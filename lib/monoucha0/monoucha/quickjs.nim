@@ -47,7 +47,6 @@ const                         ##  all tags with a reference count are negative
   JS_TAG_FLOAT64* = 7           ##  any larger tag is FLOAT64 if JS_NAN_BOXING
 
 when sizeof(int) < sizeof(int64):
-  {.passc: "-DJS_NAN_BOXING".}
   type JSValue* {.importc, header: qjsheader.} = distinct uint64
 
   type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
@@ -116,6 +115,9 @@ type
     magic: cint): JSValue {.cdecl, raises: [].}
   JSSetterMagicFunction* = proc(ctx: JSContext; this_val, val: JSValueConst;
     magic: cint): JSValue {.cdecl, raises: [].}
+  JSIteratorNextFunction* = proc(ctx: JSContext; this_val: JSValueConst;
+    argc: cint; argv: JSValueConstArray; pdone: ptr cint; magic: cint):
+    JSValue {.cdecl, raises: [].}
   JSClassID* = uint32
   JSAtom* {.importc: "JSAtom".} = distinct uint32
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
@@ -169,6 +171,17 @@ type
       receiver: JSValueConst): JSValue {.cdecl.}
     set_property*: proc(ctx: JSContext; obj: JSValueConst; atom: JSAtom;
       value, receiver: JSValueConst; flags: cint): cint {.cdecl.}
+    # To get a consistent object behavior when get_prototype != NULL,
+    # get_property, set_property and set_prototype must be != NULL
+    # and the object must be created with a JS_NULL prototype.
+    get_prototype*: proc(ctx: JSContext; obj: JSValueConst): JSValue {.cdecl.}
+    # return < 0 if exception or TRUE/FALSE
+    set_prototype*: proc(ctx: JSContext; obj, proto_val: JSValueConst): cint {.
+      cdecl.}
+    # return < 0 if exception or TRUE/FALSE
+    is_extensible*: proc(ctx: JSContext; obj: JSValueConst): cint {.cdecl.}
+    # return < 0 if exception or TRUE/FALSE
+    prevent_extensions*: proc(ctx: JSContext; obj: JSValueConst): cint {.cdecl.}
 
   JSClassExoticMethodsConst* {.importc: "const JSClassExoticMethods *",
     header: qjsheader.} = ptr JSClassExoticMethods
@@ -194,21 +207,6 @@ type
   JSClassDefConst* {.importc: "const JSClassDef *",
     header: qjsheader.} = ptr JSClassDef
 
-  JSMemoryUsage* {.importc, header: qjsheader.} = object
-    malloc_size*, malloc_limit*, memory_used_size*: int64
-    malloc_count*: int64
-    memory_used_count*: int64
-    atom_count*, atom_size*: int64
-    str_count*, str_size*: int64
-    obj_count*, obj_size*: int64
-    prop_count*, prop_size*: int64
-    shape_count*, shape_size*: int64
-    js_func_count*, js_func_size*, js_func_code_size*: int64
-    js_func_pc2line_count*, js_func_pc2line_size*: int64
-    c_func_count*, array_count*: int64
-    fast_array_count*, fast_array_elements*: int64
-    binary_object_count*, binary_object_size*: int64
-
   JSCFunctionEnum* {.size: sizeof(uint8).} = enum
     JS_CFUNC_generic, JS_CFUNC_generic_magic, JS_CFUNC_constructor,
     JS_CFUNC_constructor_magic, JS_CFUNC_constructor_or_func,
@@ -218,10 +216,16 @@ type
 
   JSCFunctionType* {.importc, union.} = object
     generic*: JSCFunction
+    generic_magic*: JSCFunctionMagic
+    constructor*: JSCFunction
+    constructor_magic*: JSCFunctionMagic
+    constructor_or_func*: JSCFunction
+    # note: f_f, f_f_f omitted
     getter*: JSGetterFunction
     setter*: JSSetterFunction
     getter_magic*: JSGetterMagicFunction
     setter_magic*: JSSetterMagicFunction
+    iterator_next*: JSIteratorNextFunction
 
   JSCFunctionListP* = ptr UncheckedArray[JSCFunctionListEntry]
 
@@ -318,15 +322,18 @@ template JS_EXCEPTION*(): untyped = JS_MKVAL(JS_TAG_EXCEPTION, 0)
 template JS_UNINITIALIZED*(): untyped = JS_MKVAL(JS_TAG_UNINITIALIZED, 0)
 
 const
-  JS_EVAL_TYPE_GLOBAL* = (0 shl 0) ##  global code (default)
-  JS_EVAL_TYPE_MODULE* = (1 shl 0) ##  module code
-  JS_EVAL_TYPE_DIRECT* = (2 shl 0) ##  direct call (internal use)
-  JS_EVAL_TYPE_INDIRECT* = (3 shl 0) ##  indirect call (internal use)
+  JS_EVAL_TYPE_GLOBAL* = (0 shl 0) ## global code (default)
+  JS_EVAL_TYPE_MODULE* = (1 shl 0) ## module code
+  JS_EVAL_TYPE_DIRECT* = (2 shl 0) ## direct call (internal use)
+  JS_EVAL_TYPE_INDIRECT* = (3 shl 0) ## indirect call (internal use)
   JS_EVAL_TYPE_MASK* = (3 shl 0)
-  JS_EVAL_FLAG_SHEBANG* = (1 shl 2) ##  skip first line beginning with '#!'
   JS_EVAL_FLAG_STRICT* = (1 shl 3) ##  force 'strict' mode
-  JS_EVAL_FLAG_UNUSED* = (1 shl 4) ##  unused
-  JS_EVAL_FLAG_COMPILE_ONLY* = (1 shl 5) ##  internal use
+  JS_EVAL_FLAG_COMPILE_ONLY* = (1 shl 5) ## compile but do not run.
+  ## The result is an object with a JS_TAG_FUNCTION_BYTECODE or
+  ## JS_TAG_MODULE tag.  It can be executed with JS_EvalFunction().
+  JS_EVAL_FLAG_BACKTRACE_BARRIER* = (1 shl 6) ## allow top-level await in normal
+  ## script.  JS_Eval() returns a promise.  Only allowed with
+  ## JS_EVAL_TYPE_GLOBAL
 
 const
   JS_DEF_CFUNC* = 0
@@ -363,14 +370,6 @@ const
   JS_PROP_HAS_GET* = cint(1 shl 11)
   JS_PROP_HAS_SET* = cint(1 shl 12)
   JS_PROP_HAS_VALUE* = cint(1 shl 13)
-
-const
-  JS_GPN_STRING_MASK* = (1 shl 0)
-  JS_GPN_SYMBOL_MASK* = (1 shl 1)
-  JS_GPN_PRIVATE_MASK* = (1 shl 2)
-  JS_GPN_ENUM_ONLY* = (1 shl 3)
-  JS_GPN_SET_ENUM* = (1 shl 4)
-
 
 template JS_CFUNC_DEF*(n: string; len: uint8; func1: JSCFunction):
     JSCFunctionListEntry =
@@ -436,14 +435,17 @@ template JS_PROP_STRING_DEF*(n, cstr: cstring; f: cint):
 {.push header: qjsheader, importc.}
 
 proc JS_NewRuntime*(): JSRuntime
-proc JS_SetRuntimeInfo*(rt: JSRuntime; info: cstringConst)
-# use 0 to disable memory limit
-proc JS_SetMemoryLimit*(rt: JSRuntime; limit: csize_t)
-proc JS_SetDumpFlags*(rt: JSRuntime; flags: uint64)
+proc JS_SetRuntimeInfo*(rt: JSRuntime; info: cstringConst) ##
+  ## info lifetime must
+  ## exceed that of rt
 proc JS_GetGCThreshold*(rt: JSRuntime): csize_t
 proc JS_SetGCThreshold*(rt: JSRuntime; gc_threshold: csize_t)
-proc JS_SetMaxStackSize*(rt: JSRuntime; stack_size: csize_t)
-proc JS_UpdateStackTop*(rt: JSRuntime)
+proc JS_SetMaxStackSize*(rt: JSRuntime; stack_size: csize_t) ##
+  ## use 0 to disable
+  ## maximum stack check
+proc JS_UpdateStackTop*(rt: JSRuntime) ##
+  ## should be called when changing thread to update the stack top value
+  ## used to check stack overflow.
 proc JS_NewRuntime2*(mf: ptr JSMallocFunctions; opaque: pointer): JSRuntime
 proc JS_FreeRuntime*(rt: JSRuntime)
 proc JS_GetRuntimeOpaque*(rt: JSRuntime): pointer
@@ -463,52 +465,59 @@ proc JS_GetContextOpaque*(ctx: JSContext): pointer
 proc JS_GetRuntime*(ctx: JSContext): JSRuntime
 proc JS_SetClassProto*(ctx: JSContext; class_id: JSClassID; obj: JSValue)
 proc JS_GetClassProto*(ctx: JSContext; class_id: JSClassID): JSValue
-proc JS_GetFunctionProto*(ctx: JSContext): JSValue
 
 # the following functions are used to select the intrinsic object to save memory
 proc JS_NewContextRaw*(rt: JSRuntime): JSContext
-proc JS_AddIntrinsicBaseObjects*(ctx: JSContext)
-proc JS_AddIntrinsicDate*(ctx: JSContext)
-proc JS_AddIntrinsicEval*(ctx: JSContext)
+proc JS_AddIntrinsicBaseObjects*(ctx: JSContext): cint
+proc JS_AddIntrinsicDate*(ctx: JSContext): cint
+proc JS_AddIntrinsicEval*(ctx: JSContext): cint
+proc JS_AddIntrinsicStringNormalize*(ctx: JSContext): cint
 proc JS_AddIntrinsicRegExpCompiler*(ctx: JSContext)
-proc JS_AddIntrinsicRegExp*(ctx: JSContext)
-proc JS_AddIntrinsicJSON*(ctx: JSContext)
-proc JS_AddIntrinsicProxy*(ctx: JSContext)
-proc JS_AddIntrinsicMapSet*(ctx: JSContext)
-proc JS_AddIntrinsicTypedArrays*(ctx: JSContext)
-proc JS_AddIntrinsicPromise*(ctx: JSContext)
-proc JS_AddIntrinsicBigInt*(ctx: JSContext)
-proc JS_AddIntrinsicWeakRef*(ctx: JSContext)
-proc JS_AddPerformance*(ctx: JSContext)
-proc JS_AddIntrinsicDOMException*(ctx: JSContext)
-
-# for equality comparisons and sameness
-proc JS_StrictEq*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
-proc JS_IsSameValue*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
-# Similar to same-value equality, but +0 and -0 are considered equal.
-proc JS_IsSameValueZero*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
+proc JS_AddIntrinsicRegExp*(ctx: JSContext): cint
+proc JS_AddIntrinsicJSON*(ctx: JSContext): cint
+proc JS_AddIntrinsicProxy*(ctx: JSContext): cint
+proc JS_AddIntrinsicMapSet*(ctx: JSContext): cint
+proc JS_AddIntrinsicTypedArrays*(ctx: JSContext): cint
+proc JS_AddIntrinsicPromise*(ctx: JSContext): cint
+proc JS_AddIntrinsicWeakRef*(ctx: JSContext): cint
+proc JS_AddIntrinsicDOMException*(ctx: JSContext): cint
 
 proc js_string_codePointRange*(ctx: JSContext; this_val: JSValueConst;
   argc: cint; argv: JSValueConstArray): JSValue
 
-proc js_calloc_rt*(rt: JSRuntime; count, size: csize_t): pointer
 proc js_malloc_rt*(rt: JSRuntime; size: csize_t): pointer
 proc js_free_rt*(rt: JSRuntime; p: pointer)
 proc js_realloc_rt*(rt: JSRuntime; p: pointer; size: csize_t): pointer
 proc js_malloc_usable_size_rt*(rt: JSRuntime; p: pointer): csize_t
 proc js_mallocz_rt*(rt: JSRuntime; size: csize_t): pointer
 
-proc js_calloc*(ctx: JSContext; count, size: csize_t): pointer
 proc js_malloc*(ctx: JSContext; size: csize_t): pointer
 proc js_free*(ctx: JSContext; p: pointer)
 proc js_realloc*(ctx: JSContext; p: pointer; size: csize_t): pointer
 proc js_malloc_usable_size*(ctx: JSContext; p: pointer): csize_t
+proc js_realloc2*(ctx: JSContext; p: pointer; size: csize_t;
+  pslack: ptr csize_t): pointer
 proc js_mallocz*(ctx: JSContext; size: csize_t): pointer
 proc js_strdup*(ctx: JSContext; str: cstringConst): cstring
 proc js_strndup*(ctx: JSContext; str: cstringConst; n: csize_t): cstring
 
+type JSMemoryUsage* {.importc, header: qjsheader.} = object
+  malloc_size*, malloc_limit*, memory_used_size*: int64
+  malloc_count*: int64
+  memory_used_count*: int64
+  atom_count*, atom_size*: int64
+  str_count*, str_size*: int64
+  obj_count*, obj_size*: int64
+  prop_count*, prop_size*: int64
+  shape_count*, shape_size*: int64
+  js_func_count*, js_func_size*, js_func_code_size*: int64
+  js_func_pc2line_count*, js_func_pc2line_size*: int64
+  c_func_count*, array_count*: int64
+  fast_array_count*, fast_array_elements*: int64
+  binary_object_count*, binary_object_size*: int64
+
 proc JS_ComputeMemoryUsage*(rt: JSRuntime; s: var JSMemoryUsage)
-# DumpMemoryUsage omitted; use getMemoryUsage instead
+proc JS_DumpMemoryUsage*(fp: File; s: var JSMemoryUsage; rt: JSRuntime)
 
 # atom support
 const JS_ATOM_NULL* = JSAtom(0)
@@ -557,44 +566,34 @@ proc JS_IsSymbol*(v: JSValueConst): JS_BOOL
 proc JS_IsObject*(v: JSValueConst): JS_BOOL
 
 proc JS_Throw*(ctx: JSContext; obj: JSValue): JSValue
-proc JS_GetException*(ctx: JSContext): JSValue
-proc JS_IsError*(v: JSValueConst): JS_BOOL
-proc JS_IsUncatchableError*(val: JSValueConst): JS_BOOL
 proc JS_SetUncatchableException*(ctx: JSContext; flag: JS_BOOL)
-proc JS_ClearUncatchableError*(ctx: JSContext; val: JSValueConst)
-proc JS_ResetUncatchableError*(ctx: JSContext)
+proc JS_GetException*(ctx: JSContext): JSValue
+proc JS_HasException*(ctx: JSContext): JS_BOOL
+proc JS_IsError*(v: JSValueConst): JS_BOOL
 proc JS_NewError*(ctx: JSContext): JSValue
-proc JS_NewInternalError*(ctx: JSContext; fmt: cstring): JSValue {.
-  varargs, discardable.}
-proc JS_NewPlainError*(ctx: JSContext; fmt: cstring): JSValue {.
-  varargs, discardable.}
-proc JS_NewRangeError*(ctx: JSContext; fmt: cstring): JSValue {.
-  varargs, discardable.}
-proc JS_NewReferenceError*(ctx: JSContext; fmt: cstring): JSValue {.
-  varargs, discardable.}
-proc JS_NewSyntaxError*(ctx: JSContext; fmt: cstring): JSValue {.
-  varargs, discardable.}
-proc JS_NewTypeError*(ctx: JSContext; fmt: cstring): JSValue {.
-  varargs, discardable.}
-proc JS_ThrowPlainError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
-  discardable.}
-proc JS_ThrowRangeError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
-  discardable.}
-proc JS_ThrowReferenceError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
-  discardable.}
 proc JS_ThrowSyntaxError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
 proc JS_ThrowTypeError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
+  discardable.}
+proc JS_ThrowReferenceError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
+  discardable.}
+proc JS_ThrowRangeError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
 proc JS_ThrowInternalError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
 proc JS_ThrowDOMException*(ctx: JSContext; name, fmt: cstring): JSValue {.
   varargs, discardable.}
+proc JS_ThrowOutOfMemory*(ctx: JSContext): JSValue {.discardable.}
 
 proc JS_FreeValue*(ctx: JSContext; v: JSValue)
 proc JS_FreeValueRT*(rt: JSRuntime; v: JSValue)
 proc JS_DupValue*(ctx: JSContext; v: JSValueConst): JSValue
 proc JS_DupValueRT*(rt: JSRuntime; v: JSValueConst): JSValue
+
+proc JS_StrictEq*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
+proc JS_SameValue*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
+# Similar to same-value equality, but +0 and -0 are considered equal.
+proc JS_SameValueZero*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
 
 # return -1 for JS_EXCEPTION
 proc JS_ToBool*(ctx: JSContext; val: JSValueConst): cint
@@ -605,7 +604,6 @@ proc JS_ToIndex*(ctx: JSContext; plen: var uint64; val: JSValueConst): cint
 proc JS_ToFloat64*(ctx: JSContext; pres: var float64; val: JSValueConst): cint
 # return an exception if 'val' is a Number
 proc JS_ToBigInt64*(ctx: JSContext; pres: var int64; val: JSValueConst): cint
-proc JS_ToBigUint64*(ctx: JSContext; pres: var int64; val: JSValueConst): cint
 # same as JS_ToInt64 but allow BigInt
 proc JS_ToInt64Ext*(ctx: JSContext; pres: var int64; val: JSValueConst): cint
 
@@ -638,10 +636,10 @@ proc JS_IsConstructor*(ctx: JSContext; val: JSValueConst): JS_BOOL
 proc JS_SetConstructorBit*(ctx: JSContext; func_obj: JSValueConst;
   val: JS_BOOL): JS_BOOL
 
-proc JS_NewArray*(ctx: JSContext): JSValue
 # takes ownership of the values
 proc JS_NewArrayFrom*(ctx: JSContext; count: cint; values: JSValueArray):
   JSValue
+proc JS_NewArray*(ctx: JSContext): JSValue
 proc JS_IsArray*(ctx: JSContext; v: JSValueConst): cint
 
 proc JS_NewDate*(ctx: JSContext; epoch_ms: float64): JSValue
@@ -670,6 +668,13 @@ proc JS_SetPrototype*(ctx: JSContext; obj, proto_val: JSValueConst): cint
 proc JS_GetPrototype*(ctx: JSContext; val: JSValueConst): JSValue
 proc JS_GetLength*(ctx: JSContext; obj: JSValueConst; pres: ptr uint64): JSValue
 proc JS_SetLength*(ctx: JSContext; obj: JSValueConst; len: uint64): cint
+
+const
+  JS_GPN_STRING_MASK* = (1 shl 0)
+  JS_GPN_SYMBOL_MASK* = (1 shl 1)
+  JS_GPN_PRIVATE_MASK* = (1 shl 2)
+  JS_GPN_ENUM_ONLY* = (1 shl 3)
+  JS_GPN_SET_ENUM* = (1 shl 4)
 
 proc JS_GetOwnPropertyNames*(ctx: JSContext;
   ptab: ptr ptr UncheckedArray[JSPropertyEnum]; plen: ptr uint32;
@@ -778,7 +783,6 @@ type JSHostPromiseRejectionTracker =
 proc JS_SetHostPromiseRejectionTracker*(rt: JSRuntime;
   cb: JSHostPromiseRejectionTracker; opaque: pointer)
 
-
 # return != 0 if the JS code needs to be interrupted
 type JSInterruptHandler* = proc(rt: JSRuntime; opaque: pointer): cint {.cdecl.}
 proc JS_SetInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
@@ -807,36 +811,33 @@ type JSSABTab* {.importc.} = object
   len*: csize_t
 
 # Object Writer/Reader (currently only used to handle precompiled code)
-const JS_WRITE_OBJ_BYTECODE* = (1 shl 0) # allow function/module
-const JS_WRITE_OBJ_BSWAP* = 0 # byte swapped output (obsolete, handled
-                              # transparently)
-const JS_WRITE_OBJ_SAB* = (1 shl 2) # allow SharedArrayBuffer
-const JS_WRITE_OBJ_REFERENCE* = (1 shl 3) # allow object references to encode
-                                          # arbitrary object graph
-const JS_WRITE_OBJ_STRIP_SOURCE* = (1 shl 4) # do not write source code
-                                             # information
-const JS_WRITE_OBJ_STRIP_DEBUG* = (1 shl 5) # do not write debug information
+const
+  JS_WRITE_OBJ_BYTECODE* = (1 shl 0) ## allow function/module
+  JS_WRITE_OBJ_BSWAP* = 0 ## byte swapped output
+  JS_WRITE_OBJ_SAB* = (1 shl 2) ## allow SharedArrayBuffer
+  JS_WRITE_OBJ_REFERENCE* = (1 shl 3) ## allow object references to encode
+                                      ## arbitrary object graph
 proc JS_WriteObject*(ctx: JSContext; psize: ptr csize_t; obj: JSValueConst;
   flags: cint): ptr uint8
 proc JS_WriteObject2*(ctx: JSContext; psize: ptr csize_t; obj: JSValueConst;
   flags: cint; psab_tab: ptr JSSABTab; psab_tab_len: ptr csize_t):
   ptr uint8
 
-const JS_READ_OBJ_BYTECODE* = (1 shl 0) # allow function/module
-const JS_READ_OBJ_ROM_DATA* = 0 # avoid duplicating 'buf' data
-                                # (obsolete, broken by ICs)
-const JS_READ_OBJ_SAB* = (1 shl 2) # allow SharedArrayBuffer
-const JS_READ_OBJ_REFERENCE* = (1 shl 3) # allow object references
+const
+  JS_READ_OBJ_BYTECODE* = (1 shl 0) ## allow function/module
+  JS_READ_OBJ_ROM_DATA* = 0 ## avoid duplicating 'buf' data
+  JS_READ_OBJ_SAB* = (1 shl 2) ## allow SharedArrayBuffer
+  JS_READ_OBJ_REFERENCE* = (1 shl 3) ## allow object references
 proc JS_ReadObject*(ctx: JSContext; buf: ptr uint8; buf_len: csize_t;
   flags: cint): JSValue
 proc JS_ReadObject2*(ctx: JSContext; buf: ptr uint8; buf_len: csize_t;
   flags: cint; psab_tab: ptr JSSABTab): JSValue
-# instantiate and evaluate a bytecode function. Only used when reading a script
-# or module with JS_ReadObject()
-proc JS_EvalFunction*(ctx: JSContext; val: JSValue): JSValue
-# load the dependencies of the module 'obj'. Useful when JS_ReadObject() returns
-# a module.
-proc JS_ResolveModule*(ctx: JSContext; obj: JSValueConst): cint
+proc JS_EvalFunction*(ctx: JSContext; val: JSValue): JSValue ## instantiate
+  ## and evaluate a bytecode function. Only used when reading a script or
+  ## module with JS_ReadObject()
+proc JS_ResolveModule*(ctx: JSContext; obj: JSValueConst): cint ## load the
+  ## dependencies of the module 'obj'. Useful when JS_ReadObject() returns
+  ## a module.
 
 # only exported for os.Worker()
 proc JS_GetScriptOrModuleName*(ctx: JSContext; n_stack_levels: cint): JSAtom
@@ -876,8 +877,9 @@ proc JS_SetModuleExport*(ctx: JSContext; m: JSModuleDef;
   export_name: cstringConst; val: JSValue): cint
 proc JS_SetModuleExportList*(ctx: JSContext; m: JSModuleDef;
   tab: JSCFunctionListP; len: cint): cint
-
-proc JS_GetVersion*(): cstring
+proc JS_SetModulePrivateValue*(ctx: JSContext; m: JSModuleDef;
+  val: JSValue): cint ## associate a JSValue to a C module
+proc JS_GetModulePrivateValue(ctx: JSContext; m: JSModuleDef): JSValue
 
 {.pop.} # header, importc
 {.pop.} # raises
