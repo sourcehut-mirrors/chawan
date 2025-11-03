@@ -458,7 +458,7 @@ proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
     if signal != nil:
       #TODO pin removeEventListener or something
       let funFun = newFunction(ctx, ["type", "callback", "capture"],
-        "() => this.removeEventListener(type, callback, capture)")
+        "return () => this.removeEventListener(type, callback, capture)")
       if JS_IsException(funFun):
         return
       let jsTarget = ctx.toJS(target)
