@@ -65,7 +65,7 @@ proc width*(s: string; start, len: int): int =
     w += u.width()
   return w
 
-proc padToWidth*(s: string; size: uint32; schar = '$'): string =
+proc padToWidth*(s: string; size: uint32): string =
   result = newStringOfCap(s.len)
   var w = 0u32
   var i = 0
@@ -73,16 +73,10 @@ proc padToWidth*(s: string; size: uint32; schar = '$'): string =
   while i < s.len:
     pi = i
     w += uint32(s.nextUTF8(i).width())
-    if w + 1 > size:
+    if w > size:
       break
     for j in pi ..< i:
       result &= s[j]
-  if w > size - 1:
-    if w == size and i == s.len:
-      for j in pi ..< i:
-        result &= s[j]
-    else:
-      result &= schar
   while w < size:
     result &= ' '
     inc w
