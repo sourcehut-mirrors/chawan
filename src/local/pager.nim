@@ -2605,7 +2605,8 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
 proc reload(pager: Pager) {.jsfunc.} =
   let old = pager.container
   let container = pager.gotoURL(newRequest(old.url), old.contentType,
-    replace = old, history = cfHistory in old.flags)
+    replace = old, history = cfHistory in old.flags,
+    charset = old.config.charsetOverride)
   container.copyCursorPos(old)
 
 type ExternDict = object of JSDict
