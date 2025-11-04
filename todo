@@ -1,5 +1,3 @@
-reduce binary size:
-- fbf for unifont
 charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
@@ -33,17 +31,17 @@ pager:
 	* just reuse dump mode code
 - alert on external command failure
 network:
+- BGI
 - uBO integration? (or at least implement filter lists)
 - dict
 - nntp
 - websockets
 javascript:
-- support defining one function with multiple names (maybe with magic?)
+- support defining function with magic
 - "this" value as JSValue
-- distinguish double from unrestricted double
-- more events
 - ReadableStream
 - separate console for each buffer
+- CORS
 layout:
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
@@ -72,10 +70,9 @@ layout:
 	* z order
 	* clipping
 - grid
-images:
-- animation
-man:
+misc:
+- animation (GIF) -> rework term first to support frame dropping
+- pager tests? (how?)
 - add a DOM -> man page converter so that we do not depend on pandoc
   for man page conversion
-tests:
-- pager? (how?)
+- unifont -> milkjf?
