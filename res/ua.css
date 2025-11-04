@@ -91,7 +91,7 @@ input {
 	height: 1em !important
 }
 input::before, input::after { content: '' !important }
-input[type=hidden i] { display: none }
+input[type=hidden i] { display: none !important }
 input:is([type=radio i], [type=checkbox i]) {
 	text-decoration: none;
 	border-style: none -cha-bracket !important
