@@ -348,7 +348,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
     classid = ctxOpaque.gclass
     p = ctxOpaque.globalObj
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let tclassid = rtOpaque.typemap.getOrDefault(nimt, JS_CLASS_OBJECT)
+  let tclassid = rtOpaque.typemap.getOrDefault(nimt, 0)
   if p == nil or not ctx.isInstanceOf(classid, tclassid):
     # dumb way to invoke JS_ThrowTypeErrorInvalidClass
     discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)

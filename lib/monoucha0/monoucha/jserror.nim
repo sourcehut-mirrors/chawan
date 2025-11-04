@@ -20,10 +20,6 @@
 ## e.g. `JS_ThrowTypeError` on exception or `ctx.toJS(val)` for your values.
 ## (You'll also want to `import monoucha/tojs` for the latter to work.)
 ##
-## To add your own custom errors, derive a new type from JS_CLASS_ERROR
-## and set the `e` field to `jeCustom` when initializing it.  Typically
-## you'd also add at least a `.jsfget` function for `message`.
-##
 ## If you want to return `null` instead of an exception, check the `jsnull`
 ## module.
 
@@ -35,7 +31,7 @@ import results
 import tojs
 
 type
-  JSError* = ref object of RootObj
+  JSError* = ref object
     e*: JSErrorEnum
     message*: string
 
@@ -46,8 +42,6 @@ type
     jeSyntaxError = "SyntaxError"
     jeTypeError = "TypeError"
     jeInternalError = "InternalError"
-    # Custom errors
-    jeCustom = "CustomError"
 
   JSResult*[T] = Result[T, JSError]
 
@@ -88,9 +82,8 @@ template errInternalError*(message: sink string): untyped =
 
 proc toJS*(ctx: JSContext; err: JSError): JSValue =
   if err == nil:
-    return JS_EXCEPTION
+    return JS_NULL
   case err.e
-  of jeCustom: return ctx.toJSRefObj(err)
   of jeRangeError: JS_ThrowRangeError(ctx, "%s", cstring(err.message))
   of jeReferenceError: JS_ThrowReferenceError(ctx, "%s", cstring(err.message))
   of jeSyntaxError: JS_ThrowSyntaxError(ctx, "%s", cstring(err.message))

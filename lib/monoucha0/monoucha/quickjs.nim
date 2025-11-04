@@ -26,16 +26,15 @@ else:
 
 const qjsheader = "qjs/quickjs.h"
 
-const                         ##  all tags with a reference count are negative
-  JS_TAG_FIRST* = -9           ##  first negative tag
-  JS_TAG_BIG_FLOAT* = -9
+const
+  # all tags with a reference count are negative
+  JS_TAG_FIRST* = -9 ## first negative tag
+  JS_TAG_BIG_INT* = -9
   JS_TAG_SYMBOL* = -8
   JS_TAG_STRING* = -7
-  JS_TAG_SHAPE* = -6            ##  used internally during GC
-  JS_TAG_ASYNC_FUNCTION* = -5   ##  used internally during GC
-  JS_TAG_VAR_REF* = -4          ##  used internally during GC
-  JS_TAG_MODULE* = -3           ##  used internally
-  JS_TAG_FUNCTION_BYTECODE* = -2 ##  used internally
+  JS_TAG_STRING_ROPE* = -6
+  JS_TAG_MODULE* = -3 ## used internally
+  JS_TAG_FUNCTION_BYTECODE* = -2 ## used internally
   JS_TAG_OBJECT* = -1
   JS_TAG_INT* = 0
   JS_TAG_BOOL* = 1
@@ -44,7 +43,8 @@ const                         ##  all tags with a reference count are negative
   JS_TAG_UNINITIALIZED* = 4
   JS_TAG_CATCH_OFFSET* = 5
   JS_TAG_EXCEPTION* = 6
-  JS_TAG_FLOAT64* = 7           ##  any larger tag is FLOAT64 if JS_NAN_BOXING
+  JS_TAG_SHORT_BIG_INT* = 7
+  JS_TAG_FLOAT64* = 8 ##  any larger tag is FLOAT64 if JS_NAN_BOXING
 
 when sizeof(int) < sizeof(int64):
   type JSValue* {.importc, header: qjsheader.} = distinct uint64
@@ -267,11 +267,6 @@ type
     is_enumerable*: JS_BOOL
     atom*: JSAtom
 
-  JSClassEnum* {.size: sizeof(uint32).} = enum
-    JS_CLASS_OBJECT = 1
-    JS_CLASS_ARRAY
-    JS_CLASS_ERROR
-
   JSMallocState* {.importc.} = object
     malloc_count: csize_t
     malloc_size: csize_t
@@ -311,9 +306,6 @@ converter toJSValueConstArray*(val: JSValueArray): JSValueConstArray {.
     importc, header: "quickjs-aux.h".} =
   JSValueConstArray(val)
 
-converter toJSClassID*(e: JSClassEnum): JSClassID {.inline.} =
-  JSClassID(e)
-
 template JS_NULL*(): untyped = JS_MKVAL(JS_TAG_NULL, 0)
 template JS_UNDEFINED*(): untyped = JS_MKVAL(JS_TAG_UNDEFINED, 0)
 template JS_FALSE*(): untyped = JS_MKVAL(JS_TAG_BOOL, 0)
@@ -346,6 +338,8 @@ const
   JS_DEF_PROP_UNDEFINED* = 7
   JS_DEF_OBJECT* = 8
   JS_DEF_ALIAS* = 9
+  JS_DEF_PROP_ATOM* = 10
+  JS_DEF_PROP_BOOL* = 11
 
 const
   JS_PROP_CONFIGURABLE* = (1 shl 0)
@@ -879,7 +873,7 @@ proc JS_SetModuleExportList*(ctx: JSContext; m: JSModuleDef;
   tab: JSCFunctionListP; len: cint): cint
 proc JS_SetModulePrivateValue*(ctx: JSContext; m: JSModuleDef;
   val: JSValue): cint ## associate a JSValue to a C module
-proc JS_GetModulePrivateValue(ctx: JSContext; m: JSModuleDef): JSValue
+proc JS_GetModulePrivateValue*(ctx: JSContext; m: JSModuleDef): JSValue
 
 {.pop.} # header, importc
 {.pop.} # raises
