@@ -1,14 +1,11 @@
 {.push raises: [].}
 
-import std/options
-
 import chame/tags
 import html/catom
 import html/dom
 import io/dynstream
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsnull
 import monoucha/quickjs
 import monoucha/tojs
 import types/blob
@@ -30,14 +27,16 @@ proc newFormData0*(entries: sink seq[FormDataEntry]; urandom: PosixStream):
     FormData =
   return FormData(boundary: urandom.generateBoundary(), entries: entries)
 
-proc newFormData(ctx: JSContext; form = none(HTMLFormElement);
-    submitter = none(HTMLElement)): Opt[FormData] {.jsctor.} =
+proc newFormData(ctx: JSContext; argv: varargs[JSValueConst]): Opt[FormData]
+    {.jsctor.} =
   let urandom = ctx.getGlobal().crypto.urandom
   let this = FormData(boundary: urandom.generateBoundary())
-  let form = form.get(nil)
-  if form != nil:
-    let submitter = submitter.get(nil)
-    if submitter != nil:
+  if argv.len > 0:
+    var form: HTMLFormElement
+    var submitter: HTMLElement = nil
+    ?ctx.fromJS(argv[0], form)
+    if argv.len > 1:
+      ?ctx.fromJS(argv[1], submitter)
       if not submitter.isSubmitButton():
         JS_ThrowDOMException(ctx, "InvalidStateError",
           "submitter must be a submit button")

@@ -309,9 +309,9 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   var body = body
   if this.requestMethod in {hmGet, hmHead}:
     body = JS_NULL
-  let credentialsMode = if this.withCredentials: cmInclude else: cmSameOrigin
+  let credentials = if this.withCredentials: cmInclude else: cmSameOrigin
   let request = newRequest(this.requestURL, this.requestMethod, this.headers,
-    credentialsMode = credentialsMode)
+    credentials = credentials)
   if not JS_IsNull(body):
     var document: Document = nil
     let contentType = if ctx.fromJS(body, document).isOk:

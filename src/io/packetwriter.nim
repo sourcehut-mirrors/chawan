@@ -7,7 +7,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/options
 import std/tables
 
 import io/dynstream
@@ -30,7 +29,6 @@ proc swrite*[T](w: var PacketWriter; s: openArray[T])
 proc swrite*[U, V](w: var PacketWriter; t: Table[U, V])
 proc swrite*(w: var PacketWriter; obj: object)
 proc swrite*(w: var PacketWriter; obj: ref object)
-proc swrite*[T](w: var PacketWriter; o: Option[T])
 proc swrite*(w: var PacketWriter; c: ARGBColor)
 proc swrite*(w: var PacketWriter; c: CellColor)
 
@@ -135,11 +133,6 @@ proc swrite*(w: var PacketWriter; obj: ref object) =
   w.swrite(obj != nil)
   if obj != nil:
     w.swrite(obj[])
-
-proc swrite*[T](w: var PacketWriter; o: Option[T]) =
-  w.swrite(o.isSome)
-  if o.isSome:
-    w.swrite(o.get)
 
 proc swrite*(w: var PacketWriter; c: ARGBColor) =
   w.swrite(uint32(c))

@@ -1,13 +1,10 @@
 {.push raises: [].}
 
-import std/options
-
 import html/script
 import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsnull
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -86,7 +83,7 @@ type
     headers*: Headers
     body*: RequestBody
     tocache*: bool
-    credentialsMode*: CredentialsMode
+    credentials*: CredentialsMode
 
   JSRequest* = ref object
     request*: Request
@@ -94,7 +91,7 @@ type
     destination* {.jsget.}: RequestDestination
     origin*: RequestOrigin
     window*: RequestWindow
-    client*: Option[EnvironmentSettings]
+    client*: EnvironmentSettings
 
 jsDestructor(JSRequest)
 
@@ -141,8 +138,8 @@ proc url(this: JSRequest): URL =
 proc jsUrl(this: JSRequest): string {.jsfget: "url".} =
   return $this.url
 
-proc credentialsMode(this: JSRequest): string {.jsfget.} =
-  return $this.request.credentialsMode
+proc credentials(this: JSRequest): string {.jsfget.} =
+  return $this.request.credentials
 
 #TODO pretty sure this is incorrect
 proc referrer(this: JSRequest): string {.jsfget.} =
@@ -159,7 +156,7 @@ proc takeReferrer*(this: Request; policy: ReferrerPolicy): string =
 
 proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
-    credentialsMode = cmSameOrigin): Request =
+    credentials = cmSameOrigin): Request =
   assert url != nil
   if referrer != nil:
     headers["Referer"] = $referrer
@@ -169,14 +166,14 @@ proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     headers: headers,
     body: body,
     tocache: tocache,
-    credentialsMode: credentialsMode
+    credentials: credentials
   )
 
 proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
-    credentialsMode = cmSameOrigin): Request =
+    credentials = cmSameOrigin): Request =
   return newRequest(parseURL0(s), httpMethod, headers, body, referrer, tocache,
-    credentialsMode)
+    credentials)
 
 proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     cors: CORSAttribute; fallbackFlag = false): JSRequest =
@@ -186,9 +183,9 @@ proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     rmCors
   if fallbackFlag and mode == rmNoCors:
     mode = rmSameOrigin
-  let credentialsMode = if cors == caAnonymous: cmSameOrigin else: cmInclude
+  let credentials = if cors == caAnonymous: cmSameOrigin else: cmInclude
   return JSRequest(
-    request: newRequest(url, credentialsMode = credentialsMode),
+    request: newRequest(url, credentials = credentials),
     destination: destination,
     mode: mode
   )
@@ -210,15 +207,15 @@ type
     of bitString:
       s: string
 
-  RequestInit* = object of JSDict
-    `method`* {.jsdefault.}: Option[HttpMethod] #TODO aliasing in dicts
-    headers* {.jsdefault.}: HeadersInit
-    body* {.jsdefault.}: BodyInit
-    referrer* {.jsdefault.}: Option[string]
-    referrerPolicy* {.jsdefault.}: Option[ReferrerPolicy]
-    credentials* {.jsdefault.}: Option[CredentialsMode]
-    mode* {.jsdefault.}: Option[RequestMode]
-    window* {.jsdefault: JS_UNDEFINED.}: JSValueConst
+  RequestInit = object of JSDict
+    `method` {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    headers {.jsdefault.}: HeadersInit
+    body {.jsdefault.}: BodyInit
+    referrer {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    referrerPolicy {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    credentials {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    mode {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    window {.jsdefault: JS_UNDEFINED.}: JSValueConst
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BodyInit):
     FromJSResult =
@@ -259,23 +256,35 @@ proc safeExtract*(init: BodyInit; body: var RequestBody): string =
   init.extract(body)
 
 proc newRequest*(ctx: JSContext; resource: JSValueConst;
-    init = RequestInit(window: JS_UNDEFINED)): Opt[JSRequest] {.jsctor.} =
+    jsInit: JSValueConst = JS_UNDEFINED): Opt[JSRequest] {.jsctor.} =
+  var init: RequestInit
+  ?ctx.fromJS(jsInit, init)
   var headers = newHeaders(hgRequest)
-  var fallbackMode = opt(rmCors)
   var window = RequestWindow(t: rwtClient)
   var body = RequestBody()
   var credentials = cmSameOrigin
   var httpMethod = hmGet
+  if not JS_IsUndefined(init.credentials):
+    ?ctx.fromJS(init.credentials, credentials)
+  if not JS_IsUndefined(init.`method`):
+    #TODO the spec allows this to be any string :(
+    ?ctx.fromJS(init.method, httpMethod)
   var referrer: URL = nil
   var url: URL = nil
+  var mode = rmNoCors
+  if not JS_IsUndefined(init.mode):
+    ?ctx.fromJS(init.mode, mode)
   if (var res: JSRequest; ctx.fromJS(resource, res).isOk):
     url = res.url
-    httpMethod = res.request.httpMethod
+    if JS_IsUndefined(init.`method`):
+      httpMethod = res.request.httpMethod
     headers[] = res.headers[]
     referrer = res.request.getReferrer()
-    credentials = res.request.credentialsMode
+    if JS_IsUndefined(init.credentials):
+      credentials = res.request.credentials
     body = res.request.body
-    fallbackMode = opt(RequestMode)
+    if JS_IsUndefined(init.mode):
+      mode = rmCors
     window = res.window
   else:
     var s: string
@@ -284,7 +293,6 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   if url.username != "" or url.password != "":
     JS_ThrowTypeError(ctx, "input URL contains a username or password")
     return err()
-  var mode = fallbackMode.get(rmNoCors)
   let destination = rdNone
   #TODO origin, window
   if not JS_IsUndefined(init.window):
@@ -296,8 +304,6 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
     mode = rmSameOrigin
   #TODO flags?
   #TODO referrer
-  if init.`method`.isSome:
-    httpMethod = init.`method`.get
   if init.body.t != bitNull and httpMethod in {hmGet, hmHead}:
     JS_ThrowTypeError(ctx, "HEAD or GET requests cannot have a body")
     return err()
@@ -305,10 +311,6 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   let contentType = init.body.extract(body)
   if contentType != "":
     headers.addIfNotFound("Content-Type", contentType)
-  if init.credentials.isSome:
-    credentials = init.credentials.get
-  if init.mode.isSome:
-    mode = init.mode.get
   if mode == rmNoCors:
     headers.guard = hgRequestNoCors
   return ok(JSRequest(
@@ -318,14 +320,14 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
       headers,
       body,
       referrer = referrer,
-      credentialsMode = credentials
+      credentials = credentials
     ),
     mode: mode,
     destination: destination,
     window: window
   ))
 
-proc credentialsMode*(attribute: CORSAttribute): CredentialsMode =
+proc credentials*(attribute: CORSAttribute): CredentialsMode =
   case attribute
   of caNoCors, caAnonymous:
     return cmSameOrigin

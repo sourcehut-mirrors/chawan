@@ -238,7 +238,7 @@ proc fetch0(window: Window; input: JSRequest): FetchPromise =
   return window.loader.fetch(input.request)
 
 proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
-    init = RequestInit(window: JS_UNDEFINED)): Opt[FetchPromise] {.jsfunc.} =
+    init: JSValueConst = JS_UNDEFINED): Opt[FetchPromise] {.jsfunc.} =
   let input = ?newRequest(ctx, input, init)
   ok(window.fetch0(input))
 

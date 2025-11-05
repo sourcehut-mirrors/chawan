@@ -5950,7 +5950,7 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
     return nil
   let window = element.document.window
   let request = createPotentialCORSRequest(url, rdScript, cors)
-  request.client = some(window.settings)
+  request.client = window.settings
   return window.loader.doRequest(request.request)
 
 #TODO settings object

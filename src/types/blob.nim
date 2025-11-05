@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/posix
 import std/strutils
 
@@ -28,7 +27,7 @@ type
     webkitRelativePath {.jsget.}: string
     name* {.jsget.}: string
     lastModified* {.jsget.}: int64
-    fd*: Option[cint]
+    fd*: cint
 
 jsDestructor(Blob)
 jsDestructor(WebFile)
@@ -40,9 +39,9 @@ proc swrite*(w: var PacketWriter; blob: Blob) =
   w.swrite(blob of WebFile)
   if blob of WebFile:
     let file = WebFile(blob)
-    w.swrite(file.fd.isSome)
-    if file.fd.isSome:
-      w.sendFd(file.fd.get)
+    w.swrite(file.fd != -1)
+    if file.fd != -1:
+      w.sendFd(file.fd)
     w.swrite(file.name)
   w.swrite(blob.ctype)
   w.swrite(blob.size)
@@ -58,7 +57,9 @@ proc sread*(r: var PacketReader; blob: var Blob) =
     var hasFd: bool
     r.sread(hasFd)
     if hasFd:
-      file.fd = some(r.recvFd())
+      file.fd = r.recvFd()
+    else:
+      file.fd = -1
     r.sread(file.name)
   r.sread(blob.ctype)
   r.sread(blob.size)
@@ -98,13 +99,13 @@ proc finalize(blob: Blob) {.jsfin.} =
     blob.buffer = nil
 
 proc finalize(file: WebFile) {.jsfin.} =
-  if file.fd.isSome:
-    discard close(file.fd.get)
+  if file.fd != -1:
+    discard close(file.fd)
 
 proc newWebFile*(name: string; fd: cint): WebFile =
   return WebFile(
     name: name,
-    fd: some(fd),
+    fd: fd,
     ctype: DefaultGuess.guessContentType(name)
   )
 
@@ -121,6 +122,7 @@ proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     {.jsctor.} =
   let file = WebFile(
     name: fileName,
+    fd: -1,
     lastModified: options.lastModified
   )
   var len = 0
@@ -148,9 +150,9 @@ proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
 proc getSize*(this: Blob): int =
   if this of WebFile:
     let file = WebFile(this)
-    if file.fd.isSome:
+    if file.fd != -1:
       var statbuf: Stat
-      if fstat(file.fd.get, statbuf) < 0:
+      if fstat(file.fd, statbuf) < 0:
         return 0
       return int(statbuf.st_size)
   return this.size

@@ -861,10 +861,9 @@ proc findItem(authMap: seq[AuthItem]; origin: Origin): AuthItem =
 
 proc includeCredentials(config: LoaderClientConfig; request: Request; url: URL):
     bool =
-  return request.credentialsMode == cmInclude or
-    request.credentialsMode == cmSameOrigin and
-      config.originURL == nil or
-        url.origin.isSameOrigin(config.originURL.origin)
+  return request.credentials == cmInclude or
+    request.credentials == cmSameOrigin and (config.originURL == nil or
+      url.origin.isSameOrigin(config.originURL.origin))
 
 proc findAuth(client: ClientHandle; request: Request; url: URL): AuthItem =
   if "Authorization" notin request.headers and

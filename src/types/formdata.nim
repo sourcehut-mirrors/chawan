@@ -1,4 +1,3 @@
-import std/options
 import std/strutils
 
 import io/dynstream
@@ -99,8 +98,8 @@ proc writeEntry*(stream: PosixStream; entry: FormDataEntry; boundary: string) =
       blob.ctype
     buf &= "Content-Type: " & ctype & "\r\n\r\n"
     stream.write(buf)
-    if blob of WebFile and WebFile(blob).fd.isSome:
-      let ps = newPosixStream(WebFile(blob).fd.get)
+    if blob of WebFile and WebFile(blob).fd != -1:
+      let ps = newPosixStream(WebFile(blob).fd)
       if ps != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:

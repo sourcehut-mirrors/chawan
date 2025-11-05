@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/posix
 import std/tables
 
@@ -23,7 +22,6 @@ proc sread*[T](r: var PacketReader; s: var seq[T])
 proc sread*[U, V](r: var PacketReader; t: var Table[U, V])
 proc sread*(r: var PacketReader; obj: var object)
 proc sread*(r: var PacketReader; obj: var ref object)
-proc sread*[T](r: var PacketReader; o: var Option[T])
 proc sread*(r: var PacketReader; c: var ARGBColor)
 proc sread*(r: var PacketReader; c: var CellColor)
 
@@ -158,16 +156,6 @@ proc sread*(r: var PacketReader; obj: var ref object) =
     r.sread(obj[])
   else:
     obj = nil
-
-proc sread*[T](r: var PacketReader; o: var Option[T]) =
-  var x: bool
-  r.sread(x)
-  if x:
-    var m: T
-    r.sread(m)
-    o = some(m)
-  else:
-    o = none(T)
 
 proc sread*(r: var PacketReader; c: var ARGBColor) =
   r.sread(uint32(c))

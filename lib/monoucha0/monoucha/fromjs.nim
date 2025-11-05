@@ -385,7 +385,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
   var isOptional = true
   var identDefsStack = @[impl[2]]
   let jsDictType = JSDict.getType()
-  var undefInit = newNimNode(nnkObjConstr).add(t)
+  var undefInit = newStmtList()
   while identDefsStack.len > 0:
     let def = identDefsStack.pop()
     case def.kind
@@ -416,54 +416,48 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
         name = name[1]
       if $name == "toFree":
         continue
-      if fallback == nil:
+      if fallback != nil:
+        undefInit.add(quote do: `res`.`name` = `fallback`)
+      else:
         isOptional = false
-      elif isOptional:
-        undefInit.add(name.newColonExpr(fallback))
-      var it = newStmtList()
       let nameStr = newStrLitNode($name)
-      it.add(quote do:
-        let prop {.inject.} = JS_GetPropertyStr(`ctx`, `val`, `nameStr`)
-      )
-      let missingStmt = if fallback == nil:
+      let it = if fallback != nil:
         quote do:
-          missing = `nameStr`
-          break `success`
+          let prop = JS_GetPropertyStr(`ctx`, `val`, `nameStr`)
+          if not JS_IsUndefined(prop):
+            res.toFree.vals.add(prop)
+            if `ctx`.fromJS(prop, `res`.`name`) == fjErr:
+              return fjErr
       else:
         quote do:
-          `res`.`name` = `fallback`
-      it.add(quote do:
-        if not JS_IsUndefined(prop):
+          missing = `nameStr`
+          let prop = JS_GetPropertyStr(`ctx`, `val`, missing)
+          if JS_IsUndefined(prop):
+            break `success`
           res.toFree.vals.add(prop)
           if `ctx`.fromJS(prop, `res`.`name`) == fjErr:
             return fjErr
-        else:
-          `missingStmt`
-      )
-      convertStmts.add(newBlockStmt(it))
+      convertStmts.add(it)
   let undefCheck = if isOptional:
     quote do:
       if JS_IsUndefined(val) or JS_IsNull(val):
-        res = `undefInit`
         return fjOk
   else:
     newStmtList()
   result = quote do:
+    `undefInit`
     `undefCheck`
     if not JS_IsObject(val):
       if not JS_IsException(val):
         JS_ThrowTypeError(ctx, "dictionary is not an object")
       return fjErr
-    # Note: following in-place construction is an optimization documented in the
-    # manual.
-    res = T(toFree: JSDictToFreeAux(ctx: ctx))
+    res.toFree = JSDictToFreeAux(ctx: ctx)
     var missing {.inject.}: cstring = nil
     block `success`:
       `convertStmts`
-    if missing != nil:
-      JS_ThrowTypeError(ctx, "missing field %s", missing)
-      return fjErr
-    return fjOk
+      return fjOk
+    JS_ThrowTypeError(ctx, "missing field %s", missing)
+    return fjErr
 
 # For some reason, the compiler can't deal with this.
 proc fromJS*[T: JSDict](ctx: JSContext; val: JSValueConst; res: var T):

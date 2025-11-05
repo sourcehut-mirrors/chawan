@@ -6,6 +6,11 @@
 const url = "https://example.org";
 assertThrows(() => new Request(url, {headers: null}), TypeError);
 assertThrows(() => new Request(url, {body: "test"}), TypeError);
+assertThrows(() => new Request(url, {mode: null}), TypeError);
+let n = 0;
+assertThrows(() => new Request({toString: () => {n = 1; return "!!!:/";}},
+	{mode: {toString: () => {n = 2; return null;}}}), TypeError);
+assertEquals(n, 2);
 new Request(url, {body: null}); /* this is OK, body init is null */
 document.getElementById("x").textContent = "Success";
 </script>

@@ -61,6 +61,7 @@ formData.append("test", "a");
 assertThrows(() => formData.append("test", "b", {
 	toString: function() { throw new Error("test"); }
 }), TypeError);
+assertThrows(() => new FormData(null), TypeError);
 assertEquals(formData.get("test"), "a");
 document.getElementById("x").textContent = "Success";
 </script>
