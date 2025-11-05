@@ -1,6 +1,5 @@
 {.experimental: "overloadableEnums".}
 
-import std/options
 import std/strutils
 import std/tables
 
