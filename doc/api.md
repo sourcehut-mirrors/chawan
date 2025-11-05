@@ -383,10 +383,7 @@ executed, and `options.wait` makes it so the user must press a key
 before the pager is resumed.
 <p>
 Returns true if the command exited successfully, false otherwise.
-<p>
-Warning: this has a bug where the output is written to stdout even if suspend
-is true. Redirect to /dev/null in the command if this is not desired. (This
-will be fixed in the future.)</td>
+</td>
 </tr>
 
 <tr>

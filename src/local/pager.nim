@@ -186,7 +186,6 @@ type
     pollData: PollData
     refreshAllowed: HashSet[string]
     regex: Opt[Regex]
-    scommand: string
     term*: Terminal
     timeouts*: TimeoutState
     tmpfSeq: uint
@@ -1663,7 +1662,7 @@ proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
 proc alert*(pager: Pager; msg: string) {.jsfunc.} =
   if msg != "":
     pager.alerts.add(msg)
-    pager.queueStatusUpdate()
+    pager.updateStatus = ussUpdate
 
 proc updatePinned(pager: Pager; old, replacement: Container) =
   if pager.pinned.downloads == old:
@@ -1824,16 +1823,18 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     myExec(cmd)
   else:
     var wstatus: cint
-    while waitpid(pid, wstatus, 0) == -1:
-      if errno != EINTR:
-        return false
+    if suspend:
+      while waitpid(pid, wstatus, 0) == -1:
+        if errno != EINTR:
+          return false
     discard sigaction(SIGINT, oldint, act)
     discard sigaction(SIGQUIT, oldquit, act)
     discard sigprocmask(SIG_SETMASK, oldmask, dummy);
-    if suspend:
-      if wait:
-        discard pager.term.anyKey() #TODO
-      discard pager.term.restart() #TODO
+    if not suspend:
+      return true
+    if wait:
+      discard pager.term.anyKey() #TODO
+    discard pager.term.restart() #TODO
     return WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0
 
 # Run process, and capture its output.
@@ -2318,7 +2319,7 @@ proc showConsole(pager: Pager) =
   if pager.pinned.console == nil:
     let request = newRequest("cache:" & $pager.consoleCacheId)
     let console = pager.gotoURL(request, "text/plain", CHARSET_UNKNOWN,
-      title = ConsoleTitle)
+      title = ConsoleTitle, history = false)
     pager.pinned.console = console
     pager.addTab(console)
   if current != pager.pinned.console:
@@ -2341,7 +2342,7 @@ proc clearConsole(pager: Pager) =
   if pager.pinned.console != nil:
     let request = newRequest("cache:" & $pager.consoleCacheId)
     let console = pager.gotoURL(request, "text/plain", CHARSET_UNKNOWN,
-      replace = pager.pinned.console, title = ConsoleTitle)
+      replace = pager.pinned.console, title = ConsoleTitle, history = false)
     pager.pinned.console = console
     pager.addTab(console)
 
@@ -2471,7 +2472,10 @@ proc updateReadLine(pager: Pager) =
         pager.replace(old, container)
         pager.lineData = nil
       of lmCommand:
-        pager.scommand = lineedit.news
+        pager.command0(lineedit.news)
+        let container = pager.pinned.console
+        if container != nil:
+          container.flags.incl(cfTailOnLoad)
         if pager.commandMode:
           pager.command()
       of lmBuffer: pager.container.readSuccess(lineedit.news)
@@ -3506,15 +3510,6 @@ proc handleEvent(pager: Pager; container: Container) =
   if container.handleEvent().isOk:
     pager.handleEvents(container)
 
-proc runCommand(pager: Pager) =
-  if pager.scommand != "":
-    pager.command0(pager.scommand)
-    let container = pager.pinned.console
-    if container != nil:
-      container.flags.incl(cfTailOnLoad)
-    pager.scommand = ""
-    pager.handleEvents()
-
 proc handleStderr(pager: Pager) =
   const BufferSize = 4096
   const prefix = "STDERR: "
@@ -3654,23 +3649,19 @@ proc inputLoop(pager: Pager): Opt[void] =
     pager.loader.unblockRegister()
     pager.loader.unregistered.setLen(0)
     pager.runJSJobs()
-    pager.runCommand()
     if pager.container == nil and pager.lineedit == nil:
       # No buffer to display.
-      if not pager.hasload:
-        # Failed to load every single URL the user passed us. We quit, and that
-        # will dump all alerts to stderr.
-        return err()
-      else:
-        # At least one connection has succeeded, but we have nothing to display.
-        # Normally, this means that the input stream has been redirected to a
-        # file or to an external program. That also means we can't just exit
-        # without potentially interrupting that stream.
+      # Perhaps we failed to load every single URL the user passed us...
+      if pager.hasload:
+        # ...or at least one connection has succeeded, but we have nothing
+        # to display.  Normally, this means that the input stream has been
+        # redirected to a file or to an external program, so we can't just
+        # exit without potentially interrupting that stream.
         #TODO: a better UI would be querying the number of ongoing streams in
         # loader, and then asking for confirmation if there is at least one.
         discard pager.term.setCursor(0, pager.term.attrs.height - 1)
         discard pager.term.anyKey("Hit any key to quit Chawan:")
-        return
+      return err()
     case pager.updateStatus
     of ussNone, ussSkip: discard
     of ussUpdate: pager.refreshStatusMsg()
