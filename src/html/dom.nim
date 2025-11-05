@@ -4335,7 +4335,7 @@ proc clientHeight(element: Element): int32 {.jsfget.} =
     return int32(rect.height)
   0
 
-const WindowEvents* = [satLoad, satError, satFocus, satBlur]
+const WindowEvents* = [satError, satLoad, satFocus, satBlur]
 
 proc reflectScriptAttr(element: Element; name: StaticAtom;
     value: Option[string]): bool =

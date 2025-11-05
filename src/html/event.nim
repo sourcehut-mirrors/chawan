@@ -777,7 +777,7 @@ proc addEventGetSet*(ctx: JSContext; obj: JSValueConst;
     atoms: openArray[StaticAtom]): Opt[void] =
   var i = cint(0)
   for atom in atoms:
-    while i < EventReflectMap.len and EventReflectMap[i] != atom:
+    while EventReflectMap[i] != atom:
       inc i
     let name = "on" & $atom
     ?ctx.addReflectFunction(obj, name, eventReflectGet, eventReflectSet, i)
