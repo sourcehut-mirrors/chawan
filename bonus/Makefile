@@ -20,21 +20,6 @@ install-filei.cgi: filei.cgi
 	mkdir -p $(CHA_CGI_DIR)
 	cp filei.cgi $(CHA_CGI_DIR)
 
-stbir2_url=https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h
-
-stbir2/stb_image_resize2.h:
-	@printf 'stb_image_resize2.h not found.\n'
-	@printf 'Should I download it from $(stbir2_url)? (y/n) '
-	@read -r res; if test "$$res" = "y"; then \
-	cd stbir2; cha -d "$(stbir2_url)" >stb_image_resize2.h; \
-	else exit 1; \
-	fi
-
-.PHONY: install-stbir2
-install-stbir2: stbir2/stbir2.nim stbir2/stb_image_resize2.h stbir2/stb_image_resize2.c
-	mkdir -p $(CHA_CGI_DIR)
-	nim c -d:release -d:lto -o:$(CHA_CGI_DIR)/resize stbir2/stbir2.nim
-
 .PHONY: install-libfetch.c
 install-libfetch-http.c: $(CHA_CGI_DIR)/libfetch-http
 	$(CC) -Wall -O2 -g -std=c89 $< -lfetch -o $@

@@ -64,19 +64,6 @@ A `nex:` URL handler and directory parser.
 Note: this does not have an installer.  Follow the instructions in the
 file's header.
 
-### [stbir2](stbir2/)
-
-By default, Chawan uses stb_image_resize for resizing images, but there
-is a newer and improved (as well as much larger) version, called
-`stb_image_resize2`. This script replaces the default image resizer
-with that.
-
-To compile this, the Makefile will try download the header file from
-GitHub: <https://raw.githubusercontent.com/nothings/stb/master/stb_image_resize2.h>
-
-but you can also just manually put the header in the directory, and then
-nothing will be downloaded.
-
 ### [trans.cgi](trans.cgi)
 
 Uses [translate-shell](https://github.com/soimort/translate-shell) to
