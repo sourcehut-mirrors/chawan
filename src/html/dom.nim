@@ -6461,38 +6461,39 @@ proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
       return (src, el.attr(satType))
   return ("", "")
 
-proc getReflectFunctions(tags: openArray[TagType]): seq[TabGetSet] =
-  result = @[]
-  for tag in tags:
-    for i in TagReflectMap.getOrDefault(tag):
-      result.add(TabGetSet(
-        name: $ReflectTable[i].funcname,
-        get: jsReflectGet,
-        set: jsReflectSet,
-        magic: i
-      ))
-
-proc getElementReflectFunctions(): seq[TabGetSet] =
-  result = @[]
+proc addElementReflection(ctx: JSContext; class: JSClassID) =
+  let proto = JS_GetClassProto(ctx, class)
   for i in ReflectAllStartIndex ..< int16(ReflectTable.len):
-    let entry = ReflectTable[i]
-    assert entry.tags == AllTagTypes
-    result.add(TabGetSet(
-      name: $ReflectTable[i].funcname,
-      get: jsReflectGet,
-      set: jsReflectSet,
-      magic: i
-    ))
+    let name = $ReflectTable[i].funcname
+    if ctx.addReflectFunction(proto, name, jsReflectGet, jsReflectSet,
+        cint(i)).isErr:
+      JS_FreeValue(ctx, proto)
+      return
+  JS_FreeValue(ctx, proto)
+
+proc getElementAttributes(tags: openArray[TagType]): seq[int16] =
+  result = TagReflectMap.getOrDefault(tags[0])
+
+proc addAttributeReflection(ctx: JSContext; class: JSClassID;
+    attrs: openArray[int16]) =
+  let proto = JS_GetClassProto(ctx, class)
+  for i in attrs:
+    if ctx.addReflectFunction(proto, $ReflectTable[i].funcname, jsReflectGet,
+        jsReflectSet, cint(i)).isErr:
+      JS_FreeValue(ctx, proto)
+      return
+  JS_FreeValue(ctx, proto)
 
 proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
-  const extraGetSet = getElementReflectFunctions()
-  let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID,
-    hasExtraGetSet = true, extraGetSet = extraGetSet)
+  let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID)
+  ctx.addElementReflection(htmlElementCID)
   template register(t: typed; tags: openArray[TagType]) =
-    const extraGetSet = getReflectFunctions(tags)
-    ctx.registerType(t, parent = htmlElementCID, hasExtraGetSet = true,
-      extraGetSet = extraGetSet)
+    let class = ctx.registerType(t, parent = htmlElementCID)
+    discard class
+    const attrs = getElementAttributes(tags)
+    when attrs.len > 0:
+      ctx.addAttributeReflection(class, attrs)
   template register(t: typed; tag: TagType) =
     register(t, [tag])
   register(HTMLInputElement, TAG_INPUT)

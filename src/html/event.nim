@@ -531,7 +531,7 @@ proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     once = false, internal = true, passive = none(bool), callback, signal = nil)
 
 # Event reflection
-const EventReflectMap* = [
+const EventReflectMap = [
   cint(0): satLoadstart,
   satProgress,
   satAbort,
@@ -772,6 +772,24 @@ proc abort(ctx: JSContext; this: AbortController; reason: JSValueConst): JSValue
     discard ctx.dispatch(signal, event)
   return JS_UNDEFINED
 
+# atoms must be sorted in the order of EventReflectMap
+proc addEventGetSet*(ctx: JSContext; obj: JSValueConst;
+    atoms: openArray[StaticAtom]): Opt[void] =
+  var i = cint(0)
+  for atom in atoms:
+    while i < EventReflectMap.len and EventReflectMap[i] != atom:
+      inc i
+    let name = "on" & $atom
+    ?ctx.addReflectFunction(obj, name, eventReflectGet, eventReflectSet, i)
+  ok()
+
+proc addEventGetSet*(ctx: JSContext; classid: JSClassID;
+    atoms: openArray[StaticAtom]): Opt[void] =
+  let proto = JS_GetClassProto(ctx, classid)
+  let res = ctx.addEventGetSet(proto, atoms)
+  JS_FreeValue(ctx, proto)
+  res
+
 proc addEventModule*(ctx: JSContext):
     tuple[eventCID, eventTargetCID: JSClassID] =
   let eventCID = ctx.registerType(Event)
@@ -783,14 +801,8 @@ proc addEventModule*(ctx: JSContext):
   ctx.registerType(InputEvent, parent = uiEventCID)
   doAssert ctx.defineConsts(eventCID, EventPhase) == dprSuccess
   let eventTargetCID = ctx.registerType(EventTarget)
-  const getset = [TabGetSet(
-    name: "onabort",
-    get: eventReflectGet,
-    set: eventReflectSet,
-    magic: int16(EventReflectMap.find(satAbort))
-  )]
-  ctx.registerType(AbortSignal, parent = eventTargetCID, hasExtraGetSet = true,
-    extraGetSet = getset)
+  let abortSignalCID = ctx.registerType(AbortSignal, parent = eventTargetCID)
+  discard ctx.addEventGetSet(abortSignalCID, [satAbort])
   ctx.registerType(AbortController)
   return (eventCID, eventTargetCID)
 

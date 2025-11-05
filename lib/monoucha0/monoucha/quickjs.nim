@@ -407,8 +407,8 @@ template JS_CGETSET_DEF_NOCONF*(n: string; fgetter: JSGetterFunction;
                            get: JSCFunctionType(getter: fgetter),
                            set: JSCFunctionType(setter: fsetter))))
 
-template JS_CGETSET_MAGIC_DEF*(n: cstring; fgetter, fsetter: typed;
-    m: int16): JSCFunctionListEntry =
+template JS_CGETSET_MAGIC_DEF*(n: cstring; fgetter: JSGetterMagicFunction;
+    fsetter: JSSetterMagicFunction; m: int16): JSCFunctionListEntry =
   JSCFunctionListEntry(name: n,
                        prop_flags: JS_PROP_CONFIGURABLE,
                        def_type: JS_DEF_CGETSET_MAGIC,

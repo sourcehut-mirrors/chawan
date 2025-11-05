@@ -518,31 +518,13 @@ proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
     this.responseObject = JS_UNDEFINED
   return JS_DupValue(ctx, this.responseObject)
 
-proc xhretGetSet(): seq[TabGetSet] =
-  result = @[]
-  for i, it in EventReflectMap:
-    if it == satReadystatechange:
-      break
-    result.add(TabGetSet(
-      name: "on" & $it,
-      get: eventReflectGet,
-      set: eventReflectSet,
-      magic: int16(i)
-    ))
-
 proc addXMLHttpRequestModule*(ctx: JSContext;
     eventCID, eventTargetCID: JSClassID) =
-  const getset0 = xhretGetSet()
-  let xhretCID = ctx.registerType(XMLHttpRequestEventTarget, eventTargetCID,
-    hasExtraGetSet = true, extraGetSet = getset0)
+  let xhretCID = ctx.registerType(XMLHttpRequestEventTarget, eventTargetCID)
+  discard ctx.addEventGetSet(xhretCID, [satLoadstart, satProgress, satAbort,
+    satError, satLoad, satTimeout, satLoadend])
   ctx.registerType(XMLHttpRequestUpload, xhretCID)
   ctx.registerType(ProgressEvent, eventCID)
-  const getset1 = [TabGetSet(
-    name: "onreadystatechange",
-    get: eventReflectGet,
-    set: eventReflectSet,
-    magic: static int16(EventReflectMap.find(satReadystatechange))
-  )]
-  let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID, hasExtraGetSet = true,
-    extraGetSet = getset1)
+  let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID)
+  discard ctx.addEventGetSet(xhrCID, [satReadystatechange])
   doAssert ctx.defineConsts(xhrCID, XMLHttpRequestState) == dprSuccess

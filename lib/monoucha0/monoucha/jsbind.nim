@@ -1281,17 +1281,6 @@ proc nimFinalizeForJS*(obj, typeptr: pointer) =
     for fin in rtOpaque.finalizers(classid):
       fin(nil, obj)
 
-type
-  TabGetSet* = object
-    name*: string
-    get*: JSGetterMagicFunction
-    set*: JSSetterMagicFunction
-    magic*: int16
-
-  TabFunc* = object
-    name*: string
-    fun*: JSCFunction
-
 template jsDestructor*[U](T: typedesc[ref U]) =
   static:
     jsDtors.incl($T)
@@ -1343,15 +1332,6 @@ proc bindGetSet(stmts: NimNode; info: RegistryInfo) =
         JS_CGETSET_MAGIC_DEF(`k`, `get`, js_replaceable_set, `magic`))
     else:
       error("Static getters and setters are not supported.")
-
-proc bindExtraGetSet(stmts: NimNode; info: var RegistryInfo;
-    extraGetSet: openArray[TabGetSet]) =
-  for x in extraGetSet:
-    let k = x.name
-    let g = x.get
-    let s = x.set
-    let m = x.magic
-    info.tabFuns.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
 
 proc jsCheckDestroy*(rt: JSRuntime; val: JSValueConst): JS_BOOL {.cdecl.} =
   let classId = JS_GetClassID(val)
@@ -1452,9 +1432,7 @@ else:
 
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
-    name: static string = ""; hasExtraGetSet: static bool = false;
-    extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL):
-    JSClassID =
+    name: static string = ""; namespace = JS_NULL): JSClassID =
   var stmts = newStmtList()
   var info = BoundFunctions.getOrDefault(t.strVal)
   if info == nil:
@@ -1480,11 +1458,6 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   if info.tabReplaceableNames.len > 0:
     stmts.bindReplaceableSet(info)
   stmts.bindGetSet(info)
-  if hasExtraGetSet:
-    #HACK: for some reason, extraGetSet gets weird contents when nothing is
-    # passed to it. So we need an extra flag to signal if anything has
-    # been passed to it at all.
-    stmts.bindExtraGetSet(info, extraGetSet)
   let sctr = stmts.bindConstructor(info)
   let endstmts = newStmtList()
   endstmts.bindEndStmts(info)

@@ -118,9 +118,7 @@ To register object types as a JavaScript interface, you must call the
 ```nim
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
-    name: static string = ""; hasExtraGetSet: static bool = false;
-    extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL):
-    JSClassID
+    name: static string = ""; namespace = JS_NULL): JSClassID
 ```
 
 Typically, you would do this using Nim reference types.  Non-reference types
@@ -221,9 +219,6 @@ Nim objects being cast to Earth references.
 Following parameters also exist:
 
 * `name`: set a different JS name than the Nim name
-* `hasExtraGetSet`, `extraGetSet`: an array of magic getters/setters.
-  `hasExtraGetSet` must be set to true in case you pass anything in
-  `extraGetSet` because of a compiler bug.
 * `namespace`: instead of defining the constructor on the global object,
   define it on the passed JS object. You must use QuickJS APIs to create
   this object. `namespace` is not consumed (i.e. you must free it
