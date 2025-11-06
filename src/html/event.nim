@@ -544,10 +544,6 @@ const EventReflectMap = [
   satBlur
 ]
 
-type UnionHack {.union.} = object
-  fun: JSCFunction
-  fun2: JSSetterMagicFunction
-
 proc eventReflectGet*(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   return JS_NULL
@@ -562,8 +558,8 @@ proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
       return JS_EXCEPTION
     let name = "on" & $atom
     let getter = ctx.identityFunction(val)
-    let hack = UnionHack(fun2: fun2) # cast does not work :(
-    let setter = JS_NewCFunction2(ctx, hack.fun, cstring(name), 1,
+    let f = JSCFunctionType(setter_magic: fun2)
+    let setter = JS_NewCFunction2(ctx, f.generic, cstring(name), 1,
       JS_CFUNC_setter_magic, magic)
     let ja = JS_NewAtom(ctx, cstring(name))
     var ret = JS_DefineProperty(ctx, jsTarget, ja, JS_UNDEFINED, getter,
