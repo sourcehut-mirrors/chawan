@@ -7,17 +7,14 @@ import std/unittest
 import chame/htmltokenizer
 import chame/minidom
 
-const hexCharMap = (func(): array[char, int] =
-  for i in 0..255:
-    case chr(i)
-    of '0'..'9': result[char(i)] = i - ord('0')
-    of 'a'..'f': result[char(i)] = i - ord('a') + 10
-    of 'A'..'F': result[char(i)] = i - ord('A') + 10
-    else: result[char(i)] = -1
-)()
-
-func hexValue(c: char): int =
-  return hexCharMap[c]
+proc hexValue*(c: char): int =
+  if c in '0'..'9':
+    return int(uint8(c) - uint8('0'))
+  if c in 'a'..'f':
+    return int(uint8(c) - uint8('a') + 0xA)
+  if c in 'A'..'F':
+    return int(uint8(c) - uint8('A') + 0xA)
+  return -1
 
 func doubleEscape(input: string): string =
   var s = ""
@@ -104,7 +101,7 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     else:
       a[1].getStr()
     return Token[MAtom](t: ttComment, s: s)
-  else: discard
+  else: return nil
 
 proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
   doAssert otok.t == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
@@ -203,6 +200,7 @@ func getState(s: string): TokenizerState =
     return CDATA_SECTION
   else:
     doAssert false, "Unknown state: " & s
+    quit(1)
 
 const rootpath = "test/html5lib-tests/tokenizer/"
 

@@ -16,7 +16,7 @@ func escapeText(s: string, attributeMode = false): string =
       if c == char(0xA0):
         result &= "&nbsp;"
       else:
-        result &= nbsp_prev & c
+        result &= nbspPrev & c
       nbspMode = false
     elif c == '&':
       result &= "&amp;"
