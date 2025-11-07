@@ -3461,9 +3461,8 @@ proc value(tokenList: DOMTokenList): string {.jsfget.} =
 
 proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
-    return ctx.item(this, u).uninitIfNull()
+  if atom.isIndex():
+    return ctx.item(this, atom.toIndex()).uninitIfNull()
   return JS_UNINITIALIZED
 
 proc reflectTokens(this: DOMTokenList; value: Option[string]) =
@@ -3531,9 +3530,8 @@ proc item(this: NodeList; u: uint32): Node {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
-    return ctx.toJS(this.item(u)).uninitIfNull()
+  if atom.isIndex():
+    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
   return JS_UNINITIALIZED
 
 proc names(ctx: JSContext; this: NodeList): JSPropertyEnumList {.jspropnames.} =
@@ -3562,13 +3560,11 @@ proc namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
-    return ctx.toJS(this.item(u)).uninitIfNull()
+  if atom.isIndex():
+    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
   var s: CAtom
-  if ctx.fromJS(atom, s).isOk:
-    return ctx.toJS(this.namedItem(s)).uninitIfNull()
-  return JS_UNINITIALIZED
+  ?ctx.fromJS(atom, s)
+  return ctx.toJS(this.namedItem(s)).uninitIfNull()
 
 proc names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
@@ -3612,13 +3608,11 @@ proc names(ctx: JSContext; this: HTMLFormControlsCollection): JSPropertyEnumList
 
 proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
     JSValue {.jsgetownprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
-    return ctx.toJS(this.item(u)).uninitIfNull()
+  if atom.isIndex():
+    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
   var s: CAtom
-  if ctx.fromJS(atom, s).isOk:
-    return ctx.toJS(ctx.namedItem(this, s)).uninitIfNull()
-  return JS_UNINITIALIZED
+  ?ctx.fromJS(atom, s)
+  return ctx.toJS(ctx.namedItem(this, s)).uninitIfNull()
 
 # HTMLAllCollection
 proc length(this: HTMLAllCollection): uint32 {.jsfget.} =
@@ -3632,9 +3626,8 @@ proc item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
-    return ctx.toJS(this.item(u)).uninitIfNull()
+  if atom.isIndex():
+    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
   return JS_UNINITIALIZED
 
 proc names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
@@ -3863,14 +3856,13 @@ proc item(map: NamedNodeMap; i: uint32): Attr {.jsfunc.} =
     return map.getAttr(int(i))
   return nil
 
-proc getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
+proc getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
-    return ok(map.item(u))
+  if atom.isIndex():
+    return ctx.toJS(map.item(atom.toIndex())).uninitIfNull()
   var s: CAtom
   ?ctx.fromJS(atom, s)
-  return ok(map.getNamedItem(s))
+  return ctx.toJS(map.getNamedItem(s)).uninitIfNull()
 
 proc names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     {.jspropnames.} =
@@ -4966,10 +4958,14 @@ proc bottom(rect: DOMRect): float64 {.jsfget.} =
 proc length(this: DOMRectList): int {.jsfget.} =
   this.list.len
 
-proc getter(this: DOMRectList; u: uint32): DOMRect {.jsgetownprop.} =
+proc getter(ctx: JSContext; this: DOMRectList; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
+  if not atom.isIndex():
+    return JS_UNINITIALIZED
+  let u = atom.toIndex()
   if int64(u) > int64(this.list.len):
-    return nil
-  return this.list[int(u)]
+    return JS_UNINITIALIZED
+  return ctx.toJS(this.list[int(u)])
 
 # CSSStyleDeclaration
 #
@@ -5088,14 +5084,13 @@ proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
+  if atom.isIndex():
+    let u = atom.toIndex()
     if u < this.length:
       return ctx.toJS(this.decls[int(u)].name)
     return JS_UNDEFINED
   var s: string
-  if ctx.fromJS(atom, s).isErr:
-    return JS_EXCEPTION
+  ?ctx.fromJS(atom, s)
   if s == "cssFloat":
     s = "float"
   if s.isSupportedProperty():
@@ -5179,15 +5174,14 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
     value: string): JSValue {.jssetprop.} =
   if ctx.checkReadOnly(this).isErr:
     return JS_EXCEPTION
-  var u: uint32
-  if ctx.fromJS(atom, u).isOk:
+  if atom.isIndex():
+    let u = atom.toIndex()
     var toks = parseComponentValues(value)
     if this.setValue(int(u), toks).isErr:
       this.element.attr(satStyle, this.cssText)
     return JS_UNDEFINED
   var name: string
-  if ctx.fromJS(atom, name).isErr:
-    return JS_EXCEPTION
+  ?ctx.fromJS(atom, name)
   if name == "cssFloat":
     name = "float"
   name = camelToKebabCase(name)
@@ -5233,8 +5227,7 @@ proc reinitURL*(element: Element): Opt[URL] =
 proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
-  if ctx.fromJS(this, element).isErr:
-    return JS_EXCEPTION
+  ?ctx.fromJS(this, element)
   let sa = StaticAtom(magic)
   if url := element.reinitURL():
     let href = ctx.toJS(url)
@@ -5248,8 +5241,7 @@ proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
 proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
-  if ctx.fromJS(this, element).isErr:
-    return JS_EXCEPTION
+  ?ctx.fromJS(this, element)
   let sa = StaticAtom(magic)
   if sa == satHref:
     var s: string
@@ -5775,8 +5767,11 @@ proc jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
     )
   return this.cachedOptions
 
-proc setter(ctx: JSContext; this: HTMLOptionsCollection; u: uint32;
+proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
     value: Option[HTMLOptionElement]): JSValue {.jssetprop.} =
+  if not atom.isIndex():
+    return JS_UNINITIALIZED
+  let u = atom.toIndex()
   let element = this.item(u)
   if value.isNone:
     let element = this.item(u)

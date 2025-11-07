@@ -499,18 +499,15 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
 
 const JS_ATOM_TAG_INT = 1u32 shl 31
 
-proc JS_IsNumber*(v: JSAtom): JS_BOOL =
-  return (uint32(v) and JS_ATOM_TAG_INT) != 0
+proc isIndex*(atom: JSAtom): JS_BOOL =
+  return (uint32(atom) and JS_ATOM_TAG_INT) != 0
+
+proc toIndex*(atom: JSAtom): uint32 =
+  uint32(atom) and (not JS_ATOM_TAG_INT)
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =
   res = atom
   fjOk
-
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var uint32): FromJSResult =
-  if JS_IsNumber(atom):
-    res = uint32(atom) and (not JS_ATOM_TAG_INT)
-    return fjOk
-  fjErr
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): FromJSResult =
   var len: csize_t

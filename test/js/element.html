@@ -30,6 +30,8 @@ assertEquals(x.attributes["pf:test"].namespaceURI, "ns");
 assertEquals(x.attributes["pf:test"].prefix, "pf");
 assertEquals(x.attributes["pf:test"].localName, "test");
 assertEquals(x.attributes["pf:test"].value, "d");
+assertEquals(x.attributes.unset, undefined);
+assertEquals(x.attributes.length, 6);
 assertEquals(x.getAttributeNS("ns", "test"), "d")
 let attr = x.attributes["pf:test"]
 x.removeAttributeNS("ns", "test")
