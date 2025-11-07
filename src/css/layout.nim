@@ -285,7 +285,8 @@ proc roundSmallMarginsAndPadding(lctx: LayoutContext;
     it.start = (it.start div cs).toInt.toLUnit * cs
     it.send = (it.send div cs).toInt.toLUnit * cs
 
-proc resolveBorder(computed: CSSValues; margin: var RelativeRect): CSSBorder =
+proc resolveBorder(lctx: LayoutContext; computed: CSSValues;
+    margin: var RelativeRect): CSSBorder =
   const Map = [
     dtHorizontal: {
       cptBorderLeftStyle: cptBorderLeftWidth,
@@ -297,22 +298,26 @@ proc resolveBorder(computed: CSSValues; margin: var RelativeRect): CSSBorder =
     }
   ]
   result = CSSBorder.default
+  #TODO error correction should probably be done on padding first and margin
+  # only as a last resort. (then maybe it becomes feasible to do box-sizing
+  # right too somehow)
   for dim, it in Map:
+    let cellSize = lctx.cellSize[dim]
     let styleStart = computed.getBorderStyle(it[0][0])
     if styleStart != BorderStyleNone:
       let w = computed.getLineWidth(it[0][1]).toLUnit()
       if w != 0'lu:
-        let e = 1'lu - w
-        if e > 0'lu and margin[dim].start <= e:
-          margin[dim].start -= e # correct error
+        let e = w - cellSize
+        if e < 0'lu and margin[dim].start >= -e or e > 0'lu:
+          margin[dim].start += e # correct error
         result[dim].start = styleStart
     let styleEnd = computed.getBorderStyle(it[1][0])
     if styleEnd != BorderStyleNone:
       let w = computed.getLineWidth(it[1][1]).toLUnit()
       if w != 0'lu:
-        let e = 1'lu - w
-        if e > 0'lu and margin[dim].send <= e:
-          margin[dim].send -= e # correct error
+        let e = w - cellSize
+        if e < 0'lu and margin[dim].send >= -e or e > 0'lu:
+          margin[dim].send += e # correct error
         result[dim].send = styleEnd
 
 proc resolvePositioned(lctx: LayoutContext; size: Size;
@@ -402,7 +407,7 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
     padding: lctx.resolvePadding(stretch(size.w), computed),
     bounds: DefaultBounds
   )
-  input.border = computed.resolveBorder(input.margin)
+  input.border = lctx.resolveBorder(computed, input.margin)
   lctx.resolveAbsoluteWidth(size, positioned, computed, input)
   lctx.resolveAbsoluteHeight(size, positioned, computed, input)
   return input
@@ -415,7 +420,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: Space; computed: CSSValues):
     padding: lctx.resolvePadding(space.w, computed),
     space: space
   )
-  input.border = computed.resolveBorder(input.margin)
+  input.border = lctx.resolveBorder(computed, input.margin)
   if computed{"display"} in DisplayInlineBlockLike:
     lctx.roundSmallMarginsAndPadding(input)
   let paddingSum = input.padding.sum()
@@ -441,7 +446,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
     space: space,
     bounds: lctx.resolveBounds(space, paddingSum, computed, flexItem = true)
   )
-  input.border = computed.resolveBorder(input.margin)
+  input.border = lctx.resolveBorder(computed, input.margin)
   if dim != dtHorizontal:
     input.space.h = maxContent()
   let length = computed.getLength(SizeMap[dim])
@@ -557,7 +562,7 @@ proc resolveBlockSizes(lctx: LayoutContext; space: Space; computed: CSSValues):
     space: space,
     bounds: lctx.resolveBounds(space, paddingSum, computed),
   )
-  input.border = computed.resolveBorder(input.margin)
+  input.border = lctx.resolveBorder(computed, input.margin)
   # height is max-content normally, but fit-content for clip.
   input.space.h = if computed{"overflow-y"} != OverflowClip:
     maxContent()
@@ -2259,7 +2264,7 @@ proc resolveBorder(tctx: var TableContext; computed: CSSValues;
     CSSBorder =
   let lctx = tctx.lctx
   var dummyMargin = RelativeRect.default # table cells have no margin
-  var border = computed.resolveBorder(dummyMargin)
+  var border = lctx.resolveBorder(computed, dummyMargin)
   if border.left notin BorderStyleNoneHidden:
     inlineBorder.start = max(lctx.cellSize.w div 2'lu, inlineBorder.start)
   if border.right notin BorderStyleNoneHidden:
