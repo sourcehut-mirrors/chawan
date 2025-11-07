@@ -67,6 +67,11 @@ proc write(state: ParseState; s: openArray[char]): Opt[void] =
     return state.ofile.write(s)
   ok()
 
+proc writeLine(state: ParseState): Opt[void] =
+  if state.ofile != nil:
+    return state.ofile.writeLine()
+  ok()
+
 proc writeLine(state: ParseState; s: openArray[char]): Opt[void] =
   if state.ofile != nil:
     return state.ofile.writeLine(s)
@@ -580,14 +585,14 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
       state.hasp = false
       ?state.writeLine("</P>")
     ?state.write("<PRE>")
-    state.blockData = line.substr(1) & '\n'
+    ?state.writeLine(line.substr(1))
   elif line.startsWith("    "):
     state.blockType = btSpacePre
     if state.hasp:
       state.hasp = false
       ?state.writeLine("</P>")
     ?state.write("<PRE>")
-    state.blockData = line.substr(4) & '\n'
+    ?state.writeLine(line.substr(4))
   elif c0 == '>':
     state.blockType = btBlockquote
     if state.hasp:
@@ -779,16 +784,14 @@ proc parseTabPre(state: var ParseState; line: string): Opt[void] =
     inc state.numPreLines
   elif line[0] != '\t':
     state.numPreLines = 0
-    ?state.write(state.blockData)
     ?state.write("</PRE>")
-    state.blockData = ""
     state.reprocess = true
     state.blockType = btNone
   else:
     while state.numPreLines > 0:
-      state.blockData &= '\n'
+      ?state.writeLine()
       dec state.numPreLines
-    state.blockData &= line.toOpenArray(1, line.high).htmlEscape() & '\n'
+    ?state.writeLine(line.toOpenArray(1, line.high).htmlEscape())
   ok()
 
 proc parseSpacePre(state: var ParseState; line: string): Opt[void] =
@@ -796,16 +799,14 @@ proc parseSpacePre(state: var ParseState; line: string): Opt[void] =
     inc state.numPreLines
   elif not line.startsWith("    "):
     state.numPreLines = 0
-    ?state.write(state.blockData)
     ?state.write("</PRE>")
-    state.blockData = ""
     state.reprocess = true
     state.blockType = btNone
   else:
     while state.numPreLines > 0:
-      state.blockData &= '\n'
+      ?state.writeLine()
       dec state.numPreLines
-    state.blockData &= line.toOpenArray(4, line.high).htmlEscape() & '\n'
+    ?state.writeLine(line.toOpenArray(4, line.high).htmlEscape())
   ok()
 
 proc parseBlockquote(state: var ParseState; line: string): Opt[void] =
