@@ -269,7 +269,7 @@ proc getRealKey(key: string): string =
         realk &= '\e'
         meta = 0
       if control == 2:
-        realk &= getControlChar(c)
+        realk &= (if c == '?': '\x7F' else: char(uint8(c) and 0x1F))
         control = 0
       else:
         realk &= c

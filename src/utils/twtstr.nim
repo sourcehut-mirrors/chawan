@@ -159,11 +159,6 @@ proc onlyWhitespace*(s: string): bool =
 proc isControlChar*(u: uint32): bool =
   return u <= 0x1F or u >= 0x7F and u <= 0x9F
 
-proc getControlChar*(c: char): char =
-  if c == '?':
-    return '\x7F'
-  return char(int(c) and 0x1F)
-
 proc kebabToCamelCase*(s: string): string =
   result = ""
   var flip = false
