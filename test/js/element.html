@@ -41,6 +41,8 @@ assertEquals(y.getElementsByTagName("div").length, 0);
 assertEquals(x.nextElementSibling, y);
 for (let z = y; z; z = z.nextElementSibling)
 	;
+y.textContent = "";
+assertEquals(y.childNodes.length, 0);
 y.remove();
 const z = document.getElementById("z");
 z.remove();

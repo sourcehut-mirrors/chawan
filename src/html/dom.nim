@@ -2284,7 +2284,8 @@ proc replaceAll(parent: ParentNode; node: Node) =
   #TODO tree mutation record
 
 proc replaceAll(parent: ParentNode; s: sink string) =
-  parent.replaceAll(parent.document.newText(s))
+  let node = if s != "": parent.document.newText(s) else: nil
+  parent.replaceAll(node)
 
 proc childrenImpl(ctx: JSContext; node: ParentNode): JSValue =
   return ctx.getWeakCollection(node, wwmChildren)
