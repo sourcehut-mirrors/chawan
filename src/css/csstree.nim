@@ -651,7 +651,7 @@ proc buildInnerBox(ctx: TreeContext; frame: TreeFrame; cached: CSSBox;
   var keepLayout = true
   for child in frame.children:
     let next = if cachedIt != nil: cachedIt.next else: nil
-    let childBox = ctx.build(cached, child, forceZ, root = false)
+    let childBox = ctx.build(cachedIt, child, forceZ, root = false)
     childBox.parent = box
     if last != nil:
       last.next = childBox
