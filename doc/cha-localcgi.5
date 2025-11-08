@@ -2,28 +2,20 @@
 .\"
 .TH "CHA-LOCALCGI" "5"
 .SH Local CGI support in Chawan
-Chawan supports the invocation of CGI scripts locally.
-This feature can be used in the following way:
-.IP \(bu 2
-All local CGI scripts must be placed in a directory specified in
-\f[CR]external.cgi\-dir\f[R].
-Multiple directories can be specified in an array too, and directories
-specified first have higher precedence.
-.PD 0
-.P
-.PD
-By default, this is set to \f[CR]$CHA_DIR/cgi\-bin\f[R] (i.e.
-\f[CR]\(ti/.chawan/cgi\-bin\f[R] or
+Chawan supports the invocation of CGI scripts placed in a directory
+specified in the \f[CR]external.cgi\-dir\f[R] configuration option.
+By default, this is set to \f[CR]$CHA_DIR/cgi\-bin\f[R]
+(i.e.\ \f[CR]\(ti/.chawan/cgi\-bin\f[R] or
 \f[CR]\(ti/.config/chawan/cgi\-bin\f[R], depending on
 \f[CR]config.toml\f[R]\(cqs location) and
 \f[CR]/usr/local/libexec/chawan/cgi\-bin\f[R].
-.IP \(bu 2
-Then, a CGI script in one of these directories can be executed by
-visiting the URL \f[CR]cgi\-bin:script\-name\f[R].
-$PATH_INFO and $QUERY_STRING are set as normal,
+.PP
+A CGI script in one of these directories can be executed by visiting the
+URL \f[CR]cgi\-bin:script\-name\f[R].
+\f[CR]$PATH_INFO\f[R] and \f[CR]$QUERY_STRING\f[R] are set as normal,
 i.e.\ \f[CR]cgi\-bin:script\-name/abcd?defgh=ijkl\f[R] will set
-$PATH_INFO to \f[CR]/abcd\f[R], and $QUERY_STRING to
-\f[CR]defgh=ijkl\f[R].
+\f[CR]$PATH_INFO\f[R] to \f[CR]/abcd\f[R], and \f[CR]$QUERY_STRING\f[R]
+to \f[CR]defgh=ijkl\f[R].
 .PP
 Further notes on processing CGI paths:
 .IP \(bu 2
@@ -38,7 +30,7 @@ So e.g.\ \f[CR]cgi\-bin:/cgi\-bin/script\-name\f[R] becomes
 \f[CR]cgi\-bin:script\-name\f[R].
 .IP \(bu 2
 If \f[CR]external.w3m\-cgi\-compat\f[R] is true, file: URLs are
-converted to cgi\-bin: URLs if the path name starts with
+converted to \f[CR]cgi\-bin:\f[R] URLs if the path name starts with
 \f[CR]/cgi\-bin/\f[R], \f[CR]/$LIB/\f[R], or the path of a local CGI
 script.
 Note: this is unsafe, please do not use it unless you must.
@@ -48,12 +40,6 @@ e.g.\ \f[CR]cgi\-bin:/path/to/cgi/dir/script\-name\f[R].
 Note however, that this only works if \f[CR]/path/to/cgi/dir\f[R] has
 already been specified as a CGI directory in
 \f[CR]external.cgi\-dir\f[R].
-.PP
-Note that this is different from w3m\(cqs cgi\-bin functionality, in
-that we use a custom scheme for local CGI instead of interpreting all
-requests to a designated path as a CGI request.
-(This incompatibility is bridged over when
-\f[CR]external.w3m\-cgi\-compat\f[R] is true.)
 .SS Headers
 Local CGI scripts may send some headers that Chawan will interpret
 specially (and thus will not pass forward to e.g.\ the fetch API, etc):
@@ -62,7 +48,7 @@ specially (and thus will not pass forward to e.g.\ the fetch API, etc):
 .IP \(bu 2
 \f[CR]Cha\-Control\f[R]: special header, see below.
 .PP
-Note that these headers MUST be sent before any regular headers.
+These headers \f[B]must\f[R] be sent before any regular headers.
 Headers received after a regular header or a
 \f[CR]Cha\-Control: ControlDone\f[R] header will be treated as regular
 headers.
@@ -91,26 +77,25 @@ before that.
 Parameter 1 is the error code, see below.
 If any following parameters are given, they are concatenated to form a
 custom error message.
-.PD 0
-.P
-.PD
+.RS 2
+.PP
 Note: short but descriptive error messages are preferred, messages that
 do not fit on the screen are currently truncated.
-(TODO fix this somehow :P)
+.RE
 .IP \(bu 2
 \f[CR]ControlDone\f[R]: Signals that no more special headers will be
 sent; this means that \f[CR]Cha\-Control\f[R] and \f[CR]Status\f[R]
 headers sent after this must be interpreted as regular headers (and thus
 e.g.\ will be available for JS code calling the script using the fetch
 API).
-.PD 0
-.P
-.PD
+.RS 2
+.PP
 WARNING: this header must be sent before any non\-hardcoded headers that
 take external input.
 For example, an HTTP client would have to send
 \f[CR]Cha\-Control: ControlDone\f[R] before returning the retrieved
 headers.
+.RE
 .PP
 Following is a list of error codes and their string counterparts.
 CGI scripts may use either (but not both) in a ConnectionError header.
@@ -127,7 +112,7 @@ supported by this protocol.
 valid URL for this format.
 .IP \(bu 2
 \f[CR]4 FileNotFound\f[R]: No file was found at the requested address,
-and thus the request is meaningless.
+so the request is meaningless.
 Note: this should only be used by protocols that do not rely on a
 client\-server architecture, e.g.\ local file access, local databases,
 or peer\-to\-peer file retrieval mechanisms.
@@ -177,12 +162,12 @@ called with an absolute path.
 \f[CR]SCRIPT_FILENAME=\(dq/path/to/script/script\-name\(dq\f[R]
 .IP \(bu 2
 \f[CR]QUERY_STRING=\f[R] the query string (i.e.\ \f[CR]URL.search\f[R]).
-Note that this variable is percent\-encoded.
+This variable is percent\-encoded.
 .IP \(bu 2
 \f[CR]PATH_INFO=\f[R] everything after the script\(cqs path name,
 e.g.\ for \f[CR]cgi\-bin:script\-name/abcd/efgh\f[R]
 \f[CR]\(dq/abcd/efgh\(dq\f[R].
-Note that this variable is NOT percent\-encoded.
+This variable is NOT percent\-encoded.
 .IP \(bu 2
 \f[CR]REQUEST_URI=\(dq$SCRIPT_NAME/$PATH_INFO?$QUERY_STRING\f[R]
 .IP \(bu 2
@@ -194,7 +179,7 @@ this request.
 .IP \(bu 2
 \f[CR]CHA_LIBEXEC_DIR=\f[R] The libexec directory Chawan was configured
 to use at compile time.
-See the tools section below for details of why this is useful.
+See the tools section below for details on why this is useful.
 .IP \(bu 2
 \f[CR]CONTENT_TYPE=\f[R] for POST requests, the Content\-Type header.
 Not set for other request types (e.g.\ GET).
@@ -203,11 +188,11 @@ Not set for other request types (e.g.\ GET).
 set.
 .IP \(bu 2
 \f[CR]ALL_PROXY=\f[R] if a proxy has been set, the proxy URL.
-WARNING: for security reasons, this MUST be respected when making
-external connections.
+WARNING: for security reasons, this \f[B]must\f[R] be respected when
+making external connections.
 If a CGI script does not support proxies, it must never make any
-external connections when the \f[CR]ALL_PROXY\f[R] variable is set, even
-if this results in it returning an error.
+external connections when the \f[CR]ALL_PROXY\f[R] variable is set, but
+rather return an error message.
 .IP \(bu 2
 \f[CR]HTTP_COOKIE=\f[R] if set, the Cookie header.
 .IP \(bu 2
@@ -222,8 +207,8 @@ set the parsed URL\(cqs parts as environment variables.
 Use of these is highly encouraged, to avoid exploits originating from
 double\-parsing of URLs.
 .PP
-e.g.\ if
-example://username:password\(atexample.org:1234/path/name.html?example
+If
+\f[CR]example://username:password\(atexample.org:1234/path/name.html?example\f[R]
 is the original URL, then:
 .IP \(bu 2
 \f[CR]MAPPED_URI_SCHEME=\f[R] the scheme of the original URL, in this
@@ -251,18 +236,14 @@ the scheme, if any.)
 \f[CR]MAPPED_URI_PATH=\f[R] the path name, in this case
 \f[CR]/path/name.html?example\f[R].
 If no path was specified, the variable is set to the empty string.
-Note: the path name is percent\-encoded.
+The path name is percent\-encoded.
 .IP \(bu 2
 \f[CR]MAPPED_URI_QUERY=\f[R] the query string, in this case
 \f[CR]example\f[R].
-Note that, unlike in JavaScript, no question mark is prepended to the
-string.
-.PD 0
-.P
-.PD
+Unlike in JavaScript, no question mark is prepended to the string.
 The query string is percent\-encoded as well.
 .PP
-Note: the fragment part is omitted intentionally.
+The fragment part is omitted intentionally.
 .SS Request body
 If the request body is not empty, it is streamed into the program
 through the standard input.
@@ -275,7 +256,7 @@ as well.
 Chawan provides certain helper binaries that may be useful for CGI
 scripts.
 These can be portably accessed by executing
-\f[CR]\(dq$CHA_LIBEXEC_DIR\(dq/[program name]\f[R].
+\f[CR]\(dq$CHA_LIBEXEC_DIR\(dq/[program]\f[R].
 .PP
 Currently, the following tools are available:
 .IP \(bu 2
@@ -288,8 +269,8 @@ Note that standard error is redirected to the browser console (by
 default, M\-cM\-c).
 This makes it easy to debug a misbehaving CGI script, but may also slow
 down the browser in case of excessive logging.
-If this is not the desired behavior, we recommend wrapping your script
-into a shell script that redirects stderr to /dev/null.
+If this is not the desired behavior, wrap your script into a shell
+script that redirects stderr to /dev/null.
 .SS My script is returning a \(lqFailed to execute script\(rq error message.
 This means the \f[CR]execl\f[R] call to the script failed.
 Make sure that your CGI script\(cqs executable bit is set, i.e.\ run
@@ -312,7 +293,6 @@ you put your CGI script to
 \f[CR]/usr/local/libexec/chawan/cgi\-bin\f[R], then it will not work.
 .SS My script is returning a \(lqfailed to set up CGI script\(rq error message.
 This means that either \f[CR]pipe\f[R] or \f[CR]fork\f[R] failed.
-Something strange is going on with your system; we recommend exorcism.
-(Maybe you are running out of memory?)
+Maybe you are running out of memory?
 .SS See also
 \f[B]cha\f[R](1) \f[B]cha\-urimethodmap\f[R](5)

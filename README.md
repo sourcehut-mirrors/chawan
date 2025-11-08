@@ -48,8 +48,8 @@ $ mancha cha # read the cha(1) man page using `mancha'
 You can also install Chawan from packages maintained by volunteers.
 Known stable packages are:
 
-* Arch Linux: <https://archlinux.org/packages/extra/x86_64/chawan/>
 * Alpine Linux: <https://pkgs.alpinelinux.org/packages?name=chawan>
+* Arch Linux: <https://archlinux.org/packages/extra/x86_64/chawan/>
 * FreeBSD: <https://www.freshports.org/www/chawan/>
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
 * NixOS: <https://search.nixos.org/packages?show=chawan>

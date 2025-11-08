@@ -393,6 +393,7 @@ the line number.</td>
 <td>{see mailcap docs}</td>
 <td>Search path for <!-- MANOFF -->[mailcap](mailcap.md) files.<!-- MANON -->
 <!-- MANON mailcap files. (See **cha-mailcap**(5) for details.) MANOFF -->
+Directories specified first have higher precedence.
 </td>
 </tr>
 

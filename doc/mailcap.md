@@ -54,11 +54,13 @@ Note that text/html and text/plain entries are ignored.
 described in the standard.
 
 If no quoting is applied, Chawan quotes the templates automatically.
-(This works with $(command substitutions) as well.)
+(This works with $(command substitutions) as well.)  However, other software
+may misbehave on such templates, so it may be better to assign them to
+a variable first.
 
 The non-standard template %u may be specified to get the original URL of
-the resource. This is a Netscape extension that may not be compatible
-with other implementations. As an alternative, the `$MAILCAP_URL`
+the resource.  This is a Netscape extension that may not be compatible
+with other implementations.  As an alternative, the `$MAILCAP_URL`
 environment variable is set to the same value.
 
 ### Fields
@@ -68,28 +70,37 @@ are recognized. The non-standard `x-htmloutput`, `x-ansioutput`,
 `x-saveoutput` and `x-needsstyle` extension fields are also recognized.
 
 * When the `test` named field is specified, the mailcap entry is only used
-  if the test command returns 0.  
+  if the test command returns 0.
+
   Warning: as of now, `%s` does not work with `test`; `test` named
   fields with a `%s` template are skipped, and no data is piped into
   `test` commands.
+
 * `copiousoutput` makes Chawan redirect the output of the external
   command's output into a new buffer. If either x-htmloutput or
   x-ansioutput is defined too, then it is ignored.
+
 * The `x-htmloutput` extension field behaves the same as
   `copiousoutput`, but makes Chawan interpret the command's output as
   HTML.
+
 * `x-ansioutput` pipes the output through the "text/x-ansi" content
   type handler, so that ANSI colors, formatting, etc. are displayed
   correctly.
+
 * `x-saveoutput` prompts the user to save the entry's output in a file.
+
 * `x-needsstyle` forces CSS to be processed for the specific type, even
   if styling is disabled in the config. Only useful when combined with
   `x-htmloutput`.
-* `x-needsimage` forces images to be displayed for the specific type,
-  even if images are disabled.
+
+* `x-needsimage` forces images to be displayed in `x-htmloutput`, even if
+  images are disabled.
+
 * `needsterminal` hands over control of the terminal to the command
   while it is running. Note: as of now, `needsterminal` does nothing if
   either `copiousoutput` or `x-htmloutput` is specified.
+
 * For a description of `nametemplate`, see the RFC.
 
 ## Examples
@@ -105,7 +116,7 @@ I recommend placing entries in `~/.chawan/auto.mailcap` (or
 text/markdown; pandoc - -f markdown -t html -o -; x-htmloutput
 
 # Show syntax highlighting for JavaScript source files using bat.
-text/javascript; bat -f -l es6 --file-name "${MAILCAP_URL:-STDIN}" -; x-ansioutput
+text/javascript; url=%u bat -f -l es6 --file-name "${url:-STDIN}" -; x-ansioutput
 
 # Play music using mpv, and hand over control of the terminal until mpv exits.
 audio/*; mpv -; needsterminal
@@ -116,7 +127,6 @@ video/*; mpv -
 
 # Open docx files using LibreOffice Writer.
 application/vnd.openxmlformats-officedocument.wordprocessingml.document; lowriter %s
-# (Wow that was ugly.)
 
 # Display manpages using pandoc. (Make sure the mime type matches the one
 # set in your mime.types file for extensions .1, .2, .3, ...)

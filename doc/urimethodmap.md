@@ -4,11 +4,11 @@ MANOFF -->
 
 # URI method map support in Chawan
 
-Chawan can be used to map unrecognized protocols to known protocols using the
-`urimethodmap` format.
+Chawan can be used to map unrecognized protocols to known protocols using
+the *urimethodmap* format.
 
 The main use case for this is implementing handlers to protocols unknown to
-Chawan through a protocol that the browser *does* understand.
+Chawan through a protocol that the browser does understand.
 
 ## Search path
 
@@ -22,8 +22,8 @@ $HOME/.urimethodmap:$HOME/.w3m/urimethodmap:/etc/urimethodmap:/usr/local/etc/uri
 ```
 ## Format
 
-The urimethodmap format is taken 1:1 from w3m, with only some modifications
-to the interpretation of templates.
+The urimethodmap format is taken 1:1 from w3m, with some modifications to
+the interpretation of templates.
 
 A rough attempt at the formal description of this:
 
@@ -41,8 +41,8 @@ Template = [see below]
 Comment = *WHITESPACE CR / "#" *CHAR CR
 ```
 
-Note that an ASCII colon sign (:) must be present after the protocol
-name. However, the whitespace may be omitted.
+Note that an ASCII colon sign (:) must be present after the protocol name.
+However, the whitespace may be omitted.
 
 Examples:
 
@@ -57,16 +57,13 @@ protocol:	/cgi-bin/interpret-protocol?%s
 protocol	/cgi-bin/interpret-protocol?%s
 ```
 
-The redirection template is the target URL. If the string `%s` is contained
+The redirection template is the target URL.  If the string `%s` is contained
 in the template, it will be replaced by the target URL.
-
-Note: Chawan used to URL-encode the substituted URL in the past, but this is
-no longer the case.
 
 For compatibility with w3m, templates starting with `/cgi-bin/` and
 `file:/cgi-bin/` are special-cased and the starting string is replaced with
-`cgi-bin:`. So for example, the template `/cgi-bin/w3mdict.cgi` is the same as
-`cgi-bin:w3mdict.cgi` (and so is `file:/cgi-bin/w3mdict.cgi`).
+`cgi-bin:`.  So for example, the template `/cgi-bin/w3mdict.cgi` is the same
+as `cgi-bin:w3mdict.cgi` (and so is `file:/cgi-bin/w3mdict.cgi`).
 
 Example:
 
@@ -123,13 +120,10 @@ tl:		/cgi-bin/trans.cgi?%s
 Then, you could open the translation of any word using `tl:word`.
 
 Note however that Chawan has a more powerful facility for substitution
-shorthands like this in the form of omni-rules. So if you want to redirect
-to an on-line dictionary site with tl:word instead of providing a local
-CGI interface, it is probably easier to just use omni-rules instead of
-urimethodmap + local CGI redirection.
-
-Rule of thumb: if you find yourself writing local CGI scripts that just
-send a `Location:` header, maybe consider just using an omni-rule.
+shorthands like this in the form of omni-rules.  So if you want to redirect
+to an online dictionary site with tl:word instead of providing a local CGI
+interface, it is easier to just use omni-rules instead of urimethodmap +
+local CGI redirection.
 
 <!-- MANON
 

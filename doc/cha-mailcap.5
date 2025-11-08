@@ -54,6 +54,8 @@ Note that text/html and text/plain entries are ignored.
 .PP
 If no quoting is applied, Chawan quotes the templates automatically.
 (This works with $(command substitutions) as well.)
+However, other software may misbehave on such templates, so it may be
+better to assign them to a variable first.
 .PP
 The non\-standard template %u may be specified to get the original URL
 of the resource.
@@ -70,12 +72,12 @@ are also recognized.
 .IP \(bu 2
 When the \f[CR]test\f[R] named field is specified, the mailcap entry is
 only used if the test command returns 0.
-.PD 0
-.P
-.PD
+.RS 2
+.PP
 Warning: as of now, \f[CR]%s\f[R] does not work with \f[CR]test\f[R];
 \f[CR]test\f[R] named fields with a \f[CR]%s\f[R] template are skipped,
 and no data is piped into \f[CR]test\f[R] commands.
+.RE
 .IP \(bu 2
 \f[CR]copiousoutput\f[R] makes Chawan redirect the output of the
 external command\(cqs output into a new buffer.
@@ -98,8 +100,8 @@ in a file.
 type, even if styling is disabled in the config.
 Only useful when combined with \f[CR]x\-htmloutput\f[R].
 .IP \(bu 2
-\f[CR]x\-needsimage\f[R] forces images to be displayed for the specific
-type, even if images are disabled.
+\f[CR]x\-needsimage\f[R] forces images to be displayed in
+\f[CR]x\-htmloutput\f[R], even if images are disabled.
 .IP \(bu 2
 \f[CR]needsterminal\f[R] hands over control of the terminal to the
 command while it is running.
@@ -119,7 +121,7 @@ I recommend placing entries in \f[CR]\(ti/.chawan/auto.mailcap\f[R] (or
 text/markdown; pandoc \- \-f markdown \-t html \-o \-; x\-htmloutput
 
 # Show syntax highlighting for JavaScript source files using bat.
-text/javascript; bat \-f \-l es6 \-\-file\-name \(dq${MAILCAP_URL:\-STDIN}\(dq \-; x\-ansioutput
+text/javascript; url=%u bat \-f \-l es6 \-\-file\-name \(dq${url:\-STDIN}\(dq \-; x\-ansioutput
 
 # Play music using mpv, and hand over control of the terminal until mpv exits.
 audio/*; mpv \-; needsterminal
@@ -130,7 +132,6 @@ video/*; mpv \-
 
 # Open docx files using LibreOffice Writer.
 application/vnd.openxmlformats\-officedocument.wordprocessingml.document; lowriter %s
-# (Wow that was ugly.)
 
 # Display manpages using pandoc. (Make sure the mime type matches the one
 # set in your mime.types file for extensions .1, .2, .3, ...)

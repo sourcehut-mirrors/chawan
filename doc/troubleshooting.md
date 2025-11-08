@@ -54,7 +54,7 @@ images = true
 The second most common reason is that your terminal supports neither Sixel
 nor Kitty images.
 
-Other reasons are enumerated <!-- MANOFF -->[here](image.md).<!-- MANON --> <!-- MANON here: **cha-image**(7) MANOFF -->
+Other reasons are enumerated <!-- MANOFF -->[here](image.md).<!-- MANON --> <!-- MANON in **cha-image**(7) MANOFF -->
 
 ## Why do I get strange/incorrect/ugly colors?
 
@@ -68,7 +68,8 @@ reports.  In particular:
   using the `display.default-background-color` and
   `display.default-foreground-color` options.
 
-See [config.md](config.md#display) for details.
+See <!-- MANOFF -->[config.md](config.md#display)<!-- MANON --> <!-- MANON *Display* in **cha-config**(5) MANOFF --> for
+details.
 
 ## I set my `$PAGER` to `cha` and now man pages are unreadable.
 
@@ -154,7 +155,9 @@ Some potential fixes:
 * Logging in to websites requires cookies.  Some websites also require
   cookie sharing across domains.  For security reasons, Chawan does not
   allow any of this by default, so you will have to fiddle with siteconf
-  to fix it.  See [config.md#siteconf](config.md#siteconf) for details.
+  to fix it.
+  See <!-- MANOFF -->[config.md#siteconf](config.md#siteconf) <!-- MANON --> <!-- MANON *Siteconf* in **cha-config**(5) --> for
+  details.
 
 * Set the `referer-from` siteconf value to true; this will cause Chawan
   to send a `Referer` header when navigating to other URLs from the
