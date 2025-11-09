@@ -8,9 +8,9 @@ mancha - view manual pages via cha(1)
 
 # SYNOPSIS
 
-**mancha** \[**-M ***path*\] \[*section*\] *name*\
-**mancha** \[**-M ***path*\] \[*section*\] -k *keyword*\
-**mancha** -l *file*
+**mancha** \[**-M** *path*\] \[*section*\] *name*\
+**mancha** \[**-M** *path*\] \[*section*\] **-k** *keyword*\
+**mancha** **-l** *file*
 
 # DESCRIPTION
 
@@ -26,16 +26,16 @@ links.
 
 Command line options are:
 
-**-M ***path*
+**-M** *path*
 
 : Set *path* as the MANPATH environment variable.  See **man**(1) for
   details of how this is interpreted.
 
-**-k ***keyword*
+**-k** *keyword*
 
 : Use *keyword* for keyword-based man page search.
 
-**-l ***file*
+**-l** *file*
 
 : Open the specified local *file* as a man page.
 
