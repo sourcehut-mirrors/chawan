@@ -158,13 +158,14 @@ proc lowerBound(this: Headers; name: string): int =
   )
 
 proc removeAll(this: Headers; name: string; n: int) =
-  var m = n
-  for n, it in this.list.toOpenArray(n, this.list.high).mypairs:
+  var j = 0
+  for i, it in this.list.toOpenArray(n, this.list.high).mypairs:
     if not it.name.equalsIgnoreCase(name):
       break
-    m = n + 1
+    j = i + 1
+  var m = n + j
   if n != m:
-    let L = this.list.len - m
+    let L = this.list.len - j
     for n in n ..< L:
       this.list[n] = move(this.list[m])
       inc m
