@@ -403,7 +403,11 @@ proc parseInline(state: var ParseState; line: string): Opt[void] =
     if c == '\\':
       inc ctx.i
       if ctx.i < line.len:
-        ?ctx.append(line[ctx.i], state)
+        let c = line[ctx.i]
+        if c == '\n':
+          ?ctx.append("<br>", state)
+        else:
+          ?ctx.append(c, state)
     elif (ctx.i > 0 and line[ctx.i - 1] notin AsciiWhitespace or
           ctx.i + 1 < line.len and line[ctx.i + 1] notin AsciiWhitespace) and
         (c == '*' or
