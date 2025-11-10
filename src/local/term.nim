@@ -51,6 +51,7 @@ type
     ttTmux = "tmux"
     ttUrxvt = "rxvt-unicode"
     ttVt100 = "vt100"
+    ttVt420 = "vt420"
     ttVt52 = "vt52"
     ttVte = "vte" # pretends to be XTerm
     ttWezterm = "wezterm"
@@ -100,6 +101,20 @@ type
     n: int # bytes of s already flushed
     next: TerminalPage
 
+  TermdescFlag = enum # 16 bits, 7 free
+    tfTitle # can set window title
+    tfDa1 # we get a response from DA1
+    tfAltScreen # has alt screen
+    tfBleedsAPC # terminal chokes on APC
+    tfColor1 # tfColor1: ANSI
+    tfColor2 # tfColor2: eight-bit; together with tfColor1: true-color
+    tfSixel # known to support Sixel (and doesn't advertise it)
+    tfSpecialGraphics # supports DEC special graphics
+    tfMargin # needs a 1-char margin at the right edge
+    tfMouse # supports SGR mouse
+
+  Termdesc = set[TermdescFlag]
+
   Terminal* = ref object
     termType: TerminalType
     cs*: Charset
@@ -117,15 +132,14 @@ type
     formatMode: set[FormatFlag]
     imageMode*: ImageMode
     cleared: bool
-    smcup: bool
-    setTitle: bool
     queryDa1: bool
-    bleedsAPC: bool
-    margin: bool
     asciiOnly: bool
     osc52Copy: bool
     ttyFlag: bool
     mouseEnabled: bool
+    specialGraphics: bool # flag for special graphics processing
+    cursorHidden: bool
+    desc: Termdesc
     origTermios: Termios
     newTermios: Termios
     defaultBackground: RGBColor
@@ -211,6 +225,93 @@ type
     mods*: set[MouseInputMod]
     pos*: MouseInputPosition
 
+# Built-in terminal capability database.
+#
+# In an ideal world, none of this would be necessary as we could just get
+# capabilities from the terminal itself.  Alas, some insist on terminfo
+# being the sole source of "reliable" information (it's not reliable...), so
+# we must emulate it to some extent.
+#
+# In general, terminal attributes that we can detect with queries are
+# omitted.  Some terminals only set COLORTERM, but do not respond to
+# queries; this may not propagate through SSH, so we still check TERM for
+# these.
+#
+# For terminals I cannot directly test, our data is based on TERMINALS.md in
+# notcurses and terminfo.src in ncurses.
+#
+# XtermCompatible: probably not 1:1 compatible, but either a) compatible
+# enough for our purposes or b) advertises incompatibilities correctly
+# through queries.  Descriptions with XtermCompatible and no extra flags
+# are redundant; I'm including them only to have a list of terminals already
+# tested.
+const XtermCompatible = {
+  tfTitle, tfDa1, tfAltScreen, tfSpecialGraphics, tfMouse
+}
+
+const AnsiColorFlag = {tfColor1}
+const EightBitColorFlag = {tfColor2}
+const TrueColorFlag = {tfColor1, tfColor2}
+
+const TermdescMap = [
+  ttAdm3a: {tfMargin},
+  ttAlacritty: XtermCompatible + TrueColorFlag,
+  ttContour: XtermCompatible,
+  ttDvtm: {tfAltScreen, tfBleedsAPC} + TrueColorFlag,
+  ttEat: XtermCompatible + TrueColorFlag,
+  ttEterm: {tfTitle, tfDa1} + AnsiColorFlag,
+  ttFbterm: {tfDa1} + AnsiColorFlag,
+  ttFoot: XtermCompatible,
+  ttFreebsd: AnsiColorFlag,
+  ttGhostty: XtermCompatible,
+  ttIterm2: XtermCompatible,
+  ttKitty: XtermCompatible + TrueColorFlag,
+  ttKonsole: XtermCompatible,
+  # Linux accepts true color or eight bit sequences, but as per the
+  # man page they are "shoehorned into 16 colors".  This breaks color
+  # correction, so we stick to ANSI.
+  # It also fails to advertise ANSI color in DA1, so we set it here.
+  ttLinux: {tfDa1, tfAltScreen} + AnsiColorFlag,
+  ttMintty: XtermCompatible + TrueColorFlag,
+  ttMlterm: XtermCompatible + TrueColorFlag,
+  ttMsTerminal: XtermCompatible + TrueColorFlag,
+  ttPutty: XtermCompatible + TrueColorFlag,
+  ttRio: XtermCompatible,
+  ttRlogin: XtermCompatible + TrueColorFlag,
+  ttRxvt: XtermCompatible + {tfBleedsAPC} + EightBitColorFlag,
+  # screen does true color, but only if you explicitly enable it.
+  # smcup is also opt-in; however, it should be fine to send it even if
+  # it's not used.
+  ttScreen: XtermCompatible + EightBitColorFlag,
+  ttSt: XtermCompatible + TrueColorFlag,
+  # SyncTERM supports Sixel, but it doesn't have private color registers
+  # so we omit it.
+  ttSyncterm: XtermCompatible + TrueColorFlag,
+  ttTerminology: XtermCompatible + {tfBleedsAPC},
+  ttTmux: XtermCompatible + TrueColorFlag,
+  # Direct color in urxvt is not really true color; apparently it
+  # just takes the nearest color of the 256 registers and replaces it
+  # with the direct color given.  I don't think this is much worse than
+  # our basic quantization for 256 colors, so we use it anyway.
+  ttUrxvt: XtermCompatible + {tfBleedsAPC} + TrueColorFlag,
+  # The VT100 had DA1, but couldn't gracefully consume unknown sequences.
+  ttVt100: {tfSpecialGraphics},
+  # The VT420 could (it seems), but I'm not convinced it brings any benefit.
+  ttVt420: {tfSpecialGraphics},
+  ttVt52: {},
+  ttVte: XtermCompatible + TrueColorFlag,
+  ttWezterm: XtermCompatible,
+  ttWterm: XtermCompatible + TrueColorFlag,
+  ttXfce: XtermCompatible + TrueColorFlag,
+  ttXst: XtermCompatible + TrueColorFlag,
+  ttXterm: XtermCompatible,
+  # yaft supports Sixel, but can't tell us so in DA1.
+  ttYaft: XtermCompatible + {tfBleedsAPC, tfSixel} - {tfAltScreen},
+  # zellij supports Sixel, but doesn't advertise it.
+  # However, the feature barely works, so we don't force it here.
+  ttZellij: XtermCompatible + TrueColorFlag,
+]
+
 # control sequence introducer
 const CSI = "\e["
 
@@ -284,7 +385,7 @@ const ResetAltScreen = DECRST(1049)
 const SetSGRMouse = DECSET(1002, 1006)
 const ResetSGRMouse = DECRST(1002, 1006)
 
-const SetBracketedPaste= DECSET(2004)
+const SetBracketedPaste = DECSET(2004)
 const ResetBracketedPaste = DECRST(2004)
 const BracketedPasteStart* = CSI & "200~"
 const BracketedPasteEnd* = CSI & "201~"
@@ -536,11 +637,15 @@ proc clearDisplay(term: Terminal): string =
 proc isatty*(term: Terminal): bool =
   term.ttyFlag
 
-proc anyKey*(term: Terminal; msg = "[Hit any key]"): Opt[void] =
+proc anyKey*(term: Terminal; msg = "[Hit any key]"; bottom = false): Opt[void] =
   if term.isatty():
     term.blockIO()
     doAssert ?term.flush()
-    ?term.write(term.clearEnd() & msg)
+    var buf = ""
+    if bottom:
+      buf &= term.cursorGoto(0, term.attrs.height - 1)
+    buf &= term.clearEnd() & msg
+    ?term.write(buf)
     discard term.readChar()
     term.unblockIO()
   ok()
@@ -565,20 +670,6 @@ proc startFormat(term: Terminal; flag: FormatFlag): string =
 
 proc endFormat(term: Terminal; flag: FormatFlag): string =
   return CSI & $FormatCodes[flag].e & 'm'
-
-proc setCursor*(term: Terminal; x, y: int): Opt[void] =
-  assert x >= 0 and y >= 0
-  if x != term.cursorx or y != term.cursory:
-    ?term.write(term.cursorGoto(x, y))
-    term.cursorx = x
-    term.cursory = y
-  ok()
-
-proc enableAltScreen(term: Terminal): string =
-  return SetAltScreen
-
-proc disableAltScreen(term: Terminal): string =
-  return ResetAltScreen
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
@@ -752,36 +843,38 @@ proc processFormat*(res: var string; term: Terminal; format: var Format;
       res.addColorSGR(bgcolor, bgmod = 10)
       format.bgcolor = bgcolor
 
+proc hasTitle(term: Terminal): bool =
+  term.config.display.setTitle.get(tfTitle in term.desc)
+
+proc hasAltScreen(term: Terminal): bool =
+  term.config.display.altScreen.get(tfAltScreen in term.desc)
+
 proc setTitle*(term: Terminal; title: string): Opt[void] =
-  if term.setTitle:
+  if term.hasTitle():
     ?term.write(OSC & "0;" & title.replaceControls() & ST)
   ok()
 
 proc enableMouse*(term: Terminal): Opt[void] =
-  if not term.mouseEnabled:
-    case term.termType
-    of ttAdm3a, ttVt52, ttVt100: discard
-    else: ?term.write(SetShiftEscape & SetSGRMouse)
+  if not term.mouseEnabled and tfMouse in term.desc:
+    ?term.write(SetShiftEscape & SetSGRMouse)
     term.mouseEnabled = true
   ok()
 
 proc disableMouse*(term: Terminal): Opt[void] =
   if term.mouseEnabled:
-    case term.termType
-    of ttAdm3a, ttVt52, ttVt100: discard
-    else: ?term.write(ResetSGRMouse)
+    ?term.write(ResetSGRMouse)
     term.mouseEnabled = false
   ok()
 
-proc enableBracketedPaste(term: Terminal): Opt[void] =
+proc enableBracketedPaste(term: Terminal): string =
   case term.termType
-  of ttAdm3a, ttVt52, ttVt100: ok()
-  else: term.write(SetBracketedPaste)
+  of ttAdm3a, ttVt52, ttVt100, ttVt420: return ""
+  else: return SetBracketedPaste
 
-proc disableBracketedPaste(term: Terminal): Opt[void] =
+proc disableBracketedPaste(term: Terminal): string =
   case term.termType
-  of ttAdm3a, ttVt52, ttVt100: ok()
-  else: term.write(ResetBracketedPaste)
+  of ttAdm3a, ttVt52, ttVt100, ttVt420: return ""
+  else: return ResetBracketedPaste
 
 proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
     iq: openArray[uint8]) =
@@ -805,6 +898,60 @@ proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
         res &= '?'
       n = res.len
 
+proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: var bool;
+    hasSpecialGraphics: bool) =
+  var sg = specialGraphics
+  for u in s.points:
+    if u < 0x80:
+      if sg and u in 0x5Fu32..0x7Eu32:
+        res &= "\e(B"
+        sg = false
+      res &= char(u)
+    else:
+      if hasSpecialGraphics:
+        block graph:
+          let c = case u
+          of 0x2500, 0x2501, 0x2504, 0x2505, 0x2508, 0x2509, 0x254C, 0x254D,
+              0x2550:
+            '\x71'
+          of 0x2502, 0x2503, 0x2506, 0x2507, 0x250A, 0x250B, 0x254E, 0x254F,
+              0x2551:
+            '\x78'
+          of 0x250Cu32..0x250Fu32, 0x2552u32..0x2554u32: '\x6C'
+          of 0x2510u32..0x2513u32, 0x2555u32..0x2557u32: '\x6B'
+          of 0x2514u32..0x2517u32, 0x2558u32..0x255Au32: '\x6D'
+          of 0x2518u32..0x251Bu32, 0x255Bu32..0x255Du32: '\x6A'
+          of 0x251Cu32..0x2523u32, 0x255Eu32..0x2560u32: '\x74'
+          of 0x2524u32..0x252Bu32, 0x2561u32..0x2563u32: '\x75'
+          of 0x252Cu32..0x2533u32, 0x2564u32..0x2566u32: '\x77'
+          of 0x2534u32..0x253Bu32, 0x2567u32..0x2569u32: '\x76'
+          of 0x253Cu32..0x254Bu32, 0x256Au32..0x256Cu32: '\x6E'
+          of 0x2264: '\x79'
+          of 0x2265: '\x7A'
+          of 0x3C0: '\x7B'
+          of 0x2260: '\x7C'
+          of 0xA3: '\x7D'
+          of 0xB7: '\x7E'
+          of 0x202F: '\x5F'
+          else: break graph
+          if not sg:
+            res &= "\e(0"
+            sg = true
+          res &= c
+          continue
+      # quotes; to be fair these shouldn't have been included, but it looks
+      # very awkward when they don't exist
+      case u
+      of 0x2018, 0x201B: res &= '`'
+      of 0x2019: res &= '\''
+      of 0x201A: res &= ','
+      of 0x201C, 0x201D: res &= '"'
+      of 0x2022: res &= '*' # also bullet lists are pretty common
+      else:
+        for i in 0 ..< u.width():
+          res &= '?'
+  specialGraphics = sg
+
 proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
     w: var int) =
   if s.len == 0:
@@ -824,20 +971,33 @@ proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
     res.setLen(L + s.len)
     copyMem(addr res[L], unsafeAddr s[0], s.len)
   elif term.asciiOnly:
-    for u in s.points:
-      if u < 0x80:
-        res &= char(u)
-      else:
-        for i in 0 ..< u.width():
-          res &= '?'
+    res.encodeAscii(s, term.specialGraphics, tfSpecialGraphics in term.desc)
   else:
     # Output is not utf-8, so we must encode it first.
     res.setLen(L + s.len) # guess length
     res.encodeAllQMark(L, term.te, s.toOpenArrayByte(0, s.high))
 
+proc hideCursor(term: Terminal): string =
+  term.cursorHidden = true
+  case term.termType
+  of ttAdm3a, ttVt52: return ""
+  else: return CIVIS
+
+proc showCursor(term: Terminal): string =
+  term.cursorHidden = false
+  case term.termType
+  of ttAdm3a, ttVt52: return ""
+  else: return CNORM
+
+proc processCell(res: var string; term: Terminal; format: var Format;
+    w: var int; cell: FixedCell) =
+  res.processFormat(term, format, cell.format)
+  res.processOutputString(term, cell.str, w)
+
 proc generateFullOutput(term: Terminal): string =
   var format = Format()
-  result = term.cursorGoto(0, 0)
+  result = term.hideCursor()
+  result &= term.cursorGoto(0, 0)
   result &= term.resetFormat()
   result &= term.clearDisplay()
   for y in 0 ..< term.attrs.height:
@@ -848,10 +1008,10 @@ proc generateFullOutput(term: Terminal): string =
       while w < x:
         result &= " "
         inc w
-      let cell = addr term.canvas[y * term.attrs.width + x]
-      result.processFormat(term, format, cell.format)
-      result.processOutputString(term, cell.str, w)
+      result.processCell(term, format, w, term.canvas[y * term.attrs.width + x])
     term.lineDamage[y] = term.attrs.width
+  term.cursorx = -1
+  term.cursory = -1
 
 proc generateSwapOutput(term: Terminal): string =
   result = ""
@@ -862,6 +1022,10 @@ proc generateSwapOutput(term: Terminal): string =
     # w will track the current position on screen
     var w = cx
     if cx < term.attrs.width:
+      if result.len == 0:
+        result &= term.hideCursor()
+        term.cursorx = -1
+        term.cursory = -1
       if cx == 0 and vy != -1:
         while vy < y:
           result &= "\r\n"
@@ -882,18 +1046,6 @@ proc generateSwapOutput(term: Terminal): string =
         result &= term.clearEnd()
       # damage is gone
       term.lineDamage[y] = term.attrs.width
-
-proc hideCursor*(term: Terminal): Opt[void] =
-  case term.termType
-  of ttAdm3a, ttVt52: discard
-  else: ?term.write(CIVIS)
-  ok()
-
-proc showCursor*(term: Terminal): Opt[void] =
-  case term.termType
-  of ttAdm3a, ttVt52: discard
-  else: ?term.write(CNORM)
-  ok()
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
@@ -936,11 +1088,6 @@ proc applyConfig(term: Terminal) =
   if term.imageMode == imSixel and term.config.display.sixelColors.isSome:
     let n = term.config.display.sixelColors.get
     term.sixelRegisterNum = clamp(n, 2, 65535)
-  if term.isatty():
-    if term.config.display.altScreen.isSome:
-      term.smcup = term.config.display.altScreen.get
-    if term.config.display.setTitle.isSome:
-      term.setTitle = term.config.display.setTitle.get
   if term.config.display.defaultBackgroundColor.isSome:
     term.defaultBackground = term.config.display.defaultBackgroundColor.get
   if term.config.display.defaultForegroundColor.isSome:
@@ -972,17 +1119,6 @@ proc applyConfig(term: Terminal) =
     term.te = newTextEncoder(term.cs)
   term.tdctx = initTextDecoderContext(term.cs)
   term.applyConfigDimensions()
-
-proc outputGrid*(term: Terminal): Opt[void] =
-  ?term.write(term.resetFormat())
-  if term.config.display.forceClear or not term.cleared:
-    ?term.write(term.generateFullOutput())
-    term.cleared = true
-  else:
-    ?term.write(term.generateSwapOutput())
-  term.cursorx = -1
-  term.cursory = -1
-  ok()
 
 proc findImage(term: Terminal; pid, imageId: int; rx, ry, width, height,
     erry, offx, dispw: int): CanvasImage =
@@ -1233,7 +1369,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
     ?term.write(outs)
   ok()
 
-proc outputImages*(term: Terminal): Opt[void] =
+proc outputImages(term: Terminal): Opt[void] =
   if term.imageMode == imKitty:
     # clean up unused kitty images
     var s = ""
@@ -1252,6 +1388,8 @@ proc outputImages*(term: Terminal): Opt[void] =
       of imNone: assert false
       of imSixel: ?term.outputSixelImage(x, y, image)
       of imKitty: ?term.outputKittyImage(x, y, image)
+      term.cursorx = -1
+      term.cursory = -1
       image.damaged = false
   ok()
 
@@ -1268,6 +1406,23 @@ proc clearCanvas*(term: Terminal) =
       newImages.add(image)
   term.clearImages(maxh)
   term.canvasImages = newImages
+
+proc draw*(term: Terminal; redraw: bool; cursorx, cursory: int): Opt[void] =
+  if redraw:
+    if term.config.display.forceClear or not term.cleared:
+      ?term.write(term.generateFullOutput())
+      term.cleared = true
+    else:
+      ?term.write(term.generateSwapOutput())
+    if term.imageMode != imNone:
+      ?term.outputImages()
+  var buf = ""
+  if cursorx != term.cursorx or cursory != term.cursory:
+    buf &= term.cursorGoto(cursorx, cursory)
+  if term.cursorHidden:
+    buf &= term.showCursor()
+  ?term.write(buf)
+  ok()
 
 proc sendOSC52*(term: Terminal; s: string): Opt[bool] =
   if not term.osc52Copy:
@@ -1314,20 +1469,21 @@ proc quit*(term: Terminal): Opt[void] =
   if term.isatty():
     if term.config.input.useMouse:
       ?term.disableMouse()
+    var buf = ""
     if term.config.input.bracketedPaste:
-      ?term.disableBracketedPaste()
-    if term.smcup:
+      buf &= term.disableBracketedPaste()
+    if term.hasAltScreen():
       if term.imageMode == imSixel:
         # xterm seems to keep sixels in the alt screen; clear these so
         # it doesn't flash in the user's face the next time they do smcup
-        ?term.write(term.clearDisplay())
-      ?term.write(term.disableAltScreen())
+        buf &= term.clearDisplay()
+      buf &= ResetAltScreen
     else:
-      ?term.write(term.cursorGoto(0, term.attrs.height - 1) &
-        term.resetFormat() & "\n")
-    if term.setTitle:
-      ?term.write(PopTitle)
-    ?term.showCursor()
+      buf &= term.cursorGoto(0, term.attrs.height - 1) & term.resetFormat() &
+        "\n"
+    buf &= PopTitle
+    buf &= term.showCursor()
+    ?term.write(buf)
     term.blockIO()
     doAssert ?term.flush()
     term.disableRawMode()
@@ -1436,7 +1592,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool; res: var QueryResult):
       # frankly I don't care.
       outs &= QueryXtermWindowOps
     if term.config.display.imageMode.isNone:
-      if not term.bleedsAPC:
+      if tfBleedsAPC notin term.desc:
         outs &= KittyQuery
       outs &= QueryColorRegisters
     elif term.config.display.imageMode.get == imSixel:
@@ -1573,90 +1729,6 @@ proc queryAttrs(term: Terminal; windowOnly: bool; res: var QueryResult):
 type TermStartResult* = enum
   tsrSuccess, tsrDA1Fail
 
-# Built-in terminal capability database.
-#
-# In an ideal world, none of this would be necessary as we could just
-# get capabilities from the terminal itself.  Alas, some insist on
-# terminfo being the sole source of "reliable" information (it isn't),
-# so we must emulate it to some extent.
-#
-# In general, terminal attributes that we can detect with queries are
-# omitted.  Some terminals only set COLORTERM, but do not respond to
-# queries; this may not propagate through SSH, so we still check TERM
-# for these.
-#
-# For terminals I cannot directly test, our data is based on
-# TERMINALS.md in notcurses and terminfo.src in ncurses.
-type
-  TermFlag = enum
-    tfTitle, tfDa1, tfSmcup, tfBleedsAPC, tfAnsiColor, tfEightBitColor,
-    tfTrueColor, tfSixel
-
-  Termdesc = set[TermFlag]
-
-# Probably not 1:1 compatible, but either a) compatible enough for our
-# purposes or b) advertises incompatibilities correctly through queries.
-# Descriptions with XtermCompatible (and no extra flags) are redundant;
-# I'm including them only to have a list of terminals already tested.
-const XtermCompatible = {tfTitle, tfDa1, tfSmcup}
-
-const TermdescMap = [
-  ttAdm3a: {},
-  ttAlacritty: XtermCompatible + {tfTrueColor},
-  ttContour: XtermCompatible,
-  ttDvtm: {tfSmcup, tfBleedsAPC, tfAnsiColor},
-  ttEat: XtermCompatible + {tfTrueColor},
-  ttEterm: {tfTitle, tfDa1, tfAnsiColor},
-  ttFbterm: {tfDa1, tfAnsiColor},
-  ttFoot: XtermCompatible,
-  ttFreebsd: {tfAnsiColor},
-  ttGhostty: XtermCompatible,
-  ttIterm2: XtermCompatible,
-  ttKitty: XtermCompatible + {tfTrueColor},
-  ttKonsole: XtermCompatible,
-  # Linux accepts true color or eight bit sequences, but as per the
-  # man page they are "shoehorned into 16 colors".  This breaks color
-  # correction, so we stick to ANSI.
-  # It also fails to advertise ANSI color in DA1, so we set it here.
-  ttLinux: {tfDa1, tfSmcup, tfAnsiColor},
-  ttMintty: XtermCompatible + {tfTrueColor},
-  ttMlterm: XtermCompatible + {tfTrueColor},
-  ttMsTerminal: XtermCompatible + {tfTrueColor},
-  ttPutty: XtermCompatible + {tfTrueColor},
-  ttRio: XtermCompatible,
-  ttRlogin: XtermCompatible + {tfTrueColor},
-  ttRxvt: XtermCompatible + {tfBleedsAPC, tfEightBitColor},
-  # screen does true color, but only if you explicitly enable it.
-  # smcup is also opt-in; however, it should be fine to send it even if
-  # it's not used.
-  ttScreen: XtermCompatible + {tfEightBitColor},
-  ttSt: XtermCompatible + {tfTrueColor},
-  # SyncTERM supports Sixel, but it doesn't have private color registers
-  # so we omit it.
-  ttSyncterm: XtermCompatible + {tfTrueColor},
-  ttTerminology: XtermCompatible + {tfBleedsAPC},
-  ttTmux: XtermCompatible + {tfTrueColor},
-  # Direct color in urxvt is not really true color; apparently it
-  # just takes the nearest color of the 256 registers and replaces it
-  # with the direct color given.  I don't think this is much worse than
-  # our basic quantization for 256 colors, so we use it anyway.
-  ttUrxvt: XtermCompatible + {tfBleedsAPC, tfTrueColor},
-  # The VT100 had DA1, but couldn't gracefully consume unknown sequences.
-  ttVt100: {tfSmcup},
-  ttVt52: {},
-  ttVte: XtermCompatible + {tfTrueColor},
-  ttWezterm: XtermCompatible,
-  ttWterm: XtermCompatible + {tfTrueColor},
-  ttXfce: XtermCompatible + {tfTrueColor},
-  ttXst: XtermCompatible + {tfTrueColor},
-  ttXterm: XtermCompatible,
-  # yaft supports Sixel, but can't tell us so in DA1.
-  ttYaft: XtermCompatible + {tfBleedsAPC, tfSixel} - {tfSmcup},
-  # zellij supports Sixel, but doesn't advertise it.
-  # However, the feature barely works, so we don't force it here.
-  ttZellij: XtermCompatible + {tfTrueColor},
-]
-
 # Parse TERM variable.  This may adjust color-mode.
 proc parseTERM(term: Terminal): TerminalType =
   var s = getEnvEmpty("TERM", "xterm")
@@ -1695,26 +1767,24 @@ proc parseTERM(term: Terminal): TerminalType =
   return res
 
 proc applyTermDesc(term: Terminal; desc: Termdesc) =
-  if tfAnsiColor in desc:
-    term.attrs.colorMode = cmANSI
-  elif tfEightBitColor in desc:
+  if tfColor1 in desc:
+    if tfColor2 in desc:
+      term.attrs.colorMode = cmTrueColor
+    else:
+      term.attrs.colorMode = cmANSI
+  elif tfColor2 in desc:
     term.attrs.colorMode = cmEightBit
-  elif tfTrueColor in desc:
-    term.attrs.colorMode = cmTrueColor
   if tfSixel in desc:
     term.imageMode = imSixel
-  term.setTitle = tfTitle in desc
-  term.smcup = tfSmcup in desc
+  term.desc = desc
   case term.termType
-  of ttAdm3a: term.margin = true
-  of ttVt52: discard
+  of ttVt52, ttAdm3a: discard
   of ttVt100: term.formatMode = {ffReverse}
   else:
     # Unless a terminal can't process one of these, it's OK to enable
     # all of them.
     term.formatMode = {FormatFlag.low..FormatFlag.high}
   term.queryDa1 = tfDa1 in desc
-  term.bleedsAPC = tfBleedsAPC in desc
 
 # when windowOnly, only refresh window size.
 proc detectTermAttributes(term: Terminal; windowOnly: bool):
@@ -1792,7 +1862,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool):
       # something went horribly wrong. set result to DA1 fail, pager will
       # alert the user
       res = tsrDA1Fail
-  if term.margin:
+  if tfMargin in term.desc:
     dec term.attrs.width
   if not windowOnly:
     if term.attrs.colorMode != cmTrueColor:
@@ -1812,14 +1882,16 @@ proc windowChange*(term: Terminal) =
 
 proc initScreen(term: Terminal): Opt[void] =
   # note: deinit happens in quit()
-  if term.setTitle:
-    ?term.write(PushTitle)
-  if term.smcup:
-    ?term.write(term.enableAltScreen())
+  var buf = ""
+  if term.hasTitle():
+    buf &= PushTitle
+  if term.hasAltScreen():
+    buf &= SetAltScreen
+  if term.config.input.bracketedPaste:
+    buf &= term.enableBracketedPaste()
+  ?term.write(buf)
   if term.config.input.useMouse:
     ?term.enableMouse()
-  if term.config.input.bracketedPaste:
-    ?term.enableBracketedPaste()
   term.cursorx = -1
   term.cursory = -1
   term.unblockIO()

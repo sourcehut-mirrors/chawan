@@ -1479,26 +1479,27 @@ proc draw(pager: Pager): Opt[void] =
       #
       # Ugh. :(
       pager.term.clearImages(pager.bufHeight)
-  if redraw:
-    ?pager.term.hideCursor()
-    ?pager.term.outputGrid()
-    if pager.term.imageMode != imNone:
-      ?pager.term.outputImages()
+  var cursorx = 0
+  var cursory = 0
   if pager.askPromise != nil:
-    ?pager.term.setCursor(pager.askCursor, pager.attrs.height - 1)
+    cursorx = pager.askCursor
+    cursory = pager.attrs.height - 1
   elif pager.lineedit != nil:
-    ?pager.term.setCursor(pager.lineedit.getCursorX(), pager.attrs.height - 1)
+    cursorx = pager.lineedit.getCursorX()
+    cursory = pager.attrs.height - 1
   elif (let menu = pager.menu; menu != nil):
-    ?pager.term.setCursor(menu.getCursorX(), menu.getCursorY())
+    cursorx = menu.getCursorX()
+    cursory = menu.getCursorY()
   elif container != nil:
     if pager.alertState == pasNormal:
       container.clearHover()
     if (let select = container.select; select != nil):
-      ?pager.term.setCursor(select.getCursorX(), select.getCursorY())
+      cursorx = select.getCursorX()
+      cursory = select.getCursorY()
     else:
-      ?pager.term.setCursor(container.acursorx, container.acursory)
-  if redraw:
-    ?pager.term.showCursor()
+      cursorx = container.acursorx
+      cursory = container.acursory
+  ?pager.term.draw(redraw, cursorx, cursory)
   ok()
 
 proc writeAskPrompt(pager: Pager; s = "") =
@@ -3693,8 +3694,7 @@ proc inputLoop(pager: Pager): Opt[void] =
         # exit without potentially interrupting that stream.
         #TODO: a better UI would be querying the number of ongoing streams in
         # loader, and then asking for confirmation if there is at least one.
-        discard pager.term.setCursor(0, pager.term.attrs.height - 1)
-        discard pager.term.anyKey("Hit any key to quit Chawan:")
+        discard pager.term.anyKey("Hit any key to quit Chawan:", bottom = true)
       return err()
     case pager.updateStatus
     of ussNone, ussSkip: discard
