@@ -620,10 +620,10 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       dims.incl(dtHorizontal)
     if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
       dims.incl(dtVertical)
-  var blockAncestor: BlockBox = nil
+  var clipAncestor: BlockBox = nil
   var it = box.parent
   var absAncestor: CSSBox = nil
-  var toPosition: seq[BlockBox] = @[]
+  var toPosition: seq[CSSBox] = @[]
   var parent: CSSBox = nil
   var offset = Offset0
   while it != nil:
@@ -631,23 +631,30 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       absAncestor = it # record first absolute ancestor
     if it of BlockBox:
       let it = BlockBox(it)
-      if blockAncestor == nil:
-        blockAncestor = it
-    if blockAncestor != nil:
-      if it.render.positioned and (not absoluteOrFixed or absAncestor != nil):
+      if clipAncestor == nil and (not absolute or it.positioned):
+        clipAncestor = it
+      if it.render.positioned and (not absolute or absAncestor != nil):
         offset = it.render.offset
         break
-      if it of BlockBox:
-        toPosition.add(BlockBox(it))
+    toPosition.add(it)
     it = it.parent
   for it in toPosition.ritems:
-    offset += it.state.offset
-    it.render = BoxRenderState(
-      offset: offset,
-      clipBox: DefaultClipBox,
-      positioned: true
-    )
-    it.inheritClipBox(parent, state)
+    if it of InlineBox:
+      let it = InlineBox(it)
+      it.render = BoxRenderState(
+        offset: offset + it.state.startOffset,
+        clipBox: if parent != nil: parent.render.clipBox else: DefaultClipBox,
+        positioned: true
+      )
+    else:
+      let it = BlockBox(it)
+      offset += it.state.offset
+      it.render = BoxRenderState(
+        offset: offset,
+        clipBox: DefaultClipBox,
+        positioned: true
+      )
+      it.inheritClipBox(parent, state)
     parent = it
   var absOffset = Offset0
   if absAncestor != nil:
@@ -662,8 +669,7 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       offset: offset + box.state.offset,
       clipBox: DefaultClipBox
     )
-    box.inheritClipBox(if absoluteOrFixed: absAncestor else: blockAncestor,
-      state)
+    box.inheritClipBox(clipAncestor, state)
   return offset
 
 proc renderPositioned(grid: var FlexibleGrid; state: var RenderState;
