@@ -37,7 +37,7 @@ int lre_check_timeout(void *opaque)
   return 0;
 }
 
-bool lre_check_stack_overflow(void *opaque, size_t alloca_size)
+int lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
   return 0;
 }
