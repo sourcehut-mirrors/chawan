@@ -2142,11 +2142,10 @@ proc omniRewrite(pager: Pager; s: string): string =
       let jsRet = ctx.call(fun.val, JS_UNDEFINED, arg0)
       JS_FreeValue(ctx, arg0)
       var res: string
-      if ctx.fromJSFree(jsRet, res).isOk:
+      if not JS_IsException(jsRet) and ctx.fromJSFree(jsRet, res).isOk:
         pager.lineHist[lmLocation].add(s)
         return move(res)
-      pager.alert("Error in substitution of " & $rule.match & " for " & s &
-        ": " & ctx.getExceptionMsg())
+      pager.alert("Exception in omni-rule: " & ctx.getExceptionMsg())
   return s
 
 # When the user has passed a partial URL as an argument, they might've meant
