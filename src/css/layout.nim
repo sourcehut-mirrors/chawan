@@ -2650,7 +2650,7 @@ proc redistributeWidth(tctx: var TableContext; weightRatio: float32) =
       tctx.cols[j].reflow = tctx.rows.len
 
 proc layoutTableRows(tctx: TableContext; table: BlockBox; input: LayoutInput) =
-  var y = 0'lu
+  var y = input.padding.top
   for i, roww in tctx.rows.mypairs:
     if roww.box.computed{"visibility"} == VisibilityCollapse:
       continue
@@ -2664,6 +2664,7 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox; input: LayoutInput) =
     y += row.state.size.h
     table.state.size.w = max(row.state.size.w, table.state.size.w)
     table.state.intr.w = max(row.state.intr.w, table.state.intr.w)
+  y += input.padding.bottom
   # Note: we can't use applySizeConstraint here; in CSS, "height" on tables just
   # sets the minimum height.
   case tctx.space.h.t
