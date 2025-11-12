@@ -3048,7 +3048,7 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
       attrs,
       cmfHTML in res.flags,
       container.charsetStack,
-      container.contentType
+      container.contentType.untilLower(';')
     )
     if pid == -1:
       res.ostream.sclose()
@@ -3248,7 +3248,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
   if cfHistory in container.flags:
     pager.lineHist[lmLocation].add($container.url)
   # contentType must have been set by applyResponse.
-  let shortContentType = container.contentType.until(';')
+  let shortContentType = container.contentType.untilLower(';')
   var contentType = container.contentType
   if shortContentType.startsWithIgnoreCase("text/"):
     # prepare content type for %{charset}

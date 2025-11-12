@@ -173,14 +173,14 @@ proc getCharset*(this: Response; fallback: Charset): Charset =
 proc getLongContentType*(this: Response; fallback: string): string =
   let header = this.headers.getFirst("Content-Type")
   if header != "":
-    return header.toValidUTF8().toLowerAscii().strip()
+    return header.toValidUTF8().strip()
   # also use DefaultGuess for container, so that local mime.types cannot
   # override buffer mime.types
   return DefaultGuess.guessContentType(this.url.pathname, fallback)
 
 proc getContentType*(this: Response; fallback = "application/octet-stream"):
     string =
-  return this.getLongContentType(fallback).until(';')
+  return this.getLongContentType(fallback).untilLower(';')
 
 proc getContentLength*(this: Response): int64 =
   let x = this.headers.getFirst("Content-Length")

@@ -159,8 +159,10 @@ type
     title: string # used in status msg
     hoverText: array[HoverType, string]
     request*: Request # source request
-    # if set, this *overrides* any content type received from the network. (this
-    # is because it stores the content type from the -T flag.)
+    # if set, this *overrides* any content type received from the network.
+    # (this is because it stores the content type from the -T flag.)
+    # beware, this string may include content type attributes, if you want
+    # to match it you'll have to use contentType.untilLower(';').
     contentType* {.jsget.}: string
     pos: CursorState
     bpos: seq[CursorState]
@@ -1722,8 +1724,8 @@ proc applyResponse*(container: Container; response: Response;
     container.loaderConfig.referrerPolicy = rpNoReferrer
   # setup content type; note that isSome means an override so we skip it
   if container.contentType == "":
-    var contentType = response.getContentType()
-    if contentType == "application/octet-stream":
+    var contentType = response.getLongContentType("application/octet-stream")
+    if contentType.until(';') == "application/octet-stream":
       contentType = mimeTypes.guessContentType(container.url.pathname,
         "text/plain")
     container.contentType = move(contentType)
