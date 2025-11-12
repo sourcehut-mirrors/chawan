@@ -965,10 +965,11 @@ proc applyConfig(term: Terminal) =
         continue
       let cs = getLocaleCharset(env)
       if cs != CHARSET_UNKNOWN:
-        if cs == CHARSET_WINDOWS_1252:
-          term.asciiOnly = env.strip(chars =  AsciiWhitespace)
-            .endsWithIgnoreCase(".ascii")
-        term.cs = cs
+        if env == "C":
+          term.asciiOnly = true
+          term.cs = CHARSET_WINDOWS_1252
+        else:
+          term.cs = cs
         break
   if term.cs in {CHARSET_UTF_8, CHARSET_UTF_16_LE, CHARSET_UTF_16_BE,
       CHARSET_REPLACEMENT}:
