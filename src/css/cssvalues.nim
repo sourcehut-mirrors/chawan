@@ -248,6 +248,7 @@ type
     BorderStyleBracket = "-cha-bracket"
     BorderStyleParen = "-cha-paren"
     BorderStyleHash = "-cha-hash"
+    BorderStylePeriod = "-cha-period"
 
 type
   # CSSLength may represent:
@@ -2261,6 +2262,10 @@ proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): string =
     case c
     of bdcHorizontalBarBottom: return "#"
     of bdcHorizontalBarTop: return "_"
+    else: " "
+  of BorderStylePeriod: # likewise
+    case c
+    of bdcHorizontalBarBottom: return "."
     else: " "
 
 when defined(debug):

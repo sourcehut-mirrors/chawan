@@ -545,8 +545,17 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
         buf &= bottom.borderChar(bdcCornerBottomLeft)
     else:
       offset.x += state.cellSize.w
-    for i in startx + 1 ..< endx - 1:
-      buf &= bottom.borderChar(bdcHorizontalBarBottom)
+    if bottom == BorderStylePeriod: # proprietary too
+      var n = 0u
+      for i in startx + 1 ..< endx - 1:
+        if n mod 2 == 0:
+          buf &= ' '
+        else:
+          buf &= '.'
+        inc n
+    else:
+      for i in startx + 1 ..< endx - 1:
+        buf &= bottom.borderChar(bdcHorizontalBarBottom)
     if right notin BorderStyleNoneHidden and not proprietary:
       buf &= bottom.borderChar(bdcCornerBottomRight)
     var flags: set[FormatFlag] = {}

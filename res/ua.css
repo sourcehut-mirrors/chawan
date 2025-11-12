@@ -281,3 +281,11 @@ ul[type=square i] { list-style-type: square }
 	a[item-type='p']::before { content: "[png] " }
 	a[item-type=';']::before { content: "[video] " }
 }
+
+@media (-cha-content-type: "text/x-dirlist") {
+	pre, h1 { margin-top: 0 }
+	table { padding: 0; border-spacing: 0 }
+	hr { border-bottom-style: -cha-period; min-width: 20ch; margin-right: 1ch }
+	a[href] { margin-top: -1em; display: block; margin-right: 1ch }
+	a[first] { margin: 0 }
+}

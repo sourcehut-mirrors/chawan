@@ -15,7 +15,6 @@ type DirlistItemType = enum
 type DirlistItem = ref object
   name: string # real name
   dname: string # display name
-  width: int # display name width
   modified: string # date last modified
   case t: DirlistItemType
   of ditLink:
@@ -25,29 +24,26 @@ type DirlistItem = ref object
   of ditDir:
     discard
 
-proc printDirlist(f: ChaFile; items: seq[DirlistItem]; maxw: int): Opt[void] =
-  ?f.writeLine("<a href=\"../\">[Upper Directory]</a>")
+proc printDirlist(f: ChaFile; items: openArray[DirlistItem]): Opt[void] =
+  ?f.writeLine("<a href=\"../\">[Upper Directory]</a><table>")
   for item in items:
     var path = percentEncode(item.name, PathPercentEncodeSet)
     if item.t == ditLink and item.linkto.len > 0 and item.linkto[^1] == '/':
       # If the target is a directory, treat it as a directory. (For FTP.)
       path &= '/'
-    var line = "<a href=\"" & path & "\">" & htmlEscape(item.dname) & "</a>"
-    var width = item.width
-    while width <= maxw:
-      if width mod 2 == 0:
-        line &= ' '
-      else:
-        line &= '.'
-      inc width
-    if line[^1] != ' ':
-      line &= ' '
+    # this depends on a CSS hack in ua.css where for dirlist, hr gets a
+    # proprietary border style and anchors are moved upwards by -1em.
+    var line = "<tr>"
+    line &= "<td><hr>"
+    line &= "<a href=\"" & path & "\">" & htmlEscape(item.dname) & "</a>"
+    line &= "<td>"
     line &= htmlEscape(item.modified)
     if item.t == ditFile:
       line &= ' ' & convertSize(uint64(max(item.nsize, 0)))
     elif item.t == ditLink:
       line &= " -> " & htmlEscape(item.linkto)
-    ?f.writeLine(line)
+    line &= "</tr>"
+    ?f.write(line)
   ok()
 
 proc usage() =
@@ -55,27 +51,12 @@ proc usage() =
   discard stderr.writeLine("Usage: dirlist2html [-t title]")
   quit(1)
 
-# I'll just assume that wchar_t is int32, as it should be on any sane
-# system.
-
-type wchar_t {.importc.} = int32
-
-proc wcwidth(wc: wchar_t): cint {.importc, header: "<wchar.h>".}
-
-proc width(s: string): int =
-  var res: cint = 0
-  for u in s.points:
-    res += wcwidth(wchar_t(u))
-  return int(res)
-
-proc addItem(items: var seq[DirlistItem]; item: DirlistItem; maxw: var int) =
+proc addItem(items: var seq[DirlistItem]; item: DirlistItem) =
   if item.t == ditDir:
     item.name &= '/'
   item.dname = item.name
   if item.t == ditLink:
     item.dname &= '@'
-  item.width = item.dname.width()
-  maxw = max(item.width, maxw)
   items.add(item)
 
 proc skipTillSpace(line: openArray[char]; i: int): int =
@@ -84,13 +65,7 @@ proc skipTillSpace(line: openArray[char]; i: int): int =
     inc i
   return i
 
-proc parseInput(f: ChaFile; items: var seq[DirlistItem]; maxw: var int):
-    Opt[void] =
-  # wcwidth wants a UTF-8 locale.
-  # I don't know how portable this is, but the worst thing that can
-  # happen is that too many dots are printed.
-  let thisUTF8 = ($setlocale(LC_CTYPE, nil)).until('.') & ".UTF-8"
-  discard setlocale(LC_CTYPE, cstring(thisUTF8))
+proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
   var line: string
   while ?f.readLine(line):
     if line.len == 0: continue
@@ -139,20 +114,20 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]; maxw: var int):
         name: linkfrom,
         modified: dates,
         linkto: linkto
-      ), maxw)
+      ))
     of 'd': # directory
       items.addItem(DirlistItem(
         t: ditDir,
         name: name,
         modified: dates
-      ), maxw)
+      ))
     else: # file
       items.addItem(DirlistItem(
         t: ditFile,
         name: name,
         modified: dates,
         nsize: nsize
-      ), maxw)
+      ))
   ok()
 
 proc parseArgs(title: var string) =
@@ -184,12 +159,11 @@ proc parse(): Opt[void] =
 <title>""" & title.htmlEscape() & """</title>
 </head>
 <body>
-<h1>""" & title.htmlEscape() & """</h1>
-<pre>""")
+<pre><h1>""" & title.htmlEscape() & """</h1>
+""")
   var items: seq[DirlistItem] = @[]
-  var maxw = 20
   let stdin = cast[ChaFile](stdin)
-  ?stdin.parseInput(items, maxw)
+  ?stdin.parseInput(items)
   items.sort(proc(a, b: DirlistItem): int =
     if a.t == ditDir and b.t != ditDir:
       return -1
@@ -197,7 +171,7 @@ proc parse(): Opt[void] =
       return 1
     return cmp(a.dname, b.dname)
   )
-  ?stdout.printDirlist(items, maxw)
+  ?stdout.printDirlist(items)
   ?stdout.write("</pre></body>")
   ok()
 
