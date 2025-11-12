@@ -3,6 +3,17 @@
 {.push raises: [].}
 
 import std/os
+import std/posix
+
+proc free(p: pointer) {.importc, header: "<stdlib.h>".}
+
+proc realPath(path: string): string =
+  let p = realpath(cstring(path), nil)
+  if p == nil:
+    return ""
+  var s = $p
+  free(p)
+  move(s)
 
 # std's getcwd binding uses int for size, but it's size_t...
 proc my_getcwd(buf: cstring; size: csize_t): cstring {.
@@ -21,6 +32,7 @@ proc getAppFilename*(): string =
   result = ""
   try:
     result = os.getAppFilename()
+    result = realPath(result)
   except OSError:
     discard
 
