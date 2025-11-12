@@ -724,10 +724,10 @@ const tchar = AsciiAlphaNumeric +
 
 proc getContentTypeAttr*(contentType, attrname: string): string =
   var i = contentType.find(';')
-  if i == -1:
+  if i < 0:
     return ""
   i = contentType.find(attrname, i)
-  if i == -1:
+  if i < 0:
     return ""
   i = contentType.skipBlanks(i + attrname.len)
   if i >= contentType.len or contentType[i] != '=':
@@ -735,23 +735,21 @@ proc getContentTypeAttr*(contentType, attrname: string): string =
   i = contentType.skipBlanks(i + 1)
   if i >= contentType.len:
     return ""
+  if contentType[i] != '"':
+    return contentType.until(';', i)
   var q = false
-  result = ""
-  let dq = contentType[i] == '"'
-  if dq:
-    inc i
-  for c in contentType.toOpenArray(i, contentType.high):
+  var s = ""
+  for c in contentType.toOpenArray(i + 1, contentType.high):
     if q:
-      result &= c
+      s &= c
       q = false
-    elif dq and c == '"':
+    elif c == '"':
       break
     elif c == '\\':
       q = true
-    elif not dq and c notin tchar:
-      break
     else:
-      result &= c
+      s &= c
+  move(s)
 
 # turn value into quoted-string
 proc mimeQuote*(value: string): string =
@@ -759,9 +757,9 @@ proc mimeQuote*(value: string): string =
   s &= '"'
   var found = false
   for c in value:
-    if c notin tchar:
+    if c in {'"', '\\'}:
       s &= '\\'
-      found = true
+    found = found or c notin tchar
     s &= c
   if not found:
     return value
@@ -782,17 +780,9 @@ proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
     contentType &= ';' & attrname & '=' & value
     return
   i = contentType.skipBlanks(i + 1)
-  var q = false
-  var j = i
-  while j < contentType.len:
-    let c = contentType[j]
-    if q:
-      q = false
-    elif c == '\\':
-      q = true
-    elif c notin tchar:
-      break
-    inc j
+  var j = contentType.find(';', i)
+  if j < 0:
+    j = contentType.len
   contentType[i..<j] = value.mimeQuote()
 
 proc atob(c: char): uint8 {.inline.} =
