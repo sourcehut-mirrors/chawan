@@ -3543,6 +3543,8 @@ proc handleRead(pager: Pager; fd: int): Opt[void] =
     ?pager.handleUserInput()
   elif fd == pager.forkserver.estream.fd:
     pager.handleStderr()
+  elif fd in pager.loader.unregistered:
+    discard # ignore (see handleError)
   elif (let data = pager.loader.get(fd); data != nil):
     if data of ConnectingContainer:
       pager.handleRead(ConnectingContainer(data))
@@ -3553,8 +3555,6 @@ proc handleRead(pager: Pager; fd: int): Opt[void] =
       pager.loader.onRead(fd)
       if data of ConnectData:
         pager.runJSJobs()
-  elif fd in pager.loader.unregistered:
-    discard # ignore
   else:
     assert false
   ok()
@@ -3563,6 +3563,8 @@ proc handleWrite(pager: Pager; fd: int): Opt[void] =
   if pager.term.ostream != nil and pager.term.ostream.fd == fd:
     if ?pager.term.flush():
       pager.pollData.unregister(pager.term.ostream.fd)
+  elif fd in pager.loader.unregistered:
+    discard # ignore (see handleError)
   else:
     let container = ContainerData(pager.loader.get(fd)).container
     if container.iface.stream.flushWrite():
@@ -3577,6 +3579,12 @@ proc handleError(pager: Pager; fd: int): Opt[void] =
   elif fd == pager.forkserver.estream.fd:
     pager.alert("fork server crashed")
     return err()
+  elif fd in pager.loader.unregistered:
+    # this fd is already unregistered in this cycle.
+    # it is possible that another handle has taken the same fd number, in
+    # that case we must suppress the error in this cycle and wait for the
+    # next one.
+    discard
   elif (let data = pager.loader.get(fd); data != nil):
     if data of ConnectingContainer:
       pager.handleError(ConnectingContainer(data))
@@ -3598,8 +3606,6 @@ proc handleError(pager: Pager; fd: int): Opt[void] =
       dec pager.numload
     else:
       discard pager.loader.onError(fd) #TODO handle connection error?
-  elif fd in pager.loader.unregistered:
-    discard # already unregistered...
   else:
     pager.showConsole()
   ok()

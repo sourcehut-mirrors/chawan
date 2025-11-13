@@ -2060,14 +2060,14 @@ proc readCommand(bc: BufferContext): bool =
 proc handleRead(bc: BufferContext; fd: int): bool =
   if fd == bc.pstream.fd:
     return bc.readCommand()
+  elif fd in bc.loader.unregistered:
+    discard # ignore (see pager handleError for explanation)
   elif (let data = bc.loader.get(fd); data != nil):
     if data of InputData:
       bc.onload(InputData(data))
     else:
       bc.loader.onRead(fd)
       bc.checkJobs = true
-  elif fd in bc.loader.unregistered:
-    discard # ignore
   else:
     assert false
   true
@@ -2076,6 +2076,8 @@ proc handleError(bc: BufferContext; fd: int): bool =
   if fd == bc.pstream.fd:
     # Connection reset by peer, probably.  Close the buffer.
     return false
+  elif fd in bc.loader.unregistered:
+    discard # ignore (see pager handleError for explanation)
   elif (let data = bc.loader.get(fd); data != nil):
     if data of InputData:
       bc.onload(InputData(data))
@@ -2084,8 +2086,6 @@ proc handleError(bc: BufferContext; fd: int): bool =
         #TODO handle connection error
         assert false, $fd
       bc.checkJobs = true
-  elif fd in bc.loader.unregistered:
-    discard # ignore
   else:
     assert false, $fd
   true
