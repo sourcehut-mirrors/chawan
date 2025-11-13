@@ -2725,7 +2725,8 @@ proc execPipeWait(pager: Pager; cmd: string; ps, os: PosixStream): int =
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
 proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
     PosixStream =
-  let i = pager.config.external.mailcap.findMailcapEntry("text/x-ansi", "", url)
+  let i = pager.config.external.autoMailcap.entries
+    .findMailcapEntry("text/x-ansi", "", url)
   if i == -1:
     pager.alert("No text/x-ansi entry found")
     return nil
@@ -2905,7 +2906,11 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     if pid == -1:
       break needsConnect
     if not ishtml and mfAnsioutput in entry.flags:
-      pins = pager.ansiDecode(url, ishtml, pins)
+      let pins2 = pager.ansiDecode(url, ishtml, pins)
+      if pins2 == nil:
+        pins.sclose()
+        break needsConnect
+      pins = pins2
     twtstr.unsetEnv("MAILCAP_URL")
     let url = parseURL0("stream:" & $pid)
     pager.loader.passFd(url.pathname, pins.fd)
