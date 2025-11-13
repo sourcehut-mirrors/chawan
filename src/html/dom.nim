@@ -162,6 +162,7 @@ type
     click*: proc(element: HTMLElement)
     importMapsAllowed*: bool
     inMicrotaskCheckpoint: bool
+    dangerAlwaysSameOrigin*: bool # for client, insecure if Window sets true
     remoteSheetNum*: uint32
     loadedSheetNum*: uint32
     remoteImageNum*: uint32

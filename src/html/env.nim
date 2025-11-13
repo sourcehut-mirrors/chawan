@@ -227,7 +227,9 @@ proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
   for it in window.jsStore:
     JS_MarkValue(rt, it, markFunc)
 
-method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
+proc isSameOrigin(window: Window; origin: Origin): bool =
+  if window.dangerAlwaysSameOrigin: # for client
+    return true
   return window.settings.origin.isSameOrigin(origin)
 
 proc fetch0(window: Window; input: JSRequest): FetchPromise =

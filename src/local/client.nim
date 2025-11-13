@@ -125,9 +125,6 @@ proc sleep(client: Client; millis: int) {.jsfunc.} =
 proc line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit
 
-method isSameOrigin(client: Client; origin: Origin): bool =
-  return true
-
 proc addJSModules(client: Client; ctx: JSContext): JSClassID =
   let (windowCID, eventCID, eventTargetCID) = ctx.addWindowModule2()
   ctx.addConsoleModule()
@@ -173,7 +170,8 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
       scripting: smApp,
       attrsp: addr pager.term.attrs,
       scriptAttrsp: addr pager.term.attrs
-    )
+    ),
+    dangerAlwaysSameOrigin: true
   )
   jsctx.setGlobal(client)
   let global = JS_GetGlobalObject(jsctx)
