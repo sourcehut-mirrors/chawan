@@ -2,7 +2,6 @@
 
 import std/algorithm
 import std/os
-import std/posix
 import std/strutils
 
 import io/chafile
