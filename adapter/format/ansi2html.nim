@@ -414,7 +414,7 @@ proc main*() =
     state.puts("<title>" & title.htmlEscape() & "</title>\n")
   if standalone:
     state.puts("<body>\n")
-  state.puts("<pre>\n")
+  state.puts("<pre style='margin-top: 0'>\n")
   let ps = newPosixStream(STDIN_FILENO)
   var buffer {.noinit.}: array[4096, char]
   while true:

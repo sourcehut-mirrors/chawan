@@ -116,7 +116,7 @@ I recommend placing entries in `~/.chawan/auto.mailcap` (or
 text/markdown; pandoc - -f markdown -t html -o -; x-htmloutput
 
 # Show syntax highlighting for JavaScript source files using bat.
-text/javascript; url=%u bat -f -l es6 --file-name "${url:-STDIN}" -; x-ansioutput
+text/javascript; bat -f -l es6 --file-name %u -; x-ansioutput
 
 # Play music using mpv, and hand over control of the terminal until mpv exits.
 audio/*; mpv -; needsterminal

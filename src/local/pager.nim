@@ -2731,8 +2731,8 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
     pager.alert("No text/x-ansi entry found")
     return nil
   var canpipe = true
-  let cmd = unquoteCommand(pager.config.external.mailcap[i].cmd, "text/x-ansi",
-    "", url, canpipe)
+  let cmd = unquoteCommand(pager.config.external.autoMailcap.entries[i].cmd,
+    "text/x-ansi", "", url, canpipe)
   if not canpipe:
     pager.alert("Error: could not pipe to text/x-ansi, decoding as text/plain")
     return nil
@@ -2905,7 +2905,8 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     stream.sclose()
     if pid == -1:
       break needsConnect
-    if not ishtml and mfAnsioutput in entry.flags:
+    let isansi = mfAnsioutput in entry.flags
+    if not ishtml and isansi:
       let pins2 = pager.ansiDecode(url, ishtml, pins)
       if pins2 == nil:
         pins.sclose()
@@ -2917,14 +2918,16 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     pins.sclose()
     let response = pager.loader.doRequest(newRequest(url))
     var flags = {cmfConnect, cmfFound, cmfRedirected}
-    if mfNeedsstyle in entry.flags or mfAnsioutput in entry.flags:
+    if mfNeedsstyle in entry.flags or isansi:
       # ansi always needs styles
+      #TOOD ideally, x-ansioutput should also switch the content type so
+      # that the UA style applies
       flags.incl(cmfNeedsstyle)
     if mfNeedsimage in entry.flags:
       flags.incl(cmfNeedsimage)
     if mfSaveoutput in entry.flags:
       flags.incl(cmfSaveoutput)
-    if ishtml:
+    if ishtml or isansi:
       flags.incl(cmfHTML)
     return MailcapResult(
       flags: flags,
