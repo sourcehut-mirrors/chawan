@@ -102,8 +102,8 @@ proc addConsoleModule*(ctx: JSContext) =
   let console = JS_NewObject(ctx)
   if JS_IsException(console):
     return
-  let fp = cast[JSCFunctionListP](unsafeAddr jsConsoleFuncs[0])
-  if JS_SetPropertyFunctionList(ctx, console, fp, cint(jsConsoleFuncs.len)) < 0:
+  if not ctx.setPropertyFunctionList(console, jsConsoleFuncs):
+    JS_FreeValue(ctx, console)
     return
   discard ctx.definePropertyCW(ctx.getOpaque().global, "console", console)
 
