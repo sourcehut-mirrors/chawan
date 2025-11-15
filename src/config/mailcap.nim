@@ -166,9 +166,9 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
         s.setLen(s.len - 1)
       if x := parseEnumNoCase[NamedField](s):
         case x
-        of nmTest: entry.test = cmd
-        of nmNametemplate: entry.nametemplate = cmd
-        of nmEdit: entry.edit = cmd
+        of nmTest: entry.test = move(cmd)
+        of nmNametemplate: entry.nametemplate = move(cmd)
+        of nmEdit: entry.edit = move(cmd)
       return ok(state.has(buf) and state.consume(buf) == ';')
     elif c in Controls:
       return state.err("invalid character in field: " & c)
@@ -314,7 +314,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
         state = usAttrQuoted
       else:
         attrname &= c
-  return cmd
+  move(cmd)
 
 proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
