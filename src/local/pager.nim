@@ -591,27 +591,40 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
         pager.alert("failed to read cookies")
   return pager
 
+proc makeDataDir(pager: Pager) =
+  # Try to ensure that we have a data directory.
+  if mkdir(cstring($pager.config.dataDir), 0o700) < 0 and errno == ENOENT:
+    # try creating parent dirs
+    var s = $pager.config.dataDir
+    var i = 1
+    while (i = s.find('/', i); i > 0):
+      s[i] = '\0'
+      if mkdir(cstring(s), 0o755) < 0 and errno != EEXIST:
+        return # something went very wrong; bail
+      s[i] = '/'
+      inc i
+    # maybe it works now?
+    discard mkdir(cstring($pager.config.dataDir), 0o700)
+
 proc cleanup(pager: Pager) =
   if pager.alive:
     pager.alive = false
     discard pager.term.quit() # maybe stdout is closed, but we don't mind here
     let hist = pager.lineHist[lmLocation]
-    let hasConfigDir = dirExists(pager.config.dir)
+    var needDataDir = true
     if not hist.transient:
-      if hasConfigDir and not dirExists(pager.config.dataDir):
-        # Basedir case: data dir is not the same as config dir.
-        # I'd try to make parent dirs but in all likelihood some other
-        # program has already spammed this nonsense into $HOME so whatever.
-        discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
+      let hasConfigDir = dirExists(pager.config.dir)
+      if hasConfigDir:
+        needDataDir = false
+        pager.makeDataDir()
       if hist.write($pager.config.external.historyFile).isErr:
         if hasConfigDir:
           # History is enabled by default, so do not print the error
           # message if no config dir exists.
           pager.alert("failed to save history")
-    if not pager.cookieJars.transient:
-      if hasConfigDir and not dirExists(pager.config.dataDir):
-        # see above
-        discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
+    if pager.cookieJars.needsWrite():
+      if needDataDir:
+        pager.makeDataDir()
       if pager.cookieJars.write($pager.config.external.cookieFile).isErr:
         pager.alert("failed to save cookies")
     for msg in pager.alerts:

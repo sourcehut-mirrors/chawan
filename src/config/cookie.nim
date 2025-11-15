@@ -449,4 +449,7 @@ proc write*(map: CookieJarMap; path: string): Opt[void] =
   ?file.close()
   res
 
+proc needsWrite*(map: CookieJarMap): bool =
+  not map.transient and map.jarsHead != nil
+
 {.pop.} # raises: []
