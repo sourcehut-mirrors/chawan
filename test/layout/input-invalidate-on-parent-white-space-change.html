@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<div id=x style="width: 5ch">
+<input> <input type="submit">
+</div>
+<script>
+const x = document.getElementById("x");
+x.getBoundingClientRect();
+window.onload = () => {
+	x.style.whiteSpace = "nowrap";
+}
+</script>

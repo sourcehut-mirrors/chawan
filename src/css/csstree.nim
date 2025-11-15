@@ -570,11 +570,15 @@ proc matchCache(node: StyledNode; box: CSSBox): bool =
     return false
   case box.t
   of cbtAnonymous:
-    return node.skipChildren and
-      node.computed{"display"} == box.computed{"display"}
+    if node.skipChildren and
+        node.computed{"display"} == box.computed{"display"}:
+      box.computed = node.computed
+      box.absolute = nil
+      return true
+    return false
   of cbtElement:
     # Do not reuse anon boxes as non-anon boxes, incorrect pseudo-elements,
-    # or boxes of the wrong type for the display.  (Could be less granular
+    # or boxes of the wrong type for the display.  (Could be more granular
     # but it probably doesn't matter.)
     if node.t == stElement and not node.skipChildren and
         node.pseudo == box.pseudo and
