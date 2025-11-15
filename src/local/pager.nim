@@ -593,9 +593,9 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
 
 proc makeDataDir(pager: Pager) =
   # Try to ensure that we have a data directory.
-  if mkdir(cstring($pager.config.dataDir), 0o700) < 0 and errno == ENOENT:
+  if mkdir(cstring(pager.config.dataDir), 0o700) < 0 and errno == ENOENT:
     # try creating parent dirs
-    var s = $pager.config.dataDir
+    var s = pager.config.dataDir
     var i = 1
     while (i = s.find('/', i); i > 0):
       s[i] = '\0'
@@ -604,7 +604,7 @@ proc makeDataDir(pager: Pager) =
       s[i] = '/'
       inc i
     # maybe it works now?
-    discard mkdir(cstring($pager.config.dataDir), 0o700)
+    discard mkdir(cstring(pager.config.dataDir), 0o700)
 
 proc cleanup(pager: Pager) =
   if pager.alive:
