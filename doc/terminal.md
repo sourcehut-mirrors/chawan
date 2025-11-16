@@ -71,8 +71,8 @@ supporting other legacy encodings, you may also have some luck with
 `language.charset`, such as `export LC_ALL=ja_JP.ISO-2022-JP`.
 
 Note that Chawan uses its own encoding library instead of the notoriously
-broken C locale facility, so the supported charsets may not fully overlap.
-You can test whether a charset is supported using
+broken C locale facility, and the two sets of supported charsets may not
+fully overlap.  You can test whether a charset is supported using
 `cha -O {charset name} -V`.
 
 <!-- MANON
