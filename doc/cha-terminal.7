@@ -6,8 +6,8 @@ Chawan does not use termcap, terminfo, or ncurses; it relies solely on
 built\-in terminal handling routines, mostly inspired by notcurses.
 .SS XTerm compatibility
 In general, Chawan assumes an XTerm\-compatible environment where XTerm
-means the current XTerm version as developed and maintained by Thomas E.
-Dickey.
+means the current XTerm version as developed and maintained by Thomas
+E.\ Dickey.
 This means that Chawan is compatible with any given terminal if:
 .IP \(bu 2
 the terminal is actually compatible with XTerm, OR
@@ -23,7 +23,7 @@ actually XTerm might malfunction.
 .PP
 (In practice, I have tested dozens of terminal emulators and haven\(cqt
 encountered any major issues; in all likelihood, yours will work too.
-Still, if it doesn\(cqt, please \c
+If it doesn\(cqt, please \c
 .UR https://todo.sr.ht/~bptato/chawan
 open a ticket
 .UE \c
@@ -68,10 +68,22 @@ the kitty query is omitted.
 Pre\-ECMA\-48 terminals are generally not expected to work.
 .PP
 There is some degree of ADM\-3A support, tested in Kragen Javier
-Sitaker\(cqs \f[CR]admu\f[R] emulator.
-However, a real ADM\-3A would likely be confused by non\-ASCII
-characters.
+Sitaker\(cqs \f[I]admu\f[R] emulator.
+The VT100 has also been tested in Lars Brinkhoff\(cqs
+\f[I]terminal\-simulator\f[R].
 .PP
 Patches for other terminals (hardware or software alike) are welcome.
+.SS Ancient character encodings
+For ASCII\-only terminals, don\(cqt forget to
+\f[CR]export LC_ALL=C\f[R].
+For terminals supporting other legacy encodings, you may also have some
+luck with \f[CR]language.charset\f[R], such as
+\f[CR]export LC_ALL=ja_JP.ISO\-2022\-JP\f[R].
+.PP
+Note that Chawan uses its own encoding library instead of the
+notoriously broken C locale facility, so the supported charsets may not
+fully overlap.
+You can test whether a charset is supported using
+\f[CR]cha \-O {charset name} \-V\f[R].
 .SS See also
 \f[B]cha\f[R](1)

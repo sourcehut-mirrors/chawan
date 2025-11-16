@@ -164,7 +164,7 @@ Some potential fixes:
   target URL.
 
 * Enable JavaScript.  If something broke, type M-c M-c to check the
-  browser console, then follow step 3. of the previous answer.
+  browser console, then follow step 3.\ of the previous answer.
 
 ## Text areas discard my edits when I type C-c in my editor!
 
