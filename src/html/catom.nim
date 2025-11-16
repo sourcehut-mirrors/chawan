@@ -282,7 +282,7 @@ proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
       return true
   return false
 
-proc toAtom*(s: openArray[char]): CAtom {.sideEffect.} =
+proc toAtom*(s: openArray[char]): CAtom =
   return getFactory()[].toAtom(s)
 
 proc toAtom*(tagType: TagType): CAtom =
@@ -293,7 +293,7 @@ proc toAtom*(attrType: StaticAtom): CAtom =
   assert attrType != satUnknown
   return CAtom(attrType)
 
-proc toAtomLower*(s: openArray[char]): CAtom {.sideEffect.} =
+proc toAtomLower*(s: openArray[char]): CAtom =
   return getFactory().lowerMap[int32(s.toAtom())]
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
