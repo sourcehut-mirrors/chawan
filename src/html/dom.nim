@@ -149,7 +149,7 @@ type
     localStorage* {.jsget.}: Storage
     sessionStorage* {.jsget.}: Storage
     crypto* {.jsget.}: Crypto
-    event* {.jsget.}: Event
+    event*: Event
     settings*: EnvironmentSettings
     loader*: FileLoader
     location* {.jsget.}: Location

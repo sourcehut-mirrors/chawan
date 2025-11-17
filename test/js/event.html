@@ -9,6 +9,7 @@ let ok7 = false;
 function bodyOnload(event) {
 	assertEquals(event.target, document);
 	assertEquals(event.currentTarget, window);
+	assertEquals(event, window.event);
 	assert(event.isTrusted);
 	assert(!event.bubbles);
 	assert(!event.cancelable);

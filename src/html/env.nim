@@ -358,6 +358,11 @@ proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
 proc alert(window: Window; s: string) {.jsfunc.} =
   window.console.error(s)
 
+proc getEvent(ctx: JSContext; window: Window): JSValue {.jsrfget: "event".} =
+  if window.event == nil:
+    return JS_UNDEFINED
+  return ctx.toJS(window.event)
+
 proc requestAnimationFrame(ctx: JSContext; window: Window;
     callback: JSValueConst): JSValue {.jsfunc.} =
   if not JS_IsFunction(ctx, callback):
