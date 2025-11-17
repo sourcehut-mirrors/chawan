@@ -116,7 +116,8 @@ proc write*(hist: History; file: string): Opt[void] =
   if hist.first == nil:
     return ok()
   let tmp = file & '~'
-  let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
+  discard unlink(cstring(tmp))
+  let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT or O_EXCL, 0o600)
   if ps2 == nil:
     return err()
   ?hist.write(ps2, sync = true, reverse = false)

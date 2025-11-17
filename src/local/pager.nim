@@ -2783,7 +2783,8 @@ proc runMailcapWritePipe(pager: Pager; stream: PosixStream;
       discard pager.term.restart() #TODO
 
 proc writeToFile(istream: PosixStream; outpath: string): bool =
-  let ps = newPosixStream(outpath, O_WRONLY or O_CREAT, 0o600)
+  discard unlink(cstring(outpath))
+  let ps = newPosixStream(outpath, O_WRONLY or O_CREAT or O_EXCL, 0o600)
   if ps == nil:
     return false
   var buffer {.noinit.}: array[4096, uint8]

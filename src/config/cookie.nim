@@ -441,7 +441,8 @@ proc write*(map: CookieJarMap; path: string): Opt[void] =
   elif map.jarsHead == nil:
     return ok()
   let tmp = path & '~'
-  let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
+  discard unlink(cstring(tmp))
+  let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT or O_EXCL, 0o600)
   if ps2 == nil:
     return err()
   let file = ?ps2.fdopen("w")

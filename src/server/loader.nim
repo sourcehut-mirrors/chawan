@@ -518,7 +518,8 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
   fileOutput = nil
   osent = 0
   discard mkdir(cstring(ctx.config.tmpdir), 0o700)
-  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
+  discard unlink(cstring(targetPath))
+  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_EXCL, 0o600)
   if ps == nil:
     return false
   var buffer {.cursor.} = output.currentBuffer
@@ -999,8 +1000,9 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     # the process ends. outputId is the cache id.
     let tmpf = ctx.getTempFile()
     ostreamOut2 = ostreamOut
+    discard unlink(cstring(tmpf))
     # RDWR, otherwise mmap won't work
-    ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR, 0o600)
+    ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR or O_EXCL, 0o600)
     if ostreamOut == nil:
       ctx.rejectHandle(handle, ceCGIFailedToOpenCacheOutput)
       ctx.close(handle)

@@ -139,7 +139,8 @@ proc readFile*(path: string; s: var string): Opt[void] =
   res
 
 proc writeFile*(path, content: string; mode: cint): Opt[void] =
-  let ps = newPosixStream(path, O_CREAT or O_WRONLY or O_TRUNC, mode)
+  discard unlink(cstring(path))
+  let ps = newPosixStream(path, O_CREAT or O_WRONLY or O_EXCL, mode)
   if ps == nil:
     return err()
   let file = ?ps.fdopen("w")

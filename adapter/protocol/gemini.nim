@@ -60,7 +60,8 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
         tmpEntry = buf
       else:
         let tmpPath = knownHostsPath & '~'
-        let ps = newPosixStream(tmpPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
+        discard unlink(cstring(tmpPath))
+        let ps = newPosixStream(tmpPath, O_CREAT or O_WRONLY or O_EXCL, 0o600)
         if ps == nil:
           cgiDie(ceInternalError, "failed to open temp file")
         let tmpFile = ps.afdopen("w")
