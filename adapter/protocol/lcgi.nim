@@ -53,7 +53,7 @@ template orDie*[T](val: Opt[T]; name: ConnectionError; s: cstring = nil): T =
 template orDie*[T](val: CGIResult[T]): T =
   var x = val
   if x.isErr:
-    cgiDie(val.error)
+    cgiDie(x.error)
   move(x.get)
 
 proc initCGIError*(code: ConnectionError; s: cstring = nil): CGIError =
