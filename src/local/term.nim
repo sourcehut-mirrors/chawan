@@ -1450,7 +1450,17 @@ proc queryAttrs(term: Terminal; windowOnly: bool; res: var QueryResult):
     if term.config.display.colorMode.isNone:
       outs &= QueryTcapRGB
     outs &= QueryANSIColors
-  outs &= QueryWindowPixels & QueryCellSize & QueryWindowCells & DA1
+  # We send these unconditionally because the OpenSSH fork of M$ returns
+  # fake garbage in TIOCGWINSZ and this way we have a chance of the terminal
+  # sending back real data to override that.
+  outs &= QueryCellSize & QueryWindowPixels
+  if term.attrs.width == 0 or term.attrs.height == 0:
+    # On the other hand, some old tmux versions return the window cell query
+    # in the wrong order, so work around that by only sending the cell size
+    # query if it's really needed (i.e. not set by either TIOCGWINSZ or
+    # COLUMNS/LINES).
+    outs &= QueryWindowCells
+  outs &= DA1
   ?term.write(outs)
   res = QueryResult(attrs: {})
   doAssert ?term.flush() # we must be blocked
@@ -1740,16 +1750,16 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool):
     if s: # DA1 success
       if r.width != 0:
         term.attrs.width = r.width
-        if r.ppc != 0:
-          term.attrs.ppc = r.ppc
-        elif r.widthPx != 0:
-          term.attrs.ppc = r.widthPx div r.width
+      if r.ppc != 0:
+        term.attrs.ppc = r.ppc
+      elif r.widthPx != 0 and r.width != 0:
+        term.attrs.ppc = r.widthPx div r.width
       if r.height != 0:
         term.attrs.height = r.height
-        if r.ppl != 0:
-          term.attrs.ppl = r.ppl
-        elif r.heightPx != 0:
-          term.attrs.ppl = r.heightPx div r.height
+      if r.ppl != 0:
+        term.attrs.ppl = r.ppl
+      elif r.heightPx != 0 and r.height != 0:
+        term.attrs.ppl = r.heightPx div r.height
       if not windowOnly: # we don't check for kitty, so don't override this
         if qaKittyImage in r.attrs:
           term.imageMode = imKitty
