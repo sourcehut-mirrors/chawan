@@ -1800,9 +1800,9 @@ proc setEnvVars(pager: Pager; env: openArray[EnvVar]) =
 # Run process (and suspend the terminal controller).
 # For the most part, this emulates system(3).
 proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
-    env: openArray[EnvVar]): bool =
+    env: openArray[EnvVar]): Opt[void] =
   if suspend:
-    discard pager.term.quit() #TODO
+    ?pager.term.quit()
   var oldint, oldquit, act: Sigaction
   var oldmask, dummy: Sigset
   act.sa_handler = SIG_IGN
@@ -1813,11 +1813,15 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
       sigaddset(act.sa_mask, SIGCHLD) < 0 or
       sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
     pager.alert("Failed to run process")
-    return false
+    if suspend:
+      discard pager.term.restart()
+    return err()
   case (let pid = fork(); pid)
   of -1:
     pager.alert("Failed to run process")
-    return false
+    if suspend:
+      discard pager.term.restart()
+    return err()
   of 0:
     if pager.setEnvVars0(env).isErr:
       quit(1)
@@ -1839,16 +1843,19 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     if suspend:
       while waitpid(pid, wstatus, 0) == -1:
         if errno != EINTR:
-          return false
+          discard pager.term.restart()
+          return err()
     discard sigaction(SIGINT, oldint, act)
     discard sigaction(SIGQUIT, oldquit, act)
     discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     if not suspend:
-      return true
+      return ok()
     if wait:
-      discard pager.term.anyKey() #TODO
-    discard pager.term.restart() #TODO
-    return WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0
+      discard pager.term.anyKey()
+    ?pager.term.restart()
+    if WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0:
+      return ok()
+    return err()
 
 # Run process, and capture its output.
 proc runProcessCapture(cmd: string; outs: var string): bool =
@@ -1913,23 +1920,23 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
     s &= quoteFile(file, qsNormal)
   move(s)
 
-proc openInEditor(pager: Pager; input: var string): bool =
+proc openEditor(pager: Pager; input: var string): Opt[void] =
   let tmpf = pager.getTempFile()
   discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
   input &= '\n'
   if chafile.writeFile(tmpf, input, 0o600).isErr:
     pager.alert("failed to write temporary file")
-    return false
+    return err()
   let cmd = pager.getEditorCommand(tmpf)
   if cmd == "":
     pager.alert("invalid external.editor command")
-  elif pager.runCommand(cmd, suspend = true, wait = false, pager.defaultEnv()):
-    if chafile.readFile(tmpf, input).isOk:
-      discard unlink(cstring(tmpf))
-      if input.len > 0 and input[input.high] == '\n':
-        input.setLen(input.high)
-      return true
-  return false
+    return err()
+  ?pager.runCommand(cmd, suspend = true, wait = false, pager.defaultEnv())
+  ?chafile.readFile(tmpf, input)
+  discard unlink(cstring(tmpf))
+  if input.len > 0 and input[input.high] == '\n':
+    input.setLen(input.high)
+  ok()
 
 proc windowChange(pager: Pager) =
   let oldAttrs = pager.attrs
@@ -2384,7 +2391,7 @@ proc commandMode(pager: Pager; val: bool) {.jsfset.} =
 
 proc openEditor(ctx: JSContext; pager: Pager; s: string): JSValue {.jsfunc.} =
   var s = s
-  if pager.openInEditor(s):
+  if pager.openEditor(s).isOk:
     return ctx.toJS(s)
   return JS_NULL
 
@@ -2647,7 +2654,7 @@ proc extern(ctx: JSContext; pager: Pager; cmd: string;
     t = ExternDict(env: JS_UNDEFINED, suspend: true)): Opt[bool] {.jsfunc.} =
   var env = newSeq[EnvVar]()
   ?ctx.readEnvSeq(pager, t.env, env)
-  ok(pager.runCommand(cmd, t.suspend, t.wait, env))
+  ok(pager.runCommand(cmd, t.suspend, t.wait, env).isOk)
 
 proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue
     {.jsfunc.} =
@@ -3441,7 +3448,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
   of cetReadArea:
     if container == pager.container:
       var s = event.tvalue
-      if pager.openInEditor(s):
+      if pager.openEditor(s).isOk:
         pager.container.readSuccess(s)
       else:
         pager.container.readCanceled()
