@@ -342,13 +342,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
       else:
         term.pageTail.next = page
         term.pageTail = page
-      # I'd much rather just use @, but that introduces a ridiculous
-      # copy function :(
-      #TODO fixed on current devel, switch when it's released & becomes
-      # widespread enough
-      let len = s.len - n
-      page.a = newSeqUninit[uint8](len)
-      copyMem(addr page.a[0], unsafeAddr s[n], len)
+      page.a = @(s.toOpenArrayByte(n, s.len - 1))
   ok()
 
 proc readChar(term: Terminal): Opt[char] =
