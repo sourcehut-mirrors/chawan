@@ -341,6 +341,7 @@ type
     ruleMap: CSSRuleMap
     cachedForms: HTMLCollection
     cachedLinks: HTMLCollection
+    cachedImages: HTMLCollection
     parser*: RootRef
     internalCookie: string
     liveCollections: seq[ptr CollectionObj]
@@ -1176,6 +1177,12 @@ proc isLink(node: Node): bool =
   let element = Element(node)
   return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
 
+proc isImage(node: Node): bool =
+  if not (node of Element):
+    return false
+  let element = Element(node)
+  return element.tagType == TAG_IMG
+
 proc logException(window: Window; url: URL) =
   #TODO excludepassword seems pointless?
   window.console.error("Exception in document",
@@ -1232,6 +1239,7 @@ proc getWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
   if JS_IsUndefined(res):
     let collection = ctx.newWeakCollection(this, wwm)
     if JS_IsException(collection):
+      JS_FreeValue(ctx, jsThis)
       return JS_EXCEPTION
     if ctx.setWeak(wwm, jsThis, JS_DupValue(ctx, collection)).isErr:
       return JS_EXCEPTION
@@ -2683,6 +2691,15 @@ proc links(document: Document): HTMLCollection {.jsfget.} =
       childonly = false
     )
   return document.cachedLinks
+
+proc images(document: Document): HTMLCollection {.jsfget.} =
+  if document.cachedImages == nil:
+    document.cachedImages = document.newHTMLCollection(
+      match = isImage,
+      islive = true,
+      childonly = false
+    )
+  return document.cachedImages
 
 proc getURL(ctx: JSContext; document: Document): JSValue {.jsfget: "URL".} =
   return ctx.toJS($document.url)
