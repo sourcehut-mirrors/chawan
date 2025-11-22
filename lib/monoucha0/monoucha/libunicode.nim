@@ -10,7 +10,10 @@ export cutils.JS_BOOL
 
 {.compile("qjs/libunicode.c", "-fwrapv").}
 
-const luheader = "qjs/libunicode.h"
+const luheader = """
+#include "qjs/cutils.h"
+#include "qjs/libunicode.h"
+"""
 
 type
   DynBufReallocFunc = proc(opaque, p: pointer; size: csize_t): pointer {.cdecl.}
