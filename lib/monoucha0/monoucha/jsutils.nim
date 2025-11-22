@@ -179,8 +179,7 @@ proc getMemoryUsage*(rt: JSRuntime): string =
 proc eval*(ctx: JSContext; s: string; file = "<input>";
     evalFlags = JS_EVAL_TYPE_GLOBAL): JSValue =
   ## Wrapper around JS_Eval.
-  return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file),
-    cint(evalFlags))
+  return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file), evalFlags)
 
 proc compileScript*(ctx: JSContext; s: string; file = "<input>"): JSValue =
   ## Compiles `s` into bytecode.

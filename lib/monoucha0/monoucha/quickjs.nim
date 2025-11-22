@@ -314,16 +314,16 @@ template JS_EXCEPTION*(): untyped = JS_MKVAL(JS_TAG_EXCEPTION, 0)
 template JS_UNINITIALIZED*(): untyped = JS_MKVAL(JS_TAG_UNINITIALIZED, 0)
 
 const
-  JS_EVAL_TYPE_GLOBAL* = (0 shl 0) ## global code (default)
-  JS_EVAL_TYPE_MODULE* = (1 shl 0) ## module code
-  JS_EVAL_TYPE_DIRECT* = (2 shl 0) ## direct call (internal use)
-  JS_EVAL_TYPE_INDIRECT* = (3 shl 0) ## indirect call (internal use)
-  JS_EVAL_TYPE_MASK* = (3 shl 0)
-  JS_EVAL_FLAG_STRICT* = (1 shl 3) ##  force 'strict' mode
-  JS_EVAL_FLAG_COMPILE_ONLY* = (1 shl 5) ## compile but do not run.
+  JS_EVAL_TYPE_GLOBAL* = cint(0 shl 0) ## global code (default)
+  JS_EVAL_TYPE_MODULE* = cint(1 shl 0) ## module code
+  JS_EVAL_TYPE_DIRECT* = cint(2 shl 0) ## direct call (internal use)
+  JS_EVAL_TYPE_INDIRECT* = cint(3 shl 0) ## indirect call (internal use)
+  JS_EVAL_TYPE_MASK* = cint(3 shl 0)
+  JS_EVAL_FLAG_STRICT* = cint(1 shl 3) ##  force 'strict' mode
+  JS_EVAL_FLAG_COMPILE_ONLY* = cint(1 shl 5) ## compile but do not run.
   ## The result is an object with a JS_TAG_FUNCTION_BYTECODE or
   ## JS_TAG_MODULE tag.  It can be executed with JS_EvalFunction().
-  JS_EVAL_FLAG_BACKTRACE_BARRIER* = (1 shl 6) ## allow top-level await in normal
+  JS_EVAL_FLAG_BACKTRACE_BARRIER* = cint(1 shl 6) ## allow top-level await in normal
   ## script.  JS_Eval() returns a promise.  Only allowed with
   ## JS_EVAL_TYPE_GLOBAL
 
@@ -783,6 +783,13 @@ proc JS_SetInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
   opaque: pointer)
 # if can_block is TRUE, Atomics.wait() can be used
 proc JS_SetCanBlock*(rt: JSRuntime; can_block: JS_BOOL)
+# select which debug info is stripped from the compiled code
+const JS_STRIP_SOURCE* = cint(1 shl 0) ## strip source code
+const JS_STRIP_DEBUG* = cint(1 shl 0) ## strip all debug info including source
+                                      ## code
+proc JS_SetStripInfo*(rt: JSRuntime; flags: cint)
+proc JS_GetStripInfo*(rt: JSRuntime): cint
+
 # set the [IsHTMLDDA] internal slot
 proc JS_SetIsHTMLDDA*(ctx: JSContext; obj: JSValueConst)
 
