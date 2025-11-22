@@ -44,7 +44,7 @@ static const JSDOMExceptionNameDef js_dom_exception_names_table[] = {
     { "DataCloneError", "DATA_CLONE_ERR" }
 };
 
-static int js_class_dom_exception = 0;
+static JSClassID js_class_dom_exception = 0;
 
 static void js_domexception_finalizer(JSRuntime *rt, JSValue val)
 {
@@ -109,8 +109,6 @@ fail1:
 static JSValue js_domexception_constructor(JSContext *ctx, JSValueConst new_target,
                                            int argc, JSValueConst *argv)
 {
-    if (JS_IsUndefined(new_target))
-        return JS_ThrowTypeError(ctx, "constructor requires 'new'");
     return js_domexception_constructor0(ctx, new_target, argc, argv, 1);
 }
 
@@ -207,7 +205,7 @@ JSValue JS_ThrowDOMException(JSContext *ctx, const char *name,
 int JS_AddIntrinsicDOMException(JSContext *ctx)
 {
     JSRuntime *rt = JS_GetRuntime(ctx);
-    int i, js_class_error, res;
+    int i, res;
     JSAtom name;
     JSValue ctor, proto, global_obj;
 
