@@ -47,8 +47,6 @@
 #include "libunicode.h"
 #include "dtoa.h"
 
-#define CONFIG_VERSION "Monoucha 0.11.0"
-
 #define OPTIMIZE         1
 #define SHORT_OPCODES    1
 #if defined(EMSCRIPTEN)

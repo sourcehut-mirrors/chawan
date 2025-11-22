@@ -14,10 +14,11 @@ export libregexp.JS_BOOL
 
 {.passl: "-lm".}
 
+const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"Monoucha 0.11.0\"'"
 when not compileOption("threads"):
-  const CFLAGS = "-fwrapv -DMNC_NO_THREADS"
+  const CFLAGS = CFLAGS0 & " -DMNC_NO_THREADS"
 else:
-  const CFLAGS = "-fwrapv"
+  const CFLAGS = CFLAGS0
   {.passl: "-lpthread".}
 
 {.compile("qjs/quickjs.c", CFLAGS).}
