@@ -23,7 +23,8 @@ function assertThrows(fun, error) {
 }
 
 function assertEquals(a, b) {
-	assert(a === b, "Expected " + b + " but got " + a);
+	if (a !== b)
+		throw new TypeError("Assertion failed: expected " + b + " but got " + a);
 }
 
 function assertNotEquals(a, b) {

@@ -6,6 +6,7 @@ import chagashi/decoder
 import html/catom
 import html/chadombuilder
 import html/dom
+import html/domexception
 import html/event
 import html/script
 import io/dynstream

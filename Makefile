@@ -132,7 +132,7 @@ tinfl = adapter/protocol/tinfl.h
 
 # lib/*0 has a 0 so that it doesn't conflict with the old submodules.
 # git can't deal with this, it seems.
-$(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* lib/chame0/chame/* \
+$(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/* lib/chame0/chame/* \
 		lib/chagashi0/chagashi/* lib/monoucha0/monoucha/* \
 		lib/monoucha0/monoucha/qjs/* $(chaseccomp) \
 		res/charwidth_gen.nim nim.cfg

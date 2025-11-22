@@ -9,6 +9,7 @@ import html/catom
 import html/chadombuilder
 import html/dom
 import html/domcanvas
+import html/domexception
 import html/event
 import html/formdata
 import html/jsencoding
@@ -514,6 +515,7 @@ proc addScripting*(window: Window) =
   ctx.setGlobal(window)
   ctx.addConsoleModule()
   ctx.addNavigatorModule()
+  ctx.addDOMExceptionModule()
   ctx.addDOMModule(eventTargetCID)
   ctx.addCanvasModule()
   ctx.addURLModule()

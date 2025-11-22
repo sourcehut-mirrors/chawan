@@ -2,6 +2,7 @@
 
 import std/math
 
+import html/domexception
 import html/event
 import io/dynstream
 import io/packetwriter

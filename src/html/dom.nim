@@ -21,6 +21,7 @@ import css/mediaquery
 import css/sheet
 import html/catom
 import html/domcanvas
+import html/domexception
 import html/event
 import html/performance
 import html/script

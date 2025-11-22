@@ -3,6 +3,7 @@
 import std/options
 
 import html/catom
+import html/domexception
 import html/script
 import io/timeout
 import monoucha/fromjs

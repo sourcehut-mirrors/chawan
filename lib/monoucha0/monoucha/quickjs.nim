@@ -474,7 +474,6 @@ proc JS_AddIntrinsicMapSet*(ctx: JSContext): cint
 proc JS_AddIntrinsicTypedArrays*(ctx: JSContext): cint
 proc JS_AddIntrinsicPromise*(ctx: JSContext): cint
 proc JS_AddIntrinsicWeakRef*(ctx: JSContext): cint
-proc JS_AddIntrinsicDOMException*(ctx: JSContext): cint
 
 proc js_string_codePointRange*(ctx: JSContext; this_val: JSValueConst;
   argc: cint; argv: JSValueConstArray): JSValue
@@ -575,8 +574,6 @@ proc JS_ThrowRangeError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
 proc JS_ThrowInternalError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
-proc JS_ThrowDOMException*(ctx: JSContext; name, fmt: cstring): JSValue {.
-  varargs, discardable.}
 proc JS_ThrowOutOfMemory*(ctx: JSContext): JSValue {.discardable.}
 
 proc JS_FreeValue*(ctx: JSContext; v: JSValue)

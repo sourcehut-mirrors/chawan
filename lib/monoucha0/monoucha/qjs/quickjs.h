@@ -409,7 +409,6 @@ int JS_AddIntrinsicMapSet(JSContext *ctx);
 int JS_AddIntrinsicTypedArrays(JSContext *ctx);
 int JS_AddIntrinsicPromise(JSContext *ctx);
 int JS_AddIntrinsicWeakRef(JSContext *ctx);
-int JS_AddIntrinsicDOMException(JSContext *ctx);
 
 JSValue js_string_codePointRange(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv);
@@ -678,7 +677,6 @@ JSValue __js_printf_like(2, 3) JS_ThrowTypeError(JSContext *ctx, const char *fmt
 JSValue __js_printf_like(2, 3) JS_ThrowReferenceError(JSContext *ctx, const char *fmt, ...);
 JSValue __js_printf_like(2, 3) JS_ThrowRangeError(JSContext *ctx, const char *fmt, ...);
 JSValue __js_printf_like(2, 3) JS_ThrowInternalError(JSContext *ctx, const char *fmt, ...);
-JSValue __js_printf_like(3, 4) JS_ThrowDOMException(JSContext *ctx, const char *name, const char *fmt, ...);
 JSValue JS_ThrowOutOfMemory(JSContext *ctx);
 
 void __JS_FreeValue(JSContext *ctx, JSValue v);
@@ -761,6 +759,7 @@ JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
 JS_BOOL JS_IsStringWideChar(JSValueConst value);
 uint8_t *JS_GetNarrowStringBuffer(JSValueConst value);
 uint32_t JS_GetStringLength(JSValueConst value);
+void JS_BuildBacktrace(JSContext *ctx, JSValueConst obj, int skip_first_level);
 
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto, JSClassID class_id);
 JSValue JS_NewObjectClass(JSContext *ctx, int class_id);

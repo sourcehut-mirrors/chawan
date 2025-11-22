@@ -258,7 +258,6 @@ DEF(TypeError, "TypeError")
 DEF(URIError, "URIError")
 DEF(InternalError, "InternalError")
 DEF(AggregateError, "AggregateError")
-DEF(DOMException, "DOMException")
 /* private symbols */
 DEF(Private_brand, "<brand>")
 /* symbols */

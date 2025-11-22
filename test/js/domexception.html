@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<title>DOMException</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+"use strict";
+
+function test_code() {
+	let ex = new DOMException();
+	assertEquals(ex.code, 0);
+	ex = new DOMException("", "HierarchyRequestError\0test");
+	assertEquals(ex.code, 0);
+	ex = new DOMException("test", "HierarchyRequestError");
+	assertEquals(ex.code, 3);
+	assertEquals(ex.code, ex.HIERARCHY_REQUEST_ERR);
+	assertEquals(ex.code, DOMException.HIERARCHY_REQUEST_ERR);
+	ex = new DOMException("", "DataCloneError");
+	assertEquals(ex.code, ex.DATA_CLONE_ERR);
+	assertEquals(ex.code, 25);
+	ex = new DOMException("", "IndexSizeError");
+	assertEquals(ex.code, ex.INDEX_SIZE_ERR);
+	assertEquals(ex.code, 1);
+}
+
+function test_properties() {
+	let ex = new DOMException("test");
+	assertEquals(ex.message, "test");
+	assertEquals(ex.name, "Error");
+	ex = new DOMException("test", "InvalidCharacterError");
+	assertEquals(ex.name, "InvalidCharacterError");
+	assertThrows(() => ex.message = "", TypeError);
+	assertThrows(() => ex.name = "test", TypeError);
+	assertEquals(ex.__proto__, DOMException.prototype);
+	/* Note: browsers set "stack" on the prototype, not the object.
+	 * This follows node. */
+	assert(Object.getOwnPropertyNames(ex), ["stack"]);
+}
+
+test_code();
+test_properties();
+
+document.getElementById("x").textContent = "Success";
+</script>
