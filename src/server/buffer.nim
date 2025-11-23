@@ -4,7 +4,6 @@ from std/strutils import split
 
 import std/macros
 import std/options
-import std/os
 import std/posix
 import std/tables
 
@@ -105,12 +104,17 @@ type
 
   InputData = ref object of MapData
 
+  PagerHandle = ref object of MapData
+    tasks: array[BufferCommand, int]
+    reportedLoad: LoadResult
+    onReshapeImmediately: bool
+    next: PagerHandle
+
   BufferContext = ref object
     firstBufferRead: bool
     headlessLoading: bool
     ishtml: bool
     needsBOMSniff: bool
-    onReshapeImmediately: bool
     savetask: bool
     checkJobs: bool
     state: BufferState
@@ -133,13 +137,11 @@ type
     pollData: PollData
     prevHover: Element
     clickResult: ClickResult
-    pstream: SocketStream # control stream
-    reportedLoad: LoadResult
     rootBox: BlockBox
-    tasks: array[BufferCommand, int]
     window: Window
     luctx: LUContext
     nhints: int
+    handlesHead: PagerHandle
 
   BufferIfaceItem = object
     id: int
@@ -202,13 +204,28 @@ type
 
   HintResult* = seq[CursorXY]
 
+  CommandResult = enum
+    cmdrDone, cmdrEOF
+
 # Forward declarations
 proc click(bc: BufferContext; clickable: Element): ClickResult
 proc submitForm(bc: BufferContext; form: HTMLFormElement;
   submitter: HTMLElement; jsSubmitCall = false): Request
 
+iterator handles(bc: BufferContext): PagerHandle =
+  var it = bc.handlesHead
+  while it != nil:
+    yield it
+    it = it.next
+
 template document(bc: BufferContext): Document =
   bc.window.document
+
+template withPacketWriterReturnEOF(stream: DynStream; w, body: untyped) =
+  stream.withPacketWriter w:
+    body
+  do:
+    return cmdrEOF
 
 proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
   if iface.len != 0:
@@ -293,7 +310,7 @@ proc buildInterfaceProc(name, params: NimNode; cmd: BufferCommand): NimNode =
     retval2 = newNimNode(nnkBracketExpr).add(ident("Promise"), retval)
   var params2 = @[retval2, this2]
   # flatten args
-  for i in 2 ..< params.len:
+  for i in 3 ..< params.len:
     let param = params[i]
     for i in 0 ..< param.len - 2:
       let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
@@ -312,16 +329,15 @@ proc buildInterfaceProc(name, params: NimNode; cmd: BufferCommand): NimNode =
     newNimNode(nnkPragma).add(ident("discardable"))
   else:
     newEmptyNode()
-  return newProc(name, params2, body, pragmas = pragmas)
+  newProc(name, params2, body, pragmas = pragmas)
 
 proc buildProxyProc(name, params: NimNode; cmd: BufferCommand; flag: ProxyFlag):
     NimNode =
   let stmts = newStmtList()
   let r = ident("r")
-  let bc = ident("bc")
   let packetid = ident("packetid")
-  let call = newCall(name, ident("bc"))
-  for i in 2 ..< params.len:
+  let call = newCall(name, ident("bc"), ident("handle"))
+  for i in 3 ..< params.len:
     let param = params[i]
     for i in 0 ..< param.len - 2:
       let id = ident(param[i].strVal)
@@ -339,23 +355,19 @@ proc buildProxyProc(name, params: NimNode; cmd: BufferCommand; flag: ProxyFlag):
       let retval {.inject.} = `call`)
   let resolve = if hasRes:
     quote do:
-      `bc`.pstream.withPacketWriter wt:
+      handle.stream.withPacketWriterReturnEOF wt:
         wt.swrite(`packetid`)
-      do:
-        quit(1)
   else:
     quote do:
-      `bc`.pstream.withPacketWriter wt:
+      handle.stream.withPacketWriterReturnEOF wt:
         wt.swrite(`packetid`)
         wt.swrite(retval)
-      do:
-        quit(1)
   case flag
   of pfTask:
     stmts.add(quote do:
-      if `bc`.savetask:
-        `bc`.savetask = false
-        `bc`.tasks[BufferCommand(`cmd`)] = `packetid`
+      if bc.savetask:
+        bc.savetask = false
+        handle.tasks[BufferCommand(`cmd`)] = `packetid`
       else:
         `resolve`
     )
@@ -363,8 +375,10 @@ proc buildProxyProc(name, params: NimNode; cmd: BufferCommand; flag: ProxyFlag):
     stmts.add(resolve)
   let name = ident(name.strVal & "Cmd")
   quote do:
-    proc `name`(`bc`: BufferContext; `r`: var PacketReader; `packetid`: int) =
+    proc `name`(bc {.inject.}: BufferContext; handle {.inject.}: PagerHandle;
+        `r`: var PacketReader; `packetid`: int): CommandResult =
       `stmts`
+      cmdrDone
 
 macro proxyt(flag: static ProxyFlag; fun: typed) =
   let name = fun.name # sym
@@ -499,8 +513,8 @@ proc navigate(bc: BufferContext; url: URL) =
   discard stderr.writeLine("navigate to " & $url)
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
-proc findPrevLink*(bc: BufferContext; cursorx, cursory, n: int):
-    tuple[x, y: int] {.proxy.} =
+proc findPrevLink*(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory, n: int): tuple[x, y: int] {.proxy.} =
   if cursory >= bc.lines.len:
     return (-1, -1)
   var found = 0
@@ -560,8 +574,8 @@ proc findPrevLink*(bc: BufferContext; cursorx, cursory, n: int):
       dec i
   return (-1, -1)
 
-proc findNextLink*(bc: BufferContext; cursorx, cursory, n: int):
-    tuple[x, y: int] {.proxy.} =
+proc findNextLink*(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory, n: int): tuple[x, y: int] {.proxy.} =
   if cursory >= bc.lines.len:
     return (-1, -1)
   var found = 0
@@ -583,7 +597,8 @@ proc findNextLink*(bc: BufferContext; cursorx, cursory, n: int):
     i = 0
   return (-1, -1)
 
-proc findPrevParagraph*(bc: BufferContext; cursory, n: int): int {.proxy.} =
+proc findPrevParagraph*(bc: BufferContext; handle: PagerHandle;
+    cursory, n: int): int {.proxy.} =
   var y = cursory
   for i in 0 ..< n:
     while y >= 0 and bc.lines[y].str.onlyWhitespace():
@@ -592,7 +607,8 @@ proc findPrevParagraph*(bc: BufferContext; cursory, n: int): int {.proxy.} =
       dec y
   return y
 
-proc findNextParagraph*(bc: BufferContext; cursory, n: int): int {.proxy.} =
+proc findNextParagraph*(bc: BufferContext; handle: PagerHandle;
+    cursory, n: int): int {.proxy.} =
   var y = cursory
   for i in 0 ..< n:
     while y < bc.lines.len and bc.lines[y].str.onlyWhitespace():
@@ -601,7 +617,8 @@ proc findNextParagraph*(bc: BufferContext; cursory, n: int): int {.proxy.} =
       inc y
   return y
 
-proc findNthLink*(bc: BufferContext; i: int): tuple[x, y: int] {.proxy.} =
+proc findNthLink*(bc: BufferContext; handle: PagerHandle; i: int):
+    tuple[x, y: int] {.proxy.} =
   if i == 0:
     return (-1, -1)
   var k = 0
@@ -618,7 +635,8 @@ proc findNthLink*(bc: BufferContext; i: int): tuple[x, y: int] {.proxy.} =
         link = fl
   return (-1, -1)
 
-proc findRevNthLink*(bc: BufferContext; i: int): tuple[x, y: int] {.proxy.} =
+proc findRevNthLink*(bc: BufferContext; handle: PagerHandle; i: int):
+    tuple[x, y: int] {.proxy.} =
   if i == 0:
     return (-1, -1)
   var k = 0
@@ -635,8 +653,8 @@ proc findRevNthLink*(bc: BufferContext; i: int): tuple[x, y: int] {.proxy.} =
         link = fl
   return (-1, -1)
 
-proc findPrevMatch*(bc: BufferContext; regex: Regex; cursorx, cursory: int;
-    wrap: bool, n: int): BufferMatch {.proxy.} =
+proc findPrevMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
+    cursorx, cursory: int; wrap: bool, n: int): BufferMatch {.proxy.} =
   if cursory >= bc.lines.len: return BufferMatch()
   var y = cursory
   let b = bc.cursorBytes(y, cursorx)
@@ -669,8 +687,8 @@ proc findPrevMatch*(bc: BufferContext; regex: Regex; cursorx, cursory: int;
     dec y
   BufferMatch()
 
-proc findNextMatch*(bc: BufferContext; regex: Regex; cursorx, cursory: int;
-    wrap: bool; n: int): BufferMatch {.proxy.} =
+proc findNextMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
+    cursorx, cursory: int; wrap: bool; n: int): BufferMatch {.proxy.} =
   if cursory >= bc.lines.len: return BufferMatch()
   var y = cursory
   let b = bc.cursorBytes(y, cursorx + 1)
@@ -709,8 +727,8 @@ type GotoAnchorResult* = object
   y*: int
   focus*: ReadLineResult
 
-proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
-    GotoAnchorResult {.proxy.} =
+proc gotoAnchor*(bc: BufferContext; handle: PagerHandle; anchor: string;
+    autofocus, target: bool): GotoAnchorResult {.proxy.} =
   if bc.document == nil:
     return GotoAnchorResult(found: false)
   if anchor.len > 0 and anchor[0] == 'L' and not bc.ishtml:
@@ -741,7 +759,8 @@ proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
   let y = max(offset.y div bc.attrs.ppl.toLUnit(), 0'lu).toInt
   return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
 
-proc checkRefresh*(bc: BufferContext): CheckRefreshResult {.proxy.} =
+proc checkRefresh*(bc: BufferContext; handle: PagerHandle): CheckRefreshResult
+    {.proxy.} =
   if bc.navigateUrl != nil:
     let url = bc.navigateUrl
     bc.navigateUrl = nil
@@ -753,32 +772,28 @@ proc checkRefresh*(bc: BufferContext): CheckRefreshResult {.proxy.} =
     return CheckRefreshResult(n: -1)
   return parseRefresh(element.attr(satContent), bc.document.url)
 
-proc hasTask(bc: BufferContext; cmd: BufferCommand): bool =
-  return bc.tasks[cmd] != 0
+proc hasTask(handle: PagerHandle; cmd: BufferCommand): bool =
+  return handle.tasks[cmd] != 0
 
-proc resolveTask(bc: BufferContext; cmd: BufferCommand) =
-  let packetid = bc.tasks[cmd]
+proc resolveTask(handle: PagerHandle; cmd: BufferCommand) =
+  let packetid = handle.tasks[cmd]
   assert packetid != 0
-  bc.pstream.withPacketWriter wt:
+  handle.stream.withPacketWriterFire wt:
     wt.swrite(packetid)
-  do:
-    quit(1)
-  bc.tasks[cmd] = 0
+  handle.tasks[cmd] = 0
 
-proc resolveTask[T](bc: BufferContext; cmd: BufferCommand; res: T) =
-  let packetid = bc.tasks[cmd]
+proc resolveTask[T](handle: PagerHandle; cmd: BufferCommand; res: T) =
+  let packetid = handle.tasks[cmd]
   assert packetid != 0
-  bc.pstream.withPacketWriter wt:
+  handle.stream.withPacketWriterFire wt:
     wt.swrite(packetid)
     wt.swrite(res)
-  do:
-    quit(1)
-  bc.tasks[cmd] = 0
+  handle.tasks[cmd] = 0
 
-proc resolveLoad(bc: BufferContext; n, len: uint64) =
+proc resolveLoad(bc: BufferContext; handle: PagerHandle; n, len: uint64) =
   let res = LoadResult(n: n, len: len, bs: bc.state)
-  bc.reportedLoad = res
-  bc.resolveTask(bcLoad, res)
+  handle.reportedLoad = res
+  handle.resolveTask(bcLoad, res)
 
 proc maybeReshape(bc: BufferContext; suppressFouc = false) =
   let document = bc.document
@@ -795,10 +810,11 @@ proc maybeReshape(bc: BufferContext; suppressFouc = false) =
     # the user to override this and interact with the page (useful if e.g. a
     # sheet really doesn't want to load).
     if not suppressFouc or bc.window.loadedSheetNum == bc.window.remoteSheetNum:
-      if bc.hasTask(bcOnReshape):
-        bc.resolveTask(bcOnReshape)
-      else:
-        bc.onReshapeImmediately = true
+      for handle in bc.handles:
+        if handle.hasTask(bcOnReshape):
+          handle.resolveTask(bcOnReshape)
+        else:
+          handle.onReshapeImmediately = true
 
 proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
   if bc.ishtml:
@@ -877,8 +893,8 @@ const HoverFun = [
   htImage: getImageHover,
   htCachedImage: getCachedImageHover
 ]
-proc updateHover*(bc: BufferContext; cursorx, cursory: int): UpdateHoverResult
-    {.proxy.} =
+proc updateHover*(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory: int): UpdateHoverResult {.proxy.} =
   let thisNode = bc.getCursorElement(cursorx, cursory)
   var hover = newSeq[tuple[t: HoverType, s: string]]()
   var repaint = false
@@ -918,8 +934,11 @@ proc loadResources(bc: BufferContext): EmptyPromise =
       let L = uint(promises.len)
       for promise in promises:
         promise.then(proc() =
-          if bc.hasTask(bcLoad) and bc.state == bsLoadingResources:
-            bc.resolveLoad(bc.window.loadedSheetNum, bc.window.remoteSheetNum)
+          if bc.state == bsLoadingResources:
+            for handle in bc.handles:
+              if handle.hasTask(bcLoad):
+                bc.resolveLoad(handle, bc.window.loadedSheetNum,
+                  bc.window.remoteSheetNum)
           inc u
           if u == L:
             res.resolve()
@@ -939,8 +958,11 @@ proc loadImages(bc: BufferContext): EmptyPromise =
       let L = uint(promises.len)
       for promise in promises:
         promise.then(proc() =
-          if bc.hasTask(bcLoad) and bc.state == bsLoadingImages:
-            bc.resolveLoad(bc.window.loadedImageNum, bc.window.remoteImageNum)
+          if bc.state == bsLoadingImages:
+            for handle in bc.handles:
+              if handle.hasTask(bcLoad):
+                bc.resolveLoad(handle, bc.window.loadedImageNum,
+                  bc.window.remoteImageNum)
           inc u
           if u == L:
             res.resolve()
@@ -968,110 +990,46 @@ proc rewind(bc: BufferContext; data: InputData; offset: uint64;
   bc.bytesRead = offset
   return true
 
-# Create an exact clone of the current buffer.
-# Required sequence of operations:
-#  suspend -> fork -> return pid -> send controlStream -> tee -> resume
-# Proxy functions are not flexible enough for this, so we just handle
-# the packets inline.
-proc cloneCmd(bc: BufferContext; r: var PacketReader; packetid: int) =
+proc addPagerHandle(bc: BufferContext; stream: PosixStream) =
+  let handle = PagerHandle(stream: stream)
+  bc.loader.put(handle)
+  bc.pollData.register(stream.fd, POLLIN)
+  var it = bc.handlesHead
+  if it == nil:
+    bc.handlesHead = handle
+  else:
+    while it.next != nil:
+      it = it.next
+    it.next = handle
+
+# returns true if there are still other handles, false otherwise
+proc removePagerHandle(bc: BufferContext; handle: PagerHandle): bool =
+  bc.loader.unset(handle)
+  bc.pollData.unregister(handle.stream.fd)
+  bc.loader.unregistered.add(handle.stream.fd)
+  if bc.handlesHead == handle:
+    bc.handlesHead = bc.handlesHead.next
+  else:
+    var it = bc.handlesHead
+    while it.next != handle:
+      it = it.next
+    it.next = it.next.next
+  bc.handlesHead != nil
+
+proc cloneCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
+    packetid: int): CommandResult =
   var newurl: URL
   r.sread(newurl)
   let pstream = newSocketStream(r.recvFd())
-  let pins = newPosixStream(r.recvFd())
-  let pouts = newPosixStream(r.recvFd())
-  # suspend outputs before tee'ing
-  var ids = newSeq[int]()
-  for it in bc.loader.ongoing:
-    if it.response.onRead != nil:
-      ids.add(it.response.outputId)
-  bc.loader.suspend(ids)
-  # ongoing transfers are now suspended; exhaust all data in the
-  # internal buffer
-  # just to be safe.
-  for it in bc.loader.ongoing:
-    if it.response.onRead != nil:
-      bc.loader.onRead(it.fd)
-  let pid = fork()
-  if pid == 0: # child
-    pins.sclose()
-    var controlStream: SocketStream
-    pstream.withPacketReader r:
-      controlStream = newSocketStream(r.recvFd())
-    do: # EOF, pager died
-      quit(1)
-    bc.pollData.clear()
-    var connecting = newSeq[ConnectData]()
-    var ongoing = newSeq[OngoingData]()
-    var istream: InputData = nil
-    for it in bc.loader.data:
-      if it of ConnectData:
-        connecting.add(ConnectData(it))
-      elif it of OngoingData:
-        let it = OngoingData(it)
-        ongoing.add(it)
-        it.response.body.sclose()
-      else:
-        istream = InputData(it)
-      bc.loader.unregistered.add(it.fd)
-      bc.loader.unset(it)
-    let myPid = getCurrentProcessId()
-    for it in ongoing:
-      let response = it.response
-      # tee ongoing streams
-      let (stream, outputId) = bc.loader.tee(response.outputId, myPid)
-      # if -1, well, this side hasn't exhausted the socket's buffer
-      doAssert outputId != -1 and stream != nil
-      response.outputId = outputId
-      response.body = stream
-      let data = OngoingData(response: response, stream: stream)
-      bc.pollData.register(data.fd, POLLIN)
-      bc.loader.put(data)
-    if istream != nil:
-      # We do not own our input stream, so we can't tee it.
-      # Luckily it is cached, so what we *can* do is to load the same thing from
-      # the cache. (This also lets us skip suspend/resume in this case.)
-      # We ignore errors; not much we can do with them here :/
-      discard bc.rewind(istream, bc.bytesRead, unregister = false)
-    bc.pstream.sclose()
-    pouts.write(char(0))
-    pouts.sclose()
-    for it in bc.tasks.mitems:
-      it = 0
-    bc.pstream = pstream
-    bc.loader.clientPid = myPid
-    # replace control stream
-    bc.loader.controlStream.sclose()
-    bc.loader.controlStream = controlStream
-    bc.pollData.register(bc.pstream.fd, POLLIN)
-    # must reconnect after the new client is set up, or the client pids get
-    # mixed up.
-    for it in connecting:
-      # connecting: just reconnect
-      bc.loader.reconnect(it)
-    # Set target now, because it's convenient.
-    # (It is also possible that newurl has no hash, and then gotoAnchor
-    # isn't called at all.)
-    let target = bc.document.findAnchor(newurl.hash)
-    bc.document.setTarget(target)
-  else: # parent
-    pouts.sclose()
-    pstream.sclose()
-    # Ask pager to get a loader handle for child.
-    bc.pstream.withPacketWriter w:
-      w.swrite(packetid)
-      w.swrite(int(pid))
-    do:
-      quit(1)
-    if pid != -1:
-      # Wait for child to tee its ongoing streams before resuming.
-      var c: char
-      if pins.readData(addr c, 1) == 1:
-        assert c == char(0)
-    pins.sclose()
-    bc.loader.resume(ids)
+  bc.addPagerHandle(pstream)
+  let target = bc.document.findAnchor(newurl.hash)
+  bc.document.setTarget(target)
+  handle.stream.withPacketWriterReturnEOF w:
+    w.swrite(packetid)
+  cmdrDone
 
-proc clone*(iface: BufferInterface; newurl: URL;
-    pstreamFd, pinsFd, poutsFd: cint): Promise[int] =
+proc clone*(iface: BufferInterface; newurl: URL; pstreamFd: cint):
+    Promise[int] =
   if not iface.stream.flush():
     return nil
   iface.stream.source.withPacketWriter w:
@@ -1079,8 +1037,6 @@ proc clone*(iface: BufferInterface; newurl: URL;
     w.swrite(iface.packetid)
     w.swrite(newurl)
     w.sendFd(pstreamFd)
-    w.sendFd(pinsFd)
-    w.sendFd(poutsFd)
   do:
     return nil
   return addPromise[int](iface)
@@ -1127,7 +1083,8 @@ proc headlessMustWait(bc: BufferContext): bool =
 # * -1 if loading is done
 # * a positive number for reporting the number of bytes loaded and that the page
 #   has been partially rendered.
-proc load*(bc: BufferContext): LoadResult {.proxy: pfTask.} =
+proc load*(bc: BufferContext; handle: PagerHandle): LoadResult {.
+    proxy: pfTask.} =
   var res = LoadResult(bs: bc.state)
   case bc.state
   of bsLoaded:
@@ -1148,14 +1105,14 @@ proc load*(bc: BufferContext): LoadResult {.proxy: pfTask.} =
     # but we already uncompress inside CGI so it's impossible to compare
     # the two
     # probably we'll need some reporting mechanism in BGI
-    if res.n > bc.reportedLoad.n:
+    if res.n > handle.reportedLoad.n:
       bc.maybeReshape(suppressFouc = true)
-  let old = bc.reportedLoad
+  let old = handle.reportedLoad
   if res.bs != bsLoaded and old.bs == res.bs and res.n == old.n:
     # drop this result, resolve in onload instead
     bc.savetask = true
   else:
-    bc.reportedLoad = res
+    handle.reportedLoad = res
   res
 
 proc onload(bc: BufferContext; data: InputData) =
@@ -1186,15 +1143,19 @@ proc onload(bc: BufferContext; data: InputData) =
       bc.finishLoad(data)
       if bc.window.pendingResources.len > 0:
         bc.state = bsLoadingResources
-        if bc.hasTask(bcLoad):
-          bc.resolveLoad(bc.window.loadedSheetNum, bc.window.remoteSheetNum)
+        for handle in bc.handles:
+          if handle.hasTask(bcLoad):
+            bc.resolveLoad(handle, bc.window.loadedSheetNum,
+              bc.window.remoteSheetNum)
       bc.loadResources().then(proc() =
         # CSS loaded
         if bc.window.pendingImages.len > 0:
           bc.maybeReshape()
           bc.state = bsLoadingImages
-          if bc.hasTask(bcLoad):
-            bc.resolveLoad(bc.window.loadedImageNum, bc.window.remoteImageNum)
+          for handle in bc.handles:
+            if handle.hasTask(bcLoad):
+              bc.resolveLoad(handle, bc.window.loadedImageNum,
+                bc.window.remoteImageNum)
         bc.loadImages().then(proc() =
           # images loaded
           bc.maybeReshape()
@@ -1206,26 +1167,32 @@ proc onload(bc: BufferContext; data: InputData) =
               ctx.ps.sclose()
               ctx.ps = nil
             bc.window.pendingCanvasCtls.setLen(0)
-          if bc.hasTask(bcGetTitle):
-            bc.resolveTask(bcGetTitle, bc.document.title)
-          if bc.hasTask(bcLoad):
-            if bc.config.headless == hmTrue and bc.headlessMustWait():
-              bc.headlessLoading = true
-            else:
-              bc.resolveLoad(0, 0)
+          for handle in bc.handles:
+            if handle.hasTask(bcGetTitle):
+              handle.resolveTask(bcGetTitle, bc.document.title)
+            if handle.hasTask(bcLoad):
+              if bc.config.headless == hmTrue and bc.headlessMustWait():
+                #TODO might want to move this to handle too
+                bc.headlessLoading = true
+              else:
+                bc.resolveLoad(handle, 0, 0)
         )
       )
       return # skip incr render
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
-  if bc.config.headless == hmFalse and bc.hasTask(bcLoad):
-    # only makes sense when not in dump mode (and the user has requested a load)
-    bc.maybeReshape(suppressFouc = true)
-    if bc.hasTask(bcGetTitle):
-      bc.resolveTask(bcGetTitle, bc.document.title)
-    bc.resolveLoad(bc.bytesRead, 0) #TODO content-length
+  if bc.config.headless == hmFalse:
+    for handle in bc.handles:
+      if handle.hasTask(bcLoad):
+        # only makes sense when not in dump mode (and the user has requested
+        # a load)
+        bc.maybeReshape(suppressFouc = true)
+        if handle.hasTask(bcGetTitle):
+          handle.resolveTask(bcGetTitle, bc.document.title)
+        bc.resolveLoad(handle, bc.bytesRead, 0) #TODO content-length
 
-proc getTitle*(bc: BufferContext): string {.proxy: pfTask.} =
+proc getTitle*(bc: BufferContext; handle: PagerHandle): string {.
+    proxy: pfTask.} =
   if bc.document != nil:
     let title = bc.document.findFirst(TAG_TITLE)
     if title != nil:
@@ -1240,14 +1207,14 @@ proc forceReshape0(bc: BufferContext) =
     bc.document.invalid = true
   bc.maybeReshape()
 
-proc forceReshape*(bc: BufferContext) {.proxy.} =
+proc forceReshape*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.document != nil and bc.document.documentElement != nil:
     bc.document.documentElement.invalidate()
   bc.rootBox = nil
   bc.forceReshape0()
 
-proc windowChange*(bc: BufferContext; attrs: WindowAttributes; x, y: int):
-    CursorXY {.proxy.} =
+proc windowChange*(bc: BufferContext; handle: PagerHandle;
+    attrs: WindowAttributes; x, y: int): CursorXY {.proxy.} =
   let element = bc.getCursorElement(x, y)
   let box = if element != nil: CSSBox(element.box) else: nil
   let offset = if box != nil: box.render.offset else: offset(0'lu, 0'lu)
@@ -1256,7 +1223,7 @@ proc windowChange*(bc: BufferContext; attrs: WindowAttributes; x, y: int):
   let dx = x - (offset.x div ppc).toInt()
   let dy = y - (offset.y div ppl).toInt()
   bc.attrs = attrs
-  bc.forceReshape()
+  bc.forceReshape(handle)
   if element != nil and element.box != nil:
     let offset = CSSBox(element.box).render.offset
     let x = (offset.x div ppc).toInt() + dx
@@ -1264,7 +1231,7 @@ proc windowChange*(bc: BufferContext; attrs: WindowAttributes; x, y: int):
     return CursorXY(x: x, y: y)
   return CursorXY(x: x, y: y)
 
-proc cancel*(bc: BufferContext) {.proxy.} =
+proc cancel*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.state == bsLoaded:
     return
   for it in bc.loader.data:
@@ -1436,14 +1403,7 @@ proc implicitSubmit(bc: BufferContext; input: HTMLInputElement): Request =
     return bc.submitForm(form, form)
   return nil
 
-proc readSuccess*(bc: BufferContext; s: string; hasFd: bool): Request
-    {.proxy.} =
-  var fd: cint = -1
-  if hasFd:
-    bc.pstream.withPacketReader r:
-      fd = r.recvFd()
-    do: # EOF, pager died
-      return nil
+proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
   if bc.document.focus != nil:
     let focus = bc.document.focus
     bc.restoreFocus()
@@ -1486,6 +1446,33 @@ proc readSuccess*(bc: BufferContext; s: string; hasFd: bool): Request
       bc.maybeReshape()
     else: discard
   return nil
+
+proc readSuccessCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
+    packetid: int): CommandResult =
+  var s: string
+  var hasfd: bool
+  r.sread(s)
+  r.sread(hasfd)
+  let fd = if hasfd: r.recvFd() else: -1
+  let request = bc.readSuccess0(s, fd)
+  handle.stream.withPacketWriterReturnEOF w:
+    w.swrite(packetid)
+    w.swrite(request)
+  cmdrDone
+
+proc readSuccess*(iface: BufferInterface; s: string; fd: cint):
+    Promise[Request] =
+  if not iface.stream.flush():
+    return newResolvedPromise[Request](nil)
+  iface.stream.withPacketWriterFire w:
+    w.swrite(bcReadSuccess)
+    w.swrite(iface.packetid)
+    w.swrite(s)
+    let hasfd = fd != -1
+    w.swrite(hasfd)
+    if hasfd:
+      w.sendFd(fd)
+  return addPromise[Request](iface)
 
 proc click(bc: BufferContext; label: HTMLLabelElement): ClickResult =
   let control = label.control
@@ -1724,8 +1711,8 @@ proc initMouseEventInit(bc: BufferContext; button: int16; buttons: uint16;
     detail: int32(clamp(detail, 0, int32.high))
   )
 
-proc click*(bc: BufferContext; cursorx, cursory, n: int): ClickResult {.
-    proxy.} =
+proc click*(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory, n: int): ClickResult {.proxy.} =
   if bc.lines.len <= cursory: return ClickResult()
   var canceled = false
   let clickable = bc.getCursorClickable(cursorx, cursory)
@@ -1754,7 +1741,8 @@ proc click*(bc: BufferContext; cursorx, cursory, n: int): ClickResult {.
     return ClickResult(open: newRequest(url, hmGet))
   return ClickResult()
 
-proc contextMenu*(bc: BufferContext; cursorx, cursory: int): bool {.proxy.} =
+proc contextMenu*(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory: int): bool {.proxy.} =
   var canceled = false
   if bc.config.scripting != smFalse:
     let element = bc.getCursorElement(cursorx, cursory)
@@ -1768,7 +1756,8 @@ proc contextMenu*(bc: BufferContext; cursorx, cursory: int): bool {.proxy.} =
       bc.maybeReshape()
   canceled
 
-proc select*(bc: BufferContext; selected: int): ClickResult {.proxy.} =
+proc select*(bc: BufferContext; handle: PagerHandle; selected: int): ClickResult
+    {.proxy.} =
   if bc.document.focus != nil and
       bc.document.focus of HTMLSelectElement:
     if selected != -1:
@@ -1783,7 +1772,7 @@ proc select*(bc: BufferContext; selected: int): ClickResult {.proxy.} =
     bc.maybeReshape()
   return ClickResult()
 
-proc readCanceled*(bc: BufferContext) {.proxy.} =
+proc readCanceled*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   bc.restoreFocus()
 
 type GetLinesResult* = object
@@ -1802,12 +1791,13 @@ proc swrite(w: var PacketWriter; x: FlexibleLine) =
     w.swrite(f.format)
     w.swrite(f.pos)
 
-proc getLinesCmd(bc: BufferContext; r: var PacketReader; packetid: int) =
+proc getLinesCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
+    packetid: int): CommandResult =
   var slice: Slice[int]
   r.sread(slice)
   if slice.b < 0 or slice.b > bc.lines.high:
     slice.b = bc.lines.high
-  bc.pstream.withPacketWriter w:
+  handle.stream.withPacketWriterReturnEOF w:
     w.swrite(packetid)
     w.swrite(bc.lines.len) # numLines
     w.swrite(bc.bgcolor) # bgcolor
@@ -1822,8 +1812,7 @@ proc getLinesCmd(bc: BufferContext; r: var PacketReader; packetid: int) =
         if image.y <= slice.b and ey >= slice.a:
           images.add(image)
     w.swrite(images) # images
-  do:
-    quit(1)
+  cmdrDone
 
 proc getLines*(iface: BufferInterface; slice: Slice[int]):
     Promise[GetLinesResult] =
@@ -1833,7 +1822,7 @@ proc getLines*(iface: BufferInterface; slice: Slice[int]):
     w.swrite(slice)
   return addPromise[GetLinesResult](iface)
 
-proc getLinks*(bc: BufferContext): seq[string] {.proxy.} =
+proc getLinks*(bc: BufferContext; handle: PagerHandle): seq[string] {.proxy.} =
   result = newSeq[string]()
   if bc.document != nil:
     for element in bc.window.displayedElements:
@@ -1843,17 +1832,18 @@ proc getLinks*(bc: BufferContext): seq[string] {.proxy.} =
         else:
           result.add(element.attr(satHref))
 
-proc onReshape*(bc: BufferContext) {.proxy: pfTask.} =
-  if bc.onReshapeImmediately:
+proc onReshape*(bc: BufferContext; handle: PagerHandle) {.proxy: pfTask.} =
+  if handle.onReshapeImmediately:
     # We got a reshape before the container even asked us for the event.
     # This variable prevents the race that would otherwise occur if
     # the buffer were to be reshaped between two onReshape requests.
-    bc.onReshapeImmediately = false
+    handle.onReshapeImmediately = false
     return
-  assert bc.tasks[bcOnReshape] == 0
+  assert handle.tasks[bcOnReshape] == 0
   bc.savetask = true
 
-proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
+proc markURL*(bc: BufferContext; handle: PagerHandle; schemes: seq[string])
+    {.proxy.} =
   if bc.document == nil or bc.document.body == nil:
     return
   var buf = "("
@@ -1945,7 +1935,8 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
     stack.add(stackNext)
   bc.forceReshape0()
 
-proc toggleImages*(bc: BufferContext): bool {.proxy: pfTask.} =
+proc toggleImages*(bc: BufferContext; handle: PagerHandle): bool {.
+    proxy: pfTask.} =
   bc.config.images = not bc.config.images
   bc.window.settings.images = bc.config.images
   bc.window.svgCache.clear()
@@ -1956,12 +1947,12 @@ proc toggleImages*(bc: BufferContext): bool {.proxy: pfTask.} =
       bc.window.loadResource(SVGSVGElement(element))
   bc.savetask = true
   bc.loadImages().then(proc() =
-    if bc.tasks[bcToggleImages] == 0:
+    if handle.tasks[bcToggleImages] == 0:
       # we resolved in then
       bc.savetask = false
     else:
-      bc.resolveTask(bcToggleImages, bc.config.images)
-    bc.forceReshape()
+      handle.resolveTask(bcToggleImages, bc.config.images)
+    bc.forceReshape(handle)
   )
   return bc.config.images
 
@@ -1988,7 +1979,8 @@ proc findLeaf(box: CSSBox; element: Element): CSSBox =
         return box
   return box
 
-proc showHints*(bc: BufferContext; sx, sy, ex, ey: int): HintResult {.proxy.} =
+proc showHints*(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
+    HintResult {.proxy.} =
   result = @[]
   bc.maybeReshape()
   let ppc = bc.attrs.ppc.toLUnit()
@@ -2008,7 +2000,7 @@ proc showHints*(bc: BufferContext; sx, sy, ex, ey: int): HintResult {.proxy.} =
   bc.nhints = result.len
   bc.maybeReshape()
 
-proc hideHints*(bc: BufferContext) {.proxy.} =
+proc hideHints*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   for element in bc.window.document.elementDescendants:
     element.setHint(false)
   bc.maybeReshape()
@@ -2046,24 +2038,30 @@ const ProxyMap = [
   bcWindowChange: windowChangeCmd,
 ]
 
-proc readCommand(bc: BufferContext): bool =
-  bc.pstream.withPacketReader r:
+proc readCommand(bc: BufferContext; data: PagerHandle): CommandResult =
+  var res = cmdrDone
+  data.stream.withPacketReader r:
     var cmd: BufferCommand
     var packetid: int
     r.sread(cmd)
     r.sread(packetid)
-    ProxyMap[cmd](bc, r, packetid)
+    res = ProxyMap[cmd](bc, data, r, packetid)
   do: # EOF, pager died
-    return false
-  true
+    return cmdrEOF
+  res
 
 proc handleRead(bc: BufferContext; fd: int): bool =
-  if fd == bc.pstream.fd:
-    return bc.readCommand()
-  elif fd in bc.loader.unregistered:
+  if fd in bc.loader.unregistered:
     discard # ignore (see pager handleError for explanation)
   elif (let data = bc.loader.get(fd); data != nil):
-    if data of InputData:
+    if data of PagerHandle:
+      let handle = PagerHandle(data)
+      case bc.readCommand(handle)
+      of cmdrDone: discard
+      of cmdrEOF:
+        if not bc.removePagerHandle(handle):
+          return false
+    elif data of InputData:
       bc.onload(InputData(data))
     else:
       bc.loader.onRead(fd)
@@ -2073,14 +2071,14 @@ proc handleRead(bc: BufferContext; fd: int): bool =
   true
 
 proc handleError(bc: BufferContext; fd: int): bool =
-  if fd == bc.pstream.fd:
-    # Connection reset by peer, probably.  Close the buffer.
-    return false
-  elif fd in bc.loader.unregistered:
+  if fd in bc.loader.unregistered:
     discard # ignore (see pager handleError for explanation)
   elif (let data = bc.loader.get(fd); data != nil):
     if data of InputData:
       bc.onload(InputData(data))
+    elif data of PagerHandle:
+      # Connection reset by peer, probably.  Close the buffer.
+      return false
     else:
       if not bc.loader.onError(fd):
         #TODO handle connection error
@@ -2100,7 +2098,8 @@ proc runBuffer(bc: BufferContext) =
   while alive:
     if bc.headlessLoading and not bc.headlessMustWait():
       bc.headlessLoading = false
-      bc.resolveLoad(0, 0) # already set to bsLoad
+      for handle in bc.handles:
+        bc.resolveLoad(handle, 0, 0) # already set to bsLoad
     let timeout = bc.getPollTimeout()
     bc.pollData.poll(timeout)
     bc.loader.blockRegister()
@@ -2123,7 +2122,7 @@ proc runBuffer(bc: BufferContext) =
         bc.checkJobs = false
 
 proc cleanup(bc: BufferContext) =
-  bc.pstream.sclose()
+  #TODO loader map handles?
   bc.window.crypto.urandom.sclose()
   if bc.config.scripting != smFalse:
     bc.window.jsctx.free()
@@ -2143,7 +2142,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: ishtml,
     loader: loader,
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
-    pstream: pstream,
     charsetStack: charsetStack,
     cacheId: cacheId,
     outputId: -1,
@@ -2179,18 +2177,13 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   istream.setBlocking(false)
   bc.loader.put(InputData(stream: istream))
   bc.pollData.register(istream.fd, POLLIN)
+  bc.addPagerHandle(pstream)
   loader.registerFun = proc(fd: int) =
     bc.pollData.register(fd, POLLIN)
   loader.unregisterFun = proc(fd: int) =
     bc.pollData.unregister(fd)
-  bc.pollData.register(bc.pstream.fd, POLLIN)
   bc.initDecoder()
-  bc.htmlParser = newHTML5ParserWrapper(
-    bc.window,
-    url,
-    confidence,
-    bc.charset
-  )
+  bc.htmlParser = newHTML5ParserWrapper(bc.window, url, confidence, bc.charset)
   bc.document.applyUASheet()
   bc.document.applyUserSheet(bc.config.userStyle)
   bc.runBuffer()

@@ -1504,10 +1504,8 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var pid: int
   var config: LoaderClientConfig
-  var clonedFrom: int
   r.sread(pid)
   r.sread(config)
-  r.sread(clonedFrom)
   assert pid notin ctx.clientMap
   var sv {.noinit.}: array[2, cint]
   var needsClose = false
@@ -1518,12 +1516,6 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
       let client = ClientHandle(stream: stream, pid: pid, config: config)
       ctx.register(client)
       ctx.put(client)
-      if clonedFrom != -1:
-        let client2 = ctx.clientMap.getOrDefault(clonedFrom)
-        if client2 != nil:
-          for item in client2.cacheMap:
-            inc item.refc
-          client.cacheMap = client2.cacheMap
       if ctx.authMap.len > 0:
         let origin = config.originURL.authOrigin
         for it in ctx.authMap:
@@ -1955,10 +1947,8 @@ proc runFileLoader*(config: LoaderConfig; stream, forkStream: SocketStream) =
     doAssert cmd == lcAddClient
     var pid: int
     var config: LoaderClientConfig
-    var clonedFrom: int
     r.sread(pid)
     r.sread(config)
-    r.sread(clonedFrom)
     stream.withPacketWriter w:
       w.swrite(true)
     do:

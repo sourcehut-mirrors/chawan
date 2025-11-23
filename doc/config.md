@@ -1291,7 +1291,8 @@ Brave Search, but this may change in the future.</td>
 <tr>
 <td><kbd>M-u</kbd></td>
 <td>`dupeBuffer`</td>
-<td>Duplicate the current buffer by forking its content process.</td>
+<td>Duplicate the current buffer.  This is a shallow clone, so modifications
+to one buffer will affect the other.</td>
 </tr>
 
 <tr>

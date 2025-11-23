@@ -21,8 +21,9 @@
 # security we get with FreeBSD Capsicum.
 #
 # On Linux, we use chaseccomp which is a very dumb BPF assembler for
-# seccomp-bpf.  It only allows syscalls deemed to be safe; notably
-# however, it also includes clone(2), which I'm not sure about...
+# seccomp-bpf.  It only allows syscalls deemed to be safe, which has the
+# unique problem that a libc change can render the program unusable at
+# any time.
 #
 # We do not have syscall sandboxing on other systems (yet).
 
@@ -67,10 +68,8 @@ elif SandboxMode == stPledge:
     header: "<unistd.h>".}
 
   proc enterBufferSandbox*() =
-    # take whatever we need to
-    # * fork
-    # * send/receive fds from/to the loader (and sometimes the pager)
-    doAssert pledge("stdio sendfd recvfd proc", nil) == 0
+    # take whatever we need to send/receive fds
+    doAssert pledge("stdio sendfd recvfd", nil) == 0
 
   proc enterNetworkSandbox*() =
     # we don't need much to write out data from sockets to stdout.

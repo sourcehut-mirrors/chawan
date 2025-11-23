@@ -129,6 +129,11 @@ type
     transparent*: bool
     # length of introducer, raster, palette data before pixel data
     preludeLen*: int
+    next: CachedImage
+
+  ImageCache = object
+    head: CachedImage
+    tail: CachedImage
 
   Tab* {.acyclic.} = ref object
     head*: Container
@@ -139,6 +144,10 @@ type
   Mark = object
     id: string
     pos: PagePos
+
+  ProcessHandle* = ref object
+    process*: int
+    refc*: int
 
   Container* = ref object of RootObj
     # note: this is not the same as source.request.url (but should be synced
@@ -156,6 +165,7 @@ type
     iface*: BufferInterface
     width* {.jsget.}: int
     height {.jsget.}: int
+    phandle*: ProcessHandle
     title: string # used in status msg
     hoverText: array[HoverType, string]
     request*: Request # source request
@@ -167,8 +177,6 @@ type
     pos: CursorState
     bpos: seq[CursorState]
     highlights: seq[Highlight]
-    process* {.jsget.}: int
-    clonedFrom*: int
     loadinfo*: string
     lines: SimpleFlexibleGrid
     lineshift: int
@@ -200,7 +208,7 @@ type
     charsetStack*: seq[Charset]
     mainConfig: Config
     images*: seq[PosBitmap]
-    cachedImages*: seq[CachedImage]
+    imageCache: ImageCache
     luctx: LUContext
     refreshHeader: string
     tab*: Tab
@@ -248,8 +256,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     pos: CursorState(setx: -1),
     loadinfo: loadinfo,
     cacheId: cacheId,
-    process: -1,
-    clonedFrom: -1,
+    phandle: ProcessHandle(process: -1, refc: 1),
     mainConfig: mainConfig,
     flags: flags,
     luctx: luctx,
@@ -258,50 +265,36 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     tab: tab
   )
 
+# shallow clone of buffer
 proc clone*(container: Container; newurl: URL; loader: FileLoader):
-    tuple[p: Promise[cint], c: Container] =
+    tuple[fd: cint, c: Container] =
   if container.iface == nil:
-    return (nil, nil)
+    return (-1, nil)
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
-    return (nil, nil)
+    return (-1, nil)
   # Send a pipe for synchronization in the clone proc.
   # (Do it here, so buffers do not need pipe rights.)
-  var pipefd {.noinit.}: array[2, cint]
-  if pipe(pipefd) == -1:
-    discard close(sv[0])
-    discard close(sv[1])
-    return (nil, nil)
   let url = if newurl != nil:
     newurl
   else:
     container.url
-  let p = container.iface.clone(url, sv[1], pipefd[0], pipefd[1])
+  let p = container.iface.clone(url, sv[1])
   discard close(sv[1])
-  discard close(pipefd[0])
-  discard close(pipefd[1])
   if p == nil:
-    return (nil, nil)
+    return (-1, nil)
   let nc = Container()
   nc[] = container[]
   nc.url = url
-  nc.process = -1
-  nc.clonedFrom = container.process
   nc.retry = @[]
   nc.prev = nil
   nc.next = nil
   nc.select = nil
-  nc.cachedImages = @[]
   nc.images = @[]
   nc.needslines = true
-  let pp = p.then(proc(pid: int): cint =
-    if pid == -1:
-      discard close(sv[0])
-      return cint(-1)
-    nc.process = pid
-    return sv[0]
-  )
-  (pp, nc)
+  nc.imageCache = ImageCache()
+  inc nc.phandle.refc
+  (sv[0], nc)
 
 proc append*(this, other: Container) =
   if other.prev != nil:
@@ -387,6 +380,9 @@ proc fromy*(container: Container): int {.jsfget.} =
 
 proc xend(container: Container): int {.inline.} =
   container.pos.xend
+
+proc process*(container: Container): int {.jsfget.} =
+  container.phandle.process
 
 proc lastVisibleLine(container: Container): int =
   min(container.fromy + container.height, container.numLines) - 1
@@ -1766,7 +1762,7 @@ proc readCanceled*(container: Container) =
   container.iface.readCanceled()
 
 proc readSuccess*(container: Container; s: string; fd: cint = -1) =
-  let p = container.iface.readSuccess(s, fd != -1)
+  let p = container.iface.readSuccess(s, fd)
   if fd != -1:
     doAssert container.iface.stream.flush()
     container.iface.stream.source.withPacketWriterFire w:
@@ -2062,6 +2058,12 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       else:
         display[n].format.incl(ffReverse)
 
+iterator cachedImages(container: Container): CachedImage =
+  var it = container.imageCache.head
+  while it != nil:
+    yield it
+    it = it.next
+
 proc findCachedImage*(container: Container; image: PosBitmap;
     offx, erry, dispw: int): CachedImage =
   let imageId = image.bmp.imageId
@@ -2071,6 +2073,21 @@ proc findCachedImage*(container: Container; image: PosBitmap;
         it.dispw == dispw:
       return it
   return nil
+
+proc clearCachedImages*(container: Container; loader: FileLoader) =
+  for cachedImage in container.cachedImages:
+    if cachedImage.state == cisLoaded:
+      loader.removeCachedItem(cachedImage.cacheId)
+    cachedImage.state = cisCanceled
+  container.imageCache.head = nil
+  container.imageCache.tail = nil
+
+proc addCachedImage*(container: Container; image: CachedImage) =
+  if container.imageCache.tail == nil:
+    container.imageCache.head = image
+  else:
+    container.imageCache.tail.next = image
+  container.imageCache.tail = image
 
 # Returns err on I/O error.
 proc handleEvent*(container: Container): Opt[void] =

@@ -217,6 +217,7 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
 proc connected3(pager: Pager; container: Container; stream: SocketStream;
   ostream: PosixStream; istreamOutputId, ostreamOutputId: int;
   redirected: bool)
+proc cloned(pager: Pager; container: Container; stream: SocketStream)
 proc deleteContainer(pager: Pager; container, setTarget: Container)
 proc dumpBuffers(pager: Pager)
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
@@ -287,11 +288,7 @@ template display(pager: Pager): Surface =
 
 proc setContainer(pager: Pager; c: Container) =
   if pager.term.imageMode != imNone and pager.container != nil:
-    for cachedImage in pager.container.cachedImages:
-      if cachedImage.state == cisLoaded:
-        pager.loader.removeCachedItem(cachedImage.cacheId)
-      cachedImage.state = cisCanceled
-    pager.container.cachedImages.setLen(0)
+    pager.container.clearCachedImages(pager.loader)
   if c != nil:
     if c.tab != pager.tab:
       assert c.tab != nil
@@ -525,7 +522,7 @@ proc initLoader(pager: Pager) =
     allowAllSchemes: true
   )
   let loader = pager.loader
-  discard loader.addClient(loader.clientPid, clientConfig, -1, isPager = true)
+  discard loader.addClient(loader.clientPid, clientConfig, isPager = true)
   pager.loader.registerFun = proc(fd: int) =
     pager.pollData.register(fd, POLLIN)
   pager.loader.unregisterFun = proc(fd: int) =
@@ -1364,7 +1361,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       cachedImage.preludeLen = parseIntP(plens).get(0)
     )
   )
-  container.cachedImages.add(cachedImage)
+  container.addCachedImage(cachedImage)
 
 proc initImages(pager: Pager; container: Container) =
   var newImages: seq[CanvasImage] = @[]
@@ -1614,18 +1611,14 @@ proc findConnectingContainer(pager: Pager; container: Container):
 
 proc dupeBuffer(pager: Pager; container: Container; url: URL): Container =
   let res = container.clone(url, pager.loader)
-  if res.p == nil:
-    pager.alert("Failed to duplicate buffer.")
-    return nil
   pager.addContainer(res.c)
   let nc = res.c
-  res.p.then(proc(fd: cint) =
-    if fd == -1:
-      pager.alert("Failed to duplicate buffer.")
-      pager.deleteContainer(nc, nil)
-    else:
-      pager.connected3(nc, newSocketStream(fd), nil, -1, -1, false)
-  )
+  let fd = res.fd
+  if fd == -1:
+    pager.alert("Failed to duplicate buffer.")
+    pager.deleteContainer(nc, nil)
+  else:
+    pager.cloned(nc, newSocketStream(fd))
   return nc
 
 proc dupeBuffer(pager: Pager): Container {.jsfunc.} =
@@ -1747,7 +1740,9 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
   if container.process != -1:
     pager.loader.removeCachedItem(container.cacheId)
     if cfCrashed notin container.flags:
-      pager.loader.removeClient(container.process)
+      dec container.phandle.refc
+      if container.phandle.refc == 0:
+        pager.loader.removeClient(container.process)
   pager.unregisterContainer(container)
 
 proc discardBuffer(pager: Pager; container = none(Container);
@@ -3084,7 +3079,7 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
       res.ostream.sclose()
       pager.fail(container, "Error forking new process for buffer")
     else:
-      container.process = pid
+      container.phandle.process = pid
       pager.connected3(container, cstream, res.ostream, response.outputId,
         res.ostreamOutputId, cmfRedirected in res.flags)
   else:
@@ -3096,8 +3091,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
     ostream: PosixStream; istreamOutputId, ostreamOutputId: int;
     redirected: bool) =
   let loader = pager.loader
-  let cstream = loader.addClient(container.process, container.loaderConfig,
-    container.clonedFrom)
+  let cstream = loader.addClient(container.process, container.loaderConfig)
   if cstream == nil:
     stream.sclose()
     ostream.sclose()
@@ -3106,40 +3100,43 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
   let bufStream = newBufStream(stream, proc(fd: int) =
     pager.pollData.unregister(fd)
     pager.pollData.register(fd, POLLIN or POLLOUT))
-  if istreamOutputId != -1: # new buffer
-    if container.cacheId == -1:
-      container.cacheId = loader.addCacheFile(istreamOutputId)
-    if container.request.url.schemeType == stCache:
-      # loading from cache; now both the buffer and us hold a new reference
-      # to the cached item, but it's only shared with the buffer. add a
-      # pager ref too.
-      discard loader.shareCachedItem(container.cacheId, loader.clientPid)
-    let pid = container.process
-    var outCacheId = container.cacheId
-    if not redirected:
-      discard loader.shareCachedItem(container.cacheId, pid)
-      loader.resume(istreamOutputId)
-    else:
-      outCacheId = loader.addCacheFile(ostreamOutputId)
-      discard loader.shareCachedItem(outCacheId, pid)
-      loader.removeCachedItem(outCacheId)
-      loader.resume([istreamOutputId, ostreamOutputId])
-    stream.withPacketWriterFire w: # if EOF, poll will notify us later
-      w.swrite(outCacheId)
-      w.sendFd(cstream.fd)
-      # pass down ostream
-      w.sendFd(ostream.fd)
-    ostream.sclose()
-  else: # cloned buffer
-    stream.withPacketWriterFire w: # if EOF, poll will notify us later
-      w.sendFd(cstream.fd)
-    # buffer is cloned, just share the parent's cached source
-    discard loader.shareCachedItem(container.cacheId, container.process)
-    # also add a reference here; it will be removed when the container is
-    # deleted
+  if container.cacheId == -1:
+    container.cacheId = loader.addCacheFile(istreamOutputId)
+  if container.request.url.schemeType == stCache:
+    # loading from cache; now both the buffer and us hold a new reference
+    # to the cached item, but it's only shared with the buffer. add a
+    # pager ref too.
     discard loader.shareCachedItem(container.cacheId, loader.clientPid)
+  let pid = container.process
+  var outCacheId = container.cacheId
+  if not redirected:
+    discard loader.shareCachedItem(container.cacheId, pid)
+    loader.resume(istreamOutputId)
+  else:
+    outCacheId = loader.addCacheFile(ostreamOutputId)
+    discard loader.shareCachedItem(outCacheId, pid)
+    loader.removeCachedItem(outCacheId)
+    loader.resume([istreamOutputId, ostreamOutputId])
+  stream.withPacketWriterFire w: # if EOF, poll will notify us later
+    w.swrite(outCacheId)
+    w.sendFd(cstream.fd)
+    # pass down ostream
+    w.sendFd(ostream.fd)
+  ostream.sclose()
   container.setStream(bufStream)
   cstream.sclose()
+  loader.put(ContainerData(stream: stream, container: container))
+  pager.pollData.register(stream.fd, POLLIN)
+
+proc cloned(pager: Pager; container: Container; stream: SocketStream) =
+  let loader = pager.loader
+  let bufStream = newBufStream(stream, proc(fd: int) =
+    pager.pollData.unregister(fd)
+    pager.pollData.register(fd, POLLIN or POLLOUT))
+  # add a reference to parent's cached source; it will be removed when the
+  # container is deleted
+  discard loader.shareCachedItem(container.cacheId, loader.clientPid)
+  container.setStream(bufStream)
   loader.put(ContainerData(stream: stream, container: container))
   pager.pollData.register(stream.fd, POLLIN)
 

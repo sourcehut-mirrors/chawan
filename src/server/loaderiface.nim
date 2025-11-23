@@ -470,12 +470,11 @@ proc addAuth*(loader: FileLoader; url: URL) =
     w.swrite(url)
 
 proc addClient*(loader: FileLoader; pid: int; config: LoaderClientConfig;
-    clonedFrom: int; isPager = false): SocketStream =
+    isPager = false): SocketStream =
   loader.withPacketWriter w:
     w.swrite(lcAddClient)
     w.swrite(pid)
     w.swrite(config)
-    w.swrite(clonedFrom)
   do:
     return nil
   var success = false
