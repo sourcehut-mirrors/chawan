@@ -2072,6 +2072,13 @@ proc findCachedImage*(container: Container; image: PosBitmap;
       return it
   return nil
 
+proc clearCachedImages*(container: Container; loader: FileLoader) =
+  for cachedImage in container.cachedImages:
+    if cachedImage.state == cisLoaded:
+      loader.removeCachedItem(cachedImage.cacheId)
+    cachedImage.state = cisCanceled
+  container.cachedImages.setLen(0)
+
 # Returns err on I/O error.
 proc handleEvent*(container: Container): Opt[void] =
   ?container.handleCommand()

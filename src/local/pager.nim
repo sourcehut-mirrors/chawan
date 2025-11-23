@@ -1742,6 +1742,7 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
   pager.setTab(container, nil)
   pager.updatePinned(container, nil)
   if wasCurrent:
+    container.clearCachedImages(pager.loader)
     pager.setContainer(setTarget)
   if container.process != -1:
     pager.loader.removeCachedItem(container.cacheId)
