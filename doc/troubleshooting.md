@@ -68,7 +68,7 @@ reports.  In particular:
   using the `display.default-background-color` and
   `display.default-foreground-color` options.
 
-See <!-- MANOFF -->[config.md](config.md#display)<!-- MANON --> <!-- MANON *Display* in **cha-config**(5) MANOFF --> for
+See <!-- MANOFF -->[config.md](config.md#display)<!-- MANON --> <!-- MANON *display* in **cha-config**(5) MANOFF --> for
 details.
 
 ## I set my `$PAGER` to `cha` and now man pages are unreadable.
