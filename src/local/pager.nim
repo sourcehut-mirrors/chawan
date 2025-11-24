@@ -2144,7 +2144,8 @@ proc gotoURLHash(pager: Pager; request: Request; current: Container;
   current.iface.gotoAnchor(anchor, false, false).then(
     proc(res: GotoAnchorResult) =
       if res.found:
-        discard pager.dupeBuffer(current, url)
+        let nc = pager.dupeBuffer(current, url)
+        nc.setCursorXYCenter(res.x, res.y)
       else:
         pager.alert("Anchor " & url.hash & " not found")
   )

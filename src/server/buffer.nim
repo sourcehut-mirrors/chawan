@@ -108,6 +108,7 @@ type
     tasks: array[BufferCommand, int]
     reportedLoad: LoadResult
     onReshapeImmediately: bool
+    prevHover: Element
     next: PagerHandle
 
   BufferContext = ref object
@@ -135,7 +136,6 @@ type
     navigateUrl: URL # stored when JS tries to navigate
     outputId: int
     pollData: PollData
-    prevHover: Element
     clickResult: ClickResult
     rootBox: BlockBox
     window: Window
@@ -898,9 +898,10 @@ proc updateHover*(bc: BufferContext; handle: PagerHandle;
   let thisNode = bc.getCursorElement(cursorx, cursory)
   var hover = newSeq[tuple[t: HoverType, s: string]]()
   var repaint = false
-  if thisNode != bc.prevHover:
+  let prevHover = handle.prevHover
+  if thisNode != prevHover:
     var oldHover = newSeq[Element]()
-    for element in bc.prevHover.branchElems:
+    for element in prevHover.branchElems:
       if element.hover:
         oldHover.add(element)
     for ht in HoverType:
@@ -921,7 +922,7 @@ proc updateHover*(bc: BufferContext; handle: PagerHandle;
       repaint = true
   if repaint:
     bc.maybeReshape()
-  bc.prevHover = thisNode
+  handle.prevHover = thisNode
   move(hover)
 
 proc loadResources(bc: BufferContext): EmptyPromise =
