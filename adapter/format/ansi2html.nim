@@ -149,8 +149,8 @@ proc parseControlFunction(state: var State; format: var Format; f: char) =
 
 proc flushOutbuf(state: var State) =
   if state.outbufIdx > 0:
-    if not state.os.writeDataLoop(
-        state.outbuf.toOpenArray(0, state.outbufIdx - 1)):
+    if state.os.writeLoop(state.outbuf.toOpenArray(0,
+        state.outbufIdx - 1)).isErr:
       quit(1)
     state.outbufIdx = 0
 
@@ -419,7 +419,7 @@ proc main*() =
   var buffer {.noinit.}: array[4096, char]
   while true:
     state.flushOutbuf()
-    let n = ps.readData(buffer)
+    let n = ps.read(buffer)
     if n <= 0:
       break
     state.processData(buffer.toOpenArray(0, n - 1))

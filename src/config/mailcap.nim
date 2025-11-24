@@ -349,17 +349,17 @@ proc findMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
       return i
   return -1
 
-proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): bool =
+proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): Opt[void] =
   let s = $entry
   let pdir = mailcap.path.parentDir()
   discard mkdir(cstring(pdir), 0o700)
   let ps = newPosixStream(mailcap.path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
   if ps == nil:
-    return false
-  let res = ps.writeDataLoop(s)
-  if res:
+    return err()
+  let res = ps.writeLoop(s)
+  if res.isOk:
     mailcap.entries.add(entry)
   ps.sclose()
-  return res
+  res
 
 {.pop.} # raises: []

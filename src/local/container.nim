@@ -1764,7 +1764,7 @@ proc readCanceled*(container: Container) =
 proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   let p = container.iface.readSuccess(s, fd)
   if fd != -1:
-    doAssert container.iface.stream.flush()
+    doAssert container.iface.stream.flush().isOk
     container.iface.stream.source.withPacketWriterFire w:
       w.sendFd(fd)
   p.then(proc(res: Request) =
@@ -1896,8 +1896,7 @@ proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
 # Returns false on I/O error.
 proc handleCommand(container: Container): Opt[void] =
   var packet {.noinit.}: array[3, int] # 0 len, 1 auxLen, 2 packetid
-  if not container.iface.stream.readDataLoop(addr packet[0], sizeof(packet)):
-    return err()
+  ?container.iface.stream.readLoop(addr packet[0], sizeof(packet))
   container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
   ok()
 

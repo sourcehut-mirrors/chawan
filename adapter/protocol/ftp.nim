@@ -85,8 +85,7 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
 proc login(f: AChaFile; username, password: string): Opt[void] =
   var obuf = ""
   if f.sendCommand("", "", obuf).get(-1) != 220:
-    let s = obuf.deleteChars({'\n', '\r'})
-    cgiDie(ceConnectionRefused, cstring(s))
+    cgiDie(ceConnectionRefused, obuf.deleteChars({'\n', '\r'}))
   var ustatus = f.sendCommand("USER", username, obuf).get(-1)
   if ustatus == 331:
     ustatus = f.sendCommand("PASS", password, obuf).get(-1)
@@ -103,13 +102,12 @@ proc cat(passive: PosixStream): Opt[void] =
   let os = newPosixStream(STDOUT_FILENO)
   var buffer {.noinit.}: array[4096, uint8]
   while true:
-    let n = passive.readData(buffer)
+    let n = passive.read(buffer)
     if n < 0:
       return err()
     if n == 0:
       break
-    if not os.writeDataLoop(buffer.toOpenArray(0, n - 1)):
-      return err()
+    ?os.writeLoop(buffer.toOpenArray(0, n - 1))
   ok()
 
 proc listDir(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =

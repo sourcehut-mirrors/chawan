@@ -37,6 +37,12 @@ proc cgiDie*(code: ConnectionError; s: cstring = nil) {.noreturn.} =
   discard stdout.writeLine()
   quit(1)
 
+proc cgiDie*(code: ConnectionError; s: string) {.noreturn.} =
+  let stdout = cast[ChaFile](stdout)
+  discard stdout.write("Cha-Control: ConnectionError " & $int(code) & ' ')
+  discard stdout.writeLine(s)
+  quit(1)
+
 proc cgiDie*(e: CGIError) {.noreturn.} =
   cgiDie(e.code, e.s)
 
@@ -104,10 +110,10 @@ proc authenticateSocks5(ps: PosixStream; buf: array[2, uint8];
     if user.len > 255 or pass.len > 255:
       return errCGIError(ceInternalError, "username or password too long")
     let sbuf = "\x01" & char(user.len) & user & char(pass.len) & pass
-    if not ps.writeDataLoop(sbuf):
+    if ps.writeLoop(sbuf).isErr:
       return errCGIError(ceProxyAuthFail)
     var rbuf = array[2, uint8].default
-    if not ps.readDataLoop(rbuf):
+    if ps.readLoop(rbuf).isErr:
       return errCGIError(ceProxyInvalidResponse,
         "failed to read proxy response")
     if rbuf[0] != 1:
@@ -130,37 +136,37 @@ proc sendSocks5Domain(ps: PosixStream; host, port: string; outIpv6: var bool):
     return errCGIError(ceInternalError, "wrong port")
   let port = x.get
   let sbuf = "\x05\x01\x00" & dstaddr & char(port shr 8) & char(port and 0xFF)
-  if not ps.writeDataLoop(sbuf):
+  if ps.writeLoop(sbuf).isErr:
     return errCGIError(ceProxyRefusedToConnect)
   var rbuf = array[4, uint8].default
-  if not ps.readDataLoop(rbuf) or rbuf[0] != 5:
+  if ps.readLoop(rbuf).isErr or rbuf[0] != 5:
     return errCGIError(ceProxyInvalidResponse)
   if rbuf[1] != 0:
     return errCGIError(ceProxyRefusedToConnect)
   case rbuf[3]
   of 0x01:
     var ipv4 = array[4, uint8].default
-    if not ps.readDataLoop(ipv4):
+    if ps.readLoop(ipv4).isErr:
       return errCGIError(ceProxyInvalidResponse)
     outIpv6 = false
   of 0x03:
     var len = [0u8]
-    if not ps.readDataLoop(len):
+    if ps.readLoop(len).isErr:
       return errCGIError(ceProxyInvalidResponse)
     var domain = newString(int(len[0]))
-    if not ps.readDataLoop(domain):
+    if ps.readLoop(domain).isErr:
       return errCGIError(ceProxyInvalidResponse)
     # we don't really know, so just assume it's ipv4.
     outIpv6 = false
   of 0x04:
     var ipv6 = array[16, uint8].default
-    if not ps.readDataLoop(ipv6):
+    if ps.readLoop(ipv6).isErr:
       return errCGIError(ceProxyInvalidResponse)
     outIpv6 = true
   else:
     return errCGIError(ceProxyInvalidResponse)
   var bndport = array[2, uint8].default
-  if not ps.readDataLoop(bndport):
+  if ps.readLoop(bndport).isErr:
     return errCGIError(ceProxyInvalidResponse)
   ok()
 
@@ -180,10 +186,10 @@ proc connectSocks5Socket(host, port, proxyHost, proxyPort,
   let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy).toProxyResult()
   const NoAuth = "\x05\x01\x00"
   const WithAuth = "\x05\x02\x00\x02"
-  if not ps.writeDataLoop(if proxyUser != "": NoAuth else: WithAuth):
+  if ps.writeLoop(if proxyUser != "": NoAuth else: WithAuth).isErr:
     return errCGIError(ceProxyRefusedToConnect)
   var buf = array[2, uint8].default
-  if not ps.readDataLoop(buf):
+  if ps.readLoop(buf).isErr:
     return errCGIError(ceProxyInvalidResponse)
   ?ps.authenticateSocks5(buf, proxyUser, proxyPass)
   ?ps.sendSocks5Domain(host, port, outIpv6)
@@ -199,13 +205,13 @@ proc connectHTTPSocket(host, port, proxyHost, proxyPort,
     let s = btoa(proxyUser & ' ' & proxyPass)
     buf &= "Proxy-Authorization: basic " & s & "\r\n"
   buf &= "\r\n"
-  if not ps.writeDataLoop(buf):
+  if ps.writeLoop(buf).isErr:
     return errCGIError(ceProxyRefusedToConnect)
   var res = ""
   var crlfState = 0
   while crlfState < 4:
     var buf = [char(0)]
-    let n = ps.readData(buf)
+    let n = ps.read(buf)
     if n <= 0:
       break
     let expected = ['\r', '\n'][crlfState mod 2]

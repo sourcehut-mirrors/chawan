@@ -8,6 +8,8 @@ import types/opt
 import utils/sandbox
 import utils/twtstr
 
+import ../protocol/lcgi
+
 {.passc: "-fno-strict-aliasing".}
 {.passl: "-fno-strict-aliasing".}
 
@@ -106,16 +108,12 @@ proc puts(s: string) =
   if s.len > 0:
     writeAll(unsafeAddr s[0], s.len)
 
-proc die(s: string) {.noreturn.} =
-  puts(s)
-  quit(1)
-
 proc main() =
   let f = getEnvEmpty("MAPPED_URI_SCHEME").after('+')
   case getEnvEmpty("MAPPED_URI_PATH")
   of "decode":
     if f notin ["jpeg", "gif", "bmp", "png", "x-unknown"]:
-      die("Cha-Control: ConnectionError 1 unknown format " & f)
+      cgiDie(ceInternalError, "unknown format " & f)
     enterNetworkSandbox()
     var user = StbiUser()
     var x: cint
@@ -138,20 +136,18 @@ proc main() =
         puts("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
         quit(0)
       else:
-        die("Cha-Control: ConnectionError 1 stbi error " &
-          $stbi_failure_reason() & '\n')
+        cgiDie(ceInternalError, stbi_failure_reason())
     let p = stbi_load_from_callbacks(addr clbk, addr user, x, y,
       channels_in_file, 4)
     if p == nil:
-      die("Cha-Control: ConnectionError 1 stbi error " &
-        $stbi_failure_reason())
+      cgiDie(ceInternalError, stbi_failure_reason())
     else:
       puts("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
       writeAll(p, x * y * 4)
       stbi_image_free(p)
   of "encode":
     if f notin ["png", "bmp", "jpeg"]:
-      die("Cha-Control: ConnectionError 1 unknown format " & f & '\n')
+      cgiDie(ceInternalError, "unknown format " & f)
     let headers = getEnvEmpty("REQUEST_HEADERS")
     var quality = cint(50)
     var width = cint(0)
@@ -163,19 +159,19 @@ proc main() =
         let w = parseUInt32(s[0], allowSign = false)
         let h = parseUInt32(s[1], allowSign = false)
         if w.isErr or w.isErr:
-          die("Cha-Control: ConnectionError 1 wrong dimensions\n")
+          cgiDie(ceInternalError, "wrong dimensions")
         width = cint(w.get)
         height = cint(h.get)
       of "Cha-Image-Quality":
         let s = hdr.after(':').strip()
         let q = parseUInt32(s, allowSign = false).get(101)
         if q < 1 or 100 < q:
-          die("Cha-Control: ConnectionError 1 wrong quality\n")
+          cgiDie(ceInternalError, "wrong quality")
         quality = cint(q)
     let ps = newPosixStream(STDIN_FILENO)
-    let src = ps.readDataLoopOrMmap(width * height * 4)
+    let src = ps.readLoopOrMmap(width * height * 4)
     if src == nil:
-      die("Cha-Control: ConnectionError 1 failed to read input\n")
+      cgiDie(ceInternalError, "failed to read input")
     enterNetworkSandbox() # don't swallow stat
     puts("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
     let p = src.p
@@ -190,7 +186,7 @@ proc main() =
         quality)
     deallocMem(src)
   else:
-    die("Cha-Control: ConnectionError 1 not implemented\n")
+    cgiDie(ceInternalError, "not implemented")
 
 main()
 

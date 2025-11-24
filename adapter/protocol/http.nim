@@ -156,7 +156,7 @@ proc inflate(op: HTTPHandle; flag: uint32) =
     var oq {.noinit.}: array[TINFL_LZ_DICT_SIZE, uint8]
     var oqoff = 0
     while true:
-      let len0 = pins.readData(iq)
+      let len0 = pins.read(iq)
       if len0 <= 0:
         break
       let len = csize_t(len0)
@@ -166,7 +166,7 @@ proc inflate(op: HTTPHandle; flag: uint32) =
         var oqn = csize_t(oq.len - oqoff)
         let status = decomp.tinfl_decompress(addr iq[n], iqn, addr oq[0],
           addr oq[oqoff], oqn, flags)
-        if not os.writeDataLoop(oq.toOpenArray(oqoff, oqoff + int(oqn) - 1)):
+        if os.writeLoop(oq.toOpenArray(oqoff, oqoff + int(oqn) - 1)).isErr:
           quit(1)
         oqoff = int((csize_t(oqoff) + oqn) and csize_t(oq.len) - 1)
         n += iqn
@@ -205,7 +205,7 @@ proc unbrotli(op: HTTPHandle) =
     var iq {.noinit.}: array[InputBufferSize, uint8]
     var oq {.noinit.}: array[InputBufferSize * 2, uint8]
     while true:
-      let len0 = pins.readData(iq)
+      let len0 = pins.read(iq)
       if len0 <= 0:
         break
       let len = csize_t(len0)
@@ -218,7 +218,7 @@ proc unbrotli(op: HTTPHandle) =
         let next_inP = cast[uint8PConstP](addr next_in)
         let status = decomp.BrotliDecoderDecompressStream(iqn, next_inP, oqn,
           next_out, nil)
-        if not os.writeDataLoop(oq.toOpenArray(0, oq.len - int(oqn) - 1)):
+        if os.writeLoop(oq.toOpenArray(0, oq.len - int(oqn) - 1)).isErr:
           quit(1)
         n = csize_t(len) - iqn
         case status
@@ -257,7 +257,7 @@ proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
       if codes.len > 3 or code.isErr:
         quit(1)
       let buf = "Status: " & $code.get & "\r\nCha-Control: ControlDone\r\n"
-      if not op.os.writeDataLoop(buf):
+      if op.os.writeLoop(buf).isErr:
         quit(1)
       op.lineState = lsNone
       op.state = hsHeaders
@@ -305,7 +305,7 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
           elif it.key.equalsIgnoreCase("Content-Length"):
             contentLength = parseUInt64(it.value).get(uint64.high)
         buf &= "\r\n"
-        if not op.os.writeDataLoop(buf):
+        if op.os.writeLoop(buf).isErr:
           quit(1)
         for ce in contentEncodings.ritems:
           case ce
@@ -357,7 +357,7 @@ proc handleBody(op: HTTPHandle; iq: openArray[char]): int =
     L = op.chunkSize
     op.state = hsAfterChunk
   let n = int(L)
-  if not op.os.writeDataLoop(iq.toOpenArray(0, n - 1)):
+  if op.os.writeLoop(iq.toOpenArray(0, n - 1)).isErr:
     quit(1)
   op.chunkSize -= L
   if op.bodyState == hsBody and op.chunkSize == 0:
@@ -447,18 +447,18 @@ proc main*() =
     buf &= "Content-Length: " & $n & "\r\n"
   buf &= getEnvEmpty("REQUEST_HEADERS")
   buf &= "\r\n"
-  if not op.ps.writeDataLoop(buf):
+  if op.ps.writeLoop(buf).isErr:
     cgiDie(ceConnectionRefused, "error sending request header")
   var iq {.noinit.}: array[InputBufferSize, char]
   if requestMethod == "POST":
     let ps = newPosixStream(STDIN_FILENO)
-    while (let n = ps.readData(iq); n > 0):
-      if not op.ps.writeDataLoop(iq.toOpenArray(0, n - 1)):
-        cgiDie(ceConnectionRefused, "error sending request body")
-  if not os.writeDataLoop("Cha-Control: Connected\r\n"):
+    while (let n = ps.read(iq); n > 0):
+      op.ps.writeLoop(iq.toOpenArray(0, n - 1))
+        .orDie(ceConnectionRefused, "error sending request body")
+  if os.writeLoop("Cha-Control: Connected\r\n").isErr:
     quit(1)
   block readResponse:
-    while (let n = ps.readData(iq); n > 0):
+    while (let n = ps.read(iq); n > 0):
       var m = 0
       while m < n:
         let k = op.handleBuffer(iq.toOpenArray(m, n - 1))

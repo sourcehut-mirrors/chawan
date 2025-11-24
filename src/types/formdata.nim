@@ -5,6 +5,7 @@ import io/packetreader
 import io/packetwriter
 import monoucha/jsbind
 import types/blob
+import types/opt
 import utils/twtstr
 
 type
@@ -79,16 +80,21 @@ proc calcLength*(this: FormData): int =
 proc getContentType*(this: FormData): string =
   return "multipart/form-data; boundary=" & this.boundary
 
-proc writeEntry*(stream: PosixStream; entry: FormDataEntry; boundary: string) =
-  stream.write("--" & boundary & "\r\n")
+proc writeEntry(stream: PosixStream; entry: FormDataEntry; boundary: string):
+    Opt[void] =
+  var buf = "--" & boundary & "\r\n"
   let name = percentEncode(entry.name, {'"', '\r', '\n'})
   if entry.isstr:
-    stream.write("Content-Disposition: form-data; name=\"" & name &
-      "\"\r\n\r\n")
-    stream.write(entry.svalue)
-    stream.write("\r\n")
+    buf &= "Content-Disposition: form-data; name=\"" & name & "\"\r\n\r\n"
+    # try to merge the write call for small entries
+    if entry.svalue.len < 4096:
+      buf &= entry.svalue
+      ?stream.writeLoop(buf)
+    else:
+      ?stream.writeLoop(buf)
+      ?stream.writeLoop(entry.svalue)
   else:
-    var buf = "Content-Disposition: form-data; name=\"" & name & "\";"
+    buf &= "Content-Disposition: form-data; name=\"" & name & "\";"
     let filename = percentEncode(entry.filename, {'"', '\r', '\n'})
     buf &= " filename=\"" & filename & "\"\r\n"
     let blob = entry.value
@@ -97,20 +103,21 @@ proc writeEntry*(stream: PosixStream; entry: FormDataEntry; boundary: string) =
     else:
       blob.ctype
     buf &= "Content-Type: " & ctype & "\r\n\r\n"
-    stream.write(buf)
+    ?stream.writeLoop(buf)
     if blob of WebFile and WebFile(blob).fd != -1:
       let ps = newPosixStream(WebFile(blob).fd)
       if ps != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:
-          let n = ps.readData(buf)
+          let n = ps.read(buf)
           if n <= 0:
             break
-          if not stream.writeDataLoop(buf.toOpenArray(0, n - 1)):
-            break
+          ?stream.writeLoop(buf.toOpenArray(0, n - 1))
     else:
-      discard stream.writeDataLoop(blob.buffer, blob.size)
-    stream.write("\r\n")
+      ?stream.writeLoop(blob.buffer, blob.size)
+  stream.writeLoop("\r\n")
 
-proc writeEnd*(stream: PosixStream; boundary: string) =
-  stream.write("--" & boundary & "--\r\n")
+proc write*(stream: PosixStream; formData: FormData): Opt[void] =
+  for entry in formData.entries:
+    ?stream.writeEntry(entry, formData.boundary)
+  stream.writeLoop("--" & formData.boundary & "--\r\n")

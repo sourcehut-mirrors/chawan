@@ -27,18 +27,12 @@ import std/algorithm
 import std/posix
 import std/strutils
 
-import io/dynstream
 import types/color
-import types/opt
-import utils/sandbox
-import utils/twtstr
+
+import ../protocol/lcgi
 
 proc puts(os: PosixStream; s: string) =
-  doAssert os.writeDataLoop(s)
-
-proc die(os: PosixStream; s: string) {.noreturn.} =
-  os.puts(s)
-  quit(1)
+  doAssert os.writeLoop(s).isOk
 
 const DCS = "\eP"
 const ST = "\e\\"
@@ -488,11 +482,11 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
 proc parseDimensions(os: PosixStream; s: string; allowZero: bool): (int, int) =
   let s = s.split('x')
   if s.len != 2:
-    os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
+    cgiDie(ceInternalError, "wrong dimensions")
   let w = parseIntP(s[0]).get(-1)
   let h = parseIntP(s[1]).get(-1)
   if w < 0 or h < 0 or not allowZero and (w == 0 or h == 0):
-    os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
+    cgiDie(ceInternalError, "wrong dimensions")
   return (w, h)
 
 proc main() =
@@ -516,19 +510,19 @@ proc main() =
       of "Cha-Image-Crop-Width":
         let q = parseUInt32(s, allowSign = false)
         if q.isErr:
-          os.die("Cha-Control: ConnectionError InternalError wrong crop width")
+          cgiDie(ceInternalError, "wrong crop width")
         cropw = int(q.get)
       of "Cha-Image-Sixel-Halfdump":
         halfdump = true
       of "Cha-Image-Sixel-Palette":
         let q = parseUInt16(s, allowSign = false)
         if q.isErr:
-          os.die("Cha-Control: ConnectionError InternalError wrong palette")
+          cgiDie(ceInternalError, "wrong palette")
         palette = int(q.get)
       of "Cha-Image-Quality":
         let q = parseUInt16(s, allowSign = false)
         if q.isErr:
-          os.die("Cha-Control: ConnectionError InternalError wrong quality")
+          cgiDie(ceInternalError, "wrong quality")
         quality = int(q.get)
     if cropw == -1:
       cropw = width
@@ -544,16 +538,16 @@ proc main() =
     let n = width * height
     let L = n * 4
     let ps = newPosixStream(STDIN_FILENO)
-    let src = ps.readDataLoopOrMmap(L)
+    let src = ps.readLoopOrMmap(L)
     if src == nil:
-      os.die("Cha-Control: ConnectionError InternalError failed to read input")
+      cgiDie(ceInternalError, "failed to read input")
     enterNetworkSandbox() # don't swallow stat
     let p = cast[ptr UncheckedArray[RGBAColorBE]](src.p)
     os.encode(p.toOpenArray(0, n - 1), width, height, offx, offy, cropw,
       palette, halfdump)
     deallocMem(src)
   else:
-    os.die("Cha-Control: ConnectionError InternalError not implemented\n")
+    cgiDie(ceInternalError, "not implemented")
 
 main()
 

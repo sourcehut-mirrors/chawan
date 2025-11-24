@@ -479,7 +479,7 @@ proc onReadCookieStream(response: Response) =
   while true:
     let olen = opaque.buffer.len
     opaque.buffer.setLen(olen + BufferSize)
-    let n = response.body.readData(addr opaque.buffer[olen], BufferSize)
+    let n = response.body.read(addr opaque.buffer[olen], BufferSize)
     if n <= 0:
       opaque.buffer.setLen(olen)
       break
@@ -2793,8 +2793,8 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
     return false
   var buffer {.noinit.}: array[4096, uint8]
   var n = 0
-  while (n = istream.readData(buffer); n > 0):
-    if not ps.writeDataLoop(buffer.toOpenArray(0, n - 1)):
+  while (n = istream.read(buffer); n > 0):
+    if ps.writeLoop(buffer.toOpenArray(0, n - 1)).isErr:
       n = -1
       break
   ps.sclose()
@@ -3142,7 +3142,7 @@ proc cloned(pager: Pager; container: Container; stream: SocketStream) =
   pager.pollData.register(stream.fd, POLLIN)
 
 proc saveEntry(pager: Pager; entry: MailcapEntry) =
-  if not pager.config.external.autoMailcap.saveEntry(entry):
+  if pager.config.external.autoMailcap.saveEntry(entry).isErr:
     pager.alert("Could not write to " & pager.config.external.autoMailcap.path)
 
 proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int;
@@ -3544,7 +3544,7 @@ proc handleStderr(pager: Pager) =
   let estream = pager.forkserver.estream
   var hadlf = true
   while true:
-    let n = estream.readData(buffer)
+    let n = estream.read(buffer)
     if n <= 0:
       break
     var i = 0
@@ -3650,7 +3650,7 @@ proc setupSigwinch(pager: Pager): PosixStream =
   gwriter = writer
   onSignal SIGWINCH:
     discard sig
-    discard gwriter.writeData([0u8])
+    discard gwriter.write([0u8])
   let reader = newPosixStream(pipefd[0])
   reader.setCloseOnExec()
   reader.setBlocking(false)

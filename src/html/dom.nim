@@ -1484,7 +1484,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
   if ps == nil:
     return
   let cacheId = loader.addCacheFile(svgres.outputId)
-  if not ps.writeDataLoop(s):
+  if ps.writeLoop(s).isErr:
     ps.sclose()
     return
   ps.sclose()

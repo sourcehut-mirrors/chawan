@@ -193,7 +193,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
   of '1': # input
     # META is the prompt.
     let it = if status1 == '1': "password" else: "search"
-    discard os.writeDataLoop("""Content-Type: text/html
+    discard os.writeLoop("""Content-Type: text/html
 
 <!DOCTYPE html>
 <title>Input required</title>
@@ -208,20 +208,20 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
     # META is the content type.
     if meta == "":
       meta = "text/gemini"
-    discard os.writeDataLoop("Content-Type: " & meta & "\n\n")
-    discard os.writeDataLoop(buffer.toOpenArray(i + 2, n - 1))
+    discard os.writeLoop("Content-Type: " & meta & "\n\n")
+    discard os.writeLoop(buffer.toOpenArray(i + 2, n - 1))
     while true:
       let n = SSL_read(ssl, addr buffer[0], cint(buffer.len))
       if n == 0:
         break
-      if not os.writeDataLoop(buffer.toOpenArray(0, int(n) - 1)):
+      if os.writeLoop(buffer.toOpenArray(0, int(n) - 1)).isErr:
         break
   of '3': # redirect
     # META is the redirection URL.
     # Using an HTTP permanent redirect would send another POST and
     # break redirection after form submission (search), so we send
     # See Other.
-    discard os.writeDataLoop("Status: 303\nLocation: " & meta & "\n\n")
+    discard os.writeLoop("Status: 303\nLocation: " & meta & "\n\n")
   of '4': # temporary failure
     # META is additional information.
     let tmp = case status1
@@ -230,7 +230,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
     of '3': "Proxy error"
     of '4': "Slow down!"
     else: "Temporary failure" # no additional information provided in the code
-    discard os.writeDataLoop("""Content-Type: text/html
+    discard os.writeLoop("""Content-Type: text/html
 
 <!DOCTYPE html>
 <title>Temporary failure</title>
@@ -245,7 +245,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
     of '3': "Proxy request refused"
     of '4': "Bad request"
     else: "Permanent failure"
-    discard os.writeDataLoop("""Content-Type: text/html
+    discard os.writeLoop("""Content-Type: text/html
 
 <!DOCTYPE html>
 <title>Permanent failure</title>
@@ -258,7 +258,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
     of '1': "Certificate not authorized"
     of '2': "Certificate not valid"
     else: "Certificate failure"
-    discard os.writeDataLoop("""Content-Type: text/html
+    discard os.writeLoop("""Content-Type: text/html
 
 <!DOCTYPE html>
 <title>Certificate failure</title>
@@ -294,7 +294,7 @@ proc main*() =
     discard SSL_write(ssl, cstring(reqBuf), cint(reqBuf.len))
     os.readResponse(ssl, reqBuf)
   of ccrFoundInvalid:
-    discard os.writeDataLoop("""
+    discard os.writeLoop("""
 Content-Type: text/html
 
 <!DOCTYPE html>
@@ -310,7 +310,7 @@ If you are sure that this is not a man-in-the-middle attack,
 please remove this host from """ & knownHostsPath & """.
 """)
   of ccrNotFound:
-    discard os.writeDataLoop("""
+    discard os.writeLoop("""
 Content-Type: text/html
 
 <!DOCTYPE html>
@@ -333,7 +333,7 @@ Trust it?
 </form>
 """)
   of ccrNewExpiration:
-    discard os.writeDataLoop("""
+    discard os.writeLoop("""
 Content-Type: text/html
 
 <!DOCTYPE html>

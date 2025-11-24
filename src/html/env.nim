@@ -198,7 +198,7 @@ proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
       "Wrong typed array type")
   if view.abuf.len > 65536:
     return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
-  doAssert crypto.urandom.readDataLoop(view.abuf.p, int(view.abuf.len))
+  doAssert crypto.urandom.readLoop(view.abuf.p, int(view.abuf.len)).isOk
   return JS_DupValue(ctx, array)
 
 proc addNavigatorModule*(ctx: JSContext) =

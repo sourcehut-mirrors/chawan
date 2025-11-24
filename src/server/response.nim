@@ -216,7 +216,7 @@ proc onReadBlob(response: Response) =
       opaque.p = realloc(opaque.p, opaque.size)
     let p = cast[ptr UncheckedArray[uint8]](opaque.p)
     let diff = opaque.size - opaque.len
-    let n = response.body.readData(addr p[opaque.len], diff)
+    let n = response.body.read(addr p[opaque.len], diff)
     if n <= 0:
       assert n != -1 or errno != EBADF
       break

@@ -167,15 +167,15 @@ $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/http.nim adapter/protocol/gemini.nim \
 	adapter/protocol/sftp.nim $(lcgi_ssl) $(sandbox) $(tinfl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.h \
-	adapter/img/stb_image_write.h $(twtstr) $(sandbox) $(dynstream)
-$(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.h $(sandbox)
-$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(sandbox) $(twtstr) $(dynstream)
+	adapter/img/stb_image_write.h $(lcgi)
+$(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.h $(lcgi)
+$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(lcgi)
 $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	src/io/packetreader.nim src/types/color.nim adapter/img/stb_image.h \
-	$(sandbox) $(dynstream) $(twtstr)
-$(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(sandbox) $(dynstream) $(twtstr)
-$(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosvg.h \
-	adapter/img/nanosvgrast.h
+	$(lcgi)
+$(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(lcgi)
+$(OUTDIR_CGI_BIN)/nanosvg: adapter/img/nanosvg.nim adapter/img/nanosvg.h \
+	adapter/img/nanosvgrast.h $(lcgi)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2html.nim \

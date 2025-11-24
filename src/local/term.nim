@@ -405,7 +405,7 @@ proc flush*(term: Terminal): Opt[bool] =
     var n = page.n
     let H = page.a.len - 1
     while n < page.a.len:
-      let m = term.ostream.writeData(page.a.toOpenArray(n, H))
+      let m = term.ostream.write(page.a.toOpenArray(n, H))
       if m < 0:
         let e = errno
         if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
@@ -427,7 +427,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
     var n = 0
     if term.pageHead == nil:
       while n < s.len:
-        let m = term.ostream.writeData(s.toOpenArray(n, s.high))
+        let m = term.ostream.write(s.toOpenArray(n, s.high))
         if m < 0:
           let e = errno
           if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
@@ -449,7 +449,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
 proc readChar(term: Terminal): Opt[char] =
   if term.ibufn == term.ibufLen:
     term.ibufn = 0
-    term.ibufLen = term.istream.readData(term.ibuf)
+    term.ibufLen = term.istream.read(term.ibuf)
     if term.ibufLen == -1:
       return err()
   result = ok(term.ibuf[term.ibufn])
@@ -465,7 +465,7 @@ proc unblockIO(term: Terminal) =
 
 proc ahandleRead*(term: Terminal): Opt[bool] =
   term.ibufn = 0
-  term.ibufLen = term.istream.readData(term.ibuf)
+  term.ibufLen = term.istream.read(term.ibuf)
   if term.ibufLen < 0:
     let e = errno
     if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:

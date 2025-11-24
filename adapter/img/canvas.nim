@@ -18,8 +18,8 @@ import io/packetreader
 import types/canvastypes
 import types/color
 import types/path
-import utils/sandbox
-import utils/twtstr
+
+import ../protocol/lcgi
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
@@ -274,8 +274,7 @@ proc main() =
   let os = newPosixStream(STDOUT_FILENO)
   let ps = newPosixStream(STDIN_FILENO)
   if getEnv("MAPPED_URI_SCHEME") != "img-codec+x-cha-canvas":
-    os.write("Cha-Control: ConnectionError 1 wrong scheme\n")
-    quit(1)
+    cgiDie(ceInternalError, "invalid scheme")
   case getEnv("MAPPED_URI_PATH")
   of "decode":
     let headers = getEnv("REQUEST_HEADERS")
@@ -290,7 +289,7 @@ proc main() =
         # you have to save canvas output too, so it doesn't have to be
         # re-coded, and handle that case in encoders... or implement on-demand
         # multi-frame output.)
-        os.write("\n")
+        discard os.write("\n")
         discard ps.readAll()
         quit(0)
     var cmd: PaintCommand
@@ -299,13 +298,14 @@ proc main() =
     ps.withPacketReader r:
       r.sread(cmd)
       if cmd != pcSetDimensions:
-        os.write("Cha-Control: ConnectionError 1 wrong dimensions\n")
-        quit(1)
+        cgiDie(ceInternalError, "wrong dimensions")
       r.sread(width)
       r.sread(height)
     do:
       quit(1)
-    os.write("Cha-Image-Dimensions: " & $width & "x" & $height & "\n\n")
+    if os.writeLoop("Cha-Image-Dimensions: " & $width & "x" & $height &
+        "\n\n").isErr:
+      quit(1)
     let bmp = newBitmap(width, height)
     var alive = true
     while alive:
@@ -358,10 +358,9 @@ proc main() =
             bmp.strokeText(text, x, y, color, align)
       do:
         alive = false
-    discard os.writeDataLoop(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
+    discard os.writeLoop(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
   else:
-    os.write("Cha-Control: ConnectionError 1 not implemented\n")
-    quit(1)
+    cgiDie(ceInternalError, "not implemented")
 
 main()
 

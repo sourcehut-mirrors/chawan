@@ -20,7 +20,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
 
 proc generateBoundary(urandom: PosixStream): string =
   var s {.noinit.}: array[33, uint8]
-  doAssert urandom.readDataLoop(s)
+  doAssert urandom.readLoop(s).isOk
   # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
   return "----WebKitFormBoundary" & btoa(s)
 
@@ -44,7 +44,7 @@ proc newFormData(ctx: JSContext; argv: varargs[JSValueConst]): Opt[FormData]
         return err()
       if FormAssociatedElement(submitter).form != form:
         JS_ThrowDOMException(ctx, "InvalidStateError",
-          "submitter's form owner is not form",)
+          "submitter's form owner is not form")
         return err()
     if not form.constructingEntryList:
       this.entries = constructEntryList(form, submitter)

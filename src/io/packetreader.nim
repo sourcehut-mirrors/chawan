@@ -5,6 +5,7 @@ import std/tables
 
 import io/dynstream
 import types/color
+import types/opt
 
 type PacketReader* = object
   buffer: seq[uint8]
@@ -32,7 +33,7 @@ proc initReader*(stream: DynStream; r: var PacketReader; len, nfds: int): bool =
     fds: newSeqUninit[cint](nfds),
     bufIdx: 0
   )
-  if not stream.readDataLoop(r.buffer):
+  if stream.readLoop(r.buffer).isErr:
     return false
   if nfds > 0:
     # bufwriter added ancillary data.
@@ -53,7 +54,7 @@ proc initReader*(stream: DynStream; r: var PacketReader; len, nfds: int): bool =
 
 proc initPacketReader*(stream: DynStream; r: var PacketReader): bool =
   var len {.noinit.}: array[2, int]
-  if not stream.readDataLoop(addr len[0], sizeof(len)):
+  if stream.readLoop(addr len[0], sizeof(len)).isErr:
     return false
   return stream.initReader(r, len[0], len[1])
 

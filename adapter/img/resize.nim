@@ -4,10 +4,7 @@ import std/os
 import std/posix
 import std/strutils
 
-import io/dynstream
-import types/opt
-import utils/sandbox
-import utils/twtstr
+import ../protocol/lcgi
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
@@ -21,11 +18,6 @@ proc stbir_resize_uint8_srgb(input_pixels: ptr uint8;
   flags: cint): cint {.importc.}
 {.pop.}
 
-proc die(s: string) {.noreturn.} =
-  let os = newPosixStream(STDOUT_FILENO)
-  discard os.writeDataLoop(s)
-  quit(1)
-
 proc main() =
   var srcWidth = cint(-1)
   var srcHeight = cint(-1)
@@ -37,11 +29,11 @@ proc main() =
       let v = hdr.after(':').strip()
       let s = v.split('x')
       if s.len != 2:
-        die("Cha-Control: ConnectionError 1 wrong dimensions\n")
+        cgiDie(ceInternalError, "wrong dimensions")
       let w = parseUInt32(s[0], allowSign = false).get(0)
       let h = parseUInt32(s[1], allowSign = false).get(0)
       if w == 0 or h == 0:
-        die("Cha-Control: ConnectionError 1 wrong dimensions\n")
+        cgiDie(ceInternalError, "wrong dimensions")
       if k == "Cha-Image-Target-Dimensions":
         dstWidth = cint(w)
         dstHeight = cint(h)
@@ -50,15 +42,15 @@ proc main() =
         srcHeight = cint(h)
   let ps = newPosixStream(STDIN_FILENO)
   let os = newPosixStream(STDOUT_FILENO)
-  let src = ps.readDataLoopOrMmap(int(srcWidth * srcHeight * 4))
+  let src = ps.readLoopOrMmap(int(srcWidth * srcHeight * 4))
   let dst = os.maybeMmapForSend(int(dstWidth * dstHeight * 4 + 1))
   if src == nil or dst == nil:
-    die("Cha-Control: ConnectionError 1 failed to open i/o\n")
+    cgiDie(ceInternalError, "failed to open i/o")
   dst.p[0] = uint8('\n') # for CGI
   enterNetworkSandbox()
   doAssert stbir_resize_uint8_srgb(addr src.p[0], srcWidth, srcHeight, 0,
     addr dst.p[1], dstWidth, dstHeight, 0, 4, 3, 0) != 0
-  discard os.writeDataLoop(dst)
+  discard os.writeLoop(dst)
   deallocMem(src)
   deallocMem(dst)
 

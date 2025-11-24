@@ -2,6 +2,8 @@
 
 import std/posix
 
+import types/opt
+
 type
   DynStream* = ref object of RootObj
     isend*: bool
@@ -13,12 +15,12 @@ type
 # isend must be set by implementations when the end of the stream is
 # reached.  If the user is trying to read after isend is set, the
 # implementation should assert.
-method readData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
+method read*(s: DynStream; buffer: pointer; len: int): int {.base.} =
   result = 0
   doAssert false
 
 # See above, but with write(2)
-method writeData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
+method write*(s: DynStream; buffer: pointer; len: int): int {.base.} =
   result = 0
   doAssert false
 
@@ -29,66 +31,59 @@ method seek*(s: DynStream; off: int64): int64 {.base.} =
 method sclose*(s: DynStream) {.base.} =
   doAssert false
 
-method flush*(s: DynStream): bool {.base.} =
-  true
+method flush*(s: DynStream): Opt[void] {.base.} =
+  ok()
 
-proc readData*(s: DynStream; buffer: var openArray[uint8]): int {.inline.} =
-  return s.readData(addr buffer[0], buffer.len)
+proc read*(s: DynStream; buffer: var openArray[uint8]): int {.inline.} =
+  return s.read(addr buffer[0], buffer.len)
 
-proc readData*(s: DynStream; buffer: var openArray[char]): int {.inline.} =
-  return s.readData(addr buffer[0], buffer.len)
+proc read*(s: DynStream; buffer: var openArray[char]): int {.inline.} =
+  return s.read(addr buffer[0], buffer.len)
 
-proc writeData*(s: DynStream; buffer: openArray[char]): int {.inline.} =
-  return s.writeData(unsafeAddr buffer[0], buffer.len)
+proc write*(s: DynStream; buffer: openArray[char]): int {.inline.} =
+  return s.write(unsafeAddr buffer[0], buffer.len)
 
-proc writeData*(s: DynStream; buffer: openArray[uint8]): int {.inline.} =
-  return s.writeData(unsafeAddr buffer[0], buffer.len)
+proc write*(s: DynStream; buffer: openArray[uint8]): int {.inline.} =
+  return s.write(unsafeAddr buffer[0], buffer.len)
 
-proc readDataLoop*(s: DynStream; buffer: pointer; len: int): bool =
+proc readLoop*(s: DynStream; buffer: pointer; len: int): Opt[void] =
   var n = 0
   while n < len:
-    let m = s.readData(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
+    let m = s.read(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
     if m <= 0:
-      return false
+      return err()
     n += m
-  return true
+  ok()
 
-proc readDataLoop*(s: DynStream; buffer: var openArray[uint8]): bool
-    {.inline.} =
+proc readLoop*(s: DynStream; buffer: var openArray[uint8]): Opt[void] =
   if buffer.len == 0:
-    return true
-  return s.readDataLoop(addr buffer[0], buffer.len)
+    return ok()
+  return s.readLoop(addr buffer[0], buffer.len)
 
-proc readDataLoop*(s: DynStream; buffer: var openArray[char]): bool {.inline.} =
+proc readLoop*(s: DynStream; buffer: var openArray[char]): Opt[void] =
   if buffer.len == 0:
-    return true
-  return s.readDataLoop(addr buffer[0], buffer.len)
+    return ok()
+  return s.readLoop(addr buffer[0], buffer.len)
 
-proc writeDataLoop*(s: DynStream; buffer: pointer; len: int): bool =
+proc writeLoop*(s: DynStream; buffer: pointer; len: int): Opt[void] =
   var n = 0
   while n < len:
     let p = addr cast[ptr UncheckedArray[uint8]](buffer)[n]
-    let m = s.writeData(p, len - n)
+    let m = s.write(p, len - n)
     if m <= 0:
-      return false
+      return err()
     n += m
-  return true
+  ok()
 
-proc writeDataLoop*(s: DynStream; buffer: openArray[uint8]): bool {.inline.} =
+proc writeLoop*(s: DynStream; buffer: openArray[uint8]): Opt[void] =
   if buffer.len > 0:
-    return s.writeDataLoop(unsafeAddr buffer[0], buffer.len)
-  return true
+    return s.writeLoop(unsafeAddr buffer[0], buffer.len)
+  ok()
 
-proc writeDataLoop*(s: DynStream; buffer: openArray[char]): bool {.inline.} =
+proc writeLoop*(s: DynStream; buffer: openArray[char]): Opt[void] =
   if buffer.len > 0:
-    return s.writeDataLoop(unsafeAddr buffer[0], buffer.len)
-  return true
-
-proc write*(s: DynStream; buffer: openArray[char]) {.inline.} =
-  discard s.writeDataLoop(buffer)
-
-proc write*(s: DynStream; c: char) {.inline.} =
-  s.write([c])
+    return s.writeLoop(unsafeAddr buffer[0], buffer.len)
+  ok()
 
 proc setEnd(s: DynStream) =
   assert not s.isend
@@ -104,7 +99,7 @@ proc readAll*(s: PosixStream; buffer: var string): bool =
   buffer = newString(4096)
   var idx = 0
   while true:
-    let n = s.readData(addr buffer[idx], buffer.len - idx)
+    let n = s.read(addr buffer[idx], buffer.len - idx)
     if n == 0:
       break
     if n < 0:
@@ -118,13 +113,13 @@ proc readAll*(s: PosixStream; buffer: var string): bool =
 proc readAll*(s: PosixStream): string =
   discard s.readAll(result)
 
-method readData*(s: PosixStream; buffer: pointer; len: int): int =
+method read*(s: PosixStream; buffer: pointer; len: int): int =
   let n = read(s.fd, buffer, len)
   if n == 0:
     s.setEnd()
   return n
 
-method writeData*(s: PosixStream; buffer: pointer; len: int): int =
+method write*(s: PosixStream; buffer: pointer; len: int): int =
   return write(s.fd, buffer, len)
 
 method setBlocking*(s: PosixStream; blocking: bool) {.base.} =
@@ -237,13 +232,13 @@ proc mmap*(ps: PosixStream): MaybeMappedMemory =
 
 # Read data of size "len", or mmap it if the stream is a file.
 # This may return nil.
-proc readDataLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
+proc readLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
   var stats: Stat
   if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
     return ps.mmap(stats, ilen)
   let res = create(MaybeMappedMemoryObj)
   let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
-  if not ps.readDataLoop(p, ilen):
+  if ps.readLoop(p, ilen).isErr:
     return nil
   res[] = MaybeMappedMemoryObj(
     t: mmmtAlloc,
@@ -284,7 +279,7 @@ proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
   if fstat(0, stats) != -1 and S_ISREG(stats.st_mode):
     if ps.seek(len - 1) < 0:
       return nil
-    if not ps.writeDataLoop([char(0)]):
+    if ps.writeLoop([char(0)]).isErr:
       return nil
     let p0 = mmap(nil, len, PROT_WRITE, MAP_SHARED, ps.fd, 0)
     if p0 == MAP_FAILED:
@@ -312,11 +307,11 @@ proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
 template toOpenArray*(mem: MaybeMappedMemory): openArray[char] =
   cast[ptr UncheckedArray[char]](mem.p).toOpenArray(0, mem.len - 1)
 
-proc writeDataLoop*(ps: PosixStream; mem: MaybeMappedMemory): bool =
+proc writeLoop*(ps: PosixStream; mem: MaybeMappedMemory): Opt[void] =
   # only send if not mmapped; otherwise everything is already where it should be
   if mem.t != mmmtMmap:
-    return ps.writeDataLoop(mem.toOpenArray())
-  return true
+    return ps.writeLoop(mem.toOpenArray())
+  ok()
 
 template dealloc*(mem: MaybeMappedMemory) {.error: "use deallocMem".} = discard
 
@@ -332,7 +327,7 @@ proc deallocMem*(mem: MaybeMappedMemory) =
 proc drain*(ps: PosixStream) =
   assert not ps.blocking
   var buffer {.noinit.}: array[4096, uint8]
-  while ps.readData(buffer) > 0:
+  while ps.read(buffer) > 0:
     discard
 
 proc setCloseOnExec*(ps: PosixStream) =
@@ -415,15 +410,15 @@ type
     registered: bool
     writeBuffer: string
 
-method readData*(s: BufStream; buffer: pointer; len: int): int =
-  s.source.readData(buffer, len)
+method read*(s: BufStream; buffer: pointer; len: int): int =
+  s.source.read(buffer, len)
 
-method writeData*(s: BufStream; buffer: pointer; len: int): int =
+method write*(s: BufStream; buffer: pointer; len: int): int =
   s.source.setBlocking(false)
   block nobuf:
     var n: int
     if not s.registered:
-      n = s.source.writeData(buffer, len)
+      n = s.source.write(buffer, len)
       if n == len:
         break nobuf
       let e = errno
@@ -445,7 +440,7 @@ method sclose*(s: BufStream) =
 
 proc flushWrite*(s: BufStream): bool =
   s.source.setBlocking(false)
-  let n = s.source.writeData(s.writeBuffer)
+  let n = s.source.write(s.writeBuffer)
   if n == -1:
     return false
   s.source.setBlocking(true)
@@ -456,8 +451,8 @@ proc flushWrite*(s: BufStream): bool =
   s.writeBuffer = s.writeBuffer.substr(n)
   return false
 
-method flush*(s: BufStream): bool =
-  return s.source.writeDataLoop(s.writeBuffer)
+method flush*(s: BufStream): Opt[void] =
+  return s.source.writeLoop(s.writeBuffer)
 
 proc newBufStream*(s: SocketStream; registerFun: proc(fd: int)): BufStream =
   return BufStream(source: s, registerFun: registerFun)

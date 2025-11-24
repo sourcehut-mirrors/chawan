@@ -1030,7 +1030,7 @@ proc cloneCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
 
 proc clone*(iface: BufferInterface; newurl: URL; pstreamFd: cint):
     Promise[int] =
-  if not iface.stream.flush():
+  if iface.stream.flush().isErr:
     return nil
   iface.stream.source.withPacketWriter w:
     w.swrite(bcClone)
@@ -1125,7 +1125,7 @@ proc onload(bc: BufferContext; data: InputData) =
   var n = 0
   while true:
     if not reprocess:
-      n = data.stream.readData(iq)
+      n = data.stream.read(iq)
       if n < 0:
         break
       bc.bytesRead += uint64(n)
@@ -1462,7 +1462,7 @@ proc readSuccessCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
 
 proc readSuccess*(iface: BufferInterface; s: string; fd: cint):
     Promise[Request] =
-  if not iface.stream.flush():
+  if iface.stream.flush().isErr:
     return newResolvedPromise[Request](nil)
   iface.stream.withPacketWriterFire w:
     w.swrite(bcReadSuccess)

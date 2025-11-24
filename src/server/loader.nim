@@ -346,13 +346,13 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
     return pbrUnregister
   pbrDone
 
-proc writeData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
+proc write(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   let len = buffer.len - si
   if len == 0:
     # Warning: this can happen when using partially cached handles.
     return 0
   assert len > 0
-  return ps.writeData(addr buffer.page[si], len)
+  return ps.write(addr buffer.page[si], len)
 
 proc iclose(ctx: var LoaderContext; handle: InputHandle) =
   if handle.stream != nil:
@@ -496,7 +496,7 @@ proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
         output.currentBuffer = buffer
         output.currentBufferIdx = 0
       else:
-        var n = output.stream.writeData(buffer)
+        var n = output.stream.write(buffer)
         if n < 0:
           let e = errno
           if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
@@ -526,7 +526,7 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
   var m = output.currentBufferIdx
   while buffer != nil:
     while m < buffer.len:
-      let n = ps.writeData(buffer, m)
+      let n = ps.write(buffer, m)
       if n <= 0:
         ps.sclose()
         return false
@@ -741,7 +741,7 @@ proc finishParse(ctx: var LoaderContext; handle: InputHandle) =
       var buffer {.noinit.}: array[4096, char]
       var off = 0i64
       while true:
-        let n = ps.readData(buffer)
+        let n = ps.read(buffer)
         if n <= 0:
           assert n == 0 or errno != EBADF
           break
@@ -767,7 +767,7 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
   let maxUnregs = unregWrite.len + handle.outputs.len
   while true:
     var buffer = newLoaderBuffer()
-    let n = handle.stream.readData(buffer.page)
+    let n = handle.stream.read(buffer.page)
     if n < 0:
       let e = errno
       if e == EAGAIN or e == EWOULDBLOCK or e == EINTR: # retry later
@@ -1089,16 +1089,13 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     handle.stream = istreamOut
     case request.body.t
     of rbtString:
-      ostream.write(request.body.s)
+      discard ostream.writeLoop(request.body.s)
       ostream.sclose()
     of rbtBlob:
-      ostream.write(request.body.blob.toOpenArray())
+      discard ostream.writeLoop(request.body.blob.toOpenArray())
       ostream.sclose()
     of rbtMultipart:
-      let boundary = request.body.multipart.boundary
-      for entry in request.body.multipart.entries:
-        ostream.writeEntry(entry, boundary)
-      ostream.writeEnd(boundary)
+      discard ostream.write(request.body.multipart)
       ostream.sclose()
     of rbtOutput:
       ostream.setBlocking(false)
@@ -1815,7 +1812,7 @@ proc handleWrite(ctx: var LoaderContext; output: OutputHandle;
     unregWrite: var seq[OutputHandle]) =
   while output.currentBuffer != nil:
     let buffer = output.currentBuffer
-    let n = output.stream.writeData(buffer, output.currentBufferIdx)
+    let n = output.stream.write(buffer, output.currentBufferIdx)
     if n < 0:
       let e = errno
       if e == EAGAIN or e == EWOULDBLOCK or e == EINTR: # never mind

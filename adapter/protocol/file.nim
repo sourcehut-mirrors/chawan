@@ -78,10 +78,10 @@ proc loadFile(os, ps: PosixStream; stats: Stat) =
   buffer[start] = '\n'
   inc start
   while true:
-    let n = ps.readData(buffer.toOpenArray(start, buffer.high))
+    let n = ps.read(buffer.toOpenArray(start, buffer.high))
     if n <= 0:
       break
-    if not os.writeDataLoop(buffer.toOpenArray(0, start + n - 1)):
+    if os.writeLoop(buffer.toOpenArray(0, start + n - 1)).isErr:
       break
     start = 0
 
@@ -93,14 +93,14 @@ proc main() =
   let res = stat(cstring(path), stats)
   if res == 0 and S_ISDIR(stats.st_mode):
     if path[^1] != '/':
-      os.write("Status: 301\nLocation: " & path.deleteChars({'\r', '\n'}) &
-        "/\n")
+      discard os.writeLoop("Status: 301\nLocation: " &
+        path.deleteChars({'\r', '\n'}) & "/\n")
     else:
       discard loadDir(path, opath)
   elif res == 0 and (let ps = newPosixStream(path); ps != nil):
     os.loadFile(ps, stats)
   else:
-    os.write("Cha-Control: ConnectionError FileNotFound")
+    discard os.writeLoop("Cha-Control: ConnectionError FileNotFound")
 
 main()
 

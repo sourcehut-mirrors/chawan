@@ -50,7 +50,7 @@ proc main() =
       quit(1)
   let ps = res.get
   if msg != "":
-    if not os.writeDataLoop(msg):
+    if os.writeLoop(msg).isErr:
       quit(1)
   enterNetworkSandbox()
   var pollData = PollData()
@@ -64,21 +64,21 @@ proc main() =
       assert (event.revents and POLLOUT) == 0
       if (event.revents and POLLIN) != 0:
         if event.fd == ips.fd:
-          let n = ips.readData(buf)
+          let n = ips.read(buf)
           if n <= 0:
             pollData.unregister(ips.fd)
             inc i
             continue
-          if not ps.writeDataLoop(buf.toOpenArray(0, n - 1)):
+          if ps.writeLoop(buf.toOpenArray(0, n - 1)).isErr:
             quit(1)
         else:
           assert event.fd == ps.fd
-          let n = ps.readData(buf)
+          let n = ps.read(buf)
           if n <= 0:
             pollData.unregister(ps.fd)
             inc i
             continue
-          if not os.writeDataLoop(buf.toOpenArray(0, n - 1)):
+          if os.writeLoop(buf.toOpenArray(0, n - 1)).isErr:
             quit(1)
       if (event.revents and (POLLERR or POLLHUP)) != 0:
         pollData.unregister(event.fd)

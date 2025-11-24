@@ -4,8 +4,7 @@ import std/os
 import std/posix
 import std/strutils
 
-import utils/sandbox
-import utils/twtstr
+import ../protocol/lcgi
 
 when sizeof(cint) < 4:
   type jebp_int = clong
@@ -71,17 +70,13 @@ proc puts(s: string) =
   if s.len > 0:
     writeAll(unsafeAddr s[0], s.len)
 
-proc die(s: string) {.noreturn.} =
-  puts(s)
-  quit(1)
-
 proc main() =
   enterNetworkSandbox()
   let scheme = getEnv("MAPPED_URI_SCHEME")
   let f = scheme.after('+')
   if getEnv("MAPPED_URI_PATH") == "decode":
     if f != "webp":
-      die("Cha-Control: ConnectionError 1 unknown format " & f & '\n')
+      cgiDie(ceInternalError, "unknown format " & f)
     let headers = getEnv("REQUEST_HEADERS")
     var infoOnly = false
     for hdr in headers.split('\n'):
@@ -97,19 +92,17 @@ proc main() =
           "\n\n")
         quit(0)
       else:
-        die("Cha-Control: ConnectionError 1 jepb error " &
-          $jebp_error_string(res) & '\n')
+        cgiDie(ceInternalError, jebp_error_string(res))
     let res = jebp_read_from_callbacks(addr image, addr cb, nil)
     if res != 0:
-      die("Cha-Control: ConnectionError 1 jebp error " &
-        $jebp_error_string(res) & '\n')
+      cgiDie(ceInternalError, jebp_error_string(res))
     else:
       puts("Cha-Image-Dimensions: " & $image.width & "x" & $image.height &
         "\n\n")
       writeAll(image.pixels, image.width * image.height * 4)
       jebp_free_image(addr image)
   else:
-    die("Cha-Control: ConnectionError 1 not implemented\n")
+    cgiDie(ceInternalError, "not implemented")
 
 main()
 

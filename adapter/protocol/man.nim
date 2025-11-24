@@ -165,9 +165,7 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     var wstatus: cint
     discard wait(addr wstatus)
     if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
-      discard stdout.writeLine("Cha-Control: ConnectionError 4 " &
-        efile.readErrorMsg(line))
-      quit(1)
+      cgiDie(ceFileNotFound, efile.readErrorMsg(line))
   # skip formatting of line 0, like w3mman does
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
@@ -321,9 +319,7 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
     var wstatus = cint(0)
     if wait(addr wstatus) >= 0 and not WIFEXITED(wstatus) or
         WEXITSTATUS(wstatus) != 0:
-      discard stdout.writeLine("Cha-Control: ConnectionError 4 " &
-        efile.readErrorMsg(line))
-      quit(1)
+      cgiDie(ceFileNotFound, efile.readErrorMsg(line))
   ?stdout.write("Content-Type: text/html\n\n")
   ?stdout.write("<title>man" & sectionOpt & " -k " & keyword & "</title>\n")
   ?stdout.write("<h1>man" & sectionOpt & " -k <b>" & keyword & "</b></h1>\n")
@@ -346,7 +342,7 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
       i = line.skipBlanks(i + 1)
     # collect section
     if line[i] != '(':
-      discard stdout.write("Error parsing line! " & line)
+      discard cast[ChaFile](stderr).writeLine("Error parsing line! " & line)
       quit(1)
     let sectionText = line.substr(i, line.find(')', i))
     i += sectionText.len

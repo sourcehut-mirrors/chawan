@@ -11,6 +11,7 @@ import std/tables
 
 import io/dynstream
 import types/color
+import types/opt
 
 type PacketWriter* = object
   buffer*: seq[uint8]
@@ -51,7 +52,7 @@ proc writeSize*(w: var PacketWriter) =
 # Returns false on EOF, true if we flushed successfully.
 proc flush*(w: var PacketWriter; stream: DynStream): bool =
   w.writeSize()
-  if not stream.writeDataLoop(w.buffer.toOpenArray(0, w.bufLen - 1)):
+  if stream.writeLoop(w.buffer.toOpenArray(0, w.bufLen - 1)).isErr:
     return false
   if w.fds.len > 0:
     w.fds.reverse()

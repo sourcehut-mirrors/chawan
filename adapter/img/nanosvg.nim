@@ -4,9 +4,7 @@ import std/os
 import std/posix
 import std/strutils
 
-import io/dynstream
-import utils/sandbox
-import utils/twtstr
+import ../protocol/lcgi
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
@@ -57,11 +55,11 @@ proc main() =
     if image == nil or image.width < 0 or image.height < 0 or
         cdouble(image.width) >= cdouble(cint.high) or
         cdouble(image.height) >= cdouble(cint.high):
-      os.write("Cha-Control: ConnectionError 1 decoding failed\n")
-      quit(1)
+      cgiDie(ceInternalError, "decoding failed")
     let width = cint(image.width)
     let height = cint(image.height)
-    os.write("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
+    discard os.writeLoop("Cha-Image-Dimensions: " & $width & 'x' & $height &
+      "\n\n")
     for hdr in getEnv("REQUEST_HEADERS").split('\n'):
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
@@ -72,11 +70,11 @@ proc main() =
         quit(1)
       var obuf = newSeqUninit[uint8](width * height * 4)
       r.nsvgRasterize(image, 0, 0, 1, addr obuf[0], width, height, width * 4)
-      discard os.writeDataLoop(obuf)
+      discard os.writeLoop(obuf)
       r.nsvgDeleteRasterizer()
       image.nsvgDelete()
   else:
-    os.write("Cha-Control: ConnectionError 1 not supported\n")
+    cgiDie(ceInternalError, "not supported")
 
 main()
 

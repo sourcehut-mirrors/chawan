@@ -179,7 +179,7 @@ proc parseSSHConfig(f: AChaFile; host: string; pubKey, privKey: var string):
   ok()
 
 proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
-  discard os.writeDataLoop("Status: 401\n")
+  discard os.writeLoop("Status: 401\n")
   quit(0)
 
 proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
@@ -221,8 +221,7 @@ const LIBSSH2_SFTP_S_IFLNK = 0o120000
 proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
     handle: ptr LIBSSH2_SFTP_HANDLE; path: string) =
   let title = ("Index of " & path).mimeQuote()
-  discard os.writeDataLoop("Content-Type: text/x-dirlist;title=" & title &
-    "\n\n")
+  discard os.writeLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   var buffer {.noinit.}: array[512, char]
   var longentry {.noinit.}: array[512, char]
   while true:
@@ -272,19 +271,19 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
         for i in 0 ..< n:
           buf &= buffer[i]
     buf &= '\n'
-    if not os.writeDataLoop(buf):
+    if os.writeLoop(buf).isErr:
       break
 
 proc readFile(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP; path: string) =
   let handle = sftpSession.libssh2_sftp_open(cstring(path), LIBSSH2_FXF_READ, 0)
   var attrs: LIBSSH2_SFTP_ATTRIBUTES
   if handle == nil or libssh2_sftp_fstat(handle, attrs) != 0:
-    discard os.writeDataLoop("""Status: 404
+    discard os.writeLoop("""Status: 404
 Content-Type: text/html
 
 <h1>Not found""")
     quit(0)
-  discard os.writeDataLoop("Content-Length: " & $attrs.filesize & "\n\n")
+  discard os.writeLoop("Content-Length: " & $attrs.filesize & "\n\n")
   # Apparently a huge buffer results in significant speed increases
   # compared to a small one.
   var buffer {.noinit.}: array[65536, char]
@@ -292,7 +291,7 @@ Content-Type: text/html
     let n = handle.libssh2_sftp_read(addr buffer[0], csize_t(buffer.len))
     if n <= 0:
       break
-    if not os.writeDataLoop(buffer.toOpenArray(0, n - 1)):
+    if os.writeLoop(buffer.toOpenArray(0, n - 1)).isErr:
       break
 
 # Fingerprint validation.
@@ -356,7 +355,7 @@ proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
   elif check == LIBSSH2_KNOWNHOST_CHECK_MATCH:
     discard
   elif check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND:
-    os.write("""
+    discard os.writeLoop("""
 Content-Type: text/html
 
 <!DOCTYPE html>
@@ -370,7 +369,7 @@ ssh """ & host & " -p " & $port)
     quit(1)
   else:
     assert check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH
-    os.write("""
+    discard os.writeLoop("""
 Content-Type: text/html
 
 <!DOCTYPE html>
@@ -408,7 +407,7 @@ proc main*() =
   let handle = sftpSession.libssh2_sftp_opendir(cstring(path))
   if handle != nil:
     if path[^1] != '/':
-      discard os.writeDataLoop("Status: 301\nLocation: " & path & "/\n")
+      discard os.writeLoop("Status: 301\nLocation: " & path & "/\n")
       quit(0)
     os.readDir(sftpSession, handle, path)
   else:

@@ -274,7 +274,7 @@ proc onReadXHR(response: Response) =
   while true:
     let olen = this.received.len
     this.received.setLen(olen + BufferSize)
-    let n = response.body.readData(addr this.received[olen], BufferSize)
+    let n = response.body.read(addr this.received[olen], BufferSize)
     if n <= 0:
       this.received.setLen(olen)
       break

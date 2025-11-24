@@ -149,10 +149,10 @@ type
   SSLStream* = ref object of DynStream
     ssl: ptr SSL
 
-method readData*(s: SSLStream; buffer: pointer; len: int): int =
+method read*(s: SSLStream; buffer: pointer; len: int): int =
   return int(SSL_read(s.ssl, buffer, cint(len)))
 
-method writeData*(s: SSLStream; buffer: pointer; len: int): int =
+method write*(s: SSLStream; buffer: pointer; len: int): int =
   return int(SSL_write(s.ssl, buffer, cint(len)))
 
 method sclose*(s: SSLStream) =
