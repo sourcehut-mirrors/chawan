@@ -4144,7 +4144,7 @@ static jebp_error_t jebp__read_vp8l_nohead(jebp_image_t *image,
     }
     err = jebp__read_vp8l_image(image, bits, &colcache, huffman_image);
     jebp__free_colcache(&colcache);
-    jebp_free_image(&huffman_image->s);
+    jebp_free_image((jebp_image_t *)huffman_image);
 
 free_transforms:
     for (nb_transforms -= 1; nb_transforms >= 0; nb_transforms -= 1) {
