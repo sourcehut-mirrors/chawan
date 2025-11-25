@@ -17,12 +17,12 @@ assumed.  On Windows you have to use WSL.
 1. Clone the Chawan repository:  
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 2.0.0 or newer, ideally 2.2.4.  (`nim -v` displays
-	  your Nim compiler's version.)  
-	  The 1.6 branch from 1.6.14 upwards may still work, but it
-	  isn't recommended unless you have no other choice.
-	* If you are using a 32-bit system, you probably need 2.2 or
-	  newer.  2.0 may still work if you `export CFLAGS=-fpermissive`.
+	* Please use 2.0.0 or newer, ideally 2.2.6.  (`nim -v` displays your
+	  Nim compiler's version.)
+	  The 1.6 branch from 1.6.14 upwards may still work, but it isn't
+	  recommended unless you have no other choice.
+	* If you are using a 32-bit system, you probably need 2.2 or newer.
+	  2.0 may still work if you `export CFLAGS=-fpermissive`.
 3. Install the following dependencies:
 	* [OpenSSL](https://www.openssl.org/) (or
 	  [LibreSSL](https://www.libressl.org/))

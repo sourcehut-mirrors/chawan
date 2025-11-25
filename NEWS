@@ -1,3 +1,12 @@
+unreleased
+
+* dupeBuffer/anchor navigation no longer forks buffer process
+* support VT420
+* support DEC special graphics in ASCII mode
+* support all VP8L indexed color transforms
+* fix cached images not being cleared when a buffer is deleted
+* fix a NULL deref in jebp
+
 0.3.0 (2025.11.21)
 
 UI additions
