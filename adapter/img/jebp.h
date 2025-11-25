@@ -104,13 +104,6 @@
  *                      recognized. Currently extended file formats (see below)
  *                      are not supported and both lossy and lossless codecs can
  *                      be disabled (see `JEBP_NO_VP8` and `JEBP_NO_VP8L`).
- *   `JEBP_ERROR_NOSUP_PALETTE` is a suberror of `NOSUP` that indicates that the
- *                      image has a color-index transform (in WebP terminology,
- *                      this would be a paletted image) with bit packing. Such
- *                      color-indexing transforms are not currently supported
- *                      (see below). Note that this error code might be removed
- *                      after color-indexing transform support is added, this is
- *                      only here for now to help detecting common issues.
  *   `JEBP_ERROR_NOMEM` means that a memory allocation failed, indicating that
  *                      there is no more memory available.
  *   `JEBP_ERROR_IO` represents any generic I/O error, usually from
@@ -127,8 +120,6 @@
  * This is not a feature-complete WebP decoder and has the following
  * limitations:
  *   - Does not support animated VP8X images, or filtered VP8X alpha.
- *   - Does not support VP8L lossless images with bit-packed color-indexing
- *     transforms (palleted images with a palette size <= 16).
  *   - Does not support VP8L images with more than 256 huffman groups. This is
  *     an arbitrary limit to prevent bad images from using too much memory. In
  *     theory, images requiring more groups should be very rare. This limit may
@@ -518,13 +509,16 @@ JEBP__INLINE jebp_error_t jebp__error(jebp_error_t *err, jebp_error_t error) {
     return *err;
 }
 
-static jebp_error_t jebp__alloc_image(jebp_image_t *image) {
-    image->pixels =
-        JEBP_ALLOC(image->width * image->height * sizeof(jebp_color_t));
+static jebp_error_t jebp__alloc_image0(jebp_image_t *image, jebp_int width) {
+    image->pixels = JEBP_ALLOC(width * image->height * sizeof(jebp_color_t));
     if (image->pixels == NULL) {
         return JEBP_ERROR_NOMEM;
     }
     return JEBP_OK;
+}
+
+static jebp_error_t jebp__alloc_image(jebp_image_t *image) {
+    return jebp__alloc_image0(image, image->width);
 }
 
 /**
@@ -2930,7 +2924,8 @@ JEBP__INLINE jebp_int jebp__read_vp8l_extrabits(jebp__bit_reader_t *bits,
 static jebp_error_t jebp__read_vp8l_image(jebp_image_t *image,
                                           jebp__bit_reader_t *bits,
                                           jebp__colcache_t *colcache,
-                                          jebp__subimage_t *huffman_image) {
+                                          jebp__subimage_t *huffman_image,
+                                          jebp_int real_width) {
     jebp_error_t err;
     jebp_int nb_groups = 1;
     jebp__huffman_group_t *groups = &(jebp__huffman_group_t){0};
@@ -2974,7 +2969,7 @@ static jebp_error_t jebp__read_vp8l_image(jebp_image_t *image,
     if (err != JEBP_OK) {
         goto free_read_groups;
     }
-    if ((err = jebp__alloc_image(image)) != JEBP_OK) {
+    if ((err = jebp__alloc_image0(image, real_width)) != JEBP_OK) {
         goto free_read_groups;
     }
 
@@ -3065,22 +3060,21 @@ static jebp_error_t jebp__read_subimage(jebp__subimage_t *subimage,
     if ((err = jebp__read_colcache(&colcache, bits)) != JEBP_OK) {
         return err;
     }
-    err = jebp__read_vp8l_image(&subimage->s, bits, &colcache, NULL);
+    err = jebp__read_vp8l_image(&subimage->s, bits, &colcache, NULL,
+                                subimage->s.width);
     jebp__free_colcache(&colcache);
     return err;
 }
 
 static jebp_error_t jebp__read_palette(jebp__subimage_t *subimage,
-                                       jebp__bit_reader_t *bits) {
+                                       jebp__bit_reader_t *bits,
+                                       jebp_image_t *image) {
     jebp_error_t err = JEBP_OK;
     jebp_uint len = jebp__read_bits(bits, 8, &err) + 1;
     jebp_uint i;
     jebp_color_t px0 = {0};
     if (err != JEBP_OK) {
         return err;
-    }
-    if (len <= 16) {
-        return JEBP_ERROR_NOSUP_PALETTE;
     }
     subimage->block_bits = 0;
     subimage->s.width = len;
@@ -3090,7 +3084,7 @@ static jebp_error_t jebp__read_palette(jebp__subimage_t *subimage,
         return err;
     }
     if ((err = jebp__read_vp8l_image(&subimage->s, bits, &colcache,
-                                     NULL)) != JEBP_OK) {
+                                     NULL, subimage->s.width)) != JEBP_OK) {
         goto free_colcache;
     }
     for (i = 0; i < len; i++) {
@@ -3100,6 +3094,13 @@ static jebp_error_t jebp__read_palette(jebp__subimage_t *subimage,
         px1->b += px0.b;
         px1->a = 255;
         px0 = *px1;
+    }
+    if (len <= 2) {
+        image->width = JEBP__RSHIFT(image->width, 3);
+    } else if (len <= 4) {
+        image->width = JEBP__RSHIFT(image->width, 2);
+    } else if (len <= 16) {
+        image->width = JEBP__RSHIFT(image->width, 1);
     }
 free_colcache:
     jebp__free_colcache(&colcache);
@@ -3847,14 +3848,21 @@ typedef struct jebp__transform_t {
 
 static jebp_error_t jebp__read_transform(jebp__transform_t *transform,
                                          jebp__bit_reader_t *bits,
-                                         jebp_image_t *image) {
+                                         jebp_image_t *image,
+                                         jebp_int *types_seen) {
     jebp_error_t err = JEBP_OK;
+    jebp_int type_bit;
     transform->type = jebp__read_bits(bits, 2, &err);
     if (err != JEBP_OK) {
         return err;
     }
+    type_bit = 1 << transform->type;
+    if ((*types_seen & type_bit) != 0) {
+        return JEBP_ERROR_INVDATA;
+    }
+    *types_seen |= type_bit;
     if (transform->type == JEBP__TRANSFORM_PALETTE) {
-        err = jebp__read_palette(&transform->image, bits);
+        err = jebp__read_palette(&transform->image, bits, image);
     } else if (transform->type != JEBP__TRANSFORM_GREEN) {
         err = jebp__read_subimage(&transform->image, bits, image);
     }
@@ -4031,24 +4039,54 @@ JEBP__INLINE jebp_error_t jebp__apply_green_transform(jebp_image_t *image) {
 }
 
 JEBP__INLINE jebp_error_t jebp__apply_palette_transform(
-    jebp_image_t *image, jebp__subimage_t *palette_image) {
-    jebp_int size = image->width * image->height;
+    jebp_image_t *image, jebp__subimage_t *palette_image, jebp_int real_width) {
     jebp_int palette_size = palette_image->s.width;
-    jebp_int i;
-    for (i = 0; i < size; i++) {
-        jebp_color_t *pixel = &image->pixels[i];
-        jebp_int idx = pixel->g;
-        if (idx < palette_size) {
-            *pixel = palette_image->s.pixels[idx];
-        } else {
-            return JEBP_ERROR_INVDATA;
+    if (palette_size > 16) {
+        jebp_int i, size = image->width * image->height;
+        for (i = 0; i < size; i++) {
+            jebp_color_t *pixel = &image->pixels[i];
+            jebp_int idx = pixel->g;
+            if (idx < palette_size) {
+                *pixel = palette_image->s.pixels[idx];
+            } else {
+                return JEBP_ERROR_INVDATA;
+            }
         }
+    } else {
+        jebp_int x, y, width = image->width, height = image->height;
+        jebp_int shift, shift_back, mask, mask_back;
+        if (palette_size <= 2) {
+            shift = 3;
+        } else if (palette_size <= 4) {
+            shift = 2;
+        } else {
+            shift = 1;
+        }
+        mask = (1 << shift) - 1;
+        shift_back = 8 >> shift;
+        mask_back = (1 << shift_back) - 1;
+        for (y = height - 1; y >= 0; y--) {
+            jebp_int real_row = y * real_width, row = y * width;
+            for (x = real_width - 1; x >= 0; x--) {
+                jebp_color_t *dst = &image->pixels[real_row + x];
+                jebp_color_t *src = &image->pixels[row + x >> shift];
+                jebp_int shift_x = (x & mask) * shift_back;
+                jebp_int idx = (src->g & (mask_back << shift_x)) >> shift_x;
+                if (idx < palette_size) {
+                    *dst = palette_image->s.pixels[idx];
+                } else {
+                    return JEBP_ERROR_INVDATA;
+                }
+            }
+        }
+        image->width = real_width;
     }
     return JEBP_OK;
 }
 
 static jebp_error_t jebp__apply_transform(jebp__transform_t *transform,
-                                          jebp_image_t *image) {
+                                          jebp_image_t *image,
+                                          jebp_int real_width) {
     switch (transform->type) {
     case JEBP__TRANSFORM_PREDICT:
         return jebp__apply_predict_transform(image, &transform->image);
@@ -4057,7 +4095,8 @@ static jebp_error_t jebp__apply_transform(jebp__transform_t *transform,
     case JEBP__TRANSFORM_GREEN:
         return jebp__apply_green_transform(image);
     case JEBP__TRANSFORM_PALETTE:
-        return jebp__apply_palette_transform(image, &transform->image);
+        return jebp__apply_palette_transform(image, &transform->image,
+                                             real_width);
     default:
         return JEBP_ERROR_NOSUP;
     }
@@ -4103,6 +4142,8 @@ static jebp_error_t jebp__read_vp8l_nohead(jebp_image_t *image,
     jebp_error_t err = JEBP_OK;
     jebp__transform_t transforms[4];
     jebp_int nb_transforms = 0;
+    jebp_int real_width = image->width;
+    jebp_int transforms_seen = 0;
     for (; nb_transforms <= JEBP__NB_TRANSFORMS; nb_transforms += 1) {
         if (!jebp__read_bits(bits, 1, &err)) {
             // no more transforms to read
@@ -4114,7 +4155,7 @@ static jebp_error_t jebp__read_vp8l_nohead(jebp_image_t *image,
             goto free_transforms;
         }
         if ((err = jebp__read_transform(&transforms[nb_transforms], bits,
-                                        image)) != JEBP_OK) {
+                                        image, &transforms_seen)) != JEBP_OK) {
             goto free_transforms;
         }
     }
@@ -4142,14 +4183,16 @@ static jebp_error_t jebp__read_vp8l_nohead(jebp_image_t *image,
             goto free_transforms;
         }
     }
-    err = jebp__read_vp8l_image(image, bits, &colcache, huffman_image);
+    err = jebp__read_vp8l_image(image, bits, &colcache, huffman_image,
+                                real_width);
     jebp__free_colcache(&colcache);
     jebp_free_image((jebp_image_t *)huffman_image);
 
 free_transforms:
     for (nb_transforms -= 1; nb_transforms >= 0; nb_transforms -= 1) {
         if (err == JEBP_OK) {
-            err = jebp__apply_transform(&transforms[nb_transforms], image);
+            err = jebp__apply_transform(&transforms[nb_transforms], image,
+                                        real_width);
         }
         jebp__free_transform(&transforms[nb_transforms]);
     }
