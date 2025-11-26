@@ -1511,7 +1511,20 @@ proc askChar(pager: Pager; prompt: string): Promise[string] {.jsfunc.} =
   return pager.askPromise
 
 proc ask(pager: Pager; prompt: string): Promise[bool] {.jsfunc.} =
-  return pager.askChar(prompt & " (y/n)").then(proc(s: string): Promise[bool] =
+  var prompt = prompt
+  let choice = " (y/n)"
+  let maxw = pager.status.grid.width - choice.width()
+  var w = 0
+  var i = 0
+  while i < prompt.len:
+    let pi = i
+    w += prompt.nextUTF8(i).width()
+    if w > maxw:
+      i = pi
+      break
+  prompt.setLen(i)
+  prompt &= choice
+  return pager.askChar(prompt).then(proc(s: string): Promise[bool] =
     if s == "y":
       return newResolvedPromise(true)
     if s == "n":
