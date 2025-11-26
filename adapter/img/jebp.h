@@ -101,7 +101,9 @@
  *                      the specification when writing.
  *   `JEBP_ERROR_NOSUP_CODEC` is a suberror of `NOSUP` that indicates that the
  *                      RIFF chunk that is most likely for the codec is not
- *                      recognized. Currently extended file formats (see below)
+ *                      recognized. This is usually returned when a specific
+ *                      file format has been disabled (see `JEBP_NO_VP8`,
+ *                      `JEBP_NO_VP8L`, `JEBP_NO_VP8X`).
  *                      are not supported and both lossy and lossless codecs can
  *                      be disabled (see `JEBP_NO_VP8` and `JEBP_NO_VP8L`).
  *   `JEBP_ERROR_NOMEM` means that a memory allocation failed, indicating that
@@ -129,12 +131,11 @@
  * constraints:
  *   - Decoding color profiles.
  *   - Decoding metadata.
- *   - Full color-indexing/palette support will be a bit of a mess, so don't
- *     expect full support of that coming anytime soon.
  *
  * Along with `JEBP_IMPLEMENTATION` defined above, there are a few other macros
  * that can be defined to change how JebP operates:
- *   `JEBP_NO_STDIO` will disable the file-reading API.
+ *   `JEBP_NO_STDIO` will disable the file-reading API. `JEBP_NO_CALLBACKS`
+ *   disables the callback API as well.
  *   `JEBP_NO_SIMD` will disable SIMD optimizations. These are currently
  *                  not-used but the detection is there ready for further work.
  *   `JEBP_NO_VP8` will disable VP8 (lossy) decoding support.
@@ -275,7 +276,6 @@ typedef enum jebp_error_t {
     JEBP_ERROR_EOF,
     JEBP_ERROR_NOSUP,
     JEBP_ERROR_NOSUP_CODEC,
-    JEBP_ERROR_NOSUP_PALETTE,
     JEBP_ERROR_NOMEM,
     JEBP_ERROR_IO,
     JEBP_ERROR_UNKNOWN,
@@ -5041,7 +5041,6 @@ static const char *const jebp__error_strings[JEBP_NB_ERRORS] = {
     "End of file",
     "Feature not supported",
     "Codec not supported",
-    "Color-indexing or palettes are not supported",
     "Not enough memory",
     "I/O error",
     "Unknown error"};
