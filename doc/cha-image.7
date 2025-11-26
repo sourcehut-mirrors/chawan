@@ -2,8 +2,8 @@
 .\"
 .TH "CHA-IMAGE" "7"
 .SH Inline images
-On terminals that support images, Chawan can display various bit\-mapped
-image formats.
+On terminals that support images, Chawan can display various image
+formats.
 .SS Enabling images
 There are actually two switches for images in the config:
 .IP \(bu 2
@@ -118,7 +118,7 @@ data to stdout \- when encoding, vice versa.
 .PP
 This means that it is possible for users to define image decoders for
 their preferred formats, or even override the built\-in ones.
-(If you actually end up doing this for some reason, please shoot me a
+(If you actually end up doing this for some reason, please send me a
 mail so I can add it to the bonus directory.)
 .PP
 A codec can have one of, or both, \(lqdecode\(rq and \(lqencode\(rq
@@ -140,8 +140,9 @@ Input headers:
 Cha\-Image\-Info\-Only: 1
 .PP
 This tells the image decoder to only send image metadata (i.e.\ size).
-Technically, the decoder is free to actually decode the image too, but
-the browser will ignore any output after headers.
+Technically, the decoder is free to fully decode the image, but this is
+a waste of resources; the browser will ignore any output received after
+headers.
 .PP
 Output headers:
 .IP \(bu 2
@@ -198,6 +199,11 @@ lseek.
 .IP \(bu 2
 When writing, your headers are part of the output.
 At the very least, you must place a newline at the file\(cqs beginning.
+.IP \(bu 2
+mmapping for write is slower than streaming the data with
+\f[CR]write\f[R].
+The only reason to mmap for write is to save memory when you can\(cqt
+stream the output.
 .IP \(bu 2
 This \f[I]is\f[R] an implementation detail, and might change at any time
 in the future (e.g.\ if we add a \(lqno cache files\(rq mode).
