@@ -1057,13 +1057,18 @@ typedef enum jebp__segment_type_t {
     JEBP__SEGMENT_ID
 } jebp__segment_type_t;
 
+typedef enum jebp__quant_type_t {
+    JEBP__QUANT_Y_DC,
+    JEBP__QUANT_Y_AC,
+    JEBP__QUANT_Y2_DC,
+    JEBP__QUANT_Y2_AC,
+    JEBP__QUANT_UV_DC,
+    JEBP__QUANT_UV_AC,
+    JEBP__QUANT_NB
+} jebp__quant_type_t;
+
 typedef struct jebp__quants_t {
-    jebp_short y_dc;
-    jebp_short y_ac;
-    jebp_short y2_dc;
-    jebp_short y2_ac;
-    jebp_short uv_dc;
-    jebp_short uv_ac;
+    jebp_short v[JEBP__QUANT_NB];
 } jebp__quants_t;
 
 typedef struct jebp__segment_t {
@@ -1144,7 +1149,8 @@ static jebp_error_t jebp__read_segment_header(jebp__vp8_header_t *hdr,
         hdr->abs_segments = jebp__read_flag(bec, &err);
         for (jebp_int i = 0; i < JEBP__NB_SEGMENTS; i += 1) {
             if (jebp__read_flag(bec, &err)) {
-                hdr->segments[i].quants.y_ac = jebp__read_bec_int(bec, 7, &err);
+                hdr->segments[i].quants.v[JEBP__QUANT_Y_AC] =
+                    jebp__read_bec_int(bec, 7, &err);
             }
         }
         for (jebp_int i = 0; i < JEBP__NB_SEGMENTS; i += 1) {
@@ -1179,20 +1185,28 @@ static jebp_error_t jebp__read_filter_header(jebp__vp8_header_t *hdr,
 
 static void jebp__update_quants(jebp__quants_t *quants,
                                 jebp__quants_t *deltas) {
-    quants->y_dc =
-        jebp__dc_quant_table[JEBP__CLAMP_QUANT(deltas->y_ac + deltas->y_dc)];
-    quants->y_ac = jebp__ac_quant_table[JEBP__CLAMP_QUANT(deltas->y_ac)];
-    quants->y2_dc =
-        jebp__dc_quant_table[JEBP__CLAMP_QUANT(deltas->y_ac + deltas->y2_dc)];
-    quants->y2_dc *= 2;
-    quants->y2_ac =
-        jebp__ac_quant_table[JEBP__CLAMP_QUANT(deltas->y_ac + deltas->y2_ac)];
-    quants->y2_ac = JEBP__MAX(quants->y2_ac * 155 / 100, 8);
-    quants->uv_dc =
-        jebp__dc_quant_table[JEBP__CLAMP_QUANT(deltas->y_ac + deltas->uv_dc)];
-    quants->uv_dc = JEBP__MIN(quants->uv_dc, 132);
-    quants->uv_ac =
-        jebp__ac_quant_table[JEBP__CLAMP_QUANT(deltas->y_ac + deltas->uv_ac)];
+    jebp_short dy_ac = deltas->v[JEBP__QUANT_Y_AC];
+    jebp_short dy_dc = deltas->v[JEBP__QUANT_Y_DC];
+    jebp_short dy2_dc = deltas->v[JEBP__QUANT_Y2_DC];
+    jebp_short dy2_ac = deltas->v[JEBP__QUANT_Y2_AC];
+    jebp_short duv_ac = deltas->v[JEBP__QUANT_UV_AC];
+    jebp_short duv_dc = deltas->v[JEBP__QUANT_UV_DC];
+    quants->v[JEBP__QUANT_Y_DC] =
+        jebp__dc_quant_table[JEBP__CLAMP_QUANT(dy_ac + dy_dc)];
+    quants->v[JEBP__QUANT_Y_AC] =
+        jebp__ac_quant_table[JEBP__CLAMP_QUANT(dy_ac)];
+    quants->v[JEBP__QUANT_Y2_DC] =
+        jebp__dc_quant_table[JEBP__CLAMP_QUANT(dy_ac + dy2_dc)];
+    quants->v[JEBP__QUANT_Y2_DC] *= 2;
+    quants->v[JEBP__QUANT_Y2_AC] =
+        jebp__ac_quant_table[JEBP__CLAMP_QUANT(dy_ac + dy2_ac)];
+    quants->v[JEBP__QUANT_Y2_AC] =
+        JEBP__MAX(quants->v[JEBP__QUANT_Y2_AC] * 155 / 100, 8);
+    quants->v[JEBP__QUANT_UV_DC] =
+        jebp__dc_quant_table[JEBP__CLAMP_QUANT(dy_ac + duv_dc)];
+    quants->v[JEBP__QUANT_UV_DC] = JEBP__MIN(quants->v[JEBP__QUANT_UV_DC], 132);
+    quants->v[JEBP__QUANT_UV_AC] =
+        jebp__ac_quant_table[JEBP__CLAMP_QUANT(dy_ac + duv_ac)];
 }
 
 static jebp_error_t jebp__read_quant_header(jebp__vp8_header_t *hdr,
@@ -1200,19 +1214,19 @@ static jebp_error_t jebp__read_quant_header(jebp__vp8_header_t *hdr,
     jebp_error_t err = JEBP_OK;
     jebp__quants_t deltas;
     jebp_int y_ac = jebp__read_bec_uint(bec, 7, &err);
-    deltas.y_dc =
+    deltas.v[JEBP__QUANT_Y_DC] =
         jebp__read_flag(bec, &err) ? jebp__read_bec_int(bec, 4, &err) : 0;
-    deltas.y2_dc =
+    deltas.v[JEBP__QUANT_Y2_DC] =
         jebp__read_flag(bec, &err) ? jebp__read_bec_int(bec, 4, &err) : 0;
-    deltas.y2_ac =
+    deltas.v[JEBP__QUANT_Y2_AC] =
         jebp__read_flag(bec, &err) ? jebp__read_bec_int(bec, 4, &err) : 0;
-    deltas.uv_dc =
+    deltas.v[JEBP__QUANT_UV_DC] =
         jebp__read_flag(bec, &err) ? jebp__read_bec_int(bec, 4, &err) : 0;
-    deltas.uv_ac =
+    deltas.v[JEBP__QUANT_UV_AC] =
         jebp__read_flag(bec, &err) ? jebp__read_bec_int(bec, 4, &err) : 0;
 
     if (hdr->segment_type == JEBP__SEGMENT_NONE) {
-        deltas.y_ac = y_ac;
+        deltas.v[JEBP__QUANT_Y_AC] = y_ac;
         jebp__update_quants(&hdr->segments->quants, &deltas);
         return err;
     }
@@ -1221,7 +1235,7 @@ static jebp_error_t jebp__read_quant_header(jebp__vp8_header_t *hdr,
     }
     for (jebp_int i = 0; i < JEBP__NB_SEGMENTS; i += 1) {
         jebp__quants_t *quants = &hdr->segments[i].quants;
-        deltas.y_ac = y_ac + quants->y_ac;
+        deltas.v[JEBP__QUANT_Y_AC] = y_ac + quants->v[JEBP__QUANT_Y_AC];
         jebp__update_quants(quants, &deltas);
     }
     return err;
@@ -2086,18 +2100,16 @@ static jebp_int jebp__read_dct(jebp__macro_header_t *hdr, jebp_short *dct,
     }
     jebp_int coeff = type == JEBP__BLOCK_Y1 ? 1 : 0;
     jebp__quants_t *quants = &hdr->segment->quants;
-    // We can treat the quants structure as an array of shorts
-    // TODO: maybe it should be an array of shorts??
     jebp_short *dcac;
     switch (type) {
     case JEBP__BLOCK_Y2:
-        dcac = &quants->y2_dc;
+        dcac = &quants->v[JEBP__QUANT_Y2_DC];
         break;
     case JEBP__BLOCK_UV:
-        dcac = &quants->uv_dc;
+        dcac = &quants->v[JEBP__QUANT_UV_DC];
         break;
     default:
-        dcac = &quants->y_dc;
+        dcac = &quants->v[JEBP__QUANT_Y_DC];
         break;
     }
     // The initial quantizer is DC if starting at 0, or AC for Y1 blocks
