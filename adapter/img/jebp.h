@@ -4223,9 +4223,9 @@ static jebp_error_t jebp__read_vp8l(jebp_image_t *image, jebp__reader_t *reader,
 #define JEBP__ICCP_TAG 0x50434349
 #define JEBP__ALPH_TAG 0x48504c41
 
-#define JEBP__VP8X_FLAG_ICCP (1 << 3)
+#define JEBP__VP8X_FLAG_ANIM (1 << 1)
 #define JEBP__VP8X_FLAG_ALPH (1 << 4)
-#define JEBP__VP8X_FLAG_ANIM (1 << 7)
+#define JEBP__VP8X_FLAG_ICCP (1 << 5)
 
 typedef struct jebp__vp8x_header_t {
     jebp_uint flags;
