@@ -44,19 +44,19 @@ incorrectly encoded image and listening for an error.
 .IP \(bu 2
 The number of Sixel color registers (\f[CR]CSI ? 1 ; 1 ; 0 $\f[R]).
 .IP \(bu 2
-Text area, cell, and window size using \f[CR]CSI 1 4 t\f[R],
-\f[CR]CSI 1 6 t\f[R], \f[CR]CSI 1 8 t\f[R].
-(Cell size, \f[CR]1 6\f[R], beats the other two as it is more reliable.)
+Primary device attributes (DA1).
 .IP \(bu 2
-Primary device attributes.
+Text area and cell size using \f[CR]CSI 1 4 t\f[R] and
+\f[CR]CSI 1 6 t\f[R].
+(Cell size beats text area size as it is more reliable.)
+.IP \(bu 2
+Window size in cells by sending a CUP to 9999;9999 and then asking for
+CPR (the same trick is used by \f[CR]resize\f[R]).
 .PP
-Primary device attributes (henceforth DA1) are queried last, and most
-terminals respond to this, so Chawan should never hang on startup.
-If it \f[I]isn\(cqt\f[R] implemented (as on the FreeBSD console), the
-user can hit any key to break out of the state machine and set
-\f[CR]display.query\-da1 = false\f[R] as instructed by the browser.
-On known terminals with this issue which set \f[CR]TERM\f[R] correctly,
-DA1 is omitted.
+In the past, Chawan relied on the terminal always responding to DA1, and
+would hang on non\-conforming terminals.
+This is no longer the case as we now allow user interaction before the
+state machine has finished.
 .PP
 Some terminals bleed the APC sequence used to recognize kitty image
 support.
@@ -68,9 +68,21 @@ the kitty query is omitted.
 Pre\-ECMA\-48 terminals are generally not expected to work.
 .PP
 There is some degree of ADM\-3A support, tested in Kragen Javier
-Sitaker\(cqs \f[I]admu\f[R] emulator.
-The VT100 has also been tested in Lars Brinkhoff\(cqs
-\f[I]terminal\-simulator\f[R].
+Sitaker\(cqs \c
+.UR https://gitlab.com/kragen/bubbleos
+admu
+.UE \c
+\ emulator.
+The VT100 has also been tested in Lars Brinkhoff\(cqs \c
+.UR https://github.com/larsbrinkhoff/terminal-simulator
+terminal\-simulator
+.UE \c
+\&.
+Finally, the VT420 has been tested in Matt Mastracci\(cqs \c
+.UR https://github.com/mmastrac/blaze
+Blaze
+.UE \c
+\&.
 .PP
 Patches for other terminals (hardware or software alike) are welcome.
 .SS Ancient character encodings

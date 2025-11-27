@@ -37,17 +37,15 @@ forward-compatible.  On startup, Chawan queries:
 * Whether the terminal can use the Kitty image protocol, by sending an
   incorrectly encoded image and listening for an error.
 * The number of Sixel color registers (`CSI ? 1 ; 1 ; 0 $`).
-* Text area, cell, and window size using `CSI 1 4 t`, `CSI 1 6 t`,
-  `CSI 1 8 t`.  (Cell size, `1 6`, beats the other two as it is more
-  reliable.)
-* Primary device attributes.
+* Primary device attributes (DA1).
+* Text area and cell size using `CSI 1 4 t` and `CSI 1 6 t`.  (Cell size
+  beats text area size as it is more reliable.)
+* Window size in cells by sending a CUP to 9999;9999 and then asking for CPR
+  (the same trick is used by `resize`).
 
-Primary device attributes (henceforth DA1) are queried last, and most
-terminals respond to this, so Chawan should never hang on startup.  If it
-*isn't* implemented (as on the FreeBSD console), the user can hit any key
-to break out of the state machine and set `display.query-da1 = false` as
-instructed by the browser.  On known terminals with this issue which set
-`TERM` correctly, DA1 is omitted.
+In the past, Chawan relied on the terminal always responding to DA1, and
+would hang on non-conforming terminals.  This is no longer the case as we
+now allow user interaction before the state machine has finished.
 
 Some terminals bleed the APC sequence used to recognize kitty image support.
 If the terminal also supports the alternate screen (ti/smcup), the sequence
@@ -59,8 +57,11 @@ which set `TERM` correctly, the kitty query is omitted.
 Pre-ECMA-48 terminals are generally not expected to work.
 
 There is some degree of ADM-3A support, tested in Kragen Javier Sitaker's
-*admu* emulator.  The VT100 has also been tested in Lars Brinkhoff's
-*terminal-simulator*.
+[admu](https://gitlab.com/kragen/bubbleos) emulator.  The VT100 has also
+been tested in Lars Brinkhoff's
+[terminal-simulator](https://github.com/larsbrinkhoff/terminal-simulator).
+Finally, the VT420 has been tested in Matt Mastracci's
+[Blaze](https://github.com/mmastrac/blaze).
 
 Patches for other terminals (hardware or software alike) are welcome.
 

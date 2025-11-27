@@ -190,6 +190,7 @@ type
     timeouts*: TimeoutState
     tmpfSeq: uint
     unreg: seq[Container]
+    attrs: WindowAttributes
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -231,6 +232,7 @@ proc loadURL(pager: Pager; url: string; contentType = "";
 proc openMenu(pager: Pager; x = -1; y = -1)
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   title: string)
+proc redraw(pager: Pager)
 proc refreshStatusMsg(pager: Pager)
 proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
   istreamOutputId: int; contentType: string; entry: MailcapEntry):
@@ -238,9 +240,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
 proc showAlerts(pager: Pager)
 proc unregisterFd(pager: Pager; fd: int)
 proc updateReadLine(pager: Pager)
-
-template attrs(pager: Pager): WindowAttributes =
-  pager.term.attrs
+proc windowChange(pager: Pager)
 
 proc container(pager: Pager): Container {.jsfget: "buffer".} =
   pager.tab.current
@@ -928,7 +928,9 @@ proc handleAskInput(pager: Pager; e: InputEvent) =
     pager.queueStatusUpdate()
     pager.handleEvents()
   of ietMouse: pager.handleMouseInput(e.m)
-  else: discard
+  of ietPaste: discard
+  of ietWindowChange: pager.windowChange()
+  of ietRedraw: pager.redraw()
 
 proc handleLineInput(pager: Pager; e: InputEvent) =
   case e.t
@@ -950,12 +952,16 @@ proc handleLineInput(pager: Pager; e: InputEvent) =
       pager.feednext = false
   of ietMouse: pager.handleMouseInput(e.m)
   of ietPaste: pager.lineedit.write(move(pager.inputBuffer))
+  of ietWindowChange: pager.windowChange()
+  of ietRedraw: pager.redraw()
 
 proc handleCommandInput(pager: Pager; e: InputEvent) =
   case e.t
   of ietMouse: pager.handleMouseInput(e.m)
   of ietKey: pager.inputBuffer &= e.c
   of ietPaste: pager.setLineEdit(lmLocation, move(pager.inputBuffer))
+  of ietWindowChange: pager.windowChange()
+  of ietRedraw: pager.redraw()
   of ietKeyEnd:
     if pager.config.input.viNumericPrefix and not pager.notnum:
       let c = pager.inputBuffer[0]
@@ -1016,10 +1022,7 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     pager.pollData.register(fd, POLLOUT))
   if sr.isErr:
     return
-  case sr.get
-  of tsrSuccess: discard
-  of tsrDA1Fail:
-    pager.alert("Failed to query DA1, please set display.query-da1 = false")
+  pager.attrs = pager.term.attrs
   for st in SurfaceType:
     pager.clear(st)
   pager.addConsole(istream != nil)
@@ -1949,22 +1952,24 @@ proc openEditor(pager: Pager; input: var string): Opt[void] =
   ok()
 
 proc windowChange(pager: Pager) =
-  let oldAttrs = pager.attrs
-  pager.term.windowChange()
-  if pager.attrs == oldAttrs:
-    #TODO maybe it's more efficient to let false positives through?
-    return
-  if pager.lineedit != nil:
-    pager.lineedit.windowChange(pager.attrs)
-  for st in SurfaceType:
-    pager.clear(st)
+  # maybe we didn't change dimensions, just color mode
+  let dimChange = pager.attrs.width != pager.term.attrs.width or
+    pager.attrs.height != pager.term.attrs.height or
+    pager.attrs.ppc != pager.term.attrs.ppc or
+    pager.attrs.ppl != pager.term.attrs.ppl
+  pager.attrs = pager.term.attrs
+  if dimChange:
+    if pager.lineedit != nil:
+      pager.lineedit.windowChange(pager.attrs)
+    for st in SurfaceType:
+      pager.clear(st)
+    if pager.menu != nil:
+      pager.menu.windowChange(pager.bufWidth, pager.bufHeight)
+    if pager.askPrompt != "":
+      pager.writeAskPrompt()
+    pager.queueStatusUpdate()
   for container in pager.containers:
     container.windowChange(pager.attrs)
-  if pager.menu != nil:
-    pager.menu.windowChange(pager.bufWidth, pager.bufHeight)
-  if pager.askPrompt != "":
-    pager.writeAskPrompt()
-  pager.queueStatusUpdate()
 
 # Apply siteconf settings to a request.
 # Note that this may modify the URL passed.
@@ -3683,6 +3688,7 @@ proc inputLoop(pager: Pager): Opt[void] =
       if (event.revents and POLLIN) != 0:
         if event.fd == sigwinch.fd:
           sigwinch.drain()
+          ?pager.term.windowChange()
           pager.windowChange()
         else:
           ?pager.handleRead(efd)
