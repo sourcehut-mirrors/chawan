@@ -187,8 +187,6 @@ type
   JSClassExoticMethodsConst* {.importc: "const JSClassExoticMethods *",
     header: qjsheader.} = ptr JSClassExoticMethods
 
-  JSRuntimeCleanUpFunc* {.importc.} = proc(rt: JSRuntime) {.cdecl.}
-
   JSClassCallP* {.importc: "JSClassCall *".} =
     proc(ctx: JSContext; func_obj, this_val: JSValueConst; argc: cint;
       argv: JSValueConstArray; flags: cint): JSValue {.cdecl.}
@@ -445,8 +443,6 @@ proc JS_NewRuntime2*(mf: ptr JSMallocFunctions; opaque: pointer): JSRuntime
 proc JS_FreeRuntime*(rt: JSRuntime)
 proc JS_GetRuntimeOpaque*(rt: JSRuntime): pointer
 proc JS_SetRuntimeOpaque*(rt: JSRuntime; p: pointer)
-proc JS_SetRuntimeCleanUpFunc*(rt: JSRuntime;
-  cleanup_func: JSRuntimeCleanUpFunc)
 proc JS_UnsetCanDestroyHooks*(rt: JSRuntime)
 proc JS_MarkValue*(rt: JSRuntime; val: JSValueConst; mark_func: JS_MarkFunc)
 proc JS_RunGC*(rt: JSRuntime)
