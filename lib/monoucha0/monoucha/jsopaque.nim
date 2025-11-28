@@ -7,6 +7,7 @@ import quickjs
 type
   JSSymbolRef* = enum
     jsyIterator = "iterator"
+    jsyToStringTag = "toStringTag"
 
   JSStrRef* = enum
     jstDone = "done"

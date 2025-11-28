@@ -326,17 +326,21 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   if not ctx.addClassUnforgeableAndFinalizer(proto, res, parent, unforgeable,
       finalizer):
     return JS_INVALID_CLASS_ID
+  let name = JS_NewString(ctx, cdef.class_name)
+  let strSym = ctxOpaque.symRefs[jsyToStringTag]
   if asglobal:
     let global = ctxOpaque.global
     assert ctxOpaque.gclass == 0
     ctxOpaque.gclass = res
     # Global already exists, so set unforgeable functions here
-    if JS_SetPrototype(ctx, global, proto) != 1 or
+    if ctx.definePropertyC(global, strSym, name) == dprException or
+        JS_SetPrototype(ctx, global, proto) != 1 or
         not ctx.setPropertyFunctionList(global, funcs) or
         not ctx.setUnforgeable(global, res):
       return JS_INVALID_CLASS_ID
   else:
-    if not ctx.setPropertyFunctionList(proto, funcs):
+    if ctx.definePropertyC(proto, strSym, name) == dprException or
+        not ctx.setPropertyFunctionList(proto, funcs):
       return JS_INVALID_CLASS_ID
   let jctor = ctx.newCtorFunFromParentClass(ctor, cdef.class_name, parent,
     ctorType)
@@ -390,7 +394,6 @@ type
     tabStatic: NimNode # array of static function table
     ctorFun: NimNode # constructor ident
     ctorType: JSCFunctionEnum # JS_CFUNC_constructor or [...]constructor_or_func
-    hasTag: bool
     getset: Table[string, (NimNode, NimNode, BoundFunctionFlag)] # name -> value
     propGetOwnFun: NimNode # custom own get function ident
     propGetFun: NimNode # custom get function ident
@@ -1441,11 +1444,6 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
       info.name = name
   if name != "":
     info.name = name
-  if not info.hasTag:
-    let tag = info.name
-    info.tabFuns.add(quote do:
-      JS_PROP_STRING_DEF("[Symbol.toStringTag]", `tag`, JS_PROP_CONFIGURABLE))
-    info.hasTag = true
   if not asglobal:
     info.dfin = quote do: jsCheckDestroy
     if info.tname notin jsDtors:
