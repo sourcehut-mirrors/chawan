@@ -800,6 +800,10 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
     of mitRelease:
       if pager.hasMouseSelection():
         pager.mouse.inSelection = true
+        if pager.term.osc52Primary:
+          container.getSelectionText().then(proc(s: string) =
+            discard pager.term.sendOSC52(s, clipboard = false)
+          )
       elif pressed == input.pos and input.pos.y < pager.attrs.height - 1:
         let prevx = container.cursorx
         let prevy = container.cursory
@@ -3688,7 +3692,7 @@ proc inputLoop(pager: Pager): Opt[void] =
       if (event.revents and POLLIN) != 0:
         if event.fd == sigwinch.fd:
           sigwinch.drain()
-          ?pager.term.windowChange()
+          ?pager.term.queryWindowSize()
           pager.windowChange()
         else:
           ?pager.handleRead(efd)

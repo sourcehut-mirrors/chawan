@@ -651,6 +651,23 @@ OSC 52 is available on launch.
 T}
 _
 T{
+osc52\-primary
+T}@T{
+boolean / \(lqauto\(rq
+T}@T{
+auto
+T}@T{
+Whether Chawan should try to set the primary selection through OSC 52.
+This happens automatically on mouse selection, and also on all clipboard
+copies.
+.PP
+When set to \(lqauto\(rq (the default), Chawan tries to detect whether
+the terminal is capable of setting the primary selection.
+Note that very few terminals actually get this right (to my knowledge,
+only XTerm and Kitty).
+T}
+_
+T{
 bracketed\-paste
 T}@T{
 boolean
@@ -995,20 +1012,6 @@ T}@T{
 T}@T{
 Sets the assumed foreground color of the terminal.
 \(lqauto\(rq leaves foreground color detection to Chawan.
-T}
-_
-T{
-query\-da1
-T}@T{
-bool
-T}@T{
-true
-T}@T{
-Enable/disable querying Primary Device Attributes, and with it, all
-\(lqdynamic\(rq terminal querying.
-.PP
-Do not alter this value unless Chawan told you so; the output will look
-awful.
 T}
 _
 T{

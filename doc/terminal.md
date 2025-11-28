@@ -33,9 +33,11 @@ forward-compatible.  On startup, Chawan queries:
 
 * Whether the terminal has true color, with XTGETTCAP rgb.
 * The default background, foreground, and 16 ANSI(-ish) colors with
-  `OSC 1 0 ; ? ST`, `OSC 1 1 ; ? ST`, and `OSC 4 ; {0..15} ; ? ST`.
-* Whether the terminal can use the Kitty image protocol, by sending an
-  incorrectly encoded image and listening for an error.
+  `OSC 10 ; ? ST`, `OSC 11 ; ? ST`, and `OSC 4 ; {0..15} ; ? ST`.
+* `OSC 60 ST` and `OSC 61 allowWindowOps ST` for detecting OSC 52 support
+  (see the *[Clipboard](#clipboard)* section).
+* Whether the terminal can use the Kitty image protocol, by sending a 1x1
+  Kitty image and listening for a response.
 * The number of Sixel color registers (`CSI ? 1 ; 1 ; 0 $`).
 * Primary device attributes (DA1).
 * Text area and cell size using `CSI 1 4 t` and `CSI 1 6 t`.  (Cell size
@@ -43,14 +45,45 @@ forward-compatible.  On startup, Chawan queries:
 * Window size in cells by sending a CUP to 9999;9999 and then asking for CPR
   (the same trick is used by `resize`).
 
-In the past, Chawan relied on the terminal always responding to DA1, and
-would hang on non-conforming terminals.  This is no longer the case as we
-now allow user interaction before the state machine has finished.
+Chawan processes responses to the above query in the same state machine
+as user input, so it works reasonably well even on terminals that do not
+fully emulate the VT100.  Also, we do not parse responses that we have
+already received, so the chance of user input being mistaken for a query
+response (or vice versa) is low.
 
 Some terminals bleed the APC sequence used to recognize kitty image support.
-If the terminal also supports the alternate screen (ti/smcup), the sequence
-may end up inside the shell prompt.  On known terminals with this issue
-which set `TERM` correctly, the kitty query is omitted.
+However, we immediately clear the screen afterwards, so in practice this
+shouldn't be an issue either.
+
+## Clipboard
+
+Some terminals support sequences to override the clipboard.  Chawan
+differentiates between three tiers:
+
+1. Supports clipboard *and* primary selection.  The latter is what allows
+   you on X11 to select some text with the mouse and then middle-click
+   paste it elsewhere.
+
+   This applies to all terminals that respond to OSC 60/61 (XTerm) as well
+   as a hardcoded list of terminals that respond with 52 in DA1 and have
+   been confirmed to support the primary selection (Kitty).
+
+2. Supports clipboard, but may choke on trying to set primary selection.
+
+   This applies to terminals that include the number 52 in DA1.  This
+   response guarantees nothing about support for the primary selection,
+   and indeed, some terminals that return it (Contour) behave incorrectly
+   when receiving primary.
+
+3. Does not support clipboard.  In this case we shell out to
+   `external.copy-cmd` (defaults to [xsel](man:xsel(1x))).
+
+   This applies to all other terminals.  Notably, this includes terminals
+   that support OSC 52 but do not have a reliable mechanism to detect
+   whether it actually works, such as Alacritty.
+
+It is possible to manually adjust OSC 52 use using the `input.osc52-copy`
+and `input.osc52-primary` configuration options.
 
 ## Ancient terminals
 

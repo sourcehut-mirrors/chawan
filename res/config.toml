@@ -103,7 +103,6 @@ force-clear = false
 set-title = "auto"
 default-background-color = "auto"
 default-foreground-color = "auto"
-query-da1 = true
 columns = 80
 lines = 24
 pixels-per-column = 9

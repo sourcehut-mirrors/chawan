@@ -102,15 +102,16 @@ type
 
   TermdescFlag = enum # 16 bits, 7 free
     tfTitle # can set window title
-    tfDa1 # we get a response from DA1
+    tfPreEcma48 # does not support ECMA-48/VT100-like queries (DA1 etc.)
+    tfXtermQuery # supports XTerm-like queries (background color etc.)
     tfAltScreen # has alt screen
-    tfBleedsAPC # terminal chokes on APC
     tfColor1 # tfColor1: ANSI
     tfColor2 # tfColor2: eight-bit; together with tfColor1: true-color
     tfSixel # known to support Sixel (and doesn't advertise it)
     tfSpecialGraphics # supports DEC special graphics
     tfMargin # needs a 1-char margin at the right edge
     tfMouse # supports SGR mouse
+    tfPrimary # interprets primary correctly in OSC 52
 
   Termdesc = set[TermdescFlag]
 
@@ -133,6 +134,7 @@ type
     cleared: bool
     asciiOnly: bool
     osc52Copy: bool
+    osc52Primary*: bool
     ttyFlag: bool
     mouseEnabled: bool
     specialGraphics: bool # flag for special graphics processing
@@ -157,8 +159,8 @@ type
     colorMap: array[16, RGBColor]
 
   QueryState = enum
-    qsBackgroundColor, qsForegroundColor, qsXtermWindowOps, qsKitty,
-    qsColorRegisters, qsTcapRGB, qsANSIColor, qsDA1, qsCellSize,
+    qsBackgroundColor, qsForegroundColor, qsXtermAllowedOps, qsXtermWindowOps,
+    qsKitty, qsColorRegisters, qsTcapRGB, qsANSIColor, qsDA1, qsCellSize,
     qsWindowPixels, qsCPR, qsNone
 
   EventState = enum
@@ -167,15 +169,18 @@ type
     esCSI = "\e["
     esCSIQMark = "\e[?"
     esCSIEquals = "\e[="
-    esCSINum
+    esCSINum = "\e["
     esBracketed = ""
     esBracketedEsc = "\e"
     esBracketedCSI = "\e["
     esBracketedCSI2 = "\e[2"
     esBracketedCSI20 = "\e[20"
     esBracketedCSI201 = "\e[201"
+    esCSILt = "\e[<"
     esOSC = "\e]"
     esOSC6 = "\e]6"
+    esOSC60 = "\e]60"
+    esOSC60Semi = "\e]60;"
     esOSC61 = "\e]61"
     esOSC61Semi = "\e]61;"
     esOSC4 = "\e]4"
@@ -195,7 +200,6 @@ type
     esAPC = "\e_"
     esAPCG = "\e_G"
     esSTEsc = "\e"
-    esMouse
     esSkipToST
     esBacktrack
 
@@ -266,6 +270,9 @@ type
     mods*: set[MouseInputMod]
     pos*: MouseInputPosition
 
+# Forward declarations
+proc windowChange(term: Terminal)
+
 # Built-in terminal capability database.
 #
 # In an ideal world, none of this would be necessary as we could just get
@@ -286,8 +293,11 @@ type
 # through queries.  Descriptions with XtermCompatible and no extra flags
 # are redundant; I'm including them only to have a list of terminals already
 # tested.
+#
+# Note: we intentionally do not include tfPrimary here, because some poorly
+# written terminals choke on it despite advertising themselves as XTerm.
 const XtermCompatible = {
-  tfTitle, tfDa1, tfAltScreen, tfSpecialGraphics, tfMouse
+  tfTitle, tfXtermQuery, tfAltScreen, tfSpecialGraphics, tfMouse
 }
 
 const AnsiColorFlag = {tfColor1}
@@ -295,31 +305,31 @@ const EightBitColorFlag = {tfColor2}
 const TrueColorFlag = {tfColor1, tfColor2}
 
 const TermdescMap = [
-  ttAdm3a: {tfMargin},
+  ttAdm3a: {tfMargin, tfPreEcma48},
   ttAlacritty: XtermCompatible + TrueColorFlag,
   ttContour: XtermCompatible,
-  ttDvtm: {tfAltScreen, tfBleedsAPC} + TrueColorFlag,
+  ttDvtm: {tfAltScreen} + TrueColorFlag,
   ttEat: XtermCompatible + TrueColorFlag,
-  ttEterm: {tfTitle, tfDa1} + AnsiColorFlag,
-  ttFbterm: {tfDa1} + AnsiColorFlag,
+  ttEterm: {tfTitle, tfXtermQuery} + AnsiColorFlag,
+  ttFbterm: {tfXtermQuery} + AnsiColorFlag,
   ttFoot: XtermCompatible,
-  ttFreebsd: AnsiColorFlag,
+  ttFreebsd: {tfXtermQuery} + AnsiColorFlag,
   ttGhostty: XtermCompatible,
   ttIterm2: XtermCompatible,
-  ttKitty: XtermCompatible + TrueColorFlag,
+  ttKitty: XtermCompatible + TrueColorFlag + {tfPrimary},
   ttKonsole: XtermCompatible,
   # Linux accepts true color or eight bit sequences, but as per the
   # man page they are "shoehorned into 16 colors".  This breaks color
   # correction, so we stick to ANSI.
   # It also fails to advertise ANSI color in DA1, so we set it here.
-  ttLinux: {tfDa1, tfAltScreen} + AnsiColorFlag,
+  ttLinux: {tfXtermQuery, tfAltScreen} + AnsiColorFlag,
   ttMintty: XtermCompatible + TrueColorFlag,
   ttMlterm: XtermCompatible + TrueColorFlag,
   ttMsTerminal: XtermCompatible + TrueColorFlag,
   ttPutty: XtermCompatible + TrueColorFlag,
   ttRio: XtermCompatible,
   ttRlogin: XtermCompatible + TrueColorFlag,
-  ttRxvt: XtermCompatible + {tfBleedsAPC} + EightBitColorFlag,
+  ttRxvt: XtermCompatible + EightBitColorFlag,
   # screen does true color, but only if you explicitly enable it.
   # smcup is also opt-in; however, it should be fine to send it even if
   # it's not used.
@@ -328,18 +338,20 @@ const TermdescMap = [
   # SyncTERM supports Sixel, but it doesn't have private color registers
   # so we omit it.
   ttSyncterm: XtermCompatible + TrueColorFlag + {tfMargin},
-  ttTerminology: XtermCompatible + {tfBleedsAPC},
+  ttTerminology: XtermCompatible,
   ttTmux: XtermCompatible + TrueColorFlag,
   # Direct color in urxvt is not really true color; apparently it
   # just takes the nearest color of the 256 registers and replaces it
   # with the direct color given.  I don't think this is much worse than
   # our basic quantization for 256 colors, so we use it anyway.
-  ttUrxvt: XtermCompatible + {tfBleedsAPC} + TrueColorFlag,
-  # The VT100 had DA1, but couldn't gracefully consume unknown sequences.
+  ttUrxvt: XtermCompatible + TrueColorFlag,
+  # The VT100 had DA1, but couldn't gracefully consume unknown sequences
+  # (tfXtermQuery).
   ttVt100: {tfSpecialGraphics},
-  # The VT420 could (it seems), but I'm not convinced it brings any benefit.
+  # The VT420 could (it seems), but I'm not convinced sending them brings
+  # any benefit.
   ttVt420: {tfSpecialGraphics},
-  ttVt52: {},
+  ttVt52: {tfPreEcma48},
   ttVte: XtermCompatible + TrueColorFlag,
   ttWezterm: XtermCompatible,
   ttWterm: XtermCompatible + TrueColorFlag,
@@ -347,7 +359,7 @@ const TermdescMap = [
   ttXst: XtermCompatible + TrueColorFlag,
   ttXterm: XtermCompatible,
   # yaft supports Sixel, but can't tell us so in DA1.
-  ttYaft: XtermCompatible + {tfBleedsAPC, tfSixel} - {tfAltScreen},
+  ttYaft: XtermCompatible + {tfSixel} - {tfAltScreen},
   # zellij supports Sixel, but doesn't advertise it.
   # However, the feature barely works, so we don't force it here.
   ttZellij: XtermCompatible + TrueColorFlag,
@@ -404,7 +416,8 @@ const QueryANSIColors = block:
     s &= OSC & "4;" & $n & ";?" & ST
   s
 
-const QueryXtermWindowOps = OSC & "61;allowWinOps" & ST
+const QueryXtermAllowedOps = OSC & "60" & ST
+const QueryXtermWindowOps = OSC & "61;allowWindowOps" & ST
 
 # DEC set
 template DECSET(s: varargs[string, `$`]): string =
@@ -434,7 +447,7 @@ const CIVIS = DECRST(25)
 # application program command
 const APC = "\e_"
 
-const KittyQuery = APC & "Gi=1,a=q;" & ST
+const KittyQuery = APC & "Gi=1,s=1,v=1,a=q;AAAAAA" & ST
 
 proc flush*(term: Terminal): Opt[bool] =
   var page = term.pageHead
@@ -532,7 +545,12 @@ proc areadChar(term: Terminal): Opt[char] =
   ok(c)
 
 proc backtrack(eparser: var EventParser; s: string; c: char) =
-  let s = $eparser.state
+  var s = $eparser.state
+  for i, num in eparser.nums:
+    if i != 0:
+      s &= ';'
+    s &= $num
+  eparser.nums.setLen(0)
   eparser.state = esBacktrack
   eparser.backtrackStack = @[c]
   for i in countdown(s.high, 0):
@@ -608,14 +626,16 @@ proc parseST(eparser: var EventParser; c: char): bool =
 proc parseMouseInput(eparser: var EventParser; t: MouseInputType;
     input: var MouseInput): Opt[void] =
   if eparser.nums.len != 3:
+    eparser.nums.setLen(0)
     return err()
   let btn = eparser.nums[0]
   let x = eparser.nums[1]
   let y = eparser.nums[2]
+  eparser.nums.setLen(0)
   if btn > uint16.high or x > uint16.high or y > uint16.high:
     return err()
   input.t = t
-  input.pos = (int32(x), int32(y))
+  input.pos = (int32(x) - 1, int32(y) - 1)
   if (btn and 4) != 0:
     input.mods.incl(mimShift)
   if (btn and 8) != 0:
@@ -694,9 +714,9 @@ proc parseEsc(eparser: var EventParser; c: char) =
 
 proc parseCSI(eparser: var EventParser; c: char) =
   case c
-  of '<': eparser.state = esMouse
+  of '<': eparser.state = esCSILt
   of '?':
-    let state = if eparser.queryState < qsColorRegisters:
+    let state = if eparser.queryState <= qsColorRegisters:
       qsColorRegisters
     else:
       qsDA1
@@ -720,6 +740,9 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
       term.eparser.state = esBracketed
       term.eparser.nums.setLen(0)
       return eprNone
+    # may be pageUp/pageDown; try to backtrack
+    term.eparser.backtrack(c)
+    return eprNone
   of 't': # XTWINOPS
     if term.eparser.nums.len == 3:
       let x = term.eparser.nums[2]
@@ -749,6 +772,7 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
           term.eparser.queryState = qsCellSize.succ
         else: discard
         if term.attrs != oattrs:
+          term.windowChange()
           changed = eprWindowChange
   of 'R': # CPR
     if term.eparser.nums.len == 2:
@@ -765,6 +789,7 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
         term.attrs.heightPx = term.attrs.height * term.attrs.ppl
       term.eparser.queryState = qsNone
       if term.attrs != oattrs:
+        term.windowChange()
         changed = eprWindowChange
   else: discard
   term.eparser.nums.setLen(0)
@@ -789,6 +814,8 @@ proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
       of 52:
         if term.config.input.osc52Copy.isNone:
           term.osc52Copy = true
+        if tfPrimary in term.desc and term.config.input.osc52Primary.isNone:
+          term.osc52Primary = true
       else: discard
   of 'S': # XTSMGRAPHICS
     if term.eparser.nums.len >= 3 and term.eparser.nums[0] == 1 and
@@ -800,16 +827,37 @@ proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
   term.eparser.nums.setLen(0)
   term.eparser.state = esNone
   if colorMode != term.attrs.colorMode: # windowChange implies redraw
+    term.windowChange()
     return eprWindowChange
   if imageMode != term.imageMode:
     return eprRedraw
   eprNone
 
+proc parseCSILt(eparser: var EventParser; c: char; mouse: var MouseInput):
+    bool =
+  # Parse a mouse event:
+  # CSI < btn ; Px ; Py M (press)
+  # CSI < btn ; Px ; Py m (release)
+  if eparser.parseNum(c):
+    return false
+  eparser.state = esNone
+  if c in {'m', 'M'}: # otherwise, just ignore
+    let t = if c == 'M': mitPress else: mitRelease
+    return eparser.parseMouseInput(t, mouse).isOk
+  eparser.nums.setLen(0)
+  return false
+
 proc parseOSC(eparser: var EventParser; c: char) =
   case c
-  of '6': eparser.nextState(qsXtermWindowOps, c, esOSC6)
+  of '6': eparser.state = esOSC6
   of '4': eparser.nextStateSameQuery(qsANSIColor, c, esOSC4)
   of '1': eparser.state = esOSC1
+  else: eparser.backtrack(c)
+
+proc parseOSC6(eparser: var EventParser; c: char) =
+  case c
+  of '0': eparser.nextState(qsXtermAllowedOps, c, esOSC60)
+  of '1': eparser.nextState(qsXtermWindowOps, c, esOSC61)
   else: eparser.backtrack(c)
 
 proc parseOSCNumSemi(term: Terminal; c: char): EscParseResult =
@@ -828,7 +876,7 @@ proc parseOSCNumSemi(term: Terminal; c: char): EscParseResult =
     let state = term.eparser.state
     let i = if state == esOSC4SemiNum: 1 else: 0
     term.eparser.buf = ""
-    term.eparser.skipToST(c)
+    discard term.eparser.parseST(c)
     if term.eparser.nums.len == i + 3:
       let n = term.eparser.nums[0]
       let r = term.eparser.nums[i]
@@ -847,6 +895,7 @@ proc parseOSCNumSemi(term: Terminal; c: char): EscParseResult =
         let prefersDark = term.defaultBackground.Y < 125
         if prefersDark != term.attrs.prefersDark:
           term.attrs.prefersDark = prefersDark
+          term.windowChange()
           return eprWindowChange
       else: discard
       return eprRedraw
@@ -855,20 +904,34 @@ proc parseOSCNumSemi(term: Terminal; c: char): EscParseResult =
   else: term.eparser.skipToST(c)
   return eprNone
 
-proc parseOSC61Semi(term: Terminal; c: char) =
-  if c in {';', '\a', '\e'}:
-    term.eparser.flag = term.eparser.flag or
-      term.eparser.buf.equalsIgnoreCase("SetSelection")
-    term.eparser.buf = ""
-    if c in {'\a', '\e'}:
+proc parseOSC60Semi(term: Terminal; c: char) =
+  if c in {',', '\a', '\e'}:
+    if term.eparser.buf.equalsIgnoreCase("allowWindowOps"):
       if term.config.input.osc52Copy.isNone:
-        term.osc52Copy = not term.eparser.flag
-      term.eparser.flag = false
+        term.osc52Copy = true
+      if term.config.input.osc52Primary.isNone:
+        term.osc52Primary = true
+    term.eparser.buf = ""
   case c
-  of ';': term.eparser.buf = ""
+  of ',': term.eparser.buf = ""
   of '\a': term.eparser.state = esNone
   of '\e': term.eparser.state = esSTEsc
   else: term.eparser.buf &= c
+
+proc parseOSC61Semi(term: Terminal; c: char) =
+  if c in {',', '\a', '\e'}:
+    term.eparser.flag = term.eparser.flag or
+      term.eparser.buf.equalsIgnoreCase("SetSelection")
+    term.eparser.buf = ""
+    if term.eparser.parseST(c):
+      if not term.eparser.flag:
+        if term.config.input.osc52Copy.isNone:
+          term.osc52Copy = true
+        if term.config.input.osc52Primary.isNone:
+          term.osc52Primary = true
+      term.eparser.flag = false
+  else:
+    term.eparser.buf &= c
 
 proc parseOSC1(term: Terminal; c: char) =
   case c
@@ -887,6 +950,34 @@ proc parseOSC4Semi(eparser: var EventParser; c: char) =
     eparser.nums.setLen(0)
     eparser.state = esNone
 
+proc parseDCS(eparser: var EventParser; c: char) =
+  case c
+  of '0': eparser.state = esDCS0
+  of '1': eparser.state = esDCS1
+  else: eparser.backtrack(c)
+
+proc parseDCS1PlusR(term: Terminal; c: char): EscParseResult =
+  if term.eparser.parseHexNum(c):
+    return eprNone
+  let nums = move(term.eparser.nums)
+  term.eparser.nums = @[]
+  term.eparser.skipToST(c)
+  if c == '=' and nums.len == 1 and nums[0] == 0x524742 and # ASCII R G B
+      term.config.display.colorMode.isNone and
+      term.attrs.colorMode != cmTrueColor:
+    term.attrs.colorMode = cmTrueColor
+    return eprWindowChange
+  eprNone
+
+proc parseAPCG(term: Terminal; c: char): EscParseResult =
+  let imageMode = term.imageMode
+  if term.config.display.imageMode.isNone:
+    term.imageMode = imKitty
+  term.eparser.skipToST(c)
+  if imageMode != term.imageMode:
+    return eprRedraw
+  eprNone
+
 proc areadCharBacktrack(term: Terminal): Opt[char] =
   if term.eparser.state == esBacktrack:
     if term.eparser.backtrackStack.len > 0:
@@ -895,7 +986,8 @@ proc areadCharBacktrack(term: Terminal): Opt[char] =
   return term.areadChar()
 
 proc areadEvent*(term: Terminal): Opt[InputEvent] =
-  while true:
+  var epr = eprNone
+  while epr == eprNone:
     if term.eparser.keyLen == 1:
       dec term.eparser.keyLen
       return ok(InputEvent(t: ietKeyEnd))
@@ -912,19 +1004,11 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
     of esBracketedEsc: term.eparser.nextState('[', c, esBracketedCSI)
     of esEsc: term.eparser.parseEsc(c)
     of esCSI: term.eparser.parseCSI(c)
-    of esCSIQMark:
-      case term.parseCSIQMark(c)
-      of eprNone: discard
-      of eprWindowChange: return ok(InputEvent(t: ietWindowChange))
-      of eprRedraw: return ok(InputEvent(t: ietRedraw))
+    of esCSIQMark: epr = term.parseCSIQMark(c)
     of esCSIEquals: # SyncTERM DA1 response; skip
       if c == 'c':
         term.eparser.state = esNone
-    of esCSINum:
-      case term.parseCSINum(c)
-      of eprNone: discard
-      of eprWindowChange: return ok(InputEvent(t: ietWindowChange))
-      of eprRedraw: return ok(InputEvent(t: ietRedraw))
+    of esCSINum: epr = term.parseCSINum(c)
     of esBracketedCSI: term.eparser.nextState('2', c)
     of esBracketedCSI2: term.eparser.nextState('0', c)
     of esBracketedCSI20: term.eparser.nextState('1', c)
@@ -933,61 +1017,32 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
         term.eparser.state = esNone
         return ok(InputEvent(t: ietPaste))
       term.eparser.backtrack(c)
-    of esMouse:
-      # CSI < btn ; Px ; Py M (press)
-      # CSI < btn ; Px ; Py m (release)
-      if term.eparser.parseNum(c):
-        continue
-      term.eparser.state = esNone
-      if c in {'m', 'M'}: # otherwise, just ignore
-        let t = if c == 'M': mitPress else: mitRelease
-        var mouse = MouseInput()
-        if term.eparser.parseMouseInput(t, mouse).isOk:
-          return ok(InputEvent(t: ietMouse, m: mouse))
+    of esCSILt:
+      var mouse: MouseInput
+      if term.eparser.parseCSILt(c, mouse):
+        return ok(InputEvent(t: ietMouse, m: mouse))
     of esOSC: term.eparser.parseOSC(c)
-    of esOSC6: term.eparser.nextState('1', c, esOSC61)
-    of esOSC61: term.eparser.nextState(';', c, esOSC61Semi)
+    of esOSC6: term.eparser.parseOSC6(c)
+    of esOSC60, esOSC61, esOSC10, esOSC11, esOSC4:
+      term.eparser.nextState(';', c)
+    of esOSC60Semi: term.parseOSC60Semi(c)
     of esOSC61Semi: term.parseOSC61Semi(c)
     of esOSC1: term.parseOSC1(c)
-    of esOSC10: term.eparser.nextState(';', c, esOSC10Semi)
-    of esOSC11: term.eparser.nextState(';', c, esOSC11Semi)
-    of esOSC4: term.eparser.nextState(';', c, esOSC4Semi)
     of esOSC4Semi: term.eparser.parseOSC4Semi(c)
-    of esOSC4SemiNum, esOSC10Semi, esOSC11Semi:
-      case term.parseOSCNumSemi(c)
-      of eprNone: discard
-      of eprWindowChange: return ok(InputEvent(t: ietWindowChange))
-      of eprRedraw: return ok(InputEvent(t: ietRedraw))
-    of esDCS:
-      case c
-      of '0': term.eparser.state = esDCS0
-      of '1': term.eparser.state = esDCS1
-      else: term.eparser.backtrack(c)
+    of esOSC4SemiNum, esOSC10Semi, esOSC11Semi: epr = term.parseOSCNumSemi(c)
+    of esDCS: term.eparser.parseDCS(c)
     of esDCS0, esDCS1: term.eparser.nextState('+', c)
     of esDCS0Plus: term.eparser.nextState('r', c, esSkipToST)
     of esDCS1Plus: term.eparser.nextState('r', c, esDCS1PlusR)
-    of esDCS1PlusR:
-      if term.eparser.parseHexNum(c):
-        continue
-      let nums = move(term.eparser.nums)
-      term.eparser.nums = @[]
-      term.eparser.skipToST(c)
-      if c == '=' and nums.len == 1 and nums[0] == 0x524742 and # ASCII R G B
-          term.config.display.colorMode.isNone and
-          term.attrs.colorMode != cmTrueColor:
-        term.attrs.colorMode = cmTrueColor
-        return ok(InputEvent(t: ietWindowChange))
+    of esDCS1PlusR: epr = term.parseDCS1PlusR(c)
     of esAPC: term.eparser.nextState('G', c, esAPCG)
-    of esAPCG:
-      let imageMode = term.imageMode
-      if term.config.display.imageMode.isNone:
-        term.imageMode = imKitty
-      term.eparser.skipToST(c)
-      if imageMode != term.imageMode:
-        return ok(InputEvent(t: ietRedraw))
+    of esAPCG: epr = term.parseAPCG(c)
     of esSTEsc: term.eparser.nextState('\\', c, esNone)
     of esSkipToST: discard term.eparser.parseST(c)
-  err()
+  case epr
+  of eprNone: return err()
+  of eprWindowChange: return ok(InputEvent(t: ietWindowChange))
+  of eprRedraw: return ok(InputEvent(t: ietRedraw))
 
 proc cursorGoto(term: Terminal; x, y: int): string =
   case term.termType
@@ -1470,6 +1525,8 @@ proc applyConfig(term: Terminal) =
   term.attrs.prefersDark = term.defaultBackground.Y < 125
   if term.config.input.osc52Copy.isSome:
     term.osc52Copy = term.config.input.osc52Copy.get
+  if term.config.input.osc52Primary.isSome:
+    term.osc52Primary = term.config.input.osc52Primary.get
   # charsets
   if term.config.encoding.displayCharset.isSome:
     term.cs = term.config.encoding.displayCharset.get
@@ -1798,12 +1855,20 @@ proc draw*(term: Terminal; redraw: bool; cursorx, cursory: int): Opt[void] =
   ?term.write(buf)
   ok()
 
-proc sendOSC52*(term: Terminal; s: string): Opt[bool] =
+proc sendOSC52*(term: Terminal; s: string; clipboard = true): Opt[bool] =
   if not term.osc52Copy:
     return ok(false)
   term.blockIO()
   doAssert ?term.flush()
-  ?term.write(OSC & "52;c;" & btoa(s) & ST)
+  var buf = OSC & "52;"
+  if clipboard:
+    buf &= 'c'
+  if term.osc52Primary:
+    buf &= 'p'
+  buf &= ';'
+  buf.btoa(s.toOpenArrayByte(0, s.high))
+  buf &= ST
+  ?term.write(buf)
   term.unblockIO()
   ok(true)
 
@@ -1850,20 +1915,27 @@ proc quit*(term: Terminal): Opt[void] =
     var buf = ""
     if term.config.input.bracketedPaste:
       buf &= term.disableBracketedPaste()
+    if term.hasAltScreen() and term.imageMode == imSixel:
+      # xterm seems to keep sixels in the alt screen; clear these so it
+      # doesn't flash in the user's face the next time they do smcup
+      buf &= term.clearDisplay()
+    # we must do the following even if we supposedly have alt screen in case
+    # support has been misdetected.
+    buf &= term.cursorGoto(0, term.attrs.height - 1) & term.resetFormat() & "\n"
     if term.hasAltScreen():
-      if term.imageMode == imSixel:
-        # xterm seems to keep sixels in the alt screen; clear these so
-        # it doesn't flash in the user's face the next time they do smcup
-        buf &= term.clearDisplay()
       buf &= ResetAltScreen
-    else:
-      buf &= term.cursorGoto(0, term.attrs.height - 1) & term.resetFormat() &
-        "\n"
-    buf &= PopTitle
+    if term.hasTitle():
+      buf &= PopTitle
     buf &= term.showCursor()
     ?term.write(buf)
     term.blockIO()
     doAssert ?term.flush()
+    while term.eparser.queryState != qsNone:
+      if not term.ahandleRead().get(true):
+        break
+      while true:
+        if term.areadEvent().isErr:
+          break
     ?term.disableRawMode()
     term.clearCanvas()
   ok()
@@ -1877,37 +1949,36 @@ proc setQueryState(term: Terminal; qs: QueryState) =
     term.eparser.queryStateStack.add(qs)
 
 proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
-  if tfDa1 notin term.desc or not term.config.display.queryDa1:
+  if tfPreEcma48 in term.desc:
     return ok()
   var outs = ""
   if not windowOnly:
     term.setQueryState(qsBackgroundColor)
-    if term.config.display.defaultBackgroundColor.isNone:
-      outs &= QueryBackgroundColor
-    if term.config.display.defaultForegroundColor.isNone:
-      outs &= QueryForegroundColor
-    if term.termType == ttXterm:
-      # XTerm doesn't implement the OSC 52 DA1 response, unfortunately.
-      # So we do this, which isn't exactly right (technically you are
-      # supposed to check OSC 60 too), and not even documented, but
-      # frankly I don't care.
-      outs &= QueryXtermWindowOps
-    if term.config.display.imageMode.isNone:
-      if tfBleedsAPC notin term.desc:
+    if tfXtermQuery in term.desc:
+      if term.config.display.defaultBackgroundColor.isNone:
+        outs &= QueryBackgroundColor
+      if term.config.display.defaultForegroundColor.isNone:
+        outs &= QueryForegroundColor
+      if term.config.input.osc52Copy.isNone or
+          term.config.input.osc52Primary.isNone:
+        outs &= QueryXtermAllowedOps
+        outs &= QueryXtermWindowOps
+      if term.config.display.imageMode.isNone:
         outs &= KittyQuery
-      outs &= QueryColorRegisters
-    elif term.config.display.imageMode.get == imSixel:
-      outs &= QueryColorRegisters
-    if term.config.display.colorMode.isNone:
-      outs &= QueryTcapRGB
-    outs &= QueryANSIColors
+        outs &= QueryColorRegisters
+      elif term.config.display.imageMode.get == imSixel:
+        outs &= QueryColorRegisters
+      if term.config.display.colorMode.isNone:
+        outs &= QueryTcapRGB
+      outs &= QueryANSIColors
     outs &= DA1
   else:
     term.setQueryState(qsCellSize)
   # We send these unconditionally because the OpenSSH fork of M$ returns
   # fake garbage in TIOCGWINSZ and this way we have a chance of the terminal
   # sending back real data to override that.
-  outs &= QueryCellSize & QueryWindowPixels
+  if tfXtermQuery in term.desc:
+    outs &= QueryCellSize & QueryWindowPixels
   # The resize hack.
   #
   # All vaguely VT100-compatible terminals must implement CPR, so sending
@@ -2001,13 +2072,16 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
     term.applyTermDesc(TermdescMap[term.termType])
   ok()
 
-proc windowChange*(term: Terminal): Opt[void] =
-  ?term.detectTermAttributes(windowOnly = true)
-  ?term.queryAttrs(windowOnly = true)
+proc windowChange(term: Terminal) =
   term.applyConfigDimensions()
   term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
   term.lineDamage = newSeq[int](term.attrs.height)
   term.clearCanvas()
+
+proc queryWindowSize*(term: Terminal): Opt[void] =
+  ?term.detectTermAttributes(windowOnly = true)
+  ?term.queryAttrs(windowOnly = true)
+  term.windowChange()
   ok()
 
 proc initScreen(term: Terminal): Opt[void] =

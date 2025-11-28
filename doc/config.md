@@ -558,6 +558,20 @@ When set to "auto" (the default), Chawan tries to detect whether OSC
 </tr>
 
 <tr>
+<td>osc52-primary</td>
+<td>boolean / "auto"</td>
+<td>auto</td>
+<td>Whether Chawan should try to set the primary selection through OSC 52.
+This happens automatically on mouse selection, and also on all clipboard
+copies.
+<p>
+When set to "auto" (the default), Chawan tries to detect whether the
+terminal is capable of setting the primary selection.  Note that very few
+terminals actually get this right (to my knowledge, only XTerm and Kitty).
+</td>
+</tr>
+
+<tr>
 <td>bracketed-paste</td>
 <td>boolean</td>
 <td>true</td>
@@ -822,17 +836,6 @@ background color detection to Chawan.</td>
 <td>"auto"</td>
 <td>Sets the assumed foreground color of the terminal. "auto" leaves foreground
 color detection to Chawan.</td>
-</tr>
-
-<tr>
-<td>query-da1</td>
-<td>bool</td>
-<td>true</td>
-<td>Enable/disable querying Primary Device Attributes, and with it, all
-"dynamic" terminal querying.
-<p>
-Do not alter this value unless Chawan told you so; the output will look
-awful.</td>
 </tr>
 
 <tr>

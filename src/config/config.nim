@@ -123,6 +123,7 @@ type
     viNumericPrefix* {.jsgetset.}: bool
     useMouse* {.jsgetset.}: bool
     osc52Copy* {.jsgetset.}: Option[bool]
+    osc52Primary* {.jsgetset.}: Option[bool]
     bracketedPaste* {.jsgetset.}: bool
     wheelScroll* {.jsgetset.}: int32
     sideWheelScroll* {.jsgetset.}: int32
@@ -151,7 +152,6 @@ type
     setTitle* {.jsgetset.}: Option[bool]
     defaultBackgroundColor* {.jsgetset.}: Option[RGBColor]
     defaultForegroundColor* {.jsgetset.}: Option[RGBColor]
-    queryDa1* {.jsgetset.}: bool
     columns* {.jsgetset.}: int32
     lines* {.jsgetset.}: int32
     pixelsPerColumn* {.jsgetset.}: int32

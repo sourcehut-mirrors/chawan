@@ -1542,7 +1542,7 @@ proc cursorToggleSelection(container: Container; n = 1;
 
 #TODO I don't like this API
 # maybe make selection a subclass of highlight?
-proc getSelectionText(container: Container; hl = none(Highlight)):
+proc getSelectionText*(container: Container; hl = none(Highlight)):
     Promise[string] {.jsfunc.} =
   let hl = hl.get(container.currentSelection)
   if container.iface == nil or hl == nil or hl.t != hltSelect:
