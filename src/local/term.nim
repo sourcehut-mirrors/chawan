@@ -105,6 +105,7 @@ type
     tfPreEcma48 # does not support ECMA-48/VT100-like queries (DA1 etc.)
     tfXtermQuery # supports XTerm-like queries (background color etc.)
     tfAltScreen # has alt screen
+    tfBleedsAPC # cannot handle APC
     tfColor1 # tfColor1: ANSI
     tfColor2 # tfColor2: eight-bit; together with tfColor1: true-color
     tfSixel # known to support Sixel (and doesn't advertise it)
@@ -308,7 +309,7 @@ const TermdescMap = [
   ttAdm3a: {tfMargin, tfPreEcma48},
   ttAlacritty: XtermCompatible + TrueColorFlag,
   ttContour: XtermCompatible,
-  ttDvtm: {tfAltScreen} + TrueColorFlag,
+  ttDvtm: {tfAltScreen, tfBleedsAPC} + TrueColorFlag,
   ttEat: XtermCompatible + TrueColorFlag,
   ttEterm: {tfTitle, tfXtermQuery} + AnsiColorFlag,
   ttFbterm: {tfXtermQuery} + AnsiColorFlag,
@@ -322,29 +323,29 @@ const TermdescMap = [
   # man page they are "shoehorned into 16 colors".  This breaks color
   # correction, so we stick to ANSI.
   # It also fails to advertise ANSI color in DA1, so we set it here.
-  ttLinux: {tfXtermQuery, tfAltScreen} + AnsiColorFlag,
+  # Linux has no alt screen.
+  ttLinux: {tfXtermQuery} + AnsiColorFlag,
   ttMintty: XtermCompatible + TrueColorFlag,
   ttMlterm: XtermCompatible + TrueColorFlag,
   ttMsTerminal: XtermCompatible + TrueColorFlag,
   ttPutty: XtermCompatible + TrueColorFlag,
   ttRio: XtermCompatible,
   ttRlogin: XtermCompatible + TrueColorFlag,
-  ttRxvt: XtermCompatible + EightBitColorFlag,
+  ttRxvt: XtermCompatible + {tfBleedsAPC} + EightBitColorFlag,
   # screen does true color, but only if you explicitly enable it.
-  # smcup is also opt-in; however, it should be fine to send it even if
-  # it's not used.
-  ttScreen: XtermCompatible + EightBitColorFlag,
+  # The alt screen is also opt-in.
+  ttScreen: XtermCompatible - {tfAltScreen} + EightBitColorFlag,
   ttSt: XtermCompatible + TrueColorFlag,
   # SyncTERM supports Sixel, but it doesn't have private color registers
   # so we omit it.
   ttSyncterm: XtermCompatible + TrueColorFlag + {tfMargin},
-  ttTerminology: XtermCompatible,
+  ttTerminology: XtermCompatible + {tfBleedsAPC},
   ttTmux: XtermCompatible + TrueColorFlag,
   # Direct color in urxvt is not really true color; apparently it
   # just takes the nearest color of the 256 registers and replaces it
   # with the direct color given.  I don't think this is much worse than
   # our basic quantization for 256 colors, so we use it anyway.
-  ttUrxvt: XtermCompatible + TrueColorFlag,
+  ttUrxvt: XtermCompatible + {tfBleedsAPC} + TrueColorFlag,
   # The VT100 had DA1, but couldn't gracefully consume unknown sequences
   # (tfXtermQuery).
   ttVt100: {tfSpecialGraphics},
@@ -359,7 +360,7 @@ const TermdescMap = [
   ttXst: XtermCompatible + TrueColorFlag,
   ttXterm: XtermCompatible,
   # yaft supports Sixel, but can't tell us so in DA1.
-  ttYaft: XtermCompatible + {tfSixel} - {tfAltScreen},
+  ttYaft: XtermCompatible + {tfSixel, tfBleedsAPC} - {tfAltScreen},
   # zellij supports Sixel, but doesn't advertise it.
   # However, the feature barely works, so we don't force it here.
   ttZellij: XtermCompatible + TrueColorFlag,
@@ -1915,15 +1916,14 @@ proc quit*(term: Terminal): Opt[void] =
     var buf = ""
     if term.config.input.bracketedPaste:
       buf &= term.disableBracketedPaste()
-    if term.hasAltScreen() and term.imageMode == imSixel:
-      # xterm seems to keep sixels in the alt screen; clear these so it
-      # doesn't flash in the user's face the next time they do smcup
-      buf &= term.clearDisplay()
-    # we must do the following even if we supposedly have alt screen in case
-    # support has been misdetected.
-    buf &= term.cursorGoto(0, term.attrs.height - 1) & term.resetFormat() & "\n"
     if term.hasAltScreen():
+      if term.imageMode == imSixel:
+        # xterm seems to keep sixels in the alt screen; clear these so it
+        # doesn't flash in the user's face the next time they do smcup
+        buf &= term.clearDisplay()
       buf &= ResetAltScreen
+    else:
+      buf &= term.cursorGoto(0, term.attrs.height - 1) & term.resetFormat()
     if term.hasTitle():
       buf &= PopTitle
     buf &= term.showCursor()
@@ -1964,11 +1964,13 @@ proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
         outs &= QueryXtermAllowedOps
         outs &= QueryXtermWindowOps
       if term.config.display.imageMode.isNone:
-        outs &= KittyQuery
+        if tfBleedsAPC notin term.desc:
+          outs &= KittyQuery
         outs &= QueryColorRegisters
       elif term.config.display.imageMode.get == imSixel:
         outs &= QueryColorRegisters
-      if term.config.display.colorMode.isNone:
+      if term.attrs.colorMode < cmTrueColor and
+          term.config.display.colorMode.isNone:
         outs &= QueryTcapRGB
       outs &= QueryANSIColors
     outs &= DA1
