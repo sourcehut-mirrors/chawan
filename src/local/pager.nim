@@ -230,6 +230,7 @@ proc handleRead(pager: Pager; fd: int): Opt[void]
 proc inputLoop(pager: Pager): Opt[void]
 proc loadURL(pager: Pager; url: string; contentType = "";
   charset = CHARSET_UNKNOWN; history = true)
+proc onSetLoadInfo(pager: Pager; container: Container)
 proc openMenu(pager: Pager; x = -1; y = -1)
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   title: string)
@@ -296,6 +297,7 @@ proc setContainer(pager: Pager; c: Container) =
       pager.tab = c.tab
     c.tab.current = c
     c.queueDraw()
+    pager.onSetLoadInfo(c)
     pager.updateTitle = true
   else:
     pager.tab.current = nil
@@ -1564,7 +1566,8 @@ proc setTab(pager: Pager; container: Container; tab: Tab) =
       pager.tab = pager.tabHead
 
 proc onSetLoadInfo(pager: Pager; container: Container) =
-  if pager.alertState != pasAlertOn and pager.askPromise == nil:
+  if container.loadinfo != "" and pager.alertState != pasAlertOn and
+      pager.askPromise == nil:
     discard pager.status.writeStatusMessage(container.loadinfo)
     pager.alertState = pasLoadInfo
     pager.updateStatus = ussSkip
@@ -1572,7 +1575,6 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
 proc addContainer(pager: Pager; container: Container) =
   pager.setTab(container, pager.tab)
   pager.setContainer(container)
-  pager.onSetLoadInfo(container)
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; url: URL; title = "";
@@ -1724,7 +1726,6 @@ proc replace(pager: Pager; target, container: Container) =
   pager.updatePinned(target, container)
   if pager.container == target:
     pager.setContainer(container)
-    pager.onSetLoadInfo(container)
 
 proc unregisterContainer(pager: Pager; container: Container) =
   if container.iface != nil: # fully connected
