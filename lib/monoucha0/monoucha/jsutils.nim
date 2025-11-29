@@ -67,11 +67,26 @@ proc newArrayFrom*(ctx: JSContext; vals: openArray[JSValue]): JSValue =
   ## Create a new array consisting of `vals`.
   ##
   ## Frees/consumes each individual value in `vals`.
-  let L = vals.len
-  if L > int(cint.high):
+  if int64(vals.len) > int64(uint32.high):
     ctx.freeValues(vals)
     return JS_ThrowRangeError(ctx, "sequence too large")
-  return JS_NewArrayFrom(ctx, cast[cint](L), vals.toJSValueArray())
+  var obj = JS_NewArray(ctx)
+  if JS_IsException(obj):
+    return obj
+  var u = 0u32
+  let L = uint32(vals.len)
+  var fail = false
+  while u < L:
+    let res = JS_SetPropertyUint32(ctx, obj, u, vals[u])
+    inc u
+    if res < 0:
+      JS_FreeValue(ctx, obj)
+      obj = JS_EXCEPTION
+      break
+  while u < L:
+    JS_FreeValue(ctx, vals[u])
+    inc u
+  return obj
 
 type DefinePropertyResult* = enum
   dprException, dprSuccess, dprFail

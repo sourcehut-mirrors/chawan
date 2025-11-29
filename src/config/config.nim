@@ -324,7 +324,7 @@ proc jsLinkHintChars(ctx: JSContext; input: InputConfig): JSValue
       if JS_IsException(val):
         break good
       vals.add(val)
-    return JS_NewArrayFrom(ctx, cint(vals.len), vals.toJSValueArray())
+    return ctx.newArrayFrom(vals)
   for val in vals:
     JS_FreeValue(ctx, val)
   return JS_EXCEPTION

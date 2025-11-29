@@ -625,8 +625,6 @@ proc JS_SetConstructorBit*(ctx: JSContext; func_obj: JSValueConst;
   val: JS_BOOL): JS_BOOL
 
 # takes ownership of the values
-proc JS_NewArrayFrom*(ctx: JSContext; count: cint; values: JSValueArray):
-  JSValue
 proc JS_NewArray*(ctx: JSContext): JSValue
 proc JS_IsArray*(ctx: JSContext; v: JSValueConst): cint
 
