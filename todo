@@ -29,7 +29,6 @@ pager:
 - handle long lines
 - save/edit buffer output
 	* just reuse dump mode code
-- alert on external command failure
 network:
 - BGI
 - uBO integration? (or at least implement filter lists)
@@ -43,7 +42,7 @@ javascript:
 - separate console for each buffer
 - CORS
 layout:
-- flexbox: align-self, align-items, justify-content, proper margin handling
+- flexbox: align-self, align-items, justify-content, margin: auto
 - details element
 - merge csstree into layout: first factor out tree traversal, then move
   build to before each layout

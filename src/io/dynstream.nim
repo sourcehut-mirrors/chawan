@@ -324,12 +324,6 @@ proc deallocMem*(mem: MaybeMappedMemory) =
   of mmmtAlloc: dealloc(mem.p0)
   dealloc(pointer(mem))
 
-proc drain*(ps: PosixStream) =
-  assert not ps.blocking
-  var buffer {.noinit.}: array[4096, uint8]
-  while ps.read(buffer) > 0:
-    discard
-
 proc setCloseOnExec*(ps: PosixStream) =
   let ofd = fcntl(ps.fd, F_GETFD)
   discard fcntl(ps.fd, ofd or F_SETFD, FD_CLOEXEC)
