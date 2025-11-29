@@ -192,13 +192,6 @@ editor = 'exec vi +%d'
 
 This should be fixed in the latest aerc version.  Please update aerc.
 
-## mancha doesn't work on NixOS?
-
-NixOS includes a broken patch in the package that results in mancha not
-finding man pages in some configurations.  I suspect it's entirely
-unnecessary, so if this bothers you then submit a PR to NixOS to remove
-the patch.
-
 <!-- MANON
 ## See also
 

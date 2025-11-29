@@ -208,6 +208,13 @@ Here we will add a protocol called \(lqcowsay\(rq, so that the URL
 cowsay:text prints the output of \f[CR]cowsay text\f[R] after a second
 of waiting.
 .PP
+Note: following assumes you put your \f[CR]config.toml\f[R] in
+\f[CR]\(ti/.chawan\f[R].
+If you are using XDG base directories (i.e.\ your \f[CR]config.toml\f[R]
+is in \f[CR]\(ti/.config/chawan\f[R]), substitute
+\f[CR]\(ti/.chawan/cgi\-bin\f[R] with
+\f[CR]\(ti/.config/chawan/cgi\-bin\f[R].
+.PP
 \f[CR]mkdir \-p \(ti/.chawan/cgi\-bin\f[R], and create a CGI script in
 \f[CR]\(ti/.chawan/cgi\-bin/cowsay.cgi\f[R]:
 .IP

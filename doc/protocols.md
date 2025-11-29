@@ -228,6 +228,11 @@ message instead.
 Here we will add a protocol called "cowsay", so that the URL cowsay:text
 prints the output of `cowsay text` after a second of waiting.
 
+Note: following assumes you put your `config.toml` in `~/.chawan`.
+If you are using XDG base directories (i.e. your `config.toml` is
+in `~/.config/chawan`), substitute `~/.chawan/cgi-bin` with
+`~/.config/chawan/cgi-bin`.
+
 `mkdir -p ~/.chawan/cgi-bin`, and create a CGI script in
 `~/.chawan/cgi-bin/cowsay.cgi`:
 

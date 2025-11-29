@@ -775,9 +775,9 @@ overrides the number of sixel color registers reported by the terminal.
 <tr>
 <td>highlight-color</td>
 <td>color</td>
-<td>"cyan"</td>
-<td>Set the highlight color for incremental search and marks.  Both hex
-values and CSS color names are accepted.
+<td>"-cha-ansi(bright-cyan)"</td>
+<td>Set the highlight color for incremental search and marks.  CSS color
+names, hex values, and color functions are all accepted.
 <p>
 In monochrome mode, this setting is ignored; instead, reverse video is
 used.</td>
