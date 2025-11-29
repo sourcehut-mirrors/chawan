@@ -4150,16 +4150,10 @@ JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *buf, size_t buf_len)
     return js_new_string8_len(ctx, buf, buf_len);
 }
 
-JS_BOOL JS_IsStringWideChar(JSValueConst value)
-{
-    if (unlikely(JS_VALUE_GET_TAG(value) != JS_TAG_STRING))
-        return FALSE;
-    return JS_VALUE_GET_STRING(value)->is_wide_char;
-}
-
 uint8_t *JS_GetNarrowStringBuffer(JSValueConst value)
 {
-    if (unlikely(JS_VALUE_GET_TAG(value) != JS_TAG_STRING))
+    if (JS_VALUE_GET_TAG(value) != JS_TAG_STRING ||
+        JS_VALUE_GET_STRING(value)->is_wide_char)
         return NULL;
     return JS_VALUE_GET_STRING(value)->u.str8;
 }

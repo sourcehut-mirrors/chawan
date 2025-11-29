@@ -344,17 +344,16 @@ proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
   let data = JS_ToString(ctx, data)
   if JS_IsException(data):
     return JS_EXCEPTION
-  doAssert JS_IsString(data)
-  if JS_IsStringWideChar(data):
-    JS_FreeValue(ctx, data)
-    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
-      "Invalid character in string")
-  let len = int(JS_GetStringLength(data))
+  let len = JS_GetStringLength(data)
   if len == 0:
     JS_FreeValue(ctx, data)
     return ctx.toJS("")
   let buf = JS_GetNarrowStringBuffer(data)
-  let res = btoa(buf.toOpenArray(0, len - 1))
+  if buf == nil:
+    JS_FreeValue(ctx, data)
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "invalid character in string")
+  let res = btoa(buf.toOpenArray(0, int(len) - 1))
   JS_FreeValue(ctx, data)
   return ctx.toJS(res)
 
