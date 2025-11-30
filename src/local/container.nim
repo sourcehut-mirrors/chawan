@@ -273,8 +273,6 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return (-1, nil)
-  # Send a pipe for synchronization in the clone proc.
-  # (Do it here, so buffers do not need pipe rights.)
   let url = if newurl != nil:
     newurl
   else:
