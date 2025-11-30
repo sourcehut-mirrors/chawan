@@ -4081,7 +4081,7 @@ JEBP__INLINE jebp_error_t jebp__apply_palette_transform(
             jebp_int real_row = y * real_width, row = y * width;
             for (x = real_width - 1; x >= 0; x--) {
                 jebp_color_t *dst = &image->pixels[real_row + x];
-                jebp_color_t *src = &image->pixels[row + x >> shift];
+                jebp_color_t *src = &image->pixels[row + (x >> shift)];
                 jebp_int shift_x = (x & mask) * shift_back;
                 jebp_int idx = (src->g & (mask_back << shift_x)) >> shift_x;
                 if (idx < palette_size) {
