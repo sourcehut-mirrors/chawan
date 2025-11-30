@@ -323,6 +323,12 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
         counterSet: @[CSSCounterSet(name: satListItem.toAtom(), num: n)]
       )
       ctx.applyPresHint(makeEntry(cptCounterSet, val))
+  of TAG_HR:
+    if dim := parseDimensionValues(element.attr(satWidth)):
+      if dim.isPx:
+        dim.npx = max(dim.npx, float32(ctx.window.settings.attrsp.ppc))
+      ctx.applyPresHint(makeEntry(cptWidth, dim))
+    ctx.applyColorHint(cptColor, element.attr(satColor))
   else: discard
 
 proc applyVars(ctx: var ApplyValueContext; vars: seq[CSSVariable];

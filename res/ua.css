@@ -41,7 +41,11 @@ progress[value] {
 	border-top-style: -cha-hash
 }
 
-hr { border-bottom-style: outset }
+hr { border-bottom-style: outset; margin: 0 auto }
+hr[align=left i] { margin-left: 0; margin-right: auto }
+hr[align=right i] { margin-left: auto; margin-right: 0 }
+hr[align=center i] { margin-left: auto; margin-right: auto }
+hr:is([color], [noshade]) { border-bottom-style: solid }
 
 q::before { content: open-quote }
 q::after { content: close-quote }
