@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 import std/strutils
 
@@ -11,7 +10,7 @@ when sizeof(cint) < 4:
 else:
   type jebp_int = cint
 
-{.passc: "-I" & currentSourcePath().parentDir().}
+{.passc: "-I" & currentSourcePath().untilLast('/').}
 
 {.push header: """
 #define JEBP_NO_STDIO
@@ -71,12 +70,12 @@ proc puts(s: string) =
 
 proc main() =
   enterNetworkSandbox()
-  let scheme = getEnv("MAPPED_URI_SCHEME")
+  let scheme = getEnvEmpty("MAPPED_URI_SCHEME")
   let f = scheme.after('+')
-  if getEnv("MAPPED_URI_PATH") == "decode":
+  if getEnvEmpty("MAPPED_URI_PATH") == "decode":
     if f != "webp":
       cgiDie(ceInternalError, "unknown format " & f)
-    let headers = getEnv("REQUEST_HEADERS")
+    let headers = getEnvEmpty("REQUEST_HEADERS")
     var infoOnly = false
     for hdr in headers.split('\n'):
       let v = hdr.after(':').strip()

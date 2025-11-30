@@ -1,12 +1,11 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 import std/strutils
 
 import ../protocol/lcgi
 
-{.passc: "-I" & currentSourcePath().parentDir().}
+{.passc: "-I" & currentSourcePath().untilLast('/').}
 
 {.push header: """
 #define NANOSVG_IMPLEMENTATION
@@ -46,7 +45,7 @@ proc nsvgDeleteRasterizer(r: ptr NSVGrasterizer)
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
   enterNetworkSandbox()
-  case getEnv("MAPPED_URI_PATH")
+  case getEnvEmpty("MAPPED_URI_PATH")
   of "decode":
     # Unfortunate as it is, I can't just mmap the string because nanosvg
     # wants to modify it.
@@ -60,7 +59,7 @@ proc main() =
     let height = cint(image.height)
     discard os.writeLoop("Cha-Image-Dimensions: " & $width & 'x' & $height &
       "\n\n")
-    for hdr in getEnv("REQUEST_HEADERS").split('\n'):
+    for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
         return

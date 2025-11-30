@@ -1,12 +1,11 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 import std/strutils
 
 import ../protocol/lcgi
 
-{.passc: "-I" & currentSourcePath().parentDir().}
+{.passc: "-I" & currentSourcePath().untilLast('/').}
 
 {.push header: """
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
@@ -23,7 +22,7 @@ proc main() =
   var srcHeight = cint(-1)
   var dstWidth = cint(-1)
   var dstHeight = cint(-1)
-  for hdr in getEnv("REQUEST_HEADERS").split('\n'):
+  for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
     let k = hdr.until(':')
     if k == "Cha-Image-Target-Dimensions" or k == "Cha-Image-Dimensions":
       let v = hdr.after(':').strip()

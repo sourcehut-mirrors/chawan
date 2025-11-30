@@ -9,7 +9,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/os
 import std/posix
 import std/strutils
 
@@ -21,7 +20,7 @@ import types/path
 
 import ../protocol/lcgi
 
-{.passc: "-I" & currentSourcePath().parentDir().}
+{.passc: "-I" & currentSourcePath().untilLast('/').}
 
 {.push header: """
 #define STBI_ONLY_PNG
@@ -273,11 +272,11 @@ proc main() =
   enterNetworkSandbox()
   let os = newPosixStream(STDOUT_FILENO)
   let ps = newPosixStream(STDIN_FILENO)
-  if getEnv("MAPPED_URI_SCHEME") != "img-codec+x-cha-canvas":
+  if getEnvEmpty("MAPPED_URI_SCHEME") != "img-codec+x-cha-canvas":
     cgiDie(ceInternalError, "invalid scheme")
-  case getEnv("MAPPED_URI_PATH")
+  case getEnvEmpty("MAPPED_URI_PATH")
   of "decode":
-    let headers = getEnv("REQUEST_HEADERS")
+    let headers = getEnvEmpty("REQUEST_HEADERS")
     for hdr in headers.split('\n'):
       if hdr.strip() == "Cha-Image-Info-Only: 1":
         #TODO this is a hack...

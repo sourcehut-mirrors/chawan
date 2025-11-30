@@ -182,7 +182,7 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
   var ignoreMan = keyword.toUpperAscii()
   if ignoreMan == keyword or keyword.len == 1:
     ignoreMan = ""
-  for p in getEnv("PATH").split(':'):
+  for p in getEnvEmpty("PATH").split(':'):
     var i = p.high
     while i > 0 and p[i] == '/':
       dec i
@@ -364,7 +364,7 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
   ok()
 
 proc main() =
-  var man = getEnv("MANCHA_MAN")
+  var man = getEnvEmpty("MANCHA_MAN")
   if man == "":
     block notfound:
       for s in ["/usr/bin/man", "/bin/man", "/usr/local/bin/man"]:
@@ -372,7 +372,7 @@ proc main() =
           man = s
           break notfound
       man = "/usr/bin/env man"
-  var apropos = getEnv("MANCHA_APROPOS")
+  var apropos = getEnvEmpty("MANCHA_APROPOS")
   if apropos == "":
     # on most systems, man is compatible with apropos (using -s syntax for
     # specifying sections).
@@ -382,8 +382,8 @@ proc main() =
       apropos = man
     else:
       apropos = "/usr/bin/apropos" # this is where it should be.
-  let path = getEnv("MAPPED_URI_PATH")
-  let scheme = getEnv("MAPPED_URI_SCHEME")
+  let path = getEnvEmpty("MAPPED_URI_PATH")
+  let scheme = getEnvEmpty("MAPPED_URI_SCHEME")
   if scheme == "man":
     let (keyword, section) = parseSection(path)
     doMan(man, keyword, section)

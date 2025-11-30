@@ -84,7 +84,7 @@ proc main() =
     "man-k:" & keyword & qsec
   else:
     "man:" & man & qsec
-  var cha = getEnv("MANCHA_CHA")
+  var cha = getEnvEmpty("MANCHA_CHA")
   if cha == "":
     cha = "cha"
   let cmd = cha & " " & quoteShellPosix(query)
