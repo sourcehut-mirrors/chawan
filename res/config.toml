@@ -79,6 +79,7 @@ allow-http-from-file = false
 vi-numeric-prefix = true
 use-mouse = true
 osc52-copy = 'auto'
+osc52-primary = 'auto'
 bracketed-paste = true
 wheel-scroll = 5
 side-wheel-scroll = 5
