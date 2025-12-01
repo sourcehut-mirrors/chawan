@@ -46,13 +46,13 @@ type
     refMap: TableRef[string, tuple[link, title: string]]
     slurpBuf: string
     slurpIdx: int
+    numTableCells: int
     reprocess: bool
     hasp: bool
     skipp: bool
     listState: ListState
     blockType: BlockType
     linkDefState: LinkDefState
-    tableCellCount: int
 
 # Forward declarations
 proc parse(state: var ParseState): Opt[void]
@@ -641,7 +641,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
   elif (let n = line.countTableCells(i); n > 0):
     state.blockData = line
     state.blockType = btTableHeader
-    state.tableCellCount = n
+    state.numTableCells = n
   else:
     state.blockType = btPar
     state.reprocess = true
@@ -848,7 +848,7 @@ proc parseTableHeader(state: var ParseState; line: string): Opt[void] =
       return state.parseTableHeaderBail(line)
   if textAlign != taNone:
     state.flushTableHeader(buf, textAlign, n, j)
-  if n != state.tableCellCount:
+  if n != state.numTableCells:
     return state.parseTableHeaderBail(line)
   ?state.parseInline(buf)
   state.blockType = btTableBody
@@ -859,8 +859,9 @@ proc parseTableBody(state: var ParseState; line: string): Opt[void] =
   var buf = "<TR>"
   var i = line.skipBlanks(0)
   var n = 0
+  var pipe = false
   if i < line.len and line[i] == '|':
-    inc n
+    pipe = true
     inc i
   var hasCell = false
   var esc = false
@@ -869,7 +870,10 @@ proc parseTableBody(state: var ParseState; line: string): Opt[void] =
     if c in AsciiWhitespace:
       buf &= c
     elif not esc and c == '|':
+      pipe = true
       inc n
+      if n >= state.numTableCells:
+        break
       if not hasCell:
         buf &= " <TD> "
       hasCell = false
@@ -883,7 +887,12 @@ proc parseTableBody(state: var ParseState; line: string): Opt[void] =
         buf &= " <TD> "
         hasCell = true
       buf &= c
-  if n > 0:
+  if pipe:
+    if hasCell:
+      inc n
+    while n < state.numTableCells:
+      buf &= " <TD>"
+      inc n
     ?state.parseInline(buf)
   else:
     ?state.write("</TABLE>")

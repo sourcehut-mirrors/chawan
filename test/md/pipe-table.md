@@ -19,6 +19,14 @@ a |
 | a
 |--
 
+|a|b|
+|-|-|
+|a|
+|a
+|a|b|ignored
+|a|b|ignored|
+a|b|ignored|
+
 # bad
 
 a
