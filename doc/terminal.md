@@ -40,20 +40,27 @@ forward-compatible.  On startup, Chawan queries:
   Kitty image and listening for a response.
 * The number of Sixel color registers (`CSI ? 1 ; 1 ; 0 $`).
 * Primary device attributes (DA1).
-* Text area and cell size using `CSI 1 4 t` and `CSI 1 6 t`.  (Cell size
-  beats text area size as it is more reliable.)
+* Text area and cell size using `CSI 14 t` and `CSI 16 t`.  (Cell size beats
+  text area size as it is more reliable.)
 * Window size in cells by sending a CUP to 9999;9999 and then asking for CPR
-  (the same trick is used by `resize`).
+  (the same trick is used by [resize(1)](man:resize(1))).
 
 Chawan processes responses to the above query in the same state machine
-as user input, so it works reasonably well even on terminals that do not
-fully emulate the VT100.  Also, we do not parse responses that we have
-already received, so the chance of user input being mistaken for a query
-response (or vice versa) is low.
+as user input, so it works reasonably well on all terminals that at least
+emulate the most basic VT100 function (CPR).  This unified state machine
+also minimizes the chance of user input being mistaken for a query response
+(or vice versa).
 
-Some terminals bleed the APC sequence used to recognize kitty image support.
-However, we immediately clear the screen afterwards, so in practice this
-shouldn't be an issue either.
+Terminals that do not respond to CPR will freeze on quit - in this case, you
+must type `C-c` to forcibly kill the state machine.  In practice, FreeBSD's
+**vt**(4) is the only one I've found that exhibits this behavior; to add
+insult to injury, it claims to be an "xterm" in TERM.  Therefore we
+discriminate between **vt**(4) and a real XTerm using an ioctl.  (Idea
+shamelessly stolen from notcurses' Linux console detection).
+
+Some terminals bleed the APC sequence used to recognize kitty image support,
+and this may result in strange artifacts when no alt screen is used.  On
+terminals that set TERM correctly, the APC sequence is not sent.
 
 ## Clipboard
 
@@ -82,19 +89,23 @@ differentiates between three tiers:
    that support OSC 52 but do not have a reliable mechanism to detect
    whether it actually works, such as Alacritty.
 
-It is possible to manually adjust OSC 52 use using the `input.osc52-copy`
-and `input.osc52-primary` configuration options.
+It is possible to manually adjust OSC 52 use with the `input.osc52-copy` and
+`input.osc52-primary` configuration options.
 
 ## Ancient terminals
 
-Pre-ECMA-48 terminals are generally not expected to work.
+Most pre-ECMA-48 (1979) terminals are not expected to work.
 
 There is some degree of ADM-3A support, tested in Kragen Javier Sitaker's
-[admu](https://gitlab.com/kragen/bubbleos) emulator.  The VT100 has also
-been tested in Lars Brinkhoff's
-[terminal-simulator](https://github.com/larsbrinkhoff/terminal-simulator).
-Finally, the VT420 has been tested in Matt Mastracci's
-[Blaze](https://github.com/mmastrac/blaze).
+[admu](https://gitlab.com/kragen/bubbleos) emulator.
+
+Some DEC terminals have also been tested in simulators of the original
+hardware running the actual ROM:
+
+* The VT100 has been tested in Lars Brinkhoff's
+  [terminal-simulator](https://github.com/larsbrinkhoff/terminal-simulator).
+* The VT420 has been tested in Matt Mastracci's
+  [Blaze](https://github.com/mmastrac/blaze).
 
 Patches for other terminals (hardware or software alike) are welcome.
 

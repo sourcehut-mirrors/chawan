@@ -314,7 +314,8 @@ const TermdescMap = [
   ttEterm: {tfTitle, tfXtermQuery} + AnsiColorFlag,
   ttFbterm: {tfXtermQuery} + AnsiColorFlag,
   ttFoot: XtermCompatible,
-  ttFreebsd: {tfXtermQuery} + AnsiColorFlag,
+  # FreeBSD has code to respond to queries, but it's #if 0'd out :(
+  ttFreebsd: {tfPreEcma48} + AnsiColorFlag,
   ttGhostty: XtermCompatible,
   ttIterm2: XtermCompatible,
   ttKitty: XtermCompatible + TrueColorFlag + {tfPrimary},
@@ -1930,6 +1931,8 @@ proc quit*(term: Terminal): Opt[void] =
     ?term.write(buf)
     term.blockIO()
     doAssert ?term.flush()
+    term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
+    discard tcSetAttr(term.istream.fd, TCSANOW, addr term.newTermios)
     while term.eparser.queryState != qsNone:
       if not term.ahandleRead().get(true):
         break
@@ -1950,6 +1953,7 @@ proc setQueryState(term: Terminal; qs: QueryState) =
 
 proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
   if tfPreEcma48 in term.desc:
+    term.eparser.queryState = qsNone
     return ok()
   var outs = ""
   if not windowOnly:
@@ -2026,6 +2030,14 @@ proc parseTERM(term: Terminal): TerminalType =
   # tmux says it's screen, but it isn't.
   if res == ttScreen and getEnv("TMUX") != "":
     return ttTmux
+  when defined(freebsd):
+    # FreeBSD console says it's an XTerm, but it responds to *absolutely
+    # nothing*.
+    if res == ttXterm:
+      let KDGETMODE {.global, importc, header: "<sys/consio.h>".}: culong
+      var mode: cint
+      if ioctl(term.istream.fd, KDGETMODE, addr mode) != -1:
+        res = ttFreebsd
   # zellij says it's its underlying terminal, but it isn't.
   if getEnv("ZELLIJ") != "":
     return ttZellij
