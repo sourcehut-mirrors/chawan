@@ -104,8 +104,6 @@
  *                      recognized. This is usually returned when a specific
  *                      file format has been disabled (see `JEBP_NO_VP8`,
  *                      `JEBP_NO_VP8L`, `JEBP_NO_VP8X`).
- *                      are not supported and both lossy and lossless codecs can
- *                      be disabled (see `JEBP_NO_VP8` and `JEBP_NO_VP8L`).
  *   `JEBP_ERROR_NOMEM` means that a memory allocation failed, indicating that
  *                      there is no more memory available.
  *   `JEBP_ERROR_IO` represents any generic I/O error, usually from
