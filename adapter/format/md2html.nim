@@ -12,8 +12,8 @@ type
     bsNone, bsInBracket
 
   BlockType = enum
-    btNone, btPar, btList, btPre, btTabPre, btSpacePre, btBlockquote, btHTML,
-    btHTMLPre, btComment, btLinkDef
+    btNone, btPar, btTableHeader, btTableBody, btList, btPre, btTabPre,
+    btSpacePre, btBlockquote, btHTML, btHTMLPre, btComment, btLinkDef
 
   ListState = enum
     lsNormal, lsAfterBlank, lsLastLine
@@ -46,13 +46,13 @@ type
     refMap: TableRef[string, tuple[link, title: string]]
     slurpBuf: string
     slurpIdx: int
-    slurping: bool
     reprocess: bool
     hasp: bool
     skipp: bool
     listState: ListState
     blockType: BlockType
     linkDefState: LinkDefState
+    tableCellCount: int
 
 # Forward declarations
 proc parse(state: var ParseState): Opt[void]
@@ -550,8 +550,31 @@ proc isThematicBreak(line: string): bool =
   let c0 = line[0]
   return c0 in ThematicBreakChars and AllChars - {c0} notin line
 
+proc countTableCells(line: string; i: int): int =
+  var i = i
+  var pipe = false
+  if i < line.len and line[i] == '|': # skip initial pipe
+    pipe = true
+    inc i
+  var n = 1
+  var seen = false # skip last pipe
+  for i in i ..< line.len:
+    let c = line[i]
+    if c == '|':
+      if seen:
+        inc n
+      seen = true
+      pipe = true
+    elif seen and c notin AsciiWhitespace:
+      seen = false
+      inc n
+  if not pipe:
+    return 0
+  return n
+
 proc parseNone(state: var ParseState; line: string): Opt[void] =
-  if AllChars - {' ', '\t'} notin line:
+  let i = line.skipBlanks(0)
+  if i == line.len:
     return ok()
   let c0 = line[0]
   if (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
@@ -575,7 +598,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.blockType = btPre
     state.blockData = line.substr(0, 2)
     ?state.write("<PRE>")
-  elif c0 == '[' and (var i = line.find(']');
+  elif c0 == '[' and (var i = line.find(']', i);
       i != -1 and i > 1 and i + 1 < line.len and line[i + 1] == ':'):
     state.blockType = btLinkDef
     state.linkDefState = ldsLink
@@ -615,6 +638,10 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     # avoid entering par state so we don't get mistaken for setext heading
     ?state.write("<HR>\n")
     state.hasp = false
+  elif (let n = line.countTableCells(i); n > 0):
+    state.blockData = line
+    state.blockType = btTableHeader
+    state.tableCellCount = n
   else:
     state.blockType = btPar
     state.reprocess = true
@@ -756,6 +783,112 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
       state.blockData = line & '\n'
   else:
     state.blockData &= line & '\n'
+  ok()
+
+proc parseTableHeaderBail(state: var ParseState; line: string): Opt[void] =
+  var oline = move(state.blockData)
+  state.blockType = btPar
+  ?state.parsePar(oline)
+  state.reprocess = true
+  ok()
+
+type TextAlign = enum
+  taNone, taNoneDash, taLeft = "left", taRight = "right", taCenter = "center"
+
+proc flushTableHeader(state: ParseState; buf: var string;
+    textAlign: var TextAlign; n, j: var int) =
+  buf &= " <TH"
+  #TODO I guess the right thing to do here is to use col, but layout
+  # doesn't do col yet...
+  case textAlign
+  of taNone, taNoneDash: discard
+  of taLeft, taRight, taCenter: buf &= " align=" & $textAlign
+  buf &= "> "
+  let s = state.blockData.until('|', j)
+  buf &= s
+  j += s.len + 1
+  textAlign = taNone
+  inc n
+
+proc parseTableHeader(state: var ParseState; line: string): Opt[void] =
+  var i = line.skipBlanks(0)
+  if i >= line.len:
+    return state.parseTableHeaderBail(line)
+  let c = line[i]
+  if c == '|':
+    inc i # skip initial pipe
+  elif c == '-' and i + 1 < line.len and line[i + 1] == ' ':
+    # oops, this is a list
+    return state.parseTableHeaderBail(line)
+  var j = state.blockData.skipBlanks(0)
+  if state.blockData[j] == '|':
+    inc j
+  var buf = "<TABLE border><TR>"
+  var textAlign = taNone
+  var n = 0
+  for i in i ..< line.len:
+    let c = line[i]
+    case c
+    of AsciiWhitespace: discard
+    of '|': state.flushTableHeader(buf, textAlign, n, j)
+    of '-':
+      case textAlign
+      of taNone: textAlign = taNoneDash
+      of taNoneDash, taLeft: discard
+      of taCenter, taRight: # dash after right-flanking colon
+        return state.parseTableHeaderBail(line)
+    of ':':
+      case textAlign
+      of taNone: textAlign = taLeft # colon before dash
+      of taNoneDash: textAlign = taRight # colon after dash
+      of taLeft: textAlign = taCenter # colon after dash + center
+      of taCenter, taRight: # colon after right-flanking colon
+        return state.parseTableHeaderBail(line)
+    else: # wrong char
+      return state.parseTableHeaderBail(line)
+  if textAlign != taNone:
+    state.flushTableHeader(buf, textAlign, n, j)
+  if n != state.tableCellCount:
+    return state.parseTableHeaderBail(line)
+  ?state.parseInline(buf)
+  state.blockType = btTableBody
+  state.blockData = ""
+  ok()
+
+proc parseTableBody(state: var ParseState; line: string): Opt[void] =
+  var buf = "<TR>"
+  var i = line.skipBlanks(0)
+  var n = 0
+  if i < line.len and line[i] == '|':
+    inc n
+    inc i
+  var hasCell = false
+  var esc = false
+  for i in i ..< line.len:
+    let c = line[i]
+    if c in AsciiWhitespace:
+      buf &= c
+    elif not esc and c == '|':
+      inc n
+      if not hasCell:
+        buf &= " <TD> "
+      hasCell = false
+    elif c == '\\':
+      esc = true
+    else:
+      if esc:
+        buf &= '\\'
+        esc = false
+      if not hasCell:
+        buf &= " <TD> "
+        hasCell = true
+      buf &= c
+  if n > 0:
+    ?state.parseInline(buf)
+  else:
+    ?state.write("</TABLE>")
+    state.blockType = btNone
+    state.reprocess = true
   ok()
 
 proc parseHTML(state: var ParseState; line: string): Opt[void] =
@@ -918,6 +1051,8 @@ proc parse(state: var ParseState): Opt[void] =
     of btBlockquote: ?state.parseBlockquote(line)
     of btList: ?state.parseList(line)
     of btPar: ?state.parsePar(line)
+    of btTableHeader: ?state.parseTableHeader(line)
+    of btTableBody: ?state.parseTableBody(line)
     of btHTML: ?state.parseHTML(line)
     of btHTMLPre: ?state.parseHTMLPre(line)
     of btComment: ?state.parseComment(line)
