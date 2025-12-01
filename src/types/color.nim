@@ -379,14 +379,19 @@ proc blend*(c0, c1: ARGBColor): ARGBColor =
   return straight(pres)
 
 # Blending operation for cell colors.
-# Normally, this should only happen with RGB color, so if either color
-# is not one, we can just return fg.
+# Normally, this should only happen with RGB color, so if either color is
+# not one, we can just return fg.
+# sbg is the bgcolor of the canvas; we fall back to it if the cell's bgcolor
+# is empty, so that we hopefully get something meaningful back.
 # (This does mean that blending over -cha-ansi is arguably broken.
 # Luckily, we get to define how it works because it's our extension :)
-proc blend*(bg, fg: CellColor; a: uint8): CellColor =
-  if bg.t != ctRGB or fg.t != ctRGB:
+proc blend*(bg, sbg, fg: CellColor; a: uint8): CellColor =
+  var cbg = bg
+  if cbg.t != ctRGB:
+    cbg = sbg
+  if cbg.t != ctRGB or fg.t != ctRGB:
     return fg
-  let bg = bg.rgb.argb
+  let bg = cbg.rgb.argb
   let fg = fg.rgb.argb(a)
   return bg.blend(fg).rgb.cellColor()
 
