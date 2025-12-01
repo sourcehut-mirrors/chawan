@@ -363,7 +363,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
       elif alpha == 255:
         it.format = format
       else:
-        it.format.bgcolor = it.format.bgcolor.blend(color, alpha)
+        it.format.bgcolor = it.format.bgcolor.blend(state.bgcolor, color, alpha)
       it.node = node
       ifi = fi
     # Process formatting around endx
