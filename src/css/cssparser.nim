@@ -56,6 +56,7 @@ type
     f: float32 # cttNumber without ctfInteger
     u: uint32 # cttDelim (codepoint)
     ft: CSSFunctionType # cttFunction
+    at: CSSAtRuleType # cttAtKeyword
 
   CSSDimensionType* = enum
     cdtUnknown = ""
@@ -431,6 +432,9 @@ template inum(tok: CSSToken): int32 =
 template ft*(tok: CSSToken): CSSFunctionType =
   tok.tu.ft
 
+template at(tok: CSSToken): CSSAtRuleType =
+  tok.tu.at
+
 template delim(tok: CSSToken): uint32 =
   tok.tu.u
 
@@ -448,7 +452,7 @@ proc toi*(tok: CSSToken): int32 {.inline.} =
 
 proc `$`*(tok: CSSToken): string =
   return case tok.t:
-  of cttAtKeyword: $tok.t & tok.s & '\n'
+  of cttAtKeyword: '@' & $tok.at
   of cttFunction: $tok.ft & '('
   of cttUrl: "url(" & tok.s & ')'
   of cttHash: '#' & tok.s
@@ -561,6 +565,11 @@ proc cssDelimToken(c: char): CSSToken =
 proc cssFunctionToken(ft: CSSFunctionType): CSSToken =
   let tu = CSSTokenUnion(ft: ft)
   return CSSToken(t: cttFunction, tu: tu)
+
+proc cssAtKeywordToken(s: string): CSSToken =
+  let at = parseEnumNoCase[CSSAtRuleType](s).get(cartUnknown)
+  let tu = CSSTokenUnion(at: at)
+  return CSSToken(t: cttAtKeyword, tu: tu)
 
 const IdentStart = AsciiAlpha + NonAscii + {'_'}
 const Ident = IdentStart + AsciiDigit + {'-'}
@@ -845,7 +854,8 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
     return CSSToken(t: cttLt)
   of '@':
     if iq.startsWithIdentSequence(n):
-      return CSSToken(t: cttAtKeyword, s: iq.consumeIdentSequence(n))
+      let s = iq.consumeIdentSequence(n)
+      return cssAtKeywordToken(s)
     return cssDelimToken('@')
   of '[': return CSSToken(t: cttLbracket)
   of '\\':
@@ -1092,8 +1102,7 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
   ok(move(decl))
 
 proc consumeAtRule(ctx: var CSSParser): CSSAtRule =
-  let tok = ctx.consumeToken()
-  let name = parseEnumNoCase[CSSAtRuleType](tok.s).get(cartUnknown)
+  let name = ctx.consumeToken().at
   result = CSSAtRule(name: name)
   if found := ctx.addUntil({cttSemicolon, cttLbrace}, result.prelude):
     if found.t == cttLbrace:
