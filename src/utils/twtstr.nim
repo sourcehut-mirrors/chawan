@@ -292,19 +292,21 @@ proc stripAndCollapse*(s: openArray[char]): string =
     space = cspace
   move(res)
 
-proc until*(s: openArray[char]; c: set[char]; starti = 0): string =
+proc until*(s: openArray[char]; cc: set[char]; starti = 0): string =
   result = ""
   for i in starti ..< s.len:
-    if s[i] in c:
+    let c = s[i]
+    if c in cc:
       break
-    result &= s[i]
+    result &= c
 
-proc untilLower*(s: openArray[char]; c: set[char]; starti = 0): string =
+proc untilLower*(s: openArray[char]; cc: set[char]; starti = 0): string =
   result = ""
   for i in starti ..< s.len:
-    if s[i] in c:
+    let c = s[i]
+    if c in cc:
       break
-    result.add(s[i].toLowerAscii())
+    result &= c.toLowerAscii()
 
 proc until*(s: openArray[char]; c: char; starti = 0): string =
   return s.until({c}, starti)
@@ -653,21 +655,21 @@ proc replaceControls*(s: openArray[char]): string =
     else:
       result.addUTF8(u)
 
-#https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
+# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc makeCRLF*(s: openArray[char]): string =
   result = newStringOfCap(s.len)
   var i = 0
-  while i < s.len - 1:
-    if s[i] == '\r' and s[i + 1] != '\n':
-      result &= '\r'
+  let L = s.len - 1
+  while i < L:
+    let c1 = s[i]
+    let c2 = s[i + 1]
+    result &= c1
+    if c1 == '\r' and c2 != '\n':
       result &= '\n'
-    elif s[i] != '\r' and s[i + 1] == '\n':
-      result &= s[i]
+    elif c1 != '\r' and c2 == '\n':
       result &= '\r'
       result &= '\n'
       inc i
-    else:
-      result &= s[i]
     inc i
   if i < s.len:
     if s[i] == '\r':
