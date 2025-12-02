@@ -56,7 +56,7 @@ must type `C-c` to forcibly kill the state machine.  In practice, FreeBSD's
 **vt**(4) is the only one I've found that exhibits this behavior; to add
 insult to injury, it claims to be an "xterm" in TERM.  Therefore we
 discriminate between **vt**(4) and a real XTerm using an ioctl.  (Idea
-shamelessly stolen from notcurses' Linux console detection).
+shamelessly stolen from notcurses' Linux console detection.)
 
 Some terminals bleed the APC sequence used to recognize kitty image support,
 and this may result in strange artifacts when no alt screen is used.  On
