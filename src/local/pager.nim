@@ -1124,7 +1124,8 @@ proc refreshStatusMsg(pager: Pager) =
       ANSIColor(1).cellColor()
     else:
       defaultColor
-    var format = initFormat(defaultColor, fgcolor, {ffReverse})
+    var format = initFormat(defaultColor, fgcolor,
+      pager.config.status.formatMode)
     pager.alertState = pasNormal
     var msg = ""
     if container.numLines > 0 and pager.config.status.showCursorPosition:

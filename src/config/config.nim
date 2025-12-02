@@ -91,6 +91,7 @@ type
   StatusConfig = ref object
     showCursorPosition* {.jsgetset.}: bool
     showHoverLink* {.jsgetset.}: bool
+    formatMode* {.jsgetset.}: set[FormatFlag]
 
   EncodingConfig = ref object
     displayCharset* {.jsgetset.}: Option[Charset]

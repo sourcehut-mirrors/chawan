@@ -889,6 +889,13 @@ Following is a list of status options:
 <td>Whether or not the link under the cursor should be displayed.</td>
 </tr>
 
+<tr>
+<td>format-mode</td>
+<td>{see \[display\] section}</td>
+<td>"reverse"</td>
+<td>Formatting of the status bar.</td>
+</tr>
+
 </table>
 
 ## Omnirule
