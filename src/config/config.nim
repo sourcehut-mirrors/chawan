@@ -623,7 +623,14 @@ proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
   ?typeCheck(v, tvtString, k)
   let e = strictParseEnum[T](v.s)
   if e.isErr:
-    return err(k & ": invalid value '" & v.s & "'")
+    var buf = k & ": invalid value '" & v.s & "', expected one of ["
+    for e in T:
+      buf &= '"'
+      buf &= $e
+      buf &= "\", "
+    buf.setLen(buf.high)
+    buf[^1] = ']'
+    return err(buf)
   x = e.get
   ok()
 
