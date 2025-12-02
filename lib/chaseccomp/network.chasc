@@ -1,23 +1,27 @@
-include common.chasc
+include "common.chasc.expanded"
 
 # syscall nr is loaded in common.chasc
 
-# for curl
+# network
 ifeqdef SYS_send allow
 ifeqdef SYS_recv allow
-ifeqdef SYS_recvfrom allow
-ifeqdef SYS_sendto allow
+ifeqdef SYS_recvfrom allow	# required at least by libssh2
+ifeqdef SYS_sendto allow	# ditto
 ifeqdef SYS_recvmsg allow
 ifeqdef SYS_sendmsg allow
-
-# curl also seems to call clock_gettime in some cases - but I have no
-# idea how to reproduce this.
-# anyway, it does no harm, so let it live.
-ifeqdef SYS_clock_gettime allow
-ifeqdef SYS_clock_gettime64 allow
-# apparently it needs gettimeofday too
-# (TODO: now I'm not even sure if this is curl...)
-ifeqdef SYS_gettimeofday allow
+ifdef SYS_socketcall
+ifne SYS_socketcall not_socketcall
+load args[0]
+ifeq 9 allow			# send
+ifeq 10 allow			# recv
+ifeq 11 allow			# sendto
+ifeq 12 allow			# recvfrom
+ifeq 13 allow			# shutdown
+ifeq 16 allow			# sendmsg
+ifeq 17 allow			# recvmsg
+load nr
+: not_socketcall
+endif
 
 # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
 ifeqdef SYS_getpid allow

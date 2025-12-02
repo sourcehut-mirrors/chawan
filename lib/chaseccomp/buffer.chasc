@@ -1,18 +1,21 @@
-include common.chasc
+include "common.chasc.expanded"
 
-# syscall nr is loaded in common.chasc
+# signal handling
+ifeqdef SYS_rt_sigreturn allow 	# newer kernels have this instead of sigreturn
+ifeqdef SYS_sigreturn allow	# called by signal trampoline
 
-# for sendfd/recvfd
+# network; note that we don't call send/recv in buffer
 ifeqdef SYS_recvmsg allow
 ifeqdef SYS_sendmsg allow
-
-# following syscalls are rarely called
-ifeqdef SYS_clock_gettime allow # used by QuickJS in atomics and cpuTime()
-ifeqdef SYS_clock_gettime64 allow # 64-bit clock_gettime on 32-bit platforms
-ifeqdef SYS_gettimeofday allow 	# used by QuickJS in Date.now()
-ifeqdef SYS_rt_sigreturn allow 	# newer kernels have this instead of sigreturn
-ifeqdef SYS_set_robust_list allow # glibc seems to need it for whatever reason
-ifeqdef SYS_sigreturn allow	# called by signal trampoline
+ifdef SYS_socketcall
+ifne SYS_socketcall not_socketcall
+load args[0]
+ifeq 13 allow			# shutdown
+ifeq 16 allow			# sendmsg
+ifeq 17 allow			# recvmsg
+load nr
+: not_socketcall
+endif
 
 : deny
 ret trap

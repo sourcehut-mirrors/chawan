@@ -6,3 +6,5 @@
 /*.o
 /*.d
 /*~
+/dummy
+/audit_nr.h

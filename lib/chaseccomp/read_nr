@@ -1,0 +1,41 @@
+#!/bin/sh
+# Audit arch numbers are derived from the ELF machine number, so for the
+# most part we can reconstruct them ourselves by just reading a dummy ELF
+# binary.
+# (We could also just run a dummy C program and trigger a SIGSYS, but that
+# prevents cross-compilation to incompatible architectures.)
+
+file=$1
+
+die() {
+	echo "$*"
+	exit 1
+}
+test -n "$file" || die "usage: read_nr [file]"
+get_bytes() {
+	od -v -t d"$2" -A n -j "$1" "$file" -N 1 | sed 's/ //g'
+}
+
+nr=$(get_bytes 18 2)
+b=$(get_bytes 4 1)
+case $b in
+1)	;;			# 32-bit
+2)	nr="$nr|0x80000000";;	# 64-bit
+*)	die "unexpected byte $b"
+esac
+b=$(get_bytes 5 1)
+case $b in
+1)	nr="$nr|0x40000000";;	# little-endian
+2)	;;			# big-endian
+*)	die "unexpected byte $b"
+esac
+
+echo "#if defined(__x86_64__) && defined(__ILP32__)
+/* x86_32 calling convention (not i386!) */
+#define CHA_AUDIT_NR 0xC000003E
+#elif defined(__LP64__) && defined(__mips_n32)
+/* MIPS n32 calling convention */
+#define CHA_AUDIT_NR ($nr|0x20000000)
+#else
+#define CHA_AUDIT_NR ($nr)
+#endif"

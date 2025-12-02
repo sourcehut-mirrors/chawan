@@ -1,3 +1,9 @@
+include "audit_nr.h"
+
+# check if we are using the expected calling convention
+load arch
+ifne CHA_AUDIT_NR deny
+
 # load syscall nr
 load nr
 
@@ -52,6 +58,8 @@ ifeqdef SYS_exit allow	# for quit
 ifeqdef SYS_exit_group allow	# for quit
 ifeqdef SYS_restart_syscall allow # for resuming poll on SIGCONT
 ifeqdef SYS_getrandom allow	# glibc calls it when initializing its malloc
+# used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
+ifeqdef SYS_getpid allow
 
 # so we don't trap on crash
 ifeqdef SYS_sigaction eperm
@@ -59,6 +67,12 @@ ifeqdef SYS_rt_sigaction eperm
 ifeqdef SYS_rt_sigprocmask eperm
 ifeqdef SYS_gettid eperm
 ifeqdef SYS_tgkill kill
+
+# these are used both by QJS in buffer and by *something* in network
+# (I could never reproduce it; might have been libcurl, might have been OpenSSL)
+ifeqdef SYS_clock_gettime allow	# used by QuickJS in atomics and cpuTime()
+ifeqdef SYS_clock_gettime64 allow # same but 32-bit
+ifeqdef SYS_gettimeofday allow	# used by QuickJS in Date.now()
 
 # bionic-specific stuff
 ifdef __BIONIC__

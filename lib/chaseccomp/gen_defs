@@ -1,79 +1,11 @@
 #!/bin/sh
 
-cat <<EOF
-#include <stdlib.h>
-#include <stddef.h>
-#include <sys/prctl.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#include <signal.h>
-#include <stdio.h>
+LC_ALL=C
 
-#include "chaseccomp.h"
+echo "#include <sys/syscall.h>"
 
-static void determine_audit_arch(int sig, siginfo_t *info, void *ucontext)
-{
-	(void)sig;
-	(void)ucontext;
-	printf("load arch\nifne %u deny\n", info->si_arch);
-}
-
-#define DIE(s) do { perror(s); exit(1); } while (0)
-
-int main(void)
-{
-	struct sigaction act = {
-		.sa_flags = SA_SIGINFO,
-		.sa_sigaction = determine_audit_arch,
-	};
-	struct sock_filter filter[] = {
-		CHA_BPF_LOAD(nr),		/* get syscall nr */
-		CHA_BPF_JNE(SYS_exit, 3),	/* if syscall is _exit */
-		CHA_BPF_LOAD(args[0]),		/* then load arg */
-		CHA_BPF_JNE(999999, 1),		/* if arg1 is 999999 */
-		CHA_BPF_RET(SECCOMP_RET_TRAP),	/* then trap */
-		CHA_BPF_RET(SECCOMP_RET_ALLOW),	/* otherwise allow */
-	};
-	struct sock_fprog prog = { .len = COUNTOF(filter), .filter = filter };
-
-	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
-		DIE("prctl");
-
-	if (syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, 0, &prog))
-		DIE("seccomp");
-
-	sigaction(SIGSYS, &act, NULL);
-	syscall(SYS_exit, 999999);
-EOF
-
-f() {
-	while IFS= read -r line
-	do	case $line in
-		'include '*)	<"${line#* }" f ;;
-		*)		printf '%s\n' "$line" ;;
-		esac
-	done
-}
-
-f | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//' | while IFS= read -r line
-do	case $line in
-	'')	;;
-	if??def' '*)
-		inst=${line%%def*}
-		line=${line#* }
-		val=${line%% *}
-		label=${line#* }
-		printf '#ifdef %s\n' "$val"
-		printf '\tprintf("%s %s %s\\n");\n' "$inst" "$val" "$label"
-		printf '#endif\n'
-		;;
-	ifdef*|endif*)
-		printf '#%s\n' "$line" ;;
-	*)	printf '\tprintf("%s\\n");\n' "$line" ;;
-	esac
-done
-
-cat <<EOF
-	exit(0);
-}
-EOF
+sed -E -e 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d' \
+	-e 's/^ifdef/#&/;s/^endif/#&/;s/^include/#&/' \
+	-e 's/^(if..)def ([^ ]+) ([^ ]+)$/#ifdef \2\
+\1 \2 \3\
+#endif/'
