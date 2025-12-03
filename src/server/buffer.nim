@@ -1224,7 +1224,8 @@ proc windowChange*(bc: BufferContext; handle: PagerHandle;
   let dx = x - (offset.x div ppc).toInt()
   let dy = y - (offset.y div ppl).toInt()
   bc.attrs = attrs
-  bc.forceReshape(handle)
+  bc.window.windowChange()
+  bc.maybeReshape()
   if element != nil and element.box != nil:
     let offset = CSSBox(element.box).render.offset
     let x = (offset.x div ppc).toInt() + dx

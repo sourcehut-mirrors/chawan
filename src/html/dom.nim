@@ -1257,8 +1257,8 @@ proc parseStylesheet(window: Window; s: string; baseURL: URL; charset: Charset;
     layer: CAtom): Promise[LoadSheetResult] =
   let sheet = s.parseStylesheet(baseURL, addr window.settings, coAuthor, layer)
   var promises: seq[EmptyPromise] = @[]
-  var sheets = newSeq[LoadSheetResult](sheet.importList.len)
-  for i, it in sheet.importList.mypairs:
+  var sheets = newSeq[LoadSheetResult](sheet.s.importList.len)
+  for i, it in sheet.s.importList.mypairs:
     let url = it.url
     let layer = it.layer
     (proc(i: int) =
@@ -1327,11 +1327,13 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       # Note: we intentionally load all sheets first and *then* check
       # whether media applies, to prevent media query based tracking.
       #TODO should we really keep the current sheet if the result is nil?
-      if res.head != nil and applies:
+      if res.head != nil:
         link.updateSheet(res.head, res.tail)
         let disabled = link.isDisabled()
         for sheet in link.sheets:
           sheet.disabled = disabled
+          sheet.applies = applies
+          sheet.media = media
       inc window.loadedSheetNum
     )
     window.pendingResources.add(p)
@@ -3207,11 +3209,32 @@ proc getRuleMap*(document: Document): CSSRuleMap =
     map.add(document.userSheet)
     sheet = document.authorSheetsHead
     while sheet != nil:
-      if not sheet.disabled:
+      if not sheet.disabled and sheet.applies:
         map.add(sheet)
       sheet = sheet.next
     document.ruleMap = map
   return document.ruleMap
+
+proc windowChange*(window: Window) =
+  let document = window.document
+  document.ruleMap = nil
+  if document.documentElement != nil:
+    document.documentElement.invalidate()
+  let baseURL = document.baseURL
+  var sheet = document.uaSheetsHead
+  while sheet != nil:
+    sheet.windowChange(baseURL)
+    sheet = sheet.next
+  if document.userSheet != nil:
+    document.userSheet.windowChange(baseURL)
+  sheet = document.authorSheetsHead
+  while sheet != nil:
+    sheet.windowChange(baseURL)
+    if sheet.media != "":
+      var ctx = initCSSParser(sheet.media)
+      let media = ctx.parseMediaQueryList(window.settings.attrsp)
+      sheet.applies = media.applies(addr window.settings)
+    sheet = sheet.next
 
 proc findAnchor*(document: Document; id: string): Element =
   if id.len == 0:

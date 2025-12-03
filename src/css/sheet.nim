@@ -29,17 +29,25 @@ type
     url*: URL
     layer*: CAtom
 
-  CSSStylesheet* = ref object
+  StyleState = object
     importList*: seq[CSSImport]
-    len: uint32
-    idx: uint32
-    settings: ptr EnvironmentSettings
+    layers: seq[CAtom]
     defsHead: CSSRuleDef
     defsTail: CSSRuleDef
-    next*: CSSStylesheet
-    disabled*: bool
+    len: uint32
+    idx: uint32
     anonLayerCount: uint16
-    layers: seq[CAtom]
+
+  CSSStylesheet* = ref object
+    s*: StyleState
+    settings: ptr EnvironmentSettings
+    next*: CSSStylesheet
+    media*: string # media attr
+    toks: seq[CSSToken]
+    baseLayer: CAtom
+    origin: CSSOrigin
+    disabled*: bool # whether or not we have disabled attr etc.
+    applies*: bool # whether or not media attr/import applies
 
   CSSRuleMap* = ref object
     tagTable*: Table[CAtom, seq[CSSRuleDef]]
@@ -65,10 +73,9 @@ type
 
 # Forward declarations
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool
-proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; origin: CSSOrigin;
-  layer: CAtom)
+proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom)
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
-  origin: CSSOrigin; layer: CAtom): Opt[void]
+  layer: CAtom): Opt[void]
 
 proc getSelectorIds(hashes: var SelectorHashes; sels: CompoundSelector) =
   for sel in sels:
@@ -181,12 +188,12 @@ proc add(sheet: CSSRuleMap; rule: CSSRuleDef) =
 
 proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
   let sheetId = map.sheetId
-  sheet.idx = sheetId
+  sheet.s.idx = sheetId
   inc map.sheetId
   # We don't have to dedupe, it won't make linear search much faster and
   # layer switches happen rarely enough anyway.
-  map.layers.add(sheet.layers)
-  var def = sheet.defsHead
+  map.layers.add(sheet.s.layers)
+  var def = sheet.s.defsHead
   var prevLayer = CAtomNull
   var layerId = 0u16
   let sheetIdShifted = (uint64(sheetId) shl 32)
@@ -206,19 +213,18 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
     def = def.next
 
 proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
-    base: URL; origin: CSSOrigin; layer: CAtom) =
+    base: URL; layer: CAtom) =
   for rule in ctx.parseListOfRules(topLevel):
     case rule.t
-    of crtAt: discard sheet.addAtRule(rule.at, base, origin, layer)
-    of crtQualified: sheet.addRule(rule.qualified, origin, layer)
+    of crtAt: discard sheet.addAtRule(rule.at, base, layer)
+    of crtQualified: sheet.addRule(rule.qualified, layer)
 
-proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; origin: CSSOrigin;
-    layer: CAtom) =
+proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom) =
   if rule.sels.len > 0:
     let ruleDef = CSSRuleDef(
       sels: move(rule.sels),
-      idx: sheet.len,
-      origin: origin,
+      idx: sheet.s.len,
+      origin: sheet.origin,
       layer: layer
     )
     for decl in rule.decls:
@@ -236,16 +242,16 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; origin: CSSOrigin;
         else:
           ruleDef.vals[f].parseComputedValues(decl.p, decl.value,
             sheet.settings.attrsp[])
-    if sheet.defsTail == nil:
-      sheet.defsHead = ruleDef
+    if sheet.s.defsTail == nil:
+      sheet.s.defsHead = ruleDef
     else:
-      sheet.defsTail.next = ruleDef
-    sheet.defsTail = ruleDef
-    inc sheet.len
+      sheet.s.defsTail.next = ruleDef
+    sheet.s.defsTail = ruleDef
+    inc sheet.s.len
 
 proc nextAnonLayer(sheet: CSSStylesheet): CAtom =
-  let res = sheet.anonLayerCount
-  inc sheet.anonLayerCount
+  let res = sheet.s.anonLayerCount
+  inc sheet.s.anonLayerCount
   ('!' & $res).toAtom()
 
 proc consumeLayerName(ctx: var CSSParser; parent: CAtom; anon: var bool):
@@ -287,11 +293,11 @@ proc parseImportLayer(ctx: var CSSParser; sheet: CSSStylesheet;
   ok(oldLayer)
 
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
-    origin: CSSOrigin; layer: CAtom): Opt[void] =
+    layer: CAtom): Opt[void] =
   case atrule.name
   of cartUnknown: discard
   of cartImport:
-    if sheet.len == 0 and base != nil:
+    if sheet.s.len == 0 and base != nil:
       var ctx = initCSSParser(atrule.prelude)
       ?ctx.skipBlanksCheckHas()
       let tok = ctx.consume()
@@ -304,13 +310,13 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
       # DOM after the sheet has been downloaded.  (e.g. importList can
       # get a "media" field, etc.)
       ?ctx.skipBlanksCheckDone()
-      sheet.importList.add(CSSImport(url: url, layer: layer))
+      sheet.s.importList.add(CSSImport(url: url, layer: layer))
   of cartMedia:
     var ctx = initCSSParser(atrule.prelude)
     let query = ctx.parseMediaQueryList(sheet.settings.attrsp)
     if query.applies(sheet.settings):
       var ctx = initCSSParser(atrule.oblock)
-      sheet.addRules(ctx, topLevel = false, base = nil, origin, layer)
+      sheet.addRules(ctx, topLevel = false, base = nil, layer)
   of cartLayer:
     var ctx = initCSSParser(atrule.prelude)
     if atrule.hasBlock:
@@ -319,12 +325,12 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
         let name = ?ctx.consumeLayerName(layer, anon)
         ?ctx.skipBlanksCheckDone()
         if anon:
-          sheet.layers.add(name) # note: we intentionally don't dedupe
+          sheet.s.layers.add(name) # note: we intentionally don't dedupe
         name
       else:
         sheet.nextAnonLayer()
       var ctx = initCSSParser(atrule.oblock)
-      sheet.addRules(ctx, topLevel = false, base = nil, origin, name)
+      sheet.addRules(ctx, topLevel = false, base = nil, name)
     else:
       var names: seq[CAtom] = @[]
       while ctx.skipBlanksCheckHas().isOk:
@@ -335,14 +341,26 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
         if ctx.consume().t != cttComma:
           return err()
         names.add(name)
-      sheet.layers.add(names)
+      sheet.s.layers.add(names)
   ok()
 
 proc parseStylesheet*(iq: string; base: URL; settings: ptr EnvironmentSettings;
     origin: CSSOrigin; layer: CAtom): CSSStylesheet =
-  let sheet = CSSStylesheet(settings: settings)
   var ctx = initCSSParser(iq)
-  sheet.addRules(ctx, topLevel = true, base, origin, layer)
+  let sheet = CSSStylesheet(
+    settings: settings,
+    origin: origin,
+    baseLayer: layer,
+    applies: true
+  )
+  sheet.addRules(ctx, topLevel = true, base, layer)
+  sheet.toks = move(ctx.toks)
   return sheet
+
+proc windowChange*(sheet: CSSStylesheet; base: URL) =
+  var ctx = initCSSParserSink(sheet.toks)
+  sheet.s = StyleState()
+  sheet.addRules(ctx, topLevel = true, base, sheet.baseLayer)
+  sheet.toks = move(ctx.toks)
 
 {.pop.} # raises: []

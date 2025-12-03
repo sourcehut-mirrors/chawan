@@ -10,12 +10,11 @@ import utils/twtstr
 
 type
   CSSParser* = object
-    toks: seq[CSSToken]
-    i*: int # pointer into iq or toks
+    toks*: seq[CSSToken]
+    at: int # pointer into toks
     iqp: ptr UncheckedArray[char] # addr iq[0]
     iqlen: int # iq.len
-    hasBuf: bool
-    tokBuf: CSSToken
+    i*: int # pointer into iq
 
 # Tokens
 
@@ -605,8 +604,9 @@ proc consumeEscape(iq: openArray[char]; n: var int): string =
   var m = n
   let c = iq[m]
   inc m
-  if c in AsciiHexDigit:
-    var num = uint32(hexValue(c))
+  let hex = hexValue(c)
+  if hex != -1:
+    var num = uint32(hex)
     var i = 0
     while i <= 5 and m < iq.len:
       let val = hexValue(iq[m])
@@ -795,7 +795,7 @@ proc nextToken(iq: openArray[char]; n: var int): bool =
   n = m
   return m < iq.len
 
-proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
+proc consume(iq: openArray[char]; n: var int): CSSToken =
   let c = iq[n]
   inc n
   case c
@@ -919,37 +919,31 @@ proc initCSSDeclaration*(name: string): Opt[CSSDeclaration] =
   ok(CSSDeclaration(t: cdtProperty, p: p))
 
 proc peekToken*(ctx: var CSSParser): lent CSSToken =
-  if ctx.toks.len > 0:
-    return ctx.toks[ctx.i]
-  if ctx.hasBuf:
-    return ctx.tokBuf
-  discard ctx.iq.nextToken(ctx.i)
-  ctx.tokBuf = ctx.iq.consumeToken(ctx.i)
-  ctx.hasBuf = true
-  return ctx.tokBuf
+  if ctx.at >= ctx.toks.len:
+    var i = ctx.i
+    doAssert ctx.iq.nextToken(i)
+    ctx.toks.add(ctx.iq.consume(i))
+    ctx.i = i
+  return ctx.toks[ctx.at]
 
-proc consumeToken(ctx: var CSSParser): CSSToken =
-  if ctx.iqlen > 0:
-    if ctx.hasBuf:
-      ctx.hasBuf = false
-      return move(ctx.tokBuf)
-    return ctx.iq.consumeToken(ctx.i)
-  let i = ctx.i
-  inc ctx.i
-  return ctx.toks[i]
+proc consume*(ctx: var CSSParser): lent CSSToken =
+  let at = ctx.at
+  if at >= ctx.toks.len:
+    var i = ctx.i
+    doAssert ctx.iq.nextToken(i)
+    ctx.toks.add(ctx.iq.consume(i))
+    ctx.i = i
+  inc ctx.at
+  return ctx.toks[at]
 
 proc seekToken*(ctx: var CSSParser) =
-  if ctx.hasBuf:
-    ctx.hasBuf = false
-  elif ctx.iqlen > 0:
-    discard ctx.consumeToken()
+  if ctx.at < ctx.toks.len:
+    inc ctx.at
   else:
-    inc ctx.i
+    discard ctx.consume()
 
 proc has*(ctx: var CSSParser): bool =
-  if ctx.iqlen > 0:
-    return ctx.hasBuf or ctx.iq.nextToken(ctx.i)
-  return ctx.i < ctx.toks.len
+  return ctx.at < ctx.toks.len or ctx.iq.nextToken(ctx.i)
 
 proc peekTokenType*(ctx: var CSSParser): CSSTokenType =
   ctx.peekToken().t
@@ -959,13 +953,6 @@ proc peekIdentNoCase*(ctx: var CSSParser; s: string): bool =
 
 proc peekFunction*(ctx: var CSSParser; ft: CSSFunctionType): bool =
   ctx.peekTokenType() == cttFunction and ctx.peekToken().ft == ft
-
-proc consume*(ctx: var CSSParser): CSSToken =
-  if ctx.iqlen == 0:
-    var cval = ctx.toks[ctx.i]
-    inc ctx.i
-    return move(cval)
-  return ctx.consumeToken()
 
 proc consumeInt*(ctx: var CSSParser): Opt[int32] =
   let tok = ctx.peekToken()
@@ -1059,7 +1046,7 @@ proc skipDeclaration(ctx: var CSSParser) =
       break
 
 proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
-  let tok = ctx.consumeToken()
+  let tok = ctx.consume()
   let x = initCSSDeclaration(tok.s)
   ?ctx.skipBlanksCheckHas()
   if ctx.peekTokenType() != cttColon or x.isErr:
@@ -1102,7 +1089,7 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
   ok(move(decl))
 
 proc consumeAtRule(ctx: var CSSParser): CSSAtRule =
-  let name = ctx.consumeToken().at
+  let name = ctx.consume().at
   result = CSSAtRule(name: name)
   if found := ctx.addUntil({cttSemicolon, cttLbrace}, result.prelude):
     if found.t == cttLbrace:

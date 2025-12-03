@@ -88,7 +88,8 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
   builder.document.mode = quirksMode
-  builder.document.applyQuirksSheet()
+  if quirksMode == QUIRKS:
+    builder.document.applyQuirksSheet()
 
 proc setEncodingImpl(builder: ChaDOMBuilder; encoding: string):
     SetEncodingResult =
