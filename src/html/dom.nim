@@ -3055,7 +3055,7 @@ proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
   if ctx.fromJS(this, element).isErr:
     return JS_EXCEPTION
   if element.tagType notin entry.tags:
-    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
+    return JS_ThrowTypeError(ctx, "invalid tag type")
   case entry.t
   of rtStr: return ctx.toJS(element.attr(entry.attrname))
   of rtUrl:
@@ -3089,7 +3089,7 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     return JS_EXCEPTION
   let entry = ReflectTable[uint16(magic)]
   if element.tagType notin entry.tags:
-    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
+    return JS_ThrowTypeError(ctx, "invalid tag type")
   case entry.t
   of rtStr, rtUrl, rtReferrerPolicy, rtMethod:
     var x: string
