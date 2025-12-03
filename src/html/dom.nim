@@ -2,6 +2,7 @@
 
 import std/algorithm
 import std/hashes
+import std/math
 import std/options
 import std/posix
 import std/sets
@@ -557,6 +558,8 @@ type
 
   HTMLModElement = ref object of HTMLElement
 
+  HTMLProgressElement = ref object of HTMLElement
+
   HTMLUnknownElement = ref object of HTMLElement
 
 jsDestructor(Navigator)
@@ -612,6 +615,7 @@ jsDestructor(HTMLTitleElement)
 jsDestructor(HTMLObjectElement)
 jsDestructor(HTMLSourceElement)
 jsDestructor(HTMLModElement)
+jsDestructor(HTMLProgressElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -707,9 +711,12 @@ proc attrb*(element: Element; at: StaticAtom): bool
 proc attrl*(element: Element; s: StaticAtom): Opt[int32]
 proc attrul*(element: Element; s: StaticAtom): Opt[uint32]
 proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
+proc attrd*(element: Element; s: StaticAtom): Opt[float64]
+proc attrdgz*(element: Element; s: StaticAtom): Opt[float64]
 proc attrl(element: Element; name: StaticAtom; value: int32)
 proc attrul(element: Element; name: StaticAtom; value: uint32)
 proc attrulgz(element: Element; name: StaticAtom; value: uint32)
+proc attrd(element: Element; name: StaticAtom; value: float64)
 proc delAttr(ctx: JSContext; element: Element; i: int)
 proc elementInsertionSteps(element: Element): bool
 proc elIndex*(this: Element): int
@@ -770,7 +777,7 @@ var getClientRectsImpl*: proc(element: Element; firstOnly, blockOnly: bool):
 # Reflected attributes.
 type
   ReflectType = enum
-    rtStr, rtUrl, rtBool, rtLong, rtUlongGz, rtUlong, rtFunction,
+    rtStr, rtUrl, rtBool, rtLong, rtUlongGz, rtUlong, rtDoubleGz, rtFunction,
     rtReferrerPolicy, rtCrossOrigin, rtMethod
 
   ReflectEntry = object
@@ -782,6 +789,8 @@ type
       i: int32
     of rtUlong, rtUlongGz:
       u: uint32
+    of rtDoubleGz:
+      f: float32
     of rtFunction:
       ctype: StaticAtom
     else: discard
@@ -888,6 +897,9 @@ proc makem(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
     tags: toset(ts)
   )
 
+proc makedgz(name: StaticAtom; t: TagType; f: float32): ReflectEntry =
+  ReflectEntry(attrname: name, funcname: name, t: rtDoubleGz, f: f, tags: {t})
+
 proc makem(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
   makem(name, name, ts)
 
@@ -932,6 +944,8 @@ const ReflectTable0 = [
   makeurl(satCite, TAG_BLOCKQUOTE, TAG_Q, TAG_INS, TAG_DEL),
   makeurl(satHref, TAG_LINK),
   makeurl(satData, TAG_OBJECT),
+  makedgz(satValue, TAG_PROGRESS, 0),
+  makedgz(satMax, TAG_PROGRESS, 1),
   # super-global attributes
   makes(satClass, satClassName, AllTagTypes),
   makef(satOnclick, satClick),
@@ -3101,6 +3115,7 @@ proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
   of rtLong: return ctx.toJS(element.attrl(entry.attrname).get(entry.i))
   of rtUlong: return ctx.toJS(element.attrul(entry.attrname).get(entry.u))
   of rtUlongGz: return ctx.toJS(element.attrulgz(entry.attrname).get(entry.u))
+  of rtDoubleGz: return ctx.toJS(element.attrdgz(entry.attrname).get(entry.f))
   of rtFunction: return JS_NULL
 
 proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
@@ -3114,8 +3129,8 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
   case entry.t
   of rtStr, rtUrl, rtReferrerPolicy, rtMethod:
     var x: string
-    if ctx.fromJS(val, x).isOk:
-      element.attr(entry.attrname, x)
+    ?ctx.fromJS(val, x)
+    element.attr(entry.attrname, x)
   of rtCrossOrigin:
     if JS_IsNull(val):
       let i = element.findAttr(entry.attrname.toAtom())
@@ -3123,29 +3138,35 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
         ctx.delAttr(element, i)
     else:
       var x: string
-      if ctx.fromJS(val, x).isOk:
-        element.attr(entry.attrname, x)
+      ?ctx.fromJS(val, x)
+      element.attr(entry.attrname, x)
   of rtBool:
     var x: bool
-    if ctx.fromJS(val, x).isOk:
-      if x:
-        element.attr(entry.attrname, "")
-      else:
-        let i = element.findAttr(entry.attrname.toAtom())
-        if i != -1:
-          ctx.delAttr(element, i)
+    ?ctx.fromJS(val, x)
+    if x:
+      element.attr(entry.attrname, "")
+    else:
+      let i = element.findAttr(entry.attrname.toAtom())
+      if i != -1:
+        ctx.delAttr(element, i)
   of rtLong:
     var x: int32
-    if ctx.fromJS(val, x).isOk:
-      element.attrl(entry.attrname, x)
+    ?ctx.fromJS(val, x)
+    element.attrl(entry.attrname, x)
   of rtUlong:
     var x: uint32
-    if ctx.fromJS(val, x).isOk:
-      element.attrul(entry.attrname, x)
+    ?ctx.fromJS(val, x)
+    element.attrul(entry.attrname, x)
   of rtUlongGz:
     var x: uint32
-    if ctx.fromJS(val, x).isOk:
-      element.attrulgz(entry.attrname, x)
+    ?ctx.fromJS(val, x)
+    element.attrulgz(entry.attrname, x)
+  of rtDoubleGz:
+    var x: float64
+    ?ctx.fromJS(val, x)
+    if classify(x) in {fcInf, fcNegInf, fcNan}:
+      return JS_ThrowTypeError(ctx, "double expected")
+    element.attrd(entry.attrname, x)
   of rtFunction:
     return ctx.eventReflectSet0(element, val, magic, jsReflectSet, entry.ctype)
   return JS_DupValue(ctx, val)
@@ -4090,6 +4111,18 @@ proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32] =
 proc attrul*(element: Element; s: StaticAtom): Opt[uint32] =
   return parseUInt32(element.attr(s), allowSign = true)
 
+proc attrd*(element: Element; s: StaticAtom): Opt[float64] =
+  let d = parseFloat64(element.attr(s))
+  if isNaN(d):
+    return err()
+  ok(d)
+
+proc attrdgz*(element: Element; s: StaticAtom): Opt[float64] =
+  let d = element.attrd(s).get(0)
+  if d <= 0:
+    return err()
+  ok(d)
+
 proc attrb*(element: Element; s: CAtom): bool =
   return element.findAttr(s) != -1
 
@@ -4661,6 +4694,8 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLSourceElement()
   of TAG_INS, TAG_DEL:
     HTMLModElement()
+  of TAG_PROGRESS:
+    HTMLProgressElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
@@ -4894,6 +4929,9 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
   if value > 0:
     element.attrul(name, value)
 
+proc attrd(element: Element; name: StaticAtom; value: float64) =
+  element.attr(name, dtoa(value))
+
 proc setAttribute(ctx: JSContext; element: Element; qualifiedName: string;
     value: sink string): Opt[void] {.jsfunc.} =
   ?ctx.validateName(qualifiedName)
@@ -4983,6 +5021,13 @@ proc getCharset(element: Element): Charset =
 
 proc isDefined*(element: Element): bool =
   element.custom in {cesUncustomized, cesCustom}
+
+proc getProgressPosition*(element: Element): float64 =
+  if not element.attrb(satValue):
+    return -1
+  let value = element.attrdgz(satValue).get(0)
+  let max = element.attrdgz(satMax).get(1)
+  return min(value, max) / max
 
 # DOMRect
 proc left(rect: DOMRect): float64 {.jsfget.} =
@@ -5718,6 +5763,10 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
         prevSelected == nil and firstOption != nil:
       firstOption.selected = true
       firstOption.invalidate(dtChecked)
+
+# <progress>
+proc position(this: HTMLProgressElement): float64 {.jsfget.} =
+  return this.getProgressPosition()
 
 # <select>
 proc displaySize(select: HTMLSelectElement): uint32 =
@@ -6577,6 +6626,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLObjectElement, TAG_OBJECT)
   register(HTMLSourceElement, TAG_SOURCE)
   register(HTMLModElement, [TAG_INS, TAG_DEL])
+  register(HTMLProgressElement, TAG_PROGRESS)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 

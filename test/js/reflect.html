@@ -10,6 +10,7 @@
 <input id=g>
 <button id=h formmethod=asdf>
 </form>
+<progress id=i value=.5 max=0>test</progress>
 <script>
 const x = document.getElementById("abc")
 const a = document.getElementsByTagName("a")[0];
@@ -43,6 +44,7 @@ const e = document.getElementById("e");
 const f = document.getElementById("f");
 const g = document.getElementById("g");
 const h = document.getElementById("h");
+const i = document.getElementById("i");
 assertEquals(d.method, "get");
 assertEquals(e.formMethod, undefined);
 assertEquals(e.method, "post");
@@ -50,7 +52,30 @@ assertEquals(f.formMethod, "get");
 assertEquals(f.method, undefined);
 assertEquals(g.formMethod, "")
 assertEquals(h.formMethod, "get")
-for (const it of [a, b, c, d, e, f, g, h])
+assertEquals(i.value, 0.5);
+assertEquals(i.max, 1);
+i.setAttribute("max", "2\0asdf");
+assertEquals(i.max, 1);
+i.removeAttribute("max");
+assertEquals(i.max, 1);
+i.value = -1;
+assertEquals(i.value, 0);
+assertEquals(i.getAttribute("value"), "-1");
+i.max = -1;
+assertEquals(i.max, 1);
+i.max = 0;
+assertEquals(i.max, 1);
+i.max = 2;
+assertEquals(i.getAttribute("max"), "2");
+i.setAttribute("max", 9.5);
+assertEquals(i.max, 9.5);
+{
+	const dummy = {};
+	dummy[Symbol.toPrimitive] = () => {throw RangeError()};
+	assertThrows(() => i.max = dummy, RangeError);
+}
+assertThrows(() => i.max = "test", TypeError);
+for (const it of [a, b, c, d, e, f, g, h, i])
 	it.remove();
 x.textContent = "Success";
 </script>

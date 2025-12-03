@@ -17,7 +17,6 @@ import html/script
 import types/color
 import types/jscolor
 import types/opt
-import utils/dtoawrap
 import utils/twtstr
 
 type
@@ -295,14 +294,9 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       let length = resolveLength(cuCh, n, ctx.window.settings.attrsp[])
       ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, length.npx))
   of TAG_PROGRESS:
-    let s = element.attr(satValue)
-    let value = parseFloat64(cstring(s))
-    if not isNaN(value):
-      let maxs = element.attr(satMax)
-      var max = parseFloat64(cstring(maxs))
-      if not (max > 0): # catches NaN
-        max = 1
-      ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, float32(value / max)))
+    let position = element.getProgressPosition()
+    if position > 0:
+      ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, float32(position)))
   of TAG_SELECT:
     if element.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)

@@ -692,7 +692,7 @@ proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
       m + 2 < iq.len and iq[m] in {'e', 'E'} and iq[m + 1] in {'+', '-'} and
         iq[m + 2] in AsciiDigit:
     # this works because initCSSParser takes string only
-    tu.f = float32(parseFloat64(cast[cstring](unsafeAddr iq[0]), n))
+    tu.f = float32(atod(cast[cstring](unsafeAddr iq[0]), n))
     m = n
     if m < iq.len and iq[m] == '%':
       n = m + 1
