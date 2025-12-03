@@ -4,8 +4,16 @@ unreleased
 * support VT420
 * support DEC special graphics in ASCII mode
 * support all VP8L indexed color transforms
+* support color, width, align, noshade properties on HR element
+* add status.format-mode to set formatting of status bar
+* remove query-da1 (no longer needed, terminal querying is now async)
+* work around FreeBSD vt(4) not responding to any query at all
 * fix cached images not being cleared when a buffer is deleted
 * fix a NULL deref in jebp
+* fix y/n being truncated out of long ask() prompts
+* fix media queries not being re-evaluated on windowChange
+* fix load info not being set on cycling between buffers
+* fix color blending over body bgcolor
 
 0.3.0 (2025.11.21)
 
