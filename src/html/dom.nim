@@ -35,6 +35,7 @@ import monoucha/jsbind
 import monoucha/jsnull
 import monoucha/jsopaque
 import monoucha/jspropenumlist
+import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -184,6 +185,7 @@ type
     jsStore*: seq[JSValue]
     jsStoreFree*: int
     weakMap*: array[WindowWeakMap, JSValue]
+    customElements* {.jsget.}: CustomElementRegistry
 
   # Navigator stuff
   Navigator* = ref object
@@ -203,6 +205,39 @@ type
 
   Crypto* = ref object
     urandom*: PosixStream
+
+  CECallbackType = enum
+    cctConnected = "connectedCallback"
+    cctDisconnected = "disconnectedCallback"
+    cctAdopted = "adoptedCallback"
+    cctConnectedMove = "connectedMoveCallback"
+    cctAttributeChanged = "attributeChangedCallback"
+    # note: if you add more, update define0 too
+    cctFormAssociated = "formAssociatedCallback"
+    cctFormReset = "formResetCallback"
+    cctFormDisabled = "formDisabledCallback"
+    cctFormStateRestore = "formStateRestoreCallback"
+
+  CECallbackMap = array[CECallbackType, JSValue]
+
+  CustomElementFlag = enum
+    cefFormAssociated, cefInternals, cefShadow
+
+  CustomElementDef = ref object
+    name: CAtom
+    localName: CAtom
+    ctor: JSValue
+    observedAttrs: seq[string] #TODO CAtom?
+    callbacks: CECallbackMap
+    flags: set[CustomElementFlag]
+    next: CustomElementDef
+
+  CustomElementRegistry* = ref object
+    rt*: JSRuntime
+    defsHead: CustomElementDef
+    defsTail: CustomElementDef
+    inDefine: bool
+    scoped: bool
 
   NamedNodeMap = ref object
     element: Element
@@ -644,6 +679,7 @@ jsDestructor(NamedNodeMap)
 jsDestructor(CSSStyleDeclaration)
 jsDestructor(DOMRect)
 jsDestructor(DOMRectList)
+jsDestructor(CustomElementRegistry)
 
 # Forward declarations
 proc loadSheet(window: Window; url: URL; charset: Charset; layer: CAtom):
@@ -1575,6 +1611,159 @@ proc getComputedStyle0*(ctx: JSContext; window: Window; element: Element;
   # the best.
   ok(newCSSStyleDeclaration(element, element.attr(satStyle), computed = true,
     readonly = true))
+
+proc addCustomElementRegistry*(window: Window; rt: JSRuntime) =
+  window.customElements = CustomElementRegistry(rt: rt)
+
+# CustomElementRegistry
+iterator defs(this: CustomElementRegistry): CustomElementDef =
+  var def = this.defsHead
+  while def != nil:
+    yield def
+    def = def.next
+
+proc newCustomElementRegistry(ctx: JSContext): CustomElementRegistry
+    {.jsctor.} =
+  return CustomElementRegistry(rt: JS_GetRuntime(ctx), scoped: true)
+
+proc mark(rt: JSRuntime; this: CustomElementRegistry; markFunc: JS_MarkFunc)
+    {.jsmark.} =
+  for def in this.defs:
+    JS_MarkValue(rt, def.ctor, markFunc)
+    for val in def.callbacks:
+      JS_MarkValue(rt, val, markFunc)
+
+proc finalize(this: CustomElementRegistry) {.jsfin.} =
+  for def in this.defs:
+    JS_FreeValueRT(this.rt, def.ctor)
+    for val in def.callbacks:
+      JS_FreeValueRT(this.rt, val)
+
+type CustomElementDefinitionOptions = object of JSDict
+  extends {.jsdefault.}: Option[string]
+
+proc find(this: CustomElementRegistry; name: CAtom): CustomElementDef =
+  for it in this.defs:
+    if it.name == name:
+      return it
+  return nil
+
+proc find(this: CustomElementRegistry; ctx: JSContext; ctor: JSValueConst):
+    CustomElementDef =
+  for it in this.defs:
+    if ctx.strictEquals(it.ctor, ctor):
+      return it
+  return nil
+
+proc tryGetStrSeq(ctx: JSContext; ctor: JSValueConst; name: cstring;
+    res: var seq[string]): Opt[void] =
+  let val = JS_GetPropertyStr(ctx, ctor, name)
+  if JS_IsException(val):
+    return err()
+  if not JS_IsUndefined(val):
+    ?ctx.fromJSFree(val, res)
+  ok()
+
+proc tryGetCallback(ctx: JSContext; proto: JSValueConst; t: CECallbackType;
+    callbacks: var CECallbackMap): Opt[void] =
+  let val = JS_GetPropertyStr(ctx, proto, cstring($t))
+  if JS_IsException(val):
+    return err()
+  if not JS_IsUndefined(val):
+    callbacks[t] = val # val is freed by caller
+    if not JS_IsFunction(ctx, val):
+      JS_ThrowTypeError(ctx, "lifecycle callback is not a function")
+      return err()
+  ok()
+
+proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
+    ctor, proto: JSValueConst; def: CustomElementDef): Opt[void] =
+  if not JS_IsObject(proto):
+    JS_ThrowTypeError(ctx, "prototype is not an object")
+    return err()
+  for t in cctConnected..cctAttributeChanged:
+    ?ctx.tryGetCallback(proto, t, def.callbacks)
+  if not JS_IsNull(def.callbacks[cctAttributeChanged]):
+    ?ctx.tryGetStrSeq(ctor, "observedAttributes", def.observedAttrs)
+  var disabled: seq[string]
+  ?ctx.tryGetStrSeq(ctor, "disabledFeatures", disabled)
+  if "internals" in disabled:
+    def.flags.excl(cefInternals)
+  if "shadow" in disabled:
+    def.flags.excl(cefShadow)
+  var formAssociated: bool
+  let val = JS_GetPropertyStr(ctx, ctor, "formAssociated")
+  ?ctx.fromJS(val, formAssociated)
+  if formAssociated:
+    def.flags.incl(cefFormAssociated)
+    for t in cctFormAssociated..cctFormStateRestore:
+      ?ctx.tryGetCallback(proto, t, def.callbacks)
+  ok()
+
+proc newCustomElementDef(name, localName: CAtom): CustomElementDef =
+  let def = CustomElementDef(
+    name: name,
+    localName: localName,
+    flags: {cefInternals, cefShadow}
+  )
+  for it in def.callbacks.mitems:
+    it = JS_NULL
+  return def
+
+proc define(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
+    ctor: JSValueConst; options = CustomElementDefinitionOptions()): JSValue
+    {.jsfunc.} =
+  if not JS_IsConstructor(ctx, ctor):
+    return JS_ThrowTypeError(ctx, "constructor expected")
+  if this.find(name) != nil or this.find(ctx, ctor) != nil:
+    return JS_ThrowDOMException(ctx, "NotSupportedError",
+      "a custom element with this name/constructor is already defined")
+  if options.extends.isSome:
+    #TODO extends
+    return JS_ThrowDOMException(ctx, "NotSupportedError",
+      "extends not supported yet")
+  if this.inDefine:
+    return JS_ThrowDOMException(ctx, "NotSupportedError",
+      "recursive custom element definition is not allowed")
+  this.inDefine = true
+  let proto = JS_GetPropertyStr(ctx, ctor, "prototype")
+  if JS_IsException(proto):
+    this.inDefine = false
+    return JS_EXCEPTION
+  let def = newCustomElementDef(name, name) #TODO extends/localName
+  let res = ctx.define0(this, name, ctor, proto, def)
+  JS_FreeValue(ctx, proto)
+  this.inDefine = false
+  if res.isErr:
+    for it in def.callbacks:
+      JS_FreeValue(ctx, it)
+    return JS_EXCEPTION
+  def.ctor = JS_DupValue(ctx, ctor)
+  if this.defsTail == nil:
+    this.defsHead = def
+  else:
+    this.defsTail.next = def
+  this.defsTail = def
+  #TODO is scoped
+  #TODO upgrade
+  #TODO when-defined
+  return JS_UNDEFINED
+
+proc get(ctx: JSContext; this: CustomElementRegistry; name: CAtom): JSValue
+    {.jsfunc.} =
+  let def = this.find(name)
+  if def != nil:
+    return JS_DupValue(ctx, def.ctor)
+  return JS_UNDEFINED
+
+proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSValueConst):
+    CAtom {.jsfunc.} =
+  let def = this.find(ctx, ctor)
+  if def != nil:
+    return def.name
+  return CAtomNull
+
+#TODO whenDefined, initialize
 
 # Node
 when defined(debug):
@@ -6658,6 +6847,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(CSSStyleDeclaration)
   ctx.registerType(DOMRect)
   ctx.registerType(DOMRectList)
+  ctx.registerType(CustomElementRegistry)
   ctx.registerElements(nodeCID)
   let imageFun = ctx.newFunction(["width", "height"], """
 const x = document.createElement("img");

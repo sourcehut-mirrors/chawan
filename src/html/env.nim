@@ -496,6 +496,7 @@ proc addScripting*(window: Window) =
   window.jsctx = ctx
   window.importMapsAllowed = true
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
+  window.addCustomElementRegistry(rt)
   JS_SetHostPromiseRejectionTracker(rt, rejectionHandler, nil)
   let jsWindow = JS_GetGlobalObject(ctx)
   let weakMap = JS_GetPropertyStr(ctx, jsWindow, "WeakMap")
