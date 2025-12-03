@@ -564,7 +564,8 @@ proc myHexValue(c: char): uint32 =
   return 0
 
 proc parseLegacyColor0*(s: string): RGBColor =
-  assert s != ""
+  if s.len <= 0:
+    return rgb(0, 0, 0)
   if x := namedRGBColor(s):
     return x
   if s.len == 4 and s[0] == '#':
