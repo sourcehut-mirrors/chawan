@@ -78,8 +78,16 @@ type
   PRResolvedOptions = object of JSDict
     locale: string
 
+  DateTimeFormat = ref object
+
+  RelativeTimeFormat = ref object
+
 jsDestructor(NumberFormat)
+jsDestructor(DateTimeFormat)
 jsDestructor(PluralRules)
+jsDestructor(RelativeTimeFormat)
+
+# NumberFormat
 
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     FromJSResult =
@@ -127,12 +135,6 @@ proc newNumberFormat(ctx: JSContext; name = "en-US";
       JS_ThrowTypeError(ctx, "undefined unit in NumberFormat() with unit style")
       return err()
   ok(nf)
-
-proc newPluralRules(): PluralRules {.jsctor.} =
-  return PluralRules()
-
-proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
-  return PRResolvedOptions(locale: "en-US")
 
 const UnitTable = [
   nupAcre: cstring"ac",
@@ -235,15 +237,35 @@ proc format(nf: NumberFormat; s: string): string {.jsfunc.} =
   of nsPercent: result &= '%'
   of nsCurrency: discard #TODO?
 
+# DateTimeFormat
+
+proc newDateTimeFormat(): Opt[DateTimeFormat] {.jsfctor.} =
+  return ok(DateTimeFormat())
+
+# PluralRules
+
+proc newPluralRules(): PluralRules {.jsctor.} =
+  return PluralRules()
+
+proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
+  return PRResolvedOptions(locale: "en-US")
+
 proc select(this: PluralRules; num: float64): string {.jsfunc.} =
   if num == 1:
     return "one"
   return "many"
 
+# RelativeTimeFormat
+
+proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
+  return RelativeTimeFormat()
+
 proc addIntlModule*(ctx: JSContext) =
   let global = JS_GetGlobalObject(ctx)
   let intl = JS_NewObject(ctx)
   ctx.registerType(NumberFormat, namespace = intl)
+  ctx.registerType(DateTimeFormat, namespace = intl)
   ctx.registerType(PluralRules, namespace = intl)
+  ctx.registerType(RelativeTimeFormat, namespace = intl)
   doAssert ctx.defineProperty(global, "Intl", intl) != dprException
   JS_FreeValue(ctx, global)
