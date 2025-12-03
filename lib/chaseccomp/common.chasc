@@ -58,8 +58,6 @@ ifeqdef SYS_exit allow	# for quit
 ifeqdef SYS_exit_group allow	# for quit
 ifeqdef SYS_restart_syscall allow # for resuming poll on SIGCONT
 ifeqdef SYS_getrandom allow	# glibc calls it when initializing its malloc
-# used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
-ifeqdef SYS_getpid allow
 
 # so we don't trap on crash
 ifeqdef SYS_sigaction eperm
