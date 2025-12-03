@@ -140,6 +140,10 @@ proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: string;
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
+proc strictEquals*(ctx: JSContext; a, b: JSValueConst): bool =
+  ## Returns true if `a === b', false otherwise.
+  return JS_StrictEq(ctx, a, b)
+
 proc addRow(s: var string; title: string; count, size, sz2, cnt2: int64;
     name: string) =
   let d = cdouble(sz2) / cdouble(cnt2)
