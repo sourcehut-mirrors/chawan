@@ -999,7 +999,7 @@ proc handleCommandInput(pager: Pager; e: InputEvent) =
 
 proc handleUserInput(pager: Pager): Opt[void] =
   if not ?pager.term.ahandleRead():
-    return
+    return ok()
   while e := pager.term.areadEvent():
     if pager.askPromise != nil:
       pager.handleAskInput(e)

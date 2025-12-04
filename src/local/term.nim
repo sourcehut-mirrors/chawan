@@ -1934,7 +1934,7 @@ proc quit*(term: Terminal): Opt[void] =
     term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
     discard tcSetAttr(term.istream.fd, TCSANOW, addr term.newTermios)
     while term.eparser.queryState != qsNone:
-      if not term.ahandleRead().get(true):
+      if term.ahandleRead().isErr:
         break
       while true:
         if term.areadEvent().isErr:
