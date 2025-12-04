@@ -689,7 +689,7 @@ proc newCDATASection(document: Document; data: string): CDATASection
 proc newComment(document: Document; data: sink string): Comment
 proc newText*(document: Document; data: sink string): Text
 proc newText(ctx: JSContext; data: sink string = ""): Text
-proc newDocument*(): Document
+proc newDocument*(url: URL): Document
 proc newDocumentType*(document: Document;
   name, publicId, systemId: sink string): DocumentType
 proc newDocumentFragment(document: Document): DocumentFragment
@@ -2219,10 +2219,10 @@ proc clone(node: Node; document = none(Document); deep = false): Node =
     Node(x)
   elif node of Document:
     let document = Document(node)
-    let x = newDocument()
+    let x = newDocument(document.url)
     x.charset = document.charset
     x.contentType = document.contentType
-    x.url = document.url
+    x.origin = document.origin
     x.mode = document.mode
     Node(x)
   elif node of DocumentType:
@@ -2828,10 +2828,21 @@ proc newXMLDocument(): XMLDocument =
   document.implementation = DOMImplementation(document: document)
   return document
 
-proc newDocument*(): Document {.jsctor.} =
+proc newDocument*(url: URL): Document =
+  let document = Document(
+    url: url,
+    contentType: satApplicationXml,
+    origin: url.origin
+  )
+  document.implementation = DOMImplementation(document: document)
+  return document
+
+proc newDocument(ctx: JSContext): Document {.jsctor.} =
+  let global = ctx.getGlobal()
   let document = Document(
     url: parseURL0("about:blank"),
-    contentType: satApplicationXml
+    contentType: satApplicationXml,
+    origin: global.document.origin
   )
   document.implementation = DOMImplementation(document: document)
   return document
@@ -2910,12 +2921,42 @@ proc images(document: Document): HTMLCollection {.jsfget.} =
 proc getURL(ctx: JSContext; document: Document): JSValue {.jsfget: "URL".} =
   return ctx.toJS($document.url)
 
-#TODO take cookie jar from loader
-proc cookie(document: Document): lent string {.jsfget.} =
-  return document.internalCookie
+proc getCookieWindow(ctx: JSContext; document: Document): Opt[Window] =
+  let window = document.window
+  if window == nil or document.url.schemeType notin {stHttp, stHttps}:
+    return ok(nil)
+  if document.origin.t == otOpaque:
+    JS_ThrowDOMException(ctx, "SecurityError",
+      "sandboxed iframe cannot access cookies")
+    return err()
+  ok(window)
 
-proc setCookie(document: Document; cookie: string) {.jsfset: "cookie".} =
-  document.internalCookie = cookie
+proc cookie(ctx: JSContext; document: Document): JSValue {.jsfget.} =
+  let window0 = ctx.getCookieWindow(document)
+  if window0.isErr:
+    return JS_EXCEPTION
+  let window = window0.get
+  if window == nil:
+    return ctx.toJS("")
+  let response = window.loader.doRequest(newRequest("x-cha-cookie:get-all"))
+  if response.res != 0:
+    return JS_ThrowInternalError(ctx, "internal error in cookie getter")
+  response.resume()
+  let cookie = response.body.readAll()
+  return ctx.toJS(cookie)
+
+proc setCookie(ctx: JSContext; document: Document; cookie: string):
+    Opt[void] {.jsfset: "cookie".} =
+  let window = ?ctx.getCookieWindow(document)
+  if window == nil:
+    return ok()
+  let headers = newHeaders(hgRequest, {"Set-Cookie": cookie})
+  let req = newRequest("x-cha-cookie:set", hmPost, headers,
+    credentials = cmOmit)
+  let response = window.loader.doRequest(req)
+  if response.res == 0:
+    response.close()
+  ok()
 
 proc focus*(document: Document): Element {.jsfget: "activeElement".} =
   return document.internalFocus
@@ -3212,7 +3253,7 @@ proc createDocument(ctx: JSContext; implementation: DOMImplementation;
 
 proc createHTMLDocument(ctx: JSContext; implementation: DOMImplementation;
     title: JSValueConst = JS_UNDEFINED): Opt[Document] {.jsfunc.} =
-  let doc = newDocument()
+  let doc = newDocument(ctx)
   doc.contentType = satTextHtml
   doc.append(doc.newDocumentType("html", "", ""))
   let html = doc.newHTMLElement(TAG_HTML)

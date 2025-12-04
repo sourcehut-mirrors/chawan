@@ -334,9 +334,10 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
     # Never persist in loader; we save cookies in the pager.
     let values = headers.getAllNoComma("Set-Cookie")
     if values.len > 0:
-      cookieJar.setCookie(values, handle.url, persist = false)
+      let url = handle.url
+      cookieJar.setCookie(values, url, persist = false, http = true)
       if ctx.cookieStream != nil:
-        ctx.updateCookies(cookieJar, handle.url, output.owner, values)
+        ctx.updateCookies(cookieJar, url, output.owner, values)
   let buffer = bufferFromWriter w:
     w.swrite(status)
     w.swrite(headers)
@@ -1176,6 +1177,14 @@ proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
   else:
     ctx.rejectHandle(handle, ceURLNotInCache)
 
+proc finishOutputSend(ctx: var LoaderContext; output: OutputHandle) =
+  if not output.dead and (output.registered or output.suspended):
+    output.istreamAtEnd = true
+  else:
+    if output.registered:
+      ctx.unregister(output)
+    ctx.oclose(output)
+
 # Data URL handler.
 # Moved back into loader from CGI, because data URLs can get extremely long
 # and thus no longer fit into the environment.
@@ -1192,20 +1201,12 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
     return
   let output = handle.output
   if s.len == 0:
-    if output.suspended:
-      output.istreamAtEnd = true
-    else:
-      ctx.oclose(output)
+    ctx.finishOutputSend(output)
     return
   let buffer = newLoaderBuffer(s)
   var dummy: seq[OutputHandle] = @[]
   ctx.pushBuffer(handle, buffer, ignoreSuspension = false, dummy)
-  if not output.dead and (output.registered or output.suspended):
-    output.istreamAtEnd = true
-  else:
-    if output.registered:
-      ctx.unregister(output)
-    ctx.oclose(output)
+  ctx.finishOutputSend(output)
 
 proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
@@ -1383,6 +1384,62 @@ proc loadAbout(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   else:
     ctx.rejectHandle(handle, ceInvalidURL, "invalid about URL")
 
+proc loadGetCookie(ctx: var LoaderContext; client: ClientHandle;
+    handle: InputHandle) =
+  case ctx.sendResult(handle, 0)
+  of pbrDone: discard
+  of pbrUnregister:
+    ctx.close(handle)
+    return
+  case ctx.sendStatus(handle, 200, newHeaders(hgResponse))
+  of pbrDone: discard
+  of pbrUnregister:
+    ctx.close(handle)
+    return
+  let output = handle.output
+  let cookieJar = client.config.cookieJar
+  if cookieJar != nil:
+    let s = cookieJar.serialize(client.config.originURL, http = false)
+    if s.len > 0:
+      let buffer = newLoaderBuffer(s)
+      var dummy: seq[OutputHandle] = @[]
+      ctx.pushBuffer(handle, buffer, ignoreSuspension = false, dummy)
+  ctx.finishOutputSend(output)
+
+proc loadSetCookie(ctx: var LoaderContext; client: ClientHandle;
+    handle: InputHandle; request: Request) =
+  case ctx.sendResult(handle, 0)
+  of pbrDone: discard
+  of pbrUnregister:
+    ctx.close(handle)
+    return
+  case ctx.sendStatus(handle, 200, newHeaders(hgResponse))
+  of pbrDone: discard
+  of pbrUnregister:
+    ctx.close(handle)
+    return
+  let output = handle.output
+  let headers = request.headers
+  let cookieJar = client.config.cookieJar
+  if cookieJar != nil:
+    let values = headers.getAllNoComma("Set-Cookie")
+    let url = client.config.originURL
+    cookieJar.setCookie(values, url, persist = false, http = false)
+    if ctx.cookieStream != nil:
+      ctx.updateCookies(cookieJar, url, output.owner, values)
+  ctx.finishOutputSend(output)
+
+proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
+    handle: InputHandle; request: Request) =
+  let url = request.url
+  case url.pathname
+  of "get-all":
+    ctx.loadGetCookie(client, handle)
+  of "set":
+    ctx.loadSetCookie(client, handle, request)
+  else:
+    ctx.rejectHandle(handle, ceInvalidURL)
+
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: Request; handle: InputHandle) =
   var redo = true
@@ -1417,6 +1474,8 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadData(handle, request)
     of stAbout:
       ctx.loadAbout(handle, request)
+    of stXChaCookie:
+      ctx.loadXChaCookie(client, handle, request)
     else:
       prevurl = request.url
       case ctx.config.uriMethodMap.findAndRewrite(request.url)
@@ -1435,7 +1494,7 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
   for k, v in config.defaultHeaders.allPairs:
     request.headers.addIfNotFound(k, v)
   if config.cookieJar != nil and credentials:
-    let cookie = config.cookieJar.serialize(request.url)
+    let cookie = config.cookieJar.serialize(request.url, http = true)
     if cookie != "":
       request.headers.addIfNotFound("Cookie", cookie)
   let referrer = request.takeReferrer(config.referrerPolicy)

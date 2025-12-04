@@ -510,7 +510,7 @@ proc onReadCookieStream(response: Response) =
     if cookieJar == nil or url == nil or persist and persists != "1":
       pager.alert("Error: received wrong set-cookie notification")
       continue
-    cookieJar.setCookie(headers, url, persist)
+    cookieJar.setCookie(headers, url, persist, http = true)
   if i > 0:
     opaque.buffer.delete(0 ..< i)
 
@@ -2074,6 +2074,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     if sc.filterCmd.isSome:
       filterCmd = sc.filterCmd.get
   loaderConfig.allowSchemes.add(pager.config.external.urimethodmap.imageProtos)
+  if result.scripting != smFalse:
+    loaderConfig.allowSchemes.add("x-cha-cookie")
   if result.images:
     result.imageTypes = pager.config.external.mimeTypes.image
   result.userAgent = loaderConfig.defaultHeaders.getFirst("User-Agent")

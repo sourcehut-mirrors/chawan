@@ -1,4 +1,4 @@
 Content-Type: text/css
-Set-Cookie: test9=css
+Set-Cookie: test9=css; HttpOnly
 
 #y { display: none }

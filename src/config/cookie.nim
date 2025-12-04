@@ -200,7 +200,8 @@ proc add(cookieJar: CookieJar; cookie: Cookie; parseMode = false,
   cookieJar.cookies.add(cookie)
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
-proc serialize*(cookieJar: CookieJar; url: URL): string =
+# if http is true, httpOnly cookies are included too
+proc serialize*(cookieJar: CookieJar; url: URL; http: bool): string =
   var res = ""
   let t = getTime().toUnix()
   var expired: seq[int] = @[]
@@ -210,6 +211,8 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
       continue
     if cookie.expires != -1 and cookie.expires <= t:
       expired.add(i)
+      continue
+    if not http and cookie.httpOnly:
       continue
     if cookie.secure and url.schemeType != stHttps and
         url.hostname != "localhost":
@@ -230,7 +233,7 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
     cookieJar.cookies.delete(i)
   move(res)
 
-proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
+proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
     Opt[Cookie] =
   let cookie = Cookie(
     expires: -1,
@@ -264,7 +267,10 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
       if x >= 0:
         cookie.expires = t + x
     of "secure": cookie.secure = true
-    of "httponly": cookie.httpOnly = true
+    of "httponly":
+      if not http:
+        return err()
+      cookie.httpOnly = true
     of "path":
       if val != "" and val[0] == '/' and '\t' notin val:
         hasPath = true
@@ -288,11 +294,11 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
   return ok(cookie)
 
 proc setCookie*(cookieJar: CookieJar; header: openArray[string]; url: URL;
-    persist: bool) =
+    persist, http: bool) =
   let t = getTime().toUnix()
   var sorted = true
   for s in header:
-    if cookie := parseSetCookie(s, t, url, persist):
+    if cookie := parseSetCookie(s, t, url, persist, http):
       cookieJar.add(cookie, persist = persist)
       sorted = false
   if not sorted:
@@ -350,7 +356,7 @@ proc parse0(map: CookieJarMap; file: ChaFile; warnings: var seq[string]):
       var cookieJar: CookieJar = nil
       if (let j = domain.find('@'); j != -1):
         cookie.domain = domain.substr(j + 1)
-        if cookie.domain[0] == '.':
+        if cookie.domain.startsWith("."):
           cookie.domain.delete(0..0)
         domain.setLen(j)
       else:

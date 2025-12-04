@@ -1709,7 +1709,7 @@ proc applyResponse*(container: Container; response: Response;
   let cookieJar = container.loaderConfig.cookieJar
   if cookieJar != nil:
     cookieJar.setCookie(response.headers.getAllNoComma("Set-Cookie"),
-      response.url, container.loaderConfig.cookieMode == cmSave)
+      response.url, container.loaderConfig.cookieMode == cmSave, http = true)
   # set referrer policy, if any
   if container.config.refererFrom:
     let referrerPolicy = response.getReferrerPolicy()

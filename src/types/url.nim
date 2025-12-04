@@ -42,6 +42,7 @@ type
     stStream = "stream"
     stWs = "ws"
     stWss = "wss"
+    stXChaCookie = "x-cha-cookie"
 
   URLSearchParams* = ref object
     list: seq[tuple[name, value: string]]
@@ -112,6 +113,7 @@ const SpecialPort = [
   stStream: -1,
   stWs: 80,
   stWss: 443,
+  stXChaCookie: -1,
 ]
 
 template isSpecial(url: URL): bool =

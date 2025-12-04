@@ -72,12 +72,11 @@ proc finish(builder: ChaDOMBuilder) =
 
 proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   let builder = wrapper.builder
-  let document = newDocument()
+  let oldDocument = builder.document
+  let document = newDocument(oldDocument.url)
   document.charset = charset
   document.setActiveParser(wrapper)
   document.contentType = satTextHtml
-  let oldDocument = builder.document
-  document.url = oldDocument.url
   let window = oldDocument.window
   if window != nil:
     document.window = window
@@ -229,10 +228,9 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: Node) =
 
 proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
     charset = DefaultCharset): ChaDOMBuilder =
-  let document = newDocument()
+  let document = newDocument(url)
   document.charset = charset
   document.contentType = satTextHtml
-  document.url = url
   if window != nil:
     document.window = window
     window.document = document

@@ -1,15 +1,15 @@
 Content-Type: text/html
-Set-Cookie: test=asdfasdf; Max-Age=123123123; Path=/headers
+Set-Cookie: test=asdfasdf; HttpOnly; Max-Age=123123123; Path=/headers
 Set-Cookie: SID=31d4d96e407aad42
-Set-Cookie: test2=asdfasdf; Max-Age=0
-Set-Cookie: test3=x
-Set-Cookie: test4=y; Max-Age=
-Set-Cookie: test5=; Domain=test.example
-Set-Cookie: test6=hi; Max-Age=9223372036854775807
-Set-Cookie: test7=hi; Expires=Mon 0 Jan 1999 20:30:00 GMT
-Set-Cookie: test8=hi; Expires=Mon, 31 Feb 1999 20:30:00 GMT
-Set-Cookie: test10=invalid; Domain=localhost:12345
-Set-Cookie: test11=valid; Domain=localhost
+Set-Cookie: test2=asdfasdf; Max-Age=0; HttpOnly
+Set-Cookie: test3=x; HttpOnly
+Set-Cookie: test4=y; HttpOnly; Max-Age=
+Set-Cookie: test5=; HttpOnly; Domain=test.example
+Set-Cookie: test6=hi; HttpOnly; Max-Age=9223372036854775807
+Set-Cookie: test7=hi; HttpOnly; Expires=Mon 0 Jan 1999 20:30:00 GMT
+Set-Cookie: test8=hi; HttpOnly; Expires=Mon, 31 Feb 1999 20:30:00 GMT
+Set-Cookie: test10=invalid; HttpOnly; Domain=localhost:12345
+Set-Cookie: test11=valid; HttpOnly; Domain=localhost
 
 <link rel=stylesheet href=cookie.css.http>
 <div id=x>Fail</div>
@@ -23,6 +23,11 @@ window.onload = () => {
 	x.send();
 	const cookie = x.responseText.split('\n').find(x => x.startsWith("cookie:"));
 	assertEquals(cookie.split(': ').pop().split('; ').sort().join(), "SID=31d4d96e407aad42,test11=valid,test3=x,test4=y,test6=hi,test7=hi,test8=hi,test9=css,test=asdfasdf");
+	assertEquals(document.cookie, "SID=31d4d96e407aad42")
+	document.cookie = "SID=test; HttpOnly";
+	assertEquals(document.cookie, "SID=31d4d96e407aad42")
+	document.cookie = "SID=test";
+	assertEquals(document.cookie, "SID=test")
 	document.getElementById("x").textContent = "Success";
 }
 </script>
