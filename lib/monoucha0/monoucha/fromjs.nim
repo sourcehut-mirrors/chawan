@@ -497,14 +497,6 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
   res = val
   fjOk
 
-const JS_ATOM_TAG_INT = 1u32 shl 31
-
-proc isIndex*(atom: JSAtom): JS_BOOL =
-  return (uint32(atom) and JS_ATOM_TAG_INT) != 0
-
-proc toIndex*(atom: JSAtom): uint32 =
-  uint32(atom) and (not JS_ATOM_TAG_INT)
-
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =
   res = atom
   fjOk

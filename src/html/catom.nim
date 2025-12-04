@@ -405,6 +405,27 @@ proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): FromJSResult =
   res = ca.toStaticAtom()
   fjOk
 
+type FromIdxResult* = enum
+  fiIdx, fiStr, fiErr
+
+proc fromIdx*[T: string|CAtom](ctx: JSContext; atom: JSAtom; idx: var uint32;
+    s: var T): FromIdxResult =
+  let val = JS_AtomIsNumericIndex1(ctx, atom)
+  if JS_IsException(val):
+    return fiErr
+  var i: int64
+  if not JS_IsUndefined(val) and ctx.fromJSFree(val, i).isOk and
+      i in 0..int64(uint32.high - 1):
+    idx = uint32(i)
+    return fiIdx
+  elif ctx.fromJS(atom, s).isOk:
+    return fiStr
+  fiErr
+
+proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult =
+  var dummy: string
+  ctx.fromIdx(atom, idx, dummy)
+
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
     return JS_NULL

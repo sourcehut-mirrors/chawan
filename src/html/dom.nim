@@ -3754,9 +3754,11 @@ proc value(tokenList: DOMTokenList): string {.jsfget.} =
 
 proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if atom.isIndex():
-    return ctx.item(this, atom.toIndex()).uninitIfNull()
-  return JS_UNINITIALIZED
+  var u: uint32
+  return case ctx.fromIdx(atom, u)
+  of fiIdx: ctx.item(this, u).uninitIfNull()
+  of fiStr: JS_UNINITIALIZED
+  of fiErr: JS_EXCEPTION
 
 proc reflectTokens(this: DOMTokenList; value: Option[string]) =
   this.toks.setLen(0)
@@ -3823,9 +3825,12 @@ proc item(this: NodeList; u: uint32): Node {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if atom.isIndex():
-    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
-  return JS_UNINITIALIZED
+  var u: uint32
+  var s: string
+  return case ctx.fromIdx(atom, u, s)
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+  of fiStr: JS_UNINITIALIZED
+  of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; this: NodeList): JSPropertyEnumList {.jspropnames.} =
   let L = this.length
@@ -3853,11 +3858,12 @@ proc namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if atom.isIndex():
-    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
+  var u: uint32
   var s: CAtom
-  ?ctx.fromJS(atom, s)
-  return ctx.toJS(this.namedItem(s)).uninitIfNull()
+  return case ctx.fromIdx(atom, u, s)
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+  of fiStr: ctx.toJS(this.namedItem(s)).uninitIfNull()
+  of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
@@ -3901,11 +3907,12 @@ proc names(ctx: JSContext; this: HTMLFormControlsCollection): JSPropertyEnumList
 
 proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
     JSValue {.jsgetownprop.} =
-  if atom.isIndex():
-    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
+  var u: uint32
   var s: CAtom
-  ?ctx.fromJS(atom, s)
-  return ctx.toJS(ctx.namedItem(this, s)).uninitIfNull()
+  return case ctx.fromIdx(atom, u, s)
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+  of fiStr: ctx.namedItem(this, s).uninitIfNull()
+  of fiErr: JS_EXCEPTION
 
 # HTMLAllCollection
 proc length(this: HTMLAllCollection): uint32 {.jsfget.} =
@@ -3919,9 +3926,11 @@ proc item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if atom.isIndex():
-    return ctx.toJS(this.item(atom.toIndex())).uninitIfNull()
-  return JS_UNINITIALIZED
+  var u: uint32
+  return case ctx.fromIdx(atom, u)
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+  of fiStr: JS_UNINITIALIZED
+  of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
     {.jspropnames.} =
@@ -4149,13 +4158,14 @@ proc item(map: NamedNodeMap; i: uint32): Attr {.jsfunc.} =
     return map.getAttr(int(i))
   return nil
 
-proc getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): JSValue
+proc getter(ctx: JSContext; this: NamedNodeMap; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if atom.isIndex():
-    return ctx.toJS(map.item(atom.toIndex())).uninitIfNull()
+  var u: uint32
   var s: CAtom
-  ?ctx.fromJS(atom, s)
-  return ctx.toJS(map.getNamedItem(s)).uninitIfNull()
+  return case ctx.fromIdx(atom, u, s)
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+  of fiStr: ctx.toJS(this.getNamedItem(s)).uninitIfNull()
+  of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     {.jspropnames.} =
@@ -5277,12 +5287,15 @@ proc length(this: DOMRectList): int {.jsfget.} =
 
 proc getter(ctx: JSContext; this: DOMRectList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if not atom.isIndex():
-    return JS_UNINITIALIZED
-  let u = atom.toIndex()
-  if int64(u) > int64(this.list.len):
-    return JS_UNINITIALIZED
-  return ctx.toJS(this.list[int(u)])
+  var u: uint32
+  return case ctx.fromIdx(atom, u)
+  of fiIdx:
+    if int64(u) < int64(this.list.len):
+      ctx.toJS(this.list[int(u)]).uninitIfNull()
+    else:
+      JS_UNINITIALIZED
+  of fiStr: JS_UNINITIALIZED
+  of fiErr: JS_EXCEPTION
 
 # CSSStyleDeclaration
 #
@@ -5401,21 +5414,23 @@ proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
 
 proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if atom.isIndex():
-    let u = atom.toIndex()
+  var u: uint32
+  var s: string
+  case ctx.fromIdx(atom, u, s)
+  of fiIdx:
     if u < this.length:
       return ctx.toJS(this.decls[int(u)].name)
-    return JS_UNDEFINED
-  var s: string
-  ?ctx.fromJS(atom, s)
-  if s == "cssFloat":
-    s = "float"
-  if s.isSupportedProperty():
-    return ctx.toJS(this.getPropertyValue(s))
-  s = camelToKebabCase(s)
-  if s.isSupportedProperty():
-    return ctx.toJS(this.getPropertyValue(s))
-  return JS_UNINITIALIZED
+    return JS_UNINITIALIZED
+  of fiStr:
+    if s == "cssFloat":
+      s = "float"
+    if s.isSupportedProperty():
+      return ctx.toJS(this.getPropertyValue(s))
+    s = camelToKebabCase(s)
+    if s.isSupportedProperty():
+      return ctx.toJS(this.getPropertyValue(s))
+    return JS_UNINITIALIZED
+  of fiErr: return JS_EXCEPTION
 
 # Consumes toks.
 proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
@@ -5491,18 +5506,21 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
     value: string): JSValue {.jssetprop.} =
   if ctx.checkReadOnly(this).isErr:
     return JS_EXCEPTION
-  if atom.isIndex():
-    let u = atom.toIndex()
+  var u: uint32
+  var name: string
+  case ctx.fromIdx(atom, u, name)
+  of fiIdx:
     var toks = parseComponentValues(value)
     if this.setValue(int(u), toks).isErr:
       this.element.attr(satStyle, this.cssText)
     return JS_UNDEFINED
-  var name: string
-  ?ctx.fromJS(atom, name)
-  if name == "cssFloat":
-    name = "float"
-  name = camelToKebabCase(name)
-  return ctx.setProperty(this, name, value)
+  of fiStr:
+    if name == "cssFloat":
+      name = "float"
+    name = camelToKebabCase(name)
+    return ctx.setProperty(this, name, value)
+  of fiErr:
+    return JS_EXCEPTION
 
 proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:
@@ -6090,9 +6108,11 @@ proc jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
 
 proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
     value: Option[HTMLOptionElement]): JSValue {.jssetprop.} =
-  if not atom.isIndex():
-    return JS_UNINITIALIZED
-  let u = atom.toIndex()
+  var u: uint32
+  case ctx.fromIdx(atom, u)
+  of fiIdx: discard
+  of fiStr: return JS_UNINITIALIZED
+  of fiErr: return JS_EXCEPTION
   let element = this.item(u)
   if value.isNone:
     let element = this.item(u)
