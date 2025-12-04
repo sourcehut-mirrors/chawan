@@ -72,6 +72,10 @@ ifeqdef SYS_clock_gettime allow	# used by QuickJS in atomics and cpuTime()
 ifeqdef SYS_clock_gettime64 allow # same but 32-bit
 ifeqdef SYS_gettimeofday allow	# used by QuickJS in Date.now()
 
+# network: used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
+# buffer: apparently used in SIGSEGV handler
+ifeqdef SYS_getpid allow
+
 # bionic-specific stuff
 ifdef __BIONIC__
 ifeqdef SYS_rt_sigprocmap allow

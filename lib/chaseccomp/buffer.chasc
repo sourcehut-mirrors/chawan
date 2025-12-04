@@ -13,9 +13,9 @@ load args[0]
 ifeq 13 allow			# shutdown
 ifeq 16 allow			# sendmsg
 ifeq 17 allow			# recvmsg
-load nr
 : not_socketcall
 endif
+# warning: nr is no longer loaded here
 
 : deny
 ret trap

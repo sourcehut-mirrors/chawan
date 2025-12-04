@@ -19,12 +19,9 @@ ifeq 12 allow			# recvfrom
 ifeq 13 allow			# shutdown
 ifeq 16 allow			# sendmsg
 ifeq 17 allow			# recvmsg
-load nr
 : not_socketcall
 endif
-
-# used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
-ifeqdef SYS_getpid allow
+# warning: nr is no longer loaded here
 
 : deny
 ret trap
