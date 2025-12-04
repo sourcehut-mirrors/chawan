@@ -380,7 +380,6 @@ type
     cachedLinks: HTMLCollection
     cachedImages: HTMLCollection
     parser*: RootRef
-    internalCookie: string
     liveCollections: seq[ptr CollectionObj]
     cachedAll: HTMLAllCollection
 
