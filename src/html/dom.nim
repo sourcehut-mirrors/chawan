@@ -6863,8 +6863,8 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
 proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
   doAssert ctx.defineConsts(nodeCID, NodeType) == dprSuccess
-  let nodeListCID = ctx.registerType(NodeList)
-  let htmlCollectionCID = ctx.registerType(HTMLCollection)
+  let nodeListCID = ctx.registerType(NodeList, iterable = jitValue)
+  let htmlCollectionCID = ctx.registerType(HTMLCollection, iterable = jitPair)
   ctx.registerType(HTMLAllCollection)
   ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
   ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
@@ -6874,7 +6874,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   let documentCID = ctx.registerType(Document, parent = nodeCID)
   ctx.registerType(XMLDocument, parent = documentCID)
   ctx.registerType(DOMImplementation)
-  ctx.registerType(DOMTokenList)
+  ctx.registerType(DOMTokenList, iterable = jitValue)
   ctx.registerType(DOMStringMap)
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
   ctx.registerType(Comment, parent = characterDataCID)

@@ -17,8 +17,15 @@ type
     jstCatch = "catch"
     jstSet = "set"
     jstGet = "get"
+    jstEntries = "entries"
+    jstForEach = "forEach"
+    jstKeys = "keys"
+    jstValues = "values"
 
   JSValueRef* = enum
+    jsvArrayPrototypeForEach = "Array.prototype.forEach"
+    jsvArrayPrototypeEntries = "Array.prototype.entries"
+    jsvArrayPrototypeKeys = "Array.prototype.keys"
     jsvArrayPrototypeValues = "Array.prototype.values"
     jsvObjectPrototypeValueOf = "Object.prototype.valueOf"
     jsvSet = "Set"

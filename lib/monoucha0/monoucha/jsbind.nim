@@ -108,6 +108,9 @@ type
     name: string
     id: NimNode
 
+  JSIterableType* = enum
+    jitNone, jitValue, jitPair
+
 var runtimes {.threadvar.}: seq[JSRuntime]
 
 proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
@@ -290,14 +293,42 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
       ctx.getOpaque().ctors[int(parent)], 0)
   return JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
 
+proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
+    proto: JSValueConst): DefinePropertyResult =
+  let ctxOpaque = ctx.getOpaque()
+  case iterable
+  of jitNone: discard
+  of jitValue:
+    let values = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
+    let itSym = ctxOpaque.symRefs[jsyIterator]
+    if ctx.defineProperty(proto, itSym, values) == dprException:
+      return dprException
+    const map = {
+      jstEntries: jsvArrayPrototypeEntries,
+      jstForEach: jsvArrayPrototypeForEach,
+      jstKeys: jsvArrayPrototypeKeys,
+      jstValues: jsvArrayPrototypeValues
+    }
+    for (n, v) in map:
+      let val = JS_DupValue(ctx, ctxOpaque.valRefs[v])
+      if ctx.defineProperty(proto, ctxOpaque.strRefs[n], val) == dprException:
+        return dprException
+  of jitPair:
+    #TODO this isn't really compliant
+    let values = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
+    let itSym = ctxOpaque.symRefs[jsyIterator]
+    if ctx.defineProperty(proto, itSym, values) == dprException:
+      return dprException
+  dprSuccess
+
 # On exception, this returns JS_INVALID_CLASS_ID, but doesn't undo changes
 # to the global object.
-#TODO it probably should
 proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
-    asglobal: bool; ctorType: JSCFunctionEnum; finalizer: JSFinalizerFunction;
-    namespace: JSValueConst; unforgeable, staticfuns: JSFunctionList;
-    dtor: BoundRefDestructor): JSClassID {.discardable.} =
+    asglobal: bool; iterable: JSIterableType; ctorType: JSCFunctionEnum;
+    finalizer: JSFinalizerFunction; namespace: JSValueConst;
+    unforgeable, staticfuns: JSFunctionList; dtor: BoundRefDestructor):
+    JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   var res: uint32
   discard JS_NewClassID(res)
@@ -310,13 +341,9 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     rtOpaque.classes.setLen(int(res) + 1)
   rtOpaque.classes[res].parent = parent
   let proto = ctx.newProtoFromParentClass(parent)
-  #TODO check if this is an indexed property getter
-  if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
-    let val = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
-    let itSym = ctxOpaque.symRefs[jsyIterator]
-    if ctx.defineProperty(proto, itSym, val) == dprException:
-      JS_FreeValue(ctx, proto)
-      return JS_INVALID_CLASS_ID
+  if ctx.defineIterableProps(iterable, proto) == dprException:
+    JS_FreeValue(ctx, proto)
+    return JS_INVALID_CLASS_ID
   JS_SetClassProto(ctx, res, proto)
   if not ctx.addClassUnforgeableAndFinalizer(proto, res, parent, unforgeable,
       finalizer):
@@ -1040,7 +1067,6 @@ macro jsfuncn*(jsname: static string; flag: static BoundFunctionFlag;
   var gen = initGenerator(fun, bfFunction, hasThis = true, jsname = jsname,
     flag = flag, staticName = staticName)
   if gen.minArgs == 0 and gen.flag != bffStatic:
-    #TODO this should work, especially with JSContext.
     error("Zero-parameter functions are not supported. " &
       "(Maybe pass Window or Client?)")
   if gen.flag != bffStatic:
@@ -1430,7 +1456,8 @@ else:
 
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
-    name: static string = ""; namespace = JS_NULL): JSClassID =
+    name: static string = ""; namespace = JS_NULL;
+    iterable: static JSIterableType = jitNone): JSClassID =
   var stmts = newStmtList()
   var info = BoundFunctions.getOrDefault(t.strVal)
   if info == nil:
@@ -1470,8 +1497,9 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     let uflist {.global, inject.}: array[`uflen`, JSCFunctionListEntry] =
       `uflist0`
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, flist, `parent`,
-      cast[bool](`global`), cast[JSCFunctionEnum](`ctorType`), `finFun`,
-      `namespace`, uflist, sflist, mncGetDtor(`t`))
+      cast[bool](`global`), cast[JSIterableType](`iterable`),
+      cast[JSCFunctionEnum](`ctorType`), `finFun`, `namespace`, uflist, sflist,
+      mncGetDtor(`t`))
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts
