@@ -1203,16 +1203,13 @@ proc getTitle*(bc: BufferContext; handle: PagerHandle): string {.
   bc.savetask = true
   return ""
 
-proc forceReshape0(bc: BufferContext) =
-  if bc.document != nil:
-    bc.document.invalid = true
-  bc.maybeReshape()
-
 proc forceReshape*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.document != nil and bc.document.documentElement != nil:
     bc.document.documentElement.invalidate()
   bc.rootBox = nil
-  bc.forceReshape0()
+  if bc.document != nil:
+    bc.document.invalid = true
+  bc.maybeReshape()
 
 proc windowChange*(bc: BufferContext; handle: PagerHandle;
     attrs: WindowAttributes; x, y: int): CursorXY {.proxy.} =
@@ -1935,7 +1932,7 @@ proc markURL*(bc: BufferContext; handle: PagerHandle; schemes: seq[string])
         let replacement = html.fragmentParsingAlgorithm(data)
         discard element.replace(text, replacement)
     stack.add(stackNext)
-  bc.forceReshape0()
+  bc.maybeReshape()
 
 proc toggleImages*(bc: BufferContext; handle: PagerHandle): bool {.
     proxy: pfTask.} =
@@ -1954,7 +1951,7 @@ proc toggleImages*(bc: BufferContext; handle: PagerHandle): bool {.
       bc.savetask = false
     else:
       handle.resolveTask(bcToggleImages, bc.config.images)
-    bc.forceReshape(handle)
+    bc.maybeReshape()
   )
   return bc.config.images
 
