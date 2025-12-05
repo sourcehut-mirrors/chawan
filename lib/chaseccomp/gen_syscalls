@@ -21,7 +21,7 @@ line_cut_next() {
 
 put_cmp() {
 	line_cut_next
-	val=$next
+	val=${next#cha_}
 	line_cut_next
 	label=$(find_label "$next")
 	test "$label" || die "missing label $next"

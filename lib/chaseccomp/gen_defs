@@ -7,5 +7,6 @@ echo "#include <sys/syscall.h>"
 sed -E -e 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d' \
 	-e 's/^ifdef/#&/;s/^endif/#&/;s/^include/#&/' \
 	-e 's/^(if..)def ([^ ]+) ([^ ]+)$/#ifdef \2\
-\1 \2 \3\
-#endif/'
+\1 cha_\2 \3\
+#endif/' \
+	-e 's/^(if..) ([a-zA-Z_]+) ([a-zA-Z_]+)/\1 cha_\2 \3/'

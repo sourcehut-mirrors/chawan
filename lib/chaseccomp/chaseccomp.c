@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <assert.h>
 
+#include "audit_nr.h"
 #include "chaseccomp.h"
 
 static void sigsys_handler_buffer(int sig, siginfo_t *info, void *ucontext)
