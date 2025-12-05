@@ -1408,30 +1408,57 @@ proc initImages(pager: Pager; container: Container) =
   pager.term.canvasImages = newImages
   pager.term.checkImageDamage(pager.bufWidth, pager.bufHeight)
 
-proc draw(pager: Pager): Opt[void] =
-  var redraw = false
-  var imageRedraw = false
-  var hasMenu = false
-  var container = pager.container
-  if pager.updateTitle:
-    if container != nil:
-      ?pager.term.setTitle(container.getTitle())
-    pager.updateTitle = false
+proc getAbsoluteCursorXY(pager: Pager; container: Container): tuple[x, y: int] =
+  var cursorx = 0
+  var cursory = 0
+  if pager.askPromise != nil:
+    return (pager.askCursor, pager.attrs.height - 1)
+  elif pager.lineedit != nil:
+    return (pager.lineedit.getCursorX(), pager.attrs.height - 1)
+  elif (let menu = pager.menu; menu != nil):
+    return (menu.getCursorX(), menu.getCursorY())
+  elif container != nil:
+    if pager.alertState == pasNormal:
+      #TODO this really doesn't belong in draw...
+      container.clearHover()
+    if (let select = container.select; select != nil):
+      cursorx = select.getCursorX()
+      cursory = select.getCursorY()
+    else:
+      cursorx = container.acursorx
+      cursory = container.acursory
+  return (cursorx, cursory)
+
+proc visibleContainer(pager: Pager): Container =
+  let container = pager.container
   if container != nil and container.loadState == lsLoading and
       cfShowLoading notin container.flags and container.numLines == 0:
     # Make buffers that haven't loaded anything yet "transparent".
     # Exception: if the user tries to interact with the page, show the ugly
     # truth.
     if container.replace != nil:
-      container = container.replace
-    elif container.prev != nil:
-      container = container.prev
+      return container.replace
+    if container.prev != nil:
+      return container.prev
+  return container
+
+proc highlightColor(pager: Pager): CellColor =
+  if pager.attrs.colorMode != cmMonochrome:
+    return pager.config.display.highlightColor.cellColor()
+  return defaultColor
+
+proc draw(pager: Pager): Opt[void] =
+  var redraw = false
+  var imageRedraw = false
+  var hasMenu = false
+  if pager.updateTitle:
+    if pager.container != nil:
+      ?pager.term.setTitle(pager.container.getTitle())
+    pager.updateTitle = false
+  let container = pager.visibleContainer
   if container != nil:
     if container.redraw:
-      let hlcolor = if pager.attrs.colorMode != cmMonochrome:
-        pager.config.display.highlightColor.cellColor()
-      else:
-        defaultColor
+      let hlcolor = pager.highlightColor
       container.drawLines(pager.display.grid, hlcolor)
       if pager.config.display.highlightMarks:
         container.highlightMarks(pager.display.grid, hlcolor)
@@ -1480,33 +1507,13 @@ proc draw(pager: Pager): Opt[void] =
       # under images.
       #
       # Well, it can, but only in a peculiar way: background color is
-      # part of the text layer, so with our image model we'd a) have to
-      # specify bgcolor for the menu and b) have to use sub-optimal
-      # in-cell positioning. (You'll understand why if you try to
-      # implement it.)
+      # part of the text layer, so with our image model we'd have to
+      # a) specify bgcolor for the menu and b) use sub-optimal in-cell
+      # positioning.  (You'll understand why if you try to implement it.)
       #
       # Ugh. :(
       pager.term.clearImages(pager.bufHeight)
-  var cursorx = 0
-  var cursory = 0
-  if pager.askPromise != nil:
-    cursorx = pager.askCursor
-    cursory = pager.attrs.height - 1
-  elif pager.lineedit != nil:
-    cursorx = pager.lineedit.getCursorX()
-    cursory = pager.attrs.height - 1
-  elif (let menu = pager.menu; menu != nil):
-    cursorx = menu.getCursorX()
-    cursory = menu.getCursorY()
-  elif container != nil:
-    if pager.alertState == pasNormal:
-      container.clearHover()
-    if (let select = container.select; select != nil):
-      cursorx = select.getCursorX()
-      cursory = select.getCursorY()
-    else:
-      cursorx = container.acursorx
-      cursory = container.acursory
+  let (cursorx, cursory) = pager.getAbsoluteCursorXY(container)
   ?pager.term.draw(redraw, cursorx, cursory)
   ok()
 
