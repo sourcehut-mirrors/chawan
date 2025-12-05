@@ -4,21 +4,23 @@ Some notes on modifying Chawan's code.
 
 ## Style
 
-Refer to the [NEP1](https://nim-lang.org/docs/nep1.html) for the
-basics. Also, try to keep the style of existing code.
+Refer to the [NEP1](https://nim-lang.org/docs/nep1.html) for the basics.
+Also, try to keep the style of existing code.
+
+In particular, style of vendored libraries should not be changed unless
+upstream is dead.
 
 ### Casing
 
-Everything is camelCase. Enums are camelCase too, but the first part is
-an abbreviation of the type name. e.g. members of `SomeEnum` start with
-`se`.
+Everything is camelCase.  Enums are camelCase too, but the first part is an
+abbreviation of the type name. e.g. members of `SomeEnum` start with `se`.
 
 Exceptions:
 
-* Types/constants use PascalCase. enums in cssvalues use PascalCase too,
-  to avoid name collisions.
+* Types/constants use PascalCase. enums in cssvalues use PascalCase too, to
+  avoid name collisions.
 * We keep style of external C libraries, which is often snake_case.
-* Chame is stuck with `SCREAMING_SNAKE_CASE` for its enums. This is
+* Chame is stuck with `SCREAMING_SNAKE_CASE` for its enums.  This is
   unfortunate, but does not warrant an API breakage.
 
 Rationale: consistency.
@@ -33,13 +35,13 @@ Rationale: makes it easier to edit in vi.
 
 ### Spacing
 
-No blank lines inside procedures (and other code blocks). A single blank
-line separates two procs, type defs, etc. If your proc doesn't fit on
-two 24-line screens, split it up into more procs instead of inserting
-blank lines.
+No blank lines inside procedures (and other code blocks).  A single blank
+line separates two procs, type defs, etc.  If your proc doesn't fit on two
+24-line screens, split it up into more procs instead of inserting blank
+lines.
 
-Exceptions: none. Occasionally a proc will get larger than two screens,
-and that's ok, but try to avoid it.
+Exceptions: occasionally a proc will get larger than two screens, and that's
+ok, but try to avoid it.
 
 Rationale: makes it easier to edit in vi.
 
@@ -58,35 +60,56 @@ Rationale: makes it easier to edit in vi.
 
 ### Naming
 
-Prefer short names. Don't copy verbose naming from the standard.
+Prefer short names.  Don't copy verbose naming from the standard.
 
 Rationale: we aren't a fruit company.
 
 ### Comments
 
-Comment what is not obvious, don't comment what is obvious. Whether
+Comment what is not obvious, don't comment what is obvious.  Whether
 something is obvious or not is left to your judgment.
 
-Don't paste standard prose into the code unless you're making a
-point. If you do, abridge the prose.
+Don't paste standard prose into the code unless you're making a point.  If
+you do, abridge the prose.
 
 Rationale: common sense, copyright.
 
-## General coding tips and guidelines
+### C style
 
-These are not hard rules, but please try to follow them unless the
-situation demands otherwise.
+Note that most C code included in this repository are from vendored external
+libraries like QuickJS; following points only apply to code we (sadly) own,
+such as chaseccomp.
 
-### Features to avoid
+* 80 spaces per line.  Indent with 4 spaces (not mixed with tabs).
+* Local variable declarations come before their use (a la C89).  The two
+  sections have a blank line inbetween.
+* Braces go on the same line as the statement, except for functions where
+  they go on the first line.
+* `if`, `for`, etc. must have braces unless all parts fit on a single line.
+* Boolean operators (`||` etc.) belong on the same line as the left-hand
+  expression.
 
-List of Nim features/patterns that sound like a good idea but aren't,
-for non-obvious reasons.
+## Features to avoid
 
-#### Exceptions
+List of Nim features/patterns that sound like a good idea but aren't, for
+non-obvious reasons.
 
-Avoid; use Result/Opt/Option instead.  Note that these kill RVO, so if
-you're returning large objects, either make them `ref`, or use manual RVO
-(return bool, set var param).
+### Exceptions
+
+Avoid at all costs.  If a standard library procedure throws, do not use it.
+Also avoid `try...finally` (even without `catch`).
+
+For own procs, use Result/Opt instead.  For large objects this may result in
+excessive copying; to avoid inefficient code, either make them `ref` or use
+manual RVO:
+
+```nim
+proc blah(input: int; output: var BigObject): Opt[void] =
+  if input < 0:
+    return err()
+  output = BigObject(...)
+  ok()
+```
 
 In new modules, always specify:
 
@@ -102,9 +125,9 @@ import ...
 {.pop.} # raises: []
 ```
 
-#### Implicit initialization
+### Implicit initialization
 
-Avoid. The correct way to create an object:
+Avoid.  The correct way to create an object:
 
 ```nim
 let myObj = MyObject(
@@ -115,37 +138,40 @@ let myObj = MyObject(
 )
 ```
 
-For arrays, use:
+For primitive types, just set them to 0, "", etc.
+
+As a special case, implicit initialization is allowed for arrays:
 
 ```nim
-var buf1 = array[1234, char].default # when you need 0-initialization
+var buf1: array[1234, char] # when you need 0-initialization
 var buf2 {.noinit.}: array[1234, char] # when you don't need 0-initialization
 ```
 
-For primitive types, just set them to 0, "", etc.
+Note that the second example is unsafe and doesn't work with GC'ed types,
+so don't use it unless you know what you're doing.
 
-#### `out` parameters
+### `out` parameters
 
 `out` parameters crash the 1.6.14 compiler.  Use `var` instead.
 
-#### `seq` parameters
+### `seq` parameters
 
-In general, `openArray` is more efficient and composes better, so prefer
-that.
+Passing `openArray` is more efficient and composes better, so prefer that.
+(This only refers to parameters, `openArray` doesn't work elsewhere.)
 
-#### Copying operations
+### Copying operations
 
-`substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which
-is a non-copying slice.  (Obviously, you should use `substr` if you
-*need* to copy.)
+`substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which is a
+non-copying slice.  (Obviously, you should use `substr` if you *need* to
+copy.)
 
-Note that `=` usually copies.  If you're copying a large object a lot,
-you may want to set its type to `ref`.  Alternatively, you can try using
-`move`, but be sure to check the generated code because often times it
-doesn't work in `refc`.
+Note that `=` usually copies.  If you're copying a large object a lot, you
+may want to set its type to `ref`.  Alternatively, you can try using `move`,
+but be sure to check the generated code because often times it doesn't work
+in `refc`.
 
-Beware of `pairs` on sequences of objects; it copies.  Use `mypairs`
-if you don't need mutation, `mpairs` if you do:
+Beware of `pairs` on sequences of objects; it copies.  Use `mypairs` if you
+don't need mutation, `mpairs` if you do:
 
 ```nim
 proc foo(objs: openArray[SomeObj]) =
@@ -158,15 +184,15 @@ proc foo(objs: openArray[SomeObj]) =
     obj.i = i
 ```
 
-#### `func`, `.noSideEffect`
+### `func`, `.noSideEffect`
 
 These introduce function coloring for little to no benefit.
 
 Just use `proc` without `.noSideEffect`.
 
-### Fixing cyclic imports
+## Fixing cyclic imports
 
-In Nim, you can't have circular dependencies between modules. This gets
+In Nim, you can't have circular dependencies between modules.  This gets
 unwieldy as the HTML/DOM/etc. specs are a huge cyclic OOP mess.
 
 The preferred workaround is global function pointer variables:
@@ -180,8 +206,8 @@ forwardDeclImpl = proc(window: Window; x, y: int) =
 ```
 
 Don't forget to make it `.nimcall`, and to comment "Forward declaration
-hack" above. (Hopefully we can remove these once Nim supports cyclic
-module dependencies.)
+hack" above.  (Hopefully we can remove these once Nim supports cyclic module
+dependencies.)
 
 ## Debugging
 
@@ -193,27 +219,27 @@ Note: following text assumes you are compiling in debug mode, i.e.
 "eprint x, y" prints x, y to stderr, space separated.
 
 Normally you can view what you printed through the M-c M-c (escape + c
-twice) console. Except when you're printing from the pager, then do `cha
-[...] 2>a` and check the "a" file.
+twice) console.  Except when you're printing from the pager, then do
+`cha [...] 2>a` and check the "a" file.
 
-Sometimes, printing to the console triggers a self-feeding loop of
-printing to the console. To avoid this, disable the console buffer:
+Sometimes, printing to the console triggers a self-feeding loop of printing
+to the console.  To avoid this, disable the console buffer:
 `cha [...] -o start.console-buffer=false 2>a`. Then check the "a" file.
 
-You can also inspect open buffers from the console. Note that you must
-run these *before* switching to the console buffer (i.e. before the
-second M-c), or it will show info about the console buffer.
+You can also inspect open buffers from the console.  Note that you must run
+these *before* switching to the console buffer (i.e. before the second M-c),
+or it will show info about the console buffer.
 
 * `pager.process`: the current buffer's PID.
 * `pager.cacheFile`: the current buffer's cache file.
-* `pager.cacheId`: the cache ID of said file. Open the `cache:id` URL
-  to view the file.
+* `pager.cacheId`: the cache ID of said file.  Open the `cache:id` URL to
+   view the file.
 
 ### gdb
 
-gdb should work fine too. You can attach it to buffers by putting a long
-sleep call in runBuffer, then retrieving the PID as described above.
-Note that this will upset seccomp, so you should compile with
+gdb should work fine too.  You can attach it to buffers by putting a long
+sleep call in runBuffer, then retrieving the PID as described above.  Note
+that this will upset seccomp, so you should compile with
 `make TARGET=debug DANGER_DISABLE_SANDBOX=1`.
 
 ### Debugging layout bugs
@@ -221,14 +247,13 @@ Note that this will upset seccomp, so you should compile with
 One possible workflow:
 
 * Save page from your favorite graphical browser.
-* Binary search the HTML by deleting half of the file at each step. Be
+* Binary search the HTML by deleting half of the file at each step.  Be
   careful to not remove any stylesheet LINK or STYLE tags.
-* Binary search the CSS using the same method. You can format it using
-  the graphical browser's developer tools.
+* Binary search the CSS using the same method.  You can format it using the
+  graphical browser's developer tools.
 
-The `-o start.console-buffer=false` trick (see above) is especially
-useful when debugging a flow layout path that the console buffer also
-needs.
+The `-o start.console-buffer=false` trick (see above) is especially useful
+when debugging a flow layout path that the console buffer also needs.
 
 Don't forget to add a test case after the fix:
 
@@ -240,16 +265,16 @@ Use `config.color.toml` and `my-test-case.color.expected` to preserve colors.
 
 ### Sandbox violations
 
-You got a syscall number (assuming you're on Linux); look it up in the
-Linux syscall table for your architecture.
+You got a syscall number (assuming you're on Linux); look it up in the Linux
+syscall table for your architecture.
 
 To get more context on what happened, you can run
 `strace -f ./cha -o start.console-buffer=false [...] 2>a`, trigger the
-crash, then search for the last occurrence of "--- SIGSYS". Then search
+crash, then search for the last occurrence of "--- SIGSYS".  Then search
 backwards on the PID to see the last syscalls.
 
-(Incidentally, strace also shows the syscall name, so it may be easier
-to check like that than looking it up in the syscall table.)
+(*strace* also shows the syscall name, so it may be easier to check like
+that than looking it up in the syscall table.)
 
 ## Resources
 
@@ -260,24 +285,23 @@ You may find these links useful.
 Of particular interest in the documentation are:
 
 * The [architecture](architecture.md) document.
-* The Monoucha [manual](../lib/monoucha0/doc/manual.md), for
-  JS-related documentation.
+* The Monoucha [manual](../lib/monoucha0/doc/manual.md), for JS-related
+  documentation.
 
 ### WHATWG
 
-* HTML: <https://html.spec.whatwg.org/multipage/>. Includes everything
-  and then some more.
-* DOM: <https://dom.spec.whatwg.org/>. Includes events, basic
-  node-related stuff, etc.
-* Encoding: <https://encoding.spec.whatwg.org/>. The core encoding
-  algorithms are already implemented in Chagashi, so this is now mainly
-  relevant for the TextEncoder JS interface (js/encoding).
-* URL: <https://url.spec.whatwg.org/>. For some incomprehensible reason,
-  it's defined as an equally incomprehensible state machine. types/url
+* HTML: <https://html.spec.whatwg.org/multipage/>.  Includes everything and
+  then some more.
+* DOM: <https://dom.spec.whatwg.org/>. Includes events, basic node-related
+  stuff, etc.
+* Encoding: <https://encoding.spec.whatwg.org/>.  These algorithms are
+  implemented in Chagashi.
+* URL: <https://url.spec.whatwg.org/>.  For some incomprehensible reason,
+  it's defined as an equally incomprehensible state machine.  types/url
   implements this.
-* Fetch: <https://fetch.spec.whatwg.org/>. Networking stuff. Also see
+* Fetch: <https://fetch.spec.whatwg.org/>.  Networking stuff.  Also see
   <https://xhr.spec.whatwg.org> for XMLHttpRequest.
-* Web IDL: <https://webidl.spec.whatwg.org/>. Relevant for Monoucha/JS
+* Web IDL: <https://webidl.spec.whatwg.org/>.  Relevant for Monoucha/JS
   bindings.
 
 Note that some of these are updated daily, such as the HTML standard.
@@ -288,10 +312,10 @@ Note that some of these are updated daily, such as the HTML standard.
   Draft" 2.2 version: <https://drafts.csswg.org/css2/>, but so far I
   haven't encountered significant differences.
 
-Good news is that unlike WHATWG specs, this doesn't change daily.  Bad
-news is that CSS 2.1 was the last real CSS version, and newer features
-are spread across a bunch of random documents with questionable status
-of stability: <https://www.w3.org/Style/CSS/specs.en.html>.
+Good news is that unlike WHATWG specs, this doesn't change daily.  Bad news
+is that CSS 2.1 was the last real CSS version, and newer features are spread
+across a bunch of random documents with questionable status of stability:
+<https://www.w3.org/Style/CSS/specs.en.html>.
 
 ### Other standards
 
@@ -304,8 +328,8 @@ It's unlikely that you will need these, but for completeness' sake:
 
 ### Nim docs
 
-* Manual: <https://nim-lang.org/docs/manual.html>.  A detailed
-  description of all language features.
+* Manual: <https://nim-lang.org/docs/manual.html>.  A detailed description
+  of all language features.
 * Standard library docs: <https://nim-lang.org/docs/lib.html>.
   Everything found in the "std/" namespace.
 
