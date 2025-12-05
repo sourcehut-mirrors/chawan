@@ -1925,6 +1925,10 @@ proc quit*(term: Terminal): Opt[void] =
       buf &= ResetAltScreen
     else:
       buf &= term.cursorGoto(0, term.attrs.height - 1) & term.resetFormat()
+      # if cleared, we have something on the screen; print a newline to
+      # avoid overprinting it
+      if term.cleared:
+        buf &= '\n'
     if term.hasTitle():
       buf &= PopTitle
     buf &= term.showCursor()
