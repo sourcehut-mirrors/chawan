@@ -75,7 +75,6 @@ proc newArrayFrom*(ctx: JSContext; vals: openArray[JSValue]): JSValue =
     return obj
   var u = 0u32
   let L = uint32(vals.len)
-  var fail = false
   while u < L:
     let res = JS_SetPropertyUint32(ctx, obj, u, vals[u])
     inc u
