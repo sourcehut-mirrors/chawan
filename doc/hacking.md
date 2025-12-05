@@ -77,14 +77,14 @@ Rationale: common sense, copyright.
 ### C style
 
 Note that most C code included in this repository are from vendored external
-libraries like QuickJS; following points only apply to code we (sadly) own,
-such as chaseccomp.
+libraries like QuickJS; following points only apply to code we own, such
+as chaseccomp.
 
 * 80 spaces per line.  Indent with 4 spaces (not mixed with tabs).
 * Local variable declarations come before their use (a la C89).  The two
   sections have a blank line inbetween.
 * Braces go on the same line as the statement, except for functions where
-  they go on the first line.
+  they go on the next line.
 * `if`, `for`, etc. must have braces unless all parts fit on a single line.
 * Boolean operators (`||` etc.) belong on the same line as the left-hand
   expression.
