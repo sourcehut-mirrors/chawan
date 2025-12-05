@@ -266,7 +266,7 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
     return fjErr
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
-  let flags = cint(JS_GPN_STRING_MASK)
+  let flags = JS_GPN_STRING_MASK
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
     return fjErr

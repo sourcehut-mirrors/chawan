@@ -656,11 +656,11 @@ proc JS_GetLength*(ctx: JSContext; obj: JSValueConst; pres: ptr uint64): JSValue
 proc JS_SetLength*(ctx: JSContext; obj: JSValueConst; len: uint64): cint
 
 const
-  JS_GPN_STRING_MASK* = (1 shl 0)
-  JS_GPN_SYMBOL_MASK* = (1 shl 1)
-  JS_GPN_PRIVATE_MASK* = (1 shl 2)
-  JS_GPN_ENUM_ONLY* = (1 shl 3)
-  JS_GPN_SET_ENUM* = (1 shl 4)
+  JS_GPN_STRING_MASK* = cint(1 shl 0)
+  JS_GPN_SYMBOL_MASK* = cint(1 shl 1)
+  JS_GPN_PRIVATE_MASK* = cint(1 shl 2)
+  JS_GPN_ENUM_ONLY* = cint(1 shl 3)
+  JS_GPN_SET_ENUM* = cint(1 shl 4)
 
 proc JS_GetOwnPropertyNames*(ctx: JSContext;
   ptab: ptr ptr UncheckedArray[JSPropertyEnum]; plen: ptr uint32;
