@@ -54,7 +54,7 @@ Text area and cell size using \f[CR]CSI 14 t\f[R] and
 (Cell size beats text area size as it is more reliable.)
 .IP \(bu 2
 Window size in cells by sending a CUP to 9999;9999 and then asking for
-CPR (the same trick is used by resize(1)).
+CPR (the same trick is used by \f[B]resize\f[R](1)).
 .PP
 Chawan processes responses to the above query in the same state machine
 as user input, so it works reasonably well on all terminals that at
@@ -94,13 +94,13 @@ Supports clipboard, but may choke on trying to set primary selection.
 .PP
 This applies to terminals that include the number 52 in DA1.
 This response guarantees nothing about support for the primary
-selection, and indeed, some terminals that return it (Contour) behave
-incorrectly when receiving primary.
+selection, and indeed, some terminals that return it (e.g.\ Contour)
+behave incorrectly when receiving primary.
 .RE
 .IP "3." 3
 Does not support clipboard.
 In this case we shell out to \f[CR]external.copy\-cmd\f[R] (defaults to
-xsel).
+\f[B]xsel\f[R](1x)).
 .RS 4
 .PP
 This applies to all other terminals.

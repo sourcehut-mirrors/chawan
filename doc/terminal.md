@@ -43,7 +43,7 @@ forward-compatible.  On startup, Chawan queries:
 * Text area and cell size using `CSI 14 t` and `CSI 16 t`.  (Cell size beats
   text area size as it is more reliable.)
 * Window size in cells by sending a CUP to 9999;9999 and then asking for CPR
-  (the same trick is used by [resize(1)](man:resize(1))).
+  (the same trick is used by [**resize**](man:resize(1))(1)).
 
 Chawan processes responses to the above query in the same state machine
 as user input, so it works reasonably well on all terminals that at least
@@ -78,12 +78,12 @@ differentiates between three tiers:
 2. Supports clipboard, but may choke on trying to set primary selection.
 
    This applies to terminals that include the number 52 in DA1.  This
-   response guarantees nothing about support for the primary selection,
-   and indeed, some terminals that return it (Contour) behave incorrectly
+   response guarantees nothing about support for the primary selection, and
+   indeed, some terminals that return it (e.g. Contour) behave incorrectly
    when receiving primary.
 
 3. Does not support clipboard.  In this case we shell out to
-   `external.copy-cmd` (defaults to [xsel](man:xsel(1x))).
+   `external.copy-cmd` (defaults to [**xsel**](man:xsel(1x))(1x)).
 
    This applies to all other terminals.  Notably, this includes terminals
    that support OSC 52 but do not have a reliable mechanism to detect
