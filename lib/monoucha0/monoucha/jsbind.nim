@@ -26,7 +26,7 @@
 ## {.jsstfunc.} binds static functions. Unlike .jsfunc, it does not
 ##   have a `this' value. A class name must be specified, e.g.
 ##   {.jsstfunc: "URL".} to define on the URL class.  To rename a static
-##   function, use the syntax "ClassName:funcName", e.g. "Response:error".
+##   function, use the syntax "ClassName#funcName", e.g. "Response#error".
 ##
 ## {.jsget.}, {.jsfget.} must be specified on object fields; these
 ##   generate regular getter & setter functions.
@@ -781,7 +781,7 @@ proc getFuncName(fun: NimNode; jsname, staticName: string): string =
   if jsname != "":
     return jsname
   if staticName != "":
-    let i = staticName.find('.')
+    let i = staticName.find('#')
     if i != -1:
       return staticName.substr(i + 1)
   return $fun.name
@@ -827,7 +827,7 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
     result.addThisName(hasThis)
   else:
     result.thisType = staticName
-    if (let i = result.thisType.find('.'); i != -1):
+    if (let i = result.thisType.find('#'); i != -1):
       result.thisType.setLen(i)
     result.newName = ident($result.t & "_" & result.funcName)
 

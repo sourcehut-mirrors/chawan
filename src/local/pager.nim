@@ -1658,7 +1658,7 @@ const OppositeMap = [
 ]
 
 proc opposite(dir: NavDirection): NavDirection
-    {.jsstfunc: "Pager.oppositeDir".} =
+    {.jsstfunc: "Pager#oppositeDir".} =
   return OppositeMap[dir]
 
 proc revDirection(pager: Pager): NavDirection {.jsfget.} =

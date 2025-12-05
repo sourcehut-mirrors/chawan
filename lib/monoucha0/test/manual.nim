@@ -203,7 +203,7 @@ assert(file.path === "/path/to/new-name");
   ctx.free()
   rt.free()
 
-proc jsExists(path: string): bool {.jsstfunc: "JSFile.exists".} =
+proc jsExists(path: string): bool {.jsstfunc: "JSFile#exists".} =
   return fileExists(path)
 
 test "jsstfunc: static functions":

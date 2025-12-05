@@ -131,7 +131,7 @@ proc newResponse*(ctx: JSContext; body: JSValueConst = JS_UNDEFINED;
     return err()
   return ok(newResponse(0, nil, nil, -1))
 
-proc makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
+proc makeNetworkError*(): Response {.jsstfunc: "Response#error".} =
   #TODO use "create" function
   return Response(
     res: 0,

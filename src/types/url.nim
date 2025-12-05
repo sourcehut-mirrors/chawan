@@ -1357,7 +1357,7 @@ proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
     parseURL1(s, url, usFragment)
 
 proc jsParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
-    URL {.jsstfunc: "URL.parse".} =
+    URL {.jsstfunc: "URL#parse".} =
   return ctx.newURL(url, base).get(nil)
 
 proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):

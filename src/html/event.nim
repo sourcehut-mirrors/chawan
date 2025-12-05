@@ -737,7 +737,7 @@ proc toSignalReason(ctx: JSContext; reason: JSValueConst): JSValue =
   return JS_GetException(ctx)
 
 proc abortSignalAbort(ctx: JSContext; reason: JSValueConst = JS_UNDEFINED):
-    AbortSignal {.jsstfunc: "AbortSignal.abort".} =
+    AbortSignal {.jsstfunc: "AbortSignal#abort".} =
   AbortSignal(rt: JS_GetRuntime(ctx), reason: ctx.toSignalReason(reason))
 
 proc throwIfAborted(ctx: JSContext; signal: AbortSignal): JSValue {.jsfunc.} =

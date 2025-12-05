@@ -414,7 +414,7 @@ JS_FreeValue(ctx, ctx.eval(code))
 
 `.jsstfunc` defines a static function on a given interface.  Unlike with
 `.jsfunc`, you must provide at least a single parameter for these functions,
-with the syntax `Interface.functionName`.
+with the syntax `Interface#functionName`.
 
 Note that `Interface` must be an interface registered through
 `registerType`.  If the interface was renamed, the Nim name (*not* the JS
@@ -425,7 +425,7 @@ Example:
 ```nim
 # [...] (see above for constructor)
 
-proc jsExists(path: string): bool {.jsstfunc: "JSFile.exists".} =
+proc jsExists(path: string): bool {.jsstfunc: "JSFile#exists".} =
   return fileExists(path)
 
 # [...]
