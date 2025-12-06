@@ -50,6 +50,7 @@ type
     ttTmux = "tmux"
     ttUrxvt = "rxvt-unicode"
     ttVt100 = "vt100"
+    ttVt100Nav = "vt100-nav" # VT100 without advanced video
     ttVt420 = "vt420"
     ttVt52 = "vt52"
     ttVte = "vte" # pretends to be XTerm
@@ -100,7 +101,7 @@ type
     n: int # bytes of s already flushed
     next: TerminalPage
 
-  TermdescFlag = enum # 16 bits, 7 free
+  TermdescFlag = enum # 16 bits, 3 free
     tfTitle # can set window title
     tfPreEcma48 # does not support ECMA-48/VT100-like queries (DA1 etc.)
     tfXtermQuery # supports XTerm-like queries (background color etc.)
@@ -113,6 +114,7 @@ type
     tfMargin # needs a 1-char margin at the right edge
     tfMouse # supports SGR mouse
     tfPrimary # interprets primary correctly in OSC 52
+    tfBracketedPaste # doesn't choke on bracketed paste (might not have it)
 
   Termdesc = set[TermdescFlag]
 
@@ -140,6 +142,8 @@ type
     mouseEnabled: bool
     specialGraphics: bool # flag for special graphics processing
     cursorHidden: bool
+    queueTitleFlag: bool # set title on next draw
+    registeredFlag*: bool # kernel won't accept any more data right now
     desc: Termdesc
     origTermios: Termios
     newTermios: Termios
@@ -158,6 +162,7 @@ type
     cursorx: int
     cursory: int
     colorMap: array[16, RGBColor]
+    title: string # current title
 
   QueryState = enum
     qsBackgroundColor, qsForegroundColor, qsXtermAllowedOps, qsXtermWindowOps,
@@ -298,7 +303,8 @@ proc windowChange(term: Terminal)
 # Note: we intentionally do not include tfPrimary here, because some poorly
 # written terminals choke on it despite advertising themselves as XTerm.
 const XtermCompatible = {
-  tfTitle, tfXtermQuery, tfAltScreen, tfSpecialGraphics, tfMouse
+  tfTitle, tfXtermQuery, tfAltScreen, tfSpecialGraphics, tfMouse,
+  tfBracketedPaste
 }
 
 const AnsiColorFlag = {tfColor1}
@@ -309,12 +315,13 @@ const TermdescMap = [
   ttAdm3a: {tfMargin, tfPreEcma48},
   ttAlacritty: XtermCompatible + TrueColorFlag,
   ttContour: XtermCompatible,
-  ttDvtm: {tfAltScreen, tfBleedsAPC} + TrueColorFlag,
+  ttDvtm: {tfAltScreen, tfBleedsAPC, tfBracketedPaste} + AnsiColorFlag,
   ttEat: XtermCompatible + TrueColorFlag,
-  ttEterm: {tfTitle, tfXtermQuery} + AnsiColorFlag,
-  ttFbterm: {tfXtermQuery} + AnsiColorFlag,
+  ttEterm: {tfTitle, tfXtermQuery, tfBracketedPaste} + AnsiColorFlag,
+  ttFbterm: {tfXtermQuery, tfBracketedPaste} + AnsiColorFlag,
   ttFoot: XtermCompatible,
   # FreeBSD has code to respond to queries, but it's #if 0'd out :(
+  # It has no bracketed paste (duh).
   ttFreebsd: {tfPreEcma48} + AnsiColorFlag,
   ttGhostty: XtermCompatible,
   ttIterm2: XtermCompatible,
@@ -324,7 +331,7 @@ const TermdescMap = [
   # man page they are "shoehorned into 16 colors".  This breaks color
   # correction, so we stick to ANSI.
   # It also fails to advertise ANSI color in DA1, so we set it here.
-  # Linux has no alt screen.
+  # Linux has no alt screen, and no paste (let alone bracketed).
   ttLinux: {tfXtermQuery} + AnsiColorFlag,
   ttMintty: XtermCompatible + TrueColorFlag,
   ttMlterm: XtermCompatible + TrueColorFlag,
@@ -350,6 +357,7 @@ const TermdescMap = [
   # The VT100 had DA1, but couldn't gracefully consume unknown sequences
   # (tfXtermQuery).
   ttVt100: {tfSpecialGraphics},
+  ttVt100Nav: {tfSpecialGraphics},
   # The VT420 could (it seems), but I'm not convinced sending them brings
   # any benefit.
   ttVt420: {tfSpecialGraphics},
@@ -383,20 +391,11 @@ const QueryWindowPixels = CSI & "14t"
 # report cell size
 const QueryCellSize = CSI & "16t"
 
-# allow shift-key to override mouse protocol
-const SetShiftEscape = CSI & ">0s"
-
 # number of color registers
 const QueryColorRegisters = CSI & "?1;1;0S"
 
 # report active position
 const QueryCursorPosition = CSI & "6n"
-
-# erase line
-const EL = CSI & 'K'
-
-# erase display
-const ED = CSI & 'J'
 
 # device control string
 const DCS = "\eP"
@@ -443,8 +442,8 @@ const BracketedPasteStart* = CSI & "200~"
 const BracketedPasteEnd* = CSI & "201~"
 
 # show/hide cursor
-const CNORM = DECSET(25)
-const CIVIS = DECRST(25)
+const ShowCursor = DECSET(25)
+const HideCursor = DECRST(25)
 
 # application program command
 const APC = "\e_"
@@ -474,29 +473,63 @@ proc flush*(term: Terminal): Opt[bool] =
     return ok(true)
   ok(false)
 
-proc write(term: Terminal; s: openArray[char]): Opt[void] =
-  if s.len > 0:
-    var n = 0
-    if term.pageHead == nil:
-      while n < s.len:
-        let m = term.ostream.write(s.toOpenArray(n, s.high))
-        if m < 0:
-          let e = errno
-          if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
-            return err()
-          break
-        n += m
-    if n < s.len:
-      let page = TerminalPage()
-      if term.pageTail == nil:
-        term.pageHead = page
-        term.pageTail = page
-        term.registerCb(int(term.ostream.fd))
-      else:
-        term.pageTail.next = page
-        term.pageTail = page
-      page.a = @(s.toOpenArrayByte(n, s.len - 1))
+proc startFlush(term: Terminal): Opt[void] =
+  if term.registeredFlag:
+    return ok()
+  if not ?term.flush():
+    term.registerCb(int(term.ostream.fd))
+    term.registeredFlag = true
   ok()
+
+# Arbitrary buffer size; data is flushed once we exceed it.
+const BufferSize = 4096
+
+proc write(term: Terminal; s: openArray[char]): Opt[void] =
+  if s.len <= 0:
+    return ok()
+  if s.len <= BufferSize: # merge small writes
+    if term.pageTail != nil and term.pageTail.a.len + s.len > BufferSize:
+      # The buffer is full, so we'll have to flush anyway; try to it now,
+      # maybe we can at least merge this write with a subsequent one.
+      ?term.startFlush()
+    let page = term.pageTail
+    if page == nil:
+      let page = TerminalPage(a: @(s.toOpenArrayByte(0, s.high)))
+      term.pageHead = page
+      term.pageTail = page
+      return ok()
+    let olen = page.a.len
+    if olen + s.len <= BufferSize:
+      page.a.setLen(olen + s.len)
+      copyMem(addr page.a[olen], unsafeAddr s[0], s.len)
+      return ok()
+  # large write, or the buffer is full.
+  ?term.startFlush()
+  var n = 0
+  if term.pageHead == nil:
+    while n < s.len:
+      let m = term.ostream.write(s.toOpenArray(n, s.high))
+      if m < 0:
+        let e = errno
+        if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
+          return err()
+        break
+      n += m
+  if n < s.len:
+    let page = TerminalPage()
+    if term.pageTail == nil:
+      term.pageHead = page
+      term.pageTail = page
+      term.registerCb(int(term.ostream.fd))
+      term.registeredFlag = true
+    else:
+      term.pageTail.next = page
+      term.pageTail = page
+    page.a = @(s.toOpenArrayByte(n, s.len - 1))
+  ok()
+
+proc write(term: Terminal; c: char): Opt[void] =
+  term.write([c])
 
 proc readChar(term: Terminal): Opt[char] =
   if term.ibufn == term.ibufLen:
@@ -507,9 +540,15 @@ proc readChar(term: Terminal): Opt[char] =
   result = ok(term.ibuf[term.ibufn])
   inc term.ibufn
 
-proc blockIO(term: Terminal) =
+proc blockIO0(term: Terminal) =
   term.istream.setBlocking(true)
   term.ostream.setBlocking(true)
+
+proc blockIO(term: Terminal): Opt[void] =
+  term.istream.setBlocking(true)
+  term.ostream.setBlocking(true)
+  doAssert ?term.flush()
+  ok()
 
 proc unblockIO(term: Terminal) =
   term.istream.setBlocking(false)
@@ -521,7 +560,7 @@ proc ahandleRead*(term: Terminal): Opt[bool] =
   if term.ibufLen < 0:
     let e = errno
     if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
-      term.blockIO()
+      term.blockIO0()
       return err()
     term.ibufLen = 0
     return ok(false)
@@ -1046,48 +1085,52 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
   of eprWindowChange: return ok(InputEvent(t: ietWindowChange))
   of eprRedraw: return ok(InputEvent(t: ietRedraw))
 
-proc cursorGoto(term: Terminal; x, y: int): string =
-  case term.termType
-  of ttAdm3a: return "\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20)
-  of ttVt52: return "\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20)
-  else: return CSI & $(y + 1) & ';' & $(x + 1) & 'H'
+proc cursorGoto(term: Terminal; x, y: int): Opt[void] =
+  return case term.termType
+  of ttAdm3a: term.write("\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
+  of ttVt52: term.write("\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
+  else: term.write(CSI & $(y + 1) & ';' & $(x + 1) & 'H')
+
+proc cursorNextLine(term: Terminal): Opt[void] =
+  term.write("\r\n")
+
+proc writeLine*(term: Terminal): Opt[void] =
+  term.write('\n')
 
 proc unsetCursorPos(term: Terminal) =
   term.cursorx = -1
   term.cursory = -1
 
-proc clearEnd(term: Terminal): string =
+proc clearEnd(term: Terminal): Opt[void] =
   case term.termType
-  of ttAdm3a: return ""
-  of ttVt52: return "\eK"
-  else: return EL
+  of ttAdm3a: return ok()
+  of ttVt52: return term.write("\eK")
+  else: return term.write(CSI & 'K')
 
-proc clearDisplay(term: Terminal): string =
-  case term.termType
-  of ttAdm3a: return "\x1A"
-  of ttVt52: return "\eJ"
-  else: return ED
+proc clearDisplay(term: Terminal): Opt[void] =
+  return case term.termType
+  of ttAdm3a: term.write("\x1A")
+  of ttVt52: term.write("\eJ")
+  else: term.write(CSI & 'J')
 
-proc isatty*(term: Terminal): bool =
+proc isatty(term: Terminal): bool =
   term.ttyFlag
 
 proc anyKey*(term: Terminal; msg = "[Hit any key]"; bottom = false): Opt[void] =
   if term.isatty():
-    term.blockIO()
-    doAssert ?term.flush()
-    var buf = ""
     if bottom:
-      buf &= term.cursorGoto(0, term.attrs.height - 1)
-    buf &= term.clearEnd() & msg
-    ?term.write(buf)
+      ?term.cursorGoto(0, term.attrs.height - 1)
+    ?term.clearEnd()
+    ?term.write(msg)
+    ?term.blockIO()
     discard term.readChar()
     term.unblockIO()
   ok()
 
-proc resetFormat(term: Terminal): string =
+proc resetFormat(term: Terminal): Opt[void] =
   case term.termType
-  of ttAdm3a, ttVt52: return ""
-  else: return CSI & 'm'
+  of ttAdm3a, ttVt52: return ok()
+  else: return term.write(CSI & 'm')
 
 const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
   ffBold: (1u8, 22u8),
@@ -1099,11 +1142,11 @@ const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
   ffBlink: (5u8, 25u8),
 ]
 
-proc startFormat(term: Terminal; flag: FormatFlag): string =
-  return CSI & $FormatCodes[flag].s & 'm'
+proc startFormat(term: Terminal; flag: FormatFlag): Opt[void] =
+  term.write(CSI & $FormatCodes[flag].s & 'm')
 
-proc endFormat(term: Terminal; flag: FormatFlag): string =
-  return CSI & $FormatCodes[flag].e & 'm'
+proc endFormat(term: Terminal; flag: FormatFlag): Opt[void] =
+  term.write(CSI & $FormatCodes[flag].e & 'm')
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
@@ -1190,8 +1233,8 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
       assert false
   return cfgcolor
 
-proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
-  res &= CSI
+proc writeColorSGR(term: Terminal; c: CellColor; bgmod: uint8): Opt[void] =
+  var res = CSI
   case c.t
   of ctNone:
     res &= 39 + bgmod
@@ -1216,6 +1259,7 @@ proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
     res &= ';'
     res &= rgb.b
   res &= 'm'
+  term.write(res)
 
 # If needed, quantize colors based on the color mode, and correct their
 # contrast.
@@ -1242,8 +1286,8 @@ proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
   of cmMonochrome:
     discard # nothing to do
 
-proc processFormat*(res: var string; term: Terminal; format: var Format;
-    cellf: Format) =
+proc processFormat*(term: Terminal; format: var Format; cellf: Format):
+    Opt[void] =
   var fgcolor = cellf.fgcolor
   var bgcolor = cellf.bgcolor
   term.reduceColors(fgcolor, bgcolor)
@@ -1255,7 +1299,7 @@ proc processFormat*(res: var string; term: Terminal; format: var Format;
         oldFlags[i] = flag
         inc i
       if flag notin format.flags and flag in cellf.flags:
-        res &= term.startFormat(flag)
+        ?term.startFormat(flag)
     if i > 0:
       # if either
       # * both fgcolor and bgcolor are the default, or
@@ -1264,18 +1308,19 @@ proc processFormat*(res: var string; term: Terminal; format: var Format;
       if cellf.flags == {} and
           (fgcolor != format.fgcolor and bgcolor != format.bgcolor or
           fgcolor == defaultColor and bgcolor == defaultColor):
-        res &= term.resetFormat()
+        ?term.resetFormat()
       else:
         for flag in oldFlags.toOpenArray(0, i - 1):
-          res &= term.endFormat(flag)
+          ?term.endFormat(flag)
     format.flags = cellf.flags
   if term.attrs.colorMode != cmMonochrome:
     if fgcolor != format.fgcolor:
-      res.addColorSGR(fgcolor, bgmod = 0)
+      ?term.writeColorSGR(fgcolor, bgmod = 0)
       format.fgcolor = fgcolor
     if bgcolor != format.bgcolor:
-      res.addColorSGR(bgcolor, bgmod = 10)
+      ?term.writeColorSGR(bgcolor, bgmod = 10)
       format.bgcolor = bgcolor
+  ok()
 
 proc hasTitle(term: Terminal): bool =
   term.config.display.setTitle.get(tfTitle in term.desc)
@@ -1283,36 +1328,14 @@ proc hasTitle(term: Terminal): bool =
 proc hasAltScreen(term: Terminal): bool =
   term.config.display.altScreen.get(tfAltScreen in term.desc)
 
-proc setTitle*(term: Terminal; title: string): Opt[void] =
-  if term.hasTitle():
-    ?term.write(OSC & "0;" & title.replaceControls() & ST)
-  ok()
+proc hasBracketedPaste(term: Terminal): bool =
+  term.config.input.bracketedPaste.get(tfBracketedPaste in term.desc)
 
-proc enableMouse*(term: Terminal): Opt[void] =
-  if not term.mouseEnabled and tfMouse in term.desc:
-    ?term.write(SetShiftEscape & SetSGRMouse)
-    term.mouseEnabled = true
-  ok()
+proc hasMouse(term: Terminal): bool =
+  term.config.input.useMouse.get(tfMouse in term.desc)
 
-proc disableMouse*(term: Terminal): Opt[void] =
-  if term.mouseEnabled:
-    ?term.write(ResetSGRMouse)
-    term.mouseEnabled = false
-  ok()
-
-proc enableBracketedPaste(term: Terminal): string =
-  case term.termType
-  of ttAdm3a, ttVt52, ttVt100, ttVt420: return ""
-  else: return SetBracketedPaste
-
-proc disableBracketedPaste(term: Terminal): string =
-  case term.termType
-  of ttAdm3a, ttVt52, ttVt100, ttVt420: return ""
-  else: return ResetBracketedPaste
-
-proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
-    iq: openArray[uint8]) =
-  var n = start
+proc encodeAllQMark(res: var string; te: TextEncoder; iq: openArray[uint8]) =
+  var n = 0
   while true:
     case te.encode(iq, res.toOpenArrayByte(0, res.high), n)
     of terDone:
@@ -1386,98 +1409,103 @@ proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: var bool;
           res &= '?'
   specialGraphics = sg
 
-proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
-    w: var int) =
-  if s.len == 0:
-    return
+proc processOutputString*(term: Terminal; s: openArray[char]; w: var int):
+    Opt[void] =
+  if s.len <= 0:
+    return ok()
   if s.validateUTF8Surr() != -1:
-    res &= '?'
     if w != -1:
       inc w
-    return
+    return term.write('?')
   if w != -1:
     for u in s.points:
       assert u > 0x9F or u != 0x7F and u > 0x1F
       w += u.width()
-  let L = res.len
   if term.te == nil:
     # The output encoding matches the internal representation.
-    res.setLen(L + s.len)
-    copyMem(addr res[L], unsafeAddr s[0], s.len)
-  elif term.asciiOnly:
+    return term.write(s)
+  var res = ""
+  if term.asciiOnly:
     res.encodeAscii(s, term.specialGraphics, tfSpecialGraphics in term.desc)
   else:
     # Output is not utf-8, so we must encode it first.
-    res.setLen(L + s.len) # guess length
-    res.encodeAllQMark(L, term.te, s.toOpenArrayByte(0, s.high))
+    res = newString(s.len) # guess length
+    res.encodeAllQMark(term.te, s.toOpenArrayByte(0, s.high))
+  term.write(res)
 
-proc hideCursor(term: Terminal): string =
+proc hideCursor(term: Terminal): Opt[void] =
   term.cursorHidden = true
   case term.termType
-  of ttAdm3a, ttVt52: return ""
-  else: return CIVIS
+  of ttAdm3a, ttVt52: return ok()
+  else: return term.write(HideCursor)
 
-proc showCursor(term: Terminal): string =
+proc showCursor(term: Terminal): Opt[void] =
   term.cursorHidden = false
   case term.termType
-  of ttAdm3a, ttVt52: return ""
-  else: return CNORM
+  of ttAdm3a, ttVt52: return ok()
+  else: return term.write(ShowCursor)
 
-proc processCell(res: var string; term: Terminal; format: var Format;
-    w: var int; cell: FixedCell) =
-  res.processFormat(term, format, cell.format)
-  res.processOutputString(term, cell.str, w)
+proc processCell(term: Terminal; format: var Format; w: var int;
+    cell: FixedCell): Opt[void] =
+  ?term.processFormat(format, cell.format)
+  term.processOutputString(cell.str, w)
 
-proc generateFullOutput(term: Terminal): string =
+proc generateFullOutput(term: Terminal): Opt[void] =
   var format = Format()
-  result = term.hideCursor()
-  result &= term.cursorGoto(0, 0)
-  result &= term.resetFormat()
-  result &= term.clearDisplay()
+  ?term.hideCursor()
+  ?term.cursorGoto(0, 0)
+  ?term.clearDisplay()
+  ?term.resetFormat()
   for y in 0 ..< term.attrs.height:
     if y != 0:
-      result &= "\r\n"
+      ?term.cursorNextLine()
     var w = 0
     for x in 0 ..< term.attrs.width:
       while w < x:
-        result &= " "
+        ?term.write(' ')
         inc w
-      result.processCell(term, format, w, term.canvas[y * term.attrs.width + x])
+      ?term.processCell(format, w, term.canvas[y * term.attrs.width + x])
     term.lineDamage[y] = term.attrs.width
   term.unsetCursorPos()
+  ok()
 
-proc generateSwapOutput(term: Terminal): string =
-  result = ""
+proc generateSwapOutput(term: Terminal): Opt[void] =
   var vy = -1
+  var first = true
+  var buf = ""
   for y in 0 ..< term.attrs.height:
     # set cx to x of the first change
     let cx = term.lineDamage[y]
     # w will track the current position on screen
     var w = cx
     if cx < term.attrs.width:
-      if result.len == 0:
-        result &= term.hideCursor()
+      if first:
+        ?term.hideCursor()
         term.unsetCursorPos()
+        first = false
       if cx == 0 and vy != -1:
         while vy < y:
-          result &= "\r\n"
+          ?term.cursorNextLine()
           inc vy
       else:
-        result &= term.cursorGoto(cx, y)
+        ?term.cursorGoto(cx, y)
         vy = y
-      result &= term.resetFormat()
+      buf.setLen(0)
+      ?term.resetFormat()
       var format = Format()
       for x in cx ..< term.attrs.width:
         while w < x: # if previous cell had no width, catch up with x
-          result &= ' '
+          buf &= ' '
           inc w
         let cell = term.canvas[y * term.attrs.width + x]
-        result.processFormat(term, format, cell.format)
-        result.processOutputString(term, cell.str, w)
+        ?term.processFormat(format, cell.format)
+        ?term.processOutputString(cell.str, w)
       if w < term.attrs.width:
-        result &= term.clearEnd()
+        ?term.clearEnd()
       # damage is gone
       term.lineDamage[y] = term.attrs.width
+      ?term.write(buf)
+  ok()
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
@@ -1694,22 +1722,14 @@ proc getU32BE(data: openArray[char]; i: int): uint32 =
     (uint32(data[i + 1]) shl 16) or
     (uint32(data[i]) shl 24)
 
-proc appendSixelAttrs(outs: var string; data: openArray[char];
-    realw, realh: int) =
-  var i = 0
-  while i < data.len:
-    let c = data[i]
-    outs &= c
-    inc i
-    if c == '"': # set raster attrs
-      break
+proc writeSixelAttrs(term: Terminal; data: openArray[char];
+    realw, realh: int): Opt[void] =
+  var i = max(data.find('"'), 0) # set raster attrs
+  ?term.write(data.toOpenArray(0, i))
+  ?term.write("1;1;" & $realw & ';' & $realh)
   while i < data.len and data[i] != '#': # skip aspect ratio attrs
     inc i
-  outs &= "1;1;" & $realw & ';' & $realh
-  if i < data.len:
-    let ol = outs.len
-    outs.setLen(ol + data.len - i)
-    copyMem(addr outs[ol], unsafeAddr data[i], data.len - i)
+  term.write(data.toOpenArray(i, data.high))
 
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
     data: openArray[char]): Opt[void] =
@@ -1725,9 +1745,8 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let L = data.len - int(data.getU32BE(data.len - 4)) - 4
   if L < 0:
     return ok()
-  var outs = term.cursorGoto(x, y)
-  outs.appendSixelAttrs(data.toOpenArray(0, preludeLen - 1), realw, realh)
-  ?term.write(outs)
+  ?term.cursorGoto(x, y)
+  ?term.writeSixelAttrs(data.toOpenArray(0, preludeLen - 1), realw, realh)
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
   if realh == image.height: # don't crop
@@ -1770,8 +1789,8 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage):
 
 proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
     Opt[void] =
-  var outs = term.cursorGoto(x, y) &
-    APC & "GC=1,s=" & $image.width & ",v=" & $image.height &
+  ?term.cursorGoto(x, y)
+  var outs = APC & "GC=1,s=" & $image.width & ",v=" & $image.height &
     ",x=" & $image.offx & ",y=" & $image.offy &
     ",X=" & $image.offx2 & ",Y=" & $image.offy2 &
     ",w=" & $(image.dispw - image.offx) &
@@ -1840,28 +1859,39 @@ proc clearCanvas*(term: Terminal) =
   term.clearImages(maxh)
   term.canvasImages = newImages
 
-proc draw*(term: Terminal; redraw: bool; cursorx, cursory: int): Opt[void] =
+proc queueTitle*(term: Terminal; title: string) =
+  if term.title != title:
+    term.queueTitleFlag = true
+    term.title = title
+
+proc draw*(term: Terminal; redraw, mouse: bool; cursorx, cursory: int):
+    Opt[void] =
   if redraw:
     if term.config.display.forceClear or not term.cleared:
-      ?term.write(term.generateFullOutput())
+      ?term.generateFullOutput()
       term.cleared = true
     else:
-      ?term.write(term.generateSwapOutput())
+      ?term.generateSwapOutput()
     if term.imageMode != imNone:
       ?term.outputImages()
-  var buf = ""
   if cursorx != term.cursorx or cursory != term.cursory:
-    buf &= term.cursorGoto(cursorx, cursory)
+    ?term.cursorGoto(cursorx, cursory)
   if term.cursorHidden:
-    buf &= term.showCursor()
-  ?term.write(buf)
-  ok()
+    ?term.showCursor()
+  if term.queueTitleFlag and term.hasTitle():
+    ?term.write(OSC & "0;" & term.title.replaceControls() & ST)
+    term.queueTitleFlag = false
+  if term.hasMouse() and mouse != term.mouseEnabled:
+    if mouse:
+      ?term.write(SetSGRMouse)
+    else:
+      ?term.write(ResetSGRMouse)
+    term.mouseEnabled = mouse
+  term.startFlush()
 
 proc sendOSC52*(term: Terminal; s: string; clipboard = true): Opt[bool] =
   if not term.osc52Copy:
     return ok(false)
-  term.blockIO()
-  doAssert ?term.flush()
   var buf = OSC & "52;"
   if clipboard:
     buf &= 'c'
@@ -1871,7 +1901,6 @@ proc sendOSC52*(term: Terminal; s: string; clipboard = true): Opt[bool] =
   buf.btoa(s.toOpenArrayByte(0, s.high))
   buf &= ST
   ?term.write(buf)
-  term.unblockIO()
   ok(true)
 
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
@@ -1912,29 +1941,28 @@ proc respectSigint*(term: Terminal) =
 
 proc quit*(term: Terminal): Opt[void] =
   if term.isatty():
-    if term.config.input.useMouse:
-      ?term.disableMouse()
-    var buf = ""
-    if term.config.input.bracketedPaste:
-      buf &= term.disableBracketedPaste()
+    if term.hasMouse() and term.mouseEnabled:
+      ?term.write(ResetSGRMouse)
+      term.mouseEnabled = false
+    if term.hasBracketedPaste():
+      ?term.write(ResetBracketedPaste)
     if term.hasAltScreen():
       if term.imageMode == imSixel:
         # xterm seems to keep sixels in the alt screen; clear these so it
         # doesn't flash in the user's face the next time they do smcup
-        buf &= term.clearDisplay()
-      buf &= ResetAltScreen
+        ?term.clearDisplay()
+      ?term.write(ResetAltScreen)
     else:
-      buf &= term.cursorGoto(0, term.attrs.height - 1) & term.resetFormat()
+      ?term.cursorGoto(0, term.attrs.height - 1)
+      ?term.resetFormat()
       # if cleared, we have something on the screen; print a newline to
       # avoid overprinting it
       if term.cleared:
-        buf &= '\n'
+        ?term.writeLine()
     if term.hasTitle():
-      buf &= PopTitle
-    buf &= term.showCursor()
-    ?term.write(buf)
-    term.blockIO()
-    doAssert ?term.flush()
+      ?term.write(PopTitle)
+    ?term.showCursor()
+    ?term.blockIO()
     term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
     discard tcSetAttr(term.istream.fd, TCSANOW, addr term.newTermios)
     while term.eparser.queryState != qsNone:
@@ -1959,36 +1987,35 @@ proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
   if tfPreEcma48 in term.desc:
     term.eparser.queryState = qsNone
     return ok()
-  var outs = ""
   if not windowOnly:
     term.setQueryState(qsBackgroundColor)
     if tfXtermQuery in term.desc:
       if term.config.display.defaultBackgroundColor.isNone:
-        outs &= QueryBackgroundColor
+        ?term.write(QueryBackgroundColor)
       if term.config.display.defaultForegroundColor.isNone:
-        outs &= QueryForegroundColor
+        ?term.write(QueryForegroundColor)
       if term.config.input.osc52Copy.isNone or
           term.config.input.osc52Primary.isNone:
-        outs &= QueryXtermAllowedOps
-        outs &= QueryXtermWindowOps
+        ?term.write(QueryXtermAllowedOps)
+        ?term.write(QueryXtermWindowOps)
       if term.config.display.imageMode.isNone:
         if tfBleedsAPC notin term.desc:
-          outs &= KittyQuery
-        outs &= QueryColorRegisters
+          ?term.write(KittyQuery)
+        ?term.write(QueryColorRegisters)
       elif term.config.display.imageMode.get == imSixel:
-        outs &= QueryColorRegisters
+        ?term.write(QueryColorRegisters)
       if term.attrs.colorMode < cmTrueColor and
           term.config.display.colorMode.isNone:
-        outs &= QueryTcapRGB
-      outs &= QueryANSIColors
-    outs &= DA1
+        ?term.write(QueryTcapRGB)
+      ?term.write(QueryANSIColors)
+    ?term.write(DA1)
   else:
     term.setQueryState(qsCellSize)
   # We send these unconditionally because the OpenSSH fork of M$ returns
   # fake garbage in TIOCGWINSZ and this way we have a chance of the terminal
   # sending back real data to override that.
   if tfXtermQuery in term.desc:
-    outs &= QueryCellSize & QueryWindowPixels
+    ?term.write(static(QueryCellSize & QueryWindowPixels))
   # The resize hack.
   #
   # All vaguely VT100-compatible terminals must implement CPR, so sending
@@ -1997,10 +2024,10 @@ proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
   #
   # We also prefer this to XTerm's (Sun's?) window size querying mechanism
   # because some old tmux versions output botched responses to that.
-  outs &= term.cursorGoto(9998, 9998)
-  outs &= QueryCursorPosition
+  ?term.cursorGoto(9998, 9998)
+  ?term.write(QueryCursorPosition)
   term.unsetCursorPos()
-  term.write(outs)
+  term.startFlush()
 
 # Parse TERM variable.  This may adjust color-mode.
 proc parseTERM(term: Terminal): TerminalType =
@@ -2060,7 +2087,8 @@ proc applyTermDesc(term: Terminal; desc: Termdesc) =
   term.desc = desc
   case term.termType
   of ttVt52, ttAdm3a: discard
-  of ttVt100: term.formatMode = {ffReverse}
+  of ttVt100Nav: term.formatMode = {ffReverse}
+  of ttVt100: term.formatMode = {ffReverse, ffBold, ffBlink, ffUnderline}
   else:
     # Unless a terminal can't process one of these, it's OK to enable
     # all of them.
@@ -2104,20 +2132,18 @@ proc queryWindowSize*(term: Terminal): Opt[void] =
 
 proc initScreen(term: Terminal): Opt[void] =
   # note: deinit happens in quit()
-  var buf = ""
-  if term.hasTitle():
-    buf &= PushTitle
-  if term.hasAltScreen():
-    buf &= SetAltScreen
-  if term.config.input.bracketedPaste:
-    buf &= term.enableBracketedPaste()
-  ?term.write(buf)
-  if term.config.input.useMouse:
-    ?term.enableMouse()
-  term.cursorx = -1
-  term.cursory = -1
   term.unblockIO()
-  ok()
+  term.unsetCursorPos()
+  if term.hasTitle():
+    ?term.write(PushTitle)
+  if term.hasAltScreen():
+    ?term.write(SetAltScreen)
+  if term.hasBracketedPaste():
+    ?term.write(SetBracketedPaste)
+  if term.hasMouse():
+    ?term.write(SetSGRMouse)
+    term.mouseEnabled = true
+  term.startFlush()
 
 proc start*(term: Terminal; istream: PosixStream;
     registerCb: (proc(fd: int) {.raises: [].})): Opt[void] =

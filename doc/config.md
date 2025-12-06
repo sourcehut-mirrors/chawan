@@ -537,11 +537,14 @@ Only applies for keybindings defined in `[page]`.</td>
 
 <tr>
 <td>use-mouse</td>
-<td>boolean</td>
+<td>boolean / "auto"</td>
 <td>true</td>
 <td>Whether Chawan is allowed to intercept mouse clicks.
 <p>
-The current implementation imitates w3m.</td>
+The current implementation imitates w3m.
+<p>
+When set to "auto" (the default), Chawan tries to detect whether mouse
+support is available.</td>
 </tr>
 
 <tr>
@@ -573,15 +576,17 @@ terminals actually get this right (to my knowledge, only XTerm and Kitty).
 
 <tr>
 <td>bracketed-paste</td>
-<td>boolean</td>
-<td>true</td>
+<td>boolean / "auto"</td>
+<td>"auto"</td>
 <td>Whether Chawan should ask for bracketed paste.
 <p>
 When true, the terminal will (hopefully) mark pasted text with escape
-sequences, which a) ensures that pasting a newline character into the
-line editor does not submit the editor, b) allows Chawan to intercept
-text pasted into the pager, automatically loading it into the browser's
-URL bar.
+sequences, which a) ensures that pasting a newline character into the line
+editor does not submit the editor, b) allows Chawan to intercept text pasted
+into the pager, automatically loading it into the browser's URL bar.
+<p>
+When set to "auto" (the default), Chawan tries to only enable bracketed
+paste if the terminal is known not to misbehave when trying to do so.
 </td>
 </tr>
 

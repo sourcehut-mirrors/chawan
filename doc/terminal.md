@@ -104,6 +104,7 @@ hardware running the actual ROM:
 
 * The VT100 has been tested in Lars Brinkhoff's
   [terminal-simulator](https://github.com/larsbrinkhoff/terminal-simulator).
+  Note: use TERM=vt100-nav if you don't have advanced video.
 * The VT420 has been tested in Matt Mastracci's
   [Blaze](https://github.com/mmastrac/blaze).
 

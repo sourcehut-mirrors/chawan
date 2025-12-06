@@ -626,13 +626,16 @@ _
 T{
 use\-mouse
 T}@T{
-boolean
+boolean / \(lqauto\(rq
 T}@T{
 true
 T}@T{
 Whether Chawan is allowed to intercept mouse clicks.
 .PP
 The current implementation imitates w3m.
+.PP
+When set to \(lqauto\(rq (the default), Chawan tries to detect whether
+mouse support is available.
 T}
 _
 T{
@@ -670,9 +673,9 @@ _
 T{
 bracketed\-paste
 T}@T{
-boolean
+boolean / \(lqauto\(rq
 T}@T{
-true
+\(lqauto\(rq
 T}@T{
 Whether Chawan should ask for bracketed paste.
 .PP
@@ -681,6 +684,10 @@ sequences, which a) ensures that pasting a newline character into the
 line editor does not submit the editor, b) allows Chawan to intercept
 text pasted into the pager, automatically loading it into the
 browser\(cqs URL bar.
+.PP
+When set to \(lqauto\(rq (the default), Chawan tries to only enable
+bracketed paste if the terminal is known not to misbehave when trying to
+do so.
 T}
 _
 T{

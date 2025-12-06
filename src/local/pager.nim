@@ -147,7 +147,6 @@ type
     notnum: bool # has a non-numeric character been input already?
     reverseSearch: bool
     dumpConsoleFile: bool
-    updateTitle: bool
     updateStatus: UpdateStatusState
     consoleCacheId: int
     consoleFile: string
@@ -288,6 +287,11 @@ template status(pager: Pager): Surface =
 template display(pager: Pager): Surface =
   pager.surfaces[stDisplay]
 
+proc updateTitle(pager: Pager) =
+  let container = pager.container
+  if container != nil:
+    pager.term.queueTitle(container.getTitle())
+
 proc setContainer(pager: Pager; c: Container) =
   if pager.term.imageMode != imNone and pager.container != nil:
     pager.container.clearCachedImages(pager.loader)
@@ -298,7 +302,7 @@ proc setContainer(pager: Pager; c: Container) =
     c.tab.current = c
     c.queueDraw()
     pager.onSetLoadInfo(c)
-    pager.updateTitle = true
+    pager.updateTitle()
   else:
     pager.tab.current = nil
 
@@ -1199,38 +1203,36 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   ox = x
   move(ls)
 
-proc drawBuffer(pager: Pager; container: Container; ofile: ChaFile): Opt[void] =
+proc drawBuffer(pager: Pager; container: Container): Opt[void] =
   var format = Format()
   let res = container.readLines(proc(line: SimpleFlexibleLine): Opt[void] =
     var x = 0
     var w = -1
     var i = 0
-    var s = ""
     if container.bgcolor != defaultColor and
         (line.formats.len == 0 or line.formats[0].pos > 0):
       let nformat = initFormat(container.bgcolor, defaultColor, {})
-      s.processFormat(pager.term, format, nformat)
+      ?pager.term.processFormat(format, nformat)
     for f in line.formats:
       var ff = f.format
       if ff.bgcolor == defaultColor:
         ff.bgcolor = container.bgcolor
       let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, f.pos)
-      s.processOutputString(pager.term, ls, w)
+      ?pager.term.processOutputString(ls, w)
       if i < line.str.len:
-        s.processFormat(pager.term, format, ff)
+        ?pager.term.processFormat(format, ff)
     if i < line.str.len:
       let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, int.high)
-      s.processOutputString(pager.term, ls, w)
+      ?pager.term.processOutputString(ls, w)
     if container.bgcolor != defaultColor and x < container.width:
       let nformat = initFormat(container.bgcolor, defaultColor, {})
-      s.processFormat(pager.term, format, nformat)
+      ?pager.term.processFormat(format, nformat)
       let spaces = ' '.repeat(container.width - x)
-      s.processOutputString(pager.term, spaces, w)
-    s.processFormat(pager.term, format, Format())
-    s &= '\n'
-    ofile.write(s)
+      ?pager.term.processOutputString(spaces, w)
+    ?pager.term.processFormat(format, Format())
+    pager.term.writeLine()
   )
-  ?ofile.flush()
+  doAssert ?pager.term.flush()
   res
 
 proc redraw(pager: Pager) {.jsfunc.} =
@@ -1451,10 +1453,6 @@ proc draw(pager: Pager): Opt[void] =
   var redraw = false
   var imageRedraw = false
   var hasMenu = false
-  if pager.updateTitle:
-    if pager.container != nil:
-      ?pager.term.setTitle(pager.container.getTitle())
-    pager.updateTitle = false
   let container = pager.visibleContainer
   if container != nil:
     if container.redraw:
@@ -1485,15 +1483,12 @@ proc draw(pager: Pager): Opt[void] =
     pager.display.redraw = false
     redraw = true
   if pager.lineedit != nil:
-    ?pager.term.disableMouse()
     if pager.lineedit.redraw:
       let x = pager.lineedit.generateOutput()
       pager.term.writeGrid(x, 0, pager.attrs.height - 1)
       pager.lineedit.redraw = false
       redraw = true
   else:
-    if pager.config.input.useMouse:
-      ?pager.term.enableMouse()
     if pager.status.redraw:
       pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
       pager.status.redraw = false
@@ -1514,8 +1509,8 @@ proc draw(pager: Pager): Opt[void] =
       # Ugh. :(
       pager.term.clearImages(pager.bufHeight)
   let (cursorx, cursory) = pager.getAbsoluteCursorXY(container)
-  ?pager.term.draw(redraw, cursorx, cursory)
-  ok()
+  let mouse = pager.lineedit == nil
+  pager.term.draw(redraw, mouse, cursorx, cursory)
 
 proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.status.grid.width - s.width()
@@ -3532,7 +3527,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
     if pager.container == container:
       if container.loadState != lsLoading:
         pager.queueStatusUpdate()
-      pager.updateTitle = true
+      pager.updateTitle()
   of cetAlert:
     if pager.container == container:
       pager.alert(event.msg)
@@ -3630,6 +3625,7 @@ proc handleWrite(pager: Pager; fd: int): Opt[void] =
   if pager.term.ostream != nil and pager.term.ostream.fd == fd:
     if ?pager.term.flush():
       pager.pollData.unregister(pager.term.ostream.fd)
+      pager.term.registeredFlag = false
   elif fd in pager.loader.unregistered:
     discard # ignore (see handleError)
   else:
@@ -3802,7 +3798,7 @@ proc dumpBuffers(pager: Pager) =
     for container in tab.containers:
       if container.iface == nil:
         continue # ignore crashed buffers; they are already logged anyway
-      if pager.drawBuffer(container, cast[ChaFile](stdout)).isOk:
+      if pager.drawBuffer(container).isOk:
         pager.handleEvents(container)
       else:
         pager.console.error("Error in buffer", $container.url)
