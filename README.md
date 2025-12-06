@@ -1,9 +1,9 @@
 [Chawan](https://chawan.net) is a TUI web (and (S)FTP, Gopher, Gemini,
 ...) browser with CSS, inline image and JavaScript support.
 
-It uses its own small browser engine developed from scratch, which
-can nevertheless display many websites in a manner similar to major
-graphical browsers.
+It uses its own small browser engine developed from scratch, which can
+nevertheless display many websites in a manner similar to major graphical
+browsers.
 
 It can also be used as a terminal pager.
 
@@ -70,18 +70,17 @@ installing a package or compiling Chawan yourself is preferable.
 Currently implemented features are:
 
 * multi-processing, incremental loading of documents
-* HTML5 support with various encodings (UTF-8, Shift_JIS, GBK, ...),
-  forms, cookies
-* [CSS](doc/css.md)-based layout engine: supports flow layout, table
-  layout, flexbox layout, double-width characters (CJK)
+* HTML5 support with various encodings (UTF-8, Shift_JIS, GBK, ...), forms,
+  cookies
+* [CSS](doc/css.md)-based layout engine: supports flow layout, table layout,
+  flexbox layout, double-width characters (CJK)
 * user-programmable keybindings (defaults are vi(m)-like), mouse support
 * JavaScript support in documents (disabled by default)
 * inline image support with [Sixel](https://en.wikipedia.org/wiki/Sixel) or
   [Kitty protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/)
-  (disabled by default; see [doc/image.md](doc/image.md) on how to
-  enable)
-* supports several network [protocols](doc/protocols.md): HTTP(S),
-  (S)FTP, Gopher, Gemini, Finger, Spartan
+  (disabled by default; see [doc/image.md](doc/image.md) on how to enable)
+* supports several network [protocols](doc/protocols.md): HTTP(S), (S)FTP,
+  Gopher, Gemini, Finger, Spartan
 * markdown viewer (`cha README.md`), man page viewer (`mancha`)
 * [user-defined protocols](doc/urimethodmap.md) and
   [file formats](doc/mailcap.md)

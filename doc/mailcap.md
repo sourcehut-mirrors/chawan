@@ -137,6 +137,10 @@ application/x-troff-man; pandoc - -f man -t html -o -; x-htmloutput
 application/epub+zip; http_proxy=localhost:0 pandoc - -f epub \
 --embed-resources --standalone; x-htmloutput
 
+# Hex viewer.  Usage: alias chadump='cha -Ttext/x-hexdump'
+# (Uses GNU-specific flags, adjust as needed on other systems.)
+text/x-hexdump; od -w12 -A x -t x1z -v; copiousoutput
+
 # Following entry will be ignored, as text/html is supported natively by Chawan.
 text/html; cha -dT text/html -I %{charset}; copiousoutput
 ```
