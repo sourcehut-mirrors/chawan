@@ -1234,6 +1234,8 @@ proc cancel*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.state == bsLoaded:
     return
   for it in bc.loader.data:
+    if it of PagerHandle:
+      continue
     let fd = it.fd
     bc.pollData.unregister(fd)
     bc.loader.unregistered.add(fd)

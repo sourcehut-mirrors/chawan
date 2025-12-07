@@ -3663,7 +3663,8 @@ proc handleError(pager: Pager; fd: int): Opt[void] =
         pager.dumpConsoleFile = true
       container.flags.incl(cfCrashed)
       pager.unregisterContainer(container)
-      pager.console.error("error in buffer", $container.url)
+      pager.console.error("Error in buffer", $container.url)
+      pager.console.flush()
       if not isConsole:
         pager.showConsole()
       dec pager.numload
