@@ -5,7 +5,7 @@ die() {
 	exit 1
 }
 
-test "$1" || die "usage: gen_syscalls [file]"
+test "$1" || die "usage: gen_syscalls [input] [output]"
 
 find_label() {
 	line=$(printf '%s\n' "$labels" | grep -e "$1 " | head -n 1)
@@ -46,6 +46,8 @@ put_ret() {
 	printf '\tCHA_BPF_RET(%s),\n' "$val"
 }
 
+sed -ne '/^: start$/,$p' "$1" >"$2~"
+
 ip=0
 while IFS= read -r line
 do	line=${line%%#*}
@@ -60,7 +62,7 @@ $line $ip"
 	'')	;;
 	*)	ip=$((ip + 1));;
 	esac
-done < "$1"
+done < "$2~"
 
 ip=0
 while IFS= read -r line
@@ -76,6 +78,10 @@ do	line_cut_next
 	*)	die "unexpected instruction $next" ;;
 	esac
 	ip=$(($ip + 1))
-done < "$1"
+done < "$2~" >"$2~~"
 
-printf '#define EXPECTED_COUNT %d\n' "$ip"
+mv "$2~~" "$2~"
+
+printf '#define EXPECTED_COUNT %d\n' "$ip" >>"$2~"
+
+mv "$2~" "$2"

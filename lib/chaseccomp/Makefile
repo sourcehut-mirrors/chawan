@@ -19,8 +19,7 @@ chasc_defs_%.c: %.chasc gen_defs chaseccomp.h audit_nr.h
 	$(CC) $(CFLAGS) $(LDFLAGS) -E -P $< -o $@
 
 chasc_%.h: %.chasc.expanded gen_syscalls
-	./gen_syscalls $< >$@~
-	mv $@~ $@
+	./gen_syscalls $< $@
 
 chaseccomp.o: chaseccomp.h chasc_network.h chasc_buffer.h
 

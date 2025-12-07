@@ -1,3 +1,5 @@
+: start
+
 include "audit_nr.h"
 
 # check if we are using the expected calling convention
