@@ -140,10 +140,9 @@ $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/* lib/chame0/chame/* \
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 
-$(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim $(twtstr) $(myposix) $(chafile)
+$(OUTDIR_BIN)/mancha: adapter/tools/mancha
 	@mkdir -p "$(OUTDIR_BIN)"
-	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/mancha" $(FLAGS) \
-		-o:"$(OUTDIR_BIN)/mancha" adapter/tools/mancha.nim
+	install -m755 $< "$(OUTDIR_BIN)"
 
 unicode_version = 17.0.0
 

@@ -1,0 +1,78 @@
+#!/bin/sh
+
+usage() {
+	msg='Usage:
+mancha [-M path] [[-s] section] -k keyword
+mancha [-M path] [[-s] section] name
+mancha -l file'
+	case $1 in
+	0)	echo "$msg";;
+	*)	echo "$msg" >&2
+	esac
+	exit $1
+}
+
+section=
+local=
+man=
+keyword=
+ambiguous=
+
+while test "$#" -gt 0
+do	param=$1
+	shift
+	case $param in
+	-h)	usage 0;;
+	-*)	if test "$#" -le 0; then usage 1; fi
+		case $param in
+		-M)	export MANPATH=$1;;
+		-s)	section="($1)";;
+		-l)	local=$1;;
+		-k)	keyword=$1;;
+		*)	usage 1
+		esac
+		shift
+		;;
+	[0-9]*|n|l|x)
+		if test -z "$section$ambiguous"
+		then	ambiguous="$param"
+		elif test -z "$man"
+		then	man=$param
+		else	usage 1
+		fi
+		;;
+	*)	if test -z "$man"; then man=$param; else usage 1; fi
+	esac
+done
+
+only_one() {
+	i=0
+	while test "$#" -gt 0
+	do	if test -n "$1"; then i=$(($i+1)); fi
+		shift
+	done
+	test "$i" = 1
+}
+
+if test -n "$ambiguous"
+then	if test -z "$man$keyword$local"
+	then	man=$ambiguous
+	elif test -z "$section"
+	then	section="($ambiguous)"
+	else	usage 1
+	fi
+fi
+if ! only_one "$local" "$man" "$keyword"; then usage 1; fi
+if test -n "$local" && test -n "$section"; then usage 1; fi
+
+case $local in
+'')	case $keyword in
+	'')	url=man:$man$section;;
+	*)	url=man-k:$keyword$section;;
+	esac
+	;;
+/*)	url=man-l:$local;;
+*)	url=man-l:$PWD/$local
+esac
+
+exec ${MANCHA_CHA:-cha} "$url"
