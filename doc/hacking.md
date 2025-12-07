@@ -76,7 +76,7 @@ Rationale: common sense, copyright.
 
 ### C style
 
-Note that most C code included in this repository are from vendored external
+Note that most C code included in this repository is from vendored external
 libraries like QuickJS; following points only apply to code we own, such
 as chaseccomp.
 
@@ -85,7 +85,7 @@ as chaseccomp.
   sections have a blank line inbetween.
 * Braces go on the same line as the statement, except for functions where
   they go on the next line.
-* `if`, `for`, etc. must have braces unless all parts fit on a single line.
+* `if`, `for`, etc. must have braces unless each part fits on a single line.
 * Boolean operators (`||` etc.) belong on the same line as the left-hand
   expression.
 
@@ -153,11 +153,6 @@ so don't use it unless you know what you're doing.
 ### `out` parameters
 
 `out` parameters crash the 1.6.14 compiler.  Use `var` instead.
-
-### `seq` parameters
-
-Passing `openArray` is more efficient and composes better, so prefer that.
-(This only refers to parameters, `openArray` doesn't work elsewhere.)
 
 ### Copying operations
 
@@ -258,10 +253,8 @@ when debugging a flow layout path that the console buffer also needs.
 Don't forget to add a test case after the fix:
 
 ```sh
-$ cha -C test/layout/config.toml test/layout/my-test-case.html > test/layout/my-test-case.expected
+$ ./test/layout/add test/layout/my-test-case.html
 ```
-
-Use `config.color.toml` and `my-test-case.color.expected` to preserve colors.
 
 ### Sandbox violations
 
@@ -338,5 +331,4 @@ It's unlikely that you will need these, but for completeness' sake:
 <https://developer.mozilla.org/en-US/docs/Web>
 
 MDN is useful if you don't quite understand how a certain feature is
-supposed to work. It also has links to relevant standards in page
-footers.
+supposed to work.  It also has links to relevant standards in page footers.

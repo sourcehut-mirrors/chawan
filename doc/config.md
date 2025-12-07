@@ -5,20 +5,20 @@ MANOFF -->
 # Configuration of Chawan
 
 Chawan supports configuration of various options like keybindings, user
-stylesheets, site preferences, etc. The configuration format is similar
-to toml, with the following exceptions:
+stylesheets, site preferences, etc.  The configuration format is similar to
+toml, with the following exceptions:
 
 * Inline tables may span across multiple lines.
-* Regular tables (`[table]`) and inline tables (`table = {}`) have
-  different semantics.  The first is additive, meaning old values are
-  not removed.  The second is destructive, and clears all definitions in
-  the table specified.
+* Regular tables (`[table]`) and inline tables (`table = {}`) have different
+  semantics.  The first is additive, meaning default values are not removed.
+  The second is destructive, and clears all default definitions in the table
+  specified.
 * `[[table-array]]` is sugar for `[table-array.n]`, where `n` is the
-  number of declared table arrays.  For example, you can declare
-  anonymous siteconfs using the syntax `[[siteconf]]`.
+  number of declared table arrays.  For example, you can declare anonymous
+  siteconfs using the syntax `[[siteconf]]`.
 
-The canonical configuration file path is ~/.chawan/config.toml, but
-the search path accommodates XDG basedirs as well:
+The canonical configuration file path is ~/.chawan/config.toml, but the
+search path accommodates XDG basedirs as well:
 
 1. config file specified through -C switch -> use that
 2. `$CHA_DIR` is set -> use `$CHA_DIR/config.toml`
