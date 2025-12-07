@@ -447,8 +447,8 @@ proc main*() =
     buf &= "Content-Length: " & $n & "\r\n"
   buf &= getEnvEmpty("REQUEST_HEADERS")
   buf &= "\r\n"
-  if op.ps.writeLoop(buf).isErr:
-    cgiDie(ceConnectionRefused, "error sending request header")
+  op.ps.writeLoop(buf)
+    .orDie(ceConnectionRefused, "error sending request header")
   var iq {.noinit.}: array[InputBufferSize, char]
   if requestMethod == "POST":
     let ps = newPosixStream(STDIN_FILENO)
