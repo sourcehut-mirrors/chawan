@@ -49,6 +49,7 @@ type
     ttTerminology = "terminology" # pretends to be XTerm
     ttTmux = "tmux"
     ttUrxvt = "rxvt-unicode"
+    ttVertigo = "vertigo" # pretends to be XTerm
     ttVt100 = "vt100"
     ttVt100Nav = "vt100-nav" # VT100 without advanced video
     ttVt420 = "vt420"
@@ -354,6 +355,7 @@ const TermdescMap = [
   # with the direct color given.  I don't think this is much worse than
   # our basic quantization for 256 colors, so we use it anyway.
   ttUrxvt: XtermCompatible + {tfBleedsAPC} + TrueColorFlag,
+  ttVertigo: XtermCompatible + TrueColorFlag,
   # The VT100 had DA1, but couldn't gracefully consume unknown sequences
   # (tfXtermQuery).
   ttVt100: {tfSpecialGraphics},
