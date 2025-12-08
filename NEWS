@@ -1,3 +1,6 @@
+0.3.2 (2025.12.08)
+* bump version string (oops)
+
 0.3.1 (2025.12.08)
 
 * fix cached images not being cleared when a buffer is deleted
