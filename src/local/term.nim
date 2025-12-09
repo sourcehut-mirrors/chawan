@@ -102,7 +102,7 @@ type
     n: int # bytes of s already flushed
     next: TerminalPage
 
-  TermdescFlag = enum # 16 bits, 3 free
+  TermdescFlag = enum # 16 bits, 2 free
     tfTitle # can set window title
     tfPreEcma48 # does not support ECMA-48/VT100-like queries (DA1 etc.)
     tfXtermQuery # supports XTerm-like queries (background color etc.)
@@ -116,6 +116,7 @@ type
     tfMouse # supports SGR mouse
     tfPrimary # interprets primary correctly in OSC 52
     tfBracketedPaste # doesn't choke on bracketed paste (might not have it)
+    tfFlowControl # uses XON/XOFF flow control (usually hardware terminals)
 
   Termdesc = set[TermdescFlag]
 
@@ -308,6 +309,13 @@ const XtermCompatible = {
   tfBracketedPaste
 }
 
+# This for hardware terminals, *not* VT100-compatible emulators.
+# The primary difference is that no emulator uses flow control (XON/XOFF)
+# so we just disable it on those.
+const Vt100Compatible = {
+  tfSpecialGraphics, tfFlowControl
+}
+
 const AnsiColorFlag = {tfColor1}
 const EightBitColorFlag = {tfColor2}
 const TrueColorFlag = {tfColor1, tfColor2}
@@ -356,14 +364,10 @@ const TermdescMap = [
   # our basic quantization for 256 colors, so we use it anyway.
   ttUrxvt: XtermCompatible + {tfBleedsAPC} + TrueColorFlag,
   ttVertigo: XtermCompatible + TrueColorFlag,
-  # The VT100 had DA1, but couldn't gracefully consume unknown sequences
-  # (tfXtermQuery).
-  ttVt100: {tfSpecialGraphics},
-  ttVt100Nav: {tfSpecialGraphics},
-  # The VT420 could (it seems), but I'm not convinced sending them brings
-  # any benefit.
-  ttVt420: {tfSpecialGraphics},
-  ttVt52: {tfPreEcma48},
+  ttVt100: Vt100Compatible,
+  ttVt100Nav: Vt100Compatible,
+  ttVt420: Vt100Compatible,
+  ttVt52: {tfPreEcma48, tfFlowControl},
   ttVte: XtermCompatible + TrueColorFlag,
   ttWezterm: XtermCompatible,
   ttWterm: XtermCompatible + TrueColorFlag,
@@ -1915,7 +1919,11 @@ proc enableRawMode(term: Terminal): Opt[void] =
   if tcGetAttr(term.istream.fd, addr term.origTermios) < 0:
     return err()
   var raw = term.origTermios
-  raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
+  raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP)
+  if tfFlowControl notin term.desc:
+    # If the terminal actually uses flow control, just let the OS handle it.
+    # Otherwise, disable it so that the user can bind C-s and C-q freely.
+    raw.c_iflag = raw.c_iflag and not IXON
   raw.c_oflag = raw.c_oflag and not (OPOST)
   raw.c_cflag = raw.c_cflag or CS8
   raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
@@ -2153,8 +2161,8 @@ proc start*(term: Terminal; istream: PosixStream;
   term.istream = istream
   term.registerCb = registerCb
   if term.isatty():
-    ?term.enableRawMode()
     ?term.detectTermAttributes(windowOnly = false)
+    ?term.enableRawMode()
   term.applyConfig()
   if term.isatty():
     ?term.initScreen()
