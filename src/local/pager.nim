@@ -191,6 +191,8 @@ type
     unreg: seq[Container]
     attrs: WindowAttributes
     pidMap: Table[int, string] # pid -> command
+    lastDrawPos: tuple[x, y: int]
+    lastDrawPid: int
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -1379,36 +1381,41 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
 proc initImages(pager: Pager; container: Container) =
   var newImages: seq[CanvasImage] = @[]
   var redrawNext = false # redraw images if a new one was loaded before
+  let bufWidth = pager.bufWidth
+  let bufHeight = pager.bufHeight
+  let maxwpx = bufWidth * pager.attrs.ppc
+  let maxhpx = bufHeight * pager.attrs.ppl
+  let imageMode = pager.term.imageMode
+  let pid = container.process
   for image in container.images:
-    var erry = 0
-    var offx = 0
-    var dispw = 0
-    if pager.term.imageMode == imSixel:
-      let xpx = (image.x - container.fromx) * pager.attrs.ppc
-      offx = -min(xpx, 0)
-      let maxwpx = pager.bufWidth * pager.attrs.ppc
-      dispw = min(image.width + xpx, maxwpx) - xpx
-      let ypx = (image.y - container.fromy) * pager.attrs.ppl
-      erry = -min(ypx, 0) mod 6
-      if dispw <= offx:
-        continue
-    let cached = container.findCachedImage(image, offx, erry, dispw)
-    let imageId = image.bmp.imageId
-    if cached == nil:
-      pager.loadCachedImage(container, image, offx, erry, dispw)
+    let dims = pager.term.positionImage(image.x, image.y,
+      image.x - container.fromx, image.y - container.fromy,
+      image.offx, image.offy, image.width, image.height, maxwpx, maxhpx)
+    if not dims.onScreen:
       continue
-    if cached.state != cisLoaded:
-      continue # loading
-    let canvasImage = pager.term.loadImage(cached.data, container.process,
-      imageId, image.x - container.fromx, image.y - container.fromy,
-      image.width, image.height, image.x, image.y, pager.bufWidth,
-      pager.bufHeight, erry, offx, dispw, image.offx, image.offy,
-      cached.preludeLen, cached.transparent, redrawNext)
+    let imageId = image.bmp.imageId
+    let canvasImage = pager.term.findImage(pid, imageId, dims)
     if canvasImage != nil:
+      pager.term.updateCanvasImage(canvasImage, dims, redrawNext, bufHeight)
       newImages.add(canvasImage)
-  pager.term.clearImages(pager.bufHeight)
-  pager.term.canvasImages = newImages
-  pager.term.checkImageDamage(pager.bufWidth, pager.bufHeight)
+      continue
+    let cachedOffx = if imageMode == imSixel: dims.offx else: 0
+    let cachedErry = if imageMode == imSixel: dims.erry else: 0
+    let cachedDispw = if imageMode == imSixel: dims.dispw else: 0
+    let cached = container.findCachedImage(image, cachedOffx, cachedErry,
+      cachedDispw)
+    if cached == nil:
+      pager.loadCachedImage(container, image, cachedOffx, cachedErry,
+        cachedDispw)
+      continue
+    if cached.state == cisLoaded:
+      let canvasImage = newCanvasImage(cached.data, pid, imageId,
+        cached.preludeLen, dims, cached.transparent)
+      newImages.add(canvasImage)
+      redrawNext = true
+  pager.term.clearImages(bufHeight)
+  pager.term.canvasImages = move(newImages)
+  pager.term.checkImageDamage(bufWidth, bufHeight)
 
 proc getAbsoluteCursorXY(pager: Pager; container: Container): tuple[x, y: int] =
   var cursorx = 0
@@ -1454,6 +1461,7 @@ proc draw(pager: Pager): Opt[void] =
   var imageRedraw = false
   var hasMenu = false
   let container = pager.visibleContainer
+  let bufHeight = pager.bufHeight
   if container != nil:
     if container.redraw:
       let hlcolor = pager.highlightColor
@@ -1465,12 +1473,25 @@ proc draw(pager: Pager): Opt[void] =
       imageRedraw = true
       if container.select != nil:
         container.select.redraw = true
+      if pager.lastDrawPid == container.process and
+          container.fromx == pager.lastDrawPos.x:
+        let diff = pager.container.fromy - pager.lastDrawPos.y
+        if diff != 0 and abs(diff) <= (bufHeight + 1) div 2:
+          if diff > 0:
+            pager.term.scrollDown(diff, bufHeight)
+          else:
+            pager.term.scrollUp(-diff, bufHeight)
+      pager.lastDrawPos.x = container.fromx
+      pager.lastDrawPos.y = container.fromy
+      pager.lastDrawPid = container.process
     if (let select = container.select; select != nil and
         (select.redraw or pager.display.redraw)):
       select.drawSelect(pager.display.grid)
       select.redraw = false
       pager.display.redraw = true
       hasMenu = true
+  else:
+    pager.lastDrawPid = -1
   if (let menu = pager.menu; menu != nil and
       (menu.redraw or pager.display.redraw)):
     menu.drawSelect(pager.display.grid)
@@ -1507,10 +1528,10 @@ proc draw(pager: Pager): Opt[void] =
       # positioning.  (You'll understand why if you try to implement it.)
       #
       # Ugh. :(
-      pager.term.clearImages(pager.bufHeight)
+      pager.term.clearImages(bufHeight)
   let (cursorx, cursory) = pager.getAbsoluteCursorXY(container)
   let mouse = pager.lineedit == nil
-  pager.term.draw(redraw, mouse, cursorx, cursory)
+  pager.term.draw(redraw, mouse, cursorx, cursory, bufHeight)
 
 proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.status.grid.width - s.width()
@@ -1970,6 +1991,7 @@ proc windowChange(pager: Pager) =
     pager.attrs.ppl != pager.term.attrs.ppl
   pager.attrs = pager.term.attrs
   if dimChange:
+    pager.lastDrawPid = -1
     if pager.lineedit != nil:
       pager.lineedit.windowChange(pager.attrs)
     for st in SurfaceType:

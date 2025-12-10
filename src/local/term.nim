@@ -63,17 +63,15 @@ type
     ttYaft = "yaft"
     ttZellij = "zellij" # pretends to be its underlying terminal
 
-  CanvasImage* = ref object
-    pid: int
-    imageId: int
+  CanvasImageDimensions* = object
     # relative position on screen
     x: int
-    y: int
+    y*: int
     # original dimensions (after resizing)
     width: int
     height: int
     # offset (crop start)
-    offx: int
+    offx*: int
     offy: int
     # kitty only: X/Y offset *inside* cell. (TODO implement for sixel too)
     # has nothing to do with offx/offy.
@@ -82,19 +80,27 @@ type
     # size cap (crop end)
     # Note: this 0-based, so the final display size is
     # (dispw - offx, disph - offy)
-    dispw: int
+    dispw*: int
     disph: int
+    # absolute x, y in container
+    rx: int
+    ry: int
+    # Sixel only: erry is the y deviation from 6 lines.
+    # erry2 is the same, but it's not affected by scroll.
+    erry*: int
+    erry2: int
+
+  CanvasImage* = ref object
+    pid: int
+    imageId: int
+    dims: CanvasImageDimensions
     damaged: bool
     marked*: bool
     dead: bool
     transparent: bool
+    scrolled: bool # sixel only: set if screen was scrolled since printing
     preludeLen: int
     kittyId: int
-    # 0 if kitty
-    erry: int
-    # absolute x, y in container
-    rx: int
-    ry: int
     data: Blob
 
   TerminalPage {.acyclic.} = ref object
@@ -163,6 +169,8 @@ type
     kittyId: int # counter for kitty image (*not* placement) ids.
     cursorx: int
     cursory: int
+    scrollTodo: int # lines to scroll (negative = up, positive = down)
+    scrollBottom: int # last line of currently set scroll area (-1 if reset)
     colorMap: array[16, RGBColor]
     title: string # current title
 
@@ -380,6 +388,9 @@ const TermdescMap = [
   # However, the feature barely works, so we don't force it here.
   ttZellij: XtermCompatible + TrueColorFlag,
 ]
+
+# reverse index (cursor up)
+const RI = "\eM"
 
 # control sequence introducer
 const CSI = "\e["
@@ -1099,8 +1110,19 @@ proc cursorGoto(term: Terminal; x, y: int): Opt[void] =
   of ttVt52: term.write("\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
   else: term.write(CSI & $(y + 1) & ';' & $(x + 1) & 'H')
 
+proc cursorHome(term: Terminal): Opt[void] =
+  if tfPreEcma48 in term.desc:
+    return term.cursorGoto(0, 0)
+  term.write(CSI & 'H')
+
 proc cursorNextLine(term: Terminal): Opt[void] =
   term.write("\r\n")
+
+proc cursorPrevLine(term: Terminal): Opt[void] =
+  term.write('\r' & RI)
+
+proc cursorLineBegin(term: Terminal): Opt[void] =
+  term.write('\r')
 
 proc writeLine*(term: Terminal): Opt[void] =
   term.write('\n')
@@ -1442,77 +1464,136 @@ proc processOutputString*(term: Terminal; s: openArray[char]; w: var int):
   term.write(res)
 
 proc hideCursor(term: Terminal): Opt[void] =
-  term.cursorHidden = true
-  case term.termType
-  of ttAdm3a, ttVt52: return ok()
-  else: return term.write(HideCursor)
+  if not term.cursorHidden:
+    term.cursorHidden = true
+    case term.termType
+    of ttAdm3a, ttVt52: discard
+    else: return term.write(HideCursor)
+  ok()
 
 proc showCursor(term: Terminal): Opt[void] =
-  term.cursorHidden = false
-  case term.termType
-  of ttAdm3a, ttVt52: return ok()
-  else: return term.write(ShowCursor)
+  if term.cursorHidden:
+    term.cursorHidden = false
+    case term.termType
+    of ttAdm3a, ttVt52: discard
+    else: return term.write(ShowCursor)
+  ok()
+
+# 1-indexed
+proc setScrollArea(term: Terminal; top, bottom: int): Opt[void] =
+  if term.scrollBottom != bottom:
+    term.scrollBottom = bottom
+    return term.write(CSI & $top & ";" & $bottom & 'r')
+  ok()
+
+proc resetScrollArea(term: Terminal): Opt[void] =
+  if term.scrollBottom != -1:
+    term.scrollBottom = -1
+    return term.write(CSI & 'r')
+  ok()
 
 proc processCell(term: Terminal; format: var Format; w: var int;
     cell: FixedCell): Opt[void] =
   ?term.processFormat(format, cell.format)
   term.processOutputString(cell.str, w)
 
-proc generateFullOutput(term: Terminal): Opt[void] =
+proc fullDrawLine(term: Terminal; y: int; format: var Format): Opt[void] =
+  var w = 0
+  for x in 0 ..< term.attrs.width:
+    while w < x:
+      ?term.write(' ')
+      inc w
+    ?term.processCell(format, w, term.canvas[y * term.attrs.width + x])
+  term.lineDamage[y] = term.attrs.width
+  ok()
+
+proc fullDraw(term: Terminal): Opt[void] =
   var format = Format()
   ?term.hideCursor()
-  ?term.cursorGoto(0, 0)
+  ?term.resetScrollArea()
+  ?term.cursorHome()
   ?term.clearDisplay()
   ?term.resetFormat()
   for y in 0 ..< term.attrs.height:
     if y != 0:
       ?term.cursorNextLine()
-    var w = 0
-    for x in 0 ..< term.attrs.width:
-      while w < x:
-        ?term.write(' ')
-        inc w
-      ?term.processCell(format, w, term.canvas[y * term.attrs.width + x])
-    term.lineDamage[y] = term.attrs.width
+    ?term.fullDrawLine(y, format)
   term.unsetCursorPos()
   ok()
 
-proc generateSwapOutput(term: Terminal): Opt[void] =
+proc partialDraw(term: Terminal; scrollBottom: int): Opt[void] =
   var vy = -1
   var first = true
   var buf = ""
+  let scroll = term.scrollTodo
+  if scroll != 0:
+    first = false
+    ?term.hideCursor()
+    term.unsetCursorPos()
+    ?term.setScrollArea(1, scrollBottom) # moves cursor to 0, 0
+    ?term.resetFormat()
+    var format = Format()
+    if scroll < 0:
+      ?term.cursorHome()
+      for i in countdown(0, scroll + 1):
+        ?term.cursorPrevLine()
+        ?term.fullDrawLine(i - scroll - 1, format)
+        ?term.clearEnd()
+      ?term.cursorLineBegin()
+      if term.termType == ttXterm and scroll < -1:
+        # XTerm has a glitch where scrolling up paints non-existent sixels
+        # to the screen, so we just paint the area *again* after the scroll
+        # is done.
+        # (Skipping the first paint seems more efficient, but that results
+        # in more tearing when no images are painted.)
+        #TODO fix this in XTerm...
+        ?term.cursorGoto(0, 1)
+        for y in 1 ..< -scroll: # first line is unaffected, so index from 1
+          ?term.fullDrawLine(y, format)
+          ?term.clearEnd()
+          ?term.cursorNextLine()
+        ?term.cursorHome()
+    else:
+      ?term.cursorGoto(0, scrollBottom - 1)
+      for i in 0 ..< scroll:
+        ?term.cursorNextLine()
+        ?term.clearEnd()
+        ?term.fullDrawLine(scrollBottom - scroll + i, format)
+      ?term.cursorHome()
   for y in 0 ..< term.attrs.height:
     # set cx to x of the first change
     let cx = term.lineDamage[y]
     # w will track the current position on screen
+    if cx >= term.attrs.width:
+      continue
+    if first:
+      ?term.hideCursor()
+      term.unsetCursorPos()
+      first = false
+    ?term.resetScrollArea()
+    if cx == 0 and vy != -1 and vy <= y:
+      while vy < y:
+        ?term.cursorNextLine()
+        inc vy
+    else:
+      ?term.cursorGoto(cx, y)
+      vy = y
+    buf.setLen(0)
+    ?term.resetFormat()
+    var format = Format()
     var w = cx
-    if cx < term.attrs.width:
-      if first:
-        ?term.hideCursor()
-        term.unsetCursorPos()
-        first = false
-      if cx == 0 and vy != -1:
-        while vy < y:
-          ?term.cursorNextLine()
-          inc vy
-      else:
-        ?term.cursorGoto(cx, y)
-        vy = y
-      buf.setLen(0)
-      ?term.resetFormat()
-      var format = Format()
-      for x in cx ..< term.attrs.width:
-        while w < x: # if previous cell had no width, catch up with x
-          buf &= ' '
-          inc w
-        let cell = term.canvas[y * term.attrs.width + x]
-        ?term.processFormat(format, cell.format)
-        ?term.processOutputString(cell.str, w)
-      if w < term.attrs.width:
-        ?term.clearEnd()
-      # damage is gone
-      term.lineDamage[y] = term.attrs.width
-      ?term.write(buf)
+    for x in cx ..< term.attrs.width:
+      while w < x: # if previous cell had no width, catch up with x
+        buf &= ' '
+        inc w
+      let cell = term.canvas[y * term.attrs.width + x]
+      ?term.processFormat(format, cell.format)
+      ?term.processOutputString(cell.str, w)
+    if w < term.attrs.width:
+      ?term.clearEnd()
+    # damage is gone
+    term.lineDamage[y] = term.attrs.width
+    ?term.write(buf)
   ok()
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
@@ -1590,56 +1671,71 @@ proc applyConfig(term: Terminal) =
   term.tdctx = initTextDecoderContext(term.cs)
   term.applyConfigDimensions()
 
-proc findImage(term: Terminal; pid, imageId: int; rx, ry, width, height,
-    erry, offx, dispw: int): CanvasImage =
+proc findImage*(term: Terminal; pid, imageId: int; dims: CanvasImageDimensions):
+    CanvasImage =
   for it in term.canvasImages:
     if not it.dead and it.pid == pid and it.imageId == imageId and
-        it.width == width and it.height == height and
-        it.rx == rx and it.ry == ry and
-        (term.imageMode != imSixel or it.erry == erry and it.dispw == dispw and
-          it.offx == offx):
+        it.dims.width == dims.width and it.dims.height == dims.height and
+        it.dims.rx == dims.rx and it.dims.ry == dims.ry and
+        (term.imageMode != imSixel or it.dims.erry == dims.erry and
+          it.dims.dispw == dims.dispw and it.dims.offx == dims.offx):
       return it
   return nil
 
-# x, y, maxw, maxh in cells
-# x, y can be negative, then image starts outside the screen
-proc positionImage(term: Terminal; image: CanvasImage;
-    x, y, maxw, maxh, offx2, offy2: int): bool =
-  image.x = x
-  image.y = y
-  image.offx2 = offx2
-  image.offy2 = offy2
+proc positionImage*(term: Terminal; rx, ry, x, y, offx2, offy2, width, height,
+    maxwpx, maxhpx: int): CanvasImageDimensions =
   var xpx = x * term.attrs.ppc
   var ypx = y * term.attrs.ppl
   if term.imageMode == imKitty:
-    xpx += image.offx2
-    ypx += image.offy2
+    xpx += offx2
+    ypx += offy2
   # calculate offset inside image to start from
-  image.offx = -min(xpx, 0)
-  image.offy = -min(ypx, 0)
-  # clear offx2/offy2 if the image starts outside the screen
-  if image.offx > 0:
-    image.offx2 = 0
-  if image.offy > 0:
-    image.offy2 = 0
-  # calculate maximum image size that fits on the screen relative to the image
-  # origin (*not* offx/offy)
-  let maxwpx = maxw * term.attrs.ppc
-  let maxhpx = maxh * term.attrs.ppl
-  image.dispw = min(image.width + xpx, maxwpx) - xpx
-  image.disph = min(image.height + ypx, maxhpx) - ypx
-  image.damaged = true
-  return image.dispw > image.offx and image.disph > image.offy
+  let offx = -min(xpx, 0)
+  let offy = -min(ypx, 0)
+  let erry = -min(ypx, 0) mod 6
+  CanvasImageDimensions(
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+    rx: rx,
+    ry: ry,
+    offx: offx,
+    offy: offy,
+    offx2: offx2,
+    offy2: offy2,
+    # maximum image size that fits on the screen relative to the image
+    # origin (*not* offx/offy)
+    dispw: min(width + xpx, maxwpx) - xpx,
+    disph: min(height + ypx, maxhpx) - ypx,
+    erry: erry,
+    erry2: erry
+  )
+
+proc onScreen*(dims: CanvasImageDimensions): bool =
+  dims.dispw > dims.offx and dims.disph > dims.offy
+
+proc repositionImage(term: Terminal; image: CanvasImage;
+    maxwpx, maxhpx: int): bool =
+  let erry2 = image.dims.erry2
+  let dims = term.positionImage(image.dims.rx, image.dims.ry, image.dims.x,
+    image.dims.y, image.dims.offx2, image.dims.offy2, image.dims.width,
+    image.dims.height, maxwpx, maxhpx)
+  if dims.onScreen:
+    image.dims = dims
+    image.dims.erry2 = erry2
+    return true
+  false
 
 proc clearImage(term: Terminal; image: CanvasImage; maxh: int) =
   case term.imageMode
   of imNone: discard
   of imSixel:
     # we must clear sixels the same way as we clear text.
-    let h = (image.height + term.attrs.ppl - 1) div term.attrs.ppl # ceil
-    let ey = min(image.y + h, maxh)
-    let x = max(image.x, 0)
-    for y in max(image.y, 0) ..< ey:
+    let h = (image.dims.height + term.attrs.ppl - 1) div term.attrs.ppl # ceil
+    let ey = min(image.dims.y + h, maxh)
+    let x = max(image.dims.x, 0)
+    for y in max(image.dims.y, 0) ..< ey:
       term.lineDamage[y] = min(term.lineDamage[y], x)
   of imKitty:
     term.imagesToClear.add(image)
@@ -1655,74 +1751,65 @@ proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
   if term.imageMode == imSixel:
     for image in term.canvasImages:
       # check if any line of our image is damaged
-      let h = (image.height + term.attrs.ppl - 1) div term.attrs.ppl # ceil
-      let ey0 = min(image.y + h, maxh)
+      let h = (image.dims.height + term.attrs.ppl - 1) div term.attrs.ppl # ceil
+      let ey0 = min(image.dims.y + h, maxh)
       # here we floor, so that a last line with rounding error (which
       # will not fully cover text) is always cleared
-      let ey1 = min(image.y + image.height div term.attrs.ppl, maxh)
-      let x = max(image.x, 0)
-      let mx = min(image.x + image.dispw div term.attrs.ppc, maxw)
-      for y in max(image.y, 0) ..< ey0:
+      let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, maxh)
+      let x = max(image.dims.x, 0)
+      let mx = min(image.dims.x + image.dims.dispw div term.attrs.ppc, maxw)
+      for y in max(image.dims.y, 0) ..< ey0:
         let od = term.lineDamage[y]
-        if image.transparent and od > x:
-          image.damaged = true
-          if od < mx:
-            # damage starts inside this image; move it to its beginning.
-            term.lineDamage[y] = x
-        elif not image.transparent and od < mx:
-          image.damaged = true
-          if y >= ey1:
-            break
-          if od >= image.x:
-            # damage starts inside this image; skip clear (but only if
-            # the damage was not caused by a printing character)
-            var textFound = false
+        if od > mx:
+          continue
+        image.damaged = true
+        if y >= ey1:
+          break
+        if od < x:
+          continue
+        if image.transparent:
+          term.lineDamage[y] = x
+        else:
+          var textFound = false
+          if not image.transparent:
+            # damage starts inside an opaque image; skip clear (but only
+            # if the damage was not caused by a printing character)
             let si = y * term.attrs.width
             for i in si + od ..< si + term.attrs.width:
               if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
                 textFound = true
                 break
-            if not textFound:
-              term.lineDamage[y] = mx
+          term.lineDamage[y] = mx
 
-proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
-    rx, ry, maxw, maxh, erry, offx, dispw, offx2, offy2, preludeLen: int;
-    transparent: bool; redrawNext: var bool): CanvasImage =
-  if (let image = term.findImage(pid, imageId, rx, ry, width, height, erry,
-        offx, dispw); image != nil):
-    # reuse image on screen
-    if image.x != x or image.y != y or redrawNext:
-      # only clear sixels; with kitty we just move the existing image
-      if term.imageMode == imSixel:
-        term.clearImage(image, maxh)
-      if not term.positionImage(image, x, y, maxw, maxh, offx2, offy2):
-        # no longer on screen
-        image.dead = true
-        return nil
-    # only mark old images; new images will not be checked until the next
-    # initImages call.
-    image.marked = true
-    return image
-  # new image
-  let image = CanvasImage(
+proc updateCanvasImage*(term: Terminal; image: CanvasImage;
+    dims: CanvasImageDimensions; redrawNext: bool; maxh: int) =
+  # reuse image on screen
+  #TODO we could skip lots of repaints with a slightly less braindead
+  # solution than redrawNext
+  # (right now it's needed to ensure correct ordering of draws)
+  if image.dims.x != dims.x or image.dims.y != dims.y or
+      image.dims.disph != dims.disph or image.dims.offy != dims.offy or
+      image.dims.erry != dims.erry or redrawNext:
+    # only clear sixels; with kitty we just move the existing image
+    if term.imageMode == imSixel:
+      term.clearImage(image, maxh)
+    image.dims = dims
+    image.damaged = true
+  # only mark old images; new images will not be checked until the next
+  # initImages call.
+  image.marked = true
+
+proc newCanvasImage*(data: Blob; pid, imageId, preludeLen: int;
+    dims: CanvasImageDimensions; transparent: bool): CanvasImage =
+  CanvasImage(
     pid: pid,
     imageId: imageId,
     data: data,
-    rx: rx,
-    ry: ry,
-    offx2: offx2,
-    offy2: offy2,
-    width: width,
-    height: height,
-    erry: erry,
+    dims: dims,
     transparent: transparent,
-    preludeLen: preludeLen
+    preludeLen: preludeLen,
+    damaged: true
   )
-  if term.positionImage(image, x, y, maxw, maxh, offx2, offy2):
-    redrawNext = true
-    return image
-  # no longer on screen
-  return nil
 
 proc getU32BE(data: openArray[char]; i: int): uint32 =
   return uint32(data[i + 3]) or
@@ -1741,10 +1828,10 @@ proc writeSixelAttrs(term: Terminal; data: openArray[char];
 
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
     data: openArray[char]): Opt[void] =
-  let offx = image.offx
-  let offy = image.offy
-  let dispw = image.dispw
-  let disph = image.disph
+  let offx = image.dims.offx
+  let offy = image.dims.offy
+  let dispw = image.dims.dispw
+  let disph = image.dims.disph
   let realw = dispw - offx
   let realh = disph - offy
   let preludeLen = image.preludeLen
@@ -1757,21 +1844,21 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   ?term.writeSixelAttrs(data.toOpenArray(0, preludeLen - 1), realw, realh)
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
-  if realh == image.height: # don't crop
+  if realh == image.dims.height: # don't crop
     return term.write(data.toOpenArray(preludeLen, L - 1))
   let si = preludeLen + int(data.getU32BE(L + (offy div 6) * 4))
   if si >= data.len: # bounds check
     return term.write(ST)
-  if disph == image.height: # crop top only
+  if disph == image.dims.height: # crop top only
     return term.write(data.toOpenArray(si, L - 1))
   # crop both top & bottom
-  let ed6 = (disph - image.erry) div 6
+  let ed6 = (disph - image.dims.erry2) div 6
   let ei = preludeLen + int(data.getU32BE(L + ed6 * 4)) - 1
   if ei <= data.len: # bounds check
     ?term.write(data.toOpenArray(si, ei - 1))
   # calculate difference between target Y & actual position in the map
-  # note: it must be offset by image.erry; that's where the map starts.
-  let herry = disph - (ed6 * 6 + image.erry)
+  # note: it must be offset by image.erry2; that's where the map starts.
+  let herry = disph - (ed6 * 6 + image.dims.erry2)
   if herry > 0:
     # can't write out the last row completely; mask off the bottom part.
     let mask = (1u8 shl herry) - 1
@@ -1798,11 +1885,16 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage):
 proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
     Opt[void] =
   ?term.cursorGoto(x, y)
-  var outs = APC & "GC=1,s=" & $image.width & ",v=" & $image.height &
-    ",x=" & $image.offx & ",y=" & $image.offy &
-    ",X=" & $image.offx2 & ",Y=" & $image.offy2 &
-    ",w=" & $(image.dispw - image.offx) &
-    ",h=" & $(image.disph - image.offy) &
+  # ignore offx2/offy2 if the image starts outside the screen (and thus we
+  # are painting a slice only)
+  # note: this looks wrong, but it's correct
+  let offx2 = if image.dims.offx > 0: 0 else: image.dims.offx2
+  let offy2 = if image.dims.offy > 0: 0 else: image.dims.offy2
+  var outs = APC & "GC=1,s=" & $image.dims.width & ",v=" & $image.dims.height &
+    ",x=" & $image.dims.offx & ",y=" & $image.dims.offy &
+    ",X=" & $offx2 & ",Y=" & $offy2 &
+    ",w=" & $(image.dims.dispw - image.dims.offx) &
+    ",h=" & $(image.dims.disph - image.dims.offy) &
     # for now, we always use placement id 1
     ",p=1,q=2"
   if image.kittyId != 0:
@@ -1842,9 +1934,10 @@ proc outputImages(term: Terminal): Opt[void] =
     term.imagesToClear.setLen(0)
   for image in term.canvasImages:
     if image.damaged:
-      assert image.dispw > 0 and image.disph > 0
-      let x = max(image.x, 0)
-      let y = max(image.y, 0)
+      assert image.dims.dispw > 0 and image.dims.disph > 0
+      ?term.resetScrollArea()
+      let x = max(image.dims.x, 0)
+      let y = max(image.dims.y, 0)
       case term.imageMode
       of imNone: assert false
       of imSixel: ?term.outputSixelImage(x, y, image)
@@ -1855,12 +1948,12 @@ proc outputImages(term: Terminal): Opt[void] =
 
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
-  let maxw = term.attrs.width
+  let maxwpx = term.attrs.widthPx
   let maxh = term.attrs.height - 1
+  let maxhpx = maxh * term.attrs.ppl
   var newImages: seq[CanvasImage] = @[]
   for image in term.canvasImages:
-    if term.positionImage(image, image.x, image.y, maxw, maxh, image.offx2,
-        image.offy2):
+    if not image.scrolled and term.repositionImage(image, maxwpx, maxhpx):
       image.damaged = true
       image.marked = true
       newImages.add(image)
@@ -1872,20 +1965,89 @@ proc queueTitle*(term: Terminal; title: string) =
     term.queueTitleFlag = true
     term.title = title
 
-proc draw*(term: Terminal; redraw, mouse: bool; cursorx, cursory: int):
-    Opt[void] =
+# Must be called directly before draw, otherwise the cursor will disappear.
+proc scrollUp*(term: Terminal; n, scrollBottom: int) =
+  if tfPreEcma48 in term.desc:
+    #TODO might want to make this a separate flag, it's quite possible that
+    # some ecma-48 terms choke on scroll up/down and vice versa
+    # (e.g. I suspect FreeBSD does it right?)
+    return
+  for y in countdown(scrollBottom - n - 1, 0):
+    for x in 0 ..< term.attrs.width:
+      let i = y * term.attrs.width + x
+      let j = (y + n) * term.attrs.width + x
+      term.canvas[j] = move(term.canvas[i])
+  for y in 0 ..< n:
+    term.lineDamage[y] = 0
+  let maxwpx = term.attrs.widthPx
+  let maxhpx = scrollBottom * term.attrs.ppl
+  let scrolled = term.imageMode == imSixel
+  for image in term.canvasImages.mitems:
+    if image.dead:
+      continue
+    image.dims.y += n
+    image.scrolled = scrolled
+    let erry = image.dims.erry
+    let offy = image.dims.offy
+    if not term.repositionImage(image, maxwpx, maxhpx):
+      image.dead = true
+    elif term.imageMode == imKitty:
+      # Kitty exhibits strangely on scroll up:
+      # * if the image touches the scroll boundary on the bottom, and is
+      #   cropped on the top, then the image fails to scroll.
+      # * otherwise, the image is cropped, but the cropping code is
+      #   apparently glitched.
+      # So we just mark all images as damaged in this case; repainting Kitty
+      # is cheap anyway.
+      image.damaged = true
+    # scroll up does not change offy or erry (the slice's start).
+    image.dims.offy = offy
+    image.dims.erry = erry
+  term.scrollTodo -= n
+
+proc scrollDown*(term: Terminal; n, scrollBottom: int) =
+  for y in n ..< scrollBottom:
+    for x in 0 ..< term.attrs.width:
+      let i = y * term.attrs.width + x
+      let j = (y - n) * term.attrs.width + x
+      term.canvas[j] = move(term.canvas[i])
+  for y in scrollBottom - n ..< scrollBottom:
+    term.lineDamage[y] = 0
+  let maxwpx = term.attrs.widthPx
+  let maxhpx = scrollBottom * term.attrs.ppl
+  let scrolled = term.imageMode == imSixel
+  for image in term.canvasImages.mitems:
+    if image.dead:
+      continue
+    image.dims.y -= n
+    image.scrolled = scrolled
+    let disph = image.dims.disph
+    if not term.repositionImage(image, maxwpx, maxhpx):
+      image.dead = true
+    elif term.imageMode == imKitty:
+      # scroll down seems to work in Kitty, but not in Ghostty :(
+      # so we apply the same workaround.
+      image.damaged = true
+    # scroll down doesn't change disph (the slice's end).
+    image.dims.disph = disph
+  term.scrollTodo += n
+
+proc draw*(term: Terminal; redraw, mouse: bool;
+    cursorx, cursory, scrollBottom: int): Opt[void] =
   if redraw:
     if term.config.display.forceClear or not term.cleared:
-      ?term.generateFullOutput()
+      ?term.fullDraw()
       term.cleared = true
     else:
-      ?term.generateSwapOutput()
+      ?term.partialDraw(scrollBottom)
     if term.imageMode != imNone:
       ?term.outputImages()
   if cursorx != term.cursorx or cursory != term.cursory:
+    if cursory > term.scrollBottom:
+      ?term.resetScrollArea()
     ?term.cursorGoto(cursorx, cursory)
-  if term.cursorHidden:
-    ?term.showCursor()
+  ?term.showCursor()
+  term.scrollTodo = 0
   if term.queueTitleFlag and term.hasTitle():
     ?term.write(OSC & "0;" & term.title.replaceControls() & ST)
     term.queueTitleFlag = false
@@ -1958,6 +2120,7 @@ proc quit*(term: Terminal): Opt[void] =
       term.mouseEnabled = false
     if term.hasBracketedPaste():
       ?term.write(ResetBracketedPaste)
+    ?term.resetScrollArea()
     if term.hasAltScreen():
       if term.imageMode == imSixel:
         # xterm seems to keep sixels in the alt screen; clear these so it
@@ -2210,7 +2373,8 @@ proc newTerminal*(ostream: PosixStream; config: Config): Terminal =
     defaultForeground: DefaultForeground,
     colorMap: ANSIColorMap,
     termType: ttXterm,
-    sixelRegisterNum: 256
+    sixelRegisterNum: 256,
+    scrollBottom: -1
   )
 
 {.pop.} # raises: []
