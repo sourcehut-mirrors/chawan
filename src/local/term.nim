@@ -729,6 +729,8 @@ proc parseHexNum(eparser: var EventParser; c: char): bool =
     eparser.nums.add(num)
     return false
   eparser.num = num * 0x10 + uint32(v0)
+  if eparser.num < num:
+    eparser.num = uint32.high
   true
 
 proc skipToST(eparser: var EventParser; c: char) =
@@ -853,7 +855,7 @@ proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
     for n in term.eparser.nums:
       case n
       of 4:
-        if term.config.display.imageMode.isNone:
+        if term.config.display.imageMode.isNone and term.imageMode == imNone:
           term.imageMode = imSixel
       of 22:
         if term.config.display.colorMode.isNone:
@@ -869,7 +871,7 @@ proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
         term.eparser.nums[1] == 0:
       let registers = term.eparser.nums[2]
       if term.config.display.sixelColors.isNone:
-        term.sixelRegisterNum = uint16(registers)
+        term.sixelRegisterNum = uint16(clamp(registers, 2, uint16.high))
   else: discard
   term.eparser.nums.setLen(0)
   term.eparser.state = esNone
