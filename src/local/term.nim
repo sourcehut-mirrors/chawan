@@ -1528,7 +1528,8 @@ proc fullDraw(term: Terminal): Opt[void] =
   term.unsetCursorPos()
   ok()
 
-proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int): Opt[void] =
+proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
+    bgcolor: CellColor): Opt[void] =
   ?term.setScrollArea(1, scrollBottom) # may move cursor to 0, 0
   if term.imageMode == imSixel and term.fastScrollTodo and
       tfFastScroll in term.desc:
@@ -1540,6 +1541,9 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int): Opt[void] =
     # Note that "slow" scroll is more effective against tearing, because
     # it allows us to limit the number of unfilled lines to one.  Thus, we
     # only want to do fast scroll if we have Sixel images on the screen.
+    var format = Format()
+    let nformat = initFormat(bgcolor, defaultColor, {})
+    ?term.processFormat(format, nformat)
     if scroll < 0:
       return term.moveLinesDown(-scroll)
     else:
@@ -1561,7 +1565,8 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int): Opt[void] =
     ?term.fullDrawLine(scrollBottom - scroll + i, format)
   term.cursorHome()
 
-proc partialDraw(term: Terminal; scrollBottom: int): Opt[void] =
+proc partialDraw(term: Terminal; scrollBottom: int; bgcolor: CellColor):
+    Opt[void] =
   var vy = -1
   var buf = ""
   var first = true
@@ -1570,7 +1575,7 @@ proc partialDraw(term: Terminal; scrollBottom: int): Opt[void] =
     first = false
     ?term.hideCursor()
     term.unsetCursorPos()
-    ?term.partialDrawScroll(scroll, scrollBottom)
+    ?term.partialDrawScroll(scroll, scrollBottom, bgcolor)
   for y in 0 ..< term.attrs.height:
     # set cx to x of the first change
     let cx = term.lineDamage[y]
@@ -2065,13 +2070,13 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
   term.scrollTodo += n
 
 proc draw*(term: Terminal; redraw, mouse: bool;
-    cursorx, cursory, scrollBottom: int): Opt[void] =
+    cursorx, cursory, scrollBottom: int; bgcolor: CellColor): Opt[void] =
   if redraw:
     if term.config.display.forceClear or not term.cleared:
       ?term.fullDraw()
       term.cleared = true
     else:
-      ?term.partialDraw(scrollBottom)
+      ?term.partialDraw(scrollBottom, bgcolor)
     if term.imageMode != imNone:
       ?term.outputImages()
   if cursorx != term.cursorx or cursory != term.cursory:
