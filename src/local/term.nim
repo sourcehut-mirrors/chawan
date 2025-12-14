@@ -57,7 +57,6 @@ type
     ttVte = "vte" # pretends to be XTerm
     ttWezterm = "wezterm"
     ttWterm = "wterm"
-    ttXfce = "xfce" # pretends to be XTerm
     ttXst = "xst"
     ttXterm = "xterm"
     ttYaft = "yaft"
@@ -108,7 +107,7 @@ type
     n: int # bytes of s already flushed
     next: TerminalPage
 
-  TermdescFlag = enum # 16 bits, 2 free
+  TermdescFlag = enum # 16 bits, 1 free
     tfTitle # can set window title
     tfPreEcma48 # does not support ECMA-48/VT100-like queries (DA1 etc.)
     tfXtermQuery # supports XTerm-like queries (background color etc.)
@@ -123,6 +122,7 @@ type
     tfPrimary # interprets primary correctly in OSC 52
     tfBracketedPaste # doesn't choke on bracketed paste (might not have it)
     tfFlowControl # uses XON/XOFF flow control (usually hardware terminals)
+    tfFastScroll # has SD/SU control sequences
 
   Termdesc = set[TermdescFlag]
 
@@ -171,6 +171,7 @@ type
     cursory: int
     scrollTodo: int # lines to scroll (negative = up, positive = down)
     scrollBottom: int # last line of currently set scroll area (-1 if reset)
+    fastScrollTodo: bool # flag to do fast scroll
     colorMap: array[16, RGBColor]
     title: string # current title
 
@@ -314,7 +315,7 @@ proc windowChange(term: Terminal)
 # written terminals choke on it despite advertising themselves as XTerm.
 const XtermCompatible = {
   tfTitle, tfXtermQuery, tfAltScreen, tfSpecialGraphics, tfMouse,
-  tfBracketedPaste
+  tfBracketedPaste, tfFastScroll
 }
 
 # This for hardware terminals, *not* VT100-compatible emulators.
@@ -374,16 +375,16 @@ const TermdescMap = [
   ttVertigo: XtermCompatible + TrueColorFlag,
   ttVt100: Vt100Compatible,
   ttVt100Nav: Vt100Compatible,
-  ttVt420: Vt100Compatible,
+  ttVt420: Vt100Compatible + {tfFastScroll},
   ttVt52: {tfPreEcma48, tfFlowControl},
   ttVte: XtermCompatible + TrueColorFlag,
   ttWezterm: XtermCompatible,
   ttWterm: XtermCompatible + TrueColorFlag,
-  ttXfce: XtermCompatible + TrueColorFlag,
   ttXst: XtermCompatible + TrueColorFlag,
   ttXterm: XtermCompatible,
   # yaft supports Sixel, but can't tell us so in DA1.
-  ttYaft: XtermCompatible + {tfSixel, tfBleedsAPC} - {tfAltScreen},
+  ttYaft: XtermCompatible + {tfSixel, tfBleedsAPC} -
+    {tfAltScreen, tfFastScroll},
   # zellij supports Sixel, but doesn't advertise it.
   # However, the feature barely works, so we don't force it here.
   ttZellij: XtermCompatible + TrueColorFlag,
@@ -506,7 +507,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
     return ok()
   if s.len <= BufferSize: # merge small writes
     if term.pageTail != nil and term.pageTail.a.len + s.len > BufferSize:
-      # The buffer is full, so we'll have to flush anyway; try to it now,
+      # The buffer is full, so we'll have to flush anyway; try to do it now,
       # maybe we can at least merge this write with a subsequent one.
       ?term.startFlush()
     let page = term.pageTail
@@ -1492,6 +1493,12 @@ proc resetScrollArea(term: Terminal): Opt[void] =
     return term.write(CSI & 'r')
   ok()
 
+proc moveLinesUp(term: Terminal; n: int): Opt[void] =
+  term.write(CSI & $n & 'S')
+
+proc moveLinesDown(term: Terminal; n: int): Opt[void] =
+  term.write(CSI & $n & 'T')
+
 proc processCell(term: Terminal; format: var Format; w: var int;
     cell: FixedCell): Opt[void] =
   ?term.processFormat(format, cell.format)
@@ -1521,45 +1528,49 @@ proc fullDraw(term: Terminal): Opt[void] =
   term.unsetCursorPos()
   ok()
 
+proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int): Opt[void] =
+  ?term.setScrollArea(1, scrollBottom) # may move cursor to 0, 0
+  if term.imageMode == imSixel and term.fastScrollTodo and
+      tfFastScroll in term.desc:
+    # Scrolling Sixel images line-by-line isn't very efficient (at least it
+    # visibly slows down XTerm on my laptop), so use fast scroll for this.
+    # (Also, XTerm has a bug that breaks slow scroll upwards, but TODO this
+    # should be fixed in XTerm...)
+    #
+    # Note that "slow" scroll is more effective against tearing, because
+    # it allows us to limit the number of unfilled lines to one.  Thus, we
+    # only want to do fast scroll if we have Sixel images on the screen.
+    if scroll < 0:
+      return term.moveLinesDown(-scroll)
+    else:
+      return term.moveLinesUp(scroll)
+  ?term.resetFormat()
+  var format = Format()
+  if scroll < 0: # scroll up
+    ?term.cursorHome()
+    for i in countdown(0, scroll + 1):
+      ?term.cursorPrevLine()
+      ?term.fullDrawLine(i - scroll - 1, format)
+      ?term.clearEnd()
+    return term.cursorLineBegin()
+  # scroll down
+  ?term.cursorGoto(0, scrollBottom - 1)
+  for i in 0 ..< scroll:
+    ?term.cursorNextLine()
+    ?term.clearEnd()
+    ?term.fullDrawLine(scrollBottom - scroll + i, format)
+  term.cursorHome()
+
 proc partialDraw(term: Terminal; scrollBottom: int): Opt[void] =
   var vy = -1
-  var first = true
   var buf = ""
+  var first = true
   let scroll = term.scrollTodo
   if scroll != 0:
     first = false
     ?term.hideCursor()
     term.unsetCursorPos()
-    ?term.setScrollArea(1, scrollBottom) # moves cursor to 0, 0
-    ?term.resetFormat()
-    var format = Format()
-    if scroll < 0:
-      ?term.cursorHome()
-      for i in countdown(0, scroll + 1):
-        ?term.cursorPrevLine()
-        ?term.fullDrawLine(i - scroll - 1, format)
-        ?term.clearEnd()
-      ?term.cursorLineBegin()
-      if term.termType == ttXterm and scroll < -1:
-        # XTerm has a glitch where scrolling up paints non-existent sixels
-        # to the screen, so we just paint the area *again* after the scroll
-        # is done.
-        # (Skipping the first paint seems more efficient, but that results
-        # in more tearing when no images are painted.)
-        #TODO fix this in XTerm...
-        ?term.cursorGoto(0, 1)
-        for y in 1 ..< -scroll: # first line is unaffected, so index from 1
-          ?term.fullDrawLine(y, format)
-          ?term.clearEnd()
-          ?term.cursorNextLine()
-        ?term.cursorHome()
-    else:
-      ?term.cursorGoto(0, scrollBottom - 1)
-      for i in 0 ..< scroll:
-        ?term.cursorNextLine()
-        ?term.clearEnd()
-        ?term.fullDrawLine(scrollBottom - scroll + i, format)
-      ?term.cursorHome()
+    ?term.partialDrawScroll(scroll, scrollBottom)
   for y in 0 ..< term.attrs.height:
     # set cx to x of the first change
     let cx = term.lineDamage[y]
@@ -1578,10 +1589,10 @@ proc partialDraw(term: Terminal; scrollBottom: int): Opt[void] =
     else:
       ?term.cursorGoto(cx, y)
       vy = y
-    buf.setLen(0)
     ?term.resetFormat()
     var format = Format()
     var w = cx
+    buf.setLen(0)
     for x in cx ..< term.attrs.width:
       while w < x: # if previous cell had no width, catch up with x
         buf &= ' '
@@ -1671,13 +1682,21 @@ proc applyConfig(term: Terminal) =
   term.tdctx = initTextDecoderContext(term.cs)
   term.applyConfigDimensions()
 
-proc findImage*(term: Terminal; pid, imageId: int; dims: CanvasImageDimensions):
-    CanvasImage =
+proc findImage*(term: Terminal; pid, imageId: int; dims: CanvasImageDimensions;
+    pass2: bool): CanvasImage =
+  # pass2 is set if the first pass found a damaged scrolled image (usually
+  # because we scrolled out some part and scrolled in another part).
+  # In this case, we can't just reuse the CanvasImage we found because that
+  # would result in displaying an image with the modified (scrolled) erry.
+  # So we just search again.
+  #TODO this is way too convoluted, I'm sure there's a better way...
   for it in term.canvasImages:
     if not it.dead and it.pid == pid and it.imageId == imageId and
         it.dims.width == dims.width and it.dims.height == dims.height and
         it.dims.rx == dims.rx and it.dims.ry == dims.ry and
-        (term.imageMode != imSixel or it.dims.erry == dims.erry and
+        (term.imageMode != imSixel or
+          (not pass2 and it.dims.erry == dims.erry or
+            pass2 and it.dims.erry2 == dims.erry) and
           it.dims.dispw == dims.dispw and it.dims.offx == dims.offx):
       return it
   return nil
@@ -1782,7 +1801,7 @@ proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
           term.lineDamage[y] = mx
 
 proc updateCanvasImage*(term: Terminal; image: CanvasImage;
-    dims: CanvasImageDimensions; redrawNext: bool; maxh: int) =
+    dims: CanvasImageDimensions; redrawNext: bool; maxh: int): bool =
   # reuse image on screen
   #TODO we could skip lots of repaints with a slightly less braindead
   # solution than redrawNext
@@ -1790,14 +1809,19 @@ proc updateCanvasImage*(term: Terminal; image: CanvasImage;
   if image.dims.x != dims.x or image.dims.y != dims.y or
       image.dims.disph != dims.disph or image.dims.offy != dims.offy or
       image.dims.erry != dims.erry or redrawNext:
+    if term.imageMode == imSixel and image.dims.erry != image.dims.erry2:
+      # we have scrolled in more of this image onto the screen, but the Y
+      # error is incorrect.  load the right one.
+      return false
+    image.damaged = true
     # only clear sixels; with kitty we just move the existing image
     if term.imageMode == imSixel:
       term.clearImage(image, maxh)
     image.dims = dims
-    image.damaged = true
   # only mark old images; new images will not be checked until the next
   # initImages call.
   image.marked = true
+  true
 
 proc newCanvasImage*(data: Blob; pid, imageId, preludeLen: int;
     dims: CanvasImageDimensions; transparent: bool): CanvasImage =
@@ -1982,17 +2006,19 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
   let maxwpx = term.attrs.widthPx
   let maxhpx = scrollBottom * term.attrs.ppl
   let scrolled = term.imageMode == imSixel
+  var found = false
   for image in term.canvasImages.mitems:
     if image.dead:
       continue
     image.dims.y += n
     image.scrolled = scrolled
+    found = true
     let erry = image.dims.erry
     let offy = image.dims.offy
     if not term.repositionImage(image, maxwpx, maxhpx):
       image.dead = true
     elif term.imageMode == imKitty:
-      # Kitty exhibits strangely on scroll up:
+      # Kitty exhibits strange behavior on scroll up:
       # * if the image touches the scroll boundary on the bottom, and is
       #   cropped on the top, then the image fails to scroll.
       # * otherwise, the image is cropped, but the cropping code is
@@ -2003,6 +2029,8 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
     # scroll up does not change offy or erry (the slice's start).
     image.dims.offy = offy
     image.dims.erry = erry
+  if found and n > 1:
+    term.fastScrollTodo = true
   term.scrollTodo -= n
 
 proc scrollDown*(term: Terminal; n, scrollBottom: int) =
@@ -2016,9 +2044,11 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
   let maxwpx = term.attrs.widthPx
   let maxhpx = scrollBottom * term.attrs.ppl
   let scrolled = term.imageMode == imSixel
+  var found = false
   for image in term.canvasImages.mitems:
     if image.dead:
       continue
+    found = true
     image.dims.y -= n
     image.scrolled = scrolled
     let disph = image.dims.disph
@@ -2030,6 +2060,8 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
       image.damaged = true
     # scroll down doesn't change disph (the slice's end).
     image.dims.disph = disph
+  if found and n > 1:
+    term.fastScrollTodo = true
   term.scrollTodo += n
 
 proc draw*(term: Terminal; redraw, mouse: bool;
@@ -2048,6 +2080,7 @@ proc draw*(term: Terminal; redraw, mouse: bool;
     ?term.cursorGoto(cursorx, cursory)
   ?term.showCursor()
   term.scrollTodo = 0
+  term.fastScrollTodo = false
   if term.queueTitleFlag and term.hasTitle():
     ?term.write(OSC & "0;" & term.title.replaceControls() & ST)
     term.queueTitleFlag = false

@@ -1394,9 +1394,11 @@ proc initImages(pager: Pager; container: Container) =
     if not dims.onScreen:
       continue
     let imageId = image.bmp.imageId
-    let canvasImage = pager.term.findImage(pid, imageId, dims)
+    var canvasImage = pager.term.findImage(pid, imageId, dims, pass2 = false)
+    if canvasImage != nil and not pager.term.updateCanvasImage(canvasImage,
+        dims, redrawNext, bufHeight):
+      canvasImage = pager.term.findImage(pid, imageId, dims, pass2 = true)
     if canvasImage != nil:
-      pager.term.updateCanvasImage(canvasImage, dims, redrawNext, bufHeight)
       newImages.add(canvasImage)
       continue
     let cachedOffx = if imageMode == imSixel: dims.offx else: 0
