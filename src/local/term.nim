@@ -1531,6 +1531,10 @@ proc fullDraw(term: Terminal): Opt[void] =
 proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
     bgcolor: CellColor): Opt[void] =
   ?term.setScrollArea(1, scrollBottom) # may move cursor to 0, 0
+  ?term.resetFormat()
+  var format = Format()
+  let nformat = initFormat(bgcolor, defaultColor, {})
+  ?term.processFormat(format, nformat)
   if term.imageMode == imSixel and term.fastScrollTodo and
       tfFastScroll in term.desc:
     # Scrolling Sixel images line-by-line isn't very efficient (at least it
@@ -1541,15 +1545,10 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
     # Note that "slow" scroll is more effective against tearing, because
     # it allows us to limit the number of unfilled lines to one.  Thus, we
     # only want to do fast scroll if we have Sixel images on the screen.
-    var format = Format()
-    let nformat = initFormat(bgcolor, defaultColor, {})
-    ?term.processFormat(format, nformat)
     if scroll < 0:
       return term.moveLinesDown(-scroll)
     else:
       return term.moveLinesUp(scroll)
-  ?term.resetFormat()
-  var format = Format()
   if scroll < 0: # scroll up
     ?term.cursorHome()
     for i in countdown(0, scroll + 1):
@@ -1773,37 +1772,45 @@ proc clearImages*(term: Terminal; maxh: int) =
 
 proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
   if term.imageMode == imSixel:
+    # we're interested in the last x/y *on screen*.  if damage exceeds that,
+    # then the image is unaffected and there's nothing to do.
+    let lastx = maxw - 1
+    let lasty = maxh - 1
+    let pplerr = term.attrs.ppl - 1
+    let ppcerr = term.attrs.ppc - 1
     for image in term.canvasImages:
-      # check if any line of our image is damaged
-      let h = (image.dims.height + term.attrs.ppl - 1) div term.attrs.ppl # ceil
-      let ey0 = min(image.dims.y + h, maxh)
-      # here we floor, so that a last line with rounding error (which
-      # will not fully cover text) is always cleared
-      let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, maxh)
+      # compute the bottom and right borders, rounded in both directions.
+      # if the last column/line doesn't cover a cell, consider it
+      # transparent.
+      let ey0 = min(image.dims.y + (image.dims.height + pplerr) div
+        term.attrs.ppl, lasty)
+      let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, lasty)
       let x = max(image.dims.x, 0)
-      let mx = min(image.dims.x + image.dims.dispw div term.attrs.ppc, maxw)
+      let mx0 = min(image.dims.x + image.dims.dispw div term.attrs.ppc, lastx)
+      let mx = min(image.dims.x + (image.dims.dispw + ppcerr) div
+        term.attrs.ppc, lastx)
       for y in max(image.dims.y, 0) ..< ey0:
         let od = term.lineDamage[y]
-        if od > mx:
+        if od > mx0:
           continue
         image.damaged = true
         if y >= ey1:
           break
         if od < x:
           continue
-        if image.transparent:
+        if image.transparent or od in mx0 ..< mx:
           term.lineDamage[y] = x
         else:
           var textFound = false
-          if not image.transparent:
-            # damage starts inside an opaque image; skip clear (but only
-            # if the damage was not caused by a printing character)
-            let si = y * term.attrs.width
-            for i in si + od ..< si + term.attrs.width:
-              if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
-                textFound = true
-                break
-          term.lineDamage[y] = mx
+          # damage starts inside an opaque image; skip clear (but only if
+          # the damage was not caused by a printing character)
+          let si = y * term.attrs.width
+          for i in si + od ..< si + term.attrs.width:
+            if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
+              textFound = true
+              break
+          if not textFound:
+            term.lineDamage[y] = mx
 
 proc updateCanvasImage*(term: Terminal; image: CanvasImage;
     dims: CanvasImageDimensions; redrawNext: bool; maxh: int): bool =
