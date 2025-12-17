@@ -13,7 +13,7 @@ die() {
 }
 test -n "$file" || die "usage: read_nr [file]"
 get_bytes() {
-	od -v -t d"$2" -A n -j "$1" "$file" -N 1 | sed 's/ //g'
+	od -v -t d"$2" -A n -N 1 -j "$1" "$file" | sed 's/ //g'
 }
 
 nr=$(get_bytes 18 2)
