@@ -1,6 +1,6 @@
 # w3m-like keybindings for Chawan.
 # Copy-paste this into your config file, or just include it (place it in
-# ~/.chawan/w3m.toml ~/.config/chawan/w3m.toml, then at the beginning of
+# ~/.chawan/w3m.toml or ~/.config/chawan/w3m.toml, then at the beginning of
 # ~/.chawan/config.toml, include = "w3m.toml".)
 
 # these are disabled by default in w3m
