@@ -1533,7 +1533,8 @@ proc draw(pager: Pager): Opt[void] =
       pager.term.clearImages(bufHeight)
   let (cursorx, cursory) = pager.getAbsoluteCursorXY(container)
   let mouse = pager.lineedit == nil
-  pager.term.draw(redraw, mouse, cursorx, cursory, bufHeight, container.bgcolor)
+  let bgcolor = if container != nil: container.bgcolor else: defaultColor
+  pager.term.draw(redraw, mouse, cursorx, cursory, bufHeight, bgcolor)
 
 proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.status.grid.width - s.width()
