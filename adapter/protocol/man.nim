@@ -300,9 +300,21 @@ proc doMan(man, keyword, section: string) =
 
 proc doLocal(man, path: string) =
   # Note: we intentionally do not use -l, because it is not supported on
-  # various systems (at the very least FreeBSD, NetBSD).
-  let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & ' ' & quoteShellPosix(path)
+  # various systems (at the very least FreeBSD, NetBSD, macOS).
+  var cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " & man & ' '
+  # ...and this worked fine until OpenBSD intentionally broke it in 7.8,
+  # saying this provides "better consistency with POSIX and traditional UNIX
+  # and BSD man(1)".
+  #
+  # Note that POSIX hardly specifies anything about man, and certainly
+  # doesn't talk about whether this case should be supported.  And while
+  # "traditional UNIX" might not have supported raw paths, this was the
+  # *only* portable way to do it until OBSD finally ruined it.
+  #
+  # Anyway, we add a platform-specific ifdef and move on.
+  when defined(openbsd):
+    cmd &= "-l "
+  cmd &= quoteShellPosix(path)
   let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
   discard ofile.processManpage(efile, header = """Content-Type: text/html
 
