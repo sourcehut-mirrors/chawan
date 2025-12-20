@@ -52,32 +52,41 @@ to find a terminal that supports it.
 
 Known quirks and implementation details:
 
-* XTerm needs extensive configuration for ideal sixel support. In
-  particular, you will want to set the decTerminalID, numColorRegisters,
-  and maxGraphicSize attributes. See [`man xterm`](man:xterm(1)) for details.
-* We assume private color registers are supported. On terminals where
-  they aren't (e.g. SyncTERM or hardware terminals), colors will get
-  messed up with multiple images on screen.
-* We send XTSMGRAPHICS for retrieving the number of color registers;
-  on failure, we fall back to 256. You can override color register count
-  using the `display.sixel-colors` configuration value.
-* For the most efficient sixel display, you will want a cell height
-  that is a multiple of 6. Otherwise, the images will have to be re-coded
-  several times on scroll.
-* Normally, Sixel encoding runs in two passes. On slow computers, you
-  can try setting `display.sixel-colors = 2`, which will skip the first
-  pass (but will also display everything in monochrome).
-* Transparency *is* supported, but looks weird because we approximate an
-  8-bit alpha channel with Sixel's 1-bit alpha channel. Also, some
+* XTerm needs extensive configuration for ideal sixel support.  In
+  particular, you will want to set the decTerminalID, numColorRegisters, and
+  maxGraphicSize attributes. See [`man xterm`](man:xterm(1)) for details.
+
+* We assume private color registers are supported.  On terminals where they
+  aren't (e.g. SyncTERM or hardware terminals), colors will get messed up with
+  multiple images on screen.
+
+* We send XTSMGRAPHICS for retrieving the number of color registers; on
+  failure, we fall back to 256. You can override color register count using
+  the `display.sixel-colors` configuration value.
+
+* For the most efficient sixel display, you will want a cell height that is
+  a multiple of 6. Otherwise, the images will have to be re-coded several
+  times on scroll.
+
+* Normally, Sixel encoding runs in two passes.  On slow computers, you can
+  try setting `display.sixel-colors = 2`, which will skip the first pass
+  (but will also display everything in monochrome).
+
+* Transparency *is* supported, but looks weird because we approximate
+  an 8-bit alpha channel with Sixel's 1-bit alpha channel.  Also, some
   terminals don't emulate it correctly - when in doubt, try XTerm (which
   does).
 
+* Terminal scroll (both with LF/RI and SU/SD) is used extensively to avoid
+  sending images several times.  Expect troubles on terminals that do not
+  handle this correctly.
+
 ### Kitty
 
-On terminals that support it, Kitty's protocol is preferred over Sixel.
-Its main benefit is that images do not have to be sent again every time they
-move on the screen (i.e. on scroll), but the initial transfer should also be
-faster (because PNG's compression tends to outperform Sixel's RLE).
+On terminals that support it, Kitty's protocol is preferred over Sixel.  Its
+main benefit is that images do not have to be sent again every time a new
+slice of the image moves into the screen, but the initial transfer should
+also be faster (because PNG's compression tends to outperform Sixel's RLE).
 
 Unlike Sixel, the Kitty protocol fully supports transparency.
 

@@ -83,11 +83,15 @@ approximate an 8\-bit alpha channel with Sixel\(cqs 1\-bit alpha
 channel.
 Also, some terminals don\(cqt emulate it correctly \- when in doubt, try
 XTerm (which does).
+.IP \(bu 2
+Terminal scroll (both with LF/RI and SU/SD) is used extensively to avoid
+sending images several times.
+Expect troubles on terminals that do not handle this correctly.
 .SS Kitty
 On terminals that support it, Kitty\(cqs protocol is preferred over
 Sixel.
 Its main benefit is that images do not have to be sent again every time
-they move on the screen (i.e.\ on scroll), but the initial transfer
+a new slice of the image moves into the screen, but the initial transfer
 should also be faster (because PNG\(cqs compression tends to outperform
 Sixel\(cqs RLE).
 .PP
