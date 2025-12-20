@@ -1206,33 +1206,32 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   move(ls)
 
 proc drawBuffer(pager: Pager; container: Container): Opt[void] =
-  var format = Format()
   let res = container.readLines(proc(line: SimpleFlexibleLine): Opt[void] =
     var x = 0
-    var w = -1
     var i = 0
-    if container.bgcolor != defaultColor and
+    let bgcolor = container.bgcolor
+    if bgcolor != defaultColor and
         (line.formats.len == 0 or line.formats[0].pos > 0):
-      let nformat = initFormat(container.bgcolor, defaultColor, {})
-      ?pager.term.processFormat(format, nformat)
+      ?pager.term.processFormat(initFormat(bgcolor, defaultColor, {}))
     for f in line.formats:
       var ff = f.format
       if ff.bgcolor == defaultColor:
         ff.bgcolor = container.bgcolor
-      let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, f.pos)
-      ?pager.term.processOutputString(ls, w)
+      let termBgcolor = pager.term.getCurrentBgcolor()
+      let ls = line.str.drawBufferAdvance(termBgcolor, i, x, f.pos)
+      ?pager.term.processOutputString(ls, trackCursor = false)
       if i < line.str.len:
-        ?pager.term.processFormat(format, ff)
+        ?pager.term.processFormat(ff)
     if i < line.str.len:
-      let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, int.high)
-      ?pager.term.processOutputString(ls, w)
-    if container.bgcolor != defaultColor and x < container.width:
-      let nformat = initFormat(container.bgcolor, defaultColor, {})
-      ?pager.term.processFormat(format, nformat)
+      let termBgcolor = pager.term.getCurrentBgcolor()
+      let ls = line.str.drawBufferAdvance(termBgcolor, i, x, int.high)
+      ?pager.term.processOutputString(ls, trackCursor = false)
+    if bgcolor != defaultColor and x < container.width:
+      ?pager.term.processFormat(initFormat(bgcolor, defaultColor, {}))
       let spaces = ' '.repeat(container.width - x)
-      ?pager.term.processOutputString(spaces, w)
-    ?pager.term.processFormat(format, Format())
-    pager.term.writeLine()
+      ?pager.term.processOutputString(spaces, trackCursor = false)
+    ?pager.term.processFormat(Format())
+    pager.term.cursorNextLine()
   )
   doAssert ?pager.term.flush()
   res

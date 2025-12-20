@@ -122,6 +122,7 @@ type
     tfPrimary # interprets primary correctly in OSC 52
     tfBracketedPaste # doesn't choke on bracketed paste (might not have it)
     tfFlowControl # uses XON/XOFF flow control (usually hardware terminals)
+    tfScroll # supports VT100-style scroll (with scroll area)
     tfFastScroll # has SD/SU control sequences
 
   Termdesc = set[TermdescFlag]
@@ -152,6 +153,7 @@ type
     cursorHidden: bool
     queueTitleFlag: bool # set title on next draw
     registeredFlag*: bool # kernel won't accept any more data right now
+    cursorKnown: bool # set if we know the cursor's position
     desc: Termdesc
     origTermios: Termios
     newTermios: Termios
@@ -167,13 +169,14 @@ type
     registerCb: proc(fd: int) {.raises: [].} # callback to register ostream
     sixelRegisterNum*: uint16
     kittyId: int # counter for kitty image (*not* placement) ids.
-    cursorx: int
-    cursory: int
+    cursorx: uint32
+    cursory: uint32
     scrollTodo: int # lines to scroll (negative = up, positive = down)
     scrollBottom: int # last line of currently set scroll area (-1 if reset)
     fastScrollTodo: bool # flag to do fast scroll
     colorMap: array[16, RGBColor]
     title: string # current title
+    format: Format # current formatting
 
   QueryState = enum
     qsBackgroundColor, qsForegroundColor, qsXtermAllowedOps, qsXtermWindowOps,
@@ -315,14 +318,14 @@ proc windowChange(term: Terminal)
 # written terminals choke on it despite advertising themselves as XTerm.
 const XtermCompatible = {
   tfTitle, tfXtermQuery, tfAltScreen, tfSpecialGraphics, tfMouse,
-  tfBracketedPaste, tfFastScroll
+  tfBracketedPaste, tfScroll, tfFastScroll
 }
 
 # This for hardware terminals, *not* VT100-compatible emulators.
 # The primary difference is that no emulator uses flow control (XON/XOFF)
 # so we just disable it on those.
 const Vt100Compatible = {
-  tfSpecialGraphics, tfFlowControl
+  tfScroll, tfSpecialGraphics, tfFlowControl
 }
 
 const AnsiColorFlag = {tfColor1}
@@ -335,12 +338,13 @@ const TermdescMap = [
   ttContour: XtermCompatible,
   ttDvtm: {tfAltScreen, tfBleedsAPC, tfBracketedPaste} + AnsiColorFlag,
   ttEat: XtermCompatible + TrueColorFlag,
-  ttEterm: {tfTitle, tfXtermQuery, tfBracketedPaste} + AnsiColorFlag,
+  # eterm bleeds titles.
+  ttEterm: {tfXtermQuery, tfBracketedPaste, tfScroll} + AnsiColorFlag,
   ttFbterm: {tfXtermQuery, tfBracketedPaste} + AnsiColorFlag,
   ttFoot: XtermCompatible,
   # FreeBSD has code to respond to queries, but it's #if 0'd out :(
   # It has no bracketed paste (duh).
-  ttFreebsd: {tfPreEcma48} + AnsiColorFlag,
+  ttFreebsd: {tfPreEcma48, tfScroll} + AnsiColorFlag,
   ttGhostty: XtermCompatible,
   ttIterm2: XtermCompatible,
   ttKitty: XtermCompatible + TrueColorFlag + {tfPrimary},
@@ -350,7 +354,7 @@ const TermdescMap = [
   # correction, so we stick to ANSI.
   # It also fails to advertise ANSI color in DA1, so we set it here.
   # Linux has no alt screen, and no paste (let alone bracketed).
-  ttLinux: {tfXtermQuery} + AnsiColorFlag,
+  ttLinux: {tfXtermQuery, tfScroll} + AnsiColorFlag,
   ttMintty: XtermCompatible + TrueColorFlag,
   ttMlterm: XtermCompatible + TrueColorFlag,
   ttMsTerminal: XtermCompatible + TrueColorFlag,
@@ -1105,36 +1109,70 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
   of eprWindowChange: return ok(InputEvent(t: ietWindowChange))
   of eprRedraw: return ok(InputEvent(t: ietRedraw))
 
-proc cursorGoto(term: Terminal; x, y: int): Opt[void] =
+proc cursorNextLineBegin(term: Terminal): Opt[void] =
+  if term.scrollBottom < 0 and term.cursory + 1 < uint32(term.attrs.width) or
+      term.cursory < uint32(term.scrollBottom):
+    inc term.cursory
+  term.cursorx = 0
+  term.write("\r\n")
+
+proc cursorNextLine*(term: Terminal): Opt[void] =
+  if term.scrollBottom < 0 and term.cursory + 1 < uint32(term.attrs.width) or
+      term.cursory < uint32(term.scrollBottom):
+    inc term.cursory
+  term.write('\n')
+
+proc cursorPrevLineBegin(term: Terminal): Opt[void] =
+  if term.cursory > 0:
+    dec term.cursory
+  term.cursorx = 0
+  term.write('\r' & RI)
+
+proc cursorLineBegin(term: Terminal): Opt[void] =
+  term.cursorx = 0
+  term.write('\r')
+
+proc cursorGoto(term: Terminal; x, y: uint32): Opt[void] =
+  if term.cursorKnown and term.cursorx == x and term.cursory == y:
+    return ok()
+  if term.cursorKnown and (x == 0 or x == term.cursorx) and
+      y - term.cursory <= 6:
+    # This is probably more efficient than setting the cursor by address.
+    if x == 0:
+      ?term.cursorLineBegin()
+    for u in term.cursory ..< y:
+      ?term.cursorNextLine()
+    return ok()
+  term.cursorx = x
+  term.cursory = y
+  term.cursorKnown = true
   return case term.termType
   of ttAdm3a: term.write("\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
   of ttVt52: term.write("\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
   else: term.write(CSI & $(y + 1) & ';' & $(x + 1) & 'H')
 
+proc cursorGoto(term: Terminal; x, y: int): Opt[void] =
+  term.cursorGoto(uint32(x), uint32(y))
+
 proc cursorHome(term: Terminal): Opt[void] =
+  if term.cursorKnown and term.cursorx == 0 and term.cursory == 0:
+    return ok()
   if tfPreEcma48 in term.desc:
     return term.cursorGoto(0, 0)
+  term.cursorx = 0
+  term.cursory = 0
   term.write(CSI & 'H')
 
-proc cursorNextLine(term: Terminal): Opt[void] =
-  term.write("\r\n")
-
-proc cursorPrevLine(term: Terminal): Opt[void] =
-  term.write('\r' & RI)
-
-proc cursorLineBegin(term: Terminal): Opt[void] =
-  term.write('\r')
-
-proc writeLine*(term: Terminal): Opt[void] =
-  term.write('\n')
-
 proc unsetCursorPos(term: Terminal) =
-  term.cursorx = -1
-  term.cursory = -1
+  term.cursorKnown = false
 
 proc clearEnd(term: Terminal): Opt[void] =
   case term.termType
-  of ttAdm3a: return ok()
+  of ttAdm3a:
+    for x in term.cursorx ..< uint32(term.attrs.width):
+      ?term.write(' ')
+    term.cursorx = uint32(term.attrs.width) - 1
+    return ok()
   of ttVt52: return term.write("\eK")
   else: return term.write(CSI & 'K')
 
@@ -1159,6 +1197,9 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]"; bottom = false): Opt[void] =
   ok()
 
 proc resetFormat(term: Terminal): Opt[void] =
+  # This resets the formatting *and* synchronizes it with the terminal.
+  # processFormat(Format()) is more efficient.
+  term.format = Format()
   case term.termType
   of ttAdm3a, ttVt52: return ok()
   else: return term.write(CSI & 'm')
@@ -1172,12 +1213,6 @@ const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
   ffOverline: (53u8, 55u8),
   ffBlink: (5u8, 25u8),
 ]
-
-proc startFormat(term: Terminal; flag: FormatFlag): Opt[void] =
-  term.write(CSI & $FormatCodes[flag].s & 'm')
-
-proc endFormat(term: Terminal; flag: FormatFlag): Opt[void] =
-  term.write(CSI & $FormatCodes[flag].e & 'm')
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
@@ -1317,40 +1352,39 @@ proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
   of cmMonochrome:
     discard # nothing to do
 
-proc processFormat*(term: Terminal; format: var Format; cellf: Format):
-    Opt[void] =
+proc processFormat*(term: Terminal; cellf: Format): Opt[void] =
   var fgcolor = cellf.fgcolor
   var bgcolor = cellf.bgcolor
   term.reduceColors(fgcolor, bgcolor)
-  if format.flags != cellf.flags:
+  if term.format.flags != cellf.flags:
     var oldFlags {.noinit.}: array[int(FormatFlag.high) + 1, FormatFlag]
     var i = 0
     for flag in term.formatMode:
-      if flag in format.flags and flag notin cellf.flags:
+      if flag in term.format.flags and flag notin cellf.flags:
         oldFlags[i] = flag
         inc i
-      if flag notin format.flags and flag in cellf.flags:
-        ?term.startFormat(flag)
+      if flag notin term.format.flags and flag in cellf.flags:
+        ?term.write(CSI & $FormatCodes[flag].s & 'm')
     if i > 0:
       # if either
       # * both fgcolor and bgcolor are the default, or
       # * both are being changed,
       # then we can use a general reset when new flags are empty.
       if cellf.flags == {} and
-          (fgcolor != format.fgcolor and bgcolor != format.bgcolor or
+          (fgcolor != term.format.fgcolor and bgcolor != term.format.bgcolor or
           fgcolor == defaultColor and bgcolor == defaultColor):
         ?term.resetFormat()
       else:
         for flag in oldFlags.toOpenArray(0, i - 1):
-          ?term.endFormat(flag)
-    format.flags = cellf.flags
+          ?term.write(CSI & $FormatCodes[flag].e & 'm')
+    term.format.flags = cellf.flags
   if term.attrs.colorMode != cmMonochrome:
-    if fgcolor != format.fgcolor:
+    if fgcolor != term.format.fgcolor:
       ?term.writeColorSGR(fgcolor, bgmod = 0)
-      format.fgcolor = fgcolor
-    if bgcolor != format.bgcolor:
+      term.format.fgcolor = fgcolor
+    if bgcolor != term.format.bgcolor:
       ?term.writeColorSGR(bgcolor, bgmod = 10)
-      format.bgcolor = bgcolor
+      term.format.bgcolor = bgcolor
   ok()
 
 proc hasTitle(term: Terminal): bool =
@@ -1440,18 +1474,20 @@ proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: var bool;
           res &= '?'
   specialGraphics = sg
 
-proc processOutputString*(term: Terminal; s: openArray[char]; w: var int):
-    Opt[void] =
+proc processOutputString*(term: Terminal; s: openArray[char];
+    trackCursor = true): Opt[void] =
   if s.len <= 0:
     return ok()
+  if not trackCursor:
+    term.unsetCursorPos()
   if s.validateUTF8Surr() != -1:
-    if w != -1:
-      inc w
+    if trackCursor:
+      inc term.cursorx
     return term.write('?')
-  if w != -1:
+  if trackCursor:
     for u in s.points:
       assert u > 0x9F or u != 0x7F and u > 0x1F
-      w += u.width()
+      term.cursorx += uint32(u.width())
   if term.te == nil:
     # The output encoding matches the internal representation.
     return term.write(s)
@@ -1484,12 +1520,16 @@ proc showCursor(term: Terminal): Opt[void] =
 proc setScrollArea(term: Terminal; top, bottom: int): Opt[void] =
   if term.scrollBottom != bottom:
     term.scrollBottom = bottom
+    term.cursorx = 0
+    term.cursory = 0
     return term.write(CSI & $top & ";" & $bottom & 'r')
   ok()
 
 proc resetScrollArea(term: Terminal): Opt[void] =
   if term.scrollBottom != -1:
     term.scrollBottom = -1
+    term.cursorx = 0
+    term.cursory = 0
     return term.write(CSI & 'r')
   ok()
 
@@ -1499,23 +1539,27 @@ proc moveLinesUp(term: Terminal; n: int): Opt[void] =
 proc moveLinesDown(term: Terminal; n: int): Opt[void] =
   term.write(CSI & $n & 'T')
 
-proc processCell(term: Terminal; format: var Format; w: var int;
-    cell: FixedCell): Opt[void] =
-  ?term.processFormat(format, cell.format)
-  term.processOutputString(cell.str, w)
+proc processCell(term: Terminal; cell: FixedCell; x: int): Opt[void] =
+  if cell.str.len == 0:
+    return ok()
+  # if previous cell was empty, catch up with x
+  let x = uint32(x)
+  while term.cursorx < x:
+    ?term.write(' ')
+    inc term.cursorx
+  ?term.processFormat(cell.format)
+  term.processOutputString(cell.str)
 
-proc fullDrawLine(term: Terminal; y: int; format: var Format): Opt[void] =
-  var w = 0
-  for x in 0 ..< term.attrs.width:
-    while w < x:
-      ?term.write(' ')
-      inc w
-    ?term.processCell(format, w, term.canvas[y * term.attrs.width + x])
+proc drawLine(term: Terminal; sx, y: int): Opt[void] =
+  for x in sx ..< term.attrs.width:
+    ?term.processCell(term.canvas[y * term.attrs.width + x], x)
+  if term.cursorx < uint32(term.attrs.width):
+    ?term.processFormat(Format())
+    ?term.clearEnd()
   term.lineDamage[y] = term.attrs.width
   ok()
 
 proc fullDraw(term: Terminal): Opt[void] =
-  var format = Format()
   ?term.hideCursor()
   ?term.resetScrollArea()
   ?term.cursorHome()
@@ -1523,18 +1567,16 @@ proc fullDraw(term: Terminal): Opt[void] =
   ?term.resetFormat()
   for y in 0 ..< term.attrs.height:
     if y != 0:
-      ?term.cursorNextLine()
-    ?term.fullDrawLine(y, format)
-  term.unsetCursorPos()
+      ?term.cursorNextLineBegin()
+    ?term.drawLine(0, y)
   ok()
 
 proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
     bgcolor: CellColor): Opt[void] =
   ?term.setScrollArea(1, scrollBottom) # may move cursor to 0, 0
   ?term.resetFormat()
-  var format = Format()
-  let nformat = initFormat(bgcolor, defaultColor, {})
-  ?term.processFormat(format, nformat)
+  # BCE to the buffer's background color to reduce visibility of tearing.
+  ?term.processFormat(initFormat(bgcolor, defaultColor, {}))
   if term.imageMode == imSixel and term.fastScrollTodo and
       tfFastScroll in term.desc:
     # Scrolling Sixel images line-by-line isn't very efficient (at least it
@@ -1543,7 +1585,7 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
     # should be fixed in XTerm...)
     #
     # Note that "slow" scroll is more effective against tearing, because
-    # it allows us to limit the number of unfilled lines to one.  Thus, we
+    # it allows us to limit the number of unfilled lines to one.  Hence we
     # only want to do fast scroll if we have Sixel images on the screen.
     if scroll < 0:
       return term.moveLinesDown(-scroll)
@@ -1552,28 +1594,22 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
   if scroll < 0: # scroll up
     ?term.cursorHome()
     for i in countdown(0, scroll + 1):
-      ?term.cursorPrevLine()
-      ?term.fullDrawLine(i - scroll - 1, format)
+      ?term.cursorPrevLineBegin()
+      ?term.drawLine(0, i - scroll - 1)
       ?term.clearEnd()
     return term.cursorLineBegin()
   # scroll down
   ?term.cursorGoto(0, scrollBottom - 1)
   for i in 0 ..< scroll:
-    ?term.cursorNextLine()
-    ?term.clearEnd()
-    ?term.fullDrawLine(scrollBottom - scroll + i, format)
+    ?term.cursorNextLineBegin()
+    ?term.drawLine(0, scrollBottom - scroll + i)
   term.cursorHome()
 
 proc partialDraw(term: Terminal; scrollBottom: int; bgcolor: CellColor):
     Opt[void] =
-  var vy = -1
-  var buf = ""
-  var first = true
   let scroll = term.scrollTodo
   if scroll != 0:
-    first = false
     ?term.hideCursor()
-    term.unsetCursorPos()
     ?term.partialDrawScroll(scroll, scrollBottom, bgcolor)
   for y in 0 ..< term.attrs.height:
     # set cx to x of the first change
@@ -1581,34 +1617,11 @@ proc partialDraw(term: Terminal; scrollBottom: int; bgcolor: CellColor):
     # w will track the current position on screen
     if cx >= term.attrs.width:
       continue
-    if first:
-      ?term.hideCursor()
-      term.unsetCursorPos()
-      first = false
+    ?term.hideCursor()
     ?term.resetScrollArea()
-    if cx == 0 and vy != -1 and vy <= y:
-      while vy < y:
-        ?term.cursorNextLine()
-        inc vy
-    else:
-      ?term.cursorGoto(cx, y)
-      vy = y
+    ?term.cursorGoto(cx, y)
     ?term.resetFormat()
-    var format = Format()
-    var w = cx
-    buf.setLen(0)
-    for x in cx ..< term.attrs.width:
-      while w < x: # if previous cell had no width, catch up with x
-        buf &= ' '
-        inc w
-      let cell = term.canvas[y * term.attrs.width + x]
-      ?term.processFormat(format, cell.format)
-      ?term.processOutputString(cell.str, w)
-    if w < term.attrs.width:
-      ?term.clearEnd()
-    # damage is gone
-    term.lineDamage[y] = term.attrs.width
-    ?term.write(buf)
+    ?term.drawLine(cx, y)
   ok()
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
@@ -1624,6 +1637,9 @@ proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
       if cell != term.canvas[i]:
         term.canvas[i] = cell
         term.lineDamage[ly] = min(term.lineDamage[ly], lastx)
+
+proc getCurrentBgcolor*(term: Terminal): CellColor =
+  term.format.bgcolor
 
 proc applyConfigDimensions(term: Terminal) =
   # screen dimensions
@@ -1877,6 +1893,9 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   if L < 0:
     return ok()
   ?term.cursorGoto(x, y)
+  # From this point on we have no idea where the cursor is because pretty
+  # much every terminal puts it somewhere else.
+  term.unsetCursorPos()
   ?term.writeSixelAttrs(data.toOpenArray(0, preludeLen - 1), realw, realh)
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
@@ -1978,7 +1997,6 @@ proc outputImages(term: Terminal): Opt[void] =
       of imNone: assert false
       of imSixel: ?term.outputSixelImage(x, y, image)
       of imKitty: ?term.outputKittyImage(x, y, image)
-      term.unsetCursorPos()
       image.damaged = false
   ok()
 
@@ -2003,10 +2021,7 @@ proc queueTitle*(term: Terminal; title: string) =
 
 # Must be called directly before draw, otherwise the cursor will disappear.
 proc scrollUp*(term: Terminal; n, scrollBottom: int) =
-  if tfPreEcma48 in term.desc:
-    #TODO might want to make this a separate flag, it's quite possible that
-    # some ecma-48 terms choke on scroll up/down and vice versa
-    # (e.g. I suspect FreeBSD does it right?)
+  if tfScroll notin term.desc:
     return
   for y in countdown(scrollBottom - n - 1, 0):
     for x in 0 ..< term.attrs.width:
@@ -2041,11 +2056,14 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
     # scroll up does not change offy or erry (the slice's start).
     image.dims.offy = offy
     image.dims.erry = erry
-  if found and n > 1:
+  if found and (n > 1 or term.termType == ttXterm):
+    # XTerm can't do single-line scroll-up correctly, see below.
     term.fastScrollTodo = true
   term.scrollTodo -= n
 
 proc scrollDown*(term: Terminal; n, scrollBottom: int) =
+  if tfScroll notin term.desc:
+    return
   for y in n ..< scrollBottom:
     for x in 0 ..< term.attrs.width:
       let i = y * term.attrs.width + x
@@ -2086,10 +2104,9 @@ proc draw*(term: Terminal; redraw, mouse: bool;
       ?term.partialDraw(scrollBottom, bgcolor)
     if term.imageMode != imNone:
       ?term.outputImages()
-  if cursorx != term.cursorx or cursory != term.cursory:
-    if cursory > term.scrollBottom:
-      ?term.resetScrollArea()
-    ?term.cursorGoto(cursorx, cursory)
+  if cursory > term.scrollBottom:
+    ?term.resetScrollArea()
+  ?term.cursorGoto(cursorx, cursory)
   ?term.showCursor()
   term.scrollTodo = 0
   term.fastScrollTodo = false
@@ -2178,7 +2195,7 @@ proc quit*(term: Terminal): Opt[void] =
       # if cleared, we have something on the screen; print a newline to
       # avoid overprinting it
       if term.cleared:
-        ?term.writeLine()
+        ?term.cursorNextLineBegin()
     if term.hasTitle():
       ?term.write(PopTitle)
     ?term.showCursor()
@@ -2318,24 +2335,25 @@ proc applyTermDesc(term: Terminal; desc: Termdesc) =
 proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
   if not term.isatty():
     return ok()
-  var win: IOctl_WinSize
-  if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
-    if win.ws_col > 0:
-      term.attrs.width = int(win.ws_col)
-      term.attrs.ppc = int(win.ws_xpixel) div term.attrs.width
-    if win.ws_row > 0:
-      term.attrs.height = int(win.ws_row)
-      term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
-  if term.attrs.width == 0:
-    term.attrs.width = parseIntP(getEnv("COLUMNS")).get(0)
-  if term.attrs.height == 0:
-    term.attrs.height = parseIntP(getEnv("LINES")).get(0)
   if not windowOnly:
     term.termType = term.parseTERM()
     let colorterm = getEnv("COLORTERM")
     if colorterm in ["24bit", "truecolor"]:
       term.attrs.colorMode = cmTrueColor
     term.applyTermDesc(TermdescMap[term.termType])
+  let margin = int(tfMargin in term.desc)
+  var win: IOctl_WinSize
+  if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
+    if win.ws_col > 0:
+      term.attrs.width = int(win.ws_col) - margin
+      term.attrs.ppc = int(win.ws_xpixel) div term.attrs.width
+    if win.ws_row > 0:
+      term.attrs.height = int(win.ws_row)
+      term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
+  if term.attrs.width == 0:
+    term.attrs.width = parseIntP(getEnv("COLUMNS")).get(0) - margin
+  if term.attrs.height == 0:
+    term.attrs.height = parseIntP(getEnv("LINES")).get(0)
   ok()
 
 proc windowChange(term: Terminal) =
