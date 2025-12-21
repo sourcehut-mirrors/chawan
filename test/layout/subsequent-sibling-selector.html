@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <style>
-div ~ div { color: red }
+div ~ div { color: green }
+#a ~ #b > #c { color: green }
 </style>
 <div>white</div>
-<span>test</span>
-<div>red</div>
+<span id=a>a</span><span id=b>b<span id=c>c</span></span>
+<div>green</div>

@@ -296,7 +296,7 @@ proc matches(element: Element; cxsel: ComplexSelector;
       e = e.previousElementSibling
       match = e != nil and e.matches(csel, mdepends, hasDeps)
     of ctSubsequentSibling:
-      var it = element.previousElementSibling
+      var it = e.previousElementSibling
       while it != nil:
         if it.matches(csel, mdepends, hasDeps):
           e = it
