@@ -1207,31 +1207,33 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
 
 proc drawBuffer(pager: Pager; container: Container): Opt[void] =
   let res = container.readLines(proc(line: SimpleFlexibleLine): Opt[void] =
+    let term = pager.term
     var x = 0
     var i = 0
     let bgcolor = container.bgcolor
+    let bgformat = term.reduceFormat(initFormat(bgcolor, defaultColor, {}))
     if bgcolor != defaultColor and
         (line.formats.len == 0 or line.formats[0].pos > 0):
-      ?pager.term.processFormat(initFormat(bgcolor, defaultColor, {}))
+      ?term.processFormat(bgformat)
     for f in line.formats:
       var ff = f.format
       if ff.bgcolor == defaultColor:
         ff.bgcolor = container.bgcolor
-      let termBgcolor = pager.term.getCurrentBgcolor()
+      let termBgcolor = term.getCurrentBgcolor()
       let ls = line.str.drawBufferAdvance(termBgcolor, i, x, f.pos)
-      ?pager.term.processOutputString(ls, trackCursor = false)
+      ?term.processOutputString(ls, trackCursor = false)
       if i < line.str.len:
-        ?pager.term.processFormat(ff)
+        ?term.processFormat(term.reduceFormat(ff))
     if i < line.str.len:
-      let termBgcolor = pager.term.getCurrentBgcolor()
+      let termBgcolor = term.getCurrentBgcolor()
       let ls = line.str.drawBufferAdvance(termBgcolor, i, x, int.high)
-      ?pager.term.processOutputString(ls, trackCursor = false)
+      ?term.processOutputString(ls, trackCursor = false)
     if bgcolor != defaultColor and x < container.width:
-      ?pager.term.processFormat(initFormat(bgcolor, defaultColor, {}))
+      ?term.processFormat(bgformat)
       let spaces = ' '.repeat(container.width - x)
-      ?pager.term.processOutputString(spaces, trackCursor = false)
-    ?pager.term.processFormat(Format())
-    pager.term.cursorNextLine()
+      ?term.processOutputString(spaces, trackCursor = false)
+    ?term.processFormat(Format())
+    term.cursorNextLine()
   )
   doAssert ?pager.term.flush()
   res

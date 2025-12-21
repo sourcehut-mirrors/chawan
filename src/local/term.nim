@@ -103,7 +103,7 @@ type
     data: Blob
 
   TerminalPage {.acyclic.} = ref object
-    a: seq[uint8] # bytes to flush
+    a: seq[char] # bytes to flush
     n: int # bytes of s already flushed
     next: TerminalPage
 
@@ -516,7 +516,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
       ?term.startFlush()
     let page = term.pageTail
     if page == nil:
-      let page = TerminalPage(a: @(s.toOpenArrayByte(0, s.high)))
+      let page = TerminalPage(a: @s)
       term.pageHead = page
       term.pageTail = page
       return ok()
@@ -547,7 +547,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
     else:
       term.pageTail.next = page
       term.pageTail = page
-    page.a = @(s.toOpenArrayByte(n, s.len - 1))
+    page.a = @(s.toOpenArray(n, s.high))
   ok()
 
 proc write(term: Terminal; c: char): Opt[void] =
@@ -1198,21 +1198,11 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]"; bottom = false): Opt[void] =
 
 proc resetFormat(term: Terminal): Opt[void] =
   # This resets the formatting *and* synchronizes it with the terminal.
-  # processFormat(Format()) is more efficient.
+  # processFormat(Format()) is usually more efficient.
   term.format = Format()
   case term.termType
   of ttAdm3a, ttVt52: return ok()
   else: return term.write(CSI & 'm')
-
-const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
-  ffBold: (1u8, 22u8),
-  ffItalic: (3u8, 23u8),
-  ffUnderline: (4u8, 24u8),
-  ffReverse: (7u8, 27u8),
-  ffStrike: (9u8, 29u8),
-  ffOverline: (53u8, 55u8),
-  ffBlink: (5u8, 25u8),
-]
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
@@ -1329,7 +1319,9 @@ proc writeColorSGR(term: Terminal; c: CellColor; bgmod: uint8): Opt[void] =
 
 # If needed, quantize colors based on the color mode, and correct their
 # contrast.
-proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
+proc reduceFormat*(term: Terminal; format: Format): Format =
+  var bgcolor = format.bgcolor
+  var fgcolor = format.fgcolor
   case term.attrs.colorMode
   of cmANSI:
     if bgcolor.t == ctANSI and uint8(bgcolor.ansi) > 15:
@@ -1350,41 +1342,56 @@ proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
   of cmTrueColor:
     fgcolor = term.correctContrast(bgcolor, fgcolor)
   of cmMonochrome:
-    discard # nothing to do
+    fgcolor = defaultColor
+    bgcolor = defaultColor
+  let flags = format.flags * term.formatMode
+  return initFormat(bgcolor, fgcolor, flags)
+
+const FormatCodes: array[FormatFlag, tuple[s, e: string]] = [
+  ffBold: ("1", "22"),
+  ffItalic: ("3", "23"),
+  ffUnderline: ("4", "24"),
+  ffReverse: ("7", "27"),
+  ffStrike: ("9", "29"),
+  ffOverline: ("53", "55"),
+  ffBlink: ("5", "25"),
+]
 
 proc processFormat*(term: Terminal; cellf: Format): Opt[void] =
-  var fgcolor = cellf.fgcolor
-  var bgcolor = cellf.bgcolor
-  term.reduceColors(fgcolor, bgcolor)
-  if term.format.flags != cellf.flags:
-    var oldFlags {.noinit.}: array[int(FormatFlag.high) + 1, FormatFlag]
-    var i = 0
-    for flag in term.formatMode:
-      if flag in term.format.flags and flag notin cellf.flags:
-        oldFlags[i] = flag
-        inc i
-      if flag notin term.format.flags and flag in cellf.flags:
-        ?term.write(CSI & $FormatCodes[flag].s & 'm')
-    if i > 0:
-      # if either
-      # * both fgcolor and bgcolor are the default, or
-      # * both are being changed,
-      # then we can use a general reset when new flags are empty.
-      if cellf.flags == {} and
-          (fgcolor != term.format.fgcolor and bgcolor != term.format.bgcolor or
-          fgcolor == defaultColor and bgcolor == defaultColor):
-        ?term.resetFormat()
-      else:
-        for flag in oldFlags.toOpenArray(0, i - 1):
-          ?term.write(CSI & $FormatCodes[flag].e & 'm')
-    term.format.flags = cellf.flags
-  if term.attrs.colorMode != cmMonochrome:
-    if fgcolor != term.format.fgcolor:
-      ?term.writeColorSGR(fgcolor, bgmod = 0)
-      term.format.fgcolor = fgcolor
-    if bgcolor != term.format.bgcolor:
-      ?term.writeColorSGR(bgcolor, bgmod = 10)
-      term.format.bgcolor = bgcolor
+  let fgcolor = cellf.fgcolor
+  let bgcolor = cellf.bgcolor
+  let flags = cellf.flags
+  let oldFgcolor = term.format.fgcolor
+  let oldBgcolor = term.format.bgcolor
+  let oldFlags = term.format.flags
+  if oldFlags != flags:
+    # if either
+    # * both fgcolor and bgcolor are the default, or
+    # * both are being changed,
+    # then we can use a general reset when new flags are empty.
+    if flags == {} and (fgcolor != oldFgcolor and bgcolor != oldBgcolor or
+        fgcolor == defaultColor and bgcolor == defaultColor):
+      ?term.resetFormat()
+    else:
+      let flagsUnset = oldFlags - flags
+      let flagsSet = flags - oldFlags
+      var first = true
+      const DivMap = [false: ";", true: CSI]
+      for flag in FormatFlag:
+        if flag in flagsUnset:
+          ?term.write(DivMap[first])
+          ?term.write(FormatCodes[flag].e)
+          first = false
+        elif flag in flagsSet:
+          ?term.write(DivMap[first])
+          ?term.write(FormatCodes[flag].s)
+          first = false
+      ?term.write('m')
+  if fgcolor != oldFgcolor:
+    ?term.writeColorSGR(fgcolor, bgmod = 0)
+  if bgcolor != oldBgcolor:
+    ?term.writeColorSGR(bgcolor, bgmod = 10)
+  term.format = cellf
   ok()
 
 proc hasTitle(term: Terminal): bool =
@@ -1574,7 +1581,6 @@ proc fullDraw(term: Terminal): Opt[void] =
 proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
     bgcolor: CellColor): Opt[void] =
   ?term.setScrollArea(1, scrollBottom) # may move cursor to 0, 0
-  ?term.resetFormat()
   # BCE to the buffer's background color to reduce visibility of tearing.
   ?term.processFormat(initFormat(bgcolor, defaultColor, {}))
   if term.imageMode == imSixel and term.fastScrollTodo and
@@ -1596,7 +1602,6 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
     for i in countdown(0, scroll + 1):
       ?term.cursorPrevLineBegin()
       ?term.drawLine(0, i - scroll - 1)
-      ?term.clearEnd()
     return term.cursorLineBegin()
   # scroll down
   ?term.cursorGoto(0, scrollBottom - 1)
@@ -1620,7 +1625,6 @@ proc partialDraw(term: Terminal; scrollBottom: int; bgcolor: CellColor):
     ?term.hideCursor()
     ?term.resetScrollArea()
     ?term.cursorGoto(cx, y)
-    ?term.resetFormat()
     ?term.drawLine(cx, y)
   ok()
 
@@ -1634,8 +1638,10 @@ proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
         # if there is a change, we have to start from the last x with
         # a string (otherwise we might overwrite half of a double-width char)
         lastx = lx
-      if cell != term.canvas[i]:
-        term.canvas[i] = cell
+      let format = term.reduceFormat(cell.format)
+      if format != term.canvas[i].format or cell.str != term.canvas[i].str:
+        term.canvas[i].str = cell.str
+        term.canvas[i].format = format
         term.lineDamage[ly] = min(term.lineDamage[ly], lastx)
 
 proc getCurrentBgcolor*(term: Terminal): CellColor =
