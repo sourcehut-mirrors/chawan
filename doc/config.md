@@ -8,7 +8,6 @@ Chawan supports configuration of various options like keybindings, user
 stylesheets, site preferences, etc.  The configuration format is similar to
 toml, with the following exceptions:
 
-* Inline tables may span across multiple lines.
 * Regular tables (`[table]`) and inline tables (`table = {}`) have different
   semantics.  The first is additive, meaning default values are not removed.
   The second is destructive, and clears all default definitions in the table
@@ -188,8 +187,8 @@ users (e.g. querying the window's size.) This may achieve better
 compatibility with websites that behave like applications, at the cost
 of reduced privacy.
 <p>
-For security reasons, users are encouraged to selectively enable
-JavaScript with `[[siteconf]]` instead of using this setting.</td>
+For security and performance reasons, users are encouraged to selectively
+enable JavaScript with `[[siteconf]]` instead of using this setting.</td>
 </tr>
 
 <tr>

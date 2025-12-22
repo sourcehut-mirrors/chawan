@@ -8,8 +8,6 @@ stylesheets, site preferences, etc.
 The configuration format is similar to toml, with the following
 exceptions:
 .IP \(bu 2
-Inline tables may span across multiple lines.
-.IP \(bu 2
 Regular tables (\f[CR][table]\f[R]) and inline tables
 (\f[CR]table = {}\f[R]) have different semantics.
 The first is additive, meaning default values are not removed.
@@ -187,8 +185,9 @@ fingerprint users (e.g.\ querying the window\(cqs size.)
 This may achieve better compatibility with websites that behave like
 applications, at the cost of reduced privacy.
 .PP
-For security reasons, users are encouraged to selectively enable
-JavaScript with \f[CR][[siteconf]]\f[R] instead of using this setting.
+For security and performance reasons, users are encouraged to
+selectively enable JavaScript with \f[CR][[siteconf]]\f[R] instead of
+using this setting.
 T}
 _
 T{
