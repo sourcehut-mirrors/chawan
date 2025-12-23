@@ -818,128 +818,135 @@ type
   ReflectEntry = object
     attrname: StaticAtom
     funcname: StaticAtom
-    tags: set[TagType]
-    case t: ReflectType
-    of rtLong:
-      i: int32
-    of rtUlong, rtUlongGz:
-      u: uint32
-    of rtDoubleGz:
-      f: float32
-    of rtFunction:
-      ctype: StaticAtom
-    else: discard
+    t: ReflectType
+    u: uint32 # 32 bits of opaque associated data (mostly default values)
 
-template toset(ts: openArray[TagType]): set[TagType] =
-  var tags: system.set[TagType] = {}
-  for tag in ts:
-    tags.incl(tag)
-  tags
+  ReflectEntryTag = object
+    tags: seq[TagType]
+    e: ReflectEntry
 
-proc makes(name: StaticAtom; ts: set[TagType]): ReflectEntry =
-  ReflectEntry(
-    attrname: name,
-    funcname: name,
-    t: rtStr,
-    tags: ts
+proc makes(attrname, funcname: StaticAtom; ts: varargs[TagType]):
+    ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: attrname,
+      funcname: funcname,
+      t: rtStr,
+    )
   )
 
-proc makes(attrname, funcname: StaticAtom; ts: set[TagType]): ReflectEntry =
-  ReflectEntry(
-    attrname: attrname,
-    funcname: funcname,
-    t: rtStr,
-    tags: ts
+proc makes(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
+  makes(name, name, ts)
+
+proc makeurl(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: name,
+      funcname: name,
+      t: rtUrl,
+    )
   )
 
-proc makes(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
-  makes(name, toset(ts))
-
-proc makes(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
-  makes(attrname, funcname, toset(ts))
-
-proc makeurl(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
-  ReflectEntry(
-    attrname: name,
-    funcname: name,
-    t: rtUrl,
-    tags: toset(ts)
+proc makeb(attrname, funcname: StaticAtom; ts: varargs[TagType]):
+    ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: attrname,
+      funcname: funcname,
+      t: rtBool,
+    )
   )
 
-proc makeb(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
-  ReflectEntry(
-    attrname: attrname,
-    funcname: funcname,
-    t: rtBool,
-    tags: toset(ts)
-  )
-
-proc makeb(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
+proc makeb(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
   makeb(name, name, ts)
 
 proc makeul(name: StaticAtom; ts: varargs[TagType]; default = 0u32):
-    ReflectEntry =
-  ReflectEntry(
-    attrname: name,
-    funcname: name,
-    t: rtUlong,
-    tags: toset(ts),
-    u: default
+    ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: name,
+      funcname: name,
+      t: rtUlong,
+      u: default
+    )
   )
 
 proc makeulgz(name: StaticAtom; ts: varargs[TagType]; default = 0u32):
-    ReflectEntry =
-  ReflectEntry(
-    attrname: name,
-    funcname: name,
-    t: rtUlongGz,
-    tags: toset(ts),
-    u: default
+    ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: name,
+      funcname: name,
+      t: rtUlongGz,
+      u: default
+    )
   )
 
-proc makef(name, ctype: StaticAtom): ReflectEntry =
-  ReflectEntry(
-    attrname: name,
-    funcname: name,
-    t: rtFunction,
-    tags: AllTagTypes,
-    ctype: ctype
+proc makef(name, ctype: StaticAtom): ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @[],
+    e: ReflectEntry(
+      attrname: name,
+      funcname: name,
+      t: rtFunction,
+      u: uint32(ctype)
+    )
   )
 
 proc makerp(attrName, funcName: StaticAtom; ts: varargs[TagType]):
-    ReflectEntry =
-  ReflectEntry(
-    attrname: attrName,
-    funcname: funcName,
-    t: rtReferrerPolicy,
-    tags: toset(ts)
+    ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: attrName,
+      funcname: funcName,
+      t: rtReferrerPolicy,
+    )
   )
 
 proc makeco(attrName, funcName: StaticAtom; ts: varargs[TagType]):
-    ReflectEntry =
-  ReflectEntry(
-    attrname: attrName,
-    funcname: funcName,
-    t: rtCrossOrigin,
-    tags: toset(ts)
+    ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: attrName,
+      funcname: funcName,
+      t: rtCrossOrigin,
+    )
   )
 
-proc makem(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
-  ReflectEntry(
-    attrname: attrname,
-    funcname: funcname,
-    t: rtMethod,
-    tags: toset(ts)
+proc makem(attrname, funcname: StaticAtom; ts: varargs[TagType]):
+    ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(
+      attrname: attrname,
+      funcname: funcname,
+      t: rtMethod
+    )
   )
 
-proc makedgz(name: StaticAtom; t: TagType; f: float32): ReflectEntry =
-  ReflectEntry(attrname: name, funcname: name, t: rtDoubleGz, f: f, tags: {t})
+proc makedgz(name: StaticAtom; t: TagType; u: uint32): ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @[t],
+    e: ReflectEntry(
+      attrname: name,
+      funcname: name,
+      t: rtDoubleGz,
+      u: u,
+    )
+  )
 
-proc makem(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
+proc makem(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
   makem(name, name, ts)
 
 # Note: this table only works for tag types with a registered interface.
-const ReflectTable0 = [
+const ReflectMap0 = [
   # non-global attributes
   makes(satTarget, TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
   makes(satHref, TAG_LINK),
@@ -982,7 +989,7 @@ const ReflectTable0 = [
   makedgz(satValue, TAG_PROGRESS, 0),
   makedgz(satMax, TAG_PROGRESS, 1),
   # super-global attributes
-  makes(satClass, satClassName, AllTagTypes),
+  makes(satClass, satClassName),
   makef(satOnclick, satClick),
   makef(satOninput, satInput),
   makef(satOnchange, satChange),
@@ -993,10 +1000,15 @@ const ReflectTable0 = [
   makef(satOnsubmit, satSubmit),
   makef(satOncontextmenu, satContextmenu),
   makef(satOndblclick, satDblclick),
-  makes(satSlot, AllTagTypes),
-  makes(satTitle, AllTagTypes),
-  makes(satLang, AllTagTypes),
+  makes(satSlot),
+  makes(satTitle),
+  makes(satLang),
 ]
+
+static:
+  # In the reflection magic we allocate 9 bits to attribute names and 7 bits
+  # to class names.
+  doAssert ReflectMap0.len < 512
 
 const LabelableElements = {
   # input only if type not hidden
@@ -3287,39 +3299,51 @@ proc replaceChildren(ctx: JSContext; this: Document;
     nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
 
-const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (proc(): (
+const (ReflectMap, TagReflectMap, ReflectAllStartIndex) = (proc(): (
     seq[ReflectEntry],
-    Table[TagType, seq[int16]],
+    array[TagType, seq[int16]],
     int16) =
   var i: int16 = 0
-  while i < ReflectTable0.len:
-    let x = ReflectTable0[i]
-    result[0].add(x)
-    if x.tags == AllTagTypes:
+  while i < ReflectMap0.len:
+    let x = ReflectMap0[i]
+    result[0].add(x.e)
+    if x.tags.len == 0:
       break
-    for tag in result[0][i].tags:
-      result[1].mgetOrPut(tag, @[]).add(i)
-    assert result[0][i].tags.len != 0
+    for tag in x.tags:
+      result[1][tag].add(i)
     inc i
   result[2] = i
-  while i < ReflectTable0.len:
-    let x = ReflectTable0[i]
-    assert x.tags == AllTagTypes
-    result[0].add(x)
+  while i < ReflectMap0.len:
+    let x = ReflectMap0[i]
+    assert x.tags.len == 0
+    result[0].add(x.e)
     inc i
 )()
 
 proc parseFormMethod(s: string): FormMethod =
   return parseEnumNoCase[FormMethod](s).get(fmGet)
 
-proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
-    {.cdecl.} =
-  let entry = ReflectTable[uint16(magic)]
+proc getReflectElement(ctx: JSContext; this: JSValueConst; magic: cint):
+    HTMLElement =
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  let magic = uint16(magic)
+  let myClass = JS_GetClassID(this)
+  let parent = rtOpaque.classes[myClass].parent
+  let class = JSClassID(magic shr 9) + parent
+  if class != parent and class != myClass:
+    JS_ThrowTypeError(ctx, "invalid tag type")
+    return nil
   var element: HTMLElement
   if ctx.fromJS(this, element).isErr:
+    return nil
+  return element
+
+proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
+    {.cdecl.} =
+  let entry = ReflectMap[uint16(magic) and 0x1FF]
+  let element = ctx.getReflectElement(this, magic)
+  if element == nil:
     return JS_EXCEPTION
-  if element.tagType notin entry.tags:
-    return JS_ThrowTypeError(ctx, "invalid tag type")
   case entry.t
   of rtStr: return ctx.toJS(element.attr(entry.attrname))
   of rtUrl:
@@ -3341,20 +3365,24 @@ proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
       return ctx.toJS("")
     return ctx.toJS($parseFormMethod(s))
   of rtBool: return ctx.toJS(element.attrb(entry.attrname))
-  of rtLong: return ctx.toJS(element.attrl(entry.attrname).get(entry.i))
+  of rtLong:
+    let i = cast[int32](entry.u)
+    return ctx.toJS(element.attrl(entry.attrname).get(i))
   of rtUlong: return ctx.toJS(element.attrul(entry.attrname).get(entry.u))
   of rtUlongGz: return ctx.toJS(element.attrulgz(entry.attrname).get(entry.u))
-  of rtDoubleGz: return ctx.toJS(element.attrdgz(entry.attrname).get(entry.f))
+  of rtDoubleGz:
+    # we do not have fractional default values, so we actually store them
+    # as uint32 and convert here.
+    let f = float32(entry.u)
+    return ctx.toJS(element.attrdgz(entry.attrname).get(f))
   of rtFunction: return JS_NULL
 
-proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
-    {.cdecl.} =
-  var element: Element
-  if ctx.fromJS(this, element).isErr:
+proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
+    JSValue {.cdecl.} =
+  let entry = ReflectMap[uint16(magic) and 0x1FF]
+  let element = ctx.getReflectElement(this, magic)
+  if element == nil:
     return JS_EXCEPTION
-  let entry = ReflectTable[uint16(magic)]
-  if element.tagType notin entry.tags:
-    return JS_ThrowTypeError(ctx, "invalid tag type")
   case entry.t
   of rtStr, rtUrl, rtReferrerPolicy, rtMethod:
     var x: string
@@ -3397,14 +3425,13 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
       return JS_ThrowTypeError(ctx, "double expected")
     element.attrd(entry.attrname, x)
   of rtFunction:
-    return ctx.eventReflectSet0(element, val, magic, jsReflectSet, entry.ctype)
+    let ctype = cast[StaticAtom](entry.u)
+    return ctx.eventReflectSet0(element, val, magic, jsReflectSet, ctype)
   return JS_DupValue(ctx, val)
 
 proc findMagic(ctype: StaticAtom): cint =
-  for i in ReflectAllStartIndex ..< int16(ReflectTable.len):
-    let entry = ReflectTable[i]
-    assert entry.tags == AllTagTypes
-    if ReflectTable[i].t == rtFunction and ReflectTable[i].ctype == ctype:
+  for i in ReflectAllStartIndex ..< int16(ReflectMap.len):
+    if ReflectMap[i].t == rtFunction and ReflectMap[i].u == uint32(ctype):
       return cint(i)
   -1
 
@@ -6799,23 +6826,21 @@ proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
 
 proc addElementReflection(ctx: JSContext; class: JSClassID) =
   let proto = JS_GetClassProto(ctx, class)
-  for i in ReflectAllStartIndex ..< int16(ReflectTable.len):
-    let name = $ReflectTable[i].funcname
+  for i in ReflectAllStartIndex ..< int16(ReflectMap.len):
+    let name = $ReflectMap[i].funcname
     if ctx.addReflectFunction(proto, name, jsReflectGet, jsReflectSet,
         cint(i)).isErr:
       JS_FreeValue(ctx, proto)
       return
   JS_FreeValue(ctx, proto)
 
-proc getElementAttributes(tags: openArray[TagType]): seq[int16] =
-  result = TagReflectMap.getOrDefault(tags[0])
-
 proc addAttributeReflection(ctx: JSContext; class: JSClassID;
-    attrs: openArray[int16]) =
+    attrs: openArray[int16]; base: JSClassID) =
   let proto = JS_GetClassProto(ctx, class)
+  let diff = (uint16(class) - uint16(base)) shl 9
   for i in attrs:
-    if ctx.addReflectFunction(proto, $ReflectTable[i].funcname, jsReflectGet,
-        jsReflectSet, cint(i)).isErr:
+    if ctx.addReflectFunction(proto, $ReflectMap[i].funcname, jsReflectGet,
+        jsReflectSet, cint(diff or uint16(i))).isErr:
       JS_FreeValue(ctx, proto)
       return
   JS_FreeValue(ctx, proto)
@@ -6827,9 +6852,9 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   template register(t: typed; tags: openArray[TagType]) =
     let class = ctx.registerType(t, parent = htmlElementCID)
     discard class
-    const attrs = getElementAttributes(tags)
+    const attrs = TagReflectMap[tags[0]]
     when attrs.len > 0:
-      ctx.addAttributeReflection(class, attrs)
+      ctx.addAttributeReflection(class, attrs, htmlElementCID)
   template register(t: typed; tag: TagType) =
     register(t, [tag])
   register(HTMLInputElement, TAG_INPUT)
@@ -6876,6 +6901,8 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLSourceElement, TAG_SOURCE)
   register(HTMLModElement, [TAG_INS, TAG_DEL])
   register(HTMLProgressElement, TAG_PROGRESS)
+  # 44/127 (warning: the 128th interface doesn't fit in the top 7 bits of
+  # the getter/setter magic)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 

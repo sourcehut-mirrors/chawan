@@ -11,6 +11,7 @@
 <button id=h formmethod=asdf>
 </form>
 <progress id=i value=.5 max=0>test</progress>
+<area id=j target="abcd">test test</area>
 <script>
 const x = document.getElementById("abc")
 const a = document.getElementsByTagName("a")[0];
@@ -75,6 +76,8 @@ assertEquals(i.max, 9.5);
 	assertThrows(() => i.max = dummy, RangeError);
 }
 assertThrows(() => i.max = "test", TypeError);
+const j = document.getElementById("j");
+assertThrows(() => a.__lookupGetter__("target").apply(j), TypeError);
 for (const it of [a, b, c, d, e, f, g, h, i])
 	it.remove();
 x.textContent = "Success";
