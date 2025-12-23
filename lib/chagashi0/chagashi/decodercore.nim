@@ -49,6 +49,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/bitops
 
 import charset_map
 
@@ -69,12 +70,10 @@ type
     pi*: int
 
   TextDecoderUTF8* = ref object of TextDecoder
-    bounds: Slice[uint8]
+    bounds: uint8
     flag: TextDecoderResult
-    buf: array[3, uint8]
-    seen: uint8
     needed: uint8
-    bufLen: uint8
+    buf: uint32
     ppi: int
 
   TextDecoderGB18030* = ref object of TextDecoder
@@ -217,6 +216,64 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
     c = elem.ucs
   c + p - offset
 
+# UTF-8 table:
+# 00..7F: ASCII
+# 80..BF: continuation byte
+# C0..C1: bad, consume 1
+# C2..DF: good, consume 1
+# E0    : good, consume 2 with first >= A0
+# E1..EC: good, consume 2
+# ED    : good, consume 2 with first < A0
+# EE..EF: good, consume 2
+# F0    : good, consume 3 with first >= 90
+# F1..F3: good, consume 3
+# F4    : good, consume 3 with first < 90
+# F5..FF: bad, consume 1
+const
+  u8tConsume1 = 1'u8 shl 0 # consume1 + consume2 = needed
+  u8tConsume2 = 1'u8 shl 1
+  u8tCont = 1'u8 shl 2
+  u8tBounds0 = 1'u8 shl 3
+  u8tBounds1 = 1'u8 shl 4
+  u8tBounds2 = 1'u8 shl 5
+  u8tBadLead = 1'u8 shl 7
+
+  u8tConsume3 = u8tConsume1 or u8tConsume2
+  u8tLt90 = u8tBounds0 # c < 90
+  u8tGe90 = u8tBounds1 # c >= 90
+  u8tGeA0 = u8tBounds2 # c >= A0
+  u8tLtA0 = u8tBounds0 or u8tBounds1 # c < A0
+  # unused = u8tBounds0 or u8tBounds2
+
+  u8tBoundsMask = u8tBounds0 or u8tBounds1 or u8tBounds2 or u8tBadLead
+
+const Utf8Table = block:
+  var res: array[uint8, uint8]
+  for u in uint8.low..uint8.high:
+    case u
+    of 0x00'u8 .. 0x7F'u8: res[u] = 0 # ASCII
+    of 0x80'u8 .. 0xBF'u8:
+      res[u] = u8tCont or u8tConsume1
+      if u < 0x90:
+        res[u] = res[u] or u8tLt90
+      else:
+        res[u] = res[u] or u8tGe90
+      if u < 0xA0:
+        res[u] = res[u] or u8tLtA0
+      else:
+        res[u] = res[u] or u8tGeA0
+    of 0xC0'u8 .. 0xC1'u8: res[u] = u8tConsume1 or u8tBadLead
+    of 0xC2'u8 .. 0xDF'u8: res[u] = u8tConsume1
+    of 0xE0'u8: res[u] = u8tConsume2 or u8tGeA0
+    of 0xE1'u8 .. 0xEC'u8: res[u] = u8tConsume2
+    of 0xED'u8: res[u] = u8tConsume2 or u8tLtA0
+    of 0xEE'u8 .. 0xEF'u8: res[u] = u8tConsume2
+    of 0xF0'u8: res[u] = u8tConsume3 or u8tGe90
+    of 0xF1'u8 .. 0xF3: res[u] = u8tConsume3
+    of 0xF4'u8: res[u] = u8tConsume3 or u8tLt90
+    of 0xF5'u8 .. 0xFF: res[u] = u8tConsume1 or u8tBadLead
+  res
+
 method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
   var bounds = td.bounds
@@ -224,9 +281,7 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
   var i = td.i
   var ri = td.ri
   var needed = td.needed
-  var seen = td.seen
-  var bufLen = td.bufLen
-  let obuf = td.buf
+  var obuf = td.buf
   var buf = obuf
   let ppi = td.ppi
   if flag == tdrDone:
@@ -237,71 +292,51 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
         if b <= 0x7F:
           ri = ni
         else:
-          bounds = 0x80u8 .. 0xBFu8
-          case b
-          of 0xC2u8 .. 0xDFu8:
-            needed = 1
-          of 0xE0u8 .. 0xEFu8:
-            if b == 0xE0: bounds.a = 0xA0
-            elif b == 0xED: bounds.b = 0x9F
-            needed = 2
-          of 0xF0u8 .. 0xF4u8:
-            if b == 0xF0: bounds.a = 0x90
-            elif b == 0xF4: bounds.b = 0x8F
-            needed = 3
-          else:
-            # needs consume
-            needed = 1
-            bounds = 1u8 .. 0u8
-          buf[0] = b
+          let t = Utf8Table[b]
+          needed = t and 3
+          bounds = (t and u8tBoundsMask) or ((t and u8tCont) shl 5) or u8tCont
+          buf = b
       else:
-        if b notin bounds:
+        let t = Utf8Table[b]
+        if (t and bounds) != bounds:
           needed = 0
-          seen = 0
-          bounds = 0x80u8 .. 0xBFu8
+          buf = 0
           # prepend, no consume
           flag = tdrError
           break
-        inc seen
-        if seen == needed:
-          needed = 0
-          seen = 0
+        dec needed
+        if needed == 0:
+          buf = 0
           ri = ni
         else:
-          buf[seen] = b
-        bounds = 0x80u8 .. 0xBFu8
+          buf = (buf shl 8) or b
+        bounds = u8tCont
       i = ni
-  td.bounds = bounds
+  if obuf != 0 and ppi == 0 and ri != 0:
+    let L = (uint8(fastLog2(obuf)) + 7) shr 3
+    let n2 = n + int(L)
+    if n2 > oq.len:
+      return tdrReqOutput
+    for i in countdown(int(L - 1), 0):
+      oq[n + i] = uint8(obuf and 0xFF)
+      obuf = obuf shr 8
+    n = n2
   td.ri = ri
   td.i = i
   td.needed = needed
-  td.seen = seen
-  td.bufLen = bufLen
-  if bufLen > 0 and ppi == 0 and ri != 0:
-    let L = int(bufLen)
-    if L > oq.len:
-      return tdrReqOutput
-    for i in 0 ..< L:
-      oq[n] = obuf[i]
-      inc n
+  td.bounds = bounds
+  td.buf = buf
   if ppi < ri:
-    td.bufLen = seen
     td.ppi = i
     td.pi = ppi
     td.flag = flag
-    td.buf = buf
     return tdrReadInput
   td.flag = tdrDone
   case flag
   of tdrError:
-    td.bufLen = 0
     td.ppi = i
     td.pi = ppi
   of tdrDone:
-    if needed > 0:
-      td.buf = buf
-      bufLen = seen + 1
-    td.bufLen = bufLen
     td.ri = 0
     td.i = 0
     td.ppi = 0
@@ -313,13 +348,12 @@ method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
   if td.needed != 0:
     result = tdfrError
   td.needed = 0
-  td.seen = 0
   td.i = 0
   td.pi = 0
   td.ri = 0
   td.ppi = 0
-  td.bufLen = 0
-  td.bounds = 0x80u8 .. 0xBFu8
+  td.buf = 0
+  td.bounds = 0
 
 proc findInRuns(runs: openArray[uint32]; offset, p: uint16): uint16 =
   let i = runs.upperBound(p, proc(x: uint32; y: uint16): int =
