@@ -68,7 +68,7 @@ proc initCGIError*(code: ConnectionError; s: cstring = nil): CGIError =
 template errCGIError*(code: ConnectionError; s: cstring = nil): untyped =
   err(initCGIError(code, s))
 
-proc openSocket(host, port: string; res: var ptr AddrInfo):
+proc openSocket(host, port: string; res: var ptr AddrInfo; nagle: bool):
     CGIResult[SocketHandle] =
   var err: cint
   for family in [AF_INET, AF_INET6, AF_UNSPEC]:
@@ -85,12 +85,17 @@ proc openSocket(host, port: string; res: var ptr AddrInfo):
   let sock = socket(res.ai_family, res.ai_socktype, res.ai_protocol)
   if cint(sock) < 0:
     return errCGIError(ceInternalError, "could not open socket")
+  if not nagle:
+    var value = cint(1)
+    let valueLen = SockLen(sizeof(value))
+    if setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, addr value, valueLen) < 0:
+      return errCGIError(ceInternalError, "could not set TCP_NODELAY")
   ok(sock)
 
-proc connectSimpleSocket(host, port: string; outIpv6: var bool):
+proc connectSimpleSocket(host, port: string; outIpv6: var bool; nagle: bool):
     CGIResult[PosixStream] =
   var res: ptr AddrInfo
-  let sock = ?openSocket(host, port, res)
+  let sock = ?openSocket(host, port, res, nagle)
   let ps = newPosixStream(sock)
   if connect(sock, res.ai_addr, res.ai_addrlen) < 0:
     ps.sclose()
@@ -183,7 +188,8 @@ proc connectSocks5Socket(host, port, proxyHost, proxyPort,
     proxyUser, proxyPass: string; outIpv6: var bool):
     CGIResult[PosixStream] =
   var dummy = false
-  let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy).toProxyResult()
+  let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy, nagle = true)
+    .toProxyResult()
   const NoAuth = "\x05\x01\x00"
   const WithAuth = "\x05\x02\x00\x02"
   if ps.writeLoop(if proxyUser != "": NoAuth else: WithAuth).isErr:
@@ -198,7 +204,8 @@ proc connectSocks5Socket(host, port, proxyHost, proxyPort,
 proc connectHTTPSocket(host, port, proxyHost, proxyPort,
     proxyUser, proxyPass: string): CGIResult[PosixStream] =
   var dummy = false
-  let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy).toProxyResult()
+  let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy, nagle = true)
+    .toProxyResult()
   var buf = "CONNECT " & host & ':' & port & " HTTP/1.1\r\n"
   buf &= "Host: " & host & ':' & port & "\r\n"
   if proxyUser != "" or proxyPass != "":
@@ -280,7 +287,7 @@ proc connectSocket*(host, port: string; outIpv6: var bool):
   let proxy = getEnvEmpty("ALL_PROXY")
   if proxy != "":
     return connectProxySocket(host, port, proxy, outIpv6)
-  return connectSimpleSocket(host, port, outIpv6)
+  return connectSimpleSocket(host, port, outIpv6, nagle = false)
 
 proc connectSocket*(host, port: string): CGIResult[PosixStream] =
   var dummy = false
