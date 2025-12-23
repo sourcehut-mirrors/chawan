@@ -48,8 +48,9 @@ proc exec*(regex: Regex; s: openArray[char]; start = 0; length = -1;
     return RegexResult()
   let L = cint(length)
   let bytecode = cast[ptr uint8](unsafeAddr regex.bytecode[0])
+  let allocCount = lre_get_alloc_count(bytecode)
+  var capture = newSeq[ptr uint8](allocCount)
   let captureCount = lre_get_capture_count(bytecode)
-  var capture = newSeq[ptr uint8](captureCount * 2)
   let pcapture = if capture.len > 0: addr capture[0] else: nil
   let base = cast[ptr uint8](unsafeAddr s[0])
   let flags = lre_get_flags(bytecode).toLREFlags

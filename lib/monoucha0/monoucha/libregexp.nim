@@ -70,8 +70,8 @@ proc lre_compile*(plen: var cint; error_msg: cstring; error_msg_size: cint;
 proc lre_exec*(capture: ptr ptr uint8; bc_buf, cbuf: ptr uint8;
   cindex, clen, cbuf_type: cint; opaque: pointer): cint
 
+proc lre_get_alloc_count*(bc_buf: ptr uint8): cint
 proc lre_get_capture_count*(bc_buf: ptr uint8): cint
-
 proc lre_get_flags*(bc_buf: ptr uint8): cint
 
 proc lre_is_space_non_ascii*(c: uint32): JS_BOOL
