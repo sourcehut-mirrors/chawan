@@ -94,13 +94,12 @@ type
     imageId: int
     dims: CanvasImageDimensions
     damaged: bool
-    marked*: bool
-    dead: bool
     transparent: bool
     scrolled: bool # sixel only: set if screen was scrolled since printing
     preludeLen: int
-    kittyId: int
+    kittyId: uint
     data: Blob
+    next: CanvasImage
 
   TerminalPage {.acyclic.} = ref object
     a: seq[char] # bytes to flush
@@ -137,8 +136,10 @@ type
     tdctx: TextDecoderContext
     eparser: EventParser
     canvas: seq[FixedCell]
-    canvasImages*: seq[CanvasImage]
-    imagesToClear*: seq[CanvasImage]
+    canvasImagesHead: CanvasImage
+    canvasImagesTmpHead: CanvasImage
+    canvasImagesTmpTail: CanvasImage
+    kittyImagesToClear: seq[uint] # Kitty only; vector of image ids
     lineDamage: seq[int]
     attrs*: WindowAttributes
     formatMode: set[FormatFlag]
@@ -168,7 +169,7 @@ type
     pageTail: TerminalPage # last output buffer
     registerCb: proc(fd: int) {.raises: [].} # callback to register ostream
     sixelRegisterNum*: uint16
-    kittyId: int # counter for kitty image (*not* placement) ids.
+    kittyId: uint # counter for kitty image (*not* placement) ids.
     cursorx: uint32
     cursory: uint32
     scrollTodo: int # lines to scroll (negative = up, positive = down)
@@ -292,6 +293,9 @@ type
 
 # Forward declarations
 proc windowChange(term: Terminal)
+proc updateCanvasImage(term: Terminal; image: CanvasImage;
+  dims: CanvasImageDimensions; redrawNext: bool; maxh: int): bool
+proc clearImages*(term: Terminal; maxh: int)
 
 # Built-in terminal capability database.
 #
@@ -1708,23 +1712,52 @@ proc applyConfig(term: Terminal) =
   term.tdctx = initTextDecoderContext(term.cs)
   term.applyConfigDimensions()
 
-proc findImage*(term: Terminal; pid, imageId: int; dims: CanvasImageDimensions;
-    pass2: bool): CanvasImage =
-  # pass2 is set if the first pass found a damaged scrolled image (usually
-  # because we scrolled out some part and scrolled in another part).
+iterator canvasImages(term: Terminal): CanvasImage =
+  var image = term.canvasImagesHead
+  while image != nil:
+    yield image
+    image = image.next
+
+proc addImage*(term: Terminal; image: CanvasImage) =
+  if term.canvasImagesTmpTail == nil:
+    term.canvasImagesTmpHead = image
+  else:
+    term.canvasImagesTmpTail.next = image
+  term.canvasImagesTmpTail = image
+
+proc takeImage*(term: Terminal; pid, imageId, bufHeight: int;
+    dims: CanvasImageDimensions; redrawNext: bool): CanvasImage =
+  # pass2 is set after finding a damaged scrolled image (usually because we
+  # scrolled out some part and scrolled in another part).
   # In this case, we can't just reuse the CanvasImage we found because that
   # would result in displaying an image with the modified (scrolled) erry.
   # So we just search again.
   #TODO this is way too convoluted, I'm sure there's a better way...
-  for it in term.canvasImages:
-    if not it.dead and it.pid == pid and it.imageId == imageId and
+  var pass2 = false
+  var it = term.canvasImagesHead
+  var prev: CanvasImage = nil
+  while it != nil:
+    if it.pid == pid and it.imageId == imageId and
         it.dims.width == dims.width and it.dims.height == dims.height and
         it.dims.rx == dims.rx and it.dims.ry == dims.ry and
         (term.imageMode != imSixel or
           (not pass2 and it.dims.erry == dims.erry or
             pass2 and it.dims.erry2 == dims.erry) and
           it.dims.dispw == dims.dispw and it.dims.offx == dims.offx):
+      if not pass2 and not term.updateCanvasImage(it, dims, redrawNext,
+          bufHeight):
+        # retry with the right y error
+        pass2 = true
+        it = term.canvasImagesHead
+        continue
+      if prev != nil:
+        prev.next = it.next
+      else:
+        term.canvasImagesHead = it.next
+      it.next = nil
       return it
+    prev = it
+    it = it.next
   return nil
 
 proc positionImage*(term: Terminal; rx, ry, x, y, offx2, offy2, width, height,
@@ -1783,58 +1816,56 @@ proc clearImage(term: Terminal; image: CanvasImage; maxh: int) =
     for y in max(image.dims.y, 0) ..< ey:
       term.lineDamage[y] = min(term.lineDamage[y], x)
   of imKitty:
-    term.imagesToClear.add(image)
+    if image.kittyId != 0:
+      term.kittyImagesToClear.add(image.kittyId)
 
 proc clearImages*(term: Terminal; maxh: int) =
   for image in term.canvasImages:
-    if not image.marked:
-      term.clearImage(image, maxh)
-    image.marked = false
-  term.canvasImages.setLen(0)
+    term.clearImage(image, maxh)
+  term.canvasImagesHead = nil
 
-proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
-  if term.imageMode == imSixel:
-    # we're interested in the last x/y *on screen*.  if damage exceeds that,
-    # then the image is unaffected and there's nothing to do.
-    let lastx = maxw - 1
-    let lasty = maxh - 1
-    let pplerr = term.attrs.ppl - 1
-    let ppcerr = term.attrs.ppc - 1
-    for image in term.canvasImages:
-      # compute the bottom and right borders, rounded in both directions.
-      # if the last column/line doesn't cover a cell, consider it
-      # transparent.
-      let ey0 = min(image.dims.y + (image.dims.height + pplerr) div
-        term.attrs.ppl, lasty)
-      let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, lasty)
-      let x = max(image.dims.x, 0)
-      let mx0 = min(image.dims.x + image.dims.dispw div term.attrs.ppc, lastx)
-      let mx = min(image.dims.x + (image.dims.dispw + ppcerr) div
-        term.attrs.ppc, lastx)
-      for y in max(image.dims.y, 0) ..< ey0:
-        let od = term.lineDamage[y]
-        if od > mx0:
-          continue
-        image.damaged = true
-        if y >= ey1:
-          break
-        if od < x:
-          continue
-        if image.transparent or od in mx0 ..< mx:
-          term.lineDamage[y] = x
-        else:
-          var textFound = false
-          # damage starts inside an opaque image; skip clear (but only if
-          # the damage was not caused by a printing character)
-          let si = y * term.attrs.width
-          for i in si + od ..< si + term.attrs.width:
-            if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
-              textFound = true
-              break
-          if not textFound:
-            term.lineDamage[y] = mx
+proc checkImageDamage(term: Terminal; maxw, maxh: int) =
+  # we're interested in the last x/y *on screen*.  if damage exceeds that,
+  # then the image is unaffected and there's nothing to do.
+  let lastx = maxw - 1
+  let lasty = maxh - 1
+  let pplerr = term.attrs.ppl - 1
+  let ppcerr = term.attrs.ppc - 1
+  for image in term.canvasImages:
+    # compute the bottom and right borders, rounded in both directions.
+    # if the last column/line doesn't cover a cell, consider it
+    # transparent.
+    let ey0 = min(image.dims.y + (image.dims.height + pplerr) div
+      term.attrs.ppl, lasty)
+    let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, lasty)
+    let x = max(image.dims.x, 0)
+    let mx0 = min(image.dims.x + image.dims.dispw div term.attrs.ppc, lastx)
+    let mx = min(image.dims.x + (image.dims.dispw + ppcerr) div
+      term.attrs.ppc, lastx)
+    for y in max(image.dims.y, 0) ..< ey0:
+      let od = term.lineDamage[y]
+      if od > mx0:
+        continue
+      image.damaged = true
+      if y >= ey1:
+        break
+      if od < x:
+        continue
+      if image.transparent or od in mx0 ..< mx:
+        term.lineDamage[y] = x
+      else:
+        var textFound = false
+        # damage starts inside an opaque image; skip clear (but only if
+        # the damage was not caused by a printing character)
+        let si = y * term.attrs.width
+        for i in si + od ..< si + term.attrs.width:
+          if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
+            textFound = true
+            break
+        if not textFound:
+          term.lineDamage[y] = mx
 
-proc updateCanvasImage*(term: Terminal; image: CanvasImage;
+proc updateCanvasImage(term: Terminal; image: CanvasImage;
     dims: CanvasImageDimensions; redrawNext: bool; maxh: int): bool =
   # reuse image on screen
   #TODO we could skip lots of repaints with a slightly less braindead
@@ -1852,10 +1883,14 @@ proc updateCanvasImage*(term: Terminal; image: CanvasImage;
     if term.imageMode == imSixel:
       term.clearImage(image, maxh)
     image.dims = dims
-  # only mark old images; new images will not be checked until the next
-  # initImages call.
-  image.marked = true
   true
+
+proc updateImages*(term: Terminal; bufWidth, bufHeight: int) =
+  term.clearImages(bufHeight)
+  term.canvasImagesHead = move(term.canvasImagesTmpHead)
+  term.canvasImagesTmpTail = nil
+  if term.imageMode == imSixel:
+    term.checkImageDamage(bufWidth, bufHeight)
 
 proc newCanvasImage*(data: Blob; pid, imageId, preludeLen: int;
     dims: CanvasImageDimensions; transparent: bool): CanvasImage =
@@ -1962,6 +1997,8 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
     outs &= ",i=" & $image.kittyId & ",a=p;" & ST
     return term.write(outs)
   inc term.kittyId # skip i=0
+  if term.kittyId == 0: # unsigned wraparound
+    inc term.kittyId
   image.kittyId = term.kittyId
   outs &= ",i=" & $image.kittyId
   const MaxBytes = 4096 * 3 div 4
@@ -1987,12 +2024,10 @@ proc outputImages(term: Terminal): Opt[void] =
   if term.imageMode == imKitty:
     # clean up unused kitty images
     var s = ""
-    for image in term.imagesToClear:
-      if image.kittyId == 0:
-        continue # maybe it was never displayed...
-      s &= APC & "Ga=d,d=I,i=" & $image.kittyId & ",p=1,q=2;" & ST
+    for id in term.kittyImagesToClear:
+      s &= APC & "Ga=d,d=I,i=" & $id & ",p=1,q=2;" & ST
     ?term.write(s)
-    term.imagesToClear.setLen(0)
+    term.kittyImagesToClear.setLen(0)
   for image in term.canvasImages:
     if image.damaged:
       assert image.dims.dispw > 0 and image.dims.disph > 0
@@ -2011,14 +2046,22 @@ proc clearCanvas*(term: Terminal) =
   let maxwpx = term.attrs.widthPx
   let maxh = term.attrs.height - 1
   let maxhpx = maxh * term.attrs.ppl
-  var newImages: seq[CanvasImage] = @[]
-  for image in term.canvasImages:
+  var imagesHead: CanvasImage = nil
+  var imagesTail: CanvasImage = nil
+  var image = term.canvasImagesHead
+  while image != nil:
+    let next = image.next
     if not image.scrolled and term.repositionImage(image, maxwpx, maxhpx):
       image.damaged = true
-      image.marked = true
-      newImages.add(image)
+      image.next = nil
+      if imagesTail == nil:
+        imagesHead = image
+      else:
+        imagesTail.next = image
+      imagesTail = image
+    image = next
   term.clearImages(maxh)
-  term.canvasImages = newImages
+  term.canvasImagesHead = imagesHead
 
 proc queueTitle*(term: Terminal; title: string) =
   if term.title != title:
@@ -2040,17 +2083,23 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
   let maxhpx = scrollBottom * term.attrs.ppl
   let scrolled = term.imageMode == imSixel
   var found = false
-  for image in term.canvasImages.mitems:
-    if image.dead:
-      continue
+  var image = term.canvasImagesHead
+  var prev: CanvasImage = nil
+  while image != nil:
     image.dims.y += n
     image.scrolled = scrolled
     found = true
     let erry = image.dims.erry
     let offy = image.dims.offy
-    if not term.repositionImage(image, maxwpx, maxhpx):
-      image.dead = true
-    elif term.imageMode == imKitty:
+    if not term.repositionImage(image, maxwpx, maxhpx): # no longer visible
+      let next = move(image.next)
+      if prev != nil:
+        prev.next = next
+      else:
+        term.canvasImagesHead = next
+      image = next
+      continue
+    if term.imageMode == imKitty:
       # Kitty exhibits strange behavior on scroll up:
       # * if the image touches the scroll boundary on the bottom, and is
       #   cropped on the top, then the image fails to scroll.
@@ -2062,6 +2111,8 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
     # scroll up does not change offy or erry (the slice's start).
     image.dims.offy = offy
     image.dims.erry = erry
+    prev = image
+    image = image.next
   if found and (n > 1 or term.termType == ttXterm):
     # XTerm can't do single-line scroll-up correctly, see below.
     term.fastScrollTodo = true
@@ -2081,21 +2132,29 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
   let maxhpx = scrollBottom * term.attrs.ppl
   let scrolled = term.imageMode == imSixel
   var found = false
-  for image in term.canvasImages.mitems:
-    if image.dead:
-      continue
+  var image = term.canvasImagesHead
+  var prev: CanvasImage = nil
+  while image != nil:
     found = true
     image.dims.y -= n
     image.scrolled = scrolled
     let disph = image.dims.disph
-    if not term.repositionImage(image, maxwpx, maxhpx):
-      image.dead = true
-    elif term.imageMode == imKitty:
+    if not term.repositionImage(image, maxwpx, maxhpx): # no longer visible
+      let next = move(image.next)
+      if prev != nil:
+        prev.next = next
+      else:
+        term.canvasImagesHead = next
+      image = next
+      continue
+    if term.imageMode == imKitty:
       # scroll down seems to work in Kitty, but not in Ghostty :(
       # so we apply the same workaround.
       image.damaged = true
     # scroll down doesn't change disph (the slice's end).
     image.dims.disph = disph
+    prev = image
+    image = image.next
   if found and n > 1:
     term.fastScrollTodo = true
   term.scrollTodo += n

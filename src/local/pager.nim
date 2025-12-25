@@ -1380,27 +1380,24 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
   container.addCachedImage(cachedImage)
 
 proc initImages(pager: Pager; container: Container) =
-  var newImages: seq[CanvasImage] = @[]
+  let term = pager.term
   var redrawNext = false # redraw images if a new one was loaded before
   let bufWidth = pager.bufWidth
   let bufHeight = pager.bufHeight
   let maxwpx = bufWidth * pager.attrs.ppc
   let maxhpx = bufHeight * pager.attrs.ppl
-  let imageMode = pager.term.imageMode
+  let imageMode = term.imageMode
   let pid = container.process
   for image in container.images:
-    let dims = pager.term.positionImage(image.x, image.y,
-      image.x - container.fromx, image.y - container.fromy,
-      image.offx, image.offy, image.width, image.height, maxwpx, maxhpx)
+    let dims = term.positionImage(image.x, image.y, image.x - container.fromx,
+      image.y - container.fromy, image.offx, image.offy, image.width,
+      image.height, maxwpx, maxhpx)
     if not dims.onScreen:
       continue
     let imageId = image.bmp.imageId
-    var canvasImage = pager.term.findImage(pid, imageId, dims, pass2 = false)
-    if canvasImage != nil and not pager.term.updateCanvasImage(canvasImage,
-        dims, redrawNext, bufHeight):
-      canvasImage = pager.term.findImage(pid, imageId, dims, pass2 = true)
+    let canvasImage = term.takeImage(pid, imageId, bufHeight, dims, redrawNext)
     if canvasImage != nil:
-      newImages.add(canvasImage)
+      term.addImage(canvasImage)
       continue
     let cachedOffx = if imageMode == imSixel: dims.offx else: 0
     let cachedErry = if imageMode == imSixel: dims.erry else: 0
@@ -1414,11 +1411,9 @@ proc initImages(pager: Pager; container: Container) =
     if cached.state == cisLoaded:
       let canvasImage = newCanvasImage(cached.data, pid, imageId,
         cached.preludeLen, dims, cached.transparent)
-      newImages.add(canvasImage)
+      term.addImage(canvasImage)
       redrawNext = true
-  pager.term.clearImages(bufHeight)
-  pager.term.canvasImages = move(newImages)
-  pager.term.checkImageDamage(bufWidth, bufHeight)
+  term.updateImages(bufWidth, bufHeight)
 
 proc getAbsoluteCursorXY(pager: Pager; container: Container): tuple[x, y: int] =
   var cursorx = 0
