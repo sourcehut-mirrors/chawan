@@ -3,7 +3,7 @@ import monoucha/dtoa
 # n: start pointer -> end pointer
 # dtoa assumes NUL-termination, so s must be a cstring.
 # returns NaN if s doesn't start with a number.
-proc atod*(s: cstring; n: var int): float32 =
+proc atod*(s: cstring; n: var int): float64 =
   let cs = cast[cstringConst](unsafeAddr s[n])
   var tmp: JSATODTempMem
   var pnext = cs
