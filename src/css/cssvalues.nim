@@ -37,6 +37,7 @@ type
     cvtFontStyle = "fontStyle"
     cvtImage = "image"
     cvtInteger = "integer"
+    cvtJustifyContent = "justifyContent"
     cvtLength = "length"
     cvtLineWidth = "lineWidth"
     cvtListStylePosition = "listStylePosition"
@@ -256,6 +257,13 @@ type
     BorderStyleHash = "-cha-hash"
     BorderStylePeriod = "-cha-period"
 
+  CSSJustifyContent* = enum
+    JustifyContentFlexStart = "flex-start"
+    JustifyContentFlexEnd = "flex-end"
+    JustifyContentCenter = "center"
+    JustifyContentSpaceBetween = "space-between"
+    JustifyContentSpaceAround = "space-around"
+
 type
   # CSSLength may represent:
   # * if isNaN(px) and isNaN(perc), the ident "auto"
@@ -299,6 +307,7 @@ type
     flexWrap*: CSSFlexWrap
     float*: CSSFloat
     fontStyle*: CSSFontStyle
+    justifyContent*: CSSJustifyContent
     listStylePosition*: CSSListStylePosition
     listStyleType*: CSSListStyleType
     overflow*: CSSOverflow
@@ -485,6 +494,7 @@ const ValueTypes = [
   cptFlexWrap: cvtFlexWrap,
   cptFloat: cvtFloat,
   cptFontStyle: cvtFontStyle,
+  cptJustifyContent: cvtJustifyContent,
   cptListStylePosition: cvtListStylePosition,
   cptListStyleType: cvtListStyleType,
   cptOverflowX: cvtOverflow,
@@ -622,7 +632,7 @@ const LayoutProperties* = {
   cptMinWidth, cptMinHeight, cptMaxWidth, cptMaxHeight,
   cptChaColspan, cptChaRowspan, cptVisibility, # collapse affects tables
   cptBorderCollapse, cptBorderSpacingInline, cptBorderSpacingBlock,
-  cptCaptionSide, cptPosition
+  cptCaptionSide, cptPosition, cptJustifyContent
 }
 
 proc isSame(a, b: CSSValues): bool =
@@ -910,6 +920,7 @@ proc serialize(val: CSSValueBit; t: CSSValueType): string =
   of cvtFlexWrap: return $val.flexWrap
   of cvtFloat: return $val.float
   of cvtFontStyle: return $val.fontStyle
+  of cvtJustifyContent: return $val.justifyContent
   of cvtListStylePosition: return $val.listStylePosition
   of cvtListStyleType: return $val.listStyleType
   of cvtOverflow: return $val.overflow
@@ -2180,6 +2191,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
       makeEntry(t, ?ctx.parseNumber(0f32..float32.high))
   of cvtOverflow: makeEntry(t, ?parseIdent[CSSOverflow](ctx))
   of cvtLineWidth: makeEntry(t, ?ctx.parseLineWidth(attrs))
+  of cvtJustifyContent: makeEntry(t, ?parseIdent[CSSJustifyContent](ctx))
   ok()
 
 proc getInitialColor(t: CSSPropertyType): CSSColor =

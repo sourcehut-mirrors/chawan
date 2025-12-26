@@ -2935,12 +2935,14 @@ type
     reverse: bool
     dim: DimensionType # main dimension
     baselineSet: bool
+    justifyContent: CSSJustifyContent
 
   FlexMainContext = object
     totalMainSize: LUnit
     maxCrossSize: LUnit
     shrinkSize: LUnit
     maxCrossMargin: Span
+    marginAutoCount: uint16
     totalWeight: array[FlexWeightType, float32]
     pending: seq[FlexPendingItem]
 
@@ -2950,19 +2952,24 @@ proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; input: LayoutInput) =
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
-    input: LayoutInput; odim: DimensionType; lctx: LayoutContext) =
+    input: LayoutInput; dim: DimensionType; lctx: LayoutContext) =
+  let odim = dim.opposite()
+  mctx.totalMainSize += child.outerSize(dim, input, lctx)
   mctx.maxCrossSize = max(mctx.maxCrossSize, child.state.size[odim] +
     input.borderSum(odim, lctx))
   mctx.maxCrossMargin.start = max(mctx.maxCrossMargin.start,
     input.margin[odim].start)
   mctx.maxCrossMargin.send = max(mctx.maxCrossMargin.send,
     input.margin[odim].send)
+  if child.computed.getLength(MarginStartMap[dim]).auto:
+    inc mctx.marginAutoCount
+  if child.computed.getLength(MarginEndMap[dim]).auto:
+    inc mctx.marginAutoCount
 
 proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     wt: FlexWeightType; dim: DimensionType; lctx: LayoutContext) =
   var diff = diff
   var totalWeight = mctx.totalWeight[wt]
-  let odim = dim.opposite
   var relayout: seq[int] = @[]
   while (wt == fwtGrow and diff > 0'lu or wt == fwtShrink and diff < 0'lu) and
       totalWeight > 0:
@@ -2980,9 +2987,11 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     totalWeight = 0
     diff = 0'lu
     relayout.setLen(0)
+    mctx.totalMainSize = 0'lu
+    mctx.marginAutoCount = 0
     for i, it in mctx.pending.mpairs:
       if it.weights[wt] == 0:
-        mctx.updateMaxSizes(it.child, it.input, odim, lctx)
+        mctx.updateMaxSizes(it.child, it.input, dim, lctx)
         continue
       var uw = unit * it.weights[wt]
       if wt == fwtShrink:
@@ -3012,13 +3021,13 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       totalWeight += it.weights[wt]
       if it.weights[wt] == 0: # frozen, relayout immediately
         lctx.layoutFlexItem(it.child, it.input)
-        mctx.updateMaxSizes(it.child, it.input, odim, lctx)
+        mctx.updateMaxSizes(it.child, it.input, dim, lctx)
       else: # delay relayout
         relayout.add(i)
     for i in relayout:
       let child = mctx.pending[i].child
       lctx.layoutFlexItem(child, mctx.pending[i].input)
-      mctx.updateMaxSizes(child, mctx.pending[i].input, odim, lctx)
+      mctx.updateMaxSizes(child, mctx.pending[i].input, dim, lctx)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     input: LayoutInput) =
@@ -3041,6 +3050,19 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   let h = (mctx.maxCrossSize + maxMarginSum).minClamp(input.bounds.a[odim])
   var intr = size(w = 0'lu, h = 0'lu)
   var offset = fctx.offset
+  var diff = if fctx.space[dim].t == scStretch:
+    fctx.space.w.u - mctx.totalMainSize
+  else:
+    0'lu
+  var marginDiff = 0'lu
+  if mctx.marginAutoCount > 0:
+    marginDiff = diff div int(mctx.marginAutoCount).toLUnit()
+    diff = 0'lu
+  case fctx.justifyContent
+  of JustifyContentFlexStart: discard
+  of JustifyContentFlexEnd: offset[dim] += diff
+  of JustifyContentCenter: offset[dim] += diff div 2'lu
+  of JustifyContentSpaceBetween, JustifyContentSpaceAround: discard
   for it in mctx.pending.mitems:
     let oborder = it.child.input.borderSum(odim, lctx)
     if it.input.space[odim].t != scStretch:
@@ -3068,8 +3090,22 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
         tmp
       it.input.space[odim] = stretch(u.minClamp(it.input.bounds.a[odim]))
       lctx.layoutFlexItem(it.child, it.input)
-    offset[dim] += it.input.margin[dim].start
+    var mainMarginStart = it.input.margin[dim].start
+    if it.child.computed.getLength(MarginStartMap[dim]).auto:
+      mainMarginStart = marginDiff
+    offset[dim] += mainMarginStart
     it.child.state.offset[dim] += offset[dim]
+    case fctx.justifyContent
+    of JustifyContentFlexStart, JustifyContentFlexEnd, JustifyContentCenter:
+      discard
+    of JustifyContentSpaceBetween:
+      if diff > 0'lu and mctx.pending.len > 1:
+        offset[dim] += diff div (mctx.pending.len - 1).toLUnit()
+    of JustifyContentSpaceAround:
+      if diff > 0'lu:
+        let diff2 = diff div mctx.pending.len.toLUnit()
+        it.child.state.offset[dim] += diff2 div 2'lu
+        offset[dim] += diff2
     # resolve auto cross margins for shrink-to-fit items
     if input.space[odim].t == scStretch:
       it.input.margin[odim].start += lctx.resolveAutoMarginStart(it.input,
@@ -3077,7 +3113,10 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] + it.input.margin[odim].start
     offset[dim] += it.child.state.size[dim]
-    offset[dim] += it.input.margin[dim].send
+    var mainMarginEnd = it.input.margin[dim].send
+    if it.child.computed.getLength(MarginEndMap[dim]).auto:
+      mainMarginEnd = marginDiff
+    offset[dim] += mainMarginEnd
     offset[dim] += it.input.borderSum(dim, lctx)
     let intru = it.child.state.intr[dim] + it.input.margin[dim].sum()
     if fctx.canWrap:
@@ -3107,7 +3146,6 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     child: BlockBox; input: LayoutInput) =
   let lctx = fctx.lctx
   let dim = fctx.dim
-  let odim = dim.opposite()
   var parentSpace = fctx.space
   if dim == dtVertical or fctx.canWrap:
     parentSpace.h = maxContent()
@@ -3121,17 +3159,16 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     # Absolutely positioned flex children do not participate in flex layout.
     child.input.bfcOffset = Offset0
   else:
+    let outerSize = child.outerSize(dim, childSizes, lctx)
     if fctx.canWrap and (parentSpace[dim].t == scMinContent or
         parentSpace[dim].isDefinite and
-        mctx.totalMainSize + child.state.size[dim] > parentSpace[dim].u):
+        mctx.totalMainSize + outerSize > parentSpace[dim].u):
       fctx.flushMain(mctx, input)
-    let outerSize = child.outerSize(dim, childSizes, lctx)
-    mctx.updateMaxSizes(child, childSizes, odim, lctx)
+    mctx.updateMaxSizes(child, childSizes, dim, lctx)
     let grow = child.computed{"flex-grow"}
     let shrink = child.computed{"flex-shrink"}
     mctx.totalWeight[fwtGrow] += grow
     mctx.totalWeight[fwtShrink] += shrink
-    mctx.totalMainSize += outerSize
     if shrink != 0:
       mctx.shrinkSize += outerSize
     mctx.pending.add(FlexPendingItem(
@@ -3150,6 +3187,7 @@ proc initFlexContext(lctx: LayoutContext; computed: CSSValues;
     space: space,
     canWrap: computed{"flex-wrap"} != FlexWrapNowrap,
     reverse: computed{"flex-direction"} in FlexReverse,
+    justifyContent: computed{"justify-content"},
     dim: dim,
   )
 

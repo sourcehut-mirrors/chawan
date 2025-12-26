@@ -8,6 +8,7 @@ unreleased
 * support oklab(), oklch(), relative color syntax (e.g. hsl(from ...))
 * support "hidden" global attribute
 * emulate logical properties (always interpreted in horizontal-tb writing-mode)
+* support `justify-content' property
 * support accessing elements by id on Window object
 * support Delete key, add default aliases for alternate Home/End
 * support browsecap for external URI handlers (based on w3mmee)

@@ -1,0 +1,25 @@
+[1mflex-center[m
+
+[48;2;255;0;0m         test       [49m
+[48;2;0;128;0m        test        [49m
+[48;2;0;0;255m      test      test[49m
+
+[1mflex-end[m
+
+[48;2;255;0;0m                test[49m
+[48;2;0;128;0mtesttest            [49m
+[48;2;0;0;255mtest            test[49m
+
+[1mspace-between[m
+
+[38;2;109;109;109m[48;2;255;255;0mtest                [39m[49m
+[48;2;255;0;0mtest            test[49m
+[48;2;0;128;0mtesttest            [49m
+[48;2;0;0;255mtest            test[49m
+
+[1mspace-around[m
+
+[48;2;255;0;0m   test      test   [49m
+[48;2;0;128;0mtesttest            [49m
+[48;2;0;0;255mtest            test[49m
+[48;2;0;0;255mtesttesttesttesttest[49mtesttesttesttesttesttest

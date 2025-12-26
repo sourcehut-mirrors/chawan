@@ -276,6 +276,7 @@ type
     cptFlexWrap = "flex-wrap"
     cptFloat = "float"
     cptFontStyle = "font-style"
+    cptJustifyContent = "justify-content"
     cptListStylePosition = "list-style-position"
     cptListStyleType = "list-style-type"
     cptOverflowX = "overflow-x"
