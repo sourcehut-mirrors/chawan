@@ -1734,14 +1734,10 @@ proc replace(pager: Pager; target, container: Container) =
     container.next.prev = container.prev
   if target.tab.head == target:
     target.tab.head = container
-  #TODO move() when we switch to arc
-  container.prev = target.prev
-  container.next = target.next
-  container.tab = target.tab
+  container.prev = move(target.prev)
+  container.next = move(target.next)
+  container.tab = move(target.tab)
   assert container.tab != nil
-  target.prev = nil
-  target.next = nil
-  target.tab = nil
   if container.prev != nil:
     container.prev.next = container
   if container.next != nil:
