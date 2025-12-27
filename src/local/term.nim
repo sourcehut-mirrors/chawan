@@ -374,7 +374,8 @@ const TermdescMap = [
   # so we omit it.
   ttSyncterm: XtermCompatible + TrueColorFlag + {tfMargin},
   ttTerminology: XtermCompatible + {tfBleedsAPC},
-  ttTmux: XtermCompatible + TrueColorFlag,
+  # Scrolling on tmux destroys images.
+  ttTmux: XtermCompatible + TrueColorFlag - {tfScroll},
   # Direct color in urxvt is not really true color; apparently it
   # just takes the nearest color of the 256 registers and replaces it
   # with the direct color given.  I don't think this is much worse than
@@ -393,8 +394,7 @@ const TermdescMap = [
   # yaft supports Sixel, but can't tell us so in DA1.
   ttYaft: XtermCompatible + {tfSixel, tfBleedsAPC} -
     {tfAltScreen, tfFastScroll},
-  # zellij supports Sixel, but doesn't advertise it.
-  # However, the feature barely works, so we don't force it here.
+  # zellij advertises Sixel, but it's completely broken.
   ttZellij: XtermCompatible + TrueColorFlag,
 ]
 
@@ -875,7 +875,12 @@ proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
     for n in term.eparser.nums:
       case n
       of 4:
-        if term.config.display.imageMode.isNone and term.imageMode == imNone:
+        if term.config.display.imageMode.isNone and term.imageMode == imNone and
+            term.termType != ttZellij:
+          # Zellij says it supports Sixel; however:
+          # * on Sixel-capable terminals it somehow misplaces images.
+          # * on non-Sixel-capable terminals it still emits image data (???)
+          # So we blacklist it.
           term.imageMode = imSixel
       of 22:
         if term.config.display.colorMode.isNone:

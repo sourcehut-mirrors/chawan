@@ -60,6 +60,18 @@ Known quirks and implementation details:
   aren't (e.g. SyncTERM or hardware terminals), colors will get messed up with
   multiple images on screen.
 
+* Zellij advertises Sixel support, but the feature is completely broken in
+  the current version, so Chawan specifically disables images in Zellij
+  by default.  In particular:
+
+	- Zellij itself does no Sixel detection, emitting Sixel data even on
+	  terminals that do not support it.  (A fairly puzzling bug, given
+	  the developers seem to be aware of the DA1 feature.)
+
+	- On terminals that support Sixel, it fails to position images
+	  correctly, with the misplaced images completely messing up layout.
+	  (I guess nothing more complex than `img2sixel` was ever tested.)
+
 * We send XTSMGRAPHICS for retrieving the number of color registers; on
   failure, we fall back to 256. You can override color register count using
   the `display.sixel-colors` configuration value.
@@ -79,7 +91,8 @@ Known quirks and implementation details:
 
 * Terminal scroll (both with LF/RI and SU/SD) is used extensively to avoid
   sending images several times.  Expect troubles on terminals that do not
-  handle this correctly.
+  handle this correctly.  (For example, tmux is known to destroy images on
+  scroll, so we avoid using scroll there.)
 
 ### Kitty
 

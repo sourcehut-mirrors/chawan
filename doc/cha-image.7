@@ -64,6 +64,23 @@ We assume private color registers are supported.
 On terminals where they aren\(cqt (e.g.\ SyncTERM or hardware
 terminals), colors will get messed up with multiple images on screen.
 .IP \(bu 2
+Zellij advertises Sixel support, but the feature is completely broken in
+the current version, so Chawan specifically disables images in Zellij by
+default.
+In particular:
+.RS 2
+.IP \(bu 2
+Zellij itself does no Sixel detection, emitting Sixel data even on
+terminals that do not support it.
+(A fairly puzzling bug, given the developers seem to be aware of the DA1
+feature.)
+.IP \(bu 2
+On terminals that support Sixel, it fails to position images correctly,
+with the misplaced images completely messing up layout.
+(I guess nothing more complex than \f[CR]img2sixel\f[R] was ever
+tested.)
+.RE
+.IP \(bu 2
 We send XTSMGRAPHICS for retrieving the number of color registers; on
 failure, we fall back to 256.
 You can override color register count using the
@@ -87,6 +104,8 @@ XTerm (which does).
 Terminal scroll (both with LF/RI and SU/SD) is used extensively to avoid
 sending images several times.
 Expect troubles on terminals that do not handle this correctly.
+(For example, tmux is known to destroy images on scroll, so we avoid
+using scroll there.)
 .SS Kitty
 On terminals that support it, Kitty\(cqs protocol is preferred over
 Sixel.
