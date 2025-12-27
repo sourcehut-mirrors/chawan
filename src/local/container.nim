@@ -1588,7 +1588,9 @@ proc markURL(container: Container) {.jsfunc.} =
   var schemes = newSeq[string]()
   for key in container.mainConfig.external.urimethodmap.map.keys:
     schemes.add(key.until(':'))
-  container.iface.markURL(schemes)
+  container.iface.markURL(schemes).then(proc() =
+    container.sendCursorPosition()
+  )
 
 proc toggleImages(container: Container) {.jsfunc.} =
   if container.iface == nil:
