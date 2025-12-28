@@ -76,10 +76,6 @@ Known quirks and implementation details:
   failure, we fall back to 256. You can override color register count using
   the `display.sixel-colors` configuration value.
 
-* For the most efficient sixel display, you will want a cell height that is
-  a multiple of 6. Otherwise, the images will have to be re-coded several
-  times on scroll.
-
 * Normally, Sixel encoding runs in two passes.  On slow computers, you can
   try setting `display.sixel-colors = 2`, which will skip the first pass
   (but will also display everything in monochrome).

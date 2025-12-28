@@ -86,10 +86,6 @@ failure, we fall back to 256.
 You can override color register count using the
 \f[CR]display.sixel\-colors\f[R] configuration value.
 .IP \(bu 2
-For the most efficient sixel display, you will want a cell height that
-is a multiple of 6.
-Otherwise, the images will have to be re\-coded several times on scroll.
-.IP \(bu 2
 Normally, Sixel encoding runs in two passes.
 On slow computers, you can try setting
 \f[CR]display.sixel\-colors = 2\f[R], which will skip the first pass
