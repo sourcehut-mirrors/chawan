@@ -86,6 +86,7 @@ type
     bcReadSuccess = "readSuccess"
     bcSelect = "select"
     bcShowHints = "showHints"
+    bcSubmitForm = "submitForm"
     bcToggleImages = "toggleImages"
     bcUpdateHover = "updateHover"
     bcWindowChange = "windowChange"
@@ -2001,6 +2002,23 @@ proc showHints*(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
   bc.nhints = result.len
   bc.maybeReshape()
 
+proc submitForm*(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory: int): ClickResult {.proxy.} =
+  var element = bc.getCursorElement(cursorx, cursory)
+  var form: HTMLFormElement = nil
+  while element != nil:
+    if element.tagType == TAG_FORM:
+      form = HTMLFormElement(element)
+      break
+    if element of FormAssociatedElement:
+      form = FormAssociatedElement(element).form
+      break
+    element = element.parentElement
+  if form == nil:
+    return ClickResult()
+  let open = bc.submitForm(form, form) #TODO maybe use element as submitter?
+  return ClickResult(open: open)
+
 proc hideHints*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   for element in bc.window.document.elementDescendants:
     element.setHint(false)
@@ -2034,6 +2052,7 @@ const ProxyMap = [
   bcReadSuccess: readSuccessCmd,
   bcSelect: selectCmd,
   bcShowHints: showHintsCmd,
+  bcSubmitForm: submitFormCmd,
   bcToggleImages: toggleImagesCmd,
   bcUpdateHover: updateHoverCmd,
   bcWindowChange: windowChangeCmd,

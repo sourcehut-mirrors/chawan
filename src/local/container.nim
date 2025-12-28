@@ -1816,6 +1816,10 @@ proc click*(container: Container; n = 1) {.jsfunc.} =
   container.iface.click(container.cursorx, container.cursory, n)
     .then(proc(res: ClickResult) = container.onclick(res))
 
+proc submitForm(container: Container) {.jsfunc.} =
+  container.iface.submitForm(container.cursorx, container.cursory)
+    .then(proc(res: ClickResult) = container.onclick(res))
+
 proc contextMenu*(container: Container): Promise[bool] {.jsfunc.} =
   if container.iface == nil:
     return
