@@ -1381,7 +1381,6 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
 
 proc initImages(pager: Pager; container: Container) =
   let term = pager.term
-  var redrawNext = false # redraw images if a new one was loaded before
   let bufWidth = pager.bufWidth
   let bufHeight = pager.bufHeight
   let maxwpx = bufWidth * pager.attrs.ppc
@@ -1395,7 +1394,7 @@ proc initImages(pager: Pager; container: Container) =
     if not dims.onScreen:
       continue
     let imageId = image.bmp.imageId
-    let canvasImage = term.takeImage(pid, imageId, bufHeight, dims, redrawNext)
+    let canvasImage = term.takeImage(pid, imageId, bufHeight, dims)
     if canvasImage != nil:
       term.addImage(canvasImage)
       continue
@@ -1412,7 +1411,6 @@ proc initImages(pager: Pager; container: Container) =
       let canvasImage = newCanvasImage(cached.data, pid, imageId,
         cached.preludeLen, dims, cached.transparent)
       term.addImage(canvasImage)
-      redrawNext = true
   term.updateImages(bufWidth, bufHeight)
 
 proc getAbsoluteCursorXY(pager: Pager; container: Container): tuple[x, y: int] =

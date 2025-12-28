@@ -63,9 +63,12 @@ type
     ttZellij = "zellij" # pretends to be its underlying terminal
 
   CanvasImageDimensions* = object
-    # relative position on screen
+    # relative position on screen (in cells, may be negative)
     x: int
     y*: int
+    # relative position on screen (in pixels, may be negative)
+    xpx: int
+    ypx: int
     # original dimensions (after resizing)
     width: int
     height: int
@@ -137,7 +140,7 @@ type
     eparser: EventParser
     canvas: seq[FixedCell]
     canvasImagesHead: CanvasImage
-    canvasImagesTmpHead: CanvasImage
+    canvasImagesTmpHead: CanvasImage # temp list during rescan
     canvasImagesTmpTail: CanvasImage
     kittyImagesToClear: seq[uint] # Kitty only; vector of image ids
     lineDamage: seq[int]
@@ -294,7 +297,7 @@ type
 # Forward declarations
 proc windowChange(term: Terminal)
 proc updateCanvasImage(term: Terminal; image: CanvasImage;
-  dims: CanvasImageDimensions; redrawNext: bool; maxh: int): bool
+  dims: CanvasImageDimensions; maxh: int): bool
 proc clearImages*(term: Terminal; maxh: int)
 
 # Built-in terminal capability database.
@@ -1731,7 +1734,7 @@ proc addImage*(term: Terminal; image: CanvasImage) =
   term.canvasImagesTmpTail = image
 
 proc takeImage*(term: Terminal; pid, imageId, bufHeight: int;
-    dims: CanvasImageDimensions; redrawNext: bool): CanvasImage =
+    dims: CanvasImageDimensions): CanvasImage =
   # pass2 is set after finding a damaged scrolled image (usually because we
   # scrolled out some part and scrolled in another part).
   # In this case, we can't just reuse the CanvasImage we found because that
@@ -1749,8 +1752,7 @@ proc takeImage*(term: Terminal; pid, imageId, bufHeight: int;
           (not pass2 and it.dims.erry == dims.erry or
             pass2 and it.dims.erry2 == dims.erry) and
           it.dims.dispw == dims.dispw and it.dims.offx == dims.offx):
-      if not pass2 and not term.updateCanvasImage(it, dims, redrawNext,
-          bufHeight):
+      if not pass2 and not term.updateCanvasImage(it, dims, bufHeight):
         # retry with the right y error
         pass2 = true
         it = term.canvasImagesHead
@@ -1767,11 +1769,10 @@ proc takeImage*(term: Terminal; pid, imageId, bufHeight: int;
 
 proc positionImage*(term: Terminal; rx, ry, x, y, offx2, offy2, width, height,
     maxwpx, maxhpx: int): CanvasImageDimensions =
-  var xpx = x * term.attrs.ppc
-  var ypx = y * term.attrs.ppl
-  if term.imageMode == imKitty:
-    xpx += offx2
-    ypx += offy2
+  let offx2 = if term.imageMode == imKitty: offx2 else: 0
+  let offy2 = if term.imageMode == imKitty: offy2 else: 0
+  let xpx = x * term.attrs.ppc + offx2
+  let ypx = y * term.attrs.ppl + offy2
   # calculate offset inside image to start from
   let offx = -min(xpx, 0)
   let offy = -min(ypx, 0)
@@ -1783,6 +1784,8 @@ proc positionImage*(term: Terminal; rx, ry, x, y, offx2, offy2, width, height,
     height: height,
     rx: rx,
     ry: ry,
+    xpx: xpx,
+    ypx: ypx,
     offx: offx,
     offy: offy,
     offx2: offx2,
@@ -1829,56 +1832,52 @@ proc clearImages*(term: Terminal; maxh: int) =
     term.clearImage(image, maxh)
   term.canvasImagesHead = nil
 
-proc checkImageDamage(term: Terminal; maxw, maxh: int) =
+proc checkImageDamage(term: Terminal; image: CanvasImage; maxw, maxh: int) =
   # we're interested in the last x/y *on screen*.  if damage exceeds that,
   # then the image is unaffected and there's nothing to do.
   let lastx = maxw - 1
   let lasty = maxh - 1
   let pplerr = term.attrs.ppl - 1
   let ppcerr = term.attrs.ppc - 1
-  for image in term.canvasImages:
-    # compute the bottom and right borders, rounded in both directions.
-    # if the last column/line doesn't cover a cell, consider it
-    # transparent.
-    let ey0 = min(image.dims.y + (image.dims.height + pplerr) div
-      term.attrs.ppl, lasty)
-    let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, lasty)
-    let x = max(image.dims.x, 0)
-    let mx0 = min(image.dims.x + image.dims.dispw div term.attrs.ppc, lastx)
-    let mx = min(image.dims.x + (image.dims.dispw + ppcerr) div
-      term.attrs.ppc, lastx)
-    for y in max(image.dims.y, 0) ..< ey0:
-      let od = term.lineDamage[y]
-      if od > mx0:
-        continue
-      image.damaged = true
-      if y >= ey1:
-        break
-      if od < x:
-        continue
-      if image.transparent or od in mx0 ..< mx:
-        term.lineDamage[y] = x
-      else:
-        var textFound = false
-        # damage starts inside an opaque image; skip clear (but only if
-        # the damage was not caused by a printing character)
-        let si = y * term.attrs.width
-        for i in si + od ..< si + term.attrs.width:
-          if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
-            textFound = true
-            break
-        if not textFound:
-          term.lineDamage[y] = mx
+  # compute the bottom and right borders, rounded in both directions.
+  # if the last column/line doesn't cover a cell, consider it
+  # transparent.
+  let ey0 = min(image.dims.y + (image.dims.height + pplerr) div
+    term.attrs.ppl, lasty)
+  let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, lasty)
+  let x = max(image.dims.x, 0)
+  let mx0 = min(image.dims.x + image.dims.dispw div term.attrs.ppc, lastx)
+  let mx = min(image.dims.x + (image.dims.dispw + ppcerr) div
+    term.attrs.ppc, lastx)
+  for y in max(image.dims.y, 0) ..< ey0:
+    let od = term.lineDamage[y]
+    if od > mx0:
+      continue
+    image.damaged = true
+    if y >= ey1:
+      break
+    if od < x:
+      continue
+    if image.transparent or od in mx0 ..< mx:
+      term.lineDamage[y] = x
+    else:
+      var textFound = false
+      # damage starts inside an opaque image; skip clear (but only if
+      # the damage was not caused by a printing character)
+      let si = y * term.attrs.width
+      for i in si + od ..< si + term.attrs.width:
+        if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
+          textFound = true
+          break
+      if not textFound:
+        term.lineDamage[y] = mx
 
 proc updateCanvasImage(term: Terminal; image: CanvasImage;
-    dims: CanvasImageDimensions; redrawNext: bool; maxh: int): bool =
+    dims: CanvasImageDimensions; maxh: int): bool =
   # reuse image on screen
-  #TODO we could skip lots of repaints with a slightly less braindead
-  # solution than redrawNext
-  # (right now it's needed to ensure correct ordering of draws)
   if image.dims.x != dims.x or image.dims.y != dims.y or
       image.dims.disph != dims.disph or image.dims.offy != dims.offy or
-      image.dims.erry != dims.erry or redrawNext:
+      image.dims.erry != dims.erry:
     if term.imageMode == imSixel and image.dims.erry != image.dims.erry2:
       # we have scrolled in more of this image onto the screen, but the Y
       # error is incorrect.  load the right one.
@@ -1890,12 +1889,44 @@ proc updateCanvasImage(term: Terminal; image: CanvasImage;
     image.dims = dims
   true
 
+proc checkImageOverlap(term: Terminal; image: CanvasImage) =
+  var it = term.canvasImagesHead
+  var prev: CanvasImage = nil
+  let x1 = image.dims.xpx + image.dims.offx
+  let y1 = image.dims.ypx + image.dims.offy
+  let x2 = image.dims.xpx + image.dims.dispw
+  let y2 = image.dims.ypx + image.dims.disph
+  let opaque = not image.transparent
+  while it != image:
+    let ix1 = it.dims.xpx + it.dims.offx
+    let iy1 = it.dims.ypx + it.dims.offy
+    let ix2 = it.dims.xpx + it.dims.dispw
+    let iy2 = it.dims.ypx + it.dims.disph
+    if ix1 < x2 and x1 < ix2 and iy1 < y2 and y1 < iy2: # overlap
+      if opaque and ix1 >= x1 and iy1 >= y1:
+        # `it' is fully covered by `image'; remove `it'.
+        let next = move(it.next)
+        if prev != nil:
+          prev.next = next
+        else:
+          term.canvasImagesHead = next
+        it = next
+        continue
+      if term.imageMode == imSixel:
+        # an image we overlap with was damaged; we have to redraw too to
+        # preserve Z order.
+        image.damaged = image.damaged or it.damaged
+    prev = it
+    it = it.next
+
 proc updateImages*(term: Terminal; bufWidth, bufHeight: int) =
   term.clearImages(bufHeight)
   term.canvasImagesHead = move(term.canvasImagesTmpHead)
   term.canvasImagesTmpTail = nil
   if term.imageMode == imSixel:
-    term.checkImageDamage(bufWidth, bufHeight)
+    for image in term.canvasImages:
+      term.checkImageDamage(image, bufWidth, bufHeight)
+      term.checkImageOverlap(image)
 
 proc newCanvasImage*(data: Blob; pid, imageId, preludeLen: int;
     dims: CanvasImageDimensions; transparent: bool): CanvasImage =
@@ -2426,10 +2457,13 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
     term.attrs.height = parseIntP(getEnv("LINES")).get(0)
   ok()
 
-proc windowChange(term: Terminal) =
-  term.applyConfigDimensions()
+proc initCanvas(term: Terminal) =
   term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
   term.lineDamage = newSeq[int](term.attrs.height)
+
+proc windowChange(term: Terminal) =
+  term.applyConfigDimensions()
+  term.initCanvas()
   term.clearCanvas()
 
 proc queryWindowSize*(term: Terminal): Opt[void] =
@@ -2467,8 +2501,7 @@ proc start*(term: Terminal; istream: PosixStream;
     # only query attrs after initializing screen to avoid moving the cursor
     # outside of the alt screen
     ?term.queryAttrs(windowOnly = false)
-  term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
-  term.lineDamage = newSeq[int](term.attrs.height)
+  term.initCanvas()
   ok()
 
 proc restart*(term: Terminal): Opt[void] =
