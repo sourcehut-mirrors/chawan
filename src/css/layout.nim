@@ -445,10 +445,19 @@ proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
     size.w = width.spx(space.w, computed, paddingSum.w)
   if hasHeight:
     size.h = height.spx(space.h, computed, paddingSum.h)
-  if not hasWidth and hasHeight:
+  #TODO maybe don't allow 0-sized images?
+  if not hasWidth and hasHeight and osize.h > 0'lu:
     size.w = size.h * osize.w div osize.h
-  elif hasWidth and not hasHeight:
+  elif hasWidth and not hasHeight and osize.w > 0'lu:
     size.h = size.w * osize.h div osize.w
+  elif not hasWidth and not hasHeight and bmp.vector:
+    # SVG has no intrinsic width.  Ugh.
+    if space.w.isDefinite():
+      size.w = min(size.w, space.w.u)
+    else:
+      size.w = 0'lu # I guess?
+    if osize.w > 0'lu:
+      size.h = size.w * osize.h div osize.w
   return input.fillImageSize(size)
 
 # Calculate and resolve available width & height for floating boxes.

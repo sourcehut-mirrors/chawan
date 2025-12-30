@@ -1506,7 +1506,8 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
             height: height,
             cacheId: cacheId,
             imageId: window.getImageId(),
-            contentType: "image/" & t
+            contentType: "image/" & t,
+            vector: t == "svg+xml"
           )
           image.bitmap = bmp
           cachedURL.bmp = bmp
@@ -1576,7 +1577,8 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
       height: height,
       cacheId: cacheId,
       imageId: imageId,
-      contentType: "image/svg+xml"
+      contentType: "image/svg+xml",
+      vector: true
     )
     for share in svg.shared:
       share.bitmap = svg.bitmap
