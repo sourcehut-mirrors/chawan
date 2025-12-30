@@ -43,7 +43,7 @@ import utils/twtstr
 
 type
   StyledNodeType = enum
-    stElement, stText, stImage, stBr, stCounter
+    stElement, stText, stBr, stCounter
 
   # Abstraction over the DOM to pretend that elements, text, replaced
   # and pseudo-elements are derived from the same type.
@@ -57,8 +57,6 @@ type
       text: RefString
     of stElement:
       anonChildren: seq[StyledNode]
-    of stImage:
-      bmp: NetworkBitmap
     of stBr: # <br> element
       discard
     of stCounter: # counters
@@ -106,8 +104,6 @@ when defined(debug):
       if node.pseudo != peNone:
         return $node.element.tagType & "::" & $node.pseudo
       return $node.element
-    of stImage:
-      return "#image"
     of stBr:
       return "#br"
     of stCounter:
@@ -404,14 +400,9 @@ proc addText(frame: var TreeFrame; s: sink string) =
   frame.addText(newRefString(s))
 
 proc addImage(frame: var TreeFrame; bmp: NetworkBitmap) =
-  if bmp != nil and bmp.cacheId != -1:
-    frame.add(StyledNode(
-      t: stImage,
-      element: frame.parent,
-      bmp: bmp,
-      computed: frame.getAnonInlineComputed()
-    ))
-  else:
+  if bmp == nil or bmp.cacheId == -1:
+    # Add a placeholder text if we have no bmp.
+    # (If we have bmp, render will take care of it automatically.)
     frame.addText("[img]")
 
 proc addBr(frame: var TreeFrame) =
@@ -605,20 +596,6 @@ proc matchCache(node: StyledNode; box: CSSBox): bool =
         box.text = node.text
         return true
       return false
-    of stImage:
-      if box of InlineImageBox:
-        let box = InlineImageBox(box)
-        # For images, there is in fact a difference because we check
-        # padding.
-        # Unfortunately, like above, it's still derived from the parent,
-        # so that's probably a bug.  But image sizing has bigger problems :(
-        box.keepLayout = box.bmp == node.bmp and
-          box.computed{"padding-left"} == node.computed{"padding-left"} and
-          box.computed{"padding-right"} == node.computed{"padding-right"}
-        box.computed = node.computed
-        box.bmp = node.bmp
-        return true
-      return false
     of stBr:
       if box of InlineNewLineBox:
         # br only checks clear.  (And white-space, which is a bug.)
@@ -804,15 +781,6 @@ proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
       element: styledNode.element,
       text: styledNode.counterStyle.listMarker(counter, addSuffix,
         ctx.linkHintChars[])
-    )
-  of stImage:
-    if cached != nil:
-      return cached
-    return InlineImageBox(
-      t: cbtText,
-      computed: styledNode.computed,
-      element: styledNode.element,
-      bmp: styledNode.bmp
     )
 
 # Root

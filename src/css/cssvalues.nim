@@ -84,6 +84,8 @@ type
     # internal, for layout
     DisplayTableWrapper = ""
     DisplayMarker = ""
+    DisplayImageBlock = ""
+    DisplayImageInline = ""
 
   CSSWhiteSpace* = enum
     WhitespaceNormal = "normal"
@@ -503,9 +505,13 @@ const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const DisplayInlineBlockLike* = {
   DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex, DisplayInlineGrid,
-  DisplayMarker
+  DisplayMarker, DisplayImageInline
 }
 const DisplayOuterInline* = DisplayInlineBlockLike + {DisplayInline}
+const DisplayOuterBlock* = {
+  DisplayFlex, DisplayGrid, DisplayBlock, DisplayImageBlock, DisplayTable,
+  DisplayFlowRoot, DisplayTableWrapper, DisplayListItem
+}
 const DisplayInnerBlock* = {
   DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayTableCell,
   DisplayInlineBlock, DisplayListItem, DisplayMarker
@@ -518,7 +524,8 @@ const RowGroupBox* = {
 }
 const DisplayInnerTable* = {DisplayTable, DisplayInlineTable}
 const DisplayInternalTable* = {
-  DisplayTableCell, DisplayTableRow, DisplayTableCaption
+  DisplayTableCell, DisplayTableRow, DisplayTableCaption, DisplayTableColumn,
+  DisplayTableColumnGroup
 } + RowGroupBox
 const DisplayNeverHasStack* = DisplayInternalTable - {DisplayTableCell}
 const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
@@ -809,7 +816,8 @@ proc inherited*(t: CSSPropertyType): bool =
 proc blockify*(display: CSSDisplay): CSSDisplay =
   case display
   of DisplayBlock, DisplayTable, DisplayListItem, DisplayNone, DisplayFlowRoot,
-      DisplayFlex, DisplayTableWrapper, DisplayGrid, DisplayMarker:
+      DisplayFlex, DisplayTableWrapper, DisplayGrid, DisplayMarker,
+      DisplayImageBlock, DisplayImageInline:
     return display
   of DisplayInline, DisplayInlineBlock, DisplayTableRow,
       DisplayTableRowGroup, DisplayTableColumn,
@@ -829,6 +837,13 @@ proc bfcify*(overflow: CSSOverflow): CSSOverflow =
   if overflow == OverflowClip:
     return OverflowHidden
   return overflow
+
+proc imgify*(display: CSSDisplay): CSSDisplay =
+  case display
+  of DisplayOuterInline: return DisplayImageInline
+  of DisplayOuterBlock: return DisplayImageBlock
+  of DisplayNone: return display
+  of DisplayInternalTable: return DisplayImageBlock
 
 const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toPoints()
 const LowerGreekMap = "αβγδεζηθικλμνξοπρστυφχψω".toPoints()

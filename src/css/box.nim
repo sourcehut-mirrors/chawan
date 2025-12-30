@@ -13,10 +13,6 @@ type
 
   Size* = array[DimensionType, LUnit]
 
-  InlineImageState* = object
-    offset*: Offset
-    size*: Size
-
   # Note: with some effort this could be turned into a non-ref object,
   # but that's slower (at least with refc).
   TextRun* = ref object
@@ -188,10 +184,6 @@ type
 
   InlineNewLineBox* = ref object of InlineBox
 
-  InlineImageBox* = ref object of InlineBox
-    imgstate*: InlineImageState
-    bmp*: NetworkBitmap
-
 proc offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
 
@@ -288,6 +280,15 @@ proc `<`*(a, b: Offset): bool =
 proc `<=`*(a, b: Offset): bool =
   a.x <= b.x and a.y <= b.y
 
+proc sum*(span: Span): LUnit =
+  return span.start + span.send
+
+proc sum*(rect: RelativeRect): Size =
+  return [
+    dtHorizontal: rect[dtHorizontal].sum(),
+    dtVertical: rect[dtVertical].sum()
+  ]
+
 const Offset0* = offset(0'lu, 0'lu)
 
 proc borderTopLeft*(input: LayoutInput; cellSize: Size): Offset =
@@ -354,6 +355,17 @@ getClientRectsImpl = proc(element: Element; firstOnly, blockOnly: bool):
   result = @[]
   if element.box != nil:
     result.getClientRects(CSSBox(element.box), firstOnly, blockOnly)
+
+# Currently, getBitmap and getImageBitmap is effectively the same.
+# The separation exists so that in the future, getBitmap can be expanded
+# to return background-image too.
+proc getBitmap*(box: BlockBox): NetworkBitmap =
+  box.element.getBitmap()
+
+proc getImageBitmap*(box: BlockBox): NetworkBitmap =
+  if box.computed{"display"} in {DisplayImageInline, DisplayImageBlock}:
+    return box.getBitmap()
+  return nil
 
 when defined(debug):
   import chame/tags

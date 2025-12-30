@@ -379,6 +379,37 @@ proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
     grid.paintBackground(state, bgcolor, offset, offset + area.size,
       box.element, alpha, box.render.clipBox)
 
+proc renderImage(grid: var FlexibleGrid; state: var RenderState;
+    box: BlockBox; offset: Offset) =
+  let bmp = box.getBitmap()
+  if bmp == nil:
+    return
+  let clipBox = box.render.clipBox
+  let padding = box.input.padding
+  #TODO we have to add/subtract padding here, but it's very ugly...
+  let offset = offset + padding.topLeft()
+  let size = box.state.size - padding.sum()
+  let p2 = offset + size
+  #TODO implement proper image clipping
+  if offset.x < clipBox.send.x and offset.y < clipBox.send.y and
+      p2.x >= clipBox.start.x and p2.y >= clipBox.start.y:
+    # add Element to background (but don't actually color it)
+    grid.paintBackground(state, defaultColor, offset, p2, box.element, 0,
+      box.render.clipBox)
+    let x = (offset.x div state.cellSize.w).toInt
+    let y = (offset.y div state.cellSize.h).toInt
+    let offx = (offset.x - x.toLUnit * state.cellSize.w).toInt
+    let offy = (offset.y - y.toLUnit * state.cellSize.h).toInt
+    state.images.add(PosBitmap(
+      x: x,
+      y: y,
+      offx: offx,
+      offy: offy,
+      width: size.w.toInt,
+      height: size.h.toInt,
+      bmp: bmp
+    ))
+
 proc renderInline(grid: var FlexibleGrid; state: var RenderState;
     ibox: InlineBox; offset: Offset; bgcolor0 = rgba(0, 0, 0, 0);
     pass2 = false) =
@@ -410,31 +441,6 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
     for run in ibox.runs:
       let offset = offset + run.offset
       grid.setText(state, run.s, offset, format, ibox.element, clipBox)
-  elif ibox of InlineImageBox:
-    let ibox = InlineImageBox(ibox)
-    if ibox.computed{"visibility"} != VisibilityVisible:
-      return
-    let offset = offset + ibox.imgstate.offset
-    let p2 = offset + ibox.imgstate.size
-    #TODO implement proper image clipping
-    if offset.x < clipBox.send.x and offset.y < clipBox.send.y and
-        p2.x >= clipBox.start.x and p2.y >= clipBox.start.y:
-      # add Element to background (but don't actually color it)
-      grid.paintBackground(state, defaultColor, offset, p2, ibox.element, 0,
-        ibox.render.clipBox)
-      let x = (offset.x div state.cellSize.w).toInt
-      let y = (offset.y div state.cellSize.h).toInt
-      let offx = (offset.x - x.toLUnit * state.cellSize.w).toInt
-      let offy = (offset.y - y.toLUnit * state.cellSize.h).toInt
-      state.images.add(PosBitmap(
-        x: x,
-        y: y,
-        offx: offx,
-        offy: offy,
-        width: ibox.imgstate.size.w.toInt,
-        height: ibox.imgstate.size.h.toInt,
-        bmp: ibox.bmp
-      ))
   else: # InlineNewLineBox does not have children, so we handle it here
     # only check position here to avoid skipping leaves that use our
     # computed values
@@ -577,6 +583,7 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
     box.inheritClipBox(box.parent, state)
   let opacity = box.computed{"opacity"}
   if box.computed{"visibility"} == VisibilityVisible and opacity != 0:
+    grid.renderImage(state, box, offset)
     #TODO maybe blend with the terminal background?
     let bgcolor0 = box.computed{"background-color"}
     let bgcolor = bgcolor0.cellColor()

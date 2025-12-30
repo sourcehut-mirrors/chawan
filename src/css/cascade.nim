@@ -389,6 +389,8 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
       (result{"overflow-y"} in {OverflowVisible, OverflowClip}):
     result{"overflow-x"} = result{"overflow-x"}.bfcify()
     result{"overflow-y"} = result{"overflow-y"}.bfcify()
+  if element != nil and element.getBitmap() != nil:
+    result{"display"} = result{"display"}.imgify()
 
 proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
     parent, element: Element; window: Window; old: CSSValues): CSSValues =

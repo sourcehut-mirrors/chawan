@@ -778,6 +778,7 @@ proc resetFormOwner(element: FormAssociatedElement)
 proc insertSheet(this: SheetElement)
 proc removeSheet(this: SheetElement)
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet)
+proc getImageRect(this: HTMLImageElement): tuple[w, h: float64]
 proc checked*(input: HTMLInputElement): bool {.inline.}
 proc setChecked*(input: HTMLInputElement; b: bool)
 proc value*(this: HTMLInputElement): lent string
@@ -4630,9 +4631,11 @@ proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
     if objs.len > 0:
       return objs[0]
     return DOMRect()
-  let width = float64(dummyAttrs.ppc)
-  let height = float64(dummyAttrs.ppl)
-  return DOMRect(x: 0, y: 0, width: width, height: height)
+  var width = float64(dummyAttrs.ppc)
+  var height = float64(dummyAttrs.ppl)
+  if element of HTMLImageElement:
+    (width, height) = HTMLImageElement(element).getImageRect()
+  return DOMRect(width: width, height: height)
 
 proc getClientRects(element: Element): DOMRectList {.jsfunc.} =
   let res = DOMRectList()
@@ -5295,6 +5298,17 @@ proc getProgressPosition*(element: Element): float64 =
   let max = element.attrdgz(satMax).get(1)
   return min(value, max) / max
 
+proc getBitmap*(element: Element): NetworkBitmap =
+  case element.tagType
+  of TAG_IMG:
+    return HTMLImageElement(element).bitmap
+  of TAG_CANVAS:
+    return HTMLCanvasElement(element).bitmap
+  elif element.tagType(satNamespaceSVG) == TAG_SVG:
+    return SVGSVGElement(element).bitmap
+  else:
+    return nil
+
 # DOMRect
 proc left(rect: DOMRect): float64 {.jsfget.} =
   return min(rect.x, rect.x + rect.width)
@@ -5834,6 +5848,30 @@ proc resetFormOwner(element: FormAssociatedElement) =
     for ancestor in element.ancestors:
       if ancestor of HTMLFormElement:
         element.setForm(HTMLFormElement(ancestor))
+
+# <img>
+proc getImageRect(this: HTMLImageElement): tuple[w, h: float64] =
+  let window = this.document.window
+  if window != nil and window.settings.scripting == smApp:
+    window.ensureLayout(this)
+    let objs = getClientRectsImpl(this, firstOnly = true, blockOnly = false)
+    if objs.len > 0:
+      return (objs[0].width, objs[0].height)
+  let width = float64(this.attrul(satWidth).get(uint32(this.bitmap.width)))
+  let height = float64(this.attrul(satHeight).get(uint32(this.bitmap.height)))
+  return (width, height)
+
+proc width(this: HTMLImageElement): uint32 {.jsfget.} =
+  return uint32(this.getImageRect().w)
+
+proc setWidth(this: HTMLImageElement; u: uint32) {.jsfset: "width".} =
+  this.attrul(satWidth, u)
+
+proc height(this: HTMLImageElement): uint32 {.jsfget.} =
+  return uint32(this.getImageRect().h)
+
+proc setHeight(this: HTMLImageElement; u: uint32) {.jsfset: "height".} =
+  this.attrul(satHeight, u)
 
 # <input>
 proc jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
