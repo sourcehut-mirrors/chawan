@@ -523,7 +523,7 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
   let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_EXCL, 0o600)
   if ps == nil:
     return false
-  var buffer {.cursor.} = output.currentBuffer
+  var buffer = output.currentBuffer
   var m = output.currentBufferIdx
   while buffer != nil:
     while m < buffer.len:

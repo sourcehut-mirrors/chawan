@@ -21,7 +21,7 @@ type
 
   HistoryEntry* = ref object
     s*: string
-    prev* {.cursor.}: HistoryEntry
+    prev*: HistoryEntry
     next*: HistoryEntry
 
 proc add(hist: History; entry: sink HistoryEntry; merge = false) =

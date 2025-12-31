@@ -1024,7 +1024,7 @@ const VoidElements = {
 
 # Iterators
 iterator childList*(node: ParentNode): Node {.inline.} =
-  var it {.cursor.} = node.firstChild
+  var it = node.firstChild
   if it != nil:
     while true:
       yield it
@@ -1035,7 +1035,7 @@ iterator childList*(node: ParentNode): Node {.inline.} =
 iterator rchildList*(node: ParentNode): Node {.inline.} =
   let first = node.firstChild
   if first != nil:
-    var it {.cursor.} = first.internalPrev
+    var it = first.internalPrev
     while true:
       yield it
       if it == first:
@@ -2300,7 +2300,7 @@ proc isEqualNode(node, other: Node): bool {.jsfunc.} =
       for i, attr in node.attrs.mypairs:
         if attr != other.attrs[i]:
           return false
-    var it {.cursor.} = other.firstChild
+    var it = other.firstChild
     for child in node.childList:
       if it == nil or not child.isEqualNode(it):
         return false
@@ -6336,7 +6336,7 @@ proc scriptOnReadyNoParser(element: HTMLScriptElement) =
 proc scriptOnReadyAsync(element: HTMLScriptElement) =
   let prepdoc = element.preparationTimeDocument
   element.execute()
-  var it {.cursor.} = prepdoc.scriptsToExecSoon
+  var it = prepdoc.scriptsToExecSoon
   if it == element:
     prepdoc.scriptsToExecSoon = element.next
   else:

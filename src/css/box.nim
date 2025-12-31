@@ -154,7 +154,7 @@ type
     cbtElement, cbtAnonymous, cbtText
 
   CSSBox* = ref object of RootObj
-    parent* {.cursor.}: CSSBox
+    parent*: CSSBox
     firstChild*: CSSBox
     next*: CSSBox
     absolute*: CSSAbsolute
@@ -308,7 +308,7 @@ proc borderBottomRight*(input: LayoutInput; cellSize: Size): Offset =
   o
 
 iterator children*(box: CSSBox): CSSBox =
-  var it {.cursor.} = box.firstChild
+  var it = box.firstChild
   while it != nil:
     yield it
     it = it.next

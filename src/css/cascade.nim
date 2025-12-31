@@ -120,8 +120,8 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
       if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
         ctx.varsSeen.clear()
         return err()
-      var cv {.cursor.}: CSSVariable = nil
-      var vars {.cursor.} = vars
+      var cv: CSSVariable = nil
+      var vars = vars
       while vars != nil:
         cv = vars.table.getOrDefault(varName)
         if cv != nil:
