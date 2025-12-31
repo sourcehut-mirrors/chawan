@@ -224,22 +224,6 @@ proc spx(l: CSSLength; p: SizeConstraint; computed: CSSValues; padding: LUnit):
     return max(u - padding, 0'lu)
   return max(u, 0'lu)
 
-proc resolveUnderflow(input: var LayoutInput; contentSize: LUnit;
-    parentSize: SizeConstraint; computed: CSSValues; lctx: LayoutContext) =
-  let dim = dtHorizontal
-  # width must be definite, so that conflicts can be resolved
-  if parentSize.t == scStretch:
-    let start = computed.getLength(MarginStartMap[dim])
-    let send = computed.getLength(MarginEndMap[dim])
-    let underflow = parentSize.u - input.space[dim].u -
-      input.margin[dim].sum() - input.padding[dim].sum() -
-      input.borderSum(dim, lctx)
-    if underflow > 0'lu and start.auto:
-      if not send.auto:
-        input.margin[dim].start = underflow
-      else:
-        input.margin[dim].start = underflow div 2'lu
-
 proc resolveMargins(lctx: LayoutContext; availableWidth: SizeConstraint;
     computed: CSSValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
@@ -429,10 +413,6 @@ proc fillImageSize(input: LayoutInput; osize: Size): Size =
     osize.w * osize.h
   return size(w = rat div osize.h, h = rat div osize.w)
 
-proc applySpace(bounds: var Bounds; dim: DimensionType; u: LUnit) =
-  bounds.mi[dim].start = max(bounds.mi[dim].start, u)
-  bounds.mi[dim].send = min(bounds.mi[dim].send, u)
-
 proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
     paddingSum: Size; bmp: NetworkBitmap; computed: CSSValues): Size =
   let width = computed{"width"}
@@ -445,7 +425,6 @@ proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
     size.w = width.spx(space.w, computed, paddingSum.w)
   if hasHeight:
     size.h = height.spx(space.h, computed, paddingSum.h)
-  #TODO maybe don't allow 0-sized images?
   if not hasWidth and hasHeight and osize.h > 0'lu:
     size.w = size.h * osize.w div osize.h
   elif hasWidth and not hasHeight and osize.w > 0'lu:
@@ -542,65 +521,49 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
     input.space[odim] = stretch(input.bounds.a[odim].max())
   return input
 
-proc resolveBlockWidth(input: var LayoutInput; parentWidth: SizeConstraint;
-    inlinePadding: LUnit; computed: CSSValues; lctx: LayoutContext) =
-  let dim = dtHorizontal
-  let width = computed{"width"}
-  if width.canpx(parentWidth):
-    input.space.w = stretch(width.spx(parentWidth, computed, inlinePadding))
-    input.resolveUnderflow(input.space.w.u, parentWidth, computed, lctx)
-    if width.isPx:
-      input.bounds.applySpace(dtHorizontal, input.space.w.u)
-  elif parentWidth.t == scStretch:
-    let underflow = parentWidth.u - input.margin[dim].sum() -
-      inlinePadding - input.borderSum(dim, lctx)
-    if underflow >= 0'lu:
-      input.space.w = stretch(underflow)
+proc resolveBlockSpace(lctx: LayoutContext; input: var LayoutInput;
+    dim: DimensionType; psc: SizeConstraint; paddingSum: LUnit;
+    computed: CSSValues): SizeConstraint =
+  var sc = case dim
+  of dtHorizontal: psc
+  of dtVertical: # height is max-content normally, but fit-content for clip.
+    if computed{"overflow-y"} != OverflowClip:
+      maxContent()
     else:
-      input.space.w = stretch(0'lu)
-      input.margin[dtHorizontal].send += underflow
-  if input.space.w.isDefinite() and input.maxWidth < input.space.w.u or
-      input.maxWidth < LUnit.high and
-      input.space.w.t in {scMaxContent, scMeasure}:
-    if input.space.w.t == scStretch:
+      fitContent(psc)
+  let length = computed.getLength(SizeMap[dim])
+  if length.canpx(psc):
+    #TODO parent height should be the nearest non-auto height in quirks mode
+    # for percentage resolution.
+    let px = length.spx(psc, computed, paddingSum)
+    sc = stretch(px)
+    if length.isPx:
+      input.bounds.mi[dim].start = max(input.bounds.mi[dim].start, px)
+      input.bounds.mi[dim].send = min(input.bounds.mi[dim].send, px)
+  elif dim == dtHorizontal and psc.t == scStretch:
+    let underflow = psc.u - input.margin[dim].sum() - paddingSum -
+      input.borderSum(dim, lctx)
+    sc = stretch(max(underflow, 0'lu))
+    input.margin[dim].send = -min(underflow, 0'lu)
+  let minu = input.bounds.a[dim].start
+  let maxu = input.bounds.a[dim].send
+  if sc.isDefinite() and maxu < sc.u or
+      maxu < LUnit.high and sc.t in {scMaxContent, scMeasure}:
+    if sc.t == scStretch:
       # available width would stretch over max-width
-      input.space.w = stretch(input.maxWidth)
+      sc = stretch(maxu)
     else: # scFitContent
       # available width could be higher than max-width (but not necessarily)
-      input.space.w = fitContent(input.maxWidth)
-    input.resolveUnderflow(input.space.w.u, parentWidth, computed, lctx)
-    input.bounds.mi[dim].send = input.space.w.u
-  if input.space.w.isDefinite() and input.minWidth > input.space.w.u or
-      input.minWidth > 0'lu and input.space.w.t == scMinContent:
+      sc = fitContent(maxu)
+    input.bounds.mi[dim].send = sc.u
+  if sc.isDefinite() and minu > sc.u or minu > 0'lu and sc.t == scMinContent:
     # two cases:
-    # * available width is stretched under min-width. in this case,
-    #   stretch to min-width instead.
-    # * available width is fit under min-width. in this case, stretch to
-    #   min-width as well (as we must satisfy min-width >= width).
-    input.space.w = stretch(input.minWidth)
-    input.resolveUnderflow(input.space.w.u, parentWidth, computed, lctx)
-
-proc resolveBlockHeight(input: var LayoutInput; parentHeight: SizeConstraint;
-    blockPadding: LUnit; computed: CSSValues;
-    lctx: LayoutContext) =
-  let height = computed{"height"}
-  if height.canpx(parentHeight):
-    let px = height.spx(parentHeight, computed, blockPadding)
-    input.space.h = stretch(px)
-    if height.isPx:
-      input.bounds.applySpace(dtVertical, px)
-  if input.space.h.isDefinite() and input.maxHeight < input.space.h.u or
-      input.maxHeight < LUnit.high and
-      input.space.h.t in {scMaxContent, scMeasure}:
-    # same reasoning as for width.
-    if input.space.h.t == scStretch:
-      input.space.h = stretch(input.maxHeight)
-    else: # scFitContent
-      input.space.h = fitContent(input.maxHeight)
-  if input.space.h.isDefinite() and input.minHeight > input.space.h.u or
-      input.minHeight > 0'lu and input.space.h.t == scMinContent:
-    # same reasoning as for width.
-    input.space.h = stretch(input.minHeight)
+    # * available width is stretched under min-width, so stretch to
+    #   min-width instead.
+    # * available width is fit under min-width, so stretch to min-width as
+    #   well (as we must satisfy min-width >= width).
+    sc = stretch(minu)
+  return sc
 
 proc resolveBlockSizes(lctx: LayoutContext; space: Space; box: BlockBox):
     LayoutInput =
@@ -614,23 +577,25 @@ proc resolveBlockSizes(lctx: LayoutContext; space: Space; box: BlockBox):
     bounds: lctx.resolveBounds(space, paddingSum, computed),
   )
   input.border = lctx.resolveBorder(computed, input.margin)
-  # height is max-content normally, but fit-content for clip.
-  input.space.h = if computed{"overflow-y"} != OverflowClip:
-    maxContent()
-  else:
-    fitContent(input.space.h)
-  # Finally, calculate available width and height.
   let bmp = box.getImageBitmap()
   if bmp != nil:
     let size = lctx.resolveImageSizes(input, space, paddingSum, bmp, computed)
     input.space = stretch(size)
-    input.resolveUnderflow(input.space.w.u, space.w, computed, lctx)
-    #TODO applySpace?
   else:
-    input.resolveBlockWidth(space.w, paddingSum[dtHorizontal], computed, lctx)
-    #TODO parent height should be lctx height in quirks mode for percentage
-    # resolution.
-    input.resolveBlockHeight(space.h, paddingSum[dtVertical], computed, lctx)
+    for dim in DimensionType:
+      input.space[dim] = lctx.resolveBlockSpace(input, dim, space[dim],
+        paddingSum[dim], computed)
+  if input.space.w.isDefinite() and space.w.t == scStretch:
+    let dim = dtHorizontal
+    let underflow = space.w.u - input.space.w.u - input.margin[dim].sum() -
+      paddingSum[dim] - input.borderSum(dim, lctx)
+    if underflow > 0'lu and computed{"margin-left"}.auto:
+      if computed{"margin-right"}.auto:
+        let underflow = underflow div 2'lu
+        input.margin[dim].start = underflow
+        input.margin[dim].send = underflow
+      else:
+        input.margin[dim].start = underflow
   if computed{"display"} == DisplayListItem:
     # Eliminate distracting margins and padding here, because
     # resolveBlockWidth may change them beforehand.
@@ -2692,11 +2657,7 @@ proc layoutCaption(lctx: LayoutContext; box: BlockBox; space: Space;
 
 proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     input: LayoutInput) =
-  # Switch the table's space to fit-content if its width is auto.  (Note
-  # that we call canpx on space, which might have been changed by specified
-  # width.  This isn't a problem however, because canpx will still return
-  # true after that.) <-- TODO not sure if any of this still make sense (I
-  # think it does?)
+  # Switch the table's space to fit-content if its width is auto.
   if tctx.space.w.t == scStretch:
     let width = parent.computed{"width"}
     if width.isPx():
