@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-URIMETHODMAP 5
-MANOFF -->
+<!-- CHA-URIMETHODMAP 5 -->
 
 # URI method map support in Chawan
 
@@ -125,9 +123,6 @@ to an online dictionary site with tl:word instead of providing a local CGI
 interface, it is easier to just use omni-rules instead of urimethodmap +
 local CGI redirection.
 
-<!-- MANON
-
 ## See also
 
-**cha**(1) **cha-localcgi**(5)
-MANOFF -->
+[**cha**](cha.md)(1) [**cha-cgi**](cgi.md)(5)

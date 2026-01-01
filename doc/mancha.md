@@ -1,6 +1,4 @@
-<!-- MANON
-% MANCHA 1
-MANOFF -->
+<!-- MANCHA 1 -->
 
 # NAME
 
@@ -63,4 +61,4 @@ Following environment variables are used:
 
 # SEE ALSO
 
-**man**(1), **cha**(1), **cha-localcgi**(5), **w3mman**(1)
+**man**(1), **cha**(1), **cha-cgi**(5), **w3mman**(1)

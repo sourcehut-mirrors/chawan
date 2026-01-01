@@ -1,15 +1,12 @@
-<!-- MANON
-% CHA-API 7
-MANOFF -->
+<!-- CHA-API 7 -->
 
 # Chawan's command API
 
-As described in <!-- MANOFF -->the [config](config.md) documentation,<!-- MANON -->
-<!-- MANON **cha-config**(5), MANOFF --> keypress combinations can be bound to
-actions.
+As described in [**cha-config**](config.md)(5), users can bind keypress
+combinations to actions.  Such an action can be either a JavaScript
+expression, or a command defined in the `[cmd]` section of config.toml.
 
-An action can be either a JavaScript expression, or a command defined in the
-`[cmd]` section of config.toml.  For example, the following works:
+For example, the following works:
 
 ```
 gpn = 'n => pager.alert(n)' # e.g. 2gpn prints `2' to the status line
@@ -920,9 +917,6 @@ Following properties (functions/getters) are defined by `LineEdit`:
 
 </table>
 
-<!-- MANON
-
 ## See also
 
-**cha**(1) **cha-config**(5)
-MANOFF -->
+[**cha**](cha.md)(1) [**cha-config**](config.md)(5)

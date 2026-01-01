@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-MAILCAP 5
-MANOFF -->
+<!-- CHA-MAILCAP 5 -->
 
 # Mailcap
 
@@ -10,10 +8,9 @@ commands, or to convert them to HTML/plain text before displaying them
 in Chawan.
 
 Note that Chawan's default mime.types file only recognizes a few file
-extensions, which may result in your entries not being executed if your
-system lacks an /etc/mime.types file.  Please consult
-the <!-- MANOFF -->[mime.types](mime.types.md)<!-- MANON --> <!-- MANON **cha-mime.types**(5) MANOFF -->
-documentation for details.
+extensions, which may result in your entries not being executed
+if your system lacks an /etc/mime.types file.  Please consult
+[**cha-mime.types**](mime.types.md)(5) for details.
 
 For an exact description of the mailcap format, see
 [RFC 1524](https://www.rfc-editor.org/rfc/rfc1524).
@@ -144,8 +141,6 @@ text/x-hexdump; od -w12 -A x -t x1z -v; copiousoutput
 # Following entry will be ignored, as text/html is supported natively by Chawan.
 text/html; cha -dT text/html -I %{charset}; copiousoutput
 ```
-<!-- MANON
 ## See also
 
-**cha**(1)
-MANOFF -->
+[**cha**](cha.md)(1)

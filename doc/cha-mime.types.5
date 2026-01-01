@@ -2,14 +2,17 @@
 .\"
 .TH "CHA-MIME.TYPES" "5"
 .SH mime.types
-Chawan uses the mime.types file to recognize certain file extensions for
-matching mailcap entries.
-See the \f[B]cha\-mailcap\f[R](5) documentation for a description of
-mailcap.
+Chawan uses the mime.types file to map file extensions to MIME types
+(also known as \f[CR]Content\-Type\f[R]).
+.PP
+MIME types in turn are used by mailcap to decide how to present a
+certain file to the user (display as text, use external viewer, save,
+etc.)
+See \f[B]cha\-mailcap\f[R](5) for details of how that works.
 .SS Search path
 Chawan parses all mime.types files defined in
 \f[CR]external.mime\-types\f[R].
-If no mime.types file was found, the built\-in mime type associations
+When no mime.types file is found, the built\-in MIME type associations
 are used.
 .PP
 The default search path for mime.types files is:
@@ -45,4 +48,4 @@ formats).
 Therefore it is highly recommended to configure at least one external
 mime.types file if you use mailcap.
 .SS See also
-\f[B]cha\f[R](1)
+\f[B]cha\f[R](1) \f[B]cha\-mailcap\f[R](5)

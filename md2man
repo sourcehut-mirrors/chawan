@@ -6,13 +6,12 @@ then	echo "Usage: md2man [in]"
 fi
 
 sed -e 's/<!-- MANOFF -->.*<!-- MANON -->//g' \
-	-e 's/<!-- MANON \(.*\) MANOFF -->/\1/g' \
 	-e '/<!-- MANOFF -->/,/<!-- MANON -->/d' \
-	-e '/^<!-- MANON$/d' \
-	-e '/^MANOFF -->$/d' \
 	"$1" | {
 	read -r line;
-	printf '%s\n' "${line#"%"}"
+	line=${line#"<!-- "}
+	line=${line%" -->"}
+	printf '%s\n' "$line"
 	$PANDOC -p -t html
 } | {
 	read -r title section

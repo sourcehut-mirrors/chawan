@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-IMAGE 7
-MANOFF -->
+<!-- CHA-IMAGE 7 -->
 
 # Inline images
 
@@ -216,9 +214,6 @@ When doing this, mind the following:
   io/dynstream.nim's recvDataLoopOrMmap and maybeMmapForSend to deal with
   this automatically.)
 
-<!-- MANON
-
 ## See also
 
-**cha**(1)
-MANOFF -->
+[**cha**](cha.md)(1) [**cha-terminal**](terminal.md)(7)

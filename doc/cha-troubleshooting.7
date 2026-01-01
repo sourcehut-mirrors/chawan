@@ -52,7 +52,7 @@ images = true
 The second most common reason is that your terminal supports neither
 Sixel nor Kitty images.
 .PP
-Other reasons are enumerated in \f[B]cha\-image\f[R](7)
+Other reasons are enumerated \f[B]cha\-image\f[R](7).
 .SS Why do I get strange/incorrect/ugly colors?
 By default, Chawan\(cqs display capabilities are limited to what your
 terminal reports.
@@ -68,7 +68,8 @@ You can correct this using the
 \f[CR]display.default\-background\-color\f[R] and
 \f[CR]display.default\-foreground\-color\f[R] options.
 .PP
-See \f[I]display\f[R] in \f[B]cha\-config\f[R](5) for details.
+See the \f[I]Display\f[R] section in \f[B]cha\-config\f[R](5) for
+details.
 .SS I set my \f[CR]$PAGER\f[R] to \f[CR]cha\f[R] and now man pages are unreadable.
 Most \f[CR]man\f[R] implementations print formatted manual pages by
 default, which Chawan \f[I]can\f[R] parse if they are passed through
@@ -101,9 +102,9 @@ exec cha \-T text/x\-ansi \(dq$\(at\(dq
 .PP
 and \f[CR]export PAGER=pcha\f[R] (or whatever you named the script).
 .SS How do I view text files with wrapping?
-By default, text files are not auto\-wrapped, so viewing plain text
-files that were not wrapped properly by the authors is somewhat
-annoying.
+By default, Chawan does not automatically wrap text files, which makes
+viewing plain text files that were not wrapped by its authors
+uncomfortable.
 .PP
 A workaround is to add this to your config\(cqs \f[CR][page]\f[R]
 section:
@@ -166,7 +167,8 @@ Logging in to websites requires cookies.
 Some websites also require cookie sharing across domains.
 For security reasons, Chawan does not allow any of this by default, so
 you will have to fiddle with siteconf to fix it.
-See for details.
+See the \f[I]Siteconf\f[R] section in \f[B]cha\-config\f[R](5) for
+details.
 .IP \(bu 2
 Set the \f[CR]referer\-from\f[R] siteconf value to true; this will cause
 Chawan to send a \f[CR]Referer\f[R] header when navigating to other URLs

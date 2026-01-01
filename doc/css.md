@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-CSS 7
-MANOFF -->
+<!-- CHA-CSS 7 -->
 
 # CSS in Chawan
 
@@ -285,9 +283,6 @@ So while the functionality exists, it has some limitations:
   from the actual content.  (That in turn would cause problems if a child
   box set `overflow: hidden`, etc.)
 
-<!-- MANON
-
 ## See also
 
-**cha**(1)
-MANOFF -->
+[**cha**](cha.md)(1)

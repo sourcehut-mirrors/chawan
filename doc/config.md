@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-CONFIG 5
-MANOFF -->
+<!-- CHA-CONFIG 5 -->
 
 # Configuration of Chawan
 
@@ -24,7 +22,7 @@ search path accommodates XDG basedirs as well:
 3. `${XDG_CONFIG_HOME:-~/.config}/chawan/config.toml` exists -> use that
 4. `~/.chawan/config.toml` exists -> use that
 
-See the [path handling](#path-handling) section for details on how the
+See the [*Path handling*](#path-handling) section for details on how the
 config directory can be accessed.
 
 <!-- MANOFF -->
@@ -390,9 +388,8 @@ the line number.</td>
 <td>mailcap</td>
 <td>array of paths</td>
 <td>{see mailcap docs}</td>
-<td>Search path for <!-- MANOFF -->[mailcap](mailcap.md) files.<!-- MANON -->
-<!-- MANON mailcap files. (See **cha-mailcap**(5) for details.) MANOFF -->
-Directories specified first have higher precedence.
+<td>Search path for mailcap files.  (See [**cha-mailcap**](mailcap.md)(5)
+for details.)  Directories specified first have higher precedence.
 </td>
 </tr>
 
@@ -400,8 +397,8 @@ Directories specified first have higher precedence.
 <td>mime-types</td>
 <td>array of paths</td>
 <td>{see mime.types docs}</td>
-<td>Search path for <!-- MANOFF -->[mime.types](mime.types.md) files.<!-- MANON -->
-<!-- MANON mime.types files. (See **cha-mime.types**(5) for details.) MANOFF -->
+<td>Search path for mime.types files.
+(See [**cha-mime.types**](mime.types.md)(5) for details.)
 </td>
 </tr>
 
@@ -418,8 +415,8 @@ The "Open as" prompt also saves entries in this file.</td>
 <td>cgi-dir</td>
 <td>array of paths</td>
 <td>{see local CGI docs}</td>
-<td>Search path for <!-- MANOFF -->[local CGI](localcgi.md) scripts.<!-- MANON -->
-<!-- MANON local CGI scripts. (See **cha-localcgi**(5) for details.) MANOFF -->
+<td>Search path for local CGI scripts.  (See [**cha-cgi**](cgi.md)(5) for
+details.)
 </td>
 </tr>
 
@@ -427,8 +424,8 @@ The "Open as" prompt also saves entries in this file.</td>
 <td>urimethodmap</td>
 <td>array of paths</td>
 <td>{see urimethodmap docs}</td>
-<td>Search path for <!-- MANOFF -->[urimethodmap](urimethodmap.md) files.<!-- MANON -->
-<!-- MANON urimethodmap files. (See **cha-urimethodmap**(5) for details.) MANOFF -->
+<td>Search path for urimethodmap files.
+(See [**cha-urimethodmap**](urimethodmap.md)(5) for details.)
 </td>
 </tr>
 
@@ -436,10 +433,9 @@ The "Open as" prompt also saves entries in this file.</td>
 <td>w3m-cgi-compat</td>
 <td>boolean</td>
 <td>false</td>
-<td>Enable local CGI compatibility with w3m. In short, it redirects
-`file:///cgi-bin/*` and `file:///$LIB/cgi-bin/*` to `cgi-bin:*`. For further
-details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
-<!-- MANON **cha-localcgi**(5). MANOFF -->
+<td>Enable local CGI compatibility with w3m.  In short, it redirects
+`file:///cgi-bin/*` and `file:///$LIB/cgi-bin/*` to `cgi-bin:*`.
+For further details, see [**cha-cgi**](cgi.md)(5).
 </td>
 </tr>
 
@@ -1224,12 +1220,7 @@ escape to the keybinding respectively (essentially making `M-` the same as
 expression. Here we only describe the pre-defined actions in the default config;
 for a description of the API, please see:
 
-<!-- MANOFF -->
-[The API documentation](api.md).
-<!-- MANON -->
-<!-- MANON
-The API documentation at **cha-api**(7).
-MANOFF -->
+The API documentation at [**cha-api**](api.md)(7).
 
 Examples:
 
@@ -1961,9 +1952,6 @@ A big word is a sequence of non-whitespace characters.
 It is essentially the same as a w3m word, but with symbols being defined
 as non-whitespace.
 
-<!-- MANON
-
 ## See also
 
-**cha**(1) **cha-api**(7)
-MANOFF -->
+[**cha**](cha.md)(1) [**cha-api**](api.md)(7)

@@ -1,14 +1,11 @@
-<!-- MANON
-% CHA-LOCALCGI 5
-MANOFF -->
+<!-- CHA-CGI 5 -->
 
 # Local CGI support in Chawan
 
-Chawan supports the invocation of CGI scripts placed in a directory
-specified in the `external.cgi-dir` configuration option.  By default,
-this is set to `$CHA_DIR/cgi-bin` (i.e.  `~/.chawan/cgi-bin` or
-`~/.config/chawan/cgi-bin`, depending on `config.toml`'s location) and
-`/usr/local/libexec/chawan/cgi-bin`.
+Chawan supports the invocation of CGI scripts placed in a directory specified
+in the `external.cgi-dir` configuration option.  By default, this is set to
+`$CHA_DIR/cgi-bin` (i.e.  `~/.chawan/cgi-bin` or `~/.config/chawan/cgi-bin`,
+depending on `config.toml`'s location) and `/usr/local/libexec/chawan/cgi-bin`.
 
 A CGI script in one of these directories can be executed by visiting the URL
 `cgi-bin:script-name`.  `$PATH_INFO` and `$QUERY_STRING` are set as normal,
@@ -223,8 +220,6 @@ not work.
 This means that either `pipe` or `fork` failed.  Maybe you are running out
 of memory?
 
-<!-- MANON
 ## See also
 
-**cha**(1) **cha-urimethodmap**(5)
-MANOFF -->
+[**cha**](cha.md)(1) [**cha-urimethodmap**](urimethodmap.md)(5)

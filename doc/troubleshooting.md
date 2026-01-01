@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-TROUBLESHOOTING 7
-MANOFF -->
+<!-- CHA-TROUBLESHOOTING 7 -->
 
 # Troubleshooting Chawan
 
@@ -54,7 +52,7 @@ images = true
 The second most common reason is that your terminal supports neither Sixel
 nor Kitty images.
 
-Other reasons are enumerated <!-- MANOFF -->[here](image.md).<!-- MANON --> <!-- MANON in **cha-image**(7) MANOFF -->
+Other reasons are enumerated [**cha-image**](image.md)(7).
 
 ## Why do I get strange/incorrect/ugly colors?
 
@@ -68,7 +66,7 @@ reports.  In particular:
   using the `display.default-background-color` and
   `display.default-foreground-color` options.
 
-See <!-- MANOFF -->[config.md](config.md#display)<!-- MANON --> <!-- MANON *display* in **cha-config**(5) MANOFF --> for
+See the *Display* section in [**cha-config**](config.md#display)(5) for
 details.
 
 ## I set my `$PAGER` to `cha` and now man pages are unreadable.
@@ -76,8 +74,8 @@ details.
 Most `man` implementations print formatted manual pages by default, which
 Chawan *can* parse if they are passed through standard input.
 
-Unfortunately, mandoc passes us the formatted document as a *file*, which Chawan
-reasonably interprets as plain text without formatting.
+Unfortunately, mandoc passes us the formatted document as a *file*, which
+Chawan reasonably interprets as plain text without formatting.
 
 At this point, you have two options:
 
@@ -101,8 +99,8 @@ and `export PAGER=pcha` (or whatever you named the script).
 
 ## How do I view text files with wrapping?
 
-By default, text files are not auto-wrapped, so viewing plain text files that
-were not wrapped properly by the authors is somewhat annoying.
+By default, Chawan does not automatically wrap text files, which makes
+viewing plain text files that were not wrapped by its authors uncomfortable.
 
 A workaround is to add this to your [config](config.md#keybindings)'s
 `[page]` section:
@@ -112,8 +110,8 @@ A workaround is to add this to your [config](config.md#keybindings)'s
 ```
 
 and then press `<space> f` to view a wrapped version of the current text
-file. (This assumes your system has an `fmt` program - if not, `fold -s` may
-be an alternative.)
+file.  (This assumes your system has an `fmt` program - if not, `fold -s`
+may be an alternative.)
 
 To always automatically wrap, you can add this to your
 [user style](config.md#buffer):
@@ -126,8 +124,8 @@ To do the same for HTML and ANSI text, use `plaintext, pre`.
 
 ## Why does `$WEBSITE` look awful?
 
-Usually, this is because it uses some CSS features that are not yet implemented
-in Chawan.  The most common offender is grid.
+Usually, this is because it uses some CSS features that are not yet
+implemented in Chawan.  The most common offender is grid.
 
 There are three ways of dealing with this:
 
@@ -155,9 +153,8 @@ Some potential fixes:
 * Logging in to websites requires cookies.  Some websites also require
   cookie sharing across domains.  For security reasons, Chawan does not
   allow any of this by default, so you will have to fiddle with siteconf
-  to fix it.
-  See <!-- MANOFF -->[config.md#siteconf](config.md#siteconf) <!-- MANON --> <!-- MANON *Siteconf* in **cha-config**(5) --> for
-  details.
+  to fix it.  See the *Siteconf* section in
+  [**cha-config**](config.md#siteconf)(5) for details.
 
 * Set the `referer-from` siteconf value to true; this will cause Chawan
   to send a `Referer` header when navigating to other URLs from the
@@ -192,8 +189,6 @@ editor = 'exec vi +%d'
 
 This should be fixed in the latest aerc version.  Please update aerc.
 
-<!-- MANON
 ## See also
 
-**cha**(1)
-MANOFF -->
+[**cha**](cha.md)(1)

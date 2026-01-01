@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA 1
-MANOFF -->
+<!-- CHA 1 -->
 
 # NAME
 
@@ -164,7 +162,9 @@ Certain environment variables are read and used by Chawan.
 
 # SEE ALSO
 
-**mancha**(1), **cha\-config**(5), **cha\-mailcap**(5),
-**cha\-mime.types**(5), **cha\-localcgi**(5), **cha\-urimethodmap**(5),
-**cha\-protocols**(7), **cha\-image**(7), **cha\-css**(7),
-**cha\-troubleshooting**(7), **cha\-terminal**(7)
+[**mancha**](mancha.md)(1), [**cha\-config**](config.md)(5),
+[**cha\-mailcap**](mailcap.md)(5), [**cha\-mime.types**](mime.types.md)(5),
+[**cha\-cgi**](cgi.md)(5), [**cha\-urimethodmap**](urimethodmap.md)(5),
+[**cha\-protocols**](protocols.md)(7), [**cha\-image**](image.md)(7),
+[**cha\-css**](css.md)(7), [**cha\-troubleshooting**](troubleshooting.md)(7),
+[**cha\-terminal**](terminal.md)(7)

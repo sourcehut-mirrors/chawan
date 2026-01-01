@@ -118,7 +118,7 @@ Markdown files.
 * mailcap: [doc/mailcap.md](doc/mailcap.md)
 * mime.types: [doc/mime.types.md](doc/mime.types.md)
 * urimethodmap: [doc/urimethodmap.md](doc/urimethodmap.md)
-* local CGI: [doc/localcgi.md](doc/localcgi.md)
+* local CGI: [doc/cgi.md](doc/cgi.md)
 * protocols: [doc/protocols.md](doc/protocols.md)
 * inline images: [doc/image.md](doc/image.md)
 * CSS: [doc/css.md](doc/css.md)

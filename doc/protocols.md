@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-PROTOCOLS 7
-MANOFF -->
+<!-- CHA-PROTOCOLS 7 -->
 
 # Protocols
 
@@ -196,10 +194,10 @@ The following about pages are available: `about:chawan`, `about:blank`,
 ## Custom protocols
 
 The `cha` binary itself does not know much about the protocols listed
-above; instead, it loads these through a combination of [local
-CGI](localcgi.md), [urimethodmap](urimethodmap.md), and if conversion to
-HTML or plain text is necessary, [mailcap](mailcap.md) (using
-x-htmloutput, x-ansioutput and copiousoutput).
+above; instead, it loads these through a combination of [local CGI](cgi.md),
+[urimethodmap](urimethodmap.md), and if conversion to HTML or plain text is
+necessary, [mailcap](mailcap.md) (using x-htmloutput, x-ansioutput and
+copiousoutput).
 
 urimethodmap can also be used to override default handlers for the
 protocols listed above.  This is similar to how w3m allows you to
@@ -271,9 +269,7 @@ cowsay:		/cgi-bin/cowsay.cgi
 Now try `cha cowsay:Hello,%20world.`.  If you did everything correctly,
 it should wait one second, then print a cow saying "Hello, world.".
 
-<!-- MANON
-
 ## See also
 
-**cha**(1), **cha-localcgi**(5), **cha-urimethodmap**(5), **cha-mailcap**(5)
-MANOFF -->
+[**cha**](cha.md)(1), [**cha-cgi**](cgi.md)(5),
+[**cha-urimethodmap**](urimethodmap.md)(5), [**cha-mailcap**](mailcap.md)(5)

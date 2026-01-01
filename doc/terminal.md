@@ -1,6 +1,4 @@
-<!-- MANON
-% CHA-TERMINAL 7
-MANOFF -->
+<!-- CHA-TERMINAL 7 -->
 
 # Chawan terminal compatibility
 
@@ -121,9 +119,6 @@ broken C locale facility, and the two sets of supported charsets may not
 fully overlap.  You can test whether a charset is supported using
 `cha -O {charset name} -V`.
 
-<!-- MANON
-
 ## See also
 
-**cha**(1)
-MANOFF -->
+[**cha**](cha.md)(1)

@@ -1,17 +1,18 @@
-<!-- MANON
-% CHA-MIME.TYPES 5
-MANOFF -->
+<!-- CHA-MIME.TYPES 5 -->
 
 # mime.types
 
-Chawan uses the mime.types file to recognize certain file extensions for
-matching mailcap entries. See the <!-- MANOFF -->[mailcap](mailcap.md)<!-- MANON --> <!-- MANON **cha-mailcap**(5) MANOFF -->
-documentation for a description of mailcap.
+Chawan uses the mime.types file to map file extensions to MIME types (also
+known as `Content-Type`).
+
+MIME types in turn are used by mailcap to decide how to present a certain
+file to the user (display as text, use external viewer, save, etc.)
+See [**cha-mailcap**](mailcap.md)(5) for details of how that works.
 
 ## Search path
 
-Chawan parses all mime.types files defined in `external.mime-types`. If no
-mime.types file was found, the built-in mime type associations are used.
+Chawan parses all mime.types files defined in `external.mime-types`.  When
+no mime.types file is found, the built-in MIME type associations are used.
 
 The default search path for mime.types files is:
 
@@ -47,8 +48,6 @@ which is rather limited (at the time of writing, 7 file formats). Therefore it
 is highly recommended to configure at least one external mime.types file if you
 use mailcap.
 
-<!-- MANON
 ## See also
 
-**cha**(1)
-MANOFF -->
+[**cha**](cha.md)(1) [**cha-mailcap**](mailcap.md)(5)

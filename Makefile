@@ -242,7 +242,7 @@ distclean: clean
 	rm -rf "$(OUTDIR)"
 
 manpages1 = cha.1 mancha.1
-manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-localcgi.5 \
+manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-cgi.5 \
 	cha-urimethodmap.5
 manpages7 = cha-protocols.7 cha-api.7 cha-troubleshooting.7 cha-image.7 cha-css.7 cha-terminal.7
 
@@ -297,8 +297,8 @@ uninstall:
 	rmdir $(LIBEXECDIR_CHAWAN) || true
 	for f in $(manpages7); do rm -f "$(DESTDIR)$(MANPREFIX7)/$$f"; done
 	for f in $(manpages5); do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
-# moved to section 7
-	for f in cha-protocols.5 cha-api.5 cha-troubleshooting.5 cha-image.5; do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
+# moved to section 7 (and localcgi renamed to just cgi)
+	for f in cha-protocols.5 cha-api.5 cha-troubleshooting.5 cha-image.5 cha-localcgi.5; do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
 
 test/net/run: test/net/run.nim
