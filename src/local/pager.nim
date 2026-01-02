@@ -2644,6 +2644,7 @@ type GotoURLDict = object of JSDict
   history {.jsdefault.}: bool
   scripting {.jsdefault.}: Option[ScriptingMode]
   cookie {.jsdefault.}: Option[CookieMode]
+  charset {.jsdefault.}: Option[Charset]
 
 proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
     t = GotoURLDict()): Opt[Container] {.jsfunc: "gotoURL".} =
@@ -2657,8 +2658,8 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
   var filterCmd: string
-  pager.initGotoURL(request, CHARSET_UNKNOWN, referrer = nil, t.cookie,
-    loaderConfig, bufferConfig, filterCmd)
+  pager.initGotoURL(request, t.charset.get(CHARSET_UNKNOWN), referrer = nil,
+    t.cookie, loaderConfig, bufferConfig, filterCmd)
   bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
   let replace = t.replace.get(nil)
   let container = pager.gotoURL0(request, t.save, t.history, bufferConfig,

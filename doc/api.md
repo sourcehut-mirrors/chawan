@@ -197,7 +197,8 @@ prepend a scheme, etc.
 </tr>
 
 <tr>
-<td>`gotoURL(url, options = {replace: null, contentType: null, save: false})`</td>
+<td>`gotoURL(url, options = {replace: null, contentType: null, save: false,
+charset: null})`</td>
 <td>Go to the specified URL immediately (without a prompt). This differs from
 `loadSubmit` in that it loads the exact URL as passed (no prepending https,
 etc.)
@@ -211,6 +212,8 @@ forcefully set to that string.
 When `save` is true, the user is prompted to save the resource instead
 of displaying it in a buffer.
 <p>
+When `charset` is not null, the specified charset label is forced instead of
+regular charset detection.
 </td>
 </tr>
 

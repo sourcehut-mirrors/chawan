@@ -220,7 +220,7 @@ evaluates omni\-rules, tries to prepend a scheme, etc.
 T}
 _
 T{
-\f[CR]gotoURL(url, options = {replace: null, contentType: null, save: false})\f[R]
+\f[CR]gotoURL(url, options = {replace: null, contentType: null, save: false, charset: null})\f[R]
 T}@T{
 Go to the specified URL immediately (without a prompt).
 This differs from \f[CR]loadSubmit\f[R] in that it loads the exact URL
@@ -234,6 +234,9 @@ forcefully set to that string.
 .PP
 When \f[CR]save\f[R] is true, the user is prompted to save the resource
 instead of displaying it in a buffer.
+.PP
+When \f[CR]charset\f[R] is not null, the specified charset label is
+forced instead of regular charset detection.
 T}
 _
 T{
