@@ -2,19 +2,21 @@
 .\"
 .TH "CHA-IMAGE" "7"
 .SH Inline images
-On terminals that support images, Chawan can display various image
-formats.
+On terminals that support images, Chawan is capable of displaying
+various image formats inline.
 .SS Enabling images
 There are actually two switches for images in the config:
 .IP \(bu 2
 buffer.images: this enables downloading images, \f[I]even if they cannot
 be displayed\f[R].
+This is the switch you typically need.
 .IP \(bu 2
 display.image\-mode: sets the inline image display method.
 Defaults to \(lqauto\(rq, but may also be set to \(lqsixel\(rq or
 \(lqkitty\(rq manually.
+This switch is rarely useful.
 .PP
-In most cases, all you need to do is to set \(lqbuffer.images\(rq to
+In most cases, all you have to do is to set \f[CR]buffer.images\f[R] to
 true:
 .IP
 .EX
@@ -44,7 +46,8 @@ is not planned.
 (To my knowledge, all image\-capable terminals support at least one of
 the above two anyways.)
 .PP
-Support for hacks such as w3mimgdisplay, ueberzug, etc.
+Support for environment\-specific hacks such as w3mimgdisplay, ueberzug,
+etc.
 is not planned.
 .SS Sixel
 Sixel is the most widely supported image format.
@@ -56,9 +59,9 @@ See \c
 Known quirks and implementation details:
 .IP \(bu 2
 XTerm needs extensive configuration for ideal sixel support.
-In particular, you will want to set the decTerminalID,
+In particular, you will want to set the decGraphicsID,
 numColorRegisters, and maxGraphicSize attributes.
-See \f[CR]man xterm\f[R] for details.
+See \f[B]xterm\f[R](1) for details.
 .IP \(bu 2
 We assume private color registers are supported.
 On terminals where they aren\(cqt (e.g.\ SyncTERM or hardware
@@ -77,8 +80,6 @@ feature.)
 .IP \(bu 2
 On terminals that support Sixel, it fails to position images correctly,
 with the misplaced images completely messing up layout.
-(I guess nothing more complex than \f[CR]img2sixel\f[R] was ever
-tested.)
 .RE
 .IP \(bu 2
 We send XTSMGRAPHICS for retrieving the number of color registers; on

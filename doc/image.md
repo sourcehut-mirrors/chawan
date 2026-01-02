@@ -2,18 +2,20 @@
 
 # Inline images
 
-On terminals that support images, Chawan can display various image formats.
+On terminals that support images, Chawan is capable of displaying various
+image formats inline.
 
 ## Enabling images
 
 There are actually two switches for images in the config:
 
 * buffer.images: this enables downloading images, *even if they cannot be
-  displayed*.
+  displayed*.  This is the switch you typically need.
 * display.image-mode: sets the inline image display method.  Defaults to
-  "auto", but may also be set to "sixel" or "kitty" manually.
+  "auto", but may also be set to "sixel" or "kitty" manually.  This switch
+  is rarely useful.
 
-In most cases, all you need to do is to set "buffer.images" to true:
+In most cases, all you have to do is to set `buffer.images` to true:
 
 ```toml
 # in ~/.chawan/config.toml (or ~/.config/chawan/config.toml)
@@ -21,11 +23,10 @@ In most cases, all you need to do is to set "buffer.images" to true:
 images = true
 ```
 
-With the default image-mode, Chawan will find the best image display
-method supported by your terminal. However, if your terminal fails
-to tell Chawan that it can display sixels, you may also have to set
-"display.image-mode" appropriately.  See below for further discussion of
-sixel configuration.
+With the default image-mode, Chawan will find the best image display method
+supported by your terminal.  However, if your terminal fails to tell Chawan
+that it can display sixels, you may also have to set "display.image-mode"
+appropriately.  See below for further discussion of sixel configuration.
 
 ## Output formats
 
@@ -37,22 +38,23 @@ Supported output formats are:
 The former is supported because it's ubiquitously adopted; the latter
 because it is technically superior to all existing alternatives.
 
-Support for other protocols (iTerm, MLTerm, etc.) is not planned. (To my
-knowledge, all image-capable terminals support at least one of the
-above two anyways.)
+Support for other protocols (iTerm, MLTerm, etc.) is not planned.  (To my
+knowledge, all image-capable terminals support at least one of the above
+two anyways.)
 
-Support for hacks such as w3mimgdisplay, ueberzug, etc. is not planned.
+Support for environment-specific hacks such as w3mimgdisplay, ueberzug,
+etc. is not planned.
 
 ### Sixel
 
-Sixel is the most widely supported image format. See <https://arewesixelyet.com>
-to find a terminal that supports it.
+Sixel is the most widely supported image format.
+See <https://arewesixelyet.com> to find a terminal that supports it.
 
 Known quirks and implementation details:
 
 * XTerm needs extensive configuration for ideal sixel support.  In
-  particular, you will want to set the decTerminalID, numColorRegisters, and
-  maxGraphicSize attributes. See [`man xterm`](man:xterm(1)) for details.
+  particular, you will want to set the decGraphicsID, numColorRegisters, and
+  maxGraphicSize attributes.  See [**xterm**](man:xterm(1))(1) for details.
 
 * We assume private color registers are supported.  On terminals where they
   aren't (e.g. SyncTERM or hardware terminals), colors will get messed up with
@@ -68,7 +70,6 @@ Known quirks and implementation details:
 
 	- On terminals that support Sixel, it fails to position images
 	  correctly, with the misplaced images completely messing up layout.
-	  (I guess nothing more complex than `img2sixel` was ever tested.)
 
 * We send XTSMGRAPHICS for retrieving the number of color registers; on
   failure, we fall back to 256. You can override color register count using
