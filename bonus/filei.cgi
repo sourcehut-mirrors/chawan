@@ -27,14 +27,15 @@ x => x.pathname[0] != "/" ?
  * - rewrite in Nim & move into Chawan proper (maybe merge with dirlist?)
  */
 
-const path = decodeURI(std.getenv("MAPPED_URI_PATH"));
+const path0 = std.getenv("MAPPED_URI_PATH")
+const path = decodeURI(path0);
 const viewer = std.getenv("MAPPED_URI_QUERY") == "viewer";
 const [stat, err1] = os.stat(path);
 switch (stat.mode & os.S_IFMT) {
 case os.S_IFREG: {
 	if (viewer) {
 		std.out.puts("Content-Type: text/html\n\n");
-		std.out.puts(`<center><img src=${path}></center>`);
+		std.out.puts(`<center><img src=${path0}></center>`);
 	} else {
 		std.out.puts("\n");
 		const f = std.open(path, 'rb');
@@ -58,8 +59,9 @@ Location: ${scheme}:${path}/\n`);
 	let dirs = "";
 	let first = true;
 	files.sort((a, b) => {
-		const [ai, bi] = [a, b].map(x => parseInt(x.replace(/[^0-9]/g, "")));
-		if (!isNaN(ai) && !isNaN(bi))
+		const [as, bs] = [a, b].map(x => x.replace(/[0-9]+/, ""));
+		const [ai, bi] = [a, b].map(x => parseInt(x.replace(/[^0-9]+/, "")));
+		if (!isNaN(ai) && !isNaN(bi) && as == bs)
 			return ai - bi;
 		return a.localeCompare(b)
 	});
