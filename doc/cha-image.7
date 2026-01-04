@@ -38,9 +38,6 @@ The DEC Sixel format
 .IP \(bu 2
 The Kitty terminal graphics protocol
 .PP
-The former is supported because it\(cqs ubiquitously adopted; the latter
-because it is technically superior to all existing alternatives.
-.PP
 Support for other protocols (iTerm, MLTerm, etc.)
 is not planned.
 (To my knowledge, all image\-capable terminals support at least one of
@@ -107,11 +104,15 @@ using scroll there.)
 On terminals that support it, Kitty\(cqs protocol is preferred over
 Sixel.
 Its main benefit is that images do not have to be sent again every time
-a new slice of the image moves into the screen, but the initial transfer
-should also be faster (because PNG\(cqs compression tends to outperform
-Sixel\(cqs RLE).
+a new slice of the image moves into the screen.
+Support for full RGBA without quantization is another benefit.
 .PP
-Unlike Sixel, the Kitty protocol fully supports transparency.
+Note: at the time of writing, tmux does not support the Kitty image
+protocol.
+While it is possible to hack Kitty images onto tmux, this requires
+significant concessions in display capabilities compared to the regular
+Kitty protocol (or even Sixel).
+Therefore, support for this hack is not planned.
 .SS Input formats
 Currently, the supported input formats are:
 .IP \(bu 2

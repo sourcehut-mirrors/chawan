@@ -35,9 +35,6 @@ Supported output formats are:
 * The DEC Sixel format
 * The Kitty terminal graphics protocol
 
-The former is supported because it's ubiquitously adopted; the latter
-because it is technically superior to all existing alternatives.
-
 Support for other protocols (iTerm, MLTerm, etc.) is not planned.  (To my
 knowledge, all image-capable terminals support at least one of the above
 two anyways.)
@@ -93,10 +90,14 @@ Known quirks and implementation details:
 
 On terminals that support it, Kitty's protocol is preferred over Sixel.  Its
 main benefit is that images do not have to be sent again every time a new
-slice of the image moves into the screen, but the initial transfer should
-also be faster (because PNG's compression tends to outperform Sixel's RLE).
+slice of the image moves into the screen.  Support for full RGBA without
+quantization is another benefit.
 
-Unlike Sixel, the Kitty protocol fully supports transparency.
+Note: at the time of writing, tmux does not support the Kitty image
+protocol.  While it is possible to hack Kitty images onto tmux, this
+requires significant concessions in display capabilities compared to the
+regular Kitty protocol (or even Sixel).  Therefore, support for this hack is
+not planned.
 
 ## Input formats
 
