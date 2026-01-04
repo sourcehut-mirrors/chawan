@@ -191,8 +191,6 @@ type
     unreg: seq[Container]
     attrs: WindowAttributes
     pidMap: Table[int, string] # pid -> command
-    lastDrawPos: tuple[x, y: int]
-    lastDrawPid: int
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -1452,11 +1450,29 @@ proc highlightColor(pager: Pager): CellColor =
     return pager.config.display.highlightColor.cellColor()
   return defaultColor
 
+proc needsRedraw(pager: Pager; container: Container): bool =
+  if pager.display.redraw or pager.status.redraw or
+      pager.menu != nil and pager.menu.redraw or
+      pager.lineedit != nil and pager.lineedit.redraw:
+    return true
+  if container != nil:
+    if container.redraw:
+      return true
+    if container.select != nil and container.select.redraw:
+      return true
+  false
+
 proc draw(pager: Pager): Opt[void] =
-  var redraw = false
+  let term = pager.term
+  let container = pager.visibleContainer
+  let redraw = pager.needsRedraw(container)
+  if redraw:
+    # Note: lack of redraw does not necessarily mean that we send nothing to
+    # the terminal, but that we at most only send a few cursor movement
+    # controls.
+    term.initFrame()
   var imageRedraw = false
   var hasMenu = false
-  let container = pager.visibleContainer
   let bufHeight = pager.bufHeight
   if container != nil:
     if container.redraw:
@@ -1469,17 +1485,13 @@ proc draw(pager: Pager): Opt[void] =
       imageRedraw = true
       if container.select != nil:
         container.select.redraw = true
-      if pager.lastDrawPid == container.process and
-          container.fromx == pager.lastDrawPos.x:
-        let diff = pager.container.fromy - pager.lastDrawPos.y
-        if diff != 0 and abs(diff) <= (bufHeight + 1) div 2:
-          if diff > 0:
-            pager.term.scrollDown(diff, bufHeight)
-          else:
-            pager.term.scrollUp(-diff, bufHeight)
-      pager.lastDrawPos.x = container.fromx
-      pager.lastDrawPos.y = container.fromy
-      pager.lastDrawPid = container.process
+      let diff = pager.term.updateScroll(container.process, container.fromx,
+        container.fromy)
+      if diff != 0 and abs(diff) <= (bufHeight + 1) div 2:
+        if diff > 0:
+          pager.term.scrollDown(diff, bufHeight)
+        else:
+          pager.term.scrollUp(-diff, bufHeight)
     if (let select = container.select; select != nil and
         (select.redraw or pager.display.redraw)):
       select.drawSelect(pager.display.grid)
@@ -1487,7 +1499,7 @@ proc draw(pager: Pager): Opt[void] =
       pager.display.redraw = true
       hasMenu = true
   else:
-    pager.lastDrawPid = -1
+    pager.term.unsetScroll()
   if (let menu = pager.menu; menu != nil and
       (menu.redraw or pager.display.redraw)):
     menu.drawSelect(pager.display.grid)
@@ -1498,18 +1510,15 @@ proc draw(pager: Pager): Opt[void] =
   if pager.display.redraw:
     pager.term.writeGrid(pager.display.grid)
     pager.display.redraw = false
-    redraw = true
   if pager.lineedit != nil:
     if pager.lineedit.redraw:
       let x = pager.lineedit.generateOutput()
       pager.term.writeGrid(x, 0, pager.attrs.height - 1)
       pager.lineedit.redraw = false
-      redraw = true
   else:
     if pager.status.redraw:
       pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
       pager.status.redraw = false
-      redraw = true
   if pager.term.imageMode != imNone:
     if imageRedraw:
       # init images only after term canvas has been finalized
@@ -1984,7 +1993,7 @@ proc windowChange(pager: Pager) =
     pager.attrs.ppl != pager.term.attrs.ppl
   pager.attrs = pager.term.attrs
   if dimChange:
-    pager.lastDrawPid = -1
+    pager.term.unsetScroll()
     if pager.lineedit != nil:
       pager.lineedit.windowChange(pager.attrs)
     for st in SurfaceType:

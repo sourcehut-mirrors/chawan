@@ -911,6 +911,11 @@ proc getFileExt*(path: string): string =
     return ""
   return path.substr(n + 1)
 
+proc chaArrayCopy*[T](dest, src: var openArray[T]) =
+  assert dest.len == src.len
+  if dest.len > 0:
+    copyMem(addr dest[0], addr src[0], dest.len * sizeof(T))
+
 iterator lineIndices*(s: openArray[char]): tuple[si, ei: int] {.inline.} =
   var i = 0
   let H = s.high

@@ -809,13 +809,6 @@ black background, etc).</td>
 </tr>
 
 <tr>
-<td>force-clear</td>
-<td>boolean</td>
-<td>false</td>
-<td>Force the screen to be completely cleared every time it is redrawn.</td>
-</tr>
-
-<tr>
 <td>set-title</td>
 <td>boolean</td>
 <td>true</td>

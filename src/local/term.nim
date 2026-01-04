@@ -129,6 +129,31 @@ type
 
   Termdesc = set[TermdescFlag]
 
+  FrameType = enum
+    ftCurrent # non-discardable
+    ftNext # discardable
+
+  Frame = object
+    head: TerminalPage # output buffer queue
+    tail: TerminalPage # last output buffer
+    canvasImagesHead: CanvasImage
+    canvas: seq[FixedCell]
+    kittyImagesToClear: seq[uint] # Kitty only; vector of image ids
+    lineDamage: seq[int]
+    title: string # current title
+    pos: tuple[pid, x, y: int]
+    scrollTodo: int # lines to scroll (negative = up, positive = down)
+    scrollBottom: int # last line of currently set scroll area (-1 if reset)
+    format: Format # current formatting
+    cursorx: uint32
+    cursory: uint32
+    cursorKnown: bool # set if we know the cursor's position
+    fastScrollTodo: bool # flag to do fast scroll
+    queueTitleFlag: bool # set title on next draw
+    mouseEnabled: bool
+    specialGraphics: bool # flag for special graphics processing
+    cursorHidden: bool
+
   Terminal* = ref object
     termType: TerminalType
     cs*: Charset
@@ -138,12 +163,8 @@ type
     ostream*: PosixStream
     tdctx: TextDecoderContext
     eparser: EventParser
-    canvas: seq[FixedCell]
-    canvasImagesHead: CanvasImage
     canvasImagesTmpHead: CanvasImage # temp list during rescan
     canvasImagesTmpTail: CanvasImage
-    kittyImagesToClear: seq[uint] # Kitty only; vector of image ids
-    lineDamage: seq[int]
     attrs*: WindowAttributes
     formatMode: set[FormatFlag]
     imageMode*: ImageMode
@@ -152,12 +173,7 @@ type
     osc52Copy: bool
     osc52Primary*: bool
     ttyFlag: bool
-    mouseEnabled: bool
-    specialGraphics: bool # flag for special graphics processing
-    cursorHidden: bool
-    queueTitleFlag: bool # set title on next draw
     registeredFlag*: bool # kernel won't accept any more data right now
-    cursorKnown: bool # set if we know the cursor's position
     desc: Termdesc
     origTermios: Termios
     newTermios: Termios
@@ -168,19 +184,12 @@ type
     ibufn: int # position in ibuf
     dynbuf: string # buffer for UTF-8 text input by the user, for areadChar
     dynbufn: int # position in dynbuf
-    pageHead: TerminalPage # output buffer queue
-    pageTail: TerminalPage # last output buffer
+    frames: array[FrameType, Frame]
+    frameType: FrameType
     registerCb: proc(fd: int) {.raises: [].} # callback to register ostream
     sixelRegisterNum*: uint16
     kittyId: uint # counter for kitty image (*not* placement) ids.
-    cursorx: uint32
-    cursory: uint32
-    scrollTodo: int # lines to scroll (negative = up, positive = down)
-    scrollBottom: int # last line of currently set scroll area (-1 if reset)
-    fastScrollTodo: bool # flag to do fast scroll
     colorMap: array[16, RGBColor]
-    title: string # current title
-    format: Format # current formatting
 
   QueryState = enum
     qsBackgroundColor, qsForegroundColor, qsXtermAllowedOps, qsXtermWindowOps,
@@ -479,28 +488,127 @@ const APC = "\e_"
 
 const KittyQuery = APC & "Gi=1,s=1,v=1,a=q;AAAAAA" & ST
 
+iterator canvasImages(frame: Frame): CanvasImage =
+  var image = frame.canvasImagesHead
+  while image != nil:
+    yield image
+    image = image.next
+
+template frame(term: Terminal): Frame =
+  term.frames[term.frameType]
+
+proc clone(image: CanvasImage): CanvasImage =
+  let image2 = CanvasImage()
+  image2[] = image[]
+  image2.next = nil
+  image2
+
+# Frame skipping.
+#
+# Conceptually, we have a FIFO queue of frames coming in, with all
+# frames that aren't partially flushed being discardable.  (Theoretically
+# we could also discard partially flushed frames, but this sounds like a
+# nightmare to implement with minimal benefits.)
+#
+# In practice, we don't need an actual queue, this can be implemented as
+# a two-element array of frames:
+# * ftCurrent is the frame currently being written; we only ever write data
+#   from here.
+# * ftNext is a buffered frame, which starts out with a copy of ftCurrent's
+#   state when we start drawing despite ftCurrent not being fully flushed.
+#   Then:
+#   - If we start drawing again and ftCurrent is *still* not flushed,
+#     we drop ftNext in favor of this new frame.
+#   - Once ftCurrent is fully flushed, we "move" ftNext into ftCurrent's
+#     place.
+proc swapFrame(term: Terminal; frameType: FrameType) =
+  let ot = if frameType == ftCurrent: ftNext else: ftCurrent
+  term.frameType = frameType
+  case frameType
+  of ftCurrent:
+    # Unbuffer.  It's fine to destructively read the old canvas here.
+    term.frame.head = move(term.frames[ftNext].head)
+    term.frame.tail = move(term.frames[ftNext].tail)
+    swap(term.frame.canvas, term.frames[ot].canvas)
+    swap(term.frame.lineDamage, term.frames[ot].lineDamage)
+    swap(term.frame.kittyImagesToClear, term.frames[ot].kittyImagesToClear)
+    # could swap this too, but that would keep data alive for longer than
+    # desirable
+    term.frame.canvasImagesHead = move(term.frames[ot].canvasImagesHead)
+  of ftNext:
+    # Buffer.  We keep the old canvas intact in ftCurrent for the case where
+    # we get a new frame before this frame becomes active (and this frame
+    # is dropped).
+    term.frame.head = nil
+    term.frame.tail = nil
+    for i in 0 ..< term.frames[ot].canvas.len:
+      term.frame.canvas[i] = term.frames[ot].canvas[i]
+    chaArrayCopy(term.frame.lineDamage, term.frames[ot].lineDamage)
+    #TODO we could avoid some allocations here by reusing CanvasImage
+    # objects from the frame to be dropped
+    var imagesHead: CanvasImage = nil
+    var imagesTail: CanvasImage = nil
+    for image in term.frames[ot].canvasImages:
+      let image2 = image.clone()
+      if imagesTail == nil:
+        imagesHead = image2
+      else:
+        imagesTail.next = image2
+      imagesTail = image2
+    term.frame.kittyImagesToClear = term.frames[ot].kittyImagesToClear
+    term.frame.canvasImagesHead = imagesHead
+  term.frame.title = term.frames[ot].title
+  term.frame.format = term.frames[ot].format
+  term.frame.pos = term.frames[ot].pos
+  term.frame.cursorx = term.frames[ot].cursorx
+  term.frame.cursory = term.frames[ot].cursory
+  term.frame.cursorKnown = term.frames[ot].cursorKnown
+  term.frame.scrollTodo = term.frames[ot].scrollTodo
+  term.frame.scrollBottom = term.frames[ot].scrollBottom
+  term.frame.fastScrollTodo = term.frames[ot].fastScrollTodo
+  term.frame.queueTitleFlag = term.frames[ot].queueTitleFlag
+  term.frame.mouseEnabled = term.frames[ot].mouseEnabled
+  term.frame.specialGraphics = term.frames[ot].specialGraphics
+  term.frame.cursorHidden = term.frames[ot].cursorHidden
+
+# Must be called at the start of draw().
+proc initFrame*(term: Terminal) =
+  if term.frame.tail != nil:
+    # Started drawing while another frame is not done.
+    # We copy ftCurrent to ftNext; this clones (buffers) the current frame,
+    # dropping the previous buffered frame (if any).
+    term.swapFrame(ftNext)
+  term.frame.scrollTodo = 0
+  term.frame.fastScrollTodo = false
+
 proc flush*(term: Terminal): Opt[bool] =
-  var page = term.pageHead
-  while page != nil:
-    var n = page.n
-    let H = page.a.len - 1
-    while n < page.a.len:
-      let m = term.ostream.write(page.a.toOpenArray(n, H))
-      if m < 0:
-        let e = errno
-        if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
-          return err()
+  while true:
+    var page = term.frames[ftCurrent].head
+    if page == nil:
+      assert term.frameType != ftNext
+    while page != nil:
+      var n = page.n
+      let H = page.a.len - 1
+      while n < page.a.len:
+        let m = term.ostream.write(page.a.toOpenArray(n, H))
+        if m < 0:
+          let e = errno
+          if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
+            return err()
+          break
+        n += m
+      if n < page.a.len:
+        page.n = n
         break
-      n += m
-    if n < page.a.len:
-      page.n = n
-      break
-    page = page.next
-  term.pageHead = page
-  if page == nil:
-    term.pageTail = nil
-    return ok(true)
-  ok(false)
+      page = page.next
+    term.frames[ftCurrent].head = page
+    if page != nil: # not done
+      return ok(false)
+    term.frames[ftCurrent].tail = nil
+    if term.frameType == ftCurrent:
+      break # flushed all
+    term.swapFrame(ftCurrent)
+  ok(true)
 
 proc startFlush(term: Terminal): Opt[void] =
   if term.registeredFlag:
@@ -517,15 +625,16 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
   if s.len <= 0:
     return ok()
   if s.len <= BufferSize: # merge small writes
-    if term.pageTail != nil and term.pageTail.a.len + s.len > BufferSize:
+    let tail = term.frame.tail
+    if tail != nil and tail.a.len + s.len > BufferSize:
       # The buffer is full, so we'll have to flush anyway; try to do it now,
       # maybe we can at least merge this write with a subsequent one.
       ?term.startFlush()
-    let page = term.pageTail
+    let page = term.frame.tail
     if page == nil:
       let page = TerminalPage(a: @s)
-      term.pageHead = page
-      term.pageTail = page
+      term.frame.head = page
+      term.frame.tail = page
       return ok()
     let olen = page.a.len
     if olen + s.len <= BufferSize:
@@ -535,7 +644,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
   # large write, or the buffer is full.
   ?term.startFlush()
   var n = 0
-  if term.pageHead == nil:
+  if term.frames[ftCurrent].head == nil:
     while n < s.len:
       let m = term.ostream.write(s.toOpenArray(n, s.high))
       if m < 0:
@@ -546,14 +655,15 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
       n += m
   if n < s.len:
     let page = TerminalPage()
-    if term.pageTail == nil:
-      term.pageHead = page
-      term.pageTail = page
-      term.registerCb(int(term.ostream.fd))
-      term.registeredFlag = true
+    if term.frame.tail == nil:
+      term.frame.head = page
+      term.frame.tail = page
+      if term.frameType == ftCurrent: # no need to register next
+        term.registerCb(int(term.ostream.fd))
+        term.registeredFlag = true
     else:
-      term.pageTail.next = page
-      term.pageTail = page
+      term.frame.tail.next = page
+      term.frame.tail = page
     page.a = @(s.toOpenArray(n, s.high))
   ok()
 
@@ -1122,42 +1232,45 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
   of eprRedraw: return ok(InputEvent(t: ietRedraw))
 
 proc cursorNextLineBegin(term: Terminal): Opt[void] =
-  if term.scrollBottom < 0 and term.cursory + 1 < uint32(term.attrs.width) or
-      term.cursory < uint32(term.scrollBottom):
-    inc term.cursory
-  term.cursorx = 0
+  let ocursory = term.frame.cursory
+  if term.frame.scrollBottom < 0 and ocursory + 1 < uint32(term.attrs.width) or
+      ocursory < uint32(term.frame.scrollBottom):
+    inc term.frame.cursory
+  term.frame.cursorx = 0
   term.write("\r\n")
 
 proc cursorNextLine*(term: Terminal): Opt[void] =
-  if term.scrollBottom < 0 and term.cursory + 1 < uint32(term.attrs.width) or
-      term.cursory < uint32(term.scrollBottom):
-    inc term.cursory
+  let ocursory = term.frame.cursory
+  if term.frame.scrollBottom < 0 and ocursory + 1 < uint32(term.attrs.width) or
+      ocursory < uint32(term.frame.scrollBottom):
+    inc term.frame.cursory
   term.write('\n')
 
 proc cursorPrevLineBegin(term: Terminal): Opt[void] =
-  if term.cursory > 0:
-    dec term.cursory
-  term.cursorx = 0
+  if term.frame.cursory > 0:
+    dec term.frame.cursory
+  term.frame.cursorx = 0
   term.write('\r' & RI)
 
 proc cursorLineBegin(term: Terminal): Opt[void] =
-  term.cursorx = 0
+  term.frame.cursorx = 0
   term.write('\r')
 
 proc cursorGoto(term: Terminal; x, y: uint32): Opt[void] =
-  if term.cursorKnown and term.cursorx == x and term.cursory == y:
+  if term.frame.cursorKnown and term.frame.cursorx == x and
+      term.frame.cursory == y:
     return ok()
-  if term.cursorKnown and (x == 0 or x == term.cursorx) and
-      y - term.cursory <= 6:
+  if term.frame.cursorKnown and (x == 0 or x == term.frame.cursorx) and
+      y - term.frame.cursory <= 6:
     # This is probably more efficient than setting the cursor by address.
     if x == 0:
       ?term.cursorLineBegin()
-    for u in term.cursory ..< y:
+    for u in term.frame.cursory ..< y:
       ?term.cursorNextLine()
     return ok()
-  term.cursorx = x
-  term.cursory = y
-  term.cursorKnown = true
+  term.frame.cursorx = x
+  term.frame.cursory = y
+  term.frame.cursorKnown = true
   return case term.termType
   of ttAdm3a: term.write("\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
   of ttVt52: term.write("\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
@@ -1167,23 +1280,24 @@ proc cursorGoto(term: Terminal; x, y: int): Opt[void] =
   term.cursorGoto(uint32(x), uint32(y))
 
 proc cursorHome(term: Terminal): Opt[void] =
-  if term.cursorKnown and term.cursorx == 0 and term.cursory == 0:
+  if term.frame.cursorKnown and term.frame.cursorx == 0 and
+      term.frame.cursory == 0:
     return ok()
   if tfPreEcma48 in term.desc:
     return term.cursorGoto(0, 0)
-  term.cursorx = 0
-  term.cursory = 0
+  term.frame.cursorx = 0
+  term.frame.cursory = 0
   term.write(CSI & 'H')
 
 proc unsetCursorPos(term: Terminal) =
-  term.cursorKnown = false
+  term.frame.cursorKnown = false
 
 proc clearEnd(term: Terminal): Opt[void] =
   case term.termType
   of ttAdm3a:
-    for x in term.cursorx ..< uint32(term.attrs.width):
+    for x in term.frame.cursorx ..< uint32(term.attrs.width):
       ?term.write(' ')
-    term.cursorx = uint32(term.attrs.width) - 1
+    term.frame.cursorx = uint32(term.attrs.width) - 1
     return ok()
   of ttVt52: return term.write("\eK")
   else: return term.write(CSI & 'K')
@@ -1211,7 +1325,7 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]"; bottom = false): Opt[void] =
 proc resetFormat(term: Terminal): Opt[void] =
   # This resets the formatting *and* synchronizes it with the terminal.
   # processFormat(Format()) is usually more efficient.
-  term.format = Format()
+  term.frame.format = Format()
   case term.termType
   of ttAdm3a, ttVt52: return ok()
   else: return term.write(CSI & 'm')
@@ -1373,9 +1487,10 @@ proc processFormat*(term: Terminal; cellf: Format): Opt[void] =
   let fgcolor = cellf.fgcolor
   let bgcolor = cellf.bgcolor
   let flags = cellf.flags
-  let oldFgcolor = term.format.fgcolor
-  let oldBgcolor = term.format.bgcolor
-  let oldFlags = term.format.flags
+  let oformat = term.frame.format
+  let oldFgcolor = oformat.fgcolor
+  let oldBgcolor = oformat.bgcolor
+  let oldFlags = oformat.flags
   if oldFlags != flags:
     # if either
     # * both fgcolor and bgcolor are the default, or
@@ -1403,7 +1518,7 @@ proc processFormat*(term: Terminal; cellf: Format): Opt[void] =
     ?term.writeColorSGR(fgcolor, bgmod = 0)
   if bgcolor != oldBgcolor:
     ?term.writeColorSGR(bgcolor, bgmod = 10)
-  term.format = cellf
+  term.frame.format = cellf
   ok()
 
 proc hasTitle(term: Terminal): bool =
@@ -1501,18 +1616,19 @@ proc processOutputString*(term: Terminal; s: openArray[char];
     term.unsetCursorPos()
   if s.validateUTF8Surr() != -1:
     if trackCursor:
-      inc term.cursorx
+      inc term.frame.cursorx
     return term.write('?')
   if trackCursor:
     for u in s.points:
       assert u > 0x9F or u != 0x7F and u > 0x1F
-      term.cursorx += uint32(u.width())
+      term.frame.cursorx += uint32(u.width())
   if term.te == nil:
     # The output encoding matches the internal representation.
     return term.write(s)
   var res = ""
   if term.asciiOnly:
-    res.encodeAscii(s, term.specialGraphics, tfSpecialGraphics in term.desc)
+    res.encodeAscii(s, term.frame.specialGraphics,
+      tfSpecialGraphics in term.desc)
   else:
     # Output is not utf-8, so we must encode it first.
     res = newString(s.len) # guess length
@@ -1520,16 +1636,16 @@ proc processOutputString*(term: Terminal; s: openArray[char];
   term.write(res)
 
 proc hideCursor(term: Terminal): Opt[void] =
-  if not term.cursorHidden:
-    term.cursorHidden = true
+  if not term.frame.cursorHidden:
+    term.frame.cursorHidden = true
     case term.termType
     of ttAdm3a, ttVt52: discard
     else: return term.write(HideCursor)
   ok()
 
 proc showCursor(term: Terminal): Opt[void] =
-  if term.cursorHidden:
-    term.cursorHidden = false
+  if term.frame.cursorHidden:
+    term.frame.cursorHidden = false
     case term.termType
     of ttAdm3a, ttVt52: discard
     else: return term.write(ShowCursor)
@@ -1537,18 +1653,18 @@ proc showCursor(term: Terminal): Opt[void] =
 
 # 1-indexed
 proc setScrollArea(term: Terminal; top, bottom: int): Opt[void] =
-  if term.scrollBottom != bottom:
-    term.scrollBottom = bottom
-    term.cursorx = 0
-    term.cursory = 0
+  if term.frame.scrollBottom != bottom:
+    term.frame.scrollBottom = bottom
+    term.frame.cursorx = 0
+    term.frame.cursory = 0
     return term.write(CSI & $top & ";" & $bottom & 'r')
   ok()
 
 proc resetScrollArea(term: Terminal): Opt[void] =
-  if term.scrollBottom != -1:
-    term.scrollBottom = -1
-    term.cursorx = 0
-    term.cursory = 0
+  if term.frame.scrollBottom != -1:
+    term.frame.scrollBottom = -1
+    term.frame.cursorx = 0
+    term.frame.cursory = 0
     return term.write(CSI & 'r')
   ok()
 
@@ -1563,19 +1679,19 @@ proc processCell(term: Terminal; cell: FixedCell; x: int): Opt[void] =
     return ok()
   # if previous cell was empty, catch up with x
   let x = uint32(x)
-  while term.cursorx < x:
+  while term.frame.cursorx < x:
     ?term.write(' ')
-    inc term.cursorx
+    inc term.frame.cursorx
   ?term.processFormat(cell.format)
   term.processOutputString(cell.str)
 
 proc drawLine(term: Terminal; sx, y: int): Opt[void] =
   for x in sx ..< term.attrs.width:
-    ?term.processCell(term.canvas[y * term.attrs.width + x], x)
-  if term.cursorx < uint32(term.attrs.width):
+    ?term.processCell(term.frame.canvas[y * term.attrs.width + x], x)
+  if term.frame.cursorx < uint32(term.attrs.width):
     ?term.processFormat(Format())
     ?term.clearEnd()
-  term.lineDamage[y] = term.attrs.width
+  term.frame.lineDamage[y] = term.attrs.width
   ok()
 
 proc fullDraw(term: Terminal): Opt[void] =
@@ -1595,7 +1711,7 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
   ?term.setScrollArea(1, scrollBottom) # may move cursor to 0, 0
   # BCE to the buffer's background color to reduce visibility of tearing.
   ?term.processFormat(initFormat(bgcolor, defaultColor, {}))
-  if term.imageMode == imSixel and term.fastScrollTodo and
+  if term.imageMode == imSixel and term.frame.fastScrollTodo and
       tfFastScroll in term.desc:
     # Scrolling Sixel images line-by-line isn't very efficient (at least it
     # visibly slows down XTerm on my laptop), so use fast scroll for this.
@@ -1624,13 +1740,13 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
 
 proc partialDraw(term: Terminal; scrollBottom: int; bgcolor: CellColor):
     Opt[void] =
-  let scroll = term.scrollTodo
+  let scroll = term.frame.scrollTodo
   if scroll != 0:
     ?term.hideCursor()
     ?term.partialDrawScroll(scroll, scrollBottom, bgcolor)
   for y in 0 ..< term.attrs.height:
     # set cx to x of the first change
-    let cx = term.lineDamage[y]
+    let cx = term.frame.lineDamage[y]
     # w will track the current position on screen
     if cx >= term.attrs.width:
       continue
@@ -1646,18 +1762,41 @@ proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
     for lx in x ..< x + grid.width:
       let i = ly * term.attrs.width + lx
       let cell = grid[(ly - y) * grid.width + (lx - x)]
-      if term.canvas[i].str != "":
+      if term.frame.canvas[i].str != "":
         # if there is a change, we have to start from the last x with
         # a string (otherwise we might overwrite half of a double-width char)
         lastx = lx
       let format = term.reduceFormat(cell.format)
-      if format != term.canvas[i].format or cell.str != term.canvas[i].str:
-        term.canvas[i].str = cell.str
-        term.canvas[i].format = format
-        term.lineDamage[ly] = min(term.lineDamage[ly], lastx)
+      if format != term.frame.canvas[i].format or
+          cell.str != term.frame.canvas[i].str:
+        term.frame.canvas[i].str = cell.str
+        term.frame.canvas[i].format = format
+        term.frame.lineDamage[ly] = min(term.frame.lineDamage[ly], lastx)
 
 proc getCurrentBgcolor*(term: Terminal): CellColor =
-  term.format.bgcolor
+  term.frame.format.bgcolor
+
+# returns diff between current and old position (0 = cannot scroll)
+proc updateScroll*(term: Terminal; pid, x, y: int): int =
+  var diff = 0
+  #TODO I think we always have to check against ftCurrent here...
+  # with ftNext you get issues because we haven't dropped the frame at this
+  # point yet?  or something
+  # but I guess that also breaks canvas updates
+  # so probably you have to do the frame dropping thing *before* the
+  # printing even starts
+  # and then this is fine eh?
+  let pos = term.frame.pos
+  if pid != -1 and pos.pid == pid and pos.x == x:
+    diff = y - pos.y
+  term.frame.pos = (pid, x, y)
+  diff
+
+proc unsetScroll*(term: Terminal) =
+  # Called on winchange or when no container is on the screen.
+  # This won't be replayed, so unset pid everywhere.
+  for frame in term.frames.mitems:
+    frame.pos.pid = -1
 
 proc applyConfigDimensions(term: Terminal) =
   # screen dimensions
@@ -1720,12 +1859,6 @@ proc applyConfig(term: Terminal) =
   term.tdctx = initTextDecoderContext(term.cs)
   term.applyConfigDimensions()
 
-iterator canvasImages(term: Terminal): CanvasImage =
-  var image = term.canvasImagesHead
-  while image != nil:
-    yield image
-    image = image.next
-
 proc addImage*(term: Terminal; image: CanvasImage) =
   if term.canvasImagesTmpTail == nil:
     term.canvasImagesTmpHead = image
@@ -1742,7 +1875,7 @@ proc takeImage*(term: Terminal; pid, imageId, bufHeight: int;
   # So we just search again.
   #TODO this is way too convoluted, I'm sure there's a better way...
   var pass2 = false
-  var it = term.canvasImagesHead
+  var it = term.frame.canvasImagesHead
   var prev: CanvasImage = nil
   while it != nil:
     if it.pid == pid and it.imageId == imageId and
@@ -1755,12 +1888,12 @@ proc takeImage*(term: Terminal; pid, imageId, bufHeight: int;
       if not pass2 and not term.updateCanvasImage(it, dims, bufHeight):
         # retry with the right y error
         pass2 = true
-        it = term.canvasImagesHead
+        it = term.frame.canvasImagesHead
         continue
       if prev != nil:
         prev.next = it.next
       else:
-        term.canvasImagesHead = it.next
+        term.frame.canvasImagesHead = it.next
       it.next = nil
       return it
     prev = it
@@ -1822,15 +1955,15 @@ proc clearImage(term: Terminal; image: CanvasImage; maxh: int) =
     let ey = min(image.dims.y + h, maxh)
     let x = max(image.dims.x, 0)
     for y in max(image.dims.y, 0) ..< ey:
-      term.lineDamage[y] = min(term.lineDamage[y], x)
+      term.frame.lineDamage[y] = min(term.frame.lineDamage[y], x)
   of imKitty:
     if image.kittyId != 0:
-      term.kittyImagesToClear.add(image.kittyId)
+      term.frame.kittyImagesToClear.add(image.kittyId)
 
 proc clearImages*(term: Terminal; maxh: int) =
-  for image in term.canvasImages:
+  for image in term.frame.canvasImages:
     term.clearImage(image, maxh)
-  term.canvasImagesHead = nil
+  term.frame.canvasImagesHead = nil
 
 proc checkImageDamage(term: Terminal; image: CanvasImage; maxw, maxh: int) =
   # we're interested in the last x/y *on screen*.  if damage exceeds that,
@@ -1850,7 +1983,7 @@ proc checkImageDamage(term: Terminal; image: CanvasImage; maxw, maxh: int) =
   let mx = min(image.dims.x + (image.dims.dispw + ppcerr) div
     term.attrs.ppc, lastx)
   for y in max(image.dims.y, 0) ..< ey0:
-    let od = term.lineDamage[y]
+    let od = term.frame.lineDamage[y]
     if od > mx0:
       continue
     image.damaged = true
@@ -1859,18 +1992,19 @@ proc checkImageDamage(term: Terminal; image: CanvasImage; maxw, maxh: int) =
     if od < x:
       continue
     if image.transparent or od in mx0 ..< mx:
-      term.lineDamage[y] = x
+      term.frame.lineDamage[y] = x
     else:
       var textFound = false
       # damage starts inside an opaque image; skip clear (but only if
       # the damage was not caused by a printing character)
       let si = y * term.attrs.width
       for i in si + od ..< si + term.attrs.width:
-        if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
+        if term.frame.canvas[i].str.len > 0 and
+            term.frame.canvas[i].str[0] != ' ':
           textFound = true
           break
       if not textFound:
-        term.lineDamage[y] = mx
+        term.frame.lineDamage[y] = mx
 
 proc updateCanvasImage(term: Terminal; image: CanvasImage;
     dims: CanvasImageDimensions; maxh: int): bool =
@@ -1890,7 +2024,7 @@ proc updateCanvasImage(term: Terminal; image: CanvasImage;
   true
 
 proc checkImageOverlap(term: Terminal; image: CanvasImage) =
-  var it = term.canvasImagesHead
+  var it = term.frame.canvasImagesHead
   var prev: CanvasImage = nil
   let x1 = image.dims.xpx + image.dims.offx
   let y1 = image.dims.ypx + image.dims.offy
@@ -1909,22 +2043,22 @@ proc checkImageOverlap(term: Terminal; image: CanvasImage) =
         if prev != nil:
           prev.next = next
         else:
-          term.canvasImagesHead = next
+          term.frame.canvasImagesHead = next
         it = next
         continue
-      if term.imageMode == imSixel:
+      if term.imageMode == imSixel and it.damaged:
         # an image we overlap with was damaged; we have to redraw too to
         # preserve Z order.
-        image.damaged = image.damaged or it.damaged
+        image.damaged = true
     prev = it
     it = it.next
 
 proc updateImages*(term: Terminal; bufWidth, bufHeight: int) =
   term.clearImages(bufHeight)
-  term.canvasImagesHead = move(term.canvasImagesTmpHead)
+  term.frame.canvasImagesHead = move(term.canvasImagesTmpHead)
   term.canvasImagesTmpTail = nil
   if term.imageMode == imSixel:
-    for image in term.canvasImages:
+    for image in term.frame.canvasImages:
       term.checkImageDamage(image, bufWidth, bufHeight)
       term.checkImageOverlap(image)
 
@@ -1969,6 +2103,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let L = data.len - int(data.getU32BE(data.len - 4)) - 4
   if L < 0:
     return ok()
+  ?term.hideCursor()
   ?term.cursorGoto(x, y)
   # From this point on we have no idea where the cursor is because pretty
   # much every terminal puts it somewhere else.
@@ -2060,11 +2195,11 @@ proc outputImages(term: Terminal): Opt[void] =
   if term.imageMode == imKitty:
     # clean up unused kitty images
     var s = ""
-    for id in term.kittyImagesToClear:
+    for id in term.frame.kittyImagesToClear:
       s &= APC & "Ga=d,d=I,i=" & $id & ",p=1,q=2;" & ST
     ?term.write(s)
-    term.kittyImagesToClear.setLen(0)
-  for image in term.canvasImages:
+    term.frame.kittyImagesToClear.setLen(0)
+  for image in term.frame.canvasImages:
     if image.damaged:
       assert image.dims.dispw > 0 and image.dims.disph > 0
       ?term.resetScrollArea()
@@ -2084,7 +2219,7 @@ proc clearCanvas*(term: Terminal) =
   let maxhpx = maxh * term.attrs.ppl
   var imagesHead: CanvasImage = nil
   var imagesTail: CanvasImage = nil
-  var image = term.canvasImagesHead
+  var image = term.frame.canvasImagesHead
   while image != nil:
     let next = image.next
     if not image.scrolled and term.repositionImage(image, maxwpx, maxhpx):
@@ -2097,12 +2232,12 @@ proc clearCanvas*(term: Terminal) =
       imagesTail = image
     image = next
   term.clearImages(maxh)
-  term.canvasImagesHead = imagesHead
+  term.frame.canvasImagesHead = imagesHead
 
 proc queueTitle*(term: Terminal; title: string) =
-  if term.title != title:
-    term.queueTitleFlag = true
-    term.title = title
+  if term.frame.title != title:
+    term.frame.queueTitleFlag = true
+    term.frame.title = title
 
 # Must be called directly before draw, otherwise the cursor will disappear.
 proc scrollUp*(term: Terminal; n, scrollBottom: int) =
@@ -2112,14 +2247,14 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
     for x in 0 ..< term.attrs.width:
       let i = y * term.attrs.width + x
       let j = (y + n) * term.attrs.width + x
-      term.canvas[j] = move(term.canvas[i])
+      term.frame.canvas[j] = move(term.frame.canvas[i])
   for y in 0 ..< n:
-    term.lineDamage[y] = 0
+    term.frame.lineDamage[y] = 0
   let maxwpx = term.attrs.widthPx
   let maxhpx = scrollBottom * term.attrs.ppl
   let scrolled = term.imageMode == imSixel
   var found = false
-  var image = term.canvasImagesHead
+  var image = term.frame.canvasImagesHead
   var prev: CanvasImage = nil
   while image != nil:
     image.dims.y += n
@@ -2132,7 +2267,9 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
       if prev != nil:
         prev.next = next
       else:
-        term.canvasImagesHead = next
+        term.frame.canvasImagesHead = next
+      if term.imageMode == imKitty: # see below
+        term.frame.kittyImagesToClear.add(image.kittyId)
       image = next
       continue
     if term.imageMode == imKitty:
@@ -2151,8 +2288,8 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
     image = image.next
   if found and (n > 1 or term.termType == ttXterm):
     # XTerm can't do single-line scroll-up correctly, see below.
-    term.fastScrollTodo = true
-  term.scrollTodo -= n
+    term.frame.fastScrollTodo = true
+  term.frame.scrollTodo -= n
 
 proc scrollDown*(term: Terminal; n, scrollBottom: int) =
   if tfScroll notin term.desc:
@@ -2161,14 +2298,14 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
     for x in 0 ..< term.attrs.width:
       let i = y * term.attrs.width + x
       let j = (y - n) * term.attrs.width + x
-      term.canvas[j] = move(term.canvas[i])
+      term.frame.canvas[j] = move(term.frame.canvas[i])
   for y in scrollBottom - n ..< scrollBottom:
-    term.lineDamage[y] = 0
+    term.frame.lineDamage[y] = 0
   let maxwpx = term.attrs.widthPx
   let maxhpx = scrollBottom * term.attrs.ppl
   let scrolled = term.imageMode == imSixel
   var found = false
-  var image = term.canvasImagesHead
+  var image = term.frame.canvasImagesHead
   var prev: CanvasImage = nil
   while image != nil:
     found = true
@@ -2180,7 +2317,9 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
       if prev != nil:
         prev.next = next
       else:
-        term.canvasImagesHead = next
+        term.frame.canvasImagesHead = next
+      if term.imageMode == imKitty: # see below
+        term.frame.kittyImagesToClear.add(image.kittyId)
       image = next
       continue
     if term.imageMode == imKitty:
@@ -2192,34 +2331,32 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
     prev = image
     image = image.next
   if found and n > 1:
-    term.fastScrollTodo = true
-  term.scrollTodo += n
+    term.frame.fastScrollTodo = true
+  term.frame.scrollTodo += n
 
 proc draw*(term: Terminal; redraw, mouse: bool;
     cursorx, cursory, scrollBottom: int; bgcolor: CellColor): Opt[void] =
   if redraw:
-    if term.config.display.forceClear or not term.cleared:
+    if not term.cleared:
       ?term.fullDraw()
       term.cleared = true
     else:
       ?term.partialDraw(scrollBottom, bgcolor)
     if term.imageMode != imNone:
       ?term.outputImages()
-  if cursory > term.scrollBottom:
+  if cursory > term.frame.scrollBottom:
     ?term.resetScrollArea()
   ?term.cursorGoto(cursorx, cursory)
   ?term.showCursor()
-  term.scrollTodo = 0
-  term.fastScrollTodo = false
-  if term.queueTitleFlag and term.hasTitle():
-    ?term.write(OSC & "0;" & term.title.replaceControls() & ST)
-    term.queueTitleFlag = false
-  if term.hasMouse() and mouse != term.mouseEnabled:
+  if term.frame.queueTitleFlag and term.hasTitle():
+    ?term.write(OSC & "0;" & term.frame.title.replaceControls() & ST)
+    term.frame.queueTitleFlag = false
+  if term.hasMouse() and mouse != term.frame.mouseEnabled:
     if mouse:
       ?term.write(SetSGRMouse)
     else:
       ?term.write(ResetSGRMouse)
-    term.mouseEnabled = mouse
+    term.frame.mouseEnabled = mouse
   term.startFlush()
 
 proc sendOSC52*(term: Terminal; s: string; clipboard = true): Opt[bool] =
@@ -2233,7 +2370,10 @@ proc sendOSC52*(term: Terminal; s: string; clipboard = true): Opt[bool] =
   buf &= ';'
   buf.btoa(s.toOpenArrayByte(0, s.high))
   buf &= ST
+  let ot = term.frameType
+  term.frameType = ftCurrent
   ?term.write(buf)
+  term.frameType = ot
   ok(true)
 
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
@@ -2278,9 +2418,10 @@ proc respectSigint*(term: Terminal) =
 
 proc quit*(term: Terminal): Opt[void] =
   if term.isatty():
-    if term.hasMouse() and term.mouseEnabled:
+    term.frameType = ftCurrent # drop buffered frames
+    if term.hasMouse() and term.frame.mouseEnabled:
       ?term.write(ResetSGRMouse)
-      term.mouseEnabled = false
+      term.frame.mouseEnabled = false
     if term.hasBracketedPaste():
       ?term.write(ResetBracketedPaste)
     ?term.resetScrollArea()
@@ -2325,6 +2466,9 @@ proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
   if tfPreEcma48 in term.desc:
     term.eparser.queryState = qsNone
     return ok()
+  let ot = term.frameType
+  # query in the current frame
+  term.frameType = ftCurrent
   if not windowOnly:
     term.setQueryState(qsBackgroundColor)
     if tfXtermQuery in term.desc:
@@ -2365,6 +2509,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
   ?term.cursorGoto(9998, 9998)
   ?term.write(QueryCursorPosition)
   term.unsetCursorPos()
+  term.frameType = ot
   term.startFlush()
 
 # Parse TERM variable.  This may adjust color-mode.
@@ -2458,8 +2603,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
   ok()
 
 proc initCanvas(term: Terminal) =
-  term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
-  term.lineDamage = newSeq[int](term.attrs.height)
+  for frame in term.frames.mitems:
+    frame.lineDamage = newSeq[int](term.attrs.height)
+    frame.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
+    frame.scrollBottom = -1
 
 proc windowChange(term: Terminal) =
   term.applyConfigDimensions()
@@ -2484,7 +2631,7 @@ proc initScreen(term: Terminal): Opt[void] =
     ?term.write(SetBracketedPaste)
   if term.hasMouse():
     ?term.write(SetSGRMouse)
-    term.mouseEnabled = true
+    term.frame.mouseEnabled = true
   term.startFlush()
 
 proc start*(term: Terminal; istream: PosixStream;
@@ -2539,8 +2686,7 @@ proc newTerminal*(ostream: PosixStream; config: Config): Terminal =
     defaultForeground: DefaultForeground,
     colorMap: ANSIColorMap,
     termType: ttXterm,
-    sixelRegisterNum: 256,
-    scrollBottom: -1
+    sixelRegisterNum: 256
   )
 
 {.pop.} # raises: []

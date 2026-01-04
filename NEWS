@@ -9,6 +9,8 @@ unreleased
 * remove query-da1 (no longer needed, terminal querying is now async)
 * work around FreeBSD vt(4) not responding to any query at all
 * optimize out Sixel repaints when scrolling
+* drop excessive frames when the terminal/link cannot keep up
+* remove display.force-clear option
 * fix cached images not being cleared when a buffer is deleted
 * fix a NULL deref in jebp
 * fix y/n being truncated out of long ask() prompts

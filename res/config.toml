@@ -101,7 +101,6 @@ highlight-color = "-cha-ansi(bright-cyan)"
 highlight-marks = true
 double-width-ambiguous = false
 minimum-contrast = 100
-force-clear = false
 set-title = "auto"
 default-background-color = "auto"
 default-foreground-color = "auto"
