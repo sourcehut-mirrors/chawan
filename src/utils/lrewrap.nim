@@ -74,12 +74,12 @@ proc exec*(regex: Regex; s: openArray[char]; start = 0; length = -1;
     result.captures.add(caps)
     if LRE_FLAG_GLOBAL notin flags:
       break
-    if start >= s.len:
-      break
     if ps == start: # avoid infinite loop: skip the first UTF-8 char.
       inc start
       while start < s.len and uint8(s[start]) in 0x80u8 .. 0xBFu8:
         inc start
+    if start >= length:
+      break
 
 proc match*(regex: Regex; str: string; start = 0; length = str.len): bool =
   return regex.exec(str, start, length, nocaps = true).success
