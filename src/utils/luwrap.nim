@@ -81,10 +81,6 @@ type
     lurSeparator = "Separator"
     lurOther = "Other"
     lurMark = "Mark"
-    lurHan = "Han"
-    lurHiragana = "Hiragana"
-    lurKatakana = "Katakana"
-    lurHangul = "Hangul"
     lurEnclosingMark = "Me"
     lurNonspacingMark = "Mn"
     lurFormat = "Cf"
@@ -112,13 +108,6 @@ proc initGeneralCategory(ctx: LUContext; lur: LURangeType) =
     doAssert unicode_general_category(p, cstring($lur)) == 0
     ctx.inited.incl(lur)
 
-proc initScript(ctx: LUContext; lur: LURangeType) =
-  if lur notin ctx.inited:
-    let p = addr ctx.crs[lur]
-    cr_init(p, nil, passRealloc)
-    doAssert unicode_script(p, cstring($lur), false) == 0
-    ctx.inited.incl(lur)
-
 proc initProp(ctx: LUContext; lur: LURangeType) =
   if lur notin ctx.inited:
     let p = addr ctx.crs[lur]
@@ -141,22 +130,6 @@ proc isOther*(ctx: LUContext; u: uint32): bool =
 proc isMark*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurMark)
   return u in ctx.crs[lurMark]
-
-proc isHan*(ctx: LUContext; u: uint32): bool =
-  ctx.initScript(lurHan)
-  return u in ctx.crs[lurHan]
-
-proc isHiragana*(ctx: LUContext; u: uint32): bool =
-  ctx.initScript(lurHiragana)
-  return u in ctx.crs[lurHiragana]
-
-proc isKatakana*(ctx: LUContext; u: uint32): bool =
-  ctx.initScript(lurKatakana)
-  return u in ctx.crs[lurKatakana]
-
-proc isHangul*(ctx: LUContext; u: uint32): bool =
-  ctx.initScript(lurHangul)
-  return u in ctx.crs[lurHangul]
 
 proc isEnclosingMark*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurEnclosingMark)

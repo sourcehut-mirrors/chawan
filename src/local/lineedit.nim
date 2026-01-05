@@ -13,7 +13,6 @@ import types/winattrs
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
-import utils/wordbreak
 
 type
   LineEditState* = enum
@@ -40,6 +39,12 @@ type
     hide: bool
 
 jsDestructor(LineEdit)
+
+proc isDigitAscii(u: uint32): bool =
+  return u < 128 and char(u) in AsciiDigit
+
+proc breaksWord(ctx: LUContext; u: uint32): bool =
+  return not u.isDigitAscii() and u.width() != 0 and not ctx.isAlpha(u)
 
 proc width(edit: LineEdit; u: uint32): int =
   if edit.hide:

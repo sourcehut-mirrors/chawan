@@ -54,6 +54,7 @@ import types/jsopt
 import types/opt
 import types/url
 import types/winattrs
+import utils/builtinre
 import utils/lrewrap
 import utils/luwrap
 import utils/myposix
@@ -158,6 +159,7 @@ type
     askPrompt: string
     config*: Config
     console*: Console
+    relist: BuiltinRegexList
     tabHead: Tab # not nil
     tab: Tab # not nil
     cookieJars: CookieJarMap
@@ -573,7 +575,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     tabHead: tab,
     tab: tab,
     consoleCacheId: -1,
-    console: console
+    console: console,
+    relist: newBuiltinRegexList()
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
@@ -1633,7 +1636,8 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     charsetStack,
     cacheId,
     pager.config,
-    if tab != nil: tab else: pager.tab
+    if tab != nil: tab else: pager.tab,
+    pager.relist
   )
   pager.loader.put(ConnectingContainer(
     state: ccsBeforeResult,

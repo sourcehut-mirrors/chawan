@@ -35,11 +35,11 @@ import types/opt
 import types/referrer
 import types/url
 import types/winattrs
+import utils/builtinre
 import utils/lrewrap
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
-import utils/wordbreak
 
 type
   CursorState = object
@@ -210,6 +210,7 @@ type
     images*: seq[PosBitmap]
     imageCache: ImageCache
     luctx: LUContext
+    relist: BuiltinRegexList
     refreshHeader: string
     tab*: Tab
 
@@ -237,7 +238,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
     title: string; redirectDepth: int; flags: set[ContainerFlag];
     contentType: string; charsetStack: seq[Charset]; cacheId: int;
-    mainConfig: Config; tab: Tab): Container =
+    mainConfig: Config; tab: Tab; relist: BuiltinRegexList): Container =
   let host = request.url.host
   let loadinfo = (if host != "":
     "Connecting to " & host
@@ -262,7 +263,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     luctx: luctx,
     redraw: true,
     lastPeek: HoverType.high,
-    tab: tab
+    tab: tab,
+    relist: relist
   )
 
 # shallow clone of buffer
@@ -398,6 +400,20 @@ proc findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
 
 proc cursorBytes(container: Container; y: int; cc = container.cursorx): int =
   return container.getLineStr(y).findColBytes(cc, 0, 0)
+
+proc findColStartByte(s: string; endx: int): int =
+  var w = 0
+  var i = 0
+  while i < s.len and w < endx:
+    let pi = i
+    let u = s.nextUTF8(i)
+    w += u.width()
+    if w > endx:
+      return pi
+  return i
+
+proc cursorStartByte(container: Container; y, cc: int): int =
+  return container.getLineStr(y).findColStartByte(cc)
 
 proc currentCursorBytes(container: Container; cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
@@ -867,208 +883,6 @@ proc cursorLineBegin(container: Container) {.jsfunc.} =
 proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
 
-type BreakFunc = proc(ctx: LUContext; r: uint32): BreakCategory {.
-  nimcall, raises: [].}
-
-# move to first char that is not in this category
-proc skipCat(container: Container; b, x: var int; breakFunc: BreakFunc;
-    cat: BreakCategory) =
-  while b < container.currentLine.len:
-    let pb = b
-    let u = container.currentLine.nextUTF8(b)
-    if container.luctx.breakFunc(u) != cat:
-      b = pb
-      break
-    x += u.width()
-
-proc skipSpace(container: Container; b, x: var int; breakFunc: BreakFunc) =
-  container.skipCat(b, x, breakFunc, bcSpace)
-
-# move to last char in category, backwards
-proc lastCatRev(container: Container; b, x: var int; breakFunc: BreakFunc;
-    cat: BreakCategory) =
-  while b > 0:
-    let pb = b
-    let u = container.currentLine.prevUTF8(b)
-    if container.luctx.breakFunc(u) != cat:
-      b = pb
-      break
-    x -= u.width()
-
-# move to first char that is not in this category, backwards
-proc skipCatRev(container: Container; b, x: var int; breakFunc: BreakFunc;
-    cat: BreakCategory): BreakCategory =
-  while b > 0:
-    let u = container.currentLine.prevUTF8(b)
-    x -= u.width()
-    let it = container.luctx.breakFunc(u)
-    if it != cat:
-      return it
-  b = -1
-  return cat
-
-proc skipSpaceRev(container: Container; b, x: var int; breakFunc: BreakFunc):
-    BreakCategory =
-  return container.skipCatRev(b, x, breakFunc, bcSpace)
-
-proc cursorNextWord(container: Container; breakFunc: BreakFunc) =
-  if container.numLines == 0: return
-  var b = container.currentCursorBytes()
-  var x = container.cursorx
-  # meow
-  let currentCat = if b < container.currentLine.len:
-    var tmp = b
-    container.luctx.breakFunc(container.currentLine.nextUTF8(tmp))
-  else:
-    bcSpace
-  if currentCat != bcSpace:
-    # not in space, skip chars that have the same category
-    container.skipCat(b, x, breakFunc, currentCat)
-  container.skipSpace(b, x, breakFunc)
-  if b < container.currentLine.len:
-    container.setCursorX(x)
-  else:
-    if container.cursory < container.numLines - 1:
-      container.cursorDown()
-      container.cursorLineBegin()
-    else:
-      container.cursorLineEnd()
-
-proc cursorNextWord(container: Container) {.jsfunc.} =
-  container.cursorNextWord(breaksWordCat)
-
-proc cursorNextViWord(container: Container) {.jsfunc.} =
-  container.cursorNextWord(breaksViWordCat)
-
-proc cursorNextBigWord(container: Container) {.jsfunc.} =
-  container.cursorNextWord(breaksBigWordCat)
-
-proc cursorPrevWord(container: Container; breakFunc: BreakFunc) =
-  if container.numLines == 0: return
-  var b = container.currentCursorBytes()
-  var x = container.cursorx
-  if container.currentLine.len > 0:
-    b = min(b, container.currentLine.len - 1)
-    var currentCat = if b >= 0:
-      var tmp = b
-      container.luctx.breakFunc(container.currentLine.nextUTF8(tmp))
-    else:
-      bcSpace
-    if currentCat != bcSpace:
-      # not in space, skip chars that have the same category
-      currentCat = container.skipCatRev(b, x, breakFunc, currentCat)
-    if currentCat == bcSpace:
-      discard container.skipSpaceRev(b, x, breakFunc)
-  else:
-    b = -1
-  if b >= 0:
-    container.setCursorX(x)
-  else:
-    if container.cursory > 0:
-      container.cursorUp()
-      container.cursorLineEnd()
-    else:
-      container.cursorLineBegin()
-
-proc cursorPrevWord(container: Container) {.jsfunc.} =
-  container.cursorPrevWord(breaksWordCat)
-
-proc cursorPrevViWord(container: Container) {.jsfunc.} =
-  container.cursorPrevWord(breaksViWordCat)
-
-proc cursorPrevBigWord(container: Container) {.jsfunc.} =
-  container.cursorPrevWord(breaksBigWordCat)
-
-proc cursorWordEnd(container: Container; breakFunc: BreakFunc) =
-  if container.numLines == 0: return
-  var b = container.currentCursorBytes()
-  var x = container.cursorx
-  var px = x
-  # if not in space, move to the right by one
-  if b < container.currentLine.len:
-    let pb = b
-    let u = container.currentLine.nextUTF8(b)
-    if container.luctx.breakFunc(u) == bcSpace:
-      b = pb
-    else:
-      px = x
-      x += u.width()
-  container.skipSpace(b, x, breakFunc)
-  # move to the last char in the current category
-  let ob = b
-  if b < container.currentLine.len:
-    var tmp = b
-    let u = container.currentLine.nextUTF8(tmp)
-    let currentCat = container.luctx.breakFunc(u)
-    while b < container.currentLine.len:
-      let pb = b
-      let u = container.currentLine.nextUTF8(b)
-      if container.luctx.breakFunc(u) != currentCat:
-        b = pb
-        break
-      px = x
-      x += u.width()
-    x = px
-  if b < container.currentLine.len or ob != b:
-    container.setCursorX(x)
-  else:
-    if container.cursory < container.numLines - 1:
-      container.cursorDown()
-      container.cursorLineBegin()
-    else:
-      container.cursorLineEnd()
-
-proc cursorWordEnd(container: Container) {.jsfunc.} =
-  container.cursorWordEnd(breaksWordCat)
-
-proc cursorViWordEnd(container: Container) {.jsfunc.} =
-  container.cursorWordEnd(breaksViWordCat)
-
-proc cursorBigWordEnd(container: Container) {.jsfunc.} =
-  container.cursorWordEnd(breaksBigWordCat)
-
-proc cursorWordBegin(container: Container; breakFunc: BreakFunc) =
-  if container.numLines == 0: return
-  var b = container.currentCursorBytes()
-  var x = container.cursorx
-  if container.currentLine.len > 0:
-    b = min(b, container.currentLine.len - 1)
-    if b >= 0:
-      var tmp = b
-      var u = container.currentLine.nextUTF8(tmp)
-      var currentCat = container.luctx.breakFunc(u)
-      # if not in space, move to the left by one
-      if currentCat != bcSpace:
-        if b > 0:
-          u = container.currentLine.prevUTF8(b)
-          x -= u.width()
-          currentCat = container.luctx.breakFunc(u)
-        else:
-          b = -1
-      if container.luctx.breakFunc(u) == bcSpace:
-        currentCat = container.skipSpaceRev(b, x, breakFunc)
-      # move to the first char in the current category
-      container.lastCatRev(b, x, breakFunc, currentCat)
-  else:
-    b = -1
-  if b >= 0:
-    container.setCursorX(x)
-  else:
-    if container.cursory > 0:
-      container.cursorUp()
-      container.cursorLineEnd()
-    else:
-      container.cursorLineBegin()
-
-proc cursorWordBegin(container: Container) {.jsfunc.} =
-  container.cursorWordBegin(breaksWordCat)
-
-proc cursorViWordBegin(container: Container) {.jsfunc.} =
-  container.cursorWordBegin(breaksViWordCat)
-
-proc cursorBigWordBegin(container: Container) {.jsfunc.} =
-  container.cursorWordBegin(breaksBigWordCat)
-
 proc pageDown(container: Container; n = 1) {.jsfunc.} =
   container.setFromY(container.fromy + container.height * n)
   container.setCursorY(container.cursory + container.height * n)
@@ -1452,11 +1266,11 @@ proc clearSearchHighlights*(container: Container) =
       container.highlights.del(i)
 
 proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
-  if res.success:
+  if res.x >= 0 and res.y >= 0:
     container.setCursorXYCenter(res.x, res.y, refresh)
     if cfHighlight in container.flags:
       container.clearSearchHighlights()
-      let ex = res.x + res.str.width() - 1
+      let ex = res.x + res.w - 1
       let hl = Highlight(
         t: hltSearch,
         x1: res.x,
@@ -1472,18 +1286,71 @@ proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
     container.queueDraw()
     container.flags.excl(cfHighlight)
 
-proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
-    n: int): EmptyPromise {.discardable.} =
-  if container.select != nil:
-    container.select.cursorNextMatch(regex, wrap, n)
-    return newResolvedPromise()
-  if container.iface == nil:
-    return newResolvedPromise()
-  return container.iface
-    .findNextMatch(regex, container.cursorx, container.cursory, wrap, n)
-    .then(proc(res: BufferMatch) =
-      container.onMatch(res, refresh)
-    )
+proc findPrevMatch(container: Container; regex: Regex; x, y: int; wrap: bool;
+    n: int): Promise[BufferMatch] =
+  var wrap = wrap
+  let endy = y
+  var n = n
+  var y = y
+  var b = container.cursorStartByte(y, x)
+  var first = true
+  while true:
+    if y < 0:
+      if not wrap:
+        break
+      y = container.numLines - 1
+      wrap = false
+    if not container.lineLoaded(y):
+      return container.iface.findPrevMatch(regex, x, y, endy, wrap, n)
+    let s = container.getLineStr(y)
+    if b < 0:
+      b = s.len
+    let res = regex.exec(s, 0, b)
+    if res.captures.len > 0:
+      let cap = res.captures[^1][0]
+      let x = s.width(0, cap.s)
+      let w = s.toOpenArray(cap.s, cap.e - 1).width()
+      dec n
+      if n == 0:
+        return newResolvedPromise(BufferMatch(x: x, y: y, w: w))
+    dec y
+    if y == endy and not first:
+      break
+    first = false
+    b = -1
+  return newResolvedPromise(BufferMatch(x: -1, y: -1))
+
+proc findNextMatch(container: Container; regex: Regex; x, y: int; wrap: bool;
+    n: int): Promise[BufferMatch] =
+  var wrap = wrap
+  let endy = y
+  var y = y
+  var n = n
+  var b = container.cursorBytes(y, x + 1)
+  var first = true
+  while true:
+    if y >= container.numLines:
+      if not wrap:
+        break
+      wrap = false
+      y = 0
+    if not container.lineLoaded(y):
+      return container.iface.findNextMatch(regex, x, y, endy, wrap, n)
+    let s = container.getLineStr(y)
+    let res = regex.exec(s, b, s.len)
+    if res.captures.len > 0:
+      let cap = res.captures[0][0]
+      let x = s.width(0, cap.s)
+      let w = s.toOpenArray(cap.s, cap.e - 1).width()
+      dec n
+      if n == 0:
+        return newResolvedPromise(BufferMatch(x: x, y: y, w: w))
+    b = 0
+    if y == endy and not first:
+      break
+    first = false
+    inc y
+  return newResolvedPromise(BufferMatch(x: -1, y: -1))
 
 proc cursorPrevMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
@@ -1493,12 +1360,85 @@ proc cursorPrevMatch*(container: Container; regex: Regex; wrap, refresh: bool;
   if container.iface == nil:
     return newResolvedPromise()
   container.markPos0()
-  return container.iface
+  return container
     .findPrevMatch(regex, container.cursorx, container.cursory, wrap, n)
     .then(proc(res: BufferMatch) =
       container.onMatch(res, refresh)
       container.markPos()
     )
+
+proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
+    n: int): EmptyPromise {.discardable.} =
+  if container.select != nil:
+    container.select.cursorNextMatch(regex, wrap, n)
+    return newResolvedPromise()
+  if container.iface == nil:
+    return newResolvedPromise()
+  return container
+    .findNextMatch(regex, container.cursorx, container.cursory, wrap, n)
+    .then(proc(res: BufferMatch) =
+      container.onMatch(res, refresh)
+    )
+
+proc cursorPrevWord(container: Container; t: BuiltinRegex): EmptyPromise =
+  let x = container.cursorx
+  let y = container.cursory
+  return container
+    .findPrevMatch(container.relist.a[t], x, y, wrap = false, 1)
+    .then(proc(res: BufferMatch) =
+      if res.x >= 0 and res.y >= 0:
+        container.setCursorXY(res.x + res.w - 1, res.y)
+      else:
+        container.cursorLineBegin()
+    )
+
+proc cursorNextWord(container: Container; t: BuiltinRegex): EmptyPromise =
+  let x = container.cursorx
+  let y = container.cursory
+  return container
+    .findNextMatch(container.relist.a[t], x, y, wrap = false, 1)
+    .then(proc(res: BufferMatch) =
+      if res.x >= 0 and res.y >= 0:
+        container.setCursorXY(res.x + res.w - 1, res.y)
+      else:
+        container.cursorLineEnd()
+    )
+
+proc cursorPrevWord(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorPrevWord(brWordEnd)
+
+proc cursorPrevViWord(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorPrevWord(brViWordEnd)
+
+proc cursorPrevBigWord(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorPrevWord(brBigWordEnd)
+
+proc cursorNextWord(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorNextWord(brWordStart)
+
+proc cursorNextViWord(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorNextWord(brViWordStart)
+
+proc cursorNextBigWord(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorNextWord(brBigWordStart)
+
+proc cursorWordBegin(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorPrevWord(brWordStart)
+
+proc cursorViWordBegin(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorPrevWord(brViWordStart)
+
+proc cursorBigWordBegin(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorPrevWord(brBigWordStart)
+
+proc cursorWordEnd(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorNextWord(brWordEnd)
+
+proc cursorViWordEnd(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorNextWord(brViWordEnd)
+
+proc cursorBigWordEnd(container: Container): EmptyPromise {.jsfunc.} =
+  container.cursorNextWord(brBigWordEnd)
 
 type
   SelectionOptions = object of JSDict

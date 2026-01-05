@@ -98,10 +98,9 @@ type
     htTitle, htLink, htImage, htCachedImage
 
   BufferMatch* = object
-    success*: bool
     x*: int
     y*: int
-    str*: string
+    w*: int
 
   InputData = ref object of MapData
 
@@ -655,72 +654,64 @@ proc findRevNthLink*(bc: BufferContext; handle: PagerHandle; i: int):
   return (-1, -1)
 
 proc findPrevMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
-    cursorx, cursory: int; wrap: bool, n: int): BufferMatch {.proxy.} =
-  if cursory >= bc.lines.len: return BufferMatch()
-  var y = cursory
-  let b = bc.cursorBytes(y, cursorx)
-  let res = regex.exec(bc.lines[y].str, 0, b)
-  var numfound = 0
-  if res.captures.len > 0:
-    let cap = res.captures[^1][0]
-    let x = bc.lines[y].str.width(0, cap.s)
-    let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
-    inc numfound
-    if numfound >= n:
-      return BufferMatch(success: true, x: x, y: y, str: str)
-  dec y
+    x, y, endy: int; wrap: bool; n: int): BufferMatch {.proxy.} =
+  if n <= 0 or x < 0 or y < 0 or y >= bc.lines.len:
+    return BufferMatch(x: -1, y: -1)
+  var n = n
+  var y = y
+  var b = bc.cursorBytes(y, x)
+  var first = true
   while true:
     if y < 0:
-      if wrap:
-        y = bc.lines.high
-      else:
+      if not wrap:
         break
-    let res = regex.exec(bc.lines[y].str)
+      y = bc.lines.high
+    let s = bc.lines[y].str
+    if b < 0:
+      b = s.len
+    let res = regex.exec(s, 0, b)
     if res.captures.len > 0:
       let cap = res.captures[^1][0]
-      let x = bc.lines[y].str.width(0, cap.s)
-      let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
-      inc numfound
-      if numfound >= n:
-        return BufferMatch(success: true, x: x, y: y, str: str)
-    if y == cursory:
+      let x = s.width(0, cap.s)
+      let w = s.toOpenArray(cap.s, cap.e - 1).width()
+      dec n
+      if n == 0:
+        return BufferMatch(x: x, y: y, w: w)
+    if y == endy and not first:
       break
+    first = false
+    b = -1
     dec y
-  BufferMatch()
+  BufferMatch(x: -1, y: -1)
 
 proc findNextMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
-    cursorx, cursory: int; wrap: bool; n: int): BufferMatch {.proxy.} =
-  if cursory >= bc.lines.len: return BufferMatch()
+    cursorx, cursory, endy: int; wrap: bool; n: int): BufferMatch {.proxy.} =
+  if n <= 0 or cursorx < 0 or cursory < 0 or cursory >= bc.lines.len:
+    return BufferMatch(x: -1, y: -1)
   var y = cursory
-  let b = bc.cursorBytes(y, cursorx + 1)
-  let res = regex.exec(bc.lines[y].str, b, bc.lines[y].str.len)
-  var numfound = 0
-  if res.success and res.captures.len > 0:
-    let cap = res.captures[0][0]
-    let x = bc.lines[y].str.width(0, cap.s)
-    let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
-    inc numfound
-    if numfound >= n:
-      return BufferMatch(success: true, x: x, y: y, str: str)
-  inc y
+  var n = n
+  var b = bc.cursorBytes(y, cursorx + 1)
+  var first = true
   while true:
-    if y > bc.lines.high:
-      if wrap:
-        y = 0
-      else:
+    if y >= bc.lines.len:
+      if not wrap:
         break
-    let res = regex.exec(bc.lines[y].str)
-    if res.success and res.captures.len > 0:
+      y = 0
+    let s = bc.lines[y].str
+    let res = regex.exec(s, b, s.len)
+    if res.captures.len > 0:
       let cap = res.captures[0][0]
-      let x = bc.lines[y].str.width(0, cap.s)
-      let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
-      inc numfound
-      if numfound >= n:
-        return BufferMatch(success: true, x: x, y: y, str: str)
-    if y == cursory:
+      let x = s.width(0, cap.s)
+      let w = s.toOpenArray(cap.s, cap.e - 1).width()
+      dec n
+      if n == 0:
+        return BufferMatch(x: x, y: y, w: w)
+    b = 0
+    if y == endy and not first:
       break
+    first = false
     inc y
-  BufferMatch()
+  BufferMatch(x: -1, y: -1)
 
 type GotoAnchorResult* = object
   found*: bool
