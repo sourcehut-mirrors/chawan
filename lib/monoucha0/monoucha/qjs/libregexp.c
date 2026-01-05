@@ -2608,10 +2608,9 @@ static BOOL is_word_char(uint32_t c)
             }                                                           \
         } else {                                                        \
             const uint8_t *__cpt2 = cptr;                               \
-            int __i = 1;                                                \
-            while (__cpt2 > cbuf_start && ((*__cpt2-- >> 6) & 2))       \
-                __i++;                                                  \
-            c = unicode_from_utf8(__cpt2, __i, &__cpt2);                \
+            while (__cpt2 > cbuf_start && ((*(--__cpt2) >> 6) == 2))    \
+                ;                                                       \
+            c = unicode_from_utf8(__cpt2, cptr - __cpt2, &__cpt2);      \
         }                                                               \
     } while (0)
 
@@ -2631,11 +2630,10 @@ static BOOL is_word_char(uint32_t c)
             }                                                           \
             cptr = (const void *)_p;                                    \
         } else {                                                        \
-            const uint8_t *__cpt2;                                      \
-            int __i = 1;                                                \
-            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2))           \
-                __i++;                                                  \
-            c = unicode_from_utf8(cptr, __i, &__cpt2);                  \
+            const uint8_t *__cpt2 = cptr;                               \
+            while (cptr > cbuf_start && ((*(--cptr) >> 6) == 2))        \
+                ;                                                       \
+            c = unicode_from_utf8(cptr, __cpt2 - cptr, &__cpt2);        \
         }                                                               \
     } while (0)
 
@@ -2653,7 +2651,8 @@ static BOOL is_word_char(uint32_t c)
             }                                                           \
             cptr = (const void *)_p;                                    \
         } else {                                                        \
-            while (cptr > cbuf_start && ((*cptr-- >> 6) & 2));          \
+            while (cptr > cbuf_start && (*(--cptr) >> 6) == 2)          \
+                ;                                                       \
         }                                                               \
     } while (0)
 
