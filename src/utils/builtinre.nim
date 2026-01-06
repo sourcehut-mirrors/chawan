@@ -23,6 +23,7 @@ type
       # other alpha & non-alpha (symbol)
       r"(\w(?!\w))|([^\p{L}\p{Z}](?![^\p{L}\p{Z}]))"
     brBigWordEnd = r"\S(?!\S)"
+    brTextStart = r"\S"
 
   BuiltinRegexList* = ref object
     a*: array[BuiltinRegex, Regex]

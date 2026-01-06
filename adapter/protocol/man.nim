@@ -100,10 +100,6 @@ proc isCommand(paths: seq[string]; name, s: string): bool =
       return true
   false
 
-iterator myCaptures(res: var RegexResult; i: int): RegexCapture =
-  for cap in res.captures.mitems:
-    yield cap[i]
-
 proc readErrorMsg(efile: AChaFile; line: var string): string =
   var msg = ""
   while true:
@@ -120,32 +116,12 @@ proc readErrorMsg(efile: AChaFile; line: var string): string =
       break
   move(msg)
 
-type RegexType = enum
-  rtLink = r"(https?|ftp)://[\w/~.-]+"
-  rtMail = r"(mailto:|)(\w[\w.-]*@[\w-]+\.[\w.-]*)"
-  rtFile = r"(file:)?[/~][\w/~.-]+[\w/]"
-  rtInclude = r"#include(</?[bu]>|\s)*&lt;([\w./-]+)"
-  rtMan = r"(</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\))"
-
-proc updateOffsets(map: var array[RegexType, RegexResult]; len: int;
-    cap: RegexCapture; ourType: RegexType) =
-  let offset = len - (cap.e - cap.s)
-  var first = true
-  for res in map.toOpenArray(ourType, RegexType.high).mitems:
-    var toDel: seq[int] = @[]
-    for i, icap in res.captures.mpairs:
-      var overlap = false
-      for it in icap.mitems:
-        if not first and it.e > cap.s and it.s < cap.e:
-          overlap = true
-        elif it.s > cap.s:
-          it.s += offset
-          it.e += offset
-      if overlap:
-        toDel.add(i)
-    for i in toDel.ritems:
-      res.captures.delete(i)
-    first = false
+const RegexStr =
+  r"((https?|ftp)://[\w/~.-]+)|" &              # link, 1
+  r"((mailto:|)(\w[\w.-]*@[\w-]+\.[\w.-]*))|" & # mail, 3
+  r"((file:)?[/~][\w/~.-]+[\w/])|" &            # file, 6
+  r"(#include(</?[bu]>|\s)*&lt;([\w./-]+))|" &  # include, 8
+  r"((</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\)))" # man, 11-15
 
 proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     Opt[void] =
@@ -173,11 +149,10 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
   ?stdout.writeLine(line.processBackspace())
   var wasBlank = false
   # regexes partially from w3mman2html
-  var reMap = array[RegexType, Regex].default
-  for t, re in reMap.mpairs:
-    if not ($t).compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE}, re):
-      discard cast[ChaFile](stderr).writeLine($t & ": " & re.bytecode)
-      quit(1)
+  var re: Regex
+  if not RegexStr.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE}, re):
+    discard cast[ChaFile](stderr).writeLine(re.bytecode)
+    quit(1)
   var paths: seq[string] = @[]
   var ignoreMan = keyword.toUpperAscii()
   if ignoreMan == keyword or keyword.len == 1:
@@ -194,70 +169,63 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
       wasBlank = true
     else:
       wasBlank = false
-    var line = line.processBackspace()
-    var res = array[RegexType, RegexResult].default
-    for t, re in reMap.mpairs:
-      res[t] = re.exec(line)
-    for cap in res[rtLink].myCaptures(0):
-      let s = line[cap.s..<cap.e]
-      let link = "<a href='" & s & "'>" & s & "</a>"
-      line[cap.s..<cap.e] = link
-      res.updateOffsets(link.len, cap, rtLink)
-    for cap in res[rtMail].myCaptures(2):
-      let s = line[cap.s..<cap.e]
-      let link = "<a href='mailto:" & s & "'>" & s & "</a>"
-      line[cap.s..<cap.e] = link
-      res.updateOffsets(link.len, cap, rtMail)
-    for cap in res[rtFile].myCaptures(0):
-      let s = line[cap.s..<cap.e]
-      let target = s.expandTilde()
-      if not fileExists(target) and not symlinkExists(target) and
-          not dirExists(target):
-        continue
-      let name = target.afterLast('/')
-      let link = if paths.isCommand(name, target):
-        "<a href='man:" & name & "'>" & s & "</a>"
-      else:
-        "<a href='file:" & target & "'>" & s & "</a>"
-      line[cap.s..<cap.e] = link
-      res.updateOffsets(link.len, cap, rtFile)
-    for cap in res[rtInclude].myCaptures(2):
-      let s = line[cap.s..<cap.e]
-      const includePaths = [
-        "/usr/include/",
-        "/usr/local/include/",
-        "/usr/X11R6/include/",
-        "/usr/X11/include/",
-        "/usr/X/include/",
-        "/usr/include/X11/"
-      ]
-      for path in includePaths:
-        let file = path & s
-        if fileExists(file):
-          let link = "<a href='file:" & file & "'>" & s & "</a>"
-          line[cap.s..<cap.e] = link
-          res.updateOffsets(link.len, cap, rtInclude)
-          break
+    let line = line.processBackspace()
+    var oline = ""
     var offset = 0
-    for cap in res[rtMan].captures.mitems:
-      cap[0].s += offset
-      cap[0].e += offset
-      var manCap = cap[2]
-      manCap.s += offset
-      manCap.e += offset
-      var secCap = cap[4]
-      secCap.s += offset
-      secCap.e += offset
-      let man = line[manCap.s..<manCap.e]
-      # ignore footers like MYPAGE(1)
-      # (just to be safe, we also check if it's in paths too)
-      if man == ignoreMan and not paths.isCommand(man.afterLast('/'), man):
-        continue
-      let cat = man & line[secCap.s..<secCap.e]
-      let link = "<a href='man:" & cat & "'>" & man & "</a>"
-      line[manCap.s..<manCap.e] = link
-      offset += link.len - (manCap.e - manCap.s)
-    ?stdout.writeLine(line)
+    var ctx = initContext(re)
+    for ret in ctx.exec(line):
+      if ret != 1:
+        oline &= line.substr(offset)
+        break
+      let cap = ctx.cap(0)
+      oline &= line[offset..<cap.s]
+      offset = cap.e
+      var s = line[cap.s..<cap.e]
+      if ctx.cap(1).s >= 0: # link
+        oline &= "<a href='" & s & "'>" & s & "</a>"
+      elif ctx.cap(3).s >= 0: # mail
+        oline &= "<a href='mailto:" & s & "'>" & s & "</a>"
+      elif ctx.cap(6).s >= 0: # file
+        let target = s.expandTilde()
+        if not fileExists(target) and not symlinkExists(target) and
+            not dirExists(target):
+          oline &= s
+          continue
+        let name = target.afterLast('/')
+        if paths.isCommand(name, target):
+          oline &= "<a href='man:" & name & "'>" & s & "</a>"
+        else:
+          oline &= "<a href='file:" & target & "'>" & s & "</a>"
+      elif ctx.cap(8).s >= 0: # include
+        const includePaths = [
+          "/usr/include/",
+          "/usr/local/include/",
+          "/usr/X11R6/include/",
+          "/usr/X11/include/",
+          "/usr/X/include/",
+          "/usr/include/X11/"
+        ]
+        block notFound:
+          for path in includePaths:
+            let file = path & s
+            if fileExists(file):
+              oline &= "<a href='file:" & file & "'>" & s & "</a>"
+              break notFound
+          oline &= s
+      elif ctx.cap(11).s >= 0:
+        let manCap = ctx.cap(13)
+        let sectionCap = ctx.cap(15)
+        let man = line[manCap.s..<manCap.e]
+        # ignore footers like MYPAGE(1)
+        # (just to be safe, we also check if it's in paths too)
+        if man == ignoreMan and not paths.isCommand(man.afterLast('/'), man):
+          oline &= s
+          continue
+        let section = line[sectionCap.s..<sectionCap.e]
+        let cat = man & section
+        s.setLen(s.len - section.len)
+        oline &= "<a href='man:" & cat & "'>" & s & "</a>" & section
+    ?stdout.writeLine(oline)
   ok()
 
 proc myOpen(cmd: string): Opt[tuple[ofile, efile: AChaFile]] =

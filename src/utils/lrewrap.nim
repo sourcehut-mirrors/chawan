@@ -9,10 +9,6 @@ type
   RegexCapture* = tuple # start, end, index
     s, e: int
 
-  RegexResult* = object
-    success*: bool
-    captures*: seq[seq[RegexCapture]]
-
 proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
   ## Compile a regular expression using QuickJS's libregexp library.
   ## If the result is false, regex.bytecode stores the error message emitted
@@ -36,53 +32,87 @@ proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
   regex = Regex(bytecode: move(byteSeq))
   true
 
-proc exec*(regex: Regex; s: openArray[char]; start = 0; length = -1;
-    nocaps = false): RegexResult =
-  ## execute the regex found in `bytecode`.
-  let length = if length == -1:
-    s.len
-  else:
-    length
-  assert start >= 0
-  if start >= length or length > int(cint.high):
-    return RegexResult()
-  let L = cint(length)
+type ExecContext* = object
+  bytecode: ptr uint8
+  tmp: seq[ptr uint8]
+  base: uint
+
+proc initContext*(regex: Regex): ExecContext =
   let bytecode = cast[ptr uint8](unsafeAddr regex.bytecode[0])
   let allocCount = lre_get_alloc_count(bytecode)
-  var capture = newSeq[ptr uint8](allocCount)
-  let captureCount = lre_get_capture_count(bytecode)
-  let pcapture = if capture.len > 0: addr capture[0] else: nil
-  let base = cast[ptr uint8](unsafeAddr s[0])
-  let flags = lre_get_flags(bytecode).toLREFlags
-  var start = cint(start)
-  result = RegexResult()
-  while true:
-    let ret = lre_exec(pcapture, bytecode, base, start, L, 3, nil)
-    if ret != 1: #TODO error handling? (-1)
+  ExecContext(
+    bytecode: bytecode,
+    tmp: newSeq[ptr uint8](int(allocCount))
+  )
+
+template ncaps(ctx: ExecContext): cint =
+  lre_get_capture_count(ctx.bytecode)
+
+proc cap*(ctx: ExecContext; i: int): tuple[s, e: int] =
+  assert i < int(ctx.ncaps)
+  let sp = ctx.tmp[i * 2]
+  let ep = ctx.tmp[i * 2 + 1]
+  if sp == nil or ep == nil:
+    return (-1, -1)
+  let s = cast[int](cast[uint](sp) - ctx.base)
+  let e = cast[int](cast[uint](ep) - ctx.base)
+  return (s, e)
+
+iterator caps*(ctx: ExecContext): tuple[s, e: int] =
+  for i in 0 ..< ctx.ncaps:
+    yield ctx.cap(i)
+
+iterator exec*(ctx: var ExecContext; s: openArray[char]; start = 0): cint =
+  let L = cint(min(int(cint.high), s.len))
+  let pcapture = if ctx.tmp.len > 0: addr ctx.tmp[0] else: nil
+  let base = if s.len > 0: cast[ptr uint8](unsafeAddr s[0]) else: nil
+  let flags = lre_get_flags(ctx.bytecode).toLREFlags()
+  ctx.base = cast[uint](base)
+  var start = cint(min(int(cint.high), start))
+  while start < L:
+    let ret = lre_exec(pcapture, ctx.bytecode, base, start, L, 3, nil)
+    yield ret
+    if ret != 1 or LRE_FLAG_GLOBAL notin flags:
       break
-    result.success = true
-    if captureCount == 0 or nocaps:
-      break
-    var caps: seq[RegexCapture] = @[]
-    let cstrAddress = cast[int](base)
-    let ps = start
-    start = cast[cint](cast[int](capture[1]) - cstrAddress)
-    for i in 0 ..< captureCount:
-      let s = cast[int](capture[i * 2]) - cstrAddress
-      let e = cast[int](capture[i * 2 + 1]) - cstrAddress
-      caps.add((s, e))
-    result.captures.add(caps)
-    if LRE_FLAG_GLOBAL notin flags:
-      break
-    if ps == start: # avoid infinite loop: skip the first UTF-8 char.
+    let pstart = start
+    start = cast[cint](ctx.cap(0).e)
+    if pstart == start: # avoid infinite loop: skip the first UTF-8 char.
       inc start
       while start < s.len and uint8(s[start]) in 0x80u8 .. 0xBFu8:
         inc start
-    if start >= length:
-      break
 
-proc match*(regex: Regex; str: string; start = 0; length = str.len): bool =
-  return regex.exec(str, start, length, nocaps = true).success
+iterator matchCap*(regex: Regex; s: openArray[char]; cap: int; start = 0):
+    tuple[s, e: int] =
+  var ctx = initContext(regex)
+  for ret in ctx.exec(s, start):
+    if ret != 1:
+      break
+    yield ctx.cap(cap)
+
+proc match*(regex: Regex; s: openArray[char]; start = 0): bool =
+  var ctx = initContext(regex)
+  for ret in ctx.exec(s, start):
+    return ret == 1
+  false
+
+proc matchFirst*(regex: Regex; str: openArray[char]; start = 0):
+    tuple[s, e: int] =
+  var ctx = initContext(regex)
+  for ret in ctx.exec(str, start):
+    if ret != 1:
+      break
+    return ctx.cap(0)
+  return (-1, -1)
+
+proc matchLast*(regex: Regex; str: openArray[char]; start = 0):
+    tuple[s, e: int] =
+  var ctx = initContext(regex)
+  var res = (-1, -1)
+  for ret in ctx.exec(str, start):
+    if ret != 1:
+      break
+    res = ctx.cap(0)
+  res
 
 proc countBackslashes(buf: string; i: int): int =
   var j = 0

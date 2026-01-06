@@ -1627,7 +1627,6 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig,
     url,
     request,
-    pager.luctx,
     pager.term.attrs,
     title,
     redirectDepth,

@@ -37,7 +37,6 @@ import types/url
 import types/winattrs
 import utils/builtinre
 import utils/lrewrap
-import utils/luwrap
 import utils/strwidth
 import utils/twtstr
 
@@ -209,7 +208,6 @@ type
     mainConfig: Config
     images*: seq[PosBitmap]
     imageCache: ImageCache
-    luctx: LUContext
     relist: BuiltinRegexList
     refreshHeader: string
     tab*: Tab
@@ -235,10 +233,10 @@ proc sendCursorPosition*(container: Container): EmptyPromise {.discardable.}
 proc loaded(container: Container)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
-    url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
-    title: string; redirectDepth: int; flags: set[ContainerFlag];
-    contentType: string; charsetStack: seq[Charset]; cacheId: int;
-    mainConfig: Config; tab: Tab; relist: BuiltinRegexList): Container =
+    url: URL; request: Request; attrs: WindowAttributes; title: string;
+    redirectDepth: int; flags: set[ContainerFlag]; contentType: string;
+    charsetStack: seq[Charset]; cacheId: int; mainConfig: Config; tab: Tab;
+    relist: BuiltinRegexList): Container =
   let host = request.url.host
   let loadinfo = (if host != "":
     "Connecting to " & host
@@ -260,7 +258,6 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     phandle: ProcessHandle(process: -1, refc: 1),
     mainConfig: mainConfig,
     flags: flags,
-    luctx: luctx,
     redraw: true,
     lastPeek: HoverType.high,
     tab: tab,
@@ -777,16 +774,20 @@ proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
 proc setAbsoluteCursorXY*(container: Container; x, y: int; refresh = true) =
   container.setCursorXY(container.fromx + x, container.fromy + y, refresh)
 
+proc cursorLineEnd(container: Container) {.jsfunc.} =
+  container.setCursorX(container.currentLineWidth() - 1)
+
 proc cursorLineTextStart(container: Container) {.jsfunc.} =
-  if container.numLines == 0: return
-  var x = 0
-  for u in container.currentLine.points:
-    if not container.luctx.isWhiteSpace(u):
-      break
-    x += u.width()
-  if x == 0:
-    dec x
-  container.setCursorX(x)
+  if container.numLines == 0 or not container.lineLoaded(container.cursory):
+    return
+  let cap = container.relist.a[brTextStart].matchFirst(container.currentLine)
+  if cap.s >= 0:
+    var x = container.currentLine.width(0, cap.s)
+    if x == 0:
+      dec x
+    container.setCursorX(x)
+  else:
+    container.cursorLineEnd()
 
 # zb
 proc lowerPage(container: Container; n = 0) {.jsfunc.} =
@@ -879,9 +880,6 @@ proc cursorRight(container: Container; n = 1) {.jsfunc.} =
 
 proc cursorLineBegin(container: Container) {.jsfunc.} =
   container.setCursorX(-1)
-
-proc cursorLineEnd(container: Container) {.jsfunc.} =
-  container.setCursorX(container.currentLineWidth() - 1)
 
 proc pageDown(container: Container; n = 1) {.jsfunc.} =
   container.setFromY(container.fromy + container.height * n)
@@ -1305,9 +1303,8 @@ proc findPrevMatch(container: Container; regex: Regex; x, y: int; wrap: bool;
     let s = container.getLineStr(y)
     if b < 0:
       b = s.len
-    let res = regex.exec(s, 0, b)
-    if res.captures.len > 0:
-      let cap = res.captures[^1][0]
+    let cap = regex.matchLast(s.toOpenArray(0, b - 1))
+    if cap.s >= 0:
       let x = s.width(0, cap.s)
       let w = s.toOpenArray(cap.s, cap.e - 1).width()
       dec n
@@ -1337,9 +1334,8 @@ proc findNextMatch(container: Container; regex: Regex; x, y: int; wrap: bool;
     if not container.lineLoaded(y):
       return container.iface.findNextMatch(regex, x, y, endy, wrap, n)
     let s = container.getLineStr(y)
-    let res = regex.exec(s, b, s.len)
-    if res.captures.len > 0:
-      let cap = res.captures[0][0]
+    let cap = regex.matchFirst(s, b)
+    if cap.s >= 0:
       let x = s.width(0, cap.s)
       let w = s.toOpenArray(cap.s, cap.e - 1).width()
       dec n

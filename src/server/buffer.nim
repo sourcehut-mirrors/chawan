@@ -669,9 +669,8 @@ proc findPrevMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
     let s = bc.lines[y].str
     if b < 0:
       b = s.len
-    let res = regex.exec(s, 0, b)
-    if res.captures.len > 0:
-      let cap = res.captures[^1][0]
+    let cap = regex.matchLast(s.toOpenArray(0, b - 1), 0)
+    if cap.s >= 0:
       let x = s.width(0, cap.s)
       let w = s.toOpenArray(cap.s, cap.e - 1).width()
       dec n
@@ -698,9 +697,8 @@ proc findNextMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
         break
       y = 0
     let s = bc.lines[y].str
-    let res = regex.exec(s, b, s.len)
-    if res.captures.len > 0:
-      let cap = res.captures[0][0]
+    let cap = regex.matchFirst(s, b)
+    if cap.s >= 0:
       let x = s.width(0, cap.s)
       let w = s.toOpenArray(cap.s, cap.e - 1).width()
       dec n
@@ -1880,40 +1878,30 @@ proc markURL*(bc: BufferContext; handle: PagerHandle; schemes: seq[string])
     for it in toRemove:
       it.remove()
     for text in texts:
-      var res = regex.exec(text.data.s)
-      if res.success:
-        var offset = 0
-        var data = ""
-        var j = 0
-        for cap in res.captures.mitems:
-          let capLen = cap[0].e - cap[0].s
-          while j < cap[0].s:
-            case (let c = text.data[j]; c)
-            of '<':
-              data &= "&lt;"
-              offset += 3
-            of '>':
-              data &= "&gt;"
-              offset += 3
-            of '\'':
-              data &= "&apos;"
-              offset += 5
-            of '"':
-              data &= "&quot;"
-              offset += 5
-            of '&':
-              data &= "&amp;"
-              offset += 4
-            else:
-              data &= c
-            inc j
-          cap[0].s += offset
-          cap[0].e += offset
-          let s = text.data.s[j ..< j + capLen]
-          let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
-          data &= news
-          j += cap[0].e - cap[0].s
-          offset += news.len - (cap[0].e - cap[0].s)
+      var data = ""
+      var j = 0
+      for cap in regex.matchCap(text.data.s, 0):
+        let capLen = cap.e - cap.s
+        while j < cap.s:
+          case (let c = text.data[j]; c)
+          of '<':
+            data &= "&lt;"
+          of '>':
+            data &= "&gt;"
+          of '\'':
+            data &= "&apos;"
+          of '"':
+            data &= "&quot;"
+          of '&':
+            data &= "&amp;"
+          else:
+            data &= c
+          inc j
+        let s = text.data.s[j ..< j + capLen]
+        let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
+        data &= news
+        j += capLen
+      if data.len > 0:
         while j < text.data.len:
           case (let c = text.data[j]; c)
           of '<': data &= "&lt;"

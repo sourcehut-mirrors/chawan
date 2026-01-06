@@ -179,7 +179,7 @@ proc cursorBottom(select: Select) {.jsfunc.} =
 proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
   var j = -1
   for i in select.cursory + 1 ..< select.options.len:
-    if regex.exec(select.options[i].s).success:
+    if regex.match(select.options[i].s):
       j = i
       break
   if j != -1:
@@ -187,7 +187,7 @@ proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
     select.queueDraw()
   elif wrap:
     for i in 0 ..< select.cursory:
-      if regex.exec(select.options[i].s).success:
+      if regex.match(select.options[i].s):
         j = i
         break
     if j != -1:
@@ -197,7 +197,7 @@ proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
 proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
   var j = -1
   for i in countdown(select.cursory - 1, 0):
-    if regex.exec(select.options[i].s).success:
+    if regex.match(select.options[i].s):
       j = i
       break
   if j != -1:
@@ -205,7 +205,7 @@ proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
     select.queueDraw()
   elif wrap:
     for i in countdown(select.options.high, select.cursory):
-      if regex.exec(select.options[i].s).success:
+      if regex.match(select.options[i].s):
         j = i
         break
     if j != -1:
