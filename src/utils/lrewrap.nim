@@ -2,12 +2,8 @@ import monoucha/libregexp
 import types/opt
 import utils/twtstr
 
-type
-  Regex* = object
-    bytecode*: string
-
-  RegexCapture* = tuple # start, end, index
-    s, e: int
+type Regex* = object
+  bytecode*: string
 
 proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
   ## Compile a regular expression using QuickJS's libregexp library.
