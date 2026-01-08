@@ -12,7 +12,6 @@ import chagashi/decoder
 import chagashi/decodercore
 import chame/htmlparser
 import chame/tags
-import config/config
 import config/conftypes
 import css/box
 import css/csstree

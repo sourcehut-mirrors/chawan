@@ -171,7 +171,6 @@ type
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
     jsctx: JSContext
-    jsrt: JSRuntime
     lastAlert: string # last alert seen by the user
     lineData: LineData
     lineHist: array[LineMode, History]
@@ -223,7 +222,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
 proc cloned(pager: Pager; container: Container; stream: SocketStream)
 proc deleteContainer(pager: Pager; container, setTarget: Container)
 proc dumpBuffers(pager: Pager)
-proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
+proc evalJS(pager: Pager; val: JSValue): JSValue
 proc fulfillAsk(pager: Pager; s: string)
 proc getHist(pager: Pager; mode: LineMode): History
 proc handleEvents(pager: Pager)
@@ -475,7 +474,16 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
 
 proc evalJSFree(opaque: RootRef; src, filename: string) =
   let pager = Pager(opaque)
-  JS_FreeValue(pager.jsctx, pager.evalJS(src, filename))
+  let ctx = pager.jsctx
+  let val = ctx.eval(src, filename,
+    JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_COMPILE_ONLY)
+  if not JS_IsException(val):
+    let ret = pager.evalJS(val)
+    if JS_IsException(ret):
+      pager.console.writeException(ctx)
+      JS_FreeValue(ctx, ret)
+  else:
+    pager.console.writeException(ctx)
 
 type CookieStreamOpaque = ref object of RootObj
   pager: Pager
@@ -565,7 +573,6 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     forkserver: forkserver,
     term: newTerminal(newPosixStream(STDOUT_FILENO), config),
     alerts: alerts,
-    jsrt: JS_GetRuntime(ctx),
     jsctx: ctx,
     luctx: LUContext(),
     exitCode: -1,
@@ -579,8 +586,9 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     relist: newBuiltinRegexList()
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
-  JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
-  JS_SetInterruptHandler(pager.jsrt, interruptHandler, nil)
+  let rt = JS_GetRuntime(ctx)
+  JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
+  JS_SetInterruptHandler(rt, interruptHandler, nil)
   pager.initLoader()
   block history:
     let hist = newHistory(pager.config.external.historySize, getTime().toUnix())
@@ -636,14 +644,16 @@ proc cleanup(pager: Pager) =
         pager.alert("failed to save cookies")
     for msg in pager.alerts:
       discard cast[ChaFile](stderr).write("cha: " & msg & '\n')
-    for val in pager.config.cmd.map.values:
-      JS_FreeValue(pager.jsctx, val)
+    pager.jsctx.freeValues(pager.config.line)
+    pager.jsctx.freeValues(pager.config.page)
     for fn in pager.config.jsvfns:
       JS_FreeValue(pager.jsctx, fn.val)
+    JS_FreeValue(pager.jsctx, pager.config.feedNext.val)
     pager.timeouts.clearAll()
     assert not pager.inEval
+    let rt = JS_GetRuntime(pager.jsctx)
     pager.jsctx.free()
-    pager.jsrt.free()
+    rt.free()
     if pager.console != nil and pager.dumpConsoleFile:
       if file := chafile.fopen(pager.consoleFile, "r+"):
         let stderr = cast[ChaFile](stderr)
@@ -657,24 +667,23 @@ proc quit(pager: Pager; code: int) =
   quit(code)
 
 proc runJSJobs(pager: Pager) =
+  let rt = JS_GetRuntime(pager.jsctx)
   while true:
-    let ctx = pager.jsrt.runJSJobs()
+    let ctx = rt.runJSJobs()
     if ctx == nil:
       break
     pager.console.writeException(ctx)
   if pager.exitCode != -1:
     pager.quit(pager.exitCode)
 
-proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
+proc evalJSStart(pager: Pager): bool =
   if pager.config.start.headless == hmFalse:
     pager.term.catchSigint()
-  let flags = if module:
-    JS_EVAL_TYPE_MODULE
-  else:
-    JS_EVAL_TYPE_GLOBAL
   let wasInEval = pager.inEval
   pager.inEval = true
-  result = pager.jsctx.eval(src, filename, flags)
+  return wasInEval
+
+proc evalJSEnd(pager: Pager; wasInEval: bool) =
   pager.inEval = false
   if pager.exitCode != -1:
     # if we are in a nested eval, then just wait until we are not.
@@ -685,52 +694,84 @@ proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
   if pager.config.start.headless == hmFalse:
     pager.term.respectSigint()
 
-proc evalActionJS(pager: Pager; action: string): JSValue =
-  let val = pager.config.cmd.map.getOrDefault(action, JS_UNINITIALIZED)
-  if not JS_IsUninitialized(val):
-    return JS_DupValue(pager.jsctx, val)
-  return pager.evalJS(action, "<command>")
+proc evalJS(pager: Pager; val: JSValue): JSValue =
+  let wasInEval = pager.evalJSStart()
+  result = pager.jsctx.evalFunction(val)
+  pager.evalJSEnd(wasInEval)
 
 # Warning: this is not re-entrant.
-proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
-  var ret = pager.evalActionJS(action)
+proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: ptr JSValue):
+    EmptyPromise =
+  let wasInEval = pager.evalJSStart()
   let ctx = pager.jsctx
-  var p: EmptyPromise = nil
-  if JS_IsFunction(ctx, ret):
+  var val = val
+  if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
+    val = ctx.evalFunction(val)
+    if oval != nil and JS_IsFunction(ctx, val):
+      # optimization: skip this eval on the next call.
+      # ideally oval should be a `var` param, but then we can't just quit in
+      # evalJSEnd as usual...  not unsurmountable but gets very ugly, so I'm
+      # sticking with the pointer.
+      JS_FreeValue(ctx, oval[])
+      oval[] = JS_DupValue(ctx, val)
+  # If an action evaluates to a function that function is evaluated too.
+  if JS_IsFunction(ctx, val):
     if arg0 != 0:
       let arg0 = ctx.toJS(arg0)
-      let ret2 = ctx.callFree(ret, JS_UNDEFINED, arg0)
+      val = ctx.callFree(val, JS_UNDEFINED, arg0)
       JS_FreeValue(ctx, arg0)
-      ret = ret2
     else: # no precnum
-      ret = ctx.callFree(ret, JS_UNDEFINED)
-    if pager.exitCode != -1:
-      assert not pager.inEval
-      pager.quit(pager.exitCode)
-  if JS_IsException(ret):
-    pager.console.writeException(pager.jsctx)
-  elif JS_IsObject(ret):
+      val = ctx.callFree(val, JS_UNDEFINED)
+  var p: EmptyPromise = nil
+  if JS_IsException(val):
+    pager.console.writeException(ctx)
+  elif JS_IsObject(val):
     var maybep: EmptyPromise
-    if ctx.fromJS(ret, maybep).isOk:
+    if ctx.fromJS(val, maybep).isOk:
       p = maybep
-  JS_FreeValue(ctx, ret)
+  JS_FreeValue(ctx, val)
+  pager.evalJSEnd(wasInEval)
   return p
+
+proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
+  let ctx = pager.jsctx
+  let val = ctx.eval("cmd." & action, "<command>", JS_EVAL_TYPE_GLOBAL)
+  if JS_IsException(val):
+    pager.console.writeException(pager.jsctx)
+    return nil
+  return pager.evalAction(val, arg0, nil)
+
+proc evalInputAction(pager: Pager; map: ActionMap; arg0: int32):
+    tuple[found: bool; p: EmptyPromise] =
+  let ctx = pager.jsctx
+  let val = map.getOrDefault(pager.inputBuffer)
+  if JS_IsUndefined(val):
+    return (false, nil)
+  # this may change oval (and thereby val too on the next invocation)
+  let oval = map.getActionPtr(pager.inputBuffer)
+  let p = pager.evalAction(JS_DupValue(ctx, val), arg0, oval)
+  return (true, p)
 
 proc queueStatusUpdate(pager: Pager) =
   if pager.updateStatus == ussNone:
     pager.updateStatus = ussUpdate
 
-proc command0(pager: Pager; src: string; filename = "<command>";
-    silence = false; module = false) =
-  let ret = pager.evalJS(src, filename, module = module)
+proc evalCommand(pager: Pager; src: string; filename = "<command>";
+    silence = false) =
+  let ctx = pager.jsctx
+  let val = ctx.eval(src, "<command>",
+    JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_COMPILE_ONLY)
+  if JS_IsException(val):
+    pager.console.writeException(ctx)
+    return
+  let ret = pager.evalJS(val)
   if JS_IsException(ret):
     pager.console.writeException(pager.jsctx)
   else:
-    if not silence:
-      var res: string
-      if pager.jsctx.fromJS(ret, res).isOk:
-        pager.console.log(res)
-        pager.console.flush()
+    var res: string
+    if pager.jsctx.fromJS(ret, res).isOk:
+      pager.console.log(res)
+      pager.console.flush()
   JS_FreeValue(pager.jsctx, ret)
 
 proc hasMouseSelection(pager: Pager): bool =
@@ -955,11 +996,9 @@ proc handleLineInput(pager: Pager; e: InputEvent) =
       edit.escNext = false
       edit.write(move(pager.inputBuffer))
     else:
-      let action = pager.config.getLinedAction(pager.inputBuffer)
-      if action == "":
+      let (found, _) = pager.evalInputAction(pager.config.line, 0)
+      if not found:
         edit.write(move(pager.inputBuffer))
-      else:
-        discard pager.evalAction(action, 0)
       if not pager.feednext:
         pager.updateReadLine()
         pager.inputBuffer = ""
@@ -988,8 +1027,7 @@ proc handleCommandInput(pager: Pager; e: InputEvent) =
         return
       else:
         pager.notnum = true
-    let action = pager.config.getNormalAction(pager.inputBuffer)
-    let p = if action != "": pager.evalAction(action, pager.precnum) else: nil
+    let (_, p) = pager.evalInputAction(pager.config.page, pager.precnum)
     if not pager.feednext:
       pager.inputBuffer = ""
       pager.precnum = 0
@@ -1016,6 +1054,35 @@ proc handleUserInput(pager: Pager): Opt[void] =
       pager.handleCommandInput(e)
   ok()
 
+proc die(pager: Pager; s: string) =
+  pager.alert(s)
+  pager.quit(1)
+
+proc runStartupScript(pager: Pager) =
+  if pager.config.start.startupScript != "":
+    let ps = newPosixStream(pager.config.start.startupScript)
+    let s = if ps != nil:
+      var x = ps.readAll()
+      ps.sclose()
+      move(x)
+    else:
+      pager.config.start.startupScript
+    let flag = if pager.config.start.startupScript.endsWith(".mjs"):
+      JS_EVAL_TYPE_MODULE
+    else:
+      JS_EVAL_TYPE_GLOBAL
+    let ctx = pager.jsctx
+    let val = ctx.eval(s, pager.config.start.startupScript,
+      flag or JS_EVAL_FLAG_COMPILE_ONLY)
+    if not JS_IsException(val):
+      let res = pager.evalJS(val)
+      if not JS_IsException(res):
+        JS_FreeValue(ctx, res)
+      else:
+        pager.console.writeException(ctx)
+    else:
+      pager.console.writeException(ctx)
+
 proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     cs: Charset; history: bool) =
   var istream: PosixStream = nil
@@ -1040,17 +1107,7 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   for st in SurfaceType:
     pager.clear(st)
   pager.addConsole(istream != nil)
-  if pager.config.start.startupScript != "":
-    let ps = newPosixStream(pager.config.start.startupScript)
-    let s = if ps != nil:
-      var x = ps.readAll()
-      ps.sclose()
-      move(x)
-    else:
-      pager.config.start.startupScript
-    let ismodule = pager.config.start.startupScript.endsWith(".mjs")
-    pager.command0(s, pager.config.start.startupScript, silence = true,
-      module = ismodule)
+  pager.runStartupScript()
   if not ps.isatty():
     # stdin may very well receive ANSI text
     let contentType = if contentType != "": contentType else: "text/x-ansi"
@@ -1065,6 +1122,37 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   else:
     pager.dumpBuffers()
   pager.quit(max(pager.exitCode, 0))
+
+proc compile*(pager: Pager; srcs, dsts: openArray[string]) =
+  if srcs.len != dsts.len:
+    pager.die("got " & $srcs.len & " files to compile, but " & $dsts.len &
+      " destinations")
+  let ctx = pager.jsctx
+  when not defined(debug):
+    let rt = JS_GetRuntime(ctx)
+    JS_SetStripInfo(rt, JS_STRIP_SOURCE or JS_STRIP_DEBUG)
+  for i in 0 ..< srcs.len:
+    let srcName = srcs[i]
+    var src: string
+    if chafile.readFile(srcName, src).isErr:
+      pager.die("failed to read " & srcs[i])
+    let obj = JS_Eval(ctx, cstring(src), csize_t(src.len), cstring(srcName),
+      JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
+    if JS_IsException(obj):
+      pager.die(ctx.getExceptionMsg())
+    var size: csize_t
+    let p0 = JS_WriteObject(ctx, addr size, obj, JS_WRITE_OBJ_BYTECODE)
+    JS_FreeValue(ctx, obj)
+    if p0 == nil:
+      pager.die(ctx.getExceptionMsg())
+    let p = cast[ptr UncheckedArray[char]](p0)
+    let dstName = dsts[i]
+    let len = int(size)
+    let res = chafile.writeFile(dstName, p.toOpenArray(0, len - 1), 0o600)
+    js_free(ctx, p0)
+    if res.isErr:
+      pager.die("failed to write " & dstName)
+  pager.quit(0)
 
 # Note: this function does not work correctly if start < x of last written char
 proc writeStatusMessage(status: var Surface; str: string; format = Format();
@@ -2547,7 +2635,7 @@ proc updateReadLine(pager: Pager) =
         pager.replace(old, container)
         pager.lineData = nil
       of lmCommand:
-        pager.command0(lineedit.news)
+        pager.evalCommand(lineedit.news)
         let container = pager.pinned.console
         if container != nil:
           container.flags.incl(cfTailOnLoad)

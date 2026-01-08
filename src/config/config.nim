@@ -30,6 +30,7 @@ import server/headers
 import types/cell
 import types/color
 import types/jscolor
+import types/jsopt
 import types/opt
 import types/url
 import utils/lrewrap
@@ -44,8 +45,11 @@ type
   CodepointSet* = object
     s*: seq[uint32]
 
-  ActionMap = ref object
-    t: Table[string, string]
+  ActionMap* = ref object
+    init: seq[tuple[k, s: string]]
+    #TODO could use a sorted tuple[k: string; v: JSValue] instead
+    # (like in htmltokenizer)
+    t: Table[string, JSValue]
 
   FormRequestType* = enum
     frtHttp = "http"
@@ -98,9 +102,7 @@ type
     documentCharset* {.jsgetset.}: seq[Charset]
 
   CommandConfig = object
-    jsObj*: JSValue
     init*: seq[tuple[k, cmd: string]] # initial k/v map
-    map*: Table[string, JSValue] # qualified name -> function
 
   ExternalConfig = ref object
     tmpdir* {.jsgetset.}: ChaPathResolved
@@ -175,6 +177,7 @@ type
 
   Config* = ref object
     jsvfns*: seq[JSValueFunction]
+    feedNext*: JSValueFunction
     arraySeen*: TableRef[string, int] # table arrays seen
     dir* {.jsget.}: string
     dataDir* {.jsget.}: string
@@ -226,15 +229,21 @@ proc toJS*(ctx: JSContext; cookie: CookieMode): JSValue =
 proc toJS*(ctx: JSContext; p: ChaPathResolved): JSValue =
   ctx.toJS($p)
 
-proc `[]=`(a: ActionMap; b: string; c: sink string) =
+proc `[]=`(a: ActionMap; b: string; c: JSValue) =
   a.t[b] = c
 
 # Can't be lent string on 2.0.4 yet.
-template `[]`*(a: ActionMap; b: string): string =
+template `[]`(a: ActionMap; b: string): JSValueConst =
   a.t[b]
 
-template getOrDefault(a: ActionMap; b: string): string =
-  a.t.getOrDefault(b)
+template getOrDefault*(a: ActionMap; k: string): JSValueConst =
+  a.t.getOrDefault(k, JS_UNDEFINED)
+
+proc getActionPtr*(a: ActionMap; k: string):
+    ptr JSValue =
+  a.t.withValue(k, p):
+    return p
+  nil
 
 proc contains*(a: ActionMap; b: string): bool =
   return b in a.t
@@ -283,20 +292,40 @@ proc getRealKey(key: string): string =
 
 proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue
     {.jsgetownprop.} =
-  a.t.withValue(s, p):
-    return ctx.toJS(p[])
-  return JS_NULL
+  return JS_DupValue(ctx, a.getOrDefault(s))
 
-proc setter(a: ActionMap; k, v: string) {.jssetprop.} =
+proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
+  if AllChars - AsciiAlphaNumeric - {'_', '$', '.'} notin s and
+      not s.startsWith("cmd."):
+    return ctx.compileScript("cmd." & s, "<command>")
+  return ctx.compileScript(s, "<command>")
+
+proc setter(ctx: JSContext; a: ActionMap; k: string; val: JSValueConst):
+    Opt[void] {.jssetprop.} =
   let k = getRealKey(k)
   if k == "":
-    return
-  a[k] = v
+    return ok()
+  let val2 = if JS_IsFunction(ctx, val):
+    JS_DupValue(ctx, val)
+  else:
+    var s: string
+    ?ctx.fromJS(val, s)
+    ctx.evalCmdDecl(s)
+  if JS_IsException(val2):
+    return err()
+  let old = a.getOrDefault(k)
+  JS_FreeValue(ctx, JSValue(old))
+  a.t[k] = val2
   var teststr = k
   teststr.setLen(teststr.high)
+  let feedNext = ctx.compileScript("window.feedNext()", "<command>")
   for i in countdown(k.high, 0):
-    discard a.t.hasKeyOrPut(teststr, "window.feedNext()")
+    let dup = JS_DupValue(ctx, feedNext)
+    if a.t.hasKeyOrPut(teststr, dup):
+      JS_FreeValue(ctx, dup)
     teststr.setLen(i)
+  JS_FreeValue(ctx, feedNext)
+  ok()
 
 proc delete(a: ActionMap; k: string): bool {.jsdelprop.} =
   let k = getRealKey(k)
@@ -403,6 +432,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Headers; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var CodepointSet; v: TomlValue;
   k: string): Err[string]
 
+proc freeValues*(ctx: JSContext; map: ActionMap) =
+  for val in map.t.values:
+    JS_FreeValue(ctx, val)
+
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
   if v.t != t:
     return err(k & ": invalid type (got " & $v.t & ", expected " & $t & ")")
@@ -425,7 +458,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
   when x isnot typeof(Config()[]):
     let k = k & '.'
   for fk, fv in x.fieldPairs:
-    when fk notin ["jsvfns", "arraySeen", "dir", "dataDir"]:
+    when fk notin ["jsvfns", "arraySeen", "dir", "dataDir", "feedNext"]:
       const kebabk = camelToKebabCase(fk)
       var x: TomlValue
       if v.pop(kebabk, x):
@@ -610,11 +643,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
   for kk, vv in v:
     ?typeCheck(vv, tvtString, k & "[" & kk & "]")
     let rk = getRealKey(kk)
-    var buf = ""
-    for c in rk.toOpenArray(0, rk.high - 1):
-      buf &= c
-      x[buf] = "window.feedNext()"
-    x[rk] = vv.s
+    x.init.add((rk, vv.s))
   ok()
 
 proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
@@ -868,12 +897,6 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
     return config.parseConfig(dir, toml.get, warnings, jsctx, builtin)
   return err("fatal error: failed to parse config\n" & toml.error)
 
-template getNormalAction*(config: Config; s: string): string =
-  config.page.getOrDefault(s)
-
-template getLinedAction*(config: Config; s: string): string =
-  config.line.getOrDefault(s)
-
 proc openConfig*(dir, dataDir: var string; override: Option[string];
     warnings: var seq[string]): PosixStream =
   if override.isSome:
@@ -906,27 +929,33 @@ proc openConfig*(dir, dataDir: var string; override: Option[string];
   dataDir = dir
   return newPosixStream(dir / "config.toml")
 
+proc initActions(config: Config; ctx: JSContext; map: ActionMap): Err[string] =
+  for it in map.init:
+    var buf = ""
+    let feedNext = config.feedNext.val
+    for c in it.k.toOpenArray(0, it.k.high - 1):
+      buf &= c
+      let old = map.getOrDefault(buf)
+      JS_FreeValue(ctx, JSValue(old))
+      map[buf] = JS_DupValue(ctx, feedNext)
+    let old = map.getOrDefault(it.k)
+    JS_FreeValue(ctx, JSValue(old))
+    let val = ctx.evalCmdDecl(it.s)
+    if JS_IsException(val):
+      return err(ctx.getExceptionMsg())
+    map[it.k] = val
+  map.init.setLen(0)
+  ok()
+
 # called after parseConfig returns
 proc initCommands*(ctx: JSContext; config: Config): Err[string] =
-  let obj = JS_NewObject(ctx)
+  let global = JS_GetGlobalObject(ctx)
+  let obj = JS_GetPropertyStr(ctx, global, "cmd")
+  JS_FreeValue(ctx, global)
   if JS_IsException(obj):
     JS_FreeValue(ctx, obj)
     return err(ctx.getExceptionMsg())
-  # backwards compat: cmd.pager and cmd.buffer used to be separate
-  case ctx.definePropertyE(obj, "buffer", JS_DupValue(ctx, obj))
-  of dprException:
-    JS_FreeValue(ctx, obj)
-    return err(ctx.getExceptionMsg())
-  else: discard
-  case ctx.definePropertyE(obj, "pager", JS_DupValue(ctx, obj))
-  of dprException:
-    JS_FreeValue(ctx, obj)
-    return err(ctx.getExceptionMsg())
-  else: discard
   for (k, cmd) in config.cmd.init.ritems:
-    if k in config.cmd.map:
-      # already in map; skip
-      continue
     var objIt = JS_DupValue(ctx, obj)
     let name = k.afterLast('.')
     if name.len < k.len:
@@ -945,7 +974,6 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
         JS_FreeValue(ctx, objIt)
         objIt = prop
     if cmd == "":
-      config.cmd.map[k] = JS_UNDEFINED
       continue
     let fun = ctx.eval(cmd, "<" & k & ">", JS_EVAL_TYPE_GLOBAL)
     if JS_IsException(fun):
@@ -955,16 +983,17 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
       JS_FreeValue(ctx, obj)
       JS_FreeValue(ctx, fun)
       return err(k & " is not a function")
-    case ctx.definePropertyE(objIt, name, JS_DupValue(ctx, fun))
+    case ctx.definePropertyE(objIt, name, fun)
     of dprException: return err(ctx.getExceptionMsg())
     else: discard
-    config.cmd.map[k] = fun
     JS_FreeValue(ctx, objIt)
-  config.cmd.jsObj = obj
+  JS_FreeValue(ctx, obj)
   config.cmd.init = @[]
-  ok()
+  ?config.initActions(ctx, config.page)
+  config.initActions(ctx, config.line)
 
-proc newConfig*(): Config =
+proc newConfig*(ctx: JSContext): Config =
+  let feedNext = ctx.compileScript("window.feedNext()", "<command>")
   Config(
     arraySeen: newTable[string, int](),
     page: ActionMap(),
@@ -977,7 +1006,8 @@ proc newConfig*(): Config =
     input: InputConfig(),
     display: DisplayConfig(),
     status: StatusConfig(),
-    buffer: BufferSectionConfig()
+    buffer: BufferSectionConfig(),
+    feedNext: JSValueFunction(val: feedNext)
   )
 
 proc addConfigModule*(ctx: JSContext) =

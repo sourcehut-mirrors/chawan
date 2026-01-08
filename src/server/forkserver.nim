@@ -7,7 +7,6 @@ import std/tables
 import chagashi/charset
 import config/config
 import config/urimethodmap
-import html/catom
 import io/chafile
 import io/dynstream
 import io/packetreader
@@ -256,7 +255,6 @@ proc runForkServer*(controlStream, loaderStream: SocketStream) =
     ctx.loaderStream = loaderStream
   do:
     quit(1)
-  initCAtomFactory()
   ctx.pollData.register(ctx.stream.fd, POLLIN)
   ctx.pollData.register(ctx.loaderStream.fd, POLLIN)
   block mainLoop:

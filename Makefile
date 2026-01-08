@@ -71,6 +71,7 @@ tools_bin = urlenc nc
 protocols = $(protocols_bin) $(ssl_link)
 converters = $(converters_bin) $(tohtml_link)
 tools = $(tools_bin) urldec
+scripts = init.jsb
 
 ifeq ($(STATIC_LINK),1)
 LDFLAGS += -static
@@ -106,6 +107,7 @@ binaries = $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha
 binaries += $(foreach bin,$(protocols),$(OUTDIR_CGI_BIN)/$(bin))
 binaries += $(foreach bin,$(converters),$(OUTDIR_LIBEXEC)/$(bin))
 binaries += $(foreach bin,$(tools),$(OUTDIR_LIBEXEC)/$(bin))
+binaries += $(foreach bin,$(scripts),$(OUTDIR_LIBEXEC)/$(bin))
 
 .PHONY: all
 all: $(binaries)
@@ -220,6 +222,9 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
+$(OUTDIR_LIBEXEC)/%.jsb: src/%.js $(OUTDIR_BIN)/cha
+	$(OUTDIR_BIN)/cha -B $< $@
+
 doc/%.1: doc/%.md md2man
 	./md2man $< > $@~
 	mv $@~ $@
@@ -261,7 +266,7 @@ install:
 	for f in $(protocols_bin); do \
 	install -m755 "$(OUTDIR_CGI_BIN)/$$f" $(LIBEXECDIR_CHAWAN)/cgi-bin; \
 	done
-	for f in $(converters_bin) $(tools_bin); \
+	for f in $(converters_bin) $(tools_bin) $(scripts); \
 	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); \
 	done
 	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc urldec)
@@ -280,7 +285,7 @@ uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
 # intentionally not quoted
 	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
-	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
+	for f in $(converters) $(tools) $(scripts); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # We only want to uninstall binaries that the main distribution
 # includes or has ever included, but not those that the user might have
 # added.  Some of these cannot be directly derived from our variables:

@@ -138,7 +138,7 @@ proc readFile*(path: string; s: var string): Opt[void] =
   ?file.close()
   res
 
-proc writeFile*(path, content: string; mode: cint): Opt[void] =
+proc writeFile*(path: string; content: openArray[char]; mode: cint): Opt[void] =
   discard unlink(cstring(path))
   let ps = newPosixStream(path, O_CREAT or O_WRONLY or O_EXCL, mode)
   if ps == nil:
