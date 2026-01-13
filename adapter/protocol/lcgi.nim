@@ -180,7 +180,7 @@ proc connectSocks5Socket(host, port, proxyHost, proxyPort,
   let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy).toProxyResult()
   const NoAuth = "\x05\x01\x00"
   const WithAuth = "\x05\x02\x00\x02"
-  if not ps.writeDataLoop(if proxyUser != "": NoAuth else: WithAuth):
+  if not ps.writeDataLoop(if proxyUser == "": NoAuth else: WithAuth):
     return errCGIError(ceProxyRefusedToConnect)
   var buf = array[2, uint8].default
   if not ps.readDataLoop(buf):
@@ -196,8 +196,8 @@ proc connectHTTPSocket(host, port, proxyHost, proxyPort,
   var buf = "CONNECT " & host & ':' & port & " HTTP/1.1\r\n"
   buf &= "Host: " & host & ':' & port & "\r\n"
   if proxyUser != "" or proxyPass != "":
-    let s = btoa(proxyUser & ' ' & proxyPass)
-    buf &= "Proxy-Authorization: basic " & s & "\r\n"
+    let s = btoa(proxyUser & ':' & proxyPass)
+    buf &= "Proxy-Authorization: Basic " & s & "\r\n"
   buf &= "\r\n"
   if not ps.writeDataLoop(buf):
     return errCGIError(ceProxyRefusedToConnect)
