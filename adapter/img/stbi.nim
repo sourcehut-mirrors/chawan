@@ -158,7 +158,7 @@ proc main() =
         let s = hdr.after(':').strip().split('x')
         let w = parseUInt32(s[0], allowSign = false)
         let h = parseUInt32(s[1], allowSign = false)
-        if w.isErr or w.isErr:
+        if w.isErr or h.isErr:
           cgiDie(ceInternalError, "wrong dimensions")
         width = cint(w.get)
         height = cint(h.get)
