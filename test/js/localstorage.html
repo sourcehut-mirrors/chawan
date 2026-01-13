@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<title>localStorage</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+localStorage.testKey = "test value";
+assertEquals(localStorage.key(localStorage.length - 1), "testKey");
+assertEquals(localStorage.key(-1), null);
+assertEquals(localStorage.getItem("testKey"), "test value");
+document.getElementById("x").textContent = "Success";
+</script>
