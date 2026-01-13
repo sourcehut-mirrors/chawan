@@ -130,9 +130,6 @@ proc cursorNthLink(select: Select; n = 1) {.jsfunc.} =
 proc cursorRevNthLink(select: Select; n = 1) {.jsfunc.} =
   select.setCursorY(select.options.len - n)
 
-proc gotoLine(select: Select; n: int) {.jsfunc.} =
-  select.setCursorY(n + 1)
-
 proc cancel(select: Select) {.jsfunc.} =
   select.selected = -1
   select.finishImpl(select.opaque, select)
