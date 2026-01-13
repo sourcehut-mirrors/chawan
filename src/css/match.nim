@@ -54,12 +54,14 @@ proc matchesAttr(element: Element; sel: Selector): bool =
     let val = element.attr(sel.attr)
     case sel.rel.flag
     of rfNone:
-      return val == sel.value or sel.value.startsWith(val & '-')
+      return val.startsWith(sel.value) and
+        (val.len <= sel.value.len or val[sel.value.len] == '-')
     of rfI:
-      return val.equalsIgnoreCase(sel.value) or
-        sel.value.startsWithIgnoreCase(val & '-')
+      return val.startsWithIgnoreCase(sel.value) and
+        (val.len <= sel.value.len or val[sel.value.len] == '-')
     of rfS:
-      return val == sel.value or sel.value.startsWith(val & '-')
+      return val.startsWith(sel.value) and
+        (val.len <= sel.value.len or val[sel.value.len] == '-')
   of rtStartsWith:
     let val = element.attr(sel.attr)
     case sel.rel.flag
@@ -157,7 +159,7 @@ proc matchesLang(element: Element; lang: string): bool =
   for element in element.branchElems:
     if element.attrb(satLang):
       return element.attr(satLang) == lang
-  true
+  false
 
 proc matchesNthChild(element: Element; nthChild: CSSNthChild;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
