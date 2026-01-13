@@ -143,7 +143,7 @@ proc length(this: Storage): uint32 {.jsfget.} =
 
 proc key(ctx: JSContext; this: Storage; i: uint32): JSValue {.jsfunc.} =
   if int(i) < this.map.len:
-    return ctx.toJS(this.map[int(i)].value)
+    return ctx.toJS(this.map[int(i)].key)
   return JS_NULL
 
 proc getItem(ctx: JSContext; this: Storage; s: string): JSValue {.jsfunc.} =
