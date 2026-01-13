@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<style>
+div { color: red }
+div[test|=test] { color: green }
+div[test2|=test-] { color: green }
+</style>
+<div test=test>should be green</div>
+<div test=test->should be green</div>
+<div test=test-test>should be green</div>
+<div test=tes>should be red</div>
+<div test2=test>should be red</div>
+<div test2=test->should be green</div>
