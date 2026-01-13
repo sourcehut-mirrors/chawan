@@ -745,7 +745,7 @@ proc restoreCursorX(container: Container) {.jsfunc.} =
   let x = clamp(container.currentLineWidth() - 1, 0, container.xend)
   container.setCursorX(x, false, false)
 
-proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
+proc setCursorY*(container: Container; y: int; refresh = true) {.jsfunc.} =
   if refresh:
     container.flags.incl(cfShowLoading)
   let y = max(min(y, container.numLines - 1), 0)
@@ -1012,23 +1012,6 @@ proc updateCursor(container: Container) =
     if container.cursory != n:
       container.setCursorY(n)
       container.alert("Last line is #" & $container.numLines)
-
-proc gotoLine*(container: Container; n: int) =
-  container.markPos0()
-  container.setCursorY(n - 1)
-  container.markPos()
-
-proc gotoLine*(container: Container; s: string) =
-  if s != "":
-    let c = s[0]
-    if c == '^':
-      container.cursorFirstLine()
-    elif c == '$':
-      container.cursorLastLine()
-    elif (let n = parseIntP(s).get(0); n > 0):
-      container.gotoLine(n)
-    else:
-      container.alert("First line is #1") # :)
 
 proc pushCursorPos*(container: Container) =
   if container.select != nil:

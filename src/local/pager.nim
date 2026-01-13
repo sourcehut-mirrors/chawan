@@ -438,17 +438,36 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
 proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
     Opt[void] {.jsfunc.} =
   let container = pager.container
-  if container == nil:
-    return ok()
+  let select = if pager.menu != nil:
+    pager.menu
+  elif container != nil:
+    container.select
+  else:
+    nil
   var n: int
   if JS_IsNumber(val) and ctx.fromJS(val, n).isOk:
-    pager.container.gotoLine(n)
+    dec n # gotoLine is 1-indexed
   elif JS_IsUndefined(val):
     pager.setLineEdit(lmGotoLine)
+    return ok()
   else:
     var s: string
     ?ctx.fromJS(val, s)
-    pager.container.gotoLine(s)
+    if s.len == 0:
+      return ok()
+    case s[0]
+    of '^': n = 0
+    of '$': n = int.high
+    elif x := parseIntP(s): n = x - 1
+    else:
+      pager.alert("Invalid line number")
+      return ok()
+  if select != nil:
+    select.setCursorY(n)
+  elif container != nil:
+    container.markPos0()
+    container.setCursorY(n)
+    container.markPos()
   return ok()
 
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
@@ -2666,7 +2685,9 @@ proc updateReadLine(pager: Pager) =
         pager.reverseSearch = pager.linemode == lmSearchB
         pager.searchNext()
       of lmGotoLine:
-        pager.container.gotoLine(lineedit.news)
+        let val = pager.jsctx.toJS(lineedit.news)
+        discard pager.jsctx.gotoLine(pager, val)
+        JS_FreeValue(pager.jsctx, val)
       of lmDownload:
         let data = LineDataDownload(pager.lineData)
         let path = ChaPath(lineedit.news).unquote(myposix.getcwd())
