@@ -35,15 +35,17 @@ proc `div`*(a, b: LUnit): LUnit {.inline.} =
   return LUnit((a div b) shr 6)
 
 proc toLUnit*(a: int32): LUnit =
-  satlu(int64(a) shl 6)
+  let b = int64(a) shl 6
+  satlu(b)
 
 proc toLUnit*(a: int): LUnit =
-  satlu(int64(a) shl 6)
+  let b = int64(a) shl 6
+  satlu(b)
 
 proc `-`*(a: LUnit): LUnit {.inline.} =
   let a = int32(a)
-  if unlikely(a == int32.high):
-    return LUnit.low
+  if unlikely(a == int32.low):
+    return LUnit.high
   return LUnit(-a)
 {.pop.} # overflowChecks, rangeChecks
 
