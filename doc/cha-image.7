@@ -12,12 +12,11 @@ be displayed\f[R].
 This is the switch you typically need.
 .IP \(bu 2
 display.image\-mode: sets the inline image display method.
-Defaults to \(lqauto\(rq, but may also be set to \(lqsixel\(rq or
-\(lqkitty\(rq manually.
+Defaults to \(lqauto\(rq, but may also be set to \(lqnone\(rq,
+\(lqsixel\(rq, or \(lqkitty\(rq manually.
 This switch is rarely useful.
 .PP
-In most cases, all you have to do is to set \f[CR]buffer.images\f[R] to
-true:
+In general, you only have to set \f[CR]buffer.images\f[R] to true:
 .IP
 .EX
 \f[I]# in \(ti/.chawan/config.toml (or \(ti/.config/chawan/config.toml)\f[R]
@@ -25,12 +24,12 @@ true:
 images = true
 .EE
 .PP
-With the default image\-mode, Chawan will find the best image display
-method supported by your terminal.
-However, if your terminal fails to tell Chawan that it can display
-sixels, you may also have to set \(lqdisplay.image\-mode\(rq
-appropriately.
-See below for further discussion of sixel configuration.
+The \f[CR]image\-mode\f[R] switch is mainly useful if you want images to
+be fetched, but not displayed (\(lqnone\(rq option).
+It may also help if \(lqauto\(rq fails to detect the terminal\(cqs image
+display capabilities; however, I am not aware of any terminal where this
+can happen.
+(If you find one, open a ticket.)
 .SS Output formats
 Supported output formats are:
 .IP \(bu 2
@@ -109,9 +108,9 @@ Support for full RGBA without quantization is another benefit.
 .PP
 Note: at the time of writing, tmux does not support the Kitty image
 protocol.
-While it is possible to hack Kitty images onto tmux, this requires
-significant concessions in display capabilities compared to the regular
-Kitty protocol (or even Sixel).
+While it is possible to hack Kitty images onto tmux nevertheless, this
+requires significant concessions in display capabilities compared to the
+regular Kitty protocol (or even Sixel).
 Therefore, support for this hack is not planned.
 .SS Input formats
 Currently, the supported input formats are:

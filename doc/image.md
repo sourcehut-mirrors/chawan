@@ -12,10 +12,10 @@ There are actually two switches for images in the config:
 * buffer.images: this enables downloading images, *even if they cannot be
   displayed*.  This is the switch you typically need.
 * display.image-mode: sets the inline image display method.  Defaults to
-  "auto", but may also be set to "sixel" or "kitty" manually.  This switch
-  is rarely useful.
+  "auto", but may also be set to "none", "sixel", or "kitty" manually.
+  This switch is rarely useful.
 
-In most cases, all you have to do is to set `buffer.images` to true:
+In general, you only have to set `buffer.images` to true:
 
 ```toml
 # in ~/.chawan/config.toml (or ~/.config/chawan/config.toml)
@@ -23,10 +23,10 @@ In most cases, all you have to do is to set `buffer.images` to true:
 images = true
 ```
 
-With the default image-mode, Chawan will find the best image display method
-supported by your terminal.  However, if your terminal fails to tell Chawan
-that it can display sixels, you may also have to set "display.image-mode"
-appropriately.  See below for further discussion of sixel configuration.
+The `image-mode` switch is mainly useful if you want images to be fetched,
+but not displayed ("none" option).  It may also help if "auto" fails to
+detect the terminal's image display capabilities; however, I am not aware of
+any terminal where this can happen.  (If you find one, open a ticket.)
 
 ## Output formats
 
@@ -94,10 +94,10 @@ slice of the image moves into the screen.  Support for full RGBA without
 quantization is another benefit.
 
 Note: at the time of writing, tmux does not support the Kitty image
-protocol.  While it is possible to hack Kitty images onto tmux, this
-requires significant concessions in display capabilities compared to the
-regular Kitty protocol (or even Sixel).  Therefore, support for this hack is
-not planned.
+protocol.  While it is possible to hack Kitty images onto tmux nevertheless,
+this requires significant concessions in display capabilities compared to
+the regular Kitty protocol (or even Sixel).  Therefore, support for this
+hack is not planned.
 
 ## Input formats
 

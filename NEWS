@@ -5,12 +5,13 @@ unreleased
 * support DEC special graphics in ASCII mode
 * support all VP8L indexed color transforms
 * support color, width, align, noshade properties on HR element
-* add status.format-mode to set formatting of status bar
-* remove query-da1 (no longer needed, terminal querying is now async)
-* work around FreeBSD vt(4) not responding to any query at all
+* add status.format-mode (sets formatting of status bar)
+* remove display.force-clear (shouldn't have ever been needed)
+* remove display.query-da1 (no longer needed)
+* make terminal querying asynchronous
+* work around FreeBSD vt(4) freezing on startup
 * optimize out Sixel repaints when scrolling
 * drop excessive frames when the terminal/link cannot keep up
-* remove display.force-clear option
 * fix cached images not being cleared when a buffer is deleted
 * fix a NULL deref in jebp
 * fix y/n being truncated out of long ask() prompts
@@ -18,6 +19,13 @@ unreleased
 * fix load info not being set on cycling between buffers
 * fix color blending over body bgcolor
 * fix matching of nested subsequent sibling combinator
+* fix various CSS image sizing bugs
+* fix bugs in our libregexp UTF-8 patch
+* fix various proxy authentication bugs
+* fix [attr|=value] and :lang() pseudo-class bugs
+* fix localStorage.key function
+* fix gotoLine malfunctioning in select menu
+* fix bug in negation of the minimum layout unit value
 
 0.3.0 (2025.11.21)
 
