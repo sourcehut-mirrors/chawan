@@ -323,3 +323,118 @@ globalThis.cmd = {
 
 /* backwards compat: cmd.pager and cmd.buffer used to be separate */
 cmd.pager = cmd.buffer = cmd;
+
+/*
+ * Buffer
+ *
+ * TODO: this should be a separate class from Container, and Container
+ * should be renamed to BufferInterface.
+ */
+
+Buffer.prototype.cursorDown = function(n = 1) {
+    this.setCursorY(this.cursory + n);
+}
+
+Buffer.prototype.cursorUp = function(n = 1) {
+    this.setCursorY(this.cursory - n);
+}
+
+Buffer.prototype.scrollDown = function(n = 1) {
+    const H = this.numLines;
+    const y = Math.min(this.fromy + this.height + n, H) - this.height;
+    if (y > this.fromy) {
+        this.setFromY(y);
+        if (this.fromy > this.cursory)
+            this.cursorDown(this.fromy - this.cursory);
+    } else
+        this.cursorDown(n);
+}
+
+Buffer.prototype.scrollUp = function(n = 1) {
+    const y = Math.max(this.fromy - n, 0);
+    if (y < this.fromy) {
+        this.setFromY(y);
+        if (this.fromy + this.height <= this.cursory)
+            this.cursorUp(this.cursory - this.fromy - this.height + 1);
+    } else
+        this.cursorUp(n)
+}
+
+Buffer.prototype.scrollRight = function(n = 1) {
+    const msw = this.maxScreenWidth();
+    const x = Math.min(this.fromx + this.width + n, msw) - this.width;
+    if (x > this.fromx)
+        this.setFromX(x)
+}
+
+Buffer.prototype.scrollLeft = function(n = 1) {
+    const x = Math.max(this.fromx - n, 0);
+    if (x < this.fromx)
+        this.setFromX(x)
+}
+
+Buffer.prototype.pageLeft = function(n = 1) {
+    this.setFromX(this.fromx - this.width * n);
+}
+
+Buffer.prototype.pageRight = function(n = 1) {
+    this.setFromX(this.fromx + this.width * n);
+}
+
+/* I am not cloning the vi behavior of e.g. 2^D setting paging size because
+ * it is counter-intuitive and annoying. */
+Buffer.prototype.halfPageUp = function(n = 1) {
+    const delta = (this.height + 1) / 2 * n
+    this.setFromY(this.fromy - delta);
+    this.setCursorY(this.cursory - delta);
+    this.restoreCursorX();
+}
+
+Buffer.prototype.halfPageDown = function(n = 1) {
+    const delta = (this.height + 1) / 2 * n;
+    this.setFromY(this.fromy + delta);
+    this.setCursorY(this.cursory + delta);
+    this.restoreCursorX();
+}
+
+Buffer.prototype.halfPageLeft = function(n = 1) {
+    this.setFromX(this.fromx - (this.width + 1) / 2 * n);
+}
+
+Buffer.prototype.halfPageRight = function(n = 1) {
+    this.setFromX(this.fromx + (this.width + 1) / 2 * n);
+}
+
+function clamp(n, lo, hi) {
+    return Math.min(Math.max(n, lo), hi);
+}
+
+Buffer.prototype.cursorTop = function(n = 1) {
+    this.markPos0();
+    this.setCursorY(this.fromy + clamp(n - 1, 0, this.height - 1));
+    this.markPos();
+}
+
+Buffer.prototype.cursorMiddle = function() {
+    this.markPos0();
+    this.setCursorY(this.fromy + (this.height - 2) / 2);
+    this.markPos();
+}
+
+Buffer.prototype.cursorBottom = function(n = 1) {
+    this.markPos0();
+    this.setCursorY(this.fromy + this.height - clamp(n, 0, this.height));
+    this.markPos();
+}
+
+Buffer.prototype.cursorLeftEdge = function() {
+    this.setCursorX(this.fromx)
+}
+
+Buffer.prototype.cursorMiddleColumn = function() {
+    this.setCursorX(this.fromx + (this.width - 2) / 2);
+}
+
+Buffer.prototype.cursorRightEdge = function() {
+    this.setCursorX(this.fromx + this.width - 1)
+}

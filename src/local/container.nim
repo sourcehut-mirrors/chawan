@@ -222,7 +222,7 @@ jsDestructor(Highlight)
 jsDestructor(Container)
 
 # Forward declarations
-proc cursorLastLine*(container: Container)
+proc cursorLastLine(container: Container)
 proc find*(container: Container; dir: NavDirection): Container
 proc onclick(container: Container; res: ClickResult)
 proc triggerEvent(container: Container; t: ContainerEventType)
@@ -468,7 +468,7 @@ proc acursorx*(container: Container): int =
 proc acursory*(container: Container): int =
   container.cursory - container.fromy
 
-proc maxScreenWidth(container: Container): int =
+proc maxScreenWidth(container: Container): int {.jsfunc.} =
   result = 0
   for y in container.fromy..container.lastVisibleLine:
     result = max(container.getLineStr(y).width(), result)
@@ -865,12 +865,6 @@ proc setCursorXYCenter*(container: Container; x, y: int; refresh = true)
   if fx != container.fromx:
     container.centerColumn()
 
-proc cursorDown(container: Container; n = 1) {.jsfunc.} =
-  container.setCursorY(container.cursory + n)
-
-proc cursorUp(container: Container; n = 1) {.jsfunc.} =
-  container.setCursorY(container.cursory - n)
-
 proc cursorLeft(container: Container; n = 1) {.jsfunc.} =
   container.setCursorX(container.cursorFirstX() - n)
 
@@ -890,32 +884,6 @@ proc pageUp(container: Container; n = 1) {.jsfunc.} =
   container.setCursorY(container.cursory - container.height * n)
   container.restoreCursorX()
 
-proc pageLeft(container: Container; n = 1) {.jsfunc.} =
-  container.setFromX(container.fromx - container.width * n)
-
-proc pageRight(container: Container; n = 1) {.jsfunc.} =
-  container.setFromX(container.fromx + container.width * n)
-
-# I am not cloning the vi behavior here because it is counter-intuitive
-# and annoying.
-# Users who disagree are free to implement it themselves. (It is about
-# 5 lines of JS.)
-proc halfPageUp(container: Container; n = 1) {.jsfunc.} =
-  container.setFromY(container.fromy - (container.height + 1) div 2 * n)
-  container.setCursorY(container.cursory - (container.height + 1) div 2 * n)
-  container.restoreCursorX()
-
-proc halfPageDown(container: Container; n = 1) {.jsfunc.} =
-  container.setFromY(container.fromy + (container.height + 1) div 2 * n)
-  container.setCursorY(container.cursory + (container.height + 1) div 2 * n)
-  container.restoreCursorX()
-
-proc halfPageLeft(container: Container; n = 1) {.jsfunc.} =
-  container.setFromX(container.fromx - (container.width + 1) div 2 * n)
-
-proc halfPageRight(container: Container; n = 1) {.jsfunc.} =
-  container.setFromX(container.fromx + (container.width + 1) div 2 * n)
-
 proc markPos0*(container: Container) {.jsfunc.} =
   container.tmpJumpMark = (container.cursorx, container.cursory)
 
@@ -929,67 +897,10 @@ proc cursorFirstLine(container: Container) {.jsfunc.} =
   container.setCursorY(0)
   container.markPos()
 
-proc cursorLastLine*(container: Container) {.jsfunc.} =
+proc cursorLastLine(container: Container) {.jsfunc.} =
   container.markPos0()
   container.setCursorY(container.numLines - 1)
   container.markPos()
-
-proc cursorTop(container: Container; i = 1) {.jsfunc.} =
-  container.markPos0()
-  let i = clamp(i - 1, 0, container.height - 1)
-  container.setCursorY(container.fromy + i)
-  container.markPos()
-
-proc cursorMiddle(container: Container) {.jsfunc.} =
-  container.markPos0()
-  container.setCursorY(container.fromy + (container.height - 2) div 2)
-  container.markPos()
-
-proc cursorBottom(container: Container; i = 1) {.jsfunc.} =
-  container.markPos0()
-  let i = clamp(i, 0, container.height)
-  container.setCursorY(container.fromy + container.height - i)
-  container.markPos()
-
-proc cursorLeftEdge(container: Container) {.jsfunc.} =
-  container.setCursorX(container.fromx)
-
-proc cursorMiddleColumn(container: Container) {.jsfunc.} =
-  container.setCursorX(container.fromx + (container.width - 2) div 2)
-
-proc cursorRightEdge(container: Container) {.jsfunc.} =
-  container.setCursorX(container.fromx + container.width - 1)
-
-proc scrollDown*(container: Container; n = 1) {.jsfunc.} =
-  let H = container.numLines
-  let y = min(container.fromy + container.height + n, H) - container.height
-  if y > container.fromy:
-    container.setFromY(y)
-    if container.fromy > container.cursory:
-      container.cursorDown(container.fromy - container.cursory)
-  else:
-    container.cursorDown(n)
-
-proc scrollUp*(container: Container; n = 1) {.jsfunc.} =
-  let y = max(container.fromy - n, 0)
-  if y < container.fromy:
-    container.setFromY(y)
-    if container.fromy + container.height <= container.cursory:
-      container.cursorUp(container.cursory - container.fromy -
-        container.height + 1)
-  else:
-    container.cursorUp(n)
-
-proc scrollRight*(container: Container; n = 1) {.jsfunc.} =
-  let msw = container.maxScreenWidth()
-  let x = min(container.fromx + container.width + n, msw) - container.width
-  if x > container.fromx:
-    container.setFromX(x)
-
-proc scrollLeft*(container: Container; n = 1) {.jsfunc.} =
-  let x = max(container.fromx - n, 0)
-  if x < container.fromx:
-    container.setFromX(x)
 
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
