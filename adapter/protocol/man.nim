@@ -120,8 +120,8 @@ const RegexStr =
   r"((https?|ftp)://[\w/~.-]+)|" &              # link, 1
   r"((mailto:|)(\w[\w.-]*@[\w-]+\.[\w.-]*))|" & # mail, 3
   r"((file:)?[/~][\w/~.-]+[\w/])|" &            # file, 6
-  r"(#include(</?[bu]>|\s)*&lt;([\w./-]+))|" &  # include, 8
-  r"((</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\)))" # man, 11-15
+  r"(#include((</?[bu]>|\s)*)&lt;([\w./-]+))|" &  # include, 8-11
+  r"((</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\)))" # man, 12-16
 
 proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     Opt[void] =
@@ -206,15 +206,19 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
           "/usr/include/X11/"
         ]
         block notFound:
-          for path in includePaths:
-            let file = path & s
-            if fileExists(file):
-              oline &= "<a href='file:" & file & "'>" & s & "</a>"
+          let fileCap = ctx.cap(11)
+          let file = line[fileCap.s..<fileCap.e]
+          let paddingCap = ctx.cap(9)
+          for dir in includePaths:
+            let path = dir & file
+            if fileExists(path):
+              oline &= "#include" & line[paddingCap.s..<paddingCap.e] &
+               "&lt;<a href='file:" & path & "'>" & file & "</a>"
               break notFound
           oline &= s
-      elif ctx.cap(11).s >= 0:
-        let manCap = ctx.cap(13)
-        let sectionCap = ctx.cap(15)
+      elif ctx.cap(12).s >= 0:
+        let manCap = ctx.cap(14)
+        let sectionCap = ctx.cap(16)
         let man = line[manCap.s..<manCap.e]
         # ignore footers like MYPAGE(1)
         # (just to be safe, we also check if it's in paths too)
