@@ -1830,6 +1830,27 @@ proc alert*(pager: Pager; msg: string) {.jsfunc.} =
     pager.alerts.add(msg)
     pager.updateStatus = ussUpdate
 
+proc peek(pager: Pager) {.jsfunc.} =
+  let container = pager.container
+  if container != nil:
+    pager.alert($container.url)
+
+proc peekCursor(pager: Pager) {.jsfunc.} =
+  let container = pager.container
+  if container == nil:
+    return
+  let s = container.getPeekCursorStr()
+  pager.alert(s)
+
+proc lineInfo(pager: Pager) {.jsfunc.} =
+  let container = pager.container
+  if container == nil:
+    return
+  pager.alert("line " & $(container.cursory + 1) & "/" &
+    $container.numLines & " (" & $container.atPercentOf() & "%) col " &
+    $(container.cursorx + 1) & "/" & $container.currentLineWidth &
+    " (byte " & $container.currentCursorBytes & ")")
+
 proc updatePinned(pager: Pager; old, replacement: Container) =
   if pager.pinned.downloads == old:
     pager.pinned.downloads = replacement
@@ -3594,6 +3615,22 @@ proc closeMenu(pager: Pager) {.jsfunc.} =
   if pager.menu != nil:
     pager.menuFinish(pager.menu)
 
+proc cancel(pager: Pager) {.jsfunc.} =
+  let container = pager.container
+  if container == nil or container.loadState != lsLoading:
+    return
+  container.loadState = lsCanceled
+  container.setLoadInfo("")
+  if container.iface != nil:
+    container.cancel()
+  elif (let item = pager.findConnectingContainer(container); item != nil):
+    dec pager.numload
+    # closes item's stream
+    pager.deleteContainer(container, container.find(ndAny))
+  else:
+    return
+  pager.alert("Canceled loading")
+
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
   case event.t
   of cetLoaded:
@@ -3661,19 +3698,6 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       if container.loadState != lsLoading:
         pager.queueStatusUpdate()
       pager.updateTitle()
-  of cetAlert:
-    if pager.container == container:
-      pager.alert(event.msg)
-  of cetCancel:
-    let item = pager.findConnectingContainer(container)
-    if item == nil:
-      # whoops. we tried to cancel, but the event loop did not favor us...
-      # at least cancel it in the buffer
-      container.remoteCancel()
-    else:
-      dec pager.numload
-      # closes item's stream
-      pager.deleteContainer(container, container.find(ndAny))
   of cetMetaRefresh:
     let url = event.refreshURL
     let n = event.refreshIn

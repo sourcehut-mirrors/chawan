@@ -51,9 +51,9 @@ type
     setxsave: bool
 
   ContainerEventType* = enum
-    cetReadLine, cetReadPassword, cetReadArea, cetReadFile, cetOpen, cetSave,
-    cetSaveSource, cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle,
-    cetCancel, cetMetaRefresh
+    cetReadLine, cetReadPassword, cetReadArea, cetReadFile, cetOpen,
+    cetSave, cetSaveSource, cetSetLoadInfo, cetStatus, cetLoaded, cetTitle,
+    cetMetaRefresh
 
   ContainerEvent* = ref object
     case t*: ContainerEventType
@@ -65,8 +65,6 @@ type
     of cetOpen, cetSave:
       request*: Request
       contentType*: string
-    of cetAlert:
-      msg*: string
     of cetMetaRefresh:
       refreshIn*: int
       refreshURL*: URL
@@ -412,7 +410,7 @@ proc findColStartByte(s: string; endx: int): int =
 proc cursorStartByte(container: Container; y, cc: int): int =
   return container.getLineStr(y).findColStartByte(cc)
 
-proc currentCursorBytes(container: Container; cc = container.cursorx): int =
+proc currentCursorBytes*(container: Container; cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
 
 # Returns the X position of the first cell occupied by the character the cursor
@@ -480,8 +478,9 @@ proc getTitle*(container: Container): string {.jsfget: "title".} =
     return container.title
   return container.url.serialize(excludepassword = true)
 
-proc currentLineWidth(container: Container): int =
-  if container.numLines == 0: return 0
+proc currentLineWidth*(container: Container): int =
+  if container.numLines == 0:
+    return 0
   return container.currentLine.width()
 
 proc maxfromy(container: Container): int =
@@ -992,15 +991,6 @@ proc scrollLeft*(container: Container; n = 1) {.jsfunc.} =
   if x < container.fromx:
     container.setFromX(x)
 
-proc alert(container: Container; msg: string) =
-  container.triggerEvent(ContainerEvent(t: cetAlert, msg: msg))
-
-proc lineInfo(container: Container) {.jsfunc.} =
-  container.alert("line " & $(container.cursory + 1) & "/" &
-    $container.numLines & " (" & $container.atPercentOf() & "%) col " &
-    $(container.cursorx + 1) & "/" & $container.currentLineWidth &
-    " (byte " & $container.currentCursorBytes & ")")
-
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
     container.setCursorX(container.pos.setx, container.pos.setxrefresh,
@@ -1011,7 +1001,6 @@ proc updateCursor(container: Container) =
     let n = max(container.lastVisibleLine, 0)
     if container.cursory != n:
       container.setCursorY(n)
-      container.alert("Last line is #" & $container.numLines)
 
 proc pushCursorPos*(container: Container) =
   if container.select != nil:
@@ -1663,24 +1652,17 @@ proc applyResponse*(container: Container; response: Response;
   container.charset = container.charsetStack[^1]
   container.refreshHeader = response.headers.getFirst("Refresh")
 
-proc remoteCancel*(container: Container) =
+proc cancel*(container: Container) =
   if container.iface != nil:
     container.iface.cancel()
-  container.setLoadInfo("")
-  container.alert("Canceled loading")
-
-proc cancel*(container: Container) {.jsfunc.} =
-  if container.loadState == lsLoading:
-    container.loadState = lsCanceled
-    if container.iface != nil:
-      container.remoteCancel()
-    else:
-      container.triggerEvent(cetCancel)
 
 proc readCanceled*(container: Container) =
-  container.iface.readCanceled()
+  if container.iface != nil:
+    container.iface.readCanceled()
 
 proc readSuccess*(container: Container; s: string; fd: cint = -1) =
+  if container.iface == nil:
+    return
   let p = container.iface.readSuccess(s, fd)
   if fd != -1:
     doAssert container.iface.stream.flush().isOk
@@ -1778,13 +1760,10 @@ proc windowChange*(container: Container; attrs: WindowAttributes) =
   if container.select != nil:
     container.select.windowChange(container.width, container.height)
 
-proc peek(container: Container) {.jsfunc.} =
-  container.alert($container.url)
-
 proc clearHover*(container: Container) =
   container.lastPeek = HoverType.high
 
-proc peekCursor(container: Container) {.jsfunc.} =
+proc getPeekCursorStr*(container: Container): string =
   var p = container.lastPeek
   while true:
     if p < HoverType.high:
@@ -1793,9 +1772,9 @@ proc peekCursor(container: Container) {.jsfunc.} =
       p = HoverType.low
     if container.hoverText[p] != "" or p == container.lastPeek:
       break
-  if container.hoverText[p] != "":
-    container.alert(container.hoverText[p])
+  let s = container.hoverText[p]
   container.lastPeek = p
+  s
 
 proc hoverLink(container: Container): lent string {.jsfget.} =
   return container.hoverText[htLink]
