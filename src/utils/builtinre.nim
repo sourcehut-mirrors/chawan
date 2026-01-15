@@ -12,7 +12,7 @@ type
       # han, hangul
       r"((?<!\p{sc=Han})\p{sc=Han})|((?<!\p{sc=Hang})\p{sc=Hang})|" &
       # other alpha & non-alpha (symbol)
-      r"((?<!\w)\w)|((?<![^\p{L}\p{Z}])[^\p{L}\p{Z}])"
+      r"((?<!\w)\w)|((?<![^\p{L}\p{Z}\p{N}])[^\p{L}\p{Z}\p{N}])"
     brBigWordStart = r"(?<!\S)\S"
     brWordEnd = r"\w(?!\w)"
     brViWordEnd =
@@ -21,7 +21,7 @@ type
       # han, hangul
       r"(\p{sc=Han}(?!\p{sc=Han}))|(\p{sc=Hang}(?!\p{sc=Hang}))|" &
       # other alpha & non-alpha (symbol)
-      r"(\w(?!\w))|([^\p{L}\p{Z}](?![^\p{L}\p{Z}]))"
+      r"(\w(?!\w))|([^\p{L}\p{Z}\p{N}](?![^\p{L}\p{Z}\p{N}]))"
     brBigWordEnd = r"\S(?!\S)"
     brTextStart = r"\S"
 
