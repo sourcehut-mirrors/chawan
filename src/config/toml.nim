@@ -203,19 +203,6 @@ proc consumeString(state: var TomlParser; buf: openArray[char]; first: char):
     let c = state.consume(buf)
     if c == '\n' and not multiline:
       return state.err("newline in string")
-    elif not escape and c == first:
-      if multiline:
-        if state.has(buf, 1):
-          let c2 = state.peek(buf, 0)
-          let c3 = state.peek(buf, 1)
-          if c2 == first and c3 == first:
-            state.seek(2)
-            break
-        res &= c
-      else:
-        break
-    elif first == '"' and c == '\\':
-      escape = true
     elif escape:
       case c
       of 'b': res &= '\b'
@@ -230,6 +217,19 @@ proc consumeString(state: var TomlParser; buf: openArray[char]; first: char):
       of '$': res &= "\\$" # special case for substitution in paths
       else: return state.err("invalid escape sequence \\" & c)
       escape = false
+    elif c == first:
+      if multiline:
+        if state.has(buf, 1):
+          let c2 = state.peek(buf, 0)
+          let c3 = state.peek(buf, 1)
+          if c2 == first and c3 == first:
+            state.seek(2)
+            break
+        res &= c
+      else:
+        break
+    elif first == '"' and c == '\\':
+      escape = true
     elif mlTrim:
       if c notin {'\n', ' ', '\t'}:
         res &= c

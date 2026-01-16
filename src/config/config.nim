@@ -254,11 +254,11 @@ proc getRealKey(key: string): string =
   var meta = 0
   var skip = false
   for c in key:
-    if c == '\\':
-      skip = true
-    elif skip:
+    if skip:
       realk &= c
       skip = false
+    elif c == '\\':
+      skip = true
     elif c == 'M' and meta == 0:
       inc meta
     elif c == 'C' and control == 0:
