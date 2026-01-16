@@ -344,8 +344,9 @@ Buffer.prototype.scrollDown = function(n = 1) {
     const y = Math.min(this.fromy + this.height + n, H) - this.height;
     if (y > this.fromy) {
         this.setFromY(y);
-        if (this.fromy > this.cursory)
-            this.cursorDown(this.fromy - this.cursory);
+        const dy = this.fromy - this.cursory;
+        if (dy > 0)
+            this.cursorDown(dy);
     } else
         this.cursorDown(n);
 }
@@ -354,8 +355,9 @@ Buffer.prototype.scrollUp = function(n = 1) {
     const y = Math.max(this.fromy - n, 0);
     if (y < this.fromy) {
         this.setFromY(y);
-        if (this.fromy + this.height <= this.cursory)
-            this.cursorUp(this.cursory - this.fromy - this.height + 1);
+        const dy = this.cursory - this.fromy - this.height + 1;
+        if (dy > 0)
+            this.cursorUp(dy);
     } else
         this.cursorUp(n)
 }
