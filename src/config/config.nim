@@ -243,14 +243,8 @@ proc getRealKey(key: string): string =
   var realk = ""
   var control = 0
   var meta = 0
-  var skip = false
   for c in key:
-    if c == '\\':
-      skip = true
-    elif skip:
-      realk &= c
-      skip = false
-    elif c == 'M' and meta == 0:
+    if c == 'M' and meta == 0:
       inc meta
     elif c == 'C' and control == 0:
       inc control
@@ -277,8 +271,6 @@ proc getRealKey(key: string): string =
     realk &= 'C'
   if meta == 1:
     realk &= 'M'
-  if skip:
-    realk &= '\\'
   move(realk)
 
 proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue
