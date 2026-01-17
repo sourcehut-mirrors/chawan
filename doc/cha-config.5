@@ -1462,11 +1462,7 @@ Keybindings are configured using the syntax
 .EE
 .PP
 Where \f[CR]<keybinding>\f[R] is a combination of unicode characters
-with or without modifiers.
-Modifiers are the prefixes \f[CR]C\-\f[R] and \f[CR]M\-\f[R], which add
-control or escape to the keybinding respectively (essentially making
-\f[CR]M\-\f[R] the same as \f[CR]C\-[\f[R]).
-Modifiers can be escaped with the \f[CR]\(rs\f[R] sign.
+using the syntax described below.
 .PP
 \f[CR]<action>\f[R] is either a command defined in the \f[CR][cmd]\f[R]
 section, or a JavaScript expression.
@@ -1483,7 +1479,7 @@ Examples:
 
 \f[I]# go to the first line of the page when g is pressed twice without a preceding\f[R]
 \f[I]# number, or to the line when a preceding number is given.\f[R]
-\(aqgg\(aq = \(aqgotoLineOrStart\(aq
+\(aqg g\(aq = \(aqgotoLineOrStart\(aq
 
 \f[I]# JS functions and expressions are accepted too. Following replaces the\f[R]
 \f[I]# default search engine with DuckDuckGo Lite.\f[R]
@@ -1491,6 +1487,31 @@ Examples:
 \f[I]# to add your own \(dqnamespaced\(dq commands like above.)\f[R]
 \(aqC\-k\(aq = \(aq() => pager.load(\(dqddg:\(dq)\(aq
 .EE
+.SS Keybinding format
+A keybinding is a space\-separated list of keys, optionally prefixed by
+modifiers \f[CR]S\-\f[R] (shift), \f[CR]C\-\f[R] (control), or
+\f[CR]M\-\f[R] (meta).
+.PP
+In general, ASCII/Unicode keys can be written as\-is.
+The exception is space, which is written as \f[CR]SPC\f[R].
+.PP
+Other supported keys with custom names are: \f[CR]TAB\f[R],
+\f[CR]ESC\f[R], \f[CR]RET\f[R] (return key), \f[CR]Left\f[R],
+\f[CR]Up\f[R], \f[CR]Down\f[R], \f[CR]Right\f[R] (cursor keys),
+\f[CR]Pgdn\f[R], \f[CR]Pgup\f[R] (page up/down), \f[CR]Home\f[R],
+\f[CR]End\f[R].
+.PP
+For backwards compatibility, spaces can be omitted from key sequences
+that do not start with an upper\-case letter.
+For example, \f[CR]\(aqgg\(aq\f[R] and \f[CR]\(aqg g\(aq\f[R] are
+equivalent.
+However, components that start with an upper\-case letter
+(e.g.\ \f[CR]\(aqGg\(aq\f[R]) are reserved for key names, so those must
+be space\-separated (e.g.\ \f[CR]\(aqG g\(aq\f[R]) to avoid ambiguous
+parsing.
+.PP
+Also, for backwards\-compatibility, spaces at the beginning/end of the
+keybinding are translated to SPC.
 .SS Pager actions
 .PP
 .TS
@@ -1605,7 +1626,7 @@ depending on what the previously viewed buffer was.
 T}
 _
 T{
-d,, d.
+d ,, d .
 T}@T{
 \f[CR]discardBufferPrev\f[R], \f[CR]discardBufferNext\f[R]
 T}@T{
@@ -1693,7 +1714,7 @@ Multiple calls allow cycling through the two.
 T}
 _
 T{
-su
+s u
 T}@T{
 \f[CR]showFullAlert\f[R]
 T}@T{
@@ -1710,7 +1731,7 @@ Copy the current buffer\(cqs URL to the system clipboard.
 T}
 _
 T{
-yu
+y u
 T}@T{
 \f[CR]copyCursorLink\f[R]
 T}@T{
@@ -1718,7 +1739,7 @@ Copy the link under the cursor to the system clipboard.
 T}
 _
 T{
-yI
+y I
 T}@T{
 \f[CR]copyCursorImage\f[R]
 T}@T{
@@ -1780,7 +1801,7 @@ Function
 T}
 _
 T{
-j/C\-p/Up arrow, k/C\-n/Down arrow
+j/C\-p/Up, k/C\-n/Down
 T}@T{
 \f[CR]cursorUp\f[R], \f[CR]cursorDown\f[R]
 T}@T{
@@ -1789,7 +1810,7 @@ Move the cursor upwards/downwards by n lines, or if n is unspecified, by
 T}
 _
 T{
-h/Left arrow, l/Right arrow
+h/Left, l/Right
 T}@T{
 \f[CR]cursorLeft\f[R], \f[CR]cursorRight\f[R]
 T}@T{
@@ -1894,7 +1915,7 @@ Move the cursor to the nth link of the document.
 T}
 _
 T{
-C\-b, C\-f, zH, zL
+C\-b, C\-f, z H, z L
 T}@T{
 \f[CR]pageUp\f[R], \f[CR]pageDown\f[R], \f[CR]pageLeft\f[R],
 \f[CR]pageRight\f[R]
@@ -1914,7 +1935,7 @@ one page.
 T}
 _
 T{
-K/C\-y, J/C\-e, zh, zl
+K/C\-y, J/C\-e, z h, z l
 T}@T{
 \f[CR]scrollUp\f[R], \f[CR]scrollDown\f[R], \f[CR]scrollLeft\f[R],
 \f[CR]scrollRight\f[R]
@@ -1924,7 +1945,7 @@ line.
 T}
 _
 T{
-Enter/Return
+RET/C\-j
 T}@T{
 \f[CR]click\f[R]
 T}@T{
@@ -1994,7 +2015,7 @@ Move to the first line/line in the middle of/last line on the screen.
 T}
 _
 T{
-zt, z Return, zz, z., zb, z\-
+z t, z RET, z z, z ., z b, z \-
 T}@T{
 \f[CR]raisePage\f[R], \f[CR]raisePageBegin\f[R], \f[CR]centerLine\f[R],
 \f[CR]centerLineBegin\f[R], \f[CR]lowerPage\f[R],
@@ -2005,21 +2026,21 @@ If n is specified, move cursor to line n.\ Then,
 .IP \(bu 2
 \f[CR]raisePage\f[R] scrolls down so that the cursor is on the top line
 of the screen.
-(vi \f[CR]z<CR>\f[R], vim \f[CR]zt\f[R].)
+(vi \f[CR]z RET\f[R], vim \f[CR]z t\f[R].)
 .IP \(bu 2
 \f[CR]centerLine\f[R] shifts the screen so that the cursor is in the
 middle of the screen.
-(vi \f[CR]z.\f[R], vim \f[CR]zz\f[R].)
+(vi \f[CR]z .\f[R], vim \f[CR]z z\f[R].)
 .IP \(bu 2
 \f[CR]lowerPage\f[R] scrolls up so that the cursor is on the bottom line
 of the screen.
-(vi \f[CR]z\-\f[R], vim \f[CR]zb\f[R].)
+(vi \f[CR]z \-\f[R], vim \f[CR]z b\f[R].)
 The \-\f[CR]Begin\f[R] variants also move the cursor to the line\(cqs
 first non\-blank character, as the variants originating from vi do.
 T}
 _
 T{
-z+
+z +
 T}@T{
 \f[CR]nextPageBegin\f[R]
 T}@T{
@@ -2029,7 +2050,7 @@ Otherwise, go to the next screen\(cqs first line and raise the page.
 T}
 _
 T{
-z\(ha
+z \(ha
 T}@T{
 \f[CR]previousPageBegin\f[R]
 T}@T{
@@ -2039,7 +2060,7 @@ Otherwise, go to the previous screen\(cqs last line and lower the page.
 T}
 _
 T{
-g0, gc, g$
+g 0, g c, g $
 T}@T{
 \f[CR]cursorLeftEdge\f[R], \f[CR]cursorMiddleColumn\f[R],
 \f[CR]cursorRightEdge\f[R]
@@ -2057,7 +2078,7 @@ Center screen around the current column.
 T}
 _
 T{
-gg, G
+g g, G
 T}@T{
 \f[CR]gotoLineOrStart\f[R], \f[CR]gotoLineOrEnd\f[R]
 T}@T{
@@ -2104,7 +2125,7 @@ Convert URL\-like strings to anchors on the current page.
 T}
 _
 T{
-s Return
+s RET
 T}@T{
 \f[CR]saveLink\f[R]
 T}@T{
@@ -2112,7 +2133,7 @@ Save resource from the URL pointed to by the cursor to the disk.
 T}
 _
 T{
-sS
+s S
 T}@T{
 \f[CR]saveSource\f[R]
 T}@T{
@@ -2120,7 +2141,7 @@ Save the source of the current buffer to the disk.
 T}
 _
 T{
-sI
+s I
 T}@T{
 \f[CR]saveImage\f[R]
 T}@T{
@@ -2165,7 +2186,7 @@ Function
 T}
 _
 T{
-Return
+RET, C\-j
 T}@T{
 \f[CR]line.submit\f[R]
 T}@T{
@@ -2189,7 +2210,7 @@ Delete character before (backspace)/after (delete) the cursor.
 T}
 _
 T{
-C\-u/C\-xC\-?, C\-k
+C\-u/C\-x C\-?, C\-k
 T}@T{
 \f[CR]line.clear\f[R], \f[CR]line.kill\f[R]
 T}@T{
@@ -2197,7 +2218,7 @@ Delete text before (clear)/after (kill) the cursor.
 T}
 _
 T{
-C\-xC\-e
+C\-x C\-e
 T}@T{
 \f[CR]line.openEditor\f[R]
 T}@T{

@@ -248,46 +248,126 @@ proc getActionPtr*(a: ActionMap; k: string):
 proc contains*(a: ActionMap; b: string): bool =
   return b in a.t
 
-proc getRealKey(key: string): string =
+type
+  CustomKey = enum
+    ckSpc = "Spc"
+    ckTab = "Tab"
+    ckEsc = "Esc"
+    ckRet = "Ret"
+    ckLeft = "Left"
+    ckUp = "Up"
+    ckDown = "Down"
+    ckRight = "Right"
+    ckPgdn = "Pgdn"
+    ckPgup = "Pgup"
+    ckHome = "Home"
+    ckEnd = "End"
+
+  KeyModifier = enum
+    kmShift, kmControl, kmMeta
+
+proc getRealKey(key: string; warnings: var seq[string]): string =
+  if key == " ":
+    return key
   var realk = ""
-  var control = 0
-  var meta = 0
-  var skip = false
-  for c in key:
-    if skip:
-      realk &= c
-      skip = false
-    elif c == '\\':
-      skip = true
-    elif c == 'M' and meta == 0:
-      inc meta
-    elif c == 'C' and control == 0:
-      inc control
-    elif c == '-' and control == 1:
-      inc control
-    elif c == '-' and meta == 1:
-      inc meta
-    elif meta == 1:
-      realk &= 'M' & c
-      meta = 0
-    elif control == 1:
-      realk &= 'C' & c
-      control = 0
-    else:
-      if meta == 2:
-        realk &= '\e'
-        meta = 0
-      if control == 2:
-        realk &= (if c == '?': '\x7F' else: char(uint8(c) and 0x1F))
-        control = 0
+  var i = 0
+  var mods: set[KeyModifier] = {}
+  if i < key.len and key[i] == ' ':
+    realk &= ' '
+    inc i
+  var start = true
+  while i < key.len:
+    let c = key[i]
+    if c == ' ':
+      start = true
+      inc i
+      continue
+    if i + 1 < key.len and key[i + 1] == '-':
+      case c
+      of 'C': mods.incl(kmControl)
+      of 'M': mods.incl(kmMeta)
+      of 'S': mods.incl(kmShift)
+      else: warnings.add("invalid modifier " & c & '-')
+      i += 2
+      continue
+    if start and c in AsciiUpperAlpha and
+        i + 1 < key.len and key[i + 1] != ' ':
+      var buf = $c
+      inc i
+      while i < key.len:
+        let c = key[i]
+        if c == ' ':
+          break
+        buf &= c.toLowerAscii()
+        inc i
+      if key := strictParseEnum[CustomKey](buf):
+        case key
+        of ckSpc:
+          if kmMeta in mods:
+            realk &= '\e'
+          if kmControl in mods:
+            realk &= '\0'
+          else:
+            realk &= ' '
+        of ckTab:
+          if kmMeta in mods:
+            realk &= '\e'
+          if kmShift in mods:
+            realk &= "\e[Z"
+          else:
+            realk &= '\t'
+        of ckEsc:
+          if kmMeta in mods:
+            realk &= '\e'
+          realk &= '\e'
+        of ckRet:
+          if kmMeta in mods:
+            realk &= '\e'
+          realk &= '\r'
+        else:
+          realk &= "\e["
+          case key
+          of ckPgdn: realk &= '6'
+          of ckPgup: realk &= '5'
+          else: discard
+          let n = if mods == {kmShift}: 2
+          elif mods == {kmControl}: 5
+          elif mods == {kmShift, kmControl}: 6
+          elif mods == {kmMeta}: 9
+          elif mods == {kmMeta, kmShift}: 10
+          elif mods == {kmMeta, kmControl}: 13
+          elif mods == {kmMeta, kmControl, kmShift}: 14
+          else: -1
+          if n > 0:
+            realk &= "1;" & $n
+          case key
+          of ckLeft: realk &= 'D'
+          of ckDown: realk &= 'B'
+          of ckUp: realk &= 'A'
+          of ckRight: realk &= 'C'
+          of ckHome: realk &= 'H'
+          of ckEnd: realk &= 'F'
+          else: discard
       else:
-        realk &= c
-  if control == 1:
-    realk &= 'C'
-  if meta == 1:
-    realk &= 'M'
-  if skip:
-    realk &= '\\'
+        realk &= buf
+        warnings.add("unknown key " & buf)
+      start = true
+      inc i
+      mods = {}
+      continue
+    if kmMeta in mods:
+      realk &= '\e'
+    if kmControl in mods:
+      realk &= (if c == '?': '\x7F' else: char(uint8(c) and 0x1F))
+    elif kmShift in mods:
+      realk &= c.toUpperAscii()
+    else:
+      realk &= c
+    mods = {}
+    start = false
+    inc i
+  if key.endsWith(" "):
+    realk &= ' '
   move(realk)
 
 proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue
@@ -302,7 +382,8 @@ proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
 
 proc setter(ctx: JSContext; a: ActionMap; k: string; val: JSValueConst):
     Opt[void] {.jssetprop.} =
-  let k = getRealKey(k)
+  var dummy: seq[string]
+  let k = getRealKey(k, dummy)
   if k == "":
     return ok()
   let val2 = if JS_IsFunction(ctx, val):
@@ -328,7 +409,8 @@ proc setter(ctx: JSContext; a: ActionMap; k: string; val: JSValueConst):
   ok()
 
 proc delete(a: ActionMap; k: string): bool {.jsdelprop.} =
-  let k = getRealKey(k)
+  var dummy: seq[string]
+  let k = getRealKey(k, dummy)
   let ina = k in a
   a.t.del(k)
   return ina
@@ -642,7 +724,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
   ?typeCheck(v, tvtTable, k)
   for kk, vv in v:
     ?typeCheck(vv, tvtString, k & "[" & kk & "]")
-    let rk = getRealKey(kk)
+    let rk = getRealKey(kk, ctx.warnings)
     x.init.add((rk, vv.s))
   ok()
 

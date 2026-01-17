@@ -106,10 +106,10 @@ A workaround is to add this to your [config](config.md#keybindings)'s
 `[page]` section:
 
 ```toml
-' f' = "pager.externFilterSource('fmt')"
+'SPC f' = "pager.externFilterSource('fmt')"
 ```
 
-and then press `<space> f` to view a wrapped version of the current text
+and then type `<space> f` to view a wrapped version of the current text
 file.  (This assumes your system has an `fmt` program - if not, `fold -s`
 may be an alternative.)
 

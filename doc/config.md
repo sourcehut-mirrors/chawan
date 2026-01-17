@@ -1204,10 +1204,8 @@ Keybindings are configured using the syntax
 '<keybinding>' = '<action>'
 ```
 
-Where `<keybinding>` is a combination of unicode characters with or without
-modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
-escape to the keybinding respectively (essentially making `M-` the same as
-`C-[`). Modifiers can be escaped with the `\` sign.
+Where `<keybinding>` is a combination of unicode characters using the syntax
+described below.
 
 `<action>` is either a command defined in the `[cmd]` section, or a JavaScript
 expression. Here we only describe the pre-defined actions in the default config;
@@ -1223,7 +1221,7 @@ Examples:
 
 # go to the first line of the page when g is pressed twice without a preceding
 # number, or to the line when a preceding number is given.
-'gg' = 'gotoLineOrStart'
+'g g' = 'gotoLineOrStart'
 
 # JS functions and expressions are accepted too. Following replaces the
 # default search engine with DuckDuckGo Lite.
@@ -1231,6 +1229,27 @@ Examples:
 # to add your own "namespaced" commands like above.)
 'C-k' = '() => pager.load("ddg:")'
 ```
+
+### Keybinding format
+
+A keybinding is a space-separated list of keys, optionally prefixed by
+modifiers `S-` (shift), `C-` (control), or `M-` (meta).
+
+In general, ASCII/Unicode keys can be written as-is.  The exception is
+space, which is written as `SPC`.
+
+Other supported keys with custom names are: `TAB`, `ESC`, `RET` (return
+key), `Left`, `Up`, `Down`, `Right` (cursor keys), `Pgdn`, `Pgup` (page
+up/down), `Home`, `End`.
+
+For backwards compatibility, spaces can be omitted from key sequences that
+do not start with an upper-case letter.  For example, `'gg'` and `'g g'` are
+equivalent.  However, components that start with an upper-case letter
+(e.g. `'Gg'`) are reserved for key names, so those must be space-separated
+(e.g. `'G g'`) to avoid ambiguous parsing.
+
+Also, for backwards-compatibility, spaces at the beginning/end of the
+keybinding are translated to SPC.
 
 ### Pager actions
 
@@ -1321,7 +1340,7 @@ depending on what the previously viewed buffer was.</td>
 </tr>
 
 <tr>
-<td><kbd>d,</kbd>, <kbd>d.</kbd></td>
+<td><kbd>d ,</kbd>, <kbd>d .</kbd></td>
 <td>`discardBufferPrev`, `discardBufferNext`</td>
 <td>Discard the current buffer, and move back to the previous/next buffer, or
 open the link under the cursor.</td>
@@ -1390,7 +1409,7 @@ title, press again -> URL)</td>
 </tr>
 
 <tr>
-<td><kbd>su</kbd></td>
+<td><kbd>s u</kbd></td>
 <td>`showFullAlert`</td>
 <td>Show the last alert inside the line editor. You can also view previous
 ones using C-p or C-n.</td>
@@ -1403,13 +1422,13 @@ ones using C-p or C-n.</td>
 </tr>
 
 <tr>
-<td><kbd>yu</kbd></td>
+<td><kbd>y u</kbd></td>
 <td>`copyCursorLink`</td>
 <td>Copy the link under the cursor to the system clipboard.</td>
 </tr>
 
 <tr>
-<td><kbd>yI</kbd></td>
+<td><kbd>y I</kbd></td>
 <td>`copyCursorImage`</td>
 <td>Copy the URL of the image under the cursor to the system clipboard.</td>
 </tr>
@@ -1460,16 +1479,15 @@ unspecified.
 </tr>
 
 <tr>
-<td><kbd>j</kbd>/<kbd>C-p</kbd>/<kbd>Up arrow</kbd>,
-<kbd>k</kbd>/<kbd>C-n</kbd>/<kbd>Down arrow</kbd></td>
+<td><kbd>j</kbd>/<kbd>C-p</kbd>/<kbd>Up</kbd>,
+<kbd>k</kbd>/<kbd>C-n</kbd>/<kbd>Down</kbd></td>
 <td>`cursorUp`, `cursorDown`</td>
 <td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
 1.</td>
 </tr>
 
 <tr>
-<td><kbd>h</kbd>/<kbd>Left arrow</kbd>,
-<kbd>l</kbd>/<kbd>Right arrow</kbd></td>
+<td><kbd>h</kbd>/<kbd>Left</kbd>, <kbd>l</kbd>/<kbd>Right</kbd></td>
 <td>`cursorLeft`, `cursorRight`</td>
 <td>Move the cursor to the left/right by n cells, or if n is unspecified, by
 1.</td>
@@ -1547,7 +1565,7 @@ from the document's last line.</td>
 </tr>
 
 <tr>
-<td><kbd>C-b</kbd>, <kbd>C-f</kbd>, <kbd>zH</kbd>, <kbd>zL</kbd></td>
+<td><kbd>C-b</kbd>, <kbd>C-f</kbd>, <kbd>z H</kbd>, <kbd>z L</kbd></td>
 <td>`pageUp`, `pageDown`, `pageLeft`, `pageRight`</td>
 <td>Scroll up/down/left/right by n pages, or if n is unspecified, by one
 page.</td>
@@ -1561,15 +1579,15 @@ page.</td>
 </tr>
 
 <tr>
-<td><kbd>K</kbd>/<kbd>C-y</kbd>, <kbd>J</kbd>/<kbd>C-e</kbd>,
-<kbd>zh</kbd>, <kbd>zl</kbd></td>
+<td><kbd>K</kbd>/<kbd>C-y</kbd>, <kbd>J</kbd>/<kbd>C-e</kbd>, <kbd>z h</kbd>,
+<kbd>z l</kbd></td>
 <td>`scrollUp`, `scrollDown`, `scrollLeft`, `scrollRight`</td>
 <td>Scroll up/down/left/right by n lines, or if n is unspecified, by one
 line.</td>
 </tr>
 
 <tr>
-<td><kbd>Enter</kbd>/<kbd>Return</kbd></td>
+<td><kbd>RET</kbd>/<kbd>C-j</kbd></td>
 <td>`click`</td>
 <td>Click the HTML element currently under the cursor.  n specifies the
 number of clicks in JS events.</td>
@@ -1622,18 +1640,18 @@ if the layout is not updating even though it should have.</td>
 </tr>
 
 <tr>
-<td><kbd>zt</kbd>, <kbd>z Return</kbd>, <kbd>zz</kbd>, <kbd>z.</kbd>,
-<kbd>zb</kbd>, <kbd>z-</kbd></td>
+<td><kbd>z t</kbd>, <kbd>z RET</kbd>, <kbd>z z</kbd>, <kbd>z .</kbd>,
+<kbd>z b</kbd>, <kbd>z -</kbd></td>
 <td>`raisePage`, `raisePageBegin`, `centerLine`, `centerLineBegin`,
 `lowerPage`, `lowerPageBegin`</td>
 <td>If n is specified, move cursor to line n. Then,
 
 * `raisePage` scrolls down so that the cursor is on the top line of the screen.
-  (vi `z<CR>`, vim `zt`.)
+  (vi `z RET`, vim `z t`.)
 * `centerLine` shifts the screen so that the cursor is in the middle of the
-  screen. (vi `z.`, vim `zz`.)
+  screen. (vi `z .`, vim `z z`.)
 * `lowerPage` scrolls up so that the cursor is on the bottom line of the screen.
-  (vi `z-`, vim `zb`.)
+  (vi `z -`, vim `z b`.)
 
 The -`Begin` variants also move the cursor to the line's first non-blank
 character, as the variants originating from vi do.
@@ -1641,7 +1659,7 @@ character, as the variants originating from vi do.
 </tr>
 
 <tr>
-<td><kbd>z+</kbd></td>
+<td><kbd>z +</kbd></td>
 <td>`nextPageBegin`</td>
 <td>If n is specified, move to the screen before the nth line and raise
 the page.  Otherwise, go to the next screen's first line and raise the
@@ -1649,7 +1667,7 @@ page.</td>
 </tr>
 
 <tr>
-<td><kbd>z^</kbd></td>
+<td><kbd>z ^</kbd></td>
 <td>`previousPageBegin`</td>
 <td>If n is specified, move to the screen before the nth line and lower
 the page.  Otherwise, go to the previous screen's last line and lower the
@@ -1657,7 +1675,7 @@ page.</td>
 </tr>
 
 <tr>
-<td><kbd>g0</kbd>, <kbd>gc</kbd>, <kbd>g$</kbd></td>
+<td><kbd>g 0</kbd>, <kbd>g c</kbd>, <kbd>g $</kbd></td>
 <td>`cursorLeftEdge`, `cursorMiddleColumn`, `cursorRightEdge`</td>
 <td>Move to the first/middle/last column on the screen.</td>
 </tr>
@@ -1669,7 +1687,7 @@ page.</td>
 </tr>
 
 <tr>
-<td><kbd>gg</kbd>, <kbd>G</kbd></td>
+<td><kbd>g g</kbd>, <kbd>G</kbd></td>
 <td>`gotoLineOrStart`, `gotoLineOrEnd`</td>
 <td>If n is specified, jump to line n. Otherwise, jump to the start/end of the
 page.</td>
@@ -1705,19 +1723,19 @@ position.</td>
 </tr>
 
 <tr>
-<td><kbd>s Return</kbd></td>
+<td><kbd>s RET</kbd></td>
 <td>`saveLink`</td>
 <td>Save resource from the URL pointed to by the cursor to the disk.</td>
 </tr>
 
 <tr>
-<td><kbd>sS</kbd></td>
+<td><kbd>s S</kbd></td>
 <td>`saveSource`</td>
 <td>Save the source of the current buffer to the disk.</td>
 </tr>
 
 <tr>
-<td><kbd>sI</kbd></td>
+<td><kbd>s I</kbd></td>
 <td>`saveImage`</td>
 <td>Save the image currently under the cursor.</td>
 </tr>
@@ -1755,7 +1773,7 @@ position.</td>
 </tr>
 
 <tr>
-<td><kbd>Return</kbd></td>
+<td><kbd>RET</kbd>, <kbd>C-j</kbd></td>
 <td>`line.submit`</td>
 <td>Submit the line.</td>
 </tr>
@@ -1773,13 +1791,13 @@ position.</td>
 </tr>
 
 <tr>
-<td><kbd>C-u</kbd>/<kbd>C-xC-?</kbd>, <kbd>C-k</kbd></td>
+<td><kbd>C-u</kbd>/<kbd>C-x C-?</kbd>, <kbd>C-k</kbd></td>
 <td>`line.clear`, `line.kill`</td>
 <td>Delete text before (clear)/after (kill) the cursor.</td>
 </tr>
 
 <tr>
-<td><kbd>C-xC-e</kbd></td>
+<td><kbd>C-x C-e</kbd></td>
 <td>`line.openEditor`</td>
 <td>Open the line editor's contents in `$EDITOR`.</td>
 </tr>
