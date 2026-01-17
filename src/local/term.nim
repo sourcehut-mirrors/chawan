@@ -973,9 +973,11 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
       if term.attrs != oattrs:
         term.windowChange()
         changed = eprWindowChange
-  else: discard
-  term.eparser.nums.setLen(0)
-  term.eparser.state = esNone
+  else:
+    term.eparser.backtrack(c)
+  if term.eparser.state != esBacktrack:
+    term.eparser.nums.setLen(0)
+    term.eparser.state = esNone
   changed
 
 proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
