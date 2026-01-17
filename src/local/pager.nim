@@ -2479,15 +2479,16 @@ proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   pager.addContainer(container)
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
-  let url = parseURL0("stream:history")
-  let ps = pager.loader.addPipe(url.pathname)
+  let tmpf = pager.getTempFile()
+  discard unlink(cstring(tmpf))
+  let ps = newPosixStream(tmpf, O_WRONLY or O_CREAT or O_EXCL, 0o600)
   if ps == nil:
     return nil
   ps.setCloseOnExec()
   let hist = pager.lineHist[lmLocation]
   if hist.write(ps, sync = false, reverse = true).isErr:
     pager.alert("failed to write history")
-  return url
+  return parseURL0("file:" & tmpf)
 
 proc addConsoleFile(pager: Pager): Opt[ChaFile] =
   let url = parseURL0("stream:console")
