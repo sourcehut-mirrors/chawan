@@ -1022,10 +1022,13 @@ proc initActions(config: Config; ctx: JSContext; map: ActionMap): Err[string] =
       map[buf] = JS_DupValue(ctx, feedNext)
     let old = map.getOrDefault(it.k)
     JS_FreeValue(ctx, JSValue(old))
-    let val = ctx.evalCmdDecl(it.s)
-    if JS_IsException(val):
-      return err(ctx.getExceptionMsg())
-    map[it.k] = val
+    if it.s == "":
+      map.t.del(it.k)
+    else:
+      let val = ctx.evalCmdDecl(it.s)
+      if JS_IsException(val):
+        return err(ctx.getExceptionMsg())
+      map[it.k] = val
   map.init.setLen(0)
   ok()
 
