@@ -1,4 +1,4 @@
-async function toggleLinkHints() {
+async function toggleLinkHints(_, autoClick = false) {
     pager.markPos0();
     const urls = await pager.showLinkHints();
     if (urls.length == 0) {
@@ -48,6 +48,8 @@ async function toggleLinkHints() {
     if (it?.leaf) {
         pager.setCursorXY(it.x, it.y);
         pager.markPos();
+        if (autoClick)
+            pager.click();
     } else if (alert)
         pager.alert("No such hint");
 }
@@ -138,6 +140,7 @@ globalThis.cmd = {
     },
     showFullAlert: () => pager.showFullAlert(),
     toggleLinkHints: toggleLinkHints,
+    toggleLinkHintsAutoClick: () => toggleLinkHints(1, true),
     cursorLeft: n => pager.cursorLeft(n),
     cursorDown: n => pager.cursorDown(n),
     cursorUp: n => pager.cursorUp(n),

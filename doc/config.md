@@ -1461,6 +1461,12 @@ The hint character set may be customized with `input.link-hint-chars`.
 </td>
 </tr>
 
+<tr>
+<td>None</td>
+<td>`toggleLinkHintsAutoClick`</td>
+<td>Same as `toggleLinkHints`, but also click the selected link.</td>
+</tr>
+
 </table>
 
 ### Buffer actions
