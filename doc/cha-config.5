@@ -1495,11 +1495,12 @@ modifiers \f[CR]S\-\f[R] (shift), \f[CR]C\-\f[R] (control), or
 In general, ASCII/Unicode keys can be written as\-is.
 The exception is space, which is written as \f[CR]SPC\f[R].
 .PP
-Other supported keys with custom names are: \f[CR]TAB\f[R],
-\f[CR]ESC\f[R], \f[CR]RET\f[R] (return key), \f[CR]Left\f[R],
-\f[CR]Up\f[R], \f[CR]Down\f[R], \f[CR]Right\f[R] (cursor keys),
-\f[CR]Pgdn\f[R], \f[CR]Pgup\f[R] (page up/down), \f[CR]Home\f[R],
-\f[CR]End\f[R].
+Other supported named keys are: \f[CR]TAB\f[R], \f[CR]ESC\f[R],
+\f[CR]RET\f[R] (return key), \f[CR]LF\f[R] (enter key/line feed),
+\f[CR]Left\f[R], \f[CR]Up\f[R], \f[CR]Down\f[R], \f[CR]Right\f[R]
+(cursor keys), \f[CR]PageUp\f[R], \f[CR]PageDown\f[R] (page up/down),
+\f[CR]Home\f[R], \f[CR]End\f[R], and function keys \f[CR]F1\f[R] through
+\f[CR]F20\f[R].
 .PP
 For backwards compatibility, spaces can be omitted from key sequences
 that do not start with an upper\-case letter.
@@ -1511,7 +1512,7 @@ be space\-separated (e.g.\ \f[CR]\(aqG g\(aq\f[R]) to avoid ambiguous
 parsing.
 .PP
 Also, for backwards\-compatibility, spaces at the beginning/end of the
-keybinding are translated to SPC.
+keybinding are translated to \f[CR]SPC\f[R].
 .SS Pager actions
 .PP
 .TS
@@ -1923,7 +1924,7 @@ Move the cursor to the nth link of the document.
 T}
 _
 T{
-C\-b, C\-f, z H, z L
+C\-b/PageUp, C\-f/PageDown, z H, z L
 T}@T{
 \f[CR]pageUp\f[R], \f[CR]pageDown\f[R], \f[CR]pageLeft\f[R],
 \f[CR]pageRight\f[R]
@@ -1953,7 +1954,7 @@ line.
 T}
 _
 T{
-RET/C\-j
+RET/LF
 T}@T{
 \f[CR]click\f[R]
 T}@T{
@@ -2194,7 +2195,7 @@ Function
 T}
 _
 T{
-RET, C\-j
+RET, LF
 T}@T{
 \f[CR]line.submit\f[R]
 T}@T{

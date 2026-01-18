@@ -1238,9 +1238,10 @@ modifiers `S-` (shift), `C-` (control), or `M-` (meta).
 In general, ASCII/Unicode keys can be written as-is.  The exception is
 space, which is written as `SPC`.
 
-Other supported keys with custom names are: `TAB`, `ESC`, `RET` (return
-key), `Left`, `Up`, `Down`, `Right` (cursor keys), `Pgdn`, `Pgup` (page
-up/down), `Home`, `End`.
+Other supported named keys are: `TAB`, `ESC`, `RET` (return key), `LF`
+(enter key/line feed), `Left`, `Up`, `Down`, `Right` (cursor keys),
+`PageUp`, `PageDown` (page up/down), `Home`, `End`, and function keys `F1`
+through `F20`.
 
 For backwards compatibility, spaces can be omitted from key sequences that
 do not start with an upper-case letter.  For example, `'gg'` and `'g g'` are
@@ -1249,7 +1250,7 @@ equivalent.  However, components that start with an upper-case letter
 (e.g. `'G g'`) to avoid ambiguous parsing.
 
 Also, for backwards-compatibility, spaces at the beginning/end of the
-keybinding are translated to SPC.
+keybinding are translated to `SPC`.
 
 ### Pager actions
 
@@ -1571,7 +1572,8 @@ from the document's last line.</td>
 </tr>
 
 <tr>
-<td><kbd>C-b</kbd>, <kbd>C-f</kbd>, <kbd>z H</kbd>, <kbd>z L</kbd></td>
+<td><kbd>C-b</kbd>/<kbd>PageUp</kbd>, <kbd>C-f</kbd>/<kbd>PageDown</kbd>,
+<kbd>z H</kbd>, <kbd>z L</kbd></td>
 <td>`pageUp`, `pageDown`, `pageLeft`, `pageRight`</td>
 <td>Scroll up/down/left/right by n pages, or if n is unspecified, by one
 page.</td>
@@ -1593,7 +1595,7 @@ line.</td>
 </tr>
 
 <tr>
-<td><kbd>RET</kbd>/<kbd>C-j</kbd></td>
+<td><kbd>RET</kbd>/<kbd>LF</kbd></td>
 <td>`click`</td>
 <td>Click the HTML element currently under the cursor.  n specifies the
 number of clicks in JS events.</td>
@@ -1779,7 +1781,7 @@ position.</td>
 </tr>
 
 <tr>
-<td><kbd>RET</kbd>, <kbd>C-j</kbd></td>
+<td><kbd>RET</kbd>, <kbd>LF</kbd></td>
 <td>`line.submit`</td>
 <td>Submit the line.</td>
 </tr>

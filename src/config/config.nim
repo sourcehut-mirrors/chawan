@@ -254,17 +254,48 @@ type
     ckTab = "Tab"
     ckEsc = "Esc"
     ckRet = "Ret"
+    ckLf = "Lf"
     ckLeft = "Left"
     ckUp = "Up"
     ckDown = "Down"
     ckRight = "Right"
-    ckPgdn = "Pgdn"
-    ckPgup = "Pgup"
+    ckPageUp = "Pageup"
+    ckPageDown = "Pagedown"
     ckHome = "Home"
     ckEnd = "End"
+    ckF1 = "F1"
+    ckF2 = "F2"
+    ckF3 = "F3"
+    ckF4 = "F4"
+    ckF5 = "F5"
+    ckF6 = "F6"
+    ckF7 = "F7"
+    ckF8 = "F8"
+    ckF9 = "F9"
+    ckF10 = "F10"
+    ckF11 = "F11"
+    ckF12 = "F12"
+    ckF13 = "F13"
+    ckF14 = "F14"
+    ckF15 = "F15"
+    ckF16 = "F16"
+    ckF17 = "F17"
+    ckF18 = "F18"
+    ckF19 = "F19"
+    ckF20 = "F20"
 
   KeyModifier = enum
     kmShift, kmControl, kmMeta
+
+proc toXTermMod(mods: set[KeyModifier]): uint8 =
+  return if mods == {kmShift}: 2
+  elif mods == {kmControl}: 5
+  elif mods == {kmShift, kmControl}: 6
+  elif mods == {kmMeta}: 9
+  elif mods == {kmMeta, kmShift}: 10
+  elif mods == {kmMeta, kmControl}: 13
+  elif mods == {kmMeta, kmControl, kmShift}: 14
+  else: 0
 
 proc getRealKey(key: string; warnings: var seq[string]): string =
   if key == " ":
@@ -324,20 +355,41 @@ proc getRealKey(key: string; warnings: var seq[string]): string =
           if kmMeta in mods:
             realk &= '\e'
           realk &= '\r'
+        of ckLf:
+          if kmMeta in mods:
+            realk &= '\e'
+          realk &= '\n'
+        of ckF1, ckF2, ckF3, ckF4:
+          let n = mods.toXTermMod()
+          let c = char(uint8(key) - uint8(ckF1) + uint8('P'))
+          if n == 0:
+            realk &= "\eO" & c
+          else:
+            realk &= "\e[1;" & $n & c
         else:
           realk &= "\e["
+          # see ctlseqs(ms) (from XTerm)
           case key
-          of ckPgdn: realk &= '6'
-          of ckPgup: realk &= '5'
+          of ckPageDown: realk &= '6'
+          of ckPageUp: realk &= '5'
+          of ckF5: realk &= "15"
+          of ckF6: realk &= "17"
+          of ckF7: realk &= "18"
+          of ckF8: realk &= "19"
+          of ckF9: realk &= "20"
+          of ckF10: realk &= "21"
+          of ckF11: realk &= "23"
+          of ckF12: realk &= "24"
+          of ckF13: realk &= "25"
+          of ckF14: realk &= "26"
+          of ckF15: realk &= "28"
+          of ckF16: realk &= "29"
+          of ckF17: realk &= "31"
+          of ckF18: realk &= "32"
+          of ckF19: realk &= "33"
+          of ckF20: realk &= "34"
           else: discard
-          let n = if mods == {kmShift}: 2
-          elif mods == {kmControl}: 5
-          elif mods == {kmShift, kmControl}: 6
-          elif mods == {kmMeta}: 9
-          elif mods == {kmMeta, kmShift}: 10
-          elif mods == {kmMeta, kmControl}: 13
-          elif mods == {kmMeta, kmControl, kmShift}: 14
-          else: -1
+          let n = mods.toXTermMod()
           if n > 0:
             realk &= "1;" & $n
           case key
