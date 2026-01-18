@@ -117,7 +117,6 @@ type ParamParseContext = object
   contentType: string
   charset: Charset
   visual: bool
-  bytecode: seq[string]
   opts: seq[string]
   stylesheet: string
   pages: seq[string]
@@ -132,9 +131,6 @@ proc getNext(ctx: var ParamParseContext): string =
 
 proc parseConfig(ctx: var ParamParseContext) =
   ctx.configPath = some(ctx.getNext())
-
-proc parseBytecode(ctx: var ParamParseContext) =
-  ctx.bytecode.add(ctx.getNext())
 
 proc parseMonochrome(ctx: var ParamParseContext) =
   ctx.opts.add("display.color-mode = monochrome")
@@ -197,7 +193,6 @@ proc parse(ctx: var ParamParseContext) =
           if j < param.high and param[j] in NeedsNextParam:
             ctx.next = param.substr(j + 1)
           case param[j]
-          of 'B': ctx.parseBytecode()
           of 'C': ctx.parseConfig()
           of 'I': ctx.parseInputCharset()
           of 'M': ctx.parseMonochrome()
@@ -262,8 +257,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   for opt in ctx.opts:
     ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", builtin = false,
       laxnames = true)
-  if ctx.bytecode.len == 0:
-    ?jsctx.initCommands(config)
+  ?jsctx.initCommands(config)
   string(config.buffer.userStyle) &= ctx.stylesheet
   isCJKAmbiguous = config.display.doubleWidthAmbiguous
   return ok()
@@ -472,8 +466,7 @@ proc main() =
   loaderControl.setCloseOnExec()
   let loader = newFileLoader(clientPid, loaderControl)
   let client = newClient(forkserver, loader, jsctx, urandom)
-  if ctx.bytecode.len == 0:
-    jsctx.setupStartupScript("init.jsb")
+  jsctx.setupStartupScript("init.jsb")
   var warnings = newSeq[string]()
   let config = newConfig(jsctx)
   if (let res = ctx.initConfig(config, warnings, jsctx); res.isErr):
@@ -515,10 +508,7 @@ proc main() =
   client.timeouts = pager.timeouts
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs
-  if ctx.bytecode.len > 0:
-    client.pager.compile(ctx.bytecode, ctx.pages)
-  else:
-    client.pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
+  client.pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
 
 main()
 

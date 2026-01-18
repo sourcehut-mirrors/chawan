@@ -1069,10 +1069,6 @@ proc handleUserInput(pager: Pager): Opt[void] =
       pager.handleCommandInput(e)
   ok()
 
-proc die(pager: Pager; s: string) =
-  pager.alert(s)
-  pager.quit(1)
-
 proc runStartupScript(pager: Pager) =
   if pager.config.start.startupScript != "":
     let ps = newPosixStream(pager.config.start.startupScript)
@@ -1137,37 +1133,6 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   else:
     pager.dumpBuffers()
   pager.quit(max(pager.exitCode, 0))
-
-proc compile*(pager: Pager; srcs, dsts: openArray[string]) =
-  if srcs.len != dsts.len:
-    pager.die("got " & $srcs.len & " files to compile, but " & $dsts.len &
-      " destinations")
-  let ctx = pager.jsctx
-  when not defined(debug):
-    let rt = JS_GetRuntime(ctx)
-    JS_SetStripInfo(rt, JS_STRIP_SOURCE or JS_STRIP_DEBUG)
-  for i in 0 ..< srcs.len:
-    let srcName = srcs[i]
-    var src: string
-    if chafile.readFile(srcName, src).isErr:
-      pager.die("failed to read " & srcs[i])
-    let obj = JS_Eval(ctx, cstring(src), csize_t(src.len), cstring(srcName),
-      JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
-    if JS_IsException(obj):
-      pager.die(ctx.getExceptionMsg())
-    var size: csize_t
-    let p0 = JS_WriteObject(ctx, addr size, obj, JS_WRITE_OBJ_BYTECODE)
-    JS_FreeValue(ctx, obj)
-    if p0 == nil:
-      pager.die(ctx.getExceptionMsg())
-    let p = cast[ptr UncheckedArray[char]](p0)
-    let dstName = dsts[i]
-    let len = int(size)
-    let res = chafile.writeFile(dstName, p.toOpenArray(0, len - 1), 0o600)
-    js_free(ctx, p0)
-    if res.isErr:
-      pager.die("failed to write " & dstName)
-  pager.quit(0)
 
 # Note: this function does not work correctly if start < x of last written char
 proc writeStatusMessage(status: var Surface; str: string; format = Format();

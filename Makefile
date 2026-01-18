@@ -50,10 +50,13 @@ OUTDIR_MAN = $(OUTDIR_TARGET)/share/man
 # platform-specific adjustments.
 FORCE_POLL_MODE ?= 0
 
+chac_flags =
+
 # Nim compiler flags
 ifeq ($(TARGET),debug)
 FLAGS += -d:debug --debugger:native
 else ifeq ($(TARGET),release)
+chac_flags = -s
 FLAGS += -d:release -d:strip -d:lto
 else ifeq ($(TARGET),release0)
 FLAGS += -d:release --stacktrace:on
@@ -222,8 +225,12 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
-$(OUTDIR_LIBEXEC)/%.jsb: src/%.js $(OUTDIR_BIN)/cha
-	$(OUTDIR_BIN)/cha -B $< $@
+# Do not add FLAGS here, because that breaks cross-compilation.
+$(OBJDIR)/chac: src/chac.nim lib/monoucha0/monoucha/* lib/monoucha0/monoucha/qjs/*
+	$(NIMC) -o:$@ $<
+
+$(OUTDIR_LIBEXEC)/%.jsb: src/%.js $(OBJDIR)/chac
+	$(OBJDIR)/chac $(chac_flags) $< $@
 
 doc/%.1: doc/%.md md2man
 	./md2man $< > $@~
