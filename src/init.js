@@ -1,9 +1,9 @@
-async function toggleLinkHints(_, autoClick = false) {
+async function toggleLinkHints() {
     pager.markPos0();
     const urls = await pager.showLinkHints();
     if (urls.length == 0) {
         pager.alert("No links on page");
-        return;
+        return false;
     }
     const chars = config.input.linkHintChars;
     function hint(n) {
@@ -48,10 +48,10 @@ async function toggleLinkHints(_, autoClick = false) {
     if (it?.leaf) {
         pager.setCursorXY(it.x, it.y);
         pager.markPos();
-        if (autoClick)
-            pager.click();
+        return true;
     } else if (alert)
         pager.alert("No such hint");
+    return false;
 }
 
 globalThis.cmd = {
@@ -100,8 +100,9 @@ globalThis.cmd = {
     loadEmpty: () => pager.load(""),
     webSearch: () => pager.load("br:"),
     addBookmark: () => {
-        const url = `cgi-bin:chabookmark?url=${encodeURIComponent(pager.url)}&title=${encodeURIComponent(pager.title)}`;
-        pager.gotoURL(url);
+        const url = encodeURIComponent(pager.url);
+        const title = encodeURIComponent(pager.title);
+        pager.gotoURL(`cgi-bin:chabookmark?url=${url}&title=${title}`);
     },
     openBookmarks: () => {
         pager.gotoURL(`cgi-bin:chabookmark?action=view`, {history: false});
@@ -140,7 +141,11 @@ globalThis.cmd = {
     },
     showFullAlert: () => pager.showFullAlert(),
     toggleLinkHints: toggleLinkHints,
-    toggleLinkHintsAutoClick: () => toggleLinkHints(1, true),
+    toggleLinkHintsAutoClick: async () => {
+        const res = await toggleLinkHints();
+        if (res)
+            pager.click();
+    },
     cursorLeft: n => pager.cursorLeft(n),
     cursorDown: n => pager.cursorDown(n),
     cursorUp: n => pager.cursorUp(n),
@@ -230,11 +235,11 @@ globalThis.cmd = {
     reshape: () => pager.reshape(),
     cancel: () => pager.cancel(),
     /* vi G */
-    gotoLineOrEnd: n => n ? pager.gotoLine(n) : pager.cursorLastLine(),
+    gotoLineOrEnd: n => pager.gotoLine(n ?? pager.numLines),
     /* vim gg */
-    gotoLineOrStart: n => n ? pager.gotoLine(n) : pager.cursorFirstLine(),
+    gotoLineOrStart: n => pager.gotoLine(n ?? 1),
     /* vi | */
-    gotoColumnOrBegin: n => n ? pager.setCursorXCenter(n - 1) : pager.cursorLineBegin(),
+    gotoColumnOrBegin: n => pager.setCursorXCenter((n ?? 1) - 1),
     gotoColumnOrEnd: n => n ? pager.setCursorXCenter(n - 1) : pager.cursorLineEnd(),
     /* vi z. z^M z- */
     centerLineBegin: n => pager.centerLineBegin(n),
@@ -388,18 +393,15 @@ Buffer.prototype.pageRight = function(n = 1) {
 
 /* I am not cloning the vi behavior of e.g. 2^D setting paging size because
  * it is counter-intuitive and annoying. */
-Buffer.prototype.halfPageUp = function(n = 1) {
-    const delta = (this.height + 1) / 2 * n
-    this.setFromY(this.fromy - delta);
-    this.setCursorY(this.cursory - delta);
-    this.restoreCursorX();
-}
-
 Buffer.prototype.halfPageDown = function(n = 1) {
     const delta = (this.height + 1) / 2 * n;
     this.setFromY(this.fromy + delta);
     this.setCursorY(this.cursory + delta);
     this.restoreCursorX();
+}
+
+Buffer.prototype.halfPageUp = function(n = 1) {
+    this.halfPageDown(-n);
 }
 
 Buffer.prototype.halfPageLeft = function(n = 1) {
@@ -442,4 +444,74 @@ Buffer.prototype.cursorMiddleColumn = function() {
 
 Buffer.prototype.cursorRightEdge = function() {
     this.setCursorX(this.fromx + this.width - 1)
+}
+
+/*
+ * RegExp literals are pre-compiled.
+ * We skip compiling vi words for now because bytecode with Unicode gets
+ * obscenely large.
+ */
+const ReWordStart = /(?<!\w)\w/gu;
+/* kana, han, hangul, other alpha & non-alpha (symbol) */
+const ReViWordStart = new RegExp(
+    String.raw`((?<!\p{sc=Hira})\p{sc=Hira})|((?<!\p{sc=Kana})\p{sc=Kana})|((?<!\p{sc=Han})\p{sc=Han})|((?<!\p{sc=Hang})\p{sc=Hang})|((?<!\w)\w)|((?<![^\p{L}\p{Z}\p{N}])[^\p{L}\p{Z}\p{N}])`,
+    "gu"
+);
+const ReBigWordStart = /(?<!\S)\S/gu;
+
+const ReWordEnd = /\w(?!\w)/gu;
+/* kana, han, hangul, other alpha & non-alpha (symbol) */
+const ReViWordEnd = new RegExp(
+    String.raw`(\p{sc=Hira}(?!\p{sc=Hira}))|(\p{sc=Kana}(?!\p{sc=Kana}))|(\p{sc=Han}(?!\p{sc=Han}))|(\p{sc=Hang}(?!\p{sc=Hang}))|(\w(?!\w))|([^\p{L}\p{Z}\p{N}](?![^\p{L}\p{Z}\p{N}]))`,
+    "gu"
+);
+const ReBigWordEnd = /\S(?!\S)/gu;
+const ReTextStart = /\S/gu;
+
+Buffer.prototype.cursorPrevWord = function(n) {
+    this.cursorPrevWordImpl(ReWordEnd, n);
+}
+
+Buffer.prototype.cursorPrevViWord = function(n) {
+    this.cursorPrevWordImpl(ReViWordEnd, n);
+}
+
+Buffer.prototype.cursorPrevBigWord = function(n) {
+    this.cursorPrevWordImpl(ReBigWordEnd, n);
+}
+
+Buffer.prototype.cursorNextWord = function(n) {
+    this.cursorNextWordImpl(ReWordStart, n);
+}
+
+Buffer.prototype.cursorNextViWord = function(n) {
+    this.cursorNextWordImpl(ReViWordStart, n);
+}
+
+Buffer.prototype.cursorNextBigWord = function(n) {
+    this.cursorNextWordImpl(ReBigWordStart, n);
+}
+
+Buffer.prototype.cursorWordBegin = function(n) {
+    this.cursorPrevWordImpl(ReWordStart, n);
+}
+
+Buffer.prototype.cursorViWordBegin = function(n) {
+    this.cursorPrevWordImpl(ReViWordStart, n);
+}
+
+Buffer.prototype.cursorBigWordBegin = function(n) {
+    this.cursorPrevWordImpl(ReBigWordStart, n);
+}
+
+Buffer.prototype.cursorWordEnd = function(n) {
+    this.cursorNextWordImpl(ReWordEnd, n);
+}
+
+Buffer.prototype.cursorViWordEnd = function(n) {
+    this.cursorNextWordImpl(ReViWordEnd, n);
+}
+
+Buffer.prototype.cursorBigWordEnd = function(n) {
+    this.cursorNextWordImpl(ReBigWordEnd, n);
 }

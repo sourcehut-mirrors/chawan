@@ -14,6 +14,17 @@ proc die(s: string) {.noreturn.} =
 proc usage() {.noreturn.} =
   die("usage: chac [-s] ifile ofile")
 
+proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
+  return alloc(size)
+
+proc bindFree(s: JSMallocStateP; p: pointer) {.cdecl.} =
+  if p != nil:
+    dealloc(p)
+
+proc bindRealloc(s: JSMallocStateP; p: pointer; size: csize_t): pointer
+    {.cdecl.} =
+  return realloc(p, size)
+
 proc main() =
   let params = commandLineParams()
   var strip = false
@@ -30,7 +41,13 @@ proc main() =
       usage()
   if ifile == "" or ofile == "":
     usage()
-  let rt = JS_NewRuntime()
+  var mf {.global.} = JSMallocFunctions(
+    js_malloc: bindMalloc,
+    js_free: bindFree,
+    js_realloc: bindRealloc,
+    js_malloc_usable_size: nil
+  )
+  let rt = JS_NewRuntime2(addr mf, nil)
   if rt == nil:
     die("failed to allocate JS runtime")
   if strip:

@@ -47140,6 +47140,16 @@ static JSRegExp *js_get_regexp(JSContext *ctx, JSValueConst obj, BOOL throw_erro
     return NULL;
 }
 
+uint8_t *JS_GetRegExpBytecode(JSContext *ctx, JSValueConst obj, size_t *plen)
+{
+    JSRegExp *re;
+
+    if ((re = js_get_regexp(ctx, obj, TRUE)) == NULL)
+        return NULL;
+    *plen = re->bytecode->len;
+    return re->bytecode->u.str8;
+}
+
 /* return < 0 if exception or TRUE/FALSE */
 static int js_is_regexp(JSContext *ctx, JSValueConst obj)
 {

@@ -1521,27 +1521,27 @@ unspecified.
 <tr>
 <td><kbd>w</kbd>, <kbd>W</kbd></td>
 <td>`cursorNextWord`, `cursorNextViWord`, `cursorNextBigWord`</td>
-<td>Move the cursor to the beginning of the next [word](#word-types).</td>
+<td>Move the cursor to the beginning of the nth next [word](#word-types).</td>
 </tr>
 
 <tr>
 <td>None</td>
 <td>`cursorPrevWord`, `cursorPrevViWord`, `cursorPrevBigWord`</td>
-<td>Move the cursor to the end of the previous [word](#word-types).</td>
+<td>Move the cursor to the end of the nth previous [word](#word-types).</td>
 </tr>
 
 <tr>
 <td><kbd>e</kbd>, <kbd>E</kbd></td>
 <td>`cursorWordEnd`, `cursorViWordEnd`, `cursorBigWordEnd`</td>
 <td>Move the cursor to the end of the current [word](#word-types), or if already
-there, to the end of the next word.</td>
+there, to the end of the nth next word.</td>
 </tr>
 
 <tr>
 <td><kbd>b</kbd>, <kbd>B</kbd></td>
 <td>`cursorWordBegin`, `cursorViWordBegin`, `cursorBigWordBegin`</td>
 <td>Move the cursor to the beginning of the current [word](#word-types), or if
-already there, to the end of the previous word.</td>
+already there, to the end of the nth previous word.</td>
 </tr>
 
 <tr>

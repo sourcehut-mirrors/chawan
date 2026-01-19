@@ -755,6 +755,7 @@ void JS_FreeCString(JSContext *ctx, const char *ptr);
 
 JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
 uint8_t *JS_GetNarrowStringBuffer(JSValueConst value);
+uint8_t *JS_GetRegExpBytecode(JSContext *ctx, JSValueConst obj, size_t *plen);
 uint32_t JS_GetStringLength(JSValueConst value);
 void JS_BuildBacktrace(JSContext *ctx, JSValueConst obj, int skip_first_level);
 

@@ -1167,6 +1167,16 @@ proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
     container.queueDraw()
     container.flags.excl(cfHighlight)
 
+#TODO probably want to skip copying the bytecode here
+proc fromJS(ctx: JSContext; val: JSValueConst; re: var Regex): FromJSResult =
+  var plen: csize_t
+  let p = JS_GetRegExpBytecode(ctx, val, plen)
+  if p == nil:
+    return fjErr
+  re = Regex(bytecode: newString(plen))
+  copyMem(addr re.bytecode[0], p, plen)
+  fjOk
+
 proc findPrevMatch(container: Container; regex: Regex; x, y: int; wrap: bool;
     n: int): Promise[BufferMatch] =
   var wrap = wrap
@@ -1259,11 +1269,12 @@ proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
       container.onMatch(res, refresh)
     )
 
-proc cursorPrevWord(container: Container; t: BuiltinRegex): EmptyPromise =
+proc cursorPrevWordImpl(container: Container; re: Regex; n = 1): EmptyPromise
+    {.jsfunc.} =
   let x = container.cursorx
   let y = container.cursory
   return container
-    .findPrevMatch(container.relist.a[t], x, y, wrap = false, 1)
+    .findPrevMatch(re, x, y, wrap = false, 1)
     .then(proc(res: BufferMatch) =
       if res.x >= 0 and res.y >= 0:
         container.setCursorXY(res.x + res.w - 1, res.y)
@@ -1271,53 +1282,18 @@ proc cursorPrevWord(container: Container; t: BuiltinRegex): EmptyPromise =
         container.cursorLineBegin()
     )
 
-proc cursorNextWord(container: Container; t: BuiltinRegex): EmptyPromise =
+proc cursorNextWordImpl(container: Container; re: Regex; n = 1): EmptyPromise
+    {.jsfunc.} =
   let x = container.cursorx
   let y = container.cursory
   return container
-    .findNextMatch(container.relist.a[t], x, y, wrap = false, 1)
+    .findNextMatch(re, x, y, wrap = false, n)
     .then(proc(res: BufferMatch) =
       if res.x >= 0 and res.y >= 0:
         container.setCursorXY(res.x + res.w - 1, res.y)
       else:
         container.cursorLineEnd()
     )
-
-proc cursorPrevWord(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorPrevWord(brWordEnd)
-
-proc cursorPrevViWord(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorPrevWord(brViWordEnd)
-
-proc cursorPrevBigWord(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorPrevWord(brBigWordEnd)
-
-proc cursorNextWord(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorNextWord(brWordStart)
-
-proc cursorNextViWord(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorNextWord(brViWordStart)
-
-proc cursorNextBigWord(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorNextWord(brBigWordStart)
-
-proc cursorWordBegin(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorPrevWord(brWordStart)
-
-proc cursorViWordBegin(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorPrevWord(brViWordStart)
-
-proc cursorBigWordBegin(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorPrevWord(brBigWordStart)
-
-proc cursorWordEnd(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorNextWord(brWordEnd)
-
-proc cursorViWordEnd(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorNextWord(brViWordEnd)
-
-proc cursorBigWordEnd(container: Container): EmptyPromise {.jsfunc.} =
-  container.cursorNextWord(brBigWordEnd)
 
 type
   SelectionOptions = object of JSDict
