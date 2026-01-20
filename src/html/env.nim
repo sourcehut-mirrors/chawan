@@ -459,33 +459,6 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   response.close()
   return ctx.finishLoadModule(source, name)
 
-proc addWindowModule*(ctx: JSContext):
-    tuple[eventCID, eventTargetCID: JSClassID] =
-  let (eventCID, eventTargetCID) = ctx.addEventModule()
-  ctx.registerType(Window, parent = eventTargetCID, asglobal = true)
-  let global = JS_GetGlobalObject(ctx)
-  discard ctx.addEventGetSet(global, WindowEvents)
-  JS_FreeValue(ctx, global)
-  ctx.registerType(MediaQueryList, parent = eventTargetCID)
-  return (eventCID, eventTargetCID)
-
-proc addWindowModule2*(ctx: JSContext):
-    tuple[windowCID, eventCID, eventTargetCID: JSClassID] =
-  let (eventCID, eventTargetCID) = ctx.addEventModule()
-  let windowCID = ctx.registerType(Window, parent = eventTargetCID,
-    asglobal = true, globalparent = true)
-  ctx.registerType(MediaQueryList, parent = eventTargetCID)
-  return (windowCID, eventCID, eventTargetCID)
-
-proc evalJSFree(opaque: RootRef; src, file: string) =
-  let window = Window(opaque)
-  let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(ret):
-    window.console.log("Exception in document", $window.document.url,
-      window.jsctx.getExceptionMsg())
-  else:
-    JS_FreeValue(window.jsctx, ret)
-
 proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     isHandled: JS_BOOL; opaque: pointer) {.cdecl.} =
   if not isHandled:
@@ -498,8 +471,41 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     if not JS_IsUndefined(stack) and ctx.fromJS(stack, ss).isOk:
       s &= ss
     JS_FreeValue(ctx, stack)
-    window.console.error("Unhandled promise in document", $window.document.url,
-      s)
+    if window.document != nil:
+      window.console.error("Unhandled promise in document",
+        $window.document.url, s)
+    else:
+      window.console.error("(Unhandled promise)", s)
+    window.console.flush()
+
+proc addWindowModule*(ctx: JSContext):
+    tuple[eventCID, eventTargetCID: JSClassID] =
+  let (eventCID, eventTargetCID) = ctx.addEventModule()
+  ctx.registerType(Window, parent = eventTargetCID, asglobal = true)
+  let global = JS_GetGlobalObject(ctx)
+  discard ctx.addEventGetSet(global, WindowEvents)
+  JS_FreeValue(ctx, global)
+  ctx.registerType(MediaQueryList, parent = eventTargetCID)
+  JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
+  return (eventCID, eventTargetCID)
+
+proc addWindowModule2*(ctx: JSContext):
+    tuple[windowCID, eventCID, eventTargetCID: JSClassID] =
+  let (eventCID, eventTargetCID) = ctx.addEventModule()
+  let windowCID = ctx.registerType(Window, parent = eventTargetCID,
+    asglobal = true, globalparent = true)
+  ctx.registerType(MediaQueryList, parent = eventTargetCID)
+  JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
+  return (windowCID, eventCID, eventTargetCID)
+
+proc evalJSFree(opaque: RootRef; src, file: string) =
+  let window = Window(opaque)
+  let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
+  if JS_IsException(ret):
+    window.console.log("Exception in document", $window.document.url,
+      window.jsctx.getExceptionMsg())
+  else:
+    JS_FreeValue(window.jsctx, ret)
 
 proc getConsole(ctx: JSContext): Console =
   ctx.getGlobal().console
@@ -512,7 +518,6 @@ proc addScripting*(window: Window) =
   window.importMapsAllowed = true
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
   window.addCustomElementRegistry(rt)
-  JS_SetHostPromiseRejectionTracker(rt, rejectionHandler, nil)
   let jsWindow = JS_GetGlobalObject(ctx)
   let weakMap = JS_GetPropertyStr(ctx, jsWindow, "WeakMap")
   for it in window.weakMap.mitems:

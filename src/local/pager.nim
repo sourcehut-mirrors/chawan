@@ -54,7 +54,6 @@ import types/jsopt
 import types/opt
 import types/url
 import types/winattrs
-import utils/builtinre
 import utils/lrewrap
 import utils/luwrap
 import utils/myposix
@@ -63,20 +62,20 @@ import utils/twtstr
 
 type
   LineMode* = enum
-    lmLocation = "URL: "
-    lmUsername = "Username: "
-    lmPassword = "Password: "
-    lmCommand = "COMMAND: "
-    lmBuffer
-    lmSearchF = "/"
-    lmSearchB = "?"
-    lmISearchF = "/"
-    lmISearchB = "?"
-    lmGotoLine = "Goto line: "
-    lmDownload = "(Download)Save file to: "
-    lmBufferFile = "(Upload)Filename: "
-    lmAlert = ""
-    lmMailcap = "Mailcap: "
+    lmLocation = "location"
+    lmUsername = "username"
+    lmPassword = "password"
+    lmCommand = "command"
+    lmBuffer = "buffer"
+    lmSearchF = "searchF"
+    lmSearchB = "searchB"
+    lmISearchF = "isearchF"
+    lmISearchB = "isearchB"
+    lmGotoLine = "gotoLine"
+    lmDownload = "download"
+    lmBufferFile = "bufferFile"
+    lmAlert = "alert"
+    lmMailcap = "mailcap"
 
   PagerAlertState = enum
     pasNormal, pasAlertOn, pasLoadInfo
@@ -158,7 +157,6 @@ type
     askPrompt: string
     config*: Config
     console: Console
-    relist: BuiltinRegexList
     tabHead: Tab # not nil
     tab: Tab # not nil
     cookieJars: CookieJarMap
@@ -167,10 +165,9 @@ type
     exitCode: int
     forkserver: ForkServer
     inputBuffer: string # currently uninterpreted characters
-    iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
     jsctx: JSContext
-    lastAlert: string # last alert seen by the user
+    lastAlert {.jsget.}: string # last alert seen by the user
     lineData: LineData
     lineHist: array[LineMode, History]
     lineedit*: LineEdit
@@ -184,13 +181,15 @@ type
     numload: int # number of pages currently being loaded
     pollData: PollData
     refreshAllowed: HashSet[string]
-    regex: Opt[Regex]
     term*: Terminal
     timeouts*: TimeoutState
     tmpfSeq: uint
     unreg: seq[Container]
     attrs: WindowAttributes
     pidMap: Table[int, string] # pid -> command
+    jsPager: JSValue
+    updateReadLineISearch: JSValue
+    updateReadLineSearch: JSValue
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -242,6 +241,16 @@ proc showAlerts(pager: Pager)
 proc unregisterFd(pager: Pager; fd: int)
 proc updateReadLine(pager: Pager)
 proc windowChange(pager: Pager)
+
+proc finalize(rt: JSRuntime; pager: Pager) {.jsfin.} =
+  JS_FreeValueRT(rt, pager.jsPager)
+  JS_FreeValueRT(rt, pager.updateReadLineISearch)
+  JS_FreeValueRT(rt, pager.updateReadLineSearch)
+
+proc mark(rt: JSRuntime; pager: Pager; markFun: JS_MarkFunc) {.jsmark.} =
+  JS_MarkValue(rt, pager.jsPager, markFun)
+  JS_MarkValue(rt, pager.updateReadLineISearch, markFun)
+  JS_MarkValue(rt, pager.updateReadLineSearch, markFun)
 
 proc container(pager: Pager): Container {.jsfget: "buffer".} =
   pager.tab.current
@@ -334,105 +343,17 @@ proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
       return val
   return JS_UNINITIALIZED
 
-proc cursorNextMatch(pager: Pager; regex: Regex; wrap, refresh: bool; n: int):
-    EmptyPromise =
-  if pager.menu != nil:
-    pager.menu.cursorNextMatch(regex, wrap, n)
-    return newResolvedPromise()
-  return pager.container.cursorNextMatch(regex, wrap, refresh, n)
-
-proc cursorPrevMatch(pager: Pager; regex: Regex; wrap, refresh: bool; n: int):
-    EmptyPromise =
-  if pager.menu != nil:
-    pager.menu.cursorPrevMatch(regex, wrap, n)
-    return newResolvedPromise()
-  return pager.container.cursorPrevMatch(regex, wrap, refresh, n)
-
-proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
-  if pager.regex.isOk:
-    let wrap = pager.config.search.wrap
-    pager.container.markPos0()
-    if not pager.reverseSearch:
-      discard pager.cursorNextMatch(pager.regex.get, wrap, true, n)
-    else:
-      discard pager.cursorPrevMatch(pager.regex.get, wrap, true, n)
-    pager.container.markPos()
-  else:
-    pager.alert("No previous regular expression")
-
-proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
-  if pager.regex.isOk:
-    let wrap = pager.config.search.wrap
-    pager.container.markPos0()
-    if not pager.reverseSearch:
-      discard pager.cursorPrevMatch(pager.regex.get, wrap, true, n)
-    else:
-      discard pager.cursorNextMatch(pager.regex.get, wrap, true, n)
-    pager.container.markPos()
-  else:
-    pager.alert("No previous regular expression")
-
-proc setSearchRegex(ctx: JSContext; pager: Pager; s: string; flags0 = "";
-    reverse = false): JSValue {.jsfunc.} =
-  var flags = {LRE_FLAG_GLOBAL}
-  for c in flags0:
-    let x = strictParseEnum[LREFlag]($c)
-    if x.isErr:
-      return JS_ThrowTypeError(ctx, "invalid flag %c", c)
-  var regex: Regex
-  if not compileRegex(s, flags, regex):
-    return JS_ThrowTypeError(ctx, cstring(regex.bytecode))
-  pager.regex = Opt[Regex].ok(move(regex))
-  pager.reverseSearch = reverse
-  return JS_UNDEFINED
-
 proc getHist(pager: Pager; mode: LineMode): History =
   if pager.lineHist[mode] == nil:
     pager.lineHist[mode] = newHistory(100)
   return pager.lineHist[mode]
 
-proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
-    prompt = $mode) =
+proc setLineEdit(pager: Pager; mode: LineMode; prompt: string; current = "";
+    hide = false) {.jsfunc.} =
   let hist = pager.getHist(mode)
   pager.lineedit = readLine(prompt, current, pager.attrs.width, hide, hist,
     pager.luctx)
   pager.linemode = mode
-
-# Reuse the line editor as an alert message viewer.
-proc showFullAlert(pager: Pager) {.jsfunc.} =
-  if pager.lastAlert != "":
-    pager.setLineEdit(lmAlert, pager.lastAlert)
-
-proc searchForward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(lmSearchF)
-
-proc searchBackward(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(lmSearchB)
-
-proc isearchForward(pager: Pager) {.jsfunc.} =
-  let container = pager.container
-  if container != nil:
-    if pager.menu != nil or container.select != nil:
-      # isearch doesn't work in menus.
-      #TODO it probably should
-      pager.searchForward()
-    else:
-      container.pushCursorPos()
-      pager.isearchpromise = newResolvedPromise()
-      container.markPos0()
-      pager.setLineEdit(lmISearchF)
-
-proc isearchBackward(pager: Pager) {.jsfunc.} =
-  let container = pager.container
-  if container != nil:
-    if pager.menu != nil or container.select != nil:
-      # see above
-      pager.searchForward()
-    else:
-      container.pushCursorPos()
-      pager.isearchpromise = newResolvedPromise()
-      container.markPos0()
-      pager.setLineEdit(lmISearchB)
 
 proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
     Opt[void] {.jsfunc.} =
@@ -447,7 +368,7 @@ proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
   if JS_IsNumber(val) and ctx.fromJS(val, n).isOk:
     dec n # gotoLine is 1-indexed
   elif JS_IsUndefined(val):
-    pager.setLineEdit(lmGotoLine)
+    pager.setLineEdit(lmGotoLine, "Goto line: ")
     return ok()
   else:
     var s: string
@@ -600,8 +521,15 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     tab: tab,
     consoleCacheId: -1,
     console: console,
-    relist: newBuiltinRegexList()
   )
+  pager.jsPager = ctx.toJS(pager)
+  pager.updateReadLineISearch = ctx.eval(
+    "Pager.prototype.updateReadLineISearch", "<command>", JS_EVAL_TYPE_GLOBAL)
+  pager.updateReadLineSearch = ctx.eval("Pager.prototype.updateReadLineSearch",
+    "<command>", JS_EVAL_TYPE_GLOBAL)
+  doAssert JS_IsObject(pager.jsPager)
+  doAssert JS_IsFunction(ctx, pager.updateReadLineISearch)
+  doAssert JS_IsFunction(ctx, pager.updateReadLineSearch)
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
@@ -889,7 +817,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
           if pressed.y == input.pos.y:
             pager.mouse.moveType = mmtSelect
             if not pager.hasMouseSelection():
-              container.startSelection(stNormal, mouse = true)
+              discard container.startSelection(stNormal, mouse = true)
             container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
           else:
             pager.mouse.moveType = mmtDrag
@@ -989,48 +917,30 @@ proc handleMouseInput(pager: Pager; input: MouseInput) =
 # it proves to be too low.
 const MaxPrecNum = 100000000
 
-proc handleAskInput(pager: Pager; e: InputEvent) =
-  case e.t
-  of ietKey: pager.inputBuffer &= e.c
-  of ietKeyEnd:
-    pager.fulfillAsk(pager.inputBuffer)
-    pager.inputBuffer = ""
-    pager.queueStatusUpdate()
-    pager.handleEvents()
-  of ietMouse: pager.handleMouseInput(e.m)
-  of ietPaste: discard
-  of ietWindowChange: pager.windowChange()
-  of ietRedraw: pager.redraw()
+proc handleAskInput(pager: Pager) =
+  pager.fulfillAsk(pager.inputBuffer)
+  pager.inputBuffer = ""
+  pager.queueStatusUpdate()
+  pager.handleEvents()
 
-proc handleLineInput(pager: Pager; e: InputEvent) =
-  case e.t
-  of ietKey: pager.inputBuffer &= e.c
-  of ietKeyEnd:
-    let edit = pager.lineedit
-    if edit.escNext:
-      edit.escNext = false
+proc handleLineInput(pager: Pager; paste: bool) =
+  let edit = pager.lineedit
+  if edit.escNext:
+    edit.escNext = false
+    edit.write(move(pager.inputBuffer))
+  else:
+    let (found, _) = pager.evalInputAction(pager.config.line, 0)
+    if not found:
       edit.write(move(pager.inputBuffer))
-    else:
-      let (found, _) = pager.evalInputAction(pager.config.line, 0)
-      if not found:
-        edit.write(move(pager.inputBuffer))
-      if not pager.feednext:
-        pager.updateReadLine()
-        pager.inputBuffer = ""
-      pager.feednext = false
-  of ietMouse: pager.handleMouseInput(e.m)
-  of ietPaste: pager.lineedit.write(move(pager.inputBuffer))
-  of ietWindowChange: pager.windowChange()
-  of ietRedraw: pager.redraw()
+    if not pager.feednext:
+      pager.updateReadLine()
+      pager.inputBuffer = ""
+    pager.feednext = false
 
-proc handleCommandInput(pager: Pager; e: InputEvent) =
-  case e.t
-  of ietMouse: pager.handleMouseInput(e.m)
-  of ietKey: pager.inputBuffer &= e.c
-  of ietPaste: pager.setLineEdit(lmLocation, move(pager.inputBuffer))
-  of ietWindowChange: pager.windowChange()
-  of ietRedraw: pager.redraw()
-  of ietKeyEnd:
+proc handleCommandInput(pager: Pager; paste: bool) =
+  if paste:
+    pager.setLineEdit(lmLocation, "Location: ", move(pager.inputBuffer))
+  else:
     if pager.config.input.viNumericPrefix and not pager.notnum:
       let c = pager.inputBuffer[0]
       if pager.precnum != 0 and c == '0' or c in '1'..'9':
@@ -1061,12 +971,19 @@ proc handleUserInput(pager: Pager): Opt[void] =
   if not ?pager.term.ahandleRead():
     return ok()
   while e := pager.term.areadEvent():
-    if pager.askPromise != nil:
-      pager.handleAskInput(e)
-    elif pager.lineedit != nil:
-      pager.handleLineInput(e)
-    else:
-      pager.handleCommandInput(e)
+    case e.t
+    of ietKey: pager.inputBuffer &= e.c
+    of ietMouse: pager.handleMouseInput(e.m)
+    of ietWindowChange: pager.windowChange()
+    of ietRedraw: pager.redraw()
+    of ietKeyEnd, ietPaste:
+      let paste = e.t == ietPaste
+      if pager.askPromise != nil:
+        pager.handleAskInput()
+      elif pager.lineedit != nil:
+        pager.handleLineInput(paste)
+      else:
+        pager.handleCommandInput(paste)
   ok()
 
 proc runStartupScript(pager: Pager) =
@@ -1704,7 +1621,6 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     cacheId,
     pager.config,
     if tab != nil: tab else: pager.tab,
-    pager.relist
   )
   pager.loader.put(ConnectingContainer(
     state: ccsBeforeResult,
@@ -2528,7 +2444,7 @@ proc addConsole(pager: Pager; interactive: bool) =
   pager.console.err = cast[ChaFile](stderr)
 
 proc command(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(lmCommand)
+  pager.setLineEdit(lmCommand, "COMMAND: ")
 
 proc commandMode(pager: Pager; val: bool) {.jsfset.} =
   pager.commandMode = val
@@ -2540,54 +2456,6 @@ proc openEditor(ctx: JSContext; pager: Pager; s: string): JSValue {.jsfunc.} =
   if pager.openEditor(s).isOk:
     return ctx.toJS(s)
   return JS_NULL
-
-proc checkRegex(pager: Pager; regex: Result[Regex, string]): Opt[Regex] =
-  if regex.isErr:
-    pager.alert("Invalid regex: " & regex.error)
-    return err()
-  ok(regex.get)
-
-proc compileSearchRegex(pager: Pager; s: string): Result[Regex, string] =
-  return compileSearchRegex(s, pager.config.search.ignoreCase)
-
-proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
-  let lineedit = pager.lineedit
-  let prev = pager.isearchpromise
-  pager.isearchpromise = prev.then(proc(): EmptyPromise =
-    case lineedit.state
-    of lesCancel:
-      pager.iregex = Result[Regex, string].err("")
-      pager.container.popCursorPos()
-      pager.container.clearSearchHighlights()
-      pager.container.redraw = true
-    of lesEdit:
-      if lineedit.news != "":
-        pager.iregex = pager.compileSearchRegex(lineedit.news)
-        pager.regex = Opt[Regex].err()
-      pager.container.popCursorPos(true)
-      pager.container.pushCursorPos()
-      if pager.iregex.isOk:
-        pager.container.flags.incl(cfHighlight)
-        let wrap = pager.config.search.wrap
-        return if linemode == lmISearchF:
-          pager.cursorNextMatch(pager.iregex.get, wrap, false, 1)
-        else:
-          pager.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
-    of lesFinish:
-      if lineedit.news == "" and pager.regex.isErr:
-        pager.container.popCursorPos()
-      else:
-        if lineedit.news != "":
-          pager.regex = pager.checkRegex(pager.iregex)
-        else:
-          pager.searchNext()
-        pager.reverseSearch = linemode == lmISearchB
-        pager.container.markPos()
-        pager.container.sendCursorPosition()
-      pager.container.clearSearchHighlights()
-      pager.container.redraw = true
-    return newResolvedPromise()
-  )
 
 proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
   if pager.loader.redirectToFile(data.outputId, path, data.url):
@@ -2609,7 +2477,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =
         if x:
-          pager.setLineEdit(lmDownload, path)
+          pager.setLineEdit(lmDownload, "(Download)Save file to: ", path)
         else:
           data.stream.sclose()
           pager.lineData = nil
@@ -2617,8 +2485,12 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
 
 proc updateReadLine(pager: Pager) =
   let lineedit = pager.lineedit
+  let ctx = pager.jsctx
   if pager.linemode in {lmISearchF, lmISearchB}:
-    pager.updateReadLineISearch(pager.linemode)
+    let reverse = ctx.toJS(pager.linemode == lmISearchB)
+    let res = ctx.call(pager.updateReadLineISearch, pager.jsPager, reverse)
+    JS_FreeValue(ctx, res)
+    JS_FreeValue(ctx, reverse)
   else:
     case lineedit.state
     of lesEdit: discard
@@ -2627,7 +2499,7 @@ proc updateReadLine(pager: Pager) =
       of lmLocation: pager.loadURL(lineedit.news)
       of lmUsername:
         LineDataAuth(pager.lineData).url.username = lineedit.news
-        pager.setLineEdit(lmPassword, hide = true)
+        pager.setLineEdit(lmPassword, "Password: ", hide = true)
       of lmPassword:
         let lineData = LineDataAuth(pager.lineData)
         let old = lineData.container
@@ -2662,11 +2534,10 @@ proc updateReadLine(pager: Pager) =
           pager.alert("Invalid path: " & lineedit.news)
           pager.container.readCanceled()
       of lmSearchF, lmSearchB:
-        if lineedit.news != "":
-          let regex = pager.compileSearchRegex(lineedit.news)
-          pager.regex = pager.checkRegex(regex)
-        pager.reverseSearch = pager.linemode == lmSearchB
-        pager.searchNext()
+        let reverse = ctx.toJS(pager.linemode == lmSearchB)
+        let res = ctx.call(pager.updateReadLineSearch, pager.jsPager, reverse)
+        JS_FreeValue(ctx, res)
+        JS_FreeValue(ctx, reverse)
       of lmGotoLine:
         let val = pager.jsctx.toJS(lineedit.news)
         discard pager.jsctx.gotoLine(pager, val)
@@ -2723,23 +2594,6 @@ proc updateReadLine(pager: Pager) =
 proc loadSubmit(pager: Pager; s: string) {.jsfunc.} =
   pager.loadURL(s)
 
-# Open a URL prompt and visit the specified URL.
-proc load(ctx: JSContext; pager: Pager; val: JSValueConst = JS_NULL): Opt[void]
-    {.jsfunc.} =
-  if JS_IsNull(val):
-    pager.setLineEdit(lmLocation, $pager.container.url)
-  else:
-    var s: string
-    ?ctx.fromJS(val, s)
-    if s.len > 0 and s[^1] == '\n':
-      const msg = "pager.load(\"...\\n\") is deprecated, use loadSubmit instead"
-      if s.len > 1:
-        pager.alert(msg)
-        pager.loadURL(s[0..^2])
-    else:
-      pager.setLineEdit(lmLocation, s)
-  ok()
-
 # Go to specific URL (for JS)
 type GotoURLDict = object of JSDict
   contentType {.jsdefault.}: Option[string]
@@ -2772,14 +2626,6 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
   if replace == nil:
     pager.addContainer(container)
   ok(container)
-
-# Reload the page in a new buffer, then kill the previous buffer.
-proc reload(pager: Pager) {.jsfunc.} =
-  let old = pager.container
-  let container = pager.gotoURL(newRequest(old.url), old.contentType,
-    replace = old, history = cfHistory in old.flags,
-    charset = old.config.charsetOverride)
-  container.copyCursorPos(old)
 
 type ExternDict = object of JSDict
   env {.jsdefault: JS_UNDEFINED.}: JSValueConst
@@ -3359,7 +3205,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
         s = $pager.config.external.mailcap[i]
         while s.len > 0 and s[^1] == '\n':
           s.setLen(s.high)
-      pager.setLineEdit(lmMailcap, s)
+      pager.setLineEdit(lmMailcap, "Mailcap: ", s)
       pager.lineData = LineDataMailcap(
         container: container,
         ostream: ostream,
@@ -3420,7 +3266,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
   var istream = response.body
   container.applyResponse(response, pager.config.external.mimeTypes)
   if response.status == 401: # unauthorized
-    pager.setLineEdit(lmUsername, container.url.username)
+    pager.setLineEdit(lmUsername, "Username: ", container.url.username)
     let url = newURL(container.url)
     pager.lineData = LineDataAuth(container: container, url: url)
     istream.sclose()
@@ -3612,8 +3458,8 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       pager.queueStatusUpdate()
   of cetReadLine, cetReadPassword:
     if container == pager.container:
-      pager.setLineEdit(lmBuffer, event.value, event.t == cetReadPassword,
-        event.prompt)
+      pager.setLineEdit(lmBuffer, event.prompt, event.value,
+        event.t == cetReadPassword)
   of cetReadArea:
     if container == pager.container:
       var s = event.tvalue
@@ -3623,7 +3469,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
         pager.container.readCanceled()
   of cetReadFile:
     if container == pager.container:
-      pager.setLineEdit(lmBufferFile, "")
+      pager.setLineEdit(lmBufferFile, "(Upload)Filename: ")
   of cetOpen, cetSave:
     let request = event.request
     let contentType = event.contentType

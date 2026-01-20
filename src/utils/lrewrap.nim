@@ -1,9 +1,17 @@
 import monoucha/libregexp
 import types/opt
-import utils/twtstr
 
-type Regex* = object
-  bytecode*: string
+type
+  Regex* = object
+    bytecode*: string
+
+  REBytecode* = distinct ptr uint8
+
+proc bytecodeToRegex*(p: REBytecode; plen: csize_t): Regex =
+  result = Regex(
+    bytecode: newString(plen)
+  )
+  copyMem(addr result.bytecode[0], cast[ptr uint8](p), plen)
 
 proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
   ## Compile a regular expression using QuickJS's libregexp library.
@@ -22,10 +30,8 @@ proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
     regex = Regex(bytecode: move(errorMsg))
     return false
   assert plen > 0
-  var byteSeq = newString(plen)
-  copyMem(addr byteSeq[0], bytecode, plen)
+  regex = bytecodeToRegex(cast[REBytecode](bytecode), csize_t(plen))
   dealloc(bytecode)
-  regex = Regex(bytecode: move(byteSeq))
   true
 
 type ExecContext* = object
@@ -33,13 +39,16 @@ type ExecContext* = object
   tmp: seq[ptr uint8]
   base: uint
 
-proc initContext*(regex: Regex): ExecContext =
-  let bytecode = cast[ptr uint8](unsafeAddr regex.bytecode[0])
+proc initContext*(bytecode: REBytecode): ExecContext =
+  let bytecode = cast[ptr uint8](bytecode)
   let allocCount = lre_get_alloc_count(bytecode)
   ExecContext(
     bytecode: bytecode,
     tmp: newSeq[ptr uint8](int(allocCount))
   )
+
+proc initContext*(regex: Regex): ExecContext =
+  initContext(cast[REBytecode](unsafeAddr regex.bytecode[0]))
 
 template ncaps(ctx: ExecContext): cint =
   lre_get_capture_count(ctx.bytecode)
@@ -85,30 +94,39 @@ iterator matchCap*(regex: Regex; s: openArray[char]; cap: int; start = 0):
       break
     yield ctx.cap(cap)
 
-proc match*(regex: Regex; s: openArray[char]; start = 0): bool =
+proc match*[T: Regex|REBytecode](regex: T; s: openArray[char]; start = 0):
+    bool =
   var ctx = initContext(regex)
   for ret in ctx.exec(s, start):
     return ret == 1
   false
 
-proc matchFirst*(regex: Regex; str: openArray[char]; start = 0):
+proc matchFirst(ctx: var ExecContext; str: openArray[char]; start = 0):
     tuple[s, e: int] =
-  var ctx = initContext(regex)
   for ret in ctx.exec(str, start):
     if ret != 1:
       break
     return ctx.cap(0)
   return (-1, -1)
 
-proc matchLast*(regex: Regex; str: openArray[char]; start = 0):
+proc matchLast(ctx: var ExecContext; str: openArray[char]; start = 0):
     tuple[s, e: int] =
-  var ctx = initContext(regex)
   var res = (-1, -1)
   for ret in ctx.exec(str, start):
     if ret != 1:
       break
     res = ctx.cap(0)
   res
+
+proc matchFirst*[T: Regex|REBytecode](regex: T; str: openArray[char];
+    start = 0): tuple[s, e: int] =
+  var ctx = initContext(regex)
+  ctx.matchFirst(str, start)
+
+proc matchLast*[T: Regex|REBytecode](regex: T; str: openArray[char]; start = 0):
+    tuple[s, e: int] =
+  var ctx = initContext(regex)
+  ctx.matchLast(str, start)
 
 proc countBackslashes(buf: string; i: int): int =
   var j = 0
@@ -150,44 +168,3 @@ proc compileMatchRegex*(buf: string): Result[Regex, string] =
   buf2 &= buf
   buf2 &= "$"
   return compileRegex(buf2)
-
-type RegexCase* = enum
-  rcStrict = ""
-  rcIgnore = "ignore"
-  rcSmart = "auto"
-
-proc compileSearchRegex*(str: string; ignoreCase: RegexCase):
-    Result[Regex, string] =
-  # Emulate vim's \c/\C: override defaultFlags if one is found, then remove it
-  # from str.
-  # Also, replace \< and \> with \b as (a bit sloppy) vi emulation.
-  var flags = {LRE_FLAG_UNICODE}
-  if ignoreCase == rcIgnore:
-    flags.incl(LRE_FLAG_IGNORECASE)
-  var s = newStringOfCap(str.len)
-  var quot = false
-  var hasUpper = false
-  var hasC = false
-  for c in str:
-    hasUpper = hasUpper or c in AsciiUpperAlpha
-    if quot:
-      quot = false
-      case c
-      of 'c':
-        flags.incl(LRE_FLAG_IGNORECASE)
-        hasC = true
-      of 'C':
-        flags.excl(LRE_FLAG_IGNORECASE)
-        hasC = true
-      of '<', '>': s &= "\\b"
-      else: s &= '\\' & c
-    elif c == '\\':
-      quot = true
-    else:
-      s &= c
-  if quot:
-    s &= '\\'
-  if not hasC and not hasUpper and ignoreCase == rcSmart:
-    flags.incl(LRE_FLAG_IGNORECASE) # smart case
-  flags.incl(LRE_FLAG_GLOBAL) # for easy backwards matching
-  return compileRegex(s, flags)

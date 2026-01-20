@@ -181,10 +181,6 @@ scheme/local files, etc.
 <p>
 Opens a prompt with the current URL when no parameters are specified; otherwise,
 the string passed is displayed in the prompt.
-<p>
-**Deprecated quirk**: If this string ends with a newline
-(e.g. `pager.load("about:chawan\n")`), the URL is loaded directly.
-This usage isn't recommended; use loadSubmit instead.
 </td>
 </tr>
 

@@ -333,6 +333,234 @@ globalThis.cmd = {
 cmd.pager = cmd.buffer = cmd;
 
 /*
+ * Utils
+ */
+function clamp(n, lo, hi) {
+    return Math.min(Math.max(n, lo), hi);
+}
+
+/*
+ * Used as a substitute for int.high.
+ * TODO: might want to use Number.MAX_SAFE_INTEGER, but I'm not sure if
+ * fromJS for int saturates.  (If it doesn't, just change everything to
+ * int64.)
+ */
+const MAX_INT32 = 0xFFFFFFFF;
+
+/*
+ * Pager
+ */
+
+/*
+ * Emulate vim's \c/\C: override defaultFlags if one is found, then remove
+ * it from str.
+ * Also, replace \< and \> with \b as (a bit sloppy) vi emulation.
+ */
+Pager.prototype.compileSearchRegex = function(s) {
+    const ignoreCaseOpt = config.search.ignoreCase;
+    let ignoreCase = false;
+    if (ignoreCaseOpt == "ignore")
+        ignoreCase = true;
+    let s2 = "";
+    let hasUpper = false;
+    let hasC = false;
+    let quot = false;
+    for (const c of s) {
+        hasUpper = hasUpper || c != c.toLowerCase();
+        if (quot) {
+            quot = false;
+            if (c == 'c')
+                ignoreCase = hasC = true;
+            else if (c == 'C') {
+                ignoreCase = false;
+                hasC = true;
+            } else if (c == '<' || c == '>') {
+                s2 += c;
+            }
+        } else if (c == '\\') {
+            quot = true;
+        } else
+            s2 += c;
+    }
+    if (!hasC && !hasUpper && ignoreCaseOpt == "auto")
+        ignoreCase = true;
+    return new RegExp(s2, ignoreCase ? "gui" : "gu");
+}
+
+Pager.prototype.setSearchRegex = function(s, flags, reverse = false) {
+    if (!flags.includes('g'))
+        flags += 'g';
+    pager.regex = new RegExp(s, flags);
+    pager.reverseSearch = reverse;
+}
+
+Pager.prototype.searchNext = async function(n = 1) {
+    const regex = this.regex;
+    if (regex) {
+        let wrap = config.search.wrap;
+        /* TODO probably we should add a separate keymap for menu/select */
+        if (this.menu)
+            return this.menu.cursorNextMatch(this.regex, wrap, true, n);
+        const buffer = this.buffer;
+        buffer.markPos0();
+        if (!this.reverseSearch)
+            await buffer.cursorNextMatch(regex, wrap, true, n);
+        else
+            await buffer.cursorPrevMatch(regex, wrap, true, n);
+        buffer.markPos();
+    } else
+        pager.alert("No previous regular expression");
+}
+
+Pager.prototype.searchPrev = async function(n = 1) {
+    if (this.regex) {
+        let wrap = config.search.wrap;
+        /* TODO ditto */
+        if (this.menu)
+            return this.menu.cursorPrevMatch(this.regex, wrap, true, n);
+        const buffer = this.buffer;
+        buffer.markPos0();
+        if (!this.reverseSearch)
+            await buffer.cursorPrevMatch(this.regex, wrap, true, n);
+        else
+            await buffer.cursorNextMatch(this.regex, wrap, true, n);
+        buffer.markPos();
+    } else
+        pager.alert("No previous regular expression");
+}
+
+Pager.prototype.searchForward = function() {
+    this.setLineEdit("searchF", "/");
+}
+
+Pager.prototype.searchBackward = function() {
+    this.setLineEdit("searchB", "?");
+}
+
+Pager.prototype.isearchForward = function() {
+    const buffer = this.buffer;
+    if (this.menu || buffer?.select) {
+        /* isearch doesn't work in menus. */
+        pager.searchForward()
+    } else if (buffer) {
+        buffer.pushCursorPos()
+        buffer.markPos0()
+        this.setLineEdit("isearchF", "/")
+    }
+}
+
+Pager.prototype.isearchBackward = function() {
+    const buffer = this.buffer;
+    if (this.menu || buffer?.select) {
+        /* isearch doesn't work in menus. */
+        pager.searchBackward()
+    } else if (buffer) {
+        buffer.pushCursorPos();
+        buffer.markPos0();
+        this.setLineEdit("isearchB", "?");
+    }
+}
+
+/* Reuse the line editor as an alert message viewer. */
+Pager.prototype.showFullAlert = function() {
+    const str = this.lastAlert;
+    if (str != "")
+        this.setLineEdit("alert", "", str);
+}
+
+/* Open a URL prompt. */
+Pager.prototype.load = function(url = null) {
+    if (!url) {
+        if (!this.buffer)
+            return;
+        url = this.buffer.url;
+    }
+    this.setLineEdit("location", "URL: ", url);
+}
+
+/* Reload the page in a new buffer, then kill the previous buffer. */
+Pager.prototype.reload = function() {
+    const old = this.buffer;
+    if (!old)
+        return;
+    const buffer = this.gotoURL(old.url, {
+        contentType: old.contentType,
+        replace: old,
+        history: old.history,
+        charset: old.charsetOverride
+    })
+    buffer.copyCursorPos(old);
+}
+
+Pager.prototype.updateReadLineISearch = async function(reverse) {
+    const buffer = this.buffer;
+    /*
+     * TODO this has a race and probably needs some kind of cancelation
+     * mechanism
+     */
+    switch (line.state) {
+    case "cancel": {
+        this.iregex = null;
+        buffer.popCursorPos();
+        buffer.clearSearchHighlights();
+        buffer.queueDraw();
+        break;
+    } case "edit": {
+        const text = line.text;
+        if (text != "") {
+            try {
+                this.iregex = this.compileSearchRegex(text);
+            } catch (e) {
+                this.iregex = e.message;
+            }
+            this.regex = null;
+        }
+        buffer.popCursorPos(true);
+        buffer.pushCursorPos();
+        if (this.iregex instanceof RegExp) {
+            buffer.highlight = true; /* TODO private variable */
+            let wrap = config.search.wrap;
+            return reverse ?
+                this.cursorPrevMatch(this.iregex, wrap, false, 1) :
+                this.cursorNextMatch(this.iregex, wrap, false, 1);
+        }
+        break;
+    } case "finish": {
+        const text = line.text;
+        if (text == "" && !this.regex) {
+            buffer.popCursorPos()
+        } else {
+            if (text != "") {
+                if (typeof this.iregex === "string")
+                    this.alert("Invalid regex: " + this.iregex);
+                else
+                    this.regex = this.iregex;
+            } else
+                this.searchNext()
+            this.reverseSearch = reverse;
+            buffer.markPos()
+            await buffer.sendCursorPosition()
+        }
+        buffer.clearSearchHighlights()
+        buffer.queueDraw();
+        break;
+    }}
+}
+
+Pager.prototype.updateReadLineSearch = function(reverse) {
+    const text = line.text;
+    if (text != "") {
+        try {
+            this.regex = this.compileSearchRegex(text);
+        } catch (e) {
+            this.alert("Invalid regex: " + e.message);
+        }
+    }
+    this.reverseSearch = reverse;
+    this.searchNext();
+}
+
+/*
  * Buffer
  *
  * TODO: this should be a separate class from Container, and Container
@@ -345,6 +573,14 @@ Buffer.prototype.cursorDown = function(n = 1) {
 
 Buffer.prototype.cursorUp = function(n = 1) {
     this.setCursorY(this.cursory - n);
+}
+
+Buffer.prototype.cursorLeft = function(n = 1) {
+    this.setCursorX(this.cursorFirstX() - n);
+}
+
+Buffer.prototype.cursorRight = function(n = 1) {
+    this.setCursorX(this.cursorLastX() + n);
 }
 
 Buffer.prototype.scrollDown = function(n = 1) {
@@ -367,20 +603,31 @@ Buffer.prototype.scrollUp = function(n = 1) {
         if (dy > 0)
             this.cursorUp(dy);
     } else
-        this.cursorUp(n)
+        this.cursorUp(n);
 }
 
 Buffer.prototype.scrollRight = function(n = 1) {
     const msw = this.maxScreenWidth();
     const x = Math.min(this.fromx + this.width + n, msw) - this.width;
     if (x > this.fromx)
-        this.setFromX(x)
+        this.setFromX(x);
 }
 
 Buffer.prototype.scrollLeft = function(n = 1) {
     const x = Math.max(this.fromx - n, 0);
     if (x < this.fromx)
-        this.setFromX(x)
+        this.setFromX(x);
+}
+
+Buffer.prototype.pageDown = function(n = 1) {
+    const delta = this.height * n;
+    this.setFromY(this.fromy + delta);
+    this.setCursorY(this.cursory + delta);
+    this.restoreCursorX();
+}
+
+Buffer.prototype.pageUp = function(n = 1) {
+    this.pageDown(-n);
 }
 
 Buffer.prototype.pageLeft = function(n = 1) {
@@ -412,10 +659,6 @@ Buffer.prototype.halfPageRight = function(n = 1) {
     this.setFromX(this.fromx + (this.width + 1) / 2 * n);
 }
 
-function clamp(n, lo, hi) {
-    return Math.min(Math.max(n, lo), hi);
-}
-
 Buffer.prototype.cursorTop = function(n = 1) {
     this.markPos0();
     this.setCursorY(this.fromy + clamp(n - 1, 0, this.height - 1));
@@ -435,7 +678,7 @@ Buffer.prototype.cursorBottom = function(n = 1) {
 }
 
 Buffer.prototype.cursorLeftEdge = function() {
-    this.setCursorX(this.fromx)
+    this.setCursorX(this.fromx);
 }
 
 Buffer.prototype.cursorMiddleColumn = function() {
@@ -443,7 +686,41 @@ Buffer.prototype.cursorMiddleColumn = function() {
 }
 
 Buffer.prototype.cursorRightEdge = function() {
-    this.setCursorX(this.fromx + this.width - 1)
+    this.setCursorX(this.fromx + this.width - 1);
+}
+
+Buffer.prototype.onMatch = function(x, y, w, refresh) {
+    if (y >= 0) {
+        this.setCursorXYCenter(x, y, refresh);
+        if (this.highlight) {
+            this.clearSearchHighlights();
+            this.addSearchHighlight(x, y, x + w - 1, y);
+            this.queueDraw();
+            this.highlight = false;
+        }
+    } else if (this.highlight) {
+        this.clearSearchHighlights();
+        this.queueDraw();
+        this.highlight = false;
+    }
+}
+
+Buffer.prototype.cursorNextMatch = async function(re, wrap, refresh, n) {
+    if (this.select)
+        return this.select.cursorNextMatch(re, wrap, n);
+    const cx = this.cursorx;
+    const cy = this.cursory;
+    const [x, y, w] = await this.findNextMatch(re, cx, cy, wrap, n);
+    this.onMatch(x, y, w, refresh);
+}
+
+Buffer.prototype.cursorPrevMatch = async function(re, wrap, refresh, n) {
+    if (this.select)
+        return this.select.cursorPrevMatch(re, wrap, n);
+    const cx = this.cursorx;
+    const cy = this.cursory;
+    const [x, y, w] = await this.findPrevMatch(re, cx, cy, wrap, n);
+    this.onMatch(x, y, w, refresh);
 }
 
 /*
@@ -468,50 +745,214 @@ const ReViWordEnd = new RegExp(
 const ReBigWordEnd = /\S(?!\S)/gu;
 const ReTextStart = /\S/gu;
 
+Buffer.prototype.cursorPrevWordImpl = async function(re, n = 1) {
+    const cx = this.cursorx;
+    const cy = this.cursory;
+    const [x, y, w] = await this.findPrevMatch(re, cx, cy, false, n);
+    if (y >= 0)
+        this.setCursorXY(x + w - 1, y);
+    else
+        this.cursorLineBegin();
+}
+
+Buffer.prototype.cursorNextWordImpl = async function(re, n = 1) {
+    const cx = this.cursorx;
+    const cy = this.cursory;
+    const [x, y, w] = await this.findNextMatch(re, cx, cy, false, n);
+    if (y >= 0 && x >= 0)
+        this.setCursorXY(x + w - 1, y);
+    else
+        this.cursorLineEnd();
+}
+
 Buffer.prototype.cursorPrevWord = function(n) {
-    this.cursorPrevWordImpl(ReWordEnd, n);
+    return this.cursorPrevWordImpl(ReWordEnd, n);
 }
 
 Buffer.prototype.cursorPrevViWord = function(n) {
-    this.cursorPrevWordImpl(ReViWordEnd, n);
+    return this.cursorPrevWordImpl(ReViWordEnd, n);
 }
 
 Buffer.prototype.cursorPrevBigWord = function(n) {
-    this.cursorPrevWordImpl(ReBigWordEnd, n);
+    return this.cursorPrevWordImpl(ReBigWordEnd, n);
 }
 
 Buffer.prototype.cursorNextWord = function(n) {
-    this.cursorNextWordImpl(ReWordStart, n);
+    return this.cursorNextWordImpl(ReWordStart, n);
 }
 
 Buffer.prototype.cursorNextViWord = function(n) {
-    this.cursorNextWordImpl(ReViWordStart, n);
+    return this.cursorNextWordImpl(ReViWordStart, n);
 }
 
 Buffer.prototype.cursorNextBigWord = function(n) {
-    this.cursorNextWordImpl(ReBigWordStart, n);
+    return this.cursorNextWordImpl(ReBigWordStart, n);
 }
 
 Buffer.prototype.cursorWordBegin = function(n) {
-    this.cursorPrevWordImpl(ReWordStart, n);
+    return this.cursorPrevWordImpl(ReWordStart, n);
 }
 
 Buffer.prototype.cursorViWordBegin = function(n) {
-    this.cursorPrevWordImpl(ReViWordStart, n);
+    return this.cursorPrevWordImpl(ReViWordStart, n);
 }
 
 Buffer.prototype.cursorBigWordBegin = function(n) {
-    this.cursorPrevWordImpl(ReBigWordStart, n);
+    return this.cursorPrevWordImpl(ReBigWordStart, n);
 }
 
 Buffer.prototype.cursorWordEnd = function(n) {
-    this.cursorNextWordImpl(ReWordEnd, n);
+    return this.cursorNextWordImpl(ReWordEnd, n);
 }
 
 Buffer.prototype.cursorViWordEnd = function(n) {
-    this.cursorNextWordImpl(ReViWordEnd, n);
+    return this.cursorNextWordImpl(ReViWordEnd, n);
 }
 
 Buffer.prototype.cursorBigWordEnd = function(n) {
-    this.cursorNextWordImpl(ReBigWordEnd, n);
+    return this.cursorNextWordImpl(ReBigWordEnd, n);
+}
+
+/* zb */
+Buffer.prototype.lowerPage = function(n) {
+    if (n)
+        this.setCursorY(n - 1);
+    this.setFromY(this.cursory - this.height + 1);
+}
+
+/* z- */
+Buffer.prototype.lowerPageBegin = function(n) {
+    this.lowerPage(n);
+    this.cursorLineTextStart()
+}
+
+/* TODO centerLine */
+
+/* z. */
+Buffer.prototype.centerLineBegin = function(n) {
+    this.centerLine(n);
+    this.cursorLineTextStart();
+}
+
+/* zt */
+Buffer.prototype.raisePage = function(n) {
+    if (n)
+        this.setCursorY(n - 1);
+    this.setFromY(this.cursory);
+}
+
+/* z^M */
+Buffer.prototype.raisePageBegin = function(n) {
+    this.raisePage(n);
+    this.cursorLineTextStart();
+}
+
+/* z+ */
+Buffer.prototype.nextPageBegin = function(n) {
+    this.setCursorY(n ? n - 1 : this.fromy + this.height);
+    this.cursorLineTextStart();
+    this.raisePage();
+}
+
+/* z^ */
+Buffer.prototype.previousPageBegin = function(n) {
+    this.setCursorY(n ? n - this.height : this.fromy - 1); /* +-1 cancels out */
+    this.cursorLineTextStart();
+    this.lowerPage();
+}
+
+Buffer.prototype.cursorToggleSelection = function(n = 1, opts = {}) {
+    if (this.currentSelection) {
+        this.clearSelection();
+        return null;
+    }
+    const cx = this.cursorFirstX();
+    this.cursorRight(n - 1);
+    return this.startSelection(opts.selectionType ?? "normal", false, cx);
+}
+
+Buffer.prototype.cursorLineBegin = function() {
+    this.setCursorX(-1);
+}
+
+Buffer.prototype.cursorLineEnd = function() {
+    this.setCursorX(MAX_INT32);
+}
+
+Buffer.prototype.cursorLineTextStart = function() {
+    const [s, e] = this.matchFirst(/\S/);
+    if (s >= 0) {
+        const x = this.currentLineWidth(0, s);
+        this.setCursorX(x > 0 ? x : x - 1);
+    } else
+        this.cursorLineEnd();
+}
+
+Buffer.prototype.cursorNextLink = async function(n = 1) {
+    this.markPos0();
+    const [x, y] = await this.findNextLink(this.cursorx, this.cursory, n);
+    if (y >= 0) {
+        this.setCursorXY(x, y);
+        this.markPos();
+    }
+}
+
+Buffer.prototype.cursorPrevLink = async function(n = 1) {
+    this.markPos0();
+    const [x, y] = await this.findPrevLink(this.cursorx, this.cursory, n);
+    if (y >= 0) {
+        this.setCursorXY(x, y);
+        this.markPos();
+    }
+}
+
+Buffer.prototype.cursorLinkNavDown = async function(n = 1) {
+    this.markPos0();
+    const [x, y] = await this.findNextLink(this.cursorx, this.cursory, n);
+    if (y < 0) {
+        if (this.numLines <= this.height) {
+            const [x2, y2] = await this.findNextLink(-1, 0, 1);
+            this.setCursorXYCenter(x2, y2);
+        } else
+            this.pageDown();
+        this.markPos();
+    } else if (y < this.fromy + this.height) {
+        this.setCursorXYCenter(x, y);
+        this.markPos();
+    } else {
+        this.pageDown();
+        if (y < this.fromy + this.height) {
+            this.setCursorXYCenter(x, y);
+            this.markPos()
+        }
+    }
+}
+
+Buffer.prototype.cursorLinkNavUp = async function(n = 1) {
+    const [x, y] = await this.findPrevLink(this.cursorx, this.cursory, n);
+    if (y < 0) {
+        const numLines = this.numLines;
+        if (numLines <= this.height) {
+            const [x2, y2] = await this.findPrevLink(MAX_INT32,
+                                                     numLines - 1, 1);
+            this.setCursorXYCenter(x2, y2);
+        } else
+            this.pageUp();
+        this.markPos();
+    } else if (y >= this.fromy) {
+        this.setCursorXYCenter(x, y);
+        this.markPos();
+    } else {
+        this.pageUp();
+        if (y >= this.fromy) {
+            this.setCursorXYCenter(x, y);
+            this.markPos();
+        }
+    }
+}
+
+Buffer.prototype.cursorFirstLine = function() {
+    this.markPos0();
+    this.setCursorY(0);
+    this.markPos();
 }

@@ -42,6 +42,11 @@ type
 
   ChaPathResolved* = distinct string
 
+  RegexCase* = enum
+    rcStrict = "" # case-sensitive
+    rcIgnore = "ignore" # case-insensitive
+    rcAuto = "auto" # smart case
+
   CodepointSet* = object
     s*: seq[uint32]
 
@@ -804,7 +809,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var RegexCase; v: TomlValue;
   else: # string
     if v.s != "auto":
       return err(k & ": invalid value '" & v.s & "'")
-    x = rcSmart
+    x = rcAuto
   ok()
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;

@@ -8,6 +8,7 @@ unreleased
 * add status.format-mode (sets formatting of status bar)
 * remove display.force-clear (shouldn't have ever been needed)
 * remove display.query-da1 (no longer needed)
+* remove deprecated special case in pager.load() with trailing newline
 * make terminal querying asynchronous
 * work around FreeBSD vt(4) freezing on startup
 * optimize out Sixel repaints when scrolling

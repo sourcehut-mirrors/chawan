@@ -5,6 +5,8 @@ import monoucha/jsbind
 import monoucha/quickjs
 import monoucha/tojs
 import types/cell
+import types/jsopt
+import types/opt
 import utils/lrewrap
 import utils/luwrap
 import utils/strwidth
@@ -173,7 +175,7 @@ proc cursorMiddle(select: Select) {.jsfunc.} =
 proc cursorBottom(select: Select) {.jsfunc.} =
   select.setCursorY(select.fromy + select.height - 1)
 
-proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
+proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1
   for i in select.cursory + 1 ..< select.options.len:
     if regex.match(select.options[i].s):
@@ -191,7 +193,7 @@ proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
       select.setCursorY(j)
       select.queueDraw()
 
-proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
+proc cursorPrevMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1
   for i in countdown(select.cursory - 1, 0):
     if regex.match(select.options[i].s):
@@ -209,13 +211,25 @@ proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
       select.setCursorY(j)
       select.queueDraw()
 
-proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool; n: int) =
+proc cursorPrevMatch(ctx: JSContext; select: Select; re: JSValueConst;
+    wrap: bool; n: int): Opt[void] {.jsfunc.} =
+  var plen: csize_t
+  let p = JS_GetRegExpBytecode(ctx, re, plen)
+  if p == nil:
+    return err()
   for i in 0 ..< n:
-    select.cursorPrevMatch(regex, wrap)
+    select.cursorPrevMatch(cast[REBytecode](p), wrap)
+  ok()
 
-proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool; n: int) =
+proc cursorNextMatch(ctx: JSContext; select: Select; re: JSValueConst;
+    wrap: bool; n: int): Opt[void] {.jsfunc.} =
+  var plen: csize_t
+  let p = JS_GetRegExpBytecode(ctx, re, plen)
+  if p == nil:
+    return err()
   for i in 0 ..< n:
-    select.cursorNextMatch(regex, wrap)
+    select.cursorNextMatch(cast[REBytecode](p), wrap)
+  ok()
 
 proc pushCursorPos*(select: Select) =
   select.bpos.add(select.cursory)

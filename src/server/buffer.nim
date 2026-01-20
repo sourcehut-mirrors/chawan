@@ -40,6 +40,7 @@ import monoucha/jsutils
 import monoucha/libregexp
 import monoucha/quickjs
 import monoucha/tojs
+import server/bufferiface
 import server/headers
 import server/loaderiface
 import server/request
@@ -142,18 +143,6 @@ type
     nhints: int
     handlesHead: PagerHandle
 
-  BufferIfaceItem = object
-    id: int
-    p: EmptyPromise
-    get: GetValueProc
-
-  BufferInterface* = ref object
-    map: seq[BufferIfaceItem]
-    packetid: int
-    len: int
-    nfds: int
-    stream*: BufStream
-
   BufferConfig* = object
     refererFrom*: bool
     styling*: bool
@@ -170,9 +159,6 @@ type
     userAgent*: string
     referrer*: string
     userStyle*: string
-
-  GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.
-    nimcall, raises: [].}
 
   ReadLineType* = enum
     rltText, rltPassword, rltArea, rltFile

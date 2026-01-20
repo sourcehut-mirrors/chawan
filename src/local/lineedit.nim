@@ -16,13 +16,13 @@ import utils/twtstr
 
 type
   LineEditState* = enum
-    lesEdit, lesFinish, lesCancel
+    lesEdit = "edit", lesFinish = "finish", lesCancel = "cancel"
 
   LineEdit* = ref object
     news* {.jsget: "text".}: string
     prompt: string
     promptw: int
-    state*: LineEditState
+    state* {.jsget.}: LineEditState
     cursorx: int # 0 ..< news.width
     cursori: int # 0 ..< news.len
     shiftx: int # 0 ..< news.width
