@@ -5,7 +5,7 @@ fi
 failed=0
 for h in *.html
 do	printf '%s\r' "$h"
-	expected="$(basename "$h" .html).expected"
+	expected=${h%.html}.expected
 	if test -f "$expected"
 	then	if ! "$CHA" -C config.toml "$h" | diff "$expected" -
 		then	failed=$(($failed+1))
