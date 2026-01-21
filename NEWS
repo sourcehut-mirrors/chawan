@@ -1,3 +1,12 @@
+0.3.3 (2025.01.21)
+* fix bugs in our libregexp UTF-8 patch
+* fix various proxy authentication bugs
+* fix [attr|=value] and :lang() pseudo-class bugs
+* fix localStorage.key function
+* fix gotoLine malfunctioning in select menu
+* fix bug in negation of the minimum layout unit value
+* remove broken backslash escape parsing in key mapping
+
 0.3.2 (2025.12.08)
 * bump version string (oops)
 
