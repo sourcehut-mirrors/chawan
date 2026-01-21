@@ -2555,7 +2555,8 @@ proc updateReadLine(pager: Pager) =
                 if x:
                   pager.saveTo(data, path)
                 else:
-                  pager.setLineEdit(lmDownload, path)
+                  pager.setLineEdit(lmDownload, "(Download)Save file to: ",
+                    path)
             )
           else:
             pager.saveTo(data, path)
@@ -3032,7 +3033,7 @@ proc askDownloadPath(pager: Pager; container: Container; stream: PosixStream;
     buf &= "index.html"
   else:
     buf &= container.url.pathname.afterLast('/').percentDecode()
-  pager.setLineEdit(lmDownload, buf)
+  pager.setLineEdit(lmDownload, "(Download)Save file to: ", buf)
   pager.lineData = LineDataDownload(
     outputId: response.outputId,
     stream: stream,
