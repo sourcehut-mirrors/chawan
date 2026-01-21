@@ -1,4 +1,4 @@
-0.3.3 (2025.01.21)
+0.3.3 (2026.01.21)
 * fix bugs in our libregexp UTF-8 patch
 * fix various proxy authentication bugs
 * fix [attr|=value] and :lang() pseudo-class bugs
