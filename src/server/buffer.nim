@@ -1440,7 +1440,7 @@ proc readSuccess*(iface: BufferInterface; s: string; fd: cint):
     Promise[Request] =
   if iface.stream.flush().isErr:
     return newResolvedPromise[Request](nil)
-  iface.stream.withPacketWriterFire w:
+  iface.stream.source.withPacketWriterFire w:
     w.swrite(bcReadSuccess)
     w.swrite(iface.packetid)
     w.swrite(s)

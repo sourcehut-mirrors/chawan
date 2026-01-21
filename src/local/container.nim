@@ -13,7 +13,6 @@ import config/mimetypes
 import css/render
 import html/script
 import io/dynstream
-import io/packetwriter
 import io/promise
 import local/select
 import monoucha/fromjs
@@ -1342,12 +1341,7 @@ proc readCanceled*(container: Container) =
 proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   if container.iface == nil:
     return
-  let p = container.iface.readSuccess(s, fd)
-  if fd != -1:
-    doAssert container.iface.stream.flush().isOk
-    container.iface.stream.source.withPacketWriterFire w:
-      w.sendFd(fd)
-  p.then(proc(res: Request) =
+  container.iface.readSuccess(s, fd).then(proc(res: Request) =
     if res != nil:
       container.triggerEvent(ContainerEvent(t: cetOpen, request: res))
   )
