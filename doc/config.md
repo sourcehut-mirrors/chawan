@@ -1243,7 +1243,7 @@ Other supported named keys are: `TAB`, `ESC`, `RET` (return key), `LF`
 `PageUp`, `PageDown` (page up/down), `Home`, `End`, and function keys `F1`
 through `F20`.
 
-For backwards compatibility, spaces can be omitted from key sequences that
+For backwards-compatibility, spaces can be omitted from key sequences that
 do not start with an upper-case letter.  For example, `'gg'` and `'g g'` are
 equivalent.  However, components that start with an upper-case letter
 (e.g. `'Gg'`) are reserved for key names, so those must be space-separated
