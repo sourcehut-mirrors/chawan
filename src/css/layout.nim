@@ -429,14 +429,20 @@ proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
     size.w = size.h * osize.w div osize.h
   elif hasWidth and not hasHeight and osize.w > 0'lu:
     size.h = size.w * osize.h div osize.w
-  elif not hasWidth and not hasHeight and bmp.vector:
-    # SVG has no intrinsic width.  Ugh.
-    if space.w.isDefinite():
-      size.w = min(size.w, space.w.u)
-    else:
-      size.w = 0'lu # I guess?
-    if osize.w > 0'lu:
-      size.h = size.w * osize.h div osize.w
+  elif not hasWidth and not hasHeight:
+    if bmp.vector:
+      # SVG has no intrinsic width.
+      if space.w.isDefinite():
+        size.w = min(size.w, space.w.u)
+      else:
+        size.w = 0'lu # I guess?
+      if osize.w > 0'lu:
+        size.h = size.w * osize.h div osize.w
+    elif space.w.t == scMeasure and
+        (width.isPerc or computed{"max-width"}.isPerc):
+      # We also seem to lose the intrinsic width if our max sizes depend on
+      # an indefinite parent size.
+      size.w = 0'lu
   return input.fillImageSize(size)
 
 # Calculate and resolve available width & height for floating boxes.
