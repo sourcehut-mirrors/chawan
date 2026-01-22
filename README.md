@@ -54,6 +54,7 @@ Known stable packages are:
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
 * NixOS: <https://search.nixos.org/packages?show=chawan>
 * Slackware (SBo): <https://slackbuilds.org/repository/15.0/network/chawan/>
+* Void Linux: <https://voidlinux.org/packages/?arch=x86_64&q=chawan>
 
 Unstable packages (tip of the `master` branch):
 

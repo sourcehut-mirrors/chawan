@@ -65,12 +65,11 @@ layout:
 	  text/plain buffers)
 - frame, iframe
 - fix image issues
-	* important: sizing bugs
 	* z order
 	* clipping
 - grid
 misc:
-- animation (GIF) -> rework term first to support frame dropping
+- animation (GIF)
 - pager tests? (how?)
 - add a DOM -> man page converter so that we do not depend on pandoc
   for man page conversion
