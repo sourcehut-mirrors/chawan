@@ -1243,13 +1243,12 @@ proc getTempFile(pager: Pager; ext = ""): string =
     result &= ext
   inc pager.tmpfSeq
 
-proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
-    offx, erry, dispw: int) =
-  let bmp = image.bmp
+proc loadCachedImage(pager: Pager; container: Container; bmp: NetworkBitmap;
+    width, height, offx, erry, dispw: int) =
   let cachedImage = CachedImage(
     bmp: bmp,
-    width: image.width,
-    height: image.height,
+    width: width,
+    height: height,
     offx: offx,
     erry: erry,
     dispw: dispw
@@ -1274,14 +1273,14 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     if cachedImage.state == cisCanceled: # container is no longer visible
       pager.loader.removeCachedItem(cacheId)
       return nil
-    if image.width == bmp.width and image.height == bmp.height:
+    if width == bmp.width and height == bmp.height:
       # skip resize
       return newResolvedPromise(res)
     # resize
     # use a temp file, so that img-resize can mmap its output
     let headers = newHeaders(hgRequest, {
       "Cha-Image-Dimensions": $bmp.width & 'x' & $bmp.height,
-      "Cha-Image-Target-Dimensions": $image.width & 'x' & $image.height
+      "Cha-Image-Target-Dimensions": $width & 'x' & $height
     })
     let p = pager.loader.fetch(newRequest(
       "cgi-bin:resize",
@@ -1306,7 +1305,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       pager.loader.removeCachedItem(cacheId)
       return
     let headers = newHeaders(hgRequest, {
-      "Cha-Image-Dimensions": $image.width & 'x' & $image.height
+      "Cha-Image-Dimensions": $width & 'x' & $height
     })
     var url: URL = nil
     case imageMode
@@ -1387,17 +1386,36 @@ proc initImages(pager: Pager; container: Container) =
     let cachedOffx = if imageMode == imSixel: dims.offx else: 0
     let cachedErry = if imageMode == imSixel: dims.erry else: 0
     let cachedDispw = if imageMode == imSixel: dims.dispw else: 0
-    let cached = container.findCachedImage(image, cachedOffx, cachedErry,
-      cachedDispw)
+    let width = image.width
+    let height = image.height
+    let cached = container.findCachedImage(imageId, width, height, cachedOffx,
+      cachedErry, cachedDispw)
     if cached == nil:
-      pager.loadCachedImage(container, image, cachedOffx, cachedErry,
-        cachedDispw)
+      pager.loadCachedImage(container, image.bmp, width, height, cachedOffx,
+        cachedErry, cachedDispw)
       continue
     if cached.state == cisLoaded:
-      let canvasImage = newCanvasImage(cached.data, pid, imageId,
-        cached.preludeLen, dims, cached.transparent)
+      let canvasImage = newCanvasImage(cached.data, pid, cached.preludeLen,
+        image.bmp, dims, cached.transparent)
       term.addImage(canvasImage)
-  term.updateImages(bufWidth, bufHeight)
+  # updateImages yields all scrolled Sixel images damaged by checkImageDamage
+  # with a new Y error.  For these, we have to reload the cached image.
+  for canvasImage in term.updateImages(bufWidth, bufHeight):
+    let cachedOffx = if imageMode == imSixel: canvasImage.dims.offx else: 0
+    let cachedErry = if imageMode == imSixel: canvasImage.dims.erry else: 0
+    let cachedDispw = if imageMode == imSixel: canvasImage.dims.dispw else: 0
+    let width = canvasImage.dims.width
+    let height = canvasImage.dims.height
+    let cached = container.findCachedImage(canvasImage.bmp.imageId,
+      width, height, cachedOffx, cachedErry, cachedDispw)
+    if cached == nil:
+      pager.loadCachedImage(container, canvasImage.bmp, width, height,
+        cachedOffx, cachedErry, cachedDispw)
+      canvasImage.damaged = false
+    elif cached.state != cisLoaded:
+      canvasImage.damaged = false
+    else:
+      canvasImage.updateImage(cached.data, cached.preludeLen)
 
 proc getAbsoluteCursorXY(pager: Pager; container: Container): tuple[x, y: int] =
   var cursorx = 0

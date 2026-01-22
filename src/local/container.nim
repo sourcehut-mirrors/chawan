@@ -1640,12 +1640,11 @@ iterator cachedImages(container: Container): CachedImage =
     yield it
     it = it.next
 
-proc findCachedImage*(container: Container; image: PosBitmap;
-    offx, erry, dispw: int): CachedImage =
-  let imageId = image.bmp.imageId
+proc findCachedImage*(container: Container;
+    imageId, width, height, offx, erry, dispw: int): CachedImage =
   for it in container.cachedImages:
-    if it.bmp.imageId == imageId and it.width == image.width and
-        it.height == image.height and it.offx == offx and it.erry == erry and
+    if it.bmp.imageId == imageId and it.width == width and
+        it.height == height and it.offx == offx and it.erry == erry and
         it.dispw == dispw:
       return it
   return nil

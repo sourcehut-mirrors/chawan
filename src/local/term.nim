@@ -12,6 +12,7 @@ import chagashi/encoder
 import config/config
 import config/conftypes
 import io/dynstream
+import types/bitmap
 import types/blob
 import types/cell
 import types/color
@@ -70,8 +71,8 @@ type
     xpx: int
     ypx: int
     # original dimensions (after resizing)
-    width: int
-    height: int
+    width*: int
+    height*: int
     # offset (crop start)
     offx*: int
     offy: int
@@ -90,13 +91,13 @@ type
     # Sixel only: erry is the y deviation from 6 lines.
     # erry2 is the same, but it's not affected by scroll.
     erry*: int
-    erry2: int
+    erry2*: int
 
   CanvasImage* = ref object
     pid: int
-    imageId: int
-    dims: CanvasImageDimensions
-    damaged: bool
+    bmp*: NetworkBitmap
+    dims*: CanvasImageDimensions
+    damaged*: bool
     transparent: bool
     scrolled: bool # sixel only: set if screen was scrolled since printing
     preludeLen: int
@@ -975,9 +976,9 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
         changed = eprWindowChange
   else:
     term.eparser.backtrack(c)
-  if term.eparser.state != esBacktrack:
-    term.eparser.nums.setLen(0)
-    term.eparser.state = esNone
+    return eprNone
+  term.eparser.nums.setLen(0)
+  term.eparser.state = esNone
   changed
 
 proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
@@ -1880,7 +1881,7 @@ proc takeImage*(term: Terminal; pid, imageId, bufHeight: int;
   var it = term.frame.canvasImagesHead
   var prev: CanvasImage = nil
   while it != nil:
-    if it.pid == pid and it.imageId == imageId and
+    if it.pid == pid and it.bmp.imageId == imageId and
         it.dims.width == dims.width and it.dims.height == dims.height and
         it.dims.rx == dims.rx and it.dims.ry == dims.ry and
         (term.imageMode != imSixel or
@@ -1971,29 +1972,28 @@ proc checkImageDamage(term: Terminal; image: CanvasImage; maxw, maxh: int) =
   # we're interested in the last x/y *on screen*.  if damage exceeds that,
   # then the image is unaffected and there's nothing to do.
   let lastx = maxw - 1
-  let lasty = maxh - 1
-  let pplerr = term.attrs.ppl - 1
-  let ppcerr = term.attrs.ppc - 1
+  let ppl = term.attrs.ppl
+  let ppc = term.attrs.ppc
   # compute the bottom and right borders, rounded in both directions.
   # if the last column/line doesn't cover a cell, consider it
   # transparent.
-  let ey0 = min(image.dims.y + (image.dims.height + pplerr) div
-    term.attrs.ppl, lasty)
-  let ey1 = min(image.dims.y + image.dims.height div term.attrs.ppl, lasty)
+  let ey0 = min(image.dims.y + (image.dims.height + ppl - 1) div ppl, maxh)
+  let eypx = image.dims.ypx + image.dims.disph
   let x = max(image.dims.x, 0)
-  let mx0 = min(image.dims.x + image.dims.dispw div term.attrs.ppc, lastx)
-  let mx = min(image.dims.x + (image.dims.dispw + ppcerr) div
-    term.attrs.ppc, lastx)
+  let mx0 = min(image.dims.x + image.dims.dispw div ppc, lastx)
+  let mx = min(image.dims.x + (image.dims.dispw + ppc - 1) div ppc, lastx)
   for y in max(image.dims.y, 0) ..< ey0:
     let od = term.frame.lineDamage[y]
     if od > mx0:
       continue
     image.damaged = true
-    if y >= ey1:
-      break
     if od < x:
       continue
-    if image.transparent or od in mx0 ..< mx:
+    # If eypx is less than y * ppl, that means it only partially covers
+    # the last line on the screen which it is painted to.  Therefore we must
+    # treat it as transparent here.
+    # A similar situation arises when od is on the last covered column.
+    if image.transparent or eypx < y * ppl or od in mx0 ..< mx:
       term.frame.lineDamage[y] = x
     else:
       var textFound = false
@@ -2055,20 +2055,36 @@ proc checkImageOverlap(term: Terminal; image: CanvasImage) =
     prev = it
     it = it.next
 
-proc updateImages*(term: Terminal; bufWidth, bufHeight: int) =
+iterator updateImages*(term: Terminal; bufWidth, bufHeight: int): CanvasImage =
   term.clearImages(bufHeight)
   term.frame.canvasImagesHead = move(term.canvasImagesTmpHead)
   term.canvasImagesTmpTail = nil
   if term.imageMode == imSixel:
-    for image in term.frame.canvasImages:
+    var image = term.frame.canvasImagesHead
+    var prev: CanvasImage = nil
+    while image != nil:
       term.checkImageDamage(image, bufWidth, bufHeight)
       term.checkImageOverlap(image)
+      if image.damaged and image.dims.erry != image.dims.erry2:
+        yield image
+        if not image.damaged: # ...yeah
+          if prev == nil:
+            term.frame.canvasImagesHead = image.next
+          else:
+            prev.next = image.next
+      prev = image
+      image = image.next
 
-proc newCanvasImage*(data: Blob; pid, imageId, preludeLen: int;
+proc updateImage*(image: CanvasImage; data: Blob; preludeLen: int) =
+  image.data = data
+  image.preludeLen = preludeLen
+  image.dims.erry2 = image.dims.erry
+
+proc newCanvasImage*(data: Blob; pid, preludeLen: int; bmp: NetworkBitmap;
     dims: CanvasImageDimensions; transparent: bool): CanvasImage =
   CanvasImage(
     pid: pid,
-    imageId: imageId,
+    bmp: bmp,
     data: data,
     dims: dims,
     transparent: transparent,
