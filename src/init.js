@@ -358,9 +358,7 @@ const MAX_INT32 = 0xFFFFFFFF;
  */
 Pager.prototype.compileSearchRegex = function(s) {
     const ignoreCaseOpt = config.search.ignoreCase;
-    let ignoreCase = false;
-    if (ignoreCaseOpt == "ignore")
-        ignoreCase = true;
+    let ignoreCase = ignoreCaseOpt == "ignore";
     let s2 = "";
     let hasUpper = false;
     let hasC = false;
@@ -375,13 +373,16 @@ Pager.prototype.compileSearchRegex = function(s) {
                 ignoreCase = false;
                 hasC = true;
             } else if (c == '<' || c == '>') {
-                s2 += c;
-            }
+                s2 += '\\b';
+            } else
+                s2 += '\\' + c;
         } else if (c == '\\') {
             quot = true;
         } else
             s2 += c;
     }
+    if (quot)
+        s2 += '\\';
     if (!hasC && !hasUpper && ignoreCaseOpt == "auto")
         ignoreCase = true;
     return new RegExp(s2, ignoreCase ? "gui" : "gu");
@@ -494,18 +495,16 @@ Pager.prototype.reload = function() {
 
 Pager.prototype.updateReadLineISearch = async function(reverse) {
     const buffer = this.buffer;
-    /*
-     * TODO this has a race and probably needs some kind of cancelation
-     * mechanism
-     */
     switch (line.state) {
     case "cancel": {
+        delete this.isearchIter;
         this.iregex = null;
         buffer.popCursorPos();
         buffer.clearSearchHighlights();
         buffer.queueDraw();
         break;
     } case "edit": {
+        const iter = this.isearchIter = (this.isearchIter ?? 0) + 1;
         const text = line.text;
         if (text != "") {
             try {
@@ -517,15 +516,21 @@ Pager.prototype.updateReadLineISearch = async function(reverse) {
         }
         buffer.popCursorPos(true);
         buffer.pushCursorPos();
-        if (this.iregex instanceof RegExp) {
+        const re = this.iregex;
+        if (re instanceof RegExp) {
             buffer.highlight = true; /* TODO private variable */
             let wrap = config.search.wrap;
-            return reverse ?
-                this.cursorPrevMatch(this.iregex, wrap, false, 1) :
-                this.cursorNextMatch(this.iregex, wrap, false, 1);
+            const cx = buffer.cursorx;
+            const cy = buffer.cursory;
+            const [x, y, w] = await (reverse ?
+                buffer.findPrevMatch(re, cx, cy, wrap, 1) :
+                buffer.findNextMatch(re, cx, cy, wrap, 1));
+            if (this.isearchIter === iter)
+                buffer.onMatch(x, y, w, false);
         }
         break;
     } case "finish": {
+        delete this.isearchIter;
         const text = line.text;
         if (text == "" && !this.regex) {
             buffer.popCursorPos()
