@@ -141,9 +141,9 @@ proc find(this: Storage; key: string): int =
 proc length(this: Storage): uint32 {.jsfget.} =
   return uint32(this.map.len)
 
-proc key(ctx: JSContext; this: Storage; i: uint32): JSValue {.jsfunc.} =
-  if int(i) < this.map.len:
-    return ctx.toJS(this.map[int(i)].key)
+proc key(ctx: JSContext; this: Storage; u: uint32): JSValue {.jsfunc.} =
+  if u < uint32(this.map.len):
+    return ctx.toJS(this.map[int(u)].key)
   return JS_NULL
 
 proc getItem(ctx: JSContext; this: Storage; s: string): JSValue {.jsfunc.} =
