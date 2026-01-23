@@ -23,17 +23,17 @@ type
 
 const DefaultSpan = Span(start: 0'lu, send: LUnit.high)
 
-proc minWidth(input: LayoutInput): LUnit =
-  return input.bounds.a[dtHorizontal].start
+proc minWidth(bounds: BoundsPart): LUnit =
+  return bounds[dtHorizontal].start
 
-proc maxWidth(input: LayoutInput): LUnit =
-  return input.bounds.a[dtHorizontal].send
+proc maxWidth(bounds: BoundsPart): LUnit =
+  return bounds[dtHorizontal].send
 
-proc minHeight(input: LayoutInput): LUnit =
-  return input.bounds.a[dtVertical].start
+proc minHeight(bounds: BoundsPart): LUnit =
+  return bounds[dtVertical].start
 
-proc maxHeight(input: LayoutInput): LUnit =
-  return input.bounds.a[dtVertical].send
+proc maxHeight(bounds: BoundsPart): LUnit =
+  return bounds[dtVertical].send
 
 proc startOffset(rect: RelativeRect): Offset =
   return offset(x = rect[dtHorizontal].start, y = rect[dtVertical].start)
@@ -323,13 +323,20 @@ const MinSizeMap = [dtHorizontal: cptMinWidth, dtVertical: cptMinHeight]
 const MaxSizeMap = [dtHorizontal: cptMaxWidth, dtVertical: cptMaxHeight]
 
 proc resolveBounds(lctx: LayoutContext; space: Space; padding: Size;
-    computed: CSSValues; flexItem = false): Bounds =
+    computed: CSSValues; replaced: bool; flexItem = false): Bounds =
   var res = DefaultBounds
   for dim in DimensionType:
     let sc = space[dim]
     let padding = padding[dim]
-    if computed.getLength(MaxSizeMap[dim]).canpx(sc):
-      let px = computed.getLength(MaxSizeMap[dim]).spx(sc, computed, padding)
+    let maxLength = computed.getLength(MaxSizeMap[dim])
+    if maxLength.canpx(sc):
+      let px = maxLength.spx(sc, computed, padding)
+      res.a[dim].send = px
+      res.mi[dim].send = px
+    elif replaced and maxLength.isPerc:
+      # for replaced elements (img), cyclic percentage max size is resolved
+      # against 0.  (this doesn't apply to min size.)
+      let px = maxLength.spx(stretch(0'lu), computed, padding)
       res.a[dim].send = px
       res.mi[dim].send = px
     if computed.getLength(MinSizeMap[dim]).canpx(sc):
@@ -390,31 +397,32 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
   lctx.resolveAbsoluteHeight(size, positioned, computed, input)
   return input
 
-proc fillImageSize(input: LayoutInput; osize: Size): Size =
+proc fillImageSize(bounds: BoundsPart; osize: Size): Size =
   if osize.w == 0'lu or osize.h == 0'lu:
     return osize
-  let ww = osize.w.minClamp(input.bounds.a[dtHorizontal]) * osize.h
-  let hh = osize.h.minClamp(input.bounds.a[dtVertical]) * osize.w
-  let rat = if osize.w < input.minWidth:
-    if osize.h < input.minHeight:
+  let ww = osize.w.minClamp(bounds[dtHorizontal]) * osize.h
+  let hh = osize.h.minClamp(bounds[dtVertical]) * osize.w
+  let rat = if osize.w < bounds.minWidth:
+    if osize.h < bounds.minHeight:
       max(ww, hh)
     else:
       ww
-  elif osize.h < input.minHeight:
+  elif osize.h < bounds.minHeight:
     hh
-  elif osize.w > input.maxWidth:
-    if osize.h > input.maxHeight:
+  elif osize.w > bounds.maxWidth:
+    if osize.h > bounds.maxHeight:
       min(ww, hh)
     else:
       ww
-  elif osize.h > input.maxHeight:
+  elif osize.h > bounds.maxHeight:
     hh
   else:
     osize.w * osize.h
   return size(w = rat div osize.h, h = rat div osize.w)
 
 proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
-    paddingSum: Size; bmp: NetworkBitmap; computed: CSSValues): Size =
+    paddingSum: Size; bmp: NetworkBitmap; computed: CSSValues;
+    intrinsic = false): Size =
   let width = computed{"width"}
   let height = computed{"height"}
   let hasWidth = width.canpx(space.w)
@@ -423,27 +431,54 @@ proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
   var size = osize
   if hasWidth:
     size.w = width.spx(space.w, computed, paddingSum.w)
+  elif intrinsic and width.isPerc:
+    # For replaced elements, cyclic percentage intrinsic size is resolved
+    # against 0.
+    # Note that this *does not* apply to the max-content size, so when
+    # we detect this to be relevant, we redo this calculation specifically
+    # for the intrinsic minimum size with intrinsic = true.  (See layoutImage.)
+    size.w = width.spx(stretch(0'lu), computed, paddingSum.w)
   if hasHeight:
     size.h = height.spx(space.h, computed, paddingSum.h)
+  elif intrinsic and height.isPerc: # see above
+    size.h = height.spx(stretch(0'lu), computed, paddingSum.h)
   if not hasWidth and hasHeight and osize.h > 0'lu:
     size.w = size.h * osize.w div osize.h
   elif hasWidth and not hasHeight and osize.w > 0'lu:
     size.h = size.w * osize.h div osize.w
-  elif not hasWidth and not hasHeight:
-    if bmp.vector:
-      # SVG has no intrinsic width.
-      if space.w.isDefinite():
-        size.w = min(size.w, space.w.u)
-      else:
-        size.w = 0'lu # I guess?
-      if osize.w > 0'lu:
-        size.h = size.w * osize.h div osize.w
-    elif space.w.t == scMeasure and
-        (width.isPerc or computed{"max-width"}.isPerc):
-      # We also seem to lose the intrinsic width if our max sizes depend on
-      # an indefinite parent size.
-      size.w = 0'lu
-  return input.fillImageSize(size)
+  elif not hasWidth and not hasHeight and bmp.vector:
+    # SVG has no intrinsic width.
+    if space.w.isDefinite():
+      size.w = min(size.w, space.w.u)
+    else:
+      size.w = 0'lu # I guess?
+    if osize.w > 0'lu:
+      size.h = size.w * osize.h div osize.w
+  if intrinsic: # intrinsic min size
+    return input.bounds.mi.fillImageSize(size)
+  return input.bounds.a.fillImageSize(size)
+
+proc applyImageSizes(lctx: LayoutContext; space: Space; paddingSum: Size;
+    bmp: NetworkBitmap; computed: CSSValues; input: var LayoutInput) =
+  let size = lctx.resolveImageSizes(input, space, paddingSum, bmp, computed)
+  input.space = stretch(size)
+  # Here we run into the problem that we are supposed to resolve intr in
+  # layoutImage, but by that time we lose information of the parent size.
+  # That is a problem because cyclic intrinsic minimum size (state.intr:
+  # a percentage width with indefinite parent, e.g. in shrink-to-fit or
+  # table cell measurement) is different from cyclic intrinsic preferred/
+  # maximum size (state.size).
+  #
+  # So our rather inelegant solution here is to resolve intr already,
+  # and then just tuck it into input.bounds which layoutImage will clamp
+  # the size to.  I guess it would be cleaner if we had a different
+  # LayoutInput variant for images (then we could just put intr right
+  # there), but alas, we don't.
+  let intr = lctx.resolveImageSizes(input, space, paddingSum, bmp, computed,
+    intrinsic = true) + paddingSum
+  for dim in DimensionType:
+    let u = intr[dim]
+    input.bounds.mi[dim] = Span(start: u, send: u)
 
 # Calculate and resolve available width & height for floating boxes.
 proc resolveFloatSizes(lctx: LayoutContext; space: Space; box: BlockBox):
@@ -458,12 +493,11 @@ proc resolveFloatSizes(lctx: LayoutContext; space: Space; box: BlockBox):
   if computed{"display"} in DisplayInlineBlockLike:
     lctx.roundSmallMarginsAndPadding(input)
   let paddingSum = input.padding.sum()
-  input.bounds = lctx.resolveBounds(space, paddingSum, computed)
-  input.space.h = maxContent()
   let bmp = box.getImageBitmap()
+  input.bounds = lctx.resolveBounds(space, paddingSum, computed, bmp != nil)
+  input.space.h = maxContent()
   if bmp != nil:
-    let size = lctx.resolveImageSizes(input, space, paddingSum, bmp, computed)
-    input.space = stretch(size)
+    lctx.applyImageSizes(space, paddingSum, bmp, computed, input)
   else:
     for dim in DimensionType:
       let length = computed.getLength(SizeMap[dim])
@@ -484,7 +518,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
     margin: lctx.resolveMargins(space.w, computed),
     padding: padding,
     space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed, flexItem = true)
+    bounds: lctx.resolveBounds(space, paddingSum, computed, replaced = false,
+      flexItem = true)
   )
   input.border = lctx.resolveBorder(computed, input.margin)
   if dim != dtHorizontal:
@@ -576,17 +611,16 @@ proc resolveBlockSizes(lctx: LayoutContext; space: Space; box: BlockBox):
   let computed = box.computed
   let padding = lctx.resolvePadding(space.w, computed)
   let paddingSum = padding.sum()
+  let bmp = box.getImageBitmap()
   var input = LayoutInput(
     margin: lctx.resolveMargins(space.w, computed),
     padding: padding,
     space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed),
+    bounds: lctx.resolveBounds(space, paddingSum, computed, bmp != nil),
   )
   input.border = lctx.resolveBorder(computed, input.margin)
-  let bmp = box.getImageBitmap()
   if bmp != nil:
-    let size = lctx.resolveImageSizes(input, space, paddingSum, bmp, computed)
-    input.space = stretch(size)
+    lctx.applyImageSizes(space, paddingSum, bmp, computed, input)
   else:
     for dim in DimensionType:
       input.space[dim] = lctx.resolveBlockSpace(input, dim, space[dim],

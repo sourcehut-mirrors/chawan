@@ -128,9 +128,11 @@ type
 
   Space* = array[DimensionType, SizeConstraint]
 
+  BoundsPart* = array[DimensionType, Span]
+
   Bounds* = object
-    a*: array[DimensionType, Span] # width clamp
-    mi*: array[DimensionType, Span] # intrinsic clamp
+    a*: BoundsPart # width clamp
+    mi*: BoundsPart # intrinsic clamp
 
   LayoutInput* = object
     # BFC offset before flushing margins.
