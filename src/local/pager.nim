@@ -2234,8 +2234,8 @@ proc gotoURLHash(pager: Pager; request: Request; current: Container;
 
 proc omniRewrite(pager: Pager; s: string): string =
   for rule in pager.config.omnirule.values:
-    if rule.match.get.match(s):
-      let fun = rule.substituteUrl.get
+    if rule.match.match(s):
+      let fun = rule.substituteUrl
       let ctx = pager.jsctx
       let arg0 = ctx.toJS(s)
       let jsRet = ctx.call(fun.val, JS_UNDEFINED, arg0)

@@ -84,8 +84,8 @@ type
     filterCmd*: Option[string]
 
   OmniRule* = ref object
-    match*: Option[Regex]
-    substituteUrl*: Option[JSValueFunction]
+    match*: Regex
+    substituteUrl*: JSValueFunction
 
   StartConfig = ref object
     visualHome* {.jsgetset.}: string
@@ -186,7 +186,7 @@ type
     arraySeen*: TableRef[string, int] # table arrays seen
     dir* {.jsget.}: string
     dataDir* {.jsget.}: string
-    `include` {.jsget.}: seq[ChaPathResolved]
+    includes {.jsget: "include".}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
     buffer* {.jsget.}: BufferSectionConfig
     search* {.jsget.}: SearchConfig
@@ -594,14 +594,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
   ?typeCheck(v, tvtTable, k)
   if v.tab.clear:
     x = default(typeof(x))
-  when x isnot typeof(Config()[]):
-    let k = k & '.'
+  let k = k & '.'
   for fk, fv in x.fieldPairs:
-    when fk notin ["jsvfns", "arraySeen", "dir", "dataDir", "feedNext"]:
-      const kebabk = camelToKebabCase(fk)
-      var x: TomlValue
-      if v.pop(kebabk, x):
-        ?ctx.parseConfigValue(fv, x, k & kebabk)
+    const kebabk = camelToKebabCase(fk)
+    var x: TomlValue
+    if v.pop(kebabk, x):
+      ?ctx.parseConfigValue(fv, x, k & kebabk)
   ctx.warnValuesLeft(v, k)
   ok()
 
@@ -1009,15 +1007,29 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
     jsctx: jsctx,
     builtin: builtin
   )
-  ?ctx.parseConfigValue(config[], t, "")
-  for name, value in config.omnirule:
-    if value.match.isNone:
-      return err("omnirule." & name & ": missing match regex")
-  #TODO: for omnirule/siteconf, check if substitution rules are specified?
-  while config.`include`.len > 0:
+  for kk, vv in t:
+    case kk
+    of "include": ?ctx.parseConfigValue(config.includes, vv, kk)
+    of "start": ?ctx.parseConfigValue(config.start, vv, kk)
+    of "buffer": ?ctx.parseConfigValue(config.buffer, vv, kk)
+    of "search": ?ctx.parseConfigValue(config.search, vv, kk)
+    of "encoding": ?ctx.parseConfigValue(config.encoding, vv, kk)
+    of "external": ?ctx.parseConfigValue(config.external, vv, kk)
+    of "network": ?ctx.parseConfigValue(config.network, vv, kk)
+    of "input": ?ctx.parseConfigValue(config.input, vv, kk)
+    of "display": ?ctx.parseConfigValue(config.display, vv, kk)
+    of "status": ?ctx.parseConfigValue(config.status, vv, kk)
+    of "siteconf": ?ctx.parseConfigValue(config.siteconf, vv, kk)
+    of "omnirule": ?ctx.parseConfigValue(config.omnirule, vv, kk)
+    of "cmd": ?ctx.parseConfigValue(config.cmd, vv, kk)
+    of "page": ?ctx.parseConfigValue(config.page, vv, kk)
+    of "line": ?ctx.parseConfigValue(config.line, vv, kk)
+    else: warnings.add("unrecognized option " & kk)
+  #TODO: for siteconf, check if substitution rules are specified?
+  while config.includes.len > 0:
     #TODO: warn about recursive includes
-    var includes = config.`include`
-    config.`include`.setLen(0)
+    # or just remove include?  it's a lot of trouble for little worth
+    let includes = move(config.includes)
     for s in includes:
       let ps = newPosixStream($s)
       if ps == nil:
