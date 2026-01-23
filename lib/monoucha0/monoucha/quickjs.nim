@@ -779,7 +779,7 @@ proc JS_SetInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
 proc JS_SetCanBlock*(rt: JSRuntime; can_block: JS_BOOL)
 # select which debug info is stripped from the compiled code
 const JS_STRIP_SOURCE* = cint(1 shl 0) ## strip source code
-const JS_STRIP_DEBUG* = cint(1 shl 0) ## strip all debug info including source
+const JS_STRIP_DEBUG* = cint(1 shl 1) ## strip all debug info including source
                                       ## code
 proc JS_SetStripInfo*(rt: JSRuntime; flags: cint)
 proc JS_GetStripInfo*(rt: JSRuntime): cint
