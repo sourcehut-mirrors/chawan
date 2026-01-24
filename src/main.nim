@@ -334,7 +334,7 @@ proc jsQuit(ctx: JSContext; client: Client; code = 0): JSValue
   ctx.jsQuit(client.pager, code)
 
 proc feedNext(client: Client) {.jsfunc.} =
-  client.pager.feednext = true
+  client.pager.feedNext = true
 
 proc alert(client: Client; msg: string) {.jsfunc.} =
   client.pager.alert(msg)

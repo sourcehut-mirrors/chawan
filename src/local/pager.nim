@@ -62,6 +62,7 @@ import utils/twtstr
 
 type
   LineMode* = enum
+    lmScript = "script"
     lmLocation = "location"
     lmUsername = "username"
     lmPassword = "password"
@@ -89,7 +90,9 @@ type
     res: int
     outputId: int
 
-  LineData = ref object of RootObj
+  LineDataScript = ref object of LineData
+    resolve: JSValue
+    catch: JSValue
 
   LineDataDownload = ref object of LineData
     outputId: int
@@ -139,13 +142,13 @@ type
 
   Pager* = ref object of RootObj
     blockTillRelease: bool
-    commandMode {.jsget.}: bool
-    feednext*: bool
+    commandMode {.jsgetset.}: bool
     hasload: bool # has a page been successfully loaded since startup?
     inEval: bool
     notnum: bool # has a non-numeric character been input already?
     reverseSearch: bool
     dumpConsoleFile: bool
+    feedNext*: bool
     updateStatus: UpdateStatusState
     consoleCacheId: int
     consoleFile: string
@@ -168,7 +171,6 @@ type
     isearchpromise: EmptyPromise
     jsctx: JSContext
     lastAlert {.jsget.}: string # last alert seen by the user
-    lineData: LineData
     lineHist: array[LineMode, History]
     lineedit*: LineEdit
     linemode: LineMode
@@ -348,12 +350,30 @@ proc getHist(pager: Pager; mode: LineMode): History =
     pager.lineHist[mode] = newHistory(100)
   return pager.lineHist[mode]
 
-proc setLineEdit(pager: Pager; mode: LineMode; prompt: string; current = "";
-    hide = false) {.jsfunc.} =
+proc setLineEdit0(pager: Pager; mode: LineMode; prompt, current: string;
+    hide: bool; data: LineData) =
   let hist = pager.getHist(mode)
   pager.lineedit = readLine(prompt, current, pager.attrs.width, hide, hist,
-    pager.luctx)
+    pager.luctx, data)
   pager.linemode = mode
+
+proc setLineEdit2(pager: Pager; mode: LineMode; prompt: string; current = "";
+    hide = false) {.jsfunc.} =
+  pager.setLineEdit0(mode, prompt, current, hide, data = nil)
+
+#TODO the above two variants should be merged into this one
+proc setLineEdit(ctx: JSContext; pager: Pager; mode: LineMode; prompt: string;
+    current = ""; hide = false): JSValue {.jsfunc.} =
+  var funs {.noinit.}: array[2, JSValue]
+  let res = JS_NewPromiseCapability(ctx, funs.toJSValueArray())
+  if JS_IsException(res):
+    return res
+  let data = LineDataScript(resolve: funs[0], catch: funs[1])
+  let hist = pager.getHist(mode)
+  pager.lineedit = readLine(prompt, current, pager.attrs.width, hide, hist,
+    pager.luctx, data)
+  pager.linemode = lmScript
+  return res
 
 proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
     Opt[void] {.jsfunc.} =
@@ -368,7 +388,7 @@ proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
   if JS_IsNumber(val) and ctx.fromJS(val, n).isOk:
     dec n # gotoLine is 1-indexed
   elif JS_IsUndefined(val):
-    pager.setLineEdit(lmGotoLine, "Goto line: ")
+    pager.setLineEdit2(lmGotoLine, "Goto line: ")
     return ok()
   else:
     var s: string
@@ -587,15 +607,19 @@ proc cleanup(pager: Pager) =
       pager.alert("failed to save cookies")
   for msg in pager.alerts:
     discard cast[ChaFile](stderr).write("cha: " & msg & '\n')
-  pager.jsctx.freeValues(pager.config.line)
-  pager.jsctx.freeValues(pager.config.page)
-  for fn in pager.config.jsvfns:
-    JS_FreeValue(pager.jsctx, fn.val)
-  JS_FreeValue(pager.jsctx, pager.config.feedNext.val)
+  let ctx = pager.jsctx
+  ctx.freeValues(pager.config.line)
+  ctx.freeValues(pager.config.page)
+  ctx.freeValues(pager.config.jsvfns)
+  if pager.lineedit != nil and pager.lineedit.data of LineDataScript:
+    #TODO maybe put this somewhere else
+    let data = LineDataScript(pager.lineedit.data)
+    JS_FreeValue(ctx, data.resolve)
+    JS_FreeValue(ctx, data.catch)
   pager.timeouts.clearAll()
   assert not pager.inEval
-  let rt = JS_GetRuntime(pager.jsctx)
-  pager.jsctx.free()
+  let rt = JS_GetRuntime(ctx)
+  ctx.free()
   rt.free()
   if pager.console != nil and pager.dumpConsoleFile:
     if file := chafile.fopen(pager.consoleFile, "r+"):
@@ -643,20 +667,17 @@ proc evalJS(pager: Pager; val: JSValue): JSValue =
   pager.evalJSEnd(wasInEval)
 
 # Warning: this is not re-entrant.
-proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: ptr JSValue):
+proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
     EmptyPromise =
   let wasInEval = pager.evalJSStart()
   let ctx = pager.jsctx
   var val = val
   if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
     val = ctx.evalFunction(val)
-    if oval != nil and JS_IsFunction(ctx, val):
+    if JS_IsFunction(ctx, val):
       # optimization: skip this eval on the next call.
-      # ideally oval should be a `var` param, but then we can't just quit in
-      # evalJSEnd as usual...  not unsurmountable but gets very ugly, so I'm
-      # sticking with the pointer.
-      JS_FreeValue(ctx, oval[])
-      oval[] = JS_DupValue(ctx, val)
+      JS_FreeValue(ctx, oval)
+      oval = JS_DupValue(ctx, val)
   # If an action evaluates to a function that function is evaluated too.
   if JS_IsFunction(ctx, val):
     if arg0 != 0:
@@ -682,17 +703,21 @@ proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
   if JS_IsException(val):
     pager.console.writeException(pager.jsctx)
     return nil
-  return pager.evalAction(val, arg0, nil)
+  var dummy = JS_UNDEFINED
+  let p = pager.evalAction(val, arg0, dummy)
+  JS_FreeValue(ctx, dummy)
+  p
 
 proc evalInputAction(pager: Pager; map: ActionMap; arg0: int32):
     tuple[found: bool; p: EmptyPromise] =
   let ctx = pager.jsctx
-  let val = map.getOrDefault(pager.inputBuffer)
+  let val = map.advance(pager.inputBuffer)
   if JS_IsUndefined(val):
     return (false, nil)
-  # this may change oval (and thereby val too on the next invocation)
-  let oval = map.getActionPtr(pager.inputBuffer)
-  let p = pager.evalAction(JS_DupValue(ctx, val), arg0, oval)
+  # note: this may replace val inside the ActionMap
+  let p = pager.evalAction(JS_DupValue(ctx, val), arg0, map.mgetValue())
+  ctx.feedNext(map, pager.feedNext, pager.inputBuffer)
+  pager.feedNext = false
   return (true, p)
 
 proc queueStatusUpdate(pager: Pager) =
@@ -930,16 +955,15 @@ proc handleLineInput(pager: Pager; paste: bool) =
     edit.write(move(pager.inputBuffer))
   else:
     let (found, _) = pager.evalInputAction(pager.config.line, 0)
-    if not found:
-      edit.write(move(pager.inputBuffer))
-    if not pager.feednext:
+    if pager.config.line.keyLast == 0:
+      if not found:
+        edit.write(move(pager.inputBuffer))
       pager.updateReadLine()
       pager.inputBuffer = ""
-    pager.feednext = false
 
 proc handleCommandInput(pager: Pager; paste: bool) =
   if paste:
-    pager.setLineEdit(lmLocation, "Location: ", move(pager.inputBuffer))
+    pager.setLineEdit2(lmLocation, "Location: ", move(pager.inputBuffer))
   else:
     if pager.config.input.viNumericPrefix and not pager.notnum:
       let c = pager.inputBuffer[0]
@@ -953,7 +977,7 @@ proc handleCommandInput(pager: Pager; paste: bool) =
       else:
         pager.notnum = true
     let (_, p) = pager.evalInputAction(pager.config.page, pager.precnum)
-    if not pager.feednext:
+    if pager.config.page.keyLast == 0:
       pager.inputBuffer = ""
       pager.precnum = 0
       pager.notnum = false
@@ -965,7 +989,6 @@ proc handleCommandInput(pager: Pager; paste: bool) =
     if p == nil:
       pager.queueStatusUpdate()
       pager.handleEvents()
-    pager.feednext = false
 
 proc handleUserInput(pager: Pager): Opt[void] =
   if not ?pager.term.ahandleRead():
@@ -2037,7 +2060,6 @@ proc windowChange(pager: Pager) =
 proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     loaderConfig: var LoaderClientConfig; ourl: var URL;
     cookieJarId: var string; filterCmd: var string): BufferConfig =
-  let host = url.host
   let ctx = pager.jsctx
   result = BufferConfig(
     userStyle: string(pager.config.buffer.userStyle) & '\n',
@@ -2066,18 +2088,20 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       url.schemeType in {stFile, stStream}:
     loaderConfig.allowSchemes.add("http")
     loaderConfig.allowSchemes.add("https")
-  cookieJarId = url.host
+  let host = url.host
   let surl = $url
-  for sc in pager.config.siteconf.values:
-    if sc.url.isSome and not sc.url.get.match(surl):
+  cookieJarId = host
+  for sc in pager.config.siteconf:
+    let matches = (case sc.matchType
+    of smUrl: sc.match.match(surl)
+    of smHost: sc.match.match(host))
+    if not matches:
       continue
-    elif sc.host.isSome and not sc.host.get.match(host):
-      continue
-    if sc.rewriteUrl.isSome:
-      let fun = sc.rewriteUrl.get
+    if sc.o.rewriteUrl.isSome:
+      let fun = sc.o.rewriteUrl.get
       var tmpUrl = newURL(url)
       let arg0 = ctx.toJS(tmpUrl)
-      let ret = ctx.call(fun.val, JS_UNDEFINED, arg0)
+      let ret = ctx.call(fun, JS_UNDEFINED, arg0)
       if not JS_IsException(ret):
         # Warning: we must only print exceptions if the *call* returned one.
         # Conversion may simply error out because the function didn't return a
@@ -2093,38 +2117,38 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       if $tmpUrl != surl:
         ourl = tmpUrl
         return
-    if sc.cookie.isSome:
-      loaderConfig.cookieMode = sc.cookie.get
-    if sc.shareCookieJar.isSome:
-      cookieJarId = sc.shareCookieJar.get
-    if sc.scripting.isSome:
-      result.scripting = sc.scripting.get
-    if sc.refererFrom.isSome:
-      result.refererFrom = sc.refererFrom.get
-    if sc.documentCharset.len > 0:
-      result.charsets = sc.documentCharset
-    if sc.images.isSome:
-      result.images = sc.images.get
-    if sc.styling.isSome:
-      result.styling = sc.styling.get
-    if sc.proxy.isSome:
-      loaderConfig.proxy = sc.proxy.get
-    if sc.defaultHeaders != nil:
-      loaderConfig.defaultHeaders = sc.defaultHeaders
-    if sc.insecureSslNoVerify.isSome:
-      loaderConfig.insecureSslNoVerify = sc.insecureSslNoVerify.get
-    if sc.autofocus.isSome:
-      result.autofocus = sc.autofocus.get
-    if sc.metaRefresh.isSome:
-      result.metaRefresh = sc.metaRefresh.get
-    if sc.history.isSome:
-      result.history = sc.history.get
-    if sc.markLinks.isSome:
-      result.markLinks = sc.markLinks.get
-    if sc.userStyle.isSome:
-      result.userStyle &= string(sc.userStyle.get) & '\n'
-    if sc.filterCmd.isSome:
-      filterCmd = sc.filterCmd.get
+    if sc.o.cookie.isSome:
+      loaderConfig.cookieMode = sc.o.cookie.get
+    if sc.o.shareCookieJar.isSome:
+      cookieJarId = sc.o.shareCookieJar.get
+    if sc.o.scripting.isSome:
+      result.scripting = sc.o.scripting.get
+    if sc.o.refererFrom.isSome:
+      result.refererFrom = sc.o.refererFrom.get
+    if sc.o.documentCharset.len > 0:
+      result.charsets = sc.o.documentCharset
+    if sc.o.images.isSome:
+      result.images = sc.o.images.get
+    if sc.o.styling.isSome:
+      result.styling = sc.o.styling.get
+    if sc.o.proxy.isSome:
+      loaderConfig.proxy = sc.o.proxy.get
+    if sc.o.defaultHeaders != nil:
+      loaderConfig.defaultHeaders = sc.o.defaultHeaders
+    if sc.o.insecureSslNoVerify.isSome:
+      loaderConfig.insecureSslNoVerify = sc.o.insecureSslNoVerify.get
+    if sc.o.autofocus.isSome:
+      result.autofocus = sc.o.autofocus.get
+    if sc.o.metaRefresh.isSome:
+      result.metaRefresh = sc.o.metaRefresh.get
+    if sc.o.history.isSome:
+      result.history = sc.o.history.get
+    if sc.o.markLinks.isSome:
+      result.markLinks = sc.o.markLinks.get
+    if sc.o.userStyle.isSome:
+      result.userStyle &= string(sc.o.userStyle.get) & '\n'
+    if sc.o.filterCmd.isSome:
+      filterCmd = sc.o.filterCmd.get
   loaderConfig.allowSchemes.add(pager.config.external.urimethodmap.imageProtos)
   if result.scripting != smFalse:
     loaderConfig.allowSchemes.add("x-cha-cookie")
@@ -2233,12 +2257,12 @@ proc gotoURLHash(pager: Pager; request: Request; current: Container;
   true
 
 proc omniRewrite(pager: Pager; s: string): string =
-  for rule in pager.config.omnirule.values:
+  for rule in pager.config.omnirule:
     if rule.match.match(s):
       let fun = rule.substituteUrl
       let ctx = pager.jsctx
       let arg0 = ctx.toJS(s)
-      let jsRet = ctx.call(fun.val, JS_UNDEFINED, arg0)
+      let jsRet = ctx.call(fun, JS_UNDEFINED, arg0)
       JS_FreeValue(ctx, arg0)
       var res: string
       if not JS_IsException(jsRet) and ctx.fromJSFree(jsRet, res).isOk:
@@ -2462,12 +2486,7 @@ proc addConsole(pager: Pager; interactive: bool) =
   pager.console.err = cast[ChaFile](stderr)
 
 proc command(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit(lmCommand, "COMMAND: ")
-
-proc commandMode(pager: Pager; val: bool) {.jsfset.} =
-  pager.commandMode = val
-  if val:
-    pager.command()
+  pager.setLineEdit2(lmCommand, "COMMAND: ")
 
 proc openEditor(ctx: JSContext; pager: Pager; s: string): JSValue {.jsfunc.} =
   var s = s
@@ -2480,7 +2499,6 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.alert("Saving file to " & path)
     pager.loader.resume(data.outputId)
     data.stream.sclose()
-    pager.lineData = nil
     if pager.config.external.showDownloadPanel:
       let request = newRequest("about:downloads")
       let old = pager.pinned.downloads
@@ -2495,14 +2513,13 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =
         if x:
-          pager.setLineEdit(lmDownload, "(Download)Save file to: ", path)
+          pager.setLineEdit2(lmDownload, "(Download)Save file to: ", path)
         else:
           data.stream.sclose()
-          pager.lineData = nil
     )
 
 proc updateReadLine(pager: Pager) =
-  let lineedit = pager.lineedit
+  let line = pager.lineedit
   let ctx = pager.jsctx
   if pager.linemode in {lmISearchF, lmISearchB}:
     let reverse = ctx.toJS(pager.linemode == lmISearchB)
@@ -2510,32 +2527,40 @@ proc updateReadLine(pager: Pager) =
     JS_FreeValue(ctx, res)
     JS_FreeValue(ctx, reverse)
   else:
-    case lineedit.state
+    case line.state
     of lesEdit: discard
     of lesFinish:
       case pager.linemode
-      of lmLocation: pager.loadURL(lineedit.news)
+      of lmScript:
+        let lineData = LineDataScript(line.data)
+        JS_FreeValue(ctx, lineData.catch)
+        let text = ctx.toJS(line.news)
+        let res = ctx.callFree(lineData.resolve, JS_UNDEFINED, text)
+        JS_FreeValue(ctx, text)
+        if JS_IsException(res):
+          pager.console.writeException(ctx)
+        JS_FreeValue(ctx, res)
+      of lmLocation: pager.loadURL(line.news)
       of lmUsername:
-        LineDataAuth(pager.lineData).url.username = lineedit.news
-        pager.setLineEdit(lmPassword, "Password: ", hide = true)
+        LineDataAuth(line.data).url.username = line.news
+        pager.setLineEdit2(lmPassword, "Password: ", hide = true)
       of lmPassword:
-        let lineData = LineDataAuth(pager.lineData)
+        let lineData = LineDataAuth(line.data)
         let old = lineData.container
         let url = lineData.url
-        url.password = lineedit.news
+        url.password = line.news
         let container = pager.gotoURL(newRequest(url), referrer = old)
         pager.replace(old, container)
-        pager.lineData = nil
       of lmCommand:
-        pager.evalCommand(lineedit.news)
+        pager.evalCommand(line.news)
         let container = pager.pinned.console
         if container != nil:
           container.flags.incl(cfTailOnLoad)
         if pager.commandMode:
           pager.command()
-      of lmBuffer: pager.container.readSuccess(lineedit.news)
+      of lmBuffer: pager.container.readSuccess(line.news)
       of lmBufferFile:
-        if path := ChaPath(lineedit.news).unquote(myposix.getcwd()):
+        if path := ChaPath(line.news).unquote(myposix.getcwd()):
           let ps = newPosixStream(path, O_RDONLY, 0)
           if ps == nil:
             pager.alert("File not found")
@@ -2549,7 +2574,7 @@ proc updateReadLine(pager: Pager) =
               pager.container.readSuccess(name, ps.fd)
             ps.sclose()
         else:
-          pager.alert("Invalid path: " & lineedit.news)
+          pager.alert("Invalid path: " & line.news)
           pager.container.readCanceled()
       of lmSearchF, lmSearchB:
         let reverse = ctx.toJS(pager.linemode == lmSearchB)
@@ -2557,12 +2582,12 @@ proc updateReadLine(pager: Pager) =
         JS_FreeValue(ctx, res)
         JS_FreeValue(ctx, reverse)
       of lmGotoLine:
-        let val = pager.jsctx.toJS(lineedit.news)
+        let val = pager.jsctx.toJS(line.news)
         discard pager.jsctx.gotoLine(pager, val)
         JS_FreeValue(pager.jsctx, val)
       of lmDownload:
-        let data = LineDataDownload(pager.lineData)
-        let path = ChaPath(lineedit.news).unquote(myposix.getcwd())
+        let data = LineDataDownload(line.data)
+        let path = ChaPath(line.news).unquote(myposix.getcwd())
         if path.isErr:
           pager.alert(path.error)
         else:
@@ -2573,15 +2598,15 @@ proc updateReadLine(pager: Pager) =
                 if x:
                   pager.saveTo(data, path)
                 else:
-                  pager.setLineEdit(lmDownload, "(Download)Save file to: ",
+                  pager.setLineEdit2(lmDownload, "(Download)Save file to: ",
                     path)
             )
           else:
             pager.saveTo(data, path)
       of lmMailcap:
         var mailcap = Mailcap.default
-        let res = mailcap.parseMailcap(lineedit.news, "<input>")
-        let data = LineDataMailcap(pager.lineData)
+        let res = mailcap.parseMailcap(line.news, "<input>")
+        let data = LineDataMailcap(line.data)
         if res.isOk and mailcap.len == 1:
           let res = pager.runMailcap(data.container.url, data.ostream,
             data.response.outputId, data.contentType, mailcap[0])
@@ -2594,19 +2619,25 @@ proc updateReadLine(pager: Pager) =
       of lmISearchF, lmISearchB, lmAlert: discard
     of lesCancel:
       case pager.linemode
+      of lmScript:
+        let lineData = LineDataScript(line.data)
+        JS_FreeValue(ctx, lineData.resolve)
+        let res = ctx.callFree(lineData.catch, JS_UNDEFINED, JS_NULL)
+        if JS_IsException(res):
+          pager.console.writeException(ctx)
+        JS_FreeValue(ctx, res)
       of lmUsername, lmPassword: pager.discardBuffer()
       of lmBuffer: pager.container.readCanceled()
       of lmCommand: pager.commandMode = false
       of lmDownload:
-        let data = LineDataDownload(pager.lineData)
+        let data = LineDataDownload(line.data)
         data.stream.sclose()
       of lmMailcap:
-        let data = LineDataMailcap(pager.lineData)
+        let data = LineDataMailcap(line.data)
         pager.askMailcap(data.container, data.ostream, data.contentType,
           data.i, data.response, data.sx)
       else: discard
-      pager.lineData = nil
-  if lineedit.state in {lesCancel, lesFinish} and pager.lineedit == lineedit:
+  if line.state in {lesCancel, lesFinish} and pager.lineedit == line:
     pager.lineedit = nil
     pager.queueStatusUpdate()
 
@@ -3051,12 +3082,12 @@ proc askDownloadPath(pager: Pager; container: Container; stream: PosixStream;
     buf &= "index.html"
   else:
     buf &= container.url.pathname.afterLast('/').percentDecode()
-  pager.setLineEdit(lmDownload, "(Download)Save file to: ", buf)
-  pager.lineData = LineDataDownload(
+  pager.setLineEdit0(lmDownload, "(Download)Save file to: ", buf, hide = false,
+      LineDataDownload(
     outputId: response.outputId,
     stream: stream,
     url: container.url
-  )
+  ))
   pager.deleteContainer(container, container.find(ndAny))
   pager.queueStatusUpdate()
   dec pager.numload
@@ -3224,15 +3255,15 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
         s = $pager.config.external.mailcap[i]
         while s.len > 0 and s[^1] == '\n':
           s.setLen(s.high)
-      pager.setLineEdit(lmMailcap, "Mailcap: ", s)
-      pager.lineData = LineDataMailcap(
+      pager.setLineEdit0(lmMailcap, "Mailcap: ", s, hide = false,
+          data = LineDataMailcap(
         container: container,
         ostream: ostream,
         contentType: contentType,
         i: i,
         response: response,
         sx: sx
-      )
+      ))
     of 't', 'T':
       retry = false
       pager.connected2(container, MailcapResult(
@@ -3285,9 +3316,9 @@ proc connected(pager: Pager; container: Container; response: Response) =
   var istream = response.body
   container.applyResponse(response, pager.config.external.mimeTypes)
   if response.status == 401: # unauthorized
-    pager.setLineEdit(lmUsername, "Username: ", container.url.username)
     let url = newURL(container.url)
-    pager.lineData = LineDataAuth(container: container, url: url)
+    pager.setLineEdit0(lmUsername, "Username: ", container.url.username,
+      hide = false, LineDataAuth(container: container, url: url))
     istream.sclose()
     return
   # This forces client to ask for confirmation before quitting.
@@ -3477,7 +3508,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       pager.queueStatusUpdate()
   of cetReadLine, cetReadPassword:
     if container == pager.container:
-      pager.setLineEdit(lmBuffer, event.prompt, event.value,
+      pager.setLineEdit2(lmBuffer, event.prompt, event.value,
         event.t == cetReadPassword)
   of cetReadArea:
     if container == pager.container:
@@ -3488,7 +3519,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
         pager.container.readCanceled()
   of cetReadFile:
     if container == pager.container:
-      pager.setLineEdit(lmBufferFile, "(Upload)Filename: ")
+      pager.setLineEdit2(lmBufferFile, "(Upload)Filename: ")
   of cetOpen, cetSave:
     let request = event.request
     let contentType = event.contentType

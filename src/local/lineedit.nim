@@ -18,6 +18,8 @@ type
   LineEditState* = enum
     lesEdit = "edit", lesFinish = "finish", lesCancel = "cancel"
 
+  LineData* = ref object of RootObj
+
   LineEdit* = ref object
     news* {.jsget: "text".}: string
     prompt: string
@@ -37,6 +39,7 @@ type
     skipLast: bool
     escNext*: bool
     hide: bool
+    data*: LineData
 
 jsDestructor(LineEdit)
 
@@ -298,7 +301,7 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.redraw = true
 
 proc readLine*(prompt, current: string; termwidth: int; hide: bool;
-    hist: History; luctx: LUContext): LineEdit =
+    hist: History; luctx: LUContext; data: LineData): LineEdit =
   let promptw = prompt.width()
   let edit = LineEdit(
     prompt: prompt,
@@ -313,7 +316,8 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     currHist: nil,
     luctx: luctx,
     # Skip the last history entry if it's identical to the input.
-    skipLast: hist.last != nil and hist.last.s == current
+    skipLast: hist.last != nil and hist.last.s == current,
+    data: data
   )
   edit.cursorx = edit.width(current)
   return edit

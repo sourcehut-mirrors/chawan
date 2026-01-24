@@ -134,9 +134,10 @@ globalThis.cmd = {
     searchNext: n => pager.searchNext(n),
     searchPrev: n => pager.searchPrev(n),
     toggleCommandMode: () => {
-        if ((pager.commandMode = consoleBuffer != pager.buffer))
+        if ((pager.commandMode = consoleBuffer != pager.buffer)) {
+            pager.command();
             console.show();
-        else
+        } else
             console.hide();
     },
     showFullAlert: () => pager.showFullAlert(),
@@ -431,11 +432,11 @@ Pager.prototype.searchPrev = async function(n = 1) {
 }
 
 Pager.prototype.searchForward = function() {
-    this.setLineEdit("searchF", "/");
+    this.setLineEdit2("searchF", "/");
 }
 
 Pager.prototype.searchBackward = function() {
-    this.setLineEdit("searchB", "?");
+    this.setLineEdit2("searchB", "?");
 }
 
 Pager.prototype.isearchForward = function() {
@@ -446,7 +447,7 @@ Pager.prototype.isearchForward = function() {
     } else if (buffer) {
         buffer.pushCursorPos()
         buffer.markPos0()
-        this.setLineEdit("isearchF", "/")
+        this.setLineEdit2("isearchF", "/")
     }
 }
 
@@ -458,7 +459,7 @@ Pager.prototype.isearchBackward = function() {
     } else if (buffer) {
         buffer.pushCursorPos();
         buffer.markPos0();
-        this.setLineEdit("isearchB", "?");
+        this.setLineEdit2("isearchB", "?");
     }
 }
 
@@ -470,13 +471,15 @@ Pager.prototype.showFullAlert = function() {
 }
 
 /* Open a URL prompt. */
-Pager.prototype.load = function(url = null) {
+Pager.prototype.load = async function(url = null) {
     if (!url) {
         if (!this.buffer)
             return;
         url = this.buffer.url;
     }
-    this.setLineEdit("location", "URL: ", url);
+    const res = await this.setLineEdit("location", "URL: ", url);
+    if (res)
+        pager.loadSubmit(res);
 }
 
 /* Reload the page in a new buffer, then kill the previous buffer. */
