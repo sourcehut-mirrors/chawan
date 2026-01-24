@@ -135,7 +135,8 @@ globalThis.cmd = {
     searchPrev: n => pager.searchPrev(n),
     toggleCommandMode: () => {
         if ((pager.commandMode = consoleBuffer != pager.buffer)) {
-            pager.command();
+            if (!line)
+                pager.command();
             console.show();
         } else
             console.hide();
@@ -392,8 +393,8 @@ Pager.prototype.compileSearchRegex = function(s) {
 Pager.prototype.setSearchRegex = function(s, flags, reverse = false) {
     if (!flags.includes('g'))
         flags += 'g';
-    pager.regex = new RegExp(s, flags);
-    pager.reverseSearch = reverse;
+    this.regex = new RegExp(s, flags);
+    this.reverseSearch = reverse;
 }
 
 Pager.prototype.searchNext = async function(n = 1) {
@@ -411,7 +412,7 @@ Pager.prototype.searchNext = async function(n = 1) {
             await buffer.cursorPrevMatch(regex, wrap, true, n);
         buffer.markPos();
     } else
-        pager.alert("No previous regular expression");
+        this.alert("No previous regular expression");
 }
 
 Pager.prototype.searchPrev = async function(n = 1) {
@@ -428,39 +429,92 @@ Pager.prototype.searchPrev = async function(n = 1) {
             await buffer.cursorNextMatch(this.regex, wrap, true, n);
         buffer.markPos();
     } else
-        pager.alert("No previous regular expression");
+        this.alert("No previous regular expression");
 }
 
-Pager.prototype.searchForward = function() {
-    this.setLineEdit2("searchF", "/");
+Pager.prototype.searchForward = async function(reverse = false) {
+    const text = await this.setLineEdit("search", reverse ? "?" : "/");
+    if (text == null)
+        return;
+    if (text != "") {
+        try {
+            this.regex = this.compileSearchRegex(text);
+        } catch (e) {
+            this.alert("Invalid regex: " + e.message);
+        }
+    }
+    this.reverseSearch = reverse;
+    this.searchNext();
 }
 
 Pager.prototype.searchBackward = function() {
-    this.setLineEdit2("searchB", "?");
+    return this.searchForward(true);
 }
 
-Pager.prototype.isearchForward = function() {
+Pager.prototype.isearchForward = async function(reverse = false) {
     const buffer = this.buffer;
     if (this.menu || buffer?.select) {
         /* isearch doesn't work in menus. */
-        pager.searchForward()
+        this.searchForward(reverse)
     } else if (buffer) {
         buffer.pushCursorPos()
         buffer.markPos0()
-        this.setLineEdit2("isearchF", "/")
+        const text = await this.setLineEdit("search", reverse ? "?" : "/", {
+            update: (async function() {
+                const iter = this.isearchIter = (this.isearchIter ?? 0) + 1;
+                const text = line.text;
+                if (text != "") {
+                    try {
+                        this.iregex = this.compileSearchRegex(text);
+                    } catch (e) {
+                        this.iregex = e.message;
+                    }
+                    this.regex = null;
+                }
+                buffer.popCursorPos(true);
+                buffer.pushCursorPos();
+                const re = this.iregex;
+                if (re instanceof RegExp) {
+                    buffer.highlight = true; /* TODO private variable */
+                    let wrap = config.search.wrap;
+                    const cx = buffer.cursorx;
+                    const cy = buffer.cursory;
+                    const [x, y, w] = await (reverse ?
+                        buffer.findPrevMatch(re, cx, cy, wrap, 1) :
+                        buffer.findNextMatch(re, cx, cy, wrap, 1));
+                    if (this.isearchIter === iter)
+                        buffer.onMatch(x, y, w, false);
+                }
+            }).bind(this)
+        });
+        if (text == null) { /* canceled */
+            delete this.isearchIter;
+            this.iregex = null;
+            buffer.popCursorPos();
+        } else {
+            delete this.isearchIter;
+            if (text == "" && !this.regex) {
+                buffer.popCursorPos()
+            } else {
+                if (text != "") {
+                    if (typeof this.iregex === "string")
+                        this.alert("Invalid regex: " + this.iregex);
+                    else
+                        this.regex = this.iregex;
+                } else
+                    this.searchNext()
+                this.reverseSearch = reverse;
+                buffer.markPos()
+                await buffer.sendCursorPosition()
+            }
+        }
+        buffer.clearSearchHighlights()
+        buffer.queueDraw();
     }
 }
 
 Pager.prototype.isearchBackward = function() {
-    const buffer = this.buffer;
-    if (this.menu || buffer?.select) {
-        /* isearch doesn't work in menus. */
-        pager.searchBackward()
-    } else if (buffer) {
-        buffer.pushCursorPos();
-        buffer.markPos0();
-        this.setLineEdit2("isearchB", "?");
-    }
+    return this.isearchForward(true);
 }
 
 /* Reuse the line editor as an alert message viewer. */
@@ -477,9 +531,9 @@ Pager.prototype.load = async function(url = null) {
             return;
         url = this.buffer.url;
     }
-    const res = await this.setLineEdit("location", "URL: ", url);
+    const res = await this.setLineEdit("location", "URL: ", {current: url});
     if (res)
-        pager.loadSubmit(res);
+        this.loadSubmit(res);
 }
 
 /* Reload the page in a new buffer, then kill the previous buffer. */
@@ -496,76 +550,44 @@ Pager.prototype.reload = function() {
     buffer.copyCursorPos(old);
 }
 
-Pager.prototype.updateReadLineISearch = async function(reverse) {
-    const buffer = this.buffer;
-    switch (line.state) {
-    case "cancel": {
-        delete this.isearchIter;
-        this.iregex = null;
-        buffer.popCursorPos();
-        buffer.clearSearchHighlights();
-        buffer.queueDraw();
-        break;
-    } case "edit": {
-        const iter = this.isearchIter = (this.isearchIter ?? 0) + 1;
-        const text = line.text;
-        if (text != "") {
-            try {
-                this.iregex = this.compileSearchRegex(text);
-            } catch (e) {
-                this.iregex = e.message;
-            }
-            this.regex = null;
-        }
-        buffer.popCursorPos(true);
-        buffer.pushCursorPos();
-        const re = this.iregex;
-        if (re instanceof RegExp) {
-            buffer.highlight = true; /* TODO private variable */
-            let wrap = config.search.wrap;
-            const cx = buffer.cursorx;
-            const cy = buffer.cursory;
-            const [x, y, w] = await (reverse ?
-                buffer.findPrevMatch(re, cx, cy, wrap, 1) :
-                buffer.findNextMatch(re, cx, cy, wrap, 1));
-            if (this.isearchIter === iter)
-                buffer.onMatch(x, y, w, false);
-        }
-        break;
-    } case "finish": {
-        delete this.isearchIter;
-        const text = line.text;
-        if (text == "" && !this.regex) {
-            buffer.popCursorPos()
-        } else {
-            if (text != "") {
-                if (typeof this.iregex === "string")
-                    this.alert("Invalid regex: " + this.iregex);
-                else
-                    this.regex = this.iregex;
-            } else
-                this.searchNext()
-            this.reverseSearch = reverse;
-            buffer.markPos()
-            await buffer.sendCursorPosition()
-        }
-        buffer.clearSearchHighlights()
-        buffer.queueDraw();
-        break;
-    }}
+Pager.prototype.command = async function() {
+    const text = await this.setLineEdit("command", "COMMAND: ");
+    if (text != null) {
+        this.evalCommand(text);
+        if (this.commandMode)
+            return this.command();
+    } else
+        this.commandMode = false;
 }
 
-Pager.prototype.updateReadLineSearch = function(reverse) {
-    const text = line.text;
-    if (text != "") {
-        try {
-            this.regex = this.compileSearchRegex(text);
-        } catch (e) {
-            this.alert("Invalid regex: " + e.message);
+Pager.prototype.gotoLine = async function(n) {
+    const buffer = this.buffer;
+    const target = this.menu ?? buffer?.select ?? buffer;
+    if (!target)
+        return;
+    if (n === undefined) {
+        const text = await this.setLineEdit("gotoLine", "Goto line: ");
+        if (text != null)
+            return this.gotoLine(text);
+    }
+    if (typeof n === "number")
+        n--; /* gotoLine is 1-indexed */
+    else {
+        n = n + "";
+        if (n.length == 0)
+            return;
+        if (n[0] == '^')
+            n = 0;
+        else if (n[0] == '$')
+            n = MAX_INT32;
+        else
+            n = parseInt(n) - 1;
+        if (isNaN(n)) {
+            pager.alert("invalid line number");
+            return;
         }
     }
-    this.reverseSearch = reverse;
-    this.searchNext();
+    target.setCursorY(n);
 }
 
 /*

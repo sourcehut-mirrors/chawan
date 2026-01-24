@@ -68,10 +68,7 @@ type
     lmPassword = "password"
     lmCommand = "command"
     lmBuffer = "buffer"
-    lmSearchF = "searchF"
-    lmSearchB = "searchB"
-    lmISearchF = "isearchF"
-    lmISearchB = "isearchB"
+    lmSearch = "search"
     lmGotoLine = "gotoLine"
     lmDownload = "download"
     lmBufferFile = "bufferFile"
@@ -92,7 +89,7 @@ type
 
   LineDataScript = ref object of LineData
     resolve: JSValue
-    catch: JSValue
+    update: JSValue
 
   LineDataDownload = ref object of LineData
     outputId: int
@@ -146,7 +143,6 @@ type
     hasload: bool # has a page been successfully loaded since startup?
     inEval: bool
     notnum: bool # has a non-numeric character been input already?
-    reverseSearch: bool
     dumpConsoleFile: bool
     feedNext*: bool
     updateStatus: UpdateStatusState
@@ -168,7 +164,6 @@ type
     exitCode: int
     forkserver: ForkServer
     inputBuffer: string # currently uninterpreted characters
-    isearchpromise: EmptyPromise
     jsctx: JSContext
     lastAlert {.jsget.}: string # last alert seen by the user
     lineHist: array[LineMode, History]
@@ -189,9 +184,6 @@ type
     unreg: seq[Container]
     attrs: WindowAttributes
     pidMap: Table[int, string] # pid -> command
-    jsPager: JSValue
-    updateReadLineISearch: JSValue
-    updateReadLineSearch: JSValue
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -243,16 +235,6 @@ proc showAlerts(pager: Pager)
 proc unregisterFd(pager: Pager; fd: int)
 proc updateReadLine(pager: Pager)
 proc windowChange(pager: Pager)
-
-proc finalize(rt: JSRuntime; pager: Pager) {.jsfin.} =
-  JS_FreeValueRT(rt, pager.jsPager)
-  JS_FreeValueRT(rt, pager.updateReadLineISearch)
-  JS_FreeValueRT(rt, pager.updateReadLineSearch)
-
-proc mark(rt: JSRuntime; pager: Pager; markFun: JS_MarkFunc) {.jsmark.} =
-  JS_MarkValue(rt, pager.jsPager, markFun)
-  JS_MarkValue(rt, pager.updateReadLineISearch, markFun)
-  JS_MarkValue(rt, pager.updateReadLineSearch, markFun)
 
 proc container(pager: Pager): Container {.jsfget: "buffer".} =
   pager.tab.current
@@ -358,57 +340,43 @@ proc setLineEdit0(pager: Pager; mode: LineMode; prompt, current: string;
   pager.linemode = mode
 
 proc setLineEdit2(pager: Pager; mode: LineMode; prompt: string; current = "";
-    hide = false) {.jsfunc.} =
+    hide = false) =
   pager.setLineEdit0(mode, prompt, current, hide, data = nil)
 
 #TODO the above two variants should be merged into this one
 proc setLineEdit(ctx: JSContext; pager: Pager; mode: LineMode; prompt: string;
-    current = ""; hide = false): JSValue {.jsfunc.} =
+    obj: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
   var funs {.noinit.}: array[2, JSValue]
   let res = JS_NewPromiseCapability(ctx, funs.toJSValueArray())
   if JS_IsException(res):
     return res
-  let data = LineDataScript(resolve: funs[0], catch: funs[1])
+  JS_FreeValue(ctx, funs[1])
+  var current = ""
+  var hide = false
+  var update = JS_UNDEFINED
+  if not JS_IsUndefined(obj):
+    let jsCurrent = JS_GetPropertyStr(ctx, obj, "current")
+    if JS_IsException(jsCurrent):
+      return jsCurrent
+    if not JS_IsUndefined(jsCurrent):
+      ?ctx.fromJSFree(jsCurrent, current)
+    let jsHide = JS_GetPropertyStr(ctx, obj, "hide")
+    if JS_IsException(jsHide):
+      return jsHide
+    if not JS_IsUndefined(jsHide):
+      ?ctx.fromJSFree(jsHide, hide)
+    update = JS_GetPropertyStr(ctx, obj, "update")
+    if JS_IsException(update):
+      return update
+  let data = LineDataScript(resolve: funs[0], update: update)
   let hist = pager.getHist(mode)
+  if pager.lineedit != nil: # clean up old lineedit
+    pager.lineedit.state = lesCancel
+    pager.updateReadLine()
   pager.lineedit = readLine(prompt, current, pager.attrs.width, hide, hist,
     pager.luctx, data)
   pager.linemode = lmScript
   return res
-
-proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
-    Opt[void] {.jsfunc.} =
-  let container = pager.container
-  let select = if pager.menu != nil:
-    pager.menu
-  elif container != nil:
-    container.select
-  else:
-    nil
-  var n: int
-  if JS_IsNumber(val) and ctx.fromJS(val, n).isOk:
-    dec n # gotoLine is 1-indexed
-  elif JS_IsUndefined(val):
-    pager.setLineEdit2(lmGotoLine, "Goto line: ")
-    return ok()
-  else:
-    var s: string
-    ?ctx.fromJS(val, s)
-    if s.len == 0:
-      return ok()
-    case s[0]
-    of '^': n = 0
-    of '$': n = int.high
-    elif x := parseIntP(s): n = x - 1
-    else:
-      pager.alert("Invalid line number")
-      return ok()
-  if select != nil:
-    select.setCursorY(n)
-  elif container != nil:
-    container.markPos0()
-    container.setCursorY(n)
-    container.markPos()
-  return ok()
 
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JSModuleDef {.cdecl.} =
@@ -542,14 +510,6 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     consoleCacheId: -1,
     console: console,
   )
-  pager.jsPager = ctx.toJS(pager)
-  pager.updateReadLineISearch = ctx.eval(
-    "Pager.prototype.updateReadLineISearch", "<command>", JS_EVAL_TYPE_GLOBAL)
-  pager.updateReadLineSearch = ctx.eval("Pager.prototype.updateReadLineSearch",
-    "<command>", JS_EVAL_TYPE_GLOBAL)
-  doAssert JS_IsObject(pager.jsPager)
-  doAssert JS_IsFunction(ctx, pager.updateReadLineISearch)
-  doAssert JS_IsFunction(ctx, pager.updateReadLineSearch)
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
@@ -615,7 +575,7 @@ proc cleanup(pager: Pager) =
     #TODO maybe put this somewhere else
     let data = LineDataScript(pager.lineedit.data)
     JS_FreeValue(ctx, data.resolve)
-    JS_FreeValue(ctx, data.catch)
+    JS_FreeValue(ctx, data.update)
   pager.timeouts.clearAll()
   assert not pager.inEval
   let rt = JS_GetRuntime(ctx)
@@ -724,8 +684,11 @@ proc queueStatusUpdate(pager: Pager) =
   if pager.updateStatus == ussNone:
     pager.updateStatus = ussUpdate
 
-proc evalCommand(pager: Pager; src: string; filename = "<command>";
-    silence = false) =
+# called from JS command()
+proc evalCommand(pager: Pager; src: string) {.jsfunc.} =
+  let container = pager.pinned.console
+  if container != nil:
+    container.flags.incl(cfTailOnLoad)
   let ctx = pager.jsctx
   let val = ctx.eval(src, "<command>",
     JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_COMPILE_ONLY)
@@ -2485,9 +2448,6 @@ proc addConsole(pager: Pager; interactive: bool) =
     pager.alert("Failed to open temp file for console")
   pager.console.err = cast[ChaFile](stderr)
 
-proc command(pager: Pager) {.jsfunc.} =
-  pager.setLineEdit2(lmCommand, "COMMAND: ")
-
 proc openEditor(ctx: JSContext; pager: Pager; s: string): JSValue {.jsfunc.} =
   var s = s
   if pager.openEditor(s).isOk:
@@ -2521,122 +2481,106 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
 proc updateReadLine(pager: Pager) =
   let line = pager.lineedit
   let ctx = pager.jsctx
-  if pager.linemode in {lmISearchF, lmISearchB}:
-    let reverse = ctx.toJS(pager.linemode == lmISearchB)
-    let res = ctx.call(pager.updateReadLineISearch, pager.jsPager, reverse)
-    JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, reverse)
-  else:
-    case line.state
-    of lesEdit: discard
-    of lesFinish:
-      case pager.linemode
-      of lmScript:
-        let lineData = LineDataScript(line.data)
-        JS_FreeValue(ctx, lineData.catch)
-        let text = ctx.toJS(line.news)
-        let res = ctx.callFree(lineData.resolve, JS_UNDEFINED, text)
-        JS_FreeValue(ctx, text)
+  case line.state
+  of lesEdit:
+    if pager.linemode == lmScript:
+      let lineData = LineDataScript(line.data)
+      if not JS_IsUndefined(lineData.update):
+        let res = ctx.call(lineData.update, JS_UNDEFINED)
         if JS_IsException(res):
           pager.console.writeException(ctx)
         JS_FreeValue(ctx, res)
-      of lmLocation: pager.loadURL(line.news)
-      of lmUsername:
-        LineDataAuth(line.data).url.username = line.news
-        pager.setLineEdit2(lmPassword, "Password: ", hide = true)
-      of lmPassword:
-        let lineData = LineDataAuth(line.data)
-        let old = lineData.container
-        let url = lineData.url
-        url.password = line.news
-        let container = pager.gotoURL(newRequest(url), referrer = old)
-        pager.replace(old, container)
-      of lmCommand:
-        pager.evalCommand(line.news)
-        let container = pager.pinned.console
-        if container != nil:
-          container.flags.incl(cfTailOnLoad)
-        if pager.commandMode:
-          pager.command()
-      of lmBuffer: pager.container.readSuccess(line.news)
-      of lmBufferFile:
-        if path := ChaPath(line.news).unquote(myposix.getcwd()):
-          let ps = newPosixStream(path, O_RDONLY, 0)
-          if ps == nil:
-            pager.alert("File not found")
-            pager.container.readCanceled()
-          else:
-            var stats: Stat
-            if fstat(ps.fd, stats) < 0 or S_ISDIR(stats.st_mode):
-              pager.alert("Not a file: " & path)
-            else:
-              let name = path.afterLast('/')
-              pager.container.readSuccess(name, ps.fd)
-            ps.sclose()
-        else:
-          pager.alert("Invalid path: " & line.news)
+  of lesFinish:
+    case pager.linemode
+    of lmScript:
+      let lineData = LineDataScript(line.data)
+      JS_FreeValue(ctx, lineData.update)
+      let text = ctx.toJS(line.news)
+      let res = ctx.callFree(lineData.resolve, JS_UNDEFINED, text)
+      JS_FreeValue(ctx, text)
+      if JS_IsException(res):
+        pager.console.writeException(ctx)
+      JS_FreeValue(ctx, res)
+    of lmLocation: pager.loadURL(line.news)
+    of lmUsername:
+      LineDataAuth(line.data).url.username = line.news
+      pager.setLineEdit2(lmPassword, "Password: ", hide = true)
+    of lmPassword:
+      let lineData = LineDataAuth(line.data)
+      let old = lineData.container
+      let url = lineData.url
+      url.password = line.news
+      let container = pager.gotoURL(newRequest(url), referrer = old)
+      pager.replace(old, container)
+    of lmBuffer: pager.container.readSuccess(line.news)
+    of lmBufferFile:
+      if path := ChaPath(line.news).unquote(myposix.getcwd()):
+        let ps = newPosixStream(path, O_RDONLY, 0)
+        if ps == nil:
+          pager.alert("File not found")
           pager.container.readCanceled()
-      of lmSearchF, lmSearchB:
-        let reverse = ctx.toJS(pager.linemode == lmSearchB)
-        let res = ctx.call(pager.updateReadLineSearch, pager.jsPager, reverse)
-        JS_FreeValue(ctx, res)
-        JS_FreeValue(ctx, reverse)
-      of lmGotoLine:
-        let val = pager.jsctx.toJS(line.news)
-        discard pager.jsctx.gotoLine(pager, val)
-        JS_FreeValue(pager.jsctx, val)
-      of lmDownload:
-        let data = LineDataDownload(line.data)
-        let path = ChaPath(line.news).unquote(myposix.getcwd())
-        if path.isErr:
-          pager.alert(path.error)
         else:
-          let path = path.get
-          if fileExists(path):
-            pager.ask("Override file " & path & "?").then(
-              proc(x: bool) =
-                if x:
-                  pager.saveTo(data, path)
-                else:
-                  pager.setLineEdit2(lmDownload, "(Download)Save file to: ",
-                    path)
-            )
+          var stats: Stat
+          if fstat(ps.fd, stats) < 0 or S_ISDIR(stats.st_mode):
+            pager.alert("Not a file: " & path)
           else:
-            pager.saveTo(data, path)
-      of lmMailcap:
-        var mailcap = Mailcap.default
-        let res = mailcap.parseMailcap(line.news, "<input>")
-        let data = LineDataMailcap(line.data)
-        if res.isOk and mailcap.len == 1:
-          let res = pager.runMailcap(data.container.url, data.ostream,
-            data.response.outputId, data.contentType, mailcap[0])
-          pager.connected2(data.container, res, data.response)
+            let name = path.afterLast('/')
+            pager.container.readSuccess(name, ps.fd)
+          ps.sclose()
+      else:
+        pager.alert("Invalid path: " & line.news)
+        pager.container.readCanceled()
+    of lmDownload:
+      let data = LineDataDownload(line.data)
+      let path = ChaPath(line.news).unquote(myposix.getcwd())
+      if path.isErr:
+        pager.alert(path.error)
+      else:
+        let path = path.get
+        if fileExists(path):
+          pager.ask("Override file " & path & "?").then(
+            proc(x: bool) =
+              if x:
+                pager.saveTo(data, path)
+              else:
+                pager.setLineEdit2(lmDownload, "(Download)Save file to: ",
+                  path)
+          )
         else:
-          if res.isErr:
-            pager.alert(res.error)
-          pager.askMailcap(data.container, data.ostream, data.contentType,
-            data.i, data.response, data.sx)
-      of lmISearchF, lmISearchB, lmAlert: discard
-    of lesCancel:
-      case pager.linemode
-      of lmScript:
-        let lineData = LineDataScript(line.data)
-        JS_FreeValue(ctx, lineData.resolve)
-        let res = ctx.callFree(lineData.catch, JS_UNDEFINED, JS_NULL)
-        if JS_IsException(res):
-          pager.console.writeException(ctx)
-        JS_FreeValue(ctx, res)
-      of lmUsername, lmPassword: pager.discardBuffer()
-      of lmBuffer: pager.container.readCanceled()
-      of lmCommand: pager.commandMode = false
-      of lmDownload:
-        let data = LineDataDownload(line.data)
-        data.stream.sclose()
-      of lmMailcap:
-        let data = LineDataMailcap(line.data)
+          pager.saveTo(data, path)
+    of lmMailcap:
+      var mailcap = Mailcap.default
+      let res = mailcap.parseMailcap(line.news, "<input>")
+      let data = LineDataMailcap(line.data)
+      if res.isOk and mailcap.len == 1:
+        let res = pager.runMailcap(data.container.url, data.ostream,
+          data.response.outputId, data.contentType, mailcap[0])
+        pager.connected2(data.container, res, data.response)
+      else:
+        if res.isErr:
+          pager.alert(res.error)
         pager.askMailcap(data.container, data.ostream, data.contentType,
           data.i, data.response, data.sx)
-      else: discard
+    else: discard
+  of lesCancel:
+    case pager.linemode
+    of lmScript:
+      let lineData = LineDataScript(line.data)
+      JS_FreeValue(ctx, lineData.update)
+      let res = ctx.callFree(lineData.resolve, JS_UNDEFINED, JS_NULL)
+      if JS_IsException(res):
+        pager.console.writeException(ctx)
+      JS_FreeValue(ctx, res)
+    of lmUsername, lmPassword: pager.discardBuffer()
+    of lmBuffer: pager.container.readCanceled()
+    of lmDownload:
+      let data = LineDataDownload(line.data)
+      data.stream.sclose()
+    of lmMailcap:
+      let data = LineDataMailcap(line.data)
+      pager.askMailcap(data.container, data.ostream, data.contentType,
+        data.i, data.response, data.sx)
+    else: discard
   if line.state in {lesCancel, lesFinish} and pager.lineedit == line:
     pager.lineedit = nil
     pager.queueStatusUpdate()
