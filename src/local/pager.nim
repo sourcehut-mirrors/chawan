@@ -1556,8 +1556,8 @@ proc askChar(pager: Pager; prompt: string): Promise[string] {.jsfunc.} =
   pager.askPromise = Promise[string]()
   return pager.askPromise
 
-proc ask(pager: Pager; prompt: string): Promise[bool] {.jsfunc.} =
-  var prompt = prompt
+proc ask(pager: Pager; prompt0: string): Promise[bool] {.jsfunc.} =
+  var prompt = prompt0
   let choice = " (y/n)"
   let maxw = pager.status.grid.width - choice.width()
   var w = 0
@@ -1576,7 +1576,7 @@ proc ask(pager: Pager; prompt: string): Promise[bool] {.jsfunc.} =
     if s == "n":
       return newResolvedPromise(false)
     pager.askPromise = Promise[string]()
-    return pager.ask(prompt)
+    return pager.ask(prompt0)
   )
 
 proc fulfillAsk(pager: Pager; s: string) =
