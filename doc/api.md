@@ -9,14 +9,14 @@ expression, or a command defined in the `[cmd]` section of config.toml.
 For example, the following works:
 
 ```
-gpn = 'n => pager.alert(n)' # e.g. 2gpn prints `2' to the status line
+'g p n' = 'n => pager.alert(n)' # e.g. 2gpn prints `2' to the status line
 ```
 
 Note however, that JavaScript functions must be called with an appropriate
 `this` value.  So e.g. the following does not work:
 
 ```
-gpn = 'pager.alert' # broken!!!
+'g p n' = 'pager.alert' # broken!!!
 ```
 
 To work around this limitation, actions have to wrap the target function in
@@ -39,9 +39,9 @@ Now you can call `cmd.my.namespace.showNumber()` from any other function, or
 include it in a keybinding (in that case, `cmd.` is optional):
 
 ```toml
-'gpn' = 'my.namespace.showNumber'
+'g p n' = 'my.namespace.showNumber'
 # same as
-'gpn' = 'cmd.my.namespace.showNumber'
+'g p n' = 'cmd.my.namespace.showNumber'
 ```
 
 ## Interfaces
@@ -110,7 +110,7 @@ Returns `fallback` if the variable does not exist.
 <td>`setenv(name, value)`</td>
 <td>Set an environment variable by `name`.
 <p>
-Throws a type error if the operation failed (e.g. because the variable's
+Throws a `TypeError` if the operation failed (e.g. because the variable's
 size exceeded an OS-specified limit.)
 </td>
 </tr>
@@ -138,8 +138,7 @@ queried as `config.external.cgiDir`, etc.
 Setting individual options sometimes works, but sometimes they do not
 get propagated as expected. Consider this an experimental API.
 <p>
-Currently, `siteconf`, `protocol` and `omnirule` values are not exposed
-to JS.
+Currently, `siteconf` and `omnirule` values are not exposed to JS.
 <p>
 The configuration directory itself can be queried as `config.dir`.</td>
 </tr>

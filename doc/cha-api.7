@@ -11,7 +11,7 @@ defined in the \f[CR][cmd]\f[R] section of config.toml.
 For example, the following works:
 .IP
 .EX
-gpn = \(aqn => pager.alert(n)\(aq # e.g. 2gpn prints \(ga2\(aq to the status line
+\(aqg p n\(aq = \(aqn => pager.alert(n)\(aq # e.g. 2gpn prints \(ga2\(aq to the status line
 .EE
 .PP
 Note however, that JavaScript functions must be called with an
@@ -19,7 +19,7 @@ appropriate \f[CR]this\f[R] value.
 So e.g.\ the following does not work:
 .IP
 .EX
-gpn = \(aqpager.alert\(aq # broken!!!
+\(aqg p n\(aq = \(aqpager.alert\(aq # broken!!!
 .EE
 .PP
 To work around this limitation, actions have to wrap the target function
@@ -46,9 +46,9 @@ function, or include it in a keybinding (in that case, \f[CR]cmd.\f[R]
 is optional):
 .IP
 .EX
-\(aqgpn\(aq = \(aqmy.namespace.showNumber\(aq
+\(aqg p n\(aq = \(aqmy.namespace.showNumber\(aq
 \f[I]# same as\f[R]
-\(aqgpn\(aq = \(aqcmd.my.namespace.showNumber\(aq
+\(aqg p n\(aq = \(aqcmd.my.namespace.showNumber\(aq
 .EE
 .SS Interfaces
 .SS Client
@@ -121,7 +121,7 @@ T{
 T}@T{
 Set an environment variable by \f[CR]name\f[R].
 .PP
-Throws a type error if the operation failed (e.g.\ because the
+Throws a \f[CR]TypeError\f[R] if the operation failed (e.g.\ because the
 variable\(cqs size exceeded an OS\-specified limit.)
 T}
 _
@@ -156,8 +156,8 @@ Setting individual options sometimes works, but sometimes they do not
 get propagated as expected.
 Consider this an experimental API.
 .PP
-Currently, \f[CR]siteconf\f[R], \f[CR]protocol\f[R] and
-\f[CR]omnirule\f[R] values are not exposed to JS.
+Currently, \f[CR]siteconf\f[R] and \f[CR]omnirule\f[R] values are not
+exposed to JS.
 .PP
 The configuration directory itself can be queried as
 \f[CR]config.dir\f[R].
