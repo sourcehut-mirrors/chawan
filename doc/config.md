@@ -1354,18 +1354,12 @@ open the link under the cursor.</td>
 </tr>
 
 <tr>
-<td><kbd>.</kbd>, <kbd>,</kbd>, <kbd>M-,</kbd>, <kbd>M-.</kbd>,
-<kbd>M-/</kbd></td>
-<td>`nextBuffer`, `prevBuffer`, `prevSiblingBuffer`, `nextSiblingBuffer`,
-`parentBuffer`</td>
+<td><kbd>.</kbd>, <kbd>,</kbd></td>
+<td>`nextBuffer`, `prevBuffer`</td>
 <td>Traverse the buffer list.
 <p>
 `nextBuffer` and `prevBuffer` switch to the next or previous buffer
 respectively.
-<p>
-`prevSiblingBuffer` and `parentBuffer` are deprecated aliases for
-`prevBuffer`, while `nextSiblingBuffer` is a deprecated alias for
-`nextBuffer`.
 </td>
 </tr>
 
