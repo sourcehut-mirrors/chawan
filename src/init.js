@@ -521,7 +521,7 @@ Pager.prototype.isearchBackward = function() {
 Pager.prototype.showFullAlert = function() {
     const str = this.lastAlert;
     if (str != "")
-        this.setLineEdit("alert", "", str);
+        this.setLineEdit("alert", "", {current: str});
 }
 
 /* Open a URL prompt. */
@@ -553,7 +553,11 @@ Pager.prototype.reload = function() {
 Pager.prototype.command = async function() {
     const text = await this.setLineEdit("command", "COMMAND: ");
     if (text != null) {
-        this.evalCommand(text);
+        try {
+            console.log(this.evalCommand(text));
+        } catch (e) {
+            console.log(e + '\n' + e.stack);
+        }
         if (this.commandMode)
             return this.command();
     } else
@@ -589,6 +593,11 @@ Pager.prototype.gotoLine = async function(n) {
     }
     target.setCursorY(n);
 }
+
+/* Backwards compatibility with the now-removed buffer tree */
+Pager.prototype.parentBuffer = Pager.prototype.prevBuffer;
+Pager.prototype.prevSiblingBuffer = Pager.prototype.prevBuffer;
+Pager.prototype.nextSiblingBuffer = Pager.prototype.nextBuffer;
 
 /*
  * Buffer

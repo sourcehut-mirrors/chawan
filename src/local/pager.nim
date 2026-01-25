@@ -685,7 +685,7 @@ proc queueStatusUpdate(pager: Pager) =
     pager.updateStatus = ussUpdate
 
 # called from JS command()
-proc evalCommand(pager: Pager; src: string) {.jsfunc.} =
+proc evalCommand(pager: Pager; src: string): JSValue {.jsfunc.} =
   let container = pager.pinned.console
   if container != nil:
     container.flags.incl(cfTailOnLoad)
@@ -695,15 +695,7 @@ proc evalCommand(pager: Pager; src: string) {.jsfunc.} =
   if JS_IsException(val):
     pager.console.writeException(ctx)
     return
-  let ret = pager.evalJS(val)
-  if JS_IsException(ret):
-    pager.console.writeException(pager.jsctx)
-  else:
-    var res: string
-    if pager.jsctx.fromJS(ret, res).isOk:
-      pager.console.log(res)
-      pager.console.flush()
-  JS_FreeValue(pager.jsctx, ret)
+  return pager.evalJS(val)
 
 proc hasMouseSelection(pager: Pager): bool =
   return pager.container.currentSelection != nil and
@@ -1699,16 +1691,6 @@ proc prevBuffer(pager: Pager): bool {.jsfunc.} =
 
 proc nextBuffer(pager: Pager): bool {.jsfunc.} =
   pager.traverse(ndNext)
-
-# Backwards compatibility with the now-removed buffer tree
-proc parentBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.traverse(ndParent)
-
-proc prevSiblingBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.traverse(ndPrevSibling)
-
-proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.traverse(ndNextSibling)
 
 proc alert*(pager: Pager; msg: string) {.jsfunc.} =
   if msg != "":
