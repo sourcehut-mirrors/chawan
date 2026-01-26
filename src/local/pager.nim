@@ -1663,9 +1663,6 @@ proc dupeBuffer(pager: Pager): Container {.jsfunc.} =
 const OppositeMap = [
   ndPrev: ndNext,
   ndNext: ndPrev,
-  ndPrevSibling: ndNextSibling,
-  ndNextSibling: ndPrevSibling,
-  ndParent: ndNext,
   ndAny: ndAny
 ]
 
@@ -1796,7 +1793,7 @@ proc discardBuffer(pager: Pager; container = none(Container);
   let dir = pager.revDirection
   let setTarget = container.find(dir)
   if container == nil or setTarget == nil:
-    let s = if dir in {ndNext, ndNextSibling}:
+    let s = if dir == ndNext:
       "No next buffer"
     else:
       "No previous buffer"

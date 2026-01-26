@@ -122,10 +122,7 @@ globalThis.cmd = {
     discardBufferNext: () => pager.discardBuffer(pager.buffer, "next"),
     discardTree: () => pager.discardTree(),
     prevBuffer: () => pager.prevBuffer(),
-    prevSiblingBuffer: () => pager.prevSiblingBuffer(),
     nextBuffer: () => pager.nextBuffer(),
-    nextSiblingBuffer: () => pager.nextSiblingBuffer(),
-    parentBuffer: () => pager.parentBuffer(),
     enterCommand: () => pager.command(),
     searchForward: () => pager.searchForward(),
     searchBackward: () => pager.searchBackward(),
@@ -593,11 +590,6 @@ Pager.prototype.gotoLine = async function(n) {
     }
     target.setCursorY(n);
 }
-
-/* Backwards compatibility with the now-removed buffer tree */
-Pager.prototype.parentBuffer = Pager.prototype.prevBuffer;
-Pager.prototype.prevSiblingBuffer = Pager.prototype.prevBuffer;
-Pager.prototype.nextSiblingBuffer = Pager.prototype.nextBuffer;
 
 /*
  * Buffer

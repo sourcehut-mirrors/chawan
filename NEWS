@@ -11,6 +11,7 @@ unreleased
 * remove display.force-clear (shouldn't have ever been needed)
 * remove display.query-da1 (no longer needed)
 * remove deprecated special case in pager.load() with trailing newline
+* remove deprecated parentBuffer, prevSiblingBuffer, nextSiblingBuffer actions
 * make terminal querying asynchronous
 * work around FreeBSD vt(4) freezing on startup
 * optimize out Sixel repaints when scrolling

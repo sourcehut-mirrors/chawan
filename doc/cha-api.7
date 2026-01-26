@@ -242,15 +242,10 @@ Switch to the next buffer in direction \f[CR]dir\f[R], interpreted as in
 T}
 _
 T{
-\f[CR]nextBuffer()\f[R], \f[CR]prevBuffer()\f[R],
-\f[CR]nextSiblingBuffer()\f[R], \f[CR]prevSiblingBuffer()\f[R],
-\f[CR]parentBuffer()\f[R]
+\f[CR]nextBuffer()\f[R], \f[CR]prevBuffer()\f[R]
 T}@T{
-Same as \f[CR]traverse(\(dqnext\(dq)\f[R],
-\f[CR]traverse(\(dqprev\(dq)\f[R],
-\f[CR]traverse(\(dqnext\-sibling\(dq)\f[R],
-\f[CR]traverse(\(dqprev\-sibling\(dq)\f[R], and
-\f[CR]traverse(\(dqparent\(dq)\f[R].
+Same as \f[CR]traverse(\(dqnext\(dq)\f[R] and
+\f[CR]traverse(\(dqprev\(dq)\f[R].
 T}
 _
 T{
@@ -489,9 +484,7 @@ T{
 T}@T{
 The direction the user last moved in the buffer list using
 \f[CR]traverse\f[R].
-Possible values are \f[CR]prev\f[R], \f[CR]next\f[R],
-\f[CR]prev\-sibling\f[R], \f[CR]next\-sibling\f[R], \f[CR]parent\f[R],
-\f[CR]any\f[R].
+Possible values are \f[CR]prev\f[R], \f[CR]next\f[R], \f[CR]any\f[R].
 T}
 _
 T{
@@ -518,9 +511,8 @@ T{
 T}@T{
 Return a string representing the direction opposite to \f[CR]dir\f[R].
 .PP
-For \(lqnext\(rq, this is \(lqprev\(rq; for \(lqparent\(rq,
-\(lqnext\(rq; for \(lqprev\-sibling\(rq, \(lqnext\-sibling\(rq; for
-\(lqany\(rq, it is the same; for the rest, vice versa.
+For \(lqnext\(rq, this is \(lqprev\(rq; for \(lqprev\(rq, \(lqnext\(rq;
+for \(lqany\(rq, it\(cqs the same.
 T}
 .TE
 .SS Buffer
@@ -870,18 +862,13 @@ T{
 T}@T{
 Find the next buffer in the list in a specific direction.
 .PP
-Possible values of \f[CR]dir\f[R] are: \f[CR]prev\f[R], \f[CR]next\f[R],
-\f[CR]prev\-sibling\f[R], \f[CR]next\-sibling\f[R], \f[CR]parent\f[R],
-\f[CR]any\f[R].
+Possible values of \f[CR]dir\f[R] are: \(lqprev\(rq, \(lqnext\(rq, and
+\(lqany\(rq.
 .PP
 \(lqnext\(rq and \(lqprev\(rq return the next/previous buffer
 respectively.
 .PP
-\(lqprev\-sibling\(rq, \(lqparent\(rq are deprecated aliases for
-\(lqprev\(rq, while \(lqnext\-sibling\(rq is a deprecated alias for
-\(lqnext\(rq.
-.PP
-Finally, \(lqany\(rq returns either \(lqprev\(rq, or if it\(cqs null,
+\(lqany\(rq returns either \(lqprev\(rq, or if it\(cqs null,
 \(lqnext\(rq.
 T}
 _

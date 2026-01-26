@@ -209,9 +209,6 @@ type
   NavDirection* = enum
     ndPrev = "prev"
     ndNext = "next"
-    ndPrevSibling = "prev-sibling"
-    ndNextSibling = "next-sibling"
-    ndParent = "parent"
     ndAny = "any"
 
 jsDestructor(Highlight)
@@ -1463,8 +1460,8 @@ proc hoverCachedImage(container: Container): lent string {.jsfget.} =
 
 proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
   return case dir
-  of ndPrev, ndPrevSibling, ndParent: container.prev
-  of ndNext, ndNextSibling: container.next
+  of ndPrev: container.prev
+  of ndNext: container.next
   of ndAny:
     if container.prev != nil: container.prev else: container.next
 
