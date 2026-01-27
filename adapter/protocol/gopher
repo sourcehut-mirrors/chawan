@@ -16,7 +16,7 @@ Content-Type: text/html
 
 <!DOCTYPE html>
 <h1>Search $MAPPED_URI_SCHEME://$MAPPED_URI_HOST:$MAPPED_URI_PORT$opath</h1>
-<form><input type=search name=name></form>
+<form><input type=search name=name autofocus></form>
 EOF
 else	LF='
 '
