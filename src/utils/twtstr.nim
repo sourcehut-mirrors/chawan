@@ -235,8 +235,18 @@ proc controlToVisual*(u: uint32): string =
 proc add*(s: var string; u: uint8) =
   s.addInt(uint64(u))
 
-proc equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
-  return s1.cmpIgnoreCase(s2) == 0
+proc cmpIgnoreCase2(a, b: openArray[char]): int =
+  let alen = a.len
+  let blen = b.len
+  let L = min(alen, blen)
+  for i in 0 ..< L:
+    let n = cmp(a[i].toLowerAscii(), b[i].toLowerAscii())
+    if n != 0:
+      return n
+  cmp(alen, blen)
+
+proc equalsIgnoreCase*(s1, s2: openArray[char]): bool {.inline.} =
+  return s1.cmpIgnoreCase2(s2) == 0
 
 proc startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
   if s1.len < s2.len:
@@ -686,16 +696,32 @@ proc getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
     result.add(($e, int(e)))
   result.sort(proc(x, y: IdentMapItem): int = cmp(x.s, y.s))
 
-proc cmpItem(x: IdentMapItem; y: string): int =
-  return x.s.cmp(y)
+proc cmpItem(x: IdentMapItem; y: openArray[char]): int =
+  let slen = x.s.len
+  let ylen = y.len
+  let L = min(slen, ylen)
+  when nimvm:
+    for i in 0 ..< L:
+      let n = cmp(x.s[i], y[i])
+      if n != 0:
+        return n
+  else:
+    if L > 0:
+      let n = cmpMem(unsafeAddr x.s[0], unsafeAddr y[0], L)
+      if n != 0:
+        return n
+  return cmp(slen, ylen)
 
-proc strictParseEnum0(map: openArray[IdentMapItem]; s: string): int =
+proc cmpItemNoCase(x: IdentMapItem; y: openArray[char]): int =
+  x.s.cmpIgnoreCase2(y)
+
+proc strictParseEnum0(map: openArray[IdentMapItem]; s: openArray[char]): int =
   let i = map.binarySearch(s, cmpItem)
   if i != -1:
     return map[i].n
   return -1
 
-proc strictParseEnum*[T: enum](s: string): Opt[T] =
+proc strictParseEnum*[T: enum](s: openArray[char]): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.strictParseEnum0(s)
   if n != -1:
@@ -704,15 +730,13 @@ proc strictParseEnum*[T: enum](s: string): Opt[T] =
     {.pop.}
   err()
 
-proc parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): int =
-  let i = map.binarySearch(s, proc(x: IdentMapItem; y: string): int =
-    return x[0].cmpIgnoreCase(y)
-  )
+proc parseEnumNoCase0*(map: openArray[IdentMapItem]; s: openArray[char]): int =
+  let i = map.binarySearch(s, cmpItemNoCase)
   if i != -1:
     return map[i].n
   return -1
 
-proc parseEnumNoCase*[T: enum](s: string): Opt[T] =
+proc parseEnumNoCase*[T: enum](s: openArray[char]): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.parseEnumNoCase0(s)
   if n != -1:

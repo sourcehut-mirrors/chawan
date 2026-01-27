@@ -1,31 +1,5 @@
 # Warning: this is an internal resource file, *not* a template.
-# Some more obscure options may be changed or removed in the future, so
-# using this as your personal config.toml isn't recommended.
-
-[start]
-visual-home = "about:chawan"
-startup-script = ""
-headless = false
-console-buffer = true
-
-[buffer]
-styling = true
-images = false
-scripting = false
-referer-from = false
-cookie = false
-meta-refresh = "ask"
-history = true
-mark-links = false
-user-style = ""
-
-[search]
-wrap = true
-ignore-case = "auto"
-
-[encoding]
-document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]
-display-charset = "auto"
+# If you are looking for a template, use bonus/config.toml instead.
 
 [external]
 mailcap = [
@@ -49,258 +23,46 @@ urimethodmap = [
 ]
 bookmark = "$CHA_DATA_DIR/bookmark.md"
 history-file = "$CHA_DATA_DIR/history.uri"
-history-size = 100
 cookie-file = "$CHA_DATA_DIR/cookies.txt"
 tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
-editor = "${VISUAL:-${EDITOR:-vi}}"
 cgi-dir = ["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 download-dir = "${TMPDIR:-/tmp}/"
-show-download-panel = true
-w3m-cgi-compat = false
-copy-cmd = 'xsel -bi'
-paste-cmd = 'xsel -bo'
-
-[network]
-max-redirect = 10
-max-net-connections = 12
-prepend-scheme = "https://"
-default-headers = {
-	User-Agent = "chawan",
-	Accept = "text/html, text/*;q=0.5, */*;q=0.4",
-	Accept-Encoding = "gzip, deflate, br",
-	Accept-Language = "en;q=1.0",
-	Pragma = "no-cache",
-	Cache-Control = "no-cache"
-}
-allow-http-from-file = false
-
-[input]
-vi-numeric-prefix = true
-use-mouse = 'auto'
-osc52-copy = 'auto'
-osc52-primary = 'auto'
-bracketed-paste = 'auto'
-wheel-scroll = 5
-side-wheel-scroll = 5
-link-hint-chars = 'abcdefghijklmnoprstuvxyz'
-
-[status]
-show-cursor-position = true
-show-hover-link = true
-format-mode = ["reverse"]
-
-[display]
-color-mode = "auto"
-format-mode = "auto"
-no-format-mode = "overline"
-image-mode = "auto"
-sixel-colors = "auto"
-alt-screen = "auto"
-highlight-color = "-cha-ansi(cyan)"
-highlight-marks = true
-double-width-ambiguous = false
-minimum-contrast = 100
-set-title = "auto"
-default-background-color = "auto"
-default-foreground-color = "auto"
-columns = 80
-lines = 24
-pixels-per-column = 9
-pixels-per-line = 18
-force-columns = false
-force-lines = false
-force-pixels-per-column = false
-force-pixels-per-line = false
 
 [omnirule.ddg]
 match = '^ddg:'
-substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+substitute-url = '''
+x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" +
+	encodeURIComponent(x.substring(x.indexOf(":")))
+'''
 
 [omnirule.br]
 match = '^br:'
-substitute-url = 'x => "https://search.brave.com/search?q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+substitute-url = '''
+x => "https://search.brave.com/search?q=" +
+	encodeURIComponent(x.substring(x.indexOf(":")))
+'''
 
 [omnirule.wk]
 match = '^wk:'
 substitute-url = '''
 x => "https://en.wikipedia.org/wiki/Special:Search?search=" +
-	encodeURIComponent(x.split(":").slice(1).join(":"))
+	encodeURIComponent(x.substring(x.indexOf(":")))
 '''
 
 [omnirule.wd]
 match = '^wd:'
 substitute-url = '''
 x => "https://en.wiktionary.org/w/index.php?title=Special:Search&search=" +
-	encodeURIComponent(x.split(":").slice(1).join(":"))
+	encodeURIComponent(x.substring(x.indexOf(":")))
 '''
 
 [omnirule.mo]
 match = '^mo:'
 substitute-url = '''
 x => "https://mojeek.com/search?q=" +
-	encodeURIComponent(x.split(":").slice(1).join(":"));
+	encodeURIComponent(x.substring(x.indexOf(":")))
 '''
 
 [siteconf.downloads]
 url = 'about:downloads'
 meta-refresh = "always"
-
-[page]
-# pager commands, but define them before y so that they actually work.
-'y u' = 'copyCursorLink'
-'y I' = 'copyCursorImage'
-
-# buffer commands
-h = 'cursorLeft'
-j = 'cursorDown'
-k = 'cursorUp'
-l = 'cursorRight'
-Left = 'cursorLeft'
-Down = 'cursorDown'
-Up = 'cursorUp'
-Right = 'cursorRight'
-C-n = 'cursorDown'
-C-p = 'cursorUp'
-'0' = 'cursorLineBegin'
-Home = 'cursorLineBegin'
-'^' = 'cursorLineTextStart'
-'$' = 'cursorLineEnd'
-End = 'cursorLineEnd'
-b = 'cursorViWordBegin'
-e = 'cursorViWordEnd'
-w = 'cursorNextViWord'
-B = 'cursorBigWordBegin'
-E = 'cursorBigWordEnd'
-W = 'cursorNextBigWord'
-'[' = 'cursorPrevLink'
-']' = 'cursorNextLink'
-'{' = 'cursorPrevParagraph'
-'}' = 'cursorNextParagraph'
-H = 'cursorTop'
-M = 'cursorMiddle'
-L = 'cursorBottom'
-'g 0' = 'cursorLeftEdge'
-'g c' = 'cursorMiddleColumn'
-'g $' = 'cursorRightEdge'
-C-d = 'halfPageDown'
-C-u = 'halfPageUp'
-C-f = 'pageDown'
-C-b = 'pageUp'
-PageDown = 'pageDown'
-PageUp = 'pageUp'
-'z H'= 'pageLeft'
-'z L' = 'pageRight'
-'<' = 'pageLeft'
-'>' = 'pageRight'
-C-e = 'scrollDown'
-C-y = 'scrollUp'
-J = 'scrollDown'
-K = 'scrollUp'
-'s E' = 'sourceEdit'
-'s RET' = 'saveLink'
-'s LF' = 'saveLink'
-'s S' = 'saveSource'
-m = 'mark'
-'`' = 'gotoMark'
-"'" = 'gotoMarkY'
-'z h'= 'scrollLeft'
-'z l' = 'scrollRight'
-'-'= 'scrollLeft'
-'+' = 'scrollRight'
-RET = 'click'
-LF = 'click'
-c = 'rightClick'
-C = 'toggleMenu'
-I = 'viewImage'
-'s I' = 'saveImage'
-M-i = 'toggleImages'
-M-j = 'toggleScripting'
-M-k = 'toggleCookie'
-':' = 'markURL'
-r = 'redraw'
-R = 'reshape'
-C-c = 'cancel'
-'g g' = 'gotoLineOrStart'
-G = 'gotoLineOrEnd'
-'|' = 'gotoColumnOrBegin'
-'z .' = 'centerLineBegin'
-'z RET' = 'raisePageBegin'
-'z LF' = 'raisePageBegin'
-'z -' = 'lowerPageBegin'
-'z z' = 'centerLine'
-'z t' = 'raisePage'
-'z b' = 'lowerPage'
-'z +' = 'nextPageBegin'
-'z ^' = 'previousPageBegin'
-y = 'copySelection'
-v = 'cursorToggleSelection'
-V = 'cursorToggleSelectionLine'
-C-v = 'cursorToggleSelectionBlock'
-
-# pager commands
-q = 'quit'
-C-z = 'suspend'
-C-l = 'load'
-M-l = 'loadCursor'
-C-k = 'webSearch'
-M-a = 'addBookmark'
-M-b = 'openBookmarks'
-C-h = 'openHistory'
-M-u = 'dupeBuffer'
-U = 'reloadBuffer'
-C-g = 'lineInfo'
-'\' = 'toggleSource'
-D = 'discardBuffer'
-'d,' = 'discardBufferPrev'
-'d.' = 'discardBufferNext'
-M-d = 'discardTree'
-',' = 'prevBuffer'
-'.' = 'nextBuffer'
-M-c = 'enterCommand'
-'/' = 'isearchForward'
-'?' = 'isearchBackward'
-n = 'searchNext'
-N = 'searchPrev'
-u = 'peekCursor'
-'s u' = 'showFullAlert'
-C-w = 'toggleWrap'
-M-y = 'copyURL'
-M-p = 'gotoClipboardURL'
-f = 'toggleLinkHints'
-
-[line]
-RET = 'line.submit'
-LF = 'line.submit'
-C-h = 'line.backspace'
-'C-?' = 'line.backspace'
-C-d = 'line.delete'
-C-c = 'line.cancel'
-C-g = 'line.cancel'
-M-b = 'line.prevWord'
-M-f = 'line.nextWord'
-C-b = 'line.backward'
-C-f = 'line.forward'
-C-u = 'line.clear'
-'C-x C-?' = 'line.clear'
-'C-x C-e' = 'line.openEditor'
-C-_ = 'line.clear'
-M-k = 'line.clear'
-C-k = 'line.kill'
-C-w = 'line.clearWord'
-M-C-h = 'line.clearWord'
-'M-C-?' = 'line.clearWord'
-M-d = 'line.killWord'
-C-a = 'line.begin'
-Home = 'line.begin'
-C-e = 'line.end'
-End = 'line.end'
-C-v = 'line.escape'
-C-p = 'line.prevHist'
-C-n = 'line.nextHist'
-M-c = 'toggleCommandMode'
-Down = 'line.nextHist'
-Up = 'line.prevHist'
-Right = 'line.forward'
-Left = 'line.backward'
-C-Left = 'line.prevWord'
-C-Right = 'line.nextWord'

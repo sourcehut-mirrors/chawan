@@ -51,10 +51,16 @@ type
   CodepointSet* = object
     s*: seq[uint32]
 
+  Action = object
+    k: string
+    n: uint32
+    val: JSValue
+
   ActionMap* = ref object
-    t*: seq[tuple[k: string; val: JSValue]]
+    t*: seq[Action]
     keyIdx: int
     keyLast*: int
+    num: uint32
 
   FormRequestType* = enum
     frtHttp = "http"
@@ -221,8 +227,6 @@ type
     config: Config
     dir: string
     warnings: seq[string]
-    builtin: bool
-    feedNext: JSValue
 
 jsDestructor(ActionMap)
 jsDestructor(StartConfig)
@@ -306,15 +310,49 @@ proc parseValue(ctx: var ConfigParser; x: SiteConfig; v: TomlValue; k: string):
 proc parseValue(ctx: var ConfigParser; x: OmniRule; v: TomlValue; k: string):
   Err[string]
 
+proc evalCmdDecl(ctx: JSContext; s: string): JSValue
+proc getRealKey(key: openArray[char]; warnings: var seq[string]): string
+
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-  warnings: var seq[string]; jsctx: JSContext; name: string; builtin: bool;
-  laxnames = false): Err[string]
+  warnings: var seq[string]; jsctx: JSContext; name: string; laxnames = false):
+  Err[string]
+
+proc newActionMap(ctx: JSContext; s: string): ActionMap =
+  let map = ActionMap()
+  var dummy: seq[string]
+  for it in s.split('\n'):
+    var i = 0
+    while true:
+      let j = it.find(' ', i)
+      if j == -1:
+        if i == 0:
+          break
+        var key = getRealKey(it.toOpenArray(0, i - 2), dummy)
+        let val = ctx.evalCmdDecl(it.substr(i))
+        map.t.add(Action(k: move(key), val: val, n: map.num))
+        inc map.num
+        break
+      i = j + 1
+  map
 
 iterator items*[T](list: ConfigList[T]): T =
   var it = list.head
   while it != nil:
     yield it
     it = it.next
+
+proc add[T](list: var ConfigList[T]; x: T) =
+  if list.tail == nil:
+    list.head = x
+  else:
+    list.tail.next = x
+  list.tail = x
+
+# ASCII only
+proc initCodepointSet(s: cstring): CodepointSet =
+  result = CodepointSet()
+  for c in s:
+    result.s.add(uint32(c))
 
 proc remove[T](list: var ConfigList[T]; name: string) =
   var it = list.head
@@ -349,13 +387,16 @@ proc toJS*(ctx: JSContext; p: ChaPathResolved): JSValue =
   ctx.toJS($p)
 
 proc sort(ctx: JSContext; map: ActionMap) =
-  map.t.sort(proc(a, b: tuple[k: string; val: JSValue]): int =
+  map.t.sort(proc(a, b: Action): int =
     cmp(a.k, b.k), SortOrder.Ascending)
   #TODO we could probably do this more efficiently
   for i in countdown(map.t.high - 1, 0):
-    if map.t[i + 1].k == map.t[i].k:
-      JS_FreeValue(ctx, map.t[i].val)
-      map.t.delete(i)
+    let j = i + 1
+    if map.t[j].k.startsWith(map.t[i].k):
+      # always remove the older keybinding
+      let k = if map.t[j].n < map.t[i].n: j else: i
+      JS_FreeValue(ctx, map.t[k].val)
+      map.t.delete(k)
   for i in countdown(map.t.high, 0):
     if JS_IsUndefined(map.t[i].val):
       map.t.delete(i)
@@ -375,10 +416,7 @@ proc advance*(map: ActionMap; k: string): JSValueConst =
   if i == 0 and j == 0 and k.len > 0:
     # optimization: bisearch for the first char
     let c = k[0]
-    i = map.t.binarySearch(c,
-      proc(x: tuple[k: string; val: JSValue]; c: char): int =
-        cmp(x.k[0], c)
-    )
+    i = map.t.binarySearch(c, proc(x: Action; c: char): int = cmp(x.k[0], c))
     if i < 0:
       return JS_UNDEFINED
     # go back to first relevant key
@@ -461,9 +499,7 @@ proc toXTermMod(mods: set[KeyModifier]): uint8 =
   elif mods == {kmMeta, kmControl, kmShift}: 14
   else: 0
 
-proc getRealKey(key: string; warnings: var seq[string]): string =
-  if key == " ":
-    return key
+proc getRealKey(key: openArray[char]; warnings: var seq[string]): string =
   var realk = ""
   var i = 0
   var mods: set[KeyModifier] = {}
@@ -487,15 +523,10 @@ proc getRealKey(key: string; warnings: var seq[string]): string =
       continue
     if start and c in AsciiUpperAlpha and
         i + 1 < key.len and key[i + 1] != ' ':
-      var buf = $c
-      inc i
-      while i < key.len:
-        let c = key[i]
-        if c == ' ':
-          break
-        buf &= c.toLowerAscii()
-        inc i
-      if key := strictParseEnum[CustomKey](buf):
+      var j = i + 2
+      while j < key.len and key[j] != ' ':
+        inc j
+      if key := parseEnumNoCase[CustomKey](key.toOpenArray(i, j - 1)):
         case key
         of ckSpc:
           if kmMeta in mods:
@@ -565,10 +596,14 @@ proc getRealKey(key: string; warnings: var seq[string]): string =
           of ckEnd: realk &= 'F'
           else: discard
       else:
-        realk &= buf
-        warnings.add("unknown key " & buf)
+        var buf = "unknown key "
+        for i in i ..< j:
+          let c = key[i]
+          realk &= c
+          buf &= c
+        warnings.add(buf)
       start = true
-      inc i
+      i = j + 1
       mods = {}
       continue
     if kmMeta in mods:
@@ -582,20 +617,16 @@ proc getRealKey(key: string; warnings: var seq[string]): string =
     mods = {}
     start = false
     inc i
-  if key.endsWith(" "):
+  if key.len > 1 and key[^1] == ' ':
     realk &= ' '
   move(realk)
 
 proc find(a: ActionMap; s: string): int =
   var dummy: seq[string]
   let rk = getRealKey(s, dummy)
-  return a.t.binarySearch(rk,
-    proc(x: tuple[k: string; val: JSValue]; k: string): int =
-      cmp(x.k, k)
-  )
+  return a.t.binarySearch(rk, proc(x: Action; k: string): int = cmp(x.k, k))
 
-proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue
-    {.jsgetownprop.} =
+proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue {.jsgetownprop.} =
   let i = a.find(s)
   if i == -1:
     return JS_UNDEFINED
@@ -623,7 +654,8 @@ proc setter(ctx: JSContext; a: ActionMap; k: string; val: JSValueConst):
     ctx.evalCmdDecl(s)
   if JS_IsException(val2):
     return err()
-  a.t.add((rk, val2))
+  a.t.add(Action(k: rk, val: val2, n: a.num))
+  inc a.num
   ctx.sort(a)
   ok()
 
@@ -755,11 +787,7 @@ proc parseValue[T](ctx: var ConfigParser; x: var ConfigList[T]; v: TomlValue;
     ?ctx.parseValue(rule, vv, kkk)
     if ctx.config.ruleSeen.containsOrIncl(kk): # replace
       x.remove(kk)
-    if x.tail == nil:
-      x.head = rule
-    else:
-      x.tail.next = rule
-    x.tail = rule
+    x.add(rule)
   ok()
 
 proc parseValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
@@ -887,7 +915,8 @@ proc parseValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
     let val = jsctx.evalCmdDecl(vv.s)
     if JS_IsException(val):
       return err(jsctx.getExceptionMsg())
-    x.t.add((rk, val))
+    x.t.add(Action(k: rk, val: val, n: x.num))
+    inc x.num
   ok()
 
 proc parseValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
@@ -1061,7 +1090,7 @@ proc parseValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
     ?typeCheck(vv, {tvtTable, tvtString}, kkk)
     if not kk.isCompatibleIdent():
       return err(kkk & ": invalid command name")
-    if not ctx.builtin and k in ["cmd", "cmd.pager", "cmd.buffer"]:
+    if k in ["cmd", "cmd.pager", "cmd.buffer"]:
       if vv.t == tvtTable:
         if AsciiUpperAlpha in kk:
           ctx.warnings.add(kkk &
@@ -1103,14 +1132,11 @@ proc parseValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   ok()
 
 proc parseConfig(config: Config; dir: string; t: TomlValue;
-    warnings: var seq[string]; jsctx: JSContext; builtin: bool): Err[string] =
-  let feedNext = jsctx.compileScript("window.feedNext()", "<init>")
+    warnings: var seq[string]; jsctx: JSContext): Err[string] =
   var ctx = ConfigParser(
     config: config,
     dir: dir,
-    jsctx: jsctx,
-    builtin: builtin,
-    feedNext: feedNext
+    jsctx: jsctx
   )
   var includes: seq[string]
   for kk, vv in t:
@@ -1131,25 +1157,23 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
     of "page": ?ctx.parseValue(config.page, vv, kk)
     of "line": ?ctx.parseValue(config.line, vv, kk)
     else: warnings.add("unrecognized option " & kk)
-  JS_FreeValue(jsctx, feedNext)
   #TODO: warn about recursive includes
   # or just remove include?  it's a lot of trouble for little worth
   for s in includes:
     let ps = newPosixStream($s)
     if ps == nil:
       return err("include file not found: " & $s)
-    ?config.parseConfig(dir, ps.readAll(), warnings, jsctx, ($s).afterLast('/'),
-      builtin)
+    ?config.parseConfig(dir, ps.readAll(), warnings, jsctx, ($s).afterLast('/'))
     ps.sclose()
   warnings.add(ctx.warnings)
   ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-    warnings: var seq[string]; jsctx: JSContext; name: string; builtin: bool;
+    warnings: var seq[string]; jsctx: JSContext; name: string;
     laxnames = false): Err[string] =
   let toml = parseToml(buf, dir / name, laxnames, config.arraySeen)
   if toml.isOk:
-    return config.parseConfig(dir, toml.get, warnings, jsctx, builtin)
+    return config.parseConfig(dir, toml.get, warnings, jsctx)
   return err("fatal error: failed to parse config\n" & toml.error)
 
 proc openConfig*(dir, dataDir: var string; override: Option[string];
@@ -1230,20 +1254,224 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
   ctx.sort(config.line)
   ok()
 
+const PageCommands = """
+y u copyCursorLink
+y I copyCursorImage
+h cursorLeft
+j cursorDown
+k cursorUp
+l cursorRight
+Left cursorLeft
+Down cursorDown
+Up cursorUp
+Right cursorRight
+C-n cursorDown
+C-p cursorUp
+0 cursorLineBegin
+Home cursorLineBegin
+^ cursorLineTextStart
+$ cursorLineEnd
+End cursorLineEnd
+b cursorViWordBegin
+e cursorViWordEnd
+w cursorNextViWord
+B cursorBigWordBegin
+E cursorBigWordEnd
+W cursorNextBigWord
+[ cursorPrevLink
+] cursorNextLink
+{ cursorPrevParagraph
+} cursorNextParagraph
+H cursorTop
+M cursorMiddle
+L cursorBottom
+g 0 cursorLeftEdge
+g c cursorMiddleColumn
+g $ cursorRightEdge
+C-d halfPageDown
+C-u halfPageUp
+C-f pageDown
+C-b pageUp
+PageDown pageDown
+PageUp pageUp
+z H pageLeft
+z L pageRight
+< pageLeft
+> pageRight
+C-e scrollDown
+C-y scrollUp
+J scrollDown
+K scrollUp
+s E sourceEdit
+s RET saveLink
+s LF saveLink
+s S saveSource
+m mark
+` gotoMark
+' gotoMarkY
+z h scrollLeft
+z l scrollRight
+- scrollLeft
++ scrollRight
+RET click
+LF click
+c rightClick
+C toggleMenu
+I viewImage
+s I saveImage
+M-i toggleImages
+M-j toggleScripting
+M-k toggleCookie
+: markURL
+r redraw
+R reshape
+C-c cancel
+g g gotoLineOrStart
+G gotoLineOrEnd
+| gotoColumnOrBegin
+z . centerLineBegin
+z RET raisePageBegin
+z LF raisePageBegin
+z - lowerPageBegin
+z z centerLine
+z t raisePage
+z b lowerPage
+z + nextPageBegin
+z ^ previousPageBegin
+y copySelection
+v cursorToggleSelection
+V cursorToggleSelectionLine
+C-v cursorToggleSelectionBlock
+q quit
+C-z suspend
+C-l load
+M-l loadCursor
+C-k webSearch
+M-a addBookmark
+M-b openBookmarks
+C-h openHistory
+M-u dupeBuffer
+U reloadBuffer
+C-g lineInfo
+\ toggleSource
+D discardBuffer
+d, discardBufferPrev
+d. discardBufferNext
+M-d discardTree
+, prevBuffer
+. nextBuffer
+M-c enterCommand
+/ isearchForward
+? isearchBackward
+n searchNext
+N searchPrev
+u peekCursor
+s u showFullAlert
+C-w toggleWrap
+M-y copyURL
+M-p gotoClipboardURL
+f toggleLinkHints
+"""
+
+const LineCommands = """
+RET line.submit
+LF line.submit
+C-h line.backspace
+C-? line.backspace
+C-d line.delete
+C-c line.cancel
+C-g line.cancel
+M-b line.prevWord
+M-f line.nextWord
+C-b line.backward
+C-f line.forward
+C-u line.clear
+C-x C-? line.clear
+C-x C-e line.openEditor
+C-_ line.clear
+M-k line.clear
+C-k line.kill
+C-w line.clearWord
+M-C-h line.clearWord
+M-C-? line.clearWord
+M-d line.killWord
+C-a line.begin
+Home line.begin
+C-e line.end
+End line.end
+C-v line.escape
+C-p line.prevHist
+C-n line.nextHist
+M-c toggleCommandMode
+Down line.nextHist
+Up line.prevHist
+Right line.forward
+Left line.backward
+C-Left line.prevWord
+C-Right line.nextWord
+"""
+
 proc newConfig*(ctx: JSContext): Config =
   Config(
     arraySeen: newTable[string, int](),
-    page: ActionMap(),
-    line: ActionMap(),
-    start: StartConfig(),
-    search: SearchConfig(),
-    encoding: EncodingConfig(),
-    external: ExternalConfig(),
-    network: NetworkConfig(),
-    input: InputConfig(),
-    display: DisplayConfig(),
-    status: StatusConfig(),
-    buffer: BufferSectionConfig()
+    page: newActionMap(ctx, PageCommands),
+    line: newActionMap(ctx, LineCommands),
+    start: StartConfig(
+      visualHome: "about:chawan",
+      consoleBuffer: true
+    ),
+    search: SearchConfig(wrap: true, ignoreCase: rcAuto),
+    encoding: EncodingConfig(
+      documentCharset: @[
+        CHARSET_UTF_8, CHARSET_SHIFT_JIS, CHARSET_EUC_JP, CHARSET_ISO_8859_2
+      ]
+    ),
+    external: ExternalConfig(
+      historySize: 100,
+      showDownloadPanel: true,
+      editor: "${VISUAL:-${EDITOR:-vi}}",
+      copyCmd: "xsel -bi",
+      pasteCmd: "xsel -bo"
+    ),
+    network: NetworkConfig(
+      maxRedirect: 10,
+      maxNetConnections: 12,
+      prependScheme: "https://",
+      defaultHeaders: newHeaders(hgRequest, {
+        "UserAgent": "chawan",
+        "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "en;q=1.0",
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache"
+      })
+    ),
+    input: InputConfig(
+      viNumericPrefix: true,
+      wheelScroll: 5,
+      sideWheelScroll: 5,
+      linkHintChars: initCodepointSet("abcdefghijklmnoprstuvxyz")
+    ),
+    display: DisplayConfig(
+      noFormatMode: {ffOverline},
+      highlightColor: ANSIColor(7).cssColor(), # cyan
+      highlightMarks: true,
+      minimumContrast: 100,
+      columns: 80,
+      lines: 24,
+      pixelsPerColumn: 9,
+      pixelsPerLine: 18
+    ),
+    status: StatusConfig(
+      showCursorPosition: true,
+      showHoverLink: true,
+      formatMode: {ffReverse}
+    ),
+    buffer: BufferSectionConfig(
+      styling: true,
+      metaRefresh: mrAsk,
+      history: true
+    )
   )
 
 proc addConfigModule*(ctx: JSContext) =

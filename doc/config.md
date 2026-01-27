@@ -25,6 +25,9 @@ search path accommodates XDG basedirs as well:
 See the [*Path handling*](#path-handling) section for details on how the
 config directory can be accessed.
 
+For a configuration template, see bonus/config.toml in the source
+distribution.
+
 <!-- MANOFF -->
 **Table of contents**
 

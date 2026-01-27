@@ -1,0 +1,169 @@
+# Chawan configuration template.
+# Put it in either ~/.chawan/config.toml or ~/.config/chawan/config.toml
+# according to your preferences; this will be your config directory.
+# Then, comment out variables which you wish to change from the default.
+# (This file lists the default values only.)
+
+[start]
+#visual-home = "about:chawan"
+#startup-script = ""
+#headless = false
+#console-buffer = true
+
+[buffer]
+#styling = true
+#images = false
+#scripting = false
+#referer-from = false
+#cookie = false
+#meta-refresh = "ask"
+#history = true
+#mark-links = false
+#user-style = ""
+
+[search]
+#wrap = true
+#ignore-case = "auto"
+
+[encoding]
+#document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]
+#display-charset = "auto"
+
+[external]
+#mailcap = [
+#	"~/.mailcap",
+#	"/etc/mailcap",
+#	"/usr/etc/mailcap",
+#	"/usr/local/etc/mailcap"
+#]
+#auto-mailcap = "auto.mailcap"
+#mime-types = [
+#	"~/.mime.types",
+#	"/etc/mime.types",
+#	"/usr/etc/mime.types",
+#	"/usr/local/etc/mime.types"
+#]
+#urimethodmap = [
+#	"~/.urimethodmap",
+#	"~/.w3m/urimethodmap",
+#	"/etc/urimethodmap",
+#	"/usr/local/etc/w3m/urimethodmap"
+#]
+#bookmark = "$CHA_DATA_DIR/bookmark.md"
+#history-file = "$CHA_DATA_DIR/history.uri"
+#history-size = 100
+#cookie-file = "$CHA_DATA_DIR/cookies.txt"
+#tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
+#editor = "${VISUAL:-${EDITOR:-vi}}"
+#cgi-dir = ["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
+#download-dir = "${TMPDIR:-/tmp}/"
+#show-download-panel = true
+#w3m-cgi-compat = false
+#copy-cmd = 'xsel -bi'
+#paste-cmd = 'xsel -bo'
+
+[network]
+#max-redirect = 10
+#max-net-connections = 12
+#prepend-scheme = "https://"
+#default-headers = {
+#	User-Agent = "chawan",
+#	Accept = "text/html, text/*;q=0.5, */*;q=0.4",
+#	Accept-Encoding = "gzip, deflate, br",
+#	Accept-Language = "en;q=1.0",
+#	Pragma = "no-cache",
+#	Cache-Control = "no-cache"
+#}
+#allow-http-from-file = false
+
+[input]
+#vi-numeric-prefix = true
+#use-mouse = 'auto'
+#osc52-copy = 'auto'
+#osc52-primary = 'auto'
+#bracketed-paste = 'auto'
+#wheel-scroll = 5
+#side-wheel-scroll = 5
+#link-hint-chars = 'abcdefghijklmnoprstuvxyz'
+
+[status]
+#show-cursor-position = true
+#show-hover-link = true
+#format-mode = ["reverse"]
+
+[display]
+#color-mode = "auto"
+#format-mode = "auto"
+#no-format-mode = "overline"
+#image-mode = "auto"
+#sixel-colors = "auto"
+#alt-screen = "auto"
+#highlight-color = "-cha-ansi(cyan)"
+#highlight-marks = true
+#double-width-ambiguous = false
+#minimum-contrast = 100
+#set-title = "auto"
+#default-background-color = "auto"
+#default-foreground-color = "auto"
+#columns = 80
+#lines = 24
+#pixels-per-column = 9
+#pixels-per-line = 18
+#force-columns = false
+#force-lines = false
+#force-pixels-per-column = false
+#force-pixels-per-line = false
+
+# Omnirules are used for automatic rewriting of the URL bar.
+# They are useful for search engines:
+
+#[omnirule.ddg]
+#match = '^ddg:'
+#substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+
+#[omnirule.br]
+#match = '^br:'
+#substitute-url = 'x => "https://search.brave.com/search?q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+
+#[omnirule.wk]
+#match = '^wk:'
+#substitute-url = '''
+#x => "https://en.wikipedia.org/wiki/Special:Search?search=" +
+#	encodeURIComponent(x.split(":").slice(1).join(":"))
+#'''
+
+#[omnirule.wd]
+#match = '^wd:'
+#substitute-url = '''
+#x => "https://en.wiktionary.org/w/index.php?title=Special:Search&search=" +
+#	encodeURIComponent(x.split(":").slice(1).join(":"))
+#'''
+
+#[omnirule.mo]
+#match = '^mo:'
+#substitute-url = '''
+#x => "https://mojeek.com/search?q=" +
+#	encodeURIComponent(x.split(":").slice(1).join(":"));
+#'''
+
+# Siteconf can be used to override most [buffer] and [network] rules for
+# specific URLs.  Example:
+#
+#[siteconf.wikipedia]
+#url = '^https?://[a-z]+\.wikipedia\.org/wiki/(?!.*useskin=.*)'
+#rewrite-url = 'x => x.searchParams.append("useskin", "vector")'
+#cookie = true
+
+[page]
+# Put pager keybindings here.  Example:
+#'h' = 'cursorLeft'
+#'Down' = 'cursorDown'
+#'M-b' = 'openBookmarks'
+#'g g' = 'gotoLineOrStart'
+
+# JS expressions also work:
+#'SPC Tab' = 'pager.alert("Hello, world!")'
+
+[line]
+# Put line editor keybindings here.  Example:
+#'C-Right' = 'line.nextWord'

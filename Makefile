@@ -332,5 +332,9 @@ test_md:
 test_net: test/net/run
 	(cd test/net && ./run.sh)
 
+.PHONY: test_pager
+test_pager: test/pager/run.sh
+	(cd test/pager && ./run.sh)
+
 .PHONY: test
-test: test_js test_layout test_net test_md
+test: test_js test_layout test_net test_md test_pager

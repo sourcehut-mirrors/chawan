@@ -240,23 +240,20 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   if twtstr.setEnv("CHA_DIR", config.dir).isErr or
       twtstr.setEnv("CHA_DATA_DIR", config.dataDir).isErr:
     die("failed to set env vars")
-  ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml",
-    builtin = true)
+  ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
   let cwd = myposix.getcwd()
   when defined(debug):
     if (let ps = newPosixStream(cwd / "res/config.toml"); ps != nil):
-      ?config.parseConfig(cwd, ps.readAll(), warnings, jsctx, "res/config.toml",
-        builtin = true)
+      ?config.parseConfig(cwd, ps.readAll(), warnings, jsctx, "res/config.toml")
       ps.sclose()
   if ps != nil:
     let src = ps.readAllOrMmap()
     ?config.parseConfig(config.dir, src.toOpenArray(), warnings, jsctx,
-      "config.toml", builtin = false)
+      "config.toml")
     deallocMem(src)
     ps.sclose()
   for opt in ctx.opts:
-    ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", builtin = false,
-      laxnames = true)
+    ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", laxnames = true)
   ?jsctx.initCommands(config)
   string(config.buffer.userStyle) &= ctx.stylesheet
   isCJKAmbiguous = config.display.doubleWidthAmbiguous
