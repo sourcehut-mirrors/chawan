@@ -22,6 +22,11 @@ Additional documentation is embedded at the beginning of each file.
 Please read it. (Note that the Makefile automates the installation
 instructions, so you can skip those.)
 
+### [config.toml](config.toml)
+
+A configuration file template, including the default options (commented out
+so less users are affected if a breaking change happens).
+
 ### [curlhttp.nim](curlhttp.nim)
 
 Old HTTP(S) handler based on libcurl.  This is mainly useful if you want
