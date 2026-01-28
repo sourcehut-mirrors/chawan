@@ -1,59 +1,3 @@
-async function toggleLinkHints() {
-    pager.markPos0();
-    const urls = await pager.showLinkHints();
-    if (urls.length == 0) {
-        pager.alert("No links on page");
-        return false;
-    }
-    const chars = config.input.linkHintChars;
-    function hint(n) {
-        let tmp = [];
-        for (n--; n >= 0; n = Math.floor(n / chars.length) - 1)
-            tmp.push(chars[n % chars.length]);
-        return tmp.reverse().join("");
-    }
-    const map = {};
-    let offset = Math.floor((urls.length + chars.length - 2) / (chars.length - 1));
-    for (let i = 0, j = offset; i < urls.length; i++, j++) {
-        let h = hint(j);
-        let it = map;
-        for (let k = 0, L = h.length - 1; k < L; k++)
-            it = it[h[k]] ?? (it[h[k]] = {});
-        urls[i].leaf = true;
-        it[h.at(-1)] = urls[i];
-    }
-    let s = "";
-    let it = map;
-    let alert = true;
-    while (it && !it.leaf) {
-        const c = await pager.askChar(s);
-        if (c == '\b' || c == '\x7f') {
-            if (s.length == 0) {
-                alert = false;
-                break;
-            }
-            s = s.substring(0, s.length - 1);
-            it = map;
-            for (const c2 of s)
-                it = it[c2];
-        } else if (c == '\x03') {
-            alert = false;
-            break;
-        } else {
-            it = it[c];
-            s += c;
-        }
-    }
-    pager.hideLinkHints();
-    if (it?.leaf) {
-        pager.setCursorXY(it.x, it.y);
-        pager.markPos();
-        return true;
-    } else if (alert)
-        pager.alert("No such hint");
-    return false;
-}
-
 globalThis.cmd = {
     quit: quit,
     suspend: suspend,
@@ -139,9 +83,9 @@ globalThis.cmd = {
             console.hide();
     },
     showFullAlert: () => pager.showFullAlert(),
-    toggleLinkHints: toggleLinkHints,
+    toggleLinkHints: () => pager.toggleLinkHints(),
     toggleLinkHintsAutoClick: async () => {
-        const res = await toggleLinkHints();
+        const res = await pager.toggleLinkHints();
         if (res)
             pager.click();
     },
@@ -584,12 +528,71 @@ Pager.prototype.gotoLine = async function(n) {
         else
             n = parseInt(n) - 1;
         if (isNaN(n)) {
-            pager.alert("invalid line number");
+            this.alert("invalid line number");
             return;
         }
     }
+    this.markPos0();
     target.setCursorY(n);
+    this.markPos();
 }
+
+Pager.prototype.toggleLinkHints = async function() {
+    this.markPos0();
+    const urls = await this.showLinkHints();
+    if (urls.length == 0) {
+        this.alert("No links on page");
+        return false;
+    }
+    const chars = config.input.linkHintChars;
+    function hint(n) {
+        let tmp = [];
+        for (n--; n >= 0; n = Math.floor(n / chars.length) - 1)
+            tmp.push(chars[n % chars.length]);
+        return tmp.reverse().join("");
+    }
+    const map = {};
+    let offset = Math.floor((urls.length + chars.length - 2) / (chars.length - 1));
+    for (let i = 0, j = offset; i < urls.length; i++, j++) {
+        let h = hint(j);
+        let it = map;
+        for (let k = 0, L = h.length - 1; k < L; k++)
+            it = it[h[k]] ??= {};
+        urls[i].leaf = true;
+        it[h.at(-1)] = urls[i];
+    }
+    let s = "";
+    let it = map;
+    let alert = true;
+    while (it && !it.leaf) {
+        const c = await this.askChar(s);
+        if (c == '\b' || c == '\x7f') {
+            if (s.length == 0) {
+                alert = false;
+                break;
+            }
+            s = s.substring(0, s.length - 1);
+            it = map;
+            for (const c2 of s)
+                it = it[c2];
+        } else if (c == '\x03') {
+            alert = false;
+            break;
+        } else {
+            it = it[c];
+            s += c;
+        }
+    }
+    this.hideLinkHints();
+    if (it?.leaf) {
+        this.setCursorXY(it.x, it.y);
+        this.markPos();
+        return true;
+    } else if (alert)
+        this.alert("No such hint");
+    return false;
+}
+
 
 /*
  * Buffer
