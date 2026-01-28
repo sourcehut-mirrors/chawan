@@ -1393,7 +1393,7 @@ proc submitForm(container: Container) {.jsfunc.} =
 
 proc contextMenu*(container: Container): Promise[bool] {.jsfunc.} =
   if container.iface == nil:
-    return
+    return newResolvedPromise(false)
   return container.iface.contextMenu(container.cursorx, container.cursory)
 
 proc saveLink*(container: Container) {.jsfunc.} =
