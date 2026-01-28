@@ -1438,7 +1438,7 @@ proc newConfig*(ctx: JSContext): Config =
       maxNetConnections: 12,
       prependScheme: "https://",
       defaultHeaders: newHeaders(hgRequest, {
-        "UserAgent": "chawan",
+        "User-Agent": "chawan",
         "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
         "Accept-Encoding": "gzip, deflate, br",
         "Accept-Language": "en;q=1.0",
