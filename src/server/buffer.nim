@@ -1836,32 +1836,28 @@ proc markURL*(bc: BufferContext; handle: PagerHandle; schemes: seq[string])
   var stack = @[bc.document.body]
   while stack.len > 0:
     let element = stack.pop()
-    var toRemove = newSeq[Node]()
     var texts = newSeq[Text]()
-    var stackNext = newSeq[HTMLElement]()
     var lastText: Text = nil
-    for node in element.childList:
+    for node in element.safeChildList:
       if node of Text:
         let text = Text(node)
         if lastText != nil:
           lastText.data &= text.data.s
-          toRemove.add(text)
+          text.remove()
         else:
           texts.add(text)
           lastText = text
       elif node of HTMLElement:
         let element = HTMLElement(node)
         if element.tagType in {TAG_NOBR, TAG_WBR}:
-          toRemove.add(node)
+          element.remove()
         elif element.tagType notin {TAG_HEAD, TAG_SCRIPT, TAG_STYLE, TAG_A}:
-          stackNext.add(element)
+          stack.add(element)
           lastText = nil
         else:
           lastText = nil
       else:
         lastText = nil
-    for it in toRemove:
-      it.remove()
     for text in texts:
       var data = ""
       var j = 0
@@ -1898,7 +1894,6 @@ proc markURL*(bc: BufferContext; handle: PagerHandle; schemes: seq[string])
           inc j
         let replacement = html.fragmentParsingAlgorithm(data)
         discard element.replace(text, replacement)
-    stack.add(stackNext)
   bc.maybeReshape()
 
 proc toggleImages*(bc: BufferContext; handle: PagerHandle): bool {.

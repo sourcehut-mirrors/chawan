@@ -1032,6 +1032,16 @@ iterator childList*(node: ParentNode): Node {.inline.} =
       if it.internalNext == nil:
         break # it is ownerDocument
 
+iterator safeChildList*(node: ParentNode): Node {.inline.} =
+  var it = node.firstChild
+  if it != nil:
+    while true:
+      let next = it.internalNext
+      yield it
+      it = next
+      if it.internalNext == nil:
+        break # it is ownerDocument
+
 iterator rchildList*(node: ParentNode): Node {.inline.} =
   let first = node.firstChild
   if first != nil:
