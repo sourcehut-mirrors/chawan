@@ -137,19 +137,24 @@ type
   UpdateStatusState = enum
     ussNone, ussUpdate, ussSkip
 
+  JSMap = object
+    # workaround for the annoying warnings (too lazy to fix them)
+    pager: JSValue
+    handleInput: JSValue
+
   Pager* = ref object of RootObj
     blockTillRelease: bool
     commandMode {.jsgetset.}: bool
     hasload: bool # has a page been successfully loaded since startup?
     inEval: bool
-    notnum: bool # has a non-numeric character been input already?
     dumpConsoleFile: bool
     feedNext*: bool
     updateStatus: UpdateStatusState
     consoleCacheId: int
     consoleFile: string
     alertState: PagerAlertState
-    precnum: int32 # current number prefix (when vi-numeric-prefix is true)
+    # current number prefix (when vi-numeric-prefix is true)
+    precnum {.jsgetset.}: int32
     alerts: seq[string]
     askCursor: int
     askPromise*: Promise[string]
@@ -184,6 +189,7 @@ type
     unreg: seq[Container]
     attrs: WindowAttributes
     pidMap: Table[int, string] # pid -> command
+    jsmap: JSMap
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -215,7 +221,6 @@ proc cloned(pager: Pager; container: Container; stream: SocketStream)
 proc deleteContainer(pager: Pager; container, setTarget: Container)
 proc dumpBuffers(pager: Pager)
 proc evalJS(pager: Pager; val: JSValue): JSValue
-proc fulfillAsk(pager: Pager; s: string)
 proc getHist(pager: Pager; mode: LineMode): History
 proc handleEvents(pager: Pager)
 proc handleRead(pager: Pager; fd: int): Opt[void]
@@ -511,6 +516,13 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     console: console,
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
+  pager.jsmap = JSMap(
+    pager: ctx.toJS(pager),
+    handleInput: ctx.eval("Pager.prototype.handleInput", "<init>",
+      JS_EVAL_TYPE_GLOBAL)
+  )
+  doAssert not JS_IsException(pager.jsmap.pager) and
+    not JS_IsException(pager.jsmap.handleInput)
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(rt, interruptHandler, nil)
@@ -571,6 +583,8 @@ proc cleanup(pager: Pager) =
   ctx.freeValues(pager.config.line)
   ctx.freeValues(pager.config.page)
   ctx.freeValues(pager.config.jsvfns)
+  for val in pager.jsmap.fields:
+    JS_FreeValue(ctx, val)
   if pager.lineedit != nil and pager.lineedit.data of LineDataScript:
     #TODO maybe put this somewhere else
     let data = LineDataScript(pager.lineedit.data)
@@ -628,7 +642,7 @@ proc evalJS(pager: Pager; val: JSValue): JSValue =
 
 # Warning: this is not re-entrant.
 proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
-    EmptyPromise =
+    JSValue =
   let wasInEval = pager.evalJSStart()
   let ctx = pager.jsctx
   var val = val
@@ -646,41 +660,60 @@ proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
       JS_FreeValue(ctx, arg0)
     else: # no precnum
       val = ctx.callFree(val, JS_UNDEFINED)
-  var p: EmptyPromise = nil
+  pager.evalJSEnd(wasInEval)
+  return val
+
+#TODO this overload shouldn't exist
+proc evalAction(pager: Pager; action: string; arg0: int32) =
+  let ctx = pager.jsctx
+  var val = ctx.eval("cmd." & action, "<command>", JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(val):
     pager.console.writeException(ctx)
-  elif JS_IsObject(val):
-    var maybep: EmptyPromise
-    if ctx.fromJS(val, maybep).isOk:
-      p = maybep
+    return
+  let wasInEval = pager.evalJSStart()
+  if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
+    val = ctx.evalFunction(val)
+  # If an action evaluates to a function that function is evaluated too.
+  if JS_IsFunction(ctx, val):
+    if arg0 != 0:
+      let arg0 = ctx.toJS(arg0)
+      val = ctx.callFree(val, JS_UNDEFINED, arg0)
+      JS_FreeValue(ctx, arg0)
+    else: # no precnum
+      val = ctx.callFree(val, JS_UNDEFINED)
+  if JS_IsException(val):
+    pager.console.writeException(ctx)
   JS_FreeValue(ctx, val)
   pager.evalJSEnd(wasInEval)
-  return p
 
-proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
-  let ctx = pager.jsctx
-  let val = ctx.eval("cmd." & action, "<command>", JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(val):
-    pager.console.writeException(pager.jsctx)
-    return nil
-  var dummy = JS_UNDEFINED
-  let p = pager.evalAction(val, arg0, dummy)
-  JS_FreeValue(ctx, dummy)
-  p
+proc writeInputBuffer(pager: Pager) {.jsfunc.} =
+  if pager.lineedit != nil:
+    pager.lineedit.write(pager.inputBuffer)
+    pager.inputBuffer.setLen(0)
+    pager.updateReadLine()
 
-proc evalInputAction(pager: Pager; map: ActionMap; arg0: int32):
-    tuple[found: bool; p: EmptyPromise] =
-  let ctx = pager.jsctx
+proc evalInputAction(ctx: JSContext; pager: Pager; map: ActionMap; arg0: int32):
+    JSValue {.jsfunc.} =
   let val = map.advance(pager.inputBuffer)
   if JS_IsUndefined(val):
-    return (false, nil)
+    if map.keyLast != 0:
+      return JS_UNDEFINED
+    if JS_IsUndefined(map.defaultAction):
+      pager.inputBuffer.setLen(0)
+      return JS_UNDEFINED
+    let res = pager.evalAction(JS_DupValue(ctx, map.defaultAction), arg0,
+      map.defaultAction)
+    pager.inputBuffer.setLen(0)
+    return res
   # note: this may replace val inside the ActionMap
-  let p = pager.evalAction(JS_DupValue(ctx, val), arg0, map.mgetValue())
+  let res = pager.evalAction(JS_DupValue(ctx, val), arg0, map.mgetValue())
   ctx.feedNext(map, pager.feedNext, pager.inputBuffer)
   pager.feedNext = false
-  return (true, p)
+  if map.keyLast == 0:
+    pager.inputBuffer.setLen(0)
+  return res
 
-proc queueStatusUpdate(pager: Pager) =
+proc queueStatusUpdate(pager: Pager) {.jsfunc.} =
   if pager.updateStatus == ussNone:
     pager.updateStatus = ussUpdate
 
@@ -710,45 +743,44 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
       if pager.mouse.inSelection:
         pager.mouse.inSelection = false
       elif input.pos.y == pager.attrs.height - 1 and pressed == input.pos:
-        discard pager.evalAction("load", 0)
+        pager.evalAction("load", 0)
       elif input.pos.y >= pager.attrs.height - 2 and pressed.y == input.pos.y:
         let dcol = input.pos.x - pressed.x
         if dcol <= -2:
-          discard pager.evalAction("nextBuffer", 0)
+          pager.evalAction("nextBuffer", 0)
         elif dcol >= 2:
-          discard pager.evalAction("prevBuffer", 0)
+          pager.evalAction("prevBuffer", 0)
       elif pressed != (-1i32, -1i32):
         let dcol = input.pos.x - pressed.x
         let drow = input.pos.y - pressed.y
         if dcol > 0:
-          discard pager.evalAction("scrollLeft", dcol)
+          pager.evalAction("scrollLeft", dcol)
         elif dcol < 0:
-          discard pager.evalAction("scrollRight", -dcol)
+          pager.evalAction("scrollRight", -dcol)
         if drow > 0:
-          discard pager.evalAction("scrollUp", drow)
+          pager.evalAction("scrollUp", drow)
         elif drow < 0:
-          discard pager.evalAction("scrollDown", -drow)
+          pager.evalAction("scrollDown", -drow)
   of mibRight:
     if input.t == mitRelease and pressed == input.pos and
         input.pos.y == pager.attrs.height - 1:
-      discard pager.evalAction("loadCursor", 0)
+      pager.evalAction("loadCursor", 0)
   of mibMiddle:
     if input.t == mitRelease and pressed == input.pos and
         input.pos.y == pager.attrs.height - 1:
-      discard pager.evalAction("loadEmpty", 0)
+      pager.evalAction("loadEmpty", 0)
   of mibWheelUp:
     if input.t == mitPress:
-      discard pager.evalAction("scrollUp", pager.config.input.wheelScroll)
+      pager.evalAction("scrollUp", pager.config.input.wheelScroll)
   of mibWheelDown:
     if input.t == mitPress:
-      discard pager.evalAction("scrollDown", pager.config.input.wheelScroll)
+      pager.evalAction("scrollDown", pager.config.input.wheelScroll)
   of mibWheelLeft:
     if input.t == mitPress:
-      discard pager.evalAction("scrollLeft", pager.config.input.sideWheelScroll)
+      pager.evalAction("scrollLeft", pager.config.input.sideWheelScroll)
   of mibWheelRight:
     if input.t == mitPress:
-      discard pager.evalAction("scrollRight",
-        pager.config.input.sideWheelScroll)
+      pager.evalAction("scrollRight", pager.config.input.sideWheelScroll)
   else: discard
   case input.t
   of mitPress:
@@ -783,7 +815,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
         let prevy = container.cursory
         container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
         if prevx == container.cursorx and prevy == container.cursory:
-          discard pager.evalAction("click", int32(pager.mouse.click[button]))
+          pager.evalAction("click", int32(pager.mouse.click[button]))
       pager.mouse.moveType = mmtNone
     of mitPress:
       if pager.hasMouseSelection():
@@ -807,7 +839,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
   of mibMiddle:
     if input.t == mitRelease and input.pos == pressed and
         input.pos.y < pager.attrs.height - 1:
-      discard pager.evalAction("discardBuffer", 0)
+      pager.evalAction("discardBuffer", 0)
   of mibRight:
     if input.t == mitPress and input.pos.y < pager.attrs.height - 1:
       # w3m uses release, but I like press better
@@ -823,10 +855,10 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
         pager.menu.unselect()
   of mibThumbInner:
     if input.t == mitPress:
-      discard pager.evalAction("prevBuffer", 0)
+      pager.evalAction("prevBuffer", 0)
   of mibThumbTip:
     if input.t == mitPress:
-      discard pager.evalAction("nextBuffer", 0)
+      pager.evalAction("nextBuffer", 0)
   else: discard
 
 proc handleMouseInput(pager: Pager; input: MouseInput; select: Select) =
@@ -893,57 +925,19 @@ proc handleMouseInput(pager: Pager; input: MouseInput) =
 
 # The maximum number we are willing to accept.
 # This should be fine for 32-bit signed ints (which precnum currently is).
-# We can always increase it further (e.g. by switching to uint32, uint64...) if
-# it proves to be too low.
 const MaxPrecNum = 100000000
 
-proc handleAskInput(pager: Pager) =
-  pager.fulfillAsk(pager.inputBuffer)
-  pager.inputBuffer = ""
-  pager.queueStatusUpdate()
-  pager.handleEvents()
-
-proc handleLineInput(pager: Pager; paste: bool) =
-  let edit = pager.lineedit
-  if edit.escNext:
-    edit.escNext = false
-    edit.write(move(pager.inputBuffer))
-  else:
-    let (found, _) = pager.evalInputAction(pager.config.line, 0)
-    if pager.config.line.keyLast == 0:
-      if not found:
-        edit.write(move(pager.inputBuffer))
-      pager.updateReadLine()
-      pager.inputBuffer = ""
-
-proc handleCommandInput(pager: Pager; paste: bool) =
-  if paste:
-    pager.setLineEdit2(lmLocation, "Location: ", move(pager.inputBuffer))
-  else:
-    if pager.config.input.viNumericPrefix and not pager.notnum:
-      let c = pager.inputBuffer[0]
-      if pager.precnum != 0 and c == '0' or c in '1'..'9':
-        if pager.precnum < MaxPrecNum: # better ignore than eval...
-          pager.precnum *= 10
-          pager.precnum += int32(decValue(c))
-        pager.inputBuffer = ""
-        pager.queueStatusUpdate()
-        return
-      else:
-        pager.notnum = true
-    let (_, p) = pager.evalInputAction(pager.config.page, pager.precnum)
-    if pager.config.page.keyLast == 0:
-      pager.inputBuffer = ""
-      pager.precnum = 0
-      pager.notnum = false
-      if p != nil:
-        p.then(proc() =
-          pager.queueStatusUpdate()
-          pager.handleEvents()
-        )
-    if p == nil:
-      pager.queueStatusUpdate()
-      pager.handleEvents()
+proc updateNumericPrefix(pager: Pager): bool {.jsfunc.} =
+  if pager.config.input.viNumericPrefix and pager.precnum >= 0:
+    let c = pager.inputBuffer[0]
+    if pager.precnum != 0 and c == '0' or c in '1'..'9':
+      if pager.precnum < MaxPrecNum: # better ignore than eval...
+        pager.precnum *= 10
+        pager.precnum += int32(decValue(c))
+      pager.inputBuffer.setLen(0)
+      return true
+    pager.precnum = -1
+  false
 
 proc handleUserInput(pager: Pager): Opt[void] =
   if not ?pager.term.ahandleRead():
@@ -955,13 +949,17 @@ proc handleUserInput(pager: Pager): Opt[void] =
     of ietWindowChange: pager.windowChange()
     of ietRedraw: pager.redraw()
     of ietKeyEnd, ietPaste:
+      let wasInEval = pager.evalJSStart()
+      let ctx = pager.jsctx
       let paste = e.t == ietPaste
-      if pager.askPromise != nil:
-        pager.handleAskInput()
-      elif pager.lineedit != nil:
-        pager.handleLineInput(paste)
-      else:
-        pager.handleCommandInput(paste)
+      let arg0 = ctx.toJS(paste)
+      let res = ctx.call(pager.jsmap.handleInput, pager.jsmap.pager, arg0)
+      JS_FreeValue(ctx, arg0)
+      let ex = JS_IsException(res)
+      JS_FreeValue(ctx, res)
+      pager.evalJSEnd(wasInEval)
+      if ex:
+        pager.console.writeException(ctx)
   ok()
 
 proc runStartupScript(pager: Pager) =
@@ -1076,7 +1074,7 @@ proc refreshStatusMsg(pager: Pager) =
   if container == nil: return
   if pager.askPromise != nil:
     return
-  if pager.precnum != 0:
+  if pager.precnum > 0:
     discard pager.status.writeStatusMessage($pager.precnum & pager.inputBuffer)
   elif pager.inputBuffer != "":
     discard pager.status.writeStatusMessage(pager.inputBuffer)
@@ -1139,7 +1137,7 @@ proc refreshStatusMsg(pager: Pager) =
 proc showAlerts(pager: Pager) =
   if (pager.alertState == pasNormal or
       pager.alertState == pasLoadInfo and pager.alerts.len > 0) and
-      pager.inputBuffer == "" and pager.precnum == 0:
+      pager.inputBuffer == "" and pager.precnum <= 0:
     pager.queueStatusUpdate()
 
 proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
@@ -1557,11 +1555,15 @@ proc ask(pager: Pager; prompt0: string): Promise[bool] {.jsfunc.} =
     return pager.ask(prompt0)
   )
 
-proc fulfillAsk(pager: Pager; s: string) =
-  let p = pager.askPromise
-  pager.askPromise = nil
-  pager.askPrompt = ""
-  p.resolve(s)
+proc fulfillAsk(pager: Pager): bool {.jsfunc.} =
+  if pager.askPromise != nil:
+    let inputBuffer = move(pager.inputBuffer)
+    let p = pager.askPromise
+    pager.askPromise = nil
+    pager.askPrompt = ""
+    p.resolve(inputBuffer)
+    return true
+  return false
 
 proc setTab(pager: Pager; container: Container; tab: Tab) =
   let removed = container.setTab(tab)
@@ -2457,7 +2459,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
           data.stream.sclose()
     )
 
-proc updateReadLine(pager: Pager) =
+proc updateReadLine(pager: Pager) {.jsfunc.} =
   let line = pager.lineedit
   let ctx = pager.jsctx
   case line.state
@@ -2480,7 +2482,6 @@ proc updateReadLine(pager: Pager) =
       if JS_IsException(res):
         pager.console.writeException(ctx)
       JS_FreeValue(ctx, res)
-    of lmLocation: pager.loadURL(line.news)
     of lmUsername:
       LineDataAuth(line.data).url.username = line.news
       pager.setLineEdit2(lmPassword, "Password: ", hide = true)
@@ -3375,7 +3376,7 @@ proc menuFinish(opaque: RootRef; select: Select) =
   let pager = Pager(opaque)
   pager.menu = nil
   if select.selected != -1:
-    discard pager.evalAction(MenuMap[select.selected][1], 0)
+    pager.evalAction(MenuMap[select.selected][1], 0)
   if pager.container != nil:
     pager.container.queueDraw()
 
@@ -3505,7 +3506,7 @@ proc handleEvents(pager: Pager; container: Container) =
   while (let event = container.popEvent(); event != nil):
     pager.handleEvent0(container, event)
 
-proc handleEvents(pager: Pager) =
+proc handleEvents(pager: Pager) {.jsfunc.} =
   if pager.container != nil:
     pager.handleEvents(pager.container)
 

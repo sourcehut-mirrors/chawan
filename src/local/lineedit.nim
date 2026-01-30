@@ -37,7 +37,7 @@ type
     luctx: LUContext
     redraw*: bool
     skipLast: bool
-    escNext*: bool
+    escNext {.jsgetset.}: bool
     hide: bool
     data*: LineData
 
@@ -130,15 +130,6 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
 proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.cursorx + edit.padding - edit.shiftx
 
-proc insertCharseq(edit: LineEdit; s: string) =
-  edit.escNext = false
-  if s.len == 0:
-    return
-  edit.news.insert(s, edit.cursori)
-  edit.cursori += s.len
-  edit.cursorx += edit.width(s)
-  edit.redraw = true
-
 proc cancel(edit: LineEdit) {.jsfunc.} =
   edit.state = lesCancel
 
@@ -156,14 +147,20 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     edit.redraw = true
  
 proc write*(edit: LineEdit; s: string) =
-  edit.insertCharseq(s)
+  edit.escNext = false
+  if s.len == 0:
+    return
+  edit.news.insert(s, edit.cursori)
+  edit.cursori += s.len
+  edit.cursorx += edit.width(s)
+  edit.redraw = true
 
 proc write(ctx: JSContext; edit: LineEdit; s: string): JSValue {.jsfunc.} =
   if s.validateUTF8Surr() != -1:
     # Note: pretty sure this is dead code, as QJS converts surrogates to
     # replacement chars.
     return JS_ThrowTypeError(ctx, "string contains surrogate codepoints")
-  edit.insertCharseq(s)
+  edit.write(s)
   return JS_UNDEFINED
 
 proc delete(edit: LineEdit) {.jsfunc.} =

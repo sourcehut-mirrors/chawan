@@ -57,9 +57,10 @@ type
     val: JSValue
 
   ActionMap* = ref object
+    defaultAction*: JSValue
     t*: seq[Action]
     keyIdx: int
-    keyLast*: int
+    keyLast* {.jsget.}: int
     num: uint32
 
   FormRequestType* = enum
@@ -317,8 +318,18 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   warnings: var seq[string]; jsctx: JSContext; name: string; laxnames = false):
   Err[string]
 
-proc newActionMap(ctx: JSContext; s: string): ActionMap =
-  let map = ActionMap()
+proc finalize(map: ActionMap) {.jsfin.} =
+  discard
+
+proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
+  JS_MarkValue(rt, map.defaultAction, markFunc)
+  for it in map.t:
+    JS_MarkValue(rt, it.val, markFunc)
+
+proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
+  let map = ActionMap(defaultAction: JS_UNDEFINED)
+  if defaultAction != "":
+    map.defaultAction = ctx.evalCmdDecl(defaultAction)
   var dummy: seq[string]
   for it in s.split('\n'):
     var i = 0
@@ -629,7 +640,7 @@ proc find(a: ActionMap; s: string): int =
 proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue {.jsgetownprop.} =
   let i = a.find(s)
   if i == -1:
-    return JS_UNDEFINED
+    return JS_UNINITIALIZED
   return JS_DupValue(ctx, a.t[i].val)
 
 proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
@@ -691,6 +702,7 @@ proc jsLinkHintChars(ctx: JSContext; input: InputConfig): JSValue
   return JS_EXCEPTION
 
 proc freeValues*(ctx: JSContext; map: ActionMap) =
+  JS_FreeValue(ctx, map.defaultAction)
   for it in map.t:
     JS_FreeValue(ctx, it.val)
 
@@ -1414,8 +1426,8 @@ C-Right line.nextWord
 proc newConfig*(ctx: JSContext): Config =
   Config(
     arraySeen: newTable[string, int](),
-    page: newActionMap(ctx, PageCommands),
-    line: newActionMap(ctx, LineCommands),
+    page: newActionMap(ctx, PageCommands, ""),
+    line: newActionMap(ctx, LineCommands, "writeInputBuffer"),
     start: StartConfig(
       visualHome: "about:chawan",
       consoleBuffer: true

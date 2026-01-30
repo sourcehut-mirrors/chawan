@@ -243,6 +243,7 @@ globalThis.cmd = {
     },
     cursorNthLink: n => pager.cursorNthLink(n),
     cursorRevNthLink: n => pager.cursorRevNthLink(n),
+    writeInputBuffer: () => pager.writeInputBuffer(),
     line: {
         submit: () => line.submit(),
         backspace: () => line.backspace(),
@@ -593,6 +594,41 @@ Pager.prototype.toggleLinkHints = async function() {
     return false;
 }
 
+Pager.prototype.handleInput = async function(paste) {
+    const line = globalThis.line;
+    if (this.fulfillAsk()) {
+        this.queueStatusUpdate();
+    } else if (line != null) {
+        if (paste || line.escNext) {
+            line.escNext = false;
+            this.writeInputBuffer();
+        } else {
+            const map = config.line;
+            const p = this.evalInputAction(map, 0);
+            if (map.keyLast == 0) {
+                await p;
+                this.updateReadLine();
+            }
+        }
+    } else if (paste) {
+        const p = this.setLineEdit("location", "URL: ");
+        this.writeInputBuffer();
+        const res = await p;
+        if (res)
+            this.loadSubmit(res);
+    } else if (this.updateNumericPrefix()) {
+        this.queueStatusUpdate();
+    } else {
+        const map = config.page;
+        const p = this.evalInputAction(map, Math.max(this.precnum, 0));
+        if (map.keyLast == 0) {
+            this.precnum = 0;
+            await p;
+            this.queueStatusUpdate();
+            this.handleEvents();
+        }
+    }
+}
 
 /*
  * Buffer
