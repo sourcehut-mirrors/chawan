@@ -1584,22 +1584,33 @@ proc parsePseudoSelector(state: var SelectorParser;
   state.skipBlanks()
   if state.nested or state.has() and state.peekTokenType() != cttComma: fail
 
+const CaseInsensitiveAttr = [
+  satAccept, satAcceptCharset, satAlign, satAlink, satAxis, satBgcolor,
+  satCharset, satChecked, satClear, satCodetype, satColor, satCompact,
+  satDeclare, satDefer, satDir, satDirection, satDisabled, satEnctype, satFace,
+  satFrame, satHreflang, satHttpEquiv, satLang, satLanguage, satLink, satMedia,
+  satMethod, satMultiple, satNohref, satNoresize, satNoshade, satNowrap,
+  satReadonly, satRel, satRev, satRules, satScope, satScrolling, satSelected,
+  satShape, satTarget, satText, satType, satValign, satValuetype, satVlink
+]
+
 proc parseAttributeSelector(state: var SelectorParser): Selector =
   state.skipBlanks()
   if not state.has() or state.peekTokenType() == cttRbracket:
     state.skipUntil(cttRbracket)
     fail
-  let attr = state.consume()
-  if attr.t != cttIdent:
+  let attrToken = state.consume()
+  if attrToken.t != cttIdent:
     state.skipUntil(cttRbracket)
     fail
+  let attr = attrToken.s.toAtomLower()
   state.skipBlanks()
   if not state.has(): fail
   let delim = state.consume()
   if delim.t == cttRbracket:
     return Selector(
       t: stAttr,
-      attr: attr.s.toAtomLower(),
+      attr: attr,
       rel: SelectorRelation(t: rtExists)
     )
   let rel = case delim.t
@@ -1627,7 +1638,7 @@ proc parseAttributeSelector(state: var SelectorParser): Selector =
       state.skipUntil(cttRbracket)
     fail
   state.skipBlanks()
-  var flag = rfNone
+  var flag = if attr.toStaticAtom() in CaseInsensitiveAttr: rfNone else: rfS
   if state.has() and state.peekTokenType() != cttRbracket:
     let delim = state.consume()
     if delim.t != cttIdent:
@@ -1642,7 +1653,7 @@ proc parseAttributeSelector(state: var SelectorParser): Selector =
     fail
   return Selector(
     t: stAttr,
-    attr: attr.s.toAtomLower(),
+    attr: attr,
     value: value.s,
     rel: SelectorRelation(t: rel, flag: flag)
   )

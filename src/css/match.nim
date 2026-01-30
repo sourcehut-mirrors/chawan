@@ -32,57 +32,56 @@ import utils/twtstr
 proc matches(element: Element; cxsel: ComplexSelector;
   depends: var DependencyInfo; ohasDeps: var bool): bool
 
-#TODO rfNone should match insensitively for certain properties
+type CaseSensitivity = enum
+  csI, csS
+
+proc attrCase(sel: Selector; element: Element): CaseSensitivity =
+  case sel.rel.flag
+  of rfNone:
+    if element.namespaceURI == satNamespaceHTML:
+      return csI
+    return csS
+  of rfS: return csS
+  of rfI: return csI
+
 proc matchesAttr(element: Element; sel: Selector): bool =
   case sel.rel.t
   of rtExists: return element.attrb(sel.attr)
   of rtEquals:
-    case sel.rel.flag
-    of rfNone: return element.attr(sel.attr) == sel.value
-    of rfI: return element.attr(sel.attr).equalsIgnoreCase(sel.value)
-    of rfS: return element.attr(sel.attr) == sel.value
+    case sel.attrCase(element)
+    of csI: return element.attr(sel.attr).equalsIgnoreCase(sel.value)
+    of csS: return element.attr(sel.attr) == sel.value
   of rtToken:
     let val = element.attr(sel.attr)
-    case sel.rel.flag
-    of rfNone: return sel.value in val.split(AsciiWhitespace)
-    of rfI:
-      let val = val.toLowerAscii()
+    case sel.attrCase(element)
+    of csI:
       let selval = sel.value.toLowerAscii()
-      return selval in val.split(AsciiWhitespace)
-    of rfS: return sel.value in val.split(AsciiWhitespace)
+      return selval in val.toLowerAscii().split(AsciiWhitespace)
+    of csS: return sel.value in val.split(AsciiWhitespace)
   of rtBeginDash:
     let val = element.attr(sel.attr)
-    case sel.rel.flag
-    of rfNone:
-      return val.startsWith(sel.value) and
-        (val.len <= sel.value.len or val[sel.value.len] == '-')
-    of rfI:
+    case sel.attrCase(element)
+    of csI:
       return val.startsWithIgnoreCase(sel.value) and
         (val.len <= sel.value.len or val[sel.value.len] == '-')
-    of rfS:
+    of csS:
       return val.startsWith(sel.value) and
         (val.len <= sel.value.len or val[sel.value.len] == '-')
   of rtStartsWith:
     let val = element.attr(sel.attr)
-    case sel.rel.flag
-    of rfNone: return val.startsWith(sel.value)
-    of rfI: return val.startsWithIgnoreCase(sel.value)
-    of rfS: return val.startsWith(sel.value)
+    case sel.attrCase(element)
+    of csI: return val.startsWithIgnoreCase(sel.value)
+    of csS: return val.startsWith(sel.value)
   of rtEndsWith:
     let val = element.attr(sel.attr)
-    case sel.rel.flag
-    of rfNone: return val.endsWith(sel.value)
-    of rfI: return val.endsWithIgnoreCase(sel.value)
-    of rfS: return val.endsWith(sel.value)
+    case sel.attrCase(element)
+    of csI: return val.endsWithIgnoreCase(sel.value)
+    of csS: return val.endsWith(sel.value)
   of rtContains:
     let val = element.attr(sel.attr)
-    case sel.rel.flag
-    of rfNone: return val.contains(sel.value)
-    of rfI:
-      let val = val.toLowerAscii()
-      let selval = sel.value.toLowerAscii()
-      return val.contains(selval)
-    of rfS: return val.contains(sel.value)
+    case sel.attrCase(element)
+    of csI: return sel.value.toLowerAscii() in val.toLowerAscii()
+    of csS: return sel.value in val
 
 proc matches(element: Element; slist: SelectorList;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
