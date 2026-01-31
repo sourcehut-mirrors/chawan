@@ -7,8 +7,6 @@
 ##   contents.
 ## * enum is converted to its stringifier's output.
 ## * JSValue is returned as-is, *without* a DupValue operation.
-## * JSError is converted to a new error object corresponding to the error
-##   it represents.
 ## * JSArrayBuffer, JSUint8Array are converted to a JS object without copying
 ##   their contents.
 ## * NarrowString is converted to a JS narrow string (with copying). For more
@@ -32,6 +30,7 @@
 
 {.push raises: [].}
 
+import std/macrocache
 import std/tables
 import std/typetraits
 
@@ -53,7 +52,6 @@ proc toJS*(ctx: JSContext; b: bool): JSValue
 proc toJS*[T](ctx: JSContext; s: seq[T]): JSValue
 proc toJS*[T](ctx: JSContext; s: set[T]): JSValue
 proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue
-proc toJS*[T: enum](ctx: JSContext; e: T): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
 proc toJS*(ctx: JSContext; obj: ref object): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
@@ -230,8 +228,28 @@ proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue =
   let tp = getTypePtr(obj)
   return ctx.toJSP0(p, tp, p, ctor)
 
+proc toJSEnum(ctx: JSContext; enumId: int; n: int; s: string): JSValue =
+  let rt = JS_GetRuntime(ctx)
+  let rtOpaque = rt.getOpaque()
+  if rtOpaque.enumMap.len <= enumId:
+    rtOpaque.enumMap.setLen(enumId + 1)
+  if rtOpaque.enumMap[enumId].len <= n:
+    rtOpaque.enumMap[enumId].setLen(n + 1)
+  var atom = rtOpaque.enumMap[enumId][n]
+  if atom == JS_ATOM_NULL:
+    atom = JS_NewAtomLen(ctx, cstringConst(s), csize_t(s.len))
+    if atom == JS_ATOM_NULL:
+      return JS_EXCEPTION
+    rtOpaque.enumMap[enumId][n] = atom
+  return JS_AtomToValue(ctx, atom)
+
+const EnumCounter = CacheCounter("EnumCounter")
+
 proc toJS*[T: enum](ctx: JSContext; e: T): JSValue =
-  return toJS(ctx, $e)
+  const enumId = EnumCounter.value
+  static:
+    inc EnumCounter
+  ctx.toJSEnum(enumId, int(e), $e)
 
 proc toJS(ctx: JSContext; j: JSValue): JSValue =
   return j

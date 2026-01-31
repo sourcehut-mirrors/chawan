@@ -451,6 +451,3 @@ proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
     return JS_NULL
   return ctx.toJS($atom)
-
-proc toJS*(ctx: JSContext; atom: StaticAtom): JSValue =
-  return ctx.toJS($atom)

@@ -189,6 +189,9 @@ proc free*(rt: JSRuntime) =
   # (But we must *not* collect them yet; wait until the cycles are collected
   # once.)
   let rtOpaque = rt.getOpaque()
+  for map in rtOpaque.enumMap:
+    for val in map:
+      JS_FreeAtomRT(rt, val)
   rtOpaque.tmplist.setLen(rtOpaque.plist.len)
   GC_unref(rtOpaque)
   # For refc: ensure there are no ghost Nim objects holding onto JS

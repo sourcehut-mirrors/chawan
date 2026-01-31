@@ -58,6 +58,7 @@ type
   JSRuntimeOpaque* = ref object
     classes*: seq[JSClassData] # JSClassID -> data
     typemap*: Table[pointer, JSClassID] # getTypePtr -> JSClassID
+    enumMap*: seq[seq[JSAtom]]
     plist*: Table[pointer, pointer] # Nim -> JS
     destroying*: pointer
     # temp list for uninit
