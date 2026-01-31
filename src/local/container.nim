@@ -3,7 +3,6 @@
 import std/options
 import std/posix
 import std/strutils
-import std/tables
 
 import chagashi/charset
 import config/config
@@ -1172,10 +1171,7 @@ proc getSelectionText*(container: Container; hl = none(Highlight)):
 proc markURL(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
-  var schemes = newSeq[string]()
-  for key in container.mainConfig.external.urimethodmap.map.keys:
-    schemes.add(key.until(':'))
-  container.iface.markURL(schemes).then(proc() =
+  container.iface.markURL().then(proc() =
     discard container.sendCursorPosition()
   )
 

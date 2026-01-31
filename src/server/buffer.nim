@@ -131,6 +131,7 @@ type
     htmlParser: HTML5ParserWrapper
     images: seq[PosBitmap]
     linkHintChars: ref seq[uint32]
+    schemes: seq[string]
     lines: FlexibleGrid
     loader: FileLoader
     navigateUrl: URL # stored when JS tries to navigate
@@ -1818,12 +1819,11 @@ proc onReshape*(bc: BufferContext; handle: PagerHandle) {.proxy: pfTask.} =
   assert handle.tasks[bcOnReshape] == 0
   bc.savetask = true
 
-proc markURL*(bc: BufferContext; handle: PagerHandle; schemes: seq[string])
-    {.proxy.} =
+proc markURL*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.document == nil or bc.document.body == nil:
     return
   var buf = "("
-  for i, scheme in schemes:
+  for i, scheme in bc.schemes.mypairs:
     if i > 0:
       buf &= '|'
     buf &= scheme
@@ -2110,7 +2110,8 @@ proc cleanup(bc: BufferContext) =
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
     pstream, istream: SocketStream; urandom: PosixStream; cacheId: int;
-    contentType: string; linkHintChars: sink seq[uint32]) =
+    contentType: string; linkHintChars: sink seq[uint32];
+    schemes: sink seq[string]) =
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
   else:
@@ -2124,7 +2125,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     charsetStack: charsetStack,
     cacheId: cacheId,
     outputId: -1,
-    luctx: LUContext()
+    luctx: LUContext(),
+    schemes: schemes
   )
   bc.linkHintChars = new(seq[uint32])
   bc.linkHintChars[] = linkHintChars

@@ -35,6 +35,7 @@ type
     loaderStream: SocketStream
     pollData: PollData
     linkHintChars: seq[uint32]
+    schemes: seq[string]
 
 proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.stream.withPacketWriter w:
@@ -153,7 +154,8 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
     discard signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox()
     launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
-      istream, urandom, cacheId, contentType, move(ctx.linkHintChars))
+      istream, urandom, cacheId, contentType, move(ctx.linkHintChars),
+      move(ctx.schemes))
     doAssert false
   discard close(fd)
   return pid
@@ -242,6 +244,8 @@ proc runForkServer*(controlStream, loaderStream: SocketStream) =
     # for CGI
     if setupForkServerEnv(config).isErr:
       quit(1)
+    for key in config.uriMethodMap.map.keys:
+      ctx.schemes.add(key.until(':'))
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader
     var (pid, loaderStream) = ctx.forkLoader(config, loaderStream)
