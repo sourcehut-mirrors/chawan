@@ -231,15 +231,17 @@ proc parse(ctx: var ParamParseContext) =
 
 const defaultConfig = staticRead"res/config.toml"
 
-proc initConfig(ctx: ParamParseContext; config: Config;
-    warnings: var seq[string]; jsctx: JSContext): Err[string] =
-  let ps = openConfig(config.dir, config.dataDir, ctx.configPath, warnings)
+proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
+    jsctx: JSContext): Result[Config, string] =
+  var dir, dataDir: string
+  let ps = openConfig(dir, dataDir, ctx.configPath, warnings)
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("failed to open config file " & ctx.configPath.get)
-  if twtstr.setEnv("CHA_DIR", config.dir).isErr or
-      twtstr.setEnv("CHA_DATA_DIR", config.dataDir).isErr:
+  if twtstr.setEnv("CHA_DIR", dir).isErr or
+      twtstr.setEnv("CHA_DATA_DIR", dataDir).isErr:
     die("failed to set env vars")
+  let config = newConfig(jsctx, dir, dataDir)
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
   let cwd = myposix.getcwd()
   when defined(debug):
@@ -257,7 +259,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   ?jsctx.initCommands(config)
   string(config.buffer.userStyle) &= ctx.stylesheet
   isCJKAmbiguous = config.display.doubleWidthAmbiguous
-  return ok()
+  ok(config)
 
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
@@ -465,9 +467,10 @@ proc main() =
   let client = newClient(forkserver, loader, jsctx, urandom)
   jsctx.setupStartupScript("init.jsb")
   var warnings = newSeq[string]()
-  let config = newConfig(jsctx)
-  if (let res = ctx.initConfig(config, warnings, jsctx); res.isErr):
-    die(res.error)
+  let cres = ctx.initConfig(warnings, jsctx)
+  if cres.isErr:
+    die(cres.error)
+  let config = cres.get
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
   if ctx.pages.len == 0 and ps.isatty():

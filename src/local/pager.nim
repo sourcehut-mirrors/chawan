@@ -175,6 +175,9 @@ type
     attrs: WindowAttributes
     pidMap: Table[int, string] # pid -> command
     jsmap: JSMap
+    autoMailcap: Mailcap
+    mailcap: Mailcap
+    mimeTypes: MimeTypes
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -480,6 +483,19 @@ proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
   return js_strdup(ctx, name)
 
+proc loadMailcap(pager: Pager; mailcap: var Mailcap; path: ChaPathResolved) =
+  let ps = newPosixStream($path)
+  if ps != nil:
+    let src = ps.readAllOrMmap()
+    let res = mailcap.parseMailcap(src.toOpenArray(), $path)
+    deallocMem(src)
+    ps.sclose()
+    if res.isErr:
+      pager.alert(res.error)
+
+const DefaultMailcap = staticRead"res/mailcap"
+const DefaultAutoMailcap = staticRead"res/auto.mailcap"
+
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int;
     console: Console): Pager =
@@ -501,19 +517,13 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     console: console,
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
-  let jsPager = ctx.toJS(pager)
-  doAssert not JS_IsException(jsPager)
-  let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
-  doAssert not JS_IsException(jsInit)
-  let res = ctx.callFree(jsInit, jsPager)
-  doAssert not JS_IsException(res)
-  JS_FreeValue(ctx, res)
   pager.jsmap = JSMap(
-    pager: jsPager,
+    pager: ctx.toJS(pager),
     handleInput: ctx.eval("Pager.prototype.handleInput", "<init>",
       JS_EVAL_TYPE_GLOBAL)
   )
-  doAssert not JS_IsException(pager.jsmap.handleInput)
+  doAssert not JS_IsException(pager.jsmap.pager) and
+    not JS_IsException(pager.jsmap.handleInput)
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(rt, interruptHandler, nil)
@@ -532,6 +542,18 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
       if pager.cookieJars.parse(ps, pager.alerts).isErr:
         pager.cookieJars.transient = true
         pager.alert("failed to read cookies")
+  pager.loadMailcap(pager.autoMailcap, config.external.autoMailcap)
+  doAssert pager.autoMailcap.parseMailcap(DefaultAutoMailcap,
+    "res/auto.mailcap").isOk
+  for p in config.external.mailcap:
+    pager.loadMailcap(pager.mailcap, p)
+  doAssert pager.mailcap.parseMailcap(DefaultMailcap, "res/mailcap").isOk
+  for p in config.external.mimeTypes:
+    if f := chafile.fopen($p, "r"):
+      let res = pager.mimeTypes.parseMimeTypes(f, DefaultImages)
+      f.close()
+      if res.isErr:
+        pager.alert("error reading file " & $p)
   return pager
 
 proc makeDataDir(pager: Pager) =
@@ -573,7 +595,8 @@ proc cleanup(pager: Pager) =
   let ctx = pager.jsctx
   ctx.freeValues(pager.config.line)
   ctx.freeValues(pager.config.page)
-  ctx.freeValues(pager.config.jsvfns)
+  ctx.freeValues(pager.config.omnirule)
+  ctx.freeValues(pager.config.siteconf)
   for val in pager.jsmap.fields:
     JS_FreeValue(ctx, val)
   if pager.lineedit != nil and pager.lineedit.data of LineDataScript:
@@ -835,6 +858,12 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   for st in SurfaceType:
     pager.clear(st)
   pager.addConsole(istream != nil)
+  let ctx = pager.jsctx
+  let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
+  doAssert not JS_IsException(jsInit)
+  let res = ctx.callFree(jsInit, pager.jsmap.pager)
+  doAssert not JS_IsException(res)
+  JS_FreeValue(ctx, res)
   pager.runStartupScript()
   if not ps.isatty():
     # stdin may very well receive ANSI text
@@ -1921,7 +1950,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   if result.scripting != smFalse:
     loaderConfig.allowSchemes.add("x-cha-cookie")
   if result.images:
-    result.imageTypes = pager.config.external.mimeTypes.image
+    result.imageTypes = pager.mimeTypes.image
   result.userAgent = loaderConfig.defaultHeaders.getFirst("User-Agent")
 
 proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
@@ -2540,14 +2569,13 @@ proc execPipeWait(pager: Pager; cmd: string; ps, os: PosixStream): int =
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
 proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
     PosixStream =
-  let i = pager.config.external.autoMailcap.entries
-    .findMailcapEntry("text/x-ansi", "", url)
+  let i = pager.autoMailcap.findMailcapEntry("text/x-ansi", "", url)
   if i == -1:
     pager.alert("No text/x-ansi entry found")
     return nil
   var canpipe = true
-  let cmd = unquoteCommand(pager.config.external.autoMailcap.entries[i].cmd,
-    "text/x-ansi", "", url, canpipe)
+  let cmd = unquoteCommand(pager.autoMailcap[i].cmd, "text/x-ansi", "", url,
+    canpipe)
   if not canpipe:
     pager.alert("Error: could not pipe to text/x-ansi, decoding as text/plain")
     return nil
@@ -2800,7 +2828,7 @@ proc redirect(pager: Pager; container: Container; response: Response;
   # if redirection fails, then we need some other container to move to...
   let failTarget = container.find(ndAny)
   # still need to apply response, or we lose cookie jars.
-  container.applyResponse(response, pager.config.external.mimeTypes)
+  container.applyResponse(response, pager.mimeTypes)
   if container.redirectDepth < pager.config.network.maxRedirect:
     if container.url.scheme == request.url.scheme or
         container.url.schemeType == stCgiBin or
@@ -2942,14 +2970,15 @@ proc cloned(pager: Pager; container: Container; stream: SocketStream) =
   pager.pollData.register(stream.fd, POLLIN)
 
 proc saveEntry(pager: Pager; entry: MailcapEntry) =
-  if pager.config.external.autoMailcap.saveEntry(entry).isErr:
-    pager.alert("Could not write to " & pager.config.external.autoMailcap.path)
+  let path = $pager.config.external.autoMailcap
+  if pager.autoMailcap.saveEntry(path, entry).isErr:
+    pager.alert("Could not write to " & $path)
 
 proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int;
     prev, next: int): string =
   var msg = "Open " & shortContentType & " as (shift=always): (t)ext, (s)ave"
   if i != -1:
-    msg &= ", (r)un \"" & pager.config.external.mailcap[i].cmd.strip() & '"'
+    msg &= ", (r)un \"" & pager.mailcap[i].cmd.strip() & '"'
   msg &= ", (e)dit entry, (C-c)ancel"
   if prev != -1:
     msg &= ", (p)rev"
@@ -2975,10 +3004,8 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
   var prev = -1
   var next = -1
   if i != -1:
-    prev = pager.config.external.mailcap.findPrevMailcapEntry(contentType, "",
-      container.url, i)
-    next = pager.config.external.mailcap.findMailcapEntry(contentType, "",
-      container.url, i)
+    prev = pager.mailcap.findPrevMailcapEntry(contentType, "", container.url, i)
+    next = pager.mailcap.findMailcapEntry(contentType, "", container.url, i)
   let msg = pager.askMailcapMsg(container.contentType.untilLower(';'), i, sx,
     prev, next)
   pager.askChar(msg).then(proc(s: string) =
@@ -3002,7 +3029,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
       retry = false
       var s = container.contentType.untilLower(';') & ';'
       if i != -1:
-        s = $pager.config.external.mailcap[i]
+        s = $pager.mailcap[i]
         while s.len > 0 and s[^1] == '\n':
           s.setLen(s.high)
       pager.setLineEdit0(lmMailcap, "Mailcap: ", s, hide = false,
@@ -3043,10 +3070,10 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
       retry = i == -1
       if not retry:
         let res = pager.runMailcap(container.url, ostream, response.outputId,
-          contentType, pager.config.external.mailcap[i])
+          contentType, pager.mailcap[i])
         pager.connected2(container, res, response)
         if c == 'R':
-          pager.saveEntry(pager.config.external.mailcap[i])
+          pager.saveEntry(pager.mailcap[i])
     of 'p', 'k':
       if prev != -1:
         i = prev
@@ -3064,7 +3091,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
 
 proc connected(pager: Pager; container: Container; response: Response) =
   var istream = response.body
-  container.applyResponse(response, pager.config.external.mimeTypes)
+  container.applyResponse(response, pager.mimeTypes)
   if response.status == 401: # unauthorized
     let url = newURL(container.url)
     pager.setLineEdit0(lmUsername, "Username: ", container.url.username,
@@ -3095,15 +3122,13 @@ proc connected(pager: Pager; container: Container; response: Response) =
       ostream: istream
     ), response)
   else:
-    let i = pager.config.external.autoMailcap.entries
-      .findMailcapEntry(contentType, "", container.url)
+    let i = pager.autoMailcap.findMailcapEntry(contentType, "", container.url)
     if i != -1:
       let res = pager.runMailcap(container.url, istream, response.outputId,
-        contentType, pager.config.external.autoMailcap.entries[i])
+        contentType, pager.autoMailcap[i])
       pager.connected2(container, res, response)
     else:
-      let i = pager.config.external.mailcap.findMailcapEntry(contentType, "",
-        container.url)
+      let i = pager.mailcap.findMailcapEntry(contentType, "", container.url)
       if pager.config.start.headless != hmFalse or
           i == -1 and shortContentType.isTextType():
         pager.connected2(container, MailcapResult(

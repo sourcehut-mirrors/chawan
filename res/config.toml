@@ -2,66 +2,12 @@
 # If you are looking for a template, use bonus/config.toml instead.
 
 [external]
-mailcap = [
-	"~/.mailcap",
-	"/etc/mailcap",
-	"/usr/etc/mailcap",
-	"/usr/local/etc/mailcap"
-]
-auto-mailcap = "auto.mailcap"
-mime-types = [
-	"~/.mime.types",
-	"/etc/mime.types",
-	"/usr/etc/mime.types",
-	"/usr/local/etc/mime.types"
-]
 urimethodmap = [
 	"~/.urimethodmap",
 	"~/.w3m/urimethodmap",
 	"/etc/urimethodmap",
 	"/usr/local/etc/w3m/urimethodmap"
 ]
-bookmark = "$CHA_DATA_DIR/bookmark.md"
-history-file = "$CHA_DATA_DIR/history.uri"
-cookie-file = "$CHA_DATA_DIR/cookies.txt"
-tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
-cgi-dir = ["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
-download-dir = "${TMPDIR:-/tmp}/"
-
-[omnirule.ddg]
-match = '^ddg:'
-substitute-url = '''
-x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" +
-	encodeURIComponent(x.substring(x.indexOf(":")))
-'''
-
-[omnirule.br]
-match = '^br:'
-substitute-url = '''
-x => "https://search.brave.com/search?q=" +
-	encodeURIComponent(x.substring(x.indexOf(":")))
-'''
-
-[omnirule.wk]
-match = '^wk:'
-substitute-url = '''
-x => "https://en.wikipedia.org/wiki/Special:Search?search=" +
-	encodeURIComponent(x.substring(x.indexOf(":")))
-'''
-
-[omnirule.wd]
-match = '^wd:'
-substitute-url = '''
-x => "https://en.wiktionary.org/w/index.php?title=Special:Search&search=" +
-	encodeURIComponent(x.substring(x.indexOf(":")))
-'''
-
-[omnirule.mo]
-match = '^mo:'
-substitute-url = '''
-x => "https://mojeek.com/search?q=" +
-	encodeURIComponent(x.substring(x.indexOf(":")))
-'''
 
 [siteconf.downloads]
 url = 'about:downloads'

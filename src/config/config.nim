@@ -12,13 +12,11 @@ import config/chapath
 import config/conftypes
 import config/cookie
 import config/mailcap
-import config/mimetypes
 import config/toml
 import config/urimethodmap
 import css/cssparser
 import css/cssvalues
 import html/script
-import io/chafile
 import io/dynstream
 import monoucha/fromjs
 import monoucha/jsbind
@@ -133,9 +131,9 @@ type
   ExternalConfig = ref object
     tmpdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
-    mailcap*: Mailcap
-    autoMailcap*: AutoMailcap
-    mimeTypes*: MimeTypes
+    mailcap* {.jsgetset.}: seq[ChaPathResolved]
+    autoMailcap* {.jsgetset.}: ChaPathResolved
+    mimeTypes* {.jsgetset.}: seq[ChaPathResolved]
     cgiDir* {.jsgetset.}: seq[ChaPathResolved]
     urimethodmap*: URIMethodMap
     bookmark* {.jsgetset.}: ChaPathResolved
@@ -202,7 +200,6 @@ type
     userStyle*: StyleString #TODO getset
 
   Config* = ref object
-    jsvfns*: seq[JSValue]
     arraySeen*: TableRef[string, int] # table arrays seen
     dir* {.jsget.}: string
     dataDir* {.jsget.}: string
@@ -288,12 +285,6 @@ proc parseValue(ctx: var ConfigParser; x: var JSValue; v: TomlValue; k: string):
   Err[string]
 proc parseValue(ctx: var ConfigParser; x: var ChaPathResolved;
   v: TomlValue; k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var AutoMailcap; v: TomlValue;
-  k: string): Err[string]
 proc parseValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   k: string): Err[string]
 proc parseValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
@@ -365,7 +356,18 @@ proc initCodepointSet(s: cstring): CodepointSet =
   for c in s:
     result.s.add(uint32(c))
 
-proc remove[T](list: var ConfigList[T]; name: string) =
+proc free(ctx: JSContext; rule: OmniRule) =
+  JS_FreeValue(ctx, rule.substituteUrl)
+
+proc free(ctx: JSContext; rule: SiteConfig) =
+  if rule.o.rewriteUrl.isSome:
+    JS_FreeValue(ctx, rule.o.rewriteUrl.get)
+
+proc freeValues*[T](ctx: JSContext; list: ConfigList[T]) =
+  for it in list:
+    ctx.free(it)
+
+proc remove[T](ctx: JSContext; list: var ConfigList[T]; name: string) =
   var it = list.head
   var prev: T = nil
   while it != nil:
@@ -377,9 +379,27 @@ proc remove[T](list: var ConfigList[T]; name: string) =
         prev.next = next
       if next == nil:
         list.tail = nil
+      ctx.free(it)
       break
     prev = it
     it = it.next
+
+proc addOmniRule(ctx: JSContext; config: Config; name: string;
+    re, fun: JSValueConst): JSValue {.jsfunc.} =
+  var len: csize_t
+  let p = JS_GetRegExpBytecode(ctx, re, len)
+  if p == nil:
+    return JS_EXCEPTION
+  if not JS_IsFunction(ctx, fun):
+    return JS_ThrowTypeError(ctx, "function expected")
+  if config.ruleSeen.containsOrIncl(name): # replace
+    ctx.remove(config.omnirule, name)
+  config.omnirule.add(OmniRule(
+    name: name,
+    match: bytecodeToRegex(cast[REBytecode](p), len),
+    substituteUrl: JS_DupValue(ctx, fun)
+  ))
+  return JS_UNDEFINED
 
 proc `$`*(p: ChaPathResolved): lent string =
   string(p)
@@ -798,7 +818,7 @@ proc parseValue[T](ctx: var ConfigParser; x: var ConfigList[T]; v: TomlValue;
     let rule = T(name: kk)
     ?ctx.parseValue(rule, vv, kkk)
     if ctx.config.ruleSeen.containsOrIncl(kk): # replace
-      x.remove(kk)
+      ctx.jsctx.remove(x, kk)
     x.add(rule)
   ok()
 
@@ -1001,7 +1021,6 @@ proc parseValue(ctx: var ConfigParser; x: var JSValue; v: TomlValue; k: string):
   if not JS_IsFunction(ctx.jsctx, fun):
     return err(k & ": not a function")
   x = fun
-  ctx.config.jsvfns.add(x) # so we can clean it up on exit
   ok()
 
 proc parseValue(ctx: var ConfigParser; x: var ChaPathResolved;
@@ -1011,64 +1030,6 @@ proc parseValue(ctx: var ConfigParser; x: var ChaPathResolved;
   if y.isErr:
     return err(k & ": " & y.error)
   x = ChaPathResolved(y.get)
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
-    k: string): Err[string] =
-  var paths: seq[ChaPathResolved]
-  ?ctx.parseValue(paths, v, k)
-  x = MimeTypes.default
-  for p in paths:
-    if f := chafile.fopen($p, "r"):
-      let res = x.parseMimeTypes(f, DefaultImages)
-      f.close()
-      if res.isErr:
-        return err(k & ": error reading file " & $p)
-  ok()
-
-const DefaultMailcap = block:
-  var mailcap: Mailcap
-  const name = "res/mailcap"
-  doAssert mailcap.parseMailcap(staticRead(name), name).isOk
-  mailcap
-
-proc parseValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
-    k: string): Err[string] =
-  var paths: seq[ChaPathResolved]
-  ?ctx.parseValue(paths, v, k)
-  x = Mailcap.default
-  for p in paths:
-    let ps = newPosixStream($p)
-    if ps != nil:
-      let src = ps.readAllOrMmap()
-      let res = x.parseMailcap(src.toOpenArray(), $p)
-      deallocMem(src)
-      ps.sclose()
-      if res.isErr:
-        ctx.warnings.add(res.error)
-  x.add(DefaultMailcap)
-  ok()
-
-const DefaultAutoMailcap = block:
-  var mailcap: Mailcap
-  const name = "res/auto.mailcap"
-  doAssert mailcap.parseMailcap(staticRead(name), name).isOk
-  mailcap
-
-proc parseValue(ctx: var ConfigParser; x: var AutoMailcap;
-    v: TomlValue; k: string): Err[string] =
-  var path: ChaPathResolved
-  ?ctx.parseValue(path, v, k)
-  x = AutoMailcap(path: $path)
-  let ps = newPosixStream($path)
-  if ps != nil:
-    let src = ps.readAllOrMmap()
-    let res = x.entries.parseMailcap(src.toOpenArray(), $path)
-    deallocMem(src)
-    ps.sclose()
-    if res.isErr:
-      ctx.warnings.add(res.error)
-  x.entries.add(DefaultAutoMailcap)
   ok()
 
 const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
@@ -1423,8 +1384,10 @@ C-Left line.prevWord
 C-Right line.nextWord
 """
 
-proc newConfig*(ctx: JSContext): Config =
+proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
   Config(
+    dir: dir,
+    dataDir: dataDir,
     arraySeen: newTable[string, int](),
     page: newActionMap(ctx, PageCommands, ""),
     line: newActionMap(ctx, LineCommands, "writeInputBuffer"),
@@ -1443,7 +1406,31 @@ proc newConfig*(ctx: JSContext): Config =
       showDownloadPanel: true,
       editor: "${VISUAL:-${EDITOR:-vi}}",
       copyCmd: "xsel -bi",
-      pasteCmd: "xsel -bo"
+      pasteCmd: "xsel -bo",
+      mailcap: @[
+        ChaPathResolved(expandPath("~/.mailcap")),
+        ChaPathResolved"/etc/mailcap",
+        ChaPathResolved"/usr/etc/mailcap",
+        ChaPathResolved"/usr/local/etc/mailcap"
+      ],
+      autoMailcap: ChaPathResolved(dir & "/auto.mailcap"),
+      mimeTypes: @[
+        ChaPathResolved(expandPath("~/.mime.types")),
+        ChaPathResolved"/etc/mime.types",
+        ChaPathResolved"/usr/etc/mime.types",
+        ChaPathResolved"/usr/local/etc/mime.types"
+      ],
+      #TODO urimethodmap
+      bookmark: ChaPathResolved(dataDir & "/bookmark.md"),
+      historyFile: ChaPathResolved(dataDir & "/history.uri"),
+      tmpdir: ChaPathResolved(
+        getEnvEmpty("TMPDIR", "/tmp") & "/cha-tmp-" & getEnvEmpty("LOGNAME")),
+      cgiDir: @[
+        ChaPathResolved(dir & "/cgi-bin"),
+        ChaPathResolved(getEnvEmpty("CHA_LIBEXEC_DIR") & "/cgi-bin")
+      ],
+      cookieFile: ChaPathResolved(dataDir & "/cookies.txt"),
+      downloadDir: ChaPathResolved(getEnvEmpty("TMPDIR", "/tmp") & '/')
     ),
     network: NetworkConfig(
       maxRedirect: 10,

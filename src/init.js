@@ -264,9 +264,22 @@ class Mouse {
     moveType = "none"; /* none, drag, select */
 }
 
+function addDefaultOmniRule(name, match, url) {
+    const fun = x => url + encodeURIComponent(x.substring(x.indexOf(':')));
+    config.addOmniRule(name, match, fun);
+}
+
 Pager.prototype.init = function() {
     this.mouse = new Mouse();
     this.commandMode = false;
+    addDefaultOmniRule("ddg", /^ddg:/,
+        "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=");
+    addDefaultOmniRule("br", /^br:/, "https://search.brave.com/search?q=");
+    addDefaultOmniRule("wk", /^wk:/,
+        "https://en.wikipedia.org/wiki/Special:Search?search=");
+    addDefaultOmniRule("wd", /^wd:/,
+        "https://en.wiktionary.org/w/index.php?title=Special:Search&search=");
+    addDefaultOmniRule("mo", /^mo:/, "https://mojeek.com/search?q=");
 }
 
 /*
