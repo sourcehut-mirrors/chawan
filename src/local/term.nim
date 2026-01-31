@@ -260,7 +260,12 @@ type
     buf: string # string buffer
 
   InputEventType* = enum
-    ietKey, ietKeyEnd, ietPaste, ietMouse, ietWindowChange, ietRedraw
+    ietKey = "key"
+    ietKeyEnd = "keyEnd"
+    ietPaste = "paste"
+    ietMouse = "mouse"
+    ietWindowChange = "windowChange"
+    ietRedraw = "redraw"
 
   InputEvent* = object
     case t*: InputEventType

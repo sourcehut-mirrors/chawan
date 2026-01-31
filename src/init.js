@@ -33,14 +33,13 @@ globalThis.cmd = {
             pager.loadSubmit(s);
     },
     peek: () => pager.alert(pager.url),
-    peekCursor: n => pager.peekCursor(n),
     toggleWrap: () => {
         config.search.wrap = !config.search.wrap;
         pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
     },
     dupeBuffer: () => pager.dupeBuffer(),
     load: () => pager.load(),
-    loadCursor: () => pager.load(pager.hoverLink || pager.hoverImage),
+    loadCursor: () => pager.loadCursor(),
     loadEmpty: () => pager.load(""),
     webSearch: () => pager.load("br:"),
     addBookmark: () => {
@@ -72,8 +71,6 @@ globalThis.cmd = {
     searchBackward: () => pager.searchBackward(),
     isearchForward: () => pager.isearchForward(),
     isearchBackward: () => pager.isearchBackward(),
-    searchNext: n => pager.searchNext(n),
-    searchPrev: n => pager.searchPrev(n),
     toggleCommandMode: () => {
         if ((pager.commandMode = consoleBuffer != pager.buffer)) {
             if (!line)
@@ -89,45 +86,9 @@ globalThis.cmd = {
         if (res)
             pager.click();
     },
-    cursorLeft: n => pager.cursorLeft(n),
-    cursorDown: n => pager.cursorDown(n),
-    cursorUp: n => pager.cursorUp(n),
-    cursorRight: n => pager.cursorRight(n),
     cursorLineBegin: () => pager.cursorLineBegin(),
     cursorLineTextStart: () => pager.cursorLineTextStart(),
     cursorLineEnd: () => pager.cursorLineEnd(),
-    cursorNextWord: () => pager.cursorNextWord(),
-    cursorNextViWord: () => pager.cursorNextViWord(),
-    cursorNextBigWord: () => pager.cursorNextBigWord(),
-    cursorWordBegin: () => pager.cursorWordBegin(),
-    cursorViWordBegin: () => pager.cursorViWordBegin(),
-    cursorBigWordBegin: () => pager.cursorBigWordBegin(),
-    cursorWordEnd: () => pager.cursorWordEnd(),
-    cursorViWordEnd: () => pager.cursorViWordEnd(),
-    cursorBigWordEnd: () => pager.cursorBigWordEnd(),
-    cursorPrevLink: n => pager.cursorPrevLink(n),
-    cursorNextLink: n => pager.cursorNextLink(n),
-    cursorPrevParagraph: n => pager.cursorPrevParagraph(n),
-    cursorNextParagraph: n => pager.cursorNextParagraph(n),
-    cursorTop: n => pager.cursorTop(n),
-    cursorMiddle: () => pager.cursorMiddle(),
-    cursorBottom: n => pager.cursorBottom(n),
-    cursorLeftEdge: () => pager.cursorLeftEdge(),
-    cursorMiddleColumn: () => pager.cursorMiddleColumn(),
-    cursorRightEdge: () => pager.cursorRightEdge(),
-    halfPageDown: n => pager.halfPageDown(n),
-    halfPageUp: n => pager.halfPageUp(n),
-    halfPageLeft: n => pager.halfPageLeft(n),
-    halfPageRight: n => pager.halfPageRight(n),
-    pageDown: n => pager.pageDown(n),
-    pageUp: n => pager.pageUp(n),
-    pageLeft: n => pager.pageLeft(n),
-    pageRight: n => pager.pageRight(n),
-    scrollDown: n => pager.scrollDown(n),
-    scrollUp: n => pager.scrollUp(n),
-    scrollLeft: n => pager.scrollLeft(n),
-    scrollRight: n => pager.scrollRight(n),
-    click: n => pager.click(n),
     rightClick: async () => {
         if (!pager.menu) {
             const canceled = await pager.contextMenu();
@@ -184,18 +145,6 @@ globalThis.cmd = {
     /* vi | */
     gotoColumnOrBegin: n => pager.setCursorXCenter((n ?? 1) - 1),
     gotoColumnOrEnd: n => n ? pager.setCursorXCenter(n - 1) : pager.cursorLineEnd(),
-    /* vi z. z^M z- */
-    centerLineBegin: n => pager.centerLineBegin(n),
-    raisePageBegin: n => pager.raisePageBegin(n),
-    lowerPageBegin: n => pager.lowerPageBegin(n),
-    /* vi z+ z^ */
-    nextPageBegin: n => pager.nextPageBegin(n),
-    previousPageBegin: n => pager.previousPageBegin(n),
-    /* vim zz zb zt */
-    centerLine: n => pager.centerLine(n),
-    raisePage: n => pager.raisePage(n),
-    lowerPage: n => pager.lowerPage(n),
-    cursorToggleSelection: n => pager.cursorToggleSelection(n),
     selectOrCopy: n => {
         if (pager.currentSelection)
             cmd.buffer.copySelection();
@@ -241,27 +190,8 @@ globalThis.cmd = {
             pager.alert("Error; please install xsel or adjust external.copy-cmd");
         pager.cursorToggleSelection();
     },
-    cursorNthLink: n => pager.cursorNthLink(n),
-    cursorRevNthLink: n => pager.cursorRevNthLink(n),
     writeInputBuffer: () => pager.writeInputBuffer(),
     line: {
-        submit: () => line.submit(),
-        backspace: () => line.backspace(),
-        delete: () => line.delete(),
-        cancel: () => line.cancel(),
-        prevWord: () => line.prevWord(),
-        nextWord: () => line.nextWord(),
-        backward: () => line.backward(),
-        forward: () => line.forward(),
-        clear: () => line.clear(),
-        kill: () => line.kill(),
-        clearWord: () => line.clearWord(),
-        killWord: () => line.killWord(),
-        begin: () => line.begin(),
-        end: () => line.end(),
-        escape: () => line.escape(),
-        prevHist: () => line.prevHist(),
-        nextHist: () => line.nextHist(),
         openEditor: () => {
             const res = pager.openEditor(line.text);
             if (res != null) {
@@ -271,6 +201,30 @@ globalThis.cmd = {
             }
         }
     }
+}
+
+/* init simple commands */
+for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
+        "cursorNextWord", "cursorNextViWord", "cursorNextBigWord",
+        "cursorWordBegin", "cursorViWordBegin", "cursorBigWordBegin",
+        "cursorWordEnd", "cursorViWordEnd", "cursorBigWordEnd",
+        "cursorPrevLink", "cursorNextLink", "cursorPrevParagraph",
+        "cursorNextParagraph", "cursorTop", "cursorMiddle", "cursorBottom",
+        "cursorLeftEdge", "cursorMiddleColumn", "cursorRightEdge",
+        "halfPageDown", "halfPageUp", "halfPageLeft", "halfPageRight",
+        "pageDown", "pageUp", "pageLeft", "pageRight", "scrollDown", "scrollUp",
+        "scrollLeft", "scrollRight", "click", "searchPrev", "searchNext",
+        "centerLineBegin", "raisePageBegin", "lowerPageBegin", "nextPageBegin",
+        "previousPageBegin", "centerLine", "raisePage", "lowerPage",
+        "cursorToggleSelection", "cursorToggleSelection", "cursorNthLink",
+        "cursorRevNthLink", "peekCursor"]) {
+    cmd[it] = n => pager[it](n);
+}
+
+for (const it of ["submit", "backspace", "delete", "cancel", "prevWord",
+        "nextWord", "backward", "forward", "clear", "kill", "clearWord",
+        "killWord", "begin", "end", "escape", "prevHist", "nextHist"]) {
+    cmd.line[it] = () => line[it]();
 }
 
 /* backwards compat: cmd.pager and cmd.buffer used to be separate */
@@ -292,8 +246,28 @@ function clamp(n, lo, hi) {
 const MAX_INT32 = 0xFFFFFFFF;
 
 /*
+ * Maximum number of consequent clicks registered.
+ * Sort of a product of poor design.
+ */
+const MAX_CLICKS = 3;
+
+/*
  * Pager
  */
+
+class Mouse {
+    pressed = {}; /* button -> position */
+    released = {}; /* button -> position */
+    click = {}; /* button -> count - 1 */
+    inSelection = false;
+    blockTillRelease = false;
+    moveType = "none"; /* none, drag, select */
+}
+
+Pager.prototype.init = function() {
+    this.mouse = new Mouse();
+    this.commandMode = false;
+}
 
 /*
  * Emulate vim's \c/\C: override defaultFlags if one is found, then remove
@@ -468,7 +442,7 @@ Pager.prototype.showFullAlert = function() {
 
 /* Open a URL prompt. */
 Pager.prototype.load = async function(url = null) {
-    if (!url) {
+    if (url == null) {
         if (!this.buffer)
             return;
         url = this.buffer.url;
@@ -476,6 +450,10 @@ Pager.prototype.load = async function(url = null) {
     const res = await this.setLineEdit("location", "URL: ", {current: url});
     if (res)
         this.loadSubmit(res);
+}
+
+Pager.prototype.loadCursor = function() {
+    return this.load(this.hoverLink || this.hoverImage);
 }
 
 /* Reload the page in a new buffer, then kill the previous buffer. */
@@ -594,39 +572,261 @@ Pager.prototype.toggleLinkHints = async function() {
     return false;
 }
 
-Pager.prototype.handleInput = async function(paste) {
+Pager.prototype.handleMouseInput = async function(input) {
+    if (this.mouse.blockTillRelease) {
+        if (input.t != "release")
+            return;
+        this.mouse.blockTillRelease = false;
+    }
+    const button = input.button;
+    const [pressedX, pressedY] = this.mouse.pressed[button] ?? [-1, -1];
+    let buffer = this.buffer;
+    const select = this.menu ?? buffer?.select;
+    if (select != null) {
+        /* one off because of border */
+        const y = select.fromy + input.y - select.y - 1;
+        let inside =
+            select.y + 1 <= input.y && input.y < select.y + select.height - 1 &&
+            select.x + 1 <= input.x && input.x < select.x + select.width - 1;
+        let outside = select.y > input.y || input.y >= select.y + select.height &&
+            select.x > input.x || input.x >= select.x + select.width;
+        switch (button) {
+        case "right":
+            if (!inside)
+                select.unselect();
+            else if (input.x != pressedX && input.y != pressedY) {
+                /*
+                 * Prevent immediate movement/submission in case the menu
+                 * appeared under the cursor.
+                 */
+                select.setCursorY(y);
+            }
+            if (input.t == "press") {
+                /*
+                 * Do not include borders, so that a double right click
+                 * closes the menu again.
+                 */
+                if (!inside) {
+                    this.mouse.blockTillRelease = true;
+                    select.cursorLeft();
+                }
+            } else if (input.t == "release") {
+                if (inside && (input.x != pressedX || input.y != pressedY))
+                    select.click();
+                else if (outside)
+                    select.cursorLeft();
+            }
+            break;
+        case "left":
+            if (input.t == "press") {
+                if (outside) { /* clicked outside the select */
+                    this.mouse.blockTillRelease = true;
+                    select.cursorLeft();
+                }
+            } else if (input.t == "release") {
+                if (input.x == pressedX && input.y == pressedY && inside) {
+                    /* clicked inside the select */
+                    select.setCursorY(y);
+                    select.click();
+                }
+            }
+            break;
+        }
+    } else if (buffer != null) {
+        switch (button) {
+        case "left":
+            switch (input.t) {
+            case "move":
+                if (this.mouse.click[button] < 2)
+                    break;
+                switch (this.mouse.moveType) {
+                case "none":
+                    if (pressedY == input.y) {
+                        this.mouse.moveType = "select";
+                        if (!buffer.hasMouseSelection())
+                            await buffer.startSelection("normal", true);
+                        buffer.setAbsoluteCursorXY(input.x, input.y);
+                    } else
+                        this.mouse.moveType = "drag";
+                    break;
+                case "select":
+                    buffer.setAbsoluteCursorXY(input.x, input.y);
+                    break;
+                }
+                break;
+            case "release":
+                if (buffer.hasMouseSelection()) {
+                    this.mouse.inSelection = true;
+                    if (this.osc52Primary) {
+                        const text = await buffer.getSelectionText();
+                        this.clipboardWrite(text, false);
+                    }
+                } else if (pressedX == input.x && pressedY == input.y &&
+                           input.y < buffer.height) {
+                    const px = buffer.cursorx;
+                    const py = buffer.cursory;
+                    buffer.setAbsoluteCursorXY(input.x, input.y);
+                    if (px == buffer.cursorx && py == buffer.cursory)
+                        buffer.click(this.mouse.click[button]);
+                }
+                this.mouse.moveType = "none";
+                break;
+            case "press":
+                if (buffer.hasMouseSelection())
+                    buffer.clearSelection();
+                break;
+            }
+            break;
+        case "middle":
+            if (input.t == "release" && input.x == pressedX &&
+                input.y == pressedY && input.y < buffer.height) {
+                this.discardBuffer(buffer);
+            }
+            break;
+        case "right":
+            if (input.t == "press" && input.y < buffer.height) {
+                let canceled = false;
+                if (buffer.currentSelection == null && !input.meta) {
+                    buffer.setAbsoluteCursorXY(input.x, input.y);
+                    canceled = await buffer.contextMenu();
+                }
+                if (!canceled) {
+                    this.openMenu(input.x, input.y);
+                    this.menu.unselect();
+                }
+            }
+            break;
+        case "thumbInner":
+            if (input.t == "press")
+                this.prevBuffer();
+            break;
+        case "thumbTip":
+            if (input.t == "press")
+                this.nextBuffer();
+        }
+    }
+    if (!this.mouse.blockTillRelease) {
+        switch (button) {
+        case "left":
+            if (input.t == "release") {
+                if (this.mouse.inSelection) {
+                    this.mouse.inSelection = false;
+                } else if (input.y == this.bufHeight &&
+                           pressedX == input.x && pressedY == input.y) {
+                    this.load();
+                } else if (input.y >= this.bufHeight - 1 &&
+                           pressedY == input.y) {
+                    const dcol = input.x - pressedX;
+                    if (dcol <= -2)
+                        this.nextBuffer();
+                    else
+                        this.prevBuffer();
+                } else if (pressedX != -1 && pressedY != -1) {
+                    const dcol = input.x - pressedX;
+                    const drow = input.y - pressedY;
+                    if (dcol > 0)
+                        this.scrollLeft(dcol);
+                    else
+                        this.scrollRight(-dcol);
+                    if (drow > 0)
+                        this.scrollUp(drow);
+                    else
+                        this.scrollDown(-drow);
+                }
+            }
+            break;
+        case "right":
+            if (input.t == "release" && pressedX == input.x &&
+                pressedY == this.bufHeight) {
+                this.loadCursor();
+            }
+            break;
+        case "middle":
+            if (input.t == "release" && pressedX == input.x &&
+                pressedY == this.bufHeight) {
+                this.load("");
+            }
+            break;
+        case "wheelUp":
+            if (input.t == "press")
+                this.scrollUp(config.input.wheelScroll);
+            break;
+        case "wheelDown":
+            if (input.t == "press")
+                this.scrollDown(config.input.wheelScroll);
+            break;
+        case "wheelLeft":
+            if (input.t == "press")
+                this.scrollLeft(config.input.sideWheelScroll);
+            break;
+        case "wheelRight":
+            if (input.t == "press")
+                this.scrollRight(config.input.sideWheelScroll);
+            break;
+        }
+        switch (input.t) {
+        case "press":
+            this.mouse.pressed[button] = [input.x, input.y];
+            const [releasedX, releasedY] =
+                this.mouse.released[button] ?? [-1, -1];
+            if (input.x == releasedX && input.y == releasedY) {
+                this.mouse.click[button] ??= 0;
+                if (++this.mouse.click[button] >= MAX_CLICKS)
+                    this.mouse.click[button] = 0;
+            }
+            break;
+        case "release":
+            if (pressedX != input.x || pressedY != input.y)
+                this.mouse.click[button] = 0;
+            this.mouse.released[button] = this.mouse.pressed[button];
+            this.mouse.pressed[button] = [-1, -1];
+            break;
+        }
+    }
+    this.forceStatusUpdate();
+    this.handleEvents();
+}
+
+Pager.prototype.handleInput = async function(t, mouseInput) {
     const line = globalThis.line;
-    if (this.fulfillAsk()) {
-        this.queueStatusUpdate();
-    } else if (line != null) {
-        if (paste || line.escNext) {
-            line.escNext = false;
+    let paste = false;
+    switch (t) {
+    case "paste": paste = true; case "keyEnd":
+        if (this.fulfillAsk()) {
+            this.queueStatusUpdate();
+        } else if (line != null) {
+            if (paste || line.escNext) {
+                line.escNext = false;
+                this.writeInputBuffer();
+            } else {
+                const map = config.line;
+                const p = this.evalInputAction(map, 0);
+                if (map.keyLast == 0) {
+                    await p;
+                    this.updateReadLine();
+                }
+            }
+        } else if (paste) {
+            const p = this.setLineEdit("location", "URL: ");
             this.writeInputBuffer();
+            const res = await p;
+            if (res)
+                this.loadSubmit(res);
+        } else if (this.updateNumericPrefix()) {
+            this.queueStatusUpdate();
         } else {
-            const map = config.line;
-            const p = this.evalInputAction(map, 0);
+            const map = config.page;
+            const p = this.evalInputAction(map, this.arg0);
             if (map.keyLast == 0) {
+                this.precnum = 0;
                 await p;
-                this.updateReadLine();
+                this.queueStatusUpdate();
+                this.handleEvents();
             }
         }
-    } else if (paste) {
-        const p = this.setLineEdit("location", "URL: ");
-        this.writeInputBuffer();
-        const res = await p;
-        if (res)
-            this.loadSubmit(res);
-    } else if (this.updateNumericPrefix()) {
-        this.queueStatusUpdate();
-    } else {
-        const map = config.page;
-        const p = this.evalInputAction(map, Math.max(this.precnum, 0));
-        if (map.keyLast == 0) {
-            this.precnum = 0;
-            await p;
-            this.queueStatusUpdate();
-            this.handleEvents();
-        }
+        break;
+    case "mouse":
+        return this.handleMouseInput(mouseInput);
     }
 }
 

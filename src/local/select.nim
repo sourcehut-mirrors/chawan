@@ -28,8 +28,8 @@ type
     maxh: int # maximum number of options on screen
     # location on screen
     #TODO make this absolute
-    x*: int
-    y*: int
+    x* {.jsget.}: int
+    y* {.jsget.}: int
     redraw*: bool
     unselected*: bool
     bpos: seq[int]
@@ -44,13 +44,13 @@ proc queueDraw(select: Select) =
 proc setFromY(select: Select; y: int) =
   select.fromy = max(min(y, select.options.len - select.maxh), 0)
 
-proc width*(select: Select): int =
+proc width(select: Select): int {.jsfget.} =
   return select.maxw + 2
 
-proc height*(select: Select): int =
+proc height(select: Select): int {.jsfget.} =
   return select.maxh + 2
 
-proc setCursorY*(select: Select; y: int) =
+proc setCursorY(select: Select; y: int) {.jsfunc.} =
   let y = clamp(y, 0, select.options.high)
   if select.options[max(y, 0)].nop:
     if not select.unselected:
@@ -239,7 +239,7 @@ proc popCursorPos*(select: Select; nojump = false) =
   if not nojump:
     select.queueDraw()
 
-proc unselect*(select: Select) =
+proc unselect*(select: Select) {.jsfunc.} =
   if not select.unselected:
     select.unselected = true
     select.queueDraw()

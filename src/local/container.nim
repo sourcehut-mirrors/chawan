@@ -179,7 +179,7 @@ type
     # if we are referenced by another container, replaceRef is set so that we
     # can clear ourselves on discard
     replaceRef*: Container
-    retry*: seq[URL]
+    retry*: URL
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
     event: ContainerEvent
     lastEvent: ContainerEvent
@@ -273,7 +273,7 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   let nc = Container()
   nc[] = container[]
   nc.url = url
-  nc.retry = @[]
+  nc.retry = nil
   nc.prev = nil
   nc.next = nil
   nc.select = nil
@@ -765,7 +765,8 @@ proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
   container.setCursorY(y, refresh)
   container.setCursorX(x, refresh)
 
-proc setAbsoluteCursorXY*(container: Container; x, y: int; refresh = true) =
+proc setAbsoluteCursorXY*(container: Container; x, y: int; refresh = true)
+    {.jsfunc.} =
   container.setCursorXY(container.fromx + x, container.fromy + y, refresh)
 
 proc matchFirst(ctx: JSContext; container: Container; re: JSValueConst): JSValue
@@ -1120,6 +1121,9 @@ proc clearSelection*(container: Container) {.jsfunc.} =
     container.highlights.delete(i)
   container.currentSelection = nil
   container.queueDraw()
+
+proc hasMouseSelection*(container: Container): bool {.jsfunc.} =
+  return container.currentSelection != nil and container.currentSelection.mouse
 
 #TODO I don't like this API
 # maybe make selection a subclass of highlight?

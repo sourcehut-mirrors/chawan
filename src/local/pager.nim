@@ -115,20 +115,6 @@ type
     redraw: bool
     grid: FixedGrid
 
-  # Mouse data
-  MouseClickState = enum
-    mcsNormal, mcsDouble, mcsTriple
-
-  MouseMoveType = enum
-    mmtNone, mmtDrag, mmtSelect
-
-  Mouse = object
-    pressed: array[MouseButton, MouseInputPosition]
-    click: array[MouseButton, MouseClickState]
-    lastPressed: array[MouseButton, MouseInputPosition]
-    inSelection: bool
-    moveType: MouseMoveType
-
   Pinned = object
     downloads: Container
     console*: Container
@@ -144,7 +130,6 @@ type
 
   Pager* = ref object of RootObj
     blockTillRelease: bool
-    commandMode {.jsgetset.}: bool
     hasload: bool # has a page been successfully loaded since startup?
     inEval: bool
     dumpConsoleFile: bool
@@ -155,6 +140,7 @@ type
     alertState: PagerAlertState
     # current number prefix (when vi-numeric-prefix is true)
     precnum {.jsgetset.}: int32
+    arg0 {.jsget.}: int32
     alerts: seq[string]
     askCursor: int
     askPromise*: Promise[string]
@@ -178,7 +164,6 @@ type
     loaderPid {.jsget.}: int
     luctx: LUContext
     menu {.jsget.}: Select
-    mouse: Mouse
     navDirection {.jsget.}: NavDirection
     numload: int # number of pages currently being loaded
     pollData: PollData
@@ -244,10 +229,10 @@ proc windowChange(pager: Pager)
 proc container(pager: Pager): Container {.jsfget: "buffer".} =
   pager.tab.current
 
-proc bufWidth(pager: Pager): int =
+proc bufWidth(pager: Pager): int {.jsfget.} =
   return pager.attrs.width
 
-proc bufHeight(pager: Pager): int =
+proc bufHeight(pager: Pager): int {.jsfget.} =
   return pager.attrs.height - 1
 
 iterator tabs(pager: Pager): Tab {.inline.} =
@@ -516,13 +501,19 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     console: console,
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
+  let jsPager = ctx.toJS(pager)
+  doAssert not JS_IsException(jsPager)
+  let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
+  doAssert not JS_IsException(jsInit)
+  let res = ctx.callFree(jsInit, jsPager)
+  doAssert not JS_IsException(res)
+  JS_FreeValue(ctx, res)
   pager.jsmap = JSMap(
-    pager: ctx.toJS(pager),
+    pager: jsPager,
     handleInput: ctx.eval("Pager.prototype.handleInput", "<init>",
       JS_EVAL_TYPE_GLOBAL)
   )
-  doAssert not JS_IsException(pager.jsmap.pager) and
-    not JS_IsException(pager.jsmap.handleInput)
+  doAssert not JS_IsException(pager.jsmap.handleInput)
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(rt, interruptHandler, nil)
@@ -640,10 +631,8 @@ proc evalJS(pager: Pager; val: JSValue): JSValue =
   result = pager.jsctx.evalFunction(val)
   pager.evalJSEnd(wasInEval)
 
-# Warning: this is not re-entrant.
 proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
     JSValue =
-  let wasInEval = pager.evalJSStart()
   let ctx = pager.jsctx
   var val = val
   if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
@@ -660,7 +649,6 @@ proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
       JS_FreeValue(ctx, arg0)
     else: # no precnum
       val = ctx.callFree(val, JS_UNDEFINED)
-  pager.evalJSEnd(wasInEval)
   return val
 
 #TODO this overload shouldn't exist
@@ -717,6 +705,9 @@ proc queueStatusUpdate(pager: Pager) {.jsfunc.} =
   if pager.updateStatus == ussNone:
     pager.updateStatus = ussUpdate
 
+proc forceStatusUpdate(pager: Pager) {.jsfunc.} =
+  pager.updateStatus = ussUpdate
+
 # called from JS command()
 proc evalCommand(pager: Pager; src: string): JSValue {.jsfunc.} =
   let container = pager.pinned.console
@@ -730,198 +721,29 @@ proc evalCommand(pager: Pager; src: string): JSValue {.jsfunc.} =
     return
   return pager.evalJS(val)
 
-proc hasMouseSelection(pager: Pager): bool =
-  return pager.container.currentSelection != nil and
-    pager.container.currentSelection.mouse
-
-proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
+proc toJS(ctx: JSContext; input: MouseInput): JSValue =
+  #TODO might want to make this an opaque type
+  let obj = JS_NewObject(ctx)
+  let t = input.t
   let button = input.button
-  let pressed = pager.mouse.pressed[input.button]
-  case button
-  of mibLeft:
-    if input.t == mitRelease:
-      if pager.mouse.inSelection:
-        pager.mouse.inSelection = false
-      elif input.pos.y == pager.attrs.height - 1 and pressed == input.pos:
-        pager.evalAction("load", 0)
-      elif input.pos.y >= pager.attrs.height - 2 and pressed.y == input.pos.y:
-        let dcol = input.pos.x - pressed.x
-        if dcol <= -2:
-          pager.evalAction("nextBuffer", 0)
-        elif dcol >= 2:
-          pager.evalAction("prevBuffer", 0)
-      elif pressed != (-1i32, -1i32):
-        let dcol = input.pos.x - pressed.x
-        let drow = input.pos.y - pressed.y
-        if dcol > 0:
-          pager.evalAction("scrollLeft", dcol)
-        elif dcol < 0:
-          pager.evalAction("scrollRight", -dcol)
-        if drow > 0:
-          pager.evalAction("scrollUp", drow)
-        elif drow < 0:
-          pager.evalAction("scrollDown", -drow)
-  of mibRight:
-    if input.t == mitRelease and pressed == input.pos and
-        input.pos.y == pager.attrs.height - 1:
-      pager.evalAction("loadCursor", 0)
-  of mibMiddle:
-    if input.t == mitRelease and pressed == input.pos and
-        input.pos.y == pager.attrs.height - 1:
-      pager.evalAction("loadEmpty", 0)
-  of mibWheelUp:
-    if input.t == mitPress:
-      pager.evalAction("scrollUp", pager.config.input.wheelScroll)
-  of mibWheelDown:
-    if input.t == mitPress:
-      pager.evalAction("scrollDown", pager.config.input.wheelScroll)
-  of mibWheelLeft:
-    if input.t == mitPress:
-      pager.evalAction("scrollLeft", pager.config.input.sideWheelScroll)
-  of mibWheelRight:
-    if input.t == mitPress:
-      pager.evalAction("scrollRight", pager.config.input.sideWheelScroll)
-  else: discard
-  case input.t
-  of mitPress:
-    pager.mouse.pressed[button] = input.pos
-    if input.pos == pager.mouse.lastPressed[input.button]:
-      if pager.mouse.click[button] < MouseClickState.high:
-        inc pager.mouse.click[button]
-    else:
-      pager.mouse.click[button] = mcsNormal
-  of mitMove: discard
-  of mitRelease:
-    if pressed != input.pos:
-      pager.mouse.click[button] = mcsNormal
-    pager.mouse.lastPressed[button] = pager.mouse.pressed[button]
-    pager.mouse.pressed[button] = (-1i32, -1i32)
+  let shift = mimShift in input.mods
+  let ctrl = mimCtrl in input.mods
+  let meta = mimMeta in input.mods
+  let (x, y) = input.pos
+  # TODO we must check for exception on toJS too
+  if ctx.defineProperty(obj, "t", ctx.toJS(t)) == dprException or
+      ctx.defineProperty(obj, "button", ctx.toJS(button)) == dprException or
+      ctx.defineProperty(obj, "shift", ctx.toJS(shift)) == dprException or
+      ctx.defineProperty(obj, "ctrl", ctx.toJS(ctrl)) == dprException or
+      ctx.defineProperty(obj, "meta", ctx.toJS(meta)) == dprException or
+      ctx.defineProperty(obj, "x", ctx.toJS(x)) == dprException or
+      ctx.defineProperty(obj, "y", ctx.toJS(y)) == dprException:
+    JS_FreeValue(ctx, obj)
+    return JS_EXCEPTION
+  return obj
 
-proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
-  let button = input.button
-  let pressed = pager.mouse.pressed[button]
-  case button
-  of mibLeft:
-    case input.t
-    of mitRelease:
-      if pager.hasMouseSelection():
-        pager.mouse.inSelection = true
-        if pager.term.osc52Primary:
-          container.getSelectionText().then(proc(s: string) =
-            discard pager.term.sendOSC52(s, clipboard = false)
-          )
-      elif pressed == input.pos and input.pos.y < pager.attrs.height - 1:
-        let prevx = container.cursorx
-        let prevy = container.cursory
-        container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
-        if prevx == container.cursorx and prevy == container.cursory:
-          pager.evalAction("click", int32(pager.mouse.click[button]))
-      pager.mouse.moveType = mmtNone
-    of mitPress:
-      if pager.hasMouseSelection():
-        pager.container.clearSelection()
-    of mitMove:
-      if pager.mouse.click[button] >= mcsDouble:
-        case pager.mouse.moveType
-        of mmtNone:
-          # if mouse moved downwards, grab.
-          # otherwise, select.
-          if pressed.y == input.pos.y:
-            pager.mouse.moveType = mmtSelect
-            if not pager.hasMouseSelection():
-              discard container.startSelection(stNormal, mouse = true)
-            container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
-          else:
-            pager.mouse.moveType = mmtDrag
-        of mmtSelect:
-          container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
-        of mmtDrag: discard
-  of mibMiddle:
-    if input.t == mitRelease and input.pos == pressed and
-        input.pos.y < pager.attrs.height - 1:
-      pager.evalAction("discardBuffer", 0)
-  of mibRight:
-    if input.t == mitPress and input.pos.y < pager.attrs.height - 1:
-      # w3m uses release, but I like press better
-      if container.currentSelection == nil and mimMeta notin input.mods:
-        container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
-        container.contextMenu().then(proc(canceled: bool) =
-          if not canceled:
-            pager.openMenu(input.pos.x, input.pos.y)
-            pager.menu.unselect()
-        )
-      else:
-        pager.openMenu(input.pos.x, input.pos.y)
-        pager.menu.unselect()
-  of mibThumbInner:
-    if input.t == mitPress:
-      pager.evalAction("prevBuffer", 0)
-  of mibThumbTip:
-    if input.t == mitPress:
-      pager.evalAction("nextBuffer", 0)
-  else: discard
-
-proc handleMouseInput(pager: Pager; input: MouseInput; select: Select) =
-  let y = select.fromy + input.pos.y - select.y - 1 # one off because of border
-  if input.button in {mibRight, mibLeft}:
-    let pressed = pager.mouse.pressed[input.button]
-    # Note: "not inside and not outside" is a valid state, and it
-    # represents the mouse being above the border.
-    let inside =
-      input.pos.y in select.y + 1 ..< select.y + select.height - 1 and
-      input.pos.x in select.x + 1 ..< select.x + select.width - 1
-    let outside =
-      input.pos.y notin select.y ..< select.y + select.height or
-      input.pos.x notin select.x ..< select.x + select.width
-    if input.button == mibRight:
-      if not inside:
-        select.unselect()
-      elif input.pos != pressed:
-        # Prevent immediate movement/submission in case the menu appeared under
-        # the cursor.
-        select.setCursorY(y)
-      case input.t
-      of mitPress:
-        # Do not include borders, so that a double right click closes the
-        # menu again.
-        if not inside:
-          pager.blockTillRelease = true
-          select.cursorLeft()
-      of mitRelease:
-        if inside and input.pos != pressed:
-          select.click()
-        elif outside:
-          select.cursorLeft()
-      of mitMove: discard
-    else: # mibLeft
-      case input.t
-      of mitPress:
-        if outside: # clicked outside the select
-          pager.blockTillRelease = true
-          select.cursorLeft()
-      of mitRelease:
-        if input.pos == pressed and inside:
-          # clicked inside the select
-          select.setCursorY(y)
-          select.click()
-      of mitMove: discard
-
-proc handleMouseInput(pager: Pager; input: MouseInput) =
-  if pager.blockTillRelease:
-    if input.t != mitRelease:
-      return
-    pager.blockTillRelease = false
-  if pager.menu != nil:
-    pager.handleMouseInput(input, pager.menu)
-  elif (let container = pager.container; container != nil):
-    if container.select != nil:
-      pager.handleMouseInput(input, container.select)
-    else:
-      pager.handleMouseInput(input, container)
-  if not pager.blockTillRelease:
-    pager.handleMouseInputGeneric(input)
-  pager.updateStatus = ussUpdate
-  pager.handleEvents()
+proc osc52Primary(pager: Pager): bool {.jsfget.} =
+  pager.term.osc52Primary
 
 # The maximum number we are willing to accept.
 # This should be fine for 32-bit signed ints (which precnum currently is).
@@ -936,6 +758,7 @@ proc updateNumericPrefix(pager: Pager): bool {.jsfunc.} =
         pager.precnum += int32(decValue(c))
       pager.inputBuffer.setLen(0)
       return true
+    pager.arg0 = max(pager.precnum, 0)
     pager.precnum = -1
   false
 
@@ -945,16 +768,17 @@ proc handleUserInput(pager: Pager): Opt[void] =
   while e := pager.term.areadEvent():
     case e.t
     of ietKey: pager.inputBuffer &= e.c
-    of ietMouse: pager.handleMouseInput(e.m)
     of ietWindowChange: pager.windowChange()
     of ietRedraw: pager.redraw()
-    of ietKeyEnd, ietPaste:
+    of ietKeyEnd, ietPaste, ietMouse:
       let wasInEval = pager.evalJSStart()
       let ctx = pager.jsctx
-      let paste = e.t == ietPaste
-      let arg0 = ctx.toJS(paste)
-      let res = ctx.call(pager.jsmap.handleInput, pager.jsmap.pager, arg0)
+      let arg0 = ctx.toJS(e.t)
+      #TODO what if exception?
+      let arg1 = if e.t == ietMouse: ctx.toJS(e.m) else: JS_UNDEFINED
+      let res = ctx.call(pager.jsmap.handleInput, pager.jsmap.pager, arg0, arg1)
       JS_FreeValue(ctx, arg0)
+      JS_FreeValue(ctx, arg1)
       let ex = JS_IsException(res)
       JS_FreeValue(ctx, res)
       pager.evalJSEnd(wasInEval)
@@ -2223,33 +2047,33 @@ proc omniRewrite(pager: Pager; s: string): string =
 proc loadURL(pager: Pager; url: string; contentType = "";
     charset = CHARSET_UNKNOWN; history = true) =
   let url0 = pager.omniRewrite(url)
-  let url = expandPath(url0)
-  if url.len == 0:
-    return
-  if firstParse := parseURL(url):
+  if firstParse := parseURL(url0):
     let request = newRequest(firstParse)
     if not pager.gotoURLHash(request, pager.container, save = false):
       let container = pager.gotoURL(request, contentType, charset,
         history = history)
       pager.addContainer(container)
     return
-  var urls: seq[URL] = @[]
-  if pager.config.network.prependScheme != "" and url[0] != '/':
-    if pageurl := parseURL(pager.config.network.prependScheme & url):
-      # attempt to load remote page
-      urls.add(pageurl)
+  let urls = expandPath(url0)
+  if urls.len <= 0:
+    return
+  let local = percentEncode(urls, LocalPathPercentEncodeSet)
   let cdir = parseURL0("file://" & percentEncode(myposix.getcwd(),
     LocalPathPercentEncodeSet) & DirSep)
-  let localurl = percentEncode(url, LocalPathPercentEncodeSet)
-  if newurl := parseURL(localurl, cdir):
-    urls.add(newurl) # attempt to load local file
-  if urls.len <= 0:
-    pager.alert("Invalid URL " & url)
-  else:
-    let container = pager.gotoURL(newRequest(urls.pop()), contentType,
+  var url = parseURL0(local, cdir) # attempt to load local file
+  var retry: URL = nil
+  if pager.config.network.prependScheme != "" and urls[0] != '/':
+    # attempt to load remote page
+    retry = parseURL0(pager.config.network.prependScheme & urls)
+  if url == nil:
+    url = move(retry)
+  if url != nil:
+    let container = pager.gotoURL(newRequest(url), contentType,
       charset = charset, history = history)
+    container.retry = retry
     pager.addContainer(container)
-    container.retry = urls
+  else:
+    pager.alert("Invalid URL " & urls)
 
 proc fromJSURL(ctx: JSContext; val: JSValueConst): Opt[URL] =
   var url: URL
@@ -2643,11 +2467,13 @@ proc jsQuit*(ctx: JSContext; pager: Pager; code = 0): JSValue =
   JS_SetUncatchableException(ctx, true)
   return JS_EXCEPTION
 
-proc clipboardWrite(ctx: JSContext; pager: Pager; s: string): JSValue
-    {.jsfunc.} =
-  if res := pager.term.sendOSC52(s):
+proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
+    JSValue {.jsfunc.} =
+  if res := pager.term.sendOSC52(s, clipboard):
     if res:
       return JS_TRUE
+    if not clipboard:
+      return JS_FALSE
     return ctx.toJS(pager.externInto(pager.config.external.copyCmd, s))
   return ctx.jsQuit(pager, 1)
 
@@ -2949,8 +2775,8 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
   if container.replace != nil: # deleteContainer unsets replace etc.
     pager.replace(container, container.replace)
   pager.deleteContainer(container, container.find(ndAny))
-  if container.retry.len > 0:
-    let container = pager.gotoURL(newRequest(container.retry.pop()),
+  if container.retry != nil:
+    let container = pager.gotoURL(newRequest(move(container.retry)),
       container.contentType, history = cfHistory in container.flags)
     pager.addContainer(container)
   else:
@@ -3278,7 +3104,8 @@ proc connected(pager: Pager; container: Container; response: Response) =
     else:
       let i = pager.config.external.mailcap.findMailcapEntry(contentType, "",
         container.url)
-      if i == -1 and shortContentType.isTextType():
+      if pager.config.start.headless != hmFalse or
+          i == -1 and shortContentType.isTextType():
         pager.connected2(container, MailcapResult(
           flags: {cmfConnect, cmfFound},
           ostream: istream
