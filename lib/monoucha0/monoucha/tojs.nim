@@ -52,6 +52,7 @@ proc toJS*(ctx: JSContext; b: bool): JSValue
 proc toJS*[T](ctx: JSContext; s: seq[T]): JSValue
 proc toJS*[T](ctx: JSContext; s: set[T]): JSValue
 proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue
+proc toJS*[T: enum](ctx: JSContext; e: T): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
 proc toJS*(ctx: JSContext; obj: ref object): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
@@ -179,6 +180,7 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
   if not ctx.setUnforgeable(jsObj, class):
+    JS_FreeValue(ctx, jsObj)
     return JS_EXCEPTION
   rtOpaque.plist[p] = JS_VALUE_GET_PTR(jsObj)
   JS_SetOpaque(jsObj, p)
