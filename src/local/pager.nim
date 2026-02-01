@@ -2330,7 +2330,7 @@ proc updateReadLine(pager: Pager) {.jsfunc.} =
     of lmScript:
       let lineData = LineDataScript(line.data)
       JS_FreeValue(ctx, lineData.update)
-      let text = ctx.toJS(line.news)
+      let text = ctx.toJS(line.text)
       if JS_IsException(text):
         pager.console.writeException(ctx)
       else:
@@ -2339,18 +2339,18 @@ proc updateReadLine(pager: Pager) {.jsfunc.} =
           pager.console.writeException(ctx)
         JS_FreeValue(ctx, res)
     of lmUsername:
-      LineDataAuth(line.data).url.username = line.news
+      LineDataAuth(line.data).url.username = line.text
       pager.setLineEdit2(lmPassword, "Password: ", hide = true)
     of lmPassword:
       let lineData = LineDataAuth(line.data)
       let old = lineData.container
       let url = lineData.url
-      url.password = line.news
+      url.password = line.text
       let container = pager.gotoURL(newRequest(url), referrer = old)
       pager.replace(old, container)
-    of lmBuffer: pager.container.readSuccess(line.news)
+    of lmBuffer: pager.container.readSuccess(line.text)
     of lmBufferFile:
-      if path := ChaPath(line.news).unquote(myposix.getcwd()):
+      if path := ChaPath(line.text).unquote(myposix.getcwd()):
         let ps = newPosixStream(path, O_RDONLY, 0)
         if ps == nil:
           pager.alert("File not found")
@@ -2364,11 +2364,11 @@ proc updateReadLine(pager: Pager) {.jsfunc.} =
             pager.container.readSuccess(name, ps.fd)
           ps.sclose()
       else:
-        pager.alert("Invalid path: " & line.news)
+        pager.alert("Invalid path: " & line.text)
         pager.container.readCanceled()
     of lmDownload:
       let data = LineDataDownload(line.data)
-      let path = ChaPath(line.news).unquote(myposix.getcwd())
+      let path = ChaPath(line.text).unquote(myposix.getcwd())
       if path.isErr:
         pager.alert(path.error)
       else:
@@ -2386,7 +2386,7 @@ proc updateReadLine(pager: Pager) {.jsfunc.} =
           pager.saveTo(data, path)
     of lmMailcap:
       var mailcap = Mailcap.default
-      let res = mailcap.parseMailcap(line.news, "<input>")
+      let res = mailcap.parseMailcap(line.text, "<input>")
       let data = LineDataMailcap(line.data)
       if res.isOk and mailcap.len == 1:
         let res = pager.runMailcap(data.container.url, data.ostream,
