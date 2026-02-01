@@ -668,8 +668,10 @@ proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
   if JS_IsFunction(ctx, val):
     if arg0 != 0:
       let arg0 = ctx.toJS(arg0)
-      val = ctx.callFree(val, JS_UNDEFINED, arg0)
-      JS_FreeValue(ctx, arg0)
+      if JS_IsException(arg0):
+        JS_FreeValue(ctx, val)
+        return arg0
+      val = ctx.callSinkFree(val, JS_UNDEFINED, arg0)
     else: # no precnum
       val = ctx.callFree(val, JS_UNDEFINED)
   return val
@@ -682,14 +684,14 @@ proc evalAction(pager: Pager; action: string; arg0: int32) =
     pager.console.writeException(ctx)
     return
   let wasInEval = pager.evalJSStart()
-  if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
-    val = ctx.evalFunction(val)
   # If an action evaluates to a function that function is evaluated too.
   if JS_IsFunction(ctx, val):
     if arg0 != 0:
       let arg0 = ctx.toJS(arg0)
-      val = ctx.callFree(val, JS_UNDEFINED, arg0)
-      JS_FreeValue(ctx, arg0)
+      if JS_IsException(arg0):
+        val = arg0
+      else:
+        val = ctx.callSinkFree(val, JS_UNDEFINED, arg0)
     else: # no precnum
       val = ctx.callFree(val, JS_UNDEFINED)
   if JS_IsException(val):
@@ -797,11 +799,12 @@ proc handleUserInput(pager: Pager): Opt[void] =
       let wasInEval = pager.evalJSStart()
       let ctx = pager.jsctx
       let arg0 = ctx.toJS(e.t)
-      #TODO what if exception?
+      if JS_IsException(arg0):
+        pager.console.writeException(ctx)
+        break
       let arg1 = if e.t == ietMouse: ctx.toJS(e.m) else: JS_UNDEFINED
-      let res = ctx.call(pager.jsmap.handleInput, pager.jsmap.pager, arg0, arg1)
-      JS_FreeValue(ctx, arg0)
-      JS_FreeValue(ctx, arg1)
+      let res = ctx.callSink(pager.jsmap.handleInput, pager.jsmap.pager, arg0,
+        arg1)
       let ex = JS_IsException(res)
       JS_FreeValue(ctx, res)
       pager.evalJSEnd(wasInEval)
@@ -1898,19 +1901,20 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       let fun = sc.o.rewriteUrl.get
       var tmpUrl = newURL(url)
       let arg0 = ctx.toJS(tmpUrl)
-      let ret = ctx.call(fun, JS_UNDEFINED, arg0)
-      if not JS_IsException(ret):
-        # Warning: we must only print exceptions if the *call* returned one.
-        # Conversion may simply error out because the function didn't return a
-        # new URL, and that's fine.
-        var nu: URL
-        if ctx.fromJS(ret, nu).isOk:
-          tmpUrl = nu
-      else:
-        #TODO should writeException the message to console
+      if JS_IsException(arg0):
         pager.alert("Error rewriting URL: " & ctx.getExceptionMsg())
-      JS_FreeValue(ctx, arg0)
-      JS_FreeValue(ctx, ret)
+      else:
+        let ret = ctx.callSink(fun, JS_UNDEFINED, arg0)
+        if not JS_IsException(ret):
+          # Warning: we must only print exceptions if the *call* returned one.
+          # Conversion may simply error out because the function didn't return a
+          # new URL, and that's fine.
+          var nu: URL
+          if ctx.fromJSFree(ret, nu).isOk:
+            tmpUrl = nu
+        else:
+          #TODO should writeException the message to console
+          pager.alert("Error rewriting URL: " & ctx.getExceptionMsg())
       if $tmpUrl != surl:
         ourl = tmpUrl
         return
@@ -2059,12 +2063,12 @@ proc omniRewrite(pager: Pager; s: string): string =
       let fun = rule.substituteUrl
       let ctx = pager.jsctx
       let arg0 = ctx.toJS(s)
-      let jsRet = ctx.call(fun, JS_UNDEFINED, arg0)
-      JS_FreeValue(ctx, arg0)
-      var res: string
-      if not JS_IsException(jsRet) and ctx.fromJSFree(jsRet, res).isOk:
-        pager.lineHist[lmLocation].add(s)
-        return move(res)
+      if not JS_IsException(arg0):
+        let jsRet = ctx.callFree(fun, JS_UNDEFINED, arg0)
+        var res: string
+        if not JS_IsException(jsRet) and ctx.fromJSFree(jsRet, res).isOk:
+          pager.lineHist[lmLocation].add(s)
+          return move(res)
       pager.alert("Exception in omni-rule: " & ctx.getExceptionMsg())
   return s
 
@@ -2330,11 +2334,13 @@ proc updateReadLine(pager: Pager) {.jsfunc.} =
       let lineData = LineDataScript(line.data)
       JS_FreeValue(ctx, lineData.update)
       let text = ctx.toJS(line.news)
-      let res = ctx.callFree(lineData.resolve, JS_UNDEFINED, text)
-      JS_FreeValue(ctx, text)
-      if JS_IsException(res):
+      if JS_IsException(text):
         pager.console.writeException(ctx)
-      JS_FreeValue(ctx, res)
+      else:
+        let res = ctx.callSinkFree(lineData.resolve, JS_UNDEFINED, text)
+        if JS_IsException(res):
+          pager.console.writeException(ctx)
+        JS_FreeValue(ctx, res)
     of lmUsername:
       LineDataAuth(line.data).url.username = line.news
       pager.setLineEdit2(lmPassword, "Password: ", hide = true)

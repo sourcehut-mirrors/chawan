@@ -460,10 +460,14 @@ proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
       #TODO pin removeEventListener or something
       let funFun = newFunction(ctx, ["type", "callback", "capture"],
         "return () => this.removeEventListener(type, callback, capture)")
-      if JS_IsException(funFun):
-        return
       let jsTarget = ctx.toJS(target)
       let jsCapture = ctx.toJS(capture)
+      if JS_IsException(funFun) or JS_IsException(jsTarget) or
+          JS_IsException(jsCapture):
+        JS_FreeValue(ctx, funFun)
+        JS_FreeValue(ctx, jsTarget)
+        JS_FreeValue(ctx, jsCapture)
+        return
       let fun = ctx.callFree(funFun, jsTarget, callback, jsCapture)
       JS_FreeValue(ctx, jsTarget)
       JS_FreeValue(ctx, jsCapture)

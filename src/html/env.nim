@@ -413,7 +413,7 @@ proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Opt[void]
 proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   let global = JS_GetGlobalObject(ctx)
-  let res = JS_Call(ctx, argv[0], global, 0, nil)
+  let res = ctx.call(argv[0], global)
   JS_FreeValue(ctx, global)
   res
 

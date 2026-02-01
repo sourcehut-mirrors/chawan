@@ -38,6 +38,11 @@ proc JS_CallFree*(ctx: JSContext; funcObj: JSValue; this: JSValueConst;
   result = JS_Call(ctx, funcObj, this, argc, argv)
   JS_FreeValue(ctx, funcObj)
 
+proc freeValues*(ctx: JSContext; vals: openArray[JSValue]) =
+  ## Free each individual value in `vals`.
+  for val in vals:
+    JS_FreeValue(ctx, val)
+
 proc call*(ctx: JSContext; funcObj, this: JSValueConst;
     argv: varargs[JSValueConst]): JSValue =
   ## Call `funcObj` with the this value `this` and parameters `argv`.
@@ -50,6 +55,54 @@ proc callFree*(ctx: JSContext; funcObj: JSValue; this: JSValueConst;
   JS_CallFree(ctx, funcObj, this, cast[cint](argv.len),
     argv.toJSValueConstArray())
 
+proc callSink*(ctx: JSContext; funcObj, this: JSValueConst;
+    argv: varargs[JSValue]): JSValue =
+  ## Call `funcObj` with the this value `this` and parameters `argv`, then
+  ## free each element of `argv`.
+  let res = JS_Call(ctx, funcObj, this, cast[cint](argv.len),
+    argv.toJSValueConstArray())
+  ctx.freeValues(argv)
+  res
+
+proc callSinkThis*(ctx: JSContext; funcObj: JSValueConst; this: JSValue;
+    argv: varargs[JSValue]): JSValue =
+  ## Call `funcObj` with the this value `this` and parameters `argv`, then
+  ## free each element of `argv` as well as `this`.
+  let res = ctx.callSink(funcObj, this, argv)
+  JS_FreeValue(ctx, this)
+  res
+
+proc callSinkFree*(ctx: JSContext; funcObj: JSValue; this: JSValueConst;
+    argv: varargs[JSValue]): JSValue =
+  ## Call `funcObj` with the this value `this` and parameters `argv`, then
+  ## free each element of `argv` and `funcObj`.
+  let res = ctx.callSink(funcObj, this, argv)
+  JS_FreeValue(ctx, funcObj)
+  res
+
+proc callSinkThisFree*(ctx: JSContext; funcObj, this: JSValue;
+    argv: varargs[JSValue]): JSValue =
+  ## Call `funcObj` with the this value `this` and parameters `argv`, then
+  ## free each element of `argv` and `funcObj`.
+  let res = ctx.callSinkThis(funcObj, this, argv)
+  JS_FreeValue(ctx, funcObj)
+  res
+
+proc invoke*(ctx: JSContext; val: JSValueConst; atom: JSAtom;
+    argv: varargs[JSValueConst]): JSValue =
+  ## Invoke the function named `atom` on `val`.
+  JS_Invoke(ctx, val, atom, cast[cint](argv.len), argv.toJSValueConstArray())
+
+proc invokeSink*(ctx: JSContext; val: JSValueConst; atom: JSAtom;
+    argv: varargs[JSValue]): JSValue =
+  ## Invoke the function named `atom` on `val`, then free each element of
+  ## `argv`.
+  let res = JS_Invoke(ctx, val, atom, cast[cint](argv.len),
+    argv.toJSValueArray())
+  for arg in argv:
+    JS_FreeValue(ctx, arg)
+  res
+
 proc toUndefined*(ctx: JSContext; val: JSValue): JSValue =
   ## Free JSValue, and return JS_EXCEPTION if it's an exception (or
   ## undefined otherwise).
@@ -57,11 +110,6 @@ proc toUndefined*(ctx: JSContext; val: JSValue): JSValue =
     return JS_EXCEPTION
   JS_FreeValue(ctx, val)
   return JS_UNDEFINED
-
-proc freeValues*(ctx: JSContext; vals: openArray[JSValue]) =
-  ## Free each individual value in `vals`.
-  for val in vals:
-    JS_FreeValue(ctx, val)
 
 proc newArrayFrom*(ctx: JSContext; vals: openArray[JSValue]): JSValue =
   ## Create a new array consisting of `vals`.

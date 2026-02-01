@@ -190,9 +190,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst;
   block then:
     let fun = JS_NewCFunctionData(ctx, promiseThenCallback, 0, 0, 1,
       tmp.toJSValueArray())
-    let val = JS_Invoke(ctx, val, ctx.getOpaque().strRefs[jstThen], 1,
-      fun.toJSValueArray())
-    JS_FreeValue(ctx, fun)
+    let val = ctx.invokeSink(val, ctx.getOpaque().strRefs[jstThen], fun)
     if JS_IsException(val):
       JS_FreeValue(ctx, tmp)
       res = nil
@@ -201,9 +199,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst;
   block catch:
     let fun = JS_NewCFunctionData(ctx, promiseCatchCallback, 0, 0, 1,
       tmp.toJSValueArray())
-    let val = JS_Invoke(ctx, val, ctx.getOpaque().strRefs[jstCatch], 1,
-      fun.toJSValueArray())
-    JS_FreeValue(ctx, fun)
+    let val = ctx.invokeSink(val, ctx.getOpaque().strRefs[jstCatch], fun)
     if JS_IsException(val):
       JS_FreeValue(ctx, tmp)
       res = nil
