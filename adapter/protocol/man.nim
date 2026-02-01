@@ -1,8 +1,15 @@
 {.push raises: [].}
 
+from std/strutils import
+  delete,
+  find,
+  split,
+  strip,
+  toLowerAscii,
+  toUpperAscii
+
 import std/os
 import std/posix
-import std/strutils
 
 import lcgi
 
@@ -106,7 +113,7 @@ proc readErrorMsg(efile: AChaFile; line: var string): string =
     # try to get the error message into an acceptable format
     if line.startsWith("man: "):
       line.delete(0..4)
-    line = line.toLower().strip().replaceControls()
+    line = line.toLowerAscii().strip().replaceControls()
     if line.len > 0 and line[^1] == '.':
       line.setLen(line.high)
     if msg != "":

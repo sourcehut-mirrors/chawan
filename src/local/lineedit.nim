@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import std/strutils
+from std/strutils import delete
 
 import chagashi/decoder
 import config/history

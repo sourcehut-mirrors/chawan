@@ -1,9 +1,10 @@
 {.push raises: [].}
 
+from std/strutils import toLowerAscii
+
 import std/algorithm
 import std/macros
 import std/math
-import std/strutils
 import std/tables
 
 import css/cssparser

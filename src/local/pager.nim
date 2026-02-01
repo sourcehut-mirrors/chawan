@@ -1,10 +1,16 @@
 {.push raises: [].}
 
+from std/strutils import
+  delete,
+  find,
+  repeat,
+  rfind,
+  strip
+
 import std/options
 import std/os
 import std/posix
 import std/sets
-import std/strutils
 import std/tables
 import std/times
 

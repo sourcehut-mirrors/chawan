@@ -1,7 +1,13 @@
 {.push raises: [].}
 
+from std/strutils import
+  cmpIgnoreCase,
+  contains,
+  split,
+  strip,
+  toLowerAscii
+
 import std/algorithm
-import std/strutils
 
 import monoucha/fromjs
 import monoucha/jsbind
@@ -351,7 +357,7 @@ type CheckRefreshResult* = object
 
 proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   var i = s.skipBlanks(0)
-  let s0 = s.until(AllChars - AsciiDigit, i)
+  let s0 = s.until(NonDigit, i)
   let x = parseUInt32(s0, allowSign = false)
   if s0 != "":
     if x.isErr and (i >= s.len or s[i] != '.'):
@@ -360,7 +366,7 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   i = s.skipBlanks(i + s0.len)
   if i < s.len and s[i] == '.':
     inc i
-    let s1 = s.until(AllChars - AsciiDigit, i)
+    let s1 = s.until(NonDigit, i)
     if s1 != "":
       n += int(parseUInt32(s1, allowSign = false).get(0))
       i = s.skipBlanks(i + s1.len)

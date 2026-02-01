@@ -1,4 +1,4 @@
-import std/strutils
+from std/strutils import split
 
 import utils/twtstr
 

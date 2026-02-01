@@ -27,6 +27,7 @@ type
     hmPost = "POST"
     hmPut = "PUT"
     hmTrace = "TRACE"
+    hmTrack = "TRACK"
 
   RequestMode* = enum
     rmNoCors = "no-cors"

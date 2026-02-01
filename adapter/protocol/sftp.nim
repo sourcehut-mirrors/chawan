@@ -2,7 +2,8 @@
 
 {.push raises: [].}
 
-import std/strutils
+from std/strutils import find
+
 import std/times
 
 import utils/twtstr

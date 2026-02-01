@@ -1,5 +1,13 @@
 {.push raises: [].}
 
+from std/strutils import
+  contains,
+  repeat,
+  split,
+  strip,
+  toLowerAscii,
+  toUpperAscii
+
 import std/algorithm
 import std/hashes
 import std/math
@@ -7,7 +15,6 @@ import std/options
 import std/posix
 import std/sets
 import std/setutils
-import std/strutils
 import std/tables
 import std/times
 
@@ -1488,7 +1495,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         for s in response.headers.getAllCommaSplit("Cache-Control"):
           if s.startsWithIgnoreCase("max-age="):
             let i = s.skipBlanks("max-age=".len)
-            let s = s.until(AllChars - AsciiDigit, i)
+            let s = s.until(NonDigit, i)
             if pi := parseInt64(s):
               expiry = getTime().toUnix() + pi
             break

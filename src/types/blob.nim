@@ -1,7 +1,8 @@
 {.push raises: [].}
 
+from std/strutils import toLowerAscii
+
 import std/posix
-import std/strutils
 
 import config/mimetypes
 import io/packetreader

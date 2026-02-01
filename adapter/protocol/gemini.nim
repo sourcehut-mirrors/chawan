@@ -2,8 +2,12 @@
 
 {.push raises: [].}
 
+from std/strutils import
+  find,
+  split,
+  strip
+
 import std/posix
-import std/strutils
 
 import lcgi_ssl
 

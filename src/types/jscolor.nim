@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import std/strutils
+from std/strutils import strip
 
 import css/cssparser
 import css/cssvalues
@@ -15,8 +15,8 @@ import utils/twtstr
 proc parseLegacyColor*(s: string): Result[RGBColor, cstring] =
   if s == "":
     return err(cstring"color value must not be the empty string")
-  let s = s.strip(chars = AsciiWhitespace).toLowerAscii()
-  if s == "transparent":
+  let s = s.strip(chars = AsciiWhitespace)
+  if s.equalsIgnoreCase("transparent"):
     return err(cstring"color must not be transparent")
   return ok(parseLegacyColor0(s))
 

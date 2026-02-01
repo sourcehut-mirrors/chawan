@@ -1,8 +1,9 @@
 {.push raises: [].}
 
+from std/strutils import find
+
 import std/algorithm
 import std/os
-import std/strutils
 
 import io/chafile
 import types/opt

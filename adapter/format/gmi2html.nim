@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import std/strutils
-
 import io/chafile
 import types/opt
 import utils/twtstr

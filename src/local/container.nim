@@ -1,8 +1,9 @@
 {.push raises: [].}
 
+from std/strutils import repeat
+
 import std/options
 import std/posix
-import std/strutils
 
 import chagashi/charset
 import config/config

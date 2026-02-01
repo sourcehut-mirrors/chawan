@@ -1,7 +1,10 @@
 {.push raises: [].}
 
+from std/strutils import
+  split,
+  strip
+
 import std/posix
-import std/strutils
 
 import ../protocol/lcgi
 

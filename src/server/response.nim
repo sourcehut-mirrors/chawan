@@ -1,7 +1,10 @@
 {.push raises: [].}
 
+from std/strutils import
+  strip,
+  toLowerAscii
+
 import std/posix
-import std/strutils
 
 import chagashi/charset
 import chagashi/decoder
@@ -269,16 +272,16 @@ proc cssDecode(iq: openArray[char]; fallback: Charset): string =
   var charset = fallback
   var offset = 0
   const charsetRule = "@charset \""
-  if iq.startsWith2("\xFE\xFF"):
+  if iq.startsWith("\xFE\xFF"):
     charset = CHARSET_UTF_16_BE
     offset = 2
-  elif iq.startsWith2("\xFF\xFE"):
+  elif iq.startsWith("\xFF\xFE"):
     charset = CHARSET_UTF_16_LE
     offset = 2
-  elif iq.startsWith2("\xEF\xBB\xBF"):
+  elif iq.startsWith("\xEF\xBB\xBF"):
     charset = CHARSET_UTF_8
     offset = 3
-  elif iq.startsWith2(charsetRule):
+  elif iq.startsWith(charsetRule):
     let s = iq.toOpenArray(charsetRule.len, min(1024, iq.high)).until('"')
     let n = charsetRule.len + s.len
     if n >= 0 and n + 1 < iq.len and iq[n] == '"' and iq[n + 1] == ';':

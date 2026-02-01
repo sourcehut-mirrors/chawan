@@ -1,8 +1,13 @@
 {.push raises: [].}
 
+from std/strutils import
+  delete,
+  split,
+  strip,
+  toLowerAscii
+
 import std/algorithm
 import std/posix
-import std/strutils
 import std/tables
 import std/times
 
@@ -85,7 +90,6 @@ proc getMapKey(cookie: Cookie): string =
 proc parseCookieDate(val: string): Opt[int64] =
   # cookie-date
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
-  const NonDigit = AllChars - AsciiDigit
   var foundTime = false
   # date-token-list
   var time = array[3, int].default

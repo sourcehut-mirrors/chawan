@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/strutils
 
 import html/catom
 import types/opt

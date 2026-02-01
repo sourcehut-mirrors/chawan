@@ -1,7 +1,10 @@
 {.push raises: [].}
 
+from std/strutils import
+  delete,
+  find
+
 import std/posix
-import std/strutils
 
 import io/chafile
 import io/dynstream

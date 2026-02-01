@@ -1,6 +1,9 @@
+{.push raises: [].}
+
+from std/strutils import cmpIgnoreCase
+
 import std/algorithm
 import std/sets
-import std/strutils
 import std/tables
 
 import io/chafile
@@ -85,3 +88,5 @@ proc isJavaScriptType*(s: string): bool =
 
 proc isTextType*(s: string): bool =
   return s.startsWithIgnoreCase("text/") or s.isJavaScriptType()
+
+{.pop.} # raises: []

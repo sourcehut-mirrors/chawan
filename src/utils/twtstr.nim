@@ -1,12 +1,19 @@
 {.push raises: [].}
 
+from std/strutils import
+  contains,
+  find,
+  rfind,
+  toLowerAscii,
+  toUpperAscii
+
 import std/algorithm
 import std/math
 import std/posix
-import std/strutils
 
 import types/opt
 
+const AllChars* = {char.low..char.high}
 const C0Controls* = {'\0'..'\x1F'}
 const Controls* = C0Controls + {'\x7F'}
 const Ascii* = {'\0'..'\x7F'}
@@ -19,6 +26,7 @@ const AsciiAlphaNumeric* = AsciiAlpha + AsciiDigit
 const AsciiHexDigit* = AsciiDigit + {'a'..'f', 'A'..'F'}
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 const HTTPWhitespace* = {' ', '\n', '\r', '\t'}
+const NonDigit* = AllChars - AsciiDigit
 
 type BoxDrawingChar* = enum
   bdcHorizontalBarTop = "\u2500"
@@ -256,23 +264,45 @@ proc startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
       return false
   return true
 
-proc startsWith2*(s1, s2: openArray[char]): bool =
-  if s1.len < s2.len:
+proc startsWith*(s1, s2: openArray[char]): bool =
+  let len2 = s2.len
+  if s1.len < len2:
     return false
-  for i in 0 ..< s2.len:
-    if s1[i] != s2[i]:
-      return false
-  return true
+  when nimvm:
+    for i in 0 ..< len2:
+      if s1[i] != s2[i]:
+        return false
+  else:
+    if len2 <= 0:
+      return true
+    return equalMem(unsafeAddr s1[0], unsafeAddr s2[0], len2)
 
 proc endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
-  if s1.len < s2.len:
+  let len2 = s2.len
+  if s1.len < len2:
     return false
   let h1 = s1.high
   let h2 = s2.high
-  for i in 0 ..< s2.len:
+  for i in 0 ..< len2:
     if s1[h1 - i].toLowerAscii() != s2[h2 - i].toLowerAscii():
       return false
   return true
+
+proc endsWith*(s1, s2: openArray[char]): bool =
+  let len1 = s1.len
+  let len2 = s2.len
+  if len1 < len2:
+    return false
+  when nimvm:
+    let h1 = s1.high
+    let h2 = s2.high
+    for i in 0 ..< len2:
+      if s1[h1 - i] != s2[h2 - i]:
+        return false
+  else:
+    if len2 <= 0:
+      return true
+    return equalMem(unsafeAddr s1[len1 - len2], unsafeAddr s2[0], len2)
 
 proc containsIgnoreCase*(ss: openArray[string]; s: string): bool =
   for it in ss:

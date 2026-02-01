@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/os
-import std/strutils
 
 import io/chafile
 import types/opt

@@ -1,4 +1,6 @@
-import std/strutils
+from std/strutils import
+  find,
+  rfind
 
 import monoucha/fromjs
 import monoucha/jsbind

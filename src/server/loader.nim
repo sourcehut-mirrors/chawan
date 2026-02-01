@@ -22,10 +22,15 @@
 
 {.push raises: [].}
 
+from std/strutils import
+  contains,
+  delete,
+  split,
+  strip
+
 import std/algorithm
 import std/os
 import std/posix
-import std/strutils
 import std/tables
 import std/times
 
@@ -1210,7 +1215,7 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
 proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
   var ct = url.pathname.until(',')
-  if ct.len == url.pathname.len or AllChars - Ascii + Controls - {'\t'} in ct:
+  if ct.len == url.pathname.len or NonAscii + Controls - {'\t'} in ct:
     ctx.rejectHandle(handle, ceInvalidURL, "invalid data URL")
     return
   let sd = ct.len + 1 # data start

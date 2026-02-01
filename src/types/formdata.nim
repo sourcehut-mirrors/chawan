@@ -1,4 +1,6 @@
-import std/strutils
+{.push raises: [].}
+
+from std/strutils import count
 
 import io/dynstream
 import io/packetreader
@@ -121,3 +123,5 @@ proc write*(stream: PosixStream; formData: FormData): Opt[void] =
   for entry in formData.entries:
     ?stream.writeEntry(entry, formData.boundary)
   stream.writeLoop("--" & formData.boundary & "--\r\n")
+
+{.pop.} # raises: []

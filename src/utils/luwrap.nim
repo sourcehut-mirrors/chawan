@@ -1,7 +1,8 @@
 {.push raises: [].}
 
+from std/strutils import contains
+
 import std/algorithm
-import std/strutils
 
 import monoucha/libunicode
 import monoucha/libregexp

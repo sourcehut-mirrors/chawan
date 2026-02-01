@@ -1,8 +1,16 @@
 # See https://url.spec.whatwg.org/#url-parsing.
+
 {.push raises: [].}
 
+from std/strutils import
+  contains,
+  delete,
+  find,
+  rfind,
+  split,
+  toLowerAscii
+
 import std/algorithm
-import std/strutils
 
 import io/packetreader
 import io/packetwriter
@@ -447,7 +455,7 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
   var first = true
   for label in processed.split('.'):
     var s = ""
-    if AllChars - Ascii in label:
+    if NonAscii in label:
       let x = punyEncode(label)
       if x.isErr:
         return ""
@@ -471,7 +479,7 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
 proc domainToAscii(domain: string; beStrict: bool): string =
   result = domain.toLowerAscii()
   if beStrict or result.startsWith("xn--") or result.find(".xn--") != -1 or
-      AllChars - Ascii in result:
+      NonAscii in result:
     result = domain.unicodeToAscii(beStrict)
 
 proc parseHost*(input: string; special: bool; hostType: var HostType): string =

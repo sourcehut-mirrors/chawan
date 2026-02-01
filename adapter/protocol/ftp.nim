@@ -1,7 +1,10 @@
 {.push raises: [].}
 
+from std/strutils import
+  find,
+  split
+
 import std/posix
-import std/strutils
 
 import lcgi
 
@@ -65,7 +68,7 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
   let i = obuf.find(AsciiDigit)
   if i == -1:
     cgiDie(ceInvalidResponse)
-  var j = obuf.find(AllChars - AsciiDigit - {','}, i)
+  var j = obuf.find(NonDigit - {','}, i)
   if j == -1:
     j = obuf.len
   let ss = obuf.substr(i, j - 1).split(',')

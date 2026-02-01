@@ -1,10 +1,15 @@
 {.push raises: [].}
 
+from std/strutils import
+  contains,
+  find,
+  split,
+  toUpperAscii
+
 import std/algorithm
 import std/options
 import std/os
 import std/sets
-import std/strutils
 import std/tables
 
 import chagashi/charset

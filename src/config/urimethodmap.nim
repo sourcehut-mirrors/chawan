@@ -1,6 +1,7 @@
 # w3m's URI method map format.
 
-import std/strutils
+from std/strutils import split
+
 import std/tables
 
 import types/opt
@@ -52,17 +53,12 @@ proc parseURIMethodMap*(this: var URIMethodMap; s: string) =
   for line in s.split('\n'):
     if line.len == 0 or line[0] == '#':
       continue # comments
-    var k = ""
-    var i = 0
-    while i < line.len and line[i] notin AsciiWhitespace + {':'}:
-      k &= line[i].toLowerAscii()
-      inc i
+    var k = line.untilLower(AsciiWhitespace + {':'})
+    var i = k.len
     if i >= line.len or line[i] != ':':
       continue # invalid
     k &= ':'
-    inc i # skip colon
-    while i < line.len and line[i] in AsciiWhitespace:
-      inc i
+    i = line.skipBlanks(i + 1) # skip colon
     var v = line.until(AsciiWhitespace, i)
     # Basic w3m compatibility.
     # If needed, w3m-cgi-compat covers more cases.

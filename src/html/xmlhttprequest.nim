@@ -1,5 +1,10 @@
+{.push raises: [].}
+
+from std/strutils import
+  toLowerAscii,
+  toUpperAscii
+
 import std/algorithm
-import std/strutils
 
 import chagashi/charset
 import chagashi/decoder
@@ -112,20 +117,14 @@ proc readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
   return uint16(this.readyState)
 
 proc parseMethod(ctx: JSContext; s: string): Opt[HttpMethod] =
-  return case s.toLowerAscii()
-  of "get": ok(hmGet)
-  of "delete": ok(hmDelete)
-  of "head": ok(hmHead)
-  of "options": ok(hmOptions)
-  of "patch": ok(hmPatch)
-  of "post": ok(hmPost)
-  of "put": ok(hmPut)
-  of "connect", "trace", "track":
+  let m = ?parseEnumNoCase[HttpMethod](s)
+  if m in {hmGet, hmDelete, hmHead, hmOptions, hmPatch, hmPost, hmPut}:
+    return ok(m)
+  if m in {hmConnect, hmTrace, hmTrack}:
     JS_ThrowDOMException(ctx, "SecurityError", "forbidden method")
-    err()
   else:
     JS_ThrowDOMException(ctx, "SyntaxError", "invalid method")
-    err()
+  err()
 
 proc fireReadyStateChangeEvent(window: Window; target: EventTarget) =
   window.fireEvent(satReadystatechange, target, bubbles = false,
@@ -529,3 +528,5 @@ proc addXMLHttpRequestModule*(ctx: JSContext;
   let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID)
   discard ctx.addEventGetSet(xhrCID, [satReadystatechange])
   doAssert ctx.defineConsts(xhrCID, XMLHttpRequestState) == dprSuccess
+
+{.pop.} # raises: []
