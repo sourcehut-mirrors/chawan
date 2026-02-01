@@ -40,7 +40,7 @@ import utils/twtstr
 
 type
   CursorState = object
-    cursor: CursorXY
+    cursor: PagePos
     xend: int
     fromx: int
     fromy: int
@@ -50,8 +50,7 @@ type
 
   ContainerEventType* = enum
     cetReadLine, cetReadPassword, cetReadArea, cetReadFile, cetOpen,
-    cetSave, cetSaveSource, cetSetLoadInfo, cetStatus, cetLoaded, cetTitle,
-    cetMetaRefresh
+    cetSave, cetSetLoadInfo, cetStatus, cetLoaded, cetTitle, cetMetaRefresh
 
   ContainerEvent* = ref object
     case t*: ContainerEventType
@@ -85,10 +84,6 @@ type
       mouse*: bool
     x1, y1: int
     x2, y2: int
-
-  PagePos = tuple
-    x: int
-    y: int
 
   BufferFilter* = ref object
     cmd*: string
@@ -157,7 +152,7 @@ type
     next* {.jsget.}: Container
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
-    iface*: BufferInterface
+    iface* {.jsget.}: BufferInterface
     width* {.jsget.}: int
     height {.jsget.}: int
     phandle*: ProcessHandle
@@ -214,13 +209,13 @@ jsDestructor(Highlight)
 jsDestructor(Container)
 
 # Forward declarations
-proc cursorLastLine(container: Container)
 proc find*(container: Container; dir: NavDirection): Container
 proc onclick(container: Container; res: ClickResult)
 proc triggerEvent(container: Container; t: ContainerEventType)
 proc updateCursor(container: Container)
 proc sendCursorPosition(container: Container): EmptyPromise
 proc loaded(container: Container)
+proc setCursorY*(container: Container; y: int; refresh = true)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; attrs: WindowAttributes; title: string;
@@ -631,7 +626,7 @@ proc requestLines(container: Container): EmptyPromise =
       container.updateCursor()
       if cfTailOnLoad in container.flags:
         container.flags.excl(cfTailOnLoad)
-        container.cursorLastLine()
+        container.setCursorY(int.high)
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
       container.queueDraw()
@@ -764,10 +759,6 @@ proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
   container.setCursorY(y, refresh)
   container.setCursorX(x, refresh)
 
-proc setAbsoluteCursorXY*(container: Container; x, y: int; refresh = true)
-    {.jsfunc.} =
-  container.setCursorXY(container.fromx + x, container.fromy + y, refresh)
-
 proc matchFirst(ctx: JSContext; container: Container; re: JSValueConst): JSValue
     {.jsfunc.} =
   if container.numLines == 0 or not container.lineLoaded(container.cursory):
@@ -787,19 +778,6 @@ proc centerLine(container: Container; n = 0) {.jsfunc.} =
 proc centerColumn(container: Container) {.jsfunc.} =
   container.setFromX(container.cursorx - container.width div 2)
 
-proc setCursorYCenter(container: Container; y: int; refresh = true)
-    {.jsfunc.} =
-  let fy = container.fromy
-  container.setCursorY(y, refresh)
-  if fy != container.fromy:
-    container.centerLine()
-
-proc setCursorXCenter(container: Container; x: int; refresh = true) {.jsfunc.} =
-  let fx = container.fromx
-  container.setCursorX(x, refresh)
-  if fx != container.fromx:
-    container.centerColumn()
-
 proc setCursorXYCenter*(container: Container; x, y: int; refresh = true)
     {.jsfunc.} =
   let fy = container.fromy
@@ -810,18 +788,13 @@ proc setCursorXYCenter*(container: Container; x, y: int; refresh = true)
   if fx != container.fromx:
     container.centerColumn()
 
-proc markPos0*(container: Container) {.jsfunc.} =
+proc markPos0(container: Container) {.jsfunc.} =
   container.tmpJumpMark = (container.cursorx, container.cursory)
 
-proc markPos*(container: Container) {.jsfunc.} =
+proc markPos(container: Container) {.jsfunc.} =
   let pos = container.tmpJumpMark
   if container.cursorx != pos.x or container.cursory != pos.y:
     container.jumpMark = pos
-
-proc cursorLastLine(container: Container) {.jsfunc.} =
-  container.markPos0()
-  container.setCursorY(container.numLines - 1)
-  container.markPos()
 
 proc updateCursor(container: Container) =
   if container.pos.setx > -1:
@@ -857,41 +830,6 @@ proc copyCursorPos*(container, c2: Container) {.jsfunc.} =
     container.startpos = some(c2.pos)
   container.flags.incl(cfHasStart)
 
-#TODO these really should be unified
-proc findNextLink(ctx: JSContext; container: Container; x, y, n: int): JSValue
-    {.jsfunc.} =
-  if container.iface == nil:
-    return ctx.toJS((-1, -1))
-  return ctx.toJS(container.iface.findNextLink(x, y, n))
-
-proc findPrevLink(ctx: JSContext; container: Container; x, y, n: int): JSValue
-    {.jsfunc.} =
-  if container.iface == nil:
-    return ctx.toJS((-1, -1))
-  return ctx.toJS(container.iface.findPrevLink(x, y, n))
-
-proc cursorNextParagraph(container: Container; n = 1) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.markPos0()
-  container.iface
-    .findNextParagraph(container.cursory, n)
-    .then(proc(res: int) =
-      container.setCursorY(res)
-      container.markPos()
-    )
-
-proc cursorPrevParagraph(container: Container; n = 1) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.markPos0()
-  container.iface
-    .findPrevParagraph(container.cursory, n)
-    .then(proc(res: int) =
-      container.setCursorY(res)
-      container.markPos()
-    )
-
 proc findMark(container: Container; id: string): int =
   for i, it in container.marks.mypairs:
     if it.id == id:
@@ -917,34 +855,14 @@ proc clearMark(container: Container; id: string): bool {.jsfunc.} =
     container.queueDraw()
   i != -1
 
-proc getMarkPos(ctx: JSContext; container: Container; id: string): JSValue {.jsfunc.} =
+proc getMarkPos(ctx: JSContext; container: Container; id: string): JSValue
+    {.jsfunc.} =
   if id == "`" or id == "'":
     return ctx.toJS(container.jumpMark)
   let i = container.findMark(id)
   if i != -1:
     return ctx.toJS(container.marks[i].pos)
   return JS_NULL
-
-proc gotoMark(container: Container; id: string): bool {.jsfunc.} =
-  container.markPos0()
-  let i = container.findMark(id)
-  let pos = if i != -1:
-    container.marks[i].pos
-  elif id == "`" or id == "'":
-    container.jumpMark
-  else:
-    return false
-  container.setCursorXYCenter(pos.x, pos.y)
-  container.markPos()
-  true
-
-proc gotoMarkY(container: Container; id: string): bool {.jsfunc.} =
-  let i = container.findMark(id)
-  if i != -1:
-    let mark = container.marks[i].pos
-    container.setCursorXYCenter(0, mark.y)
-    container.markPos()
-  i != -1
 
 proc findNextMark(ctx: JSContext; container: Container; x = -1; y = -1): JSValue
     {.jsfunc.} =
@@ -977,24 +895,6 @@ proc findPrevMark(ctx: JSContext; container: Container; x = -1; y = -1):
   if j != -1:
     return ctx.toJS(container.marks[j].id)
   return JS_NULL
-
-proc cursorNthLink(container: Container; n = 1) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.iface
-    .findNthLink(n)
-    .then(proc(res: tuple[x, y: int]) =
-      if res.x > -1 and res.y != -1:
-        container.setCursorXYCenter(res.x, res.y))
-
-proc cursorRevNthLink(container: Container; n = 1) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.iface
-    .findRevNthLink(n)
-    .then(proc(res: tuple[x, y: int]) =
-      if res.x > -1 and res.y != -1:
-        container.setCursorXYCenter(res.x, res.y))
 
 proc clearSearchHighlights(container: Container) {.jsfunc.} =
   for i in countdown(container.highlights.high, 0):
@@ -1168,13 +1068,6 @@ proc getSelectionText*(container: Container; hl = none(Highlight)):
     return s.expandPUATabsHard()
   )
 
-proc markURL(container: Container) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.iface.markURL().then(proc() =
-    discard container.sendCursorPosition()
-  )
-
 proc toggleImages(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
@@ -1233,7 +1126,7 @@ proc loaded(container: Container) =
     if anchor != "" or container.config.autofocus:
       container.iface.gotoAnchor(anchor, container.config.autofocus,
           true).then(proc(res: GotoAnchorResult) =
-        if res.found:
+        if res.y >= 0:
           container.setCursorXYCenter(res.x, res.y)
           if res.focus != nil:
             container.onReadLine(res.focus)
@@ -1343,11 +1236,6 @@ proc readSuccess*(container: Container; s: string; fd: cint = -1) =
       container.triggerEvent(ContainerEvent(t: cetOpen, request: res))
   )
 
-proc reshape(container: Container): EmptyPromise {.jsfunc.} =
-  if container.iface == nil:
-    return
-  return container.iface.forceReshape()
-
 proc selectFinish(opaque: RootRef; select: Select) =
   let container = Container(opaque)
   container.iface.select(select.selected).then(proc(res: ClickResult) =
@@ -1408,11 +1296,6 @@ proc saveLink*(container: Container) {.jsfunc.} =
           contentType: res.contentType
         ))
     )
-
-proc saveSource*(container: Container) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.triggerEvent(cetSaveSource)
 
 proc windowChange*(container: Container; attrs: WindowAttributes) =
   container.width = attrs.width

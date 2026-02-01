@@ -34,6 +34,7 @@ import monoucha/jsopaque
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
+import server/bufferiface
 import server/forkserver
 import server/headers
 import server/loaderiface
@@ -421,6 +422,7 @@ proc addJSModules(client: Client; ctx: JSContext): JSClassID =
   ctx.addConfigModule()
   ctx.addPagerModule()
   ctx.addContainerModule()
+  ctx.addBufferInterfaceModule()
   ctx.addSelectModule()
   return windowCID
 

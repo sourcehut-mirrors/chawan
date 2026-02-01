@@ -40,6 +40,7 @@ import monoucha/libregexp
 import monoucha/quickjs
 import monoucha/tojs
 import server/buffer
+import server/bufferiface
 import server/connectionerror
 import server/forkserver
 import server/headers
@@ -729,9 +730,6 @@ proc evalInputAction(ctx: JSContext; pager: Pager; map: ActionMap; arg0: int32):
 proc queueStatusUpdate(pager: Pager) {.jsfunc.} =
   if pager.updateStatus == ussNone:
     pager.updateStatus = ussUpdate
-
-proc forceStatusUpdate(pager: Pager) {.jsfunc.} =
-  pager.updateStatus = ussUpdate
 
 # called from JS command()
 proc evalCommand(pager: Pager; src: string): JSValue {.jsfunc.} =
@@ -2040,16 +2038,15 @@ proc gotoURL(pager: Pager; request: Request; contentType = "";
 
 # Check if the user is trying to go to an anchor of the current buffer.
 # If yes, the caller need not call gotoURL.
-proc gotoURLHash(pager: Pager; request: Request; current: Container;
-    save: bool): bool =
+proc gotoURLHash(pager: Pager; request: Request; current: Container): bool =
   let url = request.url
   if current == nil or not current.url.equals(url, excludeHash = true) or
-      url.hash == "" or request.httpMethod != hmGet or save:
+      url.hash == "" or request.httpMethod != hmGet:
     return false
   let anchor = url.hash.substr(1)
   current.iface.gotoAnchor(anchor, false, false).then(
     proc(res: GotoAnchorResult) =
-      if res.found:
+      if res.y >= 0:
         let nc = pager.dupeBuffer(current, url)
         nc.setCursorXYCenter(res.x, res.y)
       else:
@@ -2082,7 +2079,7 @@ proc loadURL(pager: Pager; url: string; contentType = "";
   let url0 = pager.omniRewrite(url)
   if firstParse := parseURL(url0):
     let request = newRequest(firstParse)
-    if not pager.gotoURLHash(request, pager.container, save = false):
+    if not pager.gotoURLHash(request, pager.container):
       let container = pager.gotoURL(request, contentType, charset,
         history = history)
       pager.addContainer(container)
@@ -2436,6 +2433,7 @@ type GotoURLDict = object of JSDict
   scripting {.jsdefault.}: Option[ScriptingMode]
   cookie {.jsdefault.}: Option[CookieMode]
   charset {.jsdefault.}: Option[Charset]
+  url {.jsdefault.}: Option[URL]
 
 proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
     t = GotoURLDict()): Opt[Container] {.jsfunc: "gotoURL".} =
@@ -2455,7 +2453,7 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
   let replace = t.replace.get(nil)
   let container = pager.gotoURL0(request, t.save, t.history, bufferConfig,
     loaderConfig, title = "", t.contentType.get(""), redirectDepth = 0,
-    url = nil, replace, filterCmd)
+    url = t.url.get(nil), replace, filterCmd)
   if replace == nil:
     pager.addContainer(container)
   ok(container)
@@ -2791,7 +2789,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
   let save = cfSave in container.flags
-  if not pager.gotoURLHash(request, container, save):
+  if save or not pager.gotoURLHash(request, container):
     let nc = pager.gotoURL(request, redirectDepth = container.redirectDepth + 1,
       referrer = container, save = save, history = cfHistory in container.flags)
     if nc != nil:
@@ -3317,20 +3315,15 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
     if pager.container != container or
         not save and not container.isHoverURL(url):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
-        if x and not pager.gotoURLHash(request, container, save):
+        if x and (save or not pager.gotoURLHash(request, container)):
           let container = pager.gotoURL(request, contentType,
             referrer = container, save = save)
           pager.addContainer(container)
       )
-    elif not pager.gotoURLHash(request, container, save):
+    elif (save or not pager.gotoURLHash(request, container)):
       let container = pager.gotoURL(request, contentType, referrer = container,
         save = save)
       pager.addContainer(container)
-  of cetSaveSource:
-    let request = newRequest("cache:" & $container.cacheId)
-    let container = pager.gotoURL(request, "", referrer = pager.container,
-      save = true, url = container.url)
-    pager.addContainer(container)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()

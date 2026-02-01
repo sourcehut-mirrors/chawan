@@ -796,7 +796,7 @@ Pager.prototype.handleMouseInput = async function(input) {
             break;
         }
     }
-    this.forceStatusUpdate();
+    this.queueStatusUpdate();
     this.handleEvents();
 }
 
@@ -835,7 +835,8 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
                 await p;
                 this.queueStatusUpdate();
                 this.handleEvents();
-            }
+            } else
+                this.queueStatusUpdate();
         }
         break;
     case "mouse":
@@ -1171,9 +1172,26 @@ Buffer.prototype.cursorLineTextStart = function() {
         this.cursorLineEnd();
 }
 
-Buffer.prototype.cursorNextLink = async function(n = 1) {
+Buffer.prototype.cursorNextParagraph = async function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
     this.markPos0();
-    const [x, y] = await this.findNextLink(this.cursorx, this.cursory, n);
+    const y = await iface.findNextParagraph(this.cursory, n);
+    this.setCursorY(y)
+    this.markPos();
+}
+
+Buffer.prototype.cursorPrevParagraph = async function(n = 1) {
+    return this.cursorNextParagraph(-n);
+}
+
+Buffer.prototype.cursorNextLink = async function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    this.markPos0();
+    const [x, y] = await iface.findNextLink(this.cursorx, this.cursory, n);
     if (y >= 0) {
         this.setCursorXY(x, y);
         this.markPos();
@@ -1181,20 +1199,44 @@ Buffer.prototype.cursorNextLink = async function(n = 1) {
 }
 
 Buffer.prototype.cursorPrevLink = async function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
     this.markPos0();
-    const [x, y] = await this.findPrevLink(this.cursorx, this.cursory, n);
+    const [x, y] = await iface.findPrevLink(this.cursorx, this.cursory, n);
     if (y >= 0) {
         this.setCursorXY(x, y);
         this.markPos();
     }
 }
 
+Buffer.prototype.cursorNthLink = async function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const pos = await iface.findNextLink(0, 0, n);
+    if (y >= 0)
+        this.setCursorXYCenter(...pos);
+}
+
+Buffer.prototype.cursorRevNthLink = async function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const pos = await iface.findRevNthLink(n);
+    if (y >= 0)
+        this.setCursorXYCenter(...pos);
+}
+
 Buffer.prototype.cursorLinkNavDown = async function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
     this.markPos0();
-    const [x, y] = await this.findNextLink(this.cursorx, this.cursory, n);
+    const [x, y] = await iface.findNextLink(this.cursorx, this.cursory, n);
     if (y < 0) {
         if (this.numLines <= this.height) {
-            const [x2, y2] = await this.findNextLink(-1, 0, 1);
+            const [x2, y2] = await iface.findNextLink(-1, 0, 1);
             this.setCursorXYCenter(x2, y2);
         } else
             this.pageDown();
@@ -1212,12 +1254,15 @@ Buffer.prototype.cursorLinkNavDown = async function(n = 1) {
 }
 
 Buffer.prototype.cursorLinkNavUp = async function(n = 1) {
-    const [x, y] = await this.findPrevLink(this.cursorx, this.cursory, n);
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const [x, y] = await iface.findPrevLink(this.cursorx, this.cursory, n);
     if (y < 0) {
         const numLines = this.numLines;
         if (numLines <= this.height) {
-            const [x2, y2] = await this.findPrevLink(MAX_INT32,
-                                                     numLines - 1, 1);
+            const [x2, y2] = await iface.findPrevLink(MAX_INT32,
+                                                      numLines - 1, 1);
             this.setCursorXYCenter(x2, y2);
         } else
             this.pageUp();
@@ -1238,4 +1283,67 @@ Buffer.prototype.cursorFirstLine = function() {
     this.markPos0();
     this.setCursorY(0);
     this.markPos();
+}
+
+Buffer.prototype.cursorLastLine = function() {
+    this.markPos0();
+    this.setCursorY(this.numLines - 1);
+    this.markPos();
+}
+
+Buffer.prototype.gotoMark = function(id) {
+    const pos = this.getMarkPos(id);
+    if (pos == null)
+        return false;
+    this.markPos0();
+    this.setCursorXYCenter(...pos);
+    this.markPos();
+    return true;
+}
+
+Buffer.prototype.gotoMarkY = function(id) {
+    const pos = this.getMarkPos(id);
+    if (pos == null)
+        return false;
+    this.markPos0();
+    this.setCursorXYCenter(0, pos[1]);
+    this.markPos();
+    return true;
+}
+
+Buffer.prototype.setCursorYCenter = function(y) {
+    const fy = this.fromy;
+    this.setCursorY(y);
+    if (fy != this.fromy)
+        this.centerLine();
+}
+
+Buffer.prototype.setCursorXCenter = function(x) {
+    const fx = this.fromx;
+    this.setCursorX(x);
+    if (fx != fromx)
+        this.centerColumn();
+}
+
+Buffer.prototype.setAbsoluteCursorXY = function(x, y) {
+    this.setCursorXY(this.fromx + x, this.fromy + y);
+}
+
+Buffer.prototype.markURL = async function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    await iface.markURL();
+    return this.sendCursorPosition();
+}
+
+Buffer.prototype.reshape = function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    return iface.forceReshape();
+}
+
+Buffer.prototype.saveSource = function() {
+    pager.gotoURL("cache:" + this.cacheId, {save: true, url: this.url});
 }

@@ -59,38 +59,6 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  BufferCommand* = enum
-    bcCancel = "cancel"
-    bcCheckRefresh = "checkRefresh"
-    bcClick = "click"
-    bcClone = "clone"
-    bcContextMenu = "contextMenu"
-    bcFindNextLink = "findNextLink"
-    bcFindNextMatch = "findNextMatch"
-    bcFindNextParagraph = "findNextParagraph"
-    bcFindNthLink = "findNthLink"
-    bcFindPrevLink = "findPrevLink"
-    bcFindPrevMatch = "findPrevMatch"
-    bcFindPrevParagraph = "findPrevParagraph"
-    bcFindRevNthLink = "findRevNthLink"
-    bcForceReshape = "forceReshape"
-    bcGetLines = "getLines"
-    bcGetLinks = "getLinks"
-    bcGetTitle = "getTitle"
-    bcGotoAnchor = "gotoAnchor"
-    bcHideHints = "hideHints"
-    bcLoad = "load"
-    bcMarkURL = "markURL"
-    bcOnReshape = "onReshape"
-    bcReadCanceled = "readCanceled"
-    bcReadSuccess = "readSuccess"
-    bcSelect = "select"
-    bcShowHints = "showHints"
-    bcSubmitForm = "submitForm"
-    bcToggleImages = "toggleImages"
-    bcUpdateHover = "updateHover"
-    bcWindowChange = "windowChange"
-
   BufferState* = enum
     bsLoadingPage, bsLoadingResources, bsLoadingImages, bsLoaded
 
@@ -161,14 +129,6 @@ type
     referrer*: string
     userStyle*: string
 
-  ReadLineType* = enum
-    rltText, rltPassword, rltArea, rltFile
-
-  ReadLineResult* = ref object
-    t*: ReadLineType
-    prompt*: string
-    value*: string
-
   SelectResult* = ref object
     options*: seq[SelectOption]
     selected*: int
@@ -212,30 +172,6 @@ template withPacketWriterReturnEOF(stream: DynStream; w, body: untyped) =
     body
   do:
     return cmdrEOF
-
-proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
-  if iface.len != 0:
-    let promise = Promise[T](promise)
-    var r: PacketReader
-    if iface.stream.initReader(r, iface.len, iface.nfds):
-      r.sread(promise.res)
-    iface.len = 0
-    iface.nfds = 0
-
-proc addPromise(iface: BufferInterface; promise: EmptyPromise;
-    get: GetValueProc) =
-  iface.map.add(BufferIfaceItem(id: iface.packetid, p: promise, get: get))
-  inc iface.packetid
-
-proc addPromise[T](iface: BufferInterface): Promise[T] =
-  let promise = Promise[T]()
-  iface.addPromise(promise, getFromStream[T])
-  return promise
-
-proc addEmptyPromise(iface: BufferInterface): EmptyPromise =
-  let promise = EmptyPromise()
-  iface.addPromise(promise, nil)
-  return promise
 
 proc findPromise(iface: BufferInterface; id: int): int =
   for i, it in iface.map.mypairs:
@@ -383,6 +319,21 @@ template proxy(fun: untyped) =
 template proxy(flag, fun: untyped) =
   proxyt(flag, fun)
 
+macro proxyt2(flag: static ProxyFlag; fun: typed) =
+  let name = fun.name # sym
+  let params = fun.params # formalParams
+  let cmd = strictParseEnum[BufferCommand](name.strVal).get
+  let pproc = buildProxyProc(name, params, cmd, flag)
+  quote do:
+    `fun`
+    `pproc`
+
+template proxy2(fun: untyped) =
+  proxyt2(pfNone, fun)
+
+template proxy2(flag, fun: untyped) =
+  proxyt2(flag, fun)
+
 proc getTitleAttr(bc: BufferContext; element: Element): string =
   if element != nil:
     for element in element.branchElems:
@@ -499,8 +450,8 @@ proc navigate(bc: BufferContext; url: URL) =
   discard stderr.writeLine("navigate to " & $url)
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
-proc findPrevLink*(bc: BufferContext; handle: PagerHandle;
-    cursorx, cursory, n: int): tuple[x, y: int] {.proxy.} =
+proc findPrevLink(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory, n: int): tuple[x, y: int] {.proxy2.} =
   if cursory >= bc.lines.len:
     return (-1, -1)
   var found = 0
@@ -560,8 +511,8 @@ proc findPrevLink*(bc: BufferContext; handle: PagerHandle;
       dec i
   return (-1, -1)
 
-proc findNextLink*(bc: BufferContext; handle: PagerHandle;
-    cursorx, cursory, n: int): tuple[x, y: int] {.proxy.} =
+proc findNextLink(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory, n: int): tuple[x, y: int] {.proxy2.} =
   if cursory >= bc.lines.len:
     return (-1, -1)
   var found = 0
@@ -583,46 +534,25 @@ proc findNextLink*(bc: BufferContext; handle: PagerHandle;
     i = 0
   return (-1, -1)
 
-proc findPrevParagraph*(bc: BufferContext; handle: PagerHandle;
-    cursory, n: int): int {.proxy.} =
+proc findNextParagraph(bc: BufferContext; handle: PagerHandle;
+    cursory, n: int): int {.proxy2.} =
   var y = cursory
-  for i in 0 ..< n:
-    while y >= 0 and bc.lines[y].str.onlyWhitespace():
-      dec y
-    while y >= 0 and not bc.lines[y].str.onlyWhitespace():
-      dec y
+  if n < 0:
+    for i in 0 ..< -n:
+      while y >= 0 and bc.lines[y].str.onlyWhitespace():
+        dec y
+      while y >= 0 and not bc.lines[y].str.onlyWhitespace():
+        dec y
+  else:
+    for i in 0 ..< n:
+      while y < bc.lines.len and bc.lines[y].str.onlyWhitespace():
+        inc y
+      while y < bc.lines.len and not bc.lines[y].str.onlyWhitespace():
+        inc y
   return y
 
-proc findNextParagraph*(bc: BufferContext; handle: PagerHandle;
-    cursory, n: int): int {.proxy.} =
-  var y = cursory
-  for i in 0 ..< n:
-    while y < bc.lines.len and bc.lines[y].str.onlyWhitespace():
-      inc y
-    while y < bc.lines.len and not bc.lines[y].str.onlyWhitespace():
-      inc y
-  return y
-
-proc findNthLink*(bc: BufferContext; handle: PagerHandle; i: int):
-    tuple[x, y: int] {.proxy.} =
-  if i == 0:
-    return (-1, -1)
-  var k = 0
-  var link: Element
-  for y in 0 .. bc.lines.high:
-    let line = bc.lines[y]
-    for j in 0 ..< line.formats.len:
-      let format = line.formats[j]
-      let fl = format.node.getClickable()
-      if fl != nil and fl != link:
-        inc k
-        if k == i:
-          return (format.pos, y)
-        link = fl
-  return (-1, -1)
-
-proc findRevNthLink*(bc: BufferContext; handle: PagerHandle; i: int):
-    tuple[x, y: int] {.proxy.} =
+proc findRevNthLink(bc: BufferContext; handle: PagerHandle; i: int):
+    tuple[x, y: int] {.proxy2.} =
   if i == 0:
     return (-1, -1)
   var k = 0
@@ -697,20 +627,14 @@ proc findNextMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
     inc y
   BufferMatch(x: -1, y: -1)
 
-type GotoAnchorResult* = object
-  found*: bool
-  x*: int
-  y*: int
-  focus*: ReadLineResult
-
-proc gotoAnchor*(bc: BufferContext; handle: PagerHandle; anchor: string;
-    autofocus, target: bool): GotoAnchorResult {.proxy.} =
+proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: string;
+    autofocus, target: bool): GotoAnchorResult {.proxy2.} =
   if bc.document == nil:
-    return GotoAnchorResult(found: false)
+    return GotoAnchorResult(x: -1, y: -1)
   if anchor.len > 0 and anchor[0] == 'L' and not bc.ishtml:
     let y = parseIntP(anchor.toOpenArray(1, anchor.high)).get(-1)
     if y > 0:
-      return GotoAnchorResult(found: true, x: 0, y: y - 1)
+      return GotoAnchorResult(x: 0, y: y - 1)
   var element = bc.document.findAnchor(anchor)
   if element == nil:
     let s = percentDecode(anchor)
@@ -729,11 +653,11 @@ proc gotoAnchor*(bc: BufferContext; handle: PagerHandle; anchor: string;
       let res = bc.click(autofocus)
       focus = res.readline
   if element == nil or element.box == nil:
-    return GotoAnchorResult(found: false)
+    return GotoAnchorResult(x: -1, y: -1)
   let offset = CSSBox(element.box).render.offset
   let x = max(offset.x div bc.attrs.ppc.toLUnit(), 0'lu).toInt
   let y = max(offset.y div bc.attrs.ppl.toLUnit(), 0'lu).toInt
-  return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
+  return GotoAnchorResult(x: x, y: y, focus: focus)
 
 proc checkRefresh*(bc: BufferContext; handle: PagerHandle): CheckRefreshResult
     {.proxy.} =
@@ -1809,7 +1733,7 @@ proc getLinks*(bc: BufferContext; handle: PagerHandle): seq[string] {.proxy.} =
         else:
           result.add(element.attr(satHref))
 
-proc onReshape*(bc: BufferContext; handle: PagerHandle) {.proxy: pfTask.} =
+proc onReshape(bc: BufferContext; handle: PagerHandle) {.proxy2: pfTask.} =
   if handle.onReshapeImmediately:
     # We got a reshape before the container even asked us for the event.
     # This variable prevents the race that would otherwise occur if
@@ -1819,7 +1743,7 @@ proc onReshape*(bc: BufferContext; handle: PagerHandle) {.proxy: pfTask.} =
   assert handle.tasks[bcOnReshape] == 0
   bc.savetask = true
 
-proc markURL*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
+proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy2.} =
   if bc.document == nil or bc.document.body == nil:
     return
   var buf = "("
@@ -1993,10 +1917,8 @@ const ProxyMap = [
   bcFindNextLink: findNextLinkCmd,
   bcFindNextMatch: findNextMatchCmd,
   bcFindNextParagraph: findNextParagraphCmd,
-  bcFindNthLink: findNthLinkCmd,
   bcFindPrevLink: findPrevLinkCmd,
   bcFindPrevMatch: findPrevMatchCmd,
-  bcFindPrevParagraph: findPrevParagraphCmd,
   bcFindRevNthLink: findRevNthLinkCmd,
   bcForceReshape: forceReshapeCmd,
   bcGetLines: getLinesCmd,
