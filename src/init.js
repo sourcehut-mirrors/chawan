@@ -37,9 +37,6 @@ globalThis.cmd = {
         config.search.wrap = !config.search.wrap;
         pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
     },
-    dupeBuffer: () => pager.dupeBuffer(),
-    load: () => pager.load(),
-    loadCursor: () => pager.loadCursor(),
     loadEmpty: () => pager.load(""),
     webSearch: () => pager.load("br:"),
     addBookmark: () => {
@@ -58,19 +55,9 @@ globalThis.cmd = {
         });
     },
     reloadBuffer: () => pager.reload(),
-    lineInfo: () => pager.lineInfo(),
-    toggleSource: () => pager.toggleSource(),
-    discardBuffer: () => pager.discardBuffer(),
     discardBufferPrev: () => pager.discardBuffer(pager.buffer, "prev"),
     discardBufferNext: () => pager.discardBuffer(pager.buffer, "next"),
-    discardTree: () => pager.discardTree(),
-    prevBuffer: () => pager.prevBuffer(),
-    nextBuffer: () => pager.nextBuffer(),
     enterCommand: () => pager.command(),
-    searchForward: () => pager.searchForward(),
-    searchBackward: () => pager.searchBackward(),
-    isearchForward: () => pager.isearchForward(),
-    isearchBackward: () => pager.isearchBackward(),
     toggleCommandMode: () => {
         if ((pager.commandMode = consoleBuffer != pager.buffer)) {
             if (!line)
@@ -79,16 +66,11 @@ globalThis.cmd = {
         } else
             console.hide();
     },
-    showFullAlert: () => pager.showFullAlert(),
-    toggleLinkHints: () => pager.toggleLinkHints(),
     toggleLinkHintsAutoClick: async () => {
         const res = await pager.toggleLinkHints();
         if (res)
             pager.click();
     },
-    cursorLineBegin: () => pager.cursorLineBegin(),
-    cursorLineTextStart: () => pager.cursorLineTextStart(),
-    cursorLineEnd: () => pager.cursorLineEnd(),
     rightClick: async () => {
         if (!pager.menu) {
             const canceled = await pager.contextMenu();
@@ -109,7 +91,6 @@ globalThis.cmd = {
         if (url)
             pager.gotoURL(url, {contentType: contentType, save: save});
     },
-    toggleImages: () => pager.toggleImages(),
     toggleScripting: () => {
         const buffer = pager.buffer;
         const buffer2 = pager.gotoURL(buffer.url, {
@@ -134,10 +115,6 @@ globalThis.cmd = {
         if (buffer2)
             buffer2.copyCursorPos(buffer)
     },
-    markURL: () => pager.markURL(),
-    redraw: () => pager.redraw(),
-    reshape: () => pager.reshape(),
-    cancel: () => pager.cancel(),
     /* vi G */
     gotoLineOrEnd: n => pager.gotoLine(n ?? pager.numLines),
     /* vim gg */
@@ -159,8 +136,6 @@ globalThis.cmd = {
             decodeURIComponent(url.pathname) :
             pager.cacheFile));
     },
-    saveLink: () => pager.saveLink(),
-    saveSource: () => pager.saveSource(),
     saveImage: () => cmd.buffer.viewImage(1, true),
     mark: async () => {
         const c = await pager.askChar('m');
@@ -190,7 +165,6 @@ globalThis.cmd = {
             pager.alert("Error; please install xsel or adjust external.copy-cmd");
         pager.cursorToggleSelection();
     },
-    writeInputBuffer: () => pager.writeInputBuffer(),
     line: {
         openEditor: () => {
             const res = pager.openEditor(line.text);
@@ -209,8 +183,7 @@ for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
         "cursorWordBegin", "cursorViWordBegin", "cursorBigWordBegin",
         "cursorWordEnd", "cursorViWordEnd", "cursorBigWordEnd",
         "cursorPrevLink", "cursorNextLink", "cursorPrevParagraph",
-        "cursorNextParagraph", "cursorTop", "cursorMiddle", "cursorBottom",
-        "cursorLeftEdge", "cursorMiddleColumn", "cursorRightEdge",
+        "cursorNextParagraph", "cursorTop", "cursorBottom",
         "halfPageDown", "halfPageUp", "halfPageLeft", "halfPageRight",
         "pageDown", "pageUp", "pageLeft", "pageRight", "scrollDown", "scrollUp",
         "scrollLeft", "scrollRight", "click", "searchPrev", "searchNext",
@@ -221,6 +194,19 @@ for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
     cmd[it] = n => pager[it](n);
 }
 
+/* pager, no precnum */
+for (const it of ["markURL", "redraw", "reshape", "cancel", "toggleSource",
+        "nextBuffer", "prevBuffer", "cursorLineBegin", "cursorLineTextStart",
+        "cursorLineEnd", "lineInfo", "discardBuffer", "discardBufferTree",
+        "cursorMiddleColumn", "cursorLeftEdge", "cursorRightEdge",
+        "cursorMiddle", "searchForward", "searchBackward", "isearchForward",
+        "isearchBackward", "discardTree", "dupeBuffer", "load", "loadCursor",
+        "saveLink", "saveSource", "toggleImages", "writeInputBuffer",
+        "showFullAlert", "toggleLinkHints"]) {
+    cmd[it] = () => pager[it]();
+}
+
+/* line */
 for (const it of ["submit", "backspace", "delete", "cancel", "prevWord",
         "nextWord", "backward", "forward", "clear", "kill", "clearWord",
         "killWord", "begin", "end", "escape", "prevHist", "nextHist"]) {
