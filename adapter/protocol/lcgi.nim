@@ -1,9 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  delete,
-  find
-
 import std/posix
 
 import io/chafile

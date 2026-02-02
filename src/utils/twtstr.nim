@@ -1,12 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  contains,
-  find,
-  rfind,
-  toLowerAscii,
-  toUpperAscii
-
 import std/algorithm
 import std/math
 import std/posix
@@ -161,11 +154,32 @@ proc isInRange*[U](a: openArray[(U, U)]; u: U): bool =
   )
   return res != -1
 
-proc onlyWhitespace*(s: string): bool =
-  return AllChars - AsciiWhitespace notin s
-
 proc isControlChar*(u: uint32): bool =
   return u <= 0x1F or u >= 0x7F and u <= 0x9F
+
+proc toLowerAscii*(c: char): char {.inline.} =
+  if c in AsciiUpperAlpha:
+    result = char(uint8(c) xor 0x20'u8)
+  else:
+    result = c
+
+proc toUpperAscii*(c: char): char {.inline.} =
+  if c in AsciiLowerAlpha:
+    result = char(uint8(c) xor 0x20'u8)
+  else:
+    result = c
+
+proc toLowerAscii*(s: openArray[char]): string =
+  let L = s.len
+  result = newString(L)
+  for i in 0 ..< L:
+    result[i] = s[i].toLowerAscii()
+
+proc toUpperAscii*(s: openArray[char]): string =
+  let L = s.len
+  result = newString(L)
+  for i in 0 ..< L:
+    result[i] = s[i].toUpperAscii()
 
 proc kebabToCamelCase*(s: string): string =
   result = ""
@@ -253,6 +267,9 @@ proc cmpIgnoreCase2(a, b: openArray[char]): int =
       return n
   cmp(alen, blen)
 
+proc cmpIgnoreCase*(a, b: string): int =
+  a.cmpIgnoreCase2(b)
+
 proc equalsIgnoreCase*(s1, s2: openArray[char]): bool {.inline.} =
   return s1.cmpIgnoreCase2(s2) == 0
 
@@ -272,6 +289,7 @@ proc startsWith*(s1, s2: openArray[char]): bool =
     for i in 0 ..< len2:
       if s1[i] != s2[i]:
         return false
+    return true
   else:
     if len2 <= 0:
       return true
@@ -299,10 +317,122 @@ proc endsWith*(s1, s2: openArray[char]): bool =
     for i in 0 ..< len2:
       if s1[h1 - i] != s2[h2 - i]:
         return false
+    return true
   else:
     if len2 <= 0:
       return true
     return equalMem(unsafeAddr s1[len1 - len2], unsafeAddr s2[0], len2)
+
+proc memset(s: pointer; c: cint; size: csize_t): pointer {.
+  importc, header: "<string.h>".}
+
+proc repeat*(c: char; n: int): string =
+  result = newString(n)
+  when nimvm:
+    for ic in result.mitems:
+      ic = c
+  else:
+    if n > 0:
+      discard memset(addr result[0], cint(c), csize_t(n))
+
+proc memchr(s: pointer; c: cint; n: csize_t): pointer {.
+  importc, header: "<string.h>".}
+
+proc find*(s: openArray[char]; c: char; start = 0): int =
+  let L = s.len
+  when nimvm:
+    for i in start ..< L:
+      if s[i] == c:
+        return i
+  else:
+    if L > 0 and start < L:
+      let p = memchr(unsafeAddr s[start], cint(c), csize_t(L) - csize_t(start))
+      if p != nil:
+        return cast[int](cast[uint](p) - cast[uint](unsafeAddr s[0]))
+  return -1
+
+proc find*(s: openArray[char]; cs: set[char]; start = 0): int =
+  let L = s.len
+  for i in start ..< L:
+    if s[i] in cs:
+      return i
+  return -1
+
+# could use memmem too since it's in POSIX-2024, but that doesn't work in nimvm
+proc find*(s1: openArray[char]; s2: string; start = 0): int =
+  let s1len = s1.len
+  let s2len = s2.len
+  if s1len <= 0 or s2len > s1len:
+    return -1
+  var i = max(start, 0)
+  let c = s2[0]
+  if s2len == 1:
+    return s1.find(c, i)
+  {.push overflowChecks: off, boundChecks: off.}
+  let s2len1 = s2len - 1
+  let L = s1len - s2len1
+  while i < L:
+    i = s1.find(c, i)
+    if i == -1:
+      break
+    when nimvm:
+      if s1.toOpenArray(i + 1, s1.high).startsWith(s2.toOpenArray(1, s2len1)):
+        return i
+    else:
+      if equalMem(unsafeAddr s1[i + 1], unsafeAddr s2[1], s2len1):
+        return i
+    inc i
+  {.pop.}
+  return -1
+
+proc rfind*(s: openArray[char]; c: char; start = 0; last = -1): int =
+  let H = if last < 0: s.high else: last
+  for i in countdown(H, start):
+    if s[i] == c:
+      return i
+  return -1
+
+proc rfind*(s: openArray[char]; cs: set[char]; start = 0; last = -1): int =
+  let H = if last < 0: s.high else: last
+  for i in countdown(H, start):
+    if s[i] in cs:
+      return i
+  return -1
+
+proc rfind*(s1: openArray[char]; s2: string; start = 0; last = -1): int =
+  let s1len = s1.len
+  let s2len = s2.len
+  if s1len <= 0 or s2len > s1len:
+    return -1
+  var i = if last < 0: s1.high else: last
+  let c = s2[0]
+  if s2len == 1:
+    return s1.rfind(c, start, i)
+  {.push overflowChecks: off, boundChecks: off.}
+  let s2len1 = s2len - 1
+  i -= s2len1
+  while i >= start:
+    i = s1.rfind(c, start, i)
+    if i == -1:
+      break
+    when nimvm:
+      if s1.toOpenArray(i + 1, s1.high).startsWith(s2.toOpenArray(1, s2len1)):
+        return i
+    else:
+      if equalMem(unsafeAddr s1[i + 1], unsafeAddr s2[1], s2len1):
+        return i
+    dec i
+  {.pop.}
+  return -1
+
+proc contains*(s1: openArray[char]; s2: string): bool =
+  s1.find(s2) != -1
+
+proc contains*(s: openArray[char]; cs: set[char]): bool =
+  s.find(cs) != -1
+
+proc onlyWhitespace*(s: string): bool =
+  return AllChars - AsciiWhitespace notin s
 
 proc containsIgnoreCase*(ss: openArray[string]; s: string): bool =
   for it in ss:
@@ -310,14 +440,38 @@ proc containsIgnoreCase*(ss: openArray[string]; s: string): bool =
       return true
   false
 
+proc count*(s: openArray[char]; c: char): int =
+  var n = 0
+  for ic in s:
+    if ic == c:
+      inc n
+  n
+
+proc count*(s: openArray[char]; cs: set[char]): int =
+  var n = 0
+  for c in s:
+    if c in cs:
+      inc n
+  n
+
+proc delete*(s: var string; slice: Slice[int]) =
+  if slice.b >= slice.a:
+    var i = slice.a
+    var j = slice.b + 1
+    let len = s.len + i - j
+    when nimvm:
+      while i < len:
+        s[i] = s[j]
+        inc i
+        inc j
+    else:
+      if j < s.len:
+        moveMem(addr s[i], addr s[j], s.len - j)
+    s.setLen(len)
+
 proc skipBlanks*(buf: openArray[char]; at: int): int =
   result = at
   while result < buf.len and buf[result] in AsciiWhitespace:
-    inc result
-
-proc skipBlanksTillLF*(buf: openArray[char]; at: int): int =
-  result = at
-  while result < buf.len and buf[result] in AsciiWhitespace - {'\n'}:
     inc result
 
 proc stripAndCollapse*(s: openArray[char]): string =
@@ -974,11 +1128,9 @@ iterator lineIndices*(s: openArray[char]): tuple[si, ei: int] {.inline.} =
   var i = 0
   let H = s.high
   while i < s.len:
-    var j = s.toOpenArray(i, H).find('\n')
+    var j = s.find('\n', i)
     if j == -1:
       j = H
-    else:
-      j += i
     yield (i, j - 1)
     i = j + 1
 

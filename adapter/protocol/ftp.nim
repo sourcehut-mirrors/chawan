@@ -1,8 +1,6 @@
 {.push raises: [].}
 
-from std/strutils import
-  find,
-  split
+from std/strutils import split
 
 import std/posix
 

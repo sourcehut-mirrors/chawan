@@ -2,11 +2,7 @@
 
 {.push raises: [].}
 
-from std/strutils import find
-
 import std/times
-
-import utils/twtstr
 
 import lcgi
 

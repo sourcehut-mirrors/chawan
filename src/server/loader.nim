@@ -23,8 +23,6 @@
 {.push raises: [].}
 
 from std/strutils import
-  contains,
-  delete,
   split,
   strip
 

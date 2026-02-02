@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import count
-
 import io/dynstream
 import io/packetreader
 import io/packetwriter

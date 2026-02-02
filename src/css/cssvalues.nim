@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import toLowerAscii
-
 import std/algorithm
 import std/macros
 import std/math

@@ -1,12 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  contains,
-  find,
-  repeat,
-  rfind,
-  toLowerAscii
-
 import std/tables
 
 import io/chafile

@@ -2,13 +2,7 @@
 
 {.push raises: [].}
 
-from std/strutils import
-  contains,
-  delete,
-  find,
-  rfind,
-  split,
-  toLowerAscii
+from std/strutils import split
 
 import std/algorithm
 

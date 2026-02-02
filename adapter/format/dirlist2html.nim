@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import find
-
 import std/algorithm
 import std/os
 

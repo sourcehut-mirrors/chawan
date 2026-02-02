@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import toLowerAscii
-
 import std/posix
 
 import config/mimetypes
@@ -13,6 +11,7 @@ import monoucha/jsbind
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
+import utils/twtstr
 
 type
   DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}

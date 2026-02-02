@@ -1,7 +1,3 @@
-from std/strutils import
-  find,
-  rfind
-
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jstypes

@@ -3,7 +3,6 @@
 {.push raises: [].}
 
 from std/strutils import
-  find,
   split,
   strip
 

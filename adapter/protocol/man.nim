@@ -1,12 +1,8 @@
 {.push raises: [].}
 
 from std/strutils import
-  delete,
-  find,
   split,
-  strip,
-  toLowerAscii,
-  toUpperAscii
+  strip
 
 import std/os
 import std/posix

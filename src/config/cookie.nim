@@ -1,10 +1,8 @@
 {.push raises: [].}
 
 from std/strutils import
-  delete,
   split,
-  strip,
-  toLowerAscii
+  strip
 
 import std/algorithm
 import std/posix
@@ -121,7 +119,7 @@ proc parseCookieDate(val: string): Opt[int64] =
         continue
     if month == 0: # test for month
       if dateToken.len >= 3:
-        case dateToken.substr(0, 2).toLowerAscii()
+        case dateToken.toOpenArray(0, 2).toLowerAscii()
         of "jan": month = 1
         of "feb": month = 2
         of "mar": month = 3

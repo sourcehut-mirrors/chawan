@@ -1,9 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  toLowerAscii,
-  toUpperAscii
-
 import std/algorithm
 
 import chagashi/charset

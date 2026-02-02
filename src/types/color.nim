@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import cmpIgnoreCase
-
 import std/algorithm
 
 import types/opt

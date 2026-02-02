@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import repeat
-
 import std/options
 import std/posix
 

@@ -1,10 +1,6 @@
 {.push raises: [].}
 
-from std/strutils import
-  contains,
-  find,
-  split,
-  toUpperAscii
+from std/strutils import split
 
 import std/algorithm
 import std/options

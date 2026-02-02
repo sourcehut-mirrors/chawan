@@ -1,9 +1,6 @@
 {.push raises: [].}
 
-from std/strutils import
-  contains,
-  split,
-  toLowerAscii
+from std/strutils import split
 
 import chame/tags
 import css/cssparser

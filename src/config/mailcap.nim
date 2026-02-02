@@ -2,8 +2,6 @@
 
 {.push raises: [].}
 
-from std/strutils import toLowerAscii
-
 import std/os
 import std/posix
 

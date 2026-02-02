@@ -18,8 +18,7 @@ proc setProcessTitle*(s: string) =
     discard prctl(PR_SET_NAME, cast[culong](cstring(s)), 0, 0, 0)
 
 when defined(linux):
-  from std/strutils import startsWith, delete
-  from utils/twtstr import afterLast
+  import utils/twtstr
 
 proc setBufferProcessTitle*(url: URL) =
   when defined(linux):

@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import delete
-
 import chagashi/decoder
 import config/history
 import monoucha/fromjs

@@ -1,11 +1,8 @@
 {.push raises: [].}
 
 from std/strutils import
-  cmpIgnoreCase,
-  contains,
   split,
-  strip,
-  toLowerAscii
+  strip
 
 import std/algorithm
 

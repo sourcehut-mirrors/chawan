@@ -7,11 +7,6 @@
 # atoms into ref objects; that would work with refc, but it would also
 # add a lot of overhead.)
 
-from std/strutils import
-  contains,
-  toLowerAscii,
-  toUpperAscii
-
 import std/hashes
 import std/macros
 import std/options

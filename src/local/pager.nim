@@ -1,11 +1,6 @@
 {.push raises: [].}
 
-from std/strutils import
-  delete,
-  find,
-  repeat,
-  rfind,
-  strip
+from std/strutils import strip
 
 import std/options
 import std/os
