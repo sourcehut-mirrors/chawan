@@ -61,14 +61,14 @@ Described as a tree:
 
 ### Main process
 
-The main process runs code related to the pager. This includes processing
+The main process runs code related to the pager.  This includes processing
 user input, printing buffer contents to the screen, and managing buffers in
-general. The complete list of buffers is only known to the main process.
+general.  The complete list of buffers is only known to the main process.
 
-Mailcap commands are executed by the main process. This depends on knowing the
-content type of the resource, so the main process also reads in all network
-headers of navigation responses before launching a buffer process. More on this
-in [Opening buffers](#opening-buffers).
+Mailcap commands are executed by the main process.  This depends on knowing
+the content type of the resource, so the main process also reads in all
+network headers of navigation responses before launching a buffer process.
+More on this in [Opening buffers](#opening-buffers).
 
 ### Forkserver
 
@@ -274,29 +274,25 @@ I wouldn't know why.
 css/ contains CSS parsing, cascading, layout, and rendering.
 
 Note that CSS (at least 2.0 and onward) was designed for pixel-based
-displays, not for character-based ones. So we have to round a lot,
-and sometimes this goes wrong. (This is mostly solved by the omission of
-certain problematic properties and some heuristics in the layout engine.)
+displays, not for character-based ones, so we have to round a lot.
+The layout engine includes some heuristics around this so that the result
+is usually still acceptable.
 
-Also, some (now) commonly used features like CSS grid are not
-implemented yet, so websites using those look ugly.
+Also, some (now) commonly used features like CSS grid are not implemented
+yet, so websites using those look ugly.
 
 ### Parsing, cascading
 
-The parser is not very interesting, it's just an implementation of the
-CSS 3 parsing module. The latest iteration of the selector parser is
-pretty good. The media query parser and the CSS value parser both work
-OK, but are missing some commonly used features like variables.
+The parser is not very interesting, it's just an implementation of the CSS 3
+parsing module.  Overall it works fairly well.
 
 Cascading works OK.  To speed up selector matching, various properties
-are hashed to filter out irrelevant CSS rules.  However, no further
-style optimization exists yet (such as Bloom filters or style
-interning).
+are hashed to filter out irrelevant CSS rules.  However, no further style
+optimization exists yet (such as Bloom filters or style interning).
 
-Style calculation is incremental, and results are cached until an
-element's style is invalidated, so re-styles are quite fast.  (The
-invalidation logic is primitive, but as far as I can tell, it's good
-enough in most cases.)
+Style calculation is incremental, and results are cached until an element's
+style is invalidated, so re-styles are quite fast.  (The invalidation logic
+is primitive, but it's good enough in most cases.)
 
 ### Layout
 
@@ -337,10 +333,9 @@ Additionally, boxes are assigned an offset in the `render` field here,
 which is used when jumping to anchors.
 
 The entire document is rendered, which is a performance bottleneck in some
-cases.  (Styling is usually slower, as well as layout (usually), but those
-are cached.  Rendering isn't, but all it really does is just copying around
-a bunch of strings so it's not that bad.)
+cases.  (Styling and layout are both slower, but those are cached.
+Rendering isn't, but all it really does is just copying around a bunch of
+strings and computers are very good at this.)
 
-The positive side of this design is that search is very simple (and
-fast), since we are just running regexes over a linear sequence of
-strings.
+The positive side of this design is that search is very simple (and fast),
+since we are just running regexes over a linear sequence of strings.
