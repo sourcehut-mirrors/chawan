@@ -230,7 +230,19 @@ proc parse(ctx: var ParamParseContext) =
       ctx.pages.add(param)
     inc ctx.i
 
-const defaultConfig = staticRead"res/config.toml"
+const defaultConfig = """
+[external]
+urimethodmap = [
+	"~/.urimethodmap",
+	"~/.w3m/urimethodmap",
+	"/etc/urimethodmap",
+	"/usr/local/etc/w3m/urimethodmap"
+]
+
+[siteconf.downloads]
+url = 'about:downloads'
+meta-refresh = "always"
+"""
 
 proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
     jsctx: JSContext): Result[Config, string] =
@@ -243,7 +255,7 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
       twtstr.setEnv("CHA_DATA_DIR", dataDir).isErr:
     die("failed to set env vars")
   let config = newConfig(jsctx, dir, dataDir)
-  ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
+  ?config.parseConfig("res", defaultConfig, warnings, jsctx, "default")
   let cwd = myposix.getcwd()
   when defined(debug):
     if (let ps = newPosixStream(cwd / "res/config.toml"); ps != nil):
