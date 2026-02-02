@@ -640,7 +640,7 @@ Pager.prototype.handleMouseInput = async function(input) {
         case "left":
             switch (input.t) {
             case "move":
-                if (this.mouse.click[button] < 2)
+                if (this.mouse.click[button] < 1)
                     break;
                 switch (this.mouse.moveType) {
                 case "none":
