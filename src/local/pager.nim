@@ -755,16 +755,12 @@ proc toJS(ctx: JSContext; input: MouseInput): JSValue =
   let obj = JS_NewObject(ctx)
   let t = input.t
   let button = input.button
-  let shift = mimShift in input.mods
-  let ctrl = mimCtrl in input.mods
-  let meta = mimMeta in input.mods
+  let mods = cast[int32](input.mods)
   let (x, y) = input.pos
   # TODO we must check for exception on toJS too
   if ctx.defineProperty(obj, "t", ctx.toJS(t)) == dprException or
       ctx.defineProperty(obj, "button", ctx.toJS(button)) == dprException or
-      ctx.defineProperty(obj, "shift", ctx.toJS(shift)) == dprException or
-      ctx.defineProperty(obj, "ctrl", ctx.toJS(ctrl)) == dprException or
-      ctx.defineProperty(obj, "meta", ctx.toJS(meta)) == dprException or
+      ctx.defineProperty(obj, "mods", ctx.toJS(mods)) == dprException or
       ctx.defineProperty(obj, "x", ctx.toJS(x)) == dprException or
       ctx.defineProperty(obj, "y", ctx.toJS(y)) == dprException:
     JS_FreeValue(ctx, obj)

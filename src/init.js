@@ -248,6 +248,10 @@ class Mouse {
     inSelection = false;
     blockTillRelease = false;
     moveType = "none"; /* none, drag, select */
+
+    static SHIFT = 1;
+    static CTRL = 2;
+    static META = 4;
 }
 
 function addDefaultOmniRule(name, match, url) {
@@ -685,7 +689,8 @@ Pager.prototype.handleMouseInput = async function(input) {
         case "right":
             if (input.t == "press" && input.y < buffer.height) {
                 let canceled = false;
-                if (buffer.currentSelection == null && !input.meta) {
+                if (buffer.currentSelection == null &&
+                    !(input.mods & Mouse.META)) {
                     buffer.setAbsoluteCursorXY(input.x, input.y);
                     canceled = await buffer.contextMenu();
                 }
