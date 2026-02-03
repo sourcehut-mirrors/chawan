@@ -2335,8 +2335,9 @@ proc updateReadLine(pager: Pager) {.jsfunc.} =
           pager.console.writeException(ctx)
         JS_FreeValue(ctx, res)
     of lmUsername:
-      LineDataAuth(line.data).url.username = line.text
-      pager.setLineEdit2(lmPassword, "Password: ", hide = true)
+      let data = LineDataAuth(line.data)
+      data.url.username = line.text
+      pager.setLineEdit0(lmPassword, "Password: ", "", hide = true, data)
     of lmPassword:
       let lineData = LineDataAuth(line.data)
       let old = lineData.container
