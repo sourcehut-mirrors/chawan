@@ -203,12 +203,12 @@ proc parseComment(ctx: var ParseInlineContext; line: openArray[char];
 proc parseCode(ctx: var ParseInlineContext; line: openArray[char];
     state: ParseState): Opt[void] =
   let i = ctx.i + 1
-  let j = line.toOpenArray(i, line.high).find('`')
+  let j = line.find('`', i)
   if j != -1:
     ?ctx.append("<CODE>", state)
-    ?ctx.append(line.toOpenArray(i, i + j - 1).htmlEscape(), state)
+    ?ctx.append(line.toOpenArray(i, j - 1).htmlEscape(), state)
     ?ctx.append("</CODE>", state)
-    ctx.i = i + j
+    ctx.i = j
   else:
     ?ctx.append('`', state)
   ok()

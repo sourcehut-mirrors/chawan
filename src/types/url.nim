@@ -156,8 +156,8 @@ proc parseIpv6(input: openArray[char]): string =
       for j in 0 ..< 4:
         var e = input.len
         if j < 3: # find ipv4 separator
-          e = i + input.toOpenArray(i, input.high).find('.')
-          if e < i: # not found
+          e = input.find('.', i)
+          if e < 0:
             return ""
         let x = parseUInt8NoLeadingZero(input.toOpenArray(i, e - 1))
         if x.isErr:
