@@ -2054,11 +2054,10 @@ proc gotoURLHash(pager: Pager; request: Request; current: Container): bool =
 proc omniRewrite(pager: Pager; s: string): string =
   for rule in pager.config.omnirule:
     if rule.match.match(s):
-      let fun = rule.substituteUrl
       let ctx = pager.jsctx
       let arg0 = ctx.toJS(s)
       if not JS_IsException(arg0):
-        let jsRet = ctx.callFree(fun, JS_UNDEFINED, arg0)
+        let jsRet = ctx.callSink(rule.substituteUrl, JS_UNDEFINED, arg0)
         var res: string
         if not JS_IsException(jsRet) and ctx.fromJSFree(jsRet, res).isOk:
           pager.lineHist[lmLocation].add(s)
