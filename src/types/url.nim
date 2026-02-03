@@ -184,7 +184,7 @@ proc parseIpv6(input: openArray[char]): string =
     return ""
   return address.serializeip()
 
-proc parseIpv4Number(s: string): uint32 =
+proc parseIpv4Number(s: openArray[char]): Opt[uint32] =
   var i = 0
   var R = 10u32
   if s.len >= 2 and s[0] == '0':
@@ -194,32 +194,36 @@ proc parseIpv4Number(s: string): uint32 =
     else:
       i = 1
       R = 8
-  if i >= s.len:
-    return 0
-  return parseUInt32Base(s.toOpenArray(i, s.high), radix = R).get(uint32.high)
+  return parseUInt32Base(s.toOpenArray(i, s.high), radix = R)
 
 proc parseIpv4(input: string): Opt[uint32] =
-  var numbers: seq[uint32] = @[]
-  var prevEmpty = false
+  var last = input.high
+  if last >= 0 and input[last] == '.':
+    dec last
+  var res = 0'u32
   var i = 0
-  for part in input.split('.'):
-    if i > 4 or prevEmpty:
-      return err()
+  var pi = 0
+  var npart = 4'u32
+  while i <= last:
+    let c = input[i]
+    if c == '.':
+      let tmp = ?parseIpv4Number(input.toOpenArray(pi, i - 1))
+      if tmp > 0xFF:
+        return err()
+      dec npart
+      if npart == 0:
+        return err()
+      res = (res shl 8) or tmp
+      pi = i + 1
     inc i
-    if part == "":
-      prevEmpty = true
-      continue
-    let num = parseIpv4Number(part)
-    if num notin 0u32..255u32:
+  let tmp = ?parseIpv4Number(input.toOpenArray(pi, last))
+  if npart < 4:
+    let shift = npart shl 3'u32
+    if tmp >= 1'u32 shl shift:
       return err()
-    numbers.add(num)
-  if numbers[^1] >= 1u32 shl ((5 - numbers.len) * 8):
-    return err()
-  var ipv4 = uint32(numbers[^1])
-  for i in 0 ..< numbers.high:
-    let n = uint32(numbers[i])
-    ipv4 += n * (1u32 shl ((3 - i) * 8))
-  ok(ipv4)
+    res = res shl shift
+  res = res or tmp
+  ok(res)
 
 const ForbiddenHostChars = {
   char(0x00), '\t', '\n', '\r', ' ', '#', '/', ':', '<', '>', '?', '@', '[',
@@ -236,15 +240,13 @@ proc opaqueParseHost(input: string; hostType: var HostType): string =
   move(o)
 
 proc endsInNumber(input: string): bool =
-  if input.len == 0:
+  if input.len <= 0:
     return false
   var i = input.high
   if input[i] == '.':
     dec i
-  i = input.rfind('.', last = i)
-  if i < 0:
-    return false
-  inc i
+  # if no period, start from 0
+  i = input.rfind('.', last = i) + 1
   if i + 1 < input.len and input[i] == '0' and input[i + 1] in {'x', 'X'}:
     # hex?
     i += 2
