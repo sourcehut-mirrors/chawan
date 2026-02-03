@@ -6837,10 +6837,10 @@ proc `value=`*(textarea: HTMLTextAreaElement; s: sink string)
 proc textAreaString*(textarea: HTMLTextAreaElement): string =
   result = ""
   let split = textarea.value.split('\n')
-  let rows = int(textarea.attrul(satRows).get(1))
+  let rows = int64(textarea.attrul(satRows).get(1))
   for i in 0 ..< rows:
     let cols = textarea.attrul(satCols).get(20)
-    if cols > 2 and cols <= uint32(int.high):
+    if cols > 2 and cols <= uint64(int.high):
       if i < split.len:
         result &= '[' & split[i].padToWidth(cols - 2) & "]\n"
       else:
