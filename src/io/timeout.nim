@@ -48,9 +48,9 @@ proc empty*(state: TimeoutState): bool =
 
 proc clearTimeout0(state: var TimeoutState; i: int) =
   let entry = state.timeouts[i]
-  JS_FreeValueRT(state.jsrt, entry.val)
-  for arg in entry.args:
-    JS_FreeValueRT(state.jsrt, arg)
+  let rt = state.jsrt
+  JS_FreeValueRT(rt, entry.val)
+  rt.freeValues(entry.args)
   state.timeouts.del(i)
   if state.timeouts.len != i: # only set if we del'd in the middle
     state.sorted = false
@@ -132,10 +132,10 @@ proc run*(state: var TimeoutState; console: Console): bool =
   return found
 
 proc clearAll*(state: var TimeoutState) =
+  let rt = state.jsrt
   for entry in state.timeouts:
-    JS_FreeValueRT(state.jsrt, entry.val)
-    for arg in entry.args:
-      JS_FreeValueRT(state.jsrt, arg)
+    JS_FreeValueRT(rt, entry.val)
+    rt.freeValues(entry.args)
   state.timeouts.setLen(0)
 
 {.pop.} # raises: []

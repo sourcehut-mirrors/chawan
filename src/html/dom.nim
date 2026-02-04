@@ -1272,10 +1272,9 @@ proc setWeak(ctx: JSContext; wwm: WindowWeakMap; key, val: JSValue): Opt[void] =
   let global = ctx.getGlobal()
   let res = ctx.invokeSink(global.weakMap[wwm], ctx.getOpaque().strRefs[jstSet],
     key, val)
-  let e = JS_IsException(res)
-  JS_FreeValue(ctx, res)
-  if e:
+  if JS_IsException(res):
     return err()
+  JS_FreeValue(ctx, res)
   ok()
 
 proc getWeak(ctx: JSContext; wwm: WindowWeakMap; key: JSValueConst): JSValue =
@@ -1368,6 +1367,8 @@ proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
 proc getWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
     JSValue =
   let jsThis = ctx.toJS(this)
+  if JS_IsException(jsThis):
+    return JS_EXCEPTION
   let res = ctx.getWeak(wwm, jsThis)
   if JS_IsUndefined(res):
     let collection = ctx.newWeakCollection(this, wwm)
@@ -1718,10 +1719,10 @@ proc mark(rt: JSRuntime; this: CustomElementRegistry; markFunc: JS_MarkFunc)
       JS_MarkValue(rt, val, markFunc)
 
 proc finalize(this: CustomElementRegistry) {.jsfin.} =
+  let rt = this.rt
   for def in this.defs:
-    JS_FreeValueRT(this.rt, def.ctor)
-    for val in def.callbacks:
-      JS_FreeValueRT(this.rt, val)
+    JS_FreeValueRT(rt, def.ctor)
+    rt.freeValues(def.callbacks)
 
 type CustomElementDefinitionOptions = object of JSDict
   extends {.jsdefault.}: Option[string]
@@ -1776,8 +1777,7 @@ proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
   if "shadow" in disabled:
     def.flags.excl(cefShadow)
   var formAssociated: bool
-  let val = JS_GetPropertyStr(ctx, ctor, "formAssociated")
-  ?ctx.fromJS(val, formAssociated)
+  discard ?ctx.fromJSGetProp(ctor, "formAssociated", formAssociated)
   if formAssociated:
     def.flags.incl(cefFormAssociated)
     for t in cctFormAssociated..cctFormStateRestore:
@@ -1819,8 +1819,7 @@ proc define(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
   JS_FreeValue(ctx, proto)
   this.inDefine = false
   if res.isErr:
-    for it in def.callbacks:
-      JS_FreeValue(ctx, it)
+    ctx.freeValues(def.callbacks)
     return JS_EXCEPTION
   def.ctor = JS_DupValue(ctx, ctor)
   if this.defsTail == nil:
@@ -4545,6 +4544,8 @@ proc attributes(ctx: JSContext; element: Element): JSValue {.jsfget.} =
 
 proc cachedAttributes(ctx: JSContext; element: Element): NamedNodeMap =
   let this = ctx.toJS(element)
+  if JS_IsException(this):
+    return nil
   let res = ctx.getWeak(wwmAttributes, this)
   JS_FreeValue(ctx, this)
   var map: NamedNodeMap
@@ -5903,6 +5904,8 @@ proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
   let sa = StaticAtom(magic)
   if url := element.reinitURL():
     let href = ctx.toJS(url)
+    if JS_IsException(href):
+      return JS_EXCEPTION
     let res = JS_GetPropertyStr(ctx, href, cstring($sa))
     JS_FreeValue(ctx, href)
     return res

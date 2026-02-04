@@ -38,7 +38,12 @@ proc JS_CallFree*(ctx: JSContext; funcObj: JSValue; this: JSValueConst;
   result = JS_Call(ctx, funcObj, this, argc, argv)
   JS_FreeValue(ctx, funcObj)
 
-proc freeValues*(ctx: JSContext; vals: openArray[JSValue]) =
+proc freeValues*(rt: JSRuntime; vals: varargs[JSValue]) =
+  ## Free each individual value in `vals`.
+  for val in vals:
+    JS_FreeValueRT(rt, val)
+
+proc freeValues*(ctx: JSContext; vals: varargs[JSValue]) =
   ## Free each individual value in `vals`.
   for val in vals:
     JS_FreeValue(ctx, val)

@@ -8,12 +8,36 @@ import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/quickjs
 import monoucha/tojs
+import types/jsopt
+import types/opt
 
-type Performance* = ref object of EventTarget
-  timeOrigin {.jsget.}: float64
-  scripting: ScriptingMode
+type
+  Performance* = ref object of EventTarget
+    timeOrigin {.jsget.}: float64
+    scripting: ScriptingMode
+    id: uint64
+
+  PerformanceEntry = ref object of RootObj
+    id {.jsget.}: uint64
+    name {.jsget.}: string
+    startTime {.jsget.}: float64
+    duration {.jsget.}: float64
+    navigationId {.jsget.}: uint64
+
+  PerformanceMark = ref object of PerformanceEntry
+    rt: JSRuntime
+    detail {.jsget.}: JSValue
 
 jsDestructor(Performance)
+jsDestructor(PerformanceEntry)
+jsDestructor(PerformanceMark)
+
+proc finalize(this: PerformanceMark) {.jsfin.} =
+  JS_FreeValueRT(this.rt, this.detail)
+
+proc mark(rt: JSRuntime; this: PerformanceMark; markFun: JS_MarkFunc)
+    {.jsmark.} =
+  JS_MarkValue(rt, this.detail, markFun)
 
 proc getTime(scripting: ScriptingMode): float64 =
   let t = getTime()
@@ -38,5 +62,42 @@ proc getEntriesByName(ctx: JSContext; performance: Performance; name: string;
     t: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
   return JS_NewArray(ctx)
 
+proc getEntryId(this: Performance): uint64 =
+  result = this.id
+  inc this.id
+
+# PerformanceEntry
+proc entryType(this: PerformanceEntry): string {.jsfget.} =
+  if this of PerformanceMark:
+    return "mark"
+  return ""
+
+# PerformanceMark
+#TODO constructor
+
+proc mark(ctx: JSContext; this: Performance; name: string;
+    init: JSValueConst = JS_UNDEFINED): Opt[PerformanceMark] {.jsfunc.} =
+  var startTime: float64
+  if ?ctx.fromJSGetProp(init, "startTime", startTime):
+    if startTime < 0:
+      JS_ThrowTypeError(ctx, "startTime must not be negative")
+      return err()
+  else:
+    startTime = this.now()
+  var detail: JSValue
+  if not ?ctx.fromJSGetProp(init, "detail", detail):
+    detail = JS_NULL
+  #TODO serialize/deserialize detail
+  let mark = PerformanceMark(
+    id: this.getEntryId(),
+    name: name,
+    startTime: startTime,
+    rt: JS_GetRuntime(ctx),
+    detail: detail
+  )
+  ok(mark)
+
 proc addPerformanceModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(Performance, parent = eventTargetCID)
+  let performanceEntryCID = ctx.registerType(PerformanceEntry)
+  ctx.registerType(PerformanceMark, performanceEntryCID)

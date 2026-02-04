@@ -420,7 +420,12 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   if JS_IsNull(listener.callback):
     return JS_UNDEFINED
   let jsTarget = ctx.toJS(event.currentTarget)
+  if JS_IsException(jsTarget):
+    return JS_EXCEPTION
   let jsEvent = ctx.toJS(event)
+  if JS_IsException(jsEvent):
+    JS_FreeValue(ctx, jsTarget)
+    return JS_EXCEPTION
   var ret = JS_UNINITIALIZED
   if JS_IsFunction(ctx, listener.callback):
     # Apparently it's a bad idea to call a function that can then delete
@@ -437,11 +442,11 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   return ret
 
 # shared
-proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
+proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtom;
     capture, once, internal: bool; passive: Option[bool];
-    callback: JSValueConst; signal: AbortSignal) =
+    callback: JSValueConst; signal: AbortSignal): Opt[void] =
   if signal != nil and signal.aborted or JS_IsUndefined(callback):
-    return
+    return ok()
   let passive = passive.get(defaultPassiveValue(ctype, target))
   if ctx.findEventListener(target, ctype, callback, capture) == nil: # dedup
     let listener = EventListener(
@@ -460,27 +465,30 @@ proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
       #TODO pin removeEventListener or something
       let funFun = newFunction(ctx, ["type", "callback", "capture"],
         "return () => this.removeEventListener(type, callback, capture)")
+      if JS_IsException(funFun):
+        return err()
       let jsTarget = ctx.toJS(target)
-      let jsCapture = ctx.toJS(capture)
-      if JS_IsException(funFun) or JS_IsException(jsTarget) or
-          JS_IsException(jsCapture):
+      if JS_IsException(jsTarget):
         JS_FreeValue(ctx, funFun)
-        JS_FreeValue(ctx, jsTarget)
-        JS_FreeValue(ctx, jsCapture)
-        return
+        return err()
+      let jsCapture = ctx.toJS(capture)
+      if JS_IsException(jsCapture):
+        ctx.freeValues(funFun, jsTarget)
+        return err()
       let fun = ctx.callFree(funFun, jsTarget, callback, jsCapture)
-      JS_FreeValue(ctx, jsTarget)
-      JS_FreeValue(ctx, jsCapture)
-      if not JS_IsException(fun):
-        signal.abortSteps.add(fun)
+      ctx.freeValues(jsTarget, jsCapture)
+      if JS_IsException(fun):
+        return err()
+      signal.abortSteps.add(fun)
+  ok()
 
-proc flatten(ctx: JSContext; options: JSValueConst): bool =
-  result = false
+proc flatten(ctx: JSContext; options: JSValueConst): Opt[bool] =
+  var res = false
   if JS_IsBool(options):
-    discard ctx.fromJS(options, result)
-  if JS_IsObject(options):
-    let x = JS_GetPropertyStr(ctx, options, "capture")
-    discard ctx.fromJSFree(x, result)
+    ?ctx.fromJS(options, res)
+  elif JS_IsObject(options):
+    discard ?ctx.fromJSGetProp(options, "capture", res)
+  ok(res)
 
 type FlattenMoreResult = object
   capture: bool
@@ -490,21 +498,16 @@ type FlattenMoreResult = object
 
 proc flattenMore(ctx: JSContext; options: JSValueConst;
     res: var FlattenMoreResult): Opt[void] =
-  let capture = flatten(ctx, options)
+  let capture = ?ctx.flatten(options)
   var once = false
   var passive = none(bool)
   var signal: AbortSignal = nil
   if JS_IsObject(options):
-    let jsOnce = JS_GetPropertyStr(ctx, options, "once")
-    ?ctx.fromJSFree(jsOnce, once)
-    let jsPassive = JS_GetPropertyStr(ctx, options, "passive")
-    if not JS_IsUndefined(jsPassive):
-      var x: bool
-      ?ctx.fromJSFree(jsPassive, x)
-      passive = some(x)
-    let jsSignal = JS_GetPropertyStr(ctx, options, "signal")
-    if not JS_IsUndefined(jsSignal):
-      ?ctx.fromJSFree(jsSignal, signal)
+    discard ?ctx.fromJSGetProp(options, "once", once)
+    var res: bool
+    if ?ctx.fromJSGetProp(options, "passive", res):
+      passive = some(res)
+    discard ?ctx.fromJSGetProp(options, "signal", signal)
   res = FlattenMoreResult(
     capture: capture,
     once: once,
@@ -530,9 +533,9 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     prev = it
 
 proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
-    ctype: StaticAtom; callback: JSValueConst) =
+    ctype: StaticAtom; callback: JSValueConst): Opt[void] =
   ctx.removeInternalEventListener(eventTarget, ctype)
-  ctx.addEventListener0(eventTarget, ctype.toAtom(), capture = false,
+  ctx.addEventListener(eventTarget, ctype.toAtom(), capture = false,
     once = false, internal = true, passive = none(bool), callback, signal = nil)
 
 # Event reflection
@@ -558,15 +561,27 @@ proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
     atom: StaticAtom; target2 = none(EventTarget)): JSValue =
   if JS_IsFunction(ctx, val) or JS_IsNull(val):
     let jsTarget = ctx.toJS(target)
+    if JS_IsException(jsTarget):
+      return JS_EXCEPTION
     let jsTarget2 = ctx.toJS(target2)
-    if JS_IsException(jsTarget) or JS_IsException(jsTarget2):
+    if JS_IsException(jsTarget2):
+      JS_FreeValue(ctx, jsTarget)
       return JS_EXCEPTION
     let name = "on" & $atom
     let getter = ctx.identityFunction(val)
+    if JS_IsException(getter):
+      ctx.freeValues(jsTarget, jsTarget2)
+      return JS_EXCEPTION
     let f = JSCFunctionType(setter_magic: fun2)
     let setter = JS_NewCFunction2(ctx, f.generic, cstring(name), 1,
       JS_CFUNC_setter_magic, magic)
+    if JS_IsException(getter):
+      ctx.freeValues(jsTarget, jsTarget2, getter)
+      return JS_EXCEPTION
     let ja = JS_NewAtom(ctx, cstring(name))
+    if ja == JS_ATOM_NULL:
+      ctx.freeValues(jsTarget, jsTarget2, getter, setter)
+      return JS_EXCEPTION
     var ret = JS_DefineProperty(ctx, jsTarget, ja, JS_UNDEFINED, getter,
         setter, JS_PROP_HAS_GET or JS_PROP_HAS_SET or
         JS_PROP_HAS_CONFIGURABLE or JS_PROP_CONFIGURABLE)
@@ -578,16 +593,13 @@ proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
         setter, JS_PROP_HAS_GET or JS_PROP_HAS_SET or
         JS_PROP_HAS_CONFIGURABLE or JS_PROP_CONFIGURABLE)
     JS_FreeAtom(ctx, ja)
-    JS_FreeValue(ctx, getter)
-    JS_FreeValue(ctx, setter)
-    JS_FreeValue(ctx, jsTarget)
-    JS_FreeValue(ctx, jsTarget2)
+    ctx.freeValues(getter, setter, jsTarget, jsTarget2)
     if ret == -1:
       return JS_EXCEPTION
     if JS_IsNull(val):
       ctx.removeInternalEventListener(target, atom)
-    else:
-      ctx.addInternalEventListener(target, atom, val)
+    elif ctx.addInternalEventListener(target, atom, val).isErr:
+      return JS_EXCEPTION
   return JS_DupValue(ctx, val)
 
 proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
@@ -598,21 +610,20 @@ proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
     EventReflectMap[magic])
 
 proc addEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
-    callback: JSValueConst; options: JSValueConst = JS_UNDEFINED): JSValue
+    callback: JSValueConst; options: JSValueConst = JS_UNDEFINED): Opt[void]
     {.jsfunc.} =
   if not JS_IsObject(callback) and not JS_IsNull(callback):
-    return JS_ThrowTypeError(ctx, "callback is not an object")
+    JS_ThrowTypeError(ctx, "callback is not an object")
+    return err()
   var res: FlattenMoreResult
-  if ctx.flattenMore(options, res).isErr:
-    return JS_EXCEPTION
-  ctx.addEventListener0(eventTarget, ctype, res.capture, res.once,
+  ?ctx.flattenMore(options, res)
+  ctx.addEventListener(eventTarget, ctype, res.capture, res.once,
     internal = false, res.passive, callback, res.signal)
-  return JS_UNDEFINED
 
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
-    ctype: CAtom; callback: JSValueConst; options: JSValueConst = JS_UNDEFINED)
-    {.jsfunc.} =
-  let capture = flatten(ctx, options)
+    ctype: CAtom; callback: JSValueConst; options: JSValueConst = JS_UNDEFINED):
+    Opt[void] {.jsfunc.} =
+  let capture = ?ctx.flatten(options)
   var prev: EventListener = nil
   for it in eventTarget.eventListeners:
     if not it.internal and it.ctype == ctype and
@@ -627,6 +638,7 @@ proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
         prev.next = it.next
       break
     prev = it
+  ok()
 
 type
   DispatchItem = object
@@ -726,8 +738,7 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event): JSValue
 # AbortSignal
 proc finalize(this: AbortSignal) {.jsfin.} =
   JS_FreeValueRT(this.rt, this.reason)
-  for it in this.abortSteps:
-    JS_FreeValueRT(this.rt, it)
+  this.rt.freeValues(this.abortSteps)
 
 proc mark(rt: JSRuntime; this: AbortSignal; markFun: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, this.reason, markFun)

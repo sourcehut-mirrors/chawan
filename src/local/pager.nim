@@ -309,13 +309,17 @@ proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
       ctx.toJS(pager.container.select)
     else:
       ctx.toJS(pager.container)
+    if JS_IsException(cval):
+      return JS_EXCEPTION
     let val = JS_GetProperty(ctx, cval, a)
-    if JS_IsFunction(ctx, val):
-      let funcData = @[cval, val]
-      let fun = JS_NewCFunctionData(ctx, reflect, 1, 0, 2,
-        funcData.toJSValueArray())
+    if JS_IsException(val):
       JS_FreeValue(ctx, cval)
-      JS_FreeValue(ctx, val)
+      return JS_EXCEPTION
+    if JS_IsFunction(ctx, val):
+      let data = [cval, val]
+      let fun = JS_NewCFunctionData(ctx, reflect, 1, 0, 2,
+        data.toJSValueArray())
+      ctx.freeValues(data)
       return fun
     JS_FreeValue(ctx, cval)
     if not JS_IsUndefined(val):
@@ -341,28 +345,23 @@ proc setLineEdit2(pager: Pager; mode: LineMode; prompt: string; current = "";
 #TODO the above two variants should be merged into this one
 proc setLineEdit(ctx: JSContext; pager: Pager; mode: LineMode; prompt: string;
     obj: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
-  var funs {.noinit.}: array[2, JSValue]
-  let res = JS_NewPromiseCapability(ctx, funs.toJSValueArray())
-  if JS_IsException(res):
-    return res
-  JS_FreeValue(ctx, funs[1])
   var current = ""
   var hide = false
   var update = JS_UNDEFINED
   if not JS_IsUndefined(obj):
-    let jsCurrent = JS_GetPropertyStr(ctx, obj, "current")
-    if JS_IsException(jsCurrent):
-      return jsCurrent
-    if not JS_IsUndefined(jsCurrent):
-      ?ctx.fromJSFree(jsCurrent, current)
-    let jsHide = JS_GetPropertyStr(ctx, obj, "hide")
-    if JS_IsException(jsHide):
-      return jsHide
-    if not JS_IsUndefined(jsHide):
-      ?ctx.fromJSFree(jsHide, hide)
+    if ctx.fromJSGetProp(obj, "current", current).isErr:
+      return JS_EXCEPTION
+    if ctx.fromJSGetProp(obj, "hide", hide).isErr:
+      return JS_EXCEPTION
     update = JS_GetPropertyStr(ctx, obj, "update")
     if JS_IsException(update):
-      return update
+      return JS_EXCEPTION
+  var funs {.noinit.}: array[2, JSValue]
+  let res = JS_NewPromiseCapability(ctx, funs.toJSValueArray())
+  if JS_IsException(res):
+    JS_FreeValue(ctx, update)
+    return JS_EXCEPTION
+  JS_FreeValue(ctx, funs[1])
   let data = LineDataScript(resolve: funs[0], update: update)
   let hist = pager.getHist(mode)
   if pager.lineedit != nil: # clean up old lineedit
@@ -3195,8 +3194,7 @@ if (replace.alive) {
   discard pager.timeouts.setTimeout(ttTimeout, fun, int32(n),
     args.toJSValueConstOpenArray())
   JS_FreeValue(ctx, fun)
-  for arg in args:
-    JS_FreeValue(ctx, arg)
+  ctx.freeValues(args)
 
 const MenuMap = [
   ("Select text              (v)", "selectOrCopy"),

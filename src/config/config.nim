@@ -718,8 +718,7 @@ proc jsLinkHintChars(ctx: JSContext; input: InputConfig): JSValue
         break good
       vals.add(val)
     return ctx.newArrayFrom(vals)
-  for val in vals:
-    JS_FreeValue(ctx, val)
+  ctx.freeValues(vals)
   return JS_EXCEPTION
 
 proc freeValues*(ctx: JSContext; map: ActionMap) =

@@ -42,6 +42,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
   FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
   FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): FromJSResult
 
 template isOk*(res: FromJSResult): bool =
   res == fjOk
@@ -495,6 +496,10 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
     FromJSResult =
   res = val
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): FromJSResult =
+  res = JS_DupValue(ctx, val)
   fjOk
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =

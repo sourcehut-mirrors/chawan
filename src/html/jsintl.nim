@@ -107,17 +107,6 @@ proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     unit = NumberUnit(part1: part1.get)
   fjOk
 
-proc fromJSGetProp[T](ctx: JSContext; this: JSValueConst; name: cstring;
-    res: var T): Opt[bool] =
-  let prop = JS_GetPropertyStr(ctx, this, name)
-  if JS_IsException(prop):
-    return err()
-  if JS_IsUndefined(prop):
-    return ok(false)
-  ?ctx.fromJS(prop, res)
-  JS_FreeValue(ctx, prop)
-  ok(true)
-
 proc newNumberFormat(ctx: JSContext; name = "en-US";
     options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsfctor.} =
   let nf = NumberFormat()

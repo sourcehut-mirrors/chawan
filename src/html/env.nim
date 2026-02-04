@@ -213,12 +213,9 @@ proc addNavigatorModule*(ctx: JSContext) =
 # Window
 proc finalize(window: Window) {.jsfin.} =
   window.timeouts.clearAll()
-  for it in window.weakMap:
-    JS_FreeValueRT(window.jsrt, it)
-  for it in window.jsStore.mitems:
-    let val = it
-    it = JS_UNINITIALIZED
-    JS_FreeValueRT(window.jsrt, val)
+  let rt = window.jsrt
+  rt.freeValues(window.weakMap)
+  rt.freeValues(window.jsStore)
   window.jsStore.setLen(0)
   window.settings.moduleMap.clear(window.jsrt)
 
@@ -466,11 +463,9 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     var s: string
     if fromJS(ctx, reason, s).isOk:
       s &= '\n'
-    let stack = JS_GetPropertyStr(ctx, reason, "stack");
     var ss: string
-    if not JS_IsUndefined(stack) and ctx.fromJS(stack, ss).isOk:
+    if ctx.fromJSGetProp(reason, "stack", ss).isOk:
       s &= ss
-    JS_FreeValue(ctx, stack)
     if window.document != nil:
       window.console.error("Unhandled promise in document",
         $window.document.url, s)

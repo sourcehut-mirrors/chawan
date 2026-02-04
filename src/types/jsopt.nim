@@ -35,4 +35,16 @@ proc toJSNew*[T](ctx: JSContext; opt: Opt[T]; ctor: JSValueConst): JSValue =
   else:
     return JS_EXCEPTION
 
+proc fromJSGetProp*[T](ctx: JSContext; this: JSValueConst; name: cstring;
+    res: var T): Opt[bool] =
+  if JS_IsUndefined(this):
+    return ok(false)
+  let prop = JS_GetPropertyStr(ctx, this, name)
+  if JS_IsException(prop):
+    return err()
+  if JS_IsUndefined(prop):
+    return ok(false)
+  ?ctx.fromJSFree(prop, res)
+  ok(true)
+
 {.pop.}
