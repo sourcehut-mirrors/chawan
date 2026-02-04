@@ -241,6 +241,7 @@ type
     defsTail: CustomElementDef
     inDefine: bool
     scoped: bool
+    scopedDocuments: seq[Document]
 
   NamedNodeMap = ref object
     element: Element
@@ -321,7 +322,7 @@ type
     internalPrev: Node # either previousSibling or parentNode.lastChild
 
   ParentNode* = ref object of Node
-    firstChild*: Node
+    internalFirst: Node # either firstChild or shadow root
 
   Attr = ref object of Node
     dataIdx: int
@@ -385,6 +386,7 @@ type
     parser*: RootRef
     liveCollections: seq[ptr CollectionObj]
     cachedAll: HTMLAllCollection
+    customElements: CustomElementRegistry #TODO ?
 
   XMLDocument = ref object of Document
 
@@ -404,6 +406,31 @@ type
   DocumentFragment* = ref object of ParentNode
     host*: Element
 
+  ShadowRootInit = object of JSDict
+    mode: ShadowRootMode
+    delegatesFocus {.jsdefault.}: bool
+    slotAssignment {.jsdefault.}: SlotAssignmentMode
+    clonable {.jsdefault.}: bool
+    serializable {.jsdefault.}: bool
+    customElementRegistry {.jsdefault.}: CustomElementRegistry
+
+  ShadowRootMode = enum
+    srmOpen = "open", srmClosed = "closed"
+
+  SlotAssignmentMode = enum
+    samNamed = "named", samManual = "manual"
+
+  ShadowRoot = ref object of DocumentFragment
+    mode {.jsget.}: ShadowRootMode
+    delegatesFocus {.jsget.}: bool
+    slotAssignment {.jsget.}: SlotAssignmentMode
+    clonable {.jsget.}: bool
+    serializable {.jsget.}: bool
+    declarative: bool
+    unsetCustomElements: bool
+    customElements: CustomElementRegistry
+    #TODO onslotchange
+
   DocumentType* = ref object of Node
     name* {.jsget.}: string
     publicId* {.jsget.}: string
@@ -422,7 +449,7 @@ type
     cesCustom = "custom"
 
   ElementFlag = enum
-    efHint, efHover
+    efHint, efHover, efShadowRoot
 
   Element* = ref object of ParentNode
     namespaceURI* {.jsget.}: CAtom # 4
@@ -597,6 +624,8 @@ type
 
   HTMLProgressElement = ref object of HTMLElement
 
+  HTMLSlotElement = ref object of HTMLElement
+
   HTMLUnknownElement = ref object of HTMLElement
 
 jsDestructor(Navigator)
@@ -653,6 +682,7 @@ jsDestructor(HTMLObjectElement)
 jsDestructor(HTMLSourceElement)
 jsDestructor(HTMLModElement)
 jsDestructor(HTMLProgressElement)
+jsDestructor(HTMLSlotElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -682,6 +712,7 @@ jsDestructor(CSSStyleDeclaration)
 jsDestructor(DOMRect)
 jsDestructor(DOMRectList)
 jsDestructor(CustomElementRegistry)
+jsDestructor(ShadowRoot)
 
 # Forward declarations
 proc loadSheet(window: Window; url: URL; charset: Charset; layer: CAtom):
@@ -724,9 +755,13 @@ proc reflectEvent(document: Document; target: EventTarget;
 
 proc document*(node: Node): Document
 proc nextDescendant(node, start: Node): Node
+proc nextDescendantShadow(node, start: Node): Node
+proc parentNodeShadow(node: Node): Node
+proc parentNodeHost(node: Node): Node
 proc parentElement*(node: Node): Element
-proc serializeFragment(res: var string; node: Node)
-proc serializeFragmentInner(res: var string; child: Node; parentType: TagType)
+proc serializeFragment(res: var string; node: Node; writeShadow: bool)
+proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
+  writeShadow: bool)
 
 proc countChildren(node: ParentNode; nodeType: type): int
 proc hasChild(node: ParentNode; nodeType: type): bool
@@ -734,6 +769,9 @@ proc hasChildExcept(node: ParentNode; nodeType: type; ex: Node): bool
 proc insert*(parent: ParentNode; node, before: Node; suppressObservers = false)
 proc replaceAll(parent: ParentNode; node: Node)
 proc replaceAll(parent: ParentNode; s: sink string)
+proc firstChild(parent: ParentNode): Node
+proc firstChildShadow(parent: ParentNode): Node
+proc setFirstChild(node: ParentNode; child: Node)
 
 proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool
 
@@ -741,23 +779,25 @@ proc newAttr(element: Element; dataIdx: int): Attr
 proc data(attr: Attr): lent AttrData
 proc setValue(attr: Attr; s: string)
 
+proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
+  Opt[ShadowRoot]
 proc attr*(element: Element; name: CAtom; value: sink string)
 proc attr*(element: Element; name: StaticAtom; value: sink string)
 proc attr*(element: Element; s: StaticAtom): lent string
-proc attrb*(element: Element; s: CAtom): bool
 proc attrb*(element: Element; at: StaticAtom): bool
-proc attrl*(element: Element; s: StaticAtom): Opt[int32]
-proc attrul*(element: Element; s: StaticAtom): Opt[uint32]
-proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
+proc attrb*(element: Element; s: CAtom): bool
+proc attrd(element: Element; name: StaticAtom; value: float64)
 proc attrd*(element: Element; s: StaticAtom): Opt[float64]
 proc attrdgz*(element: Element; s: StaticAtom): Opt[float64]
 proc attrl(element: Element; name: StaticAtom; value: int32)
+proc attrl*(element: Element; s: StaticAtom): Opt[int32]
 proc attrul(element: Element; name: StaticAtom; value: uint32)
+proc attrul*(element: Element; s: StaticAtom): Opt[uint32]
 proc attrulgz(element: Element; name: StaticAtom; value: uint32)
-proc attrd(element: Element; name: StaticAtom; value: float64)
+proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(ctx: JSContext; element: Element; i: int)
-proc elementInsertionSteps(element: Element): bool
 proc elIndex*(this: Element): int
+proc elementInsertionSteps(element: Element): bool
 proc ensureStyle(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtom): int
 proc findAttrNS(element: Element; namespace, localName: CAtom): int
@@ -771,8 +811,11 @@ proc postConnectionSteps(element: Element)
 proc previousElementSibling*(element: Element): Element
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc scriptingEnabled(element: Element): bool
+proc shadowRoot(this: Element): ShadowRoot
 proc tagName(element: Element): string
 proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
+
+proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
 
 proc crossOrigin(element: HTMLElement): CORSAttribute
 proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy]
@@ -958,7 +1001,7 @@ const ReflectMap0 = [
   makeb(satRequired, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makes(satName, TAG_A, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META,
     TAG_IFRAME, TAG_FRAME, TAG_IMG, TAG_OBJECT, TAG_PARAM, TAG_OBJECT, TAG_MAP,
-    TAG_FORM, TAG_OUTPUT, TAG_FIELDSET, TAG_DETAILS),
+    TAG_FORM, TAG_OUTPUT, TAG_FIELDSET, TAG_DETAILS, TAG_SLOT),
   makes(satOpen, TAG_DETAILS),
   makeb(satNovalidate, satHNoValidate, TAG_FORM),
   makeb(satSelected, satDefaultSelected, TAG_OPTION),
@@ -1045,6 +1088,18 @@ iterator safeChildList*(node: ParentNode): Node {.inline.} =
       if it.internalNext == nil:
         break # it is ownerDocument
 
+# either the shadow root, or our child list
+iterator shadowChildList*(node: ParentNode): Node {.inline.} =
+  var it = node.firstChildShadow
+  if it != nil:
+    if it.parentNode != node: # shadow root
+      it = ParentNode(it).firstChildShadow
+    while true:
+      yield it
+      it = it.internalNext
+      if it.internalNext == nil:
+        break # it is ownerDocument
+
 iterator rchildList*(node: ParentNode): Node {.inline.} =
   let first = node.firstChild
   if first != nil:
@@ -1090,18 +1145,18 @@ iterator ancestors*(node: Node): Element {.inline.} =
     yield element
     element = element.parentElement
 
-iterator nodeAncestors*(node: Node): Node {.inline.} =
-  var node = node.parentNode
-  while node != nil:
-    yield node
-    node = node.parentNode
-
 # inclusive ancestors
 iterator branch*(node: Node): Node {.inline.} =
   var node = node
   while node != nil:
     yield node
     node = node.parentNode
+
+iterator branchHost(node: Node): Node {.inline.} =
+  var node = node.parentNodeHost
+  while node != nil:
+    yield node
+    node = node.parentNodeHost
 
 iterator branchElems*(node: Node): Element {.inline.} =
   for node in node.branch:
@@ -1119,6 +1174,12 @@ iterator descendantsIncl(node: Node): Node {.inline.} =
   while it != nil:
     yield it
     it = it.nextDescendant(node)
+
+iterator descendantsShadowIncl(node: Node): Node {.inline.} =
+  var it = node
+  while it != nil:
+    yield it
+    it = it.nextDescendantShadow(node)
 
 iterator elementDescendants*(node: ParentNode): Element {.inline.} =
   for child in node.descendants:
@@ -1788,13 +1849,17 @@ proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSValueConst):
 
 #TODO whenDefined, initialize
 
+proc addScopedDocument(this: CustomElementRegistry; document: Document) =
+  if document notin this.scopedDocuments:
+    this.scopedDocuments.add(document)
+
 # Node
 when defined(debug):
   proc `$`*(node: Node): string =
     if node == nil:
       return "null"
     result = ""
-    result.serializeFragmentInner(node, TAG_UNKNOWN)
+    result.serializeFragmentInner(node, TAG_UNKNOWN, writeShadow = true)
 
 proc baseURI(node: Node): string {.jsfget.} =
   return $node.document.baseURL
@@ -1805,7 +1870,19 @@ proc document*(node: Node): Document =
     return Document(node)
   if next.internalNext == nil:
     return Document(next)
-  return Document(node.parentNode.firstChild.internalPrev.internalNext)
+  return Document(next.parentNode.firstChild.internalPrev.internalNext)
+
+proc parentNodeShadow(node: Node): Node =
+  let parent = node.parentNode
+  if parent == nil and node of ShadowRoot:
+    return ShadowRoot(node).host
+  return parent
+
+proc parentNodeHost(node: Node): Node =
+  let parent = node.parentNode
+  if parent == nil and node of DocumentFragment:
+    return DocumentFragment(node).host
+  return parent
 
 proc parentElement*(node: Node): Element {.jsfget.} =
   let p = node.parentNode
@@ -1813,12 +1890,18 @@ proc parentElement*(node: Node): Element {.jsfget.} =
     return Element(p)
   return nil
 
-proc nextSibling*(node: Node): Node {.jsfget.} =
+proc nextSiblingShadow(node: Node): Node =
   if node.internalNext == nil or node.internalNext.internalNext == nil:
     # if next is nil, then node is a Document.
     # if next.next is nil, then next is ownerDocument.
     return nil
   return node.internalNext
+
+proc nextSibling*(node: Node): Node {.jsfget.} =
+  if node.parentNode == nil:
+    # if parent is nil, then may be a shadow root
+    return nil
+  return node.nextSiblingShadow
 
 proc previousSibling*(node: Node): Node {.jsfget.} =
   if node.parentNode == nil or node == node.parentNode.firstChild:
@@ -1839,6 +1922,21 @@ proc nextDescendant(node, start: Node): Node =
     if next != nil:
       return next
     node = node.parentNode
+  # done
+  return nil
+
+proc nextDescendantShadow(node, start: Node): Node =
+  if node of ParentNode: # parent
+    let node = cast[ParentNode](node)
+    if node.firstChildShadow != nil:
+      return node.firstChildShadow
+  # climb up until we find a non-last leaf (this might be node itself)
+  var node = node
+  while node != start:
+    let next = node.nextSiblingShadow
+    if next != nil:
+      return next
+    node = node.parentNodeShadow
   # done
   return nil
 
@@ -1918,15 +2016,16 @@ proc rootNode(node: Node): Node =
     node = node.parentNode
   return node
 
-proc isHostIncludingInclusiveAncestor(a, b: Node): bool =
-  for parent in b.branch:
-    if parent == a:
+proc rootNodeShadow(node: Node): Node =
+  var node = node
+  while (let parent = node.parentNodeShadow; parent != nil):
+    node = parent
+  node
+
+proc isInclusiveAncestorHost(a, b: Node): bool =
+  for it in b.branchHost:
+    if it == a:
       return true
-  let root = b.rootNode
-  if root of DocumentFragment and DocumentFragment(root).host != nil:
-    for parent in root.branch:
-      if parent == a:
-        return true
   return false
 
 proc hasNextSibling(node: Node; nodeType: type): bool =
@@ -1968,13 +2067,13 @@ proc textContent(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   return ctx.toJS(node.textContent)
 
 proc isConnected(node: Node): bool {.jsfget.} =
-  return node.rootNode of Document #TODO shadow root
+  return node.rootNodeShadow of Document
 
 proc inSameTree*(a, b: Node): bool =
   a.rootNode == b.rootNode
 
 # a == b or a in b's ancestors
-proc contains*(a, b: Node): bool {.jsfunc.} =
+proc contains(a, b: Node): bool {.jsfunc.} =
   if b != nil:
     for node in b.branch:
       if node == a:
@@ -2003,7 +2102,7 @@ proc hasChildNodes(node: Node): bool {.jsfunc.} =
 proc preInsertionValidity(parent, node, before: Node):
     Result[ParentNode, cstring] =
   let parent = ?parent.checkParentValidity()
-  if node.isHostIncludingInclusiveAncestor(parent):
+  if node.isInclusiveAncestorHost(parent):
     return err("parent must be an ancestor")
   if before != nil and before.parentNode != parent:
     return err(nil)
@@ -2058,15 +2157,16 @@ proc remove*(node: Node; suppressObservers: bool) =
     parent.firstChild.internalPrev = prev
   if parent.firstChild == node:
     if next != nil and next.internalNext != nil:
-      parent.firstChild = next
+      parent.setFirstChild(next)
     else:
-      parent.firstChild = nil
+      parent.setFirstChild(nil)
   else:
     prev.internalNext = next
   node.internalPrev = nil
   node.internalNext = document
   node.parentNode = nil
   document.invalidateCollections()
+  var hasSlot = false
   if element != nil:
     if parentElement == nil:
       element.invalidate()
@@ -2078,9 +2178,30 @@ proc remove*(node: Node; suppressObservers: bool) =
       SheetElement(element).removeSheet()
     for desc in element.elementDescendantsIncl:
       desc.applyStyleDependencies(DependencyInfo.default)
-  #TODO assigned, shadow root, shadow root again, custom nodes, registered
-  # observers
-  #TODO not suppress observers => queue tree mutation record
+      hasSlot = desc.tagType == TAG_SLOT
+  #TODO assigned
+  let root = parent.rootNode
+  if root of ShadowRoot:
+    let shadow = ShadowRoot(root)
+    discard shadow
+    #TODO signal slot change if parent is slot without assigned nodes
+  if hasSlot:
+    #TODO assign slottables for tree with root
+    #TODO assign slottables for tree with node
+    discard
+  #TODO removing steps
+  let parentConnected = root.isConnected
+  #TODO if node is custom and connected, disconnectedcallback
+  for desc in element.descendantsShadowIncl:
+    #TODO removing steps
+    if desc of Element:
+      let element = Element(desc)
+      if element.custom == cesCustom and parentConnected:
+        discard #TODO call disconnectedCallback
+  #TODO registered observers
+  if not suppressObservers:
+    discard #TODO queue tree mutation record
+  #TODO children changed steps
 
 proc remove*(node: Node) =
   if node.parentNode != nil:
@@ -2136,7 +2257,7 @@ proc append(parent, node: Node) =
 # pointless copy.
 proc replace*(parent, child, node: Node): Err[cstring] =
   let parent = ?parent.checkParentValidity()
-  if node.isHostIncludingInclusiveAncestor(parent):
+  if node.isInclusiveAncestorHost(parent):
     return err("parent must be an ancestor")
   if child.parentNode != parent:
     return err(nil)
@@ -2265,9 +2386,31 @@ proc clone(node: Node; document = none(Document); deep = false): Node =
       copy.append(child.clone(deep = true))
   return copy
 
-proc cloneNode(node: Node; deep = false): Node {.jsfunc.} =
-  #TODO shadow root
-  return node.clone(deep = deep)
+proc cloneNode(ctx: JSContext; node: Node; deep = false): JSValue {.jsfunc.} =
+  if node of ShadowRoot:
+    return JS_ThrowDOMException(ctx, "NotSupportedError",
+      "cannot clone shadow roots")
+  let copy = node.clone(deep = deep)
+  if node of Element:
+    let element = Element(node)
+    let shadow = element.shadowRoot
+    if shadow != nil:
+      let customElements = shadow.globalCustomElements
+      let x = ctx.attachShadow(Element(copy), ShadowRootInit(
+        mode: shadow.mode,
+        serializable: shadow.serializable,
+        delegatesFocus: shadow.delegatesFocus,
+        slotAssignment: shadow.slotAssignment,
+        customElementRegistry: customElements
+      ))
+      if x.isErr:
+        return JS_EXCEPTION
+      let copyShadow = x.get
+      copyShadow.declarative = shadow.declarative
+      copyShadow.unsetCustomElements = shadow.unsetCustomElements
+      for child in shadow.childList:
+        copyShadow.append(child.clone(deep = deep))
+  return ctx.toJS(copy)
 
 proc isSameNode(node, other: Node): bool {.jsfunc.} =
   return node == other
@@ -2333,7 +2476,8 @@ proc isEqualNode(node, other: Node): bool {.jsfunc.} =
     return CharacterData(node).data == CharacterData(other).data
   true
 
-proc serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
+proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
+    writeShadow: bool) =
   if child of Element:
     let element = Element(child)
     let tags = $element.localName
@@ -2345,10 +2489,8 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
       res &= ' ' & $attr.qualifiedName & "=\"" &
         attr.value.htmlEscape(mode = emAttribute) & "\""
     res &= '>'
-    res.serializeFragment(element)
-    res &= "</"
-    res &= tags
-    res &= '>'
+    res.serializeFragment(element, writeShadow)
+    res &= "</" & tags & '>'
   elif child of Text:
     let text = Text(child)
     const LiteralTags = {
@@ -2367,7 +2509,7 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
   elif child of DocumentType:
     res &= "<!DOCTYPE " & DocumentType(child).name & '>'
 
-proc serializeFragment(res: var string; node: Node) =
+proc serializeFragment(res: var string; node: Node; writeShadow: bool) =
   var node = node
   var parentType = TAG_UNKNOWN
   if node of Element:
@@ -2383,14 +2525,31 @@ proc serializeFragment(res: var string; node: Node) =
         # Pretend parentType is not noscript, so we do not append literally
         # in serializeFragmentInner.
         parentType = TAG_UNKNOWN
+      let shadow = element.shadowRoot
+      if shadow != nil and writeShadow and shadow.serializable:
+        res &= "<template shadowrootmode=\"" & $shadow.mode & '"'
+        if shadow.delegatesFocus:
+          res &= " shadowrootdelegatesfocus=\"\""
+        if shadow.serializable:
+          res &= " shadowrootserializable=\"\""
+        if shadow.clonable:
+          res &= " shadowrootclonable=\"\""
+        let docCustomElements = node.document.customElements
+        let shadowCustomElements = shadow.customElements
+        if docCustomElements != nil and not docCustomElements.scoped or
+            shadowCustomElements != nil and not shadowCustomElements.scoped:
+          res &= " shadowrootcustomelementregistry=\"\""
+        res &= '>'
+        res.serializeFragment(shadow, writeShadow)
+        res &= "</template>"
   if node of ParentNode:
     let node = ParentNode(node)
     for child in node.childList:
-      res.serializeFragmentInner(child, parentType)
+      res.serializeFragmentInner(child, parentType, writeShadow)
 
-proc serializeFragment*(node: Node): string =
+proc serializeFragment*(node: Node; writeShadow: bool): string =
   result = ""
-  result.serializeFragment(node)
+  result.serializeFragment(node, writeShadow)
 
 proc findAncestor*(node: Node; tagType: TagType): Element =
   for element in node.ancestors:
@@ -2474,7 +2633,28 @@ proc replaceChildrenImpl(ctx: JSContext; parent: Node;
   parent.replaceAll(node)
   return JS_UNDEFINED
 
+proc assignSlot(node: Node) =
+  discard
+
 # ParentNode
+proc firstChild(parent: ParentNode): Node =
+  let child = parent.internalFirst
+  if child != nil and child.parentNode != parent:
+    when defined(debug):
+      assert child of ShadowRoot
+    return child.internalNext
+  return child
+
+proc firstChildShadow(parent: ParentNode): Node =
+  return parent.internalFirst
+
+proc setFirstChild(node: ParentNode; child: Node) =
+  let first = node.internalFirst
+  if first != nil and first.parentNode != node: # shadow root
+    first.internalNext = child
+  else:
+    node.internalFirst = child
+
 proc firstElementChild*(node: ParentNode): Element =
   for child in node.elementList:
     return child
@@ -2601,18 +2781,21 @@ proc getElementsByClassNameImpl(node: ParentNode; classNames: string):
     childonly = false
   )
 
-proc insertNode(parent: ParentNode; node, before: Node) =
-  parent.document.adopt(node)
+proc insert0(parent: ParentNode; node, before: Node;
+    postConnectionNodes: var seq[Element]) =
+  let parentDocument = parent.document
+  parentDocument.adopt(node)
   let element = if node of Element: Element(node) else: nil
+  let first = parent.firstChild
   if before == nil:
-    let first = parent.firstChild
     if first != nil:
       let last = first.internalPrev
       last.internalNext = node
       node.internalPrev = last
+      first.internalPrev = node
     else:
-      parent.firstChild = node
-    parent.firstChild.internalPrev = node
+      parent.setFirstChild(node)
+      node.internalPrev = node
   else:
     node.internalNext = before
     let prev = before.internalPrev
@@ -2620,25 +2803,42 @@ proc insertNode(parent: ParentNode; node, before: Node) =
     if prev.nextSibling != nil:
       prev.internalNext = node
     before.internalPrev = node
-    if before == parent.firstChild:
-      parent.firstChild = node
+    if before == first:
+      parent.setFirstChild(node)
   node.parentNode = parent
+  let parentElement = node.parentElement
   if element != nil:
-    if element.nextSibling != nil and parent of Element:
-      let parent = Element(parent)
-      parent.childElIndicesInvalid = true
+    if element.nextSibling != nil and parentElement != nil:
+      parentElement.childElIndicesInvalid = true
     elif (let prev = element.previousElementSibling; prev != nil):
       element.internalElIndex = prev.internalElIndex + 1
     else:
       element.internalElIndex = 0
-  node.document.invalidateCollections()
-  var nodes: seq[Element] = @[]
-  for el in node.elementDescendantsIncl:
-    #TODO shadow root
-    if el.elementInsertionSteps():
-      nodes.add(el)
-  for el in nodes:
-    el.postConnectionSteps()
+  parentDocument.invalidateCollections()
+  if parentElement != nil:
+    let shadow = parentElement.shadowRoot
+    if shadow != nil and shadow.slotAssignment == samNamed and
+        (element != nil or node of Text):
+      node.assignSlot()
+    let root = parent.rootNode
+    if parentElement.tagType == TAG_SLOT and root of ShadowRoot:
+      discard #TODO signal a slot change
+    #TODO assign slottables for a tree with root
+  for desc in node.descendantsShadowIncl:
+    if desc of Element:
+      let el = Element(desc)
+      if el.elementInsertionSteps():
+        postConnectionNodes.add(el)
+      if el.custom == cesCustom:
+        #TODO append parentDocument to element custom registry
+        discard #TODO call connectedCallback (custom elements)
+      else:
+        discard #TODO try to upgrade (custom elements)
+    elif desc of ShadowRoot:
+      let shadow = ShadowRoot(desc)
+      let customElements = shadow.customElements
+      if customElements != nil and customElements.scoped:
+        customElements.addScopedDocument(parentDocument)
 
 # WARNING ditto
 proc insert*(parent: ParentNode; node, before: Node;
@@ -2659,8 +2859,14 @@ proc insert*(parent: ParentNode; node, before: Node;
     discard
   if parent of Element:
     Element(parent).invalidate()
+  var postConnectionNodes: seq[Element] = @[]
   for node in nodes:
-    parent.insertNode(node, before)
+    parent.insert0(node, before, postConnectionNodes)
+  #TODO children changed steps for parent
+  if not suppressObservers:
+    discard #TODO queue tree mutation record
+  for el in postConnectionNodes:
+    el.postConnectionSteps()
 
 proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: string): JSValue =
   let selectors = parseSelectors(q)
@@ -4273,12 +4479,12 @@ proc isLastVisualNode*(element: Element): bool =
 
 proc innerHTML(element: Element): string {.jsfget.} =
   #TODO xml
-  return element.serializeFragment()
+  return element.serializeFragment(writeShadow = true)
 
 proc outerHTML(element: Element): string {.jsfget.} =
   #TODO xml
   result = ""
-  result.serializeFragmentInner(element, TAG_UNKNOWN)
+  result.serializeFragmentInner(element, TAG_UNKNOWN, writeShadow = true)
 
 proc tagTypeNoNS(element: Element): TagType =
   return element.localName.toTagType()
@@ -5320,6 +5526,84 @@ proc getBitmap*(element: Element): NetworkBitmap =
     return SVGSVGElement(element).bitmap
   else:
     return nil
+
+proc shadowRoot(this: Element): ShadowRoot {.jsfget.} =
+  let first = this.internalFirst
+  # note: you could optimize this by just checking if first.parentNode != this,
+  # but it seems very risky so I won't
+  if first of ShadowRoot:
+    return cast[ShadowRoot](first)
+  return nil
+
+proc setShadowRoot(this: Element; shadow: ShadowRoot) =
+  if this.internalFirst != nil:
+    shadow.internalNext = move(this.internalFirst)
+  this.internalFirst = shadow
+
+proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
+    Opt[ShadowRoot] {.jsfunc.} =
+  let document = this.document
+  let customElements = if init.customElementRegistry != nil:
+    init.customElementRegistry
+  else:
+    document.customElements
+  if customElements != nil and not customElements.scoped and
+      customElements != document.customElements:
+    JS_ThrowDOMException(ctx, "NotSupportedError",
+      "custom element registry is not scoped")
+    return err()
+  if this.namespaceURI != satNamespaceHTML:
+    JS_ThrowDOMException(ctx, "NotSupportedError",
+      "only HTML elements can have shadow trees")
+    return err()
+  const AllowedTags = {
+    TAG_ARTICLE, TAG_ASIDE, TAG_BLOCKQUOTE, TAG_BODY, TAG_DIV, TAG_FOOTER,
+    TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6, TAG_HEADER, TAG_MAIN,
+    TAG_NAV, TAG_P, TAG_SECTION, TAG_SPAN
+  }
+  let validCustom = this.localName.isValidCustomElementName()
+  if not validCustom and this.tagType notin AllowedTags:
+    JS_ThrowDOMException(ctx, "NotSupportedError", "invalid tag name")
+    return err()
+  if validCustom: #TODO or is value is non-null
+    #TODO check for disable shadow
+    discard
+  let old = this.shadowRoot
+  if old != nil:
+    if not old.declarative or old.mode != init.mode:
+      JS_ThrowDOMException(ctx, "NotSupportedError",
+        "cannot replace old shadow root")
+      return err()
+    let removedNodes = old.getChildList()
+    for child in removedNodes:
+      child.remove()
+    old.declarative = false
+    return ok(old)
+  let shadow = ShadowRoot(
+    internalNext: document,
+    host: this,
+    mode: init.mode,
+    delegatesFocus: init.delegatesFocus,
+    #TODO available to internals
+    slotAssignment: init.slotAssignment,
+    clonable: init.clonable,
+    serializable: init.serializable,
+    customElements: customElements
+  )
+  this.setShadowRoot(shadow)
+  ok(shadow)
+
+# ShadowRoot
+proc host(this: ShadowRoot): Element {.jsfget.} =
+  DocumentFragment(this).host
+
+proc globalCustomElements(this: ShadowRoot): CustomElementRegistry =
+  if not this.customElements.scoped:
+    return this.customElements
+  let document = this.document
+  if not document.customElements.scoped:
+    return document.customElements
+  return nil
 
 # DOMRect
 proc left(rect: DOMRect): float64 {.jsfget.} =
@@ -6503,8 +6787,10 @@ proc execute*(element: HTMLScriptElement) =
   case element.ctype
   of stClassic:
     let oldCurrentScript = document.currentScript
-    #TODO not if shadow root
-    document.currentScript = element
+    document.currentScript = if not (element.rootNode of ShadowRoot):
+      element
+    else:
+      nil
     if window.jsctx != nil:
       let script = element.scriptResult.script
       let ctx = window.jsctx
@@ -6950,7 +7236,8 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLSourceElement, TAG_SOURCE)
   register(HTMLModElement, [TAG_INS, TAG_DEL])
   register(HTMLProgressElement, TAG_PROGRESS)
-  # 44/127 (warning: the 128th interface doesn't fit in the top 7 bits of
+  register(HTMLSlotElement, TAG_SLOT)
+  # 45/127 (warning: the 128th interface doesn't fit in the top 7 bits of
   # the getter/setter magic)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
@@ -6974,7 +7261,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
   ctx.registerType(Comment, parent = characterDataCID)
   ctx.registerType(CDATASection, parent = characterDataCID)
-  ctx.registerType(DocumentFragment, parent = nodeCID)
+  let documentFragmentCID = ctx.registerType(DocumentFragment, parent = nodeCID)
   ctx.registerType(ProcessingInstruction, parent = characterDataCID)
   ctx.registerType(Text, parent = characterDataCID)
   ctx.registerType(DocumentType, parent = nodeCID)
@@ -6984,6 +7271,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(DOMRect)
   ctx.registerType(DOMRectList)
   ctx.registerType(CustomElementRegistry)
+  ctx.registerType(ShadowRoot, parent = documentFragmentCID)
   ctx.registerElements(nodeCID)
   let imageFun = ctx.newFunction(["width", "height"], """
 const x = document.createElement("img");
@@ -7037,6 +7325,10 @@ getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; isLoad: bool):
         return nil
       # if no browsing context, then window will be nil anyway
       return Document(eventTarget).window
+    if eventTarget of ShadowRoot:
+      let shadow = ShadowRoot(eventTarget)
+      #TODO composed
+      return shadow.host
     return Node(eventTarget).parentNode
   return nil
 

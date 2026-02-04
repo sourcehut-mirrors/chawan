@@ -313,7 +313,8 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
     let contentType = if ctx.fromJS(body, document).isOk:
       request.body = RequestBody(
         t: rbtString,
-        s: document.serializeFragment().toValidUTF8() # replace surrogates
+        s: document.serializeFragment(writeShadow = false)
+            .toValidUTF8() # replace surrogates
       )
       "text/html;charset=UTF-8"
     else: #TODO XML

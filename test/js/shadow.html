@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<title>Test shadow root</title>
+<div id=x>Fail</div>
+<div id=y>Fail if visible</div>
+<script src=asserts.js></script>
+<script>
+const el = document.getElementById("y");
+const shadow = el.attachShadow({mode: "open"})
+assertEquals(shadow.nextSibling, null);
+assertEquals(shadow.previousSibling, null);
+assertEquals(el.firstChild.previousSibling, null);
+assertInstanceof(el.firstChild, Text);
+shadow.append("Success")
+document.getElementById("x").remove();
+</script>

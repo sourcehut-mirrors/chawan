@@ -413,7 +413,7 @@ proc addBr(frame: var TreeFrame) =
   ))
 
 proc addElementChildren(frame: var TreeFrame) =
-  for it in frame.parent.childList:
+  for it in frame.parent.shadowChildList:
     if it of Element:
       let element = Element(it)
       frame.addElement(element)

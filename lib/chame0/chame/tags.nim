@@ -96,6 +96,7 @@ type
     TAG_PLAINTEXT = "plaintext"
     TAG_XMP = "xmp"
     TAG_SCRIPT = "script"
+    TAG_SLOT = "slot"
     TAG_DEL = "del"
     TAG_INS = "ins"
     TAG_CAPTION = "caption"
