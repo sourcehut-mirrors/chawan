@@ -165,7 +165,7 @@ proc forceReshape(iface: BufferInterface): EmptyPromise {.jsfunc.} =
     discard
   return addEmptyPromise(iface)
 
-proc addBufferInterfaceModule*(ctx: JSContext) =
-  ctx.registerType(BufferInterface)
+proc addBufferInterfaceModule*(ctx: JSContext): JSClassID =
+  return ctx.registerType(BufferInterface)
 
 {.pop.}

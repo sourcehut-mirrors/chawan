@@ -17,6 +17,7 @@ import server/response
 import types/bitmap
 import types/canvastypes
 import types/color
+import types/jsopt
 import types/opt
 import types/path
 import utils/strwidth
@@ -422,8 +423,9 @@ proc roundRect(ctx: CanvasRenderingContext2D; x, y, w, h, radii: float64)
     {.jsfunc.} =
   ctx.state.path.roundRect(x, y, w, h, radii)
 
-proc addCanvasModule*(ctx: JSContext) =
-  ctx.registerType(CanvasRenderingContext2D)
-  ctx.registerType(TextMetrics)
+proc addCanvasModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(CanvasRenderingContext2D)
+  ?ctx.registerType(TextMetrics)
+  ok()
 
 {.pop.} # raises: []

@@ -803,19 +803,28 @@ proc addEventGetSet*(ctx: JSContext; classid: JSClassID;
   res
 
 proc addEventModule*(ctx: JSContext):
-    tuple[eventCID, eventTargetCID: JSClassID] =
+    Opt[tuple[eventCID, eventTargetCID: JSClassID]] =
   let eventCID = ctx.registerType(Event)
-  ctx.registerType(CustomEvent, parent = eventCID)
-  ctx.registerType(MessageEvent, parent = eventCID)
-  ctx.registerType(SubmitEvent, parent = eventCID)
+  if eventCID == 0:
+    return err()
+  ?ctx.registerType(CustomEvent, parent = eventCID)
+  ?ctx.registerType(MessageEvent, parent = eventCID)
+  ?ctx.registerType(SubmitEvent, parent = eventCID)
   let uiEventCID = ctx.registerType(UIEvent, parent = eventCID)
-  ctx.registerType(MouseEvent, parent = uiEventCID)
-  ctx.registerType(InputEvent, parent = uiEventCID)
-  doAssert ctx.defineConsts(eventCID, EventPhase) == dprSuccess
+  if uiEventCID == 0:
+    return err()
+  ?ctx.registerType(MouseEvent, parent = uiEventCID)
+  ?ctx.registerType(InputEvent, parent = uiEventCID)
+  if ctx.defineConsts(eventCID, EventPhase) == dprException:
+    return err()
   let eventTargetCID = ctx.registerType(EventTarget)
+  if eventTargetCID == 0:
+    return err()
   let abortSignalCID = ctx.registerType(AbortSignal, parent = eventTargetCID)
-  discard ctx.addEventGetSet(abortSignalCID, [satAbort])
-  ctx.registerType(AbortController)
-  return (eventCID, eventTargetCID)
+  if abortSignalCID == 0:
+    return err()
+  ?ctx.addEventGetSet(abortSignalCID, [satAbort])
+  ?ctx.registerType(AbortController)
+  ok((eventCID, eventTargetCID))
 
 {.pop.} # raises: []

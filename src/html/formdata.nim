@@ -194,7 +194,8 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
   form.constructingEntryList = false
   move(entrylist)
 
-proc addFormDataModule*(ctx: JSContext) =
-  ctx.registerType(FormData)
+proc addFormDataModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(FormData)
+  ok()
 
 {.pop.} # raises: []

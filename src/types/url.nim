@@ -1368,8 +1368,9 @@ proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
     bool {.jsstfunc: "URL".} =
   return ctx.newURL(url, base).isOk
 
-proc addURLModule*(ctx: JSContext) =
-  ctx.registerType(URL)
-  ctx.registerType(URLSearchParams)
+proc addURLModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(URL)
+  ?ctx.registerType(URLSearchParams)
+  ok()
 
 {.pop.} # raises: []

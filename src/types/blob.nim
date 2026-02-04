@@ -11,6 +11,8 @@ import monoucha/jsbind
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
+import types/jsopt
+import types/opt
 import utils/twtstr
 
 type
@@ -162,8 +164,11 @@ proc size*(this: WebFile): int {.jsfget.} =
 
 #TODO lastModified
 
-proc addBlobModule*(ctx: JSContext) =
+proc addBlobModule*(ctx: JSContext): Opt[void] =
   let blobCID = ctx.registerType(Blob)
-  ctx.registerType(WebFile, parent = blobCID, name = "File")
+  if blobCID == 0:
+    return err()
+  ?ctx.registerType(WebFile, parent = blobCID, name = "File")
+  ok()
 
 {.pop.} # raises: []

@@ -516,14 +516,21 @@ proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
   return JS_DupValue(ctx, this.responseObject)
 
 proc addXMLHttpRequestModule*(ctx: JSContext;
-    eventCID, eventTargetCID: JSClassID) =
+    eventCID, eventTargetCID: JSClassID): Opt[void] =
   let xhretCID = ctx.registerType(XMLHttpRequestEventTarget, eventTargetCID)
-  discard ctx.addEventGetSet(xhretCID, [satLoadstart, satProgress, satAbort,
-    satError, satLoad, satTimeout, satLoadend])
-  ctx.registerType(XMLHttpRequestUpload, xhretCID)
-  ctx.registerType(ProgressEvent, eventCID)
+  if xhretCID == 0:
+    return err()
+  ?ctx.addEventGetSet(xhretCID, [satLoadstart, satProgress, satAbort, satError,
+    satLoad, satTimeout, satLoadend])
+  ?ctx.registerType(XMLHttpRequestUpload, xhretCID)
+  ?ctx.registerType(ProgressEvent, eventCID)
   let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID)
-  discard ctx.addEventGetSet(xhrCID, [satReadystatechange])
-  doAssert ctx.defineConsts(xhrCID, XMLHttpRequestState) == dprSuccess
+  if xhrCID == 0:
+    return err()
+  ?ctx.addEventGetSet(xhrCID, [satReadystatechange])
+  case ctx.defineConsts(xhrCID, XMLHttpRequestState)
+  of dprException: return err()
+  else: discard
+  ok()
 
 {.pop.} # raises: []

@@ -17,6 +17,13 @@ template `?`*(res: FromJSResult) =
     else:
       return err()
 
+template `?`*(res: JSClassID) =
+  if res == JS_INVALID_CLASS_ID:
+    when result is JSClassID:
+      return JS_INVALID_CLASS_ID
+    else:
+      return err()
+
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue =
   if opt.isOk:
     when not (T is void):

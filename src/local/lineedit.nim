@@ -317,7 +317,7 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
   edit.cursorx = edit.width(current)
   return edit
 
-proc addLineEditModule*(ctx: JSContext) =
-  ctx.registerType(LineEdit)
+proc addLineEditModule*(ctx: JSContext): JSClassID =
+  return ctx.registerType(LineEdit)
 
 {.pop.} # raises: []

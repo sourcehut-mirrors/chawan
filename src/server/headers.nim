@@ -387,7 +387,8 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
     return CheckRefreshResult(n: n, url: url)
   return CheckRefreshResult(n: -1)
 
-proc addHeadersModule*(ctx: JSContext) =
-  ctx.registerType(Headers)
+proc addHeadersModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(Headers)
+  ok()
 
 {.pop.} # raises: []

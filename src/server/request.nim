@@ -335,7 +335,8 @@ proc credentials*(attribute: CORSAttribute): CredentialsMode =
   of caUseCredentials:
     return cmInclude
 
-proc addRequestModule*(ctx: JSContext) =
-  ctx.registerType(JSRequest, name = "Request")
+proc addRequestModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(JSRequest, name = "Request")
+  ok()
 
 {.pop.} # raises: []

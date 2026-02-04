@@ -97,7 +97,11 @@ proc mark(ctx: JSContext; this: Performance; name: string;
   )
   ok(mark)
 
-proc addPerformanceModule*(ctx: JSContext; eventTargetCID: JSClassID) =
-  ctx.registerType(Performance, parent = eventTargetCID)
+proc addPerformanceModule*(ctx: JSContext; eventTargetCID: JSClassID):
+    Opt[void] =
+  ?ctx.registerType(Performance, parent = eventTargetCID)
   let performanceEntryCID = ctx.registerType(PerformanceEntry)
-  ctx.registerType(PerformanceMark, performanceEntryCID)
+  if performanceEntryCID == 0:
+    return err()
+  ?ctx.registerType(PerformanceMark, performanceEntryCID)
+  ok()

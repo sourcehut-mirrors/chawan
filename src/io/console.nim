@@ -6,6 +6,7 @@ import monoucha/jsopaque
 import monoucha/jsutils
 import monoucha/quickjs
 import types/jsopt
+import types/opt
 import utils/twtstr
 
 type Console* = ref object
@@ -96,16 +97,18 @@ let jsConsoleFuncs {.global.} = [
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "console", JS_PROP_CONFIGURABLE),
 ]
 
-proc addConsoleModule*(ctx: JSContext) =
+proc addConsoleModule*(ctx: JSContext): Opt[void] =
   # console doesn't really look like other WebIDL interfaces; it's just an
   # object with a couple functions assigned.
   let console = JS_NewObject(ctx)
   if JS_IsException(console):
-    return
+    return err()
   if not ctx.setPropertyFunctionList(console, jsConsoleFuncs):
     JS_FreeValue(ctx, console)
-    return
-  discard ctx.definePropertyCW(ctx.getOpaque().global, "console", console)
+    return err()
+  case ctx.definePropertyCW(ctx.getOpaque().global, "console", console)
+  of dprException: return err()
+  else: return ok()
 
 proc flush*(console: Console) =
   discard console.err.flush()

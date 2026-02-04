@@ -29,6 +29,7 @@ import types/bitmap
 import types/blob
 import types/cell
 import types/color
+import types/jsopt
 import types/opt
 import types/referrer
 import types/url
@@ -1551,8 +1552,9 @@ proc handleEvent*(container: Container): Opt[void] =
     container.needslines = false
   ok()
 
-proc addContainerModule*(ctx: JSContext) =
-  ctx.registerType(Highlight)
-  ctx.registerType(Container, name = "Buffer")
+proc addContainerModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(Highlight)
+  ?ctx.registerType(Container, name = "Buffer")
+  ok()
 
 {.pop.} # raises: []

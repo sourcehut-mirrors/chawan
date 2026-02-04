@@ -96,6 +96,7 @@ proc encode(this: JSTextEncoder; input = ""): JSTypedArray {.jsfunc.} =
 
 #TODO encodeInto
 
-proc addEncodingModule*(ctx: JSContext) =
-  ctx.registerType(JSTextDecoder, name = "TextDecoder")
-  ctx.registerType(JSTextEncoder, name = "TextEncoder")
+proc addEncodingModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(JSTextDecoder, name = "TextDecoder")
+  ?ctx.registerType(JSTextEncoder, name = "TextEncoder")
+  ok()

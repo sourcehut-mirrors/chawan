@@ -303,7 +303,7 @@ proc json(ctx: JSContext; this: Response): Promise[JSValue] {.jsfunc.} =
       cstring"<input>")
   )
 
-proc addResponseModule*(ctx: JSContext) =
-  ctx.registerType(Response)
+proc addResponseModule*(ctx: JSContext): JSClassID =
+  return ctx.registerType(Response)
 
 {.pop.} # raises: []

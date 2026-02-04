@@ -382,7 +382,7 @@ proc newSelect*(options: seq[SelectOption]; selected: int;
   select.setCursorY(selected)
   return select
 
-proc addSelectModule*(ctx: JSContext) =
-  ctx.registerType(Select)
+proc addSelectModule*(ctx: JSContext): JSClassID =
+  return ctx.registerType(Select)
 
 {.pop.} # raises: []

@@ -392,7 +392,7 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
 parseHTMLFragmentImpl = parseHTMLFragment
 parseDocumentWriteChunkImpl = parseDocumentWriteChunk
 
-proc addHTMLModule*(ctx: JSContext) =
-  ctx.registerType(DOMParser)
+proc addHTMLModule*(ctx: JSContext): JSClassID =
+  return ctx.registerType(DOMParser)
 
 {.pop.} # raises: []

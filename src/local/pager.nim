@@ -3596,7 +3596,7 @@ proc dumpBuffers(pager: Pager) =
         discard pager.handleRead(pager.forkserver.estream.fd)
         return
 
-proc addPagerModule*(ctx: JSContext) =
-  ctx.registerType(Pager)
+proc addPagerModule*(ctx: JSContext): JSClassID =
+  return ctx.registerType(Pager)
 
 {.pop.} # raises: []

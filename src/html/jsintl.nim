@@ -247,12 +247,17 @@ proc select(this: PluralRules; num: float64): string {.jsfunc.} =
 proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
   return RelativeTimeFormat()
 
-proc addIntlModule*(ctx: JSContext) =
+proc addIntlModule*(ctx: JSContext): Opt[void] =
   let global = JS_GetGlobalObject(ctx)
   let intl = JS_NewObject(ctx)
-  ctx.registerType(NumberFormat, namespace = intl)
-  ctx.registerType(DateTimeFormat, namespace = intl)
-  ctx.registerType(PluralRules, namespace = intl)
-  ctx.registerType(RelativeTimeFormat, namespace = intl)
-  doAssert ctx.defineProperty(global, "Intl", intl) != dprException
+  if JS_IsException(intl):
+    return err()
+  ?ctx.registerType(NumberFormat, namespace = intl)
+  ?ctx.registerType(DateTimeFormat, namespace = intl)
+  ?ctx.registerType(PluralRules, namespace = intl)
+  ?ctx.registerType(RelativeTimeFormat, namespace = intl)
+  case ctx.defineProperty(global, "Intl", intl)
+  of dprException: return err()
+  else: discard
   JS_FreeValue(ctx, global)
+  ok()

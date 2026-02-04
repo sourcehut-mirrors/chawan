@@ -9,16 +9,10 @@ import config/chapath
 import config/config
 import config/conftypes
 import html/catom
-import html/chadombuilder
 import html/dom
-import html/domcanvas
 import html/domexception
 import html/env
-import html/formdata
-import html/jsencoding
-import html/jsintl
 import html/script
-import html/xmlhttprequest
 import io/chafile
 import io/console
 import io/dynstream
@@ -36,14 +30,10 @@ import monoucha/quickjs
 import monoucha/tojs
 import server/bufferiface
 import server/forkserver
-import server/headers
 import server/loaderiface
-import server/request
-import server/response
 import types/blob
 import types/jsopt
 import types/opt
-import types/url
 import utils/myposix
 import utils/sandbox
 import utils/strwidth
@@ -412,30 +402,16 @@ proc sleep(client: Client; millis: int) {.jsfunc.} =
 proc line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit
 
-proc addJSModules(client: Client; ctx: JSContext): JSClassID =
-  let (windowCID, eventCID, eventTargetCID) = ctx.addWindowModule2()
-  ctx.addConsoleModule()
-  ctx.addNavigatorModule()
-  ctx.addDOMExceptionModule()
-  ctx.addDOMModule(eventTargetCID)
-  ctx.addCanvasModule()
-  ctx.addURLModule()
-  ctx.addHTMLModule()
-  ctx.addIntlModule()
-  ctx.addBlobModule()
-  ctx.addFormDataModule()
-  ctx.addXMLHttpRequestModule(eventCID, eventTargetCID)
-  ctx.addHeadersModule()
-  ctx.addRequestModule()
-  ctx.addResponseModule()
-  ctx.addEncodingModule()
-  ctx.addLineEditModule()
-  ctx.addConfigModule()
-  ctx.addPagerModule()
-  ctx.addContainerModule()
-  ctx.addBufferInterfaceModule()
-  ctx.addSelectModule()
-  return windowCID
+proc addJSModules(client: Client; ctx: JSContext): Opt[JSClassID] =
+  let (windowCID, eventCID, eventTargetCID) = ?ctx.addWindowModule2()
+  ?ctx.addCommonModules(eventCID, eventTargetCID)
+  ?ctx.addLineEditModule()
+  ?ctx.addConfigModule()
+  ?ctx.addPagerModule()
+  ?ctx.addContainerModule()
+  ?ctx.addBufferInterfaceModule()
+  ?ctx.addSelectModule()
+  ok(windowCID)
 
 proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
     urandom: PosixStream): Client =
@@ -453,9 +429,11 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
     dangerAlwaysSameOrigin: true
   )
   jsctx.setGlobal(client)
-  let windowCID = client.addJSModules(jsctx)
-  jsctx.registerType(Client, asglobal = true, parent = windowCID)
-  return client
+  if windowCID := client.addJSModules(jsctx):
+    jsctx.registerType(Client, asglobal = true, parent = windowCID)
+    return client
+  else:
+    die("failed to initialize JS " & jsctx.getExceptionMsg())
 
 proc main() =
   initCAtomFactory()

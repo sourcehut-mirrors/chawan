@@ -7162,37 +7162,44 @@ proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
       return (src, el.attr(satType))
   return ("", "")
 
-proc addElementReflection(ctx: JSContext; class: JSClassID) =
+proc addElementReflection(ctx: JSContext; class: JSClassID): Opt[void] =
   let proto = JS_GetClassProto(ctx, class)
   for i in ReflectAllStartIndex ..< int16(ReflectMap.len):
     let name = $ReflectMap[i].funcname
     if ctx.addReflectFunction(proto, name, jsReflectGet, jsReflectSet,
         cint(i)).isErr:
       JS_FreeValue(ctx, proto)
-      return
+      return err()
   JS_FreeValue(ctx, proto)
+  ok()
 
 proc addAttributeReflection(ctx: JSContext; class: JSClassID;
-    attrs: openArray[int16]; base: JSClassID) =
+    attrs: openArray[int16]; base: JSClassID): Opt[void] =
   let proto = JS_GetClassProto(ctx, class)
   let diff = (uint16(class) - uint16(base)) shl 9
   for i in attrs:
     if ctx.addReflectFunction(proto, $ReflectMap[i].funcname, jsReflectGet,
         jsReflectSet, cint(diff or uint16(i))).isErr:
       JS_FreeValue(ctx, proto)
-      return
+      return err()
   JS_FreeValue(ctx, proto)
+  ok()
 
-proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
+proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
+  if elementCID == 0:
+    return err()
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID)
-  ctx.addElementReflection(htmlElementCID)
+  if htmlElementCID == 0:
+    return err()
+  ?ctx.addElementReflection(htmlElementCID)
   template register(t: typed; tags: openArray[TagType]) =
     let class = ctx.registerType(t, parent = htmlElementCID)
-    discard class
+    if class == 0:
+      return err()
     const attrs = TagReflectMap[tags[0]]
     when attrs.len > 0:
-      ctx.addAttributeReflection(class, attrs, htmlElementCID)
+      ?ctx.addAttributeReflection(class, attrs, htmlElementCID)
   template register(t: typed; tag: TagType) =
     register(t, [tag])
   register(HTMLInputElement, TAG_INPUT)
@@ -7243,45 +7250,69 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   # 45/127 (warning: the 128th interface doesn't fit in the top 7 bits of
   # the getter/setter magic)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
-  ctx.registerType(SVGSVGElement, parent = svgElementCID)
+  if svgElementCID == 0:
+    return err()
+  ?ctx.registerType(SVGSVGElement, parent = svgElementCID)
+  ok()
 
-proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
+proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
-  doAssert ctx.defineConsts(nodeCID, NodeType) == dprSuccess
+  if nodeCID == 0:
+    return err()
+  case ctx.defineConsts(nodeCID, NodeType)
+  of dprException: return err()
+  else: discard
   let nodeListCID = ctx.registerType(NodeList, iterable = jitValue)
+  if nodeListCID == 0:
+    return err()
   let htmlCollectionCID = ctx.registerType(HTMLCollection, iterable = jitPair)
-  ctx.registerType(HTMLAllCollection)
-  ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
-  ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
-  ctx.registerType(RadioNodeList, parent = nodeListCID)
-  ctx.registerType(NodeIterator)
-  ctx.registerType(Location)
+  if htmlCollectionCID == 0:
+    return err()
+  ?ctx.registerType(HTMLAllCollection)
+  ?ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
+  ?ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
+  ?ctx.registerType(RadioNodeList, parent = nodeListCID)
+  ?ctx.registerType(NodeIterator)
+  ?ctx.registerType(Location)
   let documentCID = ctx.registerType(Document, parent = nodeCID)
-  ctx.registerType(XMLDocument, parent = documentCID)
-  ctx.registerType(DOMImplementation)
-  ctx.registerType(DOMTokenList, iterable = jitValue)
-  ctx.registerType(DOMStringMap)
+  if documentCID == 0:
+    return err()
+  ?ctx.registerType(XMLDocument, parent = documentCID)
+  ?ctx.registerType(DOMImplementation)
+  ?ctx.registerType(DOMTokenList, iterable = jitValue)
+  ?ctx.registerType(DOMStringMap)
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
-  ctx.registerType(Comment, parent = characterDataCID)
-  ctx.registerType(CDATASection, parent = characterDataCID)
+  if characterDataCID == 0:
+    return err()
+  ?ctx.registerType(Comment, parent = characterDataCID)
+  ?ctx.registerType(CDATASection, parent = characterDataCID)
   let documentFragmentCID = ctx.registerType(DocumentFragment, parent = nodeCID)
-  ctx.registerType(ProcessingInstruction, parent = characterDataCID)
-  ctx.registerType(Text, parent = characterDataCID)
-  ctx.registerType(DocumentType, parent = nodeCID)
-  ctx.registerType(Attr, parent = nodeCID)
-  ctx.registerType(NamedNodeMap)
-  ctx.registerType(CSSStyleDeclaration)
-  ctx.registerType(DOMRect)
-  ctx.registerType(DOMRectList)
-  ctx.registerType(CustomElementRegistry)
-  ctx.registerType(ShadowRoot, parent = documentFragmentCID)
-  ctx.registerElements(nodeCID)
+  if documentFragmentCID == 0:
+    return err()
+  ?ctx.registerType(ProcessingInstruction, parent = characterDataCID)
+  ?ctx.registerType(Text, parent = characterDataCID)
+  ?ctx.registerType(DocumentType, parent = nodeCID)
+  ?ctx.registerType(Attr, parent = nodeCID)
+  ?ctx.registerType(NamedNodeMap)
+  ?ctx.registerType(CSSStyleDeclaration)
+  ?ctx.registerType(DOMRect)
+  ?ctx.registerType(DOMRectList)
+  ?ctx.registerType(CustomElementRegistry)
+  ?ctx.registerType(ShadowRoot, parent = documentFragmentCID)
+  ?ctx.registerElements(nodeCID)
+  let global = JS_GetGlobalObject(ctx)
   let imageFun = ctx.newFunction(["width", "height"], """
 const x = document.createElement("img");
 x.width = width;
 x.height = height;
 return x;
 """)
+  if JS_IsException(imageFun):
+    return err()
+  case ctx.definePropertyCW(global, "Image", imageFun)
+  of dprException: return err()
+  else: discard
+  doAssert JS_SetConstructorBit(ctx, imageFun, true)
   let optionFun = ctx.newFunction(
     ["text", "value", "defaultSelected", "selected"], """
 text = text ? text + "" : "";
@@ -7293,23 +7324,31 @@ option.defaultSelected = defaultSelected;
 option.selected = selected;
 return option;
 """)
-  doAssert JS_SetConstructorBit(ctx, imageFun, true)
+  if JS_IsException(optionFun):
+    return err()
   doAssert JS_SetConstructorBit(ctx, optionFun, true)
-  let jsWindow = JS_GetGlobalObject(ctx)
-  doAssert ctx.definePropertyCW(jsWindow, "Image", imageFun) != dprException
-  doAssert ctx.definePropertyCW(jsWindow, "Option", optionFun) != dprException
-  doAssert ctx.definePropertyCW(jsWindow, "HTMLDocument",
-    JS_GetPropertyStr(ctx, jsWindow, "Document")) != dprException
+  case ctx.definePropertyCW(global, "Option", optionFun)
+  of dprException: return err()
+  else: discard
+  case ctx.definePropertyCW(global, "HTMLDocument",
+    JS_GetPropertyStr(ctx, global, "Document"))
+  of dprException: return err()
+  else: discard
   let nodeFilter = JS_NewObject(ctx)
+  if JS_IsException(nodeFilter):
+    return err()
   for e in NodeFilterNode:
     let n = ctx.toJS(1u32 shl uint32(e))
-    if (let res = ctx.definePropertyE(nodeFilter, $e, n); res != dprSuccess):
-      doAssert false
-  doAssert ctx.definePropertyE(nodeFilter, "SHOW_ALL",
-    ctx.toJS(0xFFFFFFFFu32)) != dprException
-  doAssert ctx.definePropertyCW(jsWindow, "NodeFilter",
-    ctx.toJS(nodeFilter)) != dprException
-  JS_FreeValue(ctx, jsWindow)
+    if ctx.definePropertyE(nodeFilter, $e, n) == dprException:
+      return err()
+  case ctx.definePropertyE(nodeFilter, "SHOW_ALL", ctx.toJS(0xFFFFFFFFu32))
+  of dprException: return err()
+  else: discard
+  case ctx.definePropertyCW(global, "NodeFilter", ctx.toJS(nodeFilter))
+  of dprException: return err()
+  else: discard
+  JS_FreeValue(ctx, global)
+  ok()
 
 # Forward declaration hack
 isDefaultPassiveImpl = proc(target: EventTarget): bool =
