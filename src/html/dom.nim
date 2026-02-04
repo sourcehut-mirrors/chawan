@@ -3007,6 +3007,9 @@ proc newComment(ctx: JSContext; data: sink string = ""): Comment {.jsctor.} =
   return window.document.newComment(data)
 
 # DocumentFragment
+proc getDocument(ctx: JSContext): Document =
+  return ctx.getWindow().document
+
 proc newDocumentFragment(document: Document): DocumentFragment =
   return DocumentFragment(internalNext: document)
 
@@ -6148,6 +6151,20 @@ proc resetFormOwner(element: FormAssociatedElement) =
         element.setForm(HTMLFormElement(ancestor))
 
 # <img>
+proc newImage(ctx: JSContext; _: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let document = ctx.getDocument()
+  let this = document.newHTMLElement(TAG_IMG)
+  if not JS_IsUndefined(argv[0]):
+    var x: uint32
+    ?ctx.fromJS(argv[0], x)
+    this.attrul(satWidth, x)
+  if not JS_IsUndefined(argv[1]):
+    var x: uint32
+    ?ctx.fromJS(argv[1], x)
+    this.attrul(satHeight, x)
+  ctx.toJS(this)
+
 proc getImageRect(this: HTMLImageElement): tuple[w, h: float64] =
   let window = this.document.window
   if window != nil and window.settings.scripting == smApp:
@@ -6330,6 +6347,26 @@ proc setRelList(link: HTMLLinkElement; s: string) {.jsfset: "relList".} =
   link.attr(satRel, s)
 
 # <option>
+proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let document = ctx.getDocument()
+  let this = HTMLOptionElement(document.newHTMLElement(TAG_OPTION))
+  if not JS_IsUndefined(argv[0]):
+    var text: string
+    ?ctx.fromJS(argv[0], text)
+    if text != "":
+      this.insert(document.newText(text), nil)
+  if not JS_IsUndefined(argv[1]):
+    var value: string
+    ?ctx.fromJS(argv[1], value)
+    this.attr(satValue, value)
+  var defaultSelected: bool
+  ?ctx.fromJS(argv[2], defaultSelected)
+  if defaultSelected:
+    this.attr(satSelected, "")
+  ?ctx.fromJS(argv[3], this.selected)
+  ctx.toJS(this)
+
 proc text(option: HTMLOptionElement): string {.jsfget.} =
   var s = ""
   for child in option.descendants:
@@ -7259,9 +7296,8 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
   if nodeCID == 0:
     return err()
-  case ctx.defineConsts(nodeCID, NodeType)
-  of dprException: return err()
-  else: discard
+  if ctx.defineConsts(nodeCID, NodeType) == dprException:
+    return err()
   let nodeListCID = ctx.registerType(NodeList, iterable = jitValue)
   if nodeListCID == 0:
     return err()
@@ -7301,39 +7337,21 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   ?ctx.registerType(ShadowRoot, parent = documentFragmentCID)
   ?ctx.registerElements(nodeCID)
   let global = JS_GetGlobalObject(ctx)
-  let imageFun = ctx.newFunction(["width", "height"], """
-const x = document.createElement("img");
-x.width = width;
-x.height = height;
-return x;
-""")
+  let imageFun = JS_NewCFunction(ctx, newImage, "Image", 2)
   if JS_IsException(imageFun):
     return err()
-  case ctx.definePropertyCW(global, "Image", imageFun)
-  of dprException: return err()
-  else: discard
-  doAssert JS_SetConstructorBit(ctx, imageFun, true)
-  let optionFun = ctx.newFunction(
-    ["text", "value", "defaultSelected", "selected"], """
-text = text ? text + "" : "";
-const option = document.createElement("option");
-if (text !== "")
-  option.appendChild(new Text(text));
-option.value = value;
-option.defaultSelected = defaultSelected;
-option.selected = selected;
-return option;
-""")
+  if ctx.definePropertyCW(global, "Image", imageFun) == dprException:
+    return err()
+  discard JS_SetConstructorBit(ctx, imageFun, true)
+  let optionFun = JS_NewCFunction(ctx, newOption, "Option", 4)
   if JS_IsException(optionFun):
     return err()
-  doAssert JS_SetConstructorBit(ctx, optionFun, true)
-  case ctx.definePropertyCW(global, "Option", optionFun)
-  of dprException: return err()
-  else: discard
-  case ctx.definePropertyCW(global, "HTMLDocument",
-    JS_GetPropertyStr(ctx, global, "Document"))
-  of dprException: return err()
-  else: discard
+  discard JS_SetConstructorBit(ctx, optionFun, true)
+  if ctx.definePropertyCW(global, "Option", optionFun) == dprException:
+    return err()
+  let document = JS_GetPropertyStr(ctx, global, "Document")
+  if ctx.definePropertyCW(global, "HTMLDocument", document) == dprException:
+    return err()
   let nodeFilter = JS_NewObject(ctx)
   if JS_IsException(nodeFilter):
     return err()
@@ -7344,9 +7362,8 @@ return option;
   case ctx.definePropertyE(nodeFilter, "SHOW_ALL", ctx.toJS(0xFFFFFFFFu32))
   of dprException: return err()
   else: discard
-  case ctx.definePropertyCW(global, "NodeFilter", ctx.toJS(nodeFilter))
-  of dprException: return err()
-  else: discard
+  if ctx.definePropertyCW(global, "NodeFilter", nodeFilter) == dprException:
+    return err()
   JS_FreeValue(ctx, global)
   ok()
 

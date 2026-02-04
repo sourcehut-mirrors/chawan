@@ -363,13 +363,19 @@ proc getEvent(ctx: JSContext; window: Window): JSValue {.jsrfget: "event".} =
     return JS_UNDEFINED
   return ctx.toJS(window.event)
 
+proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let arg0 = ctx.toJS(getUnixMillis())
+  return ctx.callSink(argv[0], this, arg0)
+
 proc requestAnimationFrame(ctx: JSContext; window: Window;
     callback: JSValueConst): JSValue {.jsfunc.} =
   if not JS_IsFunction(ctx, callback):
     return JS_ThrowTypeError(ctx, "callback is not a function")
-  let handler = ctx.newFunction(["callback"], """
-callback(new Event("").timeStamp);
-""")
+  let handler = JS_NewCFunction(ctx, animationFrameHandler,
+    "animation frame handler", 1)
+  if JS_IsException(handler):
+    return JS_EXCEPTION
   let res = ctx.toJS(window.setTimeout(handler, 0, callback))
   JS_FreeValue(ctx, handler)
   res

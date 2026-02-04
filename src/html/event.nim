@@ -125,6 +125,11 @@ var isHTMLElementImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
 var setEventImpl*: proc(ctx: JSContext; event: Event): Event {.
   nimcall, raises: [].}
 
+# Forward declarations
+proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
+  ctype: CAtom; callback: JSValueConst; options: JSValueConst = JS_UNDEFINED):
+  Opt[void]
+
 iterator eventListeners(this: EventTarget): EventListener =
   var it = this.eventListener
   while it != nil:
@@ -441,6 +446,17 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   JS_FreeValue(ctx, jsEvent)
   return ret
 
+proc removeEventListenerData(ctx: JSContext; _: JSValueConst;
+    argc: cint; argv: JSValueConstArray; margic: cint;
+    funcData: JSValueConstArray): JSValue {.cdecl.} =
+  var this: EventTarget
+  ?ctx.fromJS(funcData[0], this)
+  var ctype: CAtom
+  ?ctx.fromJS(funcData[1], ctype)
+  if ctx.removeEventListener(this, ctype, funcData[2], funcData[3]).isErr:
+    return JS_EXCEPTION
+  return JS_UNDEFINED
+
 # shared
 proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtom;
     capture, once, internal: bool; passive: Option[bool];
@@ -462,21 +478,18 @@ proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtom;
     )
     target.eventListener = listener
     if signal != nil:
-      #TODO pin removeEventListener or something
-      let funFun = newFunction(ctx, ["type", "callback", "capture"],
-        "return () => this.removeEventListener(type, callback, capture)")
-      if JS_IsException(funFun):
-        return err()
       let jsTarget = ctx.toJS(target)
       if JS_IsException(jsTarget):
-        JS_FreeValue(ctx, funFun)
+        return err()
+      let jsType = ctx.toJS(ctype)
+      if JS_IsException(jsType):
+        JS_FreeValue(ctx, jsTarget)
         return err()
       let jsCapture = ctx.toJS(capture)
-      if JS_IsException(jsCapture):
-        ctx.freeValues(funFun, jsTarget)
-        return err()
-      let fun = ctx.callFree(funFun, jsTarget, callback, jsCapture)
-      ctx.freeValues(jsTarget, jsCapture)
+      let data = [jsTarget, jsType, JS_DupValue(ctx, callback), jsCapture]
+      let fun = JS_NewCFunctionData(ctx, removeEventListenerData, 0, 0, 4,
+        data.toJSValueArray())
+      ctx.freeValues(data)
       if JS_IsException(fun):
         return err()
       signal.abortSteps.add(fun)
