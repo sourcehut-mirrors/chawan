@@ -24,7 +24,6 @@ import local/select
 import local/term
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsopaque
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -316,61 +315,61 @@ proc setupStartupScript(ctx: JSContext; script: string) =
   else:
     die("failed to read startup bytecode")
 
-type
-  Client* = ref object of Window
-    pager* {.jsget.}: Pager
+type Client = ref object of Window
+  pager: Pager
 
-proc config(client: Client): Config {.jsfget.} =
-  return client.pager.config
+proc jsPager(this: Window): Pager {.jsfget: "pager".} =
+  Client(this).pager
 
-proc suspend(ctx: JSContext; client: Client): JSValue {.jsfunc.} =
-  if client.pager.term.quit().isErr:
-    return ctx.jsQuit(client.pager, 1)
+proc config(this: Window): Config {.jsfget.} =
+  return Client(this).pager.config
+
+proc suspend(ctx: JSContext; this: Window): JSValue {.jsfunc.} =
+  let pager = Client(this).pager
+  if pager.term.quit().isErr:
+    return ctx.jsQuit(pager, 1)
   discard kill(0, cint(SIGTSTP))
-  discard client.pager.term.restart() #TODO
+  discard pager.term.restart() #TODO
   return JS_UNDEFINED
 
-proc jsQuit(ctx: JSContext; client: Client; code = 0): JSValue
+proc jsQuit(ctx: JSContext; this: Window; code = 0): JSValue
     {.jsfunc: "quit".} =
-  ctx.jsQuit(client.pager, code)
+  ctx.jsQuit(Client(this).pager, code)
 
-proc feedNext(client: Client) {.jsfunc.} =
-  client.pager.feedNext = true
+proc feedNext(this: Window) {.jsfunc.} =
+  Client(this).pager.feedNext = true
 
-proc alert(client: Client; msg: string) {.jsfunc.} =
-  client.pager.alert(msg)
+proc consoleBuffer(this: Window): Container {.jsfget.} =
+  return Client(this).pager.pinned.console
 
-proc consoleBuffer(client: Client): Container {.jsfget.} =
-  return client.pager.pinned.console
-
-proc readBlob(client: Client; path: string): WebFile {.jsfunc.} =
+proc readBlob(this: Window; path: string): WebFile {.jsfunc.} =
   let ps = newPosixStream(path, O_RDONLY, 0)
   if ps == nil:
     return nil
   let name = path.afterLast('/')
   return newWebFile(name, ps.fd)
 
-proc readFile(ctx: JSContext; client: Client; path: string): JSValue
+proc readFile(ctx: JSContext; this: Window; path: string): JSValue
     {.jsfunc.} =
   var s: string
   if chafile.readFile(path, s).isOk:
     return ctx.toJS(s)
   return JS_NULL
 
-proc writeFile(ctx: JSContext; client: Client; path, content: string): JSValue
+proc writeFile(ctx: JSContext; this: Window; path, content: string): JSValue
     {.jsfunc.} =
   if chafile.writeFile(path, content, 0o644).isOk:
     return JS_UNDEFINED
   return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
 
-proc getenv(ctx: JSContext; client: Client; s: string;
+proc getenv(ctx: JSContext; this: Window; s: string;
     fallback: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
   let env = twtstr.getEnvCString(s)
   if env == nil:
     return JS_DupValue(ctx, fallback)
   return JS_NewString(ctx, env)
 
-proc setenv(ctx: JSContext; client: Client; s: string; val: JSValueConst):
+proc setenv(ctx: JSContext; this: Window; s: string; val: JSValueConst):
     JSValue {.jsfunc.} =
   if JS_IsNull(val):
     twtstr.unsetEnv(s)
@@ -381,37 +380,60 @@ proc setenv(ctx: JSContext; client: Client; s: string; val: JSValueConst):
       return JS_ThrowTypeError(ctx, "Failed to set environment variable")
   return JS_UNDEFINED
 
-proc nimGCStats(client: Client): string {.jsfunc.} =
+proc nimGCStats(this: Window): string {.jsfunc.} =
   return GC_getStatistics()
 
-proc jsGCStats(client: Client): string {.jsfunc.} =
-  return client.jsrt.getMemoryUsage()
+proc jsGCStats(this: Window): string {.jsfunc.} =
+  return this.jsrt.getMemoryUsage()
 
-proc nimCollect(client: Client) {.jsfunc.} =
+proc nimCollect(this: Window) {.jsfunc.} =
   try:
     GC_fullCollect()
   except Exception:
     discard
 
-proc jsCollect(client: Client) {.jsfunc.} =
-  JS_RunGC(client.jsrt)
+proc jsCollect(this: Window) {.jsfunc.} =
+  JS_RunGC(this.jsrt)
 
-proc sleep(client: Client; millis: int) {.jsfunc.} =
+proc sleep(this: Window; millis: int) {.jsfunc.} =
   os.sleep(millis)
 
-proc line(client: Client): LineEdit {.jsfget.} =
-  return client.pager.lineedit
+proc line(this: Window): LineEdit {.jsfget.} =
+  return Client(this).pager.lineedit
 
-proc addJSModules(client: Client; ctx: JSContext): Opt[JSClassID] =
-  let (windowCID, eventCID, eventTargetCID) = ?ctx.addWindowModule2()
-  ?ctx.addCommonModules(eventCID, eventTargetCID)
+let ClientJSFunctions {.global.} = [
+  JS_CFUNC_DEF("readBlob", 0, js_func_Window_readBlob),
+  JS_CFUNC_DEF("getenv", 0, js_func_Window_getenv),
+  JS_CFUNC_DEF("setenv", 0, js_func_Window_setenv),
+  JS_CFUNC_DEF("readFile", 0, js_func_Window_readFile),
+  JS_CFUNC_DEF("jsGCStats", 0, js_func_Window_jsGCStats),
+  JS_CFUNC_DEF("sleep", 0, js_func_Window_sleep),
+  JS_CFUNC_DEF("writeFile", 0, js_func_Window_writeFile),
+  JS_CFUNC_DEF("jsCollect", 0, js_func_Window_jsCollect),
+  JS_CFUNC_DEF("nimGCStats", 0, js_func_Window_nimGCStats),
+  JS_CFUNC_DEF("feedNext", 0, js_func_Window_feedNext),
+  JS_CFUNC_DEF("quit", 0, js_func_Window_quit),
+  JS_CFUNC_DEF("nimCollect", 0, js_func_Window_nimCollect),
+  JS_CFUNC_DEF("suspend", 0, js_func_Window_suspend),
+  JS_CGETSET_DEF("pager", js_get_Window_pager, nil),
+  JS_CGETSET_DEF("line", js_get_Window_line, nil),
+  JS_CGETSET_DEF("config", js_get_Window_config, nil),
+  JS_CGETSET_DEF("consoleBuffer", js_get_Window_consoleBuffer, nil),
+]
+
+proc addJSModules(client: Client; ctx: JSContext): Opt[void] =
+  ?ctx.addCommonModules(client)
+  let global = JS_GetGlobalObject(ctx)
+  if not ctx.setPropertyFunctionList(global, ClientJSFunctions):
+    return err()
+  JS_FreeValue(ctx, global)
   ?ctx.addLineEditModule()
   ?ctx.addConfigModule()
   ?ctx.addPagerModule()
   ?ctx.addContainerModule()
   ?ctx.addBufferInterfaceModule()
   ?ctx.addSelectModule()
-  ok(windowCID)
+  ok()
 
 proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
     urandom: PosixStream): Client =
@@ -428,9 +450,7 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
     ),
     dangerAlwaysSameOrigin: true
   )
-  jsctx.setGlobal(client)
-  if windowCID := client.addJSModules(jsctx):
-    jsctx.registerType(Client, asglobal = true, parent = windowCID)
+  if client.addJSModules(jsctx).isOk:
     return client
   else:
     die("failed to initialize JS " & jsctx.getExceptionMsg())

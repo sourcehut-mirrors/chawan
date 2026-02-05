@@ -480,26 +480,16 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
       window.console.error("(Unhandled promise)", s)
     window.console.flush()
 
-proc addWindowModule*(ctx: JSContext):
-    Opt[tuple[eventCID, eventTargetCID: JSClassID]] =
+proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
+  ctx.setGlobal(window)
   let (eventCID, eventTargetCID) = ?ctx.addEventModule()
-  ?ctx.registerType(Window, parent = eventTargetCID, asglobal = true)
+  let windowCID = ctx.registerType(Window, parent = eventTargetCID,
+    asglobal = true)
+  if windowCID == 0:
+    return err()
   let global = JS_GetGlobalObject(ctx)
   ?ctx.addEventGetSet(global, WindowEvents)
   JS_FreeValue(ctx, global)
-  ok((eventCID, eventTargetCID))
-
-proc addWindowModule2*(ctx: JSContext):
-    Opt[tuple[windowCID, eventCID, eventTargetCID: JSClassID]] =
-  let (eventCID, eventTargetCID) = ?ctx.addEventModule()
-  let windowCID = ctx.registerType(Window, parent = eventTargetCID,
-    asglobal = true, globalparent = true)
-  if windowCID == 0:
-    return err()
-  ok((windowCID, eventCID, eventTargetCID))
-
-proc addCommonModules*(ctx: JSContext; eventCID, eventTargetCID: JSClassID):
-    Opt[void] =
   ?ctx.registerType(MediaQueryList, parent = eventTargetCID)
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
   ?ctx.addConsoleModule()
@@ -552,9 +542,7 @@ proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
     window.settings.scriptAttrsp = window.settings.attrsp
   else:
     window.settings.scriptAttrsp = unsafeAddr dummyAttrs
-  let (eventCID, eventTargetCID) = ?ctx.addWindowModule()
-  ctx.setGlobal(window)
-  ctx.addCommonModules(eventCID, eventTargetCID)
+  ctx.addCommonModules(window)
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     headless: HeadlessMode; attrsp: ptr WindowAttributes; loader: FileLoader;
