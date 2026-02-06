@@ -14,26 +14,23 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  SelectFinish* = proc(opaque: RootRef; select: Select): JSValue {.
-    nimcall, raises: [].}
-
   SelectOption* = object
     nop*: bool
     s*: string
 
   Select* = ref object
     options: seq[SelectOption]
-    selected*: int # new selection
-    fromy* {.jsget.}: int # first index to display
+    selected: int # new selection
+    fromy {.jsget.}: int # first index to display
     cursory {.jsget.}: int # hover index
     maxw: int # widest option
     maxh: int # maximum number of options on screen
     # location on screen
     #TODO make this absolute
-    x* {.jsget.}: int
-    y* {.jsget.}: int
+    x {.jsget.}: int
+    y {.jsget.}: int
     redraw*: bool
-    unselected*: bool
+    unselected: bool
     finish: JSValue
 
 jsDestructor(Select)
@@ -60,6 +57,15 @@ proc toJS*(ctx: JSContext; x: SelectOption): JSValue =
 
 proc queueDraw(select: Select) =
   select.redraw = true
+
+proc numLines(select: Select): int {.jsfget.} =
+  return select.options.len
+
+proc markPos0(select: Select) {.jsfunc.} =
+  discard
+
+proc markPos(select: Select) {.jsfunc.} =
+  discard
 
 proc setFromY(select: Select; y: int) =
   select.fromy = max(min(y, select.options.len - select.maxh), 0)
@@ -151,6 +157,18 @@ proc cursorNthLink(select: Select; n = 1) {.jsfunc.} =
 
 proc cursorRevNthLink(select: Select; n = 1) {.jsfunc.} =
   select.setCursorY(select.options.len - n)
+
+proc halfPageDown(select: Select; n = 1) {.jsfunc.} =
+  select.cursorDown(select.maxh div 2)
+
+proc halfPageUp(select: Select; n = 1) {.jsfunc.} =
+  select.cursorUp(select.maxh div 2)
+
+proc pageDown(select: Select; n = 1) {.jsfunc.} =
+  select.cursorDown(select.maxh)
+
+proc pageUp(select: Select; n = 1) {.jsfunc.} =
+  select.cursorUp(select.maxh)
 
 proc finish(ctx: JSContext; select: Select): JSValue =
   let selected = ctx.toJS(select.selected)
@@ -259,7 +277,7 @@ proc cursorNextMatch(ctx: JSContext; select: Select; re: JSValueConst;
     select.cursorNextMatch(cast[REBytecode](p), wrap)
   ok()
 
-proc unselect*(select: Select) {.jsfunc.} =
+proc unselect(select: Select) {.jsfunc.} =
   if not select.unselected:
     select.unselected = true
     select.queueDraw()
