@@ -7,6 +7,7 @@ unreleased
 * support color, width, align, noshade properties on HR element
 * add status.format-mode (sets formatting of status bar)
 * add toggleLinkHintsAutoClick command (by Arthur Jacquin)
+* add saveScreen, editScreen commands; rename sourceEdit to editSource
 * improve keybinding format (mostly backwards-compatible; see cha-config(5))
 * remove display.force-clear (shouldn't have ever been needed)
 * remove display.query-da1 (no longer needed)

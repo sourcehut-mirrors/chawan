@@ -130,12 +130,6 @@ globalThis.cmd = {
     },
     cursorToggleSelectionLine: n => pager.cursorToggleSelection(n, {selectionType: "line"}),
     cursorToggleSelectionBlock: n => pager.cursorToggleSelection(n, {selectionType: "block"}),
-    sourceEdit: () => {
-        const url = pager.url;
-        pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
-            decodeURIComponent(url.pathname) :
-            pager.cacheFile));
-    },
     saveImage: () => cmd.buffer.viewImage(1, true),
     mark: async () => {
         const c = await pager.askChar('m');
@@ -201,8 +195,9 @@ for (const it of ["markURL", "redraw", "reshape", "cancel", "toggleSource",
         "cursorMiddleColumn", "cursorLeftEdge", "cursorRightEdge",
         "cursorMiddle", "searchForward", "searchBackward", "isearchForward",
         "isearchBackward", "discardTree", "dupeBuffer", "load", "loadCursor",
-        "saveLink", "saveSource", "toggleImages", "writeInputBuffer",
-        "showFullAlert", "toggleLinkHints"]) {
+        "saveLink", "saveScreen", "saveSource", "editScreen", "editSource",
+        "toggleImages", "writeInputBuffer", "showFullAlert",
+        "toggleLinkHints"]) {
     cmd[it] = () => pager[it]();
 }
 
@@ -1516,6 +1511,13 @@ Buffer.prototype.reshape = function() {
     return iface.forceReshape();
 }
 
+Buffer.prototype.editSource = function() {
+    const url = pager.url;
+    pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
+        decodeURIComponent(url.pathname) :
+        pager.cacheFile));
+}
+
 Buffer.prototype.saveSource = function() {
     pager.gotoURL("cache:" + this.cacheId, {save: true, url: this.url});
 }
@@ -1658,6 +1660,43 @@ Buffer.prototype.getSelectionText = function(sel = this.currentSelection) {
         return "";
     return iface.getSelectionText(sel.startx, sel.starty, sel.endx, sel.endy,
         sel.selectionType)
+}
+
+Buffer.prototype.saveScreen = async function() {
+    let path = await pager.setLineEdit("download", "Save buffer to: ");
+    if (path == null)
+        return;
+    path = Util.unquote(path, Util.getcwd());
+    const iface = this.iface;
+    if (iface == null) {
+        pager.alert("page is not loaded yet");
+        return;
+    }
+    const text = await iface.getSelectionText(0, 0, 0, this.numLines, "line");
+    try {
+        writeFile(path, text);
+    } catch (e) {
+        pager.alert(e);
+    }
+}
+
+Buffer.prototype.editScreen = async function() {
+    const iface = this.iface;
+    if (iface == null) {
+        pager.alert("page is not loaded yet");
+        return;
+    }
+    const text = await iface.getSelectionText(0, 0, 0, this.numLines, "line");
+    try {
+        const tmp = pager.getTempFile();
+        writeFile(tmp, text);
+        const cmd = pager.getEditorCommand(tmp);
+        if (cmd == "")
+            throw new TypeError("invalid external.editor command");
+        pager.extern(cmd);
+    } catch (e) {
+        pager.alert(e);
+    }
 }
 
 /* private */

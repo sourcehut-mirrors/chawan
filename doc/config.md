@@ -1337,6 +1337,30 @@ open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
+<td><kbd>s s</kbd></td>
+<td>`saveScreen`</td>
+<td>Save the rendered buffer to a file.</td>
+</tr>
+
+<tr>
+<td><kbd>s S</kbd></td>
+<td>`saveSource`</td>
+<td>Save the buffer's source to a file.</td>
+</tr>
+
+<tr>
+<td><kbd>s e</kbd></td>
+<td>`editScreen`</td>
+<td>Open the rendered buffer in an editor.</td>
+</tr>
+
+<tr>
+<td><kbd>s E</kbd></td>
+<td>`editSource`</td>
+<td>Open the buffer's source in an editor.</td>
+</tr>
+
+<tr>
 <td><kbd>D</kbd></td>
 <td>`discardBuffer`</td>
 <td>Discard the current buffer, and move back to the previous/next buffer

@@ -1273,9 +1273,11 @@ C-e scrollDown
 C-y scrollUp
 J scrollDown
 K scrollUp
+s e editScreen
 s E sourceEdit
 s RET saveLink
 s LF saveLink
+s s saveScreen
 s S saveSource
 m mark
 ` gotoMark

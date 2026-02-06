@@ -1036,7 +1036,7 @@ proc redraw(pager: Pager) {.jsfunc.} =
   if pager.lineedit != nil:
     pager.lineedit.redraw = true
 
-proc getTempFile(pager: Pager; ext = ""): string =
+proc getTempFile(pager: Pager; ext = ""): string {.jsfunc.} =
   result = $pager.config.external.tmpdir / "chaptmp" &
     $pager.loader.clientPid & "-" & $pager.tmpfSeq
   if ext != "":
@@ -1711,6 +1711,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     if wait:
       discard pager.term.anyKey()
     ?pager.term.restart()
+    pager.redraw()
     if WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0:
       return ok()
     return err()

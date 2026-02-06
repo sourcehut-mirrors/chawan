@@ -109,12 +109,13 @@ V = 'load' #TODO file only
 # Buffer operations
 B = 'discardBufferPrev'
 v = 'toggleSource'
-#TODO edit
+E = 'editSource'
 C-l = 'redraw'
 R = 'reload'
 E = 'editFile'
 M-s = 'saveSource'
-#TODO save screen, edit screen
+S = 'saveScreen'
+M-e = 'editScreen'
 #TODO buffer selection mode
 'C-@' = 'w3m.mark'
 M-p = 'w3m.prevMark'
