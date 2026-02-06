@@ -56,6 +56,7 @@ type
     val: JSValue
 
   ActionMap* = ref object
+    rt: JSRuntime
     defaultAction*: JSValue
     t*: seq[Action]
     keyIdx: int
@@ -311,7 +312,10 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   Err[string]
 
 proc finalize(map: ActionMap) {.jsfin.} =
-  discard
+  let rt = map.rt
+  JS_FreeValueRT(rt, map.defaultAction)
+  for it in map.t:
+    JS_FreeValueRT(rt, it.val)
 
 proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, map.defaultAction, markFunc)
@@ -319,7 +323,7 @@ proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
     JS_MarkValue(rt, it.val, markFunc)
 
 proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
-  let map = ActionMap(defaultAction: JS_UNDEFINED)
+  let map = ActionMap(rt: JS_GetRuntime(ctx), defaultAction: JS_UNDEFINED)
   if defaultAction != "":
     map.defaultAction = ctx.evalCmdDecl(defaultAction)
   var dummy: seq[string]
@@ -720,11 +724,6 @@ proc jsLinkHintChars(ctx: JSContext; input: InputConfig): JSValue
     return ctx.newArrayFrom(vals)
   ctx.freeValues(vals)
   return JS_EXCEPTION
-
-proc freeValues*(ctx: JSContext; map: ActionMap) =
-  JS_FreeValue(ctx, map.defaultAction)
-  for it in map.t:
-    JS_FreeValue(ctx, it.val)
 
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
   if v.t != t:
@@ -1182,13 +1181,13 @@ proc openConfig*(dir, dataDir: var string; override: Option[string];
   return newPosixStream(dir / "config.toml")
 
 # called after parseConfig returns
-proc initCommands*(ctx: JSContext; config: Config): Err[string] =
+proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
   let global = JS_GetGlobalObject(ctx)
   let obj = JS_GetPropertyStr(ctx, global, "cmd")
   JS_FreeValue(ctx, global)
   if JS_IsException(obj):
     JS_FreeValue(ctx, obj)
-    return err(ctx.getExceptionMsg())
+    return err()
   for (k, cmd) in config.cmd.init.ritems:
     var objIt = JS_DupValue(ctx, obj)
     let name = k.afterLast('.')
@@ -1200,11 +1199,11 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
           case ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop))
           of dprException:
             JS_FreeValue(ctx, obj)
-            return err(ctx.getExceptionMsg())
+            return err()
           else: discard
         if JS_IsException(prop):
           JS_FreeValue(ctx, obj)
-          return err(ctx.getExceptionMsg())
+          return err()
         JS_FreeValue(ctx, objIt)
         objIt = prop
     if cmd == "":
@@ -1212,14 +1211,13 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
     let fun = ctx.eval(cmd, "<" & k & ">", JS_EVAL_TYPE_GLOBAL)
     if JS_IsException(fun):
       JS_FreeValue(ctx, obj)
-      return err(ctx.getExceptionMsg())
+      return err()
     if not JS_IsFunction(ctx, fun):
       JS_FreeValue(ctx, obj)
       JS_FreeValue(ctx, fun)
-      return err(k & " is not a function")
-    case ctx.definePropertyE(objIt, name, fun)
-    of dprException: return err(ctx.getExceptionMsg())
-    else: discard
+      return err()
+    if ctx.definePropertyE(objIt, name, fun) == dprException:
+      return err()
     JS_FreeValue(ctx, objIt)
   JS_FreeValue(ctx, obj)
   config.cmd.init = @[]

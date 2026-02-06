@@ -10,7 +10,7 @@
 #     pager.alert("No selection to translate.");
 #     return;
 #   }
-#   const text = await pager.getSelectionText(pager.currentSelection);
+#   const text = await pager.getSelectionText();
 #   pager.cursorToggleSelection();
 #   pager.loadSubmit(`cgi-bin:trans.cgi?${encodeURIComponent(text)}`);
 # }

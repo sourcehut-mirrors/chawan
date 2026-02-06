@@ -335,6 +335,11 @@ proc repeat*(c: char; n: int): string =
     if n > 0:
       discard memset(addr result[0], cint(c), csize_t(n))
 
+proc repeat*(s: string; n: int): string =
+  result = newStringOfCap(s.len * n)
+  for i in 0 ..< n:
+    result &= s
+
 proc memchr(s: pointer; c: cint; n: csize_t): pointer {.
   importc, header: "<string.h>".}
 

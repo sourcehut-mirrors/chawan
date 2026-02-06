@@ -2,6 +2,7 @@
 
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/cell
@@ -13,7 +14,8 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  SelectFinish* = proc(opaque: RootRef; select: Select) {.nimcall, raises: [].}
+  SelectFinish* = proc(opaque: RootRef; select: Select): JSValue {.
+    nimcall, raises: [].}
 
   SelectOption* = object
     nop*: bool
@@ -32,11 +34,29 @@ type
     y* {.jsget.}: int
     redraw*: bool
     unselected*: bool
-    bpos: seq[int]
-    opaque: RootRef
-    finishImpl: SelectFinish
+    finish: JSValue
 
 jsDestructor(Select)
+
+proc finalize(rt: JSRuntime; select: Select) {.jsfin.} =
+  JS_FreeValueRT(rt, select.finish)
+
+proc mark(rt: JSRuntime; select: Select; markFunc: JS_MarkFunc) {.jsmark.} =
+  JS_MarkValue(rt, select.finish, markFunc)
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var SelectOption):
+    FromJSResult =
+  if JS_IsNull(val):
+    res = SelectOption(nop: true)
+  else:
+    res = SelectOption()
+    ?ctx.fromJS(val, res.s)
+  fjOk
+
+proc toJS*(ctx: JSContext; x: SelectOption): JSValue =
+  if x.nop:
+    return JS_NULL
+  return ctx.toJS(x.s)
 
 proc queueDraw(select: Select) =
   select.redraw = true
@@ -132,27 +152,35 @@ proc cursorNthLink(select: Select; n = 1) {.jsfunc.} =
 proc cursorRevNthLink(select: Select; n = 1) {.jsfunc.} =
   select.setCursorY(select.options.len - n)
 
-proc cancel(select: Select) {.jsfunc.} =
+proc finish(ctx: JSContext; select: Select): JSValue =
+  let selected = ctx.toJS(select.selected)
+  if JS_IsException(selected):
+    return JS_EXCEPTION
+  let finish = move(select.finish)
+  select.finish = JS_UNDEFINED
+  ctx.callSinkFree(finish, JS_UNDEFINED, selected)
+
+proc cancel(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
   select.selected = -1
-  select.finishImpl(select.opaque, select)
+  return ctx.finish(select)
 
-proc submit(select: Select) {.jsfunc.} =
+proc submit(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
   select.selected = select.cursory
-  select.finishImpl(select.opaque, select)
+  return ctx.finish(select)
 
-proc click*(select: Select) {.jsfunc.} =
+proc click(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
   if select.unselected or
       select.cursory >= 0 and select.cursory < select.options.len and
       select.options[select.cursory].nop:
-    discard
+    return JS_UNDEFINED
   else:
-    select.submit()
+    return ctx.submit(select)
 
-proc cursorLeft*(select: Select) {.jsfunc.} =
-  select.cancel()
+proc cursorLeft(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+  ctx.cancel(select)
 
-proc cursorRight(select: Select) {.jsfunc.} =
-  select.click()
+proc cursorRight(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+  ctx.click(select)
 
 proc cursorFirstLine(select: Select) {.jsfunc.} =
   if select.cursory != 0:
@@ -230,14 +258,6 @@ proc cursorNextMatch(ctx: JSContext; select: Select; re: JSValueConst;
   for i in 0 ..< n:
     select.cursorNextMatch(cast[REBytecode](p), wrap)
   ok()
-
-proc pushCursorPos*(select: Select) =
-  select.bpos.add(select.cursory)
-
-proc popCursorPos*(select: Select; nojump = false) =
-  select.setCursorY(select.bpos.pop())
-  if not nojump:
-    select.queueDraw()
 
 proc unselect*(select: Select) {.jsfunc.} =
   if not select.unselected:
@@ -363,24 +383,27 @@ proc windowChange*(select: Select; width, height: int) =
   select.setCursorY(select.cursory)
   select.queueDraw()
 
-proc newSelect*(options: seq[SelectOption]; selected: int;
-    x, y, width, height: int; finishImpl: SelectFinish; opaque: RootRef):
-    Select =
+proc newSelect(ctx: JSContext; options: seq[SelectOption]; selected: int;
+    x, y, width, height: int; finish: JSValueConst): Opt[Select] {.jsctor.} =
   let select = Select(
-    options: options,
     selected: selected,
     x: x,
     y: y,
-    finishImpl: finishImpl,
-    opaque: opaque
+    options: options,
+    finish: JS_DupValue(ctx, finish)
   )
+  var maxw = 0
   for opt in select.options.mitems:
     opt.s.mnormalize()
     opt.s = ' ' & opt.s & ' '
-    select.maxw = max(select.maxw, opt.s.width())
+    maxw = max(maxw, opt.s.width())
+  select.maxw = maxw
+  for opt in select.options.mitems:
+    if opt.nop:
+      opt.s = ' ' & ($bdcHorizontalBarTop).repeat(maxw - 2) & ' '
   select.windowChange(width, height)
   select.setCursorY(selected)
-  return select
+  ok(select)
 
 proc addSelectModule*(ctx: JSContext): JSClassID =
   return ctx.registerType(Select)

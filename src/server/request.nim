@@ -146,6 +146,9 @@ proc credentials(this: JSRequest): string {.jsfget.} =
 proc referrer(this: JSRequest): string {.jsfget.} =
   return this.request.headers.getFirst("Referer")
 
+proc jsMethod(this: JSRequest): HttpMethod {.jsfget: "method".} =
+  return this.request.httpMethod
+
 proc getReferrer*(this: Request): URL =
   return parseURL0(this.headers.getFirst("Referer"))
 
@@ -190,6 +193,11 @@ proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     destination: destination,
     mode: mode
   )
+
+proc toPagerJSRequest*(request: Request): JSRequest =
+  if request == nil:
+    return nil
+  return JSRequest(request: request, destination: rdDocument, mode: rmNoCors)
 
 type
   BodyInitType = enum

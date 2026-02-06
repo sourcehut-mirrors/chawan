@@ -75,7 +75,7 @@ globalThis.cmd = {
         if (!pager.menu) {
             const canceled = await pager.contextMenu();
             if (!canceled)
-                pager.openMenu()
+                return pager.openMenu()
         } else
             pager.closeMenu()
     },
@@ -157,7 +157,7 @@ globalThis.cmd = {
             feedNext();
             return;
         }
-        const text = await pager.getSelectionText(pager.currentSelection);
+        const text = await pager.buffer.getSelectionText();
         const s = text.length != 1 ? "s" : "";
         if (pager.clipboardWrite(text))
             pager.alert(`Copied ${text.length} character${s}.`);
@@ -217,9 +217,9 @@ for (const it of ["submit", "backspace", "delete", "cancel", "prevWord",
 cmd.pager = cmd.buffer = cmd;
 
 /*
- * Utils
+ * Util
  */
-function clamp(n, lo, hi) {
+Util.clamp = function(n, lo, hi) {
     return Math.min(Math.max(n, lo), hi);
 }
 
@@ -229,13 +229,13 @@ function clamp(n, lo, hi) {
  * fromJS for int saturates.  (If it doesn't, just change everything to
  * int64.)
  */
-const MAX_INT32 = 0xFFFFFFFF;
+Util.MAX_INT32 = 0xFFFFFFFF;
 
 /*
  * Maximum number of consequent clicks registered.
  * Sort of a product of poor design.
  */
-const MAX_CLICKS = 3;
+Util.MAX_CLICKS = 3;
 
 /*
  * Pager
@@ -259,9 +259,11 @@ function addDefaultOmniRule(name, match, url) {
     config.addOmniRule(name, match, fun);
 }
 
-Pager.prototype.init = function() {
+Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
+    config.initCommands();
     this.mouse = new Mouse();
     this.commandMode = false;
+    this.refreshAllowed = new Set();
     addDefaultOmniRule("ddg", /^ddg:/,
         "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=");
     addDefaultOmniRule("br", /^br:/, "https://search.brave.com/search?q=");
@@ -270,6 +272,16 @@ Pager.prototype.init = function() {
     addDefaultOmniRule("wd", /^wd:/,
         "https://en.wiktionary.org/w/index.php?title=Special:Search&search=");
     addDefaultOmniRule("mo", /^mo:/, "https://mojeek.com/search?q=");
+    this.runStartupScript();
+    if (pipe) {
+        this.loadSubmit("stream:-", {
+            contentType: contentType ?? "text/x-ansi"
+        });
+    }
+    const init = {contentType, charset, history};
+    for (const page of pages)
+        this.loadSubmit(page, init);
+    this.showAlerts();
 }
 
 /*
@@ -398,11 +410,13 @@ Pager.prototype.isearchForward = async function(reverse = false) {
                     let wrap = config.search.wrap;
                     const cx = buffer.cursorx;
                     const cy = buffer.cursory;
-                    const [x, y, w] = await (reverse ?
-                        buffer.findPrevMatch(re, cx, cy, wrap, 1) :
-                        buffer.findNextMatch(re, cx, cy, wrap, 1));
-                    if (this.isearchIter === iter)
-                        buffer.onMatch(x, y, w, false);
+                    const iface = buffer.iface;
+                    if (iface != null) {
+                        const fun = reverse ? "findPrevMatch" : "findNextMatch";
+                        const [x, y, w] = await iface[fun](re, cx, cy, wrap, 1);
+                        if (this.isearchIter === iter)
+                            buffer.onMatch(x, y, w, false);
+                    }
                 }
             }).bind(this)
         });
@@ -441,6 +455,71 @@ Pager.prototype.showFullAlert = function() {
     const str = this.lastAlert;
     if (str != "")
         this.setLineEdit("alert", "", {current: str});
+}
+
+/*
+ * Check if the user is trying to go to an anchor of the current buffer.
+ * If yes, the caller need not call gotoURL.
+ */
+Pager.prototype.gotoURLHash = function(request, current) {
+    const url = new URL(request.url);
+    if (current?.iface == null || url.hash == "" || request.method != "GET")
+        return false;
+    /* check if only hash changed */
+    const anchor = url.hash.substring(1);
+    url.hash = current.url.hash;
+    if (current.url + "" != url + "")
+        return false;
+    current.iface.gotoAnchor(anchor, false, false).then(([x, y, click]) => {
+        if (y >= 0) {
+            const nc = this.dupeBuffer2(current, url);
+            nc.setCursorXYCenter(x, y);
+        } else
+            this.alert("Anchor #" + anchor + " not found");
+    });
+    return true;
+}
+
+/*
+ * When the user has passed a partial URL as an argument, they might've meant
+ * either:
+ * - file://$PWD/<file>
+ * - https://<url>
+ * So we attempt to load both, and see what works.
+ */
+Pager.prototype.loadSubmit = function(url, init) {
+    let url0;
+    try {
+        url0 = this.omniRewrite(url);
+    } catch (e) {
+        this.alert(`Exception in omni-rule: ${e} ${e.stack}`);
+        return;
+    }
+    const first = URL.parse(url0);
+    if (first != null) {
+        const request = new Request(first);
+        if (!this.gotoURLHash(request, this.buffer))
+            this.gotoURL(request, init);
+        return;
+    }
+    const urls = Util.expandPath(url0);
+    if (urls.length == 0)
+        return;
+    let retry = null;
+    const prependScheme = config.network.prependScheme;
+    if (prependScheme != "" && urls[0] != '/')
+        retry = URL.parse(prependScheme + urls);
+    const local = Util.encodeURIPath(urls);
+    const cdir = "file:" + Util.encodeURIPath(Util.getcwd()) + "/";
+    let url1 = URL.parse(local, cdir);
+    if (url1 == null) {
+        url1 = retry;
+        retry = null;
+    }
+    if (url1 != null)
+        this.gotoURL(url1, {...init, retry: retry});
+    else
+        this.alert("Invalid URL " + urls);
 }
 
 /* Open a URL prompt. */
@@ -506,7 +585,7 @@ Pager.prototype.gotoLine = async function(n) {
         if (n[0] == '^')
             n = 0;
         else if (n[0] == '$')
-            n = MAX_INT32;
+            n = Util.MAX_INT32;
         else
             n = parseInt(n) - 1;
         if (isNaN(n)) {
@@ -575,6 +654,76 @@ Pager.prototype.toggleLinkHints = async function() {
     return false;
 }
 
+Pager.prototype.lineInfo = function() {
+    const buffer = this.buffer;
+    const iface = buffer?.iface;
+    if (iface == null)
+        return;
+    const x0 = buffer.cursorx;
+    const y0 = buffer.cursory;
+    const x = x0 + 1;
+    const y = y0 + 1;
+    const numLines = buffer.numLines;
+    const perc = numLines == 0 ? 100 : Math.floor(100 * y / numLines);
+    const w = buffer.currentLineWidth();
+    const b = iface.cursorBytes(y0, x0);
+    this.alert(`line ${y}/${numLines} (${perc}%) col ${x}/${w} (byte ${b})`);
+}
+
+const MenuMap = [
+    ["Select text              (v)", cmd.selectOrCopy],
+    ["Previous buffer          (,)", cmd.prevBuffer],
+    ["Next buffer              (.)", cmd.nextBuffer],
+    ["Discard buffer           (D)", cmd.discardBuffer],
+    null,
+    ["Copy page URL          (M-y)", cmd.copyURL],
+    ["Copy link               (yu)", cmd.copyCursorLink],
+    ["View image               (I)", cmd.viewImage],
+    ["Copy image link         (yI)", cmd.copyCursorImage],
+    ["Reload                   (U)", cmd.reloadBuffer],
+    null,
+    ["Save link             (sC-m)", cmd.saveLink],
+    ["View source              (\\)", cmd.toggleSource],
+    ["Edit source             (sE)", cmd.sourceEdit],
+    ["Save source             (sS)", cmd.saveSource],
+    null,
+    ["Linkify URLs             (:)", cmd.markURL],
+    ["Toggle images          (M-i)", cmd.toggleImages],
+    ["Toggle JS & reload     (M-j)", cmd.toggleScripting],
+    ["Toggle cookie & reload (M-k)", cmd.toggleCookie],
+    null,
+    ["Bookmark page          (M-a)", cmd.addBookmark],
+    ["Open bookmarks         (M-b)", cmd.openBookmarks],
+    ["Open history           (C-h)", cmd.openHistory],
+];
+
+Pager.prototype.openMenu = async function(x = null, y = null) {
+    const buffer = this.buffer;
+    x = Math.max(x ?? buffer?.acursorx, 0);
+    y = Math.max(y ?? buffer?.acursory, 0);
+    const options = MenuMap.map(x => x ? x[0] : null);
+    if (buffer?.currentSelection != null)
+        options[0] = "Copy selection           (y)"
+    const selected = await new Promise(resolve => {
+        this.menu = new Select(options, -1, x, y,
+                               this.bufWidth, this.bufHeight, resolve);
+    });
+    pager.menu = null;
+    if (selected != -1)
+        MenuMap[selected][1]();
+    if (buffer != null)
+        buffer.queueDraw();
+}
+
+Pager.prototype.closeMenu = function() {
+    const menu = this.menu;
+    if (menu != null) {
+        this.menu = null;
+        return menu.cancel();
+    }
+}
+
+/* private */
 Pager.prototype.handleMouseInput = async function(input) {
     if (this.mouse.blockTillRelease) {
         if (input.t != "release")
@@ -646,7 +795,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                 case "none":
                     if (pressedY == input.y) {
                         this.mouse.moveType = "select";
-                        if (!buffer.hasMouseSelection())
+                        if (!buffer.currentSelection?.mouse)
                             await buffer.startSelection("normal", true);
                         buffer.setAbsoluteCursorXY(input.x, input.y);
                     } else
@@ -658,7 +807,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                 }
                 break;
             case "release":
-                if (buffer.hasMouseSelection()) {
+                if (buffer.currentSelection?.mouse) {
                     this.mouse.inSelection = true;
                     if (this.osc52Primary) {
                         const text = await buffer.getSelectionText();
@@ -675,7 +824,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                 this.mouse.moveType = "none";
                 break;
             case "press":
-                if (buffer.hasMouseSelection())
+                if (buffer.currentSelection?.mouse)
                     buffer.clearSelection();
                 break;
             }
@@ -775,7 +924,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                 this.mouse.released[button] ?? [-1, -1];
             if (input.x == releasedX && input.y == releasedY) {
                 this.mouse.click[button] ??= 0;
-                if (++this.mouse.click[button] >= MAX_CLICKS)
+                if (++this.mouse.click[button] >= Util.MAX_CLICKS)
                     this.mouse.click[button] = 0;
             }
             break;
@@ -791,6 +940,7 @@ Pager.prototype.handleMouseInput = async function(input) {
     this.handleEvents();
 }
 
+/* private */
 Pager.prototype.handleInput = async function(t, mouseInput) {
     const line = globalThis.line;
     let paste = false;
@@ -821,13 +971,23 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
         } else {
             const map = config.page;
             const p = this.evalInputAction(map, this.arg0);
+            /*
+             * We must queue the status update before the await in order to
+             * avoid the following situation:
+             * 1. action calls alert()
+             * 2. action awaits something
+             * 3. action finishes
+             * 4. now we return after the await, but the status update has
+             *    already been shown in another event cycle, so the alert
+             *    disappears.
+             * (Probably there is a better design for all this.)
+             */
+            this.queueStatusUpdate();
             if (map.keyLast == 0) {
                 this.precnum = 0;
                 await p;
-                this.queueStatusUpdate();
                 this.handleEvents();
-            } else
-                this.queueStatusUpdate();
+            }
         }
         break;
     case "mouse":
@@ -838,8 +998,8 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
 /*
  * Buffer
  *
- * TODO: this should be a separate class from Container, and Container
- * should be renamed to BufferInterface.
+ * TODO: all logic in Container should be moved to Buffer and
+ * BufferInterface, then we can make Buffer a JS-only class.
  */
 
 Buffer.prototype.cursorDown = function(n = 1) {
@@ -936,7 +1096,7 @@ Buffer.prototype.halfPageRight = function(n = 1) {
 
 Buffer.prototype.cursorTop = function(n = 1) {
     this.markPos0();
-    this.setCursorY(this.fromy + clamp(n - 1, 0, this.height - 1));
+    this.setCursorY(this.fromy + Util.clamp(n - 1, 0, this.height - 1));
     this.markPos();
 }
 
@@ -948,7 +1108,7 @@ Buffer.prototype.cursorMiddle = function() {
 
 Buffer.prototype.cursorBottom = function(n = 1) {
     this.markPos0();
-    this.setCursorY(this.fromy + this.height - clamp(n, 0, this.height));
+    this.setCursorY(this.fromy + this.height - Util.clamp(n, 0, this.height));
     this.markPos();
 }
 
@@ -983,19 +1143,37 @@ Buffer.prototype.onMatch = function(x, y, w, refresh) {
 Buffer.prototype.cursorNextMatch = async function(re, wrap, refresh, n) {
     if (this.select)
         return this.select.cursorNextMatch(re, wrap, n);
+    const iface = this.iface;
     const cx = this.cursorx;
     const cy = this.cursory;
-    const [x, y, w] = await this.findNextMatch(re, cx, cy, wrap, n);
+    if (iface == null)
+        return;
+    const [x, y, w] = await iface.findNextMatch(re, cx, cy, wrap, n);
     this.onMatch(x, y, w, refresh);
 }
 
 Buffer.prototype.cursorPrevMatch = async function(re, wrap, refresh, n) {
     if (this.select)
         return this.select.cursorPrevMatch(re, wrap, n);
+    const iface = this.iface;
     const cx = this.cursorx;
     const cy = this.cursory;
-    const [x, y, w] = await this.findPrevMatch(re, cx, cy, wrap, n);
+    if (iface == null)
+        return;
+    const [x, y, w] = await iface.findPrevMatch(re, cx, cy, wrap, n);
     this.onMatch(x, y, w, refresh);
+}
+
+/*
+ * backwards compat
+ * TODO remove once we have an official interface for these
+ */
+Buffer.prototype.findPrevMatch = function(...args) {
+    return this.iface.findPrevMatch(...args);
+}
+
+Buffer.prototype.findNextMatch = function(...args) {
+    return this.iface.findNextMatch(...args);
 }
 
 /*
@@ -1151,11 +1329,14 @@ Buffer.prototype.cursorLineBegin = function() {
 }
 
 Buffer.prototype.cursorLineEnd = function() {
-    this.setCursorX(MAX_INT32);
+    this.setCursorX(Util.MAX_INT32);
 }
 
 Buffer.prototype.cursorLineTextStart = function() {
-    const [s, e] = this.matchFirst(/\S/);
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const [s, e] = iface.matchFirst(/\S/, this.cursory);
     if (s >= 0) {
         const x = this.currentLineWidth(0, s);
         this.setCursorX(x > 0 ? x : x - 1);
@@ -1252,7 +1433,7 @@ Buffer.prototype.cursorLinkNavUp = async function(n = 1) {
     if (y < 0) {
         const numLines = this.numLines;
         if (numLines <= this.height) {
-            const [x2, y2] = await iface.findPrevLink(MAX_INT32,
+            const [x2, y2] = await iface.findPrevLink(Util.MAX_INT32,
                                                       numLines - 1, 1);
             this.setCursorXYCenter(x2, y2);
         } else
@@ -1337,4 +1518,198 @@ Buffer.prototype.reshape = function() {
 
 Buffer.prototype.saveSource = function() {
     pager.gotoURL("cache:" + this.cacheId, {save: true, url: this.url});
+}
+
+Buffer.prototype.onclick = async function(res, save = false) {
+    if (res == null)
+        return;
+    const iface = this.iface;
+    switch (res.t) {
+    case "open": {
+        const request = res.open;
+        const contentType = res.contentType;
+        const url = new URL(request.url);
+        const bufferProtocol = this.url.protocol;
+        const urlProtocol = url.protocol;
+        const sameProtocol = bufferProtocol == urlProtocol;
+        const HttpLike = ["http:", "https:"];
+        if (request.method != "GET" && !sameProtocol &&
+            !(HttpLike.includes(bufferProtocol) &&
+              HttpLike.includes(urlProtocol))) {
+            pager.alert("Blocked cross-protocol POST: " + url);
+            return;
+        }
+        /* TODO this is horrible UX, async actions shouldn't block input */
+        const hover = URL.parse(this.hoverLink);
+        if (pager.buffer != this ||
+            !save && (hover == null || !Util.isSameAuthOrigin(hover, url))) {
+            const x = await pager.ask("Open pop-up? " + url);
+            if (x && (!save || !pager.gotoURLHash(request, this)))
+                pager.gotoURL(request, {contentType, save, referrer: this});
+        } else if (save || !pager.gotoURLHash(request, this))
+            pager.gotoURL(request, {contentType, save, referrer: this});
+        break;
+    } case "select": {
+        const selected = await new Promise(resolve => {
+            const selected = res.selected;
+            this.select = new Select(res.options, selected,
+                                     Math.max(this.acursorx - 1, 0),
+                                     Math.max(this.acursory - 1 - selected, 0),
+                                     this.width, this.height, resolve);
+        });
+        this.closeSelect();
+        const res2 = await iface.select(selected);
+        return this.onclick(res2);
+    } case "read-password": case "read-text": {
+        const text = await pager.setLineEdit("buffer", res.prompt, {
+            current: res.value,
+            hide: res.t == "read-password"
+        });
+        if (text == null)
+            return iface.readCanceled();
+        const res2 = await iface.readSuccess(text, -1);
+        if (res2 != null)
+            return this.onclick(res2);
+        break;
+    } case "read-area": {
+        const text = await pager.openEditor(res.value);
+        if (text == null)
+            return iface.readCanceled();
+        return iface.readSuccess(text, -1);
+    } case "read-file": {
+        const text = await pager.setLineEdit("download", "(Upload)Filename: ");
+        if (text == null)
+            return iface.readCanceled();
+        const path = Util.unquote(text, Util.getcwd());
+        if (path == null) {
+            pager.alert("Invalid path: " + path);
+            return iface.readCanceled();
+        }
+        const fd = Util.openFile(path);
+        if (fd < 0) {
+            pager.alert("File not found");
+            return iface.readCanceled();
+        }
+        if (!Util.isFile(fd)) {
+            Util.closeFile(fd);
+            pager.alert("Not a file: " + path);
+            return iface.readCanceled();
+        }
+        const name = path.substring(path.lastIndexOf('/') + 1);
+        const res2 = await iface.readSuccess(name, fd);
+        if (res2 != null)
+            return this.onclick(res2);
+    }}
+}
+
+Buffer.prototype.click = async function(n = 1) {
+    this.showLoading();
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const res = await iface.click(this.cursorx, this.cursory, n);
+    return this.onclick(res);
+}
+
+Buffer.prototype.submitForm = async function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const res = await iface.submitForm(this.cursorx, this.cursory);
+    return this.onclick(res);
+}
+
+Buffer.prototype.saveLink = async function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const res = await iface.click(this.cursorx, this.cursory, 1);
+    return this.onclick(res, true);
+}
+
+Buffer.prototype.showLinkHints = async function() {
+    const iface = this.iface;
+    if (iface == null)
+        return [];
+    const sx = this.fromx;
+    const sy = this.fromy;
+    const ex = sx + this.width;
+    const ey = sy + this.height;
+    return iface.showHints(sx, sy, ex, ey);
+}
+
+Buffer.prototype.hideLinkHints = function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    return iface.hideHints();
+}
+
+Buffer.prototype.contextMenu = function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    return iface.contextMenu(this.cursorx, this.cursory);
+}
+
+Buffer.prototype.getSelectionText = function(sel = this.currentSelection) {
+    const iface = this.iface;
+    if (iface == null || sel == null)
+        return "";
+    return iface.getSelectionText(sel.startx, sel.starty, sel.endx, sel.endy,
+        sel.selectionType)
+}
+
+/* private */
+Buffer.prototype.loaded = async function(headless, metaRefresh, autofocus) {
+    const replace = this.unsetReplace();
+    if (replace != null)
+        pager.deleteContainer(replace, this);
+    pager.numload--;
+    if (this == pager.buffer) {
+        if (pager.alertState == "loadInfo")
+            pager.alertState = "normal";
+        pager.queueStatusUpdate();
+    }
+    if (!this.hasStart) {
+        if (!headless)
+            this.sendCursorPosition();
+        const anchor = this.url.hash.substring(1);
+        if (anchor != "" || autofocus) {
+            const [x, y, click] = await this.iface.gotoAnchor(anchor, autofocus,
+                                                              true);
+            if (y >= 0) {
+                this.setCursorXYCenter(x, y);
+                const ReadLine = ["read-text", "read-password", "read-file"];
+                if (click != null && ReadLine.includes(click.t))
+                    await this.onclick(click);
+            }
+        }
+    }
+    if (metaRefresh != "never") {
+        let url = this.refreshUrl;
+        let n = this.refreshMillis;
+        if (n == -1)
+            [n, url] = await this.iface.checkRefresh();
+        let ok = n >= 0;
+        if (ok && metaRefresh != "always") {
+            const surl = url + "";
+            const refreshAllowed = pager.refreshAllowed;
+            if (!refreshAllowed.has(surl)) {
+                ok = await pager.ask(`Redirect to ${surl} (in ${n}ms?)`);
+                if (ok)
+                    refreshAllowed.add(surl);
+            }
+        }
+        if (ok) {
+            setTimeout(() => {
+                if (replace.iface != null) {
+                    pager.gotoURL(url, {
+                        replace: replace,
+                        history: replace.history
+                    }).copyCursorPos(replace);
+                }
+            }, n);
+        }
+    }
 }

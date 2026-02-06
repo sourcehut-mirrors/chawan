@@ -116,7 +116,7 @@ proc toUndefined*(ctx: JSContext; val: JSValue): JSValue =
   JS_FreeValue(ctx, val)
   return JS_UNDEFINED
 
-proc newArrayFrom*(ctx: JSContext; vals: openArray[JSValue]): JSValue =
+proc newArrayFrom*(ctx: JSContext; vals: varargs[JSValue]): JSValue =
   ## Create a new array consisting of `vals`.
   ##
   ## Frees/consumes each individual value in `vals`.
@@ -158,12 +158,12 @@ proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSAtom;
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
-proc defineProperty*(ctx: JSContext; this: JSValueConst; name: string;
+proc defineProperty*(ctx: JSContext; this: JSValueConst; name: cstring;
     prop: JSValue; flags = cint(0)): DefinePropertyResult =
   ## Define an immutable property on `this`.
   ##
   ## Frees `prop'.
-  return case JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags)
+  return case JS_DefinePropertyValueStr(ctx, this, name, prop, flags)
   of 0: dprFail
   of 1: dprSuccess
   else: dprException

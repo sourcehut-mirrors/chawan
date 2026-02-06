@@ -54,7 +54,7 @@ install-trans.cgi: trans.cgi
 	@echo '    pager.alert("No selection to translate.");'
 	@echo '    return;'
 	@echo '  }'
-	@echo '  const text = await pager.getSelectionText(pager.currentSelection);'
+	@echo '  const text = await pager.getSelectionText();'
 	@echo '  pager.cursorToggleSelection();'
 	@echo '  pager.loadSubmit(`cgi-bin:trans.cgi?${encodeURIComponent(text)}`);'
 	@echo '}'

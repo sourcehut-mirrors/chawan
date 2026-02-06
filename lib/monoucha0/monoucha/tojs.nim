@@ -272,6 +272,13 @@ proc toJS*(ctx: JSContext; u8a: JSTypedArray): JSValue =
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =
   return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
 
+proc definePropertyConvert*[T](ctx: JSContext; this: JSValueConst;
+    name: cstring; x: T): DefinePropertyResult =
+  let val = ctx.toJS(x)
+  if JS_IsException(val):
+    return dprException
+  ctx.defineProperty(this, name, val)
+
 proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue =
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
@@ -279,9 +286,8 @@ proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue =
   block good:
     for k, v in dict.fieldPairs:
       when k != "toFree":
-        case ctx.defineProperty(obj, k, ctx.toJS(v))
-        of dprSuccess, dprFail: discard
-        of dprException: break good
+        if ctx.definePropertyConvert(obj, k, v) == dprException:
+          break good
     return obj
   JS_FreeValue(ctx, obj)
   return JS_EXCEPTION

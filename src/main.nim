@@ -17,6 +17,7 @@ import io/chafile
 import io/console
 import io/dynstream
 import io/poll
+import local/clientutil
 import local/container
 import local/lineedit
 import local/pager
@@ -109,7 +110,28 @@ type ParamParseContext = object
   visual: bool
   opts: seq[string]
   stylesheet: string
-  pages: seq[string]
+  jsctx: JSContext
+  pages: seq[JSValue]
+
+proc addPage(ctx: var ParamParseContext; s: string): Opt[void] =
+  let val = ctx.jsctx.toJS(s)
+  if JS_IsException(val):
+    return err()
+  ctx.pages.add(val)
+  ok()
+
+proc addDefaultPages(ctx: var ParamParseContext; config: Config;
+    history: var bool): Opt[void] =
+  if ctx.visual:
+    history = false
+    return ctx.addPage(config.start.visualHome)
+  if (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
+    history = false
+    return ctx.addPage(httpHome)
+  if (let wwwHome = getEnv("WWW_HOME"); wwwHome != ""):
+    history = false
+    return ctx.addPage(wwwHome)
+  ok()
 
 proc getNext(ctx: var ParamParseContext): string =
   if ctx.next != "":
@@ -158,12 +180,12 @@ proc parseRun(ctx: var ParamParseContext) =
   ctx.opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
   ctx.opts.add("start.headless = true")
 
-proc parse(ctx: var ParamParseContext) =
+proc parse(ctx: var ParamParseContext): Opt[void] =
   var escapeAll = false
   while ctx.i < ctx.params.len:
     let param = ctx.params[ctx.i]
     if escapeAll: # after --
-      ctx.pages.add(param)
+      ?ctx.addPage(param)
       inc ctx.i
       continue
     if param.len <= 0:
@@ -216,8 +238,9 @@ proc parse(ctx: var ParamParseContext) =
         of "--": escapeAll = true
         else: help(1)
     else:
-      ctx.pages.add(param)
+      ?ctx.addPage(param)
     inc ctx.i
+  ok()
 
 const defaultConfig = """
 [external]
@@ -380,24 +403,6 @@ proc setenv(ctx: JSContext; this: Window; s: string; val: JSValueConst):
       return JS_ThrowTypeError(ctx, "Failed to set environment variable")
   return JS_UNDEFINED
 
-proc nimGCStats(this: Window): string {.jsfunc.} =
-  return GC_getStatistics()
-
-proc jsGCStats(this: Window): string {.jsfunc.} =
-  return this.jsrt.getMemoryUsage()
-
-proc nimCollect(this: Window) {.jsfunc.} =
-  try:
-    GC_fullCollect()
-  except Exception:
-    discard
-
-proc jsCollect(this: Window) {.jsfunc.} =
-  JS_RunGC(this.jsrt)
-
-proc sleep(this: Window; millis: int) {.jsfunc.} =
-  os.sleep(millis)
-
 proc line(this: Window): LineEdit {.jsfget.} =
   return Client(this).pager.lineedit
 
@@ -406,14 +411,9 @@ let ClientJSFunctions {.global.} = [
   JS_CFUNC_DEF("getenv", 0, js_func_Window_getenv),
   JS_CFUNC_DEF("setenv", 0, js_func_Window_setenv),
   JS_CFUNC_DEF("readFile", 0, js_func_Window_readFile),
-  JS_CFUNC_DEF("jsGCStats", 0, js_func_Window_jsGCStats),
-  JS_CFUNC_DEF("sleep", 0, js_func_Window_sleep),
   JS_CFUNC_DEF("writeFile", 0, js_func_Window_writeFile),
-  JS_CFUNC_DEF("jsCollect", 0, js_func_Window_jsCollect),
-  JS_CFUNC_DEF("nimGCStats", 0, js_func_Window_nimGCStats),
   JS_CFUNC_DEF("feedNext", 0, js_func_Window_feedNext),
   JS_CFUNC_DEF("quit", 0, js_func_Window_quit),
-  JS_CFUNC_DEF("nimCollect", 0, js_func_Window_nimCollect),
   JS_CFUNC_DEF("suspend", 0, js_func_Window_suspend),
   JS_CGETSET_DEF("pager", js_get_Window_pager, nil),
   JS_CGETSET_DEF("line", js_get_Window_line, nil),
@@ -427,6 +427,7 @@ proc addJSModules(client: Client; ctx: JSContext): Opt[void] =
   if not ctx.setPropertyFunctionList(global, ClientJSFunctions):
     return err()
   JS_FreeValue(ctx, global)
+  ?ctx.addUtilModule()
   ?ctx.addLineEditModule()
   ?ctx.addConfigModule()
   ?ctx.addPagerModule()
@@ -467,10 +468,11 @@ proc main() =
   let forkserver = forkForkServer(loaderSockVec)
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
-  var ctx = ParamParseContext(params: commandLineParams(), i: 0)
-  ctx.parse()
   let jsrt = newJSRuntime()
   let jsctx = jsrt.newJSContext()
+  var ctx = ParamParseContext(jsctx: jsctx, params: commandLineParams(), i: 0)
+  if ctx.parse().isErr:
+    die(jsctx.getExceptionMsg())
   let clientPid = getCurrentProcessId()
   let loaderControl = newSocketStream(loaderSockVec[0])
   loaderControl.setCloseOnExec()
@@ -484,15 +486,8 @@ proc main() =
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
   if ctx.pages.len == 0 and ps.isatty():
-    if ctx.visual:
-      ctx.pages.add(config.start.visualHome)
-      history = false
-    elif (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
-      ctx.pages.add(httpHome)
-      history = false
-    elif (let wwwHome = getEnv("WWW_HOME"); wwwHome != ""):
-      ctx.pages.add(wwwHome)
-      history = false
+    if ctx.addDefaultPages(config, history).isErr:
+      die(jsctx.getExceptionMsg())
   if ctx.pages.len == 0 and config.start.headless != hmTrue:
     if ps.isatty():
       help(1)
@@ -513,8 +508,6 @@ proc main() =
     else:
       quit(1)
   jsctx.setupStartupScript("init.jsb")
-  if (let res = jsctx.initCommands(config); res.isErr):
-    die(res.error)
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
     client.console)
   client.pager = pager

@@ -39,7 +39,6 @@ import monoucha/jsbind
 import monoucha/jsutils
 import monoucha/libregexp
 import monoucha/quickjs
-import monoucha/tojs
 import server/bufferiface
 import server/headers
 import server/loaderiface
@@ -64,11 +63,6 @@ type
 
   HoverType* = enum
     htTitle, htLink, htImage, htCachedImage
-
-  BufferMatch* = object
-    x*: int
-    y*: int
-    w*: int
 
   InputData = ref object of MapData
 
@@ -129,26 +123,10 @@ type
     referrer*: string
     userStyle*: string
 
-  SelectResult* = ref object
-    options*: seq[SelectOption]
-    selected*: int
-
-  ClickResult* = ref object
-    open*: Request
-    contentType*: string
-    readline*: ReadLineResult
-    select*: SelectResult
-
   LoadResult* = object
     n*: uint64
     len*: uint64
     bs*: BufferState
-
-  CursorXY* = object
-    x*: int
-    y*: int
-
-  HintResult* = seq[CursorXY]
 
   CommandResult = enum
     cmdrDone, cmdrEOF
@@ -569,8 +547,8 @@ proc findRevNthLink(bc: BufferContext; handle: PagerHandle; i: int):
         link = fl
   return (-1, -1)
 
-proc findPrevMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
-    x, y, endy: int; wrap: bool; n: int): BufferMatch {.proxy.} =
+proc findPrevMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
+    x, y, endy: int; wrap: bool; n: int): BufferMatch {.proxy2.} =
   if n <= 0 or x < 0 or y < 0 or y >= bc.lines.len:
     return BufferMatch(x: -1, y: -1)
   var n = n
@@ -599,8 +577,8 @@ proc findPrevMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
     dec y
   BufferMatch(x: -1, y: -1)
 
-proc findNextMatch*(bc: BufferContext; handle: PagerHandle; regex: Regex;
-    cursorx, cursory, endy: int; wrap: bool; n: int): BufferMatch {.proxy.} =
+proc findNextMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
+    cursorx, cursory, endy: int; wrap: bool; n: int): BufferMatch {.proxy2.} =
   if n <= 0 or cursorx < 0 or cursory < 0 or cursory >= bc.lines.len:
     return BufferMatch(x: -1, y: -1)
   var y = cursory
@@ -642,7 +620,7 @@ proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: string;
       element = bc.document.findAnchor(s)
   if target and element != nil:
     bc.document.setTarget(element)
-  var focus: ReadLineResult = nil
+  var focus = initClickResult()
   # Do not use bc.config.autofocus when we just want to check if the
   # anchor can be found.
   if autofocus:
@@ -651,7 +629,8 @@ proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: string;
       if element == nil:
         element = autofocus # jump to autofocus instead
       let res = bc.click(autofocus)
-      focus = res.readline
+      if res.t in ClickResultReadLine:
+        focus = res
   if element == nil or element.box == nil:
     return GotoAnchorResult(x: -1, y: -1)
   let offset = CSSBox(element.box).render.offset
@@ -659,8 +638,8 @@ proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: string;
   let y = max(offset.y div bc.attrs.ppl.toLUnit(), 0'lu).toInt
   return GotoAnchorResult(x: x, y: y, focus: focus)
 
-proc checkRefresh*(bc: BufferContext; handle: PagerHandle): CheckRefreshResult
-    {.proxy.} =
+proc checkRefresh(bc: BufferContext; handle: PagerHandle): CheckRefreshResult
+    {.proxy2.} =
   if bc.navigateUrl != nil:
     let url = bc.navigateUrl
     bc.navigateUrl = nil
@@ -1103,7 +1082,7 @@ proc getTitle*(bc: BufferContext; handle: PagerHandle): string {.
   bc.savetask = true
   return ""
 
-proc forceReshape*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
+proc forceReshape(bc: BufferContext; handle: PagerHandle) {.proxy2.} =
   if bc.document != nil and bc.document.documentElement != nil:
     bc.document.documentElement.invalidate()
   bc.rootBox = nil
@@ -1112,7 +1091,7 @@ proc forceReshape*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   bc.maybeReshape()
 
 proc windowChange*(bc: BufferContext; handle: PagerHandle;
-    attrs: WindowAttributes; x, y: int): CursorXY {.proxy.} =
+    attrs: WindowAttributes; x, y: int): PagePos {.proxy.} =
   let element = bc.getCursorElement(x, y)
   let box = if element != nil: CSSBox(element.box) else: nil
   let offset = if box != nil: box.render.offset else: offset(0'lu, 0'lu)
@@ -1127,8 +1106,8 @@ proc windowChange*(bc: BufferContext; handle: PagerHandle;
     let offset = CSSBox(element.box).render.offset
     let x = (offset.x div ppc).toInt() + dx
     let y = (offset.y div ppl).toInt() + dy
-    return CursorXY(x: x, y: y)
-  return CursorXY(x: x, y: y)
+    return (x, y)
+  return (x, y)
 
 proc cancel*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.state == bsLoaded:
@@ -1356,34 +1335,21 @@ proc readSuccessCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
   r.sread(hasfd)
   let fd = if hasfd: r.recvFd() else: -1
   let request = bc.readSuccess0(s, fd)
+  let clickResult = initClickResult(request)
   handle.stream.withPacketWriterReturnEOF w:
     w.swrite(packetid)
-    w.swrite(request)
+    w.swrite(clickResult)
   cmdrDone
-
-proc readSuccess*(iface: BufferInterface; s: string; fd: cint):
-    Promise[Request] =
-  if iface.stream.flush().isErr:
-    return newResolvedPromise[Request](nil)
-  iface.stream.source.withPacketWriterFire w:
-    w.swrite(bcReadSuccess)
-    w.swrite(iface.packetid)
-    w.swrite(s)
-    let hasfd = fd != -1
-    w.swrite(hasfd)
-    if hasfd:
-      w.sendFd(fd)
-  return addPromise[Request](iface)
 
 proc click(bc: BufferContext; label: HTMLLabelElement): ClickResult =
   let control = label.control
   if control != nil:
     return bc.click(control)
-  return ClickResult()
+  return initClickResult()
 
 proc click(bc: BufferContext; select: HTMLSelectElement): ClickResult =
   if select.attrb(satMultiple):
-    return ClickResult()
+    return initClickResult()
   bc.setFocus(select)
   var options: seq[SelectOption] = @[]
   var selected = -1
@@ -1394,9 +1360,7 @@ proc click(bc: BufferContext; select: HTMLSelectElement): ClickResult =
     if selected == -1 and option.selected:
       selected = i
     inc i
-  return ClickResult(
-    select: SelectResult(options: move(options), selected: selected)
-  )
+  return initClickResult(move(options), selected)
 
 proc baseURL(bc: BufferContext): URL =
   return bc.document.baseURL
@@ -1422,17 +1386,17 @@ proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
   if url := anchor.reinitURL():
     if url.schemeType == stJavascript:
       if bc.config.scripting == smFalse:
-        return ClickResult()
+        return initClickResult()
       let s = bc.evalJSURL(url)
       bc.maybeReshape()
       if s.isErr:
-        return ClickResult()
+        return initClickResult()
       let urls = parseURL0("data:text/html," & s.get)
       if urls == nil:
-        return ClickResult()
+        return initClickResult()
       url = urls
-    return ClickResult(open: newRequest(url, hmGet))
-  return ClickResult()
+    return initClickResult(newRequest(url, hmGet))
+  return initClickResult()
 
 proc click(bc: BufferContext; option: HTMLOptionElement): ClickResult =
   let select = option.select
@@ -1443,9 +1407,9 @@ proc click(bc: BufferContext; option: HTMLOptionElement): ClickResult =
         bc.window.fireEvent(satChange, select, bubbles = true,
           cancelable = true, trusted = true)
       bc.maybeReshape()
-      return ClickResult()
+      return initClickResult()
     return bc.click(select)
-  return ClickResult()
+  return initClickResult()
 
 proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
@@ -1453,32 +1417,32 @@ proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
     of btSubmit:
       let open = bc.submitForm(button.form, button)
       bc.setFocus(button)
-      return ClickResult(open: open)
+      return initClickResult(open)
     of btReset:
       button.form.reset()
     of btButton: discard
     bc.setFocus(button)
-  return ClickResult()
+  return initClickResult()
 
 proc click(bc: BufferContext; textarea: HTMLTextAreaElement): ClickResult =
   bc.setFocus(textarea)
-  ClickResult(readline: ReadLineResult(t: rltArea, value: textarea.value))
+  ClickResult(t: crtReadArea, value: textarea.value)
 
 proc click(bc: BufferContext; audio: HTMLAudioElement): ClickResult =
   bc.restoreFocus()
   let (src, contentType) = audio.getSrc()
   if src != "":
     if url := audio.document.parseURL(src):
-      return ClickResult(open: newRequest(url), contentType: contentType)
-  return ClickResult()
+      return initClickResult(newRequest(url), contentType)
+  return initClickResult()
 
 proc click(bc: BufferContext; video: HTMLVideoElement): ClickResult =
   bc.restoreFocus()
   let (src, contentType) = video.getSrc()
   if src != "":
     if url := video.document.parseURL(src):
-      return ClickResult(open: newRequest(url), contentType: contentType)
-  return ClickResult()
+      return initClickResult(newRequest(url), contentType)
+  return initClickResult()
 
 # Used for frame, ifframe
 proc clickFrame(bc: BufferContext; frame: Element): ClickResult =
@@ -1486,8 +1450,8 @@ proc clickFrame(bc: BufferContext; frame: Element): ClickResult =
   let src = frame.attr(satSrc)
   if src != "":
     if url := frame.document.parseURL(src):
-      return ClickResult(open: newRequest(url))
-  return ClickResult()
+      return initClickResult(newRequest(url))
+  return initClickResult()
 
 const InputTypePrompt = [
   itText: "TEXT",
@@ -1520,7 +1484,7 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
   of itFile:
     #TODO we should somehow extract the path name from the current file
     bc.setFocus(input)
-    return ClickResult(readline: ReadLineResult(t: rltFile))
+    return ClickResult(t: crtReadFile)
   of itCheckbox:
     input.setChecked(not input.checked)
     if bc.config.scripting != smFalse:
@@ -1530,7 +1494,7 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
       bc.window.fireEvent(satChange, input, bubbles = true,
         cancelable = true, trusted = true)
     bc.maybeReshape()
-    return ClickResult()
+    return initClickResult()
   of itRadio:
     let wasChecked = input.checked
     input.setChecked(true)
@@ -1541,27 +1505,33 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
       bc.window.fireEvent(satChange, input, bubbles = true,
         cancelable = true, trusted = true)
     bc.maybeReshape()
-    return ClickResult()
+    return initClickResult()
   of itReset:
     if input.form != nil:
       input.form.reset()
       bc.maybeReshape()
-    return ClickResult()
+    return initClickResult()
   of itSubmit, itButton:
     if input.form != nil:
-      return ClickResult(open: bc.submitForm(input.form, input))
-    return ClickResult()
+      return initClickResult(bc.submitForm(input.form, input))
+    return initClickResult()
   else:
     # default is text.
     var prompt = InputTypePrompt[input.inputType]
     if input.inputType == itRange:
       prompt &= " (" & input.attr(satMin) & ".." & input.attr(satMax) & ")"
     bc.setFocus(input)
-    return ClickResult(readline: ReadLineResult(
-      t: if input.inputType == itPassword: rltPassword else: rltText,
+    if input.inputType == itPassword:
+      return ClickResult(
+        t: crtReadPassword,
+        prompt: prompt & ": ",
+        value: input.value
+      )
+    return ClickResult(
+      t: crtReadText,
       prompt: prompt & ": ",
       value: input.value
-    ))
+    )
 
 proc click(bc: BufferContext; clickable: Element): ClickResult =
   case clickable.tagType
@@ -1612,15 +1582,15 @@ proc initMouseEventInit(bc: BufferContext; button: int16; buttons: uint16;
     detail: int32(clamp(detail, 0, int32.high))
   )
 
-proc click*(bc: BufferContext; handle: PagerHandle;
-    cursorx, cursory, n: int): ClickResult {.proxy.} =
+proc click(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory, n: int): ClickResult {.proxy2.} =
   if bc.lines.len <= cursory: return ClickResult()
   var canceled = false
   let clickable = bc.getCursorClickable(cursorx, cursory)
   if bc.config.scripting != smFalse:
     let element = bc.getCursorElement(cursorx, cursory)
     if element != nil:
-      bc.clickResult = nil
+      bc.clickResult = initClickResult()
       let window = bc.window
       let init = bc.initMouseEventInit(0, 0, cursorx, cursory, n)
       let event = newMouseEvent(satClick.toAtom(), init)
@@ -1632,23 +1602,23 @@ proc click*(bc: BufferContext; handle: PagerHandle;
         event.isTrusted = true
         discard window.jsctx.dispatch(element, event)
       bc.maybeReshape()
-      if bc.clickResult != nil:
+      if bc.clickResult.t != crtNone:
         return bc.clickResult
   let url = bc.navigateUrl
   bc.navigateUrl = nil
   if not canceled and clickable != nil:
     return bc.click(clickable)
   if url != nil:
-    return ClickResult(open: newRequest(url, hmGet))
-  return ClickResult()
+    return initClickResult(newRequest(url, hmGet))
+  return initClickResult()
 
-proc contextMenu*(bc: BufferContext; handle: PagerHandle;
-    cursorx, cursory: int): bool {.proxy.} =
+proc contextMenu(bc: BufferContext; handle: PagerHandle;
+    cursorx, cursory: int): bool {.proxy2.} =
   var canceled = false
   if bc.config.scripting != smFalse:
     let element = bc.getCursorElement(cursorx, cursory)
     if element != nil:
-      bc.clickResult = nil
+      bc.clickResult = initClickResult()
       let window = bc.window
       let init = bc.initMouseEventInit(2, 2, cursorx, cursory, 1)
       let event = newMouseEvent(satContextmenu.toAtom(), init)
@@ -1657,8 +1627,8 @@ proc contextMenu*(bc: BufferContext; handle: PagerHandle;
       bc.maybeReshape()
   canceled
 
-proc select*(bc: BufferContext; handle: PagerHandle; selected: int): ClickResult
-    {.proxy.} =
+proc select(bc: BufferContext; handle: PagerHandle; selected: int): ClickResult
+    {.proxy2.} =
   if bc.document.focus != nil and
       bc.document.focus of HTMLSelectElement:
     if selected != -1:
@@ -1671,16 +1641,10 @@ proc select*(bc: BufferContext; handle: PagerHandle; selected: int): ClickResult
             cancelable = true, trusted = true)
     bc.restoreFocus()
     bc.maybeReshape()
-  return ClickResult()
+  return initClickResult()
 
-proc readCanceled*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
+proc readCanceled(bc: BufferContext; handle: PagerHandle) {.proxy2.} =
   bc.restoreFocus()
-
-type GetLinesResult* = object
-  numLines*: int
-  bgcolor*: CellColor
-  lines*: seq[SimpleFlexibleLine]
-  images*: seq[PosBitmap]
 
 # hack: avoid writing element in FormatCell by hand-rolling a serialization
 # function that matches SimpleFlexibleLine
@@ -1715,13 +1679,35 @@ proc getLinesCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
     w.swrite(images) # images
   cmdrDone
 
-proc getLines*(iface: BufferInterface; slice: Slice[int]):
-    Promise[GetLinesResult] =
-  iface.stream.withPacketWriterFire w:
-    w.swrite(bcGetLines)
-    w.swrite(iface.packetid)
-    w.swrite(slice)
-  return addPromise[GetLinesResult](iface)
+proc getSelectionText(bc: BufferContext; handle: PagerHandle;
+    sx, sy, ex, ey: int; t: SelectionType): string {.proxy2.} =
+  var s = ""
+  let sy = max(sy, 0)
+  let ey = min(bc.lines.high, ey)
+  case t
+  of stNormal:
+    let si = bc.lines[sy].str.findColBytes(sx)
+    let ei = bc.lines[ey].str.findColBytes(ex + 1, sx, si) - 1
+    if sy == ey:
+      s = bc.lines[sy].str.substr(si, ei)
+    else:
+      s = bc.lines[sy].str.substr(si) & '\n'
+      for y in sy + 1 .. ey - 1:
+        s &= bc.lines[y].str & '\n'
+      s &= bc.lines[ey].str.substr(0, ei)
+  of stBlock:
+    for y in sy .. ey:
+      let si = bc.lines[y].str.findColBytes(sx)
+      let ei = bc.lines[y].str.findColBytes(ex + 1, sx, si) - 1
+      if y > sy:
+        s &= '\n'
+      s &= bc.lines[y].str.substr(si, ei)
+  of stLine:
+    for y in sy .. ey:
+      if y > sy:
+        s &= '\n'
+      s &= bc.lines[y].str
+  move(s)
 
 proc getLinks*(bc: BufferContext; handle: PagerHandle): seq[string] {.proxy.} =
   result = newSeq[string]()
@@ -1841,19 +1827,6 @@ proc toggleImages*(bc: BufferContext; handle: PagerHandle): bool {.
   )
   return bc.config.images
 
-proc toJS*(ctx: JSContext; x: CursorXY): JSValue =
-  let obj = JS_NewObject(ctx)
-  if JS_IsException(obj):
-    return JS_EXCEPTION
-  block good:
-    if ctx.definePropertyCWE(obj, "x", ctx.toJS(x.x)) == dprException:
-      break good
-    if ctx.definePropertyCWE(obj, "y", ctx.toJS(x.y)) == dprException:
-      break good
-    return obj
-  JS_FreeValue(ctx, obj)
-  return JS_EXCEPTION
-
 proc findLeaf(box: CSSBox; element: Element): CSSBox =
   for it in box.children:
     if it.element == element or
@@ -1864,8 +1837,8 @@ proc findLeaf(box: CSSBox; element: Element): CSSBox =
         return box
   return box
 
-proc showHints*(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
-    HintResult {.proxy.} =
+proc showHints(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
+    HintResult {.proxy2.} =
   result = @[]
   bc.maybeReshape()
   let ppc = bc.attrs.ppc.toLUnit()
@@ -1885,8 +1858,8 @@ proc showHints*(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
   bc.nhints = result.len
   bc.maybeReshape()
 
-proc submitForm*(bc: BufferContext; handle: PagerHandle;
-    cursorx, cursory: int): ClickResult {.proxy.} =
+proc submitForm(bc: BufferContext; handle: PagerHandle; cursorx, cursory: int):
+    ClickResult {.proxy2.} =
   var element = bc.getCursorElement(cursorx, cursory)
   var form: HTMLFormElement = nil
   while element != nil:
@@ -1900,9 +1873,9 @@ proc submitForm*(bc: BufferContext; handle: PagerHandle;
   if form == nil:
     return ClickResult()
   let open = bc.submitForm(form, form) #TODO maybe use element as submitter?
-  return ClickResult(open: open)
+  return initClickResult(open)
 
-proc hideHints*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
+proc hideHints(bc: BufferContext; handle: PagerHandle) {.proxy2.} =
   for element in bc.window.document.elementDescendants:
     element.setHint(false)
   bc.maybeReshape()
@@ -1923,6 +1896,7 @@ const ProxyMap = [
   bcForceReshape: forceReshapeCmd,
   bcGetLines: getLinesCmd,
   bcGetLinks: getLinksCmd,
+  bcGetSelectionText: getSelectionTextCmd,
   bcGetTitle: getTitleCmd,
   bcGotoAnchor: gotoAnchorCmd,
   bcHideHints: hideHintsCmd,

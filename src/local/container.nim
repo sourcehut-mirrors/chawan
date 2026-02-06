@@ -15,7 +15,6 @@ import io/promise
 import local/select
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsnull
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -34,7 +33,6 @@ import types/opt
 import types/referrer
 import types/url
 import types/winattrs
-import utils/lrewrap
 import utils/strwidth
 import utils/twtstr
 
@@ -49,39 +47,21 @@ type
     setxsave: bool
 
   ContainerEventType* = enum
-    cetReadLine, cetReadPassword, cetReadArea, cetReadFile, cetOpen,
-    cetSave, cetSetLoadInfo, cetStatus, cetLoaded, cetTitle, cetMetaRefresh
+    cetSetLoadInfo, cetStatus, cetTitle
 
   ContainerEvent* = ref object
-    case t*: ContainerEventType
-    of cetReadLine, cetReadPassword:
-      prompt*: string
-      value*: string
-    of cetReadArea:
-      tvalue*: string
-    of cetOpen, cetSave:
-      request*: Request
-      contentType*: string
-    of cetMetaRefresh:
-      refreshIn*: int
-      refreshURL*: URL
-    else: discard
+    t*: ContainerEventType
     next: ContainerEvent
 
   HighlightType = enum
     hltSearch, hltSelect
 
-  SelectionType* = enum
-    stNormal = "normal"
-    stBlock = "block"
-    stLine = "line"
-
   Highlight* = ref object
     case t: HighlightType
     of hltSearch: discard
     of hltSelect:
-      selectionType {.jsget.}: SelectionType
-      mouse*: bool
+      selectionType: SelectionType
+      mouse: bool
     x1, y1: int
     x2, y2: int
 
@@ -89,11 +69,13 @@ type
     cmd*: string
 
   LoadState* = enum
-    lsLoading, lsCanceled, lsLoaded
+    lsLoading = "loading"
+    lsCanceled = "canceled"
+    lsLoaded = "loaded"
 
   ContainerFlag* = enum
-    cfHasStart, cfSave, cfIsHTML, cfHistory, cfTailOnLoad, cfCrashed,
-    cfShowLoading, cfDeferLoad, cfGotLines
+    cfSave, cfIsHTML, cfHistory, cfTailOnLoad, cfCrashed, cfShowLoading,
+    cfDeferLoad, cfGotLines
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
@@ -168,7 +150,6 @@ type
     bpos: seq[CursorState]
     highlights: seq[Highlight]
     loadinfo*: string
-    numLines* {.jsget.}: int
     replace*: Container
     # if we are referenced by another container, replaceRef is set so that we
     # can clear ourselves on discard
@@ -178,15 +159,16 @@ type
     event: ContainerEvent
     lastEvent: ContainerEvent
     startpos: Option[CursorState]
+    hasStart {.jsget.}: bool
     redirectDepth*: int
-    select* {.jsget.}: Select
+    select* {.jsgetset.}: Select
     currentSelection* {.jsget.}: Highlight
     tmpJumpMark: PagePos
     jumpMark: PagePos
     marks: seq[Mark]
     filter*: BufferFilter
     bgcolor*: CellColor
-    loadState*: LoadState
+    loadState* {.jsgetset.}: LoadState
     redraw*: bool
     needslines: bool
     lastPeek: HoverType
@@ -197,8 +179,10 @@ type
     mainConfig: Config
     images*: seq[PosBitmap]
     imageCache: ImageCache
-    refreshHeader: string
+    refreshUrl {.jsget.}: URL
+    refreshMillis {.jsget.}: int
     tab*: Tab
+    jsctx: JSContext
 
   NavDirection* = enum
     ndPrev = "prev"
@@ -210,7 +194,6 @@ jsDestructor(Container)
 
 # Forward declarations
 proc find*(container: Container; dir: NavDirection): Container
-proc onclick(container: Container; res: ClickResult)
 proc triggerEvent(container: Container; t: ContainerEventType)
 proc updateCursor(container: Container)
 proc sendCursorPosition(container: Container): EmptyPromise
@@ -220,8 +203,8 @@ proc setCursorY*(container: Container; y: int; refresh = true)
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; attrs: WindowAttributes; title: string;
     redirectDepth: int; flags: set[ContainerFlag]; contentType: string;
-    charsetStack: seq[Charset]; cacheId: int; mainConfig: Config; tab: Tab):
-    Container =
+    charsetStack: seq[Charset]; cacheId: int; mainConfig: Config; tab: Tab;
+    ctx: JSContext): Container =
   let host = request.url.host
   let loadinfo = (if host != "":
     "Connecting to " & host
@@ -245,7 +228,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     flags: flags,
     redraw: true,
     lastPeek: HoverType.high,
-    tab: tab
+    tab: tab,
+    jsctx: ctx
   )
 
 # shallow clone of buffer
@@ -324,8 +308,8 @@ proc lineLoaded(container: Container; y: int): bool =
   return container.iface.lineLoaded(y)
 
 proc getLine(container: Container; y: int): lent SimpleFlexibleLine =
-  if container.lineLoaded(y):
-    return container.iface.lines[y - container.iface.lineShift]
+  if container.iface != nil:
+    return container.iface.getLine(y)
   let line {.global.} = SimpleFlexibleLine()
   return line
 
@@ -373,40 +357,19 @@ proc xend(container: Container): int {.inline.} =
 proc process*(container: Container): int {.jsfget.} =
   container.phandle.process
 
+proc numLines*(container: Container): int {.jsfget.} =
+  let iface = container.iface
+  if iface == nil:
+    return 0
+  return iface.numLines
+
 proc lastVisibleLine(container: Container): int =
   min(container.fromy + container.height, container.numLines) - 1
 
 proc currentLine(container: Container): lent string =
   return container.getLineStr(container.cursory)
 
-proc findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
-  var w = startx
-  var i = starti
-  while i < s.len and w < endx:
-    let u = s.nextUTF8(i)
-    w += u.width()
-  return i
-
-proc cursorBytes(container: Container; y: int; cc = container.cursorx): int =
-  return container.getLineStr(y).findColBytes(cc, 0, 0)
-
-proc findColStartByte(s: string; endx: int): int =
-  var w = 0
-  var i = 0
-  while i < s.len and w < endx:
-    let pi = i
-    let u = s.nextUTF8(i)
-    w += u.width()
-    if w > endx:
-      return pi
-  return i
-
-proc cursorStartByte(container: Container; y, cc: int): int =
-  return container.getLineStr(y).findColStartByte(cc)
-
-proc currentCursorBytes*(container: Container; cc = container.cursorx): int =
-  return container.cursorBytes(container.cursory, cc)
-
+# private
 # Returns the X position of the first cell occupied by the character the cursor
 # currently points to.
 proc cursorFirstX(container: Container): int {.jsfunc.} =
@@ -423,6 +386,7 @@ proc cursorFirstX(container: Container): int {.jsfunc.} =
     w += tw
   return w
 
+# private
 # Returns the X position of the last cell occupied by the character the cursor
 # currently points to.
 proc cursorLastX(container: Container): int {.jsfunc.} =
@@ -456,12 +420,21 @@ proc cursorDispX(container: Container): int =
     return max(w - 1, 0)
   return pw
 
-proc acursorx*(container: Container): int =
+# private
+proc unsetReplace(container: Container): Container {.jsfunc.} =
+  let replace = container.replace
+  if replace != nil:
+    replace.replaceRef = nil
+    container.replace = nil
+  return replace
+
+proc acursorx*(container: Container): int {.jsfget.} =
   max(0, container.cursorDispX() - container.fromx)
 
-proc acursory*(container: Container): int =
+proc acursory*(container: Container): int {.jsfget.} =
   container.cursory - container.fromy
 
+# private
 proc maxScreenWidth(container: Container): int {.jsfunc.} =
   result = 0
   for y in container.fromy..container.lastVisibleLine:
@@ -472,6 +445,7 @@ proc getTitle*(container: Container): string {.jsfget: "title".} =
     return container.title
   return container.url.serialize(excludepassword = true)
 
+# private
 proc currentLineWidth*(container: Container; s = 0; e = int.high): int
     {.jsfunc.} =
   if container.numLines == 0:
@@ -485,7 +459,8 @@ proc maxfromx(container: Container): int =
   return max(container.maxScreenWidth() - container.width, 0)
 
 proc atPercentOf*(container: Container): int =
-  if container.numLines == 0: return 100
+  if container.numLines == 0:
+    return 100
   return (100 * (container.cursory + 1)) div container.numLines
 
 proc lineWindow(container: Container): Slice[int] =
@@ -502,7 +477,13 @@ proc lineWindow(container: Container): Slice[int] =
     x = 0
   return x .. y
 
-proc startx(hl: Highlight): int =
+proc jsSelectionType(hl: Highlight): SelectionType {.jsfget: "selectionType".} =
+  hl.selectionType
+
+proc jsMouse(hl: Highlight): bool {.jsfget: "mouse".} =
+  hl.mouse
+
+proc startx(hl: Highlight): int {.jsfget.} =
   if hl.y1 < hl.y2:
     hl.x1
   elif hl.y2 < hl.y1:
@@ -510,10 +491,10 @@ proc startx(hl: Highlight): int =
   else:
     min(hl.x1, hl.x2)
 
-proc starty(hl: Highlight): int =
+proc starty(hl: Highlight): int {.jsfget.} =
   return min(hl.y1, hl.y2)
 
-proc endx(hl: Highlight): int =
+proc endx(hl: Highlight): int {.jsfget.} =
   if hl.y1 > hl.y2:
     hl.x1
   elif hl.y2 > hl.y1:
@@ -521,7 +502,7 @@ proc endx(hl: Highlight): int =
   else:
     max(hl.x1, hl.x2)
 
-proc endy(hl: Highlight): int =
+proc endy(hl: Highlight): int {.jsfget.} =
   return max(hl.y1, hl.y2)
 
 proc colorNormal(container: Container; hl: Highlight; y: int;
@@ -570,11 +551,6 @@ proc getHoverText*(container: Container): string =
       return container.hoverText[t]
   ""
 
-proc isHoverURL*(container: Container; url: URL): bool =
-  if hoverUrl := parseURL(container.hoverText[htLink]):
-    return url.authOrigin.isSameOrigin(hoverUrl.authOrigin)
-  return false
-
 proc triggerEvent(container: Container; event: ContainerEvent) =
   if container.lastEvent == nil:
     container.event = event
@@ -595,6 +571,7 @@ proc popEvent*(container: Container): ContainerEvent =
     container.lastEvent = nil
   return res
 
+# private
 proc queueDraw*(container: Container) {.jsfunc.} =
   container.redraw = true
 
@@ -603,16 +580,17 @@ proc requestLines(container: Container): EmptyPromise =
     return newResolvedPromise()
   let w = container.lineWindow
   return container.iface.getLines(w).then(proc(res: GetLinesResult) =
-    container.iface.lines.setLen(w.len)
-    container.iface.lineShift = w.a
+    let iface = container.iface
+    iface.lines.setLen(w.len)
+    iface.lineShift = w.a
     container.flags.incl(cfGotLines)
     for y in 0 ..< min(res.lines.len, w.len):
-      container.iface.lines[y] = res.lines[y]
+      iface.lines[y] = res.lines[y]
     let isBgNew = container.bgcolor != res.bgcolor
     if isBgNew:
       container.bgcolor = res.bgcolor
-    if res.numLines != container.numLines:
-      container.numLines = res.numLines
+    if res.numLines != iface.numLines:
+      iface.numLines = res.numLines
       container.updateCursor()
       if container.startpos.isSome and
           res.numLines >= container.startpos.get.cursor.y:
@@ -647,6 +625,7 @@ proc repaintLoop(container: Container) =
     container.requestLines().then(proc() = container.repaintLoop())
   )
 
+# private
 proc sendCursorPosition(container: Container): EmptyPromise {.jsfunc.} =
   if container.iface == nil:
     return newResolvedPromise()
@@ -659,12 +638,14 @@ proc sendCursorPosition(container: Container): EmptyPromise {.jsfunc.} =
       container.triggerEvent(cetStatus)
   )
 
+# public
 proc setFromY(container: Container; y: int) {.jsfunc.} =
   if container.pos.fromy != y:
     container.pos.fromy = max(min(y, container.maxfromy), 0)
     container.needslines = true
     container.queueDraw()
 
+# public
 proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
   if refresh:
     container.flags.incl(cfShowLoading)
@@ -677,10 +658,12 @@ proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
         discard container.sendCursorPosition()
     container.queueDraw()
 
+# public
 proc setFromXY(container: Container; x, y: int) {.jsfunc.} =
   container.setFromY(y)
   container.setFromX(x)
 
+# public
 # Set the cursor to the xth column. 0-based.
 # * `refresh = false' inhibits reporting of the cursor position to the buffer.
 # * `save = false' inhibits cursor movement if it is currently outside the
@@ -729,10 +712,12 @@ proc setCursorX(container: Container; x: int; refresh = true; save = true)
   if save:
     container.pos.xend = container.cursorx
 
+# private
 proc restoreCursorX(container: Container) {.jsfunc.} =
   let x = clamp(container.currentLineWidth() - 1, 0, container.xend)
   container.setCursorX(x, false, false)
 
+# public
 proc setCursorY*(container: Container; y: int; refresh = true) {.jsfunc.} =
   if refresh:
     container.flags.incl(cfShowLoading)
@@ -755,29 +740,23 @@ proc setCursorY*(container: Container; y: int; refresh = true) {.jsfunc.} =
     # cursor moved, trigger status so the status is recomputed
     container.triggerEvent(cetStatus)
 
+# public
 proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
   container.setCursorY(y, refresh)
   container.setCursorX(x, refresh)
 
-proc matchFirst(ctx: JSContext; container: Container; re: JSValueConst): JSValue
-    {.jsfunc.} =
-  if container.numLines == 0 or not container.lineLoaded(container.cursory):
-    return ctx.toJS((-1, -1))
-  var plen: csize_t
-  let p = JS_GetRegExpBytecode(ctx, re, plen)
-  if p == nil:
-    return JS_EXCEPTION
-  return ctx.toJS(cast[REBytecode](p).matchFirst(container.currentLine))
-
+# public
 # zz
 proc centerLine(container: Container; n = 0) {.jsfunc.} =
   if n != 0:
     container.setCursorY(n - 1)
   container.setFromY(container.cursory - container.height div 2)
 
+# public
 proc centerColumn(container: Container) {.jsfunc.} =
   container.setFromX(container.cursorx - container.width div 2)
 
+# public
 proc setCursorXYCenter*(container: Container; x, y: int; refresh = true)
     {.jsfunc.} =
   let fy = container.fromy
@@ -788,9 +767,11 @@ proc setCursorXYCenter*(container: Container; x, y: int; refresh = true)
   if fx != container.fromx:
     container.centerColumn()
 
+# private
 proc markPos0(container: Container) {.jsfunc.} =
   container.tmpJumpMark = (container.cursorx, container.cursory)
 
+# private
 proc markPos(container: Container) {.jsfunc.} =
   let pos = container.tmpJumpMark
   if container.cursorx != pos.x or container.cursory != pos.y:
@@ -807,28 +788,26 @@ proc updateCursor(container: Container) =
     if container.cursory != n:
       container.setCursorY(n)
 
-proc pushCursorPos*(container: Container) {.jsfunc.} =
-  if container.select != nil:
-    container.select.pushCursorPos()
-  else:
-    container.bpos.add(container.pos)
+# private
+proc pushCursorPos(container: Container) {.jsfunc.} =
+  container.bpos.add(container.pos)
 
-proc popCursorPos*(container: Container; nojump = false) {.jsfunc.} =
-  if container.select != nil:
-    container.select.popCursorPos(nojump)
-  elif container.bpos.len > 0:
+# private
+proc popCursorPos(container: Container; nojump = false) {.jsfunc.} =
+  if container.bpos.len > 0:
     container.pos = container.bpos.pop()
     if not nojump:
       container.updateCursor()
       discard container.sendCursorPosition()
     container.needslines = true
 
-proc copyCursorPos*(container, c2: Container) {.jsfunc.} =
+# private
+proc copyCursorPos(container, c2: Container) {.jsfunc.} =
   if c2.startpos.isSome:
     container.startpos = c2.startpos
   else:
     container.startpos = some(c2.pos)
-  container.flags.incl(cfHasStart)
+  container.hasStart = true
 
 proc findMark(container: Container; id: string): int =
   for i, it in container.marks.mypairs:
@@ -836,6 +815,7 @@ proc findMark(container: Container; id: string): int =
       return i
   -1
 
+# public
 proc setMark(container: Container; id: string; x = -1; y = -1): bool
     {.jsfunc.} =
   let x = if x == -1: container.cursorx else: x
@@ -848,6 +828,7 @@ proc setMark(container: Container; id: string; x = -1; y = -1): bool
   container.queueDraw()
   i == -1
 
+# public
 proc clearMark(container: Container; id: string): bool {.jsfunc.} =
   let i = container.findMark(id)
   if i != -1:
@@ -855,6 +836,7 @@ proc clearMark(container: Container; id: string): bool {.jsfunc.} =
     container.queueDraw()
   i != -1
 
+# public
 proc getMarkPos(ctx: JSContext; container: Container; id: string): JSValue
     {.jsfunc.} =
   if id == "`" or id == "'":
@@ -864,6 +846,7 @@ proc getMarkPos(ctx: JSContext; container: Container; id: string): JSValue
     return ctx.toJS(container.marks[i].pos)
   return JS_NULL
 
+# public
 proc findNextMark(ctx: JSContext; container: Container; x = -1; y = -1): JSValue
     {.jsfunc.} =
   let x = if x < 0: container.cursorx else: x
@@ -880,6 +863,7 @@ proc findNextMark(ctx: JSContext; container: Container; x = -1; y = -1): JSValue
     return ctx.toJS(container.marks[j].id)
   return JS_NULL
 
+# public
 proc findPrevMark(ctx: JSContext; container: Container; x = -1; y = -1):
     JSValue {.jsfunc.} =
   let x = if x < 0: container.cursorx else: x
@@ -896,11 +880,13 @@ proc findPrevMark(ctx: JSContext; container: Container; x = -1; y = -1):
     return ctx.toJS(container.marks[j].id)
   return JS_NULL
 
+# private
 proc clearSearchHighlights(container: Container) {.jsfunc.} =
   for i in countdown(container.highlights.high, 0):
     if container.highlights[i].t == hltSearch:
       container.highlights.del(i)
 
+# private
 proc addSearchHighlight(container: Container; x1, y1, x2, y2: int) {.jsfunc.} =
   container.highlights.add(Highlight(
     t: hltSearch,
@@ -910,94 +896,8 @@ proc addSearchHighlight(container: Container; x1, y1, x2, y2: int) {.jsfunc.} =
     y2: y2
   ))
 
-proc toJS(ctx: JSContext; match: BufferMatch): JSValue =
-  let x = ctx.toJS(match.x)
-  let y = ctx.toJS(match.y)
-  let w = ctx.toJS(match.w)
-  if JS_IsException(x) or JS_IsException(y) or JS_IsException(w):
-    JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, y)
-    JS_FreeValue(ctx, w)
-    return JS_EXCEPTION
-  return ctx.newArrayFrom([x, y, w])
-
-proc findPrevMatch(ctx: JSContext; container: Container; re: JSValueConst;
-    x, y: int; wrap: bool; n: int): JSValue {.jsfunc.} =
-  var bytecodeLen: csize_t
-  let p = JS_GetRegExpBytecode(ctx, re, bytecodeLen)
-  if p == nil:
-    return JS_EXCEPTION
-  let bytecode = cast[REBytecode](p)
-  var wrap = wrap
-  let endy = y
-  var n = n
-  var y = y
-  var b = container.cursorStartByte(y, x)
-  var first = true
-  while true:
-    if y < 0:
-      if not wrap:
-        break
-      y = container.numLines - 1
-      wrap = false
-    if not container.lineLoaded(y):
-      let regex = bytecodeToRegex(bytecode, bytecodeLen)
-      return ctx.toJS(container.iface.findPrevMatch(regex, x, y, endy, wrap, n))
-    let s = container.getLineStr(y)
-    if b < 0:
-      b = s.len
-    let cap = bytecode.matchLast(s.toOpenArray(0, b - 1))
-    if cap.s >= 0:
-      let x = s.width(0, cap.s)
-      let w = s.toOpenArray(cap.s, cap.e - 1).width()
-      dec n
-      if n == 0:
-        return ctx.toJS(BufferMatch(x: x, y: y, w: w))
-    dec y
-    if y == endy and not first:
-      break
-    first = false
-    b = -1
-  return ctx.toJS(BufferMatch(x: -1, y: -1))
-
-proc findNextMatch(ctx: JSContext; container: Container; re: JSValueConst;
-    x, y: int; wrap: bool; n: int): JSValue {.jsfunc.} =
-  var bytecodeLen: csize_t
-  let p = JS_GetRegExpBytecode(ctx, re, bytecodeLen)
-  if p == nil:
-    return JS_EXCEPTION
-  let bytecode = cast[REBytecode](p)
-  var wrap = wrap
-  let endy = y
-  var y = y
-  var n = n
-  var b = container.cursorBytes(y, x + 1)
-  var first = true
-  while true:
-    if y >= container.numLines:
-      if not wrap:
-        break
-      wrap = false
-      y = 0
-    if not container.lineLoaded(y):
-      let regex = bytecodeToRegex(bytecode, bytecodeLen)
-      return ctx.toJS(container.iface.findNextMatch(regex, x, y, endy, wrap, n))
-    let s = container.getLineStr(y)
-    let cap = bytecode.matchFirst(s, b)
-    if cap.s >= 0:
-      let x = s.width(0, cap.s)
-      let w = s.toOpenArray(cap.s, cap.e - 1).width()
-      dec n
-      if n == 0:
-        return ctx.toJS(BufferMatch(x: x, y: y, w: w))
-    b = 0
-    if y == endy and not first:
-      break
-    first = false
-    inc y
-  return ctx.toJS(BufferMatch(x: -1, y: -1))
-
-proc startSelection*(container: Container; t: SelectionType; mouse: bool;
+# private
+proc startSelection(container: Container; t: SelectionType; mouse: bool;
     start = -1): Highlight {.jsfunc.} =
   let cx = if start != -1: start else: container.cursorFirstX()
   let highlight = Highlight(
@@ -1014,60 +914,15 @@ proc startSelection*(container: Container; t: SelectionType; mouse: bool;
   container.queueDraw()
   return highlight
 
-proc clearSelection*(container: Container) {.jsfunc.} =
+# private
+proc clearSelection(container: Container) {.jsfunc.} =
   let i = container.highlights.find(container.currentSelection)
   if i != -1:
     container.highlights.delete(i)
   container.currentSelection = nil
   container.queueDraw()
 
-proc hasMouseSelection*(container: Container): bool {.jsfunc.} =
-  return container.currentSelection != nil and container.currentSelection.mouse
-
-#TODO I don't like this API
-# maybe make selection a subclass of highlight?
-proc getSelectionText*(container: Container; hl = none(Highlight)):
-    Promise[string] {.jsfunc.} =
-  let hl = hl.get(container.currentSelection)
-  if container.iface == nil or hl == nil or hl.t != hltSelect:
-    return newResolvedPromise("")
-  let startx = hl.startx
-  let starty = hl.starty
-  let endx = hl.endx
-  let endy = hl.endy
-  let nw = starty .. endy
-  return container.iface.getLines(nw).then(proc(res: GetLinesResult): string =
-    if res.lines.len <= 0:
-      return ""
-    var s = ""
-    case hl.selectionType
-    of stNormal:
-      if starty == endy:
-        let si = res.lines[0].str.findColBytes(startx)
-        let ei = res.lines[0].str.findColBytes(endx + 1, startx, si) - 1
-        s = res.lines[0].str.substr(si, ei)
-      else:
-        let si = res.lines[0].str.findColBytes(startx)
-        s &= res.lines[0].str.substr(si) & '\n'
-        for i in 1 .. res.lines.high - 1:
-          s &= res.lines[i].str & '\n'
-        let ei = res.lines[^1].str.findColBytes(endx + 1) - 1
-        s &= res.lines[^1].str.substr(0, ei)
-    of stBlock:
-      for i, line in res.lines.mypairs:
-        let si = line.str.findColBytes(startx)
-        let ei = line.str.findColBytes(endx + 1, startx, si) - 1
-        if i > 0:
-          s &= '\n'
-        s &= line.str.substr(si, ei)
-    of stLine:
-      for i, line in res.lines.mypairs:
-        if i > 0:
-          s &= '\n'
-        s &= line.str
-    return s.expandPUATabsHard()
-  )
-
+# public
 proc toggleImages(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
@@ -1075,80 +930,24 @@ proc toggleImages(container: Container) {.jsfunc.} =
     container.config.images = images
   )
 
-proc showLinkHints(container: Container): Promise[HintResult] {.jsfunc.} =
-  if container.iface == nil:
-    return newResolvedPromise[HintResult](HintResult.default)
-  let sx = container.fromx
-  let sy = container.fromy
-  let ex = sx + container.width
-  let ey = sy + container.height
-  return container.iface.showHints(sx, sy, ex, ey)
-
-proc hideLinkHints(container: Container) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.iface.hideHints()
-
 proc setLoadInfo*(container: Container; msg: string) =
   container.loadinfo = msg
   container.triggerEvent(cetSetLoadInfo)
 
-proc onReadLine(container: Container; rl: ReadLineResult) =
-  case rl.t
-  of rltText:
-    container.triggerEvent(ContainerEvent(
-      t: cetReadLine,
-      prompt: rl.prompt,
-      value: rl.value
-    ))
-  of rltPassword:
-    container.triggerEvent(ContainerEvent(
-      t: cetReadPassword,
-      prompt: rl.prompt,
-      value: rl.value
-    ))
-  of rltArea:
-    container.triggerEvent(ContainerEvent(
-      t: cetReadArea,
-      tvalue: rl.value
-    ))
-  of rltFile:
-    container.triggerEvent(ContainerEvent(t: cetReadFile))
-
 proc loaded(container: Container) =
   container.loadinfo = ""
   container.loadState = lsLoaded
-  container.triggerEvent(cetLoaded)
-  if cfHasStart notin container.flags:
-    if container.config.headless == hmFalse:
-      discard container.sendCursorPosition()
-    let anchor = container.url.hash.substr(1)
-    if anchor != "" or container.config.autofocus:
-      container.iface.gotoAnchor(anchor, container.config.autofocus,
-          true).then(proc(res: GotoAnchorResult) =
-        if res.y >= 0:
-          container.setCursorXYCenter(res.x, res.y)
-          if res.focus != nil:
-            container.onReadLine(res.focus)
-      )
-  if container.config.metaRefresh != mrNever:
-    let res = parseRefresh(container.refreshHeader, container.url)
-    container.refreshHeader = ""
-    if res.n != -1:
-      container.triggerEvent(ContainerEvent(
-        t: cetMetaRefresh,
-        refreshIn: res.n,
-        refreshURL: if res.url != nil: res.url else: container.url
-      ))
-    else:
-      container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
-        if res.n >= 0:
-          container.triggerEvent(ContainerEvent(
-            t: cetMetaRefresh,
-            refreshIn: res.n,
-            refreshURL: if res.url != nil: res.url else: container.url
-          ))
-      )
+  #TODO
+  let ctx = container.jsctx
+  let loaded = JS_NewAtom(ctx, cstring"loaded")
+  let this = ctx.toJS(container)
+  let headless = ctx.toJS(container.config.headless != hmFalse)
+  let metaRefresh = ctx.toJS(container.config.metaRefresh)
+  let autofocus = ctx.toJS(container.config.autofocus)
+  let res = ctx.invokeSink(this, loaded, headless, metaRefresh, autofocus)
+  JS_FreeAtom(ctx, loaded)
+  JS_FreeValue(ctx, this)
+  JS_FreeValue(ctx, res)
 
 #TODO this should be called with a timeout.
 proc onload(container: Container; res: LoadResult) =
@@ -1218,84 +1017,23 @@ proc applyResponse*(container: Container; response: Response;
     if container.charsetStack.len == 0:
       container.charsetStack.add(DefaultCharset)
   container.charset = container.charsetStack[^1]
-  container.refreshHeader = response.headers.getFirst("Refresh")
+  let refresh = parseRefresh(response.headers.getFirst("Refresh"),
+    container.url)
+  container.refreshUrl = refresh.url
+  container.refreshMillis = refresh.n
 
 proc cancel*(container: Container) =
   if container.iface != nil:
     container.iface.cancel()
 
-proc readCanceled*(container: Container) =
-  if container.iface != nil:
-    container.iface.readCanceled()
-
-proc readSuccess*(container: Container; s: string; fd: cint = -1) =
-  if container.iface == nil:
-    return
-  container.iface.readSuccess(s, fd).then(proc(res: Request) =
-    if res != nil:
-      container.triggerEvent(ContainerEvent(t: cetOpen, request: res))
-  )
-
-proc selectFinish(opaque: RootRef; select: Select) =
-  let container = Container(opaque)
-  container.iface.select(select.selected).then(proc(res: ClickResult) =
-    container.onclick(res)
-  )
+# private
+proc closeSelect(container: Container) {.jsfunc.} =
   container.select = nil
   container.queueDraw()
 
-proc displaySelect(container: Container; selectResult: SelectResult) =
-  container.select = newSelect(
-    selectResult.options,
-    selectResult.selected,
-    max(container.acursorx - 1, 0),
-    max(container.acursory - 1 - selectResult.selected, 0),
-    container.width,
-    container.height,
-    selectFinish,
-    container
-  )
-
-proc onclick(container: Container; res: ClickResult) =
-  if res.open != nil:
-    container.triggerEvent(ContainerEvent(
-      t: cetOpen,
-      request: res.open,
-      contentType: res.contentType
-    ))
-  if res.select != nil and res.select.options.len > 0:
-    container.displaySelect(res.select)
-  if res.readline != nil:
-    container.onReadLine(res.readline)
-
-proc click*(container: Container; n = 1) {.jsfunc.} =
+# private
+proc showLoading(container: Container) {.jsfunc.} =
   container.flags.incl(cfShowLoading)
-  if container.iface == nil:
-    return
-  container.iface.click(container.cursorx, container.cursory, n)
-    .then(proc(res: ClickResult) = container.onclick(res))
-
-proc submitForm(container: Container) {.jsfunc.} =
-  container.iface.submitForm(container.cursorx, container.cursory)
-    .then(proc(res: ClickResult) = container.onclick(res))
-
-proc contextMenu*(container: Container): Promise[bool] {.jsfunc.} =
-  if container.iface == nil:
-    return newResolvedPromise(false)
-  return container.iface.contextMenu(container.cursorx, container.cursory)
-
-proc saveLink*(container: Container) {.jsfunc.} =
-  if container.iface == nil:
-    return
-  container.iface.click(container.cursorx, container.cursory, 1)
-    .then(proc(res: ClickResult) =
-      if res.open != nil:
-        container.triggerEvent(ContainerEvent(
-          t: cetSave,
-          request: res.open,
-          contentType: res.contentType
-        ))
-    )
 
 proc windowChange*(container: Container; attrs: WindowAttributes) =
   container.width = attrs.width
@@ -1307,7 +1045,7 @@ proc windowChange*(container: Container; attrs: WindowAttributes) =
     attrs.heightPx -= attrs.ppl
     let x = container.cursorx
     let y = container.cursory
-    container.iface.windowChange(attrs, x, y).then(proc(pos: CursorXY) =
+    container.iface.windowChange(attrs, x, y).then(proc(pos: PagePos) =
       container.setCursorXYCenter(pos.x, pos.y)
     )
   if container.select != nil:
@@ -1329,18 +1067,23 @@ proc getPeekCursorStr*(container: Container): string =
   container.lastPeek = p
   s
 
+# public
 proc hoverLink(container: Container): lent string {.jsfget.} =
   return container.hoverText[htLink]
 
+# public
 proc hoverTitle(container: Container): lent string {.jsfget.} =
   return container.hoverText[htTitle]
 
+# public
 proc hoverImage(container: Container): lent string {.jsfget.} =
   return container.hoverText[htImage]
 
+# public
 proc hoverCachedImage(container: Container): lent string {.jsfget.} =
   return container.hoverText[htCachedImage]
 
+# public
 proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
   return case dir
   of ndPrev: container.prev
@@ -1387,7 +1130,7 @@ proc onReadLine(container: Container; w: Slice[int]; handle: HandleReadLine;
         EmptyPromise =
       return container.onReadLine(w, handle, res)
     )
-  container.numLines = res.numLines
+  container.iface.numLines = res.numLines
   return nil
 
 # Synchronously read all lines in the buffer.
