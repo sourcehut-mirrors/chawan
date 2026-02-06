@@ -269,10 +269,6 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
   let config = newConfig(jsctx, dir, dataDir)
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "default")
   let cwd = myposix.getcwd()
-  when defined(debug):
-    if (let ps = newPosixStream(cwd / "res/config.toml"); ps != nil):
-      ?config.parseConfig(cwd, ps.readAll(), warnings, jsctx, "res/config.toml")
-      ps.sclose()
   if ps != nil:
     let src = ps.readAllOrMmap()
     ?config.parseConfig(config.dir, src.toOpenArray(), warnings, jsctx,
