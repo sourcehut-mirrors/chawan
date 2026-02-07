@@ -718,6 +718,29 @@ Pager.prototype.closeMenu = function() {
     }
 }
 
+Pager.prototype.openEditor = function(input) {
+    let tmpf = this.getTempFile();
+    Util.mkdir(config.external.tmpdir, 0o700);
+    input += '\n';
+    try {
+        writeFile(tmpf, input, 0o600);
+    } catch (e) {
+        this.alert("failed to write temporary file");
+        return null;
+    }
+    const cmd = this.getEditorCommand(tmpf);
+    if (cmd == "") {
+        this.alert("invalid external.editor command");
+        return null;
+    }
+    this.extern(cmd);
+    let res = readFile(tmpf, input);
+    Util.unlink(tmpf);
+    if (res != null && res.at(-1) == '\n')
+        res = res.substring(0, res.length - 1);
+    return res;
+}
+
 /* private */
 Pager.prototype.handleMouseInput = async function(input) {
     if (this.mouse.blockTillRelease) {
@@ -1513,9 +1536,11 @@ Buffer.prototype.reshape = function() {
 
 Buffer.prototype.editSource = function() {
     const url = pager.url;
-    pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
+    const path = url.protocol == "file:" ?
         decodeURIComponent(url.pathname) :
-        pager.cacheFile));
+        pager.cacheFile;
+    const cmd = pager.getEditorCommand(path)
+    pager.extern(cmd);
 }
 
 Buffer.prototype.saveSource = function() {
@@ -1743,10 +1768,8 @@ Buffer.prototype.loaded = async function(headless, metaRefresh, autofocus) {
         if (ok) {
             setTimeout(() => {
                 if (replace.iface != null) {
-                    pager.gotoURL(url, {
-                        replace: replace,
-                        history: replace.history
-                    }).copyCursorPos(replace);
+                    pager.gotoURL(url, {replace, history: replace.history})
+                        .copyCursorPos(replace);
                 }
             }, n);
         }

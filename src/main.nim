@@ -375,9 +375,9 @@ proc readFile(ctx: JSContext; this: Window; path: string): JSValue
     return ctx.toJS(s)
   return JS_NULL
 
-proc writeFile(ctx: JSContext; this: Window; path, content: string): JSValue
-    {.jsfunc.} =
-  if chafile.writeFile(path, content, 0o644).isOk:
+proc writeFile(ctx: JSContext; this: Window; path, content: string;
+    mode = cint(0o644)): JSValue {.jsfunc.} =
+  if chafile.writeFile(path, content, mode).isOk:
     return JS_UNDEFINED
   return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
 

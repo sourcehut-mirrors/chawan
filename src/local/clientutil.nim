@@ -70,6 +70,12 @@ proc encodeURIPath(s: string): string {.jsstfunc: "Util".} =
 proc expandPath(s: string): string {.jsstfunc: "Util".} =
   return twtstr.expandPath(s)
 
+proc mkdir(s: string; mode: cint): cint {.jsstfunc: "Util".} =
+  return posix.mkdir(cstring(s), Mode(mode))
+
+proc unlink(s: string) {.jsstfunc: "Util".} =
+  discard posix.unlink(cstring(s))
+
 proc addUtilModule*(ctx: JSContext): JSClassID =
   return ctx.registerType(Util)
 

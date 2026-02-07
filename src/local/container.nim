@@ -446,7 +446,7 @@ proc getTitle*(container: Container): string {.jsfget: "title".} =
   return container.url.serialize(excludepassword = true)
 
 # private
-proc currentLineWidth*(container: Container; s = 0; e = int.high): int
+proc currentLineWidth(container: Container; s = 0; e = int.high): int
     {.jsfunc.} =
   if container.numLines == 0:
     return 0

@@ -210,7 +210,6 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
 proc cloned(pager: Pager; container: Container; stream: SocketStream)
 proc deleteContainer(pager: Pager; container, setTarget: Container)
 proc dumpBuffers(pager: Pager)
-proc evalJS(pager: Pager; val: JSValue): JSValue
 proc getHist(pager: Pager; mode: LineMode): History
 proc handleEvents(pager: Pager)
 proc handleRead(pager: Pager; fd: int): Opt[void]
@@ -218,11 +217,13 @@ proc inputLoop(pager: Pager): Opt[void]
 proc onSetLoadInfo(pager: Pager; container: Container)
 proc redraw(pager: Pager)
 proc refreshStatusMsg(pager: Pager)
+proc runJSJobs(pager: Pager)
 proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
   istreamOutputId: int; contentType: string; entry: MailcapEntry):
   MailcapResult
 proc unregisterFd(pager: Pager; fd: int)
 proc updateReadLine(pager: Pager)
+proc quit(pager: Pager; code: int)
 proc windowChange(pager: Pager)
 
 proc container(pager: Pager): Container {.jsfget: "buffer".} =
@@ -387,17 +388,33 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
   result = cint(term.sigintCaught)
   term.sigintCaught = false
 
+proc evalJSStart(pager: Pager): bool =
+  if pager.config.start.headless == hmFalse:
+    pager.term.catchSigint()
+  let wasInEval = pager.inEval
+  pager.inEval = true
+  return wasInEval
+
+proc evalJSEnd(pager: Pager; wasInEval: bool) =
+  pager.inEval = false
+  if pager.exitCode != -1:
+    # if we are in a nested eval, then just wait until we are not.
+    if not wasInEval:
+      pager.quit(pager.exitCode)
+  else:
+    pager.runJSJobs()
+  if pager.config.start.headless == hmFalse:
+    pager.term.respectSigint()
+
 proc evalJSFree(opaque: RootRef; src, filename: string) =
   let pager = Pager(opaque)
   let ctx = pager.jsctx
-  let val = ctx.eval(src, filename,
-    JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_COMPILE_ONLY)
-  if not JS_IsException(val):
-    let ret = pager.evalJS(val)
-    if JS_IsException(ret):
-      pager.console.writeException(ctx)
-      JS_FreeValue(ctx, ret)
-  else:
+  let wasInEval = pager.evalJSStart()
+  let ret = ctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
+  let ex = JS_IsException(ret)
+  JS_FreeValue(ctx, ret)
+  pager.evalJSEnd(wasInEval)
+  if ex:
     pager.console.writeException(ctx)
 
 type CookieStreamOpaque = ref object of RootObj
@@ -629,29 +646,6 @@ proc runJSJobs(pager: Pager) =
   if pager.exitCode != -1:
     pager.quit(pager.exitCode)
 
-proc evalJSStart(pager: Pager): bool =
-  if pager.config.start.headless == hmFalse:
-    pager.term.catchSigint()
-  let wasInEval = pager.inEval
-  pager.inEval = true
-  return wasInEval
-
-proc evalJSEnd(pager: Pager; wasInEval: bool) =
-  pager.inEval = false
-  if pager.exitCode != -1:
-    # if we are in a nested eval, then just wait until we are not.
-    if not wasInEval:
-      pager.quit(pager.exitCode)
-  else:
-    pager.runJSJobs()
-  if pager.config.start.headless == hmFalse:
-    pager.term.respectSigint()
-
-proc evalJS(pager: Pager; val: JSValue): JSValue =
-  let wasInEval = pager.evalJSStart()
-  result = pager.jsctx.evalFunction(val)
-  pager.evalJSEnd(wasInEval)
-
 proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
     JSValue =
   let ctx = pager.jsctx
@@ -706,17 +700,12 @@ proc queueStatusUpdate(pager: Pager) {.jsfunc.} =
     pager.updateStatus = ussUpdate
 
 # called from JS command()
-proc evalCommand(pager: Pager; src: string): JSValue {.jsfunc.} =
+proc evalCommand(ctx: JSContext; pager: Pager; src: string): JSValue
+    {.jsfunc.} =
   let container = pager.pinned.console
   if container != nil:
     container.flags.incl(cfTailOnLoad)
-  let ctx = pager.jsctx
-  let val = ctx.eval(src, "<command>",
-    JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_COMPILE_ONLY)
-  if JS_IsException(val):
-    pager.console.writeException(ctx)
-    return
-  return pager.evalJS(val)
+  return ctx.eval(src, "<command>", JS_EVAL_TYPE_GLOBAL)
 
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =
   #TODO might want to make this an opaque type
@@ -781,30 +770,21 @@ proc handleUserInput(pager: Pager): Opt[void] =
   ok()
 
 # private
-proc runStartupScript(pager: Pager) {.jsfunc.} =
-  if pager.config.start.startupScript != "":
-    let ps = newPosixStream(pager.config.start.startupScript)
-    let s = if ps != nil:
-      var x = ps.readAll()
-      ps.sclose()
-      move(x)
-    else:
-      pager.config.start.startupScript
-    let flag = if pager.config.start.startupScript.endsWith(".mjs"):
-      JS_EVAL_TYPE_MODULE
-    else:
-      JS_EVAL_TYPE_GLOBAL
-    let ctx = pager.jsctx
-    let val = ctx.eval(s, pager.config.start.startupScript,
-      flag or JS_EVAL_FLAG_COMPILE_ONLY)
-    if not JS_IsException(val):
-      let res = pager.evalJS(val)
-      if not JS_IsException(res):
-        JS_FreeValue(ctx, res)
-      else:
-        pager.console.writeException(ctx)
-    else:
-      pager.console.writeException(ctx)
+proc runStartupScript(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
+  if pager.config.start.startupScript == "":
+    return JS_UNDEFINED
+  let ps = newPosixStream(pager.config.start.startupScript)
+  let s = if ps != nil:
+    var x = ps.readAll()
+    ps.sclose()
+    move(x)
+  else:
+    pager.config.start.startupScript
+  let flag = if pager.config.start.startupScript.endsWith(".mjs"):
+    JS_EVAL_TYPE_MODULE
+  else:
+    JS_EVAL_TYPE_GLOBAL
+  return ctx.eval(s, pager.config.start.startupScript, flag)
 
 proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
     charset: Charset; history: bool) =
@@ -838,12 +818,15 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   let history = pager.config.start.headless == hmFalse and history
   let ctx = pager.jsctx
   let pages = ctx.newArrayFrom(pages)
+  let wasInEval = pager.evalJSStart()
   let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
   doAssert not JS_IsException(jsInit)
   let res = ctx.callSinkFree(jsInit, pager.jsmap.pager, pages,
     ctx.toJS(contentType), ctx.toJS(charset), ctx.toJS(history), ctx.toJS(pipe))
-  if not JS_IsException(res):
-    JS_FreeValue(ctx, res)
+  let ex = JS_IsException(res)
+  JS_FreeValue(ctx, res)
+  pager.evalJSEnd(wasInEval)
+  if not ex:
     if pager.config.start.headless == hmFalse:
       discard pager.inputLoop()
     else:
@@ -1484,6 +1467,8 @@ proc dupeBuffer2(pager: Pager; container: Container; url: URL): Container
     pager.deleteContainer(nc, nil)
   else:
     pager.cloned(nc, newSocketStream(fd))
+    # I need numLines so that setCursorY works immediately
+    nc.iface.numLines = container.iface.numLines
   return nc
 
 proc dupeBuffer(pager: Pager): Container {.jsfunc.} =
@@ -1778,24 +1763,6 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
       s &= ' '
     s &= quoteFile(file, qsNormal)
   move(s)
-
-proc openEditor(pager: Pager; input: var string): Opt[void] =
-  let tmpf = pager.getTempFile()
-  discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
-  input &= '\n'
-  if chafile.writeFile(tmpf, input, 0o600).isErr:
-    pager.alert("failed to write temporary file")
-    return err()
-  let cmd = pager.getEditorCommand(tmpf)
-  if cmd == "":
-    pager.alert("invalid external.editor command")
-    return err()
-  ?pager.runCommand(cmd, suspend = true, wait = false, pager.defaultEnv())
-  ?chafile.readFile(tmpf, input)
-  discard unlink(cstring(tmpf))
-  if input.len > 0 and input[input.high] == '\n':
-    input.setLen(input.high)
-  ok()
 
 proc windowChange(pager: Pager) =
   # maybe we didn't change dimensions, just color mode
@@ -2200,12 +2167,6 @@ proc addConsole(pager: Pager; interactive: bool) =
       return
     pager.alert("Failed to open temp file for console")
   pager.console.err = cast[ChaFile](stderr)
-
-proc openEditor(ctx: JSContext; pager: Pager; s: string): JSValue {.jsfunc.} =
-  var s = s
-  if pager.openEditor(s).isOk:
-    return ctx.toJS(s)
-  return JS_NULL
 
 proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
   if pager.loader.redirectToFile(data.outputId, path, data.url):

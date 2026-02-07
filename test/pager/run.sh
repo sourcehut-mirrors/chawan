@@ -7,3 +7,5 @@ sed -E -e 's/^#([^ ])/\1/' ../../bonus/config.toml >"${TMPDIR:-/tmp}"/config.tom
 if ! $CHA -C"${TMPDIR:-/tmp}/config.toml" /dev/null | diff /dev/null -
 then	exit 1
 fi
+
+$CHA -r 'quit()'
