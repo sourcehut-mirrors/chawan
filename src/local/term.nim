@@ -2430,13 +2430,13 @@ var acceptSigint* {.global.} = false
 proc catchSigint*(term: Terminal) =
   term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
   acceptSigint = true
-  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.newTermios)
+  discard tcSetAttr(term.istream.fd, TCSADRAIN, addr term.newTermios)
 
 proc respectSigint*(term: Terminal) =
   sigintCaught = false
   acceptSigint = false
   term.newTermios.c_lflag = term.newTermios.c_lflag and not ISIG
-  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.newTermios)
+  discard tcSetAttr(term.istream.fd, TCSADRAIN, addr term.newTermios)
 
 proc quit*(term: Terminal): Opt[void] =
   if term.isatty():
@@ -2466,6 +2466,7 @@ proc quit*(term: Terminal): Opt[void] =
     ?term.blockIO()
     term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
     discard tcSetAttr(term.istream.fd, TCSANOW, addr term.newTermios)
+    signal(SIGINT, SIG_DFL)
     while term.eparser.queryState != qsNone:
       if term.ahandleRead().isErr:
         break
