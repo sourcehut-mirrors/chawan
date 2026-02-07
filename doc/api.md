@@ -522,6 +522,11 @@ already there, to the end of the previous word.</td>
 </tr>
 
 <tr>
+<td>`async getCurrentWord(x = this.cursorx, y = this.cursory)`</td>
+<td>Returns the word currently under the cursor.</td>
+</tr>
+
+<tr>
 <td>`cursorNextLink()`, `cursorPrevLink()`</td>
 <td>Move the cursor to the beginning of the next/previous clickable
 element.</td>

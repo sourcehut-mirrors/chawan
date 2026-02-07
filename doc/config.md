@@ -1787,6 +1787,18 @@ position.</td>
 <td>Reload the current buffer with cookies enabled/disabled.</td>
 </tr>
 
+<tr>
+<td><kbd>C-a</kbd>, <kbd>\*</kbd></td>
+<td>`cursorSearchWordForward`</td>
+<td>Search for the word currently under the cursor.</td>
+</tr>
+
+<tr>
+<td><kbd>#</kbd></td>
+<td>`cursorSearchWordBackward`</td>
+<td>Search for the word currently under the cursor, backwards.</td>
+</tr>
+
 </table>
 
 

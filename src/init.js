@@ -159,6 +159,16 @@ globalThis.cmd = {
             pager.alert("Error; please install xsel or adjust external.copy-cmd");
         pager.cursorToggleSelection();
     },
+    cursorSearchWordForward: async n => {
+        const word = await pager.getCurrentWord();
+        pager.regex = new RegExp('\\b' + RegExp.escape(word) + '\\b', "g");
+        return pager.searchNext(n);
+    },
+    cursorSearchWordBackward: async n => {
+        const word = await pager.getCurrentWord();
+        pager.regex = new RegExp('\\b' + RegExp.escape(word) + '\\b', "g");
+        return pager.searchPrev(n);
+    },
     line: {
         openEditor: () => {
             const res = pager.openEditor(line.text);
@@ -314,13 +324,6 @@ Pager.prototype.compileSearchRegex = function(s) {
     if (!hasC && !hasUpper && ignoreCaseOpt == "auto")
         ignoreCase = true;
     return new RegExp(s2, ignoreCase ? "gui" : "gu");
-}
-
-Pager.prototype.setSearchRegex = function(s, flags, reverse = false) {
-    if (!flags.includes('g'))
-        flags += 'g';
-    this.regex = new RegExp(s, flags);
-    this.reverseSearch = reverse;
 }
 
 Pager.prototype.searchNext = async function(n = 1) {
@@ -1282,6 +1285,22 @@ Buffer.prototype.cursorViWordEnd = function(n) {
 
 Buffer.prototype.cursorBigWordEnd = function(n) {
     return this.cursorNextWordImpl(ReBigWordEnd, n);
+}
+
+Buffer.prototype.getCurrentWord = async function(x = this.cursorx,
+                                                 y = this.cursory) {
+    const iface = this.iface
+    if (iface == null)
+        return;
+    let p1 = iface.findPrevMatch(ReViWordStart, x + 1, y, false, 1);
+    let p2 = iface.findNextMatch(ReViWordEnd, x - 1, y, false, 1);
+    let [x1, y1, w1] = await p1;
+    let [x2, y2, w2] = await p2;
+    if (y1 < y)
+        x1 = 0;
+    if (y2 > y)
+        x2 = 0;
+    return iface.getSelectionText(x1, y, x2, y, "normal");
 }
 
 /* zb */

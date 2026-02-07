@@ -1344,6 +1344,9 @@ C-w toggleWrap
 M-y copyURL
 M-p gotoClipboardURL
 f toggleLinkHints
+C-a cursorSearchWordForward
+* cursorSearchWordForward
+# cursorSearchWordBackward
 """
 
 const LineCommands = """
