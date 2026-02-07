@@ -1,3 +1,21 @@
+0.11.0 (2026.02.07)
+* switch back to upstream QuickJS
+* add .jsmark
+* add many useful procedures to jsutils
+* fix compilation on 1.6.14
+* best-effort ORC support
+* make nim-results optional
+* make .jsfin inherited (breaking)
+* refactor API (very breaking)
+* remove support for value-only objects
+* remove jsregex (libregexp bindings remain)
+* remove extraGetSet
+QuickJS-NG has plenty of bugs that upstream has fixed in the meantime,
+as well as other problems (slower, less portable), so I've switched back.
+ORC "works" if you're prepared to fight the compiler.
+fromJS has changed a lot, now it returns an "error code" instead of results.
+This is the last public release of this library.
+
 0.10.0 (2025.03.28)
 * implement [Replaceable] property as .jsrget, .jsrfget
 * allow sink parameters
