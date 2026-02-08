@@ -12,7 +12,7 @@ proc testFun(x: MyGlobal): string {.jsfunc.} =
   return "Hello, " & x.s
 
 test "hello JS":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let global = MyGlobal(s: "world!")
   ctx.registerType(MyGlobal, asglobal = true)

@@ -464,7 +464,7 @@ proc main() =
   let forkserver = forkForkServer(loaderSockVec)
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
-  let jsrt = newJSRuntime()
+  let jsrt = newGlobalJSRuntime()
   let jsctx = jsrt.newJSContext()
   var ctx = ParamParseContext(jsctx: jsctx, params: commandLineParams(), i: 0)
   if ctx.parse().isErr:

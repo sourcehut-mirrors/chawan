@@ -9,7 +9,7 @@ import monoucha/javascript
 import monoucha/jserror
 
 test "Hello, world":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   const code = "'Hello from JS!'"
   let val = ctx.eval(code)
@@ -21,7 +21,7 @@ test "Hello, world":
   rt.free()
 
 test "Error handling":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   const code = "abcd"
   let res = ctx.eval(code, "<test>")
@@ -47,7 +47,7 @@ proc jsAssert(earth: Earth; pred: bool) {.jsfunc: "assert".} =
 test "registerType: registering type interfaces":
   type Moon = ref object
   jsDestructor(Moon)
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Moon)
   const code = "Moon"
@@ -63,7 +63,7 @@ function Moon() {
   rt.free()
 
 test "Global objects":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let earth = Earth()
   ctx.registerType(Earth, asglobal = true)
@@ -78,7 +78,7 @@ test "Global objects":
 test "Inheritance":
   jsDestructor(Moon)
   jsDestructor(Planet)
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let planetCID = ctx.registerType(Planet)
   ctx.registerType(Earth, parent = planetCID, asglobal = true)
@@ -101,7 +101,7 @@ test "jsget, jsset: basic property reflectors":
       population {.jsset.}: int64
 
   jsDestructor(Moon)
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let earth = Earth(moon: Moon(), population: 1, name: "Earth")
   ctx.registerType(Earth, asglobal = true)
@@ -134,7 +134,7 @@ proc jsAssert(window: Window; pred: bool) {.jsfunc: "assert".} =
 test "jsfunc: regular functions":
   proc log(console: Console; s: string) {.jsfunc.} =
     echo s
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let window = Window(console: Console())
   ctx.registerType(Window, asglobal = true)
@@ -163,7 +163,7 @@ proc newJSFile(path: string): JSFile {.jsctor.} =
   )
 
 test "jsctor: constructors":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
@@ -185,7 +185,7 @@ proc setName(file: JSFile; s: string) {.jsfset: "name".} =
   file.path = file.path.substr(0, i) & s
 
 test "jsfget, jsfset: custom property reflectors":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
@@ -207,7 +207,7 @@ proc jsExists(path: string): bool {.jsstfunc: "JSFile#exists".} =
   return fileExists(path)
 
 test "jsstfunc: static functions":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
@@ -235,7 +235,7 @@ proc getOwner(file: JSFile): int {.jsuffget.} =
   return file.owner
 
 test "jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
@@ -262,7 +262,7 @@ proc finalize(file: JSFile) {.jsfin.} =
     inc unrefd
 
 test "jsfin: object finalizers":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   GC_fullCollect() # ensure refc runs
   unrefd = 0 # ignore previous unrefs

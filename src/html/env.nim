@@ -575,7 +575,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
   for it in window.weakMap.mitems:
     it = JS_UNDEFINED
   if scripting != smFalse:
-    let rt = newJSRuntime()
+    let rt = newGlobalJSRuntime()
     let ctx = rt.newJSContext()
     if window.addScripting(ctx).isErr:
       window.console.error("failed to initialize JS")

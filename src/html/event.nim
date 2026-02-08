@@ -45,11 +45,9 @@ type
     timeStamp {.jsget.}: float64
 
   CustomEvent* = ref object of Event
-    rt: JSRuntime
     detail {.jsget.}: JSValue
 
   MessageEvent* = ref object of Event
-    rt: JSRuntime
     data {.jsget.}: JSValue
     origin {.jsget.}: string
 
@@ -85,7 +83,6 @@ type
   EventListener {.acyclic.} = ref object
     # if callback is undefined, the listener has been removed
     callback: JSValue
-    rt: JSRuntime
     ctype: CAtom
     capture: bool
     once: bool
@@ -95,7 +92,6 @@ type
     signal: AbortSignal
 
   AbortSignal = ref object of EventTarget
-    rt: JSRuntime
     reason {.jsget.}: JSValue
     aborted {.jsget.}: bool
     abortSteps: seq[JSValue]
@@ -136,14 +132,10 @@ iterator eventListeners(this: EventTarget): EventListener =
     yield it
     it = it.next
 
-proc finalize(target: EventTarget) {.jsfin.} =
+proc finalize(rt: JSRuntime; target: EventTarget) {.jsfin.} =
   # Can't take rt as param here, because elements may be unbound in JS.
   for el in target.eventListeners:
-    let cb = el.callback
-    let rt = el.rt
-    el.callback = JS_UNDEFINED
-    el.rt = nil
-    JS_FreeValueRT(rt, cb)
+    JS_FreeValueRT(rt, el.callback)
 
 proc mark(rt: JSRuntime; target: EventTarget; markFunc: JS_MarkFunc)
     {.jsmark.} =
@@ -248,14 +240,13 @@ proc newCustomEvent*(ctx: JSContext; ctype: CAtom;
     eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent {.jsctor.} =
   let event = CustomEvent(
     ctype: ctype,
-    rt: JS_GetRuntime(ctx),
     detail: JS_DupValue(ctx, eventInitDict.detail)
   )
   event.innerEventCreationSteps(EventInit(eventInitDict))
   return event
 
-proc finalize(this: CustomEvent) {.jsfin.} =
-  JS_FreeValueRT(this.rt, this.detail)
+proc finalize(rt: JSRuntime; this: CustomEvent) {.jsfin.} =
+  JS_FreeValueRT(rt, this.detail)
 
 proc mark(rt: JSRuntime; this: CustomEvent; markFun: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, this.detail, markFun)
@@ -273,15 +264,14 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
   let event = MessageEvent(
     ctype: ctype,
-    rt: JS_GetRuntime(ctx),
     data: JS_DupValue(ctx, eventInit.data),
     origin: eventInit.origin
   )
   event.innerEventCreationSteps(EventInit(eventInit))
   return event
 
-proc finalize(this: MessageEvent) {.jsfin.} =
-  JS_FreeValueRT(this.rt, this.data)
+proc finalize(rt: JSRuntime; this: MessageEvent) {.jsfin.} =
+  JS_FreeValueRT(rt, this.data)
 
 proc mark(rt: JSRuntime; this: MessageEvent; markFun: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, this.data, markFun)
@@ -471,7 +461,6 @@ proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtom;
       once: once,
       internal: internal,
       passive: passive,
-      rt: JS_GetRuntime(ctx),
       callback: JS_DupValue(ctx, callback),
       next: target.eventListener,
       signal: signal
@@ -536,7 +525,6 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     if it.ctype == ctype and it.internal:
       let callback = it.callback
       it.callback = JS_UNDEFINED
-      it.rt = nil
       JS_FreeValue(ctx, callback)
       if prev == nil:
         eventTarget.eventListener = it.next
@@ -643,7 +631,6 @@ proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
         ctx.strictEquals(it.callback, callback) and it.capture == capture:
       let callback = it.callback
       it.callback = JS_UNDEFINED
-      it.rt = nil
       JS_FreeValue(ctx, callback)
       if prev == nil:
         eventTarget.eventListener = it.next
@@ -749,9 +736,9 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event): JSValue
   return JS_TRUE
 
 # AbortSignal
-proc finalize(this: AbortSignal) {.jsfin.} =
-  JS_FreeValueRT(this.rt, this.reason)
-  this.rt.freeValues(this.abortSteps)
+proc finalize(rt: JSRuntime; this: AbortSignal) {.jsfin.} =
+  JS_FreeValueRT(rt, this.reason)
+  rt.freeValues(this.abortSteps)
 
 proc mark(rt: JSRuntime; this: AbortSignal; markFun: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, this.reason, markFun)
@@ -766,18 +753,18 @@ proc toSignalReason(ctx: JSContext; reason: JSValueConst): JSValue =
 
 proc abortSignalAbort(ctx: JSContext; reason: JSValueConst = JS_UNDEFINED):
     AbortSignal {.jsstfunc: "AbortSignal#abort".} =
-  AbortSignal(rt: JS_GetRuntime(ctx), reason: ctx.toSignalReason(reason))
+  AbortSignal(reason: ctx.toSignalReason(reason))
 
 proc throwIfAborted(ctx: JSContext; signal: AbortSignal): JSValue {.jsfunc.} =
   if signal.aborted:
-    return JS_Throw(ctx, JS_DupValueRT(signal.rt, signal.reason))
+    return JS_Throw(ctx, JS_DupValue(ctx, signal.reason))
   return JS_UNDEFINED
 
 #TODO _any
 
 # AbortController
 proc newAbortController(ctx: JSContext): AbortController {.jsctor.} =
-  let signal = AbortSignal(rt: JS_GetRuntime(ctx), reason: JS_UNDEFINED)
+  let signal = AbortSignal(reason: JS_UNDEFINED)
   AbortController(signal: signal)
 
 proc abort(ctx: JSContext; this: AbortController; reason: JSValueConst): JSValue

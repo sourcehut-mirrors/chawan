@@ -13,7 +13,7 @@ proc newJSFile(): JSFile {.jsctor.} =
   return JSFile()
 
 test "jsfin: object finalizers":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(JSFile)
   const code = """

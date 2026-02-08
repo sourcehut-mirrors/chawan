@@ -25,15 +25,14 @@ type
     navigationId {.jsget.}: uint64
 
   PerformanceMark = ref object of PerformanceEntry
-    rt: JSRuntime
     detail {.jsget.}: JSValue
 
 jsDestructor(Performance)
 jsDestructor(PerformanceEntry)
 jsDestructor(PerformanceMark)
 
-proc finalize(this: PerformanceMark) {.jsfin.} =
-  JS_FreeValueRT(this.rt, this.detail)
+proc finalize(rt: JSRuntime; this: PerformanceMark) {.jsfin.} =
+  JS_FreeValueRT(rt, this.detail)
 
 proc mark(rt: JSRuntime; this: PerformanceMark; markFun: JS_MarkFunc)
     {.jsmark.} =
@@ -92,7 +91,6 @@ proc mark(ctx: JSContext; this: Performance; name: string;
     id: this.getEntryId(),
     name: name,
     startTime: startTime,
-    rt: JS_GetRuntime(ctx),
     detail: detail
   )
   ok(mark)

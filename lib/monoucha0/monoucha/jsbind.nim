@@ -111,7 +111,7 @@ type
   JSIterableType* = enum
     jitNone, jitValue, jitPair
 
-var runtimes {.threadvar.}: seq[JSRuntime]
+var globalRuntime {.global.}: JSRuntime
 
 proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
   return alloc(size)
@@ -132,13 +132,20 @@ proc newJSRuntime*(): JSRuntime =
     js_realloc: bindRealloc,
     js_malloc_usable_size: nil
   )
-  let rt = JS_NewRuntime2(addr mf, nil)
+  return JS_NewRuntime2(addr mf, nil)
+
+proc setGlobalRuntime*(rt: JSRuntime) =
   let opaque = JSRuntimeOpaque()
   GC_ref(opaque)
   JS_SetRuntimeOpaque(rt, cast[pointer](opaque))
   # Must be added after opaque is set, or there is a chance of
   # nimFinalizeForJS dereferencing it (at the new call).
-  runtimes.add(rt)
+  globalRuntime = rt
+
+proc newGlobalJSRuntime*(): JSRuntime =
+  let rt = newJSRuntime()
+  if rt != nil:
+    setGlobalRuntime(rt)
   return rt
 
 proc newJSContext*(rt: JSRuntime): JSContext =
@@ -241,7 +248,7 @@ proc free*(rt: JSRuntime) =
     JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.jsp))
   # GC will run again now (in QJS code).
   JS_FreeRuntime(rt)
-  runtimes.del(runtimes.find(rt))
+  globalRuntime = nil
 
 proc setGlobal*[T](ctx: JSContext; obj: T) =
   ## Set the global variable to the reference `obj`.
@@ -1283,8 +1290,8 @@ proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
               varNode.strVal & ".  This will cause memory leaks.")
 
 proc nimFinalizeForJS*(obj, typeptr: pointer) =
-  var lastrt: JSRuntime = nil
-  for rt in runtimes:
+  let rt = globalRuntime
+  if rt != nil:
     let rtOpaque = rt.getOpaque()
     rtOpaque.plist.withValue(obj, pp):
       let val = JS_MKPTR(JS_TAG_OBJECT, pp[])
@@ -1297,16 +1304,12 @@ proc nimFinalizeForJS*(obj, typeptr: pointer) =
         rtOpaque.destroying = nil
       else:
         JS_FreeValueRT(rt, val)
-      return
-    lastrt = rt
-  # No JSValue exists for the object, but it likely still expects us to
-  # free it.
-  # We pass nil as the runtime, since that's the only sensible solution.
-  if lastrt != nil:
-    let rtOpaque = lastrt.getOpaque()
-    let classid = rtOpaque.typemap.getOrDefault(typeptr)
-    for fin in rtOpaque.finalizers(classid):
-      fin(nil, obj)
+    do:
+      # No JSValue exists for the object, but it likely still expects us to
+      # free it.
+      let classid = rtOpaque.typemap.getOrDefault(typeptr)
+      for fin in rtOpaque.finalizers(classid):
+        fin(rt, obj)
 
 template jsDestructor*[U](T: typedesc[ref U]) =
   static:

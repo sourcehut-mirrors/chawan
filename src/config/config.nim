@@ -56,7 +56,6 @@ type
     val: JSValue
 
   ActionMap* = ref object
-    rt: JSRuntime
     defaultAction*: JSValue
     t*: seq[Action]
     keyIdx: int
@@ -311,8 +310,7 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   warnings: var seq[string]; jsctx: JSContext; name: string; laxnames = false):
   Err[string]
 
-proc finalize(map: ActionMap) {.jsfin.} =
-  let rt = map.rt
+proc finalize(rt: JSRuntime; map: ActionMap) {.jsfin.} =
   JS_FreeValueRT(rt, map.defaultAction)
   for it in map.t:
     JS_FreeValueRT(rt, it.val)
@@ -323,7 +321,7 @@ proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
     JS_MarkValue(rt, it.val, markFunc)
 
 proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
-  let map = ActionMap(rt: JS_GetRuntime(ctx), defaultAction: JS_UNDEFINED)
+  let map = ActionMap(defaultAction: JS_UNDEFINED)
   if defaultAction != "":
     map.defaultAction = ctx.evalCmdDecl(defaultAction)
   var dummy: seq[string]

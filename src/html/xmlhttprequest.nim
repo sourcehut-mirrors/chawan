@@ -62,7 +62,6 @@ type
     requestURL: URL
     headers: Headers
     response: Response
-    rt: JSRuntime
     responseObject: JSValue
     received: string
     contentTypeOverride: string
@@ -87,12 +86,11 @@ proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
   return XMLHttpRequest(
     upload: upload,
     headers: newHeaders(hgRequest),
-    responseObject: JS_UNDEFINED,
-    rt: JS_GetRuntime(ctx)
+    responseObject: JS_UNDEFINED
   )
 
-proc finalize(this: XMLHttpRequest) {.jsfin.} =
-  JS_FreeValueRT(this.rt, this.responseObject)
+proc finalize(rt: JSRuntime; this: XMLHttpRequest) {.jsfin.} =
+  JS_FreeValueRT(rt, this.responseObject)
 
 proc mark(rt: JSRuntime; this: XMLHttpRequest; markFun: JS_MarkFunc)
     {.jsmark.} =

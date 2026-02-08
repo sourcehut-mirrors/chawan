@@ -17,7 +17,7 @@ type TestEnum2 = enum
   te2C = "c", te2B = "b", te2A = "a"
 
 test "enums":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let val = ctx.toJS(teB)
   var e: TestEnum
@@ -31,7 +31,7 @@ test "enums":
   rt.free()
 
 test "enums null":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let val = ctx.toJS("b\0c")
   var e: TestEnum
@@ -62,7 +62,7 @@ proc default(e: typedesc[TestEnum]): TestEnum =
   return teB
 
 test "jsdict undefined missing fields":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   var res: TestDict0
   assert ctx.fromJS(JS_UNDEFINED, res).isErr
@@ -70,7 +70,7 @@ test "jsdict undefined missing fields":
   rt.free()
 
 test "optional jsdict undefined":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   var res: TestDict2
   assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
@@ -78,7 +78,7 @@ test "optional jsdict undefined":
   rt.free()
 
 test "optional jsdict inherited":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   var res: TestDict3
   assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
@@ -98,7 +98,7 @@ proc subroutine(ctx: JSContext; val: JSValueConst) =
   doAssert ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9)) == dprSuccess
 
 test "jsdict transitive JSValue descendant":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   const code = """
 const val = {
@@ -115,7 +115,7 @@ val"""
   rt.free()
 
 test "jspropenumlist":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   var list = newJSPropertyEnumList(ctx, 0)
   list.add(1)
@@ -128,7 +128,7 @@ test "jspropenumlist":
   rt.free()
 
 test "fromjs-seq":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   var test = @[1, 2, 3, 4]
   let jsTest = ctx.toJS(test)
@@ -140,7 +140,7 @@ test "fromjs-seq":
   rt.free()
 
 test "fromjs-tuple":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   var test = (2, "hi")
   let jsTest = ctx.toJS(test)
@@ -162,7 +162,7 @@ proc bar(x: X; s: sink(string)) {.jsfunc.} =
   discard
 
 test "sink":
-  let rt = newJSRuntime()
+  let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(X)
   ctx.free()

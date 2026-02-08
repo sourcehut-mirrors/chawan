@@ -282,7 +282,6 @@ type
   Collection = ref CollectionObj
 
   NodeIterator = ref object of Collection
-    ctx: JSContext
     filter: JSValue
     u: uint32
 
@@ -2927,9 +2926,9 @@ proc finalize(collection: HTMLCollection) {.jsfin.} =
 proc finalize(collection: NodeList) {.jsfin.} =
   collection.finalize0()
 
-proc finalize(collection: NodeIterator) {.jsfin.} =
+proc finalize(rt: JSRuntime; collection: NodeIterator) {.jsfin.} =
   collection.finalize0()
-  JS_FreeValue(collection.ctx, collection.filter)
+  JS_FreeValueRT(rt, collection.filter)
 
 proc mark(rt: JSRuntime; this: NodeIterator; markFun: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, this.filter, markFun)
@@ -3827,7 +3826,6 @@ proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
     inclusive = true
   )
   collection.filter = JS_DupValue(ctx, filter)
-  collection.ctx = ctx
   collection.match =
     proc(node: Node): bool =
       let n = 1u32 shl (uint32(node.nodeType) - 1)
@@ -3835,7 +3833,6 @@ proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
         return false
       if JS_IsNull(collection.filter):
         return true
-      let ctx = collection.ctx
       let filter = collection.filter
       let node = ctx.toJS(node)
       if JS_IsException(node):

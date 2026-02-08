@@ -50,7 +50,7 @@ version if you need a stable API.
 ```nim
 import monoucha/javascript
 
-let rt = newJSRuntime()
+let rt = newGlobalJSRuntime()
 let ctx = rt.newJSContext()
 const code = "'Hello from JS!'"
 let val = ctx.eval(code)
