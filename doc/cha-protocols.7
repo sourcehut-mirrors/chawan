@@ -220,24 +220,25 @@ is in \f[CR]\(ti/.config/chawan\f[R]), substitute
 .IP
 .EX
 \f[I]#!/bin/sh\f[R]
-\f[I]# We are going to wait a second from now, but want Chawan to show\f[R]
-\f[I]# \(dqDownloading...\(dq instead of \(dqConnecting...\(dq. So signal to the browser\f[R]
-\f[I]# that the connection has succeeded.\f[R]
+\f[I]# Signal to the browser that the connection has succeeded.  After this,\f[R]
+\f[I]# Chawan will now \(dqDownloading\(dq instead of \(dqConnecting\(dq.\f[R]
 printf \(aqCha\-Control: Connected\(rsn\(aq
-sleep 1 \f[I]# sleep\f[R]
+
+sleep 1 \f[I]# simulate a delay\f[R]
+
 \f[I]# Status is a special header that signals the equivalent HTTP status code.\f[R]
-printf \(aqStatus: 200\(aq \f[I]# HTTP OK\f[R]
-\f[I]# Tell the browser that no more control headers are to be expected.\f[R]
-\f[I]# This is only useful when you want to send remotely received headers;\f[R]
-\f[I]# then, it would be an attack vector to simply send the headers without\f[R]
-\f[I]# ControlDone, as nothing stops the website from sending a Cha\-Control\f[R]
-\f[I]# header.  With ControlDone sent, subsequent Cha\-Control headers will be\f[R]
-\f[I]# interpreted as regular headers.\f[R]
+printf \(aqStatus: 200\(rsn\(aq \f[I]# HTTP OK\f[R]
+
+\f[I]# ControlDone is only useful if you want to send remotely received headers\f[R]
+\f[I]# (i.e. in an HTTP adapter).  With ControlDone sent, subsequent Cha\-Control\f[R]
+\f[I]# headers are not interpreted specially.\f[R]
 printf \(aqCha\-Control: ControlDone\(rsn\(aq
-\f[I]# As in HTTP, you must send an empty line before the body.\f[R]
+
+\f[I]# As in HTTP, send an empty line before the body.\f[R]
 printf \(aq\(rsn\(aq
-\f[I]# Now, print the body. We take the path passed to the URL; urimethodmap\f[R]
-\f[I]# sets this as MAPPED_URI_PATH. This is URI\-encoded, so we also run the urldec\f[R]
+
+\f[I]# Print the body.  We take the path passed to the URL, which urimethodmap\f[R]
+\f[I]# sets as MAPPED_URI_PATH.  This is URI\-encoded, so we also run the urldec\f[R]
 \f[I]# utility on it.\f[R]
 cowsay \(dq$(printf \(aq%s\(rsn\(aq \(dq$MAPPED_URI_PATH\(dq \f[B]|\f[R] \(dq$CHA_LIBEXEC_DIR\(dq/urldec)\(dq
 .EE

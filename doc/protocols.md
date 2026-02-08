@@ -236,24 +236,25 @@ in `~/.config/chawan`), substitute `~/.chawan/cgi-bin` with
 
 ```sh
 #!/bin/sh
-# We are going to wait a second from now, but want Chawan to show
-# "Downloading..." instead of "Connecting...". So signal to the browser
-# that the connection has succeeded.
+# Signal to the browser that the connection has succeeded.  After this,
+# Chawan will now "Downloading" instead of "Connecting".
 printf 'Cha-Control: Connected\n'
-sleep 1 # sleep
+
+sleep 1 # simulate a delay
+
 # Status is a special header that signals the equivalent HTTP status code.
-printf 'Status: 200' # HTTP OK
-# Tell the browser that no more control headers are to be expected.
-# This is only useful when you want to send remotely received headers;
-# then, it would be an attack vector to simply send the headers without
-# ControlDone, as nothing stops the website from sending a Cha-Control
-# header.  With ControlDone sent, subsequent Cha-Control headers will be
-# interpreted as regular headers.
+printf 'Status: 200\n' # HTTP OK
+
+# ControlDone is only useful if you want to send remotely received headers
+# (i.e. in an HTTP adapter).  With ControlDone sent, subsequent Cha-Control
+# headers are not interpreted specially.
 printf 'Cha-Control: ControlDone\n'
-# As in HTTP, you must send an empty line before the body.
+
+# As in HTTP, send an empty line before the body.
 printf '\n'
-# Now, print the body. We take the path passed to the URL; urimethodmap
-# sets this as MAPPED_URI_PATH. This is URI-encoded, so we also run the urldec
+
+# Print the body.  We take the path passed to the URL, which urimethodmap
+# sets as MAPPED_URI_PATH.  This is URI-encoded, so we also run the urldec
 # utility on it.
 cowsay "$(printf '%s\n' "$MAPPED_URI_PATH" | "$CHA_LIBEXEC_DIR"/urldec)"
 ```
