@@ -226,7 +226,7 @@ proc parseIpv4(input: string): Opt[uint32] =
   ok(res)
 
 const ForbiddenHostChars = {
-  char(0x00), '\t', '\n', '\r', ' ', '#', '/', ':', '<', '>', '?', '@', '[',
+  '\0', '\t', '\n', '\r', ' ', '#', '/', ':', '<', '>', '?', '@', '[',
   '\\', ']', '^', '|'
 }
 const ForbiddenDomainChars = ForbiddenHostChars + {'%'}
@@ -811,7 +811,8 @@ proc parsePort(input: openArray[char]; pointer: var int; url: URL;
 proc startsWithWinDriveLetter(input: openArray[char]; i: int): bool =
   if i + 1 >= input.len:
     return false
-  return input[i] in AsciiAlpha and input[i + 1] in {':', '|'}
+  return input[i] in AsciiAlpha and input[i + 1] in {':', '|'} and
+    (i + 2 >= input.len or input[i + 2] in {'/', '\\', '?', '#'})
 
 proc parseFileSlash(input: openArray[char]; pointer: var int; base, url: URL;
     override: bool): URLState =
@@ -822,9 +823,9 @@ proc parseFileSlash(input: openArray[char]; pointer: var int; base, url: URL;
     url.hostname = base.hostname
     url.hostType = base.hostType
     if not input.startsWithWinDriveLetter(pointer) and
-        base.pathname.len > 3 and base.pathname[0] in AsciiAlpha and
-        base.pathname[1] == ':' and base.pathname[2] == '/':
-      url.pathname &= base.pathname.until('/') & '/'
+        base.pathname.len >= 3 and base.pathname[1] in AsciiAlpha and
+        base.pathname[2] == ':':
+      url.pathname &= '/' & base.pathname[1] & ':'
   return usPath
 
 proc parseFile(input: openArray[char]; pointer: var int; base, url: URL;
@@ -969,8 +970,6 @@ proc parseQuery(input: openArray[char]; pointer: var int; url: URL;
 proc parseURLImpl(input: openArray[char]; base, url: URL;
     state: URLState; override: bool): URLState =
   var pointer = 0
-  # The URL is special if this is >= 0.
-  # A special port of "0" means "no port" (i.e. file scheme).
   let input = input.deleteChars({'\n', '\t'})
   var state = state
   if state == usSchemeStart:
