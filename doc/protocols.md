@@ -256,12 +256,17 @@ printf '\n'
 # Print the body.  We take the path passed to the URL, which urimethodmap
 # sets as MAPPED_URI_PATH.  This is URI-encoded, so we also run the urldec
 # utility on it.
-cowsay "$(printf '%s\n' "$MAPPED_URI_PATH" | "$CHA_LIBEXEC_DIR"/urldec)"
+printf '%s\n' "$MAPPED_URI_PATH" | "$CHA_LIBEXEC_DIR"/urldec | cowsay
 ```
 
-Now, create a ".urimethodmap" file in your `$HOME` directory.
+Don't forget to set the executable bit, e.g.
 
-Then, enter into it the following:
+```sh
+chmod +x ~/.config/chawan/cgi-bin/cowsay.cgi
+```
+
+Finally, create a ".urimethodmap" file in your `$HOME` directory, with the
+following content:
 
 ```
 cowsay:		/cgi-bin/cowsay.cgi

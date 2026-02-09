@@ -240,13 +240,17 @@ printf \(aq\(rsn\(aq
 \f[I]# Print the body.  We take the path passed to the URL, which urimethodmap\f[R]
 \f[I]# sets as MAPPED_URI_PATH.  This is URI\-encoded, so we also run the urldec\f[R]
 \f[I]# utility on it.\f[R]
-cowsay \(dq$(printf \(aq%s\(rsn\(aq \(dq$MAPPED_URI_PATH\(dq \f[B]|\f[R] \(dq$CHA_LIBEXEC_DIR\(dq/urldec)\(dq
+printf \(aq%s\(rsn\(aq \(dq$MAPPED_URI_PATH\(dq \f[B]|\f[R] \(dq$CHA_LIBEXEC_DIR\(dq/urldec \f[B]|\f[R] cowsay
 .EE
 .PP
-Now, create a \(lq.urimethodmap\(rq file in your \f[CR]$HOME\f[R]
-directory.
+Don\(cqt forget to set the executable bit, e.g.
+.IP
+.EX
+chmod +x \(ti/.config/chawan/cgi\-bin/cowsay.cgi
+.EE
 .PP
-Then, enter into it the following:
+Finally, create a \(lq.urimethodmap\(rq file in your \f[CR]$HOME\f[R]
+directory, with the following content:
 .IP
 .EX
 cowsay:		/cgi\-bin/cowsay.cgi
