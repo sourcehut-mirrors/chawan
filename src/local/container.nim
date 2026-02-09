@@ -515,6 +515,8 @@ proc requestLines(container: Container): EmptyPromise =
       if container.startpos.isSome and
           res.numLines >= container.startpos.get.cursor.y:
         container.pos = container.startpos.get
+        container.iface.fromx = container.fromx
+        container.iface.fromy = container.fromy
         container.needslines = true
         container.startpos = none(CursorState)
         discard container.sendCursorPosition()
@@ -718,6 +720,9 @@ proc pushCursorPos(container: Container) {.jsfunc.} =
 proc popCursorPos(container: Container; nojump = false) {.jsfunc.} =
   if container.bpos.len > 0:
     container.pos = container.bpos.pop()
+    if container.iface != nil:
+      container.iface.fromx = container.fromx
+      container.iface.fromy = container.fromy
     if not nojump:
       container.updateCursor()
       discard container.sendCursorPosition()
