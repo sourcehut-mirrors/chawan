@@ -1454,7 +1454,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
     ),
     display: DisplayConfig(
       noFormatMode: {ffOverline},
-      highlightColor: ANSIColor(7).cssColor(), # cyan
+      highlightColor: ANSIColor(6).cssColor(), # cyan
       highlightMarks: true,
       minimumContrast: 100,
       columns: 80,
