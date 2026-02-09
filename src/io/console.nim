@@ -11,9 +11,6 @@ import utils/twtstr
 
 type Console* = ref object
   err*: ChaFile
-  clearFun*: proc() {.raises: [].}
-  showFun*: proc() {.raises: [].}
-  hideFun*: proc() {.raises: [].}
 
 # Forward declarations
 proc flush*(console: Console)
@@ -65,23 +62,6 @@ proc jsConsoleLog(ctx: JSContext; this: JSValueConst; argc: cint;
 
 proc jsConsoleClear(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
-  let console = ctx.getConsoleImpl()
-  if console.clearFun != nil:
-    console.clearFun()
-  return JS_UNDEFINED
-
-proc jsConsoleShow(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray): JSValue {.cdecl.} =
-  let console = ctx.getConsoleImpl()
-  if console.showFun != nil:
-    console.showFun()
-  return JS_UNDEFINED
-
-proc jsConsoleHide(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray): JSValue {.cdecl.} =
-  let console = ctx.getConsoleImpl()
-  if console.hideFun != nil:
-    console.hideFun()
   return JS_UNDEFINED
 
 let jsConsoleFuncs {.global.} = [
@@ -91,8 +71,6 @@ let jsConsoleFuncs {.global.} = [
     JS_CFUNC_DEF("error", 0, jsConsoleLog),
     JS_CFUNC_DEF("info", 0, jsConsoleLog),
     JS_CFUNC_DEF("warn", 0, jsConsoleLog),
-    JS_CFUNC_DEF("show", 0, jsConsoleShow),
-    JS_CFUNC_DEF("hide", 0, jsConsoleHide),
     JS_CFUNC_DEF("clear", 0, jsConsoleClear),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "console", JS_PROP_CONFIGURABLE),
 ]

@@ -221,6 +221,10 @@ for (const it of ["submit", "backspace", "delete", "cancel", "prevWord",
 /* backwards compat: cmd.pager and cmd.buffer used to be separate */
 cmd.pager = cmd.buffer = cmd;
 
+console.show = () => pager.showConsole();
+console.hide = () => pager.hideConsole();
+console.clear = () => pager.clearConsole();
+
 /*
  * Util
  */

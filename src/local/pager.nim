@@ -2118,7 +2118,8 @@ proc addConsoleFile(pager: Pager): Opt[ChaFile] =
 
 const ConsoleTitle = "Browser Console"
 
-proc showConsole(pager: Pager) =
+# private
+proc showConsole(pager: Pager) {.jsfunc.} =
   if pager.consoleCacheId == -1:
     return
   let current = pager.container
@@ -2132,11 +2133,13 @@ proc showConsole(pager: Pager) =
     pager.pinned.prev = current
     pager.setContainer(pager.pinned.console)
 
-proc hideConsole(pager: Pager) =
+# private
+proc hideConsole(pager: Pager) {.jsfunc.} =
   if pager.consoleCacheId != -1 and pager.container == pager.pinned.console:
     pager.setContainer(pager.pinned.prev)
 
-proc clearConsole(pager: Pager) =
+# private
+proc clearConsole(pager: Pager) {.jsfunc.} =
   if pager.consoleCacheId == -1:
     return
   let oldCacheId = pager.consoleCacheId
@@ -2157,12 +2160,6 @@ proc addConsole(pager: Pager; interactive: bool) =
     if f := pager.addConsoleFile():
       discard f.writeLine("Type (M-c) console.hide() to return to buffer mode.")
       discard f.flush()
-      pager.console.clearFun = proc() =
-        pager.clearConsole()
-      pager.console.showFun = proc() =
-        pager.showConsole()
-      pager.console.hideFun = proc() =
-        pager.hideConsole()
       pager.console.err = f
       return
     pager.alert("Failed to open temp file for console")
