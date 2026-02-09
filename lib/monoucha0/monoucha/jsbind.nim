@@ -416,7 +416,6 @@ type
     minArgs: cint
     actualMinArgs: cint # minArgs without JSContext
     i: cint # nim parameters accounted for
-    j: cint # js parameters accounted for (not including fix ones, e.g. `this')
 
   RegistryInfo = ref object
     t: NimNode # NimNode of type
@@ -593,33 +592,6 @@ template getJSPropNamesParams(): untyped =
     newIdentDefs(ident("this"), quote do: JSValueConst)
   ]
 
-proc addParam(gen: var JSFuncGenerator; s, t, val: NimNode;
-    fallback: NimNode = nil) =
-  if t.typeKind == ntyGenericParam:
-    error("Union parameters are no longer supported. Use JSValue instead.")
-  let dl = gen.dielabel
-  if fallback == nil:
-    gen.jsFunCallList.add(quote do:
-      var `s`: `t`
-      if ctx.fromJS(`val`, `s`) == fjErr:
-        break `dl`
-    )
-  else:
-    let j = gen.j
-    gen.jsFunCallList.add(quote do:
-      var `s`: `t`
-      if `j` < argc and not JS_IsUndefined(argv[`j`]):
-        if ctx.fromJS(`val`, `s`) == fjErr:
-          break `dl`
-      else:
-        `s` = `fallback`
-    )
-
-proc addValueParam(gen: var JSFuncGenerator; s, t: NimNode;
-    fallback: NimNode = nil) =
-  let j = gen.j
-  gen.addParam(s, t, quote do: argv[`j`], fallback)
-
 proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
@@ -635,45 +607,51 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   gen.jsFunCall.add(s)
   inc gen.i
 
-proc addFixParam(gen: var JSFuncGenerator; name: string) =
+proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
-  let id = ident(name)
-  gen.addParam(s, t, id)
+  let dl = gen.dielabel
+  gen.jsFunCallList.add(quote do:
+    var `s`: `t`
+    if ctx.fromJS(`id`, `s`) == fjErr:
+      break `dl`
+  )
   if gen.funcParams[gen.i].t.kind == nnkPtrTy:
     s = quote do: `s`[]
   gen.jsFunCall.add(s)
   inc gen.i
 
-proc addRequiredParams(gen: var JSFuncGenerator) =
+proc addArgv(gen: var JSFuncGenerator) =
+  var j = 0
   while gen.i < gen.minArgs:
-    var s = ident("arg_" & $gen.i)
-    let tt = gen.funcParams[gen.i].t
-    gen.addValueParam(s, tt)
-    if gen.funcParams[gen.i].t.kind == nnkPtrTy:
-      s = quote do: `s`[]
-    gen.jsFunCall.add(s)
-    inc gen.j
-    inc gen.i
-
-proc addOptionalParams(gen: var JSFuncGenerator) =
+    gen.addFixParam(quote do: argv[`j`])
+    inc j
   while gen.i < gen.funcParams.len:
-    let j = gen.j
     var s = ident("arg_" & $gen.i)
-    let tt = gen.funcParams[gen.i].t
-    if tt.kind == nnkBracketExpr and tt[0].eqIdent("varargs"):
+    let t = gen.funcParams[gen.i].t
+    if t.kind == nnkBracketExpr and t[0].eqIdent("varargs"):
       s = quote do:
         argv.toOpenArray(`j`, argc - 1)
     else:
       let fallback = gen.funcParams[gen.i].val
       if fallback == nil:
-        error("No fallback value. Maybe a non-optional parameter follows an " &
+        error("No fallback value.  Maybe a non-optional parameter follows an " &
           "optional parameter?")
-      gen.addValueParam(s, tt, fallback)
-    if gen.funcParams[gen.i].t.kind == nnkPtrTy:
-      s = quote do: `s`[]
+      if t.typeKind == ntyGenericParam:
+        error("Union parameters are not supported.  Use JSValue instead.")
+      let dl = gen.dielabel
+      gen.jsFunCallList.add(quote do:
+        var `s`: `t`
+        if `j` < argc and not JS_IsUndefined(argv[`j`]):
+          if ctx.fromJS(argv[`j`], `s`) == fjErr:
+            break `dl`
+        else:
+          `s` = `fallback`
+      )
+      if t.kind == nnkPtrTy:
+        s = quote do: `s`[]
     gen.jsFunCall.add(s)
-    inc gen.j
+    inc j
     inc gen.i
 
 proc finishFunCallList(gen: var JSFuncGenerator) =
@@ -858,8 +836,7 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; okstmt, errstmt: NimNode) =
 
 macro jsctor0*(fun: untyped; t: static BoundFunctionType) =
   var gen = initGenerator(fun, t, hasThis = false)
-  gen.addRequiredParams()
-  gen.addOptionalParams()
+  gen.addArgv()
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
@@ -880,7 +857,7 @@ template jsfctor*(fun: untyped) =
 macro jshasprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyHas, hasThis = true)
   gen.addThisParam()
-  gen.addFixParam("atom")
+  gen.addFixParam(ident"atom")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
@@ -896,7 +873,7 @@ macro jshasprop*(fun: untyped) =
 macro jsgetownprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyGetOwn, hasThis = true)
   gen.addThisParam()
-  gen.addFixParam("prop")
+  gen.addFixParam(ident"prop")
   var handleRetv: NimNode
   if gen.i < gen.funcParams.len:
     handleRetv = quote do: discard
@@ -936,9 +913,9 @@ macro jsgetownprop*(fun: untyped) =
 macro jsgetprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyGet, hasThis = true)
   gen.addThisParam("receiver")
-  gen.addFixParam("prop")
+  gen.addFixParam(ident"prop")
   if gen.i < gen.funcParams.len:
-    gen.addFixParam("this")
+    gen.addFixParam(ident"this")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
@@ -953,10 +930,10 @@ macro jsgetprop*(fun: untyped) =
 macro jssetprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertySet, hasThis = true)
   gen.addThisParam("receiver")
-  gen.addFixParam("atom")
-  gen.addFixParam("value")
+  gen.addFixParam(ident"atom")
+  gen.addFixParam(ident"value")
   if gen.i < gen.funcParams.len:
-    gen.addFixParam("this")
+    gen.addFixParam(ident"this")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
@@ -982,7 +959,7 @@ macro jssetprop*(fun: untyped) =
 macro jsdelprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyDel, hasThis = true)
   gen.addThisParam()
-  gen.addFixParam("prop")
+  gen.addFixParam(ident"prop")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
@@ -1056,7 +1033,7 @@ macro jsfsetn(jsname: static string; fun: untyped) =
   if gen.actualMinArgs != 1 or gen.funcParams.len != gen.minArgs:
     error("jsfset functions must accept two parameters")
   gen.addThisParam()
-  gen.addFixParam("val")
+  gen.addFixParam(ident"val")
   gen.finishFunCallList()
   # return param anyway
   let okstmt = quote do: discard
@@ -1077,12 +1054,10 @@ macro jsfuncn*(jsname: static string; flag: static BoundFunctionFlag;
   var gen = initGenerator(fun, bfFunction, hasThis = true, jsname = jsname,
     flag = flag, staticName = staticName)
   if gen.minArgs == 0 and gen.flag != bffStatic:
-    error("Zero-parameter functions are not supported. " &
-      "(Maybe pass Window or Client?)")
+    error("Zero-parameter functions are not supported. (Maybe pass Window?)")
   if gen.flag != bffStatic:
     gen.addThisParam()
-  gen.addRequiredParams()
-  gen.addOptionalParams()
+  gen.addArgv()
   gen.finishFunCallList()
   let okstmt = quote do:
     return JS_UNDEFINED
