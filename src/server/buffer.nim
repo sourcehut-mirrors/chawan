@@ -166,12 +166,6 @@ proc resolve(iface: BufferInterface; id: int) =
     it.p.resolve()
     iface.map.del(i)
 
-proc newBufferInterface*(stream: BufStream): BufferInterface =
-  return BufferInterface(
-    packetid: 1, # ids below 1 are invalid
-    stream: stream
-  )
-
 proc resolve*(iface: BufferInterface; packetid, len, nfds: int) =
   iface.len = len
   iface.nfds = nfds

@@ -9,6 +9,7 @@ import monoucha/jsbind
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
+import types/blob
 import types/opt
 import types/url
 import utils/myposix
@@ -75,6 +76,13 @@ proc mkdir(s: string; mode: cint): cint {.jsstfunc: "Util".} =
 
 proc unlink(s: string) {.jsstfunc: "Util".} =
   discard posix.unlink(cstring(s))
+
+proc readBlob(path: string): WebFile {.jsstfunc: "Util".} =
+  let ps = newPosixStream(path, O_RDONLY, 0)
+  if ps == nil:
+    return nil
+  let name = path.afterLast('/')
+  return newWebFile(name, ps.fd)
 
 proc addUtilModule*(ctx: JSContext): JSClassID =
   return ctx.registerType(Util)

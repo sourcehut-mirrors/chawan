@@ -32,7 +32,6 @@ globalThis.cmd = {
         else
             pager.loadSubmit(s);
     },
-    peek: () => pager.alert(pager.url),
     toggleWrap: () => {
         config.search.wrap = !config.search.wrap;
         pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
@@ -194,7 +193,7 @@ for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
         "centerLineBegin", "raisePageBegin", "lowerPageBegin", "nextPageBegin",
         "previousPageBegin", "centerLine", "raisePage", "lowerPage",
         "cursorToggleSelection", "cursorToggleSelection", "cursorNthLink",
-        "cursorRevNthLink", "peekCursor"]) {
+        "cursorRevNthLink"]) {
     cmd[it] = n => pager[it](n);
 }
 
@@ -207,7 +206,7 @@ for (const it of ["markURL", "redraw", "reshape", "cancel", "toggleSource",
         "isearchBackward", "discardTree", "dupeBuffer", "load", "loadCursor",
         "saveLink", "saveScreen", "saveSource", "editScreen", "editSource",
         "toggleImages", "writeInputBuffer", "showFullAlert",
-        "toggleLinkHints"]) {
+        "toggleLinkHints", "peek", "peekCursor"]) {
     cmd[it] = () => pager[it]();
 }
 
@@ -246,6 +245,8 @@ Util.MAX_INT32 = 0xFFFFFFFF;
  */
 Util.MAX_CLICKS = 3;
 
+Util.HttpLike = ["http:", "https:"];
+
 /*
  * Pager
  */
@@ -263,11 +264,13 @@ class Mouse {
     static META = 4;
 }
 
+/* private */
 function addDefaultOmniRule(name, match, url) {
     const fun = x => url + encodeURIComponent(x.substring(x.indexOf(':')));
     config.addOmniRule(name, match, fun);
 }
 
+/* private */
 Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
     config.initCommands();
     this.mouse = new Mouse();
@@ -298,6 +301,7 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
  * it from str.
  * Also, replace \< and \> with \b as (a bit sloppy) vi emulation.
  */
+/* private */
 Pager.prototype.compileSearchRegex = function(s) {
     const ignoreCaseOpt = config.search.ignoreCase;
     let ignoreCase = ignoreCaseOpt == "ignore";
@@ -330,41 +334,34 @@ Pager.prototype.compileSearchRegex = function(s) {
     return new RegExp(s2, ignoreCase ? "gui" : "gu");
 }
 
+/* public */
 Pager.prototype.searchNext = async function(n = 1) {
     const regex = this.regex;
     if (regex) {
-        let wrap = config.search.wrap;
+        let reverse = this.reverseSearch;
+        if (n < 0) {
+            n = -n;
+            reverse = !reverse;
+        }
+        const fun = reverse ? "cursorPrevMatch" : "cursorNextMatch";
+        const wrap = config.search.wrap;
         /* TODO probably we should add a separate keymap for menu/select */
         if (this.menu)
-            return this.menu.cursorNextMatch(this.regex, wrap, true, n);
+            return this.menu[fun](this.regex, wrap, true, n);
         const buffer = this.buffer;
         buffer.markPos0();
-        if (!this.reverseSearch)
-            await buffer.cursorNextMatch(regex, wrap, true, n);
-        else
-            await buffer.cursorPrevMatch(regex, wrap, true, n);
+        await buffer[fun](regex, wrap, true, n);
         buffer.markPos();
     } else
         this.alert("No previous regular expression");
 }
 
-Pager.prototype.searchPrev = async function(n = 1) {
-    if (this.regex) {
-        let wrap = config.search.wrap;
-        /* TODO ditto */
-        if (this.menu)
-            return this.menu.cursorPrevMatch(this.regex, wrap, true, n);
-        const buffer = this.buffer;
-        buffer.markPos0();
-        if (!this.reverseSearch)
-            await buffer.cursorPrevMatch(this.regex, wrap, true, n);
-        else
-            await buffer.cursorNextMatch(this.regex, wrap, true, n);
-        buffer.markPos();
-    } else
-        this.alert("No previous regular expression");
+/* public */
+Pager.prototype.searchPrev = function(n = 1) {
+    return this.searchNext(-n);
 }
 
+/* public */
 Pager.prototype.searchForward = async function(reverse = false) {
     const text = await this.setLineEdit("search", reverse ? "?" : "/");
     if (text == null)
@@ -380,10 +377,12 @@ Pager.prototype.searchForward = async function(reverse = false) {
     this.searchNext();
 }
 
+/* public */
 Pager.prototype.searchBackward = function() {
     return this.searchForward(true);
 }
 
+/* public */
 Pager.prototype.isearchForward = async function(reverse = false) {
     const buffer = this.buffer;
     if (this.menu || buffer?.select) {
@@ -443,16 +442,19 @@ Pager.prototype.isearchForward = async function(reverse = false) {
                 await buffer.sendCursorPosition()
             }
         }
-        buffer.clearSearchHighlights()
-        buffer.queueDraw();
+        const iface = buffer.iface;
+        if (iface != null)
+            iface.clearSearchHighlights()
     }
 }
 
+/* public */
 Pager.prototype.isearchBackward = function() {
     return this.isearchForward(true);
 }
 
 /* Reuse the line editor as an alert message viewer. */
+/* public */
 Pager.prototype.showFullAlert = function() {
     const str = this.lastAlert;
     if (str != "")
@@ -463,6 +465,7 @@ Pager.prototype.showFullAlert = function() {
  * Check if the user is trying to go to an anchor of the current buffer.
  * If yes, the caller need not call gotoURL.
  */
+/* private */
 Pager.prototype.gotoURLHash = function(request, current) {
     const url = new URL(request.url);
     if (current?.iface == null || url.hash == "" || request.method != "GET")
@@ -489,6 +492,7 @@ Pager.prototype.gotoURLHash = function(request, current) {
  * - https://<url>
  * So we attempt to load both, and see what works.
  */
+/* public */
 Pager.prototype.loadSubmit = function(url, init) {
     let url0;
     try {
@@ -525,6 +529,7 @@ Pager.prototype.loadSubmit = function(url, init) {
 }
 
 /* Open a URL prompt. */
+/* public */
 Pager.prototype.load = async function(url = null) {
     if (url == null) {
         if (!this.buffer)
@@ -536,10 +541,12 @@ Pager.prototype.load = async function(url = null) {
         this.loadSubmit(res);
 }
 
+/* public */
 Pager.prototype.loadCursor = function() {
     return this.load(this.hoverLink || this.hoverImage);
 }
 
+/* public */
 /* Reload the page in a new buffer, then kill the previous buffer. */
 Pager.prototype.reload = function() {
     const old = this.buffer;
@@ -554,6 +561,44 @@ Pager.prototype.reload = function() {
     buffer.copyCursorPos(old);
 }
 
+/* public */
+Pager.prototype.discardTree = function(buffer = this.buffer) {
+    while (buffer != null) {
+        const next = buffer.next;
+        this.deleteContainer(buffer, null);
+        buffer = next;
+    }
+}
+
+/* public */
+Pager.prototype.dupeBuffer = function() {
+    this.dupeBuffer2(this.buffer, this.buffer.url)
+}
+
+/* public */
+Pager.prototype.traverse = function(dir) {
+    this.navDirection = dir;
+    const buffer = this.buffer;
+    if (buffer == null)
+        return false;
+    const next = buffer.find(dir);
+    if (next == null)
+        return false;
+    this.setContainer(next);
+    return true;
+}
+
+/* public */
+Pager.prototype.prevBuffer = function() {
+    return this.traverse("prev");
+}
+
+/* public */
+Pager.prototype.nextBuffer = function() {
+    return this.traverse("next");
+}
+
+/* public */
 Pager.prototype.command = async function() {
     const text = await this.setLineEdit("command", "COMMAND: ");
     if (text != null) {
@@ -568,6 +613,7 @@ Pager.prototype.command = async function() {
         this.commandMode = false;
 }
 
+/* public */
 Pager.prototype.gotoLine = async function(n) {
     const buffer = this.buffer;
     const target = this.menu ?? buffer?.select ?? buffer;
@@ -600,6 +646,13 @@ Pager.prototype.gotoLine = async function(n) {
     this.markPos();
 }
 
+Pager.prototype.peek = function() {
+    const buffer = this.buffer;
+    if (buffer != null)
+        this.alert(buffer.url);
+}
+
+/* private */
 Pager.prototype.toggleLinkHints = async function() {
     this.markPos0();
     const urls = await this.showLinkHints();
@@ -656,6 +709,7 @@ Pager.prototype.toggleLinkHints = async function() {
     return false;
 }
 
+/* private */
 Pager.prototype.lineInfo = function() {
     const buffer = this.buffer;
     const iface = buffer?.iface;
@@ -699,6 +753,7 @@ const MenuMap = [
     ["Open history           (C-h)", cmd.openHistory],
 ];
 
+/* public */
 Pager.prototype.openMenu = async function(x = null, y = null) {
     const buffer = this.buffer;
     x = Math.max(x ?? buffer?.acursorx, 0);
@@ -713,10 +768,11 @@ Pager.prototype.openMenu = async function(x = null, y = null) {
     pager.menu = null;
     if (selected != -1)
         MenuMap[selected][1]();
-    if (buffer != null)
-        buffer.queueDraw();
+    if (buffer?.iface != null)
+        buffer.iface.queueDraw();
 }
 
+/* public */
 Pager.prototype.closeMenu = function() {
     const menu = this.menu;
     if (menu != null) {
@@ -725,6 +781,7 @@ Pager.prototype.closeMenu = function() {
     }
 }
 
+/* public */
 Pager.prototype.openEditor = function(input) {
     let tmpf = this.getTempFile();
     Util.mkdir(config.external.tmpdir, 0o700);
@@ -1020,6 +1077,48 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
     }
 }
 
+/* private */
+Pager.prototype.redirect = async function(buffer, request) {
+    const redirectDepth = buffer.redirectDepth;
+    if (redirectDepth < config.network.maxRedirect) {
+        const url = new URL(request.url);
+        const requestProto = url.protocol;
+        const bufferProto = buffer.url.protocol;
+        if (bufferProto != requestProto && bufferProto != "cgi-bin:") {
+            if (requestProto == "cgi-bin:") {
+                this.alert("Blocked redirection attempt to " + url);
+                return;
+            }
+            if (!(Util.HttpLike.includes(bufferProto) &&
+                  Util.HttpLike.includes(requestProto))) {
+                const x = await this.ask("Warning: switch protocols? " + url);
+                if (!x)
+                    return;
+            }
+        }
+        this.numload--;
+        const save = buffer.save;
+        if (save || !this.gotoURLHash(request, buffer)) {
+            const nc = this.gotoURL(request, {
+                history: buffer.history,
+                save: save,
+                redirectDepth: redirectDepth + 1,
+                referrer: buffer
+            });
+            if (nc != null) {
+                const replace = buffer.unsetReplace();
+                this.replace(buffer, nc);
+                if (replace != null)
+                    nc.setReplace(replace);
+                nc.setLoadInfo("Redirecting to " + url);
+            }
+        }
+    } else {
+        this.alert("Error: maximum redirection depth reached")
+        this.deleteContainer(container, buffer.find("any"))
+    }
+}
+
 /*
  * Buffer
  *
@@ -1027,22 +1126,27 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
  * BufferInterface, then we can make Buffer a JS-only class.
  */
 
+/* public */
 Buffer.prototype.cursorDown = function(n = 1) {
     this.setCursorY(this.cursory + n);
 }
 
+/* public */
 Buffer.prototype.cursorUp = function(n = 1) {
     this.setCursorY(this.cursory - n);
 }
 
+/* public */
 Buffer.prototype.cursorLeft = function(n = 1) {
     this.setCursorX(this.cursorFirstX() - n);
 }
 
+/* public */
 Buffer.prototype.cursorRight = function(n = 1) {
     this.setCursorX(this.cursorLastX() + n);
 }
 
+/* public */
 Buffer.prototype.scrollDown = function(n = 1) {
     const H = this.numLines;
     const y = Math.min(this.fromy + this.height + n, H) - this.height;
@@ -1055,6 +1159,7 @@ Buffer.prototype.scrollDown = function(n = 1) {
         this.cursorDown(n);
 }
 
+/* public */
 Buffer.prototype.scrollUp = function(n = 1) {
     const y = Math.max(this.fromy - n, 0);
     if (y < this.fromy) {
@@ -1066,6 +1171,7 @@ Buffer.prototype.scrollUp = function(n = 1) {
         this.cursorUp(n);
 }
 
+/* public */
 Buffer.prototype.scrollRight = function(n = 1) {
     const msw = this.maxScreenWidth();
     const x = Math.min(this.fromx + this.width + n, msw) - this.width;
@@ -1073,12 +1179,14 @@ Buffer.prototype.scrollRight = function(n = 1) {
         this.setFromX(x);
 }
 
+/* public */
 Buffer.prototype.scrollLeft = function(n = 1) {
     const x = Math.max(this.fromx - n, 0);
     if (x < this.fromx)
         this.setFromX(x);
 }
 
+/* public */
 Buffer.prototype.pageDown = function(n = 1) {
     const delta = this.height * n;
     this.setFromY(this.fromy + delta);
@@ -1086,20 +1194,24 @@ Buffer.prototype.pageDown = function(n = 1) {
     this.restoreCursorX();
 }
 
+/* public */
 Buffer.prototype.pageUp = function(n = 1) {
     this.pageDown(-n);
 }
 
+/* public */
 Buffer.prototype.pageLeft = function(n = 1) {
     this.setFromX(this.fromx - this.width * n);
 }
 
+/* public */
 Buffer.prototype.pageRight = function(n = 1) {
     this.setFromX(this.fromx + this.width * n);
 }
 
 /* I am not cloning the vi behavior of e.g. 2^D setting paging size because
  * it is counter-intuitive and annoying. */
+/* public */
 Buffer.prototype.halfPageDown = function(n = 1) {
     const delta = (this.height + 1) / 2 * n;
     this.setFromY(this.fromy + delta);
@@ -1107,64 +1219,74 @@ Buffer.prototype.halfPageDown = function(n = 1) {
     this.restoreCursorX();
 }
 
+/* public */
 Buffer.prototype.halfPageUp = function(n = 1) {
     this.halfPageDown(-n);
 }
 
+/* public */
 Buffer.prototype.halfPageLeft = function(n = 1) {
     this.setFromX(this.fromx - (this.width + 1) / 2 * n);
 }
 
+/* public */
 Buffer.prototype.halfPageRight = function(n = 1) {
     this.setFromX(this.fromx + (this.width + 1) / 2 * n);
 }
 
+/* public */
 Buffer.prototype.cursorTop = function(n = 1) {
     this.markPos0();
     this.setCursorY(this.fromy + Util.clamp(n - 1, 0, this.height - 1));
     this.markPos();
 }
 
+/* public */
 Buffer.prototype.cursorMiddle = function() {
     this.markPos0();
     this.setCursorY(this.fromy + (this.height - 2) / 2);
     this.markPos();
 }
 
+/* public */
 Buffer.prototype.cursorBottom = function(n = 1) {
     this.markPos0();
     this.setCursorY(this.fromy + this.height - Util.clamp(n, 0, this.height));
     this.markPos();
 }
 
+/* public */
 Buffer.prototype.cursorLeftEdge = function() {
     this.setCursorX(this.fromx);
 }
 
+/* public */
 Buffer.prototype.cursorMiddleColumn = function() {
     this.setCursorX(this.fromx + (this.width - 2) / 2);
 }
 
+/* public */
 Buffer.prototype.cursorRightEdge = function() {
     this.setCursorX(this.fromx + this.width - 1);
 }
 
+/* private */
 Buffer.prototype.onMatch = function(x, y, w, refresh) {
+    const iface = this.iface;
     if (y >= 0) {
         this.setCursorXYCenter(x, y, refresh);
         if (this.highlight) {
-            this.clearSearchHighlights();
-            this.addSearchHighlight(x, y, x + w - 1, y);
-            this.queueDraw();
+            iface.clearSearchHighlights();
+            iface.addSearchHighlight(x, y, x + w - 1, y);
             this.highlight = false;
         }
     } else if (this.highlight) {
-        this.clearSearchHighlights();
-        this.queueDraw();
+        iface.clearSearchHighlights();
         this.highlight = false;
     }
 }
 
+/* private */
 Buffer.prototype.cursorNextMatch = async function(re, wrap, refresh, n) {
     if (this.select)
         return this.select.cursorNextMatch(re, wrap, n);
@@ -1177,6 +1299,7 @@ Buffer.prototype.cursorNextMatch = async function(re, wrap, refresh, n) {
     this.onMatch(x, y, w, refresh);
 }
 
+/* private */
 Buffer.prototype.cursorPrevMatch = async function(re, wrap, refresh, n) {
     if (this.select)
         return this.select.cursorPrevMatch(re, wrap, n);
@@ -1193,10 +1316,12 @@ Buffer.prototype.cursorPrevMatch = async function(re, wrap, refresh, n) {
  * backwards compat
  * TODO remove once we have an official interface for these
  */
+/* private */
 Buffer.prototype.findPrevMatch = function(...args) {
     return this.iface.findPrevMatch(...args);
 }
 
+/* private */
 Buffer.prototype.findNextMatch = function(...args) {
     return this.iface.findNextMatch(...args);
 }
@@ -1223,6 +1348,7 @@ const ReViWordEnd = new RegExp(
 const ReBigWordEnd = /\S(?!\S)/gu;
 const ReTextStart = /\S/gu;
 
+/* private */
 Buffer.prototype.cursorPrevWordImpl = async function(re, n = 1) {
     const cx = this.cursorx;
     const cy = this.cursory;
@@ -1233,6 +1359,7 @@ Buffer.prototype.cursorPrevWordImpl = async function(re, n = 1) {
         this.cursorLineBegin();
 }
 
+/* private */
 Buffer.prototype.cursorNextWordImpl = async function(re, n = 1) {
     const cx = this.cursorx;
     const cy = this.cursory;
@@ -1243,54 +1370,67 @@ Buffer.prototype.cursorNextWordImpl = async function(re, n = 1) {
         this.cursorLineEnd();
 }
 
+/* public */
 Buffer.prototype.cursorPrevWord = function(n) {
     return this.cursorPrevWordImpl(ReWordEnd, n);
 }
 
+/* public */
 Buffer.prototype.cursorPrevViWord = function(n) {
     return this.cursorPrevWordImpl(ReViWordEnd, n);
 }
 
+/* public */
 Buffer.prototype.cursorPrevBigWord = function(n) {
     return this.cursorPrevWordImpl(ReBigWordEnd, n);
 }
 
+/* public */
 Buffer.prototype.cursorNextWord = function(n) {
     return this.cursorNextWordImpl(ReWordStart, n);
 }
 
+/* public */
 Buffer.prototype.cursorNextViWord = function(n) {
     return this.cursorNextWordImpl(ReViWordStart, n);
 }
 
+/* public */
 Buffer.prototype.cursorNextBigWord = function(n) {
     return this.cursorNextWordImpl(ReBigWordStart, n);
 }
 
+/* public */
 Buffer.prototype.cursorWordBegin = function(n) {
     return this.cursorPrevWordImpl(ReWordStart, n);
 }
 
+/* public */
 Buffer.prototype.cursorViWordBegin = function(n) {
     return this.cursorPrevWordImpl(ReViWordStart, n);
 }
 
+/* public */
 Buffer.prototype.cursorBigWordBegin = function(n) {
     return this.cursorPrevWordImpl(ReBigWordStart, n);
 }
 
+/* public */
 Buffer.prototype.cursorWordEnd = function(n) {
     return this.cursorNextWordImpl(ReWordEnd, n);
 }
 
+/* public */
 Buffer.prototype.cursorViWordEnd = function(n) {
     return this.cursorNextWordImpl(ReViWordEnd, n);
 }
 
+/* public */
 Buffer.prototype.cursorBigWordEnd = function(n) {
     return this.cursorNextWordImpl(ReBigWordEnd, n);
 }
 
+/* public */
 Buffer.prototype.getCurrentWord = async function(x = this.cursorx,
                                                  y = this.cursory) {
     const iface = this.iface
@@ -1308,6 +1448,7 @@ Buffer.prototype.getCurrentWord = async function(x = this.cursorx,
 }
 
 /* zb */
+/* public */
 Buffer.prototype.lowerPage = function(n) {
     if (n)
         this.setCursorY(n - 1);
@@ -1315,6 +1456,7 @@ Buffer.prototype.lowerPage = function(n) {
 }
 
 /* z- */
+/* public */
 Buffer.prototype.lowerPageBegin = function(n) {
     this.lowerPage(n);
     this.cursorLineTextStart()
@@ -1323,12 +1465,14 @@ Buffer.prototype.lowerPageBegin = function(n) {
 /* TODO centerLine */
 
 /* z. */
+/* public */
 Buffer.prototype.centerLineBegin = function(n) {
     this.centerLine(n);
     this.cursorLineTextStart();
 }
 
 /* zt */
+/* public */
 Buffer.prototype.raisePage = function(n) {
     if (n)
         this.setCursorY(n - 1);
@@ -1336,12 +1480,14 @@ Buffer.prototype.raisePage = function(n) {
 }
 
 /* z^M */
+/* public */
 Buffer.prototype.raisePageBegin = function(n) {
     this.raisePage(n);
     this.cursorLineTextStart();
 }
 
 /* z+ */
+/* public */
 Buffer.prototype.nextPageBegin = function(n) {
     this.setCursorY(n ? n - 1 : this.fromy + this.height);
     this.cursorLineTextStart();
@@ -1349,12 +1495,36 @@ Buffer.prototype.nextPageBegin = function(n) {
 }
 
 /* z^ */
+/* public */
 Buffer.prototype.previousPageBegin = function(n) {
     this.setCursorY(n ? n - this.height : this.fromy - 1); /* +-1 cancels out */
     this.cursorLineTextStart();
     this.lowerPage();
 }
 
+/* private */
+Buffer.prototype.startSelection = function(t, mouse,
+                                           x1 = this.cursorFirstX()) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const selection = iface.startSelection(t, mouse,
+                                           x1, this.cursory,
+                                           this.cursorx, this.cursory)
+    this.currentSelection = selection;
+    return selection;
+}
+
+/* private */
+Buffer.prototype.clearSelection = function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    iface.removeHighlight(this.currentSelection);
+    this.currentSelection = null;
+}
+
+/* public */
 Buffer.prototype.cursorToggleSelection = function(n = 1, opts = {}) {
     if (this.currentSelection) {
         this.clearSelection();
@@ -1365,14 +1535,17 @@ Buffer.prototype.cursorToggleSelection = function(n = 1, opts = {}) {
     return this.startSelection(opts.selectionType ?? "normal", false, cx);
 }
 
+/* public */
 Buffer.prototype.cursorLineBegin = function() {
     this.setCursorX(-1);
 }
 
+/* public */
 Buffer.prototype.cursorLineEnd = function() {
     this.setCursorX(Util.MAX_INT32);
 }
 
+/* public */
 Buffer.prototype.cursorLineTextStart = function() {
     const iface = this.iface;
     if (iface == null)
@@ -1385,6 +1558,7 @@ Buffer.prototype.cursorLineTextStart = function() {
         this.cursorLineEnd();
 }
 
+/* public */
 Buffer.prototype.cursorNextParagraph = async function(n = 1) {
     const iface = this.iface;
     if (iface == null)
@@ -1395,10 +1569,12 @@ Buffer.prototype.cursorNextParagraph = async function(n = 1) {
     this.markPos();
 }
 
+/* public */
 Buffer.prototype.cursorPrevParagraph = async function(n = 1) {
     return this.cursorNextParagraph(-n);
 }
 
+/* public */
 Buffer.prototype.cursorNextLink = async function(n = 1) {
     const iface = this.iface;
     if (iface == null)
@@ -1411,6 +1587,7 @@ Buffer.prototype.cursorNextLink = async function(n = 1) {
     }
 }
 
+/* public */
 Buffer.prototype.cursorPrevLink = async function(n = 1) {
     const iface = this.iface;
     if (iface == null)
@@ -1423,6 +1600,7 @@ Buffer.prototype.cursorPrevLink = async function(n = 1) {
     }
 }
 
+/* public */
 Buffer.prototype.cursorNthLink = async function(n = 1) {
     const iface = this.iface;
     if (iface == null)
@@ -1432,6 +1610,7 @@ Buffer.prototype.cursorNthLink = async function(n = 1) {
         this.setCursorXYCenter(...pos);
 }
 
+/* public */
 Buffer.prototype.cursorRevNthLink = async function(n = 1) {
     const iface = this.iface;
     if (iface == null)
@@ -1441,6 +1620,7 @@ Buffer.prototype.cursorRevNthLink = async function(n = 1) {
         this.setCursorXYCenter(...pos);
 }
 
+/* public */
 Buffer.prototype.cursorLinkNavDown = async function(n = 1) {
     const iface = this.iface;
     if (iface == null)
@@ -1466,6 +1646,7 @@ Buffer.prototype.cursorLinkNavDown = async function(n = 1) {
     }
 }
 
+/* public */
 Buffer.prototype.cursorLinkNavUp = async function(n = 1) {
     const iface = this.iface;
     if (iface == null)
@@ -1492,18 +1673,21 @@ Buffer.prototype.cursorLinkNavUp = async function(n = 1) {
     }
 }
 
+/* public */
 Buffer.prototype.cursorFirstLine = function() {
     this.markPos0();
     this.setCursorY(0);
     this.markPos();
 }
 
+/* public */
 Buffer.prototype.cursorLastLine = function() {
     this.markPos0();
     this.setCursorY(this.numLines - 1);
     this.markPos();
 }
 
+/* public */
 Buffer.prototype.gotoMark = function(id) {
     const pos = this.getMarkPos(id);
     if (pos == null)
@@ -1514,6 +1698,7 @@ Buffer.prototype.gotoMark = function(id) {
     return true;
 }
 
+/* public */
 Buffer.prototype.gotoMarkY = function(id) {
     const pos = this.getMarkPos(id);
     if (pos == null)
@@ -1524,6 +1709,7 @@ Buffer.prototype.gotoMarkY = function(id) {
     return true;
 }
 
+/* public */
 Buffer.prototype.setCursorYCenter = function(y) {
     const fy = this.fromy;
     this.setCursorY(y);
@@ -1531,6 +1717,7 @@ Buffer.prototype.setCursorYCenter = function(y) {
         this.centerLine();
 }
 
+/* public */
 Buffer.prototype.setCursorXCenter = function(x) {
     const fx = this.fromx;
     this.setCursorX(x);
@@ -1538,10 +1725,12 @@ Buffer.prototype.setCursorXCenter = function(x) {
         this.centerColumn();
 }
 
+/* public */
 Buffer.prototype.setAbsoluteCursorXY = function(x, y) {
     this.setCursorXY(this.fromx + x, this.fromy + y);
 }
 
+/* public */
 Buffer.prototype.markURL = async function() {
     const iface = this.iface;
     if (iface == null)
@@ -1550,6 +1739,7 @@ Buffer.prototype.markURL = async function() {
     return this.sendCursorPosition();
 }
 
+/* public */
 Buffer.prototype.reshape = function() {
     const iface = this.iface;
     if (iface == null)
@@ -1557,6 +1747,7 @@ Buffer.prototype.reshape = function() {
     return iface.forceReshape();
 }
 
+/* public */
 Buffer.prototype.editSource = function() {
     const url = pager.url;
     const path = url.protocol == "file:" ?
@@ -1566,10 +1757,12 @@ Buffer.prototype.editSource = function() {
     pager.extern(cmd);
 }
 
+/* public */
 Buffer.prototype.saveSource = function() {
     pager.gotoURL("cache:" + this.cacheId, {save: true, url: this.url});
 }
 
+/* private */
 Buffer.prototype.onclick = async function(res, save = false) {
     if (res == null)
         return;
@@ -1582,10 +1775,9 @@ Buffer.prototype.onclick = async function(res, save = false) {
         const bufferProtocol = this.url.protocol;
         const urlProtocol = url.protocol;
         const sameProtocol = bufferProtocol == urlProtocol;
-        const HttpLike = ["http:", "https:"];
         if (request.method != "GET" && !sameProtocol &&
-            !(HttpLike.includes(bufferProtocol) &&
-              HttpLike.includes(urlProtocol))) {
+            !(Util.HttpLike.includes(bufferProtocol) &&
+              Util.HttpLike.includes(urlProtocol))) {
             pager.alert("Blocked cross-protocol POST: " + url);
             return;
         }
@@ -1652,6 +1844,7 @@ Buffer.prototype.onclick = async function(res, save = false) {
     }}
 }
 
+/* public */
 Buffer.prototype.click = async function(n = 1) {
     this.showLoading();
     const iface = this.iface;
@@ -1661,6 +1854,7 @@ Buffer.prototype.click = async function(n = 1) {
     return this.onclick(res);
 }
 
+/* private */
 Buffer.prototype.submitForm = async function() {
     const iface = this.iface;
     if (iface == null)
@@ -1669,6 +1863,7 @@ Buffer.prototype.submitForm = async function() {
     return this.onclick(res);
 }
 
+/* public */
 Buffer.prototype.saveLink = async function() {
     const iface = this.iface;
     if (iface == null)
@@ -1677,6 +1872,7 @@ Buffer.prototype.saveLink = async function() {
     return this.onclick(res, true);
 }
 
+/* public */
 Buffer.prototype.showLinkHints = async function() {
     const iface = this.iface;
     if (iface == null)
@@ -1688,6 +1884,7 @@ Buffer.prototype.showLinkHints = async function() {
     return iface.showHints(sx, sy, ex, ey);
 }
 
+/* private */
 Buffer.prototype.hideLinkHints = function() {
     const iface = this.iface;
     if (iface == null)
@@ -1695,6 +1892,7 @@ Buffer.prototype.hideLinkHints = function() {
     return iface.hideHints();
 }
 
+/* private */
 Buffer.prototype.contextMenu = function() {
     const iface = this.iface;
     if (iface == null)
@@ -1702,6 +1900,7 @@ Buffer.prototype.contextMenu = function() {
     return iface.contextMenu(this.cursorx, this.cursory);
 }
 
+/* public */
 Buffer.prototype.getSelectionText = function(sel = this.currentSelection) {
     const iface = this.iface;
     if (iface == null || sel == null)
@@ -1710,6 +1909,7 @@ Buffer.prototype.getSelectionText = function(sel = this.currentSelection) {
         sel.selectionType)
 }
 
+/* public */
 Buffer.prototype.saveScreen = async function() {
     let path = await pager.setLineEdit("download", "Save buffer to: ");
     if (path == null)
@@ -1728,6 +1928,7 @@ Buffer.prototype.saveScreen = async function() {
     }
 }
 
+/* public */
 Buffer.prototype.editScreen = async function() {
     const iface = this.iface;
     if (iface == null) {

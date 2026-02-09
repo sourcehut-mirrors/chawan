@@ -20,6 +20,7 @@ import types/bitmap
 import types/blob
 import types/cell
 import types/color
+import types/jsopt
 import types/opt
 import types/refstring
 import types/url
@@ -67,6 +68,18 @@ type
   GetValueProc* = proc(iface: BufferInterface; promise: EmptyPromise) {.
     nimcall, raises: [].}
 
+  HighlightType* = enum
+    hltSearch, hltSelect
+
+  Highlight* = ref object
+    t* {.jsget.}: HighlightType
+    selectionType* {.jsget.}: SelectionType
+    mouse* {.jsget.}: bool
+    x1*: int
+    y1*: int
+    x2*: int
+    y2*: int
+
   BufferInterface* = ref object
     map*: seq[BufferIfaceItem]
     packetid*: int
@@ -76,6 +89,11 @@ type
     lines*: SimpleFlexibleGrid
     lineShift*: int
     numLines*: int
+    fromx*: int
+    fromy*: int
+    highlights: seq[Highlight]
+    bgcolor*: CellColor
+    redraw*: bool
 
   GotoAnchorResult* = object
     x*: int
@@ -132,6 +150,17 @@ type
     stLine = "line"
 
 jsDestructor(BufferInterface)
+jsDestructor(Highlight)
+
+# Forward declarations
+proc queueDraw(iface: BufferInterface)
+
+proc newBufferInterface*(stream: BufStream): BufferInterface =
+  return BufferInterface(
+    packetid: 1, # ids below 1 are invalid
+    stream: stream,
+    redraw: true
+  )
 
 const ClickResultReadLine* = {crtReadText, crtReadPassword, crtReadFile}
 
@@ -307,6 +336,11 @@ proc getLine*(iface: BufferInterface; y: int): lent SimpleFlexibleLine =
 proc getLineStr(iface: BufferInterface; y: int): lent string =
   return iface.getLine(y).str
 
+iterator ilines(iface: BufferInterface; slice: Slice[int]):
+    lent SimpleFlexibleLine {.inline.} =
+  for y in slice:
+    yield iface.getLine(y)
+
 proc findColStartByte(s: string; endx: int): int =
   var w = 0
   var i = 0
@@ -347,7 +381,7 @@ proc onReshape*(iface: BufferInterface): EmptyPromise =
     discard
   return iface.addEmptyPromise()
 
-proc gotoAnchor*(iface: BufferInterface; anchor: string;
+proc gotoAnchor(iface: BufferInterface; anchor: string;
     autofocus, target: bool): Promise[GotoAnchorResult] {.jsfunc.} =
   iface.withPacketWriterFire bcGotoAnchor, w:
     w.swrite(anchor)
@@ -355,7 +389,7 @@ proc gotoAnchor*(iface: BufferInterface; anchor: string;
     w.swrite(target)
   return addPromise[GotoAnchorResult](iface)
 
-proc click*(iface: BufferInterface; x, y, n: int): Promise[ClickResult] {.
+proc click(iface: BufferInterface; x, y, n: int): Promise[ClickResult] {.
     jsfunc.} =
   iface.withPacketWriterFire bcClick, w:
     w.swrite(x)
@@ -363,7 +397,7 @@ proc click*(iface: BufferInterface; x, y, n: int): Promise[ClickResult] {.
     w.swrite(n)
   return addPromise[ClickResult](iface)
 
-proc submitForm*(iface: BufferInterface; x, y: int): Promise[ClickResult] {.
+proc submitForm(iface: BufferInterface; x, y: int): Promise[ClickResult] {.
     jsfunc.} =
   iface.withPacketWriterFire bcSubmitForm, w:
     w.swrite(x)
@@ -579,7 +613,189 @@ proc matchFirst(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     return JS_EXCEPTION
   return ctx.toJS(cast[REBytecode](p).matchFirst(iface.getLineStr(y)))
 
-proc addBufferInterfaceModule*(ctx: JSContext): JSClassID =
-  return ctx.registerType(BufferInterface)
+# Highlight (search/selection)
+proc startx(hl: Highlight): int {.jsfget.} =
+  if hl.y1 < hl.y2:
+    hl.x1
+  elif hl.y2 < hl.y1:
+    hl.x2
+  else:
+    min(hl.x1, hl.x2)
+
+proc starty(hl: Highlight): int {.jsfget.} =
+  return min(hl.y1, hl.y2)
+
+proc endx(hl: Highlight): int {.jsfget.} =
+  if hl.y1 > hl.y2:
+    hl.x1
+  elif hl.y2 > hl.y1:
+    hl.x2
+  else:
+    max(hl.x1, hl.x2)
+
+proc endy(hl: Highlight): int {.jsfget.} =
+  return max(hl.y1, hl.y2)
+
+proc clearSearchHighlights(iface: BufferInterface) {.jsfunc.} =
+  for i in countdown(iface.highlights.high, 0):
+    if iface.highlights[i].t == hltSearch:
+      iface.highlights.del(i)
+  iface.queueDraw()
+
+proc addSearchHighlight(iface: BufferInterface; x1, y1, x2, y2: int) {.
+    jsfunc.} =
+  iface.highlights.add(Highlight(
+    t: hltSearch,
+    x1: x1,
+    y1: y1,
+    x2: x2,
+    y2: y2
+  ))
+  iface.queueDraw()
+
+proc startSelection(iface: BufferInterface; t: SelectionType; mouse: bool;
+    x1, y1, x2, y2: int): Highlight {.jsfunc.} =
+  let highlight = Highlight(
+    t: hltSelect,
+    selectionType: t,
+    x1: x1,
+    y1: y1,
+    x2: x2,
+    y2: y2,
+    mouse: mouse
+  )
+  iface.highlights.add(highlight)
+  iface.queueDraw()
+  return highlight
+
+proc removeHighlight(iface: BufferInterface; highlight: Highlight) {.jsfunc.} =
+  let i = iface.highlights.find(highlight)
+  if i != -1:
+    iface.highlights.delete(i)
+  iface.queueDraw()
+
+# Display
+proc queueDraw(iface: BufferInterface) {.jsfunc.} =
+  iface.redraw = true
+
+proc colorNormal(iface: BufferInterface; hl: Highlight; y: int;
+    limitx: Slice[int]): Slice[int] =
+  let starty = hl.starty
+  let endy = hl.endy
+  if y in starty + 1 .. endy - 1:
+    let w = iface.getLineStr(y).width()
+    return min(limitx.a, w) .. min(limitx.b, w)
+  if y == starty and y == endy:
+    return max(hl.startx, limitx.a) .. min(hl.endx, limitx.b)
+  if y == starty:
+    let w = iface.getLineStr(y).width()
+    return max(hl.startx, limitx.a) .. min(limitx.b, w)
+  if y == endy:
+    let w = iface.getLineStr(y).width()
+    return min(limitx.a, w) .. min(hl.endx, limitx.b)
+  0 .. 0
+
+proc colorArea(iface: BufferInterface; hl: Highlight; y: int;
+    limitx: Slice[int]): Slice[int] =
+  case hl.selectionType
+  of stNormal:
+    return iface.colorNormal(hl, y, limitx)
+  of stBlock:
+    if y in hl.starty .. hl.endy:
+      return max(hl.startx, limitx.a) .. min(hl.endx, limitx.b)
+    return 0 .. 0
+  of stLine:
+    if y in hl.starty .. hl.endy:
+      let w = iface.getLineStr(y).width()
+      return min(limitx.a, w) .. min(limitx.b, w)
+    return 0 .. 0
+
+proc setFormat(cell: var FixedCell; cf: SimpleFormatCell; bgcolor: CellColor) =
+  cell.format = cf.format
+  if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
+    cell.format.bgcolor = bgcolor
+
+proc setText(cell: var FixedCell; u: uint32; i, pi, uw: int; s: string) =
+  if u.isControlChar():
+    cell.str = u.controlToVisual()
+  elif u in TabPUARange:
+    cell.str = ' '.repeat(uw)
+  else:
+    cell.str = s.substr(pi, i - 1)
+
+proc drawLines*(iface: BufferInterface; display: var FixedGrid;
+    hlcolor: CellColor) =
+  let bgcolor = iface.bgcolor
+  var by = 0
+  let endy = min(iface.fromy + display.height, iface.numLines)
+  let maxw = iface.fromx + display.width
+  for line in iface.ilines(iface.fromy ..< endy):
+    var w = 0 # width of the row so far
+    var i = 0 # byte in line.str
+    # Skip cells till fromx.
+    while w < iface.fromx and i < line.str.len:
+      let u = line.str.nextUTF8(i)
+      w += u.width()
+    let dls = by * display.width # starting position of row in display
+    # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
+    # we encountered a double-width character.)
+    var cf = line.findFormat(w)
+    var nf = line.findNextFormat(w)
+    var k = 0
+    while k < w - iface.fromx:
+      display[dls + k] = FixedCell(str: " ")
+      display[dls + k].setFormat(cf, bgcolor)
+      inc k
+    let startw = w # save this for later
+    # Now fill in the visible part of the row.
+    while i < line.str.len:
+      let pw = w
+      let pi = i
+      let u = line.str.nextUTF8(i)
+      let uw = u.width()
+      w += uw
+      if w > maxw:
+        break
+      if nf.pos != -1 and nf.pos <= pw:
+        cf = nf
+        nf = line.findNextFormat(pw)
+      display[dls + k].setText(u, i, pi, uw, line.str)
+      display[dls + k].setFormat(cf, bgcolor)
+      inc k
+      for i in 1 ..< uw:
+        display[dls + k] = FixedCell()
+        inc k
+    if bgcolor != defaultColor:
+      # Fill the screen if bgcolor is not default.
+      let format = initFormat(bgcolor, defaultColor, {})
+      for cell in display.mline(by, k):
+        cell = FixedCell(str: " ", format: format)
+    else:
+      for cell in display.mline(by, k):
+        cell = FixedCell()
+    # Finally, override cell formatting for highlighted cells.
+    let aw = display.width - (startw - iface.fromx) # actual width
+    let y = iface.fromy + by
+    for hl in iface.highlights:
+      if y notin hl.starty .. hl.endy:
+        continue
+      let area = iface.colorArea(hl, iface.fromy + by, startw .. startw + aw)
+      for i in area:
+        if i - startw >= display.width:
+          break
+        let n = dls + i - startw
+        if hlcolor != defaultColor:
+          display[n].format.bgcolor = hlcolor
+        else:
+          display[n].format.incl(ffReverse)
+    inc by
+  for y in by ..< display.height: # clear the rest
+    for cell in display.mline(y):
+      cell = FixedCell()
+
+proc addBufferInterfaceModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerType(Highlight)
+  ?ctx.registerType(BufferInterface)
+  ok()
 
 {.pop.}

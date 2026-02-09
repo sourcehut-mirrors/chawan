@@ -31,7 +31,6 @@ import monoucha/tojs
 import server/bufferiface
 import server/forkserver
 import server/loaderiface
-import types/blob
 import types/jsopt
 import types/opt
 import utils/myposix
@@ -361,13 +360,6 @@ proc feedNext(this: Window) {.jsfunc.} =
 proc consoleBuffer(this: Window): Container {.jsfget.} =
   return Client(this).pager.pinned.console
 
-proc readBlob(this: Window; path: string): WebFile {.jsfunc.} =
-  let ps = newPosixStream(path, O_RDONLY, 0)
-  if ps == nil:
-    return nil
-  let name = path.afterLast('/')
-  return newWebFile(name, ps.fd)
-
 proc readFile(ctx: JSContext; this: Window; path: string): JSValue
     {.jsfunc.} =
   var s: string
@@ -403,7 +395,6 @@ proc line(this: Window): LineEdit {.jsfget.} =
   return Client(this).pager.lineedit
 
 let ClientJSFunctions {.global.} = [
-  JS_CFUNC_DEF("readBlob", 0, js_func_Window_readBlob),
   JS_CFUNC_DEF("getenv", 0, js_func_Window_getenv),
   JS_CFUNC_DEF("setenv", 0, js_func_Window_setenv),
   JS_CFUNC_DEF("readFile", 0, js_func_Window_readFile),
