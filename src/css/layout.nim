@@ -1280,13 +1280,18 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
       ibox.computed{"white-space"} in {WhitespacePre, WhitespacePreWrap}:
     fstate.initLine()
     let whitespace = ibox.computed{"white-space"}
-    if whitespace == WhitespacePre:
+    case whitespace
+    of WhitespacePre:
       fstate.flushWhitespace(ibox)
       # see below on padding
       fstate.intr.w = max(fstate.intr.w, fstate.lbstate.size.w -
         fstate.box.input.padding.left)
-    elif whitespace == WhitespacePreWrap:
+    of WhitespacePreWrap:
       fstate.flushWhitespace(ibox, hang = true)
+    of WhitespaceNowrap:
+      fstate.lbstate.whitespaceNum = 0
+      fstate.intr.w = max(fstate.intr.w, fstate.lbstate.size.w -
+        fstate.box.input.padding.left)
     else:
       # Note: per standard, we really should always flush with hang except
       # on pre, but a) w3m doesn't, b) I find hang annoying, so we don't.
