@@ -1,7 +1,5 @@
 # w3m's URI method map format.
 
-from std/strutils import split
-
 import std/tables
 
 import types/opt

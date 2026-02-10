@@ -1,5 +1,3 @@
-from std/strutils import split
-
 import utils/twtstr
 
 const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &

@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import split
-
 import chame/tags
 import css/cssparser
 import html/catom
@@ -54,10 +52,8 @@ proc matchesAttr(element: Element; sel: Selector): bool =
   of rtToken:
     let val = element.attr(sel.attr)
     case sel.attrCase(element)
-    of csI:
-      let selval = sel.value.toLowerAscii()
-      return selval in val.toLowerAscii().split(AsciiWhitespace)
-    of csS: return sel.value in val.split(AsciiWhitespace)
+    of csI: return val.containsTokenIgnoreCase(sel.value)
+    of csS: return val.containsToken(sel.value)
   of rtBeginDash:
     let val = element.attr(sel.attr)
     case sel.attrCase(element)

@@ -8,10 +8,6 @@
 
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/algorithm
 import std/posix
 

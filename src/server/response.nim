@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import strip
-
 import std/posix
 
 import chagashi/charset

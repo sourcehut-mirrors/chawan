@@ -1,9 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/algorithm
 
 import monoucha/fromjs
@@ -148,7 +144,7 @@ proc isNoCorsSafelisted(name, value: string): bool =
       {' ', '*', ',', '-', '.', ';', '='}
     return Forbidden notin value
   if name.equalsIgnoreCase("Content-Type"):
-    return value.strip(chars = AsciiWhitespace).toLowerAscii() in [
+    return value.strip().toLowerAscii() in [
       "multipart/form-data",
       "text/plain",
       "application-x-www-form-urlencoded"

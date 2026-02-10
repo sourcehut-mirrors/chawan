@@ -23,6 +23,17 @@ proc run() =
   assert "test".startsWith("t")
   assert "test".startsWith("")
 
+  assert " ".strip() == ""
+  assert "\f\t test \r\n".strip() == "test"
+  assert " test ".strip(trailing = false) == "test "
+  assert " test ".strip(leading = false) == " test"
+  assert " \tes\t ".strip(chars = {' '}) == "\tes\t"
+
+  assert "a\tb ".containsToken("a")
+  assert "a\tb ".containsToken("")
+  assert "\na\tb ".containsToken("")
+  assert not "ab".containsToken("")
+
 static:
   run()
 

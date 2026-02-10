@@ -1,9 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/algorithm
 import std/hashes
 import std/math
@@ -5265,7 +5261,7 @@ proc newElement*(document: Document; localName: CAtom;
   return document.newElement(localName, namespace.toAtom(), prefix.toAtom())
 
 proc renderBlocking(element: Element): bool =
-  if "render" in element.attr(satBlocking).split(AsciiWhitespace):
+  if element.attr(satBlocking).containsToken("render"):
     return true
   if element of HTMLScriptElement:
     let element = HTMLScriptElement(element)
@@ -7275,17 +7271,23 @@ proc `value=`*(textarea: HTMLTextAreaElement; s: sink string)
 
 proc textAreaString*(textarea: HTMLTextAreaElement): string =
   result = ""
-  let split = textarea.value.split('\n')
   let rows = int64(textarea.attrul(satRows).get(1))
-  for i in 0 ..< rows:
-    let cols = textarea.attrul(satCols).get(20)
+  let cols = textarea.attrul(satCols).get(20)
+  var i = 0'i64
+  for line in textarea.value.split('\n'):
+    if i >= rows:
+      break
     if cols > 2 and cols <= uint64(int.high):
-      if i < split.len:
-        result &= '[' & split[i].padToWidth(cols - 2) & "]\n"
-      else:
-        result &= '[' & ' '.repeat(int(cols - 2)) & "]\n"
+      result &= '[' & line.padToWidth(cols - 2) & "]\n"
     else:
       result &= "[]\n"
+    inc i
+  while i < rows:
+    if cols > 2 and cols <= uint64(int.high):
+      result &= '[' & ' '.repeat(int(cols - 2)) & "]\n"
+    else:
+      result &= "[]\n"
+    inc i
 
 proc defaultValue(textarea: HTMLTextAreaElement): string {.jsfget.} =
   return textarea.textContent

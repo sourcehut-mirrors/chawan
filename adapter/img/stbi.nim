@@ -1,9 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/posix
 
 import io/dynstream
@@ -156,17 +152,11 @@ proc main() =
     var width = cint(0)
     var height = cint(0)
     for hdr in headers.split('\n'):
+      let s = hdr.after(':').strip()
       case hdr.until(':')
       of "Cha-Image-Dimensions":
-        let s = hdr.after(':').strip().split('x')
-        let w = parseUInt32(s[0], allowSign = false)
-        let h = parseUInt32(s[1], allowSign = false)
-        if w.isErr or h.isErr:
-          cgiDie(ceInternalError, "wrong dimensions")
-        width = cint(w.get)
-        height = cint(h.get)
+        (width, height) = parseDimensionsC(s, allowZero = false)
       of "Cha-Image-Quality":
-        let s = hdr.after(':').strip()
         let q = parseUInt32(s, allowSign = false).get(101)
         if q < 1 or 100 < q:
           cgiDie(ceInternalError, "wrong quality")

@@ -1,9 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/posix
 
 import ../protocol/lcgi
@@ -27,21 +23,12 @@ proc main() =
   var dstHeight = cint(-1)
   for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
     let k = hdr.until(':')
-    if k == "Cha-Image-Target-Dimensions" or k == "Cha-Image-Dimensions":
-      let v = hdr.after(':').strip()
-      let s = v.split('x')
-      if s.len != 2:
-        cgiDie(ceInternalError, "wrong dimensions")
-      let w = parseUInt32(s[0], allowSign = false).get(0)
-      let h = parseUInt32(s[1], allowSign = false).get(0)
-      if w == 0 or h == 0:
-        cgiDie(ceInternalError, "wrong dimensions")
-      if k == "Cha-Image-Target-Dimensions":
-        dstWidth = cint(w)
-        dstHeight = cint(h)
-      else:
-        srcWidth = cint(w)
-        srcHeight = cint(h)
+    let v = hdr.after(':').strip()
+    case k
+    of "Cha-Image-Target-Dimensions":
+      (dstWidth, dstHeight) = parseDimensionsC(v, allowZero = false)
+    of "Cha-Image-Dimensions":
+      (srcWidth, srcHeight) = parseDimensionsC(v, allowZero = false)
   let ps = newPosixStream(STDIN_FILENO)
   let os = newPosixStream(STDOUT_FILENO)
   let src = ps.readLoopOrMmap(int(srcWidth * srcHeight * 4))

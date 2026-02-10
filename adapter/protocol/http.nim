@@ -2,10 +2,6 @@
 
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/posix
 
 import io/dynstream

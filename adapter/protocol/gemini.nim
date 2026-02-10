@@ -2,10 +2,6 @@
 
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/posix
 
 import lcgi_ssl
@@ -84,7 +80,9 @@ type CheckCertResult = enum
   ccrNotFound, ccrNewExpiration, ccrFoundInvalid, ccrFoundValid
 
 proc findHost(f: AChaFile; host: string; line: var string): Opt[bool] =
-  var found = false
+  var found = line.until(' ') == host
+  if found:
+    return ok(found)
   ?f.seek(0)
   while not found and ?f.readLine(line):
     found = line.until(' ') == host
@@ -94,22 +92,25 @@ proc checkCert0(os: PosixStream; theirDigest, host: string;
     storedDigest: var string; theirTime: var Time; knownHosts: AChaFile;
     tmpEntry: string): CheckCertResult =
   var line = tmpEntry
-  var found = line.until(' ') == host
-  if not found:
-    found = knownHosts.findHost(host, line)
-      .orDie(ceInternalError, "failed to read known hosts")
+  var found = knownHosts.findHost(host, line)
+    .orDie(ceInternalError, "failed to read known hosts")
   if not found:
     return ccrNotFound
-  let ss = line.split(' ')
-  if ss.len < 3:
+  var i = line.find(' ')
+  if i < 0:
     cgiDie(ceInternalError, "wrong line in known_hosts file")
-  if ss[1] != "sha256":
+  inc i
+  let format = line.until(' ', i)
+  if format != "sha256":
     cgiDie(ceInternalError, "unsupported digest format in known_hosts file")
-  storedDigest = ss[2]
+  i += format.len + 1
+  storedDigest = line.until(' ', i)
   if storedDigest != theirDigest:
     return ccrFoundInvalid
-  if ss.len > 3:
-    if n := parseUInt64(ss[3], allowSign = false):
+  i += storedDigest.len + 1
+  let lineTime = line.until(' ', i)
+  if lineTime.len > 0:
+    if n := parseUInt64(lineTime, allowSign = false):
       if Time(n) == theirTime:
         return ccrFoundValid
     else:

@@ -479,6 +479,20 @@ proc skipBlanks*(buf: openArray[char]; at: int): int =
   while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
 
+proc strip*(s: openArray[char]; leading = true; trailing = true;
+    chars = AsciiWhitespace): string =
+  var i = 0
+  if leading:
+    while i < s.len and s[i] in chars:
+      inc i
+  var j = s.high
+  if trailing:
+    while j >= 0 and s[j] in chars:
+      dec j
+  if i > j:
+    return ""
+  return s.toOpenArray(i, j).substr()
+
 proc stripAndCollapse*(s: openArray[char]): string =
   var res = newStringOfCap(s.len)
   var space = false
@@ -729,7 +743,6 @@ proc cssEscape*(s: openArray[char]): string =
       result &= '\\'
     result &= c
 
-#basically std join but with char
 proc join*(ss: openArray[string]; sep: char): string =
   if ss.len <= 0:
     return ""
@@ -737,6 +750,40 @@ proc join*(ss: openArray[string]; sep: char): string =
   for i in 1 ..< ss.len:
     result &= sep
     result &= ss[i]
+
+iterator split*(s: openArray[char]; sep: char): string =
+  var buf = ""
+  var i = 0
+  while i <= s.len:
+    if i == s.len or s[i] == sep:
+      yield buf
+      buf.setLen(0)
+    else:
+      buf &= s[i]
+    inc i
+
+iterator split*(s: openArray[char]; sep: set[char]): string =
+  var buf = ""
+  var i = 0
+  while i <= s.len:
+    if i == s.len or s[i] in sep:
+      yield buf
+      buf.setLen(0)
+    else:
+      buf &= s[i]
+    inc i
+
+proc containsToken*(s: openArray[char]; tok: string): bool =
+  for it in s.split(AsciiWhitespace):
+    if it == tok:
+      return true
+  return false
+
+proc containsTokenIgnoreCase*(s: openArray[char]; tok: string): bool =
+  for it in s.split(AsciiWhitespace):
+    if it.equalsIgnoreCase(tok):
+      return true
+  return false
 
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [

@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import strip
-
 import css/cssparser
 import css/cssvalues
 import monoucha/fromjs

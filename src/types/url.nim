@@ -2,8 +2,6 @@
 
 {.push raises: [].}
 
-from std/strutils import split
-
 import std/algorithm
 
 import io/packetreader

@@ -61,6 +61,22 @@ template orDie*[T](val: CGIResult[T]): T =
     cgiDie(x.error)
   move(x.get)
 
+proc parseDimensions*(s: string; allowZero: bool): tuple[w, h: int] =
+  let xi = s.find('x')
+  if xi < 0:
+    cgiDie(ceInternalError, "wrong dimensions")
+  let w = parseIntP(s.toOpenArray(0, xi - 1)).get(-1)
+  let h = parseIntP(s.toOpenArray(xi + 1, s.high)).get(-1)
+  if w < 0 or h < 0 or not allowZero and (w == 0 or h == 0):
+    cgiDie(ceInternalError, "wrong dimensions")
+  return (w, h)
+
+proc parseDimensionsC*(s: string; allowZero: bool): tuple[w, h: cint] =
+  let res = parseDimensions(s, allowZero)
+  if res.w > int(cint.high) or res.h > int(cint.high):
+    cgiDie(ceInternalError, "wrong dimensions")
+  return (cint(res.w), cint(res.h))
+
 proc initCGIError*(code: ConnectionError; s: cstring = nil): CGIError =
   CGIError(code: code, s: s)
 

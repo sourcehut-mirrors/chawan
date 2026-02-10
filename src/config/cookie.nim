@@ -1,9 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/algorithm
 import std/posix
 import std/tables
@@ -256,7 +252,7 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
       cookie.value = part.substr(cookie.name.len + 1)
       first = false
       continue
-    let part = part.strip(leading = true, trailing = false, AsciiWhitespace)
+    let part = part.strip(leading = true, trailing = false)
     let key = part.untilLower('=')
     let val = part.substr(key.len + 1)
     case key

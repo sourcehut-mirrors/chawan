@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-from std/strutils import split
-
 import std/posix
 
 import lcgi
@@ -63,25 +61,29 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
     return connectSocket(host, port).orDie()
   if f.sendCommand("PASV", "", obuf).get(-1) notin Success:
     cgiDie(ceInvalidResponse, "couldn't enter passive mode")
-  let i = obuf.find(AsciiDigit)
-  if i == -1:
+  var i = obuf.find(AsciiDigit)
+  if i < 0:
     cgiDie(ceInvalidResponse)
   var j = obuf.find(NonDigit - {','}, i)
-  if j == -1:
-    j = obuf.len
-  let ss = obuf.substr(i, j - 1).split(',')
-  if ss.len < 6:
-    cgiDie(ceInvalidResponse)
-  var ipv4 = ss[0]
-  for x in ss.toOpenArray(1, 3):
-    ipv4 &= '.'
-    ipv4 &= x
-  let x = parseUInt16(ss[4])
-  let y = parseUInt16(ss[5])
-  if x.isErr or y.isErr:
-    cgiDie(ceInvalidResponse)
-  let port = $((x.get shl 8) or y.get)
-  return connectSocket(host, port).orDie()
+  if j >= 0:
+    obuf.setLen(j)
+  var ipv4 = ""
+  var k = 0
+  while i < obuf.len:
+    let c = obuf[i]
+    inc i
+    if c == ',':
+      inc k
+      if k == 4:
+        break
+      ipv4 &= '.'
+    else:
+      ipv4 &= c
+  let xs = obuf.until(',', i)
+  let ys = obuf.until(',', i + xs.len + 1)
+  let x = parseUInt16(xs).orDie(ceInvalidResponse)
+  let y = parseUInt16(ys).orDie(ceInvalidResponse)
+  return connectSocket(ipv4, $((x shl 8) or y)).orDie()
 
 proc login(f: AChaFile; username, password: string): Opt[void] =
   var obuf = ""

@@ -22,10 +22,6 @@
 
 {.push raises: [].}
 
-from std/strutils import
-  split,
-  strip
-
 import std/algorithm
 import std/os
 import std/posix
@@ -628,22 +624,22 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
       of pbrDone: discard
       of pbrUnregister: return crError
       return crContinue
-    if v.startsWithIgnoreCase("ConnectionError"):
-      let errs = v.split(' ')
+    if v.startsWithIgnoreCase("ConnectionError "):
       var code = ceCGIInvalidChaControl
       var message = ""
-      if errs.len > 1:
-        if n := parseInt32(errs[1]):
+      var i = "ConnectionError ".len
+      let ns = v.until(' ', i)
+      if ns.len > 0:
+        if n := parseInt32(ns):
           if n > 0 and n <= int32(ConnectionError.high):
             code = ConnectionError(n)
-        elif (let x = strictParseEnum[ConnectionError](errs[1]).get(ceNone);
-            x != ceNone):
-          code = x
-        if errs.len > 2:
-          message &= errs[2]
-          for i in 3 ..< errs.len:
-            message &= ' '
-            message &= errs[i]
+        else:
+          let x = strictParseEnum[ConnectionError](ns).get(ceNone)
+          if x != ceNone:
+            code = x
+      i += ns.len + 1
+      if i < v.len:
+        message = v.substr(i)
       ctx.rejectHandle(handle, code, message)
       return crError
     if v.startsWithIgnoreCase("ControlDone"):
