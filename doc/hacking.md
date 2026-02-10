@@ -89,6 +89,21 @@ as chaseccomp.
 * Boolean operators (`||` etc.) belong on the same line as the left-hand
   expression.
 
+### JavaScript style
+
+Similar to C style.
+
+* 80 spaces per line.  Indent with 4 spaces (not mixed with tabs).
+* Prefer `const`/`let` to `var`.
+* Braces go on the same line as the statement or function.
+* `if`, `for`, etc. must have braces unless each part fits on a single line.
+* Boolean operators (`||` etc.) belong on the same line as the left-hand
+  expression.
+
+Note: although QJS has an optimizer, compared to that of a static language
+it is very limited.  Some ugliness is acceptable if it results in more
+efficient code.
+
 ## Features to avoid
 
 List of Nim features/patterns that sound like a good idea but aren't, for
@@ -314,7 +329,7 @@ across a bunch of random documents with questionable status of stability:
 
 It's unlikely that you will need these, but for completeness' sake:
 
-* TOML: <https://toml.io/en/v1.0.0>. config.toml's base language.
+* TOML: <https://toml.io/en/v1.1.0>. config.toml's base language.
 * Mailcap: <https://www.rfc-editor.org/rfc/rfc1524>.
 * Cookies: <https://www.rfc-editor.org/rfc/rfc6265>.
 * EcmaScript: <https://tc39.es/ecma262/> is the latest draft.

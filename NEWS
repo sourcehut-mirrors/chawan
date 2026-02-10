@@ -17,6 +17,7 @@ unreleased
 * work around FreeBSD vt(4) freezing on startup
 * optimize out Sixel repaints when scrolling
 * drop excessive frames when the terminal/link cannot keep up
+* rework seccomp handling to support cross-compilation to incompatible archs
 * fix cached images not being cleared when a buffer is deleted
 * fix a NULL deref in jebp
 * fix y/n being truncated out of long ask() prompts
