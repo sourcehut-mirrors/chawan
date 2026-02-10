@@ -392,7 +392,7 @@ Pager.prototype.isearchForward = async function(reverse = false) {
         buffer.pushCursorPos()
         buffer.markPos0()
         const text = await this.setLineEdit("search", reverse ? "?" : "/", {
-            update: (async function() {
+            update: async () => {
                 const iter = this.isearchIter = (this.isearchIter ?? 0) + 1;
                 const text = line.text;
                 if (text != "") {
@@ -419,7 +419,7 @@ Pager.prototype.isearchForward = async function(reverse = false) {
                             buffer.onMatch(x, y, w, false);
                     }
                 }
-            }).bind(this)
+            }
         });
         if (text == null) { /* canceled */
             delete this.isearchIter;
@@ -467,8 +467,15 @@ Pager.prototype.showFullAlert = function() {
  */
 /* private */
 Pager.prototype.gotoURLHash = function(request, current) {
-    const url = new URL(request.url);
-    if (current?.iface == null || url.hash == "" || request.method != "GET")
+    let url;
+    if (request instanceof URL)
+        url = request;
+    else {
+        if (request.method != "GET")
+            return false;
+        url = new URL(request.url);
+    }
+    if (current?.iface == null || url.hash == "")
         return false;
     /* check if only hash changed */
     const anchor = url.hash.substring(1);
@@ -503,9 +510,8 @@ Pager.prototype.loadSubmit = function(url, init) {
     }
     const first = URL.parse(url0);
     if (first != null) {
-        const request = new Request(first);
-        if (!this.gotoURLHash(request, this.buffer))
-            this.gotoURL(request, init);
+        if (!this.gotoURLHash(first, this.buffer))
+            this.gotoURL(first, init);
         return;
     }
     const urls = Util.expandPath(url0);
@@ -807,13 +813,14 @@ Pager.prototype.openEditor = function(input) {
 
 /* private */
 Pager.prototype.handleMouseInput = async function(input) {
-    if (this.mouse.blockTillRelease) {
+    const mouse = this.mouse;
+    if (mouse.blockTillRelease) {
         if (input.t != "release")
             return;
-        this.mouse.blockTillRelease = false;
+        mouse.blockTillRelease = false;
     }
     const button = input.button;
-    const [pressedX, pressedY] = this.mouse.pressed[button] ?? [-1, -1];
+    const [pressedX, pressedY] = mouse.pressed[button] ?? [-1, -1];
     let buffer = this.buffer;
     const select = this.menu ?? buffer?.select;
     if (select != null) {
@@ -822,7 +829,8 @@ Pager.prototype.handleMouseInput = async function(input) {
         let inside =
             select.y + 1 <= input.y && input.y < select.y + select.height - 1 &&
             select.x + 1 <= input.x && input.x < select.x + select.width - 1;
-        let outside = select.y > input.y || input.y >= select.y + select.height &&
+        let outside =
+            select.y > input.y || input.y >= select.y + select.height &&
             select.x > input.x || input.x >= select.x + select.width;
         switch (button) {
         case "right":
@@ -841,7 +849,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                  * closes the menu again.
                  */
                 if (!inside) {
-                    this.mouse.blockTillRelease = true;
+                    mouse.blockTillRelease = true;
                     select.cursorLeft();
                 }
             } else if (input.t == "release") {
@@ -854,7 +862,7 @@ Pager.prototype.handleMouseInput = async function(input) {
         case "left":
             if (input.t == "press") {
                 if (outside) { /* clicked outside the select */
-                    this.mouse.blockTillRelease = true;
+                    mouse.blockTillRelease = true;
                     select.cursorLeft();
                 }
             } else if (input.t == "release") {
@@ -871,17 +879,17 @@ Pager.prototype.handleMouseInput = async function(input) {
         case "left":
             switch (input.t) {
             case "move":
-                if (this.mouse.click[button] < 1)
+                if (mouse.click[button] < 1)
                     break;
-                switch (this.mouse.moveType) {
+                switch (mouse.moveType) {
                 case "none":
                     if (pressedY == input.y) {
-                        this.mouse.moveType = "select";
+                        mouse.moveType = "select";
                         if (!buffer.currentSelection?.mouse)
                             await buffer.startSelection("normal", true);
                         buffer.setAbsoluteCursorXY(input.x, input.y);
                     } else
-                        this.mouse.moveType = "drag";
+                        mouse.moveType = "drag";
                     break;
                 case "select":
                     buffer.setAbsoluteCursorXY(input.x, input.y);
@@ -890,7 +898,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                 break;
             case "release":
                 if (buffer.currentSelection?.mouse) {
-                    this.mouse.inSelection = true;
+                    mouse.inSelection = true;
                     if (this.osc52Primary) {
                         const text = await buffer.getSelectionText();
                         this.clipboardWrite(text, false);
@@ -901,9 +909,9 @@ Pager.prototype.handleMouseInput = async function(input) {
                     const py = buffer.cursory;
                     buffer.setAbsoluteCursorXY(input.x, input.y);
                     if (px == buffer.cursorx && py == buffer.cursory)
-                        buffer.click(this.mouse.click[button]);
+                        buffer.click(mouse.click[button]);
                 }
-                this.mouse.moveType = "none";
+                mouse.moveType = "none";
                 break;
             case "press":
                 if (buffer.currentSelection?.mouse)
@@ -940,7 +948,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                 this.nextBuffer();
         }
     }
-    if (!this.mouse.blockTillRelease) {
+    if (!mouse.blockTillRelease) {
         switch (button) {
         case "left":
             if (input.t == "release") {
@@ -954,7 +962,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                     const dcol = input.x - pressedX;
                     if (dcol <= -2)
                         this.nextBuffer();
-                    else
+                    else if (dcol >= 2)
                         this.prevBuffer();
                 } else if (pressedX != -1 && pressedY != -1) {
                     const dcol = input.x - pressedX;
@@ -1001,20 +1009,20 @@ Pager.prototype.handleMouseInput = async function(input) {
         }
         switch (input.t) {
         case "press":
-            this.mouse.pressed[button] = [input.x, input.y];
+            mouse.pressed[button] = [input.x, input.y];
             const [releasedX, releasedY] =
-                this.mouse.released[button] ?? [-1, -1];
+                mouse.released[button] ?? [-1, -1];
             if (input.x == releasedX && input.y == releasedY) {
-                this.mouse.click[button] ??= 0;
-                if (++this.mouse.click[button] >= Util.MAX_CLICKS)
-                    this.mouse.click[button] = 0;
+                mouse.click[button] ??= 0;
+                if (++mouse.click[button] >= Util.MAX_CLICKS)
+                    mouse.click[button] = 0;
             }
             break;
         case "release":
             if (pressedX != input.x || pressedY != input.y)
-                this.mouse.click[button] = 0;
-            this.mouse.released[button] = this.mouse.pressed[button];
-            this.mouse.pressed[button] = [-1, -1];
+                mouse.click[button] = 0;
+            mouse.released[button] = mouse.pressed[button];
+            mouse.pressed[button] = [-1, -1];
             break;
         }
     }
