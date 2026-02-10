@@ -1,6 +1,5 @@
 {.experimental: "overloadableEnums".}
 
-import std/strutils
 import std/tables
 
 import dombuilder
@@ -62,6 +61,12 @@ const AsciiAlpha = (AsciiUpperAlpha + AsciiLowerAlpha)
 const AsciiDigit = {'0'..'9'}
 const AsciiAlphaNumeric = AsciiAlpha + AsciiDigit
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
+
+proc toLowerAscii(c: char): char {.inline.} =
+  if c in AsciiUpperAlpha:
+    result = char(uint8(c) xor 0x20'u8)
+  else:
+    result = c
 
 func `$`*(tok: Token): string =
   result = $tok.t
@@ -372,8 +377,6 @@ type TokenizeResult* = enum
 proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
     ibuf: openArray[char]): TokenizeResult =
   template emit(s: static string) =
-    static:
-      doAssert AsciiWhitespace notin s
     if tokenizer.isws:
       tokenizer.flushChars()
     tokenizer.charbuf &= s

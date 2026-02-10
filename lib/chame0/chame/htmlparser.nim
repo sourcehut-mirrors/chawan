@@ -1,5 +1,4 @@
 import std/options
-import std/strutils
 import std/tables
 
 import dombuilder
@@ -650,6 +649,14 @@ const SystemIdentifierNotMissingAndPublicIdentifierStartsWith = [
   "-//W3C//DTD HTML 4.01 Transitional//"
 ]
 
+const AsciiUpperAlpha = {'A'..'Z'}
+
+proc toLowerAscii(c: char): char {.inline.} =
+  if c in AsciiUpperAlpha:
+    result = char(uint8(c) xor 0x20'u8)
+  else:
+    result = c
+
 func startsWithNoCase(str, prefix: string): bool =
   if str.len < prefix.len:
     return false
@@ -661,8 +668,15 @@ func startsWithNoCase(str, prefix: string): bool =
     inc i
   true
 
-func equalsIgnoreCase(s1, s2: string): bool {.inline.} =
-  return s1.cmpIgnoreCase(s2) == 0
+func equalsIgnoreCase(s1, s2: string): bool =
+  if s1.len != s2.len:
+    return false
+  var i = 0
+  while i < s1.len:
+    if s1[i].toLowerAscii() != s2[i].toLowerAscii():
+      return false
+    inc i
+  true
 
 func quirksConditions(name, pubid, sysid: string; flags: set[TokenFlag]): bool =
   if tfQuirks in flags:
@@ -2218,12 +2232,13 @@ proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     token: Token[Atom]): ParseResult =
   if parser.ignoreLF:
     parser.ignoreLF = false
-    if token.t == ttWhitespace:
-      if token.s[0] == '\n':
-        if token.s.len == 1:
-          return PRES_CONTINUE
-        else:
-          token.s.delete(0..0)
+    if token.t == ttWhitespace and token.s[0] == '\n':
+      if token.s.len == 1:
+        return PRES_CONTINUE
+      else:
+        for i in 1 ..< token.s.len:
+          token.s[i - 1] = token.s[i]
+        token.s.setLen(token.s.high)
   if parser.openElements.len == 0 or
       parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML:
     return parser.processInHTML(token, parser.insertionMode)
