@@ -391,7 +391,7 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       display[dls + x].format = format
       inc x
 
-proc windowChange*(select: Select; width, height: int) =
+proc windowChange*(select: Select; width, height: int) {.jsfunc.} =
   if select.y + select.options.len >= height - 2:
     select.y = max(height - 2 - select.options.len, 0)
   select.maxh = min(height - 2, select.options.len)

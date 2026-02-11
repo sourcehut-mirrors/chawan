@@ -15,7 +15,6 @@ import io/promise
 import local/select
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import server/buffer
@@ -25,7 +24,6 @@ import server/loaderiface
 import server/request
 import server/response
 import types/bitmap
-import types/blob
 import types/cell
 import types/color
 import types/jsopt
@@ -37,17 +35,8 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  CursorState = object
-    cursor: PagePos
-    xend: int
-    fromx: int
-    fromy: int
-    setx: int
-    setxrefresh: bool
-    setxsave: bool
-
   ContainerEventType* = enum
-    cetSetLoadInfo, cetStatus, cetTitle
+    cetSetLoadInfo, cetStatus
 
   ContainerEvent* = ref object
     t*: ContainerEventType
@@ -62,54 +51,19 @@ type
     lsLoaded = "loaded"
 
   ContainerFlag* = enum
-    cfSave, cfIsHTML, cfHistory, cfTailOnLoad, cfCrashed, cfShowLoading,
-    cfDeferLoad, cfGotLines
+    cfSave, cfIsHTML, cfHistory, cfTailOnLoad, cfCrashed
 
-  CachedImageState* = enum
-    cisLoading, cisCanceled, cisLoaded
-
-  CachedImage* = ref object
-    state*: CachedImageState
-    width*: int
-    height*: int
-    data*: Blob # mmapped blob of image data
-    cacheId*: int # cache id of the file backing "data"
-    bmp*: NetworkBitmap
-    # Following variables are always 0 in kitty mode; they exist to support
-    # sixel cropping.
-    # We can easily crop images where we just have to exclude some lines prior
-    # to/after the image, but we must re-encode if
-    # * offx > 0, dispw < width or
-    # * offy % 6 != previous offy % 6 (currently only happens when cell height
-    #   is not a multiple of 6).
-    offx*: int # same as CanvasImage.offx
-    dispw*: int # same as CanvasImage.dispw
-    erry*: int # same as CanvasImage.offy % 6
-    # whether the image has transparency, *disregarding the last row*
-    transparent*: bool
-    # length of introducer, raster, palette data before pixel data
-    preludeLen*: int
-    next: CachedImage
-
-  ImageCache = object
-    head: CachedImage
-    tail: CachedImage
-
-  Tab* {.acyclic.} = ref object
-    head*: Container
-    current*: Container
-    prev*: Tab
-    next*: Tab
+  Tab* = ref object
+    head* {.jsget.}: Container
+    current* {.jsget.}: Container
+    prev* {.jsget.}: Tab
+    next* {.jsget.}: Tab
 
   Mark = object
     id: string
     pos: PagePos
 
-  ProcessHandle* = ref object
-    process*: int
-    refc*: int
-
-  Container* = ref object of RootObj
+  Container* = ref object
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
     url* {.jsget.}: URL
@@ -123,9 +77,8 @@ type
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
     iface* {.jsget.}: BufferInterface
-    width* {.jsget.}: int
-    height {.jsget.}: int
-    phandle*: ProcessHandle
+    width* {.jsgetset.}: int
+    height {.jsgetset.}: int
     title: string # used in status msg
     hoverText: array[HoverType, string]
     request*: Request # source request
@@ -134,8 +87,6 @@ type
     # beware, this string may include content type attributes, if you want
     # to match it you'll have to use contentType.untilLower(';').
     contentType* {.jsget.}: string
-    pos: CursorState
-    bpos: seq[CursorState]
     loadinfo*: string
     replace*: Container
     # if we are referenced by another container, replaceRef is set so that we
@@ -147,6 +98,7 @@ type
     lastEvent: ContainerEvent
     startpos: Option[CursorState]
     hasStart {.jsget.}: bool
+    showLoading* {.jsgetset.}: bool
     redirectDepth {.jsget.}: int
     select* {.jsgetset.}: Select
     currentSelection* {.jsget.}: Highlight
@@ -155,19 +107,16 @@ type
     marks: seq[Mark]
     filter*: BufferFilter
     loadState* {.jsgetset.}: LoadState
-    needslines: bool
     lastPeek: HoverType
     flags*: set[ContainerFlag]
     #TODO this is inaccurate, because charsetStack can desync
     charset*: Charset
     charsetStack*: seq[Charset]
     mainConfig: Config
-    images*: seq[PosBitmap]
-    imageCache: ImageCache
     refreshUrl {.jsget.}: URL
     refreshMillis {.jsget.}: int
+    requestedLines: Slice[int]
     tab*: Tab
-    jsctx: JSContext
 
   NavDirection* = enum
     ndPrev = "prev"
@@ -175,19 +124,19 @@ type
     ndAny = "any"
 
 jsDestructor(Container)
+jsDestructor(Tab)
 
 # Forward declarations
 proc triggerEvent(container: Container; t: ContainerEventType)
 proc updateCursor(container: Container)
 proc sendCursorPosition(container: Container): EmptyPromise
-proc loaded(container: Container)
-proc setCursorY*(container: Container; y: int; refresh = true)
+proc setCursorY(container: Container; y: int; refresh = true)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; attrs: WindowAttributes; title: string;
     redirectDepth: int; flags: set[ContainerFlag]; contentType: string;
-    charsetStack: seq[Charset]; cacheId: int; mainConfig: Config; tab: Tab;
-    ctx: JSContext): Container =
+    charsetStack: seq[Charset]; cacheId: int; mainConfig: Config; tab: Tab):
+    Container =
   let host = request.url.host
   let loadinfo = (if host != "":
     "Connecting to " & host
@@ -203,15 +152,12 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     config: config,
     loaderConfig: loaderConfig,
     redirectDepth: redirectDepth,
-    pos: CursorState(setx: -1),
     loadinfo: loadinfo,
     cacheId: cacheId,
-    phandle: ProcessHandle(process: -1, refc: 1),
     mainConfig: mainConfig,
     flags: flags,
     lastPeek: HoverType.high,
-    tab: tab,
-    jsctx: ctx
+    tab: tab
   )
 
 # shallow clone of buffer
@@ -232,15 +178,12 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     return (-1, nil)
   let nc = Container()
   nc[] = container[]
+  nc.iface = nil
   nc.url = url
   nc.retry = nil
   nc.prev = nil
   nc.next = nil
   nc.select = nil
-  nc.images = @[]
-  nc.needslines = true
-  nc.imageCache = ImageCache()
-  inc nc.phandle.refc
   (sv[0], nc)
 
 proc append*(this, other: Container) =
@@ -284,11 +227,6 @@ proc setTab*(container: Container; tab: Tab): Tab =
     return oldTab
   nil
 
-proc lineLoaded(container: Container; y: int): bool =
-  if container.iface == nil:
-    return false
-  return container.iface.lineLoaded(y)
-
 proc getLine(container: Container; y: int): lent SimpleFlexibleLine =
   if container.iface != nil:
     return container.iface.getLine(y)
@@ -321,32 +259,53 @@ proc scripting(ctx: JSContext; container: Container): ScriptingMode {.jsfget.} =
 proc cookie(ctx: JSContext; container: Container): CookieMode {.jsfget.} =
   return container.loaderConfig.cookieMode
 
-proc cursorx*(container: Container): int {.jsfget.} =
-  container.pos.cursor.x
+# private
+proc headless(ctx: JSContext; container: Container): HeadlessMode {.jsfget.} =
+  return container.config.headless
 
+# private
+proc metaRefresh(ctx: JSContext; container: Container): MetaRefresh {.jsfget.} =
+  return container.config.metaRefresh
+
+# private
+proc autofocus(ctx: JSContext; container: Container): bool {.jsfget.} =
+  return container.config.autofocus
+
+# public
+proc cursorx(container: Container): int {.jsfget.} =
+  if container.iface != nil:
+    return container.iface.cursorx
+  return 0
+
+# public
 proc cursory*(container: Container): int {.jsfget.} =
-  container.pos.cursor.y
+  if container.iface != nil:
+    return container.iface.cursory
+  return 0
 
+# public
 proc fromx*(container: Container): int {.jsfget.} =
-  container.pos.fromx
+  if container.iface != nil:
+    return container.iface.fromx
+  return 0
 
+# public
 proc fromy*(container: Container): int {.jsfget.} =
-  container.pos.fromy
+  if container.iface != nil:
+    return container.iface.fromy
+  return 0
 
-proc xend(container: Container): int {.inline.} =
-  container.pos.xend
-
+# public
 proc process*(container: Container): int {.jsfget.} =
-  container.phandle.process
+  if container.iface == nil:
+    return -1
+  container.iface.phandle.process
 
-proc numLines*(container: Container): int {.jsfget.} =
+proc numLines(container: Container): int =
   let iface = container.iface
   if iface == nil:
     return 0
   return iface.numLines
-
-proc lastVisibleLine(container: Container): int =
-  min(container.fromy + container.height, container.numLines) - 1
 
 proc currentLine(container: Container): lent string =
   return container.getLineStr(container.cursory)
@@ -421,16 +380,15 @@ proc acursorx*(container: Container): int {.jsfget.} =
 proc acursory*(container: Container): int {.jsfget.} =
   container.cursory - container.fromy
 
-# private
-proc maxScreenWidth(container: Container): int {.jsfunc.} =
-  result = 0
-  for y in container.fromy..container.lastVisibleLine:
-    result = max(container.getLineStr(y).width(), result)
-
+# public
 proc getTitle*(container: Container): string {.jsfget: "title".} =
   if container.title != "":
     return container.title
   return container.url.serialize(excludepassword = true)
+
+# private
+proc setTitle(container: Container; s: string) {.jsfset: "title".} =
+  container.title = s
 
 # private
 proc currentLineWidth(container: Container; s = 0; e = int.high): int
@@ -439,30 +397,11 @@ proc currentLineWidth(container: Container; s = 0; e = int.high): int
     return 0
   return container.currentLine.width(s, e)
 
-proc maxfromy(container: Container): int =
-  return max(container.numLines - container.height, 0)
-
-proc maxfromx(container: Container): int =
-  return max(container.maxScreenWidth() - container.width, 0)
-
+#TODO move to iface
 proc atPercentOf*(container: Container): int =
   if container.numLines == 0:
     return 100
   return (100 * (container.cursory + 1)) div container.numLines
-
-proc lineWindow(container: Container): Slice[int] =
-  if container.numLines == 0: # not loaded
-    return 0..container.height * 5
-  let n = (container.height * 5) div 2
-  var x = container.fromy - n + container.height div 2
-  var y = container.fromy + n + container.height div 2
-  if y >= container.numLines:
-    x -= y - container.numLines
-    y = container.numLines
-  if x < 0:
-    y += -x
-    x = 0
-  return x .. y
 
 proc getHoverText*(container: Container): string =
   for t in HoverType:
@@ -495,56 +434,46 @@ proc queueDraw*(container: Container) =
   if container.iface != nil:
     container.iface.redraw = true
 
-proc requestLines(container: Container): EmptyPromise =
-  if container.iface == nil:
+proc requestLines*(container: Container; force = false): EmptyPromise {.
+    jsfunc.} =
+  let w = container.iface.lineWindow
+  if not force and container.requestedLines == w:
     return newResolvedPromise()
-  let w = container.lineWindow
+  container.requestedLines = w
   return container.iface.getLines(w).then(proc(res: GetLinesResult) =
     let iface = container.iface
     iface.lines.setLen(w.len)
     iface.lineShift = w.a
-    container.flags.incl(cfGotLines)
+    iface.gotLines = true
     for y in 0 ..< min(res.lines.len, w.len):
       iface.lines[y] = res.lines[y]
-    let isBgNew = container.iface.bgcolor != res.bgcolor
+    let isBgNew = iface.bgcolor != res.bgcolor
     if isBgNew:
-      container.iface.bgcolor = res.bgcolor
+      iface.bgcolor = res.bgcolor
     if res.numLines != iface.numLines:
       iface.numLines = res.numLines
       container.updateCursor()
       if container.startpos.isSome and
           res.numLines >= container.startpos.get.cursor.y:
-        container.pos = container.startpos.get
-        container.iface.fromx = container.fromx
-        container.iface.fromy = container.fromy
-        container.needslines = true
+        iface.pos = container.startpos.get
+        discard container.requestLines()
         container.startpos = none(CursorState)
         discard container.sendCursorPosition()
       if container.loadState != lsLoading:
         container.triggerEvent(cetStatus)
-    if res.numLines > 0:
-      container.updateCursor()
       if cfTailOnLoad in container.flags:
         container.flags.excl(cfTailOnLoad)
         container.setCursorY(int.high)
-    let cw = container.fromy ..< container.fromy + container.height
+    if res.numLines > 0:
+      container.updateCursor()
+    let cw = iface.fromy ..< iface.fromy + iface.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
-      container.queueDraw()
-    container.images.setLen(0)
+      iface.queueDraw()
+    iface.images.setLen(0)
     for image in res.images:
       if image.width > 0 and image.height > 0 and
           image.bmp.width > 0 and image.bmp.height > 0:
-        container.images.add(image)
-    if cfDeferLoad in container.flags:
-      container.flags.excl(cfDeferLoad)
-      container.loaded()
-  )
-
-proc repaintLoop(container: Container) =
-  if container.iface == nil:
-    return
-  container.iface.onReshape().then(proc() =
-    container.requestLines().then(proc() = container.repaintLoop())
+        iface.images.add(image)
   )
 
 # private
@@ -562,57 +491,54 @@ proc sendCursorPosition(container: Container): EmptyPromise {.jsfunc.} =
 
 # public
 proc setFromY(container: Container; y: int) {.jsfunc.} =
-  if container.pos.fromy != y and container.iface != nil:
-    container.pos.fromy = max(min(y, container.maxfromy), 0)
-    container.iface.fromy = container.pos.fromy
-    container.needslines = true
-    container.queueDraw()
+  let iface = container.iface
+  if iface != nil and iface.pos.fromy != y:
+    iface.pos.fromy = max(min(y, iface.maxfromy), 0)
+    discard container.requestLines()
+    iface.queueDraw()
 
 # public
 proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
   if refresh:
-    container.flags.incl(cfShowLoading)
-  if container.pos.fromx != x and container.iface != nil:
-    container.pos.fromx = max(min(x, container.maxfromx), 0)
-    container.iface.fromx = container.pos.fromx
-    if container.pos.fromx > container.cursorx:
-      container.pos.cursor.x = min(container.pos.fromx,
-        container.currentLineWidth())
+    container.showLoading = true
+  let iface = container.iface
+  if iface != nil and iface.pos.fromx != x:
+    iface.pos.fromx = max(min(x, iface.maxfromx), 0)
+    if iface.pos.fromx > iface.cursorx:
+      iface.pos.cursor.x = min(iface.pos.fromx, container.currentLineWidth())
       if refresh:
         discard container.sendCursorPosition()
-    container.queueDraw()
+    iface.queueDraw()
 
-# public
-proc setFromXY(container: Container; x, y: int) {.jsfunc.} =
-  container.setFromY(y)
-  container.setFromX(x)
-
-# public
 # Set the cursor to the xth column. 0-based.
 # * `refresh = false' inhibits reporting of the cursor position to the buffer.
 # * `save = false' inhibits cursor movement if it is currently outside the
 #   screen, and makes it so cursorx is not saved for restoration on cursory
 #   movement.
+# public
 proc setCursorX(container: Container; x: int; refresh = true; save = true)
     {.jsfunc.} =
   if refresh:
-    container.flags.incl(cfShowLoading)
-  if not container.lineLoaded(container.cursory):
-    container.pos.setx = x
-    container.pos.setxrefresh = refresh
-    container.pos.setxsave = save
+    container.showLoading = true
+  let iface = container.iface
+  if iface == nil:
     return
-  container.pos.setx = -1
+  if not iface.lineLoaded(iface.cursory):
+    iface.pos.setx = x
+    iface.pos.setxrefresh = refresh
+    iface.pos.setxsave = save
+    return
+  iface.pos.setx = -1
   let cw = container.currentLineWidth()
   let x2 = x
   let x = max(min(x, cw - 1), 0)
   # we check for save here, because it is only set by restoreCursorX where
   # we do not want to move the cursor just because it is outside the window.
-  if not save or container.fromx <= x and x < container.fromx + container.width:
-    container.pos.cursor.x = x
-  elif save and container.fromx > x:
+  if not save or iface.fromx <= x and x < iface.fromx + container.width:
+    iface.pos.cursor.x = x
+  elif save and iface.fromx > x:
     # target x is before the screen start
-    if x2 < container.cursorx:
+    if x2 < iface.cursorx:
       # desired X position is lower than cursor X; move screen back to the
       # desired position if valid, to 0 if the desired position is less than 0,
       # otherwise the last cell of the current line.
@@ -621,42 +547,48 @@ proc setCursorX(container: Container; x: int; refresh = true; save = true)
       else:
         container.setFromX(cw - 1, false)
     # take whatever position the jump has resulted in.
-    container.pos.cursor.x = container.fromx
-  elif x > container.cursorx:
+    iface.pos.cursor.x = iface.fromx
+  elif x > iface.cursorx:
     # target x is greater than current x; a simple case, just shift fromx too
     # accordingly
-    container.setFromX(max(x - container.width + 1, container.fromx), false)
-    container.pos.cursor.x = x
-  if container.cursorx == x and container.currentSelection != nil and
+    container.setFromX(max(x - container.width + 1, iface.fromx), false)
+    iface.pos.cursor.x = x
+  if iface.cursorx == x and container.currentSelection != nil and
       container.currentSelection.x2 != x:
     container.currentSelection.x2 = x
-    container.queueDraw()
+    iface.queueDraw()
   if refresh:
     discard container.sendCursorPosition()
   if save:
-    container.pos.xend = container.cursorx
+    iface.pos.xend = iface.cursorx
 
 # private
 proc restoreCursorX(container: Container) {.jsfunc.} =
-  let x = clamp(container.currentLineWidth() - 1, 0, container.xend)
+  let iface = container.iface
+  if iface == nil:
+    return
+  let x = clamp(container.currentLineWidth() - 1, 0, iface.pos.xend)
   container.setCursorX(x, false, false)
 
 # public
-proc setCursorY*(container: Container; y: int; refresh = true) {.jsfunc.} =
+proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
   if refresh:
-    container.flags.incl(cfShowLoading)
-  let y = max(min(y, container.numLines - 1), 0)
-  if y >= container.fromy and y - container.height < container.fromy:
+    container.showLoading = true
+  let iface = container.iface
+  if iface == nil:
+    return
+  let y = max(min(y, iface.numLines - 1), 0)
+  if y >= iface.fromy and y - container.height < iface.fromy:
     discard
-  elif y > container.cursory:
+  elif y > iface.cursory:
     container.setFromY(y - container.height + 1)
   else:
     container.setFromY(y)
-  if container.cursory == y:
+  if iface.cursory == y:
     return
-  container.pos.cursor.y = y
+  iface.pos.cursor.y = y
   if container.currentSelection != nil and container.currentSelection.y2 != y:
-    container.queueDraw()
+    iface.queueDraw()
     container.currentSelection.y2 = y
   container.restoreCursorX()
   if refresh:
@@ -664,76 +596,44 @@ proc setCursorY*(container: Container; y: int; refresh = true) {.jsfunc.} =
     # cursor moved, trigger status so the status is recomputed
     container.triggerEvent(cetStatus)
 
-# public
-proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
-  container.setCursorY(y, refresh)
-  container.setCursorX(x, refresh)
-
-# public
-# zz
-proc centerLine(container: Container; n = 0) {.jsfunc.} =
-  if n != 0:
-    container.setCursorY(n - 1)
-  container.setFromY(container.cursory - container.height div 2)
-
-# public
-proc centerColumn(container: Container) {.jsfunc.} =
-  container.setFromX(container.cursorx - container.width div 2)
-
-# public
-proc setCursorXYCenter(container: Container; x, y: int; refresh = true)
-    {.jsfunc.} =
-  let fy = container.fromy
-  let fx = container.fromx
-  container.setCursorXY(x, y, refresh)
-  if fy != container.fromy:
-    container.centerLine()
-  if fx != container.fromx:
-    container.centerColumn()
-
 # private
 proc markPos0(container: Container) {.jsfunc.} =
-  container.tmpJumpMark = (container.cursorx, container.cursory)
+  let iface = container.iface
+  if iface == nil:
+    return
+  container.tmpJumpMark = (iface.cursorx, iface.cursory)
 
 # private
 proc markPos(container: Container) {.jsfunc.} =
+  let iface = container.iface
+  if iface == nil:
+    return
   let pos = container.tmpJumpMark
-  if container.cursorx != pos.x or container.cursory != pos.y:
+  if iface.cursorx != pos.x or iface.cursory != pos.y:
     container.jumpMark = pos
 
 proc updateCursor(container: Container) =
-  if container.pos.setx > -1:
-    container.setCursorX(container.pos.setx, container.pos.setxrefresh,
-      container.pos.setxsave)
-  if container.fromy > container.maxfromy:
-    container.setFromY(container.maxfromy)
-  if container.cursory >= container.numLines:
-    let n = max(container.lastVisibleLine, 0)
-    if container.cursory != n:
+  let iface = container.iface
+  if iface == nil:
+    return
+  if iface.pos.setx > -1:
+    container.setCursorX(iface.pos.setx, iface.pos.setxrefresh,
+      iface.pos.setxsave)
+  if iface.fromy > iface.maxfromy:
+    container.setFromY(iface.maxfromy)
+  if iface.cursory >= iface.numLines:
+    let n = max(iface.lastVisibleLine, 0)
+    if iface.cursory != n:
       container.setCursorY(n)
 
 # private
-proc pushCursorPos(container: Container) {.jsfunc.} =
-  container.bpos.add(container.pos)
-
-# private
-proc popCursorPos(container: Container; nojump = false) {.jsfunc.} =
-  if container.bpos.len > 0:
-    container.pos = container.bpos.pop()
-    if container.iface != nil:
-      container.iface.fromx = container.fromx
-      container.iface.fromy = container.fromy
-    if not nojump:
-      container.updateCursor()
-      discard container.sendCursorPosition()
-    container.needslines = true
-
-# private
 proc copyCursorPos(container, c2: Container) {.jsfunc.} =
+  if c2.iface == nil:
+    return
   if c2.startpos.isSome:
     container.startpos = c2.startpos
   else:
-    container.startpos = some(c2.pos)
+    container.startpos = some(c2.iface.pos)
   container.hasStart = true
 
 proc findMark(container: Container; id: string): int =
@@ -829,50 +729,6 @@ proc setLoadInfo*(container: Container; msg: string) {.jsfunc.} =
   container.loadinfo = msg
   container.triggerEvent(cetSetLoadInfo)
 
-proc loaded(container: Container) =
-  container.loadinfo = ""
-  container.loadState = lsLoaded
-  #TODO
-  let ctx = container.jsctx
-  let loaded = JS_NewAtom(ctx, cstring"loaded")
-  let this = ctx.toJS(container)
-  let headless = ctx.toJS(container.config.headless != hmFalse)
-  let metaRefresh = ctx.toJS(container.config.metaRefresh)
-  let autofocus = ctx.toJS(container.config.autofocus)
-  let res = ctx.invokeSink(this, loaded, headless, metaRefresh, autofocus)
-  JS_FreeAtom(ctx, loaded)
-  JS_FreeValue(ctx, this)
-  JS_FreeValue(ctx, res)
-
-#TODO this should be called with a timeout.
-proc onload(container: Container; res: LoadResult) =
-  if container.loadState == lsCanceled:
-    return
-  case res.bs
-  of bsLoaded:
-    if cfGotLines notin container.flags:
-      # We cannot call loaded here because of a subtle phase ordering issue
-      # on reload:
-      # * load sends a cetLoad event to pager
-      # * pager deletes the buffer we are replacing
-      # * now, if lines haven't been requested yet, then we'll necessarily
-      #   see an empty screen flash because the reloaded buffer is already
-      #   deleted
-      container.flags.incl(cfDeferLoad)
-      container.needslines = true
-    else:
-      container.loaded()
-    return # skip next load
-  of bsLoadingResources:
-    container.setLoadInfo($res.n & "/" & $res.len & " stylesheets loaded")
-  of bsLoadingImages:
-    container.setLoadInfo($res.n & "/" & $res.len & " images loaded")
-  of bsLoadingPage:
-    container.setLoadInfo(convertSize(res.n) & " loaded")
-  discard container.iface.load().then(proc(res: LoadResult) =
-    container.onload(res)
-  )
-
 # Apply data received in response.
 # Note: pager must call this before checkMailcap.
 proc applyResponse*(container: Container; response: Response;
@@ -917,34 +773,9 @@ proc applyResponse*(container: Container; response: Response;
   container.refreshUrl = refresh.url
   container.refreshMillis = refresh.n
 
-proc cancel*(container: Container) =
-  if container.iface != nil:
-    container.iface.cancel()
-
 # private
 proc closeSelect(container: Container) {.jsfunc.} =
   container.select = nil
-  container.queueDraw()
-
-# private
-proc showLoading(container: Container) {.jsfunc.} =
-  container.flags.incl(cfShowLoading)
-
-proc windowChange*(container: Container; attrs: WindowAttributes) =
-  container.width = attrs.width
-  container.height = attrs.height - 1
-  if container.iface != nil:
-    var attrs = attrs
-    # subtract status line height
-    attrs.height -= 1
-    attrs.heightPx -= attrs.ppl
-    let x = container.cursorx
-    let y = container.cursory
-    container.iface.windowChange(attrs, x, y).then(proc(pos: PagePos) =
-      container.setCursorXYCenter(pos.x, pos.y)
-    )
-  if container.select != nil:
-    container.select.windowChange(container.width, container.height)
 
 proc clearHover*(container: Container) =
   container.lastPeek = HoverType.high
@@ -987,27 +818,11 @@ proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
     if container.prev != nil: container.prev else: container.next
 
 # Returns false on I/O error.
-proc handleCommand(container: Container): Opt[void] =
+proc handleCommand(iface: BufferInterface): Opt[void] =
   var packet {.noinit.}: array[3, int] # 0 len, 1 auxLen, 2 packetid
-  ?container.iface.stream.readLoop(addr packet[0], sizeof(packet))
-  container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
+  ?iface.stream.readLoop(addr packet[0], sizeof(packet))
+  iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
   ok()
-
-proc startLoad(container: Container) =
-  if container.config.headless == hmFalse:
-    container.repaintLoop()
-  container.iface.load().then(proc(res: LoadResult) =
-    container.onload(res)
-  )
-  container.iface.getTitle().then(proc(title: string) =
-    if title != "":
-      container.title = title
-      container.triggerEvent(cetTitle)
-  )
-
-proc setStream*(container: Container; stream: BufStream) =
-  container.iface = newBufferInterface(stream)
-  container.startLoad()
 
 type HandleReadLine = proc(line: SimpleFlexibleLine): Opt[void]
 
@@ -1050,9 +865,10 @@ proc readLines*(container: Container; handle: HandleReadLine): Opt[void] =
             return
       )
   )
-  while container.iface.hasPromises:
+  let iface = container.iface
+  while iface.hasPromises:
     # fulfill all promises
-    ?container.handleCommand()
+    ?iface.handleCommand()
   ok()
 
 proc highlightMarks*(container: Container; display: var FixedGrid;
@@ -1068,46 +884,16 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       else:
         display[n].format.incl(ffReverse)
 
-iterator cachedImages(container: Container): CachedImage =
-  var it = container.imageCache.head
-  while it != nil:
-    yield it
-    it = it.next
-
-proc findCachedImage*(container: Container;
-    imageId, width, height, offx, erry, dispw: int): CachedImage =
-  for it in container.cachedImages:
-    if it.bmp.imageId == imageId and it.width == width and
-        it.height == height and it.offx == offx and it.erry == erry and
-        it.dispw == dispw:
-      return it
-  return nil
-
-proc clearCachedImages*(container: Container; loader: FileLoader) =
-  for cachedImage in container.cachedImages:
-    if cachedImage.state == cisLoaded:
-      loader.removeCachedItem(cachedImage.cacheId)
-    cachedImage.state = cisCanceled
-  container.imageCache.head = nil
-  container.imageCache.tail = nil
-
-proc addCachedImage*(container: Container; image: CachedImage) =
-  if container.imageCache.tail == nil:
-    container.imageCache.head = image
-  else:
-    container.imageCache.tail.next = image
-  container.imageCache.tail = image
-
 # Returns err on I/O error.
 proc handleEvent*(container: Container): Opt[void] =
-  ?container.handleCommand()
-  if container.needslines:
-    discard container.requestLines()
-    container.needslines = false
+  let iface = container.iface
+  if iface != nil:
+    ?iface.handleCommand()
   ok()
 
 proc addContainerModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(Container, name = "Buffer")
+  ?ctx.registerType(Tab)
   ok()
 
 {.pop.} # raises: []

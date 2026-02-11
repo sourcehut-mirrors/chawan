@@ -56,9 +56,6 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  BufferState* = enum
-    bsLoadingPage, bsLoadingResources, bsLoadingImages, bsLoaded
-
   HoverType* = enum
     htTitle, htLink, htImage, htCachedImage
 
@@ -120,11 +117,6 @@ type
     userAgent*: string
     referrer*: string
     userStyle*: string
-
-  LoadResult* = object
-    n*: uint64
-    len*: uint64
-    bs*: BufferState
 
   CommandResult = enum
     cmdrDone, cmdrEOF
@@ -662,7 +654,7 @@ proc resolveTask[T](handle: PagerHandle; cmd: BufferCommand; res: T) =
   handle.tasks[cmd] = 0
 
 proc resolveLoad(bc: BufferContext; handle: PagerHandle; n, len: uint64) =
-  let res = LoadResult(n: n, len: len, bs: bc.state)
+  let res = (n: n, len: len, bs: bc.state)
   handle.reportedLoad = res
   handle.resolveTask(bcLoad, res)
 
@@ -900,19 +892,6 @@ proc cloneCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
     w.swrite(packetid)
   cmdrDone
 
-proc clone*(iface: BufferInterface; newurl: URL; pstreamFd: cint):
-    Promise[int] =
-  if iface.stream.flush().isErr:
-    return nil
-  iface.stream.source.withPacketWriter w:
-    w.swrite(bcClone)
-    w.swrite(iface.packetid)
-    w.swrite(newurl)
-    w.sendFd(pstreamFd)
-  do:
-    return nil
-  return addPromise[int](iface)
-
 proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
   let window = bc.window
   window.fireEvent(satDOMContentLoaded, bc.document, bubbles = false,
@@ -957,8 +936,10 @@ proc headlessMustWait(bc: BufferContext): bool =
 #   has been partially rendered.
 proc load*(bc: BufferContext; handle: PagerHandle): LoadResult {.
     proxy: pfTask.} =
-  var res = LoadResult(bs: bc.state)
-  case bc.state
+  var n = 0'u64
+  var len = 0'u64
+  let bs = bc.state
+  case bs
   of bsLoaded:
     if bc.config.headless == hmTrue and bc.headlessMustWait():
       # suppress load event until all scripts have finished
@@ -966,21 +947,22 @@ proc load*(bc: BufferContext; handle: PagerHandle): LoadResult {.
       bc.savetask = true
       bc.headlessLoading = true
   of bsLoadingImages:
-    res.n = bc.window.loadedImageNum
-    res.len = bc.window.remoteImageNum
+    n = bc.window.loadedImageNum
+    len = bc.window.remoteImageNum
   of bsLoadingResources:
-    res.n = bc.window.loadedSheetNum
-    res.len = bc.window.remoteSheetNum
+    n = bc.window.loadedSheetNum
+    len = bc.window.remoteSheetNum
   of bsLoadingPage:
-    res.n = bc.bytesRead
+    n = bc.bytesRead
     #TODO the problem here is that content-length is for compressed size,
     # but we already uncompress inside CGI so it's impossible to compare
     # the two
     # probably we'll need some reporting mechanism in BGI
-    if res.n > handle.reportedLoad.n:
+    if n > handle.reportedLoad.n:
       bc.maybeReshape(suppressFouc = true)
   let old = handle.reportedLoad
-  if res.bs != bsLoaded and old.bs == res.bs and res.n == old.n:
+  let res = (n: n, len: len, bs: bs)
+  if bs != bsLoaded and old.bs == bs and n == old.n:
     # drop this result, resolve in onload instead
     bc.savetask = true
   else:
@@ -1082,8 +1064,8 @@ proc forceReshape(bc: BufferContext; handle: PagerHandle) {.proxy2.} =
     bc.document.invalid = true
   bc.maybeReshape()
 
-proc windowChange*(bc: BufferContext; handle: PagerHandle;
-    attrs: WindowAttributes; x, y: int): PagePos {.proxy.} =
+proc windowChange(bc: BufferContext; handle: PagerHandle;
+    attrs: WindowAttributes; x, y: int): PagePos {.proxy2.} =
   let element = bc.getCursorElement(x, y)
   let box = if element != nil: CSSBox(element.box) else: nil
   let offset = if box != nil: box.render.offset else: offset(0'lu, 0'lu)
@@ -1101,7 +1083,7 @@ proc windowChange*(bc: BufferContext; handle: PagerHandle;
     return (x, y)
   return (x, y)
 
-proc cancel*(bc: BufferContext; handle: PagerHandle) {.proxy.} =
+proc cancel(bc: BufferContext; handle: PagerHandle) {.proxy2.} =
   if bc.state == bsLoaded:
     return
   for it in bc.loader.data:

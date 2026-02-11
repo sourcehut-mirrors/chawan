@@ -15,6 +15,7 @@ import monoucha/libregexp
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
+import server/loaderiface
 import server/request
 import types/bitmap
 import types/blob
@@ -24,6 +25,7 @@ import types/jsopt
 import types/opt
 import types/refstring
 import types/url
+import types/winattrs
 import utils/lrewrap
 import utils/strwidth
 import utils/twtstr
@@ -80,20 +82,46 @@ type
     x2*: int
     y2*: int
 
-  BufferInterface* = ref object
-    map*: seq[BufferIfaceItem]
-    packetid*: int
-    len*: int
-    nfds*: int
-    stream*: BufStream
-    lines*: SimpleFlexibleGrid
-    lineShift*: int
-    numLines*: int
-    fromx*: int
-    fromy*: int
-    highlights: seq[Highlight]
-    bgcolor*: CellColor
-    redraw*: bool
+  CachedImageState* = enum
+    cisLoading, cisCanceled, cisLoaded
+
+  CachedImage* = ref object
+    state*: CachedImageState
+    width*: int
+    height*: int
+    data*: Blob # mmapped blob of image data
+    cacheId*: int # cache id of the file backing "data"
+    bmp*: NetworkBitmap
+    # Following variables are always 0 in kitty mode; they exist to support
+    # sixel cropping.
+    # We can easily crop images where we just have to exclude some lines prior
+    # to/after the image, but we must re-encode if
+    # * offx > 0, dispw < width or
+    # * offy % 6 != previous offy % 6 (currently only happens when cell height
+    #   is not a multiple of 6).
+    offx*: int # same as CanvasImage.offx
+    dispw*: int # same as CanvasImage.dispw
+    erry*: int # same as CanvasImage.offy % 6
+    # whether the image has transparency, *disregarding the last row*
+    transparent*: bool
+    # length of introducer, raster, palette data before pixel data
+    preludeLen*: int
+    next: CachedImage
+
+  ImageCache = object
+    head: CachedImage
+    tail: CachedImage
+
+  BufferState* = enum
+    bsLoadingPage = "loadingPage"
+    bsLoadingResources = "loadingResources"
+    bsLoadingImages = "loadingImages"
+    bsLoaded = "loaded"
+
+  LoadResult* = tuple
+    n: uint64
+    len: uint64
+    bs: BufferState
 
   GotoAnchorResult* = object
     x*: int
@@ -149,18 +177,118 @@ type
     stBlock = "block"
     stLine = "line"
 
+  ProcessHandle* = ref object
+    process*: int
+    refc*: int
+
+  CursorState* = object
+    cursor*: PagePos
+    xend*: int
+    fromx*: int
+    fromy*: int
+    setx*: int
+    setxrefresh*: bool
+    setxsave*: bool
+
+  BufferInterface* = ref object
+    map*: seq[BufferIfaceItem]
+    packetid*: int
+    len*: int
+    nfds*: int
+    width*: int
+    height*: int
+    stream*: BufStream
+    lines*: SimpleFlexibleGrid
+    lineShift*: int
+    numLines* {.jsget.}: int
+    pos*: CursorState
+    highlights: seq[Highlight]
+    images*: seq[PosBitmap]
+    phandle*: ProcessHandle
+    imageCache: ImageCache
+    attrsp: ptr WindowAttributes
+    bgcolor*: CellColor
+    redraw*: bool
+    gotLines* {.jsget.}: bool
+
 jsDestructor(BufferInterface)
 jsDestructor(Highlight)
 
 # Forward declarations
-proc queueDraw(iface: BufferInterface)
+proc queueDraw*(iface: BufferInterface)
 
-proc newBufferInterface*(stream: BufStream): BufferInterface =
+proc newBufferInterface*(stream: BufStream; phandle: ProcessHandle;
+    attrsp: ptr WindowAttributes): BufferInterface =
+  inc phandle.refc
   return BufferInterface(
+    phandle: phandle,
     packetid: 1, # ids below 1 are invalid
     stream: stream,
-    redraw: true
+    redraw: true,
+    attrsp: attrsp,
+    width: attrsp.width,
+    height: attrsp.height - 1,
+    pos: CursorState(setx: -1)
   )
+
+proc newProcessHandle*(pid: int): ProcessHandle =
+  ProcessHandle(process: pid)
+
+proc process*(iface: BufferInterface): int {.jsfunc.} =
+  return iface.phandle.process
+
+proc cursorx*(iface: BufferInterface): int {.jsfunc.} =
+  return iface.pos.cursor.x
+
+proc cursory*(iface: BufferInterface): int {.jsfunc.} =
+  return iface.pos.cursor.y
+
+proc fromx*(iface: BufferInterface): int {.jsfunc.} =
+  return iface.pos.fromx
+
+proc fromy*(iface: BufferInterface): int {.jsfunc.} =
+  return iface.pos.fromy
+
+proc lineWindow*(iface: BufferInterface): Slice[int] =
+  if iface.numLines == 0: # not loaded
+    return 0 .. iface.height * 5
+  let n = (iface.height * 5) div 2
+  var x = iface.fromy - n + iface.height div 2
+  var y = iface.fromy + n + iface.height div 2
+  if y >= iface.numLines:
+    x -= y - iface.numLines
+    y = iface.numLines
+  if x < 0:
+    y += -x
+    x = 0
+  return x .. y
+
+proc lastVisibleLine*(iface: BufferInterface): int =
+  min(iface.fromy + iface.height, iface.numLines) - 1
+
+proc lineLoaded*(iface: BufferInterface; y: int): bool =
+  let dy = y - iface.lineShift
+  return dy in 0 ..< iface.lines.len
+
+proc getLine*(iface: BufferInterface; y: int): lent SimpleFlexibleLine =
+  if iface.lineLoaded(y):
+    return iface.lines[y - iface.lineShift]
+  let line {.global.} = SimpleFlexibleLine()
+  return line
+
+proc getLineStr(iface: BufferInterface; y: int): lent string =
+  return iface.getLine(y).str
+
+proc maxScreenWidth(iface: BufferInterface): int {.jsfunc.} =
+  result = 0
+  for y in iface.fromy..iface.lastVisibleLine:
+    result = max(iface.getLineStr(y).width(), result)
+
+proc maxfromx*(iface: BufferInterface): int =
+  return max(iface.maxScreenWidth() - iface.width, 0)
+
+proc maxfromy*(iface: BufferInterface): int =
+  return max(iface.numLines - iface.height, 0)
 
 const ClickResultReadLine* = {crtReadText, crtReadPassword, crtReadFile}
 
@@ -323,19 +451,6 @@ proc addPromise*[T](iface: BufferInterface): Promise[T] =
   iface.addPromise(promise, getFromStream[T])
   return promise
 
-proc lineLoaded*(iface: BufferInterface; y: int): bool =
-  let dy = y - iface.lineShift
-  return dy in 0 ..< iface.lines.len
-
-proc getLine*(iface: BufferInterface; y: int): lent SimpleFlexibleLine =
-  if iface.lineLoaded(y):
-    return iface.lines[y - iface.lineShift]
-  let line {.global.} = SimpleFlexibleLine()
-  return line
-
-proc getLineStr(iface: BufferInterface; y: int): lent string =
-  return iface.getLine(y).str
-
 iterator ilines(iface: BufferInterface; slice: Slice[int]):
     lent SimpleFlexibleLine {.inline.} =
   for y in slice:
@@ -376,117 +491,8 @@ template withPacketWriterFire(iface: BufferInterface; cmd: BufferCommand;
     w.swrite(iface.packetid)
     body
 
-proc onReshape*(iface: BufferInterface): EmptyPromise =
-  iface.withPacketWriterFire bcOnReshape, w:
-    discard
-  return iface.addEmptyPromise()
-
-proc gotoAnchor(iface: BufferInterface; anchor: string;
-    autofocus, target: bool): Promise[GotoAnchorResult] {.jsfunc.} =
-  iface.withPacketWriterFire bcGotoAnchor, w:
-    w.swrite(anchor)
-    w.swrite(autofocus)
-    w.swrite(target)
-  return addPromise[GotoAnchorResult](iface)
-
-proc click(iface: BufferInterface; x, y, n: int): Promise[ClickResult] {.
-    jsfunc.} =
-  iface.withPacketWriterFire bcClick, w:
-    w.swrite(x)
-    w.swrite(y)
-    w.swrite(n)
-  return addPromise[ClickResult](iface)
-
-proc submitForm(iface: BufferInterface; x, y: int): Promise[ClickResult] {.
-    jsfunc.} =
-  iface.withPacketWriterFire bcSubmitForm, w:
-    w.swrite(x)
-    w.swrite(y)
-  return addPromise[ClickResult](iface)
-
-proc readCanceled(iface: BufferInterface): EmptyPromise {.jsfunc.} =
-  iface.withPacketWriterFire bcReadCanceled, w:
-    discard
-  return addEmptyPromise(iface)
-
-proc readSuccess(iface: BufferInterface; s: string; fd: cint):
-    Promise[ClickResult] {.jsfunc.} =
-  if iface.stream.flush().isErr:
-    return newResolvedPromise[ClickResult](initClickResult())
-  iface.withPacketWriterFire bcReadSuccess, w:
-    w.swrite(s)
-    let hasfd = fd != -1
-    w.swrite(hasfd)
-    if hasfd:
-      w.sendFd(fd)
-  discard close(fd)
-  return addPromise[ClickResult](iface)
-
-proc select(iface: BufferInterface; selected: int): Promise[ClickResult] {.
-    jsfunc.} =
-  iface.withPacketWriterFire bcSelect, w:
-    w.swrite(selected)
-  return addPromise[ClickResult](iface)
-
-proc findNextLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
-    {.jsfunc.} =
-  iface.withPacketWriterFire bcFindNextLink, w:
-    w.swrite(x)
-    w.swrite(y)
-    w.swrite(n)
-  return addPromise[PagePos](iface)
-
-#TODO findPrevLink & findRevNthLink should probably be merged into findNextLink
-proc findPrevLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
-    {.jsfunc.} =
-  iface.withPacketWriterFire bcFindPrevLink, w:
-    w.swrite(x)
-    w.swrite(y)
-    w.swrite(n)
-  return addPromise[PagePos](iface)
-
-proc findRevNthLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
-    {.jsfunc.} =
-  iface.withPacketWriterFire bcFindPrevLink, w:
-    w.swrite(x)
-    w.swrite(y)
-    w.swrite(n)
-  return addPromise[PagePos](iface)
-
-proc findNextParagraph(iface: BufferInterface; y, n: int): Promise[int]
-    {.jsfunc.} =
-  iface.withPacketWriterFire bcFindNextParagraph, w:
-    w.swrite(y)
-    w.swrite(n)
-  return addPromise[int](iface)
-
-proc markURL(iface: BufferInterface): EmptyPromise {.jsfunc.} =
-  iface.withPacketWriterFire bcMarkURL, w:
-    discard
-  return addEmptyPromise(iface)
-
-proc forceReshape(iface: BufferInterface): EmptyPromise {.jsfunc.} =
-  iface.withPacketWriterFire bcForceReshape, w:
-    discard
-  return addEmptyPromise(iface)
-
-proc getLines*(iface: BufferInterface; slice: Slice[int]):
-    Promise[GetLinesResult] =
-  iface.withPacketWriterFire bcGetLines, w:
-    w.swrite(slice)
-  return addPromise[GetLinesResult](iface)
-
-proc showHints(iface: BufferInterface; sx, sy, ex, ey: int):
-    Promise[HintResult] {.jsfunc.} =
-  iface.withPacketWriterFire bcShowHints, w:
-    w.swrite(sx)
-    w.swrite(sy)
-    w.swrite(ex)
-    w.swrite(ey)
-  return addPromise[HintResult](iface)
-
-proc hideHints(iface: BufferInterface): EmptyPromise {.jsfunc.} =
-  iface.withPacketWriterFire bcHideHints, w:
+proc cancel*(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+  iface.withPacketWriterFire bcCancel, w:
     discard
   return addEmptyPromise(iface)
 
@@ -496,6 +502,27 @@ proc checkRefresh(iface: BufferInterface): Promise[CheckRefreshResult]
     discard
   return addPromise[CheckRefreshResult](iface)
 
+proc click(iface: BufferInterface; x, y, n: int): Promise[ClickResult] {.
+    jsfunc.} =
+  iface.withPacketWriterFire bcClick, w:
+    w.swrite(x)
+    w.swrite(y)
+    w.swrite(n)
+  return addPromise[ClickResult](iface)
+
+proc clone*(iface: BufferInterface; newurl: URL; pstreamFd: cint):
+    Promise[int] =
+  if iface.stream.flush().isErr:
+    return nil
+  iface.stream.source.withPacketWriter w:
+    w.swrite(bcClone)
+    w.swrite(iface.packetid)
+    w.swrite(newurl)
+    w.sendFd(pstreamFd)
+  do:
+    return nil
+  return addPromise[int](iface)
+
 proc contextMenu(iface: BufferInterface; cursorx, cursory: int):
     Promise[bool] {.jsfunc.} =
   iface.withPacketWriterFire bcContextMenu, w:
@@ -503,15 +530,73 @@ proc contextMenu(iface: BufferInterface; cursorx, cursory: int):
     w.swrite(cursory)
   return addPromise[bool](iface)
 
-proc getSelectionText(iface: BufferInterface; sx, sy, ex, ey: int;
-    t: SelectionType): Promise[string] {.jsfunc.} =
-  iface.withPacketWriterFire bcGetSelectionText, w:
-    w.swrite(sx)
-    w.swrite(sy)
-    w.swrite(ex)
-    w.swrite(ey)
-    w.swrite(t)
-  return addPromise[string](iface)
+proc findNextLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
+    {.jsfunc.} =
+  iface.withPacketWriterFire bcFindNextLink, w:
+    w.swrite(x)
+    w.swrite(y)
+    w.swrite(n)
+  return addPromise[PagePos](iface)
+
+proc findNextMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
+    x, y: int; wrap: bool; n: int): JSValue {.jsfunc.} =
+  var bytecodeLen: csize_t
+  let p = JS_GetRegExpBytecode(ctx, re, bytecodeLen)
+  if p == nil:
+    return JS_EXCEPTION
+  let bytecode = cast[REBytecode](p)
+  var wrap = wrap
+  let endy = y
+  var y = y
+  var n = n
+  var b = iface.cursorBytes(y, x + 1)
+  var first = true
+  while true:
+    if y >= iface.numLines:
+      if not wrap:
+        break
+      wrap = false
+      y = 0
+    if not iface.lineLoaded(y):
+      let regex = bytecodeToRegex(bytecode, bytecodeLen)
+      iface.withPacketWriterFire bcFindNextMatch, w:
+        w.swrite(regex)
+        w.swrite(x)
+        w.swrite(y)
+        w.swrite(endy)
+        w.swrite(wrap)
+        w.swrite(n)
+      return ctx.toJS(addPromise[BufferMatch](iface))
+    let s = iface.getLineStr(y)
+    let cap = bytecode.matchFirst(s, b)
+    if cap.s >= 0:
+      let x = s.width(0, cap.s)
+      let w = s.toOpenArray(cap.s, cap.e - 1).width()
+      dec n
+      if n == 0:
+        return ctx.toJS(BufferMatch(x: x, y: y, w: w))
+    b = 0
+    if y == endy and not first:
+      break
+    first = false
+    inc y
+  return ctx.toJS(BufferMatch(x: -1, y: -1))
+
+proc findNextParagraph(iface: BufferInterface; y, n: int): Promise[int]
+    {.jsfunc.} =
+  iface.withPacketWriterFire bcFindNextParagraph, w:
+    w.swrite(y)
+    w.swrite(n)
+  return addPromise[int](iface)
+
+#TODO findPrevLink & findRevNthLink should probably be merged into findNextLink
+proc findPrevLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
+    {.jsfunc.} =
+  iface.withPacketWriterFire bcFindPrevLink, w:
+    w.swrite(x)
+    w.swrite(y)
+    w.swrite(n)
+  return addPromise[PagePos](iface)
 
 proc findPrevMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     x, y: int; wrap: bool; n: int): JSValue {.jsfunc.} =
@@ -559,49 +644,119 @@ proc findPrevMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     b = -1
   return ctx.toJS(BufferMatch(x: -1, y: -1))
 
-proc findNextMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
-    x, y: int; wrap: bool; n: int): JSValue {.jsfunc.} =
-  var bytecodeLen: csize_t
-  let p = JS_GetRegExpBytecode(ctx, re, bytecodeLen)
-  if p == nil:
-    return JS_EXCEPTION
-  let bytecode = cast[REBytecode](p)
-  var wrap = wrap
-  let endy = y
-  var y = y
-  var n = n
-  var b = iface.cursorBytes(y, x + 1)
-  var first = true
-  while true:
-    if y >= iface.numLines:
-      if not wrap:
-        break
-      wrap = false
-      y = 0
-    if not iface.lineLoaded(y):
-      let regex = bytecodeToRegex(bytecode, bytecodeLen)
-      iface.withPacketWriterFire bcFindNextMatch, w:
-        w.swrite(regex)
-        w.swrite(x)
-        w.swrite(y)
-        w.swrite(endy)
-        w.swrite(wrap)
-        w.swrite(n)
-      return ctx.toJS(addPromise[BufferMatch](iface))
-    let s = iface.getLineStr(y)
-    let cap = bytecode.matchFirst(s, b)
-    if cap.s >= 0:
-      let x = s.width(0, cap.s)
-      let w = s.toOpenArray(cap.s, cap.e - 1).width()
-      dec n
-      if n == 0:
-        return ctx.toJS(BufferMatch(x: x, y: y, w: w))
-    b = 0
-    if y == endy and not first:
-      break
-    first = false
-    inc y
-  return ctx.toJS(BufferMatch(x: -1, y: -1))
+proc findRevNthLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
+    {.jsfunc.} =
+  iface.withPacketWriterFire bcFindPrevLink, w:
+    w.swrite(x)
+    w.swrite(y)
+    w.swrite(n)
+  return addPromise[PagePos](iface)
+
+proc forceReshape(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+  iface.withPacketWriterFire bcForceReshape, w:
+    discard
+  return addEmptyPromise(iface)
+
+proc getLines*(iface: BufferInterface; slice: Slice[int]):
+    Promise[GetLinesResult] =
+  iface.withPacketWriterFire bcGetLines, w:
+    w.swrite(slice)
+  return addPromise[GetLinesResult](iface)
+
+proc getSelectionText(iface: BufferInterface; sx, sy, ex, ey: int;
+    t: SelectionType): Promise[string] {.jsfunc.} =
+  iface.withPacketWriterFire bcGetSelectionText, w:
+    w.swrite(sx)
+    w.swrite(sy)
+    w.swrite(ex)
+    w.swrite(ey)
+    w.swrite(t)
+  return addPromise[string](iface)
+
+proc getTitle(iface: BufferInterface): Promise[string] {.jsfunc.} =
+  iface.withPacketWriterFire bcGetTitle, w:
+    discard
+  return addPromise[string](iface)
+
+proc gotoAnchor(iface: BufferInterface; anchor: string;
+    autofocus, target: bool): Promise[GotoAnchorResult] {.jsfunc.} =
+  iface.withPacketWriterFire bcGotoAnchor, w:
+    w.swrite(anchor)
+    w.swrite(autofocus)
+    w.swrite(target)
+  return addPromise[GotoAnchorResult](iface)
+
+proc hideHints(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+  iface.withPacketWriterFire bcHideHints, w:
+    discard
+  return addEmptyPromise(iface)
+
+proc load(iface: BufferInterface): Promise[LoadResult] {.jsfunc.} =
+  iface.withPacketWriterFire bcLoad, w:
+    discard
+  return addPromise[LoadResult](iface)
+
+proc markURL(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+  iface.withPacketWriterFire bcMarkURL, w:
+    discard
+  return addEmptyPromise(iface)
+
+proc onReshape(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+  iface.withPacketWriterFire bcOnReshape, w:
+    discard
+  return iface.addEmptyPromise()
+
+proc readCanceled(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+  iface.withPacketWriterFire bcReadCanceled, w:
+    discard
+  return addEmptyPromise(iface)
+
+proc readSuccess(iface: BufferInterface; s: string; fd: cint):
+    Promise[ClickResult] {.jsfunc.} =
+  if iface.stream.flush().isErr:
+    return newResolvedPromise[ClickResult](initClickResult())
+  iface.withPacketWriterFire bcReadSuccess, w:
+    w.swrite(s)
+    let hasfd = fd != -1
+    w.swrite(hasfd)
+    if hasfd:
+      w.sendFd(fd)
+  discard close(fd)
+  return addPromise[ClickResult](iface)
+
+proc select(iface: BufferInterface; selected: int): Promise[ClickResult] {.
+    jsfunc.} =
+  iface.withPacketWriterFire bcSelect, w:
+    w.swrite(selected)
+  return addPromise[ClickResult](iface)
+
+proc showHints(iface: BufferInterface; sx, sy, ex, ey: int):
+    Promise[HintResult] {.jsfunc.} =
+  iface.withPacketWriterFire bcShowHints, w:
+    w.swrite(sx)
+    w.swrite(sy)
+    w.swrite(ex)
+    w.swrite(ey)
+  return addPromise[HintResult](iface)
+
+proc submitForm(iface: BufferInterface; x, y: int): Promise[ClickResult] {.
+    jsfunc.} =
+  iface.withPacketWriterFire bcSubmitForm, w:
+    w.swrite(x)
+    w.swrite(y)
+  return addPromise[ClickResult](iface)
+
+proc windowChange(iface: BufferInterface; x, y: int): Promise[PagePos]
+    {.jsfunc.} =
+  var attrs = iface.attrsp[]
+  # subtract status line height
+  attrs.height -= 1
+  attrs.heightPx -= attrs.ppl
+  iface.withPacketWriterFire bcWindowChange, w:
+    w.swrite(attrs)
+    w.swrite(x)
+    w.swrite(y)
+  return addPromise[PagePos](iface)
 
 proc matchFirst(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     y: int): JSValue {.jsfunc.} =
@@ -674,8 +829,39 @@ proc removeHighlight(iface: BufferInterface; highlight: Highlight) {.jsfunc.} =
     iface.highlights.delete(i)
   iface.queueDraw()
 
+# Image
+iterator cachedImages(iface: BufferInterface): CachedImage =
+  var it = iface.imageCache.head
+  while it != nil:
+    yield it
+    it = it.next
+
+proc findCachedImage*(iface: BufferInterface;
+    imageId, width, height, offx, erry, dispw: int): CachedImage =
+  for it in iface.cachedImages:
+    if it.bmp.imageId == imageId and it.width == width and
+        it.height == height and it.offx == offx and it.erry == erry and
+        it.dispw == dispw:
+      return it
+  return nil
+
+proc clearCachedImages*(iface: BufferInterface; loader: FileLoader) =
+  for cachedImage in iface.cachedImages:
+    if cachedImage.state == cisLoaded:
+      loader.removeCachedItem(cachedImage.cacheId)
+    cachedImage.state = cisCanceled
+  iface.imageCache.head = nil
+  iface.imageCache.tail = nil
+
+proc addCachedImage*(iface: BufferInterface; image: CachedImage) =
+  if iface.imageCache.tail == nil:
+    iface.imageCache.head = image
+  else:
+    iface.imageCache.tail.next = image
+  iface.imageCache.tail = image
+
 # Display
-proc queueDraw(iface: BufferInterface) {.jsfunc.} =
+proc queueDraw*(iface: BufferInterface) {.jsfunc.} =
   iface.redraw = true
 
 proc colorNormal(iface: BufferInterface; hl: Highlight; y: int;
@@ -727,13 +913,13 @@ proc drawLines*(iface: BufferInterface; display: var FixedGrid;
     hlcolor: CellColor) =
   let bgcolor = iface.bgcolor
   var by = 0
-  let endy = min(iface.fromy + display.height, iface.numLines)
-  let maxw = iface.fromx + display.width
-  for line in iface.ilines(iface.fromy ..< endy):
+  let endy = min(iface.pos.fromy + display.height, iface.numLines)
+  let maxw = iface.pos.fromx + display.width
+  for line in iface.ilines(iface.pos.fromy ..< endy):
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str
     # Skip cells till fromx.
-    while w < iface.fromx and i < line.str.len:
+    while w < iface.pos.fromx and i < line.str.len:
       let u = line.str.nextUTF8(i)
       w += u.width()
     let dls = by * display.width # starting position of row in display
@@ -742,7 +928,7 @@ proc drawLines*(iface: BufferInterface; display: var FixedGrid;
     var cf = line.findFormat(w)
     var nf = line.findNextFormat(w)
     var k = 0
-    while k < w - iface.fromx:
+    while k < w - iface.pos.fromx:
       display[dls + k] = FixedCell(str: " ")
       display[dls + k].setFormat(cf, bgcolor)
       inc k
@@ -774,12 +960,12 @@ proc drawLines*(iface: BufferInterface; display: var FixedGrid;
       for cell in display.mline(by, k):
         cell = FixedCell()
     # Finally, override cell formatting for highlighted cells.
-    let aw = display.width - (startw - iface.fromx) # actual width
-    let y = iface.fromy + by
+    let aw = display.width - (startw - iface.pos.fromx) # actual width
+    let y = iface.pos.fromy + by
     for hl in iface.highlights:
       if y notin hl.starty .. hl.endy:
         continue
-      let area = iface.colorArea(hl, iface.fromy + by, startw .. startw + aw)
+      let area = iface.colorArea(hl, iface.pos.fromy + by, startw .. startw + aw)
       for i in area:
         if i - startw >= display.width:
           break

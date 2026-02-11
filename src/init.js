@@ -811,6 +811,41 @@ Pager.prototype.openEditor = function(input) {
     return res;
 }
 
+/* public */
+Pager.oppositeDir = function(dir) {
+    switch (dir) {
+    case "prev": return "next";
+    case "next": return "prev";
+    case "any": return "any";
+    default: throw new TypeError("direction expected");
+    }
+};
+
+/* public */
+Pager.prototype.__defineGetter__("revDirection", function() {
+    return Pager.oppositeDir(this.navDirection);
+});
+
+/* public */
+Pager.prototype.__defineGetter__("cacheFile", function() {
+    const buffer = this.buffer;
+    if (buffer == null)
+        return "";
+    return this.getCacheFile(buffer.cacheId);
+});
+
+/* public */
+Pager.prototype.discardBuffer = function(buffer = this.buffer, dir = null) {
+    if (dir != null)
+        this.navDirection = Pager.oppositeDir(dir);
+    dir = this.revDirection;
+    const setTarget = buffer.find(dir);
+    if (buffer == null || setTarget == null)
+        this.alert(dir == "next" ? "No next buffer" : "No previous buffer");
+    else
+        this.deleteContainer(buffer, setTarget);
+}
+
 /* private */
 Pager.prototype.handleMouseInput = async function(input) {
     const mouse = this.mouse;
@@ -1082,7 +1117,53 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
         break;
     case "mouse":
         return this.handleMouseInput(mouseInput);
+    case "windowChange":
+        let tab = this.tabHead;
+        const width = this.bufWidth;
+        const height = this.bufHeight;
+        const ps = [];
+        while (tab != null) {
+            let buffer = tab.head;
+            while (buffer != null) {
+                buffer.width = width;
+                buffer.height = height;
+                const iface = buffer.iface;
+                if (iface != null) {
+                    (function(buffer) {
+                        iface.windowChange(buffer.cursorx, buffer.cursory)
+                            .then(pos => buffer.setCursorXYCenter(...pos));
+                    })(buffer);
+                }
+                const select = buffer.select;
+                if (select != null)
+                    select.windowChange(width, height);
+                buffer = buffer.next;
+            }
+            tab = tab.next;
+        }
+        break;
     }
+}
+
+/* private */
+Pager.prototype.unauthorized = async function(buffer) {
+    const url = new URL(buffer.url)
+    const username = await this.setLineEdit("username", "Username: ", {
+        current: url.username
+    });
+    if (username != null) {
+        const password = await this.setLineEdit("password", "Password: ", {
+            hide: true
+        });
+        if (password != null) {
+            url.username = username;
+            url.password = password;
+            const buffer2 = this.gotoURL(url, {referrer: buffer});
+            this.replace(buffer, buffer2);
+        } else
+            this.discardBuffer(buffer);
+    } else
+        this.discardBuffer(buffer);
 }
 
 /* private */
@@ -1135,6 +1216,14 @@ Pager.prototype.redirect = async function(buffer, request) {
  */
 
 /* public */
+Buffer.prototype.__defineGetter__("numLines", function() {
+    const iface = this.iface;
+    if (iface == null)
+        return 0;
+    return iface.numLines;
+});
+
+/* public */
 Buffer.prototype.cursorDown = function(n = 1) {
     this.setCursorY(this.cursory + n);
 }
@@ -1181,7 +1270,10 @@ Buffer.prototype.scrollUp = function(n = 1) {
 
 /* public */
 Buffer.prototype.scrollRight = function(n = 1) {
-    const msw = this.maxScreenWidth();
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    const msw = iface.maxScreenWidth();
     const x = Math.min(this.fromx + this.width + n, msw) - this.width;
     if (x > this.fromx)
         this.setFromX(x);
@@ -1276,6 +1368,22 @@ Buffer.prototype.cursorMiddleColumn = function() {
 /* public */
 Buffer.prototype.cursorRightEdge = function() {
     this.setCursorX(this.fromx + this.width - 1);
+}
+
+/* private */
+Buffer.prototype.pushCursorPos = function() {
+    this.bpos ??= []; /* TODO private variable */
+    this.bpos.push([this.cursorx, this.cursory, this.fromx, this.fromy]);
+}
+
+/* private */
+Buffer.prototype.popCursorPos = function(nojump = false) {
+    const pos = this.bpos.pop();
+    if (pos !== undefined) {
+        const [cursorx, cursory, fromx, fromy] = pos;
+        this.setFromXY(fromx, fromy);
+        this.setCursorXY(cursorx, cursory, !nojump, !nojump);
+    }
 }
 
 /* private */
@@ -1470,7 +1578,41 @@ Buffer.prototype.lowerPageBegin = function(n) {
     this.cursorLineTextStart()
 }
 
-/* TODO centerLine */
+/* zz */
+/* public */
+Buffer.prototype.centerLine = function(n = 0) {
+    if (n != 0)
+        this.setCursorY(n - 1);
+    this.setFromY(this.cursory - this.height / 2);
+}
+
+/* public */
+Buffer.prototype.centerColumn = function() {
+    this.setFromX(this.cursorx - this.width / 2);
+}
+
+/* public */
+Buffer.prototype.setFromXY = function(x, y) {
+    this.setFromY(y);
+    this.setFromX(x);
+}
+
+/* public */
+Buffer.prototype.setCursorXY = function(x, y, refresh = true) {
+    this.setCursorY(y, refresh);
+    this.setCursorX(x, refresh);
+}
+
+/* public */
+Buffer.prototype.setCursorXYCenter = function(x, y, refresh = true) {
+    const fy = this.fromy;
+    const fx = this.fromx;
+    this.setCursorXY(x, y, refresh);
+    if (fy != this.fromy)
+        this.centerLine();
+    if (fx != this.fromx)
+        this.centerColumn();
+}
 
 /* z. */
 /* public */
@@ -1729,7 +1871,7 @@ Buffer.prototype.setCursorYCenter = function(y) {
 Buffer.prototype.setCursorXCenter = function(x) {
     const fx = this.fromx;
     this.setCursorX(x);
-    if (fx != fromx)
+    if (fx != this.fromx)
         this.centerColumn();
 }
 
@@ -1808,6 +1950,7 @@ Buffer.prototype.onclick = async function(res, save = false) {
                                      this.width, this.height, resolve);
         });
         this.closeSelect();
+        iface.queueDraw();
         const res2 = await iface.select(selected);
         return this.onclick(res2);
     } case "read-password": case "read-text": {
@@ -1854,7 +1997,7 @@ Buffer.prototype.onclick = async function(res, save = false) {
 
 /* public */
 Buffer.prototype.click = async function(n = 1) {
-    this.showLoading();
+    this.showLoading = true;
     const iface = this.iface;
     if (iface == null)
         return;
@@ -1957,7 +2100,63 @@ Buffer.prototype.editScreen = async function() {
 }
 
 /* private */
-Buffer.prototype.loaded = async function(headless, metaRefresh, autofocus) {
+Buffer.prototype.cancel = function() {
+    if (this.loadState != "loading")
+        return;
+    this.loadState = "canceled";
+    this.setLoadInfo("");
+    const iface = this.iface;
+    if (iface != null)
+        iface.cancel();
+    else
+        pager.cancelImpl(this);
+    pager.alert("Canceled loading")
+}
+
+/* private */
+Buffer.prototype.startLoad = async function() {
+    let repaintLoopPromise, titlePromise;
+    if (!this.headless) {
+        repaintLoopPromise = (async () => {
+            while (this.iface != null) {
+                await this.iface.onReshape();
+                await this.requestLines(true);
+            }
+        })();
+    }
+    titlePromise = this.iface.getTitle().then(title => {
+        if (title != "") {
+            this.title = title;
+            if (pager.buffer == this) {
+                if (this.loadState != "loading")
+                    pager.queueStatusUpdate();
+                pager.updateTitle();
+            }
+        }
+    });
+    loop:
+    while (this.iface != null) {
+        const [n, len, bs] = await this.iface.load();
+        if (this.loadState == "canceled")
+            break;
+        switch (bs) {
+        case "loadingPage":
+            this.setLoadInfo(`${Util.convertSize(n)} loaded`);
+            break;
+        case "loadingResources":
+            this.setLoadInfo(`${n}/${len} stylesheets loaded`);
+            break;
+        case "loadingImages":
+            this.setLoadInfo(`${n}/${len} images loaded`);
+            break;
+        default: /* loaded */
+            if (!this.iface.gotLines)
+                await this.requestLines();
+            break loop;
+        }
+    }
+    this.setLoadInfo("");
+    this.loadState = "loaded";
     const replace = this.unsetReplace();
     if (replace != null)
         pager.deleteContainer(replace, this);
@@ -1968,9 +2167,10 @@ Buffer.prototype.loaded = async function(headless, metaRefresh, autofocus) {
         pager.queueStatusUpdate();
     }
     if (!this.hasStart) {
-        if (!headless)
+        if (!this.headless)
             this.sendCursorPosition();
         const anchor = this.url.hash.substring(1);
+        const autofocus = this.autofocus;
         if (anchor != "" || autofocus) {
             const [x, y, click] = await this.iface.gotoAnchor(anchor, autofocus,
                                                               true);
@@ -1982,6 +2182,7 @@ Buffer.prototype.loaded = async function(headless, metaRefresh, autofocus) {
             }
         }
     }
+    const metaRefresh = this.metaRefresh;
     if (metaRefresh != "never") {
         let url = this.refreshUrl;
         let n = this.refreshMillis;
@@ -2006,4 +2207,6 @@ Buffer.prototype.loaded = async function(headless, metaRefresh, autofocus) {
             }, n);
         }
     }
+    await titlePromise;
+    await repaintLoopPromise;
 }

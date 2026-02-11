@@ -415,6 +415,12 @@ proc toJS*(ctx: JSContext; cookie: CookieMode): JSValue =
   of cmNone: return JS_FALSE
   of cmSave: return JS_NewString(ctx, "save")
 
+proc toJS*(ctx: JSContext; headless: HeadlessMode): JSValue =
+  case headless
+  of hmTrue: return JS_TRUE
+  of hmFalse: return JS_FALSE
+  of hmDump: return JS_NewString(ctx, "dump")
+
 proc toJS*(ctx: JSContext; p: ChaPathResolved): JSValue =
   ctx.toJS($p)
 

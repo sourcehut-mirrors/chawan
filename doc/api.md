@@ -741,6 +741,11 @@ position if it is outside the screen.</td>
 </tr>
 
 <tr>
+<td>`setFromX(x)`, `setFromY(y)`, `setFromXY(x, y)`</td>
+<td>Set the starting position of the displayed area on the screen.</td>
+</tr>
+
+<tr>
 <td>`find(dir)`</td>
 <td>Find the next buffer in the list in a specific direction.
 <p>

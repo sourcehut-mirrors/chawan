@@ -84,6 +84,9 @@ proc readBlob(path: string): WebFile {.jsstfunc: "Util".} =
   let name = path.afterLast('/')
   return newWebFile(name, ps.fd)
 
+proc convertSize(n: float64): string {.jsstfunc: "Util".} =
+  twtstr.convertSize(uint64(n))
+
 proc addUtilModule*(ctx: JSContext): JSClassID =
   return ctx.registerType(Util)
 
