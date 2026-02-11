@@ -4613,6 +4613,12 @@ proc hasAttributeNS(element: Element; namespace, localName: CAtom): bool
     {.jsfunc.} =
   return element.findAttrNS(namespace, localName) != -1
 
+proc getAttributeNames(ctx: JSContext; element: Element): JSValue {.jsfunc.} =
+  var s = newSeqOfCap[JSValue](element.attrs.len)
+  for it in element.attrs:
+    s.add(ctx.toJS(it.qualifiedName))
+  return ctx.newArrayFrom(s)
+
 proc getAttribute(ctx: JSContext; element: Element; qualifiedName: CAtom):
     JSValue {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
