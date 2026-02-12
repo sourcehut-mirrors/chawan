@@ -13,6 +13,7 @@ import io/packetreader
 import io/packetwriter
 import io/poll
 import server/buffer
+import server/bufferiface
 import server/connectionerror
 import server/loader
 import server/loaderiface

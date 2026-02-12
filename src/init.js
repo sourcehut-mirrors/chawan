@@ -93,11 +93,11 @@ globalThis.cmd = {
     toggleScripting: () => {
         const buffer = pager.buffer;
         const buffer2 = pager.gotoURL(buffer.url, {
-            contentType: buffer.contentType,
-            history: buffer.history,
+            contentType: buffer.init.contentType,
+            history: buffer.init.history,
             replace: buffer,
-            scripting: !buffer.scripting,
-            cookie: buffer.cookie
+            scripting: !buffer.init.scripting,
+            cookie: buffer.init.cookie
         });
         if (buffer2)
             buffer2.copyCursorPos(buffer)
@@ -105,11 +105,11 @@ globalThis.cmd = {
     toggleCookie: () => {
         const buffer = pager.buffer;
         pager.gotoURL(buffer.url, {
-            contentType: buffer.contentType,
-            history: buffer.history,
+            contentType: buffer.init.contentType,
+            history: buffer.init.history,
             replace: buffer,
-            scripting: buffer.scripting,
-            cookie: !buffer.cookie
+            scripting: buffer.init.scripting,
+            cookie: !buffer.init.cookie
         });
         if (buffer2)
             buffer2.copyCursorPos(buffer)
@@ -287,7 +287,7 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
     this.runStartupScript();
     if (pipe) {
         this.loadSubmit("stream:-", {
-            contentType: contentType ?? "text/x-ansi"
+            contentType: contentType || "text/x-ansi"
         });
     }
     const init = {contentType, charset, history};
@@ -388,8 +388,11 @@ Pager.prototype.isearchForward = async function(reverse = false) {
     if (this.menu || buffer?.select) {
         /* isearch doesn't work in menus. */
         this.searchForward(reverse)
-    } else if (buffer) {
-        buffer.pushCursorPos()
+    } else if (buffer != null) {
+        const cx = buffer.cursorx;
+        const cy = buffer.cursory;
+        const fx = buffer.fromx;
+        const fy = buffer.fromy;
         buffer.markPos0()
         const text = await this.setLineEdit("search", reverse ? "?" : "/", {
             update: async () => {
@@ -403,14 +406,10 @@ Pager.prototype.isearchForward = async function(reverse = false) {
                     }
                     this.regex = null;
                 }
-                buffer.popCursorPos(true);
-                buffer.pushCursorPos();
                 const re = this.iregex;
                 if (re instanceof RegExp) {
                     buffer.highlight = true; /* TODO private variable */
                     let wrap = config.search.wrap;
-                    const cx = buffer.cursorx;
-                    const cy = buffer.cursory;
                     const iface = buffer.iface;
                     if (iface != null) {
                         const fun = reverse ? "findPrevMatch" : "findNextMatch";
@@ -424,11 +423,13 @@ Pager.prototype.isearchForward = async function(reverse = false) {
         if (text == null) { /* canceled */
             delete this.isearchIter;
             this.iregex = null;
-            buffer.popCursorPos();
+            this.setFromXY(fx, fy);
+            this.setCursorXY(cx, cy);
         } else {
             delete this.isearchIter;
             if (text == "" && !this.regex) {
-                buffer.popCursorPos()
+                this.setFromXY(fx, fy);
+                this.setCursorXY(cx, cy);
             } else {
                 if (text != "") {
                     if (typeof this.iregex === "string")
@@ -439,7 +440,7 @@ Pager.prototype.isearchForward = async function(reverse = false) {
                     this.searchNext()
                 this.reverseSearch = reverse;
                 buffer.markPos()
-                await buffer.sendCursorPosition()
+                await buffer.iface.sendCursorPosition()
             }
         }
         const iface = buffer.iface;
@@ -559,10 +560,10 @@ Pager.prototype.reload = function() {
     if (!old)
         return;
     const buffer = this.gotoURL(old.url, {
-        contentType: old.contentType,
+        contentType: old.init.contentType,
         replace: old,
-        history: old.history,
-        charset: old.charsetOverride
+        history: old.init.history,
+        charset: old.init.charsetOverride
     })
     buffer.copyCursorPos(old);
 }
@@ -647,9 +648,11 @@ Pager.prototype.gotoLine = async function(n) {
             return;
         }
     }
-    this.markPos0();
+    if (target == buffer)
+        buffer.markPos0();
     target.setCursorY(n);
-    this.markPos();
+    if (target == buffer)
+        buffer.markPos();
 }
 
 Pager.prototype.peek = function() {
@@ -660,7 +663,8 @@ Pager.prototype.peek = function() {
 
 /* private */
 Pager.prototype.toggleLinkHints = async function() {
-    this.markPos0();
+    const buffer = this.buffer;
+    buffer.markPos0();
     const urls = await this.showLinkHints();
     if (urls.length == 0) {
         this.alert("No links on page");
@@ -708,7 +712,7 @@ Pager.prototype.toggleLinkHints = async function() {
     this.hideLinkHints();
     if (it?.leaf) {
         this.setCursorXY(it.x, it.y);
-        this.markPos();
+        buffer.markPos();
         return true;
     } else if (alert)
         this.alert("No such hint");
@@ -727,7 +731,7 @@ Pager.prototype.lineInfo = function() {
     const y = y0 + 1;
     const numLines = buffer.numLines;
     const perc = numLines == 0 ? 100 : Math.floor(100 * y / numLines);
-    const w = buffer.currentLineWidth();
+    const w = iface.currentLineWidth();
     const b = iface.cursorBytes(y0, x0);
     this.alert(`line ${y}/${numLines} (${perc}%) col ${x}/${w} (byte ${b})`);
 }
@@ -1121,12 +1125,11 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
         let tab = this.tabHead;
         const width = this.bufWidth;
         const height = this.bufHeight;
-        const ps = [];
         while (tab != null) {
             let buffer = tab.head;
             while (buffer != null) {
-                buffer.width = width;
-                buffer.height = height;
+                buffer.init.width = width;
+                buffer.init.height = height;
                 const iface = buffer.iface;
                 if (iface != null) {
                     (function(buffer) {
@@ -1168,7 +1171,7 @@ Pager.prototype.unauthorized = async function(buffer) {
 
 /* private */
 Pager.prototype.redirect = async function(buffer, request) {
-    const redirectDepth = buffer.redirectDepth;
+    const redirectDepth = buffer.init.redirectDepth;
     if (redirectDepth < config.network.maxRedirect) {
         const url = new URL(request.url);
         const requestProto = url.protocol;
@@ -1186,10 +1189,10 @@ Pager.prototype.redirect = async function(buffer, request) {
             }
         }
         this.numload--;
-        const save = buffer.save;
+        const save = buffer.init.save;
         if (save || !this.gotoURLHash(request, buffer)) {
             const nc = this.gotoURL(request, {
-                history: buffer.history,
+                history: buffer.init.history,
                 save: save,
                 redirectDepth: redirectDepth + 1,
                 referrer: buffer
@@ -1215,13 +1218,134 @@ Pager.prototype.redirect = async function(buffer, request) {
  * BufferInterface, then we can make Buffer a JS-only class.
  */
 
+/* getters */
+
 /* public */
 Buffer.prototype.__defineGetter__("numLines", function() {
-    const iface = this.iface;
-    if (iface == null)
-        return 0;
-    return iface.numLines;
+    return this.iface?.numLines ?? 0;
 });
+
+/* public */
+Buffer.prototype.__defineGetter__("url", function() {
+    return this.init.url;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("cacheId", function() {
+    return this.init.cacheId;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("width", function() {
+    return this.init.width;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("height", function() {
+    return this.init.height;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("title", function() {
+    return this.init.title;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("process", function() {
+    return this.iface?.process ?? -1;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("cursorx", function() {
+    return this.iface?.cursorx ?? 0;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("cursory", function() {
+    return this.iface?.cursory ?? 0;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("fromx", function() {
+    return this.iface?.fromx ?? 0;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("fromy", function() {
+    return this.iface?.fromy ?? 0;
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("hoverLink", function() {
+    return this.iface?.hoverLink ?? "";
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("hoverTitle", function() {
+    return this.iface?.hoverTitle ?? "";
+});
+
+/* public */
+Buffer.prototype.__defineGetter__("hoverImage", function() {
+    return this.iface?.hoverImage ?? "";
+});
+
+/* private */
+Buffer.prototype.__defineGetter__("hoverCachedImage", function() {
+    return this.iface?.hoverCachedImage ?? "";
+});
+
+/* private */
+Buffer.prototype.__defineGetter__("acursorx", function() {
+    return this.iface?.acursorx ?? 0;
+});
+
+/* private */
+Buffer.prototype.__defineGetter__("acursory", function() {
+    return this.iface?.acursory ?? 0;
+});
+
+/* functions */
+
+/* public */
+Buffer.prototype.setCursorX = function(x, refresh = true, save = true) {
+    if (this.iface != null) {
+        this.iface.setCursorX(x, refresh, save);
+        if (this.currentSelection != null) {
+            x = this.iface.cursorx;
+            if (x != this.currentSelection.x2) {
+                this.currentSelection.x2 = x;
+                this.iface.queueDraw();
+            }
+        }
+    }
+}
+
+/* public */
+Buffer.prototype.setCursorY = function(y, refresh = true) {
+    if (this.iface != null) {
+        this.iface.setCursorY(y, refresh);
+        if (this.currentSelection != null) {
+            y = this.iface.cursory;
+            if (y != this.currentSelection.y2) {
+                this.currentSelection.y2 = y
+                this.iface.queueDraw();
+            }
+        }
+    }
+}
+
+/* public */
+Buffer.prototype.setFromX = function(x, refresh = true) {
+    if (this.iface != null)
+        this.iface.setFromX(x, refresh);
+}
+
+/* public */
+Buffer.prototype.setFromY = function(y) {
+    if (this.iface != null)
+        this.iface.setFromY(y);
+}
 
 /* public */
 Buffer.prototype.cursorDown = function(n = 1) {
@@ -1235,12 +1359,12 @@ Buffer.prototype.cursorUp = function(n = 1) {
 
 /* public */
 Buffer.prototype.cursorLeft = function(n = 1) {
-    this.setCursorX(this.cursorFirstX() - n);
+    this.setCursorX((this.iface?.cursorFirstX ?? 0) - n);
 }
 
 /* public */
 Buffer.prototype.cursorRight = function(n = 1) {
-    this.setCursorX(this.cursorLastX() + n);
+    this.setCursorX((this.iface?.cursorLastX ?? 0) + n);
 }
 
 /* public */
@@ -1288,10 +1412,12 @@ Buffer.prototype.scrollLeft = function(n = 1) {
 
 /* public */
 Buffer.prototype.pageDown = function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
     const delta = this.height * n;
     this.setFromY(this.fromy + delta);
     this.setCursorY(this.cursory + delta);
-    this.restoreCursorX();
 }
 
 /* public */
@@ -1313,10 +1439,12 @@ Buffer.prototype.pageRight = function(n = 1) {
  * it is counter-intuitive and annoying. */
 /* public */
 Buffer.prototype.halfPageDown = function(n = 1) {
+    const iface = this.iface;
+    if (iface == null)
+        return;
     const delta = (this.height + 1) / 2 * n;
     this.setFromY(this.fromy + delta);
     this.setCursorY(this.cursory + delta);
-    this.restoreCursorX();
 }
 
 /* public */
@@ -1370,20 +1498,53 @@ Buffer.prototype.cursorRightEdge = function() {
     this.setCursorX(this.fromx + this.width - 1);
 }
 
-/* private */
-Buffer.prototype.pushCursorPos = function() {
-    this.bpos ??= []; /* TODO private variable */
-    this.bpos.push([this.cursorx, this.cursory, this.fromx, this.fromy]);
+/* public */
+Buffer.prototype.setMark = function(id, x = this.cursorx, y = this.cursory) {
+    if (this.iface == null)
+        return false;
+    return this.iface.setMark(id, x, y);
+}
+
+/* public */
+Buffer.prototype.clearMark = function(id) {
+    if (this.iface == null)
+        return false;
+    return this.iface.clearMark(id);
+}
+
+/* public */
+Buffer.prototype.getMarkPos = function(id) {
+    if (this.iface == null)
+        return null;
+    return this.iface.getMarkPos(id);
+}
+
+/* public */
+Buffer.prototype.findNextMark = function(id, x = this.cursorx,
+                                         y = this.cursory) {
+    if (this.iface == null)
+        return false;
+    return this.iface.findNextMark(id, x, y);
+}
+
+/* public */
+Buffer.prototype.findPrevMark = function(id, x = this.cursorx,
+                                         y = this.cursory) {
+    if (this.iface == null)
+        return false;
+    return this.iface.findPrevMark(id, x, y);
 }
 
 /* private */
-Buffer.prototype.popCursorPos = function(nojump = false) {
-    const pos = this.bpos.pop();
-    if (pos !== undefined) {
-        const [cursorx, cursory, fromx, fromy] = pos;
-        this.setFromXY(fromx, fromy);
-        this.setCursorXY(cursorx, cursory, !nojump, !nojump);
-    }
+Buffer.prototype.markPos0 = function() {
+    if (this.iface != null)
+        this.iface.markPos0();
+}
+
+/* private */
+Buffer.prototype.markPos = function() {
+    if (this.iface != null)
+        this.iface.markPos();
 }
 
 /* private */
@@ -1653,11 +1814,11 @@ Buffer.prototype.previousPageBegin = function(n) {
 }
 
 /* private */
-Buffer.prototype.startSelection = function(t, mouse,
-                                           x1 = this.cursorFirstX()) {
+Buffer.prototype.startSelection = function(t, mouse, x1 = undefined) {
     const iface = this.iface;
     if (iface == null)
         return;
+    x1 ??= iface.cursorFirstX;
     const selection = iface.startSelection(t, mouse,
                                            x1, this.cursory,
                                            this.cursorx, this.cursory)
@@ -1680,7 +1841,7 @@ Buffer.prototype.cursorToggleSelection = function(n = 1, opts = {}) {
         this.clearSelection();
         return null;
     }
-    const cx = this.cursorFirstX();
+    const cx = this.iface?.cursorFirstX ?? 0;
     this.cursorRight(n - 1);
     return this.startSelection(opts.selectionType ?? "normal", false, cx);
 }
@@ -1702,7 +1863,7 @@ Buffer.prototype.cursorLineTextStart = function() {
         return;
     const [s, e] = iface.matchFirst(/\S/, this.cursory);
     if (s >= 0) {
-        const x = this.currentLineWidth(0, s);
+        const x = iface.currentLineWidth(0, s);
         this.setCursorX(x > 0 ? x : x - 1);
     } else
         this.cursorLineEnd();
@@ -1912,6 +2073,14 @@ Buffer.prototype.saveSource = function() {
     pager.gotoURL("cache:" + this.cacheId, {save: true, url: this.url});
 }
 
+/* public */
+Buffer.prototype.toggleImages = async function() {
+    const iface = this.iface;
+    if (iface == null)
+        return;
+    this.init.images = await iface.toggleImages();
+}
+
 /* private */
 Buffer.prototype.onclick = async function(res, save = false) {
     if (res == null)
@@ -1997,7 +2166,7 @@ Buffer.prototype.onclick = async function(res, save = false) {
 
 /* public */
 Buffer.prototype.click = async function(n = 1) {
-    this.showLoading = true;
+    this.init.showLoading = true;
     const iface = this.iface;
     if (iface == null)
         return;
@@ -2100,12 +2269,18 @@ Buffer.prototype.editScreen = async function() {
 }
 
 /* private */
+Buffer.prototype.setLoadInfo = function(msg) {
+    this.init.loadInfo = msg;
+    pager.copyLoadInfo(this.init);
+}
+
+/* private */
 Buffer.prototype.cancel = function() {
-    if (this.loadState != "loading")
+    const iface = this.iface;
+    if (iface != null && iface.loadState != "loading")
         return;
     this.loadState = "canceled";
     this.setLoadInfo("");
-    const iface = this.iface;
     if (iface != null)
         iface.cancel();
     else
@@ -2116,19 +2291,19 @@ Buffer.prototype.cancel = function() {
 /* private */
 Buffer.prototype.startLoad = async function() {
     let repaintLoopPromise, titlePromise;
-    if (!this.headless) {
+    if (!this.init.headless) {
         repaintLoopPromise = (async () => {
             while (this.iface != null) {
                 await this.iface.onReshape();
-                await this.requestLines(true);
+                await this.iface.requestLines(true);
             }
         })();
     }
     titlePromise = this.iface.getTitle().then(title => {
         if (title != "") {
-            this.title = title;
+            this.init.title = title;
             if (pager.buffer == this) {
-                if (this.loadState != "loading")
+                if (this.iface != null && this.iface.loadState != "loading")
                     pager.queueStatusUpdate();
                 pager.updateTitle();
             }
@@ -2137,7 +2312,7 @@ Buffer.prototype.startLoad = async function() {
     loop:
     while (this.iface != null) {
         const [n, len, bs] = await this.iface.load();
-        if (this.loadState == "canceled")
+        if (this.iface.loadState == "canceled")
             break;
         switch (bs) {
         case "loadingPage":
@@ -2151,12 +2326,12 @@ Buffer.prototype.startLoad = async function() {
             break;
         default: /* loaded */
             if (!this.iface.gotLines)
-                await this.requestLines();
+                await this.iface.requestLines();
             break loop;
         }
     }
     this.setLoadInfo("");
-    this.loadState = "loaded";
+    this.iface.loadState = "loaded";
     const replace = this.unsetReplace();
     if (replace != null)
         pager.deleteContainer(replace, this);
@@ -2166,11 +2341,11 @@ Buffer.prototype.startLoad = async function() {
             pager.alertState = "normal";
         pager.queueStatusUpdate();
     }
-    if (!this.hasStart) {
-        if (!this.headless)
-            this.sendCursorPosition();
+    if (!this.init.hasStart) {
+        if (!this.init.headless)
+            this.iface.sendCursorPosition();
         const anchor = this.url.hash.substring(1);
-        const autofocus = this.autofocus;
+        const autofocus = this.init.autofocus;
         if (anchor != "" || autofocus) {
             const [x, y, click] = await this.iface.gotoAnchor(anchor, autofocus,
                                                               true);
@@ -2182,10 +2357,10 @@ Buffer.prototype.startLoad = async function() {
             }
         }
     }
-    const metaRefresh = this.metaRefresh;
+    const metaRefresh = this.init.metaRefresh;
     if (metaRefresh != "never") {
-        let url = this.refreshUrl;
-        let n = this.refreshMillis;
+        let url = this.init.refreshUrl;
+        let n = this.init.refreshMillis;
         if (n == -1)
             [n, url] = await this.iface.checkRefresh();
         let ok = n >= 0;
@@ -2200,9 +2375,11 @@ Buffer.prototype.startLoad = async function() {
         }
         if (ok) {
             setTimeout(() => {
-                if (replace.iface != null) {
-                    pager.gotoURL(url, {replace, history: replace.history})
-                        .copyCursorPos(replace);
+                if (this.iface != null) {
+                    pager.gotoURL(url, {
+                        replace: this,
+                        history: this.init.history
+                    }).init.copyCursorPos(replace.iface ?? replace.init);
                 }
             }, n);
         }

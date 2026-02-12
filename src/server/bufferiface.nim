@@ -1,12 +1,18 @@
 {.push raises: [].}
 
+import std/options
 import std/posix
+import std/tables
 
+import chagashi/charset
+import config/config
+import config/conftypes
+import config/cookie
+import config/mimetypes
 import css/render
 import io/dynstream
 import io/packetreader
 import io/packetwriter
-import io/promise
 import local/select
 import monoucha/fromjs
 import monoucha/jsbind
@@ -17,12 +23,14 @@ import monoucha/tojs
 import server/headers
 import server/loaderiface
 import server/request
+import server/response
 import types/bitmap
 import types/blob
 import types/cell
 import types/color
 import types/jsopt
 import types/opt
+import types/referrer
 import types/refstring
 import types/url
 import types/winattrs
@@ -62,13 +70,18 @@ type
     bcUpdateHover = "updateHover"
     bcWindowChange = "windowChange"
 
+  HoverType* = enum
+    htTitle, htLink, htImage, htCachedImage
+
+  UpdateHoverResult* = seq[tuple[t: HoverType, s: string]]
+
+  GetValueProc = proc(ctx: JSContext; iface: BufferInterface;
+    r: var PacketReader): JSValue {.nimcall, raises: [].}
+
   BufferIfaceItem* = object
     id*: int
-    p*: EmptyPromise
-    get*: GetValueProc
-
-  GetValueProc* = proc(iface: BufferInterface; promise: EmptyPromise) {.
-    nimcall, raises: [].}
+    fun: pointer
+    get: GetValueProc
 
   HighlightType* = enum
     hltSearch, hltSelect
@@ -79,8 +92,8 @@ type
     mouse* {.jsget.}: bool
     x1*: int
     y1*: int
-    x2*: int
-    y2*: int
+    x2* {.jsgetset.}: int
+    y2* {.jsgetset.}: int
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
@@ -166,12 +179,6 @@ type
       options*: seq[SelectOption]
       selected*: int
 
-  GetLinesResult* = object
-    numLines*: int
-    bgcolor*: CellColor
-    lines*: seq[SimpleFlexibleLine]
-    images*: seq[PosBitmap]
-
   SelectionType* = enum
     stNormal = "normal"
     stBlock = "block"
@@ -181,44 +188,279 @@ type
     process*: int
     refc*: int
 
-  CursorState* = object
-    cursor*: PagePos
-    xend*: int
-    fromx*: int
-    fromy*: int
-    setx*: int
-    setxrefresh*: bool
-    setxsave*: bool
+  CursorState = object
+    cursor: PagePos
+    xend: int
+    fromx: int
+    fromy: int
+    setx: int
+    setxrefresh: bool
+    setxsave: bool
+
+  BufferConfig* = object
+    refererFrom*: bool
+    styling*: bool
+    scripting*: ScriptingMode
+    images*: bool
+    headless*: HeadlessMode
+    autofocus*: bool
+    history*: bool
+    markLinks*: bool
+    charsetOverride*: Charset
+    metaRefresh*: MetaRefresh
+    charsets*: seq[Charset]
+    imageTypes*: Table[string, string]
+    userAgent*: string
+    referrer*: string
+    userStyle*: string
+
+  BufferInitFlag* = enum
+    bifSave, bifIsHTML, bifHistory, bifTailOnLoad, bifCrashed, bifHasStart
+
+  LoadState* = enum
+    lsLoading = "loading"
+    lsCanceled = "canceled"
+    lsLoaded = "loaded"
+
+  Mark = object
+    id: string
+    pos: PagePos
 
   BufferInterface* = ref object
-    map*: seq[BufferIfaceItem]
-    packetid*: int
-    len*: int
-    nfds*: int
-    width*: int
-    height*: int
+    map: seq[BufferIfaceItem]
+    packetid: int
     stream*: BufStream
-    lines*: SimpleFlexibleGrid
-    lineShift*: int
+    lines: SimpleFlexibleGrid
+    lineShift: int
     numLines* {.jsget.}: int
-    pos*: CursorState
+    pos: CursorState
     highlights: seq[Highlight]
     images*: seq[PosBitmap]
+    hoverText*: array[HoverType, string]
     phandle*: ProcessHandle
     imageCache: ImageCache
     attrsp: ptr WindowAttributes
+    requestedLines: Slice[int]
     bgcolor*: CellColor
+    lastPeek: HoverType
     redraw*: bool
-    gotLines* {.jsget.}: bool
+    refreshStatus*: bool
+    gotLines {.jsget.}: bool
+    loadState* {.jsgetset.}: LoadState # private
+    #TODO copy marks on clone
+    tmpJumpMark: PagePos
+    jumpMark: PagePos
+    marks: seq[Mark]
+    init*: BufferInit
+
+  BufferInit* = ref object
+    config*: BufferConfig
+    loaderConfig*: LoaderClientConfig
+    filter*: string # filter command (called on load)
+    startpos*: Option[CursorState]
+    title: string
+    # if set, this *overrides* any content type received from the network.
+    # (this is because it stores the content type from the -T flag.)
+    # beware, this string may include content type attributes, if you want
+    # to match it you'll have to use contentType.untilLower(';').
+    contentType* {.jsget.}: string
+    loadInfo* {.jsgetset.}: string
+    request*: Request # source request
+    # note: this is not the same as request.url (but should be synced
+    # with buffer.url)
+    url* {.jsget.}: URL
+    # note: this is *not* the same as Buffer.cacheId. buffer has the cache ID of
+    # the output, while iface holds that of the input. Thus pager can
+    # re-interpret the original input, and buffer can rewind the (potentially
+    # mailcap) output.
+    cacheId* {.jsget.}: int
+    redirectDepth {.jsget.}: int
+    width* {.jsgetset.}: int
+    height* {.jsgetset.}: int
+    flags*: set[BufferInitFlag]
+    showLoading* {.jsgetset.}: bool
+    #TODO this is inaccurate, because charsetStack can desync
+    charset*: Charset
+    charsetStack*: seq[Charset]
+    refreshUrl* {.jsget.}: URL
+    refreshMillis* {.jsget.}: int
+    retry*: URL
 
 jsDestructor(BufferInterface)
+jsDestructor(BufferInit)
 jsDestructor(Highlight)
+
+proc finalize(rt: JSRuntime; iface: BufferInterface) {.jsfin.} =
+  for it in iface.map:
+    if it.fun != nil:
+      JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.fun))
+
+proc mark(rt: JSRuntime; iface: BufferInterface; markFunc: JS_MarkFunc)
+    {.jsmark.} =
+  for it in iface.map:
+    if it.fun != nil:
+      JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, it.fun), markFunc)
 
 # Forward declarations
 proc queueDraw*(iface: BufferInterface)
+proc sendCursorPosition(iface: BufferInterface)
+proc requestLinesFast*(iface: BufferInterface; force = false)
 
+# BufferInit
+proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
+    url: URL; request: Request; attrs: WindowAttributes; title: string;
+    redirectDepth: int; flags: set[BufferInitFlag]; contentType: string;
+    charsetStack: seq[Charset]): BufferInit =
+  let cacheId = if request.url.schemeType == stCache:
+    parseInt32(request.url.pathname).get(-1)
+  else:
+    -1
+  let host = request.url.host
+  let loadInfo = (if host != "":
+    "Connecting to " & host
+  else:
+    "Loading " & $request.url) & "..."
+  BufferInit(
+    config: config,
+    loaderConfig: loaderConfig,
+    title: title,
+    url: url,
+    cacheId: cacheId,
+    redirectDepth: redirectDepth,
+    flags: flags,
+    contentType: contentType,
+    width: attrs.width,
+    height: attrs.height - 1,
+    request: request,
+    charsetStack: charsetStack,
+    loadInfo: loadInfo,
+    refreshMillis: -1
+  )
+
+proc newBufferInit*(url: URL; init: BufferInit): BufferInit =
+  BufferInit(
+    config: init.config,
+    loaderConfig: init.loaderConfig,
+    title: init.title,
+    url: url,
+    cacheId: init.cacheId,
+    redirectDepth: init.redirectDepth,
+    flags: init.flags,
+    contentType: init.contentType,
+    width: init.width,
+    height: init.height,
+    request: init.request,
+    charsetStack: init.charsetStack,
+    refreshMillis: -1
+  )
+
+proc copyCursorPos(ctx: JSContext; this: BufferInit; val: JSValueConst):
+    Opt[void] {.jsfunc.} =
+  var iface: BufferInterface
+  if ctx.fromJS(val, iface).isOk:
+    if iface.init.startpos.isSome:
+      this.startpos = iface.init.startpos
+    else:
+      this.startpos = some(iface.pos)
+  else:
+    var init: BufferInit
+    ?ctx.fromJS(val, init)
+    this.startpos = init.startpos
+  # set a separate flag, because startpos may be already used (and
+  # therefore unset) by the time hasStart is checked
+  this.flags.incl(bifHasStart)
+  ok()
+
+proc hasStart(init: BufferInit): bool {.jsfget.} =
+  bifHasStart in init.flags
+
+proc history(init: BufferInit): bool {.jsfget.} =
+  bifHistory in init.flags
+
+proc scripting(init: BufferInit): ScriptingMode {.jsfget.} =
+  init.config.scripting
+
+proc charsetOverride(ctx: JSContext; init: BufferInit): JSValue {.jsfget.} =
+  let charset = init.config.charsetOverride
+  if charset != CHARSET_UNKNOWN:
+    return ctx.toJS(charset)
+  return JS_NULL
+
+proc save(init: BufferInit): bool {.jsfget.} =
+  bifSave in init.flags
+
+proc cookie(init: BufferInit): CookieMode {.jsfget.} =
+  init.loaderConfig.cookieMode
+
+proc headless(init: BufferInit): HeadlessMode {.jsfget.} =
+  init.config.headless
+
+proc metaRefresh(init: BufferInit): MetaRefresh {.jsfget.} =
+  init.config.metaRefresh
+
+proc autofocus(init: BufferInit): bool {.jsfget.} =
+  init.config.autofocus
+
+proc images(init: BufferInit): bool {.jsfget.} =
+  init.config.images
+
+proc setImages(init: BufferInit; images: bool) {.jsfset: "images".} =
+  init.config.images = images
+
+proc title*(init: BufferInit): string {.jsfget.} =
+  if init.title != "":
+    return init.title
+  return init.url.serialize(excludepassword = true)
+
+proc setTitle(init: BufferInit; title: string) {.jsfset: "title".} =
+  init.title = title
+
+# Apply data received in response.
+# Note: pager must call this before checkMailcap.
+proc applyResponse*(init: BufferInit; response: Response;
+    mimeTypes: MimeTypes) =
+  # accept cookies
+  let cookieJar = init.loaderConfig.cookieJar
+  if cookieJar != nil:
+    cookieJar.setCookie(response.headers.getAllNoComma("Set-Cookie"),
+      response.url, init.loaderConfig.cookieMode == cmSave, http = true)
+  # set referrer policy, if any
+  if init.config.refererFrom:
+    let referrerPolicy = response.getReferrerPolicy()
+    init.loaderConfig.referrerPolicy = referrerPolicy.get(DefaultPolicy)
+  else:
+    init.loaderConfig.referrerPolicy = rpNoReferrer
+  # setup content type; note that isSome means an override so we skip it
+  if init.contentType == "":
+    var contentType = response.getLongContentType("application/octet-stream")
+    if contentType.until(';') == "application/octet-stream":
+      contentType = mimeTypes.guessContentType(init.url.pathname,
+        "text/plain")
+    init.contentType = move(contentType)
+  # setup charsets:
+  # * override charset
+  # * network charset
+  # * default charset guesses
+  # HTML may override the last two (but not the override charset).
+  if init.config.charsetOverride != CHARSET_UNKNOWN:
+    init.charsetStack = @[init.config.charsetOverride]
+  elif (let charset = response.getCharset(CHARSET_UNKNOWN);
+      charset != CHARSET_UNKNOWN):
+    init.charsetStack = @[charset]
+  else:
+    init.charsetStack = @[]
+    for charset in init.config.charsets.ritems:
+      init.charsetStack.add(charset)
+    if init.charsetStack.len == 0:
+      init.charsetStack.add(DefaultCharset)
+  init.charset = init.charsetStack[^1]
+  let refresh = parseRefresh(response.headers.getFirst("Refresh"), init.url)
+  init.refreshUrl = refresh.url
+  init.refreshMillis = refresh.n
+
+# BufferInterface
 proc newBufferInterface*(stream: BufStream; phandle: ProcessHandle;
-    attrsp: ptr WindowAttributes): BufferInterface =
+    attrsp: ptr WindowAttributes; init: BufferInit): BufferInterface =
   inc phandle.refc
   return BufferInterface(
     phandle: phandle,
@@ -226,35 +468,36 @@ proc newBufferInterface*(stream: BufStream; phandle: ProcessHandle;
     stream: stream,
     redraw: true,
     attrsp: attrsp,
-    width: attrsp.width,
-    height: attrsp.height - 1,
-    pos: CursorState(setx: -1)
+    init: init,
+    pos: CursorState(setx: -1),
+    lastPeek: HoverType.high,
   )
 
 proc newProcessHandle*(pid: int): ProcessHandle =
   ProcessHandle(process: pid)
 
-proc process*(iface: BufferInterface): int {.jsfunc.} =
+proc process*(iface: BufferInterface): int {.jsfget.} =
   return iface.phandle.process
 
-proc cursorx*(iface: BufferInterface): int {.jsfunc.} =
+proc cursorx(iface: BufferInterface): int {.jsfget.} =
   return iface.pos.cursor.x
 
-proc cursory*(iface: BufferInterface): int {.jsfunc.} =
+proc cursory*(iface: BufferInterface): int {.jsfget.} =
   return iface.pos.cursor.y
 
-proc fromx*(iface: BufferInterface): int {.jsfunc.} =
+proc fromx*(iface: BufferInterface): int {.jsfget.} =
   return iface.pos.fromx
 
-proc fromy*(iface: BufferInterface): int {.jsfunc.} =
+proc fromy*(iface: BufferInterface): int {.jsfget.} =
   return iface.pos.fromy
 
-proc lineWindow*(iface: BufferInterface): Slice[int] =
+proc lineWindow(iface: BufferInterface): Slice[int] =
+  let height = iface.init.height
   if iface.numLines == 0: # not loaded
-    return 0 .. iface.height * 5
-  let n = (iface.height * 5) div 2
-  var x = iface.fromy - n + iface.height div 2
-  var y = iface.fromy + n + iface.height div 2
+    return 0 .. height * 5
+  let n = (height * 5) div 2
+  var x = iface.fromy - n + height div 2
+  var y = iface.fromy + n + height div 2
   if y >= iface.numLines:
     x -= y - iface.numLines
     y = iface.numLines
@@ -263,14 +506,14 @@ proc lineWindow*(iface: BufferInterface): Slice[int] =
     x = 0
   return x .. y
 
-proc lastVisibleLine*(iface: BufferInterface): int =
-  min(iface.fromy + iface.height, iface.numLines) - 1
+proc lastVisibleLine(iface: BufferInterface): int =
+  min(iface.fromy + iface.init.height, iface.numLines) - 1
 
-proc lineLoaded*(iface: BufferInterface; y: int): bool =
+proc lineLoaded(iface: BufferInterface; y: int): bool =
   let dy = y - iface.lineShift
   return dy in 0 ..< iface.lines.len
 
-proc getLine*(iface: BufferInterface; y: int): lent SimpleFlexibleLine =
+proc getLine(iface: BufferInterface; y: int): lent SimpleFlexibleLine =
   if iface.lineLoaded(y):
     return iface.lines[y - iface.lineShift]
   let line {.global.} = SimpleFlexibleLine()
@@ -279,17 +522,271 @@ proc getLine*(iface: BufferInterface; y: int): lent SimpleFlexibleLine =
 proc getLineStr(iface: BufferInterface; y: int): lent string =
   return iface.getLine(y).str
 
+#TODO following procs should probably be computed on setCursorX for
+# efficiency
+# Returns the X position of the first cell occupied by the character the cursor
+# currently points to.
+proc cursorFirstX(iface: BufferInterface): int {.jsfget.} =
+  let y = iface.cursory
+  if not iface.lineLoaded(y):
+    return 0
+  let line = iface.getLineStr(y)
+  var w = 0
+  var i = 0
+  let cc = iface.cursorx
+  while i < line.len:
+    let u = line.nextUTF8(i)
+    let tw = u.width()
+    if w + tw > cc:
+      return w
+    w += tw
+  return w
+
+# Returns the X position of the last cell occupied by the character the cursor
+# currently points to.
+proc cursorLastX(iface: BufferInterface): int {.jsfget.} =
+  let y = iface.cursory
+  if not iface.lineLoaded(y):
+    return 0
+  let line = iface.getLineStr(y)
+  var w = 0
+  var i = 0
+  let cc = iface.cursorx
+  while i < line.len and w <= cc:
+    let u = line.nextUTF8(i)
+    w += u.width()
+  return max(w - 1, 0)
+
+# Last cell for tab, first cell for everything else (e.g. double width.)
+# This is needed because moving the cursor to the 2nd cell of a double
+# width character clears it on some terminals.
+proc cursorDispX(iface: BufferInterface): int =
+  let y = iface.cursory
+  if not iface.lineLoaded(y):
+    return 0
+  let line = iface.getLineStr(y)
+  if line.len == 0:
+    return 0
+  var w = 0
+  var pw = 0
+  var i = 0
+  var u = 0u32
+  let cc = iface.cursorx
+  while i < line.len and w <= cc:
+    u = line.nextUTF8(i)
+    pw = w
+    w += u.width()
+  if u == uint32('\t'):
+    return max(w - 1, 0)
+  return pw
+
+#TODO cache
 proc maxScreenWidth(iface: BufferInterface): int {.jsfunc.} =
   result = 0
   for y in iface.fromy..iface.lastVisibleLine:
     result = max(iface.getLineStr(y).width(), result)
 
-proc maxfromx*(iface: BufferInterface): int =
-  return max(iface.maxScreenWidth() - iface.width, 0)
+proc currentLineWidth(iface: BufferInterface; s = 0; e = int.high): int
+    {.jsfunc.} =
+  let y = iface.cursory
+  if not iface.lineLoaded(y):
+    return 0
+  return iface.getLineStr(y).width(s, e)
 
-proc maxfromy*(iface: BufferInterface): int =
-  return max(iface.numLines - iface.height, 0)
+proc acursorx*(iface: BufferInterface): int {.jsfget.} =
+  max(0, iface.cursorDispX() - iface.fromx)
 
+proc acursory*(iface: BufferInterface): int {.jsfget.} =
+  iface.cursory - iface.fromy
+
+proc maxfromx(iface: BufferInterface): int =
+  return max(iface.maxScreenWidth() - iface.init.width, 0)
+
+proc maxfromy(iface: BufferInterface): int =
+  return max(iface.numLines - iface.init.height, 0)
+
+proc getHoverText*(iface: BufferInterface): string =
+  for s in iface.hoverText:
+    if s != "":
+      return s
+  ""
+
+proc hoverLink(iface: BufferInterface): lent string {.jsfunc.} =
+  iface.hoverText[htLink]
+
+proc hoverTitle(iface: BufferInterface): lent string {.jsfunc.} =
+  iface.hoverText[htTitle]
+
+proc hoverImage(iface: BufferInterface): lent string {.jsfunc.} =
+  iface.hoverText[htImage]
+
+proc hoverCachedImage(iface: BufferInterface): lent string {.jsfunc.} =
+  iface.hoverText[htCachedImage]
+
+proc clearHover*(iface: BufferInterface) =
+  iface.lastPeek = HoverType.high
+
+proc getPeekCursorStr*(iface: BufferInterface): string =
+  var p = iface.lastPeek
+  while true:
+    if p < HoverType.high:
+      inc p
+    else:
+      p = HoverType.low
+    if iface.hoverText[p] != "" or p == iface.lastPeek:
+      break
+  let s = iface.hoverText[p]
+  iface.lastPeek = p
+  s
+
+# Marks
+proc markPos0(iface: BufferInterface) {.jsfunc.} =
+  iface.tmpJumpMark = (iface.cursorx, iface.cursory)
+
+proc markPos(iface: BufferInterface) {.jsfunc.} =
+  let pos = iface.tmpJumpMark
+  if iface.cursorx != pos.x or iface.cursory != pos.y:
+    iface.jumpMark = pos
+
+proc findMark(iface: BufferInterface; id: string): int =
+  for i, it in iface.marks.mypairs:
+    if it.id == id:
+      return i
+  -1
+
+proc setMark(iface: BufferInterface; id: string; x, y: int): bool {.jsfunc.} =
+  let i = iface.findMark(id)
+  if i != -1:
+    iface.marks[i].pos = (x, y)
+  else:
+    iface.marks.add(Mark(id: id, pos: (x, y)))
+  iface.queueDraw()
+  i == -1
+
+proc clearMark(iface: BufferInterface; id: string): bool {.jsfunc.} =
+  let i = iface.findMark(id)
+  if i != -1:
+    iface.marks.del(i)
+    iface.queueDraw()
+  i != -1
+
+proc getMarkPos(ctx: JSContext; iface: BufferInterface; id: string): JSValue
+    {.jsfunc.} =
+  if id == "`" or id == "'":
+    return ctx.toJS(iface.jumpMark)
+  let i = iface.findMark(id)
+  if i != -1:
+    return ctx.toJS(iface.marks[i].pos)
+  return JS_NULL
+
+proc findNextMark(ctx: JSContext; iface: BufferInterface; x, y: int): JSValue
+    {.jsfunc.} =
+  var best: PagePos = (int.high, int.high)
+  var j = -1
+  for i, mark in iface.marks.mypairs:
+    if mark.pos.y < y or mark.pos.y == y and mark.pos.x <= x:
+      continue
+    if mark.pos.y < best.y or mark.pos.y == best.y and mark.pos.x < best.x:
+      best = mark.pos
+      j = i
+  if j != -1:
+    return ctx.toJS(iface.marks[j].id)
+  return JS_NULL
+
+proc findPrevMark(ctx: JSContext; iface: BufferInterface; x, y: int): JSValue
+    {.jsfunc.} =
+  var best: PagePos = (-1, -1)
+  var j = -1
+  for i, mark in iface.marks.mypairs:
+    if mark.pos.y > y or mark.pos.y == y and mark.pos.x >= x:
+      continue
+    if mark.pos.y > best.y or mark.pos.y == best.y and mark.pos.x > best.x:
+      best = mark.pos
+      j = i
+  if j != -1:
+    return ctx.toJS(iface.marks[j].id)
+  return JS_NULL
+
+proc setFromY(iface: BufferInterface; y: int) {.jsfunc.} =
+  if iface.pos.fromy != y:
+    iface.pos.fromy = max(min(y, iface.maxfromy), 0)
+    iface.requestLinesFast()
+    iface.queueDraw()
+
+proc setFromX(iface: BufferInterface; x: int; refresh = true) {.jsfunc.} =
+  if refresh:
+    iface.init.showLoading = true
+  if iface.pos.fromx != x:
+    iface.pos.fromx = max(min(x, iface.maxfromx), 0)
+    if iface.pos.fromx > iface.cursorx:
+      iface.pos.cursor.x = min(iface.pos.fromx, iface.currentLineWidth())
+      if refresh:
+        iface.sendCursorPosition()
+    iface.queueDraw()
+
+# Set the cursor to the xth column. 0-based.
+# * `refresh = false' inhibits reporting of the cursor position to the buffer.
+# * `save = false' inhibits cursor movement if it is currently outside the
+#   screen, and makes it so cursorx is not saved for restoration on cursory
+#   movement.
+proc setCursorX(iface: BufferInterface; x: int; refresh, save: bool)
+    {.jsfunc.} =
+  if refresh:
+    iface.init.showLoading = true
+  if not iface.lineLoaded(iface.cursory):
+    iface.pos.setx = x
+    iface.pos.setxrefresh = refresh
+    iface.pos.setxsave = save
+    return
+  iface.pos.setx = -1
+  let cw = iface.currentLineWidth()
+  let x2 = x
+  let x = max(min(x, cw - 1), 0)
+  # we check for save here, because it is only set by restoreCursorX where
+  # we do not want to move the cursor just because it is outside the window.
+  if not save or iface.fromx <= x and x < iface.fromx + iface.init.width:
+    iface.pos.cursor.x = x
+  elif save and iface.fromx > x:
+    # target x is before the screen start
+    if x2 < iface.cursorx:
+      # desired X position is lower than cursor X; move screen back to the
+      # desired position if valid, to 0 if the desired position is less than 0,
+      # otherwise the last cell of the current line.
+      if x2 <= x:
+        iface.setFromX(x, false)
+      else:
+        iface.setFromX(cw - 1, false)
+    # take whatever position the jump has resulted in.
+    iface.pos.cursor.x = iface.fromx
+  elif x > iface.cursorx:
+    # target x is greater than current x; a simple case, just shift fromx too
+    # accordingly
+    iface.setFromX(max(x - iface.init.width + 1, iface.fromx), false)
+    iface.pos.cursor.x = x
+  if save:
+    iface.pos.xend = iface.cursorx
+  if refresh:
+    iface.sendCursorPosition()
+
+proc setCursorY(iface: BufferInterface; y: int; refresh = true) {.jsfunc.} =
+  if refresh:
+    iface.init.showLoading = true
+  let y = max(min(y, iface.numLines - 1), 0)
+  if y >= iface.fromy and y - iface.init.height < iface.fromy:
+    discard
+  elif y > iface.cursory:
+    iface.setFromY(y - iface.init.height + 1)
+  else:
+    iface.setFromY(y)
+  if iface.cursory != y:
+    iface.pos.cursor.y = y
+    iface.setCursorX(iface.pos.xend, false, false)
+    if refresh:
+      # cursor moved, trigger status so the status is recomputed
+      iface.refreshStatus = true
+      iface.sendCursorPosition()
+
+# Send/receive packets
 const ClickResultReadLine* = {crtReadText, crtReadPassword, crtReadFile}
 
 proc initClickResult*(): ClickResult =
@@ -403,7 +900,7 @@ proc toJS(ctx: JSContext; res: CheckRefreshResult): JSValue =
     return JS_EXCEPTION
   return ctx.newArrayFrom(n, url)
 
-proc toJS*(ctx: JSContext; x: CursorXY): JSValue =
+proc toJS(ctx: JSContext; x: CursorXY): JSValue =
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
     return JS_EXCEPTION
@@ -417,39 +914,95 @@ proc toJS*(ctx: JSContext; x: CursorXY): JSValue =
   return JS_EXCEPTION
 
 proc toJS(ctx: JSContext; match: BufferMatch): JSValue =
-  let x = ctx.toJS(match.x)
-  let y = ctx.toJS(match.y)
-  let w = ctx.toJS(match.w)
-  if JS_IsException(x) or JS_IsException(y) or JS_IsException(w):
-    JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, y)
-    JS_FreeValue(ctx, w)
-    return JS_EXCEPTION
-  return ctx.newArrayFrom([x, y, w])
+  var init = [JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED]
+  block good:
+    init[0] = ctx.toJS(match.x)
+    if JS_IsException(init[0]):
+      break good
+    init[1] = ctx.toJS(match.y)
+    if JS_IsException(init[1]):
+      break good
+    init[2] = ctx.toJS(match.w)
+    if JS_IsException(init[2]):
+      break good
+    return ctx.newArrayFrom(init)
+  ctx.freeValues(init)
+  return JS_EXCEPTION
 
-proc addPromise*(iface: BufferInterface; promise: EmptyPromise;
-    get: GetValueProc) =
-  iface.map.add(BufferIfaceItem(id: iface.packetid, p: promise, get: get))
+proc findPromise(iface: BufferInterface; id: int): int =
+  for i, it in iface.map.mypairs:
+    if it.id == id:
+      return i
+  return -1
+
+type IfaceResult* = enum
+  irOk, irException, irEOF
+
+# Returns false on I/O error, err on JS error.
+proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
+  iface.stream.withPacketReader r:
+    var packetid: int
+    r.sread(packetid)
+    let i = iface.findPromise(packetid)
+    var res = irOk
+    if i != -1:
+      let it = iface.map[i]
+      let val = if it.get == nil:
+        JS_UNDEFINED
+      else:
+        it.get(ctx, iface, r)
+      if not JS_IsException(val) and it.fun != nil:
+        let fun = JS_MKPTR(JS_TAG_OBJECT, it.fun)
+        let ret = ctx.callSinkFree(fun, JS_UNDEFINED, val)
+        if JS_IsException(ret):
+          res = irException
+        JS_FreeValue(ctx, ret)
+      else:
+        if it.fun != nil:
+          JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, it.fun))
+        res = irException
+      iface.map.del(i)
+  do:
+    return irEOF
+  irOk
+
+proc hasPromises(iface: BufferInterface): bool =
+  return iface.map.len > 0
+
+proc getFromStream[T](ctx: JSContext; iface: BufferInterface;
+    r: var PacketReader): JSValue =
+  var res: T
+  r.sread(res)
+  return ctx.toJS(res)
+
+proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
+    JSValue =
+  var resolvingFuncs {.noinit.}: array[2, JSValue]
+  let res = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
+  if JS_IsException(res):
+    return res
+  JS_FreeValue(ctx, resolvingFuncs[1])
+  iface.map.add(BufferIfaceItem(
+    id: iface.packetid,
+    fun: JS_VALUE_GET_PTR(resolvingFuncs[0]),
+    get: get
+  ))
+  inc iface.packetid
+  return res
+
+proc addPromise(iface: BufferInterface; get: GetValueProc) =
+  iface.map.add(BufferIfaceItem(
+    id: iface.packetid,
+    fun: nil,
+    get: get
+  ))
   inc iface.packetid
 
-proc addEmptyPromise*(iface: BufferInterface): EmptyPromise =
-  let promise = EmptyPromise()
-  iface.addPromise(promise, nil)
-  return promise
+proc addPromise[T](ctx: JSContext; iface: BufferInterface): JSValue =
+  return ctx.addPromise(iface, getFromStream[T])
 
-proc getFromStream*[T](iface: BufferInterface; promise: EmptyPromise) =
-  if iface.len != 0:
-    let promise = Promise[T](promise)
-    var r: PacketReader
-    if iface.stream.initReader(r, iface.len, iface.nfds):
-      r.sread(promise.res)
-    iface.len = 0
-    iface.nfds = 0
-
-proc addPromise*[T](iface: BufferInterface): Promise[T] =
-  let promise = Promise[T]()
-  iface.addPromise(promise, getFromStream[T])
-  return promise
+proc addEmptyPromise(ctx: JSContext; iface: BufferInterface): JSValue =
+  return ctx.addPromise(iface, nil)
 
 iterator ilines(iface: BufferInterface; slice: Slice[int]):
     lent SimpleFlexibleLine {.inline.} =
@@ -481,6 +1034,11 @@ proc findColBytes*(s: string; endx: int; startx = 0; starti = 0): int =
 proc cursorBytes(iface: BufferInterface; y, cc: int): int {.jsfunc.} =
   return iface.getLineStr(y).findColBytes(cc, 0, 0)
 
+proc atPercentOf*(iface: BufferInterface): int =
+  if iface.numLines == 0:
+    return 100
+  return (100 * (iface.cursory + 1)) div iface.numLines
+
 #TODO probably we need some mechanism to block sending packets after a
 # buffer is deleted
 
@@ -491,52 +1049,51 @@ template withPacketWriterFire(iface: BufferInterface; cmd: BufferCommand;
     w.swrite(iface.packetid)
     body
 
-proc cancel*(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+proc cancel*(iface: BufferInterface) {.jsfunc.} =
   iface.withPacketWriterFire bcCancel, w:
     discard
-  return addEmptyPromise(iface)
+  iface.addPromise(nil)
 
-proc checkRefresh(iface: BufferInterface): Promise[CheckRefreshResult]
-    {.jsfunc.} =
+proc checkRefresh(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcCheckRefresh, w:
     discard
-  return addPromise[CheckRefreshResult](iface)
+  return addPromise[CheckRefreshResult](ctx, iface)
 
-proc click(iface: BufferInterface; x, y, n: int): Promise[ClickResult] {.
+proc click(ctx: JSContext; iface: BufferInterface; x, y, n: int): JSValue {.
     jsfunc.} =
   iface.withPacketWriterFire bcClick, w:
     w.swrite(x)
     w.swrite(y)
     w.swrite(n)
-  return addPromise[ClickResult](iface)
+  return addPromise[ClickResult](ctx, iface)
 
-proc clone*(iface: BufferInterface; newurl: URL; pstreamFd: cint):
-    Promise[int] =
+proc clone*(iface: BufferInterface; newurl: URL; pstreamFd: cint): Opt[void] =
   if iface.stream.flush().isErr:
-    return nil
+    return err()
   iface.stream.source.withPacketWriter w:
     w.swrite(bcClone)
     w.swrite(iface.packetid)
     w.swrite(newurl)
     w.sendFd(pstreamFd)
   do:
-    return nil
-  return addPromise[int](iface)
+    return err()
+  iface.addPromise(nil)
+  ok()
 
-proc contextMenu(iface: BufferInterface; cursorx, cursory: int):
-    Promise[bool] {.jsfunc.} =
+proc contextMenu(ctx: JSContext; iface: BufferInterface; cursorx, cursory: int):
+    JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcContextMenu, w:
     w.swrite(cursorx)
     w.swrite(cursory)
-  return addPromise[bool](iface)
+  return addPromise[bool](ctx, iface)
 
-proc findNextLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
+proc findNextLink(ctx: JSContext; iface: BufferInterface; x, y, n: int): JSValue
     {.jsfunc.} =
   iface.withPacketWriterFire bcFindNextLink, w:
     w.swrite(x)
     w.swrite(y)
     w.swrite(n)
-  return addPromise[PagePos](iface)
+  return addPromise[PagePos](ctx, iface)
 
 proc findNextMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     x, y: int; wrap: bool; n: int): JSValue {.jsfunc.} =
@@ -566,7 +1123,7 @@ proc findNextMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
         w.swrite(endy)
         w.swrite(wrap)
         w.swrite(n)
-      return ctx.toJS(addPromise[BufferMatch](iface))
+      return addPromise[BufferMatch](ctx, iface)
     let s = iface.getLineStr(y)
     let cap = bytecode.matchFirst(s, b)
     if cap.s >= 0:
@@ -582,21 +1139,21 @@ proc findNextMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     inc y
   return ctx.toJS(BufferMatch(x: -1, y: -1))
 
-proc findNextParagraph(iface: BufferInterface; y, n: int): Promise[int]
-    {.jsfunc.} =
+proc findNextParagraph(ctx: JSContext; iface: BufferInterface; y, n: int):
+    JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcFindNextParagraph, w:
     w.swrite(y)
     w.swrite(n)
-  return addPromise[int](iface)
+  return addPromise[int](ctx, iface)
 
 #TODO findPrevLink & findRevNthLink should probably be merged into findNextLink
-proc findPrevLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
-    {.jsfunc.} =
+proc findPrevLink(ctx: JSContext; iface: BufferInterface; x, y, n: int):
+    JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcFindPrevLink, w:
     w.swrite(x)
     w.swrite(y)
     w.swrite(n)
-  return addPromise[PagePos](iface)
+  return addPromise[PagePos](ctx, iface)
 
 proc findPrevMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     x, y: int; wrap: bool; n: int): JSValue {.jsfunc.} =
@@ -626,7 +1183,7 @@ proc findPrevMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
         w.swrite(endy)
         w.swrite(wrap)
         w.swrite(n)
-      return ctx.toJS(addPromise[BufferMatch](iface))
+      return addPromise[BufferMatch](ctx, iface)
     let s = iface.getLineStr(y)
     if b < 0:
       b = s.len
@@ -644,77 +1201,180 @@ proc findPrevMatch(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     b = -1
   return ctx.toJS(BufferMatch(x: -1, y: -1))
 
-proc findRevNthLink(iface: BufferInterface; x, y, n: int): Promise[PagePos]
-    {.jsfunc.} =
+proc findRevNthLink(ctx: JSContext; iface: BufferInterface; x, y, n: int):
+    JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcFindPrevLink, w:
     w.swrite(x)
     w.swrite(y)
     w.swrite(n)
-  return addPromise[PagePos](iface)
+  return addPromise[PagePos](ctx, iface)
 
-proc forceReshape(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+proc forceReshape(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcForceReshape, w:
     discard
-  return addEmptyPromise(iface)
+  return addEmptyPromise(ctx, iface)
 
-proc getLines*(iface: BufferInterface; slice: Slice[int]):
-    Promise[GetLinesResult] =
+proc getLinesFromStream(ctx: JSContext; iface: BufferInterface;
+    r: var PacketReader): JSValue =
+  iface.gotLines = true
+  let oldBgcolor = iface.bgcolor
+  let oldNumLines = iface.numLines
+  r.sread(iface.lineShift)
+  r.sread(iface.numLines)
+  r.sread(iface.bgcolor)
+  r.sread(iface.lines)
+  r.sread(iface.images)
+  if iface.pos.setx >= 0:
+    iface.setCursorX(iface.pos.setx, iface.pos.setxrefresh, iface.pos.setxsave)
+  if oldNumLines != iface.numLines:
+    if iface.fromy > iface.maxfromy:
+      iface.setFromY(iface.maxfromy)
+    if iface.cursory >= iface.numLines:
+      let n = max(iface.lastVisibleLine, 0)
+      if iface.cursory != n:
+        iface.setCursorY(n)
+    if iface.init.startpos.isSome and
+        iface.numLines >= iface.init.startpos.get.cursor.y:
+      iface.pos = iface.init.startpos.get
+      iface.requestLinesFast()
+      iface.init.startpos = none(CursorState)
+      iface.sendCursorPosition()
+    if iface.loadState != lsLoading:
+      iface.refreshStatus = true
+    if bifTailOnLoad in iface.init.flags:
+      iface.setCursorY(int.high)
+      iface.init.flags.excl(bifTailOnLoad)
+  let slice = iface.lineShift ..< iface.lineShift + iface.lines.len
+  if slice.b >= iface.fromy and slice.a <= iface.fromy + iface.init.height or
+      oldBgcolor != iface.bgcolor:
+    iface.queueDraw()
+  return JS_UNDEFINED
+
+proc requestLinesFast*(iface: BufferInterface; force = false) =
+  let slice = iface.lineWindow
+  if not force and iface.requestedLines == slice:
+    return
+  iface.requestedLines = slice
   iface.withPacketWriterFire bcGetLines, w:
     w.swrite(slice)
-  return addPromise[GetLinesResult](iface)
+  iface.addPromise(getLinesFromStream)
 
-proc getSelectionText(iface: BufferInterface; sx, sy, ex, ey: int;
-    t: SelectionType): Promise[string] {.jsfunc.} =
+proc requestLines(ctx: JSContext; iface: BufferInterface; force = false):
+    JSValue {.jsfunc.} =
+  let slice = iface.lineWindow
+  if not force and iface.requestedLines == slice:
+    return JS_UNDEFINED
+  iface.requestedLines = slice
+  iface.withPacketWriterFire bcGetLines, w:
+    w.swrite(slice)
+  return ctx.addPromise(iface, getLinesFromStream)
+
+# dump mode
+type HandleReadLine = proc(line: SimpleFlexibleLine): Opt[void]
+
+# Synchronously read all lines in the buffer.
+proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
+    handle: HandleReadLine): IfaceResult =
+  while iface.hasPromises:
+    # fulfill all promises
+    let res = ctx.handleCommand(iface)
+    if res != irOk:
+      return res
+  var slice = 0 .. 23
+  while true:
+    let packetid = iface.packetid
+    iface.withPacketWriterFire bcGetLines, w:
+      w.swrite(slice)
+    inc iface.packetid
+    iface.stream.withPacketReaderFire r:
+      var packetid2: int
+      r.sread(packetid2)
+      assert packetid == packetid2
+      r.sread(iface.lineShift)
+      r.sread(iface.numLines)
+      r.sread(iface.bgcolor)
+      r.sread(iface.lines)
+      r.sread(iface.images)
+    for line in iface.lines:
+      if handle(line).isErr:
+        return irEOF
+    if iface.numLines <= slice.b:
+      break
+    slice.a += 24
+    slice.b += 24
+  if iface.init.config.markLinks:
+    # avoid coloring link markers
+    iface.bgcolor = defaultColor
+    if handle(SimpleFlexibleLine()).isErr:
+      return irEOF
+    let packetid = iface.packetid
+    iface.withPacketWriterFire bcGetLinks, w:
+      discard
+    inc iface.packetid
+    var links: seq[string]
+    iface.stream.withPacketReaderFire r:
+      var packetid2: int
+      r.sread(packetid2)
+      assert packetid == packetid2
+      r.sread(links)
+    for i, link in links.mypairs:
+      var s = "[" & $(i + 1) & "] " & link
+      if handle(SimpleFlexibleLine(str: move(s))).isErr:
+        return irEOF
+  irOk
+
+proc getSelectionText(ctx: JSContext; iface: BufferInterface;
+    sx, sy, ex, ey: int; t: SelectionType): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcGetSelectionText, w:
     w.swrite(sx)
     w.swrite(sy)
     w.swrite(ex)
     w.swrite(ey)
     w.swrite(t)
-  return addPromise[string](iface)
+  return addPromise[string](ctx, iface)
 
-proc getTitle(iface: BufferInterface): Promise[string] {.jsfunc.} =
+proc getTitle(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcGetTitle, w:
     discard
-  return addPromise[string](iface)
+  return addPromise[string](ctx, iface)
 
-proc gotoAnchor(iface: BufferInterface; anchor: string;
-    autofocus, target: bool): Promise[GotoAnchorResult] {.jsfunc.} =
+proc gotoAnchor(ctx: JSContext; iface: BufferInterface; anchor: string;
+    autofocus, target: bool): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcGotoAnchor, w:
     w.swrite(anchor)
     w.swrite(autofocus)
     w.swrite(target)
-  return addPromise[GotoAnchorResult](iface)
+  return addPromise[GotoAnchorResult](ctx, iface)
 
-proc hideHints(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+proc hideHints(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcHideHints, w:
     discard
-  return addEmptyPromise(iface)
+  return addEmptyPromise(ctx, iface)
 
-proc load(iface: BufferInterface): Promise[LoadResult] {.jsfunc.} =
+proc load(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcLoad, w:
     discard
-  return addPromise[LoadResult](iface)
+  return addPromise[LoadResult](ctx, iface)
 
-proc markURL(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+proc markURL(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcMarkURL, w:
     discard
-  return addEmptyPromise(iface)
+  return addEmptyPromise(ctx, iface)
 
-proc onReshape(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+proc onReshape(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcOnReshape, w:
     discard
-  return iface.addEmptyPromise()
+  return addEmptyPromise(ctx, iface)
 
-proc readCanceled(iface: BufferInterface): EmptyPromise {.jsfunc.} =
+proc readCanceled(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcReadCanceled, w:
     discard
-  return addEmptyPromise(iface)
+  return addEmptyPromise(ctx, iface)
 
-proc readSuccess(iface: BufferInterface; s: string; fd: cint):
-    Promise[ClickResult] {.jsfunc.} =
+proc readSuccess(ctx: JSContext; iface: BufferInterface; s: string; fd: cint):
+    JSValue {.jsfunc.} =
   if iface.stream.flush().isErr:
-    return newResolvedPromise[ClickResult](initClickResult())
+    return JS_UNDEFINED
   iface.withPacketWriterFire bcReadSuccess, w:
     w.swrite(s)
     let hasfd = fd != -1
@@ -722,31 +1382,53 @@ proc readSuccess(iface: BufferInterface; s: string; fd: cint):
     if hasfd:
       w.sendFd(fd)
   discard close(fd)
-  return addPromise[ClickResult](iface)
+  return addPromise[ClickResult](ctx, iface)
 
-proc select(iface: BufferInterface; selected: int): Promise[ClickResult] {.
-    jsfunc.} =
+proc select(ctx: JSContext; iface: BufferInterface; selected: int): JSValue
+    {.jsfunc.} =
   iface.withPacketWriterFire bcSelect, w:
     w.swrite(selected)
-  return addPromise[ClickResult](iface)
+  return addPromise[ClickResult](ctx, iface)
 
-proc showHints(iface: BufferInterface; sx, sy, ex, ey: int):
-    Promise[HintResult] {.jsfunc.} =
+proc showHints(ctx: JSContext; iface: BufferInterface; sx, sy, ex, ey: int):
+    JSValue {.jsfunc.} =
   iface.withPacketWriterFire bcShowHints, w:
     w.swrite(sx)
     w.swrite(sy)
     w.swrite(ex)
     w.swrite(ey)
-  return addPromise[HintResult](iface)
+  return addPromise[HintResult](ctx, iface)
 
-proc submitForm(iface: BufferInterface; x, y: int): Promise[ClickResult] {.
+proc submitForm(ctx: JSContext; iface: BufferInterface; x, y: int): JSValue {.
     jsfunc.} =
   iface.withPacketWriterFire bcSubmitForm, w:
     w.swrite(x)
     w.swrite(y)
-  return addPromise[ClickResult](iface)
+  return addPromise[ClickResult](ctx, iface)
 
-proc windowChange(iface: BufferInterface; x, y: int): Promise[PagePos]
+proc toggleImages(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
+  iface.withPacketWriterFire bcToggleImages, w:
+    discard
+  return addPromise[bool](ctx, iface)
+
+proc updateHoverFromStream(ctx: JSContext; iface: BufferInterface;
+    r: var PacketReader): JSValue =
+  var res: UpdateHoverResult
+  r.sread(res)
+  if res.len > 0:
+    assert res.high <= int(HoverType.high)
+    for (ht, s) in res:
+      iface.hoverText[ht] = s
+    iface.refreshStatus = true
+  return JS_UNDEFINED
+
+proc sendCursorPosition(iface: BufferInterface) {.jsfunc.} =
+  iface.withPacketWriterFire bcUpdateHover, w:
+    w.swrite(iface.cursorx)
+    w.swrite(iface.cursory)
+  iface.addPromise(updateHoverFromStream)
+
+proc windowChange(ctx: JSContext; iface: BufferInterface; x, y: int): JSValue
     {.jsfunc.} =
   var attrs = iface.attrsp[]
   # subtract status line height
@@ -756,7 +1438,7 @@ proc windowChange(iface: BufferInterface; x, y: int): Promise[PagePos]
     w.swrite(attrs)
     w.swrite(x)
     w.swrite(y)
-  return addPromise[PagePos](iface)
+  return addPromise[PagePos](ctx, iface)
 
 proc matchFirst(ctx: JSContext; iface: BufferInterface; re: JSValueConst;
     y: int): JSValue {.jsfunc.} =
@@ -896,6 +1578,19 @@ proc colorArea(iface: BufferInterface; hl: Highlight; y: int;
       return min(limitx.a, w) .. min(limitx.b, w)
     return 0 .. 0
 
+proc highlightMarks*(iface: BufferInterface; display: var FixedGrid;
+    hlcolor: CellColor) =
+  for mark in iface.marks:
+    if mark.pos.x in iface.fromx ..< iface.fromx + display.width and
+        mark.pos.y in iface.fromy ..< iface.fromy + display.height:
+      let x = mark.pos.x - iface.fromx
+      let y = mark.pos.y - iface.fromy
+      let n = y * display.width + x
+      if hlcolor != defaultColor:
+        display[n].format.bgcolor = hlcolor
+      else:
+        display[n].format.incl(ffReverse)
+
 proc setFormat(cell: var FixedCell; cf: SimpleFormatCell; bgcolor: CellColor) =
   cell.format = cf.format
   if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
@@ -980,8 +1675,9 @@ proc drawLines*(iface: BufferInterface; display: var FixedGrid;
       cell = FixedCell()
 
 proc addBufferInterfaceModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(Highlight)
   ?ctx.registerType(BufferInterface)
+  ?ctx.registerType(BufferInit)
+  ?ctx.registerType(Highlight)
   ok()
 
 {.pop.}
