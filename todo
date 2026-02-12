@@ -27,8 +27,6 @@ buffer:
 - xhtml
 pager:
 - handle long lines
-- save/edit buffer output
-	* just reuse dump mode code
 network:
 - BGI
 - uBO integration? (or at least implement filter lists)
