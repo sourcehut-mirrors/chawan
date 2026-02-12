@@ -343,18 +343,21 @@ proc repeat*(s: string; n: int): string =
 proc memchr(s: pointer; c: cint; n: csize_t): pointer {.
   importc, header: "<string.h>".}
 
-proc find*(s: openArray[char]; c: char; start = 0): int =
-  let L = s.len
+proc find2(s: openArray[char]; c: char; start, len: int): int =
   when nimvm:
-    for i in start ..< L:
+    for i in start ..< len:
       if s[i] == c:
         return i
   else:
-    if L > 0 and start < L:
-      let p = memchr(unsafeAddr s[start], cint(c), csize_t(L) - csize_t(start))
+    if len > 0 and start < len:
+      let p = memchr(unsafeAddr s[start], cint(c), csize_t(len) -
+        csize_t(start))
       if p != nil:
         return cast[int](cast[uint](p) - cast[uint](unsafeAddr s[0]))
   return -1
+
+proc find*(s: openArray[char]; c: char; start = 0): int =
+  return s.find2(c, start, s.len)
 
 proc find*(s: openArray[char]; cs: set[char]; start = 0): int =
   let L = s.len
@@ -376,8 +379,8 @@ proc find*(s1: openArray[char]; s2: string; start = 0): int =
   {.push overflowChecks: off, boundChecks: off.}
   let s2len1 = s2len - 1
   let L = s1len - s2len1
-  while i < L:
-    i = s1.find(c, i)
+  while true:
+    i = s1.find2(c, i, len = L)
     if i == -1:
       break
     when nimvm:
@@ -491,7 +494,13 @@ proc strip*(s: openArray[char]; leading = true; trailing = true;
       dec j
   if i > j:
     return ""
-  return s.toOpenArray(i, j).substr()
+  when NimMajor < 2:
+    var res = newStringOfCap(j + 1 - i)
+    for c in s.toOpenArray(i, j):
+      res &= c
+    move(res)
+  else:
+    return s.toOpenArray(i, j).substr()
 
 proc stripAndCollapse*(s: openArray[char]): string =
   var res = newStringOfCap(s.len)

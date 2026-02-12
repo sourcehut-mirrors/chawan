@@ -1642,7 +1642,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     ?pager.term.quit()
   var oldint, oldquit, act: Sigaction
   var oldmask, dummy: Sigset
-  act.sa_handler = SIG_IGN
+  act.sa_handler = posix.SIG_IGN
   act.sa_flags = SA_RESTART
   if sigemptyset(act.sa_mask) < 0 or
       sigaction(SIGINT, act, oldint) < 0 or
@@ -1662,7 +1662,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
   of 0:
     if pager.setEnvVars0(env).isErr:
       quit(1)
-    act.sa_handler = SIG_DFL
+    act.sa_handler = posix.SIG_DFL
     discard sigemptyset(act.sa_mask)
     discard sigaction(SIGINT, oldint, act)
     discard sigaction(SIGQUIT, oldquit, act)
@@ -2371,7 +2371,7 @@ proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
 # ps remains open, but os is consumed.
 proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
   var oldint, oldquit: Sigaction
-  var act = Sigaction(sa_handler: SIG_IGN, sa_flags: SA_RESTART)
+  var act = Sigaction(sa_handler: posix.SIG_IGN, sa_flags: SA_RESTART)
   var oldmask, dummy: Sigset
   let westream = pager.forkserver.westream
   if sigemptyset(act.sa_mask) < 0 or
@@ -2386,7 +2386,7 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
     pager.alert("Failed to fork process")
     return -1
   of 0:
-    act.sa_handler = SIG_DFL
+    act.sa_handler = posix.SIG_DFL
     discard sigemptyset(act.sa_mask)
     discard sigaction(SIGINT, oldint, act)
     discard sigaction(SIGQUIT, oldquit, act)

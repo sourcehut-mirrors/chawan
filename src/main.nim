@@ -10,7 +10,6 @@ import config/config
 import config/conftypes
 import html/catom
 import html/dom
-import html/domexception
 import html/env
 import html/script
 import io/chafile

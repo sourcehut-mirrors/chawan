@@ -19,6 +19,7 @@ import server/loaderiface
 import types/opt
 import types/url
 import types/winattrs
+import utils/myposix
 import utils/proctitle
 import utils/sandbox
 import utils/strwidth
@@ -109,14 +110,6 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     loaderStream.sclose()
     return (int(pid), newSocketStream(sv[0]))
 
-type SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
-
-let SIG_DFL {.importc, header: "<signal.h>".}: SighandlerT
-let SIG_IGN {.importc, header: "<signal.h>".}: SighandlerT
-
-proc signal(signum: cint; handler: SighandlerT): SighandlerT {.
-  importc, header: "<signal.h>".}
-
 proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   var config: BufferConfig
   var url: URL
@@ -151,7 +144,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
     do: # EOF in pager; give up
       quit(1)
     let loader = newFileLoader(pid, loaderStream)
-    discard signal(SIGPIPE, SIG_DFL)
+    discard myposix.signal(SIGPIPE, myposix.SIG_DFL)
     enterBufferSandbox()
     launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
       istream, urandom, cacheId, contentType, move(ctx.linkHintChars),
@@ -190,9 +183,9 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     # reset SIGCHLD to the default handler. this is useful if the child
     # process expects SIGCHLD to be untouched.
     # (e.g. git dies a horrible death with SIGCHLD as SIG_IGN)
-    discard signal(SIGCHLD, SIG_DFL)
+    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
     # let's also reset SIGPIPE, which we ignored on init
-    discard signal(SIGPIPE, SIG_DFL)
+    discard myposix.signal(SIGPIPE, myposix.SIG_DFL)
     const ExecErrorMsg = "Cha-Control: ConnectionError " &
       $int(ceFailedToExecuteCGIScript)
     let stdout = cast[ChaFile](stdout)
@@ -234,8 +227,8 @@ proc setupForkServerEnv(config: LoaderConfig): Opt[void] =
 proc runForkServer*(controlStream, loaderStream: SocketStream) =
   setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(stream: controlStream)
-  discard signal(SIGCHLD, SIG_IGN)
-  discard signal(SIGPIPE, SIG_IGN)
+  discard myposix.signal(SIGCHLD, myposix.SIG_IGN)
+  discard myposix.signal(SIGPIPE, myposix.SIG_IGN)
   ctx.stream.withPacketReader r:
     var config: LoaderConfig
     r.sread(isCJKAmbiguous)

@@ -37,4 +37,12 @@ proc getAppFilename*(): string =
   except OSError:
     discard
 
+type SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
+
+let SIG_DFL* {.importc, header: "<signal.h>".}: SighandlerT
+let SIG_IGN* {.importc, header: "<signal.h>".}: SighandlerT
+
+proc signal*(signum: cint; handler: SighandlerT): SighandlerT {.
+  importc, header: "<signal.h>".}
+
 {.pop.}

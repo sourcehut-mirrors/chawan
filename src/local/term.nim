@@ -17,6 +17,7 @@ import types/cell
 import types/color
 import types/opt
 import types/winattrs
+import utils/myposix
 import utils/strwidth
 import utils/twtstr
 
@@ -2466,7 +2467,7 @@ proc quit*(term: Terminal): Opt[void] =
     ?term.blockIO()
     term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
     discard tcSetAttr(term.istream.fd, TCSANOW, addr term.newTermios)
-    signal(SIGINT, SIG_DFL)
+    discard myposix.signal(SIGINT, myposix.SIG_DFL)
     while term.eparser.queryState != qsNone:
       if term.ahandleRead().isErr:
         break
