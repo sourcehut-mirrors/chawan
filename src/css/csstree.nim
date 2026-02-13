@@ -295,7 +295,7 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
     markerComputed = node.computed.inheritProperties()
     markerComputed{"display"} = DisplayMarker
   let textComputed = markerComputed.inheritProperties()
-  textComputed{"white-space"} = WhitespacePre
+  textComputed{"white-space"} = WhiteSpacePre
   textComputed{"content"} = markerComputed{"content"}
   let markerText = if markerComputed{"content"}.len == 0:
     StyledNode(
@@ -444,7 +444,7 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
     let cdata = newRefString(if option.selected: "*" else: " ")
     let computed = option.computed.inheritProperties()
     computed{"color"} = cssColor(ANSIColor(1)) # red
-    computed{"white-space"} = WhitespacePre
+    computed{"white-space"} = WhiteSpacePre
     block anon:
       var aframe = frame.ctx.initTreeFrame(option, computed)
       aframe.addText(cdata)

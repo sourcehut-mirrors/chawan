@@ -87,11 +87,11 @@ type
     DisplayImageInline = ""
 
   CSSWhiteSpace* = enum
-    WhitespaceNormal = "normal"
-    WhitespaceNowrap = "nowrap"
-    WhitespacePre = "pre"
-    WhitespacePreLine = "pre-line"
-    WhitespacePreWrap = "pre-wrap"
+    WhiteSpaceNormal = "normal"
+    WhiteSpaceNowrap = "nowrap"
+    WhiteSpacePre = "pre"
+    WhiteSpacePreLine = "pre-line"
+    WhiteSpacePreWrap = "pre-wrap"
 
   CSSFontStyle* = enum
     FontStyleNormal = "normal"
@@ -529,7 +529,7 @@ const DisplayInternalTable* = {
 const DisplayNeverHasStack* = DisplayInternalTable - {DisplayTableCell}
 const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
 const WhiteSpacePreserve* = {
-  WhitespacePre, WhitespacePreLine, WhitespacePreWrap
+  WhiteSpacePre, WhiteSpacePreLine, WhiteSpacePreWrap
 }
 const BorderStyleNoneHidden* = {BorderStyleNone, BorderStyleHidden}
 const BorderStyleInput* = {

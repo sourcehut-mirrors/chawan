@@ -856,7 +856,7 @@ iterator exclusions(fstate: FlowState): Exclusion {.inline.} =
     ex = ex.next
 
 proc nowrap(computed: CSSValues): bool =
-  computed{"white-space"} in {WhitespaceNowrap, WhitespacePre}
+  computed{"white-space"} in {WhiteSpaceNowrap, WhiteSpacePre}
 
 template cellSize(fstate: FlowState): Size =
   fstate.lctx.cellSize
@@ -1277,18 +1277,18 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     force = false; clear = ClearNone) =
   if fstate.lbstate.atomsHead != nil or force or
       fstate.lbstate.whitespaceNum != 0 and ibox != nil and
-      ibox.computed{"white-space"} in {WhitespacePre, WhitespacePreWrap}:
+      ibox.computed{"white-space"} in {WhiteSpacePre, WhiteSpacePreWrap}:
     fstate.initLine()
     let whitespace = ibox.computed{"white-space"}
     case whitespace
-    of WhitespacePre:
+    of WhiteSpacePre:
       fstate.flushWhitespace(ibox)
       # see below on padding
       fstate.intr.w = max(fstate.intr.w, fstate.lbstate.size.w -
         fstate.box.input.padding.left)
-    of WhitespacePreWrap:
+    of WhiteSpacePreWrap:
       fstate.flushWhitespace(ibox, hang = true)
-    of WhitespaceNowrap:
+    of WhiteSpaceNowrap:
       fstate.lbstate.whitespaceNum = 0
       fstate.intr.w = max(fstate.intr.w, fstate.lbstate.size.w -
         fstate.box.input.padding.left)
@@ -1302,7 +1302,7 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     fstate.alignLine()
     var f = fstate.lbstate.pendingFloatsHead
     while f != nil:
-      if whitespace != WhitespacePre and f.newLine:
+      if whitespace != WhiteSpacePre and f.newLine:
         f.offset.y += fstate.lbstate.size.h
       fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
         fstate.bfcOffset, f.offset)
@@ -1482,21 +1482,21 @@ proc processWhitespace(fstate: var FlowState; word: var WordState; c: char) =
   let ibox = word.ibox
   discard fstate.addWord(word)
   case ibox.computed{"white-space"}
-  of WhitespaceNormal, WhitespaceNowrap:
+  of WhiteSpaceNormal, WhiteSpaceNowrap:
     if fstate.lbstate.whitespaceNum < 1 and fstate.lbstate.atomsHead != nil:
       fstate.lbstate.whitespaceNum = 1
       fstate.lbstate.whitespaceBox = ibox
       fstate.lbstate.whitespaceIsLF = c == '\n'
     if c != '\n':
       fstate.lbstate.whitespaceIsLF = false
-  of WhitespacePreLine:
+  of WhiteSpacePreLine:
     if c == '\n':
       fstate.finishLine(ibox, wrap = false, force = true)
     elif fstate.lbstate.whitespaceNum < 1 and fstate.lbstate.atomsHead != nil:
       fstate.lbstate.whitespaceIsLF = false
       fstate.lbstate.whitespaceNum = 1
       fstate.lbstate.whitespaceBox = ibox
-  of WhitespacePre, WhitespacePreWrap:
+  of WhiteSpacePre, WhiteSpacePreWrap:
     fstate.lbstate.whitespaceIsLF = false
     if c == '\n':
       fstate.finishLine(ibox, wrap = false, force = true)
