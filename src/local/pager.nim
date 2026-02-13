@@ -2258,7 +2258,7 @@ type GotoURLDict = object of JSDict
   contentType {.jsdefault.}: Option[string]
   replace {.jsdefault.}: Option[Container]
   save {.jsdefault.}: bool
-  history {.jsdefault.}: bool
+  history {.jsdefault: true.}: bool
   scripting {.jsdefault.}: Option[ScriptingMode]
   cookie {.jsdefault.}: Option[CookieMode]
   charset {.jsdefault.}: Option[Charset]
