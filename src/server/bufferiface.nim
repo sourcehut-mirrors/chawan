@@ -611,16 +611,16 @@ proc getHoverText*(iface: BufferInterface): string =
       return s
   ""
 
-proc hoverLink(iface: BufferInterface): lent string {.jsfunc.} =
+proc hoverLink(iface: BufferInterface): lent string {.jsfget.} =
   iface.hoverText[htLink]
 
-proc hoverTitle(iface: BufferInterface): lent string {.jsfunc.} =
+proc hoverTitle(iface: BufferInterface): lent string {.jsfget.} =
   iface.hoverText[htTitle]
 
-proc hoverImage(iface: BufferInterface): lent string {.jsfunc.} =
+proc hoverImage(iface: BufferInterface): lent string {.jsfget.} =
   iface.hoverText[htImage]
 
-proc hoverCachedImage(iface: BufferInterface): lent string {.jsfunc.} =
+proc hoverCachedImage(iface: BufferInterface): lent string {.jsfget.} =
   iface.hoverText[htCachedImage]
 
 proc clearHover*(iface: BufferInterface) =
