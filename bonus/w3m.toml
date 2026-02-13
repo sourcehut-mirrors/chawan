@@ -9,8 +9,8 @@ show-cursor-position = false
 show-hover-link = false
 
 [cmd.w3m]
-pageDown = 'n => pager.scrollDown(pager.height * (n ?? 1))'
-pageUp = 'n => pager.scrollUp(pager.height * (n ?? 1))'
+pageDown = '(n = 1) => pager.scrollDown(pager.height * n)'
+pageUp = '(n = 1) => pager.scrollUp(pager.height * n)'
 mark = '''
 () => {
 	/* id is always the current position; this way we can clear by
@@ -43,7 +43,7 @@ nextMark = '''
 		pager.alert("No mark exists before here");
 }
 '''
-saveFile = '''
+editFile = '''
 () => {
 	if (pager.url.protocol == "file:")
 		pager.extern(pager.getEditorCommand(pager.url.pathname))
@@ -54,6 +54,10 @@ saveFile = '''
 askQuit = '''
 () => pager.ask("Do you want to exit Chawan?").then(x => x ? quit() : void(0))
 '''
+cursorUp = '(n = 1) => pager.setCursorYCenter(pager.cursory - n)'
+cursorDown = '(n = 1) => pager.setCursorYCenter(pager.cursory + n)'
+cursorLeft = '(n = 1) => pager.setCursorXCenter(pager.cursorx - n)'
+cursorRight = '(n = 1) => pager.setCursorXCenter(pager.cursorx + n)'
 
 [page]
 # Page/cursor movement
@@ -63,12 +67,16 @@ b = 'w3m.pageUp'
 M-v = 'w3m.pageUp'
 PageDown = 'w3m.pageDown'
 PageUp = 'w3m.pageUp'
-C-f = 'cursorRight'
-C-b = 'cursorLeft'
-C-n = 'cursorDown'
-C-p = 'cursorUp'
-J = 'scrollUp'
-K = 'scrollDown'
+C-f = 'w3m.cursorRight'
+C-b = 'w3m.cursorLeft'
+C-n = 'w3m.cursorDown'
+C-p = 'w3m.cursorUp'
+Right = 'w3m.cursorRight'
+Left = 'w3m.cursorLeft'
+Down = 'w3m.cursorDown'
+Up = 'w3m.cursorUp'
+J = 'scrollDown'
+K = 'scrollUp'
 '^' = 'cursorLineBegin'
 C-a = 'cursorLineBegin'
 '$' = 'cursorLineEnd'
@@ -109,10 +117,9 @@ V = 'load' #TODO file only
 # Buffer operations
 B = 'discardBufferPrev'
 v = 'toggleSource'
-E = 'editSource'
+E = 'editFile'
 C-l = 'redraw'
 R = 'reload'
-E = 'editFile'
 M-s = 'saveSource'
 S = 'saveScreen'
 M-e = 'editScreen'
@@ -134,5 +141,9 @@ C-c = 'cancel'
 q = 'w3m.askQuit'
 Q = 'quit'
 C-d = ''
+'\' = ''
+D = ''
 
-# w3m line editing is equivalent to Chawan's defaults.
+[line]
+C-o = 'line.openEditor'
+'C-x C-e' = ''
