@@ -100,7 +100,7 @@ globalThis.cmd = {
             cookie: buffer.init.cookie
         });
         if (buffer2)
-            buffer2.copyCursorPos(buffer)
+            buffer2.init.copyCursorPos(buffer.iface ?? buffer.init)
     },
     toggleCookie: () => {
         const buffer = pager.buffer;
@@ -112,7 +112,7 @@ globalThis.cmd = {
             cookie: !buffer.init.cookie
         });
         if (buffer2)
-            buffer2.copyCursorPos(buffer)
+            buffer2.init.copyCursorPos(buffer.iface ?? buffer.init)
     },
     /* vi G */
     gotoLineOrEnd: n => pager.gotoLine(n ?? pager.numLines),
@@ -565,7 +565,7 @@ Pager.prototype.reload = function() {
         history: old.init.history,
         charset: old.init.charsetOverride
     })
-    buffer.copyCursorPos(old);
+    buffer.init.copyCursorPos(old.iface ?? old.init);
 }
 
 /* public */
