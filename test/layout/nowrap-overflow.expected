@@ -1,0 +1,20 @@
+atest 
+[48;2;0;128;0mbtest ctest[49m
+dtest
+next
+atest [48;2;0;128;0mbtest ctest[49m
+dtest
+atest [48;2;0;128;0mbtest ctest[49m dtest
+test1 
+[48;2;0;128;0mtest2 test3[49mtest
+test4
+test 
+[48;2;0;128;0mtest4 test5[49m
+[48;2;0;128;0mtest4 test5[49mtest6
+test7
+[48;2;0;128;0mtest4 test5test[49mtest6
+test7
+[48;2;0;128;0mtest8 test9[49mtest0
+[48;2;0;128;0mtest test test test [49m
+float
+[48;2;0;128;0mfloattest test test [49m
