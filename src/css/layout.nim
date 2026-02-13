@@ -335,10 +335,8 @@ proc resolveBounds(lctx: LayoutContext; space: Space; padding: Size;
       res.mi[dim].send = px
     elif replaced and maxLength.isPerc:
       # for replaced elements (img), cyclic percentage max size is resolved
-      # against 0.  (this doesn't apply to min size.)
-      let px = maxLength.spx(stretch(0'lu), computed, padding)
-      res.a[dim].send = px
-      res.mi[dim].send = px
+      # against 0 when computing the intrinsic minimum size.
+      res.mi[dim].send = maxLength.spx(stretch(0'lu), computed, padding)
     if computed.getLength(MinSizeMap[dim]).canpx(sc):
       let px = computed.getLength(MinSizeMap[dim]).spx(sc, computed, padding)
       res.a[dim].start = px
@@ -433,10 +431,8 @@ proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
     size.w = width.spx(space.w, computed, paddingSum.w)
   elif intrinsic and width.isPerc:
     # For replaced elements, cyclic percentage intrinsic size is resolved
-    # against 0.
-    # Note that this *does not* apply to the max-content size, so when
-    # we detect this to be relevant, we redo this calculation specifically
-    # for the intrinsic minimum size with intrinsic = true.  (See layoutImage.)
+    # against 0.  Note that this *does not* apply to the max-content size,
+    # so we perform this calculation twice (see applyImageSizes).
     size.w = width.spx(stretch(0'lu), computed, paddingSum.w)
   if hasHeight:
     size.h = height.spx(space.h, computed, paddingSum.h)
