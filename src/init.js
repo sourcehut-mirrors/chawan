@@ -272,7 +272,12 @@ function addDefaultOmniRule(name, match, url) {
 
 /* private */
 Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
-    config.initCommands();
+    try {
+        config.initCommands();
+    } catch (e) {
+        pager.alert(e + '\n' + e.stack);
+        quit(1);
+    }
     this.mouse = new Mouse();
     this.commandMode = false;
     this.refreshAllowed = new Set();

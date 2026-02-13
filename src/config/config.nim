@@ -1212,15 +1212,20 @@ proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
       continue
     let fun = ctx.eval(cmd, "<" & k & ">", JS_EVAL_TYPE_GLOBAL)
     if JS_IsException(fun):
+      JS_FreeValue(ctx, objIt)
       JS_FreeValue(ctx, obj)
       return err()
     if not JS_IsFunction(ctx, fun):
+      JS_FreeValue(ctx, objIt)
       JS_FreeValue(ctx, obj)
       JS_FreeValue(ctx, fun)
+      JS_ThrowTypeError(ctx, "not a function")
       return err()
-    if ctx.definePropertyE(objIt, name, fun) == dprException:
-      return err()
+    let dpr = ctx.definePropertyE(objIt, name, fun)
     JS_FreeValue(ctx, objIt)
+    if dpr == dprException:
+      JS_FreeValue(ctx, obj)
+      return err()
   JS_FreeValue(ctx, obj)
   config.cmd.init = @[]
   ctx.sort(config.page)
