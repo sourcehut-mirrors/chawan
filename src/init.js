@@ -266,7 +266,7 @@ class Mouse {
 
 /* private */
 function addDefaultOmniRule(name, match, url) {
-    const fun = x => url + encodeURIComponent(x.substring(x.indexOf(':')));
+    const fun = x => url + encodeURIComponent(x.substring(x.indexOf(':') + 1));
     config.addOmniRule(name, match, fun);
 }
 
