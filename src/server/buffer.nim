@@ -521,12 +521,12 @@ proc checkRefresh(bc: BufferContext; handle: PagerHandle): CheckRefreshResult
   if bc.navigateUrl != nil:
     let url = bc.navigateUrl
     bc.navigateUrl = nil
-    return CheckRefreshResult(n: 0, url: url)
+    return (n: 0, url: url)
   if bc.document == nil:
-    return CheckRefreshResult(n: -1)
+    return (n: -1, url: nil)
   let element = bc.document.findMetaRefresh()
   if element == nil:
-    return CheckRefreshResult(n: -1)
+    return (n: -1, url: nil)
   return parseRefresh(element.attr(satContent), bc.document.url)
 
 proc hasTask(handle: PagerHandle; cmd: BufferCommand): bool =

@@ -55,6 +55,7 @@ chac_flags =
 # Nim compiler flags
 ifeq ($(TARGET),debug)
 FLAGS += -d:debug --debugger:native
+CFLAGS += -DDUMP_LEAKS=1
 else ifeq ($(TARGET),release)
 chac_flags = -s
 FLAGS += -d:release -d:strip -d:lto

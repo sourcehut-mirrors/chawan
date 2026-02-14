@@ -1,9 +1,9 @@
 {.push raises: [].}
 
-import chagashi/decoder
 import config/history
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/cell
@@ -13,16 +13,10 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  LineEditState* = enum
-    lesEdit = "edit", lesFinish = "finish", lesCancel = "cancel"
-
-  LineData* = ref object of RootObj
-
   LineEdit* = ref object
-    text* {.jsget.}: string
+    text {.jsget.}: string
     prompt: string
     promptw: int
-    state* {.jsget.}: LineEditState
     cursorx: int # 0 ..< text.width
     cursori: int # 0 ..< text.len
     shiftx: int # 0 ..< text.width
@@ -37,9 +31,19 @@ type
     skipLast: bool
     escNext {.jsgetset.}: bool
     hide: bool
-    data*: LineData
+    update: JSValue
+    resolve: JSValue
 
 jsDestructor(LineEdit)
+
+proc finalize(rt: JSRuntime; this: LineEdit) {.jsfin.} =
+  JS_FreeValueRT(rt, this.update)
+  JS_FreeValueRT(rt, this.resolve)
+
+proc mark(rt: JSRuntime; this: LineEdit; markFun: JS_MarkFunc)
+    {.jsmark.} =
+  JS_MarkValue(rt, this.update, markFun)
+  JS_MarkValue(rt, this.resolve, markFun)
 
 proc isDigitAscii(u: uint32): bool =
   return u < 128 and char(u) in AsciiDigit
@@ -128,13 +132,23 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
 proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.cursorx + edit.padding - edit.shiftx
 
-proc cancel(edit: LineEdit) {.jsfunc.} =
-  edit.state = lesCancel
+proc resolve(ctx: JSContext; edit: LineEdit; val: JSValue): JSValue =
+  if not JS_IsFunction(ctx, edit.resolve):
+    return JS_ThrowTypeError(ctx, "nothing to resolve")
+  let resolve = edit.resolve
+  edit.resolve = JS_UNDEFINED
+  return ctx.callSinkFree(resolve, JS_UNDEFINED, val)
 
-proc submit(edit: LineEdit) {.jsfunc.} =
+proc cancel(ctx: JSContext; edit: LineEdit): JSValue {.jsfunc.} =
+  return ctx.resolve(edit, JS_NULL)
+
+proc submit(ctx: JSContext; edit: LineEdit): JSValue {.jsfunc.} =
+  let text = ctx.toJS(edit.text)
   if edit.hist.mtime == 0 and edit.text.len > 0:
     edit.hist.add(edit.text)
-  edit.state = lesFinish
+  if JS_IsException(text):
+    return text
+  return ctx.resolve(edit, text)
 
 proc backspace(edit: LineEdit) {.jsfunc.} =
   if edit.cursori > 0:
@@ -143,22 +157,16 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     edit.text.delete(edit.cursori ..< pi)
     edit.cursorx -= edit.width(u)
     edit.redraw = true
- 
-proc write*(edit: LineEdit; s: string) =
-  edit.escNext = false
-  if s.len == 0:
-    return
-  edit.text.insert(s, edit.cursori)
-  edit.cursori += s.len
-  edit.cursorx += edit.width(s)
-  edit.redraw = true
 
-proc write(ctx: JSContext; edit: LineEdit; s: string): JSValue {.jsfunc.} =
-  if s.validateUTF8Surr() != -1:
-    # Note: pretty sure this is dead code, as QJS converts surrogates to
-    # replacement chars.
-    return JS_ThrowTypeError(ctx, "string contains surrogate codepoints")
-  edit.write(s)
+proc write*(ctx: JSContext; edit: LineEdit; s: string): JSValue {.jsfunc.} =
+  edit.escNext = false
+  if s.len > 0:
+    edit.text.insert(s, edit.cursori)
+    edit.cursori += s.len
+    edit.cursorx += edit.width(s)
+    edit.redraw = true
+    if not JS_IsUndefined(edit.update):
+      return ctx.call(edit.update, JS_UNDEFINED)
   return JS_UNDEFINED
 
 proc delete(edit: LineEdit) {.jsfunc.} =
@@ -246,7 +254,7 @@ proc killWord(edit: LineEdit) {.jsfunc.} =
   edit.text.delete(edit.cursori ..< i)
   edit.redraw = true
 
-proc begin*(edit: LineEdit) {.jsfunc.} =
+proc begin(edit: LineEdit) {.jsfunc.} =
   edit.cursori = 0
   edit.cursorx = 0
   if edit.shiftx > 0:
@@ -296,7 +304,7 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.redraw = true
 
 proc readLine*(prompt, current: string; termwidth: int; hide: bool;
-    hist: History; luctx: LUContext; data: LineData): LineEdit =
+    hist: History; luctx: LUContext; update, resolve: JSValue): LineEdit =
   let promptw = prompt.width()
   let edit = LineEdit(
     prompt: prompt,
@@ -312,7 +320,8 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     luctx: luctx,
     # Skip the last history entry if it's identical to the input.
     skipLast: hist.last != nil and hist.last.s == current,
-    data: data
+    update: update,
+    resolve: resolve
   )
   edit.cursorx = edit.width(current)
   return edit

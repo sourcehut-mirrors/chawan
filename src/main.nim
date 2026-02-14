@@ -17,7 +17,6 @@ import io/console
 import io/dynstream
 import io/poll
 import local/clientutil
-import local/container
 import local/lineedit
 import local/pager
 import local/select
@@ -333,31 +332,10 @@ proc setupStartupScript(ctx: JSContext; script: string) =
     die("failed to read startup bytecode")
 
 type Client = ref object of Window
-  pager: Pager
-
-proc jsPager(this: Window): Pager {.jsfget: "pager".} =
-  Client(this).pager
+  config: Config
 
 proc config(this: Window): Config {.jsfget.} =
-  return Client(this).pager.config
-
-proc suspend(ctx: JSContext; this: Window): JSValue {.jsfunc.} =
-  let pager = Client(this).pager
-  if pager.term.quit().isErr:
-    return ctx.jsQuit(pager, 1)
-  discard kill(0, cint(SIGTSTP))
-  discard pager.term.restart() #TODO
-  return JS_UNDEFINED
-
-proc jsQuit(ctx: JSContext; this: Window; code = 0): JSValue
-    {.jsfunc: "quit".} =
-  ctx.jsQuit(Client(this).pager, code)
-
-proc feedNext(this: Window) {.jsfunc.} =
-  Client(this).pager.feedNext = true
-
-proc consoleBuffer(this: Window): Container {.jsfget.} =
-  return Client(this).pager.pinned.console
+  return Client(this).config
 
 proc readFile(ctx: JSContext; this: Window; path: string): JSValue
     {.jsfunc.} =
@@ -390,21 +368,12 @@ proc setenv(ctx: JSContext; this: Window; s: string; val: JSValueConst):
       return JS_ThrowTypeError(ctx, "Failed to set environment variable")
   return JS_UNDEFINED
 
-proc line(this: Window): LineEdit {.jsfget.} =
-  return Client(this).pager.lineedit
-
 let ClientJSFunctions {.global.} = [
   JS_CFUNC_DEF("getenv", 0, js_func_Window_getenv),
   JS_CFUNC_DEF("setenv", 0, js_func_Window_setenv),
   JS_CFUNC_DEF("readFile", 0, js_func_Window_readFile),
   JS_CFUNC_DEF("writeFile", 0, js_func_Window_writeFile),
-  JS_CFUNC_DEF("feedNext", 0, js_func_Window_feedNext),
-  JS_CFUNC_DEF("quit", 0, js_func_Window_quit),
-  JS_CFUNC_DEF("suspend", 0, js_func_Window_suspend),
-  JS_CGETSET_DEF("pager", js_get_Window_pager, nil),
-  JS_CGETSET_DEF("line", js_get_Window_line, nil),
   JS_CGETSET_DEF("config", js_get_Window_config, nil),
-  JS_CGETSET_DEF("consoleBuffer", js_get_Window_consoleBuffer, nil),
 ]
 
 proc addJSModules(client: Client; ctx: JSContext): Opt[void] =
@@ -417,7 +386,6 @@ proc addJSModules(client: Client; ctx: JSContext): Opt[void] =
   ?ctx.addLineEditModule()
   ?ctx.addConfigModule()
   ?ctx.addPagerModule()
-  ?ctx.addContainerModule()
   ?ctx.addBufferInterfaceModule()
   ?ctx.addSelectModule()
   ok()
@@ -469,6 +437,7 @@ proc main() =
   if cres.isErr:
     die(cres.error)
   let config = cres.get
+  client.config = config
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
   if ctx.pages.len == 0 and ps.isatty():
@@ -496,11 +465,10 @@ proc main() =
   jsctx.setupStartupScript("init.jsb")
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
     client.console)
-  client.pager = pager
   client.timeouts = pager.timeouts
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs
-  client.pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
+  pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
 
 main()
 

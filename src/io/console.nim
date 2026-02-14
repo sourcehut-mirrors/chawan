@@ -10,7 +10,7 @@ import types/opt
 import utils/twtstr
 
 type Console* = ref object
-  err*: ChaFile
+  err: ChaFile
 
 # Forward declarations
 proc flush*(console: Console)
@@ -22,8 +22,9 @@ var getConsoleImpl*: proc(ctx: JSContext): Console {.nimcall, raises: [].}
 proc newConsole*(err: ChaFile): Console =
   return Console(err: err)
 
-proc setStream*(console: Console; file: ChaFile) =
-  discard console.err.close()
+proc setStream*(console: Console; file: ChaFile; close: bool) =
+  if console.err != nil and close:
+    discard console.err.close()
   console.err = file
 
 proc write*(console: Console; s: openArray[char]) =

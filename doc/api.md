@@ -89,16 +89,6 @@ Throws a TypeError if this failed for whatever reason.
 </tr>
 
 <tr>
-<td>`openEditor(text)`</td>
-<td>Open "text" in the command configured as `external.editor` (this is
-typically just `$EDITOR`.)
-<p>
-If the editor signals an error (crash or non-zero exit code), `null` is
-returned.  Otherwise, the user's input is returned as a string.
-</td>
-</tr>
-
-<tr>
 <td>`getenv(name, fallback = null)`</td>
 <td>Get an environment variable by `name`.
 <p>
@@ -403,6 +393,16 @@ Returns `undefined`. (It should return a promise; TODO.)</td>
 </tr>
 
 <tr>
+<td>`openEditor(text)`</td>
+<td>Open "text" in the command configured as `external.editor` (this is
+typically just `$EDITOR`.)
+<p>
+If the editor signals an error (crash or non-zero exit code), `null` is
+returned.  Otherwise, the user's input is returned as a string.
+</td>
+</tr>
+
+<tr>
 <td>`openMenu(x = pager.cursorx - pager.fromx, y = pager.cursory -
 pager.fromy)`</td>
 <td>Opens the context menu at the specified x/y positions.</td>
@@ -622,7 +622,7 @@ top line on the screen. (zb in vim.)</td>
 </tr>
 
 <tr>
-<td>`lowerPageBegin(n = this.cursory)`</td>
+<td>`raisePageBegin(n = this.cursory)`</td>
 <td>Move cursor to the first non-blank character of line n, then scroll up
 so that the cursor is on the last line on the screen. (`z^` in vi.)</td>
 </tr>

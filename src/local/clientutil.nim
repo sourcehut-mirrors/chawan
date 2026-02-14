@@ -13,6 +13,7 @@ import types/blob
 import types/opt
 import types/url
 import utils/myposix
+import utils/strwidth
 import utils/twtstr
 
 type Util = ref object
@@ -86,6 +87,9 @@ proc readBlob(path: string): WebFile {.jsstfunc: "Util".} =
 
 proc convertSize(n: float64): string {.jsstfunc: "Util".} =
   twtstr.convertSize(uint64(n))
+
+proc width(s: string): int {.jsstfunc: "Util".} =
+  strwidth.width(s)
 
 proc addUtilModule*(ctx: JSContext): JSClassID =
   return ctx.registerType(Util)

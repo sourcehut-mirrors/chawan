@@ -145,7 +145,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
     do: # EOF in pager; give up
       quit(1)
     let loader = newFileLoader(pid, loaderStream)
-    discard myposix.signal(SIGPIPE, myposix.SIG_DFL)
+    # SIGPIPE remains ignored, because we don't want the buffer to signal
+    # just because the pager unregistered it (this can also happen when a
+    # buffer is cloned)
     enterBufferSandbox()
     launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
       istream, urandom, cacheId, contentType, move(ctx.linkHintChars),

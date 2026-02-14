@@ -98,17 +98,6 @@ Throws a TypeError if this failed for whatever reason.
 T}
 _
 T{
-\f[CR]openEditor(text)\f[R]
-T}@T{
-Open \(lqtext\(rq in the command configured as
-\f[CR]external.editor\f[R] (this is typically just \f[CR]$EDITOR\f[R].)
-.PP
-If the editor signals an error (crash or non\-zero exit code),
-\f[CR]null\f[R] is returned.
-Otherwise, the user\(cqs input is returned as a string.
-T}
-_
-T{
 \f[CR]getenv(name, fallback = null)\f[R]
 T}@T{
 Get an environment variable by \f[CR]name\f[R].
@@ -454,6 +443,17 @@ Returns \f[CR]undefined\f[R].
 T}
 _
 T{
+\f[CR]openEditor(text)\f[R]
+T}@T{
+Open \(lqtext\(rq in the command configured as
+\f[CR]external.editor\f[R] (this is typically just \f[CR]$EDITOR\f[R].)
+.PP
+If the editor signals an error (crash or non\-zero exit code),
+\f[CR]null\f[R] is returned.
+Otherwise, the user\(cqs input is returned as a string.
+T}
+_
+T{
 \f[CR]openMenu(x = pager.cursorx \- pager.fromx, y = pager.cursory \- pager.fromy)\f[R]
 T}@T{
 Opens the context menu at the specified x/y positions.
@@ -720,7 +720,7 @@ line on the screen.
 T}
 _
 T{
-\f[CR]lowerPageBegin(n = this.cursory)\f[R]
+\f[CR]raisePageBegin(n = this.cursory)\f[R]
 T}@T{
 Move cursor to the first non\-blank character of line n, then scroll up
 so that the cursor is on the last line on the screen.
