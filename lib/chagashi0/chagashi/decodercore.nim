@@ -78,7 +78,6 @@ type
 
   TextDecoderGB18030* = ref object of TextDecoder
     buf: uint8
-    hasbuf: bool
     first: uint8
     second: uint8
     third: uint8
@@ -397,23 +396,16 @@ proc gb18030ToU16(row, col: uint16): uint16 =
 
 method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  while (let i = td.i; i < iq.len or td.hasbuf):
-    template consume =
-      if td.hasbuf:
-        td.hasbuf = false
-      else:
-        inc td.i
-    let b = if td.hasbuf:
-      td.buf
-    else:
-      iq[i]
+  while (let i = td.i; i < iq.len or td.buf != 0):
+    if td.buf != 0:
+      oq.try_put_byte td.buf, n
+      td.buf = 0
+      continue
+    let b = iq[i]
     if b < 0x80 and td.first == 0 and td.second == 0 and td.third == 0:
       oq.try_put_byte b, n
-      consume
-      continue
-    if td.third != 0:
+    elif td.third != 0:
       if b notin 0x30u8 .. 0x39u8:
-        td.hasbuf = true
         td.buf = td.second
         td.first = td.third
         td.second = 0
@@ -428,7 +420,7 @@ method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
         td.first = 0
         td.second = 0
         td.third = 0
-        consume
+        inc td.i
         return tdrError
       else:
         oq.try_put_utf8 c, n
@@ -439,7 +431,6 @@ method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
       if b in 0x81u8 .. 0xFEu8:
         td.third = b
       else:
-        td.hasbuf = true
         td.buf = td.second
         td.first = 0
         td.second = 0
@@ -456,22 +447,22 @@ method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
           if (let c = gb18030ToU16(row, col); c != 0):
             oq.try_put_utf8 c, n
             td.first = 0
-            consume
+            inc td.i
             continue
         td.first = 0
         if b < 0x80:
           continue # prepend (no inc i)
         else:
-          consume
+          inc td.i
           return tdrError
     elif b == 0x80:
       oq.try_put_str "\u20AC", n
     elif b in 0x81u8 .. 0xFEu8:
       td.first = b
     else:
-      consume
+      inc td.i
       return tdrError
-    consume
+    inc td.i
   td.i = 0
   tdrDone
 
@@ -479,7 +470,7 @@ method finish*(td: TextDecoderGB18030): TextDecoderFinishResult =
   result = tdfrDone
   if td.first != 0 or td.second != 0 or td.third != 0:
     result = tdfrError
-  assert not td.hasbuf
+  assert td.buf == 0
   td.first = 0
   td.second = 0
   td.third = 0

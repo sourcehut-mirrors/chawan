@@ -256,3 +256,4 @@ test "GB18030 ranges":
   let last = "\u{10000}".encodeAll(CHARSET_GB18030)
   check last == "\x90\x30\x81\x30"
   check last.decodeAll(CHARSET_GB18030) == "\u{10000}"
+  check "\xfe\x39\xfe\x40".decodeAll(CHARSET_GB18030) == "\uFFFD9\uFA0C"
