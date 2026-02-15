@@ -15,6 +15,8 @@ assertEquals(new URL('..', 'file:///C:/demo') + "", "file:///C:/");
 assertEquals(new URL("x", "file:///A:y") + "", "file:///x");
 assertEquals(new URL("x", "file:///A:/y") + "", "file:///A:/x");
 assertEquals(new URL("/x", "file:///A:") + "", "file:///A:/x");
+assertEquals(new URL('file://C:/') + "", "file:///C:/");
+assertEquals(new URL('file://C|/') + "", "file:///C:/");
 assertEquals(new URL('file://loc%61lhost/') + "", "file:///");
 assertEquals(new URL("https://user:password@example.org/") + "", "https://user:password@example.org/");
 assertEquals(new URL("https://example.org/foo bar") + "", "https://example.org/foo%20bar");

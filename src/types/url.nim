@@ -717,9 +717,9 @@ proc parseAuthority(input: openArray[char]; pointer: var int; url: URL):
 proc parseFileHost(input: openArray[char]; pointer: var int; url: URL;
     override: bool): URLState =
   let buffer = input.until({'/', '\\', '?', '#'}, pointer)
-  pointer += buffer.len
   if not override and buffer.isWinDriveLetter():
     return usPath
+  pointer += buffer.len
   if buffer == "":
     url.hostType = htDomain
     url.hostname = ""
