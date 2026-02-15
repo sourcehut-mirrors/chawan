@@ -33,5 +33,12 @@ for (const c of bytes) {
 }
 res += dec.decode();
 assertEquals(res, "a Ā 𐀀 文 🦄");
+
+/* EOS handling */
+const d = new TextDecoder("utf-16le", {fatal: true});
+assertEquals(d.decode(Uint8Array.of(0x00), {stream: true}), '');
+assertThrows(() => d.decode(), TypeError);
+assertEquals(d.decode(), '');
+
 document.getElementById("success").textContent = "Success";
 </script>

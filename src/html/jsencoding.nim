@@ -57,17 +57,19 @@ proc decode(ctx: JSContext; this: JSTextDecoder;
     this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
     this.bomSeen = false
   this.stream = options.stream
+  var oq = ""
+  let stream = this.stream
   if not JS_IsUndefined(jsInput):
     let H = int(input.abuf.len) - 1
-    var oq = ""
-    let stream = this.stream
     for chunk in this.tdctx.decode(input.abuf.p.toOpenArray(0, H), not stream):
       oq &= chunk
-    if this.tdctx.failed:
-      this.tdctx.failed = false
-      return JS_ThrowTypeError(ctx, "failed to decode string")
-    return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
-  return JS_NewString(ctx, "")
+  else:
+    for chunk in this.tdctx.decode([], not stream):
+      oq &= chunk
+  if this.tdctx.failed:
+    this.tdctx.failed = false
+    return JS_ThrowTypeError(ctx, "failed to decode string")
+  return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
 
 proc newTextEncoder(): JSTextEncoder {.jsctor.} =
   return JSTextEncoder()
