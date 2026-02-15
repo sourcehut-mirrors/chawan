@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/math
 import std/sets
 import std/tables
 
@@ -16,6 +17,7 @@ import html/script
 import types/color
 import types/jscolor
 import types/opt
+import utils/dtoawrap
 import utils/twtstr
 
 type
@@ -215,6 +217,17 @@ proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   # impossible to move presentational hints to pure CSS.  Another
   # spectacular failure of the committee...
   ctx.applyValue(entry, rtUser)
+
+proc parseDimensionValues(s: string): Opt[CSSLength] =
+  var i = s.skipBlanks(0)
+  if i >= s.len or s[i] notin AsciiDigit:
+    return err()
+  let n = float32(atod(cstring(s), i))
+  if isNaN(n):
+    return err()
+  if i < s.len and s[i] == '%':
+    return ok(cssLengthPerc(n))
+  ok(cssLength(n))
 
 proc applyDimensionHint(ctx: var ApplyValueContext; p: CSSPropertyType;
     s: string) =

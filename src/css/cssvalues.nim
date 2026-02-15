@@ -1080,30 +1080,6 @@ proc parseLength(tok: CSSToken; attrs: WindowAttributes): Opt[CSSLength] =
     return ok(resolveLength(tok.dt, tok.num, attrs))
   return err()
 
-proc parseDimensionValues*(s: string): Opt[CSSLength] =
-  var i = s.skipBlanks(0)
-  if i >= s.len or s[i] notin AsciiDigit:
-    return err()
-  var n = 0f64
-  while s[i] in AsciiDigit:
-    n *= 10
-    n += float32(decValue(s[i]))
-    inc i
-    if i >= s.len:
-      return ok(cssLength(n))
-  if s[i] == '.':
-    inc i
-    if i >= s.len:
-      return ok(cssLength(n))
-    var d = 1
-    while i < s.len and s[i] in AsciiDigit:
-      n += float32(decValue(s[i])) / float32(d)
-      inc d
-      inc i
-  if i < s.len and s[i] == '%':
-    return ok(cssLengthPerc(n))
-  ok(cssLength(n))
-
 # The return value is in degrees.
 proc parseAngle(tok: CSSToken): Opt[float32] =
   case tok.dt
