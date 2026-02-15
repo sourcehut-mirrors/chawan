@@ -275,7 +275,7 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
         cookie.path = val
     of "domain":
       var hostType = htNone
-      var domain = parseHost(val, special = false, hostType)
+      var domain = parseHost(val, url.schemeType, hostType)
       if domain.len > 0 and domain[0] == '.':
         domain.delete(0..0)
       if hostType == htNone or not cookieDomainMatches(domain, url):

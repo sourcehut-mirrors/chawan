@@ -33,6 +33,7 @@ type
     stCache = "cache"
     stCgiBin = "cgi-bin"
     stData = "data"
+    stEd2k = "ed2k"
     stFile = "file"
     stFtp = "ftp"
     stHttp = "http"
@@ -104,6 +105,7 @@ const SpecialPort = [
   stCache: -1,
   stCgiBin: -1,
   stData: -1,
+  stEd2k: -1,
   stFile: 0,
   stFtp: 21,
   stHttp: 80,
@@ -228,10 +230,12 @@ const ForbiddenHostChars = {
   '\\', ']', '^', '|'
 }
 const ForbiddenDomainChars = ForbiddenHostChars + {'%'}
-proc opaqueParseHost(input: string; hostType: var HostType): string =
+proc opaqueParseHost(input: string; schemeType: SchemeType;
+    hostType: var HostType): string =
   var o = ""
   for c in input:
-    if c in ForbiddenHostChars:
+    # non-standard ed2k quirk for web-compat
+    if c in ForbiddenHostChars and not (c == '|' and schemeType == stEd2k):
       return ""
     o.percentEncode(c, ControlPercentEncodeSet)
   hostType = htOpaque
@@ -476,7 +480,9 @@ proc domainToAscii(domain: string; beStrict: bool): string =
       NonAscii in result:
     result = domain.unicodeToAscii(beStrict)
 
-proc parseHost*(input: string; special: bool; hostType: var HostType): string =
+proc parseHost*(input: string; schemeType: SchemeType; hostType: var HostType):
+    string =
+  let special = SpecialPort[schemeType] >= 0
   if input.len <= 0:
     if not special:
       hostType = htOpaque
@@ -489,7 +495,7 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
       hostType = htIpv6
     return move(ipv6)
   if not special:
-    return opaqueParseHost(input, hostType)
+    return opaqueParseHost(input, schemeType, hostType)
   let domain = percentDecode(input)
   var asciiDomain = domain.domainToAscii(beStrict = false)
   if asciiDomain == "" or ForbiddenDomainChars in asciiDomain:
@@ -725,7 +731,7 @@ proc parseFileHost(input: openArray[char]; pointer: var int; url: URL;
     url.hostname = ""
   else:
     var t = htNone
-    var hostname = parseHost(buffer, url.isSpecial, t)
+    var hostname = parseHost(buffer, url.schemeType, t)
     if t == htNone:
       return usFail
     url.hostType = t
@@ -749,7 +755,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; url: URL;
       if override and state == usHostname:
         return usFail
       var t = htNone
-      let hostname = parseHost(buffer, url.isSpecial, t)
+      let hostname = parseHost(buffer, url.schemeType, t)
       if t == htNone:
         return usFail
       url.hostname = hostname
@@ -770,7 +776,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; url: URL;
   if override and buffer == "" and (url.includesCredentials or url.port >= 0):
     return usFail
   var t = htNone
-  let hostname = parseHost(buffer, url.isSpecial, t)
+  let hostname = parseHost(buffer, url.schemeType, t)
   if t == htNone:
     return usFail
   url.hostname = hostname

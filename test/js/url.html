@@ -17,6 +17,10 @@ assertEquals(new URL("x", "file:///A:/y") + "", "file:///A:/x");
 assertEquals(new URL("/x", "file:///A:") + "", "file:///A:/x");
 assertEquals(new URL('file://C:/') + "", "file:///C:/");
 assertEquals(new URL('file://C|/') + "", "file:///C:/");
+/* non-standard, but needed for compat with ed2k */
+assertEquals(new URL('ed2k://|a|b|c|/') + "", "ed2k://|a|b|c|/");
+/* following is standard behavior (but IMO the spec should be changed) */
+assertThrows(() => new URL('ed3k://|a|b|c|/'), TypeError);
 assertEquals(new URL('file://loc%61lhost/') + "", "file:///");
 assertEquals(new URL("https://user:password@example.org/") + "", "https://user:password@example.org/");
 assertEquals(new URL("https://example.org/foo bar") + "", "https://example.org/foo%20bar");
