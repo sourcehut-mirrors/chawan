@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<title>Test template</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const abuf = new ArrayBuffer(10);
+const view1 = new Int8Array(abuf);
+const view2 = new Int8Array(abuf, 9, 1);
+crypto.getRandomValues(view2);
+assertEquals(view1[0], 0);
+const view3 = new Uint8ClampedArray(abuf, 0, 1);
+assertThrows(() => crypto.getRandomValues(view3), DOMException);
+assertEquals(view1[0], 0);
+document.getElementById("x").textContent = "Success";
+</script>

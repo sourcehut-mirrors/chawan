@@ -58786,7 +58786,7 @@ int JS_GetTypedArrayType(JSValueConst obj)
 {
     JSClassID class_id = JS_GetClassID((JSValue)obj);
 
-    if (class_id < JS_CLASS_INT8_ARRAY || class_id > JS_CLASS_BIG_UINT64_ARRAY)
+    if (class_id < JS_CLASS_UINT8C_ARRAY || class_id > JS_CLASS_BIG_UINT64_ARRAY)
         return -1;
     return class_id - JS_CLASS_UINT8C_ARRAY;
 }

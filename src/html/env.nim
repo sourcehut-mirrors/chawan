@@ -193,12 +193,12 @@ proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
   var view: JSArrayBufferView
   if ctx.fromJS(array, view).isErr:
     return JS_EXCEPTION
-  if view.t < 0 or view.t > cint(JS_TYPED_ARRAY_BIG_UINT64):
+  if view.t == JS_TYPED_ARRAY_UINT8C or view.t > JS_TYPED_ARRAY_BIG_UINT64:
     return JS_ThrowDOMException(ctx, "TypeMismatchError",
       "Wrong typed array type")
   if view.abuf.len > 65536:
     return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
-  doAssert crypto.urandom.readLoop(view.abuf.p, int(view.abuf.len)).isOk
+  doAssert crypto.urandom.readLoop(view.toOpenArray()).isOk
   return JS_DupValue(ctx, array)
 
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =

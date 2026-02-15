@@ -56,7 +56,7 @@ proc toJS*[T: enum](ctx: JSContext; e: T): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
 proc toJS*(ctx: JSContext; obj: ref object): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
-proc toJS*(ctx: JSContext; u8a: JSTypedArray): JSValue
+proc toJS*(ctx: JSContext; u8a: JSArrayBufferView): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
 proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 
@@ -259,14 +259,24 @@ proc toJS(ctx: JSContext; j: JSValue): JSValue =
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue =
   return JS_NewArrayBuffer(ctx, abuf.p, abuf.len, abuf.dealloc, nil, false)
 
-proc toJS*(ctx: JSContext; u8a: JSTypedArray): JSValue =
+proc toJS*(ctx: JSContext; u8a: JSArrayBufferView): JSValue =
   let jsabuf = ctx.toJS(u8a.abuf)
   if JS_IsException(jsabuf):
     return jsabuf
-  let argv = [JSValueConst(jsabuf), JS_UNDEFINED, JS_UNDEFINED]
-  let ret = JS_NewTypedArray(ctx, 3, argv.toJSValueConstArray(),
-    JS_TYPED_ARRAY_UINT8)
+  let offset = ctx.toJS(u8a.offset)
+  if JS_IsException(offset):
+    JS_FreeValue(ctx, jsabuf)
+    return offset
+  let len = ctx.toJS(u8a.len)
+  if JS_IsException(len):
+    JS_FreeValue(ctx, jsabuf)
+    JS_FreeValue(ctx, offset)
+    return len
+  let argv = [JSValueConst(jsabuf), JSValueConst(offset), JSValueConst(len)]
+  let ret = JS_NewTypedArray(ctx, 3, argv.toJSValueConstArray(), u8a.t)
   JS_FreeValue(ctx, jsabuf)
+  JS_FreeValue(ctx, offset)
+  JS_FreeValue(ctx, len)
   return ret
 
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =

@@ -60,8 +60,7 @@ proc decode(ctx: JSContext; this: JSTextDecoder;
   var oq = ""
   let stream = this.stream
   if not JS_IsUndefined(jsInput):
-    let H = int(input.abuf.len) - 1
-    for chunk in this.tdctx.decode(input.abuf.p.toOpenArray(0, H), not stream):
+    for chunk in this.tdctx.decode(input.toOpenArray(), not stream):
       oq &= chunk
   else:
     for chunk in this.tdctx.decode([], not stream):
@@ -81,7 +80,7 @@ proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
   if p != nil:
     dealloc(p)
 
-proc encode(this: JSTextEncoder; input = ""): JSTypedArray {.jsfunc.} =
+proc encode(this: JSTextEncoder; input = ""): JSArrayBufferView {.jsfunc.} =
   # we have to validate input first :/
   #TODO it is possible to do less copies here...
   let input = input.toValidUTF8()
@@ -91,9 +90,11 @@ proc encode(this: JSTextEncoder; input = ""): JSTypedArray {.jsfunc.} =
     buf
   else:
     nil
-  JSTypedArray(
+  JSArrayBufferView(
     t: JS_TYPED_ARRAY_UINT8,
-    abuf: JSArrayBuffer(p: p, len: csize_t(input.len), dealloc: deallocWrap)
+    abuf: JSArrayBuffer(p: p, len: csize_t(input.len), dealloc: deallocWrap),
+    offset: 0,
+    len: int64(input.len)
   )
 
 #TODO encodeInto
