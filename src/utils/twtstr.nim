@@ -343,55 +343,78 @@ proc repeat*(s: string; n: int): string =
 proc memchr(s: pointer; c: cint; n: csize_t): pointer {.
   importc, header: "<string.h>".}
 
-proc find2(s: openArray[char]; c: char; start, len: int): int =
+proc find*(s: openArray[char]; c: char): int =
+  let slen = s.len
   when nimvm:
-    for i in start ..< len:
+    for i in 0 ..< slen:
       if s[i] == c:
         return i
   else:
-    if len > 0 and start < len:
-      let p = memchr(unsafeAddr s[start], cint(c), csize_t(len) -
-        csize_t(start))
+    if slen > 0:
+      let sp = unsafeAddr s[0]
+      let p = memchr(sp, cint(c), csize_t(slen))
       if p != nil:
-        return cast[int](cast[uint](p) - cast[uint](unsafeAddr s[0]))
+        return cast[int](cast[uint](p) - cast[uint](sp))
   return -1
 
-proc find*(s: openArray[char]; c: char; start = 0): int =
-  return s.find2(c, start, s.len)
+proc find*(s: openArray[char]; c: char; start: int; last = -1): int =
+  let last = if last == -1: s.high else: last
+  let n = s.toOpenArray(start, last).find(c)
+  if n < 0:
+    return n
+  return start + n
 
-proc find*(s: openArray[char]; cs: set[char]; start = 0): int =
-  let L = s.len
-  for i in start ..< L:
+proc find*(s: openArray[char]; cs: set[char]): int =
+  let slen = s.len
+  for i in 0 ..< slen:
     if s[i] in cs:
       return i
   return -1
 
-# could use memmem too since it's in POSIX-2024, but that doesn't work in nimvm
-proc find*(s1: openArray[char]; s2: string; start = 0): int =
-  let s1len = s1.len
-  let s2len = s2.len
-  if s1len <= 0 or s2len > s1len:
+proc find*(s: openArray[char]; cs: set[char]; start: int; last = -1): int =
+  let last = if last == -1: s.high else: last
+  if start > last:
     return -1
-  var i = max(start, 0)
-  let c = s2[0]
-  if s2len == 1:
-    return s1.find(c, i)
-  {.push overflowChecks: off, boundChecks: off.}
-  let s2len1 = s2len - 1
-  let L = s1len - s2len1
-  while true:
-    i = s1.find2(c, i, len = L)
-    if i == -1:
-      break
-    when nimvm:
-      if s1.toOpenArray(i + 1, s1.high).startsWith(s2.toOpenArray(1, s2len1)):
+  let n = s.toOpenArray(start, last).find(cs)
+  if n < 0:
+    return n
+  return start + n
+
+proc memmem(haystack: pointer; haystacklen: csize_t; needle: pointer;
+  needlelen: csize_t): pointer {.importc, header: "<string.h>".}
+
+proc find*(haystack: openArray[char]; needle: string): int =
+  let haystacklen = haystack.len
+  let needlelen = needle.len
+  if haystacklen < needlelen:
+    return -1
+  if needlelen <= 0:
+    return 0
+  when nimvm:
+    let L = haystacklen - needlelen + 1
+    var i = 0
+    let haystackHigh = haystack.high
+    while i < L:
+      if haystack.toOpenArray(i, haystackHigh).startsWith(needle):
         return i
-    else:
-      if equalMem(unsafeAddr s1[i + 1], unsafeAddr s2[1], s2len1):
-        return i
-    inc i
-  {.pop.}
+      inc i
+  else:
+    let sp = unsafeAddr haystack[0]
+    let p = memmem(sp, csize_t(haystacklen), unsafeAddr needle[0],
+      csize_t(needlelen))
+    if p != nil:
+      return cast[int](cast[uint](p) - cast[uint](sp))
   return -1
+
+proc find*(haystack: openArray[char]; needle: string; start: int; last = -1):
+    int =
+  let last = if last == -1: haystack.high else: last
+  if start > last:
+    return -1
+  let n = haystack.toOpenArray(start, last).find(needle)
+  if n < 0:
+    return n
+  return start + n
 
 proc rfind*(s: openArray[char]; c: char; start = 0; last = -1): int =
   let H = if last < 0: s.high else: last
@@ -407,31 +430,31 @@ proc rfind*(s: openArray[char]; cs: set[char]; start = 0; last = -1): int =
       return i
   return -1
 
-proc rfind*(s1: openArray[char]; s2: string; start = 0; last = -1): int =
-  let s1len = s1.len
-  let s2len = s2.len
-  if s1len <= 0 or s2len > s1len:
-    return -1
-  var i = if last < 0: s1.high else: last
-  let c = s2[0]
-  if s2len == 1:
-    return s1.rfind(c, start, i)
-  {.push overflowChecks: off, boundChecks: off.}
-  let s2len1 = s2len - 1
-  i -= s2len1
-  while i >= start:
-    i = s1.rfind(c, start, i)
-    if i == -1:
-      break
-    when nimvm:
-      if s1.toOpenArray(i + 1, s1.high).startsWith(s2.toOpenArray(1, s2len1)):
-        return i
-    else:
-      if equalMem(unsafeAddr s1[i + 1], unsafeAddr s2[1], s2len1):
-        return i
+proc rfind*(haystack: openArray[char]; needle: string): int =
+  let haystacklen = haystack.len
+  let needlelen = needle.len
+  if needlelen <= 0:
+    return 0
+  if needlelen == 1:
+    return haystack.rfind(needle[0])
+  {.push overflowChecks: off.}
+  var i = haystacklen - needlelen
+  while i >= 0:
+    if haystack.toOpenArray(i, haystack.high).startsWith(needle):
+      return i
     dec i
   {.pop.}
   return -1
+
+proc rfind*(haystack: openArray[char]; needle: string; start: int; last = -1):
+    int =
+  let last = if last == -1: haystack.high else: last
+  if start > last:
+    return -1
+  let n = haystack.toOpenArray(start, last).rfind(needle)
+  if n < 0:
+    return n
+  return start + n
 
 proc contains*(s1: openArray[char]; s2: string): bool =
   s1.find(s2) != -1
