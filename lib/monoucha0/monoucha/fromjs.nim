@@ -323,6 +323,7 @@ proc fromJSEnumBody(map: openArray[IdentMapItem]; ctx: JSContext;
   if i == -1:
     JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s",
       s, tname)
+  JS_FreeCString(ctx, s)
   return i
 
 proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
