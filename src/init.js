@@ -1212,7 +1212,7 @@ Pager.prototype.redirect = async function(buffer, request) {
         }
     } else {
         this.alert("Error: maximum redirection depth reached")
-        this.deleteContainer(container, buffer.find("any"))
+        this.deleteContainer(buffer, buffer.find("any"))
     }
 }
 
