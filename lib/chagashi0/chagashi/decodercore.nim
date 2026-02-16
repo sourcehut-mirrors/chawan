@@ -74,7 +74,6 @@ type
     flag: TextDecoderResult
     needed: uint8
     buf: uint32
-    ppi: int
 
   TextDecoderGB18030* = ref object of TextDecoder
     buf: uint8
@@ -104,14 +103,14 @@ type
     lead: uint8
 
   TextDecoderUTF16_BE* = ref object of TextDecoder
-    lead: uint8
     surr: uint16
+    lead: uint8
     haslead: bool
     hassurr: bool
 
   TextDecoderUTF16_LE* = ref object of TextDecoder
-    lead: uint8
     surr: uint16
+    lead: uint8
     haslead: bool
     hassurr: bool
 
@@ -282,7 +281,7 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
   var needed = td.needed
   var obuf = td.buf
   var buf = obuf
-  let ppi = td.ppi
+  let pi = i
   if flag == tdrDone:
     while i < iq.len:
       let b = iq[i]
@@ -311,7 +310,13 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
           buf = (buf shl 8) or b
         bounds = u8tCont
       i = ni
-  if obuf != 0 and ppi == 0 and ri != 0:
+  if (bounds and u8tBadLead) != 0 and needed == 1:
+    # if streaming, we can't defer error reporting to the next iteration
+    # (as this would be observable)
+    needed = 0
+    buf = 0
+    flag = tdrError
+  if obuf != 0 and pi == 0 and ri != 0:
     let L = (uint8(fastLog2(obuf)) + 7) shr 3
     let n2 = n + int(L)
     if n2 > oq.len:
@@ -325,20 +330,17 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
   td.needed = needed
   td.bounds = bounds
   td.buf = buf
-  if ppi < ri:
-    td.ppi = i
-    td.pi = ppi
+  if pi < ri:
+    td.pi = pi
     td.flag = flag
     return tdrReadInput
   td.flag = tdrDone
   case flag
   of tdrError:
-    td.ppi = i
-    td.pi = ppi
+    td.pi = pi
   of tdrDone:
     td.ri = 0
     td.i = 0
-    td.ppi = 0
   else: discard # unreachable
   flag
 
@@ -350,7 +352,6 @@ method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
   td.i = 0
   td.pi = 0
   td.ri = 0
-  td.ppi = 0
   td.buf = 0
   td.bounds = 0
 
@@ -396,11 +397,10 @@ proc gb18030ToU16(row, col: uint16): uint16 =
 
 method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  while (let i = td.i; i < iq.len or td.buf != 0):
-    if td.buf != 0:
-      oq.try_put_byte td.buf, n
-      td.buf = 0
-      continue
+  if td.buf != 0:
+    oq.try_put_byte td.buf, n
+    td.buf = 0
+  while (let i = td.i; i < iq.len):
     let b = iq[i]
     if b < 0x80 and td.first == 0 and td.second == 0 and td.third == 0:
       oq.try_put_byte b, n

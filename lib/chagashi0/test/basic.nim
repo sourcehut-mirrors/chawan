@@ -257,3 +257,10 @@ test "GB18030 ranges":
   check last == "\x90\x30\x81\x30"
   check last.decodeAll(CHARSET_GB18030) == "\u{10000}"
   check "\xfe\x39\xfe\x40".decodeAll(CHARSET_GB18030) == "\uFFFD9\uFA0C"
+
+test "invalid UTF-8 in stream":
+  var ctx = initTextDecoderContext(CHARSET_UTF_8)
+  var res = ""
+  for slice in ctx.decode("\xc0a".toOpenArrayByte(0, 0), finish = false):
+    res &= slice
+  check res == "\uFFFD"
