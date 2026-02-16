@@ -488,6 +488,7 @@ Pager.prototype.gotoURLHash = function(request, current) {
     url.hash = current.url.hash;
     if (current.url + "" != url + "")
         return false;
+    url.hash = anchor;
     current.iface.gotoAnchor(anchor, false, false).then(([x, y, click]) => {
         if (y >= 0) {
             const nc = this.dupeBuffer2(current, url);
