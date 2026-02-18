@@ -41,9 +41,10 @@ proc swrite*(w: var PacketWriter; blob: Blob) =
   w.swrite(blob of WebFile)
   if blob of WebFile:
     let file = WebFile(blob)
-    w.swrite(file.fd != -1)
-    if file.fd != -1:
-      w.sendFd(file.fd)
+    let fd = dup(file.fd)
+    w.swrite(fd != -1)
+    if fd != -1:
+      w.sendFd(fd)
     w.swrite(file.name)
   w.swrite(blob.ctype)
   w.swrite(blob.size)

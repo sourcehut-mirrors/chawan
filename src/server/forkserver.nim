@@ -77,7 +77,6 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     w.sendFd(sv[1])
   do:
     fail = true
-  discard close(sv[1])
   var bufferPid = -1
   if not fail:
     forkserver.stream.withPacketReaderFire r:

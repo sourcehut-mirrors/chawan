@@ -1041,8 +1041,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       ctx.rejectHandle(handle, ceCGIOutputHandleNotFound)
       ctx.close(handle)
       return
-  if request.body.t in {rbtString, rbtBlob, rbtMultipart, rbtOutput} or
-      request.body.t == rbtCache and istream2 != nil:
+  if request.body.t notin {rbtNone, rbtCache} or istream2 != nil:
     var pipefdRead: array[2, cint] # parent -> child
     if pipe(pipefdRead) == -1:
       ctx.rejectHandle(handle, ceFailedToSetUpCGI)
@@ -1073,11 +1072,6 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       r.sread(pid)
     do:
       pid = -1
-  ostreamOut.sclose() # close write
-  if ostreamOut2 != nil:
-    ostreamOut2.sclose() # close write
-  if request.body.t != rbtNone:
-    istream.sclose() # close read
   if pid == -1:
     ctx.rejectHandle(handle, ceFailedToSetUpCGI)
     if ostream != nil:
@@ -1511,7 +1505,6 @@ proc load(ctx: var LoaderContext; request: Request; client: ClientHandle;
       fail = true
       w.swrite(false)
   if not fail:
-    discard close(pipev[0])
     let stream = newSocketStream(pipev[1])
     stream.setBlocking(false)
     let credentials = config.includeCredentials(request, request.url)
@@ -1562,7 +1555,6 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
   r.sread(config)
   assert pid notin ctx.clientMap
   var sv {.noinit.}: array[2, cint]
-  var needsClose = false
   var res = cmdrDone
   rclient.withPacketWriter w:
     if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
@@ -1577,13 +1569,10 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
             client.authMap.add(it)
       w.swrite(true)
       w.sendFd(sv[1])
-      needsClose = true
     else:
       w.swrite(false)
   do:
     res = cmdrEOF
-  if needsClose:
-    discard close(sv[1])
   res
 
 proc removeClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
@@ -1684,8 +1673,6 @@ proc openCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
       w.sendFd(ps.fd)
   do:
     return cmdrEOF
-  if ps != nil:
-    ps.sclose()
   cmdrDone
 
 proc passFdCmd(ctx: var LoaderContext; rclient: ClientHandle;
@@ -1714,7 +1701,6 @@ proc addPipeCmd(ctx: var LoaderContext; rclient: ClientHandle;
       w.sendFd(pipefd[1])
     do:
       discard close(pipefd[0])
-      discard close(pipefd[1])
       return cmdrEOF
     discard close(pipefd[1])
     if success:
@@ -1757,7 +1743,6 @@ proc teeCmd(ctx: var LoaderContext; rclient: ClientHandle; r: var PacketReader):
       w.sendFd(pipev[0])
     do:
       res = cmdrEOF
-    discard close(pipev[0])
   else:
     rclient.withPacketWriter w:
       w.swrite(-1)

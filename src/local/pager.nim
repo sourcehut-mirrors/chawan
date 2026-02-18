@@ -690,7 +690,6 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   let pipe = not ps.isatty()
   if pipe:
     pager.loader.passFd("-", ps.fd)
-    ps.sclose()
   # we don't want history for dump/headless mode
   let history = pager.config.start.headless == hmFalse and history
   let ctx = pager.jsctx
@@ -1284,7 +1283,6 @@ proc clone(pager: Pager; iface: BufferInterface; init: BufferInit; url: URL):
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return nil
   let res = iface.clone(url, sv[1])
-  discard close(sv[1])
   if res.isErr:
     return nil
   let fd = sv[0]
@@ -2076,7 +2074,6 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     twtstr.unsetEnv("MAILCAP_URL")
     let url = parseURL0("stream:" & $pid)
     pager.loader.passFd(url.pathname, pins.fd)
-    pins.sclose()
     let response = pager.loader.doRequest(newRequest(url))
     var flags = {cmfConnect, cmfRedirected}
     if mfNeedsstyle in entry.flags or isansi:
@@ -2220,8 +2217,6 @@ proc connected2(pager: Pager; init: BufferInit): Opt[void] {.jsfunc.} =
       w.sendFd(cstream.fd)
       # pass down ostream
       w.sendFd(ostream.fd)
-    ostream.sclose()
-    cstream.sclose()
     let iface = pager.addInterface(init, stream, newProcessHandle(pid))
     arg0 = ctx.toJS(iface)
     bcrConnected

@@ -1475,7 +1475,6 @@ proc readSuccess(ctx: JSContext; iface: BufferInterface; s: string; fd: cint):
     w.swrite(hasfd)
     if hasfd:
       w.sendFd(fd)
-  discard close(fd)
   return addPromise[ClickResult](ctx, iface)
 
 proc select(ctx: JSContext; iface: BufferInterface; selected: int): JSValue

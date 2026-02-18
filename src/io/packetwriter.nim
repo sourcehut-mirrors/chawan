@@ -7,6 +7,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/posix
 import std/tables
 
 import io/dynstream
@@ -33,6 +34,7 @@ proc swrite*(w: var PacketWriter; obj: ref object)
 proc swrite*(w: var PacketWriter; c: ARGBColor)
 proc swrite*(w: var PacketWriter; c: CellColor)
 
+# consumes `fd'
 proc sendFd*(w: var PacketWriter; fd: cint) =
   w.fds.add(fd)
 
@@ -49,18 +51,24 @@ proc writeSize*(w: var PacketWriter) =
   let len = [w.bufLen - InitLen, w.fds.len]
   copyMem(addr w.buffer[0], unsafeAddr len[0], sizeof(len))
 
+proc closeFds(w: var PacketWriter) =
+  for fd in w.fds:
+    discard close(fd)
+  w.fds.setLen(0)
+
 # Returns false on EOF, true if we flushed successfully.
 proc flush*(w: var PacketWriter; stream: DynStream): bool =
   w.writeSize()
   if stream.writeLoop(w.buffer.toOpenArray(0, w.bufLen - 1)).isErr:
+    w.closeFds()
     return false
   if w.fds.len > 0:
     w.fds.reverse()
     let n = SocketStream(stream).sendMsg([0u8], w.fds)
     if n < 1:
       return false
+  w.closeFds()
   w.bufLen = 0
-  w.fds.setLen(0)
   true
 
 template withPacketWriter*(stream: DynStream; w, body, fallback: untyped) =

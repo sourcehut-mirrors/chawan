@@ -4,6 +4,10 @@ include "common.chasc.expanded"
 ifeqdef SYS_rt_sigreturn allow 	# newer kernels have this instead of sigreturn
 ifeqdef SYS_sigreturn allow	# called by signal trampoline
 
+# serializing blob requires dup
+#TODO sending blob to buffer is not the best idea in the first place
+ifeqdef SYS_dup allow
+
 # network; note that we don't call send/recv in buffer
 ifeqdef SYS_recvmsg allow
 ifeqdef SYS_sendmsg allow
