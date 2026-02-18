@@ -1820,8 +1820,8 @@ proc handleError(bc: BufferContext; fd: int): bool =
     if data of InputData:
       bc.onload(InputData(data))
     elif data of PagerHandle:
-      # Connection reset by peer, probably.  Close the buffer.
-      return false
+      if not bc.removePagerHandle(PagerHandle(data)):
+        return false
     else:
       if not bc.loader.onError(fd):
         #TODO handle connection error
