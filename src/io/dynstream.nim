@@ -400,7 +400,7 @@ proc newSocketStream*(fd: cint): SocketStream =
 type
   BufStream* = ref object of DynStream
     source*: SocketStream
-    registerFun: proc(fd: int)
+    registerFun: proc(fd: cint)
     registered: bool
     writeBuffer: string
 
@@ -448,7 +448,7 @@ proc flushWrite*(s: BufStream): bool =
 method flush*(s: BufStream): Opt[void] =
   return s.source.writeLoop(s.writeBuffer)
 
-proc newBufStream*(s: SocketStream; registerFun: proc(fd: int)): BufStream =
+proc newBufStream*(s: SocketStream; registerFun: proc(fd: cint)): BufStream =
   return BufStream(source: s, registerFun: registerFun)
 
 {.pop.} # raises: []

@@ -90,7 +90,6 @@ type
     loader: FileLoader
     navigateUrl: URL # stored when JS tries to navigate
     outputId: int
-    pollData: PollData
     clickResult: ClickResult
     rootBox: BlockBox
     window: Window
@@ -728,28 +727,24 @@ proc loadImages(bc: BufferContext): EmptyPromise =
       )
   return newResolvedPromise()
 
-proc rewind(bc: BufferContext; data: InputData; offset: uint64;
-    unregister = true): bool =
+proc rewind(bc: BufferContext; data: InputData; offset: uint64): bool =
   let url = parseURL0("cache:" & $bc.cacheId & "?" & $offset)
   let response = bc.loader.doRequest(newRequest(url))
   if response.body == nil:
     return false
   bc.loader.resume(response.outputId)
-  if unregister:
-    bc.pollData.unregister(data.stream.fd)
-    bc.loader.unregistered.add(data.stream.fd)
-  bc.loader.unset(data)
+  bc.loader.unregister(data)
   data.stream.sclose()
-  bc.loader.put(InputData(stream: response.body))
   response.body.setBlocking(false)
-  bc.pollData.register(response.body.fd, POLLIN)
+  let data = InputData(stream: response.body)
+  bc.loader.register(data, POLLIN)
   bc.bytesRead = offset
   return true
 
 proc addPagerHandle(bc: BufferContext; stream: PosixStream) =
   let handle = PagerHandle(stream: stream)
   bc.loader.put(handle)
-  bc.pollData.register(stream.fd, POLLIN)
+  bc.loader.pollData.register(stream.fd, POLLIN)
   var it = bc.handlesHead
   if it == nil:
     bc.handlesHead = handle
@@ -760,9 +755,8 @@ proc addPagerHandle(bc: BufferContext; stream: PosixStream) =
 
 # returns true if there are still other handles, false otherwise
 proc removePagerHandle(bc: BufferContext; handle: PagerHandle): bool =
-  bc.loader.unset(handle)
-  bc.pollData.unregister(handle.stream.fd)
-  bc.loader.unregistered.add(handle.stream.fd)
+  bc.loader.unregister(handle)
+  handle.stream.sclose()
   if bc.handlesHead == handle:
     bc.handlesHead = bc.handlesHead.next
   else:
@@ -809,12 +803,10 @@ proc finishLoad(bc: BufferContext; data: InputData) =
   bc.document.readyState = rsInteractive
   if bc.config.scripting != smFalse:
     bc.dispatchDOMContentLoadedEvent()
-  bc.pollData.unregister(data.stream.fd)
-  bc.loader.unregistered.add(data.stream.fd)
+  bc.loader.unregister(data)
   bc.loader.removeCachedItem(bc.cacheId)
   bc.cacheId = -1
   bc.outputId = -1
-  bc.loader.unset(data)
   data.stream.sclose()
 
 proc headlessMustWait(bc: BufferContext): bool =
@@ -981,11 +973,8 @@ proc cancel(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   for it in bc.loader.data:
     if it of PagerHandle:
       continue
-    let fd = it.fd
-    bc.pollData.unregister(fd)
-    bc.loader.unregistered.add(fd)
+    bc.loader.unregister(it)
     it.stream.sclose()
-    bc.loader.unset(it)
     if it of InputData:
       bc.loader.removeCachedItem(bc.cacheId)
       bc.cacheId = -1
@@ -1793,7 +1782,7 @@ proc readCommand(bc: BufferContext; data: PagerHandle): CommandResult =
     return cmdrEOF
   res
 
-proc handleRead(bc: BufferContext; fd: int): bool =
+proc handleRead(bc: BufferContext; fd: cint): bool =
   if fd in bc.loader.unregistered:
     discard # ignore (see pager handleError for explanation)
   elif (let data = bc.loader.get(fd); data != nil):
@@ -1813,7 +1802,7 @@ proc handleRead(bc: BufferContext; fd: int): bool =
     assert false
   true
 
-proc handleError(bc: BufferContext; fd: int): bool =
+proc handleError(bc: BufferContext; fd: cint): bool =
   if fd in bc.loader.unregistered:
     discard # ignore (see pager handleError for explanation)
   elif (let data = bc.loader.get(fd); data != nil):
@@ -1844,10 +1833,10 @@ proc runBuffer(bc: BufferContext) =
       for handle in bc.handles:
         bc.resolveLoad(handle, 0, 0) # already set to bsLoad
     let timeout = bc.getPollTimeout()
-    bc.pollData.poll(timeout)
+    bc.loader.pollData.poll(timeout)
     bc.loader.blockRegister()
-    for fd, revents in bc.pollData.events:
-      let fd = int(fd)
+    for fd, revents in bc.loader.pollData.events:
+      let fd = fd
       if (revents and POLLIN) != 0:
         if not bc.handleRead(fd):
           alive = false
@@ -1921,12 +1910,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   bc.charset = bc.charsetStack.pop()
   istream.setBlocking(false)
   bc.loader.put(InputData(stream: istream))
-  bc.pollData.register(istream.fd, POLLIN)
+  bc.loader.pollData.register(istream.fd, POLLIN)
   bc.addPagerHandle(pstream)
-  loader.registerFun = proc(fd: int) =
-    bc.pollData.register(fd, POLLIN)
-  loader.unregisterFun = proc(fd: int) =
-    bc.pollData.unregister(fd)
   bc.initDecoder()
   bc.htmlParser = newHTML5ParserWrapper(bc.window, url, confidence, bc.charset)
   bc.document.applyUASheet()

@@ -135,7 +135,6 @@ type
     luctx: LUContext
     menu {.jsget.}: Select
     numload {.jsgetset.}: int # number of pages currently being loaded
-    pollData: PollData
     term*: Terminal
     timeouts*: TimeoutState
     tmpfSeq: uint
@@ -170,7 +169,6 @@ jsDestructor(Pager)
 proc addConsole2(pager: Pager; interactive: bool)
 proc alert*(pager: Pager; msg: string)
 proc redraw(pager: Pager)
-proc unregisterFd(pager: Pager; fd: int)
 proc quit(pager: Pager; code: int)
 proc windowChange(pager: Pager): Opt[void]
 
@@ -343,10 +341,6 @@ proc initLoader(pager: Pager) =
   )
   let loader = pager.loader
   discard loader.addClient(loader.clientPid, clientConfig, isPager = true)
-  pager.loader.registerFun = proc(fd: int) =
-    pager.pollData.register(fd, POLLIN)
-  pager.loader.unregisterFun = proc(fd: int) =
-    pager.pollData.unregister(fd)
   let request = newRequest("about:cookie-stream")
   loader.fetch(request).then(proc(res: FetchResult) =
     if res.isErr:
@@ -678,9 +672,9 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
       istream = nil
     if istream == nil:
       pager.config.start.headless = hmDump
-  pager.pollData.register(pager.forkserver.estream.fd, POLLIN)
-  let sr = pager.term.start(istream, proc(fd: int) =
-    pager.pollData.register(fd, POLLOUT))
+  pager.loader.pollData.register(pager.forkserver.estream.fd, POLLIN)
+  let sr = pager.term.start(istream, proc(fd: cint) =
+    pager.loader.pollData.register(fd, POLLOUT))
   if sr.isErr:
     return
   pager.attrs = pager.term.attrs
@@ -1243,7 +1237,7 @@ proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
   if stream == nil:
     pager.alert("failed to start request for " & $request.url)
     return nil
-  pager.loader.registerFun(stream.fd)
+  pager.loader.pollData.register(stream.fd, POLLIN)
   let init = newBufferInit(bufferConfig, loaderConfig, url, request,
     pager.attrs, title, redirectDepth, flags, contentType, filterCmd,
     charsetStack)
@@ -1268,12 +1262,12 @@ proc initBufferFrom(pager: Pager; init: BufferInit;
 
 proc addInterface(pager: Pager; init: BufferInit; stream: SocketStream;
     phandle: ProcessHandle): BufferInterface =
-  let bufStream = newBufStream(stream, proc(fd: int) =
-    pager.pollData.unregister(fd)
-    pager.pollData.register(fd, POLLIN or POLLOUT))
+  let bufStream = newBufStream(stream, proc(fd: cint) =
+    pager.loader.pollData.unregister(fd)
+    pager.loader.pollData.register(fd, POLLIN or POLLOUT))
   let iface = newBufferInterface(bufStream, phandle, addr pager.attrs, init)
-  pager.loader.put(BufferInterfaceData(stream: stream, iface: iface))
-  pager.pollData.register(stream.fd, POLLIN)
+  let data = BufferInterfaceData(stream: stream, iface: iface)
+  pager.loader.register(data, POLLIN)
   return iface
 
 # private
@@ -1318,8 +1312,8 @@ proc unregisterBufferIface(pager: Pager; iface: BufferInterface) {.jsfunc.} =
     if iface.phandle.refc == 0:
       pager.loader.removeClient(iface.process)
   let stream = iface.stream
-  let fd = int(stream.source.fd)
-  pager.unregisterFd(fd)
+  let fd = stream.source.fd
+  pager.loader.unregister(fd)
   pager.loader.unset(fd)
   stream.sclose()
   iface.dead = true
@@ -1338,8 +1332,7 @@ proc unregisterBufferInit(pager: Pager; init: BufferInit) {.jsfunc.} =
   if item != nil:
     # connecting to URL
     let stream = item.stream
-    pager.unregisterFd(int(stream.fd))
-    pager.loader.unset(item)
+    pager.loader.unregister(item)
     stream.sclose()
 
 template myExec(cmd: string) =
@@ -2324,10 +2317,6 @@ proc connected(pager: Pager; init: BufferInit; response: Response): Opt[void] =
     JS_FreeValue(ctx, res)
     return ok()
 
-proc unregisterFd(pager: Pager; fd: int) =
-  pager.pollData.unregister(fd)
-  pager.loader.unregistered.add(fd)
-
 proc handleRead(pager: Pager; item: ConnectingBuffer): Opt[void] =
   let init = item.init
   let stream = item.stream
@@ -2358,8 +2347,7 @@ proc handleRead(pager: Pager; item: ConnectingBuffer): Opt[void] =
       r.sread(response.status)
       r.sread(response.headers)
     # done
-    pager.loader.unset(item)
-    pager.unregisterFd(int(item.stream.fd))
+    pager.loader.unregister(item)
     init.applyResponse(response, pager.mimeTypes)
     let redirect = response.getRedirect(init.request)
     let ctx = pager.jsctx
@@ -2423,7 +2411,7 @@ proc handleStderr(pager: Pager) {.jsfunc.} =
     pager.console.write('\n')
   pager.console.flush()
 
-proc handleRead(pager: Pager; fd: int): Opt[bool] =
+proc handleRead(pager: Pager; fd: cint): Opt[bool] =
   if pager.term.istream != nil and fd == pager.term.istream.fd:
     if pager.handleUserInput().isErr:
       return ok(false)
@@ -2451,24 +2439,24 @@ proc handleRead(pager: Pager; fd: int): Opt[bool] =
     assert false
   ok(true)
 
-proc handleWrite(pager: Pager; fd: int): bool =
+proc handleWrite(pager: Pager; fd: cint): bool =
   if pager.term.ostream != nil and pager.term.ostream.fd == fd:
     let res = pager.term.flush()
     if res.isErr:
       return false
     if res.get:
-      pager.pollData.unregister(pager.term.ostream.fd)
+      pager.loader.pollData.unregister(pager.term.ostream.fd)
       pager.term.registeredFlag = false
   elif fd in pager.loader.unregistered:
     discard # ignore (see handleError)
   else:
     let iface = BufferInterfaceData(pager.loader.get(fd)).iface
     if iface.stream.flushWrite():
-      pager.pollData.unregister(fd)
-      pager.pollData.register(fd, POLLIN)
+      pager.loader.pollData.unregister(fd)
+      pager.loader.pollData.register(fd, POLLIN)
   true
 
-proc handleError(pager: Pager; fd: int): Opt[bool] =
+proc handleError(pager: Pager; fd: cint): Opt[bool] =
   if pager.term.istream != nil and fd == pager.term.istream.fd:
     pager.alert("error in tty")
     return ok(false)
@@ -2541,15 +2529,15 @@ proc handleSigchld(pager: Pager): Opt[void] =
   ok()
 
 proc inputLoop(pager: Pager): Opt[void] {.jsfunc.} =
-  pager.pollData.register(pager.term.istream.fd, POLLIN)
+  pager.loader.pollData.register(pager.term.istream.fd, POLLIN)
   let signals = pager.setupSignals()
-  pager.pollData.register(signals.fd, POLLIN)
+  pager.loader.pollData.register(signals.fd, POLLIN)
   while true:
     let timeout = pager.timeouts.sortAndGetTimeout()
-    pager.pollData.poll(timeout)
+    pager.loader.pollData.poll(timeout)
     pager.loader.blockRegister()
-    for event in pager.pollData.events:
-      let efd = int(event.fd)
+    for event in pager.loader.pollData.events:
+      let efd = event.fd
       if (event.revents and POLLIN) != 0:
         if event.fd == signals.fd:
           var sigwinch = false
@@ -2609,10 +2597,10 @@ proc hasSelectFds(pager: Pager): bool =
 proc headlessLoop(pager: Pager): Opt[void] {.jsfunc.} =
   while pager.hasSelectFds():
     let timeout = pager.timeouts.sortAndGetTimeout()
-    pager.pollData.poll(timeout)
+    pager.loader.pollData.poll(timeout)
     pager.loader.blockRegister()
-    for event in pager.pollData.events:
-      let efd = int(event.fd)
+    for event in pager.loader.pollData.events:
+      let efd = event.fd
       if (event.revents and POLLIN) != 0:
         if not ?pager.handleRead(efd):
           return ok()

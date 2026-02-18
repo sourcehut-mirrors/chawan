@@ -187,7 +187,7 @@ type
     dynbufn: int # position in dynbuf
     frames: array[FrameType, Frame]
     frameType: FrameType
-    registerCb: proc(fd: int) {.raises: [].} # callback to register ostream
+    registerCb: proc(fd: cint) {.raises: [].} # callback to register ostream
     sixelRegisterNum*: uint16
     kittyId: uint # counter for kitty image (*not* placement) ids.
     colorMap: array[16, RGBColor]
@@ -620,7 +620,7 @@ proc startFlush(term: Terminal): Opt[void] =
   if term.registeredFlag:
     return ok()
   if not ?term.flush():
-    term.registerCb(int(term.ostream.fd))
+    term.registerCb(term.ostream.fd)
     term.registeredFlag = true
   ok()
 
@@ -665,7 +665,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
       term.frame.head = page
       term.frame.tail = page
       if term.frameType == ftCurrent: # no need to register next
-        term.registerCb(int(term.ostream.fd))
+        term.registerCb(term.ostream.fd)
         term.registeredFlag = true
     else:
       term.frame.tail.next = page
@@ -2659,7 +2659,7 @@ proc initScreen(term: Terminal): Opt[void] =
   term.startFlush()
 
 proc start*(term: Terminal; istream: PosixStream;
-    registerCb: (proc(fd: int) {.raises: [].})): Opt[void] =
+    registerCb: (proc(fd: cint) {.raises: [].})): Opt[void] =
   term.ttyFlag = istream != nil and istream.isatty() and term.ostream.isatty()
   term.istream = istream
   term.registerCb = registerCb

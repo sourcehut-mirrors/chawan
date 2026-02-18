@@ -1,13 +1,16 @@
 # Interface to server/loader. The idea is that modules don't have to
-# depend on the entire loader implementation to interact with it.
+# import the entire loader implementation to interact with it.
 #
 # See server/loader for a more detailed description of the protocol.
+
+import std/posix
 
 import config/conftypes
 import config/cookie
 import io/dynstream
 import io/packetreader
 import io/packetwriter
+import io/poll
 import io/promise
 import server/connectionerror
 import server/headers
@@ -22,13 +25,12 @@ type
     clientPid*: int
     map: seq[MapData]
     mapFds*: int # number of fds in map
-    unregistered*: seq[int]
-    registerFun*: proc(fd: int) {.raises: [].}
-    unregisterFun*: proc(fd: int) {.raises: [].}
+    pollData*: PollData
+    unregistered*: seq[cint]
     # A mechanism to queue up new fds being added to the poll data
     # inside the events iterator.
     registerBlocked: bool
-    registerQueue: seq[ConnectData]
+    registerQueue: seq[tuple[data: MapData; events: cshort]]
     # UNIX domain socket to the loader process.
     # We send all messages through this.
     controlStream*: SocketStream
@@ -159,9 +161,6 @@ iterator ongoing*(loader: FileLoader): OngoingData {.inline.} =
     if it of OngoingData:
       yield OngoingData(it)
 
-proc fd*(data: MapData): int =
-  return int(data.stream.fd)
-
 proc put*(loader: FileLoader; data: MapData) =
   let fd = int(data.stream.fd)
   if loader.map.len <= fd:
@@ -171,30 +170,43 @@ proc put*(loader: FileLoader; data: MapData) =
   if data of LoaderData:
     inc loader.mapFds
 
-proc get*(loader: FileLoader; fd: int): MapData =
+proc get*(loader: FileLoader; fd: cint): MapData =
   if fd < loader.map.len:
     return loader.map[fd]
   return nil
 
-proc unset*(loader: FileLoader; fd: int) =
+proc unset*(loader: FileLoader; fd: cint) =
   if loader.map[fd] != nil and loader.map[fd] of LoaderData:
     dec loader.mapFds
   loader.map[fd] = nil
 
 proc unset*(loader: FileLoader; data: MapData) =
-  let fd = int(data.stream.fd)
+  let fd = data.stream.fd
   if loader.get(fd) != nil:
     loader.unset(fd)
 
 proc hasFds*(loader: FileLoader): bool =
   return loader.mapFds > 0 or loader.registerQueue.len > 0
 
-proc register(loader: FileLoader; data: ConnectData) =
+proc register*(loader: FileLoader; data: MapData; events: cshort) =
   if loader.registerBlocked:
-    loader.registerQueue.add(data)
+    loader.registerQueue.add((data, events))
   else:
-    loader.registerFun(int(data.stream.fd))
+    loader.pollData.register(data.stream.fd, events)
     loader.put(data)
+
+proc register(loader: FileLoader; data: ConnectData) =
+  loader.register(data, POLLIN)
+
+proc unregister*(loader: FileLoader; fd: cint) =
+  loader.pollData.unregister(fd)
+  loader.unregistered.add(fd)
+
+#TODO ideally this should be the only exposed unregister function
+# (unset + unregister on fd belong together)
+proc unregister*(loader: FileLoader; data: MapData) =
+  loader.unset(data)
+  loader.unregister(data.stream.fd)
 
 proc blockRegister*(loader: FileLoader) =
   assert not loader.registerBlocked
@@ -204,7 +216,7 @@ proc unblockRegister*(loader: FileLoader) =
   assert loader.registerBlocked
   loader.registerBlocked = false
   for it in loader.registerQueue:
-    loader.register(it)
+    loader.register(it.data, it.events)
   loader.registerQueue.setLen(0)
 
 proc fetch0(loader: FileLoader; input: Request; promise: FetchPromise;
@@ -222,16 +234,6 @@ proc fetch*(loader: FileLoader; input: Request): FetchPromise =
   let promise = FetchPromise()
   loader.fetch0(input, promise, 0)
   return promise
-
-proc reconnect*(loader: FileLoader; data: ConnectData) =
-  data.stream.sclose()
-  let stream = loader.startRequest(data.request)
-  if stream != nil:
-    loader.register(ConnectData(
-      promise: data.promise,
-      request: data.request,
-      stream: stream
-    ))
 
 proc suspend*(loader: FileLoader; fds: seq[int]) =
   loader.withPacketWriterFire w:
@@ -316,9 +318,8 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
         var msg: string
         # msg is discarded.
         r.sread(msg) # packet 1
-        let fd = connectData.fd
-        loader.unregisterFun(fd)
-        loader.unregistered.add(fd)
+        let fd = connectData.stream.fd
+        loader.unregister(fd)
         stream.sclose()
         # delete before resolving the promise
         loader.unset(connectData)
@@ -335,12 +336,10 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       loader.unset(connectData)
       let data = OngoingData(response: response, stream: stream)
       loader.put(data)
-      assert loader.unregisterFun != nil
       response.unregisterFun = proc() =
         loader.unset(data)
-        let fd = data.fd
-        loader.unregistered.add(fd)
-        loader.unregisterFun(fd)
+        let fd = data.stream.fd
+        loader.unregister(fd)
       response.resumeFun = proc(outputId: int) =
         loader.resume(outputId)
       stream.setBlocking(false)
@@ -356,8 +355,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       else:
         promise.resolve(FetchResult.ok(response))
   do: # loader died
-    loader.unregisterFun(connectData.fd)
-    loader.unregistered.add(connectData.fd)
+    loader.unregister(connectData.stream.fd)
     stream.sclose()
     # delete before resolving the promise
     loader.unset(connectData)
