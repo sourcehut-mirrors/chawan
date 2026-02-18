@@ -68,7 +68,7 @@ proc clear*(ctx: var PollData) =
 
 proc poll*(ctx: var PollData; timeout: cint) =
   ctx.trim()
-  let fds = addr ctx.fds[0]
+  let fds = if ctx.fds.len > 0: addr ctx.fds[0] else: nil
   let res = poll(fds, nfds_t(ctx.fds.len), timeout)
   if res < 0: # error
     for event in ctx.fds.mitems:
