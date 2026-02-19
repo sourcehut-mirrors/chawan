@@ -125,8 +125,10 @@ template withPacketWriterReturnEOF(stream: DynStream; w, body: untyped) =
 type ProxyFlag = enum
   pfNone, pfTask
 
-proc buildProxyProc(name, params: NimNode; cmd: BufferCommand; flag: ProxyFlag):
-    NimNode =
+macro proxyt(flag: static ProxyFlag; fun: typed) =
+  let name = fun.name # sym
+  let params = fun.params # formalParams
+  let cmd = strictParseEnum[BufferCommand](name.strVal).get
   let stmts = newStmtList()
   let r = ident("r")
   let packetid = ident("packetid")
@@ -167,21 +169,13 @@ proc buildProxyProc(name, params: NimNode; cmd: BufferCommand; flag: ProxyFlag):
     )
   of pfNone:
     stmts.add(resolve)
-  let name = ident(name.strVal & "Cmd")
+  let nameId = ident(name.strVal & "Cmd")
   quote do:
-    proc `name`(bc {.inject.}: BufferContext; handle {.inject.}: PagerHandle;
+    `fun`
+    proc `nameId`(bc {.inject.}: BufferContext; handle {.inject.}: PagerHandle;
         `r`: var PacketReader; `packetid`: int): CommandResult =
       `stmts`
       cmdrDone
-
-macro proxyt(flag: static ProxyFlag; fun: typed) =
-  let name = fun.name # sym
-  let params = fun.params # formalParams
-  let cmd = strictParseEnum[BufferCommand](name.strVal).get
-  let pproc = buildProxyProc(name, params, cmd, flag)
-  quote do:
-    `fun`
-    `pproc`
 
 template proxy(fun: untyped) =
   proxyt(pfNone, fun)
