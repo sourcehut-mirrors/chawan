@@ -255,7 +255,7 @@ type
     lastPeek: HoverType
     redraw*: bool
     refreshStatus*: bool
-    dead*: bool
+    dead* {.jsget.}: bool
     gotLines {.jsget.}: bool
     loadState* {.jsgetset.}: LoadState # private
     #TODO copy marks on clone
@@ -289,7 +289,6 @@ type
     width* {.jsgetset.}: int
     height* {.jsgetset.}: int
     flags*: set[BufferInitFlag]
-    showLoading* {.jsgetset.}: bool
     #TODO this is inaccurate, because charsetStack can desync
     charset*: Charset
     charsetStack*: seq[Charset]
@@ -787,8 +786,6 @@ proc setFromY(iface: BufferInterface; y: int) {.jsfunc.} =
     iface.queueDraw()
 
 proc setFromX(iface: BufferInterface; x: int; refresh = true) {.jsfunc.} =
-  if refresh:
-    iface.init.showLoading = true
   if iface.pos.fromx != x:
     iface.pos.fromx = max(min(x, iface.maxfromx), 0)
     if iface.pos.fromx > iface.cursorx:
@@ -804,8 +801,6 @@ proc setFromX(iface: BufferInterface; x: int; refresh = true) {.jsfunc.} =
 #   movement.
 proc setCursorX(iface: BufferInterface; x: int; refresh, save: bool)
     {.jsfunc.} =
-  if refresh:
-    iface.init.showLoading = true
   if not iface.lineLoaded(iface.cursory):
     iface.pos.setx = x
     iface.pos.setxrefresh = refresh
@@ -842,8 +837,6 @@ proc setCursorX(iface: BufferInterface; x: int; refresh, save: bool)
     iface.sendCursorPosition()
 
 proc setCursorY(iface: BufferInterface; y: int; refresh = true) {.jsfunc.} =
-  if refresh:
-    iface.init.showLoading = true
   let y = max(min(y, iface.numLines - 1), 0)
   if y >= iface.fromy and y - iface.init.height < iface.fromy:
     discard
@@ -855,8 +848,6 @@ proc setCursorY(iface: BufferInterface; y: int; refresh = true) {.jsfunc.} =
     iface.pos.cursor.y = y
     iface.setCursorX(iface.pos.xend, false, false)
     if refresh:
-      # cursor moved, trigger status so the status is recomputed
-      iface.refreshStatus = true
       iface.sendCursorPosition()
 
 # Send/receive packets
@@ -1319,6 +1310,7 @@ proc getLinesFromStream(ctx: JSContext; iface: BufferInterface;
       let n = max(iface.lastVisibleLine, 0)
       if iface.cursory != n:
         iface.setCursorY(n)
+        iface.refreshStatus = true
     if iface.init.startpos.isSome and
         iface.numLines >= iface.init.startpos.get.cursor.y:
       iface.pos = iface.init.startpos.get
@@ -1329,6 +1321,7 @@ proc getLinesFromStream(ctx: JSContext; iface: BufferInterface;
       iface.refreshStatus = true
     if bifTailOnLoad in iface.init.flags:
       iface.setCursorY(int.high)
+      iface.refreshStatus = true
       iface.init.flags.excl(bifTailOnLoad)
   let slice = iface.lineShift ..< iface.lineShift + iface.lines.len
   if slice.b >= iface.fromy and slice.a <= iface.fromy + iface.init.height or
@@ -1363,6 +1356,8 @@ type HandleReadLine = proc(line: SimpleFlexibleLine): Opt[void]
 # Synchronously read all lines in the buffer.
 proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
     handle: HandleReadLine): IfaceResult =
+  if iface.dead:
+    return irEOF
   while iface.hasPromises:
     # fulfill all promises
     let res = ctx.handleCommand(iface)

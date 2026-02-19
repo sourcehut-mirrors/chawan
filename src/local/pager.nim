@@ -167,7 +167,7 @@ jsDestructor(Pager)
 
 # Forward declarations
 proc addConsole2(pager: Pager; interactive: bool)
-proc alert*(pager: Pager; msg: string)
+proc alert(pager: Pager; msg: string)
 proc redraw(pager: Pager)
 proc quit(pager: Pager; code: int)
 proc windowChange(pager: Pager): Opt[void]
@@ -202,9 +202,11 @@ template display(pager: Pager): Surface =
 proc statusWidth(pager: Pager): int {.jsfget.} =
   return pager.status.grid.width
 
+# private
 proc updateTitle(pager: Pager; init: BufferInit) {.jsfunc.} =
   pager.term.queueTitle(init.title)
 
+# private
 proc clearCachedImages(pager: Pager; iface: BufferInterface) {.jsfunc.} =
   if pager.term.imageMode != imNone:
     iface.clearCachedImages(pager.loader)
@@ -249,6 +251,7 @@ proc setLineEdit0(ctx: JSContext; pager: Pager; mode: LineMode; prompt: string;
     pager.luctx, update, funs[0])
   return res
 
+# private
 proc unsetLineEdit(pager: Pager) {.jsfunc.} =
   pager.lineEdit = nil
 
@@ -839,6 +842,7 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   ox = x
   move(ls)
 
+# private
 proc drawBuffer(pager: Pager; iface: BufferInterface): Opt[bool] {.jsfunc.} =
   let ctx = pager.jsctx
   let res = ctx.requestLinesSync(iface, proc(line: SimpleFlexibleLine):
@@ -1248,6 +1252,7 @@ proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
   ))
   return init
 
+# private
 proc initBufferFrom(pager: Pager; init: BufferInit;
     contentType, filterCmd: string): BufferInit {.jsfunc.} =
   return pager.initBuffer(
@@ -1327,6 +1332,7 @@ proc findBufferInit(pager: Pager; init: BufferInit): ConnectingBuffer =
         return item
   return nil
 
+# private
 proc unregisterBufferInit(pager: Pager; init: BufferInit) {.jsfunc.} =
   let item = pager.findBufferInit(init)
   if item != nil:
@@ -1707,6 +1713,7 @@ proc addConsole0(pager: Pager; close: bool): bool =
     return true
   return false
 
+# private
 proc addConsole(pager: Pager): bool {.jsfunc.} =
   pager.addConsole0(close = true)
 
@@ -2088,6 +2095,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
   twtstr.unsetEnv("MAILCAP_URL")
   return MailcapResult(flags: {})
 
+# private
 proc addHist(pager: Pager; mode: LineMode; s: string) {.jsfunc.} =
   pager.getHist(mode).add(s)
 
@@ -2123,6 +2131,7 @@ proc applyMailcap(pager: Pager; init: BufferInit; entry: MailcapEntry) =
   if cmfRedirected in res.flags:
     init.flags.incl(bifRedirected)
 
+# private
 proc applyMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
     val: JSValueConst): Opt[void] {.jsfunc.} =
   if JS_IsNumber(val):
@@ -2147,6 +2156,7 @@ proc applyMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
       return err()
   ok()
 
+# private
 proc connected2(pager: Pager; init: BufferInit): Opt[void] {.jsfunc.} =
   let loader = pager.loader
   let ctx = pager.jsctx
@@ -2224,6 +2234,7 @@ proc saveEntry(pager: Pager; entry: MailcapEntry) =
   if pager.autoMailcap.saveEntry(path, entry).isErr:
     pager.alert("Could not write to " & $path)
 
+# private
 proc saveMailcapEntry(ctx: JSContext; pager: Pager; i: int): Opt[void]
     {.jsfunc.} =
   if i < 0 or i >= pager.mailcap.len:
@@ -2232,6 +2243,7 @@ proc saveMailcapEntry(ctx: JSContext; pager: Pager; i: int): Opt[void]
   pager.saveEntry(pager.mailcap[i])
   ok()
 
+# private
 proc addMailcapEntry(pager: Pager; init: BufferInit; cmd: string;
     flag: MailcapFlag) {.jsfunc.} =
   pager.saveEntry(MailcapEntry(
@@ -2249,6 +2261,7 @@ proc findMailcapPrevNext(pager: Pager; init: BufferInit; i: int):
     init.url, i)
   return (prev, next)
 
+# private
 proc askMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
     i, sx, prev, next: int): JSValue {.jsfunc.} =
   var sx = sx
@@ -2375,13 +2388,7 @@ proc setMenu(ctx: JSContext; pager: Pager; val: JSValueConst): Opt[void] {.
     ?ctx.fromJS(val, pager.menu)
   ok()
 
-#TODO factor refreshStatus out somehow
 # private
-proc handleEventsImpl(pager: Pager; iface: BufferInterface) {.jsfunc.} =
-  if iface.refreshStatus:
-    pager.showAlerts()
-    iface.refreshStatus = false
-
 proc handleStderr(pager: Pager) {.jsfunc.} =
   const BufferSize = 4096
   const prefix = "STDERR: "
@@ -2427,8 +2434,9 @@ proc handleRead(pager: Pager; fd: cint): Opt[bool] =
       let ctx = pager.jsctx
       case ctx.handleCommand(iface)
       of irOk:
-        if pager.bufferIface == iface:
-          pager.handleEventsImpl(iface)
+        if pager.bufferIface == iface and iface.refreshStatus:
+          pager.showAlerts()
+        iface.refreshStatus = false
       of irException: pager.console.writeException(ctx)
       of irEOF: discard
     else:
@@ -2528,6 +2536,7 @@ proc handleSigchld(pager: Pager): Opt[void] =
         pager.alert("Command " & cmd & " crashed")
   ok()
 
+# private
 proc inputLoop(pager: Pager): Opt[void] {.jsfunc.} =
   pager.loader.pollData.register(pager.term.istream.fd, POLLIN)
   let signals = pager.setupSignals()
@@ -2594,6 +2603,7 @@ proc hasSelectFds(pager: Pager): bool =
   return not pager.timeouts.empty or pager.numload > 0 or
     pager.loader.hasFds()
 
+# private
 proc headlessLoop(pager: Pager): Opt[void] {.jsfunc.} =
   while pager.hasSelectFds():
     let timeout = pager.timeouts.sortAndGetTimeout()
@@ -2639,7 +2649,7 @@ const LegacyReflectFuncList = [
   "cursorToggleSelection", "getSelectionText", "markURL", "showLinkHints",
   "toggleImages", "saveLink", "saveSource", "setCursorX", "setCursorY",
   "setCursorXY", "setCursorXCenter", "setCursorYCenter", "setCursorXYCenter",
-  "setFromX", "setFromY", "setFromXY", "find", "cancel"
+  "setFromX", "setFromY", "setFromXY", "find", "cancel", "reshape"
 ]
 const LegacyReflectGetList = [
   cstring"url", "hoverTitle", "hoverLink", "hoverImage", "cursorx", "cursory",
@@ -2705,6 +2715,5 @@ proc addPagerModule*(ctx: JSContext): Opt[void] =
     JS_FreeAtom(ctx, atom)
   JS_FreeValue(ctx, proto)
   ok()
-
 
 {.pop.} # raises: []

@@ -111,7 +111,7 @@ globalThis.cmd = {
     },
     toggleCookie: () => {
         const buffer = pager.buffer;
-        pager.gotoURL(buffer.url, {
+        const buffer2 = pager.gotoURL(buffer.url, {
             contentType: buffer.init.contentType,
             history: buffer.init.history,
             replace: buffer,
@@ -347,20 +347,11 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
         while (tab != null) {
             let buffer = tab.head;
             while (buffer != null) {
-                const iface = buffer.iface;
-                if (iface == null) {
-                    /* ignore crashed buffers (but TODO: they no longer get a
-                     * null iface...) */
-                    continue;
-                }
-                if (this.drawBuffer(iface))
-                    this.handleEvents(iface);
-                else {
-                    console.error("Error in buffer", iface.init.url);
+                if (!this.drawBuffer(buffer.iface)) {
+                    console.error("Error in buffer", buffer.iface.init.url);
                     this.handleStderr(); /* dump errors */
                     break loop;
                 }
-
                 buffer = buffer.next
             }
             tab = tab.next;
@@ -731,8 +722,8 @@ Pager.prototype.gotoURL = function(request, obj) {
     if (init == null)
         return null;
     const buffer = new Buffer(init, this.tab);
-    buffer.retry = obj.retry;
-    const old = obj.replace;
+    buffer.retry = obj?.retry;
+    const old = obj?.replace;
     if (old != null) {
         this.replaceWith(old, buffer);
         let replace = old;
@@ -744,7 +735,7 @@ Pager.prototype.gotoURL = function(request, obj) {
         }
         buffer.replace = replace;
         replace.replaceRef = buffer;
-    } else if (!obj.suppressAdd)
+    } else if (!obj?.suppressAdd)
         this.addBuffer(buffer);
     return buffer;
 }
@@ -1203,12 +1194,6 @@ Pager.prototype.discardBuffer = function(buffer = this.buffer, dir = null) {
 }
 
 /* private */
-Pager.prototype.handleEvents = function() {
-    if (this.buffer?.iface != null)
-        this.handleEventsImpl(this.buffer.iface);
-}
-
-/* private */
 Pager.prototype.handleMouseInput = async function(input) {
     const mouse = this.mouse;
     if (mouse.blockTillRelease) {
@@ -1424,7 +1409,6 @@ Pager.prototype.handleMouseInput = async function(input) {
         }
     }
     this.queueStatusUpdate();
-    this.handleEvents();
 }
 
 /* private */
@@ -1469,7 +1453,6 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
             if (map.keyLast == 0) {
                 this.precnum = 0;
                 await p;
-                this.handleEvents();
             }
         }
         break;
@@ -1905,6 +1888,7 @@ const ReTextStart = /\S/gu;
         const metaRefresh = this.init.metaRefresh;
         if (metaRefresh != "never") {
             let [n, url] = await this.iface.checkRefresh();
+            url ??= this.url; /* null => reload (if n >= 0) */
             if (n >= 0 && metaRefresh != "always") {
                 const surl = url + "";
                 const refreshAllowed = pager.refreshAllowed;
@@ -1917,7 +1901,6 @@ const ReTextStart = /\S/gu;
                 }
             }
             if (n >= 0) {
-                url ??= this.url; /* null => reload */
                 setTimeout(() => {
                     if (this.iface != null) {
                         pager.gotoURL(url, {
@@ -2285,10 +2268,12 @@ const ReTextStart = /\S/gu;
 
     /* public */ setCursorY(y, refresh = true) {
         if (this.iface != null) {
+            const oy = this.iface.cursory;
             this.iface.setCursorY(y, refresh);
-            if (this.currentSelection != null) {
-                y = this.iface.cursory;
-                if (y != this.currentSelection.y2) {
+            if (oy != y) {
+                pager.queueStatusUpdate();
+                if (this.currentSelection != null &&
+                    y != this.currentSelection.y2) {
                     this.currentSelection.y2 = y
                     this.iface.queueDraw();
                 }
@@ -2804,6 +2789,8 @@ const ReTextStart = /\S/gu;
         const iface = this.iface;
         if (iface == null)
             return;
+        if (pager.bufferInit == this.init)
+            pager.setVisibleBuffer(this);
         return iface.forceReshape();
     }
 
@@ -2828,7 +2815,6 @@ const ReTextStart = /\S/gu;
     }
 
     /* public */ async click(n = 1) {
-        this.init.showLoading = true;
         const iface = this.iface;
         if (iface == null)
             return;
