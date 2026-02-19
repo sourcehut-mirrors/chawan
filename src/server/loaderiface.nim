@@ -21,7 +21,7 @@ import types/referrer
 import types/url
 
 type
-  FileLoader* = ref object
+  FileLoader* = ref object of RootObj
     clientPid*: int
     map: seq[MapData]
     mapFds*: int # number of fds in map

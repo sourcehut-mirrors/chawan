@@ -39,10 +39,7 @@ proc initReader*(stream: DynStream; r: var PacketReader; len, nfds: int): bool =
     # bufwriter added ancillary data.
     var dummy {.noinit.}: array[1, uint8]
     var numFds = 0
-    let stream = if stream of BufStream:
-      BufStream(stream).source
-    else:
-      SocketStream(stream)
+    let stream = SocketStream(stream)
     let n = stream.recvMsg(dummy, r.fds, numFds)
     if n < dummy.len:
       return false

@@ -20,6 +20,17 @@ type PacketWriter* = object
   # file descriptors to send in the packet
   fds: seq[cint]
 
+type
+  BufferPacketFun* = proc(opaque: RootRef; stream: PosixStream) {.nimcall,
+    raises: [].}
+
+  PacketBuffer* = object
+    ws: seq[PacketWriter]
+    wi: int # index into ws
+    opaque: RootRef
+    register: BufferPacketFun
+    registered*: bool
+
 proc swrite*(w: var PacketWriter; n: SomeNumber)
 proc swrite*[T](w: var PacketWriter; s: set[T])
 proc swrite*[T: enum](w: var PacketWriter; x: T)
@@ -46,6 +57,10 @@ proc initPacketWriter*(): PacketWriter =
     bufLen: InitLen
   )
 
+proc initPacketBuffer*(register: BufferPacketFun; opaque: RootRef):
+    PacketBuffer =
+  PacketBuffer(register: register, opaque: opaque)
+
 proc writeSize*(w: var PacketWriter) =
   # subtract the length field's size
   let len = [w.bufLen - InitLen, w.fds.len]
@@ -71,6 +86,62 @@ proc flush*(w: var PacketWriter; stream: DynStream): bool =
   w.bufLen = 0
   true
 
+type FlushResult = enum
+  frEOF, frBuffer, frDone
+
+proc flush2(w: var PacketWriter; stream: PosixStream): FlushResult =
+  let bufLen = w.bufLen
+  let n = stream.write(w.buffer.toOpenArray(0, bufLen - 1))
+  if n < 0:
+    let e = errno
+    if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
+      return frBuffer
+    w.bufLen = 0
+    w.closeFds()
+    return frEOF
+  elif n < w.bufLen:
+    let left = bufLen - n
+    moveMem(addr w.buffer[0], addr w.buffer[n], left)
+    w.bufLen = left
+    return frBuffer
+  w.bufLen = 0
+  w.buffer = @[]
+  if w.fds.len > 0:
+    w.fds.reverse()
+    let n = SocketStream(stream).sendMsg([0u8], w.fds)
+    assert n != 0
+    if n < 0:
+      let e = errno
+      if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
+        w.fds.reverse() # will be reversed on next flush
+        return frBuffer
+      w.closeFds()
+      return frEOF
+    w.closeFds()
+  frDone
+
+proc flush*(b: var PacketBuffer; stream: PosixStream): bool =
+  if b.registered:
+    return true
+  while b.wi < b.ws.len:
+    case b.ws[b.wi].flush2(stream)
+    of frDone:
+      inc b.wi
+    of frBuffer:
+      b.register(b.opaque, stream)
+      b.registered = true
+      return true
+    of frEOF: return false
+  b.wi = 0
+  b.ws.setLen(0)
+  true
+
+proc flush*(b: var PacketBuffer; w: var PacketWriter; stream: PosixStream):
+    bool =
+  w.writeSize()
+  b.ws.add(move(w))
+  b.flush(stream)
+
 template withPacketWriter*(stream: DynStream; w, body, fallback: untyped) =
   var w = initPacketWriter()
   body
@@ -81,6 +152,13 @@ template withPacketWriterFire*(stream: DynStream; w, body: untyped) =
   var w = initPacketWriter()
   body
   discard w.flush(stream)
+
+template withPacketWriter*(b: var PacketBuffer; stream: PosixStream;
+    w, body, fallback: untyped) =
+  var w = initPacketWriter()
+  body
+  if not b.flush(w):
+    fallback
 
 proc writeData*(w: var PacketWriter; buffer: pointer; len: int) =
   let targetLen = w.bufLen + len

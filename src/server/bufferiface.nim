@@ -236,10 +236,10 @@ type
     id: string
     pos: PagePos
 
-  BufferInterface* = ref object
+  BufferInterface* = ref object of MapData
     map: seq[BufferIfaceItem]
     packetid: int
-    stream*: BufStream
+    packetBuffer: PacketBuffer
     lines: SimpleFlexibleGrid
     lineShift: int
     numLines* {.jsget.}: int
@@ -531,8 +531,9 @@ proc applyResponse*(init: BufferInit; response: Response;
   init.refreshMillis = refresh.n
 
 # BufferInterface
-proc newBufferInterface*(stream: BufStream; phandle: ProcessHandle;
-    attrsp: ptr WindowAttributes; init: BufferInit): BufferInterface =
+proc newBufferInterface*(stream: SocketStream; register: BufferPacketFun;
+    opaque: RootRef; phandle: ProcessHandle; attrsp: ptr WindowAttributes;
+    init: BufferInit): BufferInterface =
   inc phandle.refc
   return BufferInterface(
     phandle: phandle,
@@ -543,6 +544,7 @@ proc newBufferInterface*(stream: BufStream; phandle: ProcessHandle;
     init: init,
     pos: CursorState(setx: -1),
     lastPeek: HoverType.high,
+    packetBuffer: initPacketBuffer(register, opaque)
   )
 
 proc newProcessHandle*(pid: int): ProcessHandle =
@@ -1021,6 +1023,10 @@ proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
     return irEOF
   irOk
 
+proc flushWrite*(iface: BufferInterface): bool =
+  iface.packetBuffer.registered = false
+  return iface.packetBuffer.flush(iface.stream)
+
 proc hasPromises(iface: BufferInterface): bool =
   return iface.map.len > 0
 
@@ -1101,7 +1107,7 @@ proc initPacketWriter(iface: BufferInterface; cmd: BufferCommand):
   result.swrite(iface.packetid)
 
 proc flush(ctx: JSContext; iface: BufferInterface; w: var PacketWriter): bool =
-  if iface.dead or not w.flush(iface.stream):
+  if iface.dead or not iface.packetBuffer.flush(w, iface.stream):
     JS_ThrowTypeError(ctx, "buffer %d disconnected", cint(iface.phandle.process))
     return false
   return true
@@ -1114,6 +1120,13 @@ template withPacketWriter(ctx: JSContext; iface: BufferInterface;
     return JS_EXCEPTION
 
 template withPacketWriter(iface: BufferInterface; cmd: BufferCommand;
+    w, body, fallback: untyped) =
+  var w = iface.initPacketWriter(cmd)
+  body
+  if iface.dead or not iface.packetBuffer.flush(w, iface.stream):
+    fallback
+
+template withPacketWriterSync(iface: BufferInterface; cmd: BufferCommand;
     w, body, fallback: untyped) =
   var w = iface.initPacketWriter(cmd)
   body
@@ -1145,11 +1158,7 @@ proc click(ctx: JSContext; iface: BufferInterface; x, y, n: int): JSValue {.
   return addPromise[ClickResult](ctx, iface)
 
 proc clone*(iface: BufferInterface; newurl: URL; pstreamFd: cint): Opt[void] =
-  if iface.stream.flush().isErr:
-    return err()
-  iface.stream.source.withPacketWriter w:
-    w.swrite(bcClone)
-    w.swrite(iface.packetid)
+  iface.withPacketWriter bcClone, w:
     w.swrite(newurl)
     w.sendFd(pstreamFd)
   do:
@@ -1358,6 +1367,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
     handle: HandleReadLine): IfaceResult =
   if iface.dead:
     return irEOF
+  iface.stream.setBlocking(true)
   while iface.hasPromises:
     # fulfill all promises
     let res = ctx.handleCommand(iface)
@@ -1366,7 +1376,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
   var slice = 0 .. 23
   while true:
     let packetid = iface.packetid
-    iface.withPacketWriter bcGetLines, w:
+    iface.withPacketWriterSync bcGetLines, w:
       w.swrite(slice)
     do:
       return irEOF
@@ -1395,7 +1405,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
     if handle(SimpleFlexibleLine()).isErr:
       return irEOF
     let packetid = iface.packetid
-    iface.withPacketWriter bcGetLinks, w:
+    iface.withPacketWriterSync bcGetLinks, w:
       discard
     do:
       return irEOF

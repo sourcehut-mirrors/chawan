@@ -148,10 +148,6 @@ type
     bufferIface {.jsget.}: BufferInterface # visible BufferInterface
     bufferAtom: JSAtom
 
-  #TODO derive BufferInterface from MapData?
-  BufferInterfaceData = ref object of MapData
-    iface: BufferInterface
-
   CheckMailcapFlag = enum
     cmfConnect, cmfHTML, cmfRedirected, cmfPrompt, cmfNeedsstyle,
     cmfNeedsimage, cmfSaveoutput
@@ -1265,14 +1261,17 @@ proc initBufferFrom(pager: Pager; init: BufferInit;
     filterCmd = filterCmd
   )
 
+proc bufferPackets(opaque: RootRef; stream: PosixStream) =
+  let loader = FileLoader(opaque)
+  loader.pollData.unregister(stream.fd)
+  loader.pollData.register(stream.fd, POLLIN or POLLOUT)
+
 proc addInterface(pager: Pager; init: BufferInit; stream: SocketStream;
     phandle: ProcessHandle): BufferInterface =
-  let bufStream = newBufStream(stream, proc(fd: cint) =
-    pager.loader.pollData.unregister(fd)
-    pager.loader.pollData.register(fd, POLLIN or POLLOUT))
-  let iface = newBufferInterface(bufStream, phandle, addr pager.attrs, init)
-  let data = BufferInterfaceData(stream: stream, iface: iface)
-  pager.loader.register(data, POLLIN)
+  stream.setBlocking(false)
+  let iface = newBufferInterface(stream, bufferPackets, pager.loader, phandle,
+    addr pager.attrs, init)
+  pager.loader.register(iface, POLLIN)
   return iface
 
 # private
@@ -1317,7 +1316,7 @@ proc unregisterBufferIface(pager: Pager; iface: BufferInterface) {.jsfunc.} =
     if iface.phandle.refc == 0:
       pager.loader.removeClient(iface.process)
   let stream = iface.stream
-  let fd = stream.source.fd
+  let fd = stream.fd
   pager.loader.unregister(fd)
   pager.loader.unset(fd)
   stream.sclose()
@@ -2429,8 +2428,8 @@ proc handleRead(pager: Pager; fd: cint): Opt[bool] =
   elif (let data = pager.loader.get(fd); data != nil):
     if data of ConnectingBuffer:
       ?pager.handleRead(ConnectingBuffer(data))
-    elif data of BufferInterfaceData:
-      let iface = BufferInterfaceData(data).iface
+    elif data of BufferInterface:
+      let iface = BufferInterface(data)
       let ctx = pager.jsctx
       case ctx.handleCommand(iface)
       of irOk:
@@ -2458,10 +2457,13 @@ proc handleWrite(pager: Pager; fd: cint): bool =
   elif fd in pager.loader.unregistered:
     discard # ignore (see handleError)
   else:
-    let iface = BufferInterfaceData(pager.loader.get(fd)).iface
-    if iface.stream.flushWrite():
-      pager.loader.pollData.unregister(fd)
-      pager.loader.pollData.register(fd, POLLIN)
+    let iface = BufferInterface(pager.loader.get(fd))
+    # this might just do an unregister/register/unregister/register sequence,
+    # but with poll this is basically free so it's fine
+    pager.loader.pollData.unregister(fd)
+    pager.loader.pollData.register(fd, POLLIN)
+    # if flushWrite errors out, then poll will notify us anyway
+    discard iface.flushWrite()
   true
 
 proc handleError(pager: Pager; fd: cint): Opt[bool] =
@@ -2481,8 +2483,8 @@ proc handleError(pager: Pager; fd: cint): Opt[bool] =
     if data of ConnectingBuffer:
       let item = ConnectingBuffer(data)
       ?pager.fail(item.init, "loader died while loading")
-    elif data of BufferInterfaceData:
-      let iface = BufferInterfaceData(data).iface
+    elif data of BufferInterface:
+      let iface = BufferInterface(data)
       let isConsole = iface.init == pager.consoleInit
       if isConsole:
         pager.dumpConsoleFile = true

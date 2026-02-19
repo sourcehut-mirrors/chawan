@@ -348,7 +348,7 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
             let buffer = tab.head;
             while (buffer != null) {
                 if (!this.drawBuffer(buffer.iface)) {
-                    console.error("Error in buffer", buffer.iface.init.url);
+                    console.error("Error in buffer", buffer.url);
                     this.handleStderr(); /* dump errors */
                     break loop;
                 }
