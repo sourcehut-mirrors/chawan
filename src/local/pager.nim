@@ -427,7 +427,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   doAssert pager.mailcap.parseMailcap(DefaultMailcap, "res/mailcap").isOk
   for p in config.external.mimeTypes:
     if f := chafile.fopen($p, "r"):
-      let res = pager.mimeTypes.parseMimeTypes(f, DefaultImages)
+      let res = pager.mimeTypes.parseMimeTypes(f)
       f.close()
       if res.isErr:
         pager.alert("error reading file " & $p)
@@ -2360,7 +2360,7 @@ proc handleRead(pager: Pager; item: ConnectingBuffer): Opt[void] =
       r.sread(response.headers)
     # done
     pager.loader.unregister(item)
-    init.applyResponse(response, pager.mimeTypes)
+    init.applyResponse(response, pager.mimeTypes.t)
     let redirect = response.getRedirect(init.request)
     let ctx = pager.jsctx
     var arg0 = JS_UNDEFINED

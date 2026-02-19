@@ -490,7 +490,7 @@ proc closeMailcap*(init: BufferInit) {.jsfunc.} =
 # Apply data received in response.
 # Note: pager must call this before checkMailcap.
 proc applyResponse*(init: BufferInit; response: Response;
-    mimeTypes: MimeTypes) =
+    mimeTypes: MimeTypesTable) =
   # accept cookies
   let cookieJar = init.loaderConfig.cookieJar
   if cookieJar != nil:
@@ -506,8 +506,7 @@ proc applyResponse*(init: BufferInit; response: Response;
   if init.contentType == "":
     var contentType = response.getLongContentType("application/octet-stream")
     if contentType.until(';') == "application/octet-stream":
-      contentType = mimeTypes.guessContentType(init.url.pathname,
-        "text/plain")
+      contentType = mimeTypes.guessContentType(init.url.pathname, "text/plain")
     init.contentType = move(contentType)
   # setup charsets:
   # * override charset

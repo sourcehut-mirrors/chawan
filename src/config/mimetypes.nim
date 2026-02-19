@@ -1,61 +1,70 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/sets
 import std/tables
 
 import io/chafile
 import types/opt
 import utils/twtstr
 
+const DefaultGuess* = {
+  "ans": "text/x-ansi",
+  "asc": "text/x-ansi",
+  "css": "text/css",
+  "gmi": "text/gemini",
+  "htm": "text/html",
+  "html": "text/html",
+  "md": "text/markdown",
+  "txt": "text/plain",
+  "uri": "text/uri-list",
+  "xht": "application/xhtml+xml",
+  "xhtm": "application/xhtml+xml",
+  "xhtml": "application/xhtml+xml",
+  "bmp": "image/bmp",
+  "gif": "image/gif",
+  "jfif": "image/jpg",
+  "jpe": "image/jpg",
+  "jpeg": "image/jpg",
+  "jpg": "image/jpg",
+  "png": "image/png",
+  "svg": "image/svg+xml",
+  "webp": "image/webp",
+}.toTable()
+
+# Part after image/, *not* the file extension.
+const DefaultImages = [
+  "png", "jpg", "webp", "svg+xml", "gif", "bmp"
+]
+
 # extension -> type
-type MimeTypes* = object
-  t: Table[string, string] # ext -> type
-  image*: Table[string, string] # ext -> image/(\w*)
+type
+  MimeTypesTable* = Table[string, string] # ext -> type
 
-template getOrDefault*(mimeTypes: MimeTypes; k, fallback: string): string =
-  mimeTypes.t.getOrDefault(k, fallback)
+  MimeTypes* = object
+    t*: MimeTypesTable
+    image*: Table[string, string] # ext -> image/(\w*)
 
-proc parseMimeTypesLine(mimeTypes: var MimeTypes; buf: openArray[char];
-    defaultImages: HashSet[string]) =
-  if buf.len == 0 or buf[0] == '#':
-    return
-  let t = buf.untilLower(AsciiWhitespace)
-  var i = t.len
-  while i < buf.len:
-    i = buf.skipBlanks(i)
-    let ext = buf.untilLower(AsciiWhitespace, i)
-    i += ext.len
-    if ext.len > 0 and not mimeTypes.t.hasKeyOrPut(ext, t) and
-        t.startsWith("image/"):
-      let t = t.after('/')
-      # As a fingerprinting countermeasure: prevent additional
-      # extensions for predefined inline image type detection.
-      if t notin defaultImages:
-        mimeTypes.image[ext] = t
-
-proc parseMimeTypes*(mimeTypes: var MimeTypes; file: ChaFile;
-    defaultImages: HashSet[string]): Opt[void] =
+proc parseMimeTypes*(mimeTypes: var MimeTypes; file: ChaFile): Opt[void] =
   var line: string
   while ?file.readLine(line):
-    mimeTypes.parseMimeTypesLine(line, defaultImages)
+    if line.len == 0 or line[0] == '#':
+      continue
+    let t = line.untilLower(AsciiWhitespace)
+    var i = t.len
+    while i < line.len:
+      i = line.skipBlanks(i)
+      let ext = line.untilLower(AsciiWhitespace, i)
+      i += ext.len
+      if ext.len > 0 and not mimeTypes.t.hasKeyOrPut(ext, t) and
+          t.startsWith("image/"):
+        let t = t.after('/')
+        # As a fingerprinting countermeasure: prevent additional
+        # extensions for predefined inline image type detection.
+        if t notin DefaultImages:
+          mimeTypes.image[ext] = t
   ok()
 
-const DefaultGuess* = block:
-  var mimeTypes = MimeTypes()
-  let s = staticRead"res/mime.types"
-  let dummy = initHashSet[string]()
-  for (si, ei) in s.lineIndices:
-    mimeTypes.parseMimeTypesLine(s.toOpenArray(si, ei), dummy)
-  mimeTypes
-
-const DefaultImages* = block:
-  var s = initHashSet[string]()
-  for _, v in DefaultGuess.image:
-    s.incl(v)
-  s
-
-proc guessContentType*(mimeTypes: MimeTypes; path: string;
+proc guessContentType*(mimeTypes: MimeTypesTable; path: string;
     fallback = "application/octet-stream"): string =
   let ext = path.getFileExt()
   if ext.len > 0:
