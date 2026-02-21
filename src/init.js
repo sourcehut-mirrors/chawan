@@ -425,13 +425,12 @@ Pager.prototype.setBuffer = function(buffer) {
         if (buffer.tab != this.tab)
             this.tab = buffer.tab;
         this.tab.current = buffer;
-        if (buffer.iface != null)
-            buffer.iface.queueDraw();
         this.bufferInit = buffer.init;
         this.copyLoadInfo(buffer.init);
         /* if iface is null, it will be set once the buffer is loaded */
-        if (buffer.iface != null)
+        if (buffer.iface != null) {
             this.setVisibleBuffer(buffer);
+        }
     } else {
         this.tab.current = null;
         this.bufferInit = null;
@@ -443,6 +442,7 @@ Pager.prototype.setVisibleBuffer = function(buffer) {
     this.updateTitle(buffer.init);
     this.bufferIface = buffer.iface;
     this.menu = buffer.select;
+    buffer.iface.queueDraw();
 }
 
 /*
@@ -655,26 +655,23 @@ Pager.prototype.addTab = function(buffer = "about:blank") {
     }
     let tab = new Tab();
     const oldTab = this.tab;
-    if (oldTab.next != null) {
+    if (oldTab.next != null)
         oldTab.next.prev = tab;
-    }
     /* add to link first, or setTab dies */
     tab.prev = oldTab;
     tab.next = oldTab.next;
     if (tab.next != null)
         tab.next.prev = tab;
     oldTab.next = tab;
+    pager.setTab(buffer, tab);
     this.setBuffer(buffer);
-    if (buffer.iface != null)
-        buffer.iface.queueDraw();
 }
 
 /* public */
 Pager.prototype.prevTab = function() {
     if (this.tab.prev != null) {
         this.tab = this.tab.prev;
-        if (this.buffer.iface != null)
-            this.buffer.iface.queueDraw();
+        this.setBuffer(this.buffer);
     } else
         pager.alert("No previous tab");
 }
@@ -683,8 +680,7 @@ Pager.prototype.prevTab = function() {
 Pager.prototype.nextTab = function() {
     if (this.tab.next != null) {
         this.tab = this.tab.next;
-        if (this.buffer.iface != null)
-            this.buffer.iface.queueDraw();
+        this.setBuffer(this.buffer);
     } else
         pager.alert("No next tab");
 }
@@ -692,9 +688,9 @@ Pager.prototype.nextTab = function() {
 /* public */
 Pager.prototype.discardTab = function() {
     const tab = this.tab;
-    if (tab.prev != null || tab.next != null) {
-        const prevTab = tab.prev;
-        const nextTab = tab.next;
+    const prevTab = tab.prev;
+    const nextTab = tab.next;
+    if (prevTab != null || nextTab != null) {
         let buffer = tab.head;
         while (buffer != null) {
             const next = buffer.next;
@@ -704,14 +700,14 @@ Pager.prototype.discardTab = function() {
         if (prevTab != null) {
             if (nextTab != null)
                 nextTab.prev = prevTab;
+            this.tab = prevTab;
         } else {
             nextTab.prev = prevTab;
             if (tab == this.tabHead)
                 this.tabHead = nextTab;
             this.tab = nextTab;
         }
-        if (this.buffer.iface != null)
-            this.buffer.iface.queueDraw();
+        this.setBuffer(this.buffer);
     } else
         this.alert("This is the last tab")
 }
