@@ -140,9 +140,6 @@ proc pointLen*(s: openArray[char]): int =
     inc n
   return n
 
-proc searchInMap*[U, T](a: openArray[(U, T)]; u: U): int =
-  binarySearch(a, u, proc(x: (U, T); y: U): int = cmp(x[0], y))
-
 proc isInRange*[U](a: openArray[(U, U)]; u: U): bool =
   let res = binarySearch(a, u, proc(x: (U, U); y: U): int =
     if x[0] > y:
@@ -1207,16 +1204,6 @@ proc chaArrayCopy*[T](dest, src: var openArray[T]) =
   assert dest.len == src.len
   if dest.len > 0:
     copyMem(addr dest[0], addr src[0], dest.len * sizeof(T))
-
-iterator lineIndices*(s: openArray[char]): tuple[si, ei: int] {.inline.} =
-  var i = 0
-  let H = s.high
-  while i < s.len:
-    var j = s.find('\n', i)
-    if j == -1:
-      j = H
-    yield (i, j - 1)
-    i = j + 1
 
 when not defined(nimHasXorSet):
   proc toggle*[T](x: var set[T]; y: set[T]) =

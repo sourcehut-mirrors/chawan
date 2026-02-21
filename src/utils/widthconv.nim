@@ -1,3 +1,5 @@
+import std/algorithm
+
 import utils/twtstr
 
 const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &
@@ -101,7 +103,8 @@ const fullSizeMap = genFullSizeMap()
 proc fullsize*(s: string): string =
   result = ""
   for u in s.points:
-    let i = searchInMap(fullSizeMap, u)
+    let i = fullSizeMap.binarySearch(u,
+      proc(x: (uint32, uint32); y: uint32): int = cmp(x[0], y))
     if i == -1:
       result.addUTF8(u)
     else:
