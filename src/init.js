@@ -1213,7 +1213,7 @@ Pager.prototype.handleMouseInput = async function(input) {
         case "right":
             if (!inside)
                 select.unselect();
-            else if (input.x != pressedX && input.y != pressedY) {
+            else if (input.x != pressedX || input.y != pressedY) {
                 /*
                  * Prevent immediate movement/submission in case the menu
                  * appeared under the cursor.
