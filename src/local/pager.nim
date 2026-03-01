@@ -2669,6 +2669,9 @@ proc legacyReflectFunction(ctx: JSContext; this: JSValueConst; argc: cint;
   if JS_IsException(val):
     JS_FreeValue(ctx, cval)
     return JS_EXCEPTION
+  if JS_IsUndefined(val):
+    JS_FreeValue(ctx, cval)
+    return JS_UNDEFINED
   let res = JS_Call(ctx, val, cval, argc, argv)
   ctx.freeValues(val, cval)
   return res
