@@ -331,12 +331,6 @@ proc setupStartupScript(ctx: JSContext; script: string) =
   else:
     die("failed to read startup bytecode")
 
-type Client = ref object of Window
-  config: Config
-
-proc config(this: Window): Config {.jsfget.} =
-  return Client(this).config
-
 proc readFile(ctx: JSContext; this: Window; path: string): JSValue
     {.jsfunc.} =
   var s: string
@@ -372,11 +366,10 @@ let ClientJSFunctions {.global.} = [
   JS_CFUNC_DEF("getenv", 0, js_func_Window_getenv),
   JS_CFUNC_DEF("setenv", 0, js_func_Window_setenv),
   JS_CFUNC_DEF("readFile", 0, js_func_Window_readFile),
-  JS_CFUNC_DEF("writeFile", 0, js_func_Window_writeFile),
-  JS_CGETSET_DEF("config", js_get_Window_config, nil),
+  JS_CFUNC_DEF("writeFile", 0, js_func_Window_writeFile)
 ]
 
-proc addJSModules(client: Client; ctx: JSContext): Opt[void] =
+proc addJSModules(client: Window; ctx: JSContext): Opt[void] =
   ?ctx.addCommonModules(client)
   let global = JS_GetGlobalObject(ctx)
   if not ctx.setPropertyFunctionList(global, ClientJSFunctions):
@@ -391,9 +384,9 @@ proc addJSModules(client: Client; ctx: JSContext): Opt[void] =
   ok()
 
 proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
-    urandom: PosixStream): Client =
+    urandom: PosixStream): Window =
   let console = newConsole(cast[ChaFile](stderr))
-  let client = Client(
+  let client = Window(
     jsctx: jsctx,
     loader: loader,
     crypto: Crypto(urandom: urandom),
@@ -435,7 +428,10 @@ proc main() =
   if cres.isErr:
     die(cres.error)
   let config = cres.get
-  client.config = config
+  let global = JS_GetGlobalObject(jsctx)
+  if jsctx.definePropertyConvert(global, "config", config) == dprException:
+    die(jsctx.getExceptionMsg())
+  JS_FreeValue(jsctx, global)
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
   if ctx.pages.len == 0 and ps.isatty():
