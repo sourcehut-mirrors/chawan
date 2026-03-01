@@ -120,7 +120,7 @@ type
     argc: cint; argv: JSValueConstArray; pdone: ptr cint; magic: cint):
     JSValue {.cdecl, raises: [].}
   JSClassID* = uint32
-  JSAtom* {.importc: "JSAtom".} = distinct uint32
+  JSAtom* {.importc: "JSAtom", header: qjsheader.} = distinct uint32
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
     cdecl, raises: [].}
   JSClassCheckDestroy* = proc(rt: JSRuntime; val: JSValueConst): JS_BOOL
