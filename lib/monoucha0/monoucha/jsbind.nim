@@ -111,8 +111,6 @@ type
   JSIterableType* = enum
     jitNone, jitValue, jitPair
 
-var globalRuntime {.global.}: JSRuntime
-
 proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
   return alloc(size)
 

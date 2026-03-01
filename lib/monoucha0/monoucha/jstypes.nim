@@ -1,25 +1,24 @@
 {.push raises: [].}
 
+import jsopaque
 import quickjs
 
 # This is the WebIDL dictionary type.
 # We only use it for type inference in generics.
-#TODO required members
 type
   # JSDictToFreeAux is a hack to ensure JSValues are freed only
   # when the JSDict goes out of scope. Ugly and sub-optimal, but it does
   # the job.
   JSDictToFreeAux* = ref JSDictToFreeAuxObj
   JSDictToFreeAuxObj = object
-    ctx*: JSContext
     vals*: seq[JSValue]
 
-  JSDict* = object of RootObj
+  JSDict* {.pure, inheritable.} = object
     toFree*: JSDictToFreeAux
 
 proc `=destroy`*(x: var JSDictToFreeAuxObj) =
   for val in x.vals:
-    JS_FreeValue(x.ctx, val)
+    JS_FreeValueRT(globalRuntime, val)
 
 # Example usage:
 #

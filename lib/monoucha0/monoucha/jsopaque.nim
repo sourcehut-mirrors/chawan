@@ -73,6 +73,8 @@ type
     # temp list for uninit
     tmplist*: seq[tuple[nimp, jsp: pointer]]
 
+var globalRuntime* {.global.}: JSRuntime
+
 iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
     JSFinalizerFunction =
   let classid = int(classid)

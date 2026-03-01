@@ -447,10 +447,9 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
     `undefInit`
     `undefCheck`
     if not JS_IsObject(val):
-      if not JS_IsException(val):
-        JS_ThrowTypeError(ctx, "dictionary is not an object")
+      JS_ThrowTypeError(ctx, "dictionary is not an object")
       return fjErr
-    res.toFree = JSDictToFreeAux(ctx: ctx)
+    res.toFree = JSDictToFreeAux()
     var missing {.inject.}: cstring = nil
     block `success`:
       `convertStmts`
