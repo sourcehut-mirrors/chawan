@@ -1436,9 +1436,8 @@ else:
     nil
 
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
-    asglobal: static bool = false; globalparent: static bool = false;
-    name: static string = ""; namespace = JS_NULL;
-    iterable: static JSIterableType = jitNone): JSClassID =
+    asglobal: static bool = false; name: static string = "";
+    namespace = JS_NULL; iterable: static JSIterableType = jitNone): JSClassID =
   var stmts = newStmtList()
   var info = BoundFunctions.getOrDefault(t.strVal)
   if info == nil:
@@ -1470,7 +1469,6 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let uflist0 = info.tabUnforgeable
   let uflen = uflist0.len
   let ctorType = info.ctorType
-  let global = asglobal and not globalparent
   endstmts.add(quote do:
     let flist {.global, inject.}: array[`flen`, JSCFunctionListEntry] = `flist0`
     let sflist {.global, inject.}: array[`sflen`, JSCFunctionListEntry] =
@@ -1478,7 +1476,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     let uflist {.global, inject.}: array[`uflen`, JSCFunctionListEntry] =
       `uflist0`
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, flist, `parent`,
-      cast[bool](`global`), cast[JSIterableType](`iterable`),
+      cast[bool](`asglobal`), cast[JSIterableType](`iterable`),
       cast[JSCFunctionEnum](`ctorType`), `finFun`, `namespace`, uflist, sflist,
       mncGetDtor(`t`))
   )

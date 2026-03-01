@@ -113,8 +113,8 @@ To register object types as a JavaScript interface, you must call the
 
 ```nim
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
-    asglobal: static bool = false; globalparent: static bool = false;
-    name: static string = ""; namespace = JS_NULL): JSClassID
+    asglobal: static bool = false; name: static string = "";
+    namespace = JS_NULL): JSClassID
 ```
 
 Typically, you would do this using Nim reference types.  Non-reference types
