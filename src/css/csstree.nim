@@ -674,11 +674,11 @@ proc resetCounters(ctx: TreeContext; element: Element;
       break
 
 proc pushStackItem(ctx: TreeContext; styledNode: StyledNode): StackItem =
+  ctx.absoluteHead = nil
+  ctx.absoluteTail = nil
   let index = styledNode.computed{"z-index"}
   let stack = StackItem(index: index.num)
   ctx.stackItem.children.add(stack)
-  if not index.auto:
-    ctx.stackItem = stack
   return stack
 
 proc popStackItem(ctx: TreeContext; old: StackItem) =
@@ -716,12 +716,18 @@ proc buildOuterBox(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
   let oldStackItem = ctx.stackItem
   let oldAbsoluteHead = ctx.absoluteHead
   let oldAbsoluteTail = ctx.absoluteTail
-  if not root and
-      (position != PositionStatic and display notin DisplayNeverHasStack or
-      forceZ and not frame.computed{"z-index"}.auto):
-    ctx.absoluteHead = nil
-    ctx.absoluteTail = nil
-    stackItem = ctx.pushStackItem(styledNode)
+  if not root:
+    let index = frame.computed{"z-index"}
+    if position != PositionStatic and display notin DisplayNeverHasStack or
+        forceZ and not index.auto:
+      stackItem = ctx.pushStackItem(styledNode)
+      if not index.auto:
+        ctx.stackItem = stackItem
+    elif frame.computed{"float"} != FloatNone:
+      # floats don't really create a new stacking context, but you have to
+      # treat them "as if" they did.  (effectively it's the same as the
+      # auto index case)
+      stackItem = ctx.pushStackItem(styledNode)
   frame.buildChildren(styledNode)
   let box = ctx.buildInnerBox(frame, cached, styledNode)
   if styledNode.t == stElement:
