@@ -1756,6 +1756,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   var offset = fstate.offset
   offset.x += input.margin.left
   let clear = child.computed{"clear"}
+  var cleared = false
   if clear != ClearNone:
     let target = case clear
     of ClearLeft, ClearInlineStart: FloatLeft
@@ -1767,19 +1768,18 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
         fstate.flushMargins(offset.y)
         break
       f = f.next
-    var cleared = false
     offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear, cleared)
-    if cleared:
-      # subtract our own margin so that the top edge of this box touches
-      # the bottom edge of the last cleared float
-      # (margin must be collapsed with subsequent boxes as usual, so we
-      # can't just skip addMargin)
-      offset.y -= input.margin.top
+  fstate.marginTodo.addMargin(input.margin.top)
+  if cleared:
+    # subtract the current state of our collapsed margin so that the top
+    # edge of this box touches the bottom edge of the last cleared float
+    # (margin must be collapsed with subsequent boxes as usual, so we
+    # can't just skip addMargin)
+    offset.y -= fstate.marginTodo.sum()
   const DisplayWithBFC = {
     DisplayFlowRoot, DisplayTable, DisplayFlex, DisplayGrid, DisplayImageBlock,
     DisplayImageInline
   }
-  fstate.marginTodo.addMargin(input.margin.top)
   if child.computed{"display"} in DisplayWithBFC or
       child.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
     # This box establishes a new BFC.
