@@ -155,7 +155,6 @@ jsDestructor(Pager)
 proc addConsole2(pager: Pager; interactive: bool)
 proc alert(pager: Pager; msg: string)
 proc redraw(pager: Pager)
-proc quit(pager: Pager; code: int)
 proc windowChange(pager: Pager): Opt[void]
 
 # private
@@ -471,9 +470,6 @@ proc cleanup(pager: Pager) =
   for val in pager.jsmap.fields:
     JS_FreeValue(ctx, val)
   pager.timeouts.clearAll()
-  let rt = JS_GetRuntime(ctx)
-  ctx.free()
-  rt.free()
   if pager.console != nil and pager.dumpConsoleFile:
     if file := chafile.fopen(pager.consoleFile, "r+"):
       let stderr = cast[ChaFile](stderr)
@@ -481,10 +477,6 @@ proc cleanup(pager: Pager) =
       while (let n = file.read(buffer); n != 0):
         if stderr.write(buffer.toOpenArray(0, n - 1)).isErr:
           break
-
-proc quit(pager: Pager; code: int) =
-  pager.cleanup()
-  quit(code)
 
 proc runJSJobs(pager: Pager): Opt[void] =
   let rt = JS_GetRuntime(pager.jsctx)
@@ -647,7 +639,7 @@ proc runStartupScript(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
   return ctx.eval(s, pager.config.start.startupScript, flag)
 
 proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
-    charset: Charset; history: bool) =
+    charset: Charset; history: bool): int =
   var istream: PosixStream = nil
   let ps = newPosixStream(STDIN_FILENO)
   if pager.config.start.headless == hmFalse:
@@ -684,7 +676,8 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   if JS_IsException(res) and pager.exitCode == -1:
     pager.console.writeException(ctx)
   JS_FreeValue(ctx, res)
-  pager.quit(max(pager.exitCode, 0))
+  pager.cleanup()
+  return max(pager.exitCode, 0)
 
 # Note: this function does not work correctly if start < x of last written char
 proc writeStatusMessage(status: var Surface; str: string; format = Format();

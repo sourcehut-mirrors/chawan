@@ -401,21 +401,11 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
   else:
     die("failed to initialize JS " & jsctx.getExceptionMsg())
 
-proc main() =
-  initCAtomFactory()
-  let binDir = myposix.getAppFilename().untilLast('/')
-  if twtstr.setEnv("CHA_BIN_DIR", binDir).isErr or
-      twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
-    die("failed to set env vars")
-  var loaderSockVec {.noinit.}: array[2, cint]
-  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
-    die("failed to set up initial socket pair")
-  let pagerPid = getCurrentProcessId()
-  let forkserver = forkForkServer(loaderSockVec, pagerPid)
+proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
+    forkserver: ForkServer): int =
+  let jsctx = rt.newJSContext()
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
-  let jsrt = newGlobalJSRuntime()
-  let jsctx = jsrt.newJSContext()
   var ctx = ParamParseContext(jsctx: jsctx, params: commandLineParams(), i: 0)
   if ctx.parse().isErr:
     die(jsctx.getExceptionMsg())
@@ -462,7 +452,25 @@ proc main() =
   client.timeouts = pager.timeouts
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs
-  pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
+  let code = pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
+  jsctx.free()
+  return code
+
+proc main() =
+  initCAtomFactory()
+  let binDir = myposix.getAppFilename().untilLast('/')
+  if twtstr.setEnv("CHA_BIN_DIR", binDir).isErr or
+      twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
+    die("failed to set env vars")
+  var loaderSockVec {.noinit.}: array[2, cint]
+  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
+    die("failed to set up initial socket pair")
+  let pagerPid = getCurrentProcessId()
+  let forkserver = forkForkServer(loaderSockVec, pagerPid)
+  let jsrt = newGlobalJSRuntime()
+  let code = main2(jsrt, loaderSockVec, pagerPid, forkserver)
+  jsrt.free()
+  quit(code)
 
 main()
 
