@@ -104,7 +104,7 @@ type
     crSeen: bool
     status: uint16
     lineBuffer: string
-    headers: Headers
+    headers: seq[HTTPHeader]
 
   ResponseState = enum
     rsBeforeResult, rsAfterFailure, rsBeforeStatus, rsAfterHeaders
@@ -320,22 +320,28 @@ proc updateCookies(ctx: var LoaderContext; cookieJar: CookieJar;
     ctx.cookieStream = nil
 
 proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
-    headers: Headers): PushBufferResult =
+    headers: openArray[HTTPHeader]): PushBufferResult =
   assert handle.rstate == rsBeforeStatus
   inc handle.rstate
-  let contentLens = headers.getFirst("Content-Length")
   handle.startTime = getTime()
-  handle.contentLen = parseUInt64(contentLens).get(uint64.high)
   let output = handle.output
   let cookieJar = output.owner.config.cookieJar
-  if cookieJar != nil and handle.credentials:
+  var contentLengthSeen = false
+  var cookies: seq[string] = @[]
+  for header in headers:
+    if not contentLengthSeen and header.name.equalsIgnoreCase("Content-Length"):
+      handle.contentLen = parseUInt64(header.value).get(uint64.high)
+      contentLengthSeen = true
+    elif cookieJar != nil and handle.credentials and
+        header.name.equalsIgnoreCase("Set-Cookie"):
+      #TODO skip the copy
+      cookies.add(header.value)
+  if cookies.len > 0:
     # Never persist in loader; we save cookies in the pager.
-    let values = headers.getAllNoComma("Set-Cookie")
-    if values.len > 0:
-      let url = handle.url
-      cookieJar.setCookie(values, url, persist = false, http = true)
-      if ctx.cookieStream != nil:
-        ctx.updateCookies(cookieJar, url, output.owner, values)
+    let url = handle.url
+    cookieJar.setCookie(cookies, url, persist = false, http = true)
+    if ctx.cookieStream != nil:
+      ctx.updateCookies(cookieJar, url, output.owner, cookies)
   let buffer = bufferFromWriter w:
     w.swrite(status)
     w.swrite(headers)
@@ -346,7 +352,7 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
   pbrDone
 
 proc sendConnectedStatus(ctx: var LoaderContext; handle: InputHandle;
-    status: uint16; headers: Headers): PushBufferResult =
+    status: uint16; headers: openArray[HTTPHeader]): PushBufferResult =
   case ctx.sendResult(handle, 0)
   of pbrDone: discard
   of pbrUnregister: return pbrUnregister
@@ -659,7 +665,7 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
   case ctx.sendResult(handle, 0) # success
   of pbrDone: discard
   of pbrUnregister: return crError
-  handle.parser.headers.add(k, v)
+  handle.parser.headers.add((k, v))
   return crDone
 
 proc handleControlLine(handle: InputHandle; line: string): ControlResult =
@@ -678,14 +684,14 @@ proc handleControlLine(handle: InputHandle; line: string): ControlResult =
     if v.startsWithIgnoreCase("ControlDone"):
       return crDone
     return crError
-  handle.parser.headers.add(k, v)
+  handle.parser.headers.add((k, v))
   return crDone
 
 proc handleLine(handle: InputHandle; line: string) =
   let k = line.until(':')
   if k.len < line.len:
     let v = line.substr(k.len + 1).strip()
-    handle.parser.headers.add(k, v)
+    handle.parser.headers.add((k, v))
 
 proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
     data: openArray[char]): int =
@@ -1088,7 +1094,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       ostream.sclose()
     ctx.close(handle)
   else:
-    handle.parser = HeaderParser(headers: newHeaders(hgResponse))
+    handle.parser = HeaderParser()
     handle.stream = istreamOut
     case request.body.t
     of rbtString:
@@ -1133,7 +1139,7 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
   case ctx.sendResult(handle, 0)
   of pbrDone: discard
   of pbrUnregister: return
-  case ctx.sendStatus(handle, 200, newHeaders(hgResponse))
+  case ctx.sendStatus(handle, 200, [])
   of pbrDone: discard
   of pbrUnregister: return
   let ps = client.passedFdMap[i].ps
@@ -1161,7 +1167,7 @@ proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
       ctx.rejectHandle(handle, ceFileNotInCache)
       client.cacheMap.del(n)
       return
-    case ctx.sendConnectedStatus(handle, 200, newHeaders(hgResponse))
+    case ctx.sendConnectedStatus(handle, 200, [])
     of pbrDone:
       handle.output.stream.setBlocking(false)
       let cachedHandle = ctx.findCachedHandle(id)
@@ -1184,8 +1190,7 @@ proc finishOutputSend(ctx: var LoaderContext; output: OutputHandle) =
 # Moved back into loader from CGI, because data URLs can get extremely long
 # and thus no longer fit into the environment.
 proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
-  let headers = newHeaders(hgResponse, {"Content-Type": ct})
-  case ctx.sendConnectedStatus(handle, 200, headers)
+  case ctx.sendConnectedStatus(handle, 200, {"Content-Type": ct})
   of pbrDone: discard
   of pbrUnregister:
     ctx.close(handle)
@@ -1345,7 +1350,7 @@ proc loadCookieStream(ctx: var LoaderContext; handle: InputHandle;
   if ctx.cookieStream != nil:
     ctx.rejectHandle(handle, ceCookieStreamExists)
     return
-  case ctx.sendConnectedStatus(handle, 200, newHeaders(hgResponse))
+  case ctx.sendConnectedStatus(handle, 200, [])
   of pbrDone:
     ctx.cookieStream = handle
   of pbrUnregister:
@@ -1371,7 +1376,7 @@ proc loadAbout(ctx: var LoaderContext; handle: InputHandle; request: Request) =
 
 proc loadGetCookie(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle) =
-  case ctx.sendConnectedStatus(handle, 200, newHeaders(hgResponse))
+  case ctx.sendConnectedStatus(handle, 200, [])
   of pbrDone: discard
   of pbrUnregister:
     ctx.close(handle)
@@ -1388,7 +1393,7 @@ proc loadGetCookie(ctx: var LoaderContext; client: ClientHandle;
 
 proc loadSetCookie(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; request: Request) =
-  case ctx.sendConnectedStatus(handle, 200, newHeaders(hgResponse))
+  case ctx.sendConnectedStatus(handle, 200, [])
   of pbrDone: discard
   of pbrUnregister:
     ctx.close(handle)

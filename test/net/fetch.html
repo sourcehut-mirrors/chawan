@@ -11,6 +11,7 @@ const x = document.getElementById("x");
 	assertEquals(window.getComputedStyle(x).textAlign, "right");
 	assertEquals(s.length, 53);
 	x.style.textAlign = "left";
+	assertInstanceof(new Response().headers, Headers);
 }
 {
 	const file = new File(["test"], "name");

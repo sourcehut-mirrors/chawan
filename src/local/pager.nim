@@ -2350,7 +2350,7 @@ proc handleRead(pager: Pager; init: BufferInit): Opt[void] =
     let response = newResponse(init.request, stream, init.istreamOutputId)
     stream.withPacketReaderFire r:
       r.sread(response.status)
-      r.sread(response.headers)
+      r.sreadLoader(response.headers)
     init.applyResponse(response, pager.mimeTypes.t)
     let redirect = response.getRedirect(init.request)
     let ctx = pager.jsctx

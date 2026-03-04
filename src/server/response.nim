@@ -110,6 +110,7 @@ proc newResponse*(request: Request; stream: PosixStream; outputId: int):
     url: if request != nil: request.url else: nil,
     body: stream,
     outputId: outputId,
+    headers: newHeaders(hgResponse),
     status: 200
   )
 

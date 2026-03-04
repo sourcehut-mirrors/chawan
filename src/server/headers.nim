@@ -2,6 +2,7 @@
 
 import std/algorithm
 
+import io/packetreader
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jstypes
@@ -42,6 +43,15 @@ iterator pairs*(this: Headers): tuple[name, value: lent string] =
 iterator allPairs*(headers: Headers): tuple[name, value: lent string] =
   for (name, value) in headers.list:
     yield (name, value)
+
+proc sort(headers: Headers) =
+  headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
+
+# in the loader we just send a seq of openArray[HTTPHeader]
+proc sreadLoader*(r: var PacketReader; headers: Headers) =
+  assert headers != nil
+  r.sread(headers.list)
+  headers.sort()
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     FromJSResult =
@@ -281,7 +291,7 @@ proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
     Headers =
   let headers = newHeaders(guard)
   headers.list = @list
-  headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
+  headers.sort()
   return headers
 
 proc newHeaders(ctx: JSContext; jsInit: JSValueConst = JS_UNDEFINED):

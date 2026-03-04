@@ -80,11 +80,11 @@ type
 
   Request* = ref object
     httpMethod*: HttpMethod
+    tocache*: bool
+    credentials*: CredentialsMode
     url*: URL
     headers*: Headers
     body*: RequestBody
-    tocache*: bool
-    credentials*: CredentialsMode
 
   JSRequest* = ref object
     request*: Request

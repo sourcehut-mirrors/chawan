@@ -343,7 +343,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       let response = newResponse(request, stream, connectData.outputId)
       # packet 2
       r.sread(response.status)
-      r.sread(response.headers)
+      r.sreadLoader(response.headers)
       # Only a stream of the response body may arrive after this point.
       response.body = stream
       # delete before resolving the promise
@@ -406,7 +406,7 @@ proc onError*(loader: FileLoader; fd: int): bool =
 # Note: this blocks until headers are received.
 proc doRequest*(loader: FileLoader; request: Request): Response =
   let stream = loader.startRequest(request)
-  let response = Response(url: request.url)
+  let response = newResponse(request, nil, -1)
   var r: PacketReader
   if stream != nil and stream.initPacketReader(r):
     var res: int
@@ -415,7 +415,7 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
       r.sread(response.outputId) # packet 1
       if stream.initPacketReader(r): # packet 2
         r.sread(response.status)
-        r.sread(response.headers)
+        r.sreadLoader(response.headers)
         # Only a stream of the response body may arrive after this point.
         response.body = stream
         response.resumeFun = proc(outputId: int) =
