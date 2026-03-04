@@ -22,18 +22,19 @@ const DefaultGuess* = {
   "xhtml": "application/xhtml+xml",
   "bmp": "image/bmp",
   "gif": "image/gif",
-  "jfif": "image/jpg",
-  "jpe": "image/jpg",
-  "jpeg": "image/jpg",
-  "jpg": "image/jpg",
+  "jfif": "image/jpeg",
+  "jpe": "image/jpeg",
+  "jpeg": "image/jpeg",
+  "jpg": "image/jpeg",
   "png": "image/png",
   "svg": "image/svg+xml",
   "webp": "image/webp",
 }.toTable()
 
 # Part after image/, *not* the file extension.
+# (sorted by order of perceived frequency)
 const DefaultImages = [
-  "png", "jpg", "webp", "svg+xml", "gif", "bmp"
+  "png", "jpeg", "webp", "svg+xml", "gif", "bmp"
 ]
 
 # extension -> type
