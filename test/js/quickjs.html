@@ -28,8 +28,14 @@ function testArrayBuffer() {
 	assertThrows(() => Reflect.construct(Uint8Array, [src], EvilConstructor), RangeError);
 }
 
+function testDate() {
+	/* regression test for sandboxing */
+	new Date();
+}
+
 testNumberLiterals();
 testArrayBuffer();
+testDate();
 
 document.getElementById("x").textContent = "Success";
 </script>
