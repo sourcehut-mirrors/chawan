@@ -2787,7 +2787,7 @@ const ReTextStart = /\S/gu;
         if (iface == null)
             return;
         await iface.markURL();
-        return this.sendCursorPosition();
+        return iface.sendCursorPosition();
     }
 
     /* public */ reshape() {
