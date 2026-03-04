@@ -370,7 +370,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   let pager = Pager(
     config: config,
     forkserver: forkserver,
-    term: newTerminal(newPosixStream(STDOUT_FILENO), config),
+    term: newTerminal(newPosixStream(STDOUT_FILENO), config, loader),
     alerts: alerts,
     jsctx: ctx,
     luctx: LUContext(),
@@ -654,8 +654,7 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
     if istream == nil:
       pager.config.start.headless = hmDump
   pager.loader.pollData.register(pager.forkserver.estream.fd, POLLIN)
-  let sr = pager.term.start(istream, proc(fd: cint) =
-    pager.loader.pollData.register(fd, POLLOUT))
+  let sr = pager.term.start(istream)
   if sr.isErr:
     return
   pager.attrs = pager.term.attrs

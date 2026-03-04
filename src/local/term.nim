@@ -11,6 +11,8 @@ import chagashi/encoder
 import config/config
 import config/conftypes
 import io/dynstream
+import io/poll
+import server/loaderiface
 import types/bitmap
 import types/blob
 import types/cell
@@ -187,7 +189,7 @@ type
     dynbufn: int # position in dynbuf
     frames: array[FrameType, Frame]
     frameType: FrameType
-    registerCb: proc(fd: cint) {.raises: [].} # callback to register ostream
+    loader: FileLoader # callback to register ostream
     sixelRegisterNum*: uint16
     kittyId: uint # counter for kitty image (*not* placement) ids.
     colorMap: array[16, RGBColor]
@@ -620,7 +622,7 @@ proc startFlush(term: Terminal): Opt[void] =
   if term.registeredFlag:
     return ok()
   if not ?term.flush():
-    term.registerCb(term.ostream.fd)
+    term.loader.pollData.register(term.ostream.fd, POLLOUT)
     term.registeredFlag = true
   ok()
 
@@ -665,7 +667,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
       term.frame.head = page
       term.frame.tail = page
       if term.frameType == ftCurrent: # no need to register next
-        term.registerCb(term.ostream.fd)
+        term.loader.pollData.register(term.ostream.fd, POLLOUT)
         term.registeredFlag = true
     else:
       term.frame.tail.next = page
@@ -2658,11 +2660,9 @@ proc initScreen(term: Terminal): Opt[void] =
     term.frame.mouseEnabled = true
   term.startFlush()
 
-proc start*(term: Terminal; istream: PosixStream;
-    registerCb: (proc(fd: cint) {.raises: [].})): Opt[void] =
+proc start*(term: Terminal; istream: PosixStream): Opt[void] =
   term.ttyFlag = istream != nil and istream.isatty() and term.ostream.isatty()
   term.istream = istream
-  term.registerCb = registerCb
   if term.isatty():
     ?term.detectTermAttributes(windowOnly = false)
     ?term.enableRawMode()
@@ -2700,7 +2700,8 @@ const ANSIColorMap = [
   rgb(255, 255, 255)
 ]
 
-proc newTerminal*(ostream: PosixStream; config: Config): Terminal =
+proc newTerminal*(ostream: PosixStream; config: Config; loader: FileLoader):
+    Terminal =
   const DefaultBackground = namedRGBColor("black").get
   const DefaultForeground = namedRGBColor("white").get
   return Terminal(
@@ -2710,7 +2711,8 @@ proc newTerminal*(ostream: PosixStream; config: Config): Terminal =
     defaultForeground: DefaultForeground,
     colorMap: ANSIColorMap,
     termType: ttXterm,
-    sixelRegisterNum: 256
+    sixelRegisterNum: 256,
+    loader: loader
   )
 
 {.pop.} # raises: []
