@@ -237,12 +237,17 @@ for (const it of ["redraw", "cancel", "toggleSource", "nextBuffer",
 }
 
 /* buffer, no precnum */
-for (const it of ["markURL", "reshape", "cursorLineBegin",
-        "cursorLineTextStart", "cursorLineEnd", "cursorMiddleColumn",
-        "cursorLeftEdge", "cursorRightEdge", "cursorMiddle", "saveLink",
-        "saveScreen", "saveSource", "editScreen", "editSource",
-        "toggleImages"]) {
+for (const it of ["cursorLineBegin", "cursorLineTextStart", "cursorLineEnd",
+        "cursorMiddleColumn", "cursorLeftEdge", "cursorRightEdge",
+        "cursorMiddle"]) {
     cmd[it] = () => pager[it]();
+}
+
+/* buffer, unshared with select
+ * (really select should have adifferent keymap) */
+for (const it of ["markURL", "reshape", "editScreen", "editSource",
+        "saveLink", "saveScreen", "saveSource", "toggleImages"]) {
+    cmd[it] = () => pager.buffer[it]();
 }
 
 /* line */
