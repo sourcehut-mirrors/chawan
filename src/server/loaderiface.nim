@@ -7,18 +7,28 @@
 
 import std/posix
 
+import chagashi/charset
+import chagashi/decoder
 import config/conftypes
 import config/cookie
+import config/mimetypes
 import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
+import monoucha/fromjs
+import monoucha/jsbind
+import monoucha/jsutils
+import monoucha/quickjs
+import monoucha/tojs
 import server/headers
 import server/request
-import server/response
+import types/blob
+import types/jsopt
 import types/opt
 import types/referrer
 import types/url
+import utils/twtstr
 
 type
   FileLoader* = ref object of RootObj
@@ -86,6 +96,307 @@ type
     insecureSslNoVerify*: bool
     referrerPolicy*: ReferrerPolicy
     cookieMode*: CookieMode
+
+  ResponseType* = enum
+    rtDefault = "default"
+    rtBasic = "basic"
+    rtCors = "cors"
+    rtError = "error"
+    rtOpaque = "opaque"
+    rtOpaquedirect = "opaqueredirect"
+
+  ResponseFlag* = enum
+    rfAborted, rfBodyUsed, rfResumed
+
+  ResponseFinish* = proc(response: Response; success: bool) {.
+    nimcall, raises: [].}
+
+  ResponseRead* = proc(response: Response) {.nimcall, raises: [].}
+
+  Response* = ref object
+    body*: PosixStream
+    flags*: set[ResponseFlag]
+    responseType* {.jsget: "type".}: ResponseType
+    status* {.jsget.}: uint16
+    headers* {.jsget.}: Headers
+    url*: URL #TODO should be urllist?
+    onRead*: ResponseRead
+    onFinish*: ResponseFinish
+    outputId*: int
+    opaque*: RootRef
+
+  TextResult* = object
+    isOk*: bool
+    get*: string
+
+  BlobFinish* = proc(opaque: BlobOpaque; blob: Blob) {.nimcall, raises: [].}
+
+  BlobOpaque* = ref object of RootObj
+    p: pointer
+    len: int
+    size: int
+    contentType*: string
+
+  JSBlobOpaque = ref object of BlobOpaque
+    ctx: JSContext
+    resolve: pointer # JSObject *
+    reject: pointer # JSObject *
+
+jsDestructor(Response)
+
+# Forward declarations
+proc get*(loader: FileLoader; fd: cint): MapData
+proc resume*(loader: FileLoader; outputId: int)
+proc unregister*(loader: FileLoader; data: MapData)
+
+# Forward declaration hack
+var getLoaderImpl*: proc(ctx: JSContext): FileLoader {.nimcall, raises: [].}
+
+template resolveVal(this: BlobOpaque): JSValue =
+  JS_MKPTR(JS_TAG_OBJECT, this.resolve)
+
+template rejectVal(this: BlobOpaque): JSValue =
+  JS_MKPTR(JS_TAG_OBJECT, this.reject)
+
+proc finalize(rt: JSRuntime; this: Response) {.jsfin.} =
+  if this.opaque of JSBlobOpaque:
+    let opaque = JSBlobOpaque(this.opaque)
+    if opaque.resolve != nil:
+      JS_FreeValueRT(rt, opaque.resolveVal)
+    if opaque.reject != nil:
+      JS_FreeValueRT(rt, opaque.rejectVal)
+
+proc mark(rt: JSRuntime; this: Response; fun: JS_MarkFunc) {.jsmark.} =
+  if this.opaque of JSBlobOpaque:
+    let opaque = JSBlobOpaque(this.opaque)
+    if opaque.resolve != nil:
+      JS_MarkValue(rt, opaque.resolveVal, fun)
+    if opaque.reject != nil:
+      JS_MarkValue(rt, opaque.rejectVal, fun)
+
+template isErr*(x: TextResult): bool =
+  not x.isOk
+
+template ok*(t: typedesc[TextResult]; s: string): TextResult =
+  TextResult(isOk: true, get: s)
+
+template err*(t: typedesc[TextResult]): TextResult =
+  TextResult()
+
+proc toJS*(ctx: JSContext; x: TextResult): JSValue =
+  if x.isOk:
+    return ctx.toJS(x.get)
+  return JS_ThrowTypeError(ctx, "error reading response body")
+
+proc newResponse*(request: Request; stream: PosixStream; outputId: int):
+    Response =
+  return Response(
+    url: if request != nil: request.url else: nil,
+    body: stream,
+    outputId: outputId,
+    headers: newHeaders(hgResponse),
+    status: 200
+  )
+
+proc newResponse*(ctx: JSContext; body: JSValueConst = JS_UNDEFINED;
+    init: JSValueConst = JS_UNDEFINED): Opt[Response] {.jsctor.} =
+  if not JS_IsUndefined(body) or not JS_IsUndefined(init):
+    #TODO
+    JS_ThrowInternalError(ctx, "Response constructor with body or init")
+    return err()
+  return ok(newResponse(nil, nil, -1))
+
+proc makeNetworkError*(): Response {.jsstfunc: "Response#error".} =
+  #TODO use "create" function
+  return Response(
+    responseType: rtError,
+    status: 0,
+    headers: newHeaders(hgImmutable),
+    flags: {rfBodyUsed}
+  )
+
+proc jsOk(response: Response): bool {.jsfget: "ok".} =
+  return response.status in 200u16 .. 299u16
+
+proc surl*(response: Response): string {.jsfget: "url".} =
+  if response.responseType == rtError or response.url == nil:
+    return ""
+  return $response.url
+
+proc bodyUsed*(response: Response): bool {.jsfget.} =
+  rfBodyUsed in response.flags
+
+proc getCharset*(this: Response; fallback: Charset): Charset =
+  let header = this.headers.getFirst("Content-Type").toLowerAscii()
+  if header != "":
+    let cs = header.getContentTypeAttr("charset").getCharset()
+    if cs != CHARSET_UNKNOWN:
+      return cs
+  return fallback
+
+proc getLongContentType*(this: Response; fallback: string): string =
+  let header = this.headers.getFirst("Content-Type")
+  if header != "":
+    return header.toValidUTF8().strip()
+  # also use DefaultGuess for container, so that local mime.types cannot
+  # override buffer mime.types
+  return DefaultGuess.guessContentType(this.url.pathname, fallback)
+
+proc getContentType*(this: Response; fallback = "application/octet-stream"):
+    string =
+  return this.getLongContentType(fallback).untilLower(';')
+
+proc getContentLength*(this: Response): int64 =
+  let x = this.headers.getFirst("Content-Length")
+  let u = parseUInt64(x.strip(), allowSign = false).get(uint64.high)
+  if u <= uint64(int64.high):
+    return int64(u)
+  return -1
+
+proc getReferrerPolicy*(this: Response): Opt[ReferrerPolicy] =
+  for value in this.headers.getAllCommaSplit("Referrer-Policy"):
+    if policy := parseEnumNoCase[ReferrerPolicy](value):
+      return ok(policy)
+  err()
+
+proc resume*(loader: FileLoader; response: Response) =
+  assert rfResumed notin response.flags
+  loader.resume(response.outputId)
+  response.flags.incl(rfResumed)
+
+proc close*(loader: FileLoader; response: Response) =
+  response.flags.incl(rfBodyUsed)
+  if rfResumed notin response.flags:
+    loader.resume(response)
+  if response.body != nil:
+    let fd = response.body.fd
+    let data = loader.get(fd)
+    if data != nil:
+      loader.unregister(data)
+    response.body.sclose()
+    response.body = nil
+
+const BufferSize = 4096
+
+proc onReadBlob(response: Response) =
+  let opaque = BlobOpaque(response.opaque)
+  while true:
+    if opaque.len + BufferSize > opaque.size:
+      opaque.size *= 2
+      opaque.p = realloc(opaque.p, opaque.size)
+    let p = cast[ptr UncheckedArray[uint8]](opaque.p)
+    let diff = opaque.size - opaque.len
+    let n = response.body.read(addr p[opaque.len], diff)
+    if n <= 0:
+      assert n != -1 or errno != EBADF
+      break
+    opaque.len += n
+
+proc onFinishBlob*(response: Response; success: bool): Blob =
+  let opaque = BlobOpaque(response.opaque)
+  if success:
+    let p = opaque.p
+    opaque.p = nil
+    let blob = if p == nil:
+      newEmptyBlob(opaque.contentType)
+    else:
+      newBlob(p, opaque.len, opaque.contentType, deallocBlob)
+    return blob
+  if opaque.p != nil:
+    dealloc(opaque.p)
+    opaque.p = nil
+  return nil
+
+proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
+  response.opaque = opaque
+  if response.bodyUsed:
+    response.onFinish(response, false)
+    return
+  if response.body == nil:
+    response.flags.incl(rfBodyUsed)
+    response.onFinish(response, true)
+    return
+  opaque.contentType = response.getContentType()
+  opaque.p = alloc(BufferSize)
+  opaque.size = BufferSize
+  response.onRead = onReadBlob
+  response.flags.incl(rfBodyUsed)
+  loader.resume(response)
+
+proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
+  let ctx = opaque.ctx
+  let resolve = opaque.resolveVal
+  let reject = opaque.rejectVal
+  opaque.resolve = nil
+  opaque.reject = nil
+  opaque.ctx = nil
+  if not JS_IsException(val):
+    let res = ctx.callSink(resolve, JS_UNDEFINED, val)
+    JS_FreeValue(ctx, res)
+  else:
+    discard ctx.enqueueRejection(reject)
+  JS_FreeValue(ctx, resolve)
+  JS_FreeValue(ctx, reject)
+  JS_FreeContext(ctx)
+
+proc jsBlobFinish(response: Response; success: bool) =
+  let blob = response.onFinishBlob(success)
+  let opaque = JSBlobOpaque(response.opaque)
+  let ctx = opaque.ctx
+  let val = if blob != nil:
+    ctx.toJS(blob)
+  else:
+    JS_ThrowTypeError(ctx, "error reading response body")
+  jsFinish0(opaque, val)
+
+proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
+    JSValue =
+  var funs {.noinit.}: array[2, JSValue]
+  let res = ctx.newPromiseCapability(funs)
+  if JS_IsException(res):
+    return res
+  let opaque = JSBlobOpaque(
+    ctx: JS_DupContext(ctx),
+    resolve: JS_VALUE_GET_PTR(funs[0]),
+    reject: JS_VALUE_GET_PTR(funs[1])
+  )
+  response.onFinish = finish
+  let loader = ctx.getLoaderImpl()
+  loader.blob(response, opaque)
+  return res
+
+proc blob(ctx: JSContext; response: Response): JSValue {.jsfunc.} =
+  return ctx.blob0(response, jsBlobFinish)
+
+proc onFinishText(response: Response; success: bool) =
+  let blob = response.onFinishBlob(success)
+  let opaque = JSBlobOpaque(response.opaque)
+  let ctx = opaque.ctx
+  let val = if blob != nil:
+    ctx.toJS(blob.toOpenArray().toValidUTF8())
+  else:
+    JS_ThrowTypeError(ctx, "error reading response body")
+  jsFinish0(opaque, val)
+
+proc text(ctx: JSContext; response: Response): JSValue {.jsfunc.} =
+  return ctx.blob0(response, onFinishText)
+
+proc onFinishJSON(response: Response; success: bool) =
+  let blob = response.onFinishBlob(success)
+  let opaque = JSBlobOpaque(response.opaque)
+  let ctx = opaque.ctx
+  let val = if blob != nil:
+    let s = blob.toOpenArray().toValidUTF8()
+    JS_ParseJSON(ctx, cstring(s), csize_t(s.len), cstring"<input>")
+  else:
+    JS_ThrowTypeError(ctx, "error reading response body")
+  jsFinish0(opaque, val)
+
+proc json(ctx: JSContext; this: Response): JSValue {.jsfunc.} =
+  return ctx.blob0(this, onFinishJSON)
+
+proc addResponseModule*(ctx: JSContext): JSClassID =
+  return ctx.registerType(Response)
 
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:
@@ -242,25 +553,13 @@ proc suspend*(loader: FileLoader; fds: seq[int]) =
     w.swrite(lcSuspend)
     w.swrite(fds)
 
-proc resume*(loader: FileLoader; fds: openArray[int]) =
+proc resume*(loader: FileLoader; outputIds: openArray[int]) =
   loader.withPacketWriterFire w:
     w.swrite(lcResume)
-    w.swrite(fds)
+    w.swrite(outputIds)
 
-proc resume*(loader: FileLoader; fds: int) =
-  loader.resume([fds])
-
-proc close*(loader: FileLoader; response: Response) =
-  response.bodyUsed = true
-  if response.resumeFun != nil:
-    response.resume()
-  if response.body != nil:
-    let fd = response.body.fd
-    let data = loader.get(fd)
-    if data != nil:
-      loader.unregister(data)
-    response.body.sclose()
-    response.body = nil
+proc resume*(loader: FileLoader; outputId: int) =
+  loader.resume([outputId])
 
 proc tee*(loader: FileLoader; sourceId, targetPid: int): (PosixStream, int) =
   loader.withPacketWriter w:
@@ -350,8 +649,6 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       loader.unset(connectData)
       let data = OngoingData(response: response, stream: stream)
       loader.put(data)
-      response.resumeFun = proc(outputId: int) =
-        loader.resume(outputId)
       stream.setBlocking(false)
       let redirect = response.getRedirect(request)
       if redirect != nil:
@@ -418,8 +715,6 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
         r.sreadLoader(response.headers)
         # Only a stream of the response body may arrive after this point.
         response.body = stream
-        response.resumeFun = proc(outputId: int) =
-          loader.resume(outputId)
       else: # EOF
         stream.sclose()
     else:

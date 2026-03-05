@@ -20,7 +20,6 @@ import monoucha/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import server/response
 import types/blob
 import types/jsopt
 import types/opt
@@ -313,7 +312,7 @@ proc sendAsync(opaque: RootRef; response: Response) =
   response.opaque = env
   response.onRead = onReadXHR
   response.onFinish = onFinishXHR
-  response.resume()
+  window.loader.resume(response)
   #TODO timeout
 
 proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
@@ -365,7 +364,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
       let response = window.loader.doRequest(request)
       if response.body != nil:
         #TODO timeout
-        response.resume()
+        window.loader.resume(response)
         this.response = response
         this.received = response.body.readAll()
         window.loader.close(response)

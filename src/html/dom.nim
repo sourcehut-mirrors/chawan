@@ -40,7 +40,6 @@ import monoucha/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import server/response
 import types/bitmap
 import types/blob
 import types/color
@@ -1532,7 +1531,7 @@ proc loadSheet0(opaque: RootRef; response: Response) =
   if response != nil:
     if response.getContentType().equalsIgnoreCase("text/css"):
       response.onFinish = onFinishCSSText
-      response.blob(env)
+      window.loader.blob(response, env)
       return
     window.loader.close(response)
   env.finish(window, env.this, LoadSheetResult(), env.parseEnv, env.i)
@@ -3385,7 +3384,7 @@ proc cookie(ctx: JSContext; document: Document): JSValue {.jsfget.} =
   let response = window.loader.doRequest(newRequest("x-cha-cookie:get-all"))
   if response.body == nil:
     return JS_ThrowInternalError(ctx, "internal error in cookie getter")
-  response.resume()
+  window.loader.resume(response)
   let cookie = response.body.readAll()
   return ctx.toJS(cookie)
 
@@ -6307,7 +6306,8 @@ proc toBlob1(opaque: RootRef; response: Response) =
     JS_FreeContext(ctx)
   else:
     response.onFinish = onFinishToBlob
-    response.blob(env)
+    let window = env.ctx.getGlobal()
+    window.loader.blob(response, env)
 
 proc toBlob0(opaque: RootRef; response: Response) =
   let env = ToBlobEnv(opaque)
@@ -7117,6 +7117,7 @@ proc fetchSingleModuleResponse(opaque: RootRef; response: Response) =
   let moduleType = env.moduleType
   let element = env.element
   let onComplete = env.onComplete
+  let window = env.window
   if response == nil:
     let res = ScriptResult(t: srtNull)
     settings.moduleMap.set(url, moduleType, res)
@@ -7124,7 +7125,7 @@ proc fetchSingleModuleResponse(opaque: RootRef; response: Response) =
     return
   env.referrerPolicy = response.getReferrerPolicy()
   response.onFinish = onFinishFetchModule
-  response.blob(env)
+  window.loader.blob(response, env)
 
 #TODO settings object
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
@@ -7340,7 +7341,7 @@ proc prepare*(element: HTMLScriptElement) =
       if response.body == nil:
         element.markAsReady(ScriptResult(t: srtNull))
       else:
-        response.resume()
+        window.loader.resume(response)
         let source = response.body.readAll().decodeAll(encoding)
         response.body.sclose()
         let script = window.jsctx.newClassicScript(source, response.url,

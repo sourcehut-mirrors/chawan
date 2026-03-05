@@ -42,7 +42,6 @@ import server/forkserver
 import server/headers
 import server/loaderiface
 import server/request
-import server/response
 import types/bitmap
 import types/blob
 import types/cell
@@ -332,7 +331,7 @@ proc initCookieStream(opaque: RootRef; response: Response) =
   response.opaque = CookieStreamOpaque(pager: pager)
   response.onRead = onReadCookieStream
   response.onFinish = onFinishCookieStream
-  response.resume()
+  pager.loader.resume(response)
 
 proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =

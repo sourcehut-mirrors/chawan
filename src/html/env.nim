@@ -31,7 +31,6 @@ import monoucha/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import server/response
 import types/blob
 import types/jsopt
 import types/opt
@@ -471,7 +470,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   if response.body == nil:
     JS_ThrowTypeError(ctx, "Failed to load module %s", moduleName)
     return nil
-  response.resume()
+  window.loader.resume(response)
   let source = response.body.readAll()
   window.loader.close(response)
   return ctx.finishLoadModule(source, name)
@@ -533,6 +532,9 @@ proc evalJSFree(opaque: RootRef; src, file: string) =
 
 proc getConsole(ctx: JSContext): Console =
   ctx.getGlobal().console
+
+proc getLoader(ctx: JSContext): FileLoader =
+  ctx.getGlobal().loader
 
 proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
   let rt = JS_GetRuntime(ctx)
@@ -597,5 +599,6 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
 
 # Forward declaration hack
 getConsoleImpl = getConsole
+getLoaderImpl = getLoader
 
 {.pop.} # raises: []

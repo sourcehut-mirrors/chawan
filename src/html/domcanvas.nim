@@ -13,7 +13,6 @@ import monoucha/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import server/response
 import types/bitmap
 import types/canvastypes
 import types/color
