@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jstypes
@@ -261,3 +263,5 @@ proc addIntlModule*(ctx: JSContext): Opt[void] =
   else: discard
   JS_FreeValue(ctx, global)
   ok()
+
+{.pop.}

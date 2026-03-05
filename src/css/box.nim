@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import css/cssparser
 import css/cssvalues
 import css/lunit
@@ -417,3 +419,5 @@ when defined(debug):
       result &= $child
       result &= "</child>\n"
     result &= "</STACK>\n"
+
+{.pop.}

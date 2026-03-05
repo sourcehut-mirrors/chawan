@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import chagashi/charset
 import chagashi/decoder
 import monoucha/fromjs
@@ -103,3 +105,5 @@ proc addEncodingModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(JSTextDecoder, name = "TextDecoder")
   ?ctx.registerType(JSTextEncoder, name = "TextEncoder")
   ok()
+
+{.pop.}
