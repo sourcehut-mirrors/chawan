@@ -645,6 +645,22 @@ in vi.)</td>
 </tr>
 
 <tr>
+<td>`findPrevMatch(regex, x, y, wrap = false, n = 1)`,
+`findNextMatch(regex, x, y, wrap = false, n = 1)`</td>
+<td>Find the previous/next match for a regex.
+<p>
+`regex` is a RegExp object (e.g. from `/this syntax/`).  `x` and `y`
+are the starting position in the buffer, `wrap` determines whether or
+not the search should wrap over the document, and `n` is the count of
+occurrences to be found.
+<p>
+Returns an array of the elements `[x, y, w]` where `x` and `y` are the
+matched coordinates and `w` the width of the matched text.  If no match
+is found, the result is `[-1, -1, 0]`.
+</td>
+</tr>
+
+<tr>
 <td>`findNextMark(x = this.cursorx, y = this.cursory)`,
 `findPrevMark(x = this.cursorx, y = this.cursory)`</td>
 <td>Find the next/previous mark after/before `x`, `y`, if any; and return its id

@@ -2135,16 +2135,12 @@ const ReTextStart = /\S/gu;
             this.cursorLineEnd();
     }
 
-    /*
-     * backwards compat
-     * TODO remove once we have an official interface for these
-     */
-    /* private */ findPrevMatch(...args) {
-        return this.iface.findPrevMatch(...args);
+    /* public */ findPrevMatch(regex, x, y, wrap = false, n = 1) {
+        return this.iface.findPrevMatch(regex, x, y, wrap, n);
     }
 
-    /* private */ findNextMatch(...args) {
-        return this.iface.findNextMatch(...args);
+    /* public */ findNextMatch(regex, x, y, wrap = false, n = 1) {
+        return this.iface.findNextMatch(regex, x, y, wrap, n);
     }
 
     /* private */ startSelection(t, mouse, x1 = undefined) {

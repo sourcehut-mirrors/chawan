@@ -750,6 +750,24 @@ Center screen around the current column.
 T}
 _
 T{
+\f[CR]findPrevMatch(regex, x, y, wrap = false, n = 1)\f[R],
+\f[CR]findNextMatch(regex, x, y, wrap = false, n = 1)\f[R]
+T}@T{
+Find the previous/next match for a regex.
+.PP
+\f[CR]regex\f[R] is a RegExp object (e.g.\ from
+\f[CR]/this syntax/\f[R]).
+\f[CR]x\f[R] and \f[CR]y\f[R] are the starting position in the buffer,
+\f[CR]wrap\f[R] determines whether or not the search should wrap over
+the document, and \f[CR]n\f[R] is the count of occurrences to be found.
+.PP
+Returns an array of the elements \f[CR][x, y, w]\f[R] where \f[CR]x\f[R]
+and \f[CR]y\f[R] are the matched coordinates and \f[CR]w\f[R] the width
+of the matched text.
+If no match is found, the result is \f[CR][\-1, \-1, 0]\f[R].
+T}
+_
+T{
 \f[CR]findNextMark(x = this.cursorx, y = this.cursory)\f[R],
 \f[CR]findPrevMark(x = this.cursorx, y = this.cursory)\f[R]
 T}@T{
