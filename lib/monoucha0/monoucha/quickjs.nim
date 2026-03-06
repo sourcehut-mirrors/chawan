@@ -14,9 +14,9 @@ export libregexp.JS_BOOL
 
 {.passl: "-lm".}
 
-const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"Monoucha 0.11.0\"'"
+const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"Monoucha 0.11.0\"' -DCHA_BUILD"
 when not compileOption("threads"):
-  const CFLAGS = CFLAGS0 & " -DMNC_NO_THREADS"
+  const CFLAGS = CFLAGS0 & " -DCHA_NO_THREADS"
 else:
   const CFLAGS = CFLAGS0
   {.passl: "-lpthread".}

@@ -68,7 +68,7 @@
 
 /* define to include Atomics.* operations which depend on the OS
    threads */
-#if !defined(EMSCRIPTEN) && !defined(MNC_NO_THREADS)
+#if !defined(EMSCRIPTEN) && !defined(CHA_NO_THREADS)
 #define CONFIG_ATOMICS
 #endif
 
@@ -47472,7 +47472,7 @@ int lre_check_timeout(void *opaque)
             rt->interrupt_handler(rt, rt->interrupt_opaque));
 }
 
-#if 0
+#ifndef CHA_BUILD
 void *lre_realloc(void *opaque, void *ptr, size_t size)
 {
     JSContext *ctx = opaque;

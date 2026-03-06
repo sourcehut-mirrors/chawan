@@ -1,6 +1,6 @@
 {.used.}
 when not compileOption("threads"):
-  const CFLAGS = "-fwrapv -DMNC_NO_THREADS"
+  const CFLAGS = "-fwrapv -DCHA_NO_THREADS"
 else:
   const CFLAGS = "-fwrapv"
 
