@@ -135,6 +135,7 @@ type
     mimeTypes: MimeTypes
     bufferInit {.jsget.}: BufferInit # visible BufferInit (may != iface.init)
     bufferIface {.jsget.}: BufferInterface # visible BufferInterface
+    imageProtos: seq[string]
 
   CheckMailcapFlag = enum
     cmfConnect, cmfHTML, cmfRedirected, cmfPrompt, cmfNeedsstyle,
@@ -262,7 +263,7 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
 proc evalJSFree(opaque: RootRef; src, filename: string) =
   let pager = Pager(opaque)
   let ctx = pager.jsctx
-  let headless = pager.config.start.headless != hmFalse
+  let headless = pager.config{"headless"} != hmFalse
   if not headless:
     pager.term.catchSigint()
   let ret = ctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
@@ -336,7 +337,7 @@ proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
   return js_strdup(ctx, name)
 
-proc loadMailcap(pager: Pager; mailcap: var Mailcap; path: ChaPathResolved) =
+proc loadMailcap(pager: Pager; mailcap: var Mailcap; path: string) =
   let res = mailcap.parseMailcap($path)
   if res.isErr:
     pager.alert(res.error)
@@ -364,7 +365,7 @@ application/xhtml+xml; exec cat; x-htmloutput
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int;
-    console: Console): Pager =
+    console: Console; imageProtos: seq[string]): Pager =
   let pager = Pager(
     config: config,
     forkserver: forkserver,
@@ -379,6 +380,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     consoleCacheId: -1,
     console: console,
     bufferAtom: JS_NewAtom(ctx, cstring"buffer"),
+    imageProtos: imageProtos
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   pager.jsmap = JSMap(
@@ -397,22 +399,22 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   let request = newRequest("about:cookie-stream")
   pager.loader.fetch(request, initCookieStream, pager)
   block history:
-    let hist = newHistory(pager.config.external.historySize, getTime().toUnix())
-    let ps = newPosixStream($pager.config.external.historyFile)
+    let hist = newHistory(pager.config{"historySize"}, getTime().toUnix())
+    let ps = newPosixStream(pager.config{"historyFile"})
     if ps != nil:
       if hist.parse(ps).isErr:
         hist.transient = true
         pager.alert("failed to read history")
     pager.lineHist[lmLocation] = hist
   block cookie:
-    let ps = newPosixStream($pager.config.external.cookieFile)
+    let ps = newPosixStream(pager.config{"cookieFile"})
     if ps != nil:
       if pager.cookieJars.parse(ps, pager.alerts).isErr:
         pager.cookieJars.transient = true
         pager.alert("failed to read cookies")
-  pager.loadMailcap(pager.autoMailcap, config.external.autoMailcap)
+  pager.loadMailcap(pager.autoMailcap, config{"autoMailcap"})
   pager.autoMailcap.parseBuiltin(DefaultAutoMailcap)
-  for p in config.external.mimeTypes:
+  for p in config{"mimeTypes"}:
     if f := chafile.fopen($p, "r"):
       let res = pager.mimeTypes.parseMimeTypes(f)
       f.close()
@@ -444,7 +446,7 @@ proc cleanup(pager: Pager) =
     if hasConfigDir:
       needDataDir = false
       pager.makeDataDir()
-    if hist.write($pager.config.external.historyFile).isErr:
+    if hist.write(pager.config{"historyFile"}).isErr:
       if hasConfigDir:
         # History is enabled by default, so do not print the error
         # message if no config dir exists.
@@ -452,7 +454,7 @@ proc cleanup(pager: Pager) =
   if pager.cookieJars.needsWrite():
     if needDataDir:
       pager.makeDataDir()
-    if pager.cookieJars.write($pager.config.external.cookieFile).isErr:
+    if pager.cookieJars.write(pager.config{"cookieFile"}).isErr:
       pager.alert("failed to save cookies")
   for msg in pager.alerts:
     discard cast[ChaFile](stderr).write("cha: " & msg & '\n')
@@ -460,8 +462,8 @@ proc cleanup(pager: Pager) =
   # Decrement refcount of action maps.  This is needed so that refc
   # actually cleans them up.
   # (For some reason, doing the same with config doesn't work.)
-  pager.config.line = nil
-  pager.config.page = nil
+  for it in pager.config.actionMap.mitems:
+    it = nil
   ctx.freeValues(pager.config.omnirule)
   ctx.freeValues(pager.config.siteconf)
   JS_FreeAtom(ctx, pager.bufferAtom)
@@ -580,7 +582,7 @@ const MaxPrecNum = 100000000
 
 # private
 proc updateNumericPrefix(pager: Pager): bool {.jsfunc.} =
-  if pager.config.input.viNumericPrefix and pager.precnum >= 0:
+  if pager.config{"viNumericPrefix"} and pager.precnum >= 0:
     let c = pager.inputBuffer[0]
     if pager.precnum != 0 and c == '0' or c in '1'..'9':
       if pager.precnum < MaxPrecNum: # better ignore than eval...
@@ -621,26 +623,26 @@ proc handleUserInput(pager: Pager): Opt[void] =
 
 # private
 proc runStartupScript(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
-  if pager.config.start.startupScript == "":
+  if pager.config{"startupScript"} == "":
     return JS_UNDEFINED
-  let ps = newPosixStream(pager.config.start.startupScript)
+  let ps = newPosixStream(pager.config{"startupScript"})
   let s = if ps != nil:
     var x = ps.readAll()
     ps.sclose()
     move(x)
   else:
-    pager.config.start.startupScript
-  let flag = if pager.config.start.startupScript.endsWith(".mjs"):
+    pager.config{"startupScript"}
+  let flag = if pager.config{"startupScript"}.endsWith(".mjs"):
     JS_EVAL_TYPE_MODULE
   else:
     JS_EVAL_TYPE_GLOBAL
-  return ctx.eval(s, pager.config.start.startupScript, flag)
+  return ctx.eval(s, pager.config{"startupScript"}, flag)
 
 proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
     charset: Charset; history: bool): int =
   var istream: PosixStream = nil
   let ps = newPosixStream(STDIN_FILENO)
-  if pager.config.start.headless == hmFalse:
+  if pager.config{"headless"} == hmFalse:
     let os = newPosixStream(STDOUT_FILENO)
     if ps.isatty():
       istream = ps
@@ -650,7 +652,7 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
     else:
       istream = nil
     if istream == nil:
-      pager.config.start.headless = hmDump
+      pager.config.bits[coHeadless].headlessMode = hmDump
   pager.loader.pollData.register(pager.forkserver.estream.fd, POLLIN)
   let sr = pager.term.start(istream)
   if sr.isErr:
@@ -663,7 +665,7 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   if pipe:
     pager.loader.passFd("-", ps.fd)
   # we don't want history for dump/headless mode
-  let history = pager.config.start.headless == hmFalse and history
+  let history = pager.config{"headless"} == hmFalse and history
   let ctx = pager.jsctx
   let pages = ctx.newArrayFrom(pages)
   let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
@@ -740,13 +742,12 @@ proc refreshStatusMsg(pager: Pager) =
       ANSIColor(1).cellColor()
     else:
       defaultColor
-    var format = initFormat(defaultColor, fgcolor,
-      pager.config.status.formatMode)
+    let config = pager.config
+    var format = initFormat(defaultColor, fgcolor, config{"status.formatMode"})
     pager.alertState = pasNormal
     var msg = ""
     let iface = pager.bufferIface
-    if pager.config.status.showCursorPosition and iface != nil and
-        iface.numLines > 0:
+    if config{"showCursorPosition"} and iface != nil and iface.numLines > 0:
       msg &= $(iface.cursory + 1) & "/" & $iface.numLines &
         " (" & $iface.atPercentOf() & "%)"
     else:
@@ -754,7 +755,7 @@ proc refreshStatusMsg(pager: Pager) =
     if bifCrashed in init.flags:
       msg &= " CRASHED!"
     msg &= " <" & init.title
-    let hover = if pager.config.status.showHoverLink and iface != nil:
+    let hover = if config{"showHoverLink"} and iface != nil:
       iface.getHoverText()
     else:
       ""
@@ -872,8 +873,8 @@ proc redraw(pager: Pager) {.jsfunc.} =
 
 # private
 proc getTempFile(pager: Pager; ext = ""): string {.jsfunc.} =
-  result = $pager.config.external.tmpdir / "chaptmp" &
-    $pager.loader.clientPid & "-" & $pager.tmpfSeq
+  result = pager.config{"tmpdir"} / "chaptmp" & $pager.loader.clientPid &
+    "-" & $pager.tmpfSeq
   if ext != "":
     result &= "."
     result &= ext
@@ -1098,7 +1099,7 @@ proc getAbsoluteCursorXY(pager: Pager; iface: BufferInterface): PagePos =
 
 proc highlightColor(pager: Pager): CellColor =
   if pager.attrs.colorMode != cmMonochrome:
-    return pager.config.display.highlightColor.cellColor()
+    return pager.config{"highlightColor"}.cellColor()
   return defaultColor
 
 proc needsRedraw(pager: Pager; iface: BufferInterface): bool =
@@ -1123,7 +1124,7 @@ proc draw(pager: Pager): bool =
     if iface.redraw:
       let hlcolor = pager.highlightColor
       iface.drawLines(pager.display.grid, hlcolor)
-      if pager.config.display.highlightMarks:
+      if pager.config{"highlightMarks"}:
         iface.highlightMarks(pager.display.grid, hlcolor)
       iface.redraw = false
       pager.display.redraw = true
@@ -1441,7 +1442,7 @@ proc getCacheFile(pager: Pager; cacheId: int; pid = -1): string {.jsfunc.} =
 
 # private
 proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
-  var editor = pager.config.external.editor
+  var editor = pager.config{"editor"}
   if uqEditor := ChaPath(editor).unquote(""):
     if uqEditor in ["vi", "nvi", "vim", "nvim"]:
       editor = uqEditor & " +%d"
@@ -1489,30 +1490,33 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     cookieJarId: var string; filterCmd: var string): BufferConfig =
   let ctx = pager.jsctx
   result = BufferConfig(
-    userStyle: string(pager.config.buffer.userStyle) & '\n',
-    refererFrom: pager.config.buffer.refererFrom,
-    scripting: pager.config.buffer.scripting,
-    charsets: pager.config.encoding.documentCharset,
-    images: pager.config.buffer.images,
-    styling: pager.config.buffer.styling,
-    autofocus: pager.config.buffer.autofocus,
-    history: pager.config.buffer.history,
-    headless: pager.config.start.headless,
+    userStyle: pager.config{"userStyle"} & '\n',
+    refererFrom: pager.config{"refererFrom"},
+    scripting: pager.config{"scripting"},
+    charsets: pager.config{"documentCharset"},
+    images: pager.config{"images"},
+    styling: pager.config{"styling"},
+    autofocus: pager.config{"autofocus"},
+    history: pager.config{"history"},
+    headless: pager.config{"headless"},
     charsetOverride: charsetOverride,
-    metaRefresh: pager.config.buffer.metaRefresh,
-    markLinks: pager.config.buffer.markLinks
+    metaRefresh: pager.config{"metaRefresh"},
+    markLinks: pager.config{"markLinks"}
   )
   loaderConfig = LoaderClientConfig(
     originURL: url,
-    defaultHeaders: pager.config.network.defaultHeaders,
+    defaultHeaders: pager.config{"defaultHeaders"},
     cookiejar: nil,
-    proxy: pager.config.network.proxy,
+    proxy: pager.config{"proxy"},
     allowSchemes: @["data", "cache", "stream"],
-    cookieMode: pager.config.buffer.cookie,
+    cookieMode: pager.config{"cookie"},
     insecureSslNoVerify: false
   )
-  if pager.config.network.allowHttpFromFile and
-      url.schemeType in {stFile, stStream}:
+  let allowHttpFromFile = when NimMajor < 2:
+    pager.config.bits[coAllowHttpFromFile].bool
+  else:
+    pager.config{"allowHttpFromFile"}
+  if allowHttpFromFile and url.schemeType in {stFile, stStream}:
     loaderConfig.allowSchemes.add("http")
     loaderConfig.allowSchemes.add("https")
   let host = url.host
@@ -1520,12 +1524,12 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   cookieJarId = host
   for sc in pager.config.siteconf:
     let matches = (case sc.matchType
-    of smUrl: sc.match.match(surl)
-    of smHost: sc.match.match(host))
+    of smUrl: sc.regex.match(surl)
+    of smHost: sc.regex.match(host))
     if not matches:
       continue
-    if sc.o.rewriteUrl.isSome:
-      let fun = sc.o.rewriteUrl.get
+    if not JS_IsUndefined(sc.fun):
+      let fun = sc.fun
       var tmpUrl = newURL(url)
       let arg0 = ctx.toJS(tmpUrl)
       if JS_IsException(arg0):
@@ -1545,39 +1549,47 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       if $tmpUrl != surl:
         ourl = tmpUrl
         return
-    if sc.o.cookie.isSome:
-      loaderConfig.cookieMode = sc.o.cookie.get
-    if sc.o.shareCookieJar.isSome:
-      cookieJarId = sc.o.shareCookieJar.get
-    if sc.o.scripting.isSome:
-      result.scripting = sc.o.scripting.get
-    if sc.o.refererFrom.isSome:
-      result.refererFrom = sc.o.refererFrom.get
-    if sc.o.documentCharset.len > 0:
-      result.charsets = sc.o.documentCharset
-    if sc.o.images.isSome:
-      result.images = sc.o.images.get
-    if sc.o.styling.isSome:
-      result.styling = sc.o.styling.get
-    if sc.o.proxy.isSome:
-      loaderConfig.proxy = sc.o.proxy.get
-    if sc.o.defaultHeaders != nil:
-      loaderConfig.defaultHeaders = sc.o.defaultHeaders
-    if sc.o.insecureSslNoVerify.isSome:
-      loaderConfig.insecureSslNoVerify = sc.o.insecureSslNoVerify.get
-    if sc.o.autofocus.isSome:
-      result.autofocus = sc.o.autofocus.get
-    if sc.o.metaRefresh.isSome:
-      result.metaRefresh = sc.o.metaRefresh.get
-    if sc.o.history.isSome:
-      result.history = sc.o.history.get
-    if sc.o.markLinks.isSome:
-      result.markLinks = sc.o.markLinks.get
-    if sc.o.userStyle.isSome:
-      result.userStyle &= string(sc.o.userStyle.get) & '\n'
-    if sc.o.filterCmd.isSome:
-      filterCmd = sc.o.filterCmd.get
-  loaderConfig.allowSchemes.add(pager.config.external.urimethodmap.imageProtos)
+    for e in sc.entries:
+      # we dispatch on class first to skip the object variant check
+      case e.t
+      of cocBit:
+        let bit = e.bit
+        case e.opt
+        of coCookie: loaderConfig.cookieMode = bit.cookieMode
+        of coScripting: result.scripting = bit.scriptingMode
+        of coRefererFrom: result.refererFrom = bit.bool
+        of coImages: result.images = bit.bool
+        of coStyling: result.styling = bit.bool
+        of coInsecureSslNoVerify: loaderConfig.insecureSslNoVerify = bit.bool
+        of coAutofocus: result.autofocus = bit.bool
+        of coMetaRefresh: result.metaRefresh = bit.metaRefresh
+        of coHistory: result.history = bit.bool
+        of coMarkLinks: result.markLinks = bit.bool
+        else: assert false
+      of cocStr:
+        case e.opt
+        of coShareCookieJar: cookieJarId = e.str
+        of coUserStyle: result.userStyle &= e.str & '\n'
+        of coFilterCmd: filterCmd = e.str
+        else: assert false
+      of cocCharsetSeq:
+        assert e.opt == coDocumentCharset
+        result.charsets = e.charsetSeq
+      of cocURL:
+        assert e.opt == coProxy
+        loaderConfig.proxy = e.url
+      of cocHeaders:
+        assert e.opt == coDefaultHeaders
+        let init = e.headers
+        if init.clear:
+          loaderConfig.defaultHeaders = newHeaders(hgRequest, init.s)
+        else:
+          let headers = loaderConfig.defaultHeaders.clone()
+          for it in init.s:
+            headers.add(it.name, it.value)
+          loaderConfig.defaultHeaders = headers
+      else: assert false
+  loaderConfig.allowSchemes.add(pager.imageProtos)
   if result.scripting != smFalse:
     loaderConfig.allowSchemes.add("x-cha-cookie")
   if result.images:
@@ -1597,7 +1609,7 @@ proc initGotoURL(pager: Pager; request: Request; charset: Charset;
     loaderConfig: var LoaderClientConfig; bufferConfig: var BufferConfig;
     filterCmd: var string) =
   var cookieJarId: string
-  for i in 0 ..< pager.config.network.maxRedirect:
+  for i in 0 ..< pager.config{"maxRedirect"}:
     var ourl: URL = nil
     bufferConfig = pager.applySiteconf(request.url, charset, loaderConfig, ourl,
       cookieJarId, filterCmd)
@@ -1637,9 +1649,9 @@ proc omniRewrite(ctx: JSContext; pager: Pager; arg0: JSValueConst): JSValue
   var s: string
   ?ctx.fromJS(arg0, s)
   for rule in pager.config.omnirule:
-    if rule.match.match(s):
+    if rule.regex.match(s):
       pager.lineHist[lmLocation].add(s)
-      return ctx.call(rule.substituteUrl, JS_UNDEFINED, arg0)
+      return ctx.call(rule.fun, JS_UNDEFINED, arg0)
   return JS_DupValue(ctx, arg0)
 
 proc createPipe(pager: Pager): (PosixStream, PosixStream) =
@@ -1704,7 +1716,7 @@ proc addConsole(pager: Pager): bool {.jsfunc.} =
   pager.addConsole0(close = true)
 
 proc addConsole2(pager: Pager; interactive: bool) =
-  if interactive and pager.config.start.consoleBuffer:
+  if interactive and pager.config{"consoleBuffer"}:
     if pager.addConsole0(close = false):
       pager.console.log("Type (M-c) console.hide() to return to buffer mode.")
       pager.console.flush()
@@ -1819,7 +1831,7 @@ proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
       return JS_TRUE
     if not clipboard:
       return JS_FALSE
-    return ctx.toJS(pager.externInto(pager.config.external.copyCmd, s))
+    return ctx.toJS(pager.externInto(pager.config{"copyCmd"}, s))
   return ctx.jsQuit(pager, 1)
 
 # Execute cmd, with ps moved onto stdin, os onto stdout, and the browser
@@ -1966,7 +1978,7 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
 # If needsterminal, leave stderr and stdout open and wait for the process.
 proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd, outpath: string) =
-  discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
+  discard mkdir(cstring(pager.config{"tmpdir"}), 0o700)
   if needsterminal:
     discard pager.term.quit() #TODO
     let os = newPosixStream(dup(pager.term.ostream.fd))
@@ -2212,7 +2224,7 @@ proc connected2(pager: Pager; init: BufferInit): Opt[void] {.jsfunc.} =
   ok()
 
 proc saveEntry(pager: Pager; entry: MailcapEntry) =
-  let path = $pager.config.external.autoMailcap
+  let path = pager.config{"autoMailcap"}
   if pager.autoMailcap.saveEntry(path, entry).isErr:
     pager.alert("Could not write to " & $path)
 
@@ -2238,7 +2250,7 @@ proc addMailcapEntry(pager: Pager; init: BufferInit; cmd: string;
 proc findMailcapPrevNext(pager: Pager; init: BufferInit; i: int):
     tuple[prev, next: int] {.jsfunc.} =
   if not pager.mailcapLoaded:
-    for p in pager.config.external.mailcap:
+    for p in pager.config{"mailcap"}:
       pager.loadMailcap(pager.mailcap, p)
     pager.mailcap.parseBuiltin(DefaultMailcap)
     pager.mailcapLoaded = true
@@ -2298,7 +2310,7 @@ proc connected(pager: Pager; init: BufferInit; response: Response): Opt[void] =
   if shortContentType.equalsIgnoreCase("text/plain") or bifSave in init.flags:
     return pager.connected2(init)
   let i = pager.autoMailcap.findMailcapEntry(contentType, init.url)
-  if i != -1 or pager.config.start.headless != hmFalse:
+  if i != -1 or pager.config{"headless"} != hmFalse:
     pager.applyMailcap(init, pager.autoMailcap[i])
     return pager.connected2(init)
   else:

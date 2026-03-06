@@ -1,0 +1,6 @@
+[[siteconf]]
+host = 'example\.org'
+default-headers = {
+	a = "b", # comment
+	c = "d", # trailing comma
+}

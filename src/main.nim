@@ -8,6 +8,7 @@ import chagashi/charset
 import config/chapath
 import config/config
 import config/conftypes
+import config/urimethodmap
 import html/catom
 import html/dom
 import html/env
@@ -121,7 +122,7 @@ proc addDefaultPages(ctx: var ParamParseContext; config: Config;
     history: var bool): Opt[void] =
   if ctx.visual:
     history = false
-    return ctx.addPage(config.start.visualHome)
+    return ctx.addPage(config{"visualHome"})
   if (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
     history = false
     return ctx.addPage(httpHome)
@@ -239,43 +240,27 @@ proc parse(ctx: var ParamParseContext): Opt[void] =
     inc ctx.i
   ok()
 
-const defaultConfig = """
-[external]
-urimethodmap = [
-	"~/.urimethodmap",
-	"~/.w3m/urimethodmap",
-	"/etc/urimethodmap",
-	"/usr/local/etc/w3m/urimethodmap"
-]
-
-[siteconf.downloads]
-url = 'about:downloads'
-meta-refresh = "always"
-"""
-
 proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
     jsctx: JSContext): Result[Config, string] =
   var dir, dataDir: string
-  let ps = openConfig(dir, dataDir, ctx.configPath, warnings)
-  if ps == nil and ctx.configPath.isSome:
+  let file = openConfig(dir, dataDir, ctx.configPath, warnings)
+  if file.isErr and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("failed to open config file " & ctx.configPath.get)
   if twtstr.setEnv("CHA_DIR", dir).isErr or
       twtstr.setEnv("CHA_DATA_DIR", dataDir).isErr:
     die("failed to set env vars")
   let config = newConfig(jsctx, dir, dataDir)
-  ?config.parseConfig("res", defaultConfig, warnings, jsctx, "default")
+  if config == nil:
+    return err(jsctx.getExceptionMsg())
   let cwd = myposix.getcwd()
-  if ps != nil:
-    let src = ps.readAllOrMmap()
-    ?config.parseConfig(config.dir, src.toOpenArray(), warnings, jsctx,
-      "config.toml")
-    deallocMem(src)
-    ps.sclose()
+  if file.isOk:
+    ?config.parseConfig(config.dir, file.get, warnings, jsctx, "config.toml")
+    discard file.get.close()
   for opt in ctx.opts:
     ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", laxnames = true)
-  string(config.buffer.userStyle) &= ctx.stylesheet
-  isCJKAmbiguous = config.display.doubleWidthAmbiguous
+  config{"userStyle"} &= ctx.stylesheet
+  isCJKAmbiguous = config{"doubleWidthAmbiguous"}
   ok(config)
 
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
@@ -401,6 +386,8 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
   else:
     die("failed to initialize JS " & jsctx.getExceptionMsg())
 
+const DefaultURIMethodMap = staticRead"res/urimethodmap"
+
 proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =
   let jsctx = rt.newJSContext()
@@ -427,17 +414,24 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
   if ctx.pages.len == 0 and ps.isatty():
     if ctx.addDefaultPages(config, history).isErr:
       die(jsctx.getExceptionMsg())
-  if ctx.pages.len == 0 and config.start.headless != hmTrue:
+  if ctx.pages.len == 0 and config{"headless"} != hmTrue:
     if ps.isatty():
       help(1)
   # make sure tmpdir exists
-  let tmpdir = cstring(config.external.tmpdir)
+  let tmpdir = cstring(config{"tmpdir"})
   discard mkdir(tmpdir, 0o700)
   if chown(tmpdir, getuid(), getgid()) != 0:
-    die("failed to set ownership of " & $config.external.tmpdir)
+    die("failed to set ownership of " & config{"tmpdir"})
   if chmod(tmpdir, 0o700) != 0:
-    die("failed to set permissions of " & $config.external.tmpdir)
-  let loaderPid = forkserver.loadConfig(config)
+    die("failed to set permissions of " & config{"tmpdir"})
+  var urimethodmap: URIMethodMap
+  for path in config{"urimethodmap"}:
+    let ps = newPosixStream(path)
+    if ps != nil:
+      urimethodmap.parseURIMethodMap(ps.readAll())
+      ps.sclose()
+  urimethodmap.parseURIMethodMap(DefaultURIMethodMap)
+  let loaderPid = forkserver.loadConfig(config, urimethodmap)
   if loaderPid == -1:
     die("failed to fork loader process")
   onSignal SIGINT:
@@ -448,7 +442,7 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
       quit(1)
   jsctx.setupStartupScript("init.jsb")
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
-    client.console)
+    client.console, urimethodmap.imageProtos)
   client.timeouts = pager.timeouts
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs

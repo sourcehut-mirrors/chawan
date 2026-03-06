@@ -292,6 +292,11 @@ proc startsWith*(s1, s2: openArray[char]): bool =
       return true
     return equalMem(unsafeAddr s1[0], unsafeAddr s2[0], len2)
 
+proc startsWith*(s1, s2: openArray[char]; start: int): bool =
+  if start >= s1.len:
+    return false
+  return s1.toOpenArray(start, s1.high).startsWith(s2)
+
 proc endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
   let len2 = s2.len
   if s1.len < len2:
@@ -686,12 +691,6 @@ proc parseInt32*(s: openArray[char]): Opt[int32] =
 
 proc parseInt64*(s: openArray[char]): Opt[int64] =
   return parseIntImpl[int64, uint64](s, 10)
-
-proc parseOctInt64*(s: openArray[char]): Opt[int64] =
-  return parseIntImpl[int64, uint64](s, 8)
-
-proc parseHexInt64*(s: openArray[char]): Opt[int64] =
-  return parseIntImpl[int64, uint64](s, 16)
 
 proc parseIntP*(s: openArray[char]): Opt[int] =
   return parseIntImpl[int, uint](s, 10)

@@ -39,24 +39,25 @@ type
     linkHintChars: seq[uint32]
     schemes: seq[string]
 
-proc loadConfig*(forkserver: ForkServer; config: Config): int =
+proc loadConfig*(forkserver: ForkServer; config: Config;
+    urimethodmap: URIMethodMap): int =
   forkserver.stream.withPacketWriter w:
-    w.swrite(config.display.doubleWidthAmbiguous)
-    w.swrite(config.input.linkHintChars.s)
+    w.swrite(config{"doubleWidthAmbiguous"})
+    w.swrite(config{"linkHintChars"})
     w.swrite(LoaderConfig(
-      urimethodmap: config.external.urimethodmap,
-      w3mCGICompat: config.external.w3mCgiCompat,
-      cgiDir: seq[string](config.external.cgiDir),
-      tmpdir: $config.external.tmpdir,
+      w3mCGICompat: config{"w3mCgiCompat"},
+      cgiDir: config{"cgiDir"},
+      tmpdir: config{"tmpdir"},
       configDir: config.dir,
       dataDir: config.dataDir,
-      bookmark: $config.external.bookmark,
-      maxNetConnections: config.network.maxNetConnections
+      bookmark: config{"bookmark"},
+      maxNetConnections: config{"maxNetConnections"},
+      uriMethodMap: urimethodmap,
     ))
     # client config for pager
     w.swrite(LoaderClientConfig(
-      defaultHeaders: config.network.defaultHeaders,
-      proxy: config.network.proxy,
+      defaultHeaders: config{"defaultHeaders"},
+      proxy: config{"proxy"},
       allowAllSchemes: true
     ))
   do:
@@ -241,10 +242,12 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
   ctx.stream.withPacketReader r:
     var config: LoaderConfig
     var clientConfig: LoaderClientConfig
+    var linkHintChars: string
     r.sread(isCJKAmbiguous)
-    r.sread(ctx.linkHintChars)
+    r.sread(linkHintChars)
     r.sread(config)
     r.sread(clientConfig)
+    ctx.linkHintChars = linkHintChars.toPoints()
     # for CGI
     if setupForkServerEnv(config).isErr:
       quit(1)

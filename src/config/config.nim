@@ -1,6 +1,8 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/macros
+import std/math
 import std/options
 import std/os
 import std/sets
@@ -11,15 +13,14 @@ import config/chapath
 import config/conftypes
 import config/cookie
 import config/mailcap
-import config/toml
-import config/urimethodmap
 import css/cssparser
 import css/cssvalues
 import html/script
+import io/chafile
 import io/dynstream
+import monoucha/dtoa
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsnull
 import monoucha/jspropenumlist
 import monoucha/jsutils
 import monoucha/quickjs
@@ -31,22 +32,16 @@ import types/jscolor
 import types/jsopt
 import types/opt
 import types/url
+import utils/dtoawrap
 import utils/lrewrap
 import utils/myposix
 import utils/twtstr
 
 type
-  StyleString* = distinct string
-
-  ChaPathResolved* = distinct string
-
   RegexCase* = enum
+    rcAuto = "auto" # smart case
     rcStrict = "" # case-sensitive
     rcIgnore = "ignore" # case-insensitive
-    rcAuto = "auto" # smart case
-
-  CodepointSet* = object
-    s*: seq[uint32]
 
   Action = object
     k: string
@@ -69,243 +64,525 @@ type
   SiteconfMatch* = enum
     smUrl, smHost
 
-  SiteConfigObj* = object
-    rewriteUrl*: Option[JSValue]
-    shareCookieJar*: Option[string]
-    proxy*: Option[URL]
-    defaultHeaders*: Headers
-    cookie*: Option[CookieMode]
-    refererFrom*: Option[bool]
-    scripting*: Option[ScriptingMode]
-    documentCharset*: seq[Charset]
-    images*: Option[bool]
-    styling*: Option[bool]
-    insecureSslNoVerify*: Option[bool]
-    autofocus*: Option[bool]
-    metaRefresh*: Option[MetaRefresh]
-    history*: Option[bool]
-    markLinks*: Option[bool]
-    userStyle*: Option[StyleString]
-    filterCmd*: Option[string]
+  BoolAuto* = enum
+    baAuto = "auto"
+    baFalse = "false"
+    baTrue = "true"
 
-  SiteConfig* = ref object
+  # ColorMode or -1 for auto
+  ColorModeAuto = distinct uint8
+
+  # ImageMode or -1 for auto
+  ImageModeAuto = distinct uint8
+
+  # cast[int32] of FormatMode or -1 for auto
+  FormatModeAuto = distinct uint32
+
+  ConfigOptionBit {.union.} = object
+    u*: uint8
+    bool*: bool
+    boolAuto*: BoolAuto # bool or "auto"
+    charset*: Charset
+    colorModeAuto*: ColorModeAuto
+    cookieMode*: CookieMode
+    formatMode: FormatMode
+    headlessMode*: HeadlessMode
+    imageModeAuto*: ImageModeAuto
+    metaRefresh*: MetaRefresh
+    regexCase: RegexCase
+    scriptingMode*: ScriptingMode
+
+  ConfigOptionHWord {.union.} = object
+    int32: int32
+    formatModeAuto: FormatModeAuto
+
+  # RGBColor or -1 for auto
+  RGBColorAuto = distinct uint64
+
+  ConfigOptionWord {.union.} = object
+    cssColor: CSSColor
+    rgbColorAuto: RGBColorAuto
+
+  ConfigOptionType = enum
+    # bit (1 byte)
+    cotBool = "bool"
+    cotBoolAuto = "boolAuto"
+    cotCharset = "charset"
+    cotColorModeAuto = "colorModeAuto"
+    cotCookieMode = "cookieMode"
+    cotFormatMode = "formatMode"
+    cotHeadlessMode = "headlessMode"
+    cotImageModeAuto = "imageModeAuto"
+    cotMetaRefresh = "metaRefresh"
+    cotRegexCase = "regexCase"
+    cotScriptingMode = "scriptingMode"
+    # hword (4 bytes)
+    cotInt32 = "int32"
+    cotInt32Auto = "int32" # signed int32; parses "auto" as -1
+    cotFormatModeAuto = "formatModeAuto"
+    # word (8 bytes)
+    cotCSSColor = "cssColor"
+    cotRGBColorAuto = "rgbColorAuto"
+    # string
+    cotString
+    cotStylesheet
+    cotPath
+    cotCodepointSet
+    # seq[Charset]
+    cotCharsetSeq
+    # seq[ChaPath]
+    cotPathSeq
+    # Headers
+    cotHeaders
+    # URL
+    cotURL
+    # regex
+    cotRegex
+    # JS function
+    cotFunction
+
+  ConfigSection* = enum
+    csNone = "none" # starting section
+    csBuffer = "buffer"
+    csDisplay = "display"
+    csEncoding = "encoding"
+    csExternal = "external"
+    csInput = "input"
+    csNetwork = "network"
+    csSearch = "search"
+    csStart = "start"
+    csStatus = "status"
+    # command sections
+    csCmd = "cmd"
+    csPage = "page"
+    csLine = "line"
+    # array sections
+    csSiteconf = "siteconf"
+    csOmnirule = "omnirule"
+
+  # Note: when adding a new option, the compiler will scream about a bunch
+  # of places.  Just fill the gaps until it's satisfied, then everything
+  # should be OK.
+  ConfigOption* = enum
+    # 1 byte
+    coAllowHttpFromFile = "allowHttpFromFile"
+    coAltScreen = "altScreen"
+    coAutofocus = "autofocus"
+    coBracketedPaste = "bracketedPaste"
+    coColorMode = "colorMode"
+    coConsoleBuffer = "consoleBuffer"
+    coCookie = "cookie"
+    coDisplayCharset = "displayCharset"
+    coDoubleWidthAmbiguous = "doubleWidthAmbiguous"
+    coForceColumns = "forceColumns"
+    coForceLines = "forceLines"
+    coForcePixelsPerColumn = "forcePixelsPerColumn"
+    coForcePixelsPerLine = "forcePixelsPerLine"
+    coFormatModeStatus = "status.formatMode"
+    coHeadless = "headless"
+    coHighlightMarks = "highlightMarks"
+    coHistory = "history"
+    coIgnoreCase = "ignoreCase"
+    coImageMode = "imageMode"
+    coImages = "images"
+    coMarkLinks = "markLinks"
+    coMetaRefresh = "metaRefresh"
+    coNoFormatMode = "noFormatMode"
+    coOsc52Copy = "osc52Copy"
+    coOsc52Primary = "osc52Primary"
+    coRefererFrom = "refererFrom"
+    coScripting = "scripting"
+    coSetTitle = "setTitle"
+    coShowCursorPosition = "showCursorPosition"
+    coShowDownloadPanel = "showDownloadPanel"
+    coShowHoverLink = "showHoverLink"
+    coStyling = "styling"
+    coUseMouse = "useMouse"
+    coViNumericPrefix = "viNumericPrefix"
+    coW3mCgiCompat = "w3mCgiCompat"
+    coWrap = "wrap"
+
+    # 4 bytes
+    coColumns = "columns"
+    coFormatModeDisplay = "display.formatMode"
+    coHistorySize = "historySize"
+    coLines = "lines"
+    coMaxNetConnections = "maxNetConnections"
+    coMaxRedirect = "maxRedirect"
+    coMinimumContrast = "minimumContrast"
+    coPixelsPerColumn = "pixelsPerColumn"
+    coPixelsPerLine = "pixelsPerLine"
+    coSideWheelScroll = "sideWheelScroll"
+    coSixelColors = "sixelColors"
+    coWheelScroll = "wheelScroll"
+
+    # 8 bytes
+    coDefaultBackgroundColor = "defaultBackgroundColor"
+    coDefaultForegroundColor = "defaultForegroundColor"
+    coHighlightColor = "highlightColor"
+
+    # string
+    coAutoMailcap = "autoMailcap"
+    coBookmark = "bookmark"
+    coCookieFile = "cookieFile"
+    coCopyCmd = "copyCmd"
+    coDownloadDir = "downloadDir"
+    coEditor = "editor"
+    coHistoryFile = "historyFile"
+    coLinkHintChars = "linkHintChars"
+    coPasteCmd = "pasteCmd"
+    coPrependScheme = "prependScheme"
+    coStartupScript = "startupScript"
+    coTmpdir = "tmpdir"
+    coUserStyle = "userStyle"
+    coVisualHome = "visualHome"
+
+    # seq[string]
+    coCgiDir = "cgiDir"
+    coInclude = "include"
+    coMailcap = "mailcap"
+    coMimeTypes = "mimeTypes"
+    coUrimethodmap = "urimethodmap"
+
+    # Note: if you add another of these, don't forget to add an
+    # array in Config too
+
+    # seq[Charset]
+    coDocumentCharset = "documentCharset"
+
+    # Headers
+    coDefaultHeaders = "defaultHeaders"
+
+    # URL
+    coProxy = "proxy"
+
+    # siteconf-only, not available in config
+    coAddEntry = "-cha-addEntry" # pseudo-rule for new entries
+    coFilterCmd = "filterCmd"
+    coHost = "host"
+    coInsecureSslNoVerify = "insecureSslNoVerify"
+    coMatch = "match"
+    coRewriteUrl = "rewriteUrl"
+    coShareCookieJar = "shareCookieJar"
+    coSubstituteUrl = "substituteUrl"
+    coUrl = "url"
+
+  ConfigOptionClass* = enum
+    cocBit, cocHWord, cocWord, cocStr, cocStrSeq, cocCharsetSeq, cocHeaders,
+    cocURL, cocRegex, cocFunction, cocClear
+
+  ConfigHeadersInit* = ref object
+    clear*: bool
+    s*: seq[HTTPHeader]
+
+  ConfigEntry* = object
+    section*: ConfigSection
+    opt*: ConfigOption
+    case t*: ConfigOptionClass
+    of cocBit:
+      bit*: ConfigOptionBit
+    of cocHWord:
+      hword*: ConfigOptionHWord
+    of cocWord:
+      word*: ConfigOptionWord
+    of cocStr:
+      str*: string
+    of cocStrSeq:
+      strSeq*: seq[string]
+    of cocCharsetSeq:
+      charsetSeq*: seq[Charset]
+    of cocHeaders:
+      headers*: ConfigHeadersInit
+    of cocURL:
+      url*: URL
+    of cocRegex:
+      regex*: Regex
+    of cocFunction:
+      fun*: pointer # JSObject *
+    of cocClear:
+      discard
+
+  ConfigRule* = ref object
     name: string
-    matchType*: SiteconfMatch
-    match*: Regex
-    o*: SiteConfigObj
-    next: SiteConfig
+    matchType*: SiteconfMatch # only used for siteconf
+    regex*: Regex # url for siteconf, match for omnirule
+    fun*: JSValue # substituteUrl for siteconf, rewriteUrl for omnirule
+    entries*: seq[ConfigEntry] # only used for siteconf
+    next: ConfigRule
 
-  OmniRule* = ref object
-    name: string
-    match*: Regex
-    substituteUrl*: JSValue
-    next: OmniRule
-
-  ConfigList[T] = object
-    head: T
-    tail: T
-
-  StartConfig = ref object
-    visualHome* {.jsgetset.}: string
-    startupScript* {.jsgetset.}: string
-    headless* {.jsgetset.}: HeadlessMode
-    consoleBuffer* {.jsgetset.}: bool
-
-  SearchConfig = ref object
-    wrap* {.jsgetset.}: bool
-    ignoreCase* {.jsgetset.}: RegexCase
-
-  StatusConfig = ref object
-    showCursorPosition* {.jsgetset.}: bool
-    showHoverLink* {.jsgetset.}: bool
-    formatMode* {.jsgetset.}: set[FormatFlag]
-
-  EncodingConfig = ref object
-    displayCharset* {.jsgetset.}: Option[Charset]
-    documentCharset* {.jsgetset.}: seq[Charset]
+  ConfigList = object
+    head: ConfigRule
+    tail: ConfigRule
 
   CommandConfig = object
     init*: seq[tuple[k, cmd: string]] # initial k/v map
 
-  ExternalConfig = ref object
-    tmpdir* {.jsgetset.}: ChaPathResolved
-    editor* {.jsgetset.}: string
-    mailcap* {.jsgetset.}: seq[ChaPathResolved]
-    autoMailcap* {.jsgetset.}: ChaPathResolved
-    mimeTypes* {.jsgetset.}: seq[ChaPathResolved]
-    cgiDir* {.jsgetset.}: seq[ChaPathResolved]
-    urimethodmap*: URIMethodMap
-    bookmark* {.jsgetset.}: ChaPathResolved
-    historyFile*: ChaPathResolved
-    historySize* {.jsgetset.}: int32
-    cookieFile*: ChaPathResolved
-    downloadDir* {.jsgetset.}: ChaPathResolved
-    showDownloadPanel* {.jsgetset.}: bool
-    w3mCgiCompat* {.jsgetset.}: bool
-    copyCmd* {.jsgetset.}: string
-    pasteCmd* {.jsgetset.}: string
+const OptionMap = [
+  coAllowHttpFromFile: (t: cotBool, section: csNetwork),
+  coAltScreen: (cotBoolAuto, csDisplay),
+  coAutofocus: (cotBool, csBuffer),
+  coBracketedPaste: (cotBoolAuto, csInput),
+  coColorMode: (cotColorModeAuto, csDisplay),
+  coConsoleBuffer: (cotBool, csStart),
+  coCookie: (cotCookieMode, csBuffer),
+  coDisplayCharset: (cotCharset, csEncoding),
+  coDoubleWidthAmbiguous: (cotBool, csDisplay),
+  coForceColumns: (cotBool, csDisplay),
+  coForceLines: (cotBool, csDisplay),
+  coForcePixelsPerColumn: (cotBool, csDisplay),
+  coForcePixelsPerLine: (cotBool, csDisplay),
+  coFormatModeStatus: (cotFormatMode, csStatus),
+  coHeadless: (cotHeadlessMode, csStart),
+  coHighlightMarks: (cotBool, csDisplay),
+  coHistory: (cotBool, csBuffer),
+  coIgnoreCase: (cotRegexCase, csSearch),
+  coImageMode: (cotImageModeAuto, csDisplay),
+  coImages: (cotBool, csBuffer),
+  coMarkLinks: (cotBool, csBuffer),
+  coMetaRefresh: (cotMetaRefresh, csBuffer),
+  coNoFormatMode: (cotFormatMode, csDisplay),
+  coOsc52Copy: (cotBoolAuto, csInput),
+  coOsc52Primary: (cotBoolAuto, csInput),
+  coRefererFrom: (cotBool, csBuffer),
+  coScripting: (cotScriptingMode, csBuffer),
+  coSetTitle: (cotBoolAuto, csDisplay),
+  coShowCursorPosition: (cotBool, csStatus),
+  coShowDownloadPanel: (cotBool, csExternal),
+  coShowHoverLink: (cotBool, csStatus),
+  coStyling: (cotBool, csBuffer),
+  coUseMouse: (cotBoolAuto, csInput),
+  coViNumericPrefix: (cotBool, csInput),
+  coW3mCgiCompat: (cotBool, csExternal),
+  coWrap: (cotBool, csSearch),
 
-  InputConfig = ref object
-    viNumericPrefix* {.jsgetset.}: bool
-    useMouse* {.jsgetset.}: Option[bool]
-    osc52Copy* {.jsgetset.}: Option[bool]
-    osc52Primary* {.jsgetset.}: Option[bool]
-    bracketedPaste* {.jsgetset.}: Option[bool]
-    wheelScroll* {.jsgetset.}: int32
-    sideWheelScroll* {.jsgetset.}: int32
-    linkHintChars*: CodepointSet
+  coColumns: (cotInt32, csDisplay),
+  coFormatModeDisplay: (cotFormatModeAuto, csDisplay),
+  coHistorySize: (cotInt32, csExternal),
+  coLines: (cotInt32, csDisplay),
+  coMaxNetConnections: (cotInt32, csNetwork),
+  coMaxRedirect: (cotInt32, csNetwork),
+  coMinimumContrast: (cotInt32, csDisplay),
+  coPixelsPerColumn: (cotInt32, csDisplay),
+  coPixelsPerLine: (cotInt32, csDisplay),
+  coSideWheelScroll: (cotInt32, csInput),
+  coSixelColors: (cotInt32Auto, csDisplay),
+  coWheelScroll: (cotInt32, csInput),
 
-  NetworkConfig = ref object
-    maxRedirect* {.jsgetset.}: int32
-    maxNetConnections* {.jsgetset.}: int32
-    prependScheme* {.jsgetset.}: string
-    proxy* {.jsgetset.}: URL
-    defaultHeaders* {.jsgetset.}: Headers
-    allowHttpFromFile* {.jsgetset.}: bool
+  coDefaultBackgroundColor: (cotRGBColorAuto, csDisplay),
+  coDefaultForegroundColor: (cotRGBColorAuto, csDisplay),
+  coHighlightColor: (cotCSSColor, csDisplay),
 
-  DisplayConfig = ref object
-    colorMode* {.jsgetset.}: Option[ColorMode]
-    formatMode* {.jsgetset.}: Option[set[FormatFlag]]
-    noFormatMode* {.jsgetset.}: set[FormatFlag]
-    imageMode* {.jsgetset.}: Option[ImageMode]
-    sixelColors* {.jsgetset.}: Option[int32]
-    altScreen* {.jsgetset.}: Option[bool]
-    highlightColor* {.jsgetset.}: CSSColor
-    highlightMarks* {.jsgetset.}: bool
-    doubleWidthAmbiguous* {.jsgetset.}: bool
-    minimumContrast* {.jsgetset.}: int32
-    setTitle* {.jsgetset.}: Option[bool]
-    defaultBackgroundColor* {.jsgetset.}: Option[RGBColor]
-    defaultForegroundColor* {.jsgetset.}: Option[RGBColor]
-    columns* {.jsgetset.}: int32
-    lines* {.jsgetset.}: int32
-    pixelsPerColumn* {.jsgetset.}: int32
-    pixelsPerLine* {.jsgetset.}: int32
-    forceColumns* {.jsgetset.}: bool
-    forceLines* {.jsgetset.}: bool
-    forcePixelsPerColumn* {.jsgetset.}: bool
-    forcePixelsPerLine* {.jsgetset.}: bool
+  coAutoMailcap: (cotPath, csExternal),
+  coBookmark: (cotPath, csExternal),
+  coCookieFile: (cotPath, csExternal),
+  coCopyCmd: (cotString, csExternal),
+  coDownloadDir: (cotPath, csExternal),
+  coEditor: (cotPath, csExternal),
+  coHistoryFile: (cotPath, csExternal),
+  coLinkHintChars: (cotCodepointSet, csInput),
+  coPasteCmd: (cotString, csExternal),
+  coPrependScheme: (cotString, csNetwork),
+  coStartupScript: (cotString, csStart),
+  coTmpdir: (cotPath, csExternal),
+  coUserStyle: (cotStylesheet, csBuffer),
+  coVisualHome: (cotString, csStart),
 
-  BufferSectionConfig* = ref object
-    styling* {.jsgetset.}: bool
-    scripting* {.jsgetset.}: ScriptingMode
-    images* {.jsgetset.}: bool
-    cookie* {.jsgetset.}: CookieMode
-    refererFrom* {.jsgetset.}: bool
-    autofocus* {.jsgetset.}: bool
-    metaRefresh* {.jsgetset.}: MetaRefresh
-    history* {.jsgetset.}: bool
-    markLinks* {.jsgetset.}: bool
-    userStyle*: StyleString #TODO getset
+  coCgiDir: (cotPathSeq, csExternal),
+  coInclude: (cotPathSeq, csNone),
+  coMailcap: (cotPathSeq, csExternal),
+  coMimeTypes: (cotPathSeq, csExternal),
+  coUrimethodmap: (cotPathSeq, csExternal),
 
-  Config* = ref object
-    arraySeen*: TableRef[string, int] # table arrays seen
+  coDocumentCharset: (cotCharsetSeq, csEncoding),
+
+  coDefaultHeaders: (cotHeaders, csNetwork),
+
+  coProxy: (cotURL, csNetwork),
+
+  coAddEntry: (cotString, csSiteconf),
+  coFilterCmd: (cotString, csSiteconf),
+  coHost: (cotRegex, csSiteconf),
+  coInsecureSslNoVerify: (cotBool, csSiteconf),
+  coMatch: (cotRegex, csOmnirule),
+  coRewriteUrl: (cotFunction, csSiteconf),
+  coShareCookieJar: (cotString, csSiteconf),
+  coSubstituteUrl: (cotFunction, csOmnirule),
+  coUrl: (cotRegex, csSiteconf),
+]
+
+const FirstBitOpt = ConfigOption.low
+const LastBitOpt = coWrap
+const FirstHWordOpt = LastBitOpt.succ
+const LastHWordOpt = coWheelScroll
+const FirstWordOpt = LastHWordOpt.succ
+const LastWordOpt = coHighlightColor
+const FirstStrOpt = LastWordOpt.succ
+const LastStrOpt = coVisualHome
+const FirstStrSeqOpt = LastStrOpt.succ
+const LastStrSeqOpt = coUrimethodmap
+
+const SiteconfOptions = {
+  coCookie, coScripting, coRefererFrom, coImages, coStyling,
+  coInsecureSslNoVerify, coAutofocus, coMetaRefresh, coHistory, coMarkLinks,
+  coShareCookieJar, coUserStyle, coFilterCmd, coDocumentCharset, coProxy,
+  coDefaultHeaders
+}
+
+type
+  Config* = ref ConfigObj
+
+  ConfigObj = object
+    bits*: array[FirstBitOpt..LastBitOpt, ConfigOptionBit]
+    hwords*: array[FirstHWordOpt..LastHWordOpt, ConfigOptionHWord]
+    words*: array[FirstWordOpt..LastWordOpt, ConfigOptionWord]
+    strs*: array[FirstStrOpt..LastStrOpt, string]
+    strSeqs*: array[FirstStrSeqOpt..LastStrSeqOpt, seq[string]]
+    # we only have one of these types, so no arrays
+    documentCharset*: seq[Charset]
+    defaultHeaders*: Headers
+    proxy*: URL
     dir* {.jsget.}: string
     dataDir* {.jsget.}: string
-    start* {.jsget.}: StartConfig
-    buffer* {.jsget.}: BufferSectionConfig
-    search* {.jsget.}: SearchConfig
-    encoding* {.jsget.}: EncodingConfig
-    external* {.jsget.}: ExternalConfig
-    network* {.jsget.}: NetworkConfig
-    input* {.jsget.}: InputConfig
-    display* {.jsget.}: DisplayConfig
-    status* {.jsget.}: StatusConfig
     #TODO getset
-    siteconf*: ConfigList[SiteConfig]
-    omnirule*: ConfigList[OmniRule]
+    lists*: array[csSiteconf..csOmnirule, ConfigList]
     ruleSeen: HashSet[string]
     cmd*: CommandConfig
-    page* {.jsget.}: ActionMap
-    line* {.jsget.}: ActionMap
+    actionMap*: array[csPage..csLine, ActionMap]
+
+  TomlState = enum
+    tsTable
+    tsArray
+    tsMultiStringSimple
+    tsMultiStringDouble
+
+  TomlType = enum
+    ttString = "string"
+    ttMultiString = "multi-string"
+    ttInteger = "integer"
+    ttFloat = "float"
+    ttBoolean = "boolean"
+    ttTable = "table"
+    ttArray = "array"
+
+  BeforeKey = object
+    keyLen: int
+    section: ConfigSection
+    opt: ConfigOption
+    addEntrySeen: bool
 
   ConfigParser = object
-    jsctx: JSContext
+    ctx: JSContext
     config: Config
-    dir: string
+    dir: string # CWD for -o, config.dir otherwise
+    filename: string
+    key: string # user-specified key
+    buf: string # last consumed string
     warnings: seq[string]
+    states: seq[TomlState]
+    arr: seq[string]
+    entries: seq[ConfigEntry]
+    # these sections have user-defined keys, so we prevent dupes like this
+    keysSeen: array[csCmd..csOmnirule, HashSet[string]]
+    tableArrayCount: array[csSiteconf..csOmnirule, uint32]
+    error: string
+    line: int
+    beforeKey: BeforeKey
+    ival: int32
+    tt: TomlType
+    bval: bool
+    laxnames: bool
+    commaSeen: bool
+    section: ConfigSection
+    opt: ConfigOption
+    sectionsSeen: set[ConfigSection]
+    optionsSeen: set[ConfigOption]
+    # cleared on every new siteconf/omnirule
+    ruleOptionsSeen: set[ConfigOption]
 
 jsDestructor(ActionMap)
-jsDestructor(StartConfig)
-jsDestructor(SearchConfig)
-jsDestructor(EncodingConfig)
-jsDestructor(ExternalConfig)
-jsDestructor(NetworkConfig)
-jsDestructor(InputConfig)
-jsDestructor(DisplayConfig)
-jsDestructor(BufferSectionConfig)
 jsDestructor(Config)
-jsDestructor(StatusConfig)
+
+when defined(gcDestructors):
+  proc `=destroy`*(a: var ConfigOptionBit) =
+    discard
+
+  proc `=destroy`*(a: var ConfigOptionHWord) =
+    discard
+
+  proc `=destroy`*(a: var ConfigOptionWord) =
+    discard
+
+  proc `=copy`*(a: var ConfigOptionBit; b: ConfigOptionBit) =
+    copyMem(addr a, unsafeAddr b, sizeof(a))
+
+  proc `=copy`*(a: var ConfigOptionHWord; b: ConfigOptionHWord) =
+    copyMem(addr a, unsafeAddr b, sizeof(a))
+
+  proc `=copy`*(a: var ConfigOptionWord; b: ConfigOptionWord) =
+    copyMem(addr a, unsafeAddr b, sizeof(a))
 
 # Forward declarations
-proc parseValue[T: object](ctx: var ConfigParser; x: var T; v: TomlValue;
-  k: string): Err[string]
-proc parseValue[T: ref object](ctx: var ConfigParser; x: var T; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var string; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var ChaPath; v: TomlValue;
-  k: string): Err[string]
-proc parseValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var HeadlessMode; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
-  k: string): Err[string]
-proc parseValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var CSSColor; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
-  k: string): Err[string]
-proc parseValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
-  k: string): Err[string]
-proc parseValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var RegexCase; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var JSValue; v: TomlValue; k: string):
-  Err[string]
-proc parseValue(ctx: var ConfigParser; x: var ChaPathResolved;
-  v: TomlValue; k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var Headers; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: var CodepointSet; v: TomlValue;
-  k: string): Err[string]
-proc parseValue[T](ctx: var ConfigParser; x: var ConfigList[T]; v: TomlValue;
-  k: string): Err[string]
-proc parseValue(ctx: var ConfigParser; x: SiteConfig; v: TomlValue; k: string):
-  Err[string]
-proc parseValue(ctx: var ConfigParser; x: OmniRule; v: TomlValue; k: string):
-  Err[string]
+proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void]
+proc parseConfigValue(cp: var ConfigParser): Opt[void]
+proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string
 
-proc evalCmdDecl(ctx: JSContext; s: string): JSValue
-proc getRealKey(key: openArray[char]; warnings: var seq[string]): string
+static:
+  doAssert sizeof(ConfigOptionBit) == 1
+  doAssert sizeof(ConfigOptionHWord) == 4
+  doAssert sizeof(ConfigOptionWord) == 8
+
+proc parseOption(s: openArray[char]): Opt[ConfigOption] =
+  return strictParseEnum[ConfigOption](s)
+
+proc optionType(o: ConfigOption): ConfigOptionType =
+  return OptionMap[o].t
+
+proc section(o: ConfigOption): ConfigSection =
+  return OptionMap[o].section
+
+macro `{}`*(config: Config; s: static string): untyped =
+  let t = parseOption(s).get
+  let om = OptionMap[t]
+  let ot = om.t
+  if om.section == csSiteconf:
+    error("value only available in siteconf")
+  let vs = ident($ot)
+  case ot
+  of cotBool..cotScriptingMode:
+    return quote do:
+      `config`.bits[ConfigOption(`t`)].`vs`
+  of cotInt32..cotFormatModeAuto:
+    return quote do:
+      `config`.hwords[ConfigOption(`t`)].`vs`
+  of cotCSSColor..cotRGBColorAuto:
+    return quote do:
+      `config`.words[ConfigOption(`t`)].`vs`
+  of cotString..cotCodepointSet:
+    return quote do:
+      `config`.strs[ConfigOption(`t`)]
+  of cotCharsetSeq:
+    return quote do:
+      `config`.documentCharset
+  of cotPathSeq:
+    return quote do:
+      `config`.strSeqs[ConfigOption(`t`)]
+  of cotHeaders:
+    return quote do:
+      `config`.defaultHeaders
+  of cotURL:
+    return quote do:
+      `config`.proxy
+  of cotRegex, cotFunction: # only used in omnirule/siteconf
+    error("no such config value")
+
+proc page*(config: Config): lent ActionMap {.jsfget.} =
+  config.actionMap[csPage]
+
+proc line*(config: Config): lent ActionMap {.jsfget.} =
+  config.actionMap[csLine]
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-  warnings: var seq[string]; jsctx: JSContext; name: string; laxnames = false):
+  warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
   Err[string]
 
 proc finalize(rt: JSRuntime; map: ActionMap) {.jsfin.} =
@@ -317,6 +594,107 @@ proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, map.defaultAction, markFunc)
   for it in map.t:
     JS_MarkValue(rt, it.val, markFunc)
+
+template siteconf*(config: Config): ConfigList =
+  config.lists[csSiteconf]
+
+template omnirule*(config: Config): ConfigList =
+  config.lists[csOmnirule]
+
+proc get*(ba: BoolAuto; b: bool): bool =
+  case ba
+  of baAuto: return b
+  of baTrue: return true
+  of baFalse: return false
+
+template isSome*(ba: BoolAuto): bool =
+  ba != baAuto
+
+template isNone*(ba: BoolAuto): bool =
+  ba == baAuto
+
+template get*(ba: BoolAuto): bool =
+  ba == baTrue
+
+template defineAuto(typ, other: untyped) =
+  template isSome*(v: typ): bool =
+    uint8(v) > 0
+
+  template isNone*(v: typ): bool =
+    uint8(v) == 0
+
+  template get*(v: typ): other =
+    other(uint8(v) - 1)
+
+  proc toJS*(ctx: JSContext; v: typ): JSValue =
+    if v.isSome:
+      return ctx.toJS(v.get)
+    return JS_NULL
+
+  proc fromJS*(ctx: JSContext; val: JSValueConst; res: var typ): FromJSResult =
+    if not JS_IsNull(val):
+      res = typ(0)
+    else:
+      var res2: other
+      ?ctx.fromJS(val, res2)
+      res = typ(uint(res2) + 1)
+    fjOk
+
+defineAuto(ColorModeAuto, ColorMode)
+defineAuto(ImageModeAuto, ImageMode)
+
+template isSome*(v: FormatModeAuto): bool =
+  uint32(v) > 0
+
+template get*(v: FormatModeAuto): FormatMode =
+  cast[set[FormatFlag]](uint32(v) - 1)
+
+proc toJS*(ctx: JSContext; v: FormatModeAuto): JSValue =
+  if v.isSome:
+    return ctx.toJS(v.get)
+  return JS_NULL
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var FormatModeAuto):
+    FromJSResult =
+  if JS_IsNull(val):
+    res = FormatModeAuto(0)
+  else:
+    var res2: FormatMode
+    ?ctx.fromJS(val, res2)
+    res = FormatModeAuto(cast[uint32](res2) + 1)
+  fjOk
+
+template isSome*(v: RGBColorAuto): bool =
+  int64(v) > 0
+
+template isNone*(v: RGBColorAuto): bool =
+  int64(v) == 0
+
+template get*(v: RGBColorAuto): RGBColor =
+  cast[RGBColor](int64(v))
+
+proc toJS*(ctx: JSContext; v: RGBColorAuto): JSValue =
+  if v.isSome:
+    return ctx.toJS(v.get)
+  return JS_NULL
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColorAuto):
+    FromJSResult =
+  if JS_IsNull(val):
+    res = RGBColorAuto(0)
+  else:
+    var res2: RGBColor
+    ?ctx.fromJS(val, res2)
+    res = RGBColorAuto(uint64(res2) + 1)
+  fjOk
+
+proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
+  if s.len == 0:
+    return JS_UNDEFINED
+  if AllChars - AsciiAlphaNumeric - {'_', '$', '.'} notin s and
+      not s.startsWith("cmd."):
+    return ctx.compileScript("cmd." & s, "<command>")
+  return ctx.compileScript(s, "<command>")
 
 proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
   let map = ActionMap(defaultAction: JS_UNDEFINED)
@@ -330,7 +708,7 @@ proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
       if j == -1:
         if i == 0:
           break
-        var key = getRealKey(it.toOpenArray(0, i - 2), dummy)
+        var key = parseKeyComb(it.toOpenArray(0, i - 2), dummy)
         let val = ctx.evalCmdDecl(it.substr(i))
         map.t.add(Action(k: move(key), val: val, n: map.num))
         inc map.num
@@ -338,39 +716,31 @@ proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
       i = j + 1
   map
 
-iterator items*[T](list: ConfigList[T]): T =
+iterator items*(list: ConfigList): ConfigRule =
   var it = list.head
   while it != nil:
     yield it
     it = it.next
 
-proc add[T](list: var ConfigList[T]; x: T) =
+proc add(list: var ConfigList; x: ConfigRule) =
   if list.tail == nil:
     list.head = x
   else:
     list.tail.next = x
   list.tail = x
 
-# ASCII only
-proc initCodepointSet(s: cstring): CodepointSet =
-  result = CodepointSet()
-  for c in s:
-    result.s.add(uint32(c))
-
-proc free(ctx: JSContext; rule: OmniRule) =
-  JS_FreeValue(ctx, rule.substituteUrl)
-
-proc free(ctx: JSContext; rule: SiteConfig) =
-  if rule.o.rewriteUrl.isSome:
-    JS_FreeValue(ctx, rule.o.rewriteUrl.get)
-
-proc freeValues*[T](ctx: JSContext; list: ConfigList[T]) =
+proc freeValues*(ctx: JSContext; list: ConfigList) =
   for it in list:
-    ctx.free(it)
+    JS_FreeValue(ctx, it.fun)
 
-proc remove[T](ctx: JSContext; list: var ConfigList[T]; name: string) =
+proc clear(ctx: JSContext; list: var ConfigList) =
+  ctx.freeValues(list)
+  list.head = nil
+  list.tail = nil
+
+proc remove(ctx: JSContext; list: var ConfigList; name: string) =
   var it = list.head
-  var prev: T = nil
+  var prev: ConfigRule = nil
   while it != nil:
     if it.name == name:
       let next = move(it.next)
@@ -380,7 +750,8 @@ proc remove[T](ctx: JSContext; list: var ConfigList[T]; name: string) =
         prev.next = next
       if next == nil:
         list.tail = nil
-      ctx.free(it)
+      it.next = nil
+      JS_FreeValue(ctx, it.fun)
       break
     prev = it
     it = it.next
@@ -395,19 +766,18 @@ proc addOmniRule(ctx: JSContext; config: Config; name: string;
     return JS_ThrowTypeError(ctx, "function expected")
   if config.ruleSeen.containsOrIncl(name): # replace
     ctx.remove(config.omnirule, name)
-  config.omnirule.add(OmniRule(
+  config.omnirule.add(ConfigRule(
     name: name,
-    match: bytecodeToRegex(cast[REBytecode](p), len),
-    substituteUrl: JS_DupValue(ctx, fun)
+    regex: bytecodeToRegex(cast[REBytecode](p), len),
+    fun: JS_DupValue(ctx, fun)
   ))
   return JS_UNDEFINED
 
-proc `$`*(p: ChaPathResolved): lent string =
-  string(p)
-
-proc fromJS(ctx: JSContext; val: JSValueConst; res: var ChaPathResolved):
-    FromJSResult =
-  ctx.fromJS(val, string(res))
+proc toJS*(ctx: JSContext; b: BoolAuto): JSValue =
+  case b
+  of baAuto: return JS_NULL
+  of baFalse: return JS_FALSE
+  of baTrue: return JS_TRUE
 
 proc toJS*(ctx: JSContext; cookie: CookieMode): JSValue =
   case cookie
@@ -426,9 +796,6 @@ proc toJS*(ctx: JSContext; val: ScriptingMode): JSValue =
   of smTrue: return JS_TRUE
   of smFalse: return JS_FALSE
   of smApp: return JS_NewString(ctx, "app")
-
-proc toJS*(ctx: JSContext; p: ChaPathResolved): JSValue =
-  ctx.toJS($p)
 
 proc sort(ctx: JSContext; map: ActionMap) =
   map.t.sort(proc(a, b: Action): int =
@@ -543,7 +910,7 @@ proc toXTermMod(mods: set[KeyModifier]): uint8 =
   elif mods == {kmMeta, kmControl, kmShift}: 14
   else: 0
 
-proc getRealKey(key: openArray[char]; warnings: var seq[string]): string =
+proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string =
   var realk = ""
   var i = 0
   var mods: set[KeyModifier] = {}
@@ -667,7 +1034,7 @@ proc getRealKey(key: openArray[char]; warnings: var seq[string]): string =
 
 proc find(a: ActionMap; s: string): int =
   var dummy: seq[string]
-  let rk = getRealKey(s, dummy)
+  let rk = parseKeyComb(s, dummy)
   return a.t.binarySearch(rk, proc(x: Action; k: string): int = cmp(x.k, k))
 
 proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue {.jsgetownprop.} =
@@ -676,18 +1043,10 @@ proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue {.jsgetownprop.} =
     return JS_UNINITIALIZED
   return JS_DupValue(ctx, a.t[i].val)
 
-proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
-  if s.len == 0:
-    return JS_UNDEFINED
-  if AllChars - AsciiAlphaNumeric - {'_', '$', '.'} notin s and
-      not s.startsWith("cmd."):
-    return ctx.compileScript("cmd." & s, "<command>")
-  return ctx.compileScript(s, "<command>")
-
 proc setter(ctx: JSContext; a: ActionMap; k: string; val: JSValueConst):
     Opt[void] {.jssetprop.} =
   var dummy: seq[string]
-  let rk = getRealKey(k, dummy)
+  let rk = parseKeyComb(k, dummy)
   if rk == "":
     return ok()
   let val2 = if JS_IsFunction(ctx, val):
@@ -717,343 +1076,6 @@ proc names(ctx: JSContext; a: ActionMap): JSPropertyEnumList
     list.add(it.k)
   return list
 
-proc jsLinkHintChars(ctx: JSContext; input: InputConfig): JSValue
-    {.jsfget: "linkHintChars".} =
-  var vals: seq[JSValue] = @[]
-  block good:
-    var buf = ""
-    for u in input.linkHintChars.s:
-      buf.setLen(0)
-      buf.addUTF8(u)
-      let val = ctx.toJS(buf)
-      if JS_IsException(val):
-        break good
-      vals.add(val)
-    return ctx.newArrayFrom(vals)
-  ctx.freeValues(vals)
-  return JS_EXCEPTION
-
-proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
-  if v.t != t:
-    return err(k & ": invalid type (got " & $v.t & ", expected " & $t & ")")
-  ok()
-
-proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string): Err[string] =
-  if v.t notin t:
-    return err(k & ": invalid type (got " & $v.t & ", expected " & $t & ")")
-  ok()
-
-proc warnValuesLeft(ctx: var ConfigParser; v: TomlValue; k: string) =
-  for fk in v.keys:
-    ctx.warnings.add("unrecognized option " & k & fk)
-
-proc parseValue[T: object](ctx: var ConfigParser; x: var T; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  if v.tab.clear:
-    x = default(typeof(x))
-  let k = k & '.'
-  for fk, fv in x.fieldPairs:
-    const kebabk = camelToKebabCase(fk)
-    var x: TomlValue
-    if v.pop(kebabk, x):
-      ?ctx.parseValue(fv, x, k & kebabk)
-  ctx.warnValuesLeft(v, k)
-  ok()
-
-proc parseValue[T: ref object](ctx: var ConfigParser; x: var T; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  if x == nil:
-    new(x)
-  ctx.parseValue(x[], v, k)
-
-proc parseValue(ctx: var ConfigParser; x: var Headers; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  if v.tab.clear or x == nil:
-    x = newHeaders(hgRequest)
-  for kk, vv in v:
-    ?typeCheck(vv, tvtString, k & "[" & kk & "]")
-    x[kk] = vv.s
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var CodepointSet; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  x = CodepointSet()
-  var seen = initHashSet[uint32]()
-  for u in v.s.points:
-    if seen.containsOrIncl(u):
-      return err(k & ": duplicate codepoint '" & u.toUTF8() & "'")
-    if x.s.len > int(cint.high):
-      return err(k & ": too many values")
-    x.s.add(u)
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: OmniRule; v: TomlValue;
-    k: string): Err[string] =
-  var vv: TomlValue
-  if not v.pop("match", vv):
-    return err(k & ": missing match")
-  ?ctx.parseValue(x.match, vv, k & '.' & "match")
-  if not v.pop("substitute-url", vv):
-    return err(k & ": missing substitute-url")
-  ?ctx.parseValue(x.substituteUrl, vv, k & '.' & "substitute-url")
-  ctx.warnValuesLeft(v, k)
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: SiteConfig; v: TomlValue;
-    k: string): Err[string] =
-  var match: TomlValue
-  let isHost = v.pop("host", match)
-  if isHost == v.pop("url", match):
-    return err(k & ": either host or url must be specified (but not both)")
-  x.matchType = if isHost: smHost else: smUrl
-  ?ctx.parseValue(x.match, match, k & '.' & "match")
-  ctx.parseValue(x.o, v, k)
-
-proc parseValue[T](ctx: var ConfigParser; x: var ConfigList[T]; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  if v.tab.clear:
-    x.head = nil
-    x.tail = nil
-  for kk, vv in v:
-    let kkk = k & '.' & kk
-    ?typeCheck(vv, tvtTable, kkk)
-    let rule = T(name: kk)
-    ?ctx.parseValue(rule, vv, kkk)
-    if ctx.config.ruleSeen.containsOrIncl(kk): # replace
-      ctx.jsctx.remove(x, kk)
-    x.add(rule)
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtBoolean, k)
-  x = v.b
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var string; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  x = v.s
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var ChaPath;
-    v: TomlValue; k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  x = ChaPath(v.s)
-  ok()
-
-proc parseValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, {tvtString, tvtArray}, k)
-  if v.t != tvtArray:
-    var y: typeof(x[0])
-    ?ctx.parseValue(y, v, k)
-    x = @[move(y)]
-  else:
-    x.setLen(0)
-    for i in 0 ..< v.a.len:
-      var y: typeof(x[0])
-      ?ctx.parseValue(y, v.a[i], k & "[" & $i & "]")
-      x.add(move(y))
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  x = getCharset(v.s)
-  if x == CHARSET_UNKNOWN:
-    return err(k & ": unknown charset '" & v.s & "'")
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtInteger, k)
-  x = int32(v.i)
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtInteger, k)
-  x = v.i
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, {tvtString, tvtBoolean}, k)
-  if v.t == tvtBoolean:
-    x = if v.b: smTrue else: smFalse
-  elif v.s == "app":
-    x = smApp
-  else:
-    return err(k & ": unknown scripting mode '" & v.s & "'")
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var HeadlessMode; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, {tvtString, tvtBoolean}, k)
-  if v.t == tvtBoolean:
-    x = if v.b: hmTrue else: hmFalse
-  elif v.s == "dump":
-    x = hmDump
-  else:
-    return err(k & ": unknown headless mode '" & v.s & "'")
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, {tvtString, tvtBoolean}, k)
-  if v.t == tvtBoolean:
-    x = if v.b: cmReadOnly else: cmNone
-  elif v.s == "save":
-    x = cmSave
-  else:
-    return err(k & ": unknown cookie mode '" & v.s & "'")
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var CSSColor; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  var ctx = initCSSParser(v.s)
-  let c = ctx.parseColor()
-  if c.isErr or ctx.has() or c.get.t == cctCurrent:
-    return err(k & ": invalid color '" & v.s & "'")
-  x = c.get
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  let c = parseLegacyColor(v.s)
-  if c.isErr:
-    return err(k & ": invalid color '" & v.s & "'")
-  x = c.get
-  ok()
-
-proc parseValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
-    k: string): Err[string] =
-  if v.t == tvtString and v.s == "auto":
-    x = none(typeof(x.get))
-  else:
-    var y: typeof(x.get)
-    ?ctx.parseValue(y, v, k)
-    x = some(move(y))
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  for kk, vv in v:
-    ?typeCheck(vv, tvtString, k & "[" & kk & "]")
-    let rk = getRealKey(kk, ctx.warnings)
-    let jsctx = ctx.jsctx
-    let val = jsctx.evalCmdDecl(vv.s)
-    if JS_IsException(val):
-      return err(jsctx.getExceptionMsg())
-    x.t.add(Action(k: rk, val: val, n: x.num))
-    inc x.num
-  ok()
-
-proc parseValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  let e = strictParseEnum[typeof(x)](v.s)
-  if e.isErr:
-    var buf = k & ": invalid value '" & v.s & "', expected one of ["
-    for e in typeof(x):
-      buf &= '"'
-      buf &= $e
-      buf &= "\", "
-    buf.setLen(buf.high)
-    buf[^1] = ']'
-    return err(buf)
-  x = e.get
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var RegexCase; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, {tvtBoolean, tvtString}, k)
-  if v.t == tvtBoolean:
-    x = if v.b: rcIgnore else: rcStrict
-  else: # string
-    if v.s != "auto":
-      return err(k & ": invalid value '" & v.s & "'")
-    x = rcAuto
-  ok()
-
-proc parseValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, {tvtString, tvtArray}, k)
-  if v.t == tvtString:
-    var xx: T
-    ?ctx.parseValue(xx, v, k)
-    x = {xx}
-  else:
-    x = {}
-    for i in 0 ..< v.a.len:
-      let kk = k & "[" & $i & "]"
-      var xx: T
-      ?ctx.parseValue(xx, v.a[i], kk)
-      x.incl(xx)
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  let y = compileMatchRegex(v.s)
-  if y.isErr:
-    return err(k & ": invalid regex (" & y.error & ")")
-  x = y.get
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  let y = parseURL0(v.s)
-  if y == nil:
-    return err(k & ": invalid URL " & v.s)
-  x = y
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var JSValue; v: TomlValue; k: string):
-    Err[string] =
-  ?typeCheck(v, tvtString, k)
-  let fun = ctx.jsctx.eval(v.s, "<config>", JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(fun):
-    return err(k & ": " & ctx.jsctx.getExceptionMsg())
-  if not JS_IsFunction(ctx.jsctx, fun):
-    return err(k & ": not a function")
-  x = fun
-  ok()
-
-proc parseValue(ctx: var ConfigParser; x: var ChaPathResolved;
-    v: TomlValue; k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  let y = ChaPath(v.s).unquote(ctx.config.dir)
-  if y.isErr:
-    return err(k & ": " & y.error)
-  x = ChaPathResolved(y.get)
-  ok()
-
-const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
-
-proc parseValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
-    k: string): Err[string] =
-  var paths: seq[ChaPathResolved]
-  ?ctx.parseValue(paths, v, k)
-  x = URIMethodMap.default
-  for p in paths:
-    let ps = newPosixStream($p)
-    if ps != nil:
-      x.parseURIMethodMap(ps.readAll())
-      ps.sclose()
-  x.append(DefaultURIMethodMap)
-  ok()
-
 proc isCompatibleIdent(s: string): bool =
   if s.len == 0 or s[0] notin AsciiAlpha + {'_', '$'}:
     return false
@@ -1062,33 +1084,496 @@ proc isCompatibleIdent(s: string): bool =
       return false
   return true
 
-proc parseValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  for kk, vv in v:
-    let kkk = k & "." & kk
-    ?typeCheck(vv, {tvtTable, tvtString}, kkk)
-    if not kk.isCompatibleIdent():
-      return err(kkk & ": invalid command name")
-    if k in ["cmd", "cmd.pager", "cmd.buffer"]:
-      if vv.t == tvtTable:
-        if AsciiUpperAlpha in kk:
-          ctx.warnings.add(kkk &
-            ": the first component of namespaces must be lower-case.")
-      else: # tvtString
-        ctx.warnings.add("Please move " & kkk &
-          " to your own namespace (e.g. [cmd.me]) to avoid name clashes.")
-    if vv.t == tvtTable:
-      ?ctx.parseValue(x, vv, kkk)
-    else: # tvtString
-      x.init.add((kkk.substr("cmd.".len), vv.s))
+const ValidBare = AsciiAlphaNumeric + {'-', '_'}
+
+proc setError(cp: var ConfigParser; msg: string) =
+  #TODO add line etc later?
+  cp.error = cp.filename & "(" & $cp.line & "): " & msg
+
+template err(cp: var ConfigParser; msg: string): untyped =
+  cp.setError(msg)
+  err()
+
+proc warn(cp: var ConfigParser; msg: string) =
+  cp.warnings.add(cp.filename & "(" & $cp.line & "): " & msg)
+
+proc expect(cp: var ConfigParser; c: char; line: string; n: var int):
+    Opt[void] =
+  let m = n
+  if m >= line.len:
+    return cp.err("expected `" & c & "', got end of line")
+  let nc = line[m]
+  if nc != c:
+    return cp.err("expected `" & c & "', got `" & nc & "'")
+  inc n
   ok()
 
-proc parseValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
+proc expectEOL(cp: var ConfigParser; line: string; n: int): Opt[void] =
+  if n < line.len and line[n] != '#':
+    return cp.err("unexpected character `" & line[n] & '\'')
+  ok()
+
+proc skipTomlBlanks(line: openArray[char]; n: int): int =
+  var n = n
+  while n < line.len:
+    if line[n] notin {' ', '\t'}:
+      break
+    inc n
+  n
+
+proc consumeEscape(cp: var ConfigParser; line: openArray[char]; c: char;
+    res: var string; n: int): Opt[n] =
+  var n = n
+  case c
+  of 'b': res &= '\b'
+  of 't': res &= '\t'
+  of 'n': res &= '\n'
+  of 'f': res &= '\f'
+  of 'r': res &= '\r'
+  of '"': res &= '"'
+  of '\\': res &= '\\'
+  of 'u', 'U':
+    var last = n + 4
+    if c == 'U':
+      last = n + 8
+    let c = line[n]
+    inc n
+    var num = 0'u32
+    let val = hexValue(c)
+    if val == -1:
+      return cp.err("invalid escaped codepoint: " & $c)
+    num = uint32(val)
+    while n < last:
+      let val = hexValue(line[n])
+      if val == -1:
+        break
+      num *= 0x10
+      num += uint32(val)
+      inc n
+    if n != last:
+      return cp.err("invalid escaped length")
+    if num > 0x10FFFF or num in 0xD800'u32..0xDFFF'u32:
+      return cp.err("invalid escaped codepoint: " & $num)
+    res.addUTF8(num)
+  of '$': res &= "\\$" # special case for substitution in paths
+  else: return cp.err("invalid escape sequence \\" & c)
+  ok(n)
+
+# Consume a string and store it in cp.buf.
+# If `camel' is true, the buffer is converted to camel-case from
+# kebab-case.
+proc consumeKeyString(cp: var ConfigParser; camel: bool; line: string;
+    first: char; n: int): Opt[int] =
+  var n = n
+  var escape = false
+  var upper = false
+  while n < line.len:
+    var c = line[n]
+    inc n
+    if escape:
+      n = ?cp.consumeEscape(line, c, cp.buf, n)
+      escape = false
+    elif c == first:
+      break
+    elif first == '"' and c == '\\':
+      escape = true
+    elif c == '-' and camel:
+      upper = true
+    else:
+      if upper:
+        c = c.toUpperAscii()
+        upper = false
+      cp.buf &= c
+  if escape:
+    return cp.err("invalid escape sequence \\ LF")
+  ok(n)
+
+# Consume a bare token, and store it camel-cased in cp.buf.
+proc consumeBare(cp: var ConfigParser; camel: bool; line: string; n: int):
+    Opt[int] =
+  var n = n
+  var upper = false
+  while n < line.len:
+    var c = line[n]
+    case c
+    of ' ', '\t': discard
+    of '.', '=', ']':
+      break
+    elif c == '-' and camel:
+      upper = true
+    elif c in ValidBare:
+      if upper:
+        c = c.toUpperAscii()
+        upper = false
+      cp.buf &= c
+    else:
+      return cp.err("invalid value in token: " & c)
+    inc n
+  ok(n)
+
+proc consumeKey(cp: var ConfigParser; camel: bool; line: string; n: int):
+    Opt[int] =
+  var n = line.skipTomlBlanks(n)
+  if n >= line.len:
+    return cp.err("key expected")
+  cp.buf.setLen(0)
+  let c = line[n]
+  if c in {'"', '\''}:
+    n = ?cp.consumeKeyString(camel, line, c, n + 1)
+  else:
+    n = ?cp.consumeBare(camel, line, n)
+  ok(line.skipTomlBlanks(n))
+
+proc consumeString(cp: var ConfigParser; line: string; first: char; n: int):
+    Opt[int] =
+  var n = n
+  var escape = false
+  var multiline = false
+  var start = true
+  if cp.states.len > 0 and
+      cp.states[^1] in {tsMultiStringSimple, tsMultiStringDouble}:
+    multiline = true
+    start = false
+  elif line.startsWith("\"\"", n):
+    cp.states.add(tsMultiStringDouble)
+    multiline = true
+    n += 2
+  elif line.startsWith("''", n):
+    cp.states.add(tsMultiStringSimple)
+    multiline = true
+    n += 2
+  if start:
+    cp.buf.setLen(0)
+  while n < line.len:
+    var c = line[n]
+    inc n
+    if escape:
+      n = ?cp.consumeEscape(line, c, cp.buf, n)
+      escape = false
+    elif c == first:
+      if not multiline:
+        return ok(n)
+      if n + 1 < line.len and line[n] == first and line[n + 1] == first:
+        n += 2
+        doAssert cp.states.pop() in {tsMultiStringSimple, tsMultiStringDouble}
+        return ok(n)
+      cp.buf &= c
+    elif first == '"' and c == '\\':
+      escape = true
+    else:
+      cp.buf &= c
+  if escape:
+    return cp.err("invalid escape sequence \\ LF")
+  if not multiline:
+    return cp.err("unexpected end of line")
+  if not start:
+    cp.buf &= '\n'
+  ok(n)
+
+proc parseSection(cp: var ConfigParser; key: string): Opt[ConfigSection] =
+  let section = strictParseEnum[ConfigSection](key).get(csNone)
+  if section == csNone:
+    return cp.err("unknown section " & key)
+  ok(section)
+
+proc parseOption(cp: var ConfigParser; section: ConfigSection; key: string):
+    Opt[ConfigOption] =
+  var x = parseOption(key)
+  if x.isErr:
+    # retry ambiguous names
+    let full = $section & '.' & key
+    x = parseOption(full)
+    if x.isErr:
+      cp.warn("unknown option " & camelToKebabCase(full))
+      return ok(coAddEntry) # dummy value
+  let opt = x.get
+  if opt.section != section and
+      not (section == csSiteconf and opt in SiteconfOptions):
+    let kebab = camelToKebabCase(key)
+    cp.warnings.add("unknown option " & $section & '.' & kebab &
+      ", maybe try " & $opt.section & '.' & kebab & '?')
+    return ok(coAddEntry) # dummy value
+  if section in {csSiteconf, csOmnirule}:
+    if opt in cp.ruleOptionsSeen:
+      let kebab = camelToKebabCase(key)
+      return cp.err("redefinition of option " & kebab)
+    cp.ruleOptionsSeen.incl(opt)
+  else:
+    if opt in cp.optionsSeen:
+      let kebab = camelToKebabCase(key)
+      return cp.err("redefinition of option " & $section & '.' & kebab)
+    cp.optionsSeen.incl(opt)
+  x
+
+proc addRuleEntry(cp: var ConfigParser) =
+  cp.entries.add(ConfigEntry(
+    section: cp.section,
+    opt: coAddEntry,
+    t: cocStr,
+    str: move(cp.buf)
+  ))
+  cp.ruleOptionsSeen.incl(coAddEntry)
+
+proc checkRuleRegex(cp: var ConfigParser): Opt[void] =
+  if coAddEntry in cp.ruleOptionsSeen:
+    let intersection = {coUrl, coHost, coMatch} * cp.ruleOptionsSeen
+    if intersection == {}:
+      return cp.err("missing match regex for " & $cp.section)
+    if intersection notin [{coUrl}, {coHost}, {coMatch}]:
+      return cp.err("too many match regexes for " & $cp.section)
+  ok()
+
+proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
+    n: int): Opt[int] =
+  var n = n
+  var section = cp.section
+  if section == csNone:
+    n = ?cp.consumeKey(camel = false, line, n)
+    section = cp.parseSection(cp.buf).get(csNone)
+    if section == csNone:
+      if cp.buf != "include":
+        return err()
+      cp.opt = coInclude
+    cp.section = section
+    if single or n >= line.len or line[n] != '.':
+      if section in cp.sectionsSeen:
+        cp.warn("re-definition of section " & $section)
+      return ok(n)
+    if not tableArray and section notin {csSiteconf, csOmnirule}:
+      # Duplicate sections are invalid TOML for siteconf/omnirule too,
+      # but the old parser accepted them.
+      cp.sectionsSeen.incl(section)
+    inc n
+  case section
+  of csSiteconf, csOmnirule:
+    if coAddEntry notin cp.ruleOptionsSeen:
+      n = ?cp.consumeKey(camel = false, line, n)
+      if cp.keysSeen[section].containsOrIncl(cp.buf):
+        return cp.err("duplicate key " & $section & '.' & cp.buf)
+      cp.addRuleEntry()
+      if single or n >= line.len or line[n] != '.':
+        return ok(n)
+      inc n
+  of csCmd:
+    n = ?cp.consumeKey(camel = false, line, n)
+    if not cp.buf.isCompatibleIdent():
+      return cp.err("invalid command name: " & cp.buf)
+    if cp.key.len > 0:
+      cp.key &= '.'
+    cp.key &= cp.buf
+    while n < line.len and line[n] == '.':
+      inc n
+      n = ?cp.consumeKey(camel = false, line, n)
+      if not cp.buf.isCompatibleIdent():
+        return cp.err("invalid command name: " & cp.buf)
+      cp.key &= '.'
+      cp.key &= cp.buf
+    if cp.keysSeen[section].containsOrIncl(cp.key):
+      return cp.err("duplicate command")
+    return ok(n)
+  of csPage, csLine:
+    if cp.key.len > 0:
+      return cp.err("unexpected nested key for section " & $section)
+    n = ?cp.consumeKey(camel = false, line, n)
+    var warnings: seq[string]
+    cp.key = parseKeyComb(cp.buf, warnings)
+    for warning in warnings:
+      cp.warn(warning)
+    if cp.keysSeen[section].containsOrIncl(cp.key):
+      return cp.err("duplicate keybinding")
+    return ok(n)
+  else: discard
+  if cp.opt == coAddEntry:
+    n = ?cp.consumeKey(camel = true, line, n)
+    cp.opt = ?cp.parseOption(cp.section, cp.buf)
+    if single or n >= line.len or line[n] != '.':
+      return ok(n)
+    inc n
+  if cp.opt.optionType == cotHeaders:
+    n = ?cp.consumeKey(camel = false, line, n)
+    cp.key = move(cp.buf)
+  ok(n)
+
+proc parseConfigSection(cp: var ConfigParser; line: string; n: int): Opt[void] =
+  var n = n
+  if n >= line.len:
+    return cp.err("unexpected end of line")
+  let c = line[n]
+  let tableArray = c == '['
+  if tableArray:
+    inc n
+  ?cp.checkRuleRegex()
+  cp.buf.setLen(0)
+  cp.ruleOptionsSeen = {}
+  cp.section = csNone
+  cp.opt = coAddEntry
+  n = ?cp.parseKey(single = false, tableArray, line, n)
+  let section = cp.section
+  if tableArray:
+    if section notin {csSiteconf, csOmnirule}:
+      return cp.err("unexpected table array " & $section &
+        ", maybe try [" & $section & "]")
+    if coAddEntry in cp.ruleOptionsSeen:
+      return cp.err("unexpected name, maybe try [[" & $section & "]]")
+    cp.buf = $cp.tableArrayCount[section]
+    inc cp.tableArrayCount[section]
+    cp.addRuleEntry()
+  ?cp.expect(']', line, n)
+  if tableArray:
+    ?cp.expect(']', line, n)
+  cp.expectEOL(line, n)
+
+proc typeCheck(cp: var ConfigParser; t: TomlType): Opt[void] =
+  let vt = cp.tt
+  if vt != t:
+    return cp.err("invalid type (got " & $vt & ", expected " & $t & ")")
+  ok()
+
+proc typeCheck(cp: var ConfigParser; t: set[TomlType]): Opt[void] =
+  let vt = cp.tt
+  if vt notin t:
+    return cp.err("invalid type (got " & $vt & ", expected " & $t & ")")
+  ok()
+
+proc parseBool(cp: var ConfigParser; x: var bool): Opt[void] =
+  ?cp.typeCheck(ttBoolean)
+  x = cp.bval
+  ok()
+
+proc parseBoolAuto(cp: var ConfigParser; x: var BoolAuto): Opt[void] =
+  if cp.tt == ttString and cp.buf == "auto":
+    x = baAuto
+  else:
+    ?cp.typeCheck(ttBoolean)
+    x = BoolAuto(uint8(cp.bval) + 1)
+  ok()
+
+proc parseCharset(cp: var ConfigParser; x: var Charset): Opt[void] =
+  ?cp.typeCheck(ttString)
+  let charset = getCharset(cp.buf)
+  if charset == CHARSET_UNKNOWN and cp.buf != "auto":
+    # auto represented as unknown
+    return cp.err("unknown charset '" & cp.buf & "'")
+  x = charset
+  ok()
+
+proc parseEnum[T: enum](cp: var ConfigParser; x: var T): Opt[void] =
+  let e = if cp.tt == ttBoolean:
+    strictParseEnum[T]($cp.bval)
+  else:
+    ?cp.typeCheck(ttString)
+    strictParseEnum[T](cp.buf)
+  if e.isErr:
+    var buf = "invalid value '" & cp.buf & "', expected one of ["
+    for e in T:
+      buf &= '"'
+      buf &= $e
+      buf &= "\", "
+    buf.setLen(buf.high)
+    buf[^1] = ']'
+    return cp.err(buf)
+  x = e.get
+  ok()
+
+proc parseColorModeAuto(cp: var ConfigParser; x: var ColorModeAuto): Opt[void] =
+  if cp.tt == ttString and cp.buf == "auto":
+    x = ColorModeAuto(0)
+  else:
+    var y: ColorMode
+    ?cp.parseEnum(y)
+    x = ColorModeAuto(uint8(y) + 1)
+  ok()
+
+proc parseImageModeAuto(cp: var ConfigParser; x: var ImageModeAuto): Opt[void] =
+  if cp.tt == ttString and cp.buf == "auto":
+    x = ImageModeAuto(0)
+  else:
+    var y: ImageMode
+    ?cp.parseEnum(y)
+    x = ImageModeAuto(uint8(y) + 1)
+  ok()
+
+proc parseRegexCase(cp: var ConfigParser; x: var RegexCase): Opt[void] =
+  ?cp.typeCheck({ttString, ttBoolean})
+  if cp.tt == ttBoolean:
+    x = if cp.bval: rcIgnore else: rcStrict
+  else: # string
+    if cp.buf != "auto":
+      return cp.err("invalid value '" & cp.buf & "'")
+    x = rcAuto
+  ok()
+
+proc parseSet[T: enum](cp: var ConfigParser; x: var set[T]): Opt[void] =
+  ?cp.typeCheck({ttString, ttArray})
+  if cp.tt == ttString:
+    var e: T
+    ?cp.parseEnum(e)
+    x = {e}
+    return ok()
+  cp.tt = ttString
+  var tmp: set[T] = {}
+  for s in cp.arr.mitems:
+    cp.buf = move(s)
+    var e: T
+    ?cp.parseEnum(e)
+    tmp.incl(e)
+  x = tmp
+  ok()
+
+proc parseInt32(cp: var ConfigParser; x: var int32): Opt[void] =
+  ?cp.typeCheck(ttInteger)
+  x = cp.ival
+  ok()
+
+proc parseInt32Auto(cp: var ConfigParser; x: var int32): Opt[void] =
+  if cp.tt == ttString and cp.buf == "auto":
+    x = 0'i32
+  else:
+    ?cp.typeCheck(ttInteger)
+    if cp.ival <= 0:
+      return cp.err("positive value expected")
+    x = cp.ival
+  ok()
+
+proc parseFormatModeAuto(cp: var ConfigParser; x: var FormatModeAuto):
+    Opt[void] =
+  if cp.tt == ttString and cp.buf == "auto":
+    x = FormatModeAuto(0'u32)
+  else:
+    var y: FormatMode
+    ?cp.parseSet(y)
+    x = FormatModeAuto(cast[uint32](y) + 1)
+  ok()
+
+proc parseCSSColor(cp: var ConfigParser; x: var CSSColor): Opt[void] =
+  ?cp.typeCheck(ttString)
+  var ctx = initCSSParser(cp.buf)
+  let c = ctx.parseColor()
+  if c.isErr or ctx.has() or c.get.t == cctCurrent:
+    return cp.err("invalid color '" & cp.buf & "'")
+  x = c.get
+  ok()
+
+proc parseRGBColorAuto(cp: var ConfigParser; x: var RGBColorAuto): Opt[void] =
+  ?cp.typeCheck(ttString)
+  if cp.buf == "auto":
+    x = RGBColorAuto(0)
+  else:
+    let c = parseLegacyColor(cp.buf)
+    if c.isErr:
+      return cp.err("invalid color '" & cp.buf & "'")
+    x = RGBColorAuto(uint64(c.get) + 1)
+  ok()
+
+proc parseString(cp: var ConfigParser; x: var string): Opt[void] =
+  ?cp.typeCheck(ttString)
+  x = move(cp.buf)
+  ok()
+
+proc parseStylesheet(cp: var ConfigParser; x: var string): Opt[void] =
+  ?cp.typeCheck(ttString)
   var y = ""
-  var parser = initCSSParser(v.s)
+  var parser = initCSSParser(cp.buf)
   var j = 0
   for it in parser.consumeImports():
     var parser2 = initCSSParserSink(it.prelude)
@@ -1098,86 +1583,515 @@ proc parseValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
     if parser2.skipBlanksCheckDone().isErr:
       break
     if tok.t != cttString:
-      return err(k & ": wrong CSS import (unexpected token)")
-    let path = ChaPath(tok.s).unquote(ctx.config.dir)
+      return cp.err("wrong CSS import (unexpected token)")
+    let path = ChaPath(tok.s).unquote(cp.config.dir)
     if path.isErr:
-      return err(k & ": wrong CSS import (" & tok.s & " is not a valid path)")
+      return cp.err("wrong CSS import (" & tok.s & " is not a valid path)")
     let ps = newPosixStream(path.get)
     if ps == nil:
-      return err(k & ": wrong CSS import (file " & tok.s & " not found)")
+      return cp.err("wrong CSS import (file " & tok.s & " not found)")
     y &= ps.readAll()
     j = parser.i
-  y &= v.s.substr(j)
-  x = StyleString(move(y))
+  y &= cp.buf.substr(j)
+  x = move(y)
   ok()
 
-proc parseConfig(config: Config; dir: string; t: TomlValue;
-    warnings: var seq[string]; jsctx: JSContext): Err[string] =
-  var ctx = ConfigParser(
+proc parsePath(cp: var ConfigParser; x: var string): Opt[void] =
+  ?cp.typeCheck(ttString)
+  var y = ChaPath(cp.buf).unquote(cp.config.dir)
+  if y.isErr:
+    return cp.err(y.error)
+  x = move(y.get)
+  ok()
+
+proc parseCodepointSet(cp: var ConfigParser; x: var string): Opt[void] =
+  ?cp.typeCheck(ttString)
+  var seen = initHashSet[uint32]()
+  var nseen = 0
+  for u in cp.buf.points:
+    if seen.containsOrIncl(u):
+      return cp.err("duplicate codepoint '" & u.toUTF8() & "'")
+    inc nseen
+    if nseen > int(cint.high):
+      return cp.err("too many values")
+  x = move(cp.buf)
+  ok()
+
+proc parseCharsetSeq(cp: var ConfigParser; x: var seq[Charset]): Opt[void] =
+  ?cp.typeCheck({ttString, ttArray})
+  if cp.tt == ttString:
+    var charset: Charset
+    ?cp.parseEnum(charset)
+    x = @[charset]
+  else:
+    x = @[]
+    cp.tt = ttString
+    for it in cp.arr.mitems:
+      cp.buf = move(it)
+      var charset: Charset
+      ?cp.parseCharset(charset)
+      x.add(charset)
+  ok()
+
+proc parsePathSeq(cp: var ConfigParser; x: var seq[string]): Opt[void] =
+  ?cp.typeCheck({ttString, ttArray})
+  if cp.tt == ttString:
+    var s: string
+    ?cp.parsePath(s)
+    x = @[move(s)]
+  else:
+    x = @[]
+    for it in cp.arr:
+      var y = ChaPath(it).unquote(cp.config.dir)
+      if y.isErr:
+        return cp.err(y.error)
+      x.add(move(y.get))
+  ok()
+
+proc parseHeaders(cp: var ConfigParser; x: var ConfigHeadersInit): Opt[void] =
+  if x == nil:
+    x = ConfigHeadersInit()
+  if cp.tt == ttTable:
+    x.clear = true
+  else:
+    ?cp.typeCheck(ttString)
+    x.s.add((move(cp.key), move(cp.buf)))
+  ok()
+
+proc parseURL(cp: var ConfigParser; x: var URL): Opt[void] =
+  ?cp.typeCheck(ttString)
+  x = parseURL0(cp.buf)
+  if x == nil:
+    return cp.err("invalid URL " & cp.buf)
+  ok()
+
+proc parseRegex(cp: var ConfigParser; x: var Regex): Opt[void] =
+  ?cp.typeCheck(ttString)
+  var y = compileMatchRegex(cp.buf)
+  if y.isErr:
+    return cp.err("invalid regex (" & y.error & ")")
+  x = move(y.get)
+  ok()
+
+proc parseFunction(cp: var ConfigParser; x: var pointer): Opt[void] =
+  ?cp.typeCheck(ttString)
+  let fun = cp.ctx.eval(cp.buf, "<config>", JS_EVAL_TYPE_GLOBAL)
+  if JS_IsException(fun):
+    return cp.err(cp.ctx.getExceptionMsg())
+  if not JS_IsFunction(cp.ctx, fun):
+    return cp.err("not a function")
+  x = JS_VALUE_GET_PTR(fun)
+  ok()
+
+proc saveKeyState(cp: var ConfigParser) =
+  # state to be restored after the current option is flushed
+  cp.beforeKey = BeforeKey(
+    keyLen: cp.key.len,
+    section: cp.section,
+    opt: cp.opt,
+    addEntrySeen: coAddEntry in cp.ruleOptionsSeen
+  )
+
+proc parseKVPair(cp: var ConfigParser; single: bool; line: string; n: var int):
+    Opt[void] =
+  let nstates = cp.states.len
+  cp.saveKeyState()
+  n = ?cp.parseKey(single, tableArray = false, line, n)
+  ?cp.expect('=', line, n)
+  n = line.skipTomlBlanks(n)
+  ?cp.consumeValue(line, n)
+  n = line.skipTomlBlanks(n)
+  # if nesting increased (e.g. array), we defer flushing the option until
+  # the line that decreases it.
+  if nstates != cp.states.len:
+    return ok()
+  cp.parseConfigValue()
+
+proc consumeArray(cp: var ConfigParser; line: string; n: var int): Opt[void] =
+  let nstates = cp.states.len
+  while true:
+    n = line.skipTomlBlanks(n)
+    if n >= line.len:
+      break
+    let c = line[n]
+    if c == ']':
+      inc n
+      cp.states.setLen(cp.states.high)
+      cp.tt = ttArray
+      break
+    if c == '#':
+      break
+    if not cp.commaSeen:
+      ?cp.expect(',', line, n)
+      n = line.skipTomlBlanks(n)
+      cp.commaSeen = true
+    if n >= line.len or line[n] == '#':
+      break
+    ?cp.consumeValue(line, n)
+    cp.commaSeen = false
+    if nstates != cp.states.len:
+      return cp.err("unexpected nested array")
+    ?cp.typeCheck(ttString)
+    cp.arr.add(move(cp.buf))
+  ok()
+
+proc consumeTable(cp: var ConfigParser; line: string; n: var int): Opt[void] =
+  while true:
+    n = line.skipTomlBlanks(n)
+    if n >= line.len:
+      break
+    let c = line[n]
+    if c == '}':
+      inc n
+      cp.states.setLen(cp.states.high)
+      cp.tt = ttTable
+      if cp.key.len > 0:
+        cp.key.setLen(max(cp.key.rfind('.'), 0))
+      elif cp.opt != coAddEntry:
+        cp.opt = coAddEntry
+      elif coAddEntry in cp.ruleOptionsSeen:
+        ?cp.checkRuleRegex()
+        cp.ruleOptionsSeen.excl(coAddEntry)
+      else:
+        cp.section = csNone
+      cp.saveKeyState()
+      break
+    if c == '#':
+      break
+    if not cp.commaSeen:
+      ?cp.expect(',', line, n)
+      n = line.skipTomlBlanks(n)
+      cp.commaSeen = true
+    if n >= line.len or line[n] == '#':
+      break
+    ?cp.parseKVPair(single = true, line, n)
+    cp.commaSeen = false
+  ok()
+
+proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void] =
+  if n >= line.len:
+    return cp.err("value expected")
+  let c = line[n]
+  case c
+  of '[':
+    cp.commaSeen = true
+    inc n
+    cp.states.add(tsArray)
+    cp.arr.setLen(0)
+    return cp.consumeArray(line, n)
+  of '{':
+    cp.commaSeen = true
+    inc n
+    cp.states.add(tsTable)
+    if cp.opt == coAddEntry and cp.section in {csSiteconf, csOmnirule}:
+      # Note: the old parser could clear all objects, but this seems like
+      # a fairly useless feature.
+      cp.entries.add(ConfigEntry(section: cp.section, t: cocClear))
+    return cp.consumeTable(line, n)
+  of '+', '-', AsciiDigit:
+    cp.tt = ttInteger
+    let val = atod(cstring(line), n, 0, JS_ATOD_INT_ONLY or
+      JS_ATOD_ACCEPT_UNDERSCORES)
+    if classify(val) in {fcInf, fcNegInf, fcNan}:
+      return cp.err("invalid number")
+    let ival = int64(val)
+    if ival notin int64(int32.low)..int64(int32.high):
+      return cp.err("number out of bounds")
+    cp.ival = int32(ival)
+  of AsciiAlpha:
+    cp.buf.setLen(0)
+    n = ?cp.consumeBare(camel = false, line, n)
+    if cp.buf == "true":
+      cp.tt = ttBoolean
+      cp.bval = true
+    elif cp.buf == "false":
+      cp.tt = ttBoolean
+      cp.bval = false
+    elif cp.laxnames:
+      cp.tt = ttString
+    else:
+      return cp.err("invalid token: " & cp.buf)
+  of '"', '\'':
+    cp.tt = ttString
+    n = ?cp.consumeString(line, c, n + 1)
+  else:
+    return cp.err("unexpected character in value: `" & c & "'")
+  ok()
+
+proc addBit(cp: var ConfigParser): var ConfigOptionBit =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocBit))
+  cp.entries[^1].bit
+
+proc addHWord(cp: var ConfigParser): var ConfigOptionHWord =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocHWord))
+  cp.entries[^1].hword
+
+proc addWord(cp: var ConfigParser): var ConfigOptionWord =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocWord))
+  cp.entries[^1].word
+
+proc addStr(cp: var ConfigParser): var string =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocStr))
+  cp.entries[^1].str
+
+proc addCharsetSeq(cp: var ConfigParser): var seq[Charset] =
+  cp.entries.add(ConfigEntry(
+    section: cp.section,
+    opt: cp.opt,
+    t: cocCharsetSeq
+  ))
+  cp.entries[^1].charsetSeq
+
+proc addStrSeq(cp: var ConfigParser): var seq[string] =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocStrSeq))
+  cp.entries[^1].strSeq
+
+proc addHeaders(cp: var ConfigParser): var ConfigHeadersInit =
+  if cp.entries.len == 0 or cp.entries[^1].opt != cp.opt:
+    cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocHeaders))
+  cp.entries[^1].headers
+
+proc addURL(cp: var ConfigParser): var URL =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocURL))
+  cp.entries[^1].url
+
+proc addRegex(cp: var ConfigParser): var Regex =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocRegex))
+  cp.entries[^1].regex
+
+proc addFunction(cp: var ConfigParser): var pointer =
+  cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocFunction))
+  cp.entries[^1].fun
+
+proc parseConfigValue1(cp: var ConfigParser): Opt[void] =
+  let ot = optionType(cp.opt)
+  return case ot
+  of cotBool: cp.parseBool(cp.addBit().bool)
+  of cotBoolAuto: cp.parseBoolAuto(cp.addBit().boolAuto)
+  of cotCharset: cp.parseCharset(cp.addBit().charset)
+  of cotColorModeAuto: cp.parseColorModeAuto(cp.addBit().colorModeAuto)
+  of cotCookieMode: cp.parseEnum(cp.addBit().cookieMode)
+  of cotFormatMode: cp.parseSet(cp.addBit().formatMode)
+  of cotHeadlessMode: cp.parseEnum(cp.addBit().headlessMode)
+  of cotImageModeAuto: cp.parseImageModeAuto(cp.addBit().imageModeAuto)
+  of cotMetaRefresh: cp.parseEnum(cp.addBit().metaRefresh)
+  of cotRegexCase: cp.parseRegexCase(cp.addBit().regexCase)
+  of cotScriptingMode: cp.parseEnum(cp.addBit().scriptingMode)
+  of cotInt32: cp.parseInt32(cp.addHWord().int32)
+  of cotInt32Auto: cp.parseInt32Auto(cp.addHWord().int32)
+  of cotFormatModeAuto: cp.parseFormatModeAuto(cp.addHWord().formatModeAuto)
+  of cotCSSColor: cp.parseCSSColor(cp.addWord().cssColor)
+  of cotRGBColorAuto: cp.parseRGBColorAuto(cp.addWord().rgbColorAuto)
+  of cotString: cp.parseString(cp.addStr())
+  of cotStylesheet: cp.parseStylesheet(cp.addStr())
+  of cotPath: cp.parsePath(cp.addStr())
+  of cotCodepointSet: cp.parseCodepointSet(cp.addStr())
+  of cotCharsetSeq: cp.parseCharsetSeq(cp.addCharsetSeq())
+  of cotPathSeq: cp.parsePathSeq(cp.addStrSeq())
+  of cotHeaders: cp.parseHeaders(cp.addHeaders())
+  of cotURL: cp.parseURL(cp.addURL())
+  of cotRegex: cp.parseRegex(cp.addRegex())
+  of cotFunction: cp.parseFunction(cp.addFunction())
+
+proc parseConfigValue(cp: var ConfigParser): Opt[void] =
+  let section = cp.section
+  case section
+  of csCmd:
+    ?cp.typeCheck(ttString)
+    let dotIdx = cp.key.find('.')
+    if dotIdx == -1:
+      cp.warn("please move cmd." & cp.key &
+        " to your own namespace (e.g. [cmd.me]) to avoid name clashes")
+    elif cp.key.startsWith("pager.") or cp.key.startsWith("buffer."):
+      cp.warn("the namespace " & cp.key.until('.') & " is deprecated")
+    elif AsciiUpperAlpha in cp.key.toOpenArray(0, dotIdx):
+      cp.warn("the first component of namespaces must be lower-case")
+    #TODO I guess it would be better if we eval'd here?
+    # then a) config reloading can't (normally) choke after parsing,
+    # b) we don't have to store the buffer
+    cp.config.cmd.init.add((move(cp.key), move(cp.buf)))
+  of csPage, csLine:
+    ?cp.typeCheck(ttString)
+    let ctx = cp.ctx
+    let val = ctx.evalCmdDecl(cp.buf)
+    if JS_IsException(val):
+      return cp.err(ctx.getExceptionMsg())
+    #TODO this won't fly for dynamic reloading (and neither will cmd)
+    let map = cp.config.actionMap[section]
+    map.t.add(Action(k: move(cp.key), val: val, n: map.num))
+    inc map.num
+  elif cp.opt != coAddEntry: # add entry here means "not found"
+    ?cp.parseConfigValue1()
+  # reset to state before this key
+  cp.section = cp.beforeKey.section
+  cp.opt = cp.beforeKey.opt
+  if not cp.beforeKey.addEntrySeen:
+    ?cp.checkRuleRegex()
+    cp.ruleOptionsSeen.excl(coAddEntry)
+  cp.key.setLen(cp.beforeKey.keyLen)
+  ok()
+
+proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
+  let section = entry.section
+  let opt = entry.opt
+  if section in {csSiteconf, csOmnirule}:
+    if entry.t == cocStr and opt == coAddEntry:
+      let rule = ConfigRule(fun: JS_UNDEFINED, name: move(entry.str))
+      if config.ruleSeen.containsOrIncl(rule.name): # replace
+        ctx.remove(config.lists[section], rule.name)
+      config.lists[section].add(rule)
+    else:
+      let rule = config.lists[section].tail
+      case entry.t
+      of cocRegex:
+        if opt == coHost: # smUrl is the default
+          rule.matchType = smHost
+        rule.regex.bytecode = move(entry.regex.bytecode)
+      of cocFunction:
+        rule.fun = JS_MKPTR(JS_TAG_OBJECT, entry.fun)
+      of cocClear: ctx.clear(config.lists[section])
+      else:
+        assert opt in SiteconfOptions
+        rule.entries.add(entry)
+  else:
+    case entry.t
+    of cocBit: config.bits[opt] = entry.bit
+    of cocHWord: config.hwords[opt] = entry.hword
+    of cocWord: config.words[opt] = entry.word
+    of cocStr: config.strs[opt] = move(entry.str)
+    of cocStrSeq: config.strSeqs[opt] = move(entry.strSeq)
+    of cocCharsetSeq: config.documentCharset = move(entry.charsetSeq)
+    of cocHeaders:
+      let init = entry.headers
+      if init.clear:
+        config.defaultHeaders = newHeaders(hgRequest, init.s)
+      else:
+        for it in init.s:
+          config.defaultHeaders.add(it.name, it.value)
+    of cocURL: config.proxy = move(entry.url)
+    of cocClear, cocRegex, cocFunction: assert false
+
+proc applyEntries(ctx: JSContext; config: Config;
+    entries: var seq[ConfigEntry]) =
+  for entry in entries.mitems:
+    ctx.applyEntry(config, entry)
+
+proc parseConfigRegular(cp: var ConfigParser; line: string): Opt[void] =
+  var n = line.skipTomlBlanks(0)
+  if n >= line.len:
+    return ok()
+  case (let c = line[n]; c)
+  of '#': return ok()
+  of '[':
+    inc n
+    return cp.parseConfigSection(line, n)
+  of '"', '\'', ValidBare:
+    ?cp.parseKVPair(single = false, line, n)
+    return cp.expectEOL(line, n)
+  else:
+    return cp.err("unexpected character `" & c & "'")
+
+proc parseConfigLine(cp: var ConfigParser; line: string): Opt[void] =
+  if cp.states.len == 0:
+    return cp.parseConfigRegular(line)
+  var n = 0
+  while cp.states.len > 0 and n < line.len and line[n] != '#':
+    let nstates = cp.states.len
+    case cp.states[^1]
+    of tsTable: ?cp.consumeTable(line, n)
+    of tsArray: ?cp.consumeArray(line, n)
+    of tsMultiStringSimple: n = ?cp.consumeString(line, '\'', n)
+    of tsMultiStringDouble: n = ?cp.consumeString(line, '"', n)
+    if nstates > cp.states.len:
+      ?cp.parseConfigValue()
+    n = line.skipTomlBlanks(n)
+  cp.expectEOL(line, n)
+
+proc initConfigParser(config: Config; dir: string; ctx: JSContext; name: string;
+    laxnames: bool): ConfigParser =
+  ConfigParser(
     config: config,
     dir: dir,
-    jsctx: jsctx
+    ctx: ctx,
+    filename: dir / name,
+    line: 1,
+    laxnames: laxnames,
+    sectionsSeen: {csNone},
+    opt: coAddEntry
   )
-  var includes: seq[string]
-  for kk, vv in t:
-    case kk
-    of "include": ?ctx.parseValue(includes, vv, kk)
-    of "start": ?ctx.parseValue(config.start, vv, kk)
-    of "buffer": ?ctx.parseValue(config.buffer, vv, kk)
-    of "search": ?ctx.parseValue(config.search, vv, kk)
-    of "encoding": ?ctx.parseValue(config.encoding, vv, kk)
-    of "external": ?ctx.parseValue(config.external, vv, kk)
-    of "network": ?ctx.parseValue(config.network, vv, kk)
-    of "input": ?ctx.parseValue(config.input, vv, kk)
-    of "display": ?ctx.parseValue(config.display, vv, kk)
-    of "status": ?ctx.parseValue(config.status, vv, kk)
-    of "siteconf": ?ctx.parseValue(config.siteconf, vv, kk)
-    of "omnirule": ?ctx.parseValue(config.omnirule, vv, kk)
-    of "cmd": ?ctx.parseValue(config.cmd, vv, kk)
-    of "page": ?ctx.parseValue(config.page, vv, kk)
-    of "line": ?ctx.parseValue(config.line, vv, kk)
-    else: warnings.add("unrecognized option " & kk)
-  #TODO: warn about recursive includes
-  # or just remove include?  it's a lot of trouble for little worth
+
+proc parseFile(cp: var ConfigParser; file: ChaFile): Opt[void] =
+  var line: string
+  while ?file.readLine(line):
+    ?cp.parseConfigLine(line)
+    inc cp.line
+  ok()
+
+proc cleanup(cp: var ConfigParser) =
+  for entry in cp.entries:
+    if entry.t == cocFunction and entry.fun != nil:
+      JS_FreeValue(cp.ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
+  if cp.error == "":
+    cp.error = "failed to read config"
+
+proc parseConfig*(config: Config; dir: string; file: ChaFile;
+    warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
+    Err[string] =
+  var cp = initConfigParser(config, dir, ctx, name, laxnames)
+  if cp.parseFile(file).isErr:
+    cp.cleanup()
+    return err(move(cp.error))
+  ctx.applyEntries(config, cp.entries)
+  #TODO warn about recursive includes
+  # or just remove include
+  var includes = move(config{"include"})
   for s in includes:
-    let ps = newPosixStream($s)
-    if ps == nil:
-      return err("include file not found: " & $s)
-    ?config.parseConfig(dir, ps.readAll(), warnings, jsctx, ($s).afterLast('/'))
-    ps.sclose()
-  warnings.add(ctx.warnings)
+    let x = chafile.fopen(s, "r")
+    if x.isErr:
+      return err("include file not found: " & s)
+    let f = x.get
+    ?config.parseConfig(dir, f, warnings, ctx, s.afterLast('/'))
+    f.close()
+  warnings.add(cp.warnings)
   ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-    warnings: var seq[string]; jsctx: JSContext; name: string;
-    laxnames = false): Err[string] =
-  let toml = parseToml(buf, dir / name, laxnames, config.arraySeen)
-  if toml.isOk:
-    return config.parseConfig(dir, toml.get, warnings, jsctx)
-  return err("fatal error: failed to parse config\n" & toml.error)
+    warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
+    Err[string] =
+  var cp = initConfigParser(config, dir, ctx, name, laxnames)
+  for line in buf.split('\n'):
+    if cp.parseConfigLine(line).isErr:
+      for entry in cp.entries:
+        if entry.t == cocFunction and entry.fun != nil:
+          JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
+      return err(move(cp.error))
+    inc cp.line
+  ctx.applyEntries(config, cp.entries)
+  warnings.add(cp.warnings)
+  ok()
 
 proc openConfig*(dir, dataDir: var string; override: Option[string];
-    warnings: var seq[string]): PosixStream =
+    warnings: var seq[string]): Opt[ChaFile] =
   if override.isSome:
     if override.get.len > 0 and override.get[0] == '/':
       dir = parentDir(override.get)
       dataDir = dir
-      return newPosixStream(override.get)
+      return chafile.fopen(override.get, "r")
     let path = myposix.getcwd() / override.get
     dir = parentDir(path)
     dataDir = dir
-    return newPosixStream(path)
+    return chafile.fopen(path, "r")
   dir = getEnvEmpty("CHA_DIR")
   if dir != "":
     # mainly just to behave sanely in nested invocations
     dataDir = getEnvEmpty("CHA_DATA_DIR", dir)
-    return newPosixStream(dir / "config.toml")
+    return chafile.fopen(dir / "config.toml", "r")
   dir = getEnvEmpty("XDG_CONFIG_HOME")
   if dir != "":
     dir = dir / "chawan"
   else:
     dir = expandPath("~/.config/chawan")
-  if (let fs = newPosixStream(dir / "config.toml"); fs != nil):
+  if (let fs = chafile.fopen(dir / "config.toml", "r"); fs.isOk):
     let s = getEnvEmpty("XDG_DATA_HOME")
     if s != "":
       dataDir = s / "chawan"
@@ -1186,7 +2100,7 @@ proc openConfig*(dir, dataDir: var string; override: Option[string];
     return fs
   dir = expandPath("~/.chawan")
   dataDir = dir
-  return newPosixStream(dir / "config.toml")
+  return chafile.fopen(dir / "config.toml", "r")
 
 # called after parseConfig returns
 proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
@@ -1400,106 +2314,223 @@ C-Left line.prevWord
 C-Right line.nextWord
 """
 
+# boolean options that initialize to true
+const ConfigInitTrue = [
+  coConsoleBuffer, coWrap, coShowDownloadPanel, coViNumericPrefix,
+  coHighlightMarks, coShowCursorPosition, coShowHoverLink, coStyling, coHistory
+]
+
+const ConfigInitInt32 = {
+  coHistorySize: 100'i32,
+  coMaxRedirect: 10,
+  coMaxNetConnections: 12,
+  coWheelScroll: 5,
+  coSideWheelScroll: 5,
+  coMinimumContrast: 100,
+  coColumns: 80,
+  coLines: 24,
+  coPixelsPerColumn: 9,
+  coPixelsPerLine: 18
+}
+
+const ConfigInitStr = {
+  coVisualHome: "about:chawan",
+  coEditor: "${VISUAL:-${EDITOR:-vi}}",
+  coCopyCmd: "xsel -bi",
+  coPasteCmd: "xsel -bo",
+  coPrependScheme: "https://",
+  coLinkHintChars: "abcdefghijklmnoprstuvxyz",
+}
+
+const ConfigInitPath = {
+  coAutoMailcap: "auto.mailcap",
+  coBookmark: "$CHA_DATA_DIR/bookmark.md",
+  coHistoryFile: "$CHA_DATA_DIR/history.md",
+  coTmpdir: "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME",
+  coCookieFile: "$CHA_DATA_DIR/cookies.txt",
+  coDownloadDir: "${TMPDIR:-/tmp}/",
+}
+
+const ConfigInitPathSeq = {
+  coMailcap: @[
+    "~/.mailcap", "/etc/mailcap", "/usr/etc/mailcap", "/usr/local/etc/mailcap"
+  ],
+  coMimeTypes: @[
+    "~/.mime.types", "/etc/mime.types", "/usr/etc/mime.types",
+    "/usr/local/etc/mime.types"
+  ],
+  #TODO why are we using w3m's urimethodmap?
+  coUrimethodmap: @[
+    "~/.urimethodmap",
+    "~/.w3m/urimethodmap",
+    "/etc/urimethodmap",
+    "/usr/local/etc/w3m/urimethodmap"
+  ],
+  coCgiDir: @["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"],
+}
+
+proc getConfigOption(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
+    {.cdecl.} =
+  let config = cast[ptr ConfigObj](JS_GetOpaque(this, JS_GetClassID(this)))
+  let opt = cast[ConfigOption](magic)
+  case opt.optionType
+  of cotBool: return ctx.toJS(config.bits[opt].bool)
+  of cotBoolAuto: return ctx.toJS(config.bits[opt].boolAuto)
+  of cotCharset: return ctx.toJS(config.bits[opt].charset)
+  of cotColorModeAuto: return ctx.toJS(config.bits[opt].colorModeAuto)
+  of cotCookieMode: return ctx.toJS(config.bits[opt].cookieMode)
+  of cotFormatMode: return ctx.toJS(config.bits[opt].formatMode)
+  of cotHeadlessMode: return ctx.toJS(config.bits[opt].headlessMode)
+  of cotImageModeAuto: return ctx.toJS(config.bits[opt].imageModeAuto)
+  of cotMetaRefresh: return ctx.toJS(config.bits[opt].metaRefresh)
+  of cotRegexCase: return ctx.toJS(config.bits[opt].regexCase)
+  of cotScriptingMode: return ctx.toJS(config.bits[opt].scriptingMode)
+  of cotInt32: return ctx.toJS(config.hwords[opt].int32)
+  of cotInt32Auto:
+    let i = config.hwords[opt].int32
+    if i < 0:
+      return JS_NULL
+    return ctx.toJS(i)
+  of cotFormatModeAuto: return ctx.toJS(config.hwords[opt].formatModeAuto)
+  of cotCSSColor: return ctx.toJS(config.words[opt].cssColor)
+  of cotRGBColorAuto: return ctx.toJS(config.words[opt].rgbColorAuto)
+  of cotString, cotStylesheet, cotPath, cotCodepointSet:
+    return ctx.toJS(config.strs[opt])
+  of cotCharsetSeq: return ctx.toJS(config.documentCharset)
+  of cotPathSeq: return ctx.toJS(config.strSeqs[opt])
+  of cotHeaders: return ctx.toJS(config.defaultHeaders)
+  of cotURL: return ctx.toJS(config.proxy)
+  of cotRegex, cotFunction: return JS_NULL
+
+proc setConfigOption(ctx: JSContext; this, val: JSValueConst; magic: cint):
+    JSValue {.cdecl.} =
+  let config = cast[ptr ConfigObj](JS_GetOpaque(this, JS_GetClassID(this)))
+  let opt = cast[ConfigOption](magic)
+  let res = case opt.optionType
+  of cotBool: ctx.fromJS(val, config.bits[opt].bool)
+  of cotBoolAuto: ctx.fromJS(val, config.bits[opt].boolAuto)
+  of cotCharset: ctx.fromJS(val, config.bits[opt].charset)
+  of cotColorModeAuto: ctx.fromJS(val, config.bits[opt].colorModeAuto)
+  of cotCookieMode: ctx.fromJS(val, config.bits[opt].cookieMode)
+  of cotFormatMode: ctx.fromJS(val, config.bits[opt].formatMode)
+  of cotHeadlessMode: ctx.fromJS(val, config.bits[opt].headlessMode)
+  of cotImageModeAuto: ctx.fromJS(val, config.bits[opt].imageModeAuto)
+  of cotMetaRefresh: ctx.fromJS(val, config.bits[opt].metaRefresh)
+  of cotRegexCase: ctx.fromJS(val, config.bits[opt].regexCase)
+  of cotScriptingMode: ctx.fromJS(val, config.bits[opt].scriptingMode)
+  of cotInt32: ctx.fromJS(val, config.hwords[opt].int32)
+  of cotInt32Auto:
+    if JS_IsNull(val):
+      config.hwords[opt].int32 = -1
+      fjOk
+    else:
+      ctx.fromJS(val, config.hwords[opt].int32)
+  of cotFormatModeAuto: ctx.fromJS(val, config.hwords[opt].formatModeAuto)
+  of cotCSSColor: ctx.fromJS(val, config.words[opt].cssColor)
+  of cotRGBColorAuto: ctx.fromJS(val, config.words[opt].rgbColorAuto)
+  of cotString, cotStylesheet, cotPath, cotCodepointSet:
+    ctx.fromJS(val, config.strs[opt])
+  of cotCharsetSeq: ctx.fromJS(val, config.documentCharset)
+  of cotPathSeq: ctx.fromJS(val, config.strSeqs[opt])
+  of cotHeaders: ctx.fromJS(val, config.defaultHeaders)
+  of cotURL: ctx.fromJS(val, config.proxy)
+  of cotRegex, cotFunction: fjOk
+  if res == fjErr:
+    return JS_EXCEPTION
+  return JS_DupValue(ctx, val)
+
+proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
+  var objs {.noinit.}: array[csBuffer..csStatus, JSValue]
+  for obj in objs.mitems:
+    obj = JS_NewObject(ctx)
+    if JS_IsException(obj):
+      return err()
+    JS_SetOpaque(obj, addr config[])
+  for opt in ConfigOption.low..coAddEntry.pred:
+    let desc = OptionMap[opt]
+    if desc.section == csNone:
+      continue
+    let obj = objs[desc.section]
+    let s = $opt
+    let start = s.find('.') + 1
+    let p = cast[cstring](unsafeAddr s[start])
+    let atom = JS_NewAtomLen(ctx, p, csize_t(s.len - start))
+    var f: JSCFunctionType
+    f.getter_magic = getConfigOption
+    let get = JS_NewCFunction2(ctx, f.generic, p, 0, JS_CFUNC_getter_magic,
+      cint(opt))
+    if JS_IsException(get):
+      return err()
+    f.setter_magic = setConfigOption
+    let set = JS_NewCFunction2(ctx, f.generic, p, 0, JS_CFUNC_setter_magic,
+      cint(opt))
+    if JS_IsException(set):
+      return err()
+    if JS_DefineProperty(ctx, obj, atom, JS_UNDEFINED, get, set,
+        JS_PROP_HAS_GET or JS_PROP_HAS_GET) < 0:
+      return err()
+    ctx.freeValues(get, set)
+    JS_FreeAtom(ctx, atom)
+  let configObj = ctx.toJS(config)
+  for section in csBuffer..csStatus:
+    let s = $section
+    let obj = objs[section]
+    if ctx.defineProperty(configObj, cstring(s), obj) == dprException:
+      return err()
+  JS_FreeValue(ctx, configObj)
+  ok()
+
 proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
-  Config(
+  let config = Config(
     dir: dir,
     dataDir: dataDir,
-    arraySeen: newTable[string, int](),
-    page: newActionMap(ctx, PageCommands, ""),
-    line: newActionMap(ctx, LineCommands, "writeInputBuffer"),
-    start: StartConfig(
-      visualHome: "about:chawan",
-      consoleBuffer: true
-    ),
-    search: SearchConfig(wrap: true, ignoreCase: rcAuto),
-    encoding: EncodingConfig(
-      documentCharset: @[
-        CHARSET_UTF_8, CHARSET_SHIFT_JIS, CHARSET_EUC_JP, CHARSET_ISO_8859_2
-      ]
-    ),
-    external: ExternalConfig(
-      historySize: 100,
-      showDownloadPanel: true,
-      editor: "${VISUAL:-${EDITOR:-vi}}",
-      copyCmd: "xsel -bi",
-      pasteCmd: "xsel -bo",
-      mailcap: @[
-        ChaPathResolved(expandPath("~/.mailcap")),
-        ChaPathResolved"/etc/mailcap",
-        ChaPathResolved"/usr/etc/mailcap",
-        ChaPathResolved"/usr/local/etc/mailcap"
-      ],
-      autoMailcap: ChaPathResolved(dir & "/auto.mailcap"),
-      mimeTypes: @[
-        ChaPathResolved(expandPath("~/.mime.types")),
-        ChaPathResolved"/etc/mime.types",
-        ChaPathResolved"/usr/etc/mime.types",
-        ChaPathResolved"/usr/local/etc/mime.types"
-      ],
-      #TODO urimethodmap
-      bookmark: ChaPathResolved(dataDir & "/bookmark.md"),
-      historyFile: ChaPathResolved(dataDir & "/history.uri"),
-      tmpdir: ChaPathResolved(
-        getEnvEmpty("TMPDIR", "/tmp") & "/cha-tmp-" & getEnvEmpty("LOGNAME")),
-      cgiDir: @[
-        ChaPathResolved(dir & "/cgi-bin"),
-        ChaPathResolved(getEnvEmpty("CHA_LIBEXEC_DIR") & "/cgi-bin")
-      ],
-      cookieFile: ChaPathResolved(dataDir & "/cookies.txt"),
-      downloadDir: ChaPathResolved(getEnvEmpty("TMPDIR", "/tmp") & '/')
-    ),
-    network: NetworkConfig(
-      maxRedirect: 10,
-      maxNetConnections: 12,
-      prependScheme: "https://",
-      defaultHeaders: newHeaders(hgRequest, {
-        "User-Agent": "chawan",
-        "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "en;q=1.0",
-        "Pragma": "no-cache",
-        "Cache-Control": "no-cache"
-      })
-    ),
-    input: InputConfig(
-      viNumericPrefix: true,
-      wheelScroll: 5,
-      sideWheelScroll: 5,
-      linkHintChars: initCodepointSet("abcdefghijklmnoprstuvxyz")
-    ),
-    display: DisplayConfig(
-      noFormatMode: {ffOverline},
-      highlightColor: ANSIColor(6).cssColor(), # cyan
-      highlightMarks: true,
-      minimumContrast: 100,
-      columns: 80,
-      lines: 24,
-      pixelsPerColumn: 9,
-      pixelsPerLine: 18
-    ),
-    status: StatusConfig(
-      showCursorPosition: true,
-      showHoverLink: true,
-      formatMode: {ffReverse}
-    ),
-    buffer: BufferSectionConfig(
-      styling: true,
-      metaRefresh: mrAsk,
-      history: true
-    )
+    actionMap: [
+      csPage: newActionMap(ctx, PageCommands, ""),
+      csLine: newActionMap(ctx, LineCommands, "writeInputBuffer"),
+    ],
+    documentCharset: @[
+      CHARSET_UTF_8, CHARSET_SHIFT_JIS, CHARSET_EUC_JP, CHARSET_ISO_8859_2
+    ],
+    defaultHeaders: newHeaders(hgRequest, {
+      "User-Agent": "chawan",
+      "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept-Language": "en;q=1.0",
+      "Pragma": "no-cache",
+      "Cache-Control": "no-cache"
+    }),
   )
+  for it in ConfigInitTrue:
+    config.bits[it].bool = true
+  config.bits[coFormatModeStatus].formatMode = {ffReverse}
+  config.bits[coNoFormatMode].formatMode = {ffOverline}
+  config.words[coHighlightColor].cssColor = ANSIColor(6).cssColor() # cyan
+  for it in ConfigInitInt32:
+    config.hwords[it[0]].int32 = it[1]
+  for it in ConfigInitStr:
+    config.strs[it[0]] = it[1]
+  for it in ConfigInitPath:
+    config.strs[it[0]] = ChaPath(it[1]).unquote(dir).get
+  for it in ConfigInitPathSeq:
+    for path in it[1]:
+      config.strSeqs[it[0]].add(ChaPath(path).unquote(dir).get)
+  config.siteconf.add(ConfigRule(
+    name: "downloads",
+    regex: compileMatchRegex("about:downloads").get,
+    fun: JS_UNDEFINED,
+    entries: @[ConfigEntry(
+      section: csSiteconf,
+      opt: coMetaRefresh,
+      t: cocBit,
+      bit: ConfigOptionBit(metaRefresh: mrAlways)
+    )]
+  ))
+  if ctx.addConfigSections(config).isErr:
+    return nil
+  config
 
 proc addConfigModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(ActionMap)
-  ?ctx.registerType(StartConfig)
-  ?ctx.registerType(SearchConfig)
-  ?ctx.registerType(EncodingConfig)
-  ?ctx.registerType(ExternalConfig)
-  ?ctx.registerType(NetworkConfig)
-  ?ctx.registerType(InputConfig)
-  ?ctx.registerType(DisplayConfig)
-  ?ctx.registerType(StatusConfig)
-  ?ctx.registerType(BufferSectionConfig, name = "BufferConfig")
   ?ctx.registerType(Config)
   ok()
 

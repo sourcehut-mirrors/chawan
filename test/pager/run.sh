@@ -8,4 +8,6 @@ if ! $CHA -C"${TMPDIR:-/tmp}/config.toml" /dev/null | diff /dev/null -
 then	exit 1
 fi
 
+$CHA -VCtest.toml >/dev/null || exit 1
+
 $CHA -r 'quit()'

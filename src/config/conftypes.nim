@@ -21,9 +21,9 @@ type
     cmSave = "save"
 
   MetaRefresh* = enum
+    mrAsk = "ask"
     mrNever = "never"
     mrAlways = "always"
-    mrAsk = "ask"
 
   ImageMode* = enum
     imNone = "none"

@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/os
 import std/posix
 import std/termios
@@ -169,7 +168,7 @@ type
     canvasImagesTmpHead: CanvasImage # temp list during rescan
     canvasImagesTmpTail: CanvasImage
     attrs*: WindowAttributes
-    formatMode: set[FormatFlag]
+    formatMode: FormatMode
     imageMode*: ImageMode
     cleared: bool
     asciiOnly: bool
@@ -943,20 +942,20 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
         let y = int(y)
         case term.eparser.nums[0]
         of 4:
-          if not term.config.display.forcePixelsPerColumn and
+          if not term.config{"forcePixelsPerColumn"} and
               term.attrs.ppc == 0 and term.attrs.width != 0:
             term.attrs.ppc = x div term.attrs.width
             term.attrs.widthPx = term.attrs.ppc * term.attrs.width
-          if not term.config.display.forcePixelsPerLine and
+          if not term.config{"forcePixelsPerLine"} and
               term.attrs.ppl == 0 and term.attrs.height != 0:
             term.attrs.ppl = y div term.attrs.height
             term.attrs.heightPx = term.attrs.ppl * term.attrs.height
           term.eparser.queryState = qsWindowPixels.succ
         of 6:
-          if not term.config.display.forcePixelsPerColumn:
+          if not term.config{"forcePixelsPerColumn"}:
             term.attrs.ppc = x
             term.attrs.widthPx = x * term.attrs.width
-          if not term.config.display.forcePixelsPerLine:
+          if not term.config{"forcePixelsPerLine"}:
             term.attrs.ppl = y
             term.attrs.heightPx = y * term.attrs.height
           term.eparser.queryState = qsCellSize.succ
@@ -971,10 +970,10 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
       let y = term.eparser.nums[0]
       # if either value is 9999, we might just have a humongous terminal
       # (or CUP is implemented incorrectly)
-      if x < 9999 and not term.config.display.forceColumns:
+      if x < 9999 and not term.config{"forceColumns"}:
         term.attrs.width = max(int(x) - int(tfMargin in term.desc), 0)
         term.attrs.widthPx = term.attrs.width * term.attrs.ppc
-      if y < 9999 and not term.config.display.forceLines:
+      if y < 9999 and not term.config{"forceLines"}:
         term.attrs.height = int(y)
         term.attrs.heightPx = term.attrs.height * term.attrs.ppl
       term.eparser.queryState = qsNone
@@ -998,7 +997,7 @@ proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
     for n in term.eparser.nums:
       case n
       of 4:
-        if term.config.display.imageMode.isNone and term.imageMode == imNone and
+        if term.config{"imageMode"}.isNone and term.imageMode == imNone and
             term.termType != ttZellij:
           # Zellij says it supports Sixel; however:
           # * on Sixel-capable terminals it somehow misplaces images.
@@ -1006,19 +1005,19 @@ proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
           # So we blacklist it.
           term.imageMode = imSixel
       of 22:
-        if term.config.display.colorMode.isNone:
+        if term.config{"colorMode"}.isNone:
           term.attrs.colorMode = max(term.attrs.colorMode, cmANSI)
       of 52:
-        if term.config.input.osc52Copy.isNone:
+        if term.config{"osc52Copy"}.isNone:
           term.osc52Copy = true
-        if tfPrimary in term.desc and term.config.input.osc52Primary.isNone:
+        if tfPrimary in term.desc and term.config{"osc52Primary"}.isNone:
           term.osc52Primary = true
       else: discard
   of 'S': # XTSMGRAPHICS
     if term.eparser.nums.len >= 3 and term.eparser.nums[0] == 1 and
         term.eparser.nums[1] == 0:
       let registers = term.eparser.nums[2]
-      if term.config.display.sixelColors.isNone:
+      if term.config{"sixelColors"} <= 0:
         term.sixelRegisterNum = uint16(clamp(registers, 2, uint16.high))
   else: discard
   term.eparser.nums.setLen(0)
@@ -1104,9 +1103,9 @@ proc parseOSCNumSemi(term: Terminal; c: char): EscParseResult =
 proc parseOSC60Semi(term: Terminal; c: char) =
   if c in {',', '\a', '\e'}:
     if term.eparser.buf.equalsIgnoreCase("allowWindowOps"):
-      if term.config.input.osc52Copy.isNone:
+      if term.config{"osc52Copy"}.isNone:
         term.osc52Copy = true
-      if term.config.input.osc52Primary.isNone:
+      if term.config{"osc52Primary"}.isNone:
         term.osc52Primary = true
     term.eparser.buf = ""
   case c
@@ -1122,9 +1121,9 @@ proc parseOSC61Semi(term: Terminal; c: char) =
     term.eparser.buf = ""
     if term.eparser.parseST(c):
       if not term.eparser.flag:
-        if term.config.input.osc52Copy.isNone:
+        if term.config{"osc52Copy"}.isNone:
           term.osc52Copy = true
-        if term.config.input.osc52Primary.isNone:
+        if term.config{"osc52Primary"}.isNone:
           term.osc52Primary = true
       term.eparser.flag = false
   else:
@@ -1160,7 +1159,7 @@ proc parseDCS1PlusR(term: Terminal; c: char): EscParseResult =
   term.eparser.nums = @[]
   term.eparser.skipToST(c)
   if c == '=' and nums.len == 1 and nums[0] == 0x524742 and # ASCII R G B
-      term.config.display.colorMode.isNone and
+      term.config{"colorMode"}.isNone and
       term.attrs.colorMode != cmTrueColor:
     term.attrs.colorMode = cmTrueColor
     return eprWindowChange
@@ -1168,7 +1167,7 @@ proc parseDCS1PlusR(term: Terminal; c: char): EscParseResult =
 
 proc parseAPCG(term: Terminal; c: char): EscParseResult =
   let imageMode = term.imageMode
-  if term.config.display.imageMode.isNone:
+  if term.config{"imageMode"}.isNone:
     term.imageMode = imKitty
   term.eparser.skipToST(c)
   if imageMode != term.imageMode:
@@ -1393,7 +1392,7 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
     # box's background color, but that should be rare enough (hopefully a
     # website would at least use a consistent color syntax...)
     return fgcolor
-  let contrast = term.config.display.minimumContrast
+  let contrast = term.config{"minimumContrast"}
   let cfgcolor = fgcolor
   let bgcolor = term.getRGB(bgcolor, term.defaultBackground)
   let fgcolor = term.getRGB(fgcolor, term.defaultForeground)
@@ -1532,16 +1531,16 @@ proc processFormat*(term: Terminal; cellf: Format): Opt[void] =
   ok()
 
 proc hasTitle(term: Terminal): bool =
-  term.config.display.setTitle.get(tfTitle in term.desc)
+  term.config{"setTitle"}.get(tfTitle in term.desc)
 
 proc hasAltScreen(term: Terminal): bool =
-  term.config.display.altScreen.get(tfAltScreen in term.desc)
+  term.config{"altScreen"}.get(tfAltScreen in term.desc)
 
 proc hasBracketedPaste(term: Terminal): bool =
-  term.config.input.bracketedPaste.get(tfBracketedPaste in term.desc)
+  term.config{"bracketedPaste"}.get(tfBracketedPaste in term.desc)
 
 proc hasMouse(term: Terminal): bool =
-  term.config.input.useMouse.get(tfMouse in term.desc)
+  term.config{"useMouse"}.get(tfMouse in term.desc)
 
 proc encodeAllQMark(res: var string; te: TextEncoder; iq: openArray[uint8]) =
   var n = 0
@@ -1810,43 +1809,45 @@ proc unsetScroll*(term: Terminal) =
 
 proc applyConfigDimensions(term: Terminal) =
   # screen dimensions
-  if term.attrs.width == 0 or term.config.display.forceColumns:
-    term.attrs.width = int(term.config.display.columns)
-  if term.attrs.height == 0 or term.config.display.forceLines:
-    term.attrs.height = int(term.config.display.lines)
-  if term.attrs.ppc == 0 or term.config.display.forcePixelsPerColumn:
-    term.attrs.ppc = int(term.config.display.pixelsPerColumn)
-  if term.attrs.ppl == 0 or term.config.display.forcePixelsPerLine:
-    term.attrs.ppl = int(term.config.display.pixelsPerLine)
+  if term.attrs.width == 0 or term.config{"forceColumns"}:
+    term.attrs.width = int(term.config{"columns"})
+  if term.attrs.height == 0 or term.config{"forceLines"}:
+    term.attrs.height = int(term.config{"lines"})
+  if term.attrs.ppc == 0 or term.config{"forcePixelsPerColumn"}:
+    term.attrs.ppc = int(term.config{"pixelsPerColumn"})
+  if term.attrs.ppl == 0 or term.config{"forcePixelsPerLine"}:
+    term.attrs.ppl = int(term.config{"pixelsPerLine"})
   term.attrs.widthPx = term.attrs.ppc * term.attrs.width
   term.attrs.heightPx = term.attrs.ppl * term.attrs.height
 
 proc applyConfig(term: Terminal) =
   # colors, formatting
-  if term.config.display.colorMode.isSome:
-    term.attrs.colorMode = term.config.display.colorMode.get
-  if term.config.display.formatMode.isSome:
-    term.formatMode = term.config.display.formatMode.get
+  if term.config{"colorMode"}.isSome:
+    term.attrs.colorMode = term.config{"colorMode"}.get
+  if term.config{"display.formatMode"}.isSome:
+    term.formatMode = term.config{"display.formatMode"}.get
   for fm in FormatFlag:
-    if fm in term.config.display.noFormatMode:
+    if fm in term.config{"noFormatMode"}:
       term.formatMode.excl(fm)
-  if term.config.display.imageMode.isSome:
-    term.imageMode = term.config.display.imageMode.get
-  if term.config.display.sixelColors.isSome:
-    let n = term.config.display.sixelColors.get
-    term.sixelRegisterNum = uint16(clamp(n, 2, 65535))
-  if term.config.display.defaultBackgroundColor.isSome:
-    term.defaultBackground = term.config.display.defaultBackgroundColor.get
-  if term.config.display.defaultForegroundColor.isSome:
-    term.defaultForeground = term.config.display.defaultForegroundColor.get
+  if term.config{"imageMode"}.isSome:
+    term.imageMode = term.config{"imageMode"}.get
+  let sixelColors = term.config{"sixelColors"}
+  if sixelColors >= 0:
+    term.sixelRegisterNum = uint16(clamp(sixelColors, 2, 65535))
+  let defaultBackground = term.config{"defaultBackgroundColor"}
+  if defaultBackground.isSome:
+    term.defaultBackground = defaultBackground.get
+  let defaultForeground = term.config{"defaultForegroundColor"}
+  if defaultForeground.isSome:
+    term.defaultForeground = defaultForeground.get
   term.attrs.prefersDark = term.defaultBackground.Y < 125
-  if term.config.input.osc52Copy.isSome:
-    term.osc52Copy = term.config.input.osc52Copy.get
-  if term.config.input.osc52Primary.isSome:
-    term.osc52Primary = term.config.input.osc52Primary.get
+  if term.config{"osc52Copy"}.isSome:
+    term.osc52Copy = term.config{"osc52Copy"}.get
+  if term.config{"osc52Primary"}.isSome:
+    term.osc52Primary = term.config{"osc52Primary"}.get
   # charsets
-  if term.config.encoding.displayCharset.isSome:
-    term.cs = term.config.encoding.displayCharset.get
+  if term.config{"displayCharset"} != CHARSET_UNKNOWN:
+    term.cs = term.config{"displayCharset"}
   else:
     term.cs = DefaultCharset
     for s in ["LC_ALL", "LC_CTYPE", "LANG"]:
@@ -2498,22 +2499,21 @@ proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
   if not windowOnly:
     term.setQueryState(qsBackgroundColor)
     if tfXtermQuery in term.desc:
-      if term.config.display.defaultBackgroundColor.isNone:
+      if term.config{"defaultBackgroundColor"}.isNone:
         ?term.write(QueryBackgroundColor)
-      if term.config.display.defaultForegroundColor.isNone:
+      if term.config{"defaultForegroundColor"}.isNone:
         ?term.write(QueryForegroundColor)
-      if term.config.input.osc52Copy.isNone or
-          term.config.input.osc52Primary.isNone:
+      if term.config{"osc52Copy"}.isNone or term.config{"osc52Primary"}.isNone:
         ?term.write(QueryXtermAllowedOps)
         ?term.write(QueryXtermWindowOps)
-      if term.config.display.imageMode.isNone:
+      if term.config{"imageMode"}.isNone:
         if tfBleedsAPC notin term.desc:
           ?term.write(KittyQuery)
         ?term.write(QueryColorRegisters)
-      elif term.config.display.imageMode.get == imSixel:
+      elif term.config{"imageMode"}.get == imSixel:
         ?term.write(QueryColorRegisters)
       if term.attrs.colorMode < cmTrueColor and
-          term.config.display.colorMode.isNone:
+          term.config{"colorMode"}.isNone:
         ?term.write(QueryTcapRGB)
       ?term.write(QueryANSIColors)
     ?term.write(DA1)

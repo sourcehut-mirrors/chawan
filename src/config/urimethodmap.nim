@@ -66,11 +66,3 @@ proc parseURIMethodMap*(this: var URIMethodMap; s: string) =
     elif v.startsWith("/cgi-bin/"):
       v = "cgi-bin:" & v.substr("/cgi-bin/".len)
     this.insert(k, v)
-
-proc parseURIMethodMap*(s: string): URIMethodMap =
-  result = URIMethodMap()
-  result.parseURIMethodMap(s)
-
-proc append*(this: var URIMethodMap; that: URIMethodMap) =
-  for k, v in that.map:
-    this.insert(k, v)
