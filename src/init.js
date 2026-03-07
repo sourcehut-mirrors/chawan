@@ -1047,7 +1047,7 @@ Pager.prototype.toggleLinkHints = async function() {
             s += c;
         }
     }
-    this.hideLinkHints();
+    buffer.hideLinkHints();
     if (it?.leaf) {
         this.setCursorXY(it.x, it.y);
         buffer.markPos();

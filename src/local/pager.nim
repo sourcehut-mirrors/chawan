@@ -721,7 +721,7 @@ proc writeStatusMessage(status: var Surface; str: string; format = Format();
 # Note: should only be called directly after user interaction.
 proc refreshStatusMsg(pager: Pager) =
   let init = pager.bufferInit
-  if init == nil or pager.askPrompt != "":
+  if init == nil or not JS_IsUndefined(pager.jsmap.askPromise):
     return
   if pager.precnum > 0:
     discard pager.status.writeStatusMessage($pager.precnum & pager.inputBuffer)
@@ -1083,7 +1083,7 @@ proc initImages(pager: Pager; iface: BufferInterface) =
 proc getAbsoluteCursorXY(pager: Pager; iface: BufferInterface): PagePos =
   var cursorx = 0
   var cursory = 0
-  if pager.askPrompt != "":
+  if not JS_IsUndefined(pager.jsmap.askPromise):
     return (pager.askCursor, pager.attrs.height - 1)
   elif pager.lineEdit != nil:
     return (pager.lineEdit.getCursorX(), pager.attrs.height - 1)
@@ -1183,8 +1183,6 @@ proc writeAskPrompt(pager: Pager; s = "") =
 
 # public
 proc askChar(ctx: JSContext; pager: Pager; prompt: string): JSValue {.jsfunc.} =
-  if prompt == "":
-    return JS_ThrowTypeError(ctx, "prompt may not be empty")
   var funs {.noinit.}: array[2, JSValue]
   let res = ctx.newPromiseCapability(funs)
   if JS_IsException(res):
@@ -1231,7 +1229,7 @@ proc fulfillAsk(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
 # private
 proc copyLoadInfo(pager: Pager; init: BufferInit) {.jsfunc.} =
   if pager.bufferInit == init and init.loadInfo != "" and
-      pager.alertState != pasAlertOn and pager.askPrompt == "":
+      pager.alertState != pasAlertOn and JS_IsUndefined(pager.jsmap.askPromise):
     discard pager.status.writeStatusMessage(init.loadInfo)
     pager.alertState = pasLoadInfo
     pager.updateStatus = ussSkip
@@ -1472,7 +1470,7 @@ proc windowChange(pager: Pager): Opt[void] =
       pager.clear(st)
     if pager.menu != nil:
       pager.menu.windowChange(pager.bufWidth, pager.bufHeight)
-    if pager.askPrompt != "":
+    if not JS_IsUndefined(pager.jsmap.askPromise):
       pager.writeAskPrompt()
     pager.queueStatusUpdate()
   let ctx = pager.jsctx
