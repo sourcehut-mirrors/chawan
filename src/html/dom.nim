@@ -1424,13 +1424,13 @@ proc isSameOrigin*(window: Window; origin: Origin): bool =
     return true
   return window.settings.origin.isSameOrigin(origin)
 
-proc fetch*(window: Window; input: JSRequest; finish: FetchFinish;
+proc fetch*(window: Window; input: Request; finish: FetchFinish;
     opaque: RootRef) =
   #TODO cors requests?
-  if input.request.url.schemeType != stData and
-      not window.isSameOrigin(input.request.url.origin):
+  if input.url.schemeType != stData and
+      not window.isSameOrigin(input.url.origin):
     return
-  window.loader.fetch(input.request, finish, opaque)
+  window.loader.fetch(input, finish, opaque)
 
 proc corsFetch(window: Window; input: Request; finish: FetchFinish;
     opaque: RootRef) =
@@ -7015,7 +7015,7 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
   let window = element.document.window
   let request = createPotentialCORSRequest(url, rdScript, cors)
   request.client = window.settings
-  return window.loader.doRequest(request.request)
+  return window.loader.doRequest(request)
 
 #TODO settings object
 proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
@@ -7149,13 +7149,11 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
     rmCors
   #TODO client
   #TODO initiator type
-  let request = JSRequest(
-    request: newRequest(
-      url,
-      referrer = referrer,
-    ),
-    destination: destination,
-    mode: mode
+  let request = newRequest(
+    url,
+    referrer = referrer,
+    destination = destination,
+    mode = mode
   )
   #TODO set up module script request
   #TODO performFetch

@@ -1738,11 +1738,8 @@ type GotoURLDict = object of JSDict
 # public
 proc gotoURLImpl(ctx: JSContext; pager: Pager; v: JSValueConst;
     t = GotoURLDict()): Opt[BufferInit] {.jsfunc.} =
-  var request: Request = nil
-  var jsRequest: JSRequest = nil
-  if ctx.fromJS(v, jsRequest).isOk:
-    request = jsRequest.request
-  else:
+  var request: Request
+  if ctx.fromJS(v, request).isErr:
     var url: URL
     if ctx.fromJS(v, url).isErr:
       var s: string
@@ -2347,13 +2344,13 @@ proc handleRead(pager: Pager; init: BufferInit): Opt[void] =
     let response = newResponse(init.request, stream, init.istreamOutputId)
     stream.withPacketReaderFire r:
       r.sread(response.status)
-      r.sreadLoader(response.headers)
+      r.sreadList(response.headers)
     init.applyResponse(response, pager.mimeTypes.t)
     let redirect = response.getRedirect(init.request)
     let ctx = pager.jsctx
     var arg0 = JS_UNDEFINED
     let cres = if redirect != nil:
-      arg0 = ctx.toJS(redirect.toPagerJSRequest())
+      arg0 = ctx.toJS(redirect)
       bcrRedirect
     elif response.status == 401:
       bcrUnauthorized

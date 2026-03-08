@@ -870,6 +870,13 @@ proc initClickResult*(open: Request; contentType = ""): ClickResult =
     return initClickResult()
   return ClickResult(t: crtOpen, open: open, contentType: contentType)
 
+proc initClickResult*(open: RawRequest; contentType = ""): ClickResult =
+  return ClickResult(
+    t: crtOpen,
+    open: newRequest(open),
+    contentType: contentType
+  )
+
 proc initClickResult*(options: seq[SelectOption]; selected: int):
     ClickResult =
   if options.len == 0:
@@ -883,7 +890,7 @@ proc sread*(r: var PacketReader; x: var ClickResult) =
   case t
   of crtNone: x = initClickResult()
   of crtOpen:
-    var open: Request
+    var open: RawRequest
     var contentType: string
     r.sread(open)
     r.sread(contentType)
@@ -927,7 +934,7 @@ proc toJS(ctx: JSContext; x: ClickResult): JSValue =
     case x.t
     of crtNone: discard
     of crtOpen:
-      let open = x.open.toPagerJSRequest()
+      let open = x.open
       if ctx.definePropertyConvert(obj, "open", open) == dprException:
         break good
       if ctx.definePropertyConvert(obj, "contentType", x.contentType) ==

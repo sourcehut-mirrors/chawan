@@ -3,6 +3,7 @@
 import std/algorithm
 
 import io/packetreader
+import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jstypes
@@ -10,6 +11,7 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt
 import types/opt
+import types/referrer
 import types/url
 import utils/twtstr
 
@@ -23,8 +25,12 @@ type
 
   HTTPHeader* = tuple[name, value: string]
 
+  HeaderList = seq[HTTPHeader]
+
+  HeaderListConst = openArray[HTTPHeader]
+
   Headers* = ref object
-    list: seq[HTTPHeader]
+    list: HeaderList
     guard*: HeaderGuard
 
   HeadersInit* = object
@@ -44,14 +50,20 @@ iterator allPairs*(headers: Headers): tuple[name, value: lent string] =
   for (name, value) in headers.list:
     yield (name, value)
 
+proc sort*(list: var HeaderList) =
+  list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
+
 proc sort(headers: Headers) =
-  headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
+  headers.list.sort()
 
 # in the loader we just send a seq of openArray[HTTPHeader]
-proc sreadLoader*(r: var PacketReader; headers: Headers) =
+proc sreadList*(r: var PacketReader; headers: Headers) =
   assert headers != nil
   r.sread(headers.list)
   headers.sort()
+
+proc swriteList*(w: var PacketWriter; headers: Headers) =
+  w.swrite(headers.list)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     FromJSResult =
@@ -161,30 +173,42 @@ proc isNoCorsSafelisted(name, value: string): bool =
     ]
   return false
 
-proc lowerBound(this: Headers; name: string): int =
-  return this.list.lowerBound(name, proc(it: HTTPHeader; name: string): int =
+proc lowerBound(list: HeaderListConst; name: string): int =
+  list.lowerBound(name, proc(it: HTTPHeader; name: string): int =
     cmpIgnoreCase(it.name, name)
   )
 
-proc removeAll(this: Headers; name: string; n: int) =
+proc lowerBound(this: Headers; name: string): int =
+  this.list.lowerBound(name)
+
+proc removeAll(list: var HeaderList; name: string; n: int) =
   var j = 0
-  for i, it in this.list.toOpenArray(n, this.list.high).mypairs:
+  for i, it in list.toOpenArray(n, list.high).mypairs:
     if not it.name.equalsIgnoreCase(name):
       break
     j = i + 1
   var m = n + j
   if n != m:
-    let L = this.list.len - j
+    let L = list.len - j
     for n in n ..< L:
-      this.list[n] = move(this.list[m])
+      list[n] = move(list[m])
       inc m
-    this.list.setLen(L)
+    list.setLen(L)
+
+proc removeAll(this: Headers; name: string; n: int) =
+  this.list.removeAll(name, n)
+
+proc contains(list: HeaderListConst; name: string; n: int): bool =
+  return n < list.len and list[n].name.equalsIgnoreCase(name)
 
 proc contains(this: Headers; name: string; n: int): bool =
-  return n < this.list.len and this.list[n].name.equalsIgnoreCase(name)
+  this.list.contains(name, n)
+
+proc contains*(list: HeaderList; name: string): bool =
+  list.contains(name, list.lowerBound(name))
 
 proc contains*(this: Headers; name: string): bool =
-  return this.contains(name, this.lowerBound(name))
+  this.list.contains(name)
 
 proc removeAll*(this: Headers; name: string) =
   this.removeAll(name, this.lowerBound(name))
@@ -195,10 +219,13 @@ proc add(headers: Headers; name, value: string; n: int) =
     inc n
   headers.list.insert((name, value), n)
 
+proc addIfNotFound*(list: var HeaderList; name, value: string) =
+  let n = list.lowerBound(name)
+  if not list.contains(name, n):
+    list.insert((name, value), n)
+
 proc addIfNotFound*(headers: Headers; name, value: string) =
-  let n = headers.lowerBound(name)
-  if not headers.contains(name, n):
-    headers.list.insert((name, value), n)
+  headers.list.addIfNotFound(name, value)
 
 # returns true if added, false otherwise
 proc addIfNotFoundCheck*(headers: Headers; name, value: string): bool =
@@ -318,30 +345,40 @@ proc `[]`*(this: Headers; name: string): var string =
   let n = this.lowerBound(name)
   return this.list[n].value
 
-proc getFirst(headers: Headers; name: string; n: int): lent string =
-  if headers.contains(name, n):
-    return headers.list[n].value
+proc getFirst(list: HeaderListConst; name: string; n: int): lent string =
+  if list.contains(name, n):
+    return list[n].value
   let emptyStr {.global.} = ""
   return emptyStr
 
+proc getFirst*(list: HeaderListConst; name: string): lent string =
+  list.getFirst(name, list.lowerBound(name))
+
 proc getFirst*(headers: Headers; name: string): lent string =
-  return headers.getFirst(name, headers.lowerBound(name))
+  headers.list.getFirst(name)
 
-proc takeFirstRemoveAll*(headers: Headers; name: string): string =
-  let n = headers.lowerBound(name)
-  var s = ""
-  if headers.contains(name, n):
-    s = move(headers.list[n].value)
-  headers.removeAll(name, n)
-  move(s)
+proc setupReferrer*(list: var HeaderList; target: URL;
+    referrerPolicy: ReferrerPolicy) =
+  # set referrer based on origin URL and referrer policy
+  let n = list.lowerBound("Referer")
+  if list.contains("Referer", n):
+    let url = parseURL0(move(list[n].value))
+    list.removeAll("Referer", n)
+    if url != nil:
+      let referrer = url.getReferrer(target, referrerPolicy)
+      if referrer != "":
+        list.insert(("Referer", referrer), n)
 
-proc getAllNoComma*(this: Headers; k: string): seq[string] =
+proc getAllNoComma*(list: HeaderListConst; k: string): seq[string] =
   result = @[]
-  let n = this.lowerBound(k)
-  for it in this.list.toOpenArray(n, this.list.high):
+  let n = list.lowerBound(k)
+  for it in list.toOpenArray(n, list.high):
     if not it.name.equalsIgnoreCase(k):
       break
     result.add(it.value)
+
+proc getAllNoComma*(this: Headers; k: string): seq[string] =
+  this.list.getAllNoComma(k)
 
 proc getAllCommaSplit*(this: Headers; k: string): seq[string] =
   result = @[]

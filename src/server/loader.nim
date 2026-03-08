@@ -3,7 +3,7 @@
 # to each with a response.  In case of the "load" request, we return one
 # half of a socket pair, and then send connection information before the
 # response body so that the protocol looks like:
-# C: Request
+# C: RawRequest
 # S: (packet 1) res (0 => success, _ => error)
 # if success:
 #  S: (packet 1) output ID
@@ -127,7 +127,7 @@ type
     numConnections: int
     # Requests that will only be sent once n no longer exceeds
     # maxNetConnections.
-    pending: seq[(InputHandle, Request, URL)]
+    pending: seq[(InputHandle, RawRequest, URL)]
 
   DownloadItem = ref object
     path: string
@@ -179,7 +179,7 @@ type
 
 # Forward declarations
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
-  request: Request; prevURL: URL; config: LoaderClientConfig)
+  request: RawRequest; prevURL: URL; config: LoaderClientConfig)
 proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
   buffer: LoaderBuffer; ignoreSuspension: bool;
   unregWrite: var seq[OutputHandle])
@@ -323,25 +323,19 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
     headers: openArray[HTTPHeader]): PushBufferResult =
   assert handle.rstate == rsBeforeStatus
   inc handle.rstate
+  let contentLens = headers.getFirst("Content-Length")
   handle.startTime = getTime()
+  handle.contentLen = parseUInt64(contentLens).get(uint64.high)
   let output = handle.output
   let cookieJar = output.owner.config.cookieJar
-  var contentLengthSeen = false
-  var cookies: seq[string] = @[]
-  for header in headers:
-    if not contentLengthSeen and header.name.equalsIgnoreCase("Content-Length"):
-      handle.contentLen = parseUInt64(header.value).get(uint64.high)
-      contentLengthSeen = true
-    elif cookieJar != nil and handle.credentials and
-        header.name.equalsIgnoreCase("Set-Cookie"):
-      #TODO skip the copy
-      cookies.add(header.value)
-  if cookies.len > 0:
+  if cookieJar != nil and handle.credentials:
     # Never persist in loader; we save cookies in the pager.
-    let url = handle.url
-    cookieJar.setCookie(cookies, url, persist = false, http = true)
-    if ctx.cookieStream != nil:
-      ctx.updateCookies(cookieJar, url, output.owner, cookies)
+    let values = headers.getAllNoComma("Set-Cookie")
+    if values.len > 0:
+      let url = handle.url
+      cookieJar.setCookie(values, url, persist = false, http = true)
+      if ctx.cookieStream != nil:
+        ctx.updateCookies(cookieJar, url, output.owner, values)
   let buffer = bufferFromWriter w:
     w.swrite(status)
     w.swrite(headers)
@@ -713,6 +707,7 @@ proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
           of pbrUnregister:
             handle.parser = nil
             return -1
+        parser.headers.sort()
         let res = ctx.sendStatus(handle, parser.status, parser.headers)
         handle.parser = nil
         return case res
@@ -731,6 +726,7 @@ proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
         of crDone: parser.state = hpsControlDone
         of crContinue: discard
         of crError:
+          parser.headers.sort()
           discard ctx.sendStatus(handle, 500, parser.headers)
           handle.parser = nil
           return -1
@@ -875,17 +871,16 @@ proc findItem(authMap: seq[AuthItem]; origin: Origin): AuthItem =
       return it
   return nil
 
-proc includeCredentials(config: LoaderClientConfig; request: Request; url: URL):
-    bool =
+proc includeCredentials(config: LoaderClientConfig; request: RawRequest;
+    url: URL): bool =
   return request.credentials == cmInclude or
     request.credentials == cmSameOrigin and (config.originURL == nil or
       url.origin.isSameOrigin(config.originURL.origin))
 
-proc findAuth(client: ClientHandle; request: Request; url: URL): AuthItem =
-  if "Authorization" notin request.headers and
-      client.config.includeCredentials(request, url):
-    if client.authMap.len > 0:
-      return client.authMap.findItem(url.authOrigin)
+proc findAuth(client: ClientHandle; request: RawRequest; url: URL): AuthItem =
+  if not request.headers.contains("Authorization") and
+      client.config.includeCredentials(request, url) and client.authMap.len > 0:
+    return client.authMap.findItem(url.authOrigin)
   return nil
 
 proc putMappedURL(s: var seq[tuple[name, value: string]]; url: URL;
@@ -907,8 +902,8 @@ type CGIPath = object
   requestURI: string
   myDir: string
 
-proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
-    config: LoaderClientConfig; auth: AuthItem):
+proc setupEnv(cpath: CGIPath; request: RawRequest; contentLen: int;
+    prevURL: URL; config: LoaderClientConfig; auth: AuthItem):
     seq[tuple[name, value: string]] =
   result = @[]
   let url = request.url
@@ -916,9 +911,22 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
   result.add(("SCRIPT_FILENAME", cpath.cmd))
   result.add(("REQUEST_URI", cpath.requestURI))
   result.add(("REQUEST_METHOD", $request.httpMethod))
+  var contentTypeSeen = false
+  var contentType = ""
+  var cookieSeen = false
+  var refererSeen = false
   var headers = ""
-  for k, v in request.headers.allPairs:
-    headers &= k & ": " & v & "\r\n"
+  for it in request.headers:
+    headers &= it.name & ": " & it.value & "\r\n"
+    if not contentTypeSeen and it.name.equalsIgnoreCase("Content-Type"):
+      contentType = it.value
+      contentTypeSeen = true
+    elif not cookieSeen and it.name.equalsIgnoreCase("Cookie"):
+      result.add(("HTTP_COOKIE", it.value))
+      cookieSeen = true
+    elif not refererSeen and it.name.equalsIgnoreCase("Referer"):
+      result.add(("HTTP_REFERER", it.value))
+      refererSeen = true
   result.add(("REQUEST_HEADERS", headers))
   if prevURL != nil:
     result.putMappedURL(prevURL, auth)
@@ -930,21 +938,14 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
     if request.body.t == rbtMultipart:
       result.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
     else:
-      let contentType = request.headers.getFirst("Content-Type")
       result.add(("CONTENT_TYPE", contentType))
     result.add(("CONTENT_LENGTH", $contentLen))
-  let cookie = request.headers.getFirst("Cookie")
-  if cookie != "":
-    result.add(("HTTP_COOKIE", cookie))
-  let referer = request.headers.getFirst("Referer")
-  if referer != "":
-    result.add(("HTTP_REFERER", referer))
   if config.proxy != nil:
     result.add(("ALL_PROXY", $config.proxy))
   if config.insecureSslNoVerify:
     result.add(("CHA_INSECURE_SSL_NO_VERIFY", "1"))
 
-proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
+proc parseCGIPath(ctx: LoaderContext; request: RawRequest): CGIPath =
   var path = percentDecode(request.url.pathname)
   if path.startsWith("/cgi-bin/"):
     path.delete(0 .. "/cgi-bin/".high)
@@ -978,7 +979,7 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
   return cpath
 
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
-    request: Request; prevURL: URL; config: LoaderClientConfig) =
+    request: RawRequest; prevURL: URL; config: LoaderClientConfig) =
   if prevURL != nil and not ctx.isPrivileged(client) and prevURL.isNetPath():
     # Quick hack to throttle the number of simultaneous ongoing
     # connections.
@@ -1131,7 +1132,7 @@ proc findPassedFd(client: ClientHandle; name: string): int =
   return -1
 
 proc loadStream(ctx: var LoaderContext; client: ClientHandle;
-    handle: InputHandle; request: Request) =
+    handle: InputHandle; request: RawRequest) =
   let i = client.findPassedFd(request.url.pathname)
   if i == -1:
     ctx.rejectHandle(handle, ceFileNotFound, "stream not found")
@@ -1155,7 +1156,7 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
     ctx.loadStreamRegular(handle, nil)
 
 proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
-    handle: InputHandle; request: Request) =
+    handle: InputHandle; request: RawRequest) =
   let id = parseInt32(request.url.pathname).get(-1)
   let startFrom = parseInt64(request.url.search.substr(1)).get(0)
   let (ps, n) = client.openCachedItem(id)
@@ -1204,7 +1205,8 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
   ctx.pushBuffer(handle, buffer, ignoreSuspension = false, dummy)
   ctx.finishOutputSend(output)
 
-proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
+proc loadData(ctx: var LoaderContext; handle: InputHandle;
+    request: RawRequest) =
   let url = request.url
   var ct = url.pathname.until(',')
   if ct.len == url.pathname.len or NonAscii + Controls - {'\t'} in ct:
@@ -1300,7 +1302,7 @@ proc parseDownloadActions(ctx: LoaderContext; s: string): seq[DownloadAction] =
     Descending)
 
 proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
-    request: Request) =
+    request: RawRequest) =
   if request.httpMethod == hmPost:
     # OK clicked
     if request.body.t != rbtString:
@@ -1346,7 +1348,7 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
 
 # Stream for notifying the pager of new cookies set in the loader.
 proc loadCookieStream(ctx: var LoaderContext; handle: InputHandle;
-    request: Request) =
+    request: RawRequest) =
   if ctx.cookieStream != nil:
     ctx.rejectHandle(handle, ceCookieStreamExists)
     return
@@ -1356,7 +1358,8 @@ proc loadCookieStream(ctx: var LoaderContext; handle: InputHandle;
   of pbrUnregister:
     ctx.close(handle)
 
-proc loadAbout(ctx: var LoaderContext; handle: InputHandle; request: Request) =
+proc loadAbout(ctx: var LoaderContext; handle: InputHandle;
+    request: RawRequest) =
   let url = request.url
   case url.pathname
   of "blank":
@@ -1392,25 +1395,27 @@ proc loadGetCookie(ctx: var LoaderContext; client: ClientHandle;
   ctx.finishOutputSend(output)
 
 proc loadSetCookie(ctx: var LoaderContext; client: ClientHandle;
-    handle: InputHandle; request: Request) =
+    handle: InputHandle; request: RawRequest) =
   case ctx.sendConnectedStatus(handle, 200, [])
   of pbrDone: discard
   of pbrUnregister:
     ctx.close(handle)
     return
   let output = handle.output
-  let headers = request.headers
   let cookieJar = client.config.cookieJar
   if cookieJar != nil:
-    let values = headers.getAllNoComma("Set-Cookie")
+    var cookies: seq[string] = @[]
+    for it in request.headers:
+      if it.name.equalsIgnoreCase("Set-Cookie"):
+        cookies.add(it.value)
     let url = client.config.originURL
-    cookieJar.setCookie(values, url, persist = false, http = false)
+    cookieJar.setCookie(cookies, url, persist = false, http = false)
     if ctx.cookieStream != nil:
-      ctx.updateCookies(cookieJar, url, output.owner, values)
+      ctx.updateCookies(cookieJar, url, output.owner, cookies)
   ctx.finishOutputSend(output)
 
 proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
-    handle: InputHandle; request: Request) =
+    handle: InputHandle; request: RawRequest) =
   let url = request.url
   case url.pathname
   of "get-all":
@@ -1421,7 +1426,7 @@ proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
     ctx.rejectHandle(handle, ceInvalidURL)
 
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
-    config: LoaderClientConfig; request: Request; handle: InputHandle) =
+    config: LoaderClientConfig; request: var RawRequest; handle: InputHandle) =
   var redo = true
   var tries = 0
   var prevurl: URL = nil
@@ -1469,7 +1474,7 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
   if tries >= MaxRewrites:
     ctx.rejectHandle(handle, ceTooManyRewrites)
 
-proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
+proc setupRequestDefaults(request: var RawRequest; config: LoaderClientConfig;
     credentials: bool) =
   for k, v in config.defaultHeaders.allPairs:
     request.headers.addIfNotFound(k, v)
@@ -1477,12 +1482,10 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
     let cookie = config.cookieJar.serialize(request.url, http = true)
     if cookie != "":
       request.headers.addIfNotFound("Cookie", cookie)
-  let referrer = request.takeReferrer(config.referrerPolicy)
-  if referrer != "":
-    request.headers.add("Referer", referrer)
+  request.headers.setupReferrer(request.url, config.referrerPolicy)
 
-proc load(ctx: var LoaderContext; request: Request; client: ClientHandle;
-    config: LoaderClientConfig): CommandResult =
+proc load(ctx: var LoaderContext; request: var RawRequest;
+    client: ClientHandle; config: LoaderClientConfig): CommandResult =
   var pipev {.noinit.}: array[2, cint]
   var fail = false
   client.withPacketWriterReturnEOF w:
@@ -1508,13 +1511,13 @@ proc load(ctx: var LoaderContext; request: Request; client: ClientHandle;
 
 proc loadCmd(ctx: var LoaderContext; client: ClientHandle; r: var PacketReader):
     CommandResult =
-  var request: Request
+  var request: RawRequest
   r.sread(request)
   ctx.load(request, client, client.config)
 
 proc loadConfigCmd(ctx: var LoaderContext; client: ClientHandle;
     r: var PacketReader): CommandResult =
-  var request: Request
+  var request: RawRequest
   var config: LoaderClientConfig
   r.sread(request)
   r.sread(config)

@@ -642,7 +642,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       let response = newResponse(request, stream, connectData.outputId)
       # packet 2
       r.sread(response.status)
-      r.sreadLoader(response.headers)
+      r.sreadList(response.headers)
       # Only a stream of the response body may arrive after this point.
       response.body = stream
       # delete before resolving the promise
@@ -712,7 +712,7 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
       r.sread(response.outputId) # packet 1
       if stream.initPacketReader(r): # packet 2
         r.sread(response.status)
-        r.sreadLoader(response.headers)
+        r.sreadList(response.headers)
         # Only a stream of the response body may arrive after this point.
         response.body = stream
       else: # EOF

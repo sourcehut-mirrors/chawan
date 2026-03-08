@@ -323,8 +323,9 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   if this.requestMethod in {hmGet, hmHead}:
     body = JS_NULL
   let credentials = if this.withCredentials: cmInclude else: cmSameOrigin
+  #TODO unsafe request flag, client, use-url-credentials, initiator type
   let request = newRequest(this.requestURL, this.requestMethod, this.headers,
-    credentials = credentials)
+    credentials = credentials, mode = rmCors)
   if not JS_IsNull(body):
     var document: Document = nil
     let contentType = if ctx.fromJS(body, document).isOk:
@@ -342,11 +343,6 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
       # author already set a content type
       if request.body.t == rbtString or document != nil:
         request.headers["Content-Type"].setContentTypeAttr("charset", "UTF-8")
-  let jsRequest = JSRequest(
-    #TODO unsafe request flag, client, use-url-credentials, initiator type
-    request: request,
-    mode: rmCors
-  )
   if JS_IsNull(body):
     this.flags.incl(xhrfUploadComplete)
   else:
@@ -357,7 +353,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   if xhrfSync notin this.flags: # async
     window.fireProgressEvent(this, satLoadstart, 0, 0)
     let opaque = XHROpaque(this: this, window: window)
-    window.fetch(jsRequest, sendAsync, opaque)
+    window.fetch(request, sendAsync, opaque)
   else: # sync
     #TODO cors requests?
     if window.settings.origin.isSameOrigin(request.url.origin):

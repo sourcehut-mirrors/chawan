@@ -13,7 +13,6 @@ import types/blob
 import types/formdata
 import types/jsopt
 import types/opt
-import types/referrer
 import types/url
 
 type
@@ -78,23 +77,30 @@ type
     of rbtBlob:
       blob*: Blob
 
-  Request* = ref object
-    httpMethod*: HttpMethod
-    tocache*: bool
-    credentials*: CredentialsMode
+  RawRequest* = object
     url*: URL
-    headers*: Headers
+    headers*: seq[HTTPHeader]
     body*: RequestBody
+    httpMethod* {.jsget: "method".}: HttpMethod
+    tocache*: bool
+    credentials* {.jsget: "credentials".}: CredentialsMode
 
-  JSRequest* = ref object
-    request*: Request
+  Request* = ref object
+    # RawRequest
+    url*: URL
+    headers* {.jsget.}: Headers
+    body*: RequestBody
+    httpMethod* {.jsget: "method".}: HttpMethod
+    tocache*: bool
+    credentials* {.jsget: "credentials".}: CredentialsMode
+    # client-specific
     mode* {.jsget.}: RequestMode
     destination* {.jsget.}: RequestDestination
     origin*: RequestOrigin
     window*: RequestWindow
     client*: EnvironmentSettings
 
-jsDestructor(JSRequest)
+jsDestructor(Request)
 
 # Forward declaration hack
 var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall, raises: [].}
@@ -121,46 +127,47 @@ proc sread*(r: var PacketReader; o: var RequestBody) =
   of rbtOutput: r.sread(o.outputId)
   of rbtCache: r.sread(o.cacheId)
 
+proc swrite*(w: var PacketWriter; o: Request) =
+  w.swrite(o.url)
+  w.swriteList(o.headers)
+  w.swrite(o.body)
+  w.swrite(o.httpMethod)
+  w.swrite(o.tocache)
+  w.swrite(o.credentials)
+
+proc sread*(w: var PacketReader; o: var Request) {.
+    error: "use RawRequest instead".} =
+  discard
+
+proc sread*(r: var PacketReader; o: var RawRequest) =
+  r.sread(o.url)
+  r.sread(o.headers)
+  r.sread(o.body)
+  r.sread(o.httpMethod)
+  r.sread(o.tocache)
+  r.sread(o.credentials)
+
 proc contentLength*(body: RequestBody): int =
   case body.t
-  of rbtNone: return 0
   of rbtString: return body.s.len
   of rbtBlob: return body.blob.size
   of rbtMultipart: return body.multipart.calcLength()
-  of rbtOutput: return 0
-  of rbtCache: return 0
+  of rbtNone, rbtOutput, rbtCache: return 0
 
-proc headers(this: JSRequest): Headers {.jsfget.} =
-  return this.request.headers
-
-proc url(this: JSRequest): URL =
-  return this.request.url
-
-proc jsUrl(this: JSRequest): string {.jsfget: "url".} =
+proc jsUrl(this: Request): string {.jsfget: "url".} =
   return $this.url
 
-proc credentials(this: JSRequest): string {.jsfget.} =
-  return $this.request.credentials
-
 #TODO pretty sure this is incorrect
-proc referrer(this: JSRequest): string {.jsfget.} =
-  return this.request.headers.getFirst("Referer")
-
-proc jsMethod(this: JSRequest): HttpMethod {.jsfget: "method".} =
-  return this.request.httpMethod
+proc referrer(this: Request): string {.jsfget.} =
+  return this.headers.getFirst("Referer")
 
 proc getReferrer*(this: Request): URL =
   return parseURL0(this.headers.getFirst("Referer"))
 
-proc takeReferrer*(this: Request; policy: ReferrerPolicy): string =
-  let url = parseURL0(this.headers.takeFirstRemoveAll("Referer"))
-  if url != nil:
-    return url.getReferrer(this.url, policy)
-  return ""
-
-proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
-    body = RequestBody(); referrer: URL = nil; tocache = false;
-    credentials = cmSameOrigin): Request =
+proc newRequest*(url: URL; httpMethod = hmGet;
+    headers = newHeaders(hgRequest); body = RequestBody(); referrer: URL = nil;
+    tocache = false; credentials = cmSameOrigin; destination = rdNone;
+    mode = rmNoCors; window = RequestWindow(t: rwtNoWindow)): Request =
   assert url != nil
   if referrer != nil:
     headers["Referer"] = $referrer
@@ -170,8 +177,14 @@ proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     headers: headers,
     body: body,
     tocache: tocache,
-    credentials: credentials
+    credentials: credentials,
+    destination: destination,
+    mode: mode
   )
+
+proc newRequest*(raw: RawRequest): Request =
+  return newRequest(raw.url, raw.httpMethod, newHeaders(hgRequest, raw.headers),
+    raw.body, tocache = raw.tocache, credentials = raw.credentials)
 
 proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
@@ -180,7 +193,7 @@ proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
     credentials)
 
 proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
-    cors: CORSAttribute; fallbackFlag = false): JSRequest =
+    cors: CORSAttribute; fallbackFlag = false): Request =
   var mode = if cors == caNoCors:
     rmNoCors
   else:
@@ -188,16 +201,7 @@ proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
   if fallbackFlag and mode == rmNoCors:
     mode = rmSameOrigin
   let credentials = if cors == caAnonymous: cmSameOrigin else: cmInclude
-  return JSRequest(
-    request: newRequest(url, credentials = credentials),
-    destination: destination,
-    mode: mode
-  )
-
-proc toPagerJSRequest*(request: Request): JSRequest =
-  if request == nil:
-    return nil
-  return JSRequest(request: request, destination: rdDocument, mode: rmNoCors)
+  return newRequest(url, credentials = credentials, destination = destination, mode = mode)
 
 type
   BodyInitType = enum
@@ -265,7 +269,7 @@ proc safeExtract*(init: BodyInit; body: var RequestBody): string =
   init.extract(body)
 
 proc newRequest*(ctx: JSContext; resource: JSValueConst;
-    jsInit: JSValueConst = JS_UNDEFINED): Opt[JSRequest] {.jsctor.} =
+    jsInit: JSValueConst = JS_UNDEFINED): Opt[Request] {.jsctor.} =
   var init: RequestInit
   ?ctx.fromJS(jsInit, init)
   var headers = newHeaders(hgRequest)
@@ -283,15 +287,15 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   var mode = rmNoCors
   if not JS_IsUndefined(init.mode):
     ?ctx.fromJS(init.mode, mode)
-  if (var res: JSRequest; ctx.fromJS(resource, res).isOk):
+  if (var res: Request; ctx.fromJS(resource, res).isOk):
     url = res.url
     if JS_IsUndefined(init.`method`):
-      httpMethod = res.request.httpMethod
+      httpMethod = res.httpMethod
     headers[] = res.headers[]
-    referrer = res.request.getReferrer()
+    referrer = res.getReferrer()
     if JS_IsUndefined(init.credentials):
-      credentials = res.request.credentials
-    body = res.request.body
+      credentials = res.credentials
+    body = res.body
     if JS_IsUndefined(init.mode):
       mode = rmCors
     window = res.window
@@ -322,18 +326,16 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
     headers.addIfNotFound("Content-Type", contentType)
   if mode == rmNoCors:
     headers.guard = hgRequestNoCors
-  return ok(JSRequest(
-    request: newRequest(
-      url,
-      httpMethod,
-      headers,
-      body,
-      referrer = referrer,
-      credentials = credentials
-    ),
-    mode: mode,
-    destination: destination,
-    window: window
+  ok(newRequest(
+    url,
+    httpMethod,
+    headers,
+    body,
+    referrer = referrer,
+    credentials = credentials,
+    mode = mode,
+    destination = destination,
+    window = window
   ))
 
 proc credentials*(attribute: CORSAttribute): CredentialsMode =
@@ -344,7 +346,7 @@ proc credentials*(attribute: CORSAttribute): CredentialsMode =
     return cmInclude
 
 proc addRequestModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(JSRequest, name = "Request")
+  ?ctx.registerType(Request)
   ok()
 
 {.pop.} # raises: []

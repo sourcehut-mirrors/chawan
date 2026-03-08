@@ -269,8 +269,8 @@ proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
   let res = ctx.newPromiseCapability(funs)
   if JS_IsException(res):
     return res
-  if input.request.url.schemeType != stData and
-      not window.isSameOrigin(input.request.url.origin):
+  if input.url.schemeType != stData and
+      not window.isSameOrigin(input.url.origin):
     JS_FreeValue(ctx, funs[0])
     # reject immediately
     discard ctx.throwNetworkError()
@@ -284,7 +284,7 @@ proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
       resolve: funs[0],
       reject: funs[1]
     )
-    window.loader.fetch(input.request, jsFinish, opaque)
+    window.loader.fetch(input, jsFinish, opaque)
   return res
 
 proc scrollTo(window: Window) {.jsfunc.} =
