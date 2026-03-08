@@ -323,7 +323,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   if this.requestMethod in {hmGet, hmHead}:
     body = JS_NULL
   let credentials = if this.withCredentials: cmInclude else: cmSameOrigin
-  #TODO unsafe request flag, client, use-url-credentials, initiator type
+  #TODO unsafe request flag, client, initiator type
   let request = newRequest(this.requestURL, this.requestMethod, this.headers,
     credentials = credentials, mode = rmCors)
   if not JS_IsNull(body):

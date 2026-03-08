@@ -879,8 +879,17 @@ proc includeCredentials(config: LoaderClientConfig; request: RawRequest;
 
 proc findAuth(client: ClientHandle; request: RawRequest; url: URL): AuthItem =
   if not request.headers.contains("Authorization") and
-      client.config.includeCredentials(request, url) and client.authMap.len > 0:
-    return client.authMap.findItem(url.authOrigin)
+      client.config.includeCredentials(request, url):
+    if request.urlCredentials and request.url.includesCredentials():
+      #TODO this should be sent only after 401 I guess?
+      # (otherwise we should return nil, *not* fallback to authMap)
+      return AuthItem(
+        origin: url.authOrigin,
+        username: request.url.username,
+        password: request.url.password
+      )
+    if client.authMap.len > 0:
+      return client.authMap.findItem(url.authOrigin)
   return nil
 
 proc putMappedURL(s: var seq[tuple[name, value: string]]; url: URL;

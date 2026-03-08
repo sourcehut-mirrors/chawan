@@ -518,7 +518,7 @@ proc shortenPath(url: URL) =
   if url.pathname.len > 0:
     url.pathname.setLen(url.pathname.rfind('/'))
 
-proc includesCredentials(url: URL): bool =
+proc includesCredentials*(url: URL): bool =
   return url.username != "" or url.password != ""
 
 proc isWinDriveLetter(s: string): bool =

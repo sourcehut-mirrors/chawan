@@ -83,6 +83,7 @@ type
     body*: RequestBody
     httpMethod* {.jsget: "method".}: HttpMethod
     tocache*: bool
+    urlCredentials*: bool
     credentials* {.jsget: "credentials".}: CredentialsMode
 
   Request* = ref object
@@ -92,6 +93,7 @@ type
     body*: RequestBody
     httpMethod* {.jsget: "method".}: HttpMethod
     tocache*: bool
+    urlCredentials*: bool # whether to use user/pass in URL
     credentials* {.jsget: "credentials".}: CredentialsMode
     # client-specific
     mode* {.jsget.}: RequestMode
@@ -133,6 +135,7 @@ proc swrite*(w: var PacketWriter; o: Request) =
   w.swrite(o.body)
   w.swrite(o.httpMethod)
   w.swrite(o.tocache)
+  w.swrite(o.urlCredentials)
   w.swrite(o.credentials)
 
 proc sread*(w: var PacketReader; o: var Request) {.
@@ -145,6 +148,7 @@ proc sread*(r: var PacketReader; o: var RawRequest) =
   r.sread(o.body)
   r.sread(o.httpMethod)
   r.sread(o.tocache)
+  r.sread(o.urlCredentials)
   r.sread(o.credentials)
 
 proc contentLength*(body: RequestBody): int =
@@ -166,8 +170,9 @@ proc getReferrer*(this: Request): URL =
 
 proc newRequest*(url: URL; httpMethod = hmGet;
     headers = newHeaders(hgRequest); body = RequestBody(); referrer: URL = nil;
-    tocache = false; credentials = cmSameOrigin; destination = rdNone;
-    mode = rmNoCors; window = RequestWindow(t: rwtNoWindow)): Request =
+    tocache = false; credentials = cmSameOrigin; urlCredentials = false;
+    destination = rdNone; mode = rmNoCors;
+    window = RequestWindow(t: rwtNoWindow)): Request =
   assert url != nil
   if referrer != nil:
     headers["Referer"] = $referrer
@@ -177,6 +182,7 @@ proc newRequest*(url: URL; httpMethod = hmGet;
     headers: headers,
     body: body,
     tocache: tocache,
+    urlCredentials: urlCredentials,
     credentials: credentials,
     destination: destination,
     mode: mode
@@ -184,7 +190,8 @@ proc newRequest*(url: URL; httpMethod = hmGet;
 
 proc newRequest*(raw: RawRequest): Request =
   return newRequest(raw.url, raw.httpMethod, newHeaders(hgRequest, raw.headers),
-    raw.body, tocache = raw.tocache, credentials = raw.credentials)
+    raw.body, tocache = raw.tocache, credentials = raw.credentials,
+    urlCredentials = raw.urlCredentials)
 
 proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
