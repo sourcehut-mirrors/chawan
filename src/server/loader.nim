@@ -880,13 +880,13 @@ proc includeCredentials(config: LoaderClientConfig; request: RawRequest;
 proc findAuth(client: ClientHandle; request: RawRequest; url: URL): AuthItem =
   if not request.headers.contains("Authorization") and
       client.config.includeCredentials(request, url):
-    if request.urlCredentials and request.url.includesCredentials():
+    if request.urlCredentials and url.includesCredentials():
       #TODO this should be sent only after 401 I guess?
       # (otherwise we should return nil, *not* fallback to authMap)
       return AuthItem(
         origin: url.authOrigin,
-        username: request.url.username,
-        password: request.url.password
+        username: url.username,
+        password: url.password
       )
     if client.authMap.len > 0:
       return client.authMap.findItem(url.authOrigin)

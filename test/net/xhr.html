@@ -51,5 +51,16 @@ _header-333: c\r\n`);
 }
 y.open("GET", "headers.http", false);
 y.send()
+let z = new XMLHttpRequest();
+z.onreadystatechange = function() {
+	if (z.readyState != XMLHttpRequest.DONE)
+		return
+	const auth = z.response.split('\n')
+		.find(x => x.startsWith("authorization"));
+	assertEquals(auth, "authorization: Basic Y2hhLXRlc3QtdXNlcjpjaGEtdGVzdC1wYXNz");
+}
+z.open("GET", "headers", false, "cha-test-user", "cha-test-pass");
+z.withCredentials = true;
+z.send()
 document.getElementById("x").textContent = "Success";
 </script>
