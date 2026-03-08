@@ -95,7 +95,7 @@ proc create2DContext*(loader: FileLoader; target: EventTarget;
   )
   let response = loader.doRequest(request)
   loader.close(ctlres)
-  if response.body == nil:
+  if response.stream == nil:
     # no canvas module; give up
     ps.sclose()
     return nil

@@ -266,7 +266,7 @@ proc onReadXHR(response: Response) =
   while true:
     let olen = this.received.len
     this.received.setLen(olen + BufferSize)
-    let n = response.body.read(addr this.received[olen], BufferSize)
+    let n = response.stream.read(addr this.received[olen], BufferSize)
     if n <= 0:
       this.received.setLen(olen)
       break
@@ -359,11 +359,11 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
     #TODO cors requests?
     if window.settings.origin.isSameOrigin(request.url.origin):
       let response = window.loader.doRequest(request)
-      if response.body != nil:
+      if response.stream != nil:
         #TODO timeout
         window.loader.resume(response)
         this.response = response
-        this.received = response.body.readAll()
+        this.received = response.stream.readAll()
         window.loader.close(response)
         #TODO report timing
         let len = max(response.getContentLength(), 0)

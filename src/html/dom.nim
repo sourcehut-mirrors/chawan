@@ -3382,10 +3382,10 @@ proc cookie(ctx: JSContext; document: Document): JSValue {.jsfget.} =
   if window == nil:
     return ctx.toJS("")
   let response = window.loader.doRequest(newRequest("x-cha-cookie:get-all"))
-  if response.body == nil:
+  if response.stream == nil:
     return JS_ThrowInternalError(ctx, "internal error in cookie getter")
   window.loader.resume(response)
-  let cookie = response.body.readAll()
+  let cookie = response.stream.readAll()
   return ctx.toJS(cookie)
 
 proc setCookie(ctx: JSContext; document: Document; cookie: string):
@@ -7336,12 +7336,12 @@ proc prepare*(element: HTMLScriptElement) =
       element.blockRendering()
       element.onReady = scriptOnReadyRunInParser
     if response != nil:
-      if response.body == nil:
+      if response.stream == nil:
         element.markAsReady(ScriptResult(t: srtNull))
       else:
         window.loader.resume(response)
-        let source = response.body.readAll().decodeAll(encoding)
-        response.body.sclose()
+        let source = response.stream.readAll().decodeAll(encoding)
+        response.stream.sclose()
         let script = window.jsctx.newClassicScript(source, response.url,
           options, false)
         element.markAsReady(script)

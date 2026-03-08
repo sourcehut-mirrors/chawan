@@ -63,9 +63,6 @@ type
     opaque*: RootRef
     request: Request
 
-  OngoingData* = ref object of LoaderData
-    response*: Response
-
   LoaderCommand* = enum
     lcAddAuth
     lcAddCacheFile
@@ -113,8 +110,7 @@ type
 
   ResponseRead* = proc(response: Response) {.nimcall, raises: [].}
 
-  Response* = ref object
-    body*: PosixStream
+  Response* = ref object of LoaderData
     flags*: set[ResponseFlag]
     responseType* {.jsget: "type".}: ResponseType
     status* {.jsget.}: uint16
@@ -192,7 +188,7 @@ proc newResponse*(request: Request; stream: PosixStream; outputId: int):
     Response =
   return Response(
     url: if request != nil: request.url else: nil,
-    body: stream,
+    stream: stream,
     outputId: outputId,
     headers: newHeaders(hgResponse),
     status: 200
@@ -268,13 +264,13 @@ proc close*(loader: FileLoader; response: Response) =
   response.flags.incl(rfBodyUsed)
   if rfResumed notin response.flags:
     loader.resume(response)
-  if response.body != nil:
-    let fd = response.body.fd
+  if response.stream != nil:
+    let fd = response.stream.fd
     let data = loader.get(fd)
     if data != nil:
       loader.unregister(data)
-    response.body.sclose()
-    response.body = nil
+    response.stream.sclose()
+    response.stream = nil
 
 const BufferSize = 4096
 
@@ -286,7 +282,7 @@ proc onReadBlob(response: Response) =
       opaque.p = realloc(opaque.p, opaque.size)
     let p = cast[ptr UncheckedArray[uint8]](opaque.p)
     let diff = opaque.size - opaque.len
-    let n = response.body.read(addr p[opaque.len], diff)
+    let n = response.stream.read(addr p[opaque.len], diff)
     if n <= 0:
       assert n != -1 or errno != EBADF
       break
@@ -312,7 +308,7 @@ proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
   if response.bodyUsed:
     response.onFinish(response, false)
     return
-  if response.body == nil:
+  if response.stream == nil:
     response.flags.incl(rfBodyUsed)
     response.onFinish(response, true)
     return
@@ -469,10 +465,10 @@ iterator data*(loader: FileLoader): MapData {.inline.} =
     if it != nil:
       yield it
 
-iterator ongoing*(loader: FileLoader): OngoingData {.inline.} =
+iterator ongoing*(loader: FileLoader): Response {.inline.} =
   for it in loader.data:
-    if it of OngoingData:
-      yield OngoingData(it)
+    if it of Response:
+      yield Response(it)
 
 proc put*(loader: FileLoader; data: MapData) =
   let fd = int(data.stream.fd)
@@ -644,15 +640,14 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       r.sread(response.status)
       r.sreadList(response.headers)
       # Only a stream of the response body may arrive after this point.
-      response.body = stream
+      response.stream = stream
       # delete before resolving the promise
       loader.unset(connectData)
-      let data = OngoingData(response: response, stream: stream)
-      loader.put(data)
+      loader.put(response)
       stream.setBlocking(false)
       let redirect = response.getRedirect(request)
       if redirect != nil:
-        loader.unregister(data)
+        loader.unregister(response)
         stream.sclose()
         let redirectNum = connectData.redirectNum + 1
         if redirectNum < 5: #TODO use config.network.max_redirect?
@@ -668,10 +663,9 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
     loader.unset(connectData)
     finish(opaque, nil)
 
-proc onRead*(loader: FileLoader; data: OngoingData) =
-  let response = data.response
+proc onRead*(loader: FileLoader; response: Response) =
   response.onRead(response)
-  if response.body.isend:
+  if response.stream.isend:
     if response.onFinish != nil:
       response.onFinish(response, true)
     response.onFinish = nil
@@ -682,10 +676,9 @@ proc onRead*(loader: FileLoader; fd: int) =
   if data of ConnectData:
     loader.onConnected(ConnectData(data))
   else:
-    loader.onRead(OngoingData(data))
+    loader.onRead(Response(data))
 
-proc onError*(loader: FileLoader; data: OngoingData) =
-  let response = data.response
+proc onError*(loader: FileLoader; response: Response) =
   if response.onFinish != nil:
     response.onFinish(response, true)
   response.onFinish = nil
@@ -697,7 +690,7 @@ proc onError*(loader: FileLoader; fd: int): bool =
     # probably shouldn't happen. TODO
     return false
   else:
-    loader.onError(OngoingData(data))
+    loader.onError(Response(data))
     return true
 
 # Note: this blocks until headers are received.
@@ -714,7 +707,7 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
         r.sread(response.status)
         r.sreadList(response.headers)
         # Only a stream of the response body may arrive after this point.
-        response.body = stream
+        response.stream = stream
       else: # EOF
         stream.sclose()
     else:
@@ -819,7 +812,7 @@ proc doPipeRequest*(loader: FileLoader; id: string):
     return (nil, nil)
   let request = newRequest("stream:" & id)
   let response = loader.doRequest(request)
-  if response.body == nil:
+  if response.stream == nil:
     ps.sclose()
     return (nil, nil)
   return (ps, response)

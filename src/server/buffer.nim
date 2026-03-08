@@ -680,13 +680,13 @@ proc updateHover(bc: BufferContext; handle: PagerHandle;
 proc rewind(bc: BufferContext; data: InputData; offset: uint64): bool =
   let url = parseURL0("cache:" & $bc.cacheId & "?" & $offset)
   let response = bc.loader.doRequest(newRequest(url))
-  if response.body == nil:
+  if response.stream == nil:
     return false
   bc.loader.resume(response.outputId)
   bc.loader.unregister(data)
   data.stream.sclose()
-  response.body.setBlocking(false)
-  let data = InputData(stream: response.body)
+  response.stream.setBlocking(false)
+  let data = InputData(stream: response.stream)
   bc.loader.register(data, POLLIN)
   bc.bytesRead = offset
   return true

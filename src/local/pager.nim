@@ -284,7 +284,7 @@ proc onReadCookieStream(response: Response) =
   while true:
     let olen = opaque.buffer.len
     opaque.buffer.setLen(olen + BufferSize)
-    let n = response.body.read(addr opaque.buffer[olen], BufferSize)
+    let n = response.stream.read(addr opaque.buffer[olen], BufferSize)
     if n <= 0:
       opaque.buffer.setLen(olen)
       break
@@ -1671,7 +1671,7 @@ proc addConsoleFile(pager: Pager): Opt[ChaFile] =
   ps.setCloseOnExec()
   let file = ?ps.fdopen("w")
   let response = pager.loader.doRequest(newRequest(url))
-  if response.body == nil:
+  if response.stream == nil:
     discard file.close()
     return err()
   let cacheId = pager.loader.addCacheFile(response.outputId)
@@ -2073,7 +2073,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
       flags.incl(cmfHTML)
     return MailcapResult(
       flags: flags,
-      ostream: response.body,
+      ostream: response.stream,
       ostreamOutputId: response.outputId
     )
   twtstr.unsetEnv("MAILCAP_URL")
@@ -2285,7 +2285,7 @@ proc connected(pager: Pager; init: BufferInit; response: Response): Opt[void] =
   if shortContentType.startsWithIgnoreCase("text/"):
     # prepare content type for %{charset}
     contentType.setContentTypeAttr("charset", $init.charset)
-  var istream = response.body
+  var istream = response.stream
   if init.filterCmd != "":
     pager.setEnvVars(pager.defaultEnv())
     istream = pager.execPipeSink(init.filterCmd, istream)

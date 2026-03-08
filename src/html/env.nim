@@ -467,11 +467,11 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     return nil
   let request = newRequest(url)
   let response = window.loader.doRequest(request)
-  if response.body == nil:
+  if response.stream == nil:
     JS_ThrowTypeError(ctx, "Failed to load module %s", moduleName)
     return nil
   window.loader.resume(response)
-  let source = response.body.readAll()
+  let source = response.stream.readAll()
   window.loader.close(response)
   return ctx.finishLoadModule(source, name)
 
