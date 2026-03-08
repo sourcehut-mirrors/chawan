@@ -2805,8 +2805,7 @@ const ReTextStart = /\S/gu;
         const path = url.protocol == "file:" ?
             decodeURIComponent(url.pathname) :
             pager.cacheFile;
-        const cmd = pager.getEditorCommand(path)
-        pager.extern(cmd);
+        pager.extern(pager.getEditorCommand(path));
     }
 
     /* public */ saveSource() {
