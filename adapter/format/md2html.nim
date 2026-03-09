@@ -227,9 +227,11 @@ proc parseLinkDestination(link: var string; line: openArray[char];
       quote = false
     elif sc == '<' and c == '>':
       break
-    elif sc == '<' and c in {'<', '\n'} or
-        sc != '<' and c in Controls + AsciiWhitespace:
+    elif sc == '<' and c in {'<', '\n'} or sc != '<' and c in Controls:
       return -1
+    elif sc != '<' and c in AsciiWhitespace:
+      i = line.skipBlanks(i)
+      break
     elif c == '\\':
       quote = true
     elif c == '(':
@@ -358,7 +360,7 @@ proc parseImage(ctx: var ParseInlineContext; line: string;
   var alt = ""
   var i = alt.parseImageAlt(line, ctx.i + 2)
   if i == -1 or i + 1 >= line.len or line[i] != ']':
-    return ctx.append("![", state)
+    return ctx.append("!", state)
   inc i
   let c = line[i]
   if c == '[':
@@ -366,22 +368,22 @@ proc parseImage(ctx: var ParseInlineContext; line: string;
       ?state.slurp()
     let j = line.find(']', i + 1)
     if j == -1:
-      return ctx.append("![", state)
+      return ctx.append("!", state)
     let s = line.substr(i + 1, j - 1).toLowerAscii()
     let (link, title) = state.refMap.getOrDefault(s)
     if link == "":
-      return ctx.append("![", state)
+      return ctx.append("!", state)
     ctx.i = j
     return ctx.parseImageWrite(link, title, alt, state)
   if c != '(':
-    return ctx.append("![", state)
+    return ctx.append("!", state)
   var link = ""
   var j = link.parseLinkDestination(line, line.skipBlanks(i + 1))
   var title = ""
   if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
     j = title.parseTitle(line, j)
   if j == -1 or j >= line.len or line[j] != ')':
-    return ctx.append("![", state)
+    return ctx.append("!", state)
   ctx.i = j
   return ctx.parseImageWrite(link, title, alt, state)
 
