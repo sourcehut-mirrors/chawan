@@ -2,7 +2,6 @@
 
 import std/algorithm
 import std/math
-import std/sets
 import std/tables
 
 import chame/tags
@@ -52,7 +51,7 @@ type
     window: Window
     old: CSSValues
     revertMap: RevertMap
-    varsSeen: HashSet[CAtom]
+    varsSeen: array[20, CAtom]
 
 # Forward declarations
 proc ensureStyle*(element: Element)
@@ -119,8 +118,15 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
   for item in items:
     let varName = item.name
     if varName != CAtomNull:
-      if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
-        ctx.varsSeen.clear()
+      var success = false
+      for it in ctx.varsSeen.mitems:
+        if it == varName:
+          break
+        if it == CAtomNull:
+          it = varName
+          success = true
+          break
+      if not success:
         return err()
       var cv: CSSVariable = nil
       var vars = vars
@@ -145,9 +151,11 @@ proc resolveVariable(ctx: var ApplyValueContext; p: CSSWidePropertyType;
       ctx.applyValues(it.entries, revertType)
       return ok()
   var toks: seq[CSSToken] = @[]
-  ?ctx.addItems(toks, vars, cvar.items)
+  let res = ctx.addItems(toks, vars, cvar.items)
+  zeroMem(addr ctx.varsSeen, sizeof(ctx.varsSeen))
+  if res.isErr:
+    return err()
   # fully resolved
-  ctx.varsSeen.clear()
   var entries: seq[CSSComputedEntry] = @[]
   let window = ctx.window
   var parser = initCSSParserSink(toks)
