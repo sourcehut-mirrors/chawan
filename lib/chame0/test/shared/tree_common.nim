@@ -329,6 +329,7 @@ proc checkTest(nodein, nodep: Node) =
     check nodein.name == nodep.name
     check nodein.publicId == nodep.publicId
     check nodein.systemId == nodep.systemId
-  for i in 0 ..< nodein.childList.len:
-    checkTest(nodein.childList[i], nodep.childList[i])
+  if nodein.childList.len == nodep.childList.len:
+    for i in 0 ..< nodein.childList.len:
+      checkTest(nodein.childList[i], nodep.childList[i])
 

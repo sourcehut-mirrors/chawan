@@ -115,6 +115,66 @@ type
 
 include htmlparseriface
 
+iterator ancestors*(node: Node): Node =
+  var it = node.parentNode
+  while it != nil:
+    yield it
+    it = it.parentNode
+
+iterator descendants*(node: Node): Node =
+  var stack = newSeqOfCap[Node](node.childList.len)
+  for i in countdown(node.childList.high, 0):
+    stack.add(node.childList[i])
+  while stack.len > 0:
+    let node = stack.pop()
+    yield node
+    for i in countdown(node.childList.high, 0):
+      stack.add(node.childList[i])
+
+proc findAttribute*(element: Element; name: string): int =
+  if element.attrs.len == 0:
+    return -1
+  let name = element.document.factory.strToAtom(name)
+  for i, it in element.attrs.mpairs:
+    if it.name == name:
+      return i
+  return -1
+
+proc hasAttribute*(element: Element; name: string): bool =
+  element.findAttribute(name) != -1
+
+proc clone*(node: Node; deep: bool): Node =
+  let copy = if node of Element:
+    let element = Element(node)
+    Node(Element(
+      localName: element.localName,
+      namespace: element.namespace,
+      attrs: element.attrs,
+      document: element.document
+    ))
+  elif node of Text:
+    Node(Text(data: Text(node).data))
+  elif node of Comment:
+    Node(Comment(data: Comment(node).data))
+  elif node of Document:
+    Node(Document(factory: Document(node).factory))
+  elif node of DocumentType:
+    let doctype = DocumentType(node)
+    Node(DocumentType(
+      name: doctype.name,
+      publicId: doctype.publicId,
+      systemId: doctype.systemId
+    ))
+  elif node of DocumentFragment:
+    Node(DocumentFragment())
+  else:
+    assert false
+    Node(nil)
+  if deep:
+    for child in node.childList:
+      copy.childList.add(child.clone(deep = true))
+  return copy
+
 func toTagType*(atom: MAtom): TagType {.inline.} =
   if int(atom) <= int(high(TagType)):
     return TagType(atom)
@@ -380,6 +440,37 @@ proc moveChildrenImpl(builder: MiniDOMBuilder; fromNode, toNode: Node) =
   for child in tomove:
     child.parentNode = nil
     toNode.insertBefore(child, none(Node))
+
+proc elementPoppedImpl(builder: MiniDOMBuilder; node: Node) =
+  let popped = Element(node)
+  if popped.namespace != Namespace.HTML or popped.tagType != TAG_OPTION:
+    return
+  let selected = popped.hasAttribute("selected")
+  for ancestor in popped.ancestors:
+    if not (ancestor of Element):
+      break
+    let ancestor = Element(ancestor)
+    if ancestor.namespace != Namespace.HTML or ancestor.tagType != TAG_SELECT:
+      continue
+    var found: Element = nil
+    for child in ancestor.descendants:
+      if not (child of Element):
+        continue
+      let child = Element(child)
+      if child.namespace == Namespace.HTML:
+        if child.tagType == TAG_OPTION and child != popped and not selected:
+          # emulate selectedness by declaring the first option selected
+          found = nil
+          break
+        if child.tagType == TAG_SELECTEDCONTENT:
+          found = child
+    if found != nil:
+      for it in found.childList:
+        it.parentNode = nil
+      found.childList.setLen(0)
+      for child in popped.childList:
+        found.childList.add(child.clone(deep = true))
+    break
 
 proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
     attrs: Table[MAtom, string]) =

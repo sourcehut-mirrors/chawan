@@ -123,6 +123,7 @@ type
     TAG_OUTPUT = "output"
     TAG_PROGRESS = "progress"
     TAG_SELECT = "select"
+    TAG_SELECTEDCONTENT = "selectedcontent"
     TAG_TEXTAREA = "textarea"
     TAG_DETAILS = "details"
     TAG_DIALOG = "dialog"
