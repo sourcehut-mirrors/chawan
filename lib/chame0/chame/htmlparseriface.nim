@@ -242,14 +242,15 @@ proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
   ##     element.attrs.add(attr)
   ## ```
 
-proc createCommentImpl(builder: DOMBuilderImpl; text: string): HandleImpl
-    {.doc.}
-  ## Create a new comment node. `text` is a string representing the new comment
-  ## node's character data.
+proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
+    text: string; before: Option[HandleImpl]) {.doc.}
+  ## Create a new comment node, and insert it into `parent` before the node
+  ## `before`.
+  ## `text` is a string representing the new comment node's character data.
 
-proc createDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
-    systemId: string): HandleImpl {.doc.}
-  ## Create a new document type node.
+proc appendDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
+    systemId: string) {.doc.}
+  ## Append a new document type node to the Document node.
 
 proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
     before: Option[HandleImpl]) {.doc.}

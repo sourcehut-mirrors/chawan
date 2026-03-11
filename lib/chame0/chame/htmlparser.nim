@@ -171,15 +171,15 @@ proc createHTMLElement[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
   mixin createHTMLElementImpl
   return parser.dombuilder.createHTMLElementImpl()
 
-proc createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom];
-    text: string): Handle =
-  mixin createCommentImpl
-  return parser.dombuilder.createCommentImpl(text)
+proc insertCommentImpl[Handle, Atom](parser: HTML5Parser[Handle, Atom];
+    parent: Handle; text: string; before: Option[Handle]) =
+  mixin insertCommentImpl
+  parser.dombuilder.insertCommentImpl(parent, text, before)
 
-proc createDocumentType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
-    name, publicId, systemId: string): Handle =
-  mixin createDocumentTypeImpl
-  return parser.dombuilder.createDocumentTypeImpl(name, publicId, systemId)
+proc appendDocumentType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
+    name, publicId, systemId: string) =
+  mixin appendDocumentTypeImpl
+  parser.dombuilder.appendDocumentTypeImpl(name, publicId, systemId)
 
 proc insertBefore[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     parent, child: Handle; before: Option[Handle]) =
@@ -534,8 +534,7 @@ proc insertCharacter(parser: var HTML5Parser; data: string) =
 
 proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     token: Token; position: InsertionLocation[Handle]) =
-  let comment = parser.createComment(token.s)
-  parser.insert(position, comment)
+  parser.insertCommentImpl(position.inside, token.s, position.before)
 
 proc insertComment(parser: var HTML5Parser; token: Token) =
   let position = parser.appropriatePlaceForInsert()
@@ -1090,9 +1089,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     of ttWhitespace: discard
     of ttComment: parser.insertComment(token, lastChildOf(parser.getDocument()))
     of ttDoctype:
-      let doctype = parser.createDocumentType(token.name, token.pubid,
-        token.sysid)
-      parser.append(parser.getDocument(), doctype)
+      parser.appendDocumentType(token.name, token.pubid, token.sysid)
       if not parser.opts.isIframeSrcdoc:
         if quirksConditions(token.name, token.pubid, token.sysid, token.flags):
           parser.setQuirksMode(QUIRKS)

@@ -290,17 +290,6 @@ proc getNamespaceImpl(builder: MiniDOMBuilder; handle: Node): Namespace =
 proc getTemplateContentImpl(builder: MiniDOMBuilder, handle: Node): Node =
   return HTMLTemplateElement(handle).content
 
-proc createCommentImpl(builder: MiniDOMBuilder; text: string): Node =
-  return Comment(data: text.toValidUTF8())
-
-proc createDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
-    systemId: string): Node =
-  return DocumentType(
-    name: name.toValidUTF8(),
-    publicId: publicId.toValidUTF8(),
-    systemId: systemId.toValidUTF8()
-  )
-
 func countElementChildren(node: Node): int =
   result = 0
   for child in node.childList:
@@ -407,6 +396,20 @@ proc insertBefore(parent, child: Node; before: Option[Node]) =
 proc insertBeforeImpl(builder: MiniDOMBuilder; parent, child: Node;
     before: Option[Node]) =
   parent.insertBefore(child, before)
+
+proc insertCommentImpl(builder: MiniDOMBuilder; parent: Node; text: string;
+    before: Option[Node]) =
+  let comment = Comment(data: text.toValidUTF8())
+  parent.insertBefore(comment, before)
+
+proc appendDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
+    systemId: string) =
+  let doctype = DocumentType(
+    name: name.toValidUTF8(),
+    publicId: publicId.toValidUTF8(),
+    systemId: systemId.toValidUTF8()
+  )
+  builder.document.insertBefore(doctype, none(Node))
 
 proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: string;
     before: Option[Node]) =
