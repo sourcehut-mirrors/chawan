@@ -24,7 +24,7 @@ import io/packetreader
 import io/packetwriter
 import io/poll
 import io/timeout
-import local/lineEdit
+import local/lineedit
 import local/select
 import local/term
 import monoucha/fromjs
