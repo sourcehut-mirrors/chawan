@@ -563,6 +563,8 @@ proc matchCache(node: StyledNode; box: CSSBox): bool =
   of cbtAnonymous:
     if node.skipChildren and
         node.computed{"display"} == box.computed{"display"}:
+      if node.computed.relayout:
+        box.keepLayout = false
       box.computed = node.computed
       box.absolute = nil
       return true

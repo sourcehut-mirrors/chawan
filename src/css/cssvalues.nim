@@ -2154,7 +2154,7 @@ proc initialOrCopyFrom*(a, b: CSSValues; t: CSSPropertyType) =
     a.setInitial(t)
 
 proc inheritProperties*(parent: CSSValues): CSSValues =
-  result = CSSValues()
+  result = CSSValues(relayout: parent.relayout)
   for t in CSSPropertyType:
     if t.inherited:
       result.copyFrom(parent, t)
