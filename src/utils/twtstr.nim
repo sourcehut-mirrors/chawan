@@ -483,24 +483,34 @@ proc count*(s: openArray[char]; cs: set[char]): int =
   n
 
 proc delete*(s: var string; slice: Slice[int]) =
-  if slice.b >= slice.a:
-    var i = slice.a
-    var j = slice.b + 1
-    let len = s.len + i - j
+  let a = max(0, slice.a)
+  let b = min(s.high, slice.b)
+  if b >= a:
+    var i = a
+    var j = b + 1
+    let moveLen = s.len - j
+    let len = moveLen + i
     when nimvm:
       while i < len:
         s[i] = s[j]
         inc i
         inc j
     else:
-      if j < s.len:
-        moveMem(addr s[i], addr s[j], s.len - j)
+      if moveLen > 0:
+        moveMem(addr s[i], addr s[j], moveLen)
     s.setLen(len)
 
 proc skipBlanks*(buf: openArray[char]; at: int): int =
   result = at
   while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
+
+when NimMajor < 2:
+  proc substr*(s: openArray[char]): string =
+    var res = newStringOfCap(s.len)
+    for c in s:
+      res &= c
+    move(res)
 
 proc strip*(s: openArray[char]; leading = true; trailing = true;
     chars = AsciiWhitespace): string =
@@ -514,13 +524,7 @@ proc strip*(s: openArray[char]; leading = true; trailing = true;
       dec j
   if i > j:
     return ""
-  when NimMajor < 2:
-    var res = newStringOfCap(j + 1 - i)
-    for c in s.toOpenArray(i, j):
-      res &= c
-    move(res)
-  else:
-    return s.toOpenArray(i, j).substr()
+  return s.toOpenArray(i, j).substr()
 
 proc stripAndCollapse*(s: openArray[char]): string =
   var res = newStringOfCap(s.len)

@@ -40,6 +40,10 @@ proc run() =
   assert "\na\tb ".containsToken("")
   assert not "ab".containsToken("")
 
+  var x = "test"
+  x.delete(1..4)
+  assert x == "t"
+
 static:
   run()
 

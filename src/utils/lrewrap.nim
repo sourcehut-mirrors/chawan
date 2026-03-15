@@ -1,5 +1,10 @@
+{.push raises: [].}
+
 import monoucha/libregexp
 import types/opt
+
+when NimMajor < 2:
+  from utils/twtstr import substr
 
 type
   Regex* = object
@@ -9,12 +14,8 @@ type
 
 proc bytecodeToRegex*(p: REBytecode; plen: cint): Regex =
   let plen = int(plen)
-  when NimMajor >= 2:
-    let p = cast[ptr UncheckedArray[char]](p)
-    result = Regex(bytecode: p.toOpenArray(0, plen - 1).substr())
-  else:
-    result = Regex(bytecode: newString(cast[int](plen)))
-    copyMem(addr result.bytecode[0], cast[ptr uint8](p), plen)
+  let p = cast[ptr UncheckedArray[char]](p)
+  result = Regex(bytecode: p.toOpenArray(0, plen - 1).substr())
 
 proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
   ## Compile a regular expression using QuickJS's libregexp library.
@@ -171,3 +172,5 @@ proc compileMatchRegex*(buf: string): Result[Regex, string] =
   buf2 &= buf
   buf2 &= "$"
   return compileRegex(buf2)
+
+{.pop.}
