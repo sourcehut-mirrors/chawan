@@ -130,7 +130,7 @@ type
     pending: seq[(InputHandle, RawRequest, URL)]
 
   DownloadItem = ref object
-    path: string
+    escapedPath: string
     displayUrl: string
     output: OutputHandle
     sent: uint64
@@ -1266,7 +1266,13 @@ proc formatDuration(dur: Duration): string =
 
 proc makeProgress(it: DownloadItem; now: Time): string =
   result = it.displayUrl.htmlEscape() & '\n'
-  result &= "  -> " & it.path & '\n'
+  result &= "  -> "
+  if it.output == nil: # linkify path on completion
+    result &= "<a href=\"file:" & it.escapedPath & "\">" & it.escapedPath &
+      "</a>"
+  else:
+    result &= it.escapedPath
+  result &= '\n'
   result &= "  <progress value=" & $it.sent & " max="
   result &= $it.contentLen & "></progress>  \n  "
   result &= formatSize(it.sent)
@@ -1622,7 +1628,7 @@ proc redirectToFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
       #TODO ???
       fromUnix(0)
     ctx.downloadList.add(DownloadItem(
-      path: targetPath,
+      escapedPath: targetPath.htmlEscape(),
       output: fileOutput,
       displayUrl: displayUrl,
       sent: sent,
