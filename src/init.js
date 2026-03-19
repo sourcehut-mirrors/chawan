@@ -1822,15 +1822,23 @@ const ReTextStart = /\S/gu;
         }}
     }
 
+    #setVisible() {
+        if (this.iface.gotLines && pager.bufferInit == this.init) {
+            if (pager.bufferIface != this.iface)
+                pager.setVisibleBuffer(this);
+            if (pager.alertState == "loadInfo") {
+                pager.alertState = "normal";
+                pager.queueStatusUpdate();
+            }
+        }
+    }
+
     async #startLoad() {
         let repaintLoopPromise, titlePromise;
         if (!this.init.headless) {
             repaintLoopPromise = (async () => {
                 for (;;) {
-                    if (this.numLines > 0 && pager.bufferInit == this.init &&
-                        pager.bufferIface != this.iface) {
-                        pager.setVisibleBuffer(this);
-                    }
+                    this.#setVisible();
                     await this.iface.onReshape();
                     await this.iface.requestLines(true);
                 }
@@ -1867,17 +1875,11 @@ const ReTextStart = /\S/gu;
         }
         this.setLoadInfo("");
         this.iface.loadState = "loaded";
-        if (pager.bufferInit == this.init && pager.bufferIface != this.iface)
-            pager.setVisibleBuffer(this);
+        this.#setVisible();
         const replace = this.#popReplace();
         if (replace != null)
             pager.deleteBuffer(replace, this);
         pager.numload--;
-        if (this == pager.buffer) {
-            if (pager.alertState == "loadInfo")
-                pager.alertState = "normal";
-            pager.queueStatusUpdate();
-        }
         if (!this.init.hasStart) {
             if (!this.init.headless)
                 this.iface.sendCursorPosition();
