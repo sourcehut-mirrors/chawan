@@ -479,11 +479,12 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
   let jsbuf = JS_GetTypedArrayBuffer(ctx, val, offset, len, bytesPerItem)
   if JS_IsException(jsbuf):
     return fjErr
-  var abuf: JSArrayBuffer
-  ?ctx.fromJSFree(jsbuf, abuf)
   if uint64(offset) + uint64(len) > uint64(int32.high):
+    JS_FreeValue(ctx, jsbuf)
     JS_ThrowRangeError(ctx, "array buffer view too large")
     return fjErr
+  var abuf: JSArrayBuffer
+  ?ctx.fromJSFree(jsbuf, abuf)
   res = JSArrayBufferView(
     abuf: abuf,
     offset: cast[int](offset),
