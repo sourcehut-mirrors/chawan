@@ -6,6 +6,7 @@ import std/posix
 
 import io/dynstream
 import types/opt
+import utils/twtstr
 
 type
   CFile {.importc: "FILE", header: "<stdio.h>", incompleteStruct.} = object
@@ -25,6 +26,7 @@ proc fread(p: pointer; size, nmemb: csize_t; f: ChaFile): csize_t
 proc fputc(c: cint; file: ChaFile): cint
 proc fputs(s: cstring; file: ChaFile): cint
 proc fgetc(file: ChaFile): cint
+proc fgets(s: cstring; n: cint; file: ChaFile): cstring
 proc ferror(file: ChaFile): cint
 proc popen*(cmd, t: cstring): ChaFile
 proc pclose*(file: ChaFile): cint
@@ -106,8 +108,26 @@ proc readLineAppend*(file: ChaFile; s: var string): Opt[bool] =
   ok(false)
 
 proc readLine*(file: ChaFile; s: var string): Opt[bool] =
-  s.setLen(0)
-  file.readLineAppend(s)
+  var i = 0
+  var bufLen = cint(80)
+  s.setLen(int(bufLen))
+  zeroMem(addr s[0], 80)
+  while true:
+    if fgets(cast[cstring](addr s[i]), bufLen - cast[cint](i), file) == nil:
+      break
+    i = s.find('\n', i)
+    if i >= 0:
+      s.setLen(i)
+      return ok(true)
+    i = int(bufLen - 1)
+    bufLen += 128
+    s.setLen(int(bufLen))
+  if i > 0: # got EOF before EOL?
+    s.setLen(i)
+    return ok(true)
+  if ferror(file) != 0:
+    return err()
+  return ok(false)
 
 proc readAll*(file: ChaFile; s: var string): Opt[void] =
   s = newString(4096)
