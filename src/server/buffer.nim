@@ -960,13 +960,6 @@ proc cancel(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   bc.state = bsLoaded
   bc.maybeReshape()
 
-proc serializeMultipart(entries: seq[FormDataEntry]; urandom: PosixStream):
-    FormData =
-  let formData = newFormData0(entries, urandom)
-  for entry in formData.entries.mitems:
-    entry.name = makeCRLF(entry.name)
-  return formData
-
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
   result = ""
   for (name, value) in kvs:
@@ -990,8 +983,9 @@ proc pickCharset(form: HTMLFormElement): Charset =
     return CHARSET_UTF_8
   return form.document.charset.getOutputEncoding()
 
+# entryList is consumed
 proc makeFormRequest(bc: BufferContext; parsedAction: URL;
-    httpMethod: HttpMethod; entryList: seq[FormDataEntry];
+    httpMethod: HttpMethod; entryList: var seq[FormDataEntry];
     enctype: FormEncodingType): Request =
   assert httpMethod in {hmGet, hmPost}
   case parsedAction.schemeType
@@ -1043,10 +1037,14 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       RequestBody(t: rbtString, s: serializeFormURLEncoded(kvlist))
     of fetMultipart:
       #TODO with charset
-      let multipart = serializeMultipart(entryList,
-        bc.window.crypto.urandom)
-      contentType = multipart.getContentType()
-      RequestBody(t: rbtMultipart, multipart: multipart)
+      let formData = newFormData0(bc.window.crypto.urandom)
+      if formData == nil:
+        return nil
+      formData.entries = move(entryList)
+      for entry in formData.entries.mitems:
+        entry.name = makeCRLF(entry.name)
+      contentType = formData.getContentType()
+      RequestBody(t: rbtMultipart, multipart: formData)
     of fetTextPlain:
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
@@ -1077,7 +1075,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
       return nil
   let charset = form.pickCharset()
   discard charset #TODO pass to constructEntryList
-  let entryList = form.constructEntryList(submitter)
+  var entryList = form.constructEntryList(submitter)
   let subAction = submitter.action()
   let action = if subAction != "":
     subAction

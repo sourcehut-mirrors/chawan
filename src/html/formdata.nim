@@ -20,19 +20,22 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
 
 proc generateBoundary(urandom: PosixStream): string =
   var s {.noinit.}: array[33, uint8]
-  doAssert urandom.readLoop(s).isOk
+  if urandom.readLoop(s).isErr:
+    return ""
   # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
   return "----WebKitFormBoundary" & btoa(s)
 
-proc newFormData0*(entries: sink seq[FormDataEntry]; urandom: PosixStream):
-    FormData =
-  return FormData(boundary: urandom.generateBoundary(), entries: entries)
+proc newFormData0*(urandom: PosixStream): FormData =
+  var boundary = urandom.generateBoundary()
+  if boundary.len == 0:
+    return nil
+  return FormData(boundary: move(boundary))
 
 proc newFormData(ctx: JSContext; argv: varargs[JSValueConst]): Opt[FormData]
     {.jsctor.} =
   let urandom = ctx.getGlobal().crypto.urandom
-  let this = FormData(boundary: urandom.generateBoundary())
-  if argv.len > 0:
+  let this = newFormData0(urandom)
+  if this != nil and argv.len > 0:
     var form: HTMLFormElement
     var submitter: HTMLElement = nil
     ?ctx.fromJS(argv[0], form)
