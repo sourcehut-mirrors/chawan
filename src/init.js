@@ -1709,7 +1709,7 @@ const ReTextStart = /\S/gu;
             break;
         } case "save": {
             let buf = config.external.downloadDir;
-            if (buf[0] != '/')
+            if (buf.at(-1) != '/')
                 buf += '/';
             const path = this.init.url.pathname;
             if (path.at(-1) == '/')
