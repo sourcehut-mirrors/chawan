@@ -1823,11 +1823,13 @@ const ReTextStart = /\S/gu;
     }
 
     #setVisible() {
-        if (this.iface.gotLines && pager.bufferInit == this.init) {
+        if (this.iface.loadState == "loaded" && this.iface.gotLines &&
+            pager.bufferInit == this.init) {
             if (pager.bufferIface != this.iface)
                 pager.setVisibleBuffer(this);
             if (pager.alertState == "loadInfo") {
                 pager.alertState = "normal";
+                this.setLoadInfo("");
                 pager.queueStatusUpdate();
             }
         }
@@ -1838,6 +1840,11 @@ const ReTextStart = /\S/gu;
         if (!this.init.headless) {
             repaintLoopPromise = (async () => {
                 for (;;) {
+                    /* If we get lines before the buffer loads, show them.
+                     * However, loadinfo must remain visible until the
+                     * buffer actually loads. */
+                    if (this.numLines > 0 && pager.bufferIface != this.iface)
+                        pager.setVisibleBuffer(this);
                     this.#setVisible();
                     await this.iface.onReshape();
                     await this.iface.requestLines(true);
@@ -1873,7 +1880,6 @@ const ReTextStart = /\S/gu;
                 break loop;
             }
         }
-        this.setLoadInfo("");
         this.iface.loadState = "loaded";
         this.#setVisible();
         const replace = this.#popReplace();
