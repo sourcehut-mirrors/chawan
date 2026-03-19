@@ -45,20 +45,13 @@ type
 
   JSArrayBufferView* = object
     abuf*: JSArrayBuffer
-    offset*: int64 # offset into the buffer
-    len*: int64 # number of members
+    offset*: int # offset into the buffer
+    len*: int # number of members
     bytesPerItem*: uint8 # ignored in toJS
     t*: JSTypedArrayEnum # type
 
-when NimMajor < 2:
-  # 1.6.14 can't do int64 openArray
-  # (whether this works at all on 2.0.0 + 32-bit is another question)
-  template toOpenArray*(view: JSArrayBufferView): openArray[uint8] =
-    let offset = cast[int](view.offset)
-    view.abuf.p.toOpenArray(offset, offset + cast[int](view.len) - 1)
-else:
-  template toOpenArray*(view: JSArrayBufferView): openArray[uint8] =
-    view.abuf.p.toOpenArray(view.offset, view.offset + view.len - 1)
+template toOpenArray*(view: JSArrayBufferView): openArray[uint8] =
+  view.abuf.p.toOpenArray(view.offset, view.offset + view.len - 1)
 
 # A key-value pair: in WebIDL terms, this is a record.
 type JSKeyValuePair*[K, T] = object
