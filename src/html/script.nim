@@ -154,7 +154,7 @@ proc get*(moduleMap: ModuleMap; url: URL; moduleType: ModuleType):
     return nil
   return moduleMap[i].value.clone()
 
-proc set*(moduleMap: var ModuleMap; url: URL; moduleType: ModuleType;
+proc put*(moduleMap: var ModuleMap; url: URL; moduleType: ModuleType;
     value: ScriptResult) =
   let i = moduleMap.find(url, moduleType)
   if i != -1:

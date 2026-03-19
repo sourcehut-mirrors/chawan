@@ -7090,7 +7090,7 @@ proc onFinishFetchModule(response: Response; success: bool) =
   let blob = response.onFinishBlob(success)
   if blob == nil:
     let res = ScriptResult(t: srtNull)
-    settings.moduleMap.set(url, moduleType, res)
+    settings.moduleMap.put(url, moduleType, res)
     element.onComplete(res)
     return
   if contentType.isJavaScriptType():
@@ -7104,7 +7104,7 @@ proc onFinishFetchModule(response: Response; success: bool) =
       if env.referrerPolicy.isOk:
         res.script.options.referrerPolicy = env.referrerPolicy
       # set & onComplete both take ownership
-      settings.moduleMap.set(url, moduleType, res.clone())
+      settings.moduleMap.put(url, moduleType, res.clone())
       element.onComplete(res)
   else:
     #TODO non-JS modules
@@ -7120,7 +7120,7 @@ proc fetchSingleModuleResponse(opaque: RootRef; response: Response) =
   let window = env.window
   if response == nil:
     let res = ScriptResult(t: srtNull)
-    settings.moduleMap.set(url, moduleType, res)
+    settings.moduleMap.put(url, moduleType, res)
     element.onComplete(res)
     return
   env.referrerPolicy = response.getReferrerPolicy()
