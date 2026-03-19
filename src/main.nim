@@ -74,19 +74,19 @@ proc help(i: int) {.noreturn.} =
   let s = ChaVersionStr & """
 Usage: cha [options] [URL(s) or file(s)...]
 Options:
-    --                          Interpret all following arguments as URLs
-    -c, --css <stylesheet>      Pass stylesheet (e.g. -c 'a{color: blue}')
-    -d, --dump                  Print page to stdout
-    -h, --help                  Print this usage message
-    -o, --opt <config>          Pass config options (e.g. -o 'page.q="quit()"')
-    -r, --run <script/file>     Run passed script or file
-    -v, --version               Print version information
-    -C, --config <file>         Override config path
-    -I, --input-charset <enc>   Specify document charset
-    -M, --monochrome            Set color-mode to 'monochrome'
-    -O, --output-charset <enc>  Specify display charset
-    -T, --type <type>           Specify content mime type
-    -V, --visual                Visual startup mode
+    --                         Interpret all following arguments as URLs
+    -c, --css <stylesheet>     Pass stylesheet (e.g. -c 'a {color: blue}')
+    -d, --dump                 Print page to stdout
+    -h, --help                 Print this usage message
+    -o, --opt <config>         Pass config options (e.g. -o buffer.images=true)
+    -r, --run <script/file>    Run passed script or file
+    -v, --version              Print version information
+    -C, --config <file>        Override config path
+    -I, --input-charset <enc>  Specify document charset
+    -M, --monochrome           Set color-mode to 'monochrome'
+    -O, --output-charset <enc> Specify display charset
+    -T, --type <type>          Specify content mime type
+    -V, --visual               Visual startup mode
 """
   if i == 0:
     discard cast[ChaFile](stdout).write(s)
