@@ -418,12 +418,38 @@ proc find*(haystack: openArray[char]; needle: string; start: int; last = -1):
     return n
   return start + n
 
-proc rfind*(s: openArray[char]; c: char; start = 0; last = -1): int =
-  let H = if last < 0: s.high else: last
-  for i in countdown(H, start):
-    if s[i] == c:
-      return i
+const HasMemrchr = defined(linux) or defined(freebsd) or defined(openbsd) or
+  defined(netbsd) or defined(haiku)
+
+when HasMemrchr:
+  proc memrchr(s: pointer; c: cint; n: csize_t): pointer {.
+    importc, header: "<string.h>".}
+
+proc rfind*(s: openArray[char]; c: char): int =
+  template impl =
+    for i in countdown(s.high, 0):
+      if s[i] == c:
+        return i
+  when nimvm:
+    impl()
+  else:
+    when HasMemrchr:
+      let slen = s.len
+      if slen > 0:
+        let sp = unsafeAddr s[0]
+        let p = memrchr(sp, cint(c), csize_t(slen))
+        if p != nil:
+          return cast[int](cast[uint](p) - cast[uint](sp))
+    else:
+      impl()
   return -1
+
+proc rfind*(s: openArray[char]; c: char; start: int; last = -1): int =
+  let last = if last == -1: s.high else: last
+  let n = s.toOpenArray(start, last).rfind(c)
+  if n < 0:
+    return n
+  return start + n
 
 proc rfind*(s: openArray[char]; cs: set[char]; start = 0; last = -1): int =
   let H = if last < 0: s.high else: last
@@ -431,32 +457,6 @@ proc rfind*(s: openArray[char]; cs: set[char]; start = 0; last = -1): int =
     if s[i] in cs:
       return i
   return -1
-
-proc rfind*(haystack: openArray[char]; needle: string): int =
-  let haystacklen = haystack.len
-  let needlelen = needle.len
-  if needlelen <= 0:
-    return 0
-  if needlelen == 1:
-    return haystack.rfind(needle[0])
-  {.push overflowChecks: off.}
-  var i = haystacklen - needlelen
-  while i >= 0:
-    if haystack.toOpenArray(i, haystack.high).startsWith(needle):
-      return i
-    dec i
-  {.pop.}
-  return -1
-
-proc rfind*(haystack: openArray[char]; needle: string; start: int; last = -1):
-    int =
-  let last = if last == -1: haystack.high else: last
-  if start > last:
-    return -1
-  let n = haystack.toOpenArray(start, last).rfind(needle)
-  if n < 0:
-    return n
-  return start + n
 
 proc contains*(s1: openArray[char]; s2: string): bool =
   s1.find(s2) != -1

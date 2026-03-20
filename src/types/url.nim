@@ -249,7 +249,7 @@ proc endsInNumber(input: string): bool =
   if input[i] == '.':
     dec i
   # if no period, start from 0
-  i = input.rfind('.', last = i) + 1
+  i = input.rfind('.', start = 0, last = i) + 1
   if i + 1 < input.len and input[i] == '0' and input[i + 1] in {'x', 'X'}:
     # hex?
     i += 2
