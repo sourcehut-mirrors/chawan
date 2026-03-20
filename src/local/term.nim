@@ -199,44 +199,12 @@ type
     qsWindowPixels, qsCPR, qsNone
 
   EventState = enum
-    esNone = ""
-    esEsc = "\e"
-    esCSI = "\e["
-    esCSIQMark = "\e[?"
-    esCSIEquals = "\e[="
-    esCSINum = "\e["
-    esBracketed = ""
-    esBracketedEsc = "\e"
-    esBracketedCSI = "\e["
-    esBracketedCSI2 = "\e[2"
-    esBracketedCSI20 = "\e[20"
-    esBracketedCSI201 = "\e[201"
-    esCSILt = "\e[<"
-    esOSC = "\e]"
-    esOSC6 = "\e]6"
-    esOSC60 = "\e]60"
-    esOSC60Semi = "\e]60;"
-    esOSC61 = "\e]61"
-    esOSC61Semi = "\e]61;"
-    esOSC4 = "\e]4"
-    esOSC4Semi = "\e]4;"
-    esOSC4SemiNum
-    esOSC1 = "\e]1"
-    esOSC10 = "\e]10"
-    esOSC10Semi = "\e]10;"
-    esOSC11 = "\e]11"
-    esOSC11Semi = "\e]11;"
-    esDCS = "\eP"
-    esDCS0 = "\eP0"
-    esDCS0Plus = "\eP0+"
-    esDCS1 = "\eP1"
-    esDCS1Plus = "\eP1+"
-    esDCS1PlusR = "\eP1+r"
-    esAPC = "\e_"
-    esAPCG = "\e_G"
-    esSTEsc = "\e"
-    esSkipToST
-    esBacktrack
+    esNone, esEsc, esCSI, esCSIQMark, esCSIEquals, esCSINum, esBracketed,
+    esBracketedEsc, esBracketedCSI, esBracketedCSI2, esBracketedCSI20,
+    esBracketedCSI201, esCSILt, esOSC, esOSC6, esOSC60, esOSC60Semi,
+    esOSC61, esOSC61Semi, esOSC4, esOSC4Semi, esOSC4SemiNum, esOSC1, esOSC10,
+    esOSC10Semi, esOSC11, esOSC11Semi, esDCS, esDCS0, esDCS0Plus, esDCS1,
+    esDCS1Plus, esDCS1PlusR, esAPC, esAPCG, esSTEsc, esSkipToST, esBacktrack
 
   EventParser = object
     state: EventState
@@ -315,6 +283,47 @@ proc windowChange(term: Terminal)
 proc updateCanvasImage(term: Terminal; image: CanvasImage;
   dims: CanvasImageDimensions; maxh: int): bool
 proc clearImages*(term: Terminal; maxh: int)
+
+const StateMap = [
+  esNone: cstring"",
+  esEsc: "\e",
+  esCSI: "\e[",
+  esCSIQMark: "\e[?",
+  esCSIEquals: "\e[=",
+  esCSINum: "\e[",
+  esBracketed: "",
+  esBracketedEsc: "\e",
+  esBracketedCSI: "\e[",
+  esBracketedCSI2: "\e[2",
+  esBracketedCSI20: "\e[20",
+  esBracketedCSI201: "\e[201",
+  esCSILt: "\e[<",
+  esOSC: "\e]",
+  esOSC6: "\e]6",
+  esOSC60: "\e]60",
+  esOSC60Semi: "\e]60;",
+  esOSC61: "\e]61",
+  esOSC61Semi: "\e]61;",
+  esOSC4: "\e]4",
+  esOSC4Semi: "\e]4;",
+  esOSC4SemiNum: "",
+  esOSC1: "\e]1",
+  esOSC10: "\e]10",
+  esOSC10Semi: "\e]10;",
+  esOSC11: "\e]11",
+  esOSC11Semi: "\e]11;",
+  esDCS: "\eP",
+  esDCS0: "\eP0",
+  esDCS0Plus: "\eP0+",
+  esDCS1: "\eP1",
+  esDCS1Plus: "\eP1+",
+  esDCS1PlusR: "\eP1+r",
+  esAPC: "\e_",
+  esAPCG: "\e_G",
+  esSTEsc: "\e",
+  esSkipToST: "",
+  esBacktrack: "",
+]
 
 # Built-in terminal capability database.
 #
@@ -732,7 +741,7 @@ proc areadChar(term: Terminal): Opt[char] =
   ok(c)
 
 proc backtrack(eparser: var EventParser; s: string; c: char) =
-  var s = $eparser.state
+  var s = $StateMap[eparser.state]
   for i, num in eparser.nums:
     if i != 0:
       s &= ';'
@@ -744,7 +753,7 @@ proc backtrack(eparser: var EventParser; s: string; c: char) =
     eparser.backtrackStack.add(num)
 
 proc backtrack(eparser: var EventParser; c: char) =
-  eparser.backtrack($eparser.state, c)
+  eparser.backtrack($StateMap[eparser.state], c)
 
 proc nextState(eparser: var EventParser; c, cc: char) =
   if c == cc:
