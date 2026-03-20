@@ -885,7 +885,7 @@ Pager.prototype.toggleSource = function() {
 Pager.prototype.discardTree = function(buffer = this.buffer) {
     while (buffer != null) {
         const next = buffer.next;
-        this.deleteBuffer(buffer);
+        this.discardBuffer(buffer);
         buffer = next;
     }
 }
