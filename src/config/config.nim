@@ -1188,18 +1188,14 @@ proc consumeKeyString(cp: var ConfigParser; camel: bool; line: string;
     return cp.err("invalid escape sequence \\ LF")
   ok(n)
 
-# Consume a bare token, and store it camel-cased in cp.buf.
+# Consume a bare token, and store it (optionally camel-cased) in cp.buf.
 proc consumeBare(cp: var ConfigParser; camel: bool; line: string; n: int):
     Opt[int] =
-  var n = n
+  var n = line.skipTomlBlanks(n)
   var upper = false
   while n < line.len:
     var c = line[n]
-    case c
-    of ' ', '\t': discard
-    of '.', '=', ']':
-      break
-    elif c == '-' and camel:
+    if c == '-' and camel:
       upper = true
     elif c in ValidBare:
       if upper:
@@ -1207,7 +1203,7 @@ proc consumeBare(cp: var ConfigParser; camel: bool; line: string; n: int):
         upper = false
       cp.buf &= c
     else:
-      return cp.err("invalid value in token: " & c)
+      break
     inc n
   ok(n)
 
@@ -1421,6 +1417,7 @@ proc parseConfigSection(cp: var ConfigParser; line: string; n: int): Opt[void] =
   ?cp.expect(']', line, n)
   if tableArray:
     ?cp.expect(']', line, n)
+  n = line.skipTomlBlanks(n)
   cp.expectEOL(line, n)
 
 proc typeCheck(cp: var ConfigParser; t: TomlType): Opt[void] =

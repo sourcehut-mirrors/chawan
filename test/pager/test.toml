@@ -1,6 +1,7 @@
-[[siteconf]]
-host = 'example\.org'
-default-headers = {
+  [[siteconf]] # test
+ host = 'example\.org' # test
+default-headers = { # test
 	a = "b", # comment
 	c = "d", # trailing comma
-}
+} # test
+cookie = true # test
