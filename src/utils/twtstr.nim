@@ -1201,16 +1201,20 @@ proc btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
 
 iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
-  var i = 0u
-  let L = uint(a.len)
+  var i = 0
+  let L = a.len
   while i < L:
-    yield (cast[int](i), a[i])
+    yield (i, a[i])
+    {.push overflowChecks: off.}
     inc i
+    {.pop.}
 
 iterator ritems*[T](a: openArray[T]): lent T {.inline.} =
-  var i = uint(a.len)
+  var i = a.len
   while i > 0:
+    {.push overflowChecks: off.}
     dec i
+    {.pop.}
     yield a[i]
 
 proc getFileExt*(path: string): string =
