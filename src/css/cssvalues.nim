@@ -965,8 +965,8 @@ proc japaneseNumber(i: int32; formal: bool): string =
     of 9: ss.add("九")
     else: discard
     n -= m
-  for j in countdown(ss.high, 0):
-    s &= $ss[j]
+  for it in ss.ritems:
+    s &= $it
   move(s)
 
 proc listMarker0(t: CSSListStyleType; i: int32; hintMap: openArray[uint32]):

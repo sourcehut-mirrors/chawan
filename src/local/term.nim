@@ -740,8 +740,8 @@ proc backtrack(eparser: var EventParser; s: string; c: char) =
   eparser.nums.setLen(0)
   eparser.state = esBacktrack
   eparser.backtrackStack = @[c]
-  for i in countdown(s.high, 0):
-    eparser.backtrackStack.add(s[i])
+  for num in s.ritems:
+    eparser.backtrackStack.add(num)
 
 proc backtrack(eparser: var EventParser; c: char) =
   eparser.backtrack($eparser.state, c)

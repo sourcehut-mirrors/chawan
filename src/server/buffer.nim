@@ -408,8 +408,7 @@ proc findRevNthLink(bc: BufferContext; handle: PagerHandle; i: int):
   var link: Element
   for y in countdown(bc.lines.high, 0):
     let line = bc.lines[y]
-    for j in countdown(line.formats.high, 0):
-      let format = line.formats[j]
+    for format in line.formats.ritems:
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
         inc k
