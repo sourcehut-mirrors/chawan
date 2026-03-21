@@ -1772,9 +1772,9 @@ const ReTextStart = /\S/gu;
                 case 'e':
                     /* TODO no idea how to implement save :/
                      * probably it should run use a custom reader that runs
-                     * through auto.mailcap clearing any other entry. but maybe
-                     * it's better to add a full blown editor like w3m has at
-                     * that point... */
+                     * through auto-mailcap clearing any other entry.
+                     * but maybe it's better to add a full blown editor
+                     * like w3m has at that point... */
                     const text = await pager.setLineEdit("mailcap",
                                                          "Mailcap: ", {
                         current: init.shortContentType + ';'

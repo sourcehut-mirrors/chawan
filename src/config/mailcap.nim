@@ -7,8 +7,10 @@ import std/posix
 
 import io/chafile
 import io/dynstream
+import monoucha/libregexp
 import types/opt
 import types/url
+import utils/lrewrap
 import utils/myposix
 import utils/twtstr
 
@@ -20,37 +22,53 @@ type
   MailcapFlag* = enum
     mfNeedsterminal = "needsterminal"
     mfCopiousoutput = "copiousoutput"
-    mfHtmloutput = "x-htmloutput" # from w3m
+    mfHtmloutput = "x-htmloutput" # w3m extension
     mfAnsioutput = "x-ansioutput" # Chawan extension
     mfSaveoutput = "x-saveoutput" # Chawan extension
     mfNeedsstyle = "x-needsstyle" # Chawan extension
     mfNeedsimage = "x-needsimage" # Chawan extension
+    mfType = "x-type" # w3mmee extension
 
-  MailcapEntry* = object
+  NamedFieldType* = enum
+    nfTest = "test"
+    nfNametemplate = "nametemplate"
+    nfEdit = "edit"
+    nfMatch = "x-match" # w3mmee extension
+    nfNcMatch = "x-nc-match" # w3mmee extension
+
+  NamedField = ref object
+    t: NamedFieldType
+    value*: string
+    next: NamedField
+
+  MailcapEntry* = object #TODO merge t and cmd?
     t*: string
     cmd*: string
     flags*: set[MailcapFlag]
-    nametemplate*: string
-    edit*: string
-    test*: string
+    fieldsHead: NamedField
 
   Mailcap* = seq[MailcapEntry]
 
-  AutoMailcap* = object
-    path*: string
-    entries*: Mailcap
+iterator fields(entry: MailcapEntry): NamedField =
+  var field = entry.fieldsHead
+  while field != nil:
+    yield field
+    field = field.next
+
+proc find*(entry: MailcapEntry; t: NamedFieldType): NamedField =
+  for field in entry.fields:
+    if field.t == t:
+      return field
+  nil
 
 proc `$`*(entry: MailcapEntry): string =
   var s = entry.t & ';' & entry.cmd
   for flag in MailcapFlag:
     if flag in entry.flags:
       s &= ';' & $flag
-  if entry.nametemplate != "":
-    s &= ";nametemplate=" & entry.nametemplate
-  if entry.edit != "":
-    s &= ";edit=" & entry.edit
-  if entry.test != "":
-    s &= ";test=" & entry.test
+  for field in entry.fields:
+    # if value is regex, then the source is until the first NUL
+    s &= ';' & $field.t & '=' & $cstring(field.value)
   s &= '\n'
   move(s)
 
@@ -104,13 +122,28 @@ proc consumeCommand(state: var MailcapParser; line: string;
     inc n
   ok(n)
 
-type NamedField = enum
-  nmTest = "test"
-  nmNametemplate = "nametemplate"
-  nmEdit = "edit"
+proc addNamedField(entry: var MailcapEntry; t: NamedFieldType;
+    fieldsTail: var NamedField; cmd: var string) =
+  var s = move(cmd)
+  if t in {nfMatch, nfNcMatch}:
+    let flags = if t == nfNcMatch: {LRE_FLAG_IGNORECASE} else: {}
+    var re: Regex
+    if not compileRegex(s, flags, re):
+      return
+    s &= '\0' & re.bytecode
+  let field = entry.find(t)
+  if field != nil:
+    field.value = move(s)
+  else:
+    let field = NamedField(t: t, value: move(s))
+    if fieldsTail == nil:
+      entry.fieldsHead = field
+    else:
+      fieldsTail.next = field
+    fieldsTail = field
 
 proc consumeField(state: var MailcapParser; line: string;
-    entry: var MailcapEntry; n: int): Opt[int] =
+    entry: var MailcapEntry; n: int; fieldsTail: var NamedField): Opt[int] =
   var n = line.skipBlanks(n)
   var s = ""
   while n < line.len:
@@ -126,11 +159,8 @@ proc consumeField(state: var MailcapParser; line: string;
       n = ?state.consumeCommand(line, cmd, n)
       while s.len > 0 and s[^1] in AsciiWhitespace:
         s.setLen(s.len - 1)
-      if x := parseEnumNoCase[NamedField](s):
-        case x
-        of nmTest: entry.test = move(cmd)
-        of nmNametemplate: entry.nametemplate = move(cmd)
-        of nmEdit: entry.edit = move(cmd)
+      if t := parseEnumNoCase[NamedFieldType](s):
+        entry.addNamedField(t, fieldsTail, cmd)
       return ok(n)
     elif c in Controls:
       return state.err("invalid character in field: " & c)
@@ -146,8 +176,9 @@ proc parseEntry*(state: var MailcapParser; line: string;
     entry: var MailcapEntry): Opt[void] =
   var n = ?state.consumeTypeField(line, entry.t)
   n = ?state.consumeCommand(line, entry.cmd, n)
+  var fieldsTail: NamedField
   while n < line.len:
-    n = ?state.consumeField(line, entry, n)
+    n = ?state.consumeField(line, entry, n, fieldsTail)
   ok()
 
 proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
@@ -160,7 +191,7 @@ proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
     doAssert res.isOk, state.error
     mailcap.add(entry)
 
-proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
+proc parseMailcap(state: var MailcapParser; mailcap, typeMailcap: var Mailcap;
     file: ChaFile): Opt[void] =
   var line: string
   while file.readLine(line).get(false):
@@ -176,17 +207,21 @@ proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
         break
     var entry: MailcapEntry
     ?state.parseEntry(line, entry)
-    mailcap.add(entry)
+    if mfType in entry.flags:
+      typeMailcap.add(entry)
+    else:
+      mailcap.add(entry)
     inc state.line
   return ok()
 
-proc parseMailcap*(mailcap: var Mailcap; path: string): Err[string] =
+proc parseMailcap*(mailcap, typeMailcap: var Mailcap; path: string):
+    Err[string] =
   let file0 = chafile.fopen(path, "r")
   if file0.isErr:
     return ok()
   let file = file0.get
   var state = MailcapParser(line: 1)
-  let res = state.parseMailcap(mailcap, file)
+  let res = state.parseMailcap(mailcap, typeMailcap, file)
   file.close()
   if res.isErr:
     return err(path & '(' & $state.line & "): " & msg)
@@ -287,7 +322,19 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
       of 'u': # Netscape extension
         if url != nil: # nil in getEditorCommand
           cmd &= quoteFile($url, qs)
-      of 'd': # line; not used in mailcap, only in getEditorCommand
+      of 'h': # w3mmee extension
+        if url != nil:
+          cmd &= quoteFile(url.hostname, qs)
+      of 'H': # Chawan extension
+        if url != nil:
+          cmd &= quoteFile(url.host, qs)
+      of 'p': # w3mmee extension
+        if url != nil:
+          cmd &= quoteFile(url.port, qs)
+      of '?': # w3mmee(-ish) extension
+        if url != nil:
+          cmd &= quoteFile(url.search, qs)
+      of 'd': # Chawan extension
         if line != -1: # -1 in mailcap
           cmd &= $line
       of '{':
@@ -316,28 +363,42 @@ proc checkEntry(entry: MailcapEntry; contentType, mt, st: string; url: URL):
   if not entry.t.startsWith("*/") and not entry.t.startsWithIgnoreCase(mt) or
       not entry.t.endsWith("/*") and not entry.t.endsWithIgnoreCase(st):
     return false
-  if entry.test != "":
-    var canpipe = true
-    let cmd = unquoteCommand(entry.test, contentType, "", url, canpipe)
-    return canpipe and myposix.system(cstring(cmd)) == 0
+  for field in entry.fields:
+    case field.t
+    of nfTest:
+      var canpipe = true
+      let cmd = unquoteCommand(field.value, contentType, "", url, canpipe)
+      if canpipe and myposix.system(cstring(cmd)) == 0:
+        return false
+    of nfMatch, nfNcMatch:
+      let i = field.value.find('\0') + 1
+      let surl = $url
+      let (si, ei) = cast[REBytecode](addr field.value[i]).matchFirst(surl)
+      if si != 0 or ei != surl.len:
+        return false
+    else: discard
   true
 
 proc findPrevMailcapEntry*(mailcap: Mailcap; contentType: string; url: URL;
     last: int): int =
-  let mt = contentType.until('/') & '/'
-  let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
-  for i in countdown(last - 1, 0):
-    if checkEntry(mailcap[i], contentType, mt, st, url):
-      return i
+  let si = last - 1
+  if si >= 0:
+    let mt = contentType.until('/') & '/'
+    let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
+    for i in countdown(last - 1, 0):
+      if checkEntry(mailcap[i], contentType, mt, st, url):
+        return i
   return -1
 
 proc findMailcapEntry*(mailcap: Mailcap; contentType: string; url: URL;
     start = -1): int =
-  let mt = contentType.until('/') & '/'
-  let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
-  for i in start + 1 ..< mailcap.len:
-    if checkEntry(mailcap[i], contentType, mt, st, url):
-      return i
+  let si = start + 1
+  if si < mailcap.len:
+    let mt = contentType.until('/') & '/'
+    let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
+    for i in si ..< mailcap.len:
+      if checkEntry(mailcap[i], contentType, mt, st, url):
+        return i
   return -1
 
 proc saveEntry*(mailcap: var Mailcap; path: string; entry: MailcapEntry):

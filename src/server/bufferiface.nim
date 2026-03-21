@@ -216,7 +216,7 @@ type
 
   BufferInitFlag* = enum
     bifSave, bifHTML, bifHistory, bifTailOnLoad, bifCrashed, bifHasStart,
-    bifRedirected, bifMailcapCancel
+    bifRedirected, bifMailcapCancel, bifForceType
 
   LoadState* = enum
     lsLoading = "loading"
@@ -348,6 +348,9 @@ proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     "Connecting to " & host
   else:
     "Loading " & $request.url) & "..."
+  var flags = flags
+  if contentType != "":
+    flags.incl(bifForceType)
   BufferInit(
     config: config,
     loaderConfig: loaderConfig,

@@ -2340,7 +2340,7 @@ const ConfigInitStr = {
 }
 
 const ConfigInitPath = {
-  coAutoMailcap: "auto.mailcap",
+  coAutoMailcap: "mailcap",
   coBookmark: "$CHA_DATA_DIR/bookmark.md",
   coHistoryFile: "$CHA_DATA_DIR/history.md",
   coTmpdir: "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME",

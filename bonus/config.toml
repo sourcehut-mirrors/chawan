@@ -36,7 +36,7 @@
 #	"/usr/etc/mailcap",
 #	"/usr/local/etc/mailcap"
 #]
-#auto-mailcap = "auto.mailcap"
+#auto-mailcap = "$CHA_DIR/mailcap"
 #mime-types = [
 #	"~/.mime.types",
 #	"/etc/mime.types",
@@ -55,7 +55,7 @@
 #cookie-file = "$CHA_DATA_DIR/cookies.txt"
 #tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
 #editor = "${VISUAL:-${EDITOR:-vi}}"
-#cgi-dir = ["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
+#cgi-dir = ["$CHA_DIR/cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 #download-dir = "${TMPDIR:-/tmp}/"
 #show-download-panel = true
 #w3m-cgi-compat = false

@@ -418,7 +418,7 @@ tmpdir
 T}@T{
 path
 T}@T{
-{usually /tmp/cha\-tmp\-user}
+{usually \(lq/tmp/cha\-tmp\-user\(rq}
 T}@T{
 Directory used to save temporary files.
 T}
@@ -428,7 +428,7 @@ editor
 T}@T{
 shell command
 T}@T{
-{usually \f[CR]$EDITOR\f[R]}
+{usually \(lq$EDITOR\(rq}
 T}@T{
 External editor command.
 %s is substituted for the file name, %d for the line number.
@@ -462,11 +462,14 @@ auto\-mailcap
 T}@T{
 path
 T}@T{
-\(lqauto.mailcap\(rq
+\(lq$CHA_DIR/mailcap\(rq
 T}@T{
 Mailcap file for entries that are automatically executed.
 .PP
 The \(lqOpen as\(rq prompt also saves entries in this file.
+.PP
+For backwards\-compatibility, if this is \(lqmailcap\(rq and the file
+does not exist, Chawan will also check \(lqauto.mailcap\(rq.
 T}
 _
 T{
@@ -550,7 +553,7 @@ bookmark
 T}@T{
 path
 T}@T{
-\(lqbookmark.md\(rq
+\(lq$CHA_DATA_DIR/bookmark.md\(rq
 T}@T{
 Path to the bookmark.md file.
 (The file it points to should have a .md extension, so that its type can
@@ -562,7 +565,7 @@ history\-file
 T}@T{
 path
 T}@T{
-\(lqhistory.uri\(rq
+\(lq$CHA_DATA_DIR/history.uri\(rq
 T}@T{
 Path to the history file.
 T}
@@ -582,7 +585,7 @@ cookie\-file
 T}@T{
 path
 T}@T{
-\(lqcookies.txt\(rq
+\(lq$CHA_DATA_DIR/cookies.txt\(rq
 T}@T{
 Path to the cookie file.
 .PP

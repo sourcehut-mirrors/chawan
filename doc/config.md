@@ -375,14 +375,14 @@ Following is a list of external options:
 <tr>
 <td>tmpdir</td>
 <td>path</td>
-<td>{usually /tmp/cha-tmp-user}</td>
+<td>{usually "/tmp/cha-tmp-user"}</td>
 <td>Directory used to save temporary files.</td>
 </tr>
 
 <tr>
 <td>editor</td>
 <td>shell command</td>
-<td>{usually `$EDITOR`}</td>
+<td>{usually "$EDITOR"}</td>
 <td>External editor command. %s is substituted for the file name, %d for
 the line number.</td>
 </tr>
@@ -408,10 +408,13 @@ for details.)  Directories specified first have higher precedence.
 <tr>
 <td>auto-mailcap</td>
 <td>path</td>
-<td>"auto.mailcap"</td>
+<td>"$CHA_DIR/mailcap"</td>
 <td>Mailcap file for entries that are automatically executed.
 <p>
-The "Open as" prompt also saves entries in this file.</td>
+The "Open as" prompt also saves entries in this file.
+<p>
+For backwards-compatibility, if this is "mailcap" and the file does not
+exist, Chawan will also check "auto.mailcap".</td>
 </tr>
 
 <tr>
@@ -474,7 +477,7 @@ download.</td>
 <tr>
 <td>bookmark</td>
 <td>path</td>
-<td>"bookmark.md"</td>
+<td>"$CHA_DATA_DIR/bookmark.md"</td>
 <td>Path to the bookmark.md file. (The file it points to should have a
 .md extension, so that its type can be correctly deduced.)</td>
 </tr>
@@ -482,7 +485,7 @@ download.</td>
 <tr>
 <td>history-file</td>
 <td>path</td>
-<td>"history.uri"</td>
+<td>"$CHA_DATA_DIR/history.uri"</td>
 <td>Path to the history file.</td>
 </tr>
 
@@ -496,7 +499,7 @@ download.</td>
 <tr>
 <td>cookie-file</td>
 <td>path</td>
-<td>"cookies.txt"</td>
+<td>"$CHA_DATA_DIR/cookies.txt"</td>
 <td>Path to the cookie file.
 <p>
 The format is equivalent to curl's "cookies.txt" format, except that a

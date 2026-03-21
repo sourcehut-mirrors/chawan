@@ -131,6 +131,7 @@ type
     pidMap: Table[int, string] # pid -> command
     jsmap: JSMap
     autoMailcap: Mailcap
+    typeMailcap: Mailcap
     mailcap: Mailcap
     mimeTypes: MimeTypes
     bufferInit {.jsget.}: BufferInit # visible BufferInit (may != iface.init)
@@ -337,8 +338,15 @@ proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
   return js_strdup(ctx, name)
 
+proc loadMailcap(pager: Pager; mailcap, typeMailcap: var Mailcap;
+    path: string) =
+  let res = mailcap.parseMailcap(typeMailcap, path)
+  if res.isErr:
+    pager.alert(res.error)
+
 proc loadMailcap(pager: Pager; mailcap: var Mailcap; path: string) =
-  let res = mailcap.parseMailcap($path)
+  var typeMailcap: Mailcap # dummy, discarded
+  let res = mailcap.parseMailcap(typeMailcap, path)
   if res.isErr:
     pager.alert(res.error)
 
@@ -362,6 +370,25 @@ text/x-dirlist;	exec "$CHA_LIBEXEC_DIR"/dirlist2html -t '%{title}'; x-htmloutput
 text/uri-list;	exec "$CHA_LIBEXEC_DIR"/uri2html '%{title}'; x-htmloutput
 application/xhtml+xml; exec cat; x-htmloutput
 """
+
+proc loadAutoMailcap(pager: Pager) =
+  # Backwards-compatibility: the default path used to be auto.mailcap, so
+  # it is possible that
+  # a) there is no ~/.config/mailcap, but there is ~/.config/auto.mailcap
+  # b) there *is* a ~/.config/mailcap, but it is already assigned as the
+  # non-auto mailcap
+  # Here we make sure that both cases work as before.
+  let config = pager.config
+  if config{"autoMailcap"} == config.dir / "mailcap":
+    if config{"autoMailcap"} in config{"mailcap"}: # case b
+      pager.config.strs[coAutoMailcap] = config.dir / "auto.mailcap"
+    elif not fileExists(config{"autoMailcap"}):
+      var autoMailcapPath = config.dir / "auto.mailcap"
+      if fileExists(autoMailcapPath): # case a
+        pager.config.strs[coAutoMailcap] = move(autoMailcapPath)
+  pager.loadMailcap(pager.autoMailcap, pager.typeMailcap,
+    config{"autoMailcap"})
+  pager.autoMailcap.parseBuiltin(DefaultAutoMailcap)
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int;
@@ -412,8 +439,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
       if pager.cookieJars.parse(ps, pager.alerts).isErr:
         pager.cookieJars.transient = true
         pager.alert("failed to read cookies")
-  pager.loadMailcap(pager.autoMailcap, config{"autoMailcap"})
-  pager.autoMailcap.parseBuiltin(DefaultAutoMailcap)
+  pager.loadAutoMailcap()
   for p in config{"mimeTypes"}:
     if f := chafile.fopen($p, "r"):
       let res = pager.mimeTypes.parseMimeTypes(f)
@@ -2027,8 +2053,9 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     MailcapResult =
   let ext = url.pathname.afterLast('.')
   var outpath = pager.getTempFile(ext)
-  if entry.nametemplate != "":
-    outpath = unquoteCommand(entry.nametemplate, contentType, outpath, url)
+  let nametemplate = entry.find(nfNametemplate)
+  if nametemplate != nil:
+    outpath = unquoteCommand(nametemplate.value, contentType, outpath, url)
   var canpipe = true
   let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, canpipe)
   let ishtml = mfHtmloutput in entry.flags
@@ -2285,33 +2312,30 @@ proc askMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
       break
   return ctx.askChar(pager, msg.substr(j))
 
-proc connected(pager: Pager; init: BufferInit; response: Response): Opt[void] =
-  # This forces client to ask for confirmation before quitting.
-  pager.hasload = true
-  if bifHistory in init.flags:
-    pager.lineHist[lmLocation].add($init.url)
+proc initMailcap(pager: Pager; init: BufferInit): Opt[void] =
   # contentType must have been set by applyResponse.
-  let shortContentType = init.contentType.untilLower(';')
   var contentType = init.contentType
-  if shortContentType.startsWithIgnoreCase("text/"):
+  if bifForceType notin init.flags:
+    var i = -1
+    while true:
+      i = pager.typeMailcap.findMailcapEntry(contentType, init.url, i)
+      if i == -1:
+        break
+      contentType = pager.typeMailcap[i].cmd & contentType.after(';')
+  if contentType.startsWithIgnoreCase("text/"):
     # prepare content type for %{charset}
     contentType.setContentTypeAttr("charset", $init.charset)
-  var istream = response.stream
-  if init.filterCmd != "":
-    pager.setEnvVars(pager.defaultEnv())
-    istream = pager.execPipeSink(init.filterCmd, istream)
-    if istream == nil:
-      return pager.fail(init, "failed to filter buffer")
-  init.istreamOutputId = response.outputId
-  init.ostream = istream
-  if shortContentType.equalsIgnoreCase("text/html"):
+  let shortContentType = contentType.untilLower(';')
+  if shortContentType == "text/html":
     init.flags.incl(bifHTML)
     return pager.connected2(init)
-  if shortContentType.equalsIgnoreCase("text/plain") or bifSave in init.flags:
+  if shortContentType == "text/plain" or bifSave in init.flags:
     return pager.connected2(init)
   let i = pager.autoMailcap.findMailcapEntry(contentType, init.url)
-  if i != -1 or pager.config{"headless"} != hmFalse:
+  if i != -1:
     pager.applyMailcap(init, pager.autoMailcap[i])
+    return pager.connected2(init)
+  elif pager.config{"headless"} != hmFalse:
     return pager.connected2(init)
   else:
     let (_, i) = pager.findMailcapPrevNext(init, -1)
@@ -2366,7 +2390,19 @@ proc handleRead(pager: Pager; init: BufferInit): Opt[void] =
     elif response.status == 401:
       bcrUnauthorized
     else:
-      return pager.connected(init, response)
+      # This forces client to ask for confirmation before quitting.
+      pager.hasload = true
+      if bifHistory in init.flags:
+        pager.lineHist[lmLocation].add($init.url)
+      init.istreamOutputId = response.outputId
+      init.ostream = stream
+      if init.filterCmd != "":
+        pager.setEnvVars(pager.defaultEnv())
+        let ostream = pager.execPipeSink(init.filterCmd, init.ostream)
+        if ostream == nil:
+          return pager.fail(init, "failed to filter buffer")
+        init.ostream = ostream
+      return pager.initMailcap(init)
     stream.sclose()
     let res = ctx.connected(init, cres, arg0)
     if JS_IsException(res):

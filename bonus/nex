@@ -5,7 +5,7 @@ Usage (replace ~/.chawan with ~/.config/chawan if you prefer XDG):
 * put nex binary in ~/.chawan/cgi-bin
 * put in ~/.chawan/urimethodmap
 nex: /cgi-bin/nex
-* put in ~/.chawan/auto.mailcap
+* put in ~/.chawan/mailcap
 text/x-nex; "$CHA_CGI_DIR"/nex html; x-htmloutput
 * enjoy'
 

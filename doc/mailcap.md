@@ -2,8 +2,8 @@
 
 # Mailcap
 
-By default, Chawan's buffers only handle HTML and plain text. The
-`mailcap` file can be used to view other file formats using external
+By default, Chawan's buffers only handle HTML and plain text.
+The *mailcap* file can be used to view other file formats using external
 commands, or to convert them to HTML/plain text before displaying them
 in Chawan.
 
@@ -18,21 +18,21 @@ For an exact description of the mailcap format, see
 ## Search path
 
 The search path for mailcap files is set by the configuration variable
-`external.mailcap`. This matches the recommended path in the RFC:
+`external.mailcap`.  This matches the recommended path in the RFC:
 
 ```
 $HOME/.mailcap:/etc/mailcap:/usr/etc/mailcap:/usr/local/etc/mailcap
 ```
 
-By default, mailcap entries are only executed if the user types `r`
-(run) after the prompt. Other options are to view the file with `t`
-(text), or to save the file with `s`.
+By default, mailcap entries are only executed if the user types `r` (run)
+after the prompt.  Other options are to view the file with `t` (text), or
+to save the file with `s`.
 
-If a capital letter is typed (e.g. press shift and type `R`), then a
-corresponding entry is appended to `external.auto-mailcap` (default:
-`~/.chawan/auto.mailcap`, or `~/.config/chawan/auto.mailcap` with XDG
-basedirs). `(T)ext` and `(S)ave` may also be used to append entries
-corresponding to the other display options.
+If a capital letter is typed (e.g. shift + `R`), then a corresponding entry
+is appended to `external.auto-mailcap` (default: `~/.chawan/mailcap`, or
+`~/.config/chawan/mailcap` with XDG basedirs).  `(T)ext` and `(S)ave`
+may also be used to append entries corresponding to the other display
+options.
 
 Entries in auto-mailcap are automatically executed, so it is recommended
 to add your Chawan-specific entries there (or just set it to your
@@ -40,70 +40,120 @@ personal mailcap file).
 
 ## Format
 
-Chawan adheres to the format described in RFC 1524, with a few
-extensions.
+Chawan adheres to the format described in RFC 1524, with a few extensions.
 
-Note that text/html and text/plain entries are ignored.
+`text/html` and `text/plain` entries are ignored.
 
 ### Templating
 
-`%s`, `%t`, and named content type fields like `%{charset}` work as
-described in the standard.
+The command part of entries may include template strings which are
+substituted by the browser at execution.
 
-If no quoting is applied, Chawan quotes the templates automatically.
-(This works with $(command substitutions) as well.)  However, other software
-may misbehave on such templates, so it may be better to assign them to
-a variable first.
+Templates do not have to be quoted; Chawan quotes them automatically.
+(This works with $(command substitutions) as well.)  However, other
+software may misbehave on such templates, so it may be better to assign
+them to a variable first, e.g.
 
-The non-standard template %u may be specified to get the original URL of
-the resource.  This is a Netscape extension that may not be compatible
-with other implementations.  As an alternative, the `$MAILCAP_URL`
-environment variable is set to the same value.
+```
+text/x-example; s=%s cat "$s"; copiousoutput
+```
+
+Following templates are supported:
+
+* `%s` expands to the path.  Specifying `%s` forces download of the
+  external resource *before* the entry is executed.  If `%s` is not
+  specified, the resource is instead piped to standard input.  (In this
+  case, `needsterminal` does not apply.)
+
+* `%t` expands to the content type.  Named content type fields can also
+  be specified with the syntax `%{charset}`.  For example, in
+
+  ```
+  text/html; charset=utf-8
+  ```
+
+  `%t` would expand to the above string, while `%{charset}` would expand
+  to "utf-8".
+
+* Non-standard templates for the resource's original URL: `%u` (from
+  Netscape) expands to the original URL of the resource, `%h` (from w3mmee)
+  expands to the hostname without the port, `%H` expands to the hostname
+  including the port, and `%?` (from w3mmee) expands to the query string
+  including the question mark.
+
+  (w3mmee did not actually include the question mark in `%?`.  However,
+  that design could not express the difference between the empty query
+  string and the null query string, so it has been changed in Chawan.)
 
 ### Fields
 
-The `test`, `nametemplate`, `needsterminal` and `copiousoutput` fields
-are recognized. The non-standard `x-htmloutput`, `x-ansioutput`,
-`x-saveoutput` and `x-needsstyle` extension fields are also recognized.
+Following fields are recognized.
 
 * When the `test` named field is specified, the mailcap entry is only used
-  if the test command returns 0.
+  if the test command returns 0.  For example, you can restrict entries
+  that require X11 as follows:
 
-  Warning: as of now, `%s` does not work with `test`; `test` named
-  fields with a `%s` template are skipped, and no data is piped into
-  `test` commands.
+  ```
+  image; feh -; test=test -n "$DISPLAY"
+  ```
+
+  Warning: `%s` does not work with `test`.  `test` named fields with a `%s`
+  template are skipped, and no data is piped into `test` commands.
 
 * `copiousoutput` makes Chawan redirect the output of the external
-  command's output into a new buffer. If either x-htmloutput or
-  x-ansioutput is defined too, then it is ignored.
+  command's output into a new buffer.  If either `x-htmloutput` or
+  `x-ansioutput` is defined too, then `copiousoutput` is ignored.
 
-* The `x-htmloutput` extension field behaves the same as
-  `copiousoutput`, but makes Chawan interpret the command's output as
-  HTML.
+* `needsterminal` hands over control of the terminal to the command
+  while it is running.  It does nothing if one of `copiousoutput`,
+  `x-ansioutput`, `x-saveoutput` or `x-htmloutput` is specified.
 
-* `x-ansioutput` pipes the output through the "text/x-ansi" content
-  type handler, so that ANSI colors, formatting, etc. are displayed
-  correctly.
+* `nametemplate` provides a specific template for the temporary file
+  created when `%s` is specified.  See the RFC for details.
+
+* `x-htmloutput` (from w3m) behaves the same as `copiousoutput`, but makes
+  Chawan interpret the command's output as HTML.
+
+* `x-ansioutput` pipes the output through the "text/x-ansi" content type
+  handler, so that ANSI colors, formatting, etc. are displayed correctly.
 
 * `x-saveoutput` prompts the user to save the entry's output in a file.
 
 * `x-needsstyle` forces CSS to be processed for the specific type, even
-  if styling is disabled in the config. Only useful when combined with
-  `x-htmloutput`.
+  if styling is disabled in the config.  Only useful when combined with
+  `x-htmloutput`.  (Also see the `-cha-content-type` media query in
+  [**cha-css**](css.md)(7).)
 
 * `x-needsimage` forces images to be displayed in `x-htmloutput`, even if
   images are disabled.
 
-* `needsterminal` hands over control of the terminal to the command
-  while it is running. Note: as of now, `needsterminal` does nothing if
-  either `copiousoutput` or `x-htmloutput` is specified.
+* `x-type` (from w3mmee) specifies a MIME type substitution.  The command
+   part is interpreted as a MIME type (without template expansion) which is
+   used instead of the original type.  Such entries are only respected in
+   `external.auto-mailcap`.
 
-* For a description of `nametemplate`, see the RFC.
+   `x-type` has a higher priority than other entries, and applies even to
+   text/plain and text/html documents (which are normally excluded from
+   mailcap).  However, `x-type` entries do not apply if the content type
+   was forced (e.g. using the `-T` flag).
+
+   (Note: `x-type` is experimental.  Future changes to its semantics are
+   to be expected.)
+
+* `x-match` (from w3mmee) restricts an entry's URL to the specified regex.
+   `x-nc-match` is the same, but it is case-insensitive.  For example,
+   `x-match=https?://example\.org/.*` restricts an entry to example.org
+   (note the backslash.)
+
+   When one of these fields is present together with `test`, the result is
+   ANDed together.
 
 ## Examples
 
-I recommend placing entries in `~/.chawan/auto.mailcap` (or
-`~/.config/chawan/auto.mailcap` if you use XDG basedirs).
+To automatically execute these entries, place them in `~/.chawan/mailcap`
+(or `~/.config/chawan/mailcap` if you use XDG basedirs).  Alternatively,
+if you already have a mailcap file to share with other programs, you can
+set `external.auto-mailcap` to `~/.mailcap`.
 
 ```
 # Note: these examples require an entry in mime.types that sets e.g. md as
@@ -141,6 +191,7 @@ text/x-hexdump; od -w12 -A x -t x1z -v; copiousoutput
 # Following entry will be ignored, as text/html is supported natively by Chawan.
 text/html; cha -dT text/html -I %{charset}; copiousoutput
 ```
+
 ## See also
 
 [**cha**](cha.md)(1)

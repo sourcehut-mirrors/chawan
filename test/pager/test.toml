@@ -1,3 +1,9 @@
+[buffer]
+history = false
+
+[external]
+mime-types = "mime.types"
+
   [[siteconf]] # test
  host = 'example\.org' # test
 default-headers = { # test

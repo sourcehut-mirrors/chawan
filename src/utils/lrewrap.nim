@@ -98,13 +98,6 @@ iterator matchCap*(regex: Regex; s: openArray[char]; cap: int; start = 0):
       break
     yield ctx.cap(cap)
 
-proc match*[T: Regex|REBytecode](regex: T; s: openArray[char]; start = 0):
-    bool =
-  var ctx = initContext(regex)
-  for ret in ctx.exec(s, start):
-    return ret == 1
-  false
-
 proc matchFirst(ctx: var ExecContext; str: openArray[char]; start = 0):
     tuple[s, e: int] =
   for ret in ctx.exec(str, start):
@@ -112,6 +105,11 @@ proc matchFirst(ctx: var ExecContext; str: openArray[char]; start = 0):
       break
     return ctx.cap(0)
   return (-1, -1)
+
+proc match*[T: Regex|REBytecode](regex: T; s: openArray[char]; start = 0):
+    bool =
+  var ctx = initContext(regex)
+  ctx.matchFirst(s, start).s != -1
 
 proc matchLast(ctx: var ExecContext; str: openArray[char]; start = 0):
     tuple[s, e: int] =
