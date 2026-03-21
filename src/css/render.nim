@@ -647,7 +647,8 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       absAncestor = it # record first absolute ancestor
     if it of BlockBox:
       let it = BlockBox(it)
-      if clipAncestor == nil and (not absolute or it.positioned):
+      if clipAncestor == nil and
+          (not absolute or it.positioned or it.parent == nil):
         clipAncestor = it
       if it.render.positioned and (not absolute or absAncestor != nil):
         offset = it.render.offset
