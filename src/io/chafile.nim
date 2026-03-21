@@ -125,6 +125,7 @@ proc readLine*(file: ChaFile; s: var string): Opt[bool] =
   if i > 0: # got EOF before EOL?
     s.setLen(i)
     return ok(true)
+  s = ""
   if ferror(file) != 0:
     return err()
   return ok(false)
