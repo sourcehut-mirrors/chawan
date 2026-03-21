@@ -1843,7 +1843,8 @@ const ReTextStart = /\S/gu;
                     /* If we get lines before the buffer loads, show them.
                      * However, loadinfo must remain visible until the
                      * buffer actually loads. */
-                    if (this.numLines > 0 && pager.bufferIface != this.iface)
+                    if (this.numLines > 0 && pager.bufferInit == this.init &&
+                        pager.bufferIface != this.iface)
                         pager.setVisibleBuffer(this);
                     this.#setVisible();
                     await this.iface.onReshape();
