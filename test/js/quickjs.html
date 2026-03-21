@@ -25,7 +25,7 @@ function testArrayBuffer() {
 		return Reflect.get(target, prop, receiver);
 	    }
 	});
-	assertThrows(() => Reflect.construct(Uint8Array, [src], EvilConstructor), RangeError);
+	Reflect.construct(Uint8Array, [src], EvilConstructor);
 }
 
 function testDate() {
