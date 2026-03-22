@@ -46,414 +46,283 @@ include it in a keybinding (in that case, `cmd.` is optional):
 
 ## Interfaces
 
+Note that there are also many private functions not documented here.
+Such functions have no stability guarantee and may disappear at any time,
+so using them is not recommended.
+
 ### Client
 
-The global object (`globalThis`) implements the `Client` interface. Documented
-functions of this are:
+The global object (`globalThis`) implements the `Client` interface.
+Public functions of this are:
 
-<table border>
+`quit()`
+: Exit the browser.
 
-<tr>
-<th>Property</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<td>`quit()`</td>
-<td>Exit the browser.</td>
-</tr>
-
-<tr>
-<td>`suspend()`</td>
-<td>Temporarily suspend the browser, by delivering the client process a
+`suspend()`
+: Temporarily suspend the browser, by delivering the client process a
 SIGTSTP signal.
-<p>
-Note: this suspends the entire process group.</td>
-</tr>
 
-<tr>
-<td>`readFile(path)`</td>
-<td>Read a file at `path`.
-<p>
-Returns the file's content as a string, or null if the file does not
-exist.
-</td>
-</tr>
+  Note: this suspends the entire process group.
 
-<tr>
-<td>`writeFile(path, content)`</td>
-<td>Write `content` to the file at `path`.
-<p>
-Throws a TypeError if this failed for whatever reason.
-</td>
-</tr>
+`readFile(path)`
+: Read a file at `path`.
 
-<tr>
-<td>`getenv(name, fallback = null)`</td>
-<td>Get an environment variable by `name`.
-<p>
-Returns `fallback` if the variable does not exist.
-</td>
-</tr>
+  Returns the file's content as a string, or null if the file does not
+  exist.
 
-<tr>
-<td>`setenv(name, value)`</td>
-<td>Set an environment variable by `name`.
-<p>
-Throws a `TypeError` if the operation failed (e.g. because the variable's
-size exceeded an OS-specified limit.)
-</td>
-</tr>
+`writeFile(path, content)`
+: Write `content` to the file at `path`.
 
-<tr>
-<td>`pager`</td>
-<td>The pager object. Implements `Pager`, as described below.</td>
-</tr>
+  Throws a TypeError if this failed for whatever reason.
 
-<tr>
-<td>`line`</td>
-<td>The line editor. Implements `LineEdit`, as described below.</td>
-</tr>
+`getenv(name, fallback = null)`
+: Get an environment variable by `name`.
 
-<tr>
-<td>`config`</td>
-<td>The config object.
-<p>
-A currently incomplete interface for retrieving and setting
-configuration options. In general, names are the same as in config.toml,
-except all `-` (ASCII hyphen) characters are stripped and the next
-character is upper-cased. e.g. `external.cgi-dir` can be
-queried as `config.external.cgiDir`, etc.
-<p>
-Setting individual options sometimes works, but sometimes they do not
-get propagated as expected. Consider this an experimental API.
-<p>
-Currently, `siteconf` and `omnirule` values are not exposed to JS.
-<p>
-The configuration directory itself can be queried as `config.dir`.</td>
-</tr>
+  Returns `fallback` if the variable does not exist.
 
-</table>
+`setenv(name, value)`
+: Set an environment variable by `name`.
+
+  Throws a `TypeError` if the operation failed (e.g. because the variable's
+  size exceeded an OS-specified limit.)
+
+`pager`
+: The pager object.  Implements `Pager`, as described below.
+
+`line`
+: The line editor. Implements `LineEdit`, as described below.
+
+`config`
+: The config object.
+
+  A currently incomplete interface for retrieving and setting
+  configuration options.  In general, names are the same as in config.toml,
+  except all `-` (ASCII hyphen) characters are stripped and the next
+  character is upper-cased.  e.g. `external.cgi-dir` can be queried as
+  `config.external.cgiDir`, etc.
+
+  Setting individual options sometimes works, but sometimes they do not get
+  propagated as expected.  Consider this an experimental API.
+
+  Currently, `siteconf` and `omnirule` values are not exposed to JS.
+
+  The configuration directory itself can be queried as `config.dir`.
 
 `Client` also implements various web standards normally available on the
-`Window` object on websites, e.g. fetch().  Note however that it does *not* give
-access to JS objects in buffers, so e.g. `globalThis.document` is not available.
+`Window` object on websites, e.g. fetch().  Note however that it does *not*
+give access to JS objects in buffers, so e.g. `globalThis.document` is not
+available.
 
 ### Pager
 
 `Pager` is a separate interface from `Client` that gives access to the
-pager (i.e. browser chrome).  It is accessible as `globalThis.pager`,
-or simply `pager`.
+pager (i.e. browser chrome).  It is accessible as `globalThis.pager`, or
+simply `pager`.
 
 Note that there is a quirk of questionable value, where accessing
 properties that do not exist on the pager will dispatch those to the
-current buffer (`pager.buffer`).  So if you see e.g. `pager.url`, that
-is actually equivalent to `pager.buffer.url`, because `Pager` has no
-`url` getter.
+current buffer (`pager.buffer`).  So if you see e.g. `pager.url`, that is
+actually equivalent to `pager.buffer.url`, because `Pager` has no `url`
+getter.
 
 Following properties (functions/getters) are defined by `Pager`:
 
-<table border>
+`load(url = pager.buffer.url)`
+: Put the specified address into the URL bar, and optionally load it.
 
-<tr>
-<th>Property</th>
-<th>Description</th>
-</tr>
+  Note that this performs auto-expansion of URLs, so Chawan will expand any
+  matching omni-rules (e.g. search), try to open schemeless URLs with the
+  default scheme/local files, etc.
 
-<tr>
-<td>`load(url = pager.buffer.url)`</td>
-<td>Put the specified address into the URL bar, and optionally load it.
-<p>
-Note that this performs auto-expansion of URLs, so Chawan will expand any
-matching omni-rules (e.g. search), try to open schemeless URLs with the default
-scheme/local files, etc.
-<p>
-Opens a prompt with the current URL when no parameters are specified; otherwise,
-the string passed is displayed in the prompt.
-</td>
-</tr>
+  Opens a prompt with the current URL when no parameters are specified;
+  otherwise, the string passed is displayed in the prompt.
 
-<tr>
-<td>`loadSubmit(url)`</td>
-<td>Act as if `url` had been entered to the URL bar.  `loadSubmit`
-differs from `gotoURL` in that it also evaluates omni-rules, tries to
-prepend a scheme, etc.
-</td>
-</tr>
+`loadSubmit(url)`
+: Act as if `url` had been entered to the URL bar.  `loadSubmit` differs
+from `gotoURL` in that it also evaluates omni-rules, tries to prepend a
+scheme, etc.
 
-<tr>
-<td>`gotoURL(url, options = {replace: null, contentType: null, save: false,
-charset: null})`</td>
-<td>Go to the specified URL immediately (without a prompt). This differs from
-`loadSubmit` in that it loads the exact URL as passed (no prepending https,
-etc.)
-<p>
-When `replace` is set, the new buffer may replace the old one if it loads
-successfully.
-<p>
-When `contentType` is set, the new buffer's content type is
-forcefully set to that string.
-<p>
-When `save` is true, the user is prompted to save the resource instead
-of displaying it in a buffer.
-<p>
-When `charset` is not null, the specified charset label is forced instead of
-regular charset detection.
-</td>
-</tr>
+`gotoURL(url, options = {replace: null, contentType: null, save: false, charset: null})`
+: Go to the specified URL immediately (without a prompt).  This differs
+from `loadSubmit` in that it loads the exact URL as passed (no prepending
+https, etc.)
 
-<tr>
-<td>`traverse(dir)`</td>
-<td>Switch to the next buffer in direction `dir`, interpreted as in
-`Buffer#find`.</td>
-</tr>
+  When `replace` is set, the new buffer may replace the old one if it loads
+  successfully.
 
-<tr>
-<td>`nextBuffer()`, `prevBuffer()`</td>
-<td>Same as `traverse("next")` and `traverse("prev")`.</td>
-</tr>
+  When `contentType` is set, the new buffer's content type is forcefully
+  set to that string.
 
-<tr>
-<td>`dupeBuffer()`</td>
-<td>Duplicate the current buffer by loading its source in a new
-buffer.</td>
-</tr>
+  When `save` is true, the user is prompted to save the resource instead of
+  displaying it in a buffer.
 
-<tr>
-<td>`discardBuffer(buffer = pager.buffer, dir =
-pager.navDirection)`</td>
-<td>Discard `buffer`, then move back to the buffer opposite to `dir`
-(interpreted as in `Buffer#find`).</td>
-</tr>
+  When `charset` is not null, the specified charset label is forced instead
+  of regular charset detection.
 
-<tr>
-<td>`discardTree()`</td>
-<td>Discard all next siblings of the current buffer.  This function is
-deprecated, and may be removed in the future.</td>
-</tr>
+`traverse(dir)`
+: Switch to the next buffer in direction `dir`, interpreted as in
+`Buffer#find`.
 
-<tr>
-<td>`addTab(target)`</td>
-<td>Open a new tab.
-<p>
-If `target` is a buffer, it is removed from its current tab and added to the
-newly created tab.  Otherwise, `target` is interpreted as a URL to open with
-`gotoURL`.
-</td>
-</tr>
+`nextBuffer()`, `prevBuffer()`
+: Same as `traverse("next")` and `traverse("prev")`.
 
-<tr>
-<td>`prevTab()`, `nextTab()`</td>
-<td>Switch to the previous/next tab in the tab list.</td>
-</tr>
+`dupeBuffer()`
+: Duplicate the current buffer by loading its source in a new buffer.
 
-<tr>
-<td>`discardTab()`</td>
-<td>Discard the current tab.</td>
-</tr>
+`discardBuffer(buffer = pager.buffer, dir = pager.navDirection)`
+: Discard `buffer`, then move back to the buffer opposite to `dir`
+(interpreted as in `Buffer#find`).
 
-<tr>
-<td>`reload()`</td>
-<td>Open a new buffer with the current buffer's URL, replacing the current
-buffer.</td>
-</tr>
+`discardTree()`
+: Discard all subsequent siblings of the current buffer.  This function is
+deprecated, and may be removed in the future.
 
-<tr>
-<td>`reshape()`</td>
-<td>Reshape the current buffer (=render the current page anew.)</td>
-</tr>
+`addTab(target)`
+: Open a new tab.
 
-<tr>
-<td>`redraw()`</td>
-<td>Redraw screen contents. Useful if something messed up the display.</td>
-</tr>
+  If `target` is a buffer, it is removed from its current tab and added to
+  the newly created tab.  Otherwise, `target` is interpreted as a URL to
+  open with `gotoURL`.
 
-<tr>
-<td>`toggleSource()`</td>
-<td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
-open the current buffer's contents as HTML.</td>
-</tr>
+`prevTab()`, `nextTab()`
+: Switch to the previous/next tab in the tab list.
 
-<tr>
-<td>`lineInfo()`</td>
-<td>Display information about the current line.</td>
-</tr>
+`discardTab()`
+: Discard the current tab.
 
-<tr>
-<td>`searchForward()`, `searchBackward()`</td>
-<td>Search forward/backward for a string in the current buffer.</td>
-</tr>
+`reload()`
+: Open a new buffer with the current buffer's URL, replacing the current
+buffer.
 
-<tr>
-<td>`isearchForward()`, `isearchBackward()`</td>
-<td>Incremental-search forward/backward for a string, highlighting the
-first result.</td>
-</tr>
+`reshape()`
+: Reshape the current buffer (=render the current page anew.)
 
-<tr>
-<td>`gotoLine(n?)`</td>
-<td>Go to the line passed as the first argument.
-<p>
-If no arguments were specified, an input window for entering a line is
-shown.</td>
-</tr>
+`redraw()`
+: Redraw screen contents.  Useful if something messed up the display.
 
-<tr>
-<td>`searchNext(n = 1)`, `searchPrev(n = 1)`</td>
-<td>Jump to the nth next/previous search result.</td>
-</tr>
+`toggleSource()`
+: If viewing an HTML buffer, open a new buffer with its source.  Otherwise,
+open the current buffer's contents as HTML.
 
-<tr>
-<td>`peek()`</td>
-<td>Display an alert message of the current URL.</td>
-</tr>
+`lineInfo()`
+: Display information about the current line.
 
-<tr>
-<td>`peekCursor()`</td>
-<td>Display an alert message of the URL or title under the cursor. Multiple
-calls allow cycling through the two. (i.e. by default, press u once -> title,
-press again -> URL)</td>
-</tr>
+`searchForward()`, `searchBackward()`
+: Search forward/backward for a string in the current buffer.
 
-<tr>
-<td>`showFullAlert()`</td>
-<td>Show the last alert inside the line editor.</td>
-</tr>
+`isearchForward()`, `isearchBackward()`
+: Incremental-search forward/backward for a string, highlighting the first
+result.
 
-<tr>
-<td>`ask(prompt)`</td>
-<td>Ask the user for confirmation. Returns a promise which resolves to a
+`gotoLine(n?)`
+: Go to the line passed as the first argument.
+
+    If no arguments were specified, an input window for entering a line is
+    shown.
+
+    `searchNext(n = 1)`, `searchPrev(n = 1)`
+    Jump to the nth next/previous search result.
+
+`peek()`
+: Display an alert message of the current URL.
+
+`peekCursor()`
+: Display an alert message of the URL or title under the cursor.  Multiple
+calls allow cycling through the two. (i.e. by default, press u once ->
+title, press again -> URL)
+
+`showFullAlert()`
+: Show the last alert inside the line editor.
+
+`ask(prompt)`
+: Ask the user for confirmation.  Returns a promise which resolves to a
 boolean value indicating whether the user responded with yes.
-<p>
-Can be used to implement an exit prompt like this:
-```
-q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
-```
-</td>
-</tr>
 
-<tr>
-<td>`askChar(prompt)`</td>
-<td>Ask the user for any character.
-<p>
-Like `pager.ask`, but the return value is a character.</td>
-</tr>
+    Can be used to implement an exit prompt like this:
 
-<tr>
-<td>`clipboardWrite(s)`</td>
-<td>Write `s` to the clipboard (copy).  By default, it tries using OSC
-52; if that fails, it tries to run `external.copy-cmd` (defaults to
-`xsel`).
-<p>
-Returns true if the copy succeeded, false otherwise.  (There may be
-false positives in case OSC 52 is used and the terminal doesn't consume
-the text.)
-</td>
-</tr>
+    ```
+    q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
+    ```
 
-<tr>
-<td>`extern(cmd, options = {env: { ... }, suspend: true, wait: false})`
-</td>
-<td>Run an external command `cmd`.
-<p>
-By default, the `$CHA_URL` and `$CHA_CHARSET` variables are set; change
-this using the `env` option.
-<p>
-`options.suspend` suspends the pager while the command is being
-executed, and `options.wait` makes it so the user must press a key
-before the pager is resumed.
-<p>
-Returns true if the command exited successfully, false otherwise.
-</td>
-</tr>
+`askChar(prompt)`
+: Ask the user for any character.
 
-<tr>
-<td>`externCapture(cmd)`</td>
-<td>Like extern(), but redirect the command's stdout string into the
-result. null is returned if the command wasn't executed successfully, or if
-the command returned a non-zero exit value.</td>
-</tr>
+    Like `pager.ask`, but the return value is a character.
 
-<tr>
-<td>`externInto(cmd, ins)`</td>
-<td>Like extern(), but redirect `ins` into the command's standard input stream.
-`true` is returned if the command exits successfully, otherwise the return
-value is `false`.</td>
-</tr>
+`clipboardWrite(s)`
+: Write `s` to the clipboard (copy).  By default, it tries using OSC 52;
+if that fails, it tries to run `external.copy-cmd` (defaults to `xsel`).
 
-<tr>
-<td>`externFilterSource(cmd, buffer = null, contentType = null)`</td>
-<td>Redirects the specified (or if `buffer` is null, the current) buffer's
+    Returns true if the copy succeeded, false otherwise.  (There may be
+    false positives in case OSC 52 is used and the terminal doesn't consume
+    the text, although Chawan will try its best to avoid this.)
+
+`extern(cmd, options = {env: { ... }, suspend: true, wait: false})`
+: Run an external command `cmd`.
+
+    By default, the `$CHA_URL` and `$CHA_CHARSET` variables are set; change
+    this using the `env` option.
+
+    `options.suspend` suspends the pager while the command is being
+    executed, and `options.wait` makes it so the user must press a key
+    before the pager is resumed.
+
+    Returns true if the command exited successfully, false otherwise.
+
+
+`externCapture(cmd)`
+: Like extern(), but redirect the command's stdout string into the
+result.  null is returned if the command wasn't executed successfully,
+or if the command returned a non-zero exit value.
+
+`externInto(cmd, ins)`
+: Like extern(), but redirect `ins` into the command's standard input
+stream.  `true` is returned if the command exits successfully, otherwise
+the return value is `false`.
+
+`externFilterSource(cmd, buffer = null, contentType = null)`
+: Redirects the specified (or if `buffer` is null, the current) buffer's
 source into `cmd`.
-<p>
-Then, it pipes the output into a new buffer, with the content type `contentType`
-(or, if `contentType` is null, the original buffer's content type).
-<p>
-Returns `undefined`. (It should return a promise; TODO.)</td>
-</tr>
 
-<tr>
-<td>`openEditor(text)`</td>
-<td>Open "text" in the command configured as `external.editor` (this is
+    Then, it pipes the output into a new buffer, with the content type `contentType`
+    (or, if `contentType` is null, the original buffer's content type).
+
+    Returns `undefined`.  (It should return a promise; TODO.)
+
+`openEditor(text)`
+: Open "text" in the command configured as `external.editor` (this is
 typically just `$EDITOR`.)
-<p>
-If the editor signals an error (crash or non-zero exit code), `null` is
-returned.  Otherwise, the user's input is returned as a string.
-</td>
-</tr>
 
-<tr>
-<td>`openMenu(x = pager.cursorx - pager.fromx, y = pager.cursory -
-pager.fromy)`</td>
-<td>Opens the context menu at the specified x/y positions.</td>
-</tr>
+    If the editor signals an error (crash or non-zero exit code), `null` is
+    returned.  Otherwise, the user's input is returned as a string.
 
-<tr>
-<td>`closeMenu()`</td>
-<td>Closes the menu if it is opened.</td>
-</tr>
+`openMenu(x = pager.cursorx - pager.fromx, y = pager.cursory - pager.fromy)`
+: Opens the context menu at the specified x/y positions.
 
-<tr>
-<td>`buffer`</td>
-<td>Getter for the currently displayed buffer.  Returns a `Buffer` object; see
-below.</td>
-</tr>
+`closeMenu()`
+: Closes the menu if it is opened.
 
-<tr>
-<td>`menu`</td>
-<td>Getter for the currently displayed menu.  Returns a `Select` object.</td>
-</tr>
+`buffer`
+: Getter for the currently displayed buffer.  Returns a `Buffer` object;
+see below.
 
-<tr>
-<td>`navDirection`</td>
-<td>The direction the user last moved in the buffer list using `traverse`.
-Possible values are `prev`, `next`, `any`.</td>
-</tr>
+`menu`
+: Getter for the currently displayed menu.  Returns a `Select` object.
 
-<tr>
-<td>`revDirection`</td>
-<td>Equivalent to `Pager.oppositeDir(pager.navDirection)`.</td>
-</tr>
+`navDirection`
+: The direction the user last moved in the buffer list using `traverse`.
+Possible values are `prev`, `next`, `any`.
 
-</table>
+`revDirection`
+: Equivalent to `Pager.oppositeDir(pager.navDirection)`.
 
 Also, the following static function is defined on `Pager` itself:
 
-<table border>
+`Pager.oppositeDir(dir)`
+: Return a string representing the direction opposite to `dir`.
 
-<tr>
-<th>Property</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<td>`Pager.oppositeDir(dir)`</td>
-<td>Return a string representing the direction opposite to `dir`.
-<p>
-For "next", this is "prev"; for "prev", "next"; for "any", it's the same.</td>
-</tr>
-
-</table>
+    For "next", this is "prev"; for "prev", "next"; for "any", it's the
+    same.
 
 ### Buffer
 
@@ -466,378 +335,243 @@ properties onto the current buffer.
 
 Following properties (functions/getters) are defined by `Buffer`:
 
-<table border>
+`cursorUp(n = 1)`, `cursorDown(n = 1)`
+: Move the cursor upwards/downwards by n lines, or if n is unspecified,
+by 1.
 
-<tr>
-<th>Property</th>
-<th>Description</th>
-</tr>
+`cursorLeft(n = 1)`, `cursorRight(n = 1)`
+: Move the cursor to the left/right by n cells, or if n is unspecified,
+by 1.
 
-<tr>
-<td>`cursorUp(n = 1)`, `cursorDown(n = 1)`</td>
-<td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
-1.</td>
-</tr>
+    Note: `n` right now represents cells, but really it should
+    represent characters.  (The difference is that numbered cursorLeft or
+    cursorRight is currently broken for double-width chars.)
 
-<tr>
-<td>`cursorLeft(n = 1)`, `cursorRight(n = 1)`</td>
-<td>Move the cursor to the left/right by n cells, or if n is unspecified, by
-1.
-<p>
-Note: `n` right now represents cells, but really it should represent characters.
-(The difference is that right now numbered cursorLeft/cursorRight is broken for
-double-width chars.)</td>
-</tr>
+`cursorLineBegin()`, `cursorLineEnd()`
+: Move the cursor to the first/last cell of the line.
 
-<tr>
-<td>`cursorLineBegin()`, `cursorLineEnd()`</td>
-<td>Move the cursor to the first/last cell of the line.</td>
-</tr>
+`cursorLineTextStart()`
+: Move the cursor to the first non-blank character of the line.
 
-<tr>
-<td>`cursorLineTextStart()`</td>
-<td>Move the cursor to the first non-blank character of the line.</td>
-</tr>
+`cursorNextWord()`, `cursorNextViWord()`, `cursorNextBigWord()`
+: Move the cursor to the beginning of the next [word](#word-types).
 
-<tr>
-<td>`cursorNextWord()`, `cursorNextViWord()`, `cursorNextBigWord()`</td>
-<td>Move the cursor to the beginning of the next [word](#word-types).</td>
-</tr>
+`cursorPrevWord()`, `cursorPrevViWord()`, `cursorPrevBigWord()`
+: Move the cursor to the end of the previous [word](#word-types).
 
-<tr>
-<td>`cursorPrevWord()`, `cursorPrevViWord()`, `cursorPrevBigWord()`</td>
-<td>Move the cursor to the end of the previous [word](#word-types).</td>
-</tr>
+`cursorWordEnd()`, `cursorViWordEnd()`, `cursorBigWordEnd()`
+: Move the cursor to the end of the current [word](#word-types), or if already
+there, to the end of the next word.
 
-<tr>
-<td>`cursorWordEnd()`, `cursorViWordEnd()`, `cursorBigWordEnd()`</td>
-<td>Move the cursor to the end of the current [word](#word-types), or if already
-there, to the end of the next word.</td>
-</tr>
+`cursorWordBegin()`, `cursorViWordBegin()`, `cursorBigWordBegin()`
+: Move the cursor to the beginning of the current [word](#word-types),
+or if already there, to the end of the previous word.
 
-<tr>
-<td>`cursorWordBegin()`, `cursorViWordBegin()`, `cursorBigWordBegin()`</td>
-<td>Move the cursor to the beginning of the current [word](#word-types), or if
-already there, to the end of the previous word.</td>
-</tr>
+`async getCurrentWord(x = this.cursorx, y = this.cursory)`
+: Returns the word currently under the cursor as a string.
 
-<tr>
-<td>`async getCurrentWord(x = this.cursorx, y = this.cursory)`</td>
-<td>Returns the word currently under the cursor.</td>
-</tr>
+`cursorNextLink()`, `cursorPrevLink()`
+: Move the cursor to the beginning of the next/previous clickable element.
 
-<tr>
-<td>`cursorNextLink()`, `cursorPrevLink()`</td>
-<td>Move the cursor to the beginning of the next/previous clickable
-element.</td>
-</tr>
+`cursorLinkNavDown(n = 1)`, `cursorLinkNavUp(n = 1)`
+: Move the cursor to the beginning of the next/previous clickable element.
+Buffer scrolls pagewise, wrap to beginning/end if content is less than
+one page length.
 
-<tr>
-<td>`cursorLinkNavDown(n = 1)`, `cursorLinkNavUp(n = 1)`</td>
-<td>Move the cursor to the beginning of the next/previous clickable element.
-Buffer scrolls pagewise, wrap to beginning/end if content is less than one page
-length.</td>
-</tr>
+`cursorNextParagraph(n = 1)`, `cursorPrevParagraph(n = 1)`
+: Move the cursor to the beginning/end of the nth next/previous paragraph.
 
-<tr>
-<td>`cursorNextParagraph(n = 1)`, `cursorPrevParagraph(n = 1)`</td>
-<td>Move the cursor to the beginning/end of the nth next/previous
-paragraph.</td>
-</tr>
+`cursorNthLink(n = 1)`
+: Move the cursor to the nth link of the document.
 
-<tr>
-<td>`cursorNthLink(n = 1)`</td>
-<td>Move the cursor to the nth link of the document.</td>
-</tr>
+`cursorRevNthLink(n = 1)`
+: Move the cursor to the nth link of the document, counting backwards
+from the document's last line.
 
-<tr>
-<td>`cursorRevNthLink(n = 1)`</td>
-<td>Move the cursor to the nth link of the document, counting backwards
-from the document's last line.</td>
-</tr>
+`pageUp(n = 1)`, `pageDown(n = 1)`, `pageLeft(n = 1)`, `pageRight(n = 1)`
+: Scroll up/down/left/right by n pages.
 
-<tr>
-<td>`pageUp(n = 1)`, `pageDown(n = 1)`, `pageLeft(n = 1)`,
-`pageRight(n = 1)`</td>
-<td>Scroll up/down/left/right by n pages.</td>
-</tr>
+`halfPageUp(n = 1)`, `halfPageDown(n = 1)`, `halfPageLeft(n = 1)`, `halfPageRight(n = 1)`
+: Scroll up/down/left/right by n half pages.
 
-<tr>
-<td>`halfPageUp(n = 1)`, `halfPageDown(n = 1)`, `halfPageLeft(n = 1)`,
-`halfPageRight(n = 1)`</td>
-<td>Scroll up/down/left/right by n half pages.</td>
-</tr>
+`scrollUp(n = 1)`, `scrollDown(n = 1)`, `scrollLeft(n = 1)`, `scrollRight(n = 1)`
+: Scroll up/down/left/right by n lines.
 
-<tr>
-<td>`scrollUp(n = 1)`, `scrollDown(n = 1)`, `scrollLeft(n = 1)`,
-`scrollRight(n = 1)`</td>
-<td>Scroll up/down/left/right by n lines.</td>
-</tr>
-
-<tr>
-<td>`click(n = 1)`</td>
-<td>Click the HTML element currently under the cursor.  `n` controls the
+`click(n = 1)`
+: Click the HTML element currently under the cursor.  `n` controls the
 number of clicks, e.g. `n = 2` is a double click.  (The number of clicks is
-only relevant in JS apps.)</td>
-</tr>
+only relevant in JS apps.)
 
-<tr>
-<td>`cursorFirstLine()`, `cursorLastLine()`</td>
-<td>Move to the first/last line in the buffer.</td>
-</tr>
+`cursorFirstLine()`, `cursorLastLine()`
+: Move to the first/last line in the buffer.
 
-<tr>
-<td>`cursorTop()`, `cursorMiddle()`, `cursorBottom()`</td>
-<td>Move to the first/middle/bottom line on the screen. (Equivalent to H/M/L
-in vi.)</td>
-</tr>
+`cursorTop()`, `cursorMiddle()`, `cursorBottom()`
+: Move to the first/middle/bottom line on the screen.  (Equivalent to H/M/L
+in vi.)
 
-<tr>
-<td>`lowerPage(n = this.cursory)`</td>
-<td>Move cursor to line n, then scroll up so that the cursor is on the
-top line on the screen. (`zt` in vim.)</td>
-</tr>
+`lowerPage(n = this.cursory)`
+: Move cursor to line n, then scroll up so that the cursor is on the
+top line on the screen.  (`zt` in vim.)
 
-<tr>
-<td>`lowerPageBegin(n = this.cursory)`</td>
-<td>Move cursor to the first non-blank character of line n, then scroll up
-so that the cursor is on the top line on the screen. (`z<CR>` in vi.)</td>
-</tr>
+`lowerPageBegin(n = this.cursory)`
+: Move cursor to the first non-blank character of line n, then scroll up
+so that the cursor is on the top line on the screen.  (`z<CR>` in vi.)
 
-<tr>
-<td>`centerLine(n = this.cursory)`</td>
-<td>Center screen around line n. (`zz` in vim.)</td>
-</tr>
+`centerLine(n = this.cursory)`
+: Center screen around line n. (`zz` in vim.)
 
-<tr>
-<td>`centerLineBegin(n = this.cursory)`</td>
-<td>Center screen around line n, and move the cursor to the line's first
-non-blank character. (`z.` in vi.)</td>
-</tr>
+`centerLineBegin(n = this.cursory)`
+: Center screen around line n, and move the cursor to the line's first
+non-blank character.  (`z.` in vi.)
 
-<tr>
-<td>`raisePage(n = this.cursory)`</td>
-<td>Move cursor to line n, then scroll down so that the cursor is on the
-top line on the screen. (zb in vim.)</td>
-</tr>
+`raisePage(n = this.cursory)`
+: Move cursor to line n, then scroll down so that the cursor is on the
+top line on the screen.  (`zb` in vim.)
 
-<tr>
-<td>`raisePageBegin(n = this.cursory)`</td>
-<td>Move cursor to the first non-blank character of line n, then scroll up
-so that the cursor is on the last line on the screen. (`z^` in vi.)</td>
-</tr>
+`raisePageBegin(n = this.cursory)`
+: Move cursor to the first non-blank character of line n, then scroll up
+so that the cursor is on the last line on the screen.  (`z^` in vi.)
 
-<tr>
-<td>`nextPageBegin(n = this.cursory)`</td>
-<td>If n was given, move to the screen before the nth line and raise the page.
-Otherwise, go to the previous screen's last line and raise the page. (`z+`
-in vi.)</td>
-</tr>
+`nextPageBegin(n = this.cursory)`
+: If n was given, move to the screen before the nth line and raise the
+page.  Otherwise, go to the previous screen's last line and raise the page.
+(`z+` in vi.)
 
-<tr>
-<td>`cursorLeftEdge()`, `cursorMiddleColumn()`, `cursorRightEdge()`</td>
-<td>Move to the first/middle/last column on the screen.</td>
-</tr>
+`cursorLeftEdge()`, `cursorMiddleColumn()`, `cursorRightEdge()`
+: Move to the first/middle/last column on the screen.
 
-<tr>
-<td>`centerColumn()`</td>
-<td>Center screen around the current column.</td>
-</tr>
+`centerColumn()`
+: Center screen around the current column.
 
-<tr>
-<td>`findPrevMatch(regex, x, y, wrap = false, n = 1)`,
-`findNextMatch(regex, x, y, wrap = false, n = 1)`</td>
-<td>Find the previous/next match for a regex.
-<p>
-`regex` is a RegExp object (e.g. from `/this syntax/`).  `x` and `y`
-are the starting position in the buffer, `wrap` determines whether or
-not the search should wrap over the document, and `n` is the count of
-occurrences to be found.
-<p>
-Returns an array of the elements `[x, y, w]` where `x` and `y` are the
-matched coordinates and `w` the width of the matched text.  If no match
-is found, the result is `[-1, -1, 0]`.
-</td>
-</tr>
+`findPrevMatch(regex, x, y, wrap = false, n = 1)`, `findNextMatch(regex, x, y, wrap = false, n = 1)`
+: Find the previous/next match for a regex.
 
-<tr>
-<td>`findNextMark(x = this.cursorx, y = this.cursory)`,
-`findPrevMark(x = this.cursorx, y = this.cursory)`</td>
-<td>Find the next/previous mark after/before `x`, `y`, if any; and return its id
-(or null if none were found.)</td>
-</tr>
+    `regex` is a RegExp object (e.g. from `/this syntax/`).  `x` and `y`
+    are the starting position in the buffer, `wrap` determines whether or
+    not the search should wrap over the document, and `n` is the count of
+    occurrences to be found.
 
-<tr>
-<td>`setMark(id, x = this.cursorx, y = this.cursory)`</td>
-<td>Set a mark at (x, y) using the name `id`.
-<p>
-Returns true if no other mark exists with `id`. If one already exists,
-it will be overridden and the function returns false.</td>
-</tr>
+    Returns an array of the elements `[x, y, w]` where `x` and `y` are the
+    matched coordinates and `w` the width of the matched text.  If no match
+    is found, the result is `[-1, -1, 0]`.
 
-<tr>
-<td>`clearMark(id)`</td>
-<td>Clear the mark with the name `id`. Returns true if the mark existed,
-false otherwise.</td>
-</tr>
+`findNextMark(x = this.cursorx, y = this.cursory)`, `findPrevMark(x = this.cursorx, y = this.cursory)`
+: Find the next/previous mark after/before `x`, `y`, if any; and return its id
+(or null if none were found.)
 
-<tr>
-<td>`gotoMark(id)`</td>
-<td>If the mark `id` exists, jump to its position and return true. Otherwise,
-do nothing and return false.</td>
-</tr>
+`setMark(id, x = this.cursorx, y = this.cursory)`
+: Set a mark at (x, y) using the name `id`.
 
-<tr>
-<td>`gotoMarkY(id)`</td>
-<td>If the mark `id` exists, jump to the beginning of the line at
-its Y position and return true. Otherwise, do nothing and return false.</td>
-</tr>
+    Returns true if no other mark exists with `id`. If one already exists,
+    it will be overridden and the function returns false.
 
-<tr>
-<td>`getMarkPos(id)`</td>
-<td>If the mark `id` exists, return its position as an array where the
-first element is the X position and the second element is the Y position.
-If the mark does not exist, return null.</td>
-</tr>
+`clearMark(id)`
+: Clear the mark with the name `id`.  Returns true if the mark existed,
+false otherwise.
 
-<tr>
-<td>`cursorToggleSelection(n = 1, opts = {selectionType: "normal"})`</td>
-<td>Start a vim-style visual selection. The cursor is moved to the right
-by `n` cells.
-<p>
-selectionType may be "normal" (regular selection), "line" (line-based
-selection) and "column" (column-based selection).</td>
-</tr>
+`gotoMark(id)`
+: If the mark `id` exists, jump to its position and return true.
+Otherwise, do nothing and return false.
 
-<tr>
-<td>`getSelectionText()`</td>
-<td>Get the currently selected text.
-<p>
-Returns a promise, so consumers must `await` it to get the text.</td>
-</tr>
+`gotoMarkY(id)`
+: If the mark `id` exists, jump to the beginning of the line at its Y
+position and return true.  Otherwise, do nothing and return false.
 
-<tr>
-<td>`markURL()`</td>
-<td>Convert URL-like strings to anchors on the current page.</td>
-</tr>
+`getMarkPos(id)`
+: If the mark `id` exists, return its position as an array where the first
+element is the X position and the second element is the Y position.  If the
+mark does not exist, return null.
 
-<tr>
-<td>`showLinkHints()`</td>
-<td>Display link hints on the page.  Mainly intended for the built-in
+`cursorToggleSelection(n = 1, opts = {selectionType: "normal"})`
+: Start a vim-style visual selection. The cursor is moved to the right by
+`n` cells.
+
+    selectionType may be "normal" (regular selection), "line" (line-based
+    selection) and "column" (column-based selection).
+
+`getSelectionText()`
+: Get the currently selected text.
+
+    Returns a promise, so consumers must `await` it to get the text.
+
+`markURL()`
+: Convert URL-like strings to anchors on the current page.
+
+`showLinkHints()`
+: Display link hints on the page.  Mainly intended for the built-in
 toggleLinkHints command.
-<p>
-Returns an array of objects with `x` representing the x position, `y` the y
-position of a link.
-</td>
-</tr>
 
-<tr>
-<td>`toggleImages()`</td>
-<td>Toggle display of images in this buffer.</td>
-</tr>
+    Returns an array of objects with `x` representing the x position, `y`
+    the y position of a link.
 
-<tr>
-<td>`saveLink()`</td>
-<td>Save URL pointed to by the cursor.</td>
-</tr>
+`toggleImages()`
+: Toggle display of images in this buffer.
 
-<tr>
-<td>`saveSource()`</td>
-<td>Save the source of this buffer.</td>
-</tr>
+`saveLink()`
+: Save URL pointed to by the cursor.
 
-<tr>
-<td>`setCursorX(x)`, `setCursorY(y)`, `setCursorXY(x, y)`,
-`setCursorXCenter(x)`, `setCursorYCenter(y)`, `setCursorXYCenter(x, y)`</td>
-<td>Set the cursor position to `x` and `y` respectively, scrolling the
-view if necessary.
-<p>
-Variants that end with "Center" will also center the screen around the
-position if it is outside the screen.</td>
-</tr>
+`saveSource()`
+: Save the source of this buffer.
 
-<tr>
-<td>`setFromX(x)`, `setFromY(y)`, `setFromXY(x, y)`</td>
-<td>Set the starting position of the displayed area on the screen.</td>
-</tr>
+`setCursorX(x)`, `setCursorY(y)`, `setCursorXY(x, y)`, `setCursorXCenter(x)`, `setCursorYCenter(y)`, `setCursorXYCenter(x, y)`
+: Set the cursor position to `x` and `y` respectively, scrolling the view
+if necessary.
 
-<tr>
-<td>`find(dir)`</td>
-<td>Find the next buffer in the list in a specific direction.
-<p>
-Possible values of `dir` are: "prev", "next", and "any".
-<p>
-"next" and "prev" return the next/previous buffer respectively.
-<p>
-"any" returns either "prev", or if it's null, "next".
-</td>
-</tr>
+    Variants that end with "Center" will also center the screen around the
+    position if it is outside the screen.
 
-<tr>
-<td>`url`</td>
-<td>Getter for the buffer's URL. Note: this returns a `URL` object, not a
-string.</td>
-</tr>
+`setFromX(x)`, `setFromY(y)`, `setFromXY(x, y)`
+: Set the starting position of the displayed area on the screen.
 
-<tr>
-<td>`hoverTitle`, `hoverLink`, `hoverImage`</td>
-<td>Getter for the string representation of the element title/link/image
-currently under the cursor. Returns the empty string if no title is found.</td>
-</tr>
+`find(dir)`
+: Find the next buffer in the list in a specific direction.
 
-<tr>
-<td>`cursorx`, `cursory`</td>
-<td>The x/y position of the cursor inside the buffer.
-<p>
-Note that although the status line is 1-based, these values are 0-based.</td>
-</tr>
+    Possible values of `dir` are "prev", "next", and "any".
+    "next" and "prev" return the next/previous buffer respectively,
+    while "any" returns either "prev", or if it's null, "next".
 
-<tr>
-<td>`fromx`, `fromy`</td>
-<td>The x/y position of the first line displayed on the screen.</td>
-</tr>
+`url`
+: Getter for the buffer's URL.  Note: this returns a `URL` object, not a
+string.
 
-<tr>
-<td>`numLines`</td>
-<td>The number of lines currently loaded in the buffer.</td>
-</tr>
+`hoverTitle`, `hoverLink`, `hoverImage`
+: Getter for the string representation of the element title/link/image
+currently under the cursor.  Returns the empty string if no title is found.
 
-<tr>
-<td>`width`, `height`</td>
-<td>The width and height of the buffer's window (i.e. the visible part
-of the canvas).</td>
-</tr>
+`cursorx`, `cursory`
+: The x/y position of the cursor inside the buffer.
 
-<tr>
-<td>`process`</td>
-<td>The process ID of the buffer.</td>
-</tr>
+    Note that although the status line is 1-based, these values are 0-based.
 
-<tr>
-<td>`title`</td>
-<td>Text from the `title` element, or the buffer's URL if there is no
-title.</td>
-</tr>
+`fromx`, `fromy`
+: The x/y position of the first line displayed on the screen.
 
-<tr>
-<td>`next`</td>
-<td>Next buffer in the buffer list.  May be `null`.</td>
-</tr>
+`numLines`
+: The number of lines currently loaded in the buffer.
 
-<tr>
-<td>`prev`</td>
-<td>Previous buffer in the buffer list.  May be `null`.</td>
-</tr>
+`width`, `height`
+: The width and height of the buffer's window (i.e. the visible part of the
+canvas).
 
-<tr>
-<td>`select`</td>
-<td>Reference to the current `select` element's widget, or null if no
+`process`
+: The process ID of the buffer.
+
+`title`
+: Text from the `title` element, or the buffer's URL if there is no title.
+
+`next`
+: Next buffer in the buffer list.  May be `null`.
+
+`prev`
+: Previous buffer in the buffer list.  May be `null`.
+
+`select`
+: Reference to the current `select` element's widget, or null if no
 `select` element is open.
-<p>
-This object implements the `Select` interface, which is somewhat
-compatible with the `Buffer` interface with some exceptions. (TODO:
-elaborate)</td>
-</tr>
+
+    This object implements the `Select` interface, which is somewhat
+    compatible with the `Buffer` interface with some exceptions.  (TODO:
+    elaborate)
 
 </table>
 
@@ -852,84 +586,47 @@ simply returns `null`.
 
 Following properties (functions/getters) are defined by `LineEdit`:
 
-<table border>
+`submit()`
+: Submit line.
 
-<tr>
-<th>Property</th>
-<th>Description</th>
-</tr>
+`cancel()`
+: Cancel operation.
 
-<tr>
-<td>`submit()`</td>
-<td>Submit line.</td>
-</tr>
+`backspace()`
+: Delete character before cursor.
 
-<tr>
-<td>`cancel()`</td>
-<td>Cancel operation.</td>
-</tr>
+`delete()`
+: Delete character after cursor.
 
-<tr>
-<td>`backspace()`</td>
-<td>Delete character before cursor.</td>
-</tr>
+`clear()`
+: Clear text before cursor.
 
-<tr>
-<td>`delete()`</td>
-<td>Delete character after cursor.</td>
-</tr>
+`kill()`
+: Clear text after cursor.
 
-<tr>
-<td>`clear()`</td>
-<td>Clear text before cursor.</td>
-</tr>
+`clearWord()`
+: Delete word before cursor.
 
-<tr>
-<td>`kill()`</td>
-<td>Clear text after cursor.</td>
-</tr>
+`killWord()`
+: Delete word after cursor.
 
-<tr>
-<td>`clearWord()`</td>
-<td>Delete word before cursor.</td>
-</tr>
+`backward()`, `forward()`
+: Move cursor backward/forward by one character.
 
-<tr>
-<td>`killWord()`</td>
-<td>Delete word after cursor.</td>
-</tr>
+`nextWord()`, `prevWord()`
+: Move cursor to the next/previous word by one character.
 
-<tr>
-<td>`backward()`, `forward()`</td>
-<td>Move cursor backward/forward by one character.</td>
-</tr>
+`begin()`, `end()`
+: Move cursor to the beginning/end of the line.
 
-<tr>
-<td>`nextWord()`, `prevWord()`</td>
-<td>Move cursor to the next/previous word by one character.</td>
-</tr>
+`escape()`
+: Ignore keybindings for next character.
 
-<tr>
-<td>`begin()`, `end()`</td>
-<td>Move cursor to the beginning/end of the line.</td>
-</tr>
+`nextHist()`, `prevHist()`
+: Jump to the previous/next history entry.
 
-<tr>
-<td>`escape()`</td>
-<td>Ignore keybindings for next character.</td>
-</tr>
-
-<tr>
-<td>`nextHist()`, `prevHist()`</td>
-<td>Jump to the previous/next history entry.</td>
-</tr>
-
-<tr>
-<td>`text`</td>
-<td>The currently entered text.</td>
-</tr>
-
-</table>
+`text`
+: The currently entered text.
 
 ## See also
 

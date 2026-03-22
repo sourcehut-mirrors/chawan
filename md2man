@@ -11,13 +11,7 @@ sed -e 's/<!-- MANOFF -->.*<!-- MANON -->//g' \
 	read -r line;
 	line=${line#"<!-- "}
 	line=${line%" -->"}
-	printf '%s\n' "$line"
-	$PANDOC -p -t html
-} | {
-	read -r title section
-	$PANDOC -p -f html -t man --standalone \
-		--variable title="$title" \
-		--variable section="$section"
-} | {
-	sed -E '/^\.TH/s/""//g;/^\.TH/s/ *$//'
-} | awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1'
+	title=${line%' '*}
+	section=${line##*' '}
+	$PANDOC -p -t man --standalone -V title="$title" -V section="$section"
+} | sed -E '/^\.TH/s/""//g;/^\.TH/s/ *$//'

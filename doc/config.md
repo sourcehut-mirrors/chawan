@@ -64,69 +64,47 @@ Start-up options are to be placed in the `[start]` section.
 
 Following is a list of start-up options:
 
-<table border>
-<col width=20%><col width=10%><col width=15%><col width=55%>
+visual-home = "about:chawan"
+: **URL**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Page opened when Chawan is called with the -V option and no other pages
+are passed as arguments.
 
-<tr>
-<td>visual-home</td>
-<td>url</td>
-<td>"about:chawan"</td>
-<td>Page opened when Chawan is called with the -V option and no other
-pages are passed as arguments.</td>
-</tr>
+startup-script = ""
+: **JavaScript code**
 
-<tr>
-<td>startup-script</td>
-<td>JavaScript code</td>
-<td>""</td>
-<td>Script Chawan runs on start-up. Pages will not be loaded until this
-function exits. (Note however that asynchronous functions like setTimeout
-do not block loading.)</td>
-</tr>
+: Script Chawan runs on start-up. Pages will not be loaded until this
+function exits.  (Note however that asynchronous functions like setTimeout
+do not block loading.)
 
-<tr>
-<td>headless</td>
-<td>boolean / "dump"</td>
-<td>false</td>
-<td>When set to true or "dump", the browser does not take input;
-instead, it prints a rendered version of all buffers in order, then
-exits.
-<p>
-The difference between `true` and "dump" is that `true` first waits
-for all scripts and network requests to run to completion, while "dump"
-does not.  This means that `true` may never exit when scripting is
-enabled (e.g. if a script sets `setInterval`.)
-<p>
-Piping `cha` to an external program or passing the `-d` switch has the
-same effect as setting this option to "dump".
-</td>
-</tr>
+headless = false
+: **boolean** / **"dump"**
 
-<tr>
-<td>console-buffer</td>
-<td>boolean</td>
-<td>true</td>
-<td>Whether Chawan should open a console buffer in non-headless mode.
-<p>
-Warning: this is only useful for debugging. Disabling this option without
-manually redirecting standard error will result in error messages randomly
-appearing on your screen.</td>
-</tr>
+: When set to true or "dump", the browser does not take input; instead, it
+prints a rendered version of all buffers in order, then exits.
 
-</table>
+  The difference between `true` and "dump" is that `true` first waits for
+  all scripts and network requests to run to completion, while "dump" does
+  not.  This means that `true` may never exit when scripting is enabled
+  (e.g. if a script sets `setInterval`.)
+
+  Piping `cha` to an external program or passing the `-d` switch has the same
+  effect as setting this option to "dump".
+
+console-buffer = true
+: **boolean**
+
+: Whether Chawan should open a console buffer in non-headless mode.
+
+  Warning: this is only useful for debugging.  Disabling this option
+  without manually redirecting standard error will result in error messages
+  randomly appearing on your screen.
 
 ## Buffer
 
 Buffer options are to be placed in the `[buffer]` section.
 
-These options are global to all buffers. For more granular filtering,
+These options are global to all buffers.  For more granular filtering,
 use `[[siteconf]]`.
 
 Example:
@@ -159,121 +137,88 @@ a[href] { text-decoration: revert !important }
 
 Following is a list of buffer options:
 
-<table border>
-<col width=20%><col width=15%><col width=10%><col width=55%>
+styling = true
+: **boolean**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Enable/disable author style sheets.  Note that disabling this does not
+affect user styles.
 
-<tr>
-<td>styling</td>
-<td>boolean</td>
-<td>true</td>
-<td>Enable/disable author style sheets. Note that disabling this does
-not affect user styles.</td>
-</tr>
+scripting = false
+: **boolean** / **"app"**
 
-<tr>
-<td>scripting</td>
-<td>boolean / "app"</td>
-<td>false</td>
-<td>Enable/disable JavaScript in *all* buffers.
-<p>
-`"app"` also enables JavaScript APIs that can be used to fingerprint
-users (e.g. querying the window's size.) This may achieve better
-compatibility with websites that behave like applications, at the cost
-of reduced privacy.
-<p>
-For security and performance reasons, users are encouraged to selectively
-enable JavaScript with `[[siteconf]]` instead of using this setting.</td>
-</tr>
+: Enable/disable JavaScript in *all* buffers.
 
-<tr>
-<td>images</td>
-<td>boolean</td>
-<td>false</td>
-<td>Enable/disable inline image display.</td>
-</tr>
+  `"app"` also enables JavaScript APIs that can be used to fingerprint
+  users (e.g. querying the window's size).  This may achieve better
+  compatibility with websites that behave like applications, at the cost of
+  reduced privacy.
 
-<tr>
-<td>cookie</td>
-<td>boolean / "save"</td>
-<td>false</td>
-<td>Enable/disable cookies on sites.
-<p>
-If the string "save" is specified, then cookies are also saved to
-`external.cookie-file`. `true` still reads cookies.txt, but does not
-modify it.
-<p>
-In Chawan, each website gets a separate cookie jar, so websites relying
-on cross-site cookies may not work as expected. You may use the
-`[[siteconf]]` `"share-cookie-jar"` setting to adjust this behavior for
-specific sites.</td>
-</tr>
+  For security and performance reasons, users are encouraged to selectively
+  enable JavaScript with `[[siteconf]]` instead of using this setting.
 
-<tr>
-<td>referer-from</td>
-<td>boolean</td>
-<td>false</td>
-<td>Enable/disable the "Referer" header.
-<p>
-Defaults to false. For privacy reasons, users are encouraged to leave this
-option disabled, only enabling it for specific sites in `[[siteconf]]`.
-</td>
-</tr>
+images = false
+: **boolean**
 
-<tr>
-<td>autofocus</td>
-<td>boolean</td>
-<td>false</td>
-<td>When set to true, elements with an "autofocus" attribute are focused on
+: Enable/disable inline image display.
+
+cookie = false
+: **boolean** / **"save"**
+
+: Enable/disable cookies on sites.
+
+  If the string "save" is specified, then cookies are also saved to
+  `external.cookie-file`. `true` still reads cookies.txt, but does not
+  modify it.
+
+  In Chawan, each website gets a separate cookie jar, so websites relying
+  on cross-site cookies may not work as expected.  You may use the
+  `[[siteconf]]` `"share-cookie-jar"` setting to adjust this behavior for
+  specific sites.
+
+referer-from = false
+: **boolean**
+
+: Enable/disable the "Referer" header.
+
+  Defaults to false.  For privacy reasons, users are encouraged to
+  leave this option disabled, only enabling it for specific sites in
+  `[[siteconf]]`.
+
+autofocus = false
+: **boolean**
+
+: When set to true, elements with an "autofocus" attribute are focused on
 automatically after the buffer is loaded.
-<p>
-If scripting is enabled, this also allows scripts to focus on elements.</td>
-</tr>
 
-<tr>
-<td>meta-refresh</td>
-<td>"never" / "always" / "ask"</td>
-<td>"ask"</td>
-<td>Whether or not `http-equiv=refresh` meta tags should be respected. "never"
-completely disables them, "always" automatically accepts all of them, "ask"
-brings up a pop-up menu.</td>
-</tr>
+  If scripting is enabled, this also allows scripts to focus on elements.
 
-<tr>
-<td>history</td>
-<td>boolean</td>
-<td>true</td>
-<td>Whether or not browsing history should be saved to the disk.</td>
-</tr>
+meta-refresh = "ask"
+: **"never"** / **"always"** / **"ask"**
 
-<tr>
-<td>mark-links</td>
-<td>boolean</td>
-<td>false</td>
-<td>Add numeric markers before links.  In headless/dump mode, this also
-prints a list of URLs after the page.</td>
-</tr>
+: Whether or not `http-equiv=refresh` meta tags should be respected.
+"never" completely disables them, "always" automatically accepts all of
+them, "ask" brings up a pop-up menu.
 
-<tr>
-<td>user-style</td>
-<td>string</td>
-<td>""</td>
-<td>A user stylesheet applied to all buffers.
-<p>
-External stylesheets can be imported using the `@import 'file.css';`
-syntax.  Paths are relative to the configuration directory.
-<p>
-Nested @import is not supported yet.
-</td>
-</tr>
+history = true
+: **boolean**
 
-</table>
+: Whether or not browsing history should be saved to the disk.
+
+mark-links = false
+: **boolean**
+
+: Add numeric markers before links.  In headless/dump mode, this also
+prints a list of URLs after the page.
+
+user-style = ""
+: **CSS stylesheet**
+
+: A user stylesheet applied to all buffers.
+
+  External stylesheets can be imported using the `@import 'file.css';`
+  syntax.  Paths are relative to the configuration directory.
+
+  Nested `@import` is not supported yet.
 
 ## Search
 
@@ -281,37 +226,21 @@ Search options are to be placed in the `[search]` section.
 
 Following is a list of search options:
 
-<table border>
-<col width=20%><col width=15%><col width=10%><col width=55%>
+wrap = true
+: **boolean**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Whether on-page searches should wrap around the document.
 
-<tr>
-<td>wrap</td>
-<td>boolean</td>
-<td>true</td>
-<td>Whether on-page searches should wrap around the document.</td>
-</tr>
+ignore-case = "auto"
+: **"auto"** / **boolean**
 
-<tr>
-<td>ignore-case</td>
-<td>"auto" / boolean</td>
-<td>"auto"</td>
-<td>When set to true, document-wide searches are case-insensitive by
-default. When set to "auto", searches are only case-sensitive when the search
-term includes a capital letter.
-<p>
-Note: this can also be overridden inline in the search bar (vim-style),
-with the escape sequences `\c` (ignore case) and `\C` (strict case). See
-[search mode](#search-mode) for details.)</td>
-</tr>
+: When set to true, document-wide searches are case-insensitive by
+default.  When set to "auto", searches are only case-sensitive when the
+search term includes a capital letter.
 
-</table>
+  Note: this can also be overridden inline in the search bar (vim-style),
+  with the escape sequences `\c` (ignore case) and `\C` (strict case).
+  See [search mode](#search-mode) for details.)
 
 ## Encoding
 
@@ -319,42 +248,25 @@ Encoding options are to be placed in the `[encoding]` section.
 
 Following is a list of encoding options:
 
-<table border>
-<col width=20%><col width=15%><col width=15%><col width=50%>
+document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]
+: **array of charset label strings**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: List of character sets for loading documents.
 
-<tr>
-<td>document-charset</td>
-<td>array of charset label strings</td>
-<td>["utf-8", "sjis", "euc-jp", "latin2"]</td>
-<td>List of character sets for loading documents.
-<p>
-All listed character sets are enumerated until the document has been decoded
-without errors. In HTML, meta tags and the BOM may override this with a
-different charset, so long as the specified charset can decode the document
-correctly.
-</td>
-</tr>
+  All listed character sets are enumerated until the document has been
+  decoded without errors. In HTML, meta tags and the BOM may override this
+  with a different charset, so long as the specified charset can decode the
+  document correctly.
 
-<tr>
-<td>display-charset</td>
-<td>string</td>
-<td>"auto"</td>
-<td>Character set for keyboard input and displaying documents.
-<p>
-Used in dump mode as well.
-<p>
-(This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is roughly equivalent to
-`iconv -f EUC-JP -t UTF-8`.)</td>
-</tr>
+display-charset = "auto"
+: **charset label string** / **"auto"**
 
-</table>
+: Character set for keyboard input and displaying documents.
+
+  Used in dump mode as well.
+
+  (This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is roughly
+  equivalent to `iconv -f EUC-JP -t UTF-8`.)
 
 ## External
 
@@ -362,261 +274,185 @@ External options are to be placed in the `[external]` section.
 
 Following is a list of external options:
 
-<table border>
-<col width=25%><col width=10%><col width=20%><col width=45%>
+tmpdir = {usually "/tmp/cha-tmp-user"}
+: **path**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Directory used to save temporary files.
 
-<tr>
-<td>tmpdir</td>
-<td>path</td>
-<td>{usually "/tmp/cha-tmp-user"}</td>
-<td>Directory used to save temporary files.</td>
-</tr>
+editor = "\${VISUAL:-\${EDITOR:-vi}}"
+: **shell command**
 
-<tr>
-<td>editor</td>
-<td>shell command</td>
-<td>{usually "$EDITOR"}</td>
-<td>External editor command. %s is substituted for the file name, %d for
-the line number.</td>
-</tr>
+: External editor command.  %s is substituted for the file name, %d for
+the line number.
 
-<tr>
-<td>mailcap</td>
-<td>array of paths</td>
-<td>{see mailcap docs}</td>
-<td>Search path for mailcap files.  (See [**cha-mailcap**](mailcap.md)(5)
-for details.)  Directories specified first have higher precedence.
-</td>
-</tr>
+mailcap = ["~/.mailcap", "/etc/mailcap", "/usr/etc/mailcap", "/usr/local/etc/mailcap"]
+: **array of paths**
 
-<tr>
-<td>mime-types</td>
-<td>array of paths</td>
-<td>{see mime.types docs}</td>
-<td>Search path for mime.types files.
-(See [**cha-mime.types**](mime.types.md)(5) for details.)
-</td>
-</tr>
+: Search path for mailcap files.  See [**cha-mailcap**](mailcap.md)(5)
+for details.  Directories specified first have higher precedence.
 
-<tr>
-<td>auto-mailcap</td>
-<td>path</td>
-<td>"$CHA_DIR/mailcap"</td>
-<td>Mailcap file for entries that are automatically executed.
-<p>
-The "Open as" prompt also saves entries in this file.
-<p>
-For backwards-compatibility, if this is "mailcap" and the file does not
-exist, Chawan will also check "auto.mailcap".</td>
-</tr>
+mime-types = ["~/.mime.types", "/etc/mime.types", "/usr/etc/mime.types", "/usr/local/etc/mime.types"]
+: **array of paths**
 
-<tr>
-<td>cgi-dir</td>
-<td>array of paths</td>
-<td>{see local CGI docs}</td>
-<td>Search path for local CGI scripts.  (See [**cha-cgi**](cgi.md)(5) for
-details.)
-</td>
-</tr>
+: Search path for mime.types files.  See [**cha-mime.types**](mime.types.md)(5)
+for details.
 
-<tr>
-<td>urimethodmap</td>
-<td>array of paths</td>
-<td>{see urimethodmap docs}</td>
-<td>Search path for urimethodmap files.
-(See [**cha-urimethodmap**](urimethodmap.md)(5) for details.)
-</td>
-</tr>
+auto-mailcap = "\$CHA_DIR/mailcap"
+: **path**
 
-<tr>
-<td>w3m-cgi-compat</td>
-<td>boolean</td>
-<td>false</td>
-<td>Enable local CGI compatibility with w3m.  In short, it redirects
+: Mailcap file for entries that are automatically executed.
+
+  The "Open as" prompt also saves entries in this file.
+
+  For backwards-compatibility, if this is "mailcap" and the file does not
+  exist, Chawan will also check "auto.mailcap".
+
+cgi-dir = ["\$CHA_DIR/cgi-bin", "\$CHA_LIBEXEC_DIR/cgi-bin"]
+: **array of paths**
+
+: Search path for local CGI scripts.  See [**cha-cgi**](cgi.md)(5) for
+details.
+
+urimethodmap = ["~/.urimethodmap", "~/.w3m/urimethodmap", "/etc/urimethodmap", "/usr/local/etc/w3m/urimethodmap"]
+: **array of paths**
+
+: Search path for urimethodmap files.  See
+[**cha-urimethodmap**](urimethodmap.md)(5) for details.
+
+w3m-cgi-compat = false
+: **boolean**
+
+: Enable local CGI compatibility with w3m.  In short, it redirects
 `file:///cgi-bin/*` and `file:///$LIB/cgi-bin/*` to `cgi-bin:*`.
-For further details, see [**cha-cgi**](cgi.md)(5).
-</td>
-</tr>
+See [**cha-cgi**](cgi.md)(5) for details.
 
-<tr>
-<td>download-dir</td>
-<td>path</td>
-<td>{same as tmpdir}</td>
-<td>Path to pre-fill for "Save to:" prompts.</td>
-</tr>
+download-dir = "\${TMPDIR:-/tmp}/"
+: **path**
 
-<tr>
-<td>show-download-panel</td>
-<td>boolean</td>
-<td>true</td>
-<td>Whether the `about:downloads` should be shown after starting a
-download.</td>
-</tr>
+: Path to pre-fill for "Save to:" prompts.
 
-<tr>
-<td>copy-cmd</td>
-<td>shell command</td>
-<td>"xsel -bi"</td>
-<td>Command to use for "copy to clipboard" operations.</td>
-</tr>
+show-download-panel = true
+: **boolean**
 
-<tr>
-<td>paste-cmd</td>
-<td>shell command</td>
-<td>"xsel -bo"</td>
-<td>Command to use for "read from clipboard" operations.</td>
-</tr>
+: Whether `about:downloads` should be opened after starting a download.
 
-<tr>
-<td>bookmark</td>
-<td>path</td>
-<td>"$CHA_DATA_DIR/bookmark.md"</td>
-<td>Path to the bookmark.md file. (The file it points to should have a
-.md extension, so that its type can be correctly deduced.)</td>
-</tr>
+copy-cmd = "xsel -bi"
+: **shell command**
 
-<tr>
-<td>history-file</td>
-<td>path</td>
-<td>"$CHA_DATA_DIR/history.uri"</td>
-<td>Path to the history file.</td>
-</tr>
+: Command to use for "copy to clipboard" operations.  When
+`input.osc52-copy` is set to "auto" (the default), `copy-cmd` is ignored if
+support for OSC 52 is detected.
 
-<tr>
-<td>history-size</td>
-<td>number</td>
-<td>100</td>
-<td>Maximum length of the history file.</td>
-</tr>
+paste-cmd = "xsel -bo"
+: **shell command**
 
-<tr>
-<td>cookie-file</td>
-<td>path</td>
-<td>"$CHA_DATA_DIR/cookies.txt"</td>
-<td>Path to the cookie file.
-<p>
-The format is equivalent to curl's "cookies.txt" format, except that a
-"jar@" part is prepended for cookies that belong in a different jar
-than the domain.
-<p>
-Cookies from this file are used if "buffer.cookie" (or its equivalent
-siteconf override) is set to `true` or `"save"`. This means that `true`
-sets the cookie-file to a "read-only" mode.</td>
-</tr>
+: Command to use for "read from clipboard" operations.
 
-</table>
+bookmark = "\$CHA_DATA_DIR/bookmark.md"
+: **path**
+
+: Path to the bookmark.md file. (The file it points to should have a
+.md extension, so that its type can be correctly deduced.)
+
+history-file = "\$CHA_DATA_DIR/history.uri"
+: **path**
+
+: Path to the history file.
+
+history-size = 100
+: **number**
+
+: Maximum length of the history file.
+
+cookie-file = "\$CHA_DATA_DIR/cookies.txt"
+: **path**
+
+: Path to the cookie file.
+
+  The format is equivalent to curl's "cookies.txt" format, except that a
+  "jar@" part is prepended for cookies that belong in a different jar than
+  the domain.
+
+  Cookies from this file are used if "buffer.cookie" (or its equivalent
+  siteconf override) is set to `true` or `"save"`. This means that `true`
+  sets the cookie-file to a "read-only" mode.
 
 ## Input
 
 Input options are to be placed in the `[input]` section.
 
-<table border>
-<col width=20%><col width=10%><col width=10%><col width=60%>
+vi-numeric-prefix = true
+: **boolean**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Whether vi-style numeric prefixes to commands should be accepted.
 
-<tr>
-<td>vi-numeric-prefix</td>
-<td>boolean</td>
-<td>true</td>
-<td>Whether vi-style numeric prefixes to commands should be accepted.
-<p>
-Only applies for keybindings defined in `[page]`.</td>
-</tr>
+  Only applies for keybindings defined in `[page]`.
 
-<tr>
-<td>use-mouse</td>
-<td>boolean / "auto"</td>
-<td>true</td>
-<td>Whether Chawan is allowed to intercept mouse clicks.
-<p>
-The current implementation imitates w3m.
-<p>
-When set to "auto" (the default), Chawan tries to detect whether mouse
-support is available.</td>
-</tr>
+use-mouse = "auto"
+: **boolean** / **"auto"**
 
-<tr>
-<td>osc52-copy</td>
-<td>boolean / "auto"</td>
-<td>auto</td>
-<td>Whether Chawan should use the OSC 52 escape sequence for copying
-to the clipboard directly through the terminal.  When available, OSC 52
-overrides `external.copy-cmd`.
-<p>
-When set to "auto" (the default), Chawan tries to detect whether OSC
-52 is available on launch.
-</td>
-</tr>
+: Whether Chawan is allowed to intercept mouse clicks.
 
-<tr>
-<td>osc52-primary</td>
-<td>boolean / "auto"</td>
-<td>auto</td>
-<td>Whether Chawan should try to set the primary selection through OSC 52.
+  The current implementation imitates w3m.
+
+  When set to "auto" (the default), Chawan tries to detect whether mouse
+  support is available.
+
+osc52-copy = "auto"
+: **boolean** / **"auto"**
+
+: Whether Chawan should use the OSC 52 escape sequence for copying to the
+clipboard directly through the terminal.  When available, OSC 52 overrides
+`external.copy-cmd`.
+
+  When set to "auto" (the default), Chawan tries to detect whether OSC 52
+  is available on launch.
+
+osc52-primary = "auto"
+: **boolean** / **"auto"**
+
+: Whether Chawan should try to set the primary selection through OSC 52.
 This happens automatically on mouse selection, and also on all clipboard
 copies.
-<p>
-When set to "auto" (the default), Chawan tries to detect whether the
-terminal is capable of setting the primary selection.  Note that very few
-terminals actually get this right (to my knowledge, only XTerm and Kitty).
-</td>
-</tr>
 
-<tr>
-<td>bracketed-paste</td>
-<td>boolean / "auto"</td>
-<td>"auto"</td>
-<td>Whether Chawan should ask for bracketed paste.
-<p>
-When true, the terminal will (hopefully) mark pasted text with escape
-sequences, which a) ensures that pasting a newline character into the line
-editor does not submit the editor, b) allows Chawan to intercept text pasted
-into the pager, automatically loading it into the browser's URL bar.
-<p>
-When set to "auto" (the default), Chawan tries to only enable bracketed
-paste if the terminal is known not to misbehave when trying to do so.
-</td>
-</tr>
+  When set to "auto" (the default), Chawan tries to detect whether the
+  terminal is capable of setting the primary selection.  Note that very
+  few terminals actually implement OSC 52 correctly (to my knowledge, only
+  XTerm and Kitty), and on other terminals this might even break copying to
+  the clipboard selection.
 
-<tr>
-<td>wheel-scroll</td>
-<td>number</td>
-<td>5</td>
-<td>Number of lines to scroll for a mouse wheel event.</td>
-</tr>
+bracketed-paste = "auto"
+: **boolean** / **"auto"**
 
-<tr>
-<td>side-wheel-scroll</td>
-<td>number</td>
-<td>5</td>
-<td>Number of columns to scroll for a mouse side-wheel event.</td>
-</tr>
+: Whether Chawan should ask for bracketed paste.
 
-<tr>
-<td>link-hint-chars</td>
-<td>string</td>
-<td>abcdefghijklmnoprstuvxyz</td>
-<td>A string of characters to use in `toggleLinkHints`.  Any Unicode
-codepoint is accepted, and they are ordered as specified in this
-option.</td>
-</tr>
+  When true, the terminal will (hopefully) mark pasted text with escape
+  sequences, which a) ensures that pasting a newline character into the
+  line editor does not submit the editor, b) allows Chawan to intercept
+  text pasted into the pager, automatically loading it into the browser's
+  URL bar.
 
-</table>
+  When set to "auto" (the default), Chawan tries to only enable bracketed
+  paste if the terminal is known not to misbehave when trying to do so.
+
+wheel-scroll = 5
+: **number**
+
+: Number of lines to scroll for a mouse wheel event.
+
+side-wheel-scroll = 5
+: **number**
+
+: Number of columns to scroll for a mouse side-wheel event.
+
+link-hint-chars = "abcdefghijklmnoprstuvxyz"
+: **string**
+
+: A string of characters to use in `toggleLinkHints`.  Any Unicode
+codepoint is accepted, and they are ordered as specified in this option.
 
 Examples:
+
 ```
 [input]
 vi-numeric-prefix = true
@@ -633,79 +469,56 @@ G = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
 
 Network options are to be placed in the `[network]` section.
 
-<table border>
-<col width=25%><col width=12%><col width=13%><col width=50%>
+max-redirect = 10
+: **number**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Maximum number of redirections to follow.
 
-<tr>
-<td>max-redirect</td>
-<td>number</td>
-<td>10</td>
-<td>Maximum number of redirections to follow.</td>
-</tr>
+max-net-connections = 12
+: **number**
 
-<tr>
-<td>max-net-connections</td>
-<td>number</td>
-<td>12</td>
-<td>Maximum number of simultaneous network connections allowed in one
-buffer.  Further connections are held back until the number returns
-below the threshold.</td>
-</tr>
+: Maximum number of simultaneous network connections allowed in one buffer.
+Further connections are held back until the number returns below the
+threshold.
 
-<tr>
-<td>prepend-scheme</td>
-<td>string</td>
-<td>"https://"</td>
-<td>Prepend this to URLs passed to Chawan without a scheme.
-<p>
-Note that local files (`file:` scheme) will always be checked first; only
-if this fails, Chawan will retry the request with `prepend-scheme` set as
-the scheme.</td>
-</tr>
+prepend-scheme = "https://"
+: **string**
 
-<tr>
-<td>proxy</td>
-<td>URL</td>
-<td>unset</td>
-<td>Specify a proxy for all network requests Chawan makes.  Currently,
-the formats `http://user:pass@domain` and `socks5://user:pass@domain`
-are accepted.  (Unlike in curl, `socks5h` is an alias of `socks5`, and
-DNS requests are always tunneled.)
-<p>
-Can be overridden by siteconf.</td>
-</tr>
+: Prepend this to URLs passed to Chawan (or typed into the URL bar) without
+a scheme.
 
-<tr>
-<td>default-headers</td>
-<td>table</td>
-<td>{omitted}</td>
-<td>Specify a list of default headers for all HTTP(S) network requests. Can be
-overridden by siteconf.</td>
-</tr>
+  Note that local files (`file:` scheme) will always be checked first; only
+  if this fails, Chawan will retry the request with `prepend-scheme` set as
+  the scheme.
 
-<tr>
-<td>allow-http-from-file</td>
-<td>boolean</td>
-<td>false</td>
-<td>**WARNING: think twice before enabling this.**
-<p>
-Allows HTTP and HTTPS requests from the `file:` and `stream:` schemes.
-This is a very bad idea in general, because it allows local files to
-ping remote servers (a functionality commonly abused by HTML e-mails to
-track your mailbox activity.)
-<p>
-On the other hand, it allows loading images in HTML e-mails if you
-don't care about the privacy implications.</td>
-</tr>
+proxy = ""
+: **URL**
 
-</table>
+: Specify a proxy for all network requests Chawan makes.  Currently, the
+formats `http://user:pass@domain` and `socks5://user:pass@domain` are
+accepted.  Unlike in curl, `socks5h` is an alias of `socks5`, and DNS
+requests are always tunneled.
+
+  Can be overridden by siteconf.
+
+default-headers = {see bonus/config.toml}
+: **table**
+
+: Specify a table of default headers for all HTTP(S) network requests.
+Can be overridden by siteconf.
+
+allow-http-from-file = false
+: **boolean**
+
+: **WARNING: think twice before enabling this.**
+
+  Allows HTTP and HTTPS requests from the `file:` and `stream:` schemes.
+  This is a bad idea in general, because it allows local files to ping
+  remote servers (a functionality commonly abused by HTML e-mails to track
+  your mailbox activity).
+
+  On the other hand, it allows loading images in HTML e-mails if you don't
+  care about the privacy implications.
 
 ## Display
 
@@ -713,189 +526,142 @@ Display options are to be placed in the `[display]` section.
 
 Following is a list of display options:
 
-<table border>
-<col width=33%><col width=17%><col width=10%><col width=40%>
+color-mode = "auto"
+: **"monochrome"** / **"ansi"** / **"eight-bit"** / **"true-color"** /
+**"auto"**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Set the color mode.  "auto" for automatic detection, "monochrome"
+for black on white, "ansi" for eight ANSI plus eight aixterm colors,
+"eight-bit" for 256-color mode, and "true-color" for 24-bit colors.
 
-<tr>
-<td>color-mode</td>
-<td>"monochrome" / "ansi" / "eight-bit" / "true-color" / "auto"</td>
-<td>"auto"</td>
-<td>Set the color mode.  "auto" for automatic detection, "monochrome" for
-black on white, "ansi" for eight ANSI plus eight aixterm colors, "eight-bit"
-for 256-color mode, and "true-color" for 24-bit colors.</td>
-</tr>
+format-mode = "auto"
+: **"auto"** / **["bold", "italic", "underline", "reverse", "strike",
+"overline", "blink"]**
 
-<tr>
-<td>format-mode</td>
-<td>"auto" / ["bold", "italic", "underline", "reverse", "strike", "overline",
-"blink"]</td>
-<td>"auto"</td>
-<td>Specifies output formatting modes. Accepts the string "auto" or an array
-of specific attributes. An empty array (`[]`) disables formatting
-completely.</td>
-</tr>
+: Specifies allowed output formatting modes.  Accepts the string "auto" or
+an array of specific attributes.  "auto" (the default) tries to detect
+supported formatting modes when launched visually, and omits all formatting
+modes in dump mode.  An empty array (`[]`) disables formatting even in
+visual mode.
 
-<tr>
-<td>no-format-mode</td>
-<td>["bold", "italic", "underline", "reverse", "strike", "overline", "blink"]</td>
-<td>"overline"</td>
-<td>Disable specific formatting modes.</td>
-</tr>
+no-format-mode = ["overline"]
+: **["bold", "italic", "underline", "reverse", "strike", "overline",
+"blink"]**
 
-<tr>
-<td>image-mode</td>
-<td>"auto" / "none" / "sixel" / "kitty"</td>
-<td>"auto"</td>
-<td>Specifies the image output mode. "sixel" uses sixels for output, "kitty"
+: Disable specific formatting modes.
+
+image-mode = "auto"
+: **"auto"** / **"none"** / **"sixel"** / **"kitty"**
+
+: Specifies the image output mode.  "sixel" uses sixels for output, "kitty"
 uses the Kitty image display protocol, "none" disables image display
 completely.
-<p>
-"auto" tries to detect sixel or kitty support, and falls back to "none" when
-neither are available.  This is the default setting, but you must also
-enable `buffer.images` for images to work.</td>
-</tr>
 
-<tr>
-<td>sixel-colors</td>
-<td>"auto" / 2..65535</td>
-<td>"auto"</td>
-<td>Only applies when `display.image-mode="sixel"`. Setting a number
+  "auto" detects sixel or kitty support automatically, and falls back to
+  "none" when neither are available.  This is the default setting, and is
+  expected to work on all known terminals with functional image support.
+  However, you must enable `buffer.images` for images to work.
+
+sixel-colors = "auto"
+: **"auto"** / **2..65535**
+
+: Only applies when `display.image-mode="sixel"`.  Setting this to a number
 overrides the number of sixel color registers reported by the terminal.
-</td>
-</tr>
 
-<tr>
-<td>alt-screen</td>
-<td>"auto" / boolean</td>
-<td>"auto"</td>
-<td>Enable/disable the alternative screen.</td>
-</tr>
+alt-screen = "auto"
+: **"auto"** / **boolean**
 
-<tr>
-<td>highlight-color</td>
-<td>color</td>
-<td>"-cha-ansi(bright-cyan)"</td>
-<td>Set the highlight color for incremental search and marks.  CSS color
+: Enable/disable the alternative screen.  "auto" (the default) tries to
+detect support for this feature.  (However, since Chawan does not link to
+terminfo, you should not expect hacks which remove the respective terminfo
+description to work.)
+
+highlight-color = "-cha-ansi(bright-cyan)"
+: **CSS color**
+
+: Set the highlight color for incremental search and marks.  CSS color
 names, hex values, and color functions are all accepted.
-<p>
-In monochrome mode, this setting is ignored; instead, reverse video is
-used.</td>
-</tr>
 
-<tr>
-<td>highlight-marks</td>
-<td>boolean</td>
-<td>true</td>
-<td>Enable/disable highlighting of marks.</td>
-</tr>
+  In monochrome mode, this setting is ignored; instead, reverse video is
+  used.
 
-<tr>
-<td>double-width-ambiguous</td>
-<td>boolean</td>
-<td>false</td>
-<td>Assume the terminal displays characters in the East Asian Ambiguous
-category as double-width characters. Useful when e.g. ○ occupies two
-cells.</td>
-</tr>
+highlight-marks = true
+: **boolean**
 
-<tr>
-<td>minimum-contrast</td>
-<td>number</td>
-<td>100</td>
-<td>Specify the minimum difference between the luminance (Y) of the background
-and the foreground. -1 disables this function (i.e. allows black letters on
-black background, etc).</td>
-</tr>
+: Enable/disable highlighting of marks.
 
-<tr>
-<td>set-title</td>
-<td>boolean</td>
-<td>true</td>
-<td>Set the terminal emulator's window title to that of the current page.</td>
-</tr>
+double-width-ambiguous = false
+: **boolean**
 
-<tr>
-<td>default-background-color</td>
-<td>"auto" / color</td>
-<td>"auto"</td>
-<td>Overrides the assumed background color of the terminal. "auto" leaves
-background color detection to Chawan.</td>
-</tr>
+: Assume the terminal displays characters in the East Asian Ambiguous
+category as double-width characters.  Useful when e.g. ○ occupies two
+cells.
 
-<tr>
-<td>default-foreground-color</td>
-<td>"auto" / color</td>
-<td>"auto"</td>
-<td>Sets the assumed foreground color of the terminal. "auto" leaves foreground
-color detection to Chawan.</td>
-</tr>
+minimum-contrast = 100
+: **0..235**
 
-<tr>
-<td>columns, lines, pixels-per-column, pixels-per-line</td>
-<td>number</td>
-<td>80, 24, 9, 18</td>
-<td>Fallback values for the number of columns, lines, pixels per
-column, and pixels per line for the cases where it cannot be determined
-automatically. (For example, these values are used in dump mode.)</td>
-</tr>
+: Specify the minimum difference between the luminance (Y) of the default
+terminal background and the foreground as represented in YUV.  0 disables
+this function (i.e. allows black letters on black background, etc).
 
-<tr>
-<td>force-columns, force-lines, force-pixels-per-column,
-force-pixels-per-line</td>
-<td>boolean</td>
-<td>false</td>
-<td>Force-set columns, lines, pixels per column, or pixels per line to the
-fallback values provided above.</td>
-</tr>
+  Note: in the past, this option used to apply to all colors, but since
+  v0.3 Chawan only performs color contrast correction when either the
+  foreground or background color is the terminal default.
 
-</table>
+  Also, the contrast correction algorithm is still not perfect, so future
+  changes are to be expected.
+
+set-title = true
+: **boolean**
+
+: Set the terminal emulator's window title to that of the current page.
+
+default-background-color = "auto"
+: **"auto"** / **RGB color**
+
+: Overrides the assumed background color of the terminal.  "auto" leaves
+background color detection to Chawan.
+
+default-foreground-color = "auto"
+: **"auto"** / **RGB color**
+
+: Sets the assumed foreground color of the terminal.  "auto" leaves
+foreground color detection to Chawan.
+
+columns = 80, lines = 24, pixels-per-column = 9, pixels-per-line = 18
+: **number**
+
+: Fallback values for the number of columns, lines, pixels per column, and
+pixels per line for the cases where it cannot be determined automatically.
+(For example, these values are used in dump mode.)
+
+force-columns = false, force-lines = false, force-pixels-per-column = false, force-pixels-per-line = false
+: **boolean**
+
+: Force-set columns, lines, pixels per column, or pixels per line to the
+fallback values provided above.
 
 ## Status
 
-Options concerning the status bar (last line on the screen) are to be placed
-in the `[status]` section.
+Options concerning the status bar (last line on the screen) are to be
+placed in the `[status]` section.
 
 Following is a list of status options:
 
-<table border>
-<col width=33%><col width=17%><col width=10%><col width=40%>
+show-cursor-position = true
+: **boolean**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
+: Whether or not the current line number should be displayed.
 
-<tr>
-<td>show-cursor-position</td>
-<td>boolean</td>
-<td>true</td>
-<td>Whether or not the current line number should be displayed.</td>
-</tr>
+show-hover-link = true
+: **boolean**
 
-<tr>
-<td>show-hover-link</td>
-<td>boolean</td>
-<td>true</td>
-<td>Whether or not the link under the cursor should be displayed.</td>
-</tr>
+: Whether or not the link under the cursor should be displayed.
 
-<tr>
-<td>format-mode</td>
-<td>{see \[display\] section}</td>
-<td>"reverse"</td>
-<td>Formatting of the status bar.</td>
-</tr>
+format-mode = "reverse"
+: **{see \[display\] section}**
 
-</table>
+: Formatting of the status bar.
 
 ## Omnirule
 
@@ -941,33 +707,20 @@ Currently, these are:
 
 Omnirule options:
 
-<table border>
-<col width=25%><col width=25%><col width=50%>
+match
+: **regex**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Function</th>
-</tr>
-
-<tr>
-<td>match</td>
-<td>regex</td>
-<td>Regular expression used to match the input string. Note that websites
+: Regular expression used to match the input string.  Note that websites
 passed as arguments are matched as well.
-<p>
-Note: regexes are handled according to the [match mode](#match-mode) regex
-handling rules.</td>
-</tr>
 
-<tr>
-<td>substitute-url</td>
-<td>JavaScript function</td>
-<td>A JavaScript function Chawan will pass the input string to. If a new string is
-returned, it will be parsed instead of the old one.</td>
-</tr>
+  Note: regexes are handled according to the [match mode](#match-mode)
+  regex handling rules.
 
-</table>
+substitute-url
+: **JavaScript function**
+
+: A JavaScript function Chawan will pass the input string to.  If a new
+string is returned, it will be parsed instead of the old one.
 
 ## Siteconf
 
@@ -1026,176 +779,124 @@ default-headers = {
 
 Siteconf options:
 
-<table border>
-<col width=25%><col width=15%><col width=28%><col width=32%>
+url
+: **regex**
 
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Overrides</th>
-<th>Function</th>
-</tr>
+: Regular expression used to match the URL.  Either this or the `host`
+option must be specified.
 
-<tr>
-<td>url</td>
-<td>regex</td>
-<td>n/a</td>
-<td>Regular expression used to match the URL. Either this or the `host` option
-must be specified.
-<p>
-Note: regexes are handled according to the [match mode](#match-mode) regex
-handling rules.</td>
-</tr>
+  Note: regexes are handled according to the [match mode](#match-mode)
+  regex handling rules.
 
-<tr>
-<td>host</td>
-<td>regex</td>
-<td>n/a</td>
-<td>Regular expression used to match the host part of the URL (i.e. domain
-name/ip address.) Either this or the `url` option must be specified.
-<p>
-Note: regexes are handled according to the [match mode](#match-mode) regex
-handling rules.</td>
-</tr>
+host
+: **regex**
 
-<tr>
-<td>rewrite-url</td>
-<td>JavaScript function</td>
-<td>n/a</td>
-<td>A JavaScript function Chawan will pass the site's URL object to. If
+: Regular expression used to match the host part of the URL (i.e. domain
+name/ip address).  Either this or the `url` option (but not both) must be
+specified.
+
+  Note: regexes are handled according to the [match mode](#match-mode) regex
+  handling rules.
+
+rewrite-url
+: **JavaScript function**
+
+: A JavaScript function Chawan will pass the site's URL object to.  If
 a new URL is returned, or the URL object is modified in any way, Chawan
-will transparently redirect the user to this new URL.</td>
-</tr>
+will transparently redirect the user to this new URL.
 
-<tr>
-<td>cookie</td>
-<td>boolean / "save"</td>
-<td>`buffer.cookie`</td>
-<td>Whether loading (with "save", also saving) cookies should be allowed
-for this URL.</td>
-</tr>
+cookie = buffer.cookie
+: **boolean** / **"save"**
 
-<tr>
-<td>share-cookie-jar</td>
-<td>host</td>
-<td>n/a</td>
-<td>Cookie jar to use for this domain. Useful for e.g. sharing cookies with
-subdomains.</td>
-</tr>
+: Whether loading (with "save", also saving) cookies should be allowed for
+this URL.
 
-<tr>
-<td>referer-from</td>
-<td>boolean</td>
-<td>`buffer.referer-from`</td>
-<td>Whether or not we should send a Referer header when opening requests
-originating from this domain. Simplified example: if you click a link on a.com
-that refers to b.com, and referer-from is true, b.com is sent "a.com" as the
-Referer header.
-</td>
-</tr>
+share-cookie-jar
+: **host string**
 
-<tr>
-<td>scripting</td>
-<td>boolean / "app"</td>
-<td>`buffer.scripting`</td>
-<td>Enable/disable JavaScript execution on this site. See
-`buffer.scripting` for details.</td>
-</tr>
+: Cookie jar to use for this domain.  Useful for e.g. sharing cookies with
+subdomains.
 
-<tr>
-<td>styling</td>
-<td>boolean</td>
-<td>`buffer.styling`</td>
-<td>Enable/disable author styles (CSS) on this site.</td>
-</tr>
+referer-from = buffer.referer-from
+: **boolean**
 
-<tr>
-<td>images</td>
-<td>boolean</td>
-<td>`buffer.images`</td>
-<td>Enable/disable image display on this site.</td>
-</tr>
+: Whether or not Chawan should send a Referer header when opening requests
+originating from this domain.  Simplified example: if you click a link
+on a.com that refers to b.com, and referer-from is true, b.com is sent
+"a.com" as the Referer header.
 
-<tr>
-<td>document-charset</td>
-<td>charset label string</td>
-<td>`encoding.document-charset`</td>
-<td>Specify the default encoding for this site.</td>
-</tr>
+scripting = buffer.scripting
+: **boolean** / **"app"**
 
-<tr>
-<td>proxy</td>
-<td>URL</td>
-<td>`network.proxy`</td>
-<td>Specify a proxy for network requests fetching contents of this
-buffer.</td>
-</tr>
+: Enable/disable JavaScript execution on this site.  See `buffer.scripting`
+for details.
 
-<tr>
-<td>default-headers</td>
-<td>table</td>
-<td>`network.default-headers`</td>
-<td>Specify a list of default headers for HTTP(S) network requests
-to this buffer.</td>
-</tr>
+styling = buffer.styling
+: **boolean**
 
-<tr>
-<td>insecure-ssl-no-verify</td>
-<td>boolean</td>
-<td>n/a</td>
-<td>Defaults to false. When set to true, this disables peer and hostname
-verification for SSL keys on this site, like `curl --insecure` would.
-<p>
-Please do not use this unless you are absolutely sure you know what you
-are doing.</td>
-</tr>
+: Enable/disable author styles (CSS) on this site.
 
-<tr>
-<td>autofocus</td>
-<td>boolean</td>
-<td>`buffer.autofocus`</td>
-<td>When set to true, elements with an "autofocus" attribute are focused
-on automatically after the buffer is loaded.
-<p>
-If scripting is enabled, this also allows scripts to focus on
-elements.</td>
-</tr>
+images = buffer.images
+: **boolean**
 
-<tr>
-<td>meta-refresh</td>
-<td>"never" / "always" / "ask"</td>
-<td>`buffer.meta-refresh`</td>
-<td>Whether or not `http-equiv=refresh` meta tags should be respected. "never"
-completely disables them, "always" automatically accepts all of them, "ask"
-brings up a pop-up menu.
-</td>
-</tr>
+: Enable/disable loading of images on this site.
 
-<tr>
-<td>history</td>
-<td>boolean</td>
-<td>`buffer.history`</td>
-<td>Whether or not browsing history should be saved to the disk for this
-URL.</td>
-</tr>
+document-charset = encoding.document-charset
+: **charset label string**
 
-<tr>
-<td>mark-links</td>
-<td>boolean</td>
-<td>`buffer.mark-links`</td>
-<td>Add numeric markers before links.</td>
-</tr>
+: Specify the default encoding for this site.
 
-<tr>
-<td>user-style</td>
-<td>string</td>
-<td>`buffer.user-style`</td>
-<td>Specify a user style sheet specific to the site.
-<p>
-Please refer to `buffer.user-style` for details.</td>
-</tr>
+proxy = network.proxy
+: **URL string**
 
-</table>
+: Specify a proxy for network requests fetching contents of this buffer.
+
+default-headers = network.default-headers
+: **table**
+
+: Specify a list of default headers for HTTP(S) network requests to this
+buffer.
+
+insecure-ssl-no-verify = false
+: **boolean**
+
+: When set to true, this disables peer and hostname verification for SSL
+keys on this site, like `curl --insecure` would.
+
+  Please do not use this unless you are absolutely sure you know what you
+  are doing.
+
+autofocus = buffer.autofocus
+: **boolean**
+
+: When set to true, elements with an "autofocus" attribute are focused on
+automatically after the buffer is loaded.
+
+  If scripting is enabled, this also allows scripts to focus on elements.
+
+meta-refresh = buffer.meta-refresh
+: **"never"** / **"always"** / **"ask"**
+
+: Whether or not `http-equiv=refresh` meta tags should be respected.
+"never" completely disables them, "always" automatically accepts all of
+them, "ask" brings up a pop-up menu.
+
+history = buffer.history
+: **boolean**
+
+: Whether or not browsing history should be saved to the disk for this URL.
+
+mark-links = buffer.mark-links
+: **boolean**
+
+: Add numeric markers before links.
+
+user-style = buffer.user-style
+: **string**
+
+: Specify a user style sheet specific to the site.
+
+  Refer to `buffer.user-style` for details.
 
 ## Keybindings
 
@@ -1213,11 +914,10 @@ Keybindings are configured using the syntax
 Where `<keybinding>` is a combination of unicode characters using the syntax
 described below.
 
-`<action>` is either a command defined in the `[cmd]` section, or a JavaScript
-expression. Here we only describe the pre-defined actions in the default config;
-for a description of the API, please see:
-
-The API documentation at [**cha-api**](api.md)(7).
+`<action>` is either a command defined in the `[cmd]` section, or a
+JavaScript expression.  This document only describes the pre-defined
+actions in the default config; for a description of the API, see
+[**cha-api**](api.md)(7).
 
 Examples:
 
@@ -1260,629 +960,488 @@ keybinding are translated to `SPC`.
 
 ### Pager actions
 
-<table border>
-<col width=20%><col width=30%><col width=50%>
+Default keybindings are highlighted in **bold**.
 
-<tr>
-<th>Default key</th>
-<th>Name</th>
-<th>Function</th>
-</tr>
+quit
+: **q**
 
-<tr>
-<td><kbd>q</kbd></td>
-<td>`quit`</td>
-<td>Exit the browser.</td>
-</tr>
+: Exit the browser.
 
-<tr>
-<td><kbd>C-z</kbd></td>
-<td>`suspend`</td>
-<td>Temporarily suspend the browser
-<p>
-Note: this also suspends e.g. buffer processes or CGI scripts. So if you are
-downloading something, that will be delayed until you restart the process.</td>
-</tr>
+suspend
+: **C-z**
 
-<tr>
-<td><kbd>C-l</kbd></td>
-<td>`load`</td>
-<td>Open the current address in the URL bar.</td>
-</tr>
+: Temporarily suspend the browser
 
-<tr>
-<td><kbd>M-l</kbd></td>
-<td>`loadCursor`</td>
-<td>Open the address of the link or image being hovered in the URL
-bar.
-<p>
-If no link/image is under the cursor, an empty URL bar is opened.</td>
-</tr>
+  Note: this also suspends e.g. buffer processes or CGI scripts.  So if
+  you are downloading something, that will be delayed until you restart the
+  process.
 
-<tr>
-<td>None</td>
-<td>`loadEmpty`</td>
-<td>Open an empty address bar.</td>
-</tr>
+load
+: **C-l**
 
-<tr>
-<td><kbd>C-k</kbd></td>
-<td>`webSearch`</td>
-<td>Open the URL bar with an arbitrary search engine. At the moment, this is
-Brave Search, but this may change in the future.</td>
-</tr>
+: Open the current address in the URL bar.
 
-<tr>
-<td><kbd>M-u</kbd></td>
-<td>`dupeBuffer`</td>
-<td>Duplicate the current buffer.  This is a shallow clone, so modifications
-to one buffer will affect the other.</td>
-</tr>
+loadCursor
+: **M-l**
 
-<tr>
-<td><kbd>U</kbd></td>
-<td>`reloadBuffer`</td>
-<td>Open a new buffer with the current buffer's URL, replacing the current
-buffer.</td>
-</tr>
+: Open the address of the link or image being hovered in the URL bar.
 
-<tr>
-<td><kbd>C-g</kbd></td>
-<td>`lineInfo`</td>
-<td>Display information about the current line on the status line.</td>
-</tr>
+  If no link/image is under the cursor, an empty URL bar is opened.
 
-<tr>
-<td><kbd>&bsol;</kbd></td>
-<td>`toggleSource`</td>
-<td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
-open the current buffer's contents as HTML.</td>
-</tr>
+loadEmpty
 
-<tr>
-<td><kbd>s s</kbd></td>
-<td>`saveScreen`</td>
-<td>Save the rendered buffer to a file.</td>
-</tr>
+: Open an empty address bar.
 
-<tr>
-<td><kbd>s S</kbd></td>
-<td>`saveSource`</td>
-<td>Save the buffer's source to a file.</td>
-</tr>
+webSearch
+: **C-k**
 
-<tr>
-<td><kbd>s e</kbd></td>
-<td>`editScreen`</td>
-<td>Open the rendered buffer in an editor.</td>
-</tr>
+: Open the URL bar with an arbitrary search engine.  At the moment, this is
+Brave Search, but this may change in the future.
 
-<tr>
-<td><kbd>s E</kbd></td>
-<td>`editSource`</td>
-<td>Open the buffer's source in an editor.</td>
-</tr>
+dupeBuffer
+: **M-u**
 
-<tr>
-<td><kbd>D</kbd></td>
-<td>`discardBuffer`</td>
-<td>Discard the current buffer, and move back to the previous/next buffer
-depending on what the previously viewed buffer was.</td>
-</tr>
+: Duplicate the current buffer.  This is a shallow clone, so modifications
+to one buffer will affect the other.
 
-<tr>
-<td><kbd>d ,</kbd>, <kbd>d .</kbd></td>
-<td>`discardBufferPrev`, `discardBufferNext`</td>
-<td>Discard the current buffer, and move back to the previous/next buffer, or
-open the link under the cursor.</td>
-</tr>
+reloadBuffer
+: **U**
 
-<tr>
-<td><kbd>M-d</kbd></td>
-<td>`discardTree`</td>
-<td>Discard all child buffers of the current buffer.</td>
-</tr>
+: Open a new buffer with the current buffer's URL, replacing the current
+buffer.
 
-<tr>
-<td><kbd>.</kbd>, <kbd>,</kbd></td>
-<td>`nextBuffer`, `prevBuffer`</td>
-<td>Traverse the buffer list.
-<p>
-`nextBuffer` and `prevBuffer` switch to the next or previous buffer
-respectively.
-</td>
-</tr>
+lineInfo
+: **C-g**
 
-<tr>
-<td><kbd>M-c</kbd></td>
-<td>`enterCommand`</td>
-<td>Directly enter a JavaScript command. Note that this interacts with
-the pager, not the website being displayed.</td>
-</tr>
+: Display information about the current line on the status line.
 
-<tr>
-<td>None</td>
-<td>`searchForward`, `searchBackward`</td>
-<td>Search for a string in the current buffer, forwards or backwards.</td>
-</tr>
+toggleSource
+: **&bsol;**
 
-<tr>
-<td><kbd>/</kbd>, <kbd>?</kbd></td>
-<td>`isearchForward`, `searchBackward`</td>
-<td>Incremental-search for a string, highlighting the first result, forwards or
-backwards.</td>
-</tr>
+: If viewing an HTML buffer, open a new buffer with its source.  Otherwise,
+open the current buffer's contents as HTML.
 
-<tr>
-<td><kbd>n</kbd>, <kbd>N</kbd></td>
-<td>`searchNext`, `searchPrev`</td>
-<td>Jump to the nth (or if unspecified, first) next/previous search result.</td>
-</tr>
+saveScreen
+: **s s**
 
-<tr>
-<td>None</td>
-<td>`peek`</td>
-<td>Display a message of the current buffer's URL on the status line.</td>
-</tr>
+: Save the rendered buffer to a file.
 
-<tr>
-<td><kbd>u</kbd></td>
-<td>`peekCursor`</td>
-<td>Display a message of the URL or title under the cursor on the status line.
-Multiple calls allow cycling through the two. (i.e. by default, press u once ->
-title, press again -> URL)</td>
-</tr>
+saveSource
+: **s S**
 
-<tr>
-<td><kbd>s u</kbd></td>
-<td>`showFullAlert`</td>
-<td>Show the last alert inside the line editor. You can also view previous
-ones using C-p or C-n.</td>
-</tr>
+: Save the buffer's source to a file.
 
-<tr>
-<td><kbd>M-y</kbd></td>
-<td>`copyURL`</td>
-<td>Copy the current buffer's URL to the system clipboard.</td>
-</tr>
+editScreen
+: **s e**
 
-<tr>
-<td><kbd>y u</kbd></td>
-<td>`copyCursorLink`</td>
-<td>Copy the link under the cursor to the system clipboard.</td>
-</tr>
+: Open the rendered buffer in an editor.
 
-<tr>
-<td><kbd>y I</kbd></td>
-<td>`copyCursorImage`</td>
-<td>Copy the URL of the image under the cursor to the system clipboard.</td>
-</tr>
+editSource
+: **s E**
 
-<tr>
-<td><kbd>M-p</kbd></td>
-<td>`gotoClipboardURL`</td>
-<td>Go to the URL currently on the clipboard.</td>
-</tr>
+: Open the buffer's source in an editor.
 
-<tr>
-<td><kbd>M-b</kbd></td>
-<td>`openBookmarks`</td>
-<td>Open the bookmark file.</td>
-</tr>
+discardBuffer
+: **D**
 
-<tr>
-<td><kbd>M-a</kbd></td>
-<td>`addBookmark`</td>
-<td>Add the current page to your bookmarks.</td>
-</tr>
+: Discard the current buffer, and move back to the previous/next buffer
+depending on what the previously viewed buffer was.
 
-<tr>
-<td><kbd>f</kbd></td>
-<td>`toggleLinkHints`</td>
-<td>Show hints before each link (or button).  After typing a hint, the
-cursor is placed on the respective link.
-<p>
-The hint character set may be customized with `input.link-hint-chars`.
-</td>
-</tr>
+discardBufferPrev, discardBufferNext
+: **d ,**, **d .**
 
-<tr>
-<td>None</td>
-<td>`toggleLinkHintsAutoClick`</td>
-<td>Same as `toggleLinkHints`, but also click the selected link.</td>
-</tr>
+: Discard the current buffer, and move back to the previous/next buffer,
+or open the link under the cursor.
 
-</table>
+discardTree
+: **M-d**
+
+: Discard all child buffers of the current buffer.
+
+nextBuffer, prevBuffer
+: **.**, **,**
+
+: Switch to the next or previous buffer respectively.
+
+enterCommand
+: **M-c**
+
+: Directly enter a JavaScript command.  Note that this interacts with
+the pager, not the website being displayed.
+
+searchForward, searchBackward
+
+: Search for a string in the current buffer, forwards or backwards.
+
+isearchForward, searchBackward
+: **/**, **?**
+: Incremental-search for a string, highlighting the first result, forwards
+or backwards.
+
+searchNext, searchPrev
+: **n**, **N**
+
+: Jump to the nth (or if unspecified, first) next/previous search result.
+
+peek
+
+: Display a message of the current buffer's URL on the status line.
+
+peekCursor
+: **u**
+
+: Display a message of the URL or title under the cursor on the status
+line.  Multiple calls allow cycling through the two. (i.e. by default,
+press u once -> title, press again -> URL)
+
+showFullAlert
+: **s u**
+
+: Show the last alert inside the line editor.  You can also view previous
+ones using C-p or C-n.
+
+copyURL
+: **M-y**
+
+: Copy the current buffer's URL to the system clipboard.
+
+copyCursorLink
+: **y u**
+
+: Copy the link under the cursor to the system clipboard.
+
+copyCursorImage
+: **y I**
+
+: Copy the URL of the image under the cursor to the system clipboard.
+
+gotoClipboardURL
+: **M-p**
+
+: Go to the URL currently on the clipboard.
+
+openBookmarks
+: **M-b**
+
+: Open the bookmark file.
+
+addBookmark
+: **M-a**
+
+: Add the current page to your bookmarks.
+
+toggleLinkHints
+: **f**
+
+: Show hints before each link (or button).  After typing a hint, the cursor
+is placed on the respective link.
+
+  The hint character set may be customized with `input.link-hint-chars`.
+
+toggleLinkHintsAutoClick
+
+: Same as `toggleLinkHints`, but also click the selected link.
 
 ### Buffer actions
 
-Note: `n` in the following text refers to a number preceding the action.  e.g.
-in `10gg`, n = 10.  If no preceding number is input, then it is left
-unspecified.
+`n` refers to a number preceding the action.  e.g. in `10gg`, n = 10.
+If no preceding number is input, then it is left unspecified.
 
-<table border>
-<col width=20%><col width=35%><col width=45%>
+Default keybindings are highlighted in **bold**.
 
-<tr>
-<th>Default key</th>
-<th>Name</th>
-<th>Function</th>
-</tr>
+cursorUp, cursorDown
+: **j**/**C-p**/**Up**,
+**k**/**C-n**/**Down**
 
-<tr>
-<td><kbd>j</kbd>/<kbd>C-p</kbd>/<kbd>Up</kbd>,
-<kbd>k</kbd>/<kbd>C-n</kbd>/<kbd>Down</kbd></td>
-<td>`cursorUp`, `cursorDown`</td>
-<td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
-1.</td>
-</tr>
+: Move the cursor upwards/downwards by n lines, or if n is unspecified,
+by 1.
 
-<tr>
-<td><kbd>h</kbd>/<kbd>Left</kbd>, <kbd>l</kbd>/<kbd>Right</kbd></td>
-<td>`cursorLeft`, `cursorRight`</td>
-<td>Move the cursor to the left/right by n cells, or if n is unspecified, by
-1.</td>
-</tr>
+cursorLeft, cursorRight
+: **h**/**Left**, **l**/**Right**
 
-<tr>
-<td><kbd>0</kbd>/<kbd>Home</kbd></td>
-<td>`cursorLineBegin`</td>
-<td>Move the cursor to the first cell of the line.</td>
-</tr>
+: Move the cursor to the left/right by n cells, or if n is unspecified,
+by 1.
 
-<tr>
-<td><kbd>^</kbd></td>
-<td>`cursorLineTextStart`</td>
-<td>Move the cursor to the first non-blank character of the line.</td>
-</tr>
+cursorLineBegin
+: **0**/**Home**
 
-<tr>
-<td><kbd>&dollar;</kbd>/<kbd>End</kbd></td>
-<td>`cursorLineEnd`</td>
-<td>Move the cursor to the last cell of the line.</td>
-</tr>
+: Move the cursor to the first cell of the line.
 
-<tr>
-<td><kbd>w</kbd>, <kbd>W</kbd></td>
-<td>`cursorNextWord`, `cursorNextViWord`, `cursorNextBigWord`</td>
-<td>Move the cursor to the beginning of the nth next [word](#word-types).</td>
-</tr>
+cursorLineTextStart
+: **^**
 
-<tr>
-<td>None</td>
-<td>`cursorPrevWord`, `cursorPrevViWord`, `cursorPrevBigWord`</td>
-<td>Move the cursor to the end of the nth previous [word](#word-types).</td>
-</tr>
+: Move the cursor to the first non-blank character of the line.
 
-<tr>
-<td><kbd>e</kbd>, <kbd>E</kbd></td>
-<td>`cursorWordEnd`, `cursorViWordEnd`, `cursorBigWordEnd`</td>
-<td>Move the cursor to the end of the current [word](#word-types), or if already
-there, to the end of the nth next word.</td>
-</tr>
+cursorLineEnd
+: **&dollar;**/**End**
 
-<tr>
-<td><kbd>b</kbd>, <kbd>B</kbd></td>
-<td>`cursorWordBegin`, `cursorViWordBegin`, `cursorBigWordBegin`</td>
-<td>Move the cursor to the beginning of the current [word](#word-types), or if
-already there, to the end of the nth previous word.</td>
-</tr>
+: Move the cursor to the last cell of the line.
 
-<tr>
-<td><kbd>[</kbd>, <kbd>]</kbd></td>
-<td>`cursorPrevLink`, `cursorNextLink`</td>
-<td>Move the cursor to the end/beginning of the previous/next clickable
-element (e.g. link, input field, etc).</td>
-</tr>
+cursorNextWord, cursorNextViWord, cursorNextBigWord
+: **w**, **W**
 
-<tr>
-<td><kbd>{</kbd>, <kbd>}</kbd></td>
-<td>`cursorPrevParagraph`, `cursorNextParagraph`</td>
-<td>Move the cursor to the end/beginning of the nth previous/next
-paragraph.</td>
-</tr>
+: Move the cursor to the beginning of the nth next [word](#word-types).
 
-<tr>
-<td>None</td>
-<td>`cursorRevNthLink`</td>
-<td>Move the cursor to the nth link of the document, counting backwards
-from the document's last line.</td>
-</tr>
+cursorPrevWord, cursorPrevViWord, cursorPrevBigWord
 
-<tr>
-<td>None</td>
-<td>`cursorNthLink`</td>
-<td>Move the cursor to the nth link of the document.</td>
-</tr>
+: Move the cursor to the end of the nth previous [word](#word-types).
 
-<tr>
-<td><kbd>C-b</kbd>/<kbd>PageUp</kbd>, <kbd>C-f</kbd>/<kbd>PageDown</kbd>,
-<kbd>z H</kbd>, <kbd>z L</kbd></td>
-<td>`pageUp`, `pageDown`, `pageLeft`, `pageRight`</td>
-<td>Scroll up/down/left/right by n pages, or if n is unspecified, by one
-page.</td>
-</tr>
+cursorWordEnd, cursorViWordEnd, cursorBigWordEnd
+: **e**, **E**
 
-<tr>
-<td><kbd>C-u</kbd>, <kbd>C-d</kbd></td>
-<td>`halfPageUp`, `halfPageDown`, `halfPageLeft`, `halfPageUp`</td>
-<td>Scroll up/down/left/right by n half pages, or if n is unspecified, by one
-page.</td>
-</tr>
+: Move the cursor to the end of the current [word](#word-types), or if
+already there, to the end of the nth next word.
 
-<tr>
-<td><kbd>K</kbd>/<kbd>C-y</kbd>, <kbd>J</kbd>/<kbd>C-e</kbd>, <kbd>z h</kbd>,
-<kbd>z l</kbd></td>
-<td>`scrollUp`, `scrollDown`, `scrollLeft`, `scrollRight`</td>
-<td>Scroll up/down/left/right by n lines, or if n is unspecified, by one
-line.</td>
-</tr>
+cursorWordBegin, cursorViWordBegin, cursorBigWordBegin
+: **b**, **B**
 
-<tr>
-<td><kbd>RET</kbd>/<kbd>LF</kbd></td>
-<td>`click`</td>
-<td>Click the HTML element currently under the cursor.  n specifies the
-number of clicks in JS events.</td>
-</tr>
+: Move the cursor to the beginning of the current [word](#word-types),
+or if already there, to the end of the nth previous word.
 
-<tr>
-<td><kbd>c</kbd></td>
-<td>`rightClick`</td>
-<td>Send a right click to the buffer.  If it doesn't catch the event
-(i.e. no JS context menu is shown), toggle the menu instead.</td>
-</tr>
+cursorPrevLink, cursorNextLink
+: **[**, **]**
 
-<tr>
-<td><kbd>C</kbd></td>
-<td>`toggleMenu`</td>
-<td>Toggle the menu.</td>
-</tr>
+: Move the cursor to the end/beginning of the previous/next clickable
+element (e.g. link, input field, etc).
 
-<tr>
-<td><kbd>I</kbd></td>
-<td>`viewImage`</td>
-<td>View the image currently under the cursor in an external
-viewer.</td>
-</tr>
+cursorPrevParagraph, cursorNextParagraph
+: **{**, **}**
 
-<tr>
-<td><kbd>R</kbd></td>
-<td>`reshape`</td>
-<td>Reshape the current buffer (=render the current page anew.) Useful
-if the layout is not updating even though it should have.</td>
-</tr>
+: Move the cursor to the end/beginning of the nth previous/next paragraph.
 
-<tr>
-<td><kbd>r</kbd></td>
-<td>`redraw`</td>
-<td>Redraw screen contents. Useful if something messed up the display.</td>
-</tr>
+cursorRevNthLink
 
-<tr>
-<td>None (see gotoLineOrStart/End instead)</td>
-<td>`cursorFirstLine`, `cursorLastLine`</td>
-<td>Move to the beginning/end in the buffer.</td>
-</tr>
+: Move the cursor to the nth link of the document, counting backwards from
+the document's last line.
 
-<tr>
-<td><kbd>H</kbd>, <kbd>M</kbd>, <kbd>L</kbd></td>
-<td>`cursorTop`, `cursorMiddle`, `cursorBottom`</td>
-<td>Move to the first line/line in the middle of/last line on the screen.
-(Equivalent to `H`, `M`, `L` in vi.)</td>
-</tr>
+cursorNthLink
 
-<tr>
-<td><kbd>z t</kbd>, <kbd>z RET</kbd>, <kbd>z z</kbd>, <kbd>z .</kbd>,
-<kbd>z b</kbd>, <kbd>z -</kbd></td>
-<td>`raisePage`, `raisePageBegin`, `centerLine`, `centerLineBegin`,
-`lowerPage`, `lowerPageBegin`</td>
-<td>If n is specified, move cursor to line n. Then,
+: Move the cursor to the nth link of the document.
 
-* `raisePage` scrolls down so that the cursor is on the top line of the screen.
-  (vi `z RET`, vim `z t`.)
-* `centerLine` shifts the screen so that the cursor is in the middle of the
-  screen. (vi `z .`, vim `z z`.)
-* `lowerPage` scrolls up so that the cursor is on the bottom line of the screen.
-  (vi `z -`, vim `z b`.)
+pageUp, pageDown, pageLeft, pageRight
+: **C-b**/**PageUp**, **C-f**/**PageDown**, **z H**, **z L**
 
-The -`Begin` variants also move the cursor to the line's first non-blank
-character, as the variants originating from vi do.
-</td>
-</tr>
+: Scroll up/down/left/right by n pages, or if n is unspecified, by one
+page.
 
-<tr>
-<td><kbd>z +</kbd></td>
-<td>`nextPageBegin`</td>
-<td>If n is specified, move to the screen before the nth line and raise
-the page.  Otherwise, go to the next screen's first line and raise the
-page.</td>
-</tr>
+halfPageUp, halfPageDown, halfPageLeft, halfPageUp
+: **C-u**, **C-d**
 
-<tr>
-<td><kbd>z ^</kbd></td>
-<td>`previousPageBegin`</td>
-<td>If n is specified, move to the screen before the nth line and lower
-the page.  Otherwise, go to the previous screen's last line and lower the
-page.</td>
-</tr>
+: Scroll up/down/left/right by n half pages, or if n is unspecified, by
+one page.
 
-<tr>
-<td><kbd>g 0</kbd>, <kbd>g c</kbd>, <kbd>g $</kbd></td>
-<td>`cursorLeftEdge`, `cursorMiddleColumn`, `cursorRightEdge`</td>
-<td>Move to the first/middle/last column on the screen.</td>
-</tr>
+scrollUp, scrollDown, scrollLeft, scrollRight
+: **K**/**C-y**, **J**/**C-e**, **z h**, **z l**
 
-<tr>
-<td>None</td>
-<td>`centerColumn`</td>
-<td>Center screen around the current column. (w3m `Z`.)</td>
-</tr>
+: Scroll up/down/left/right by n lines, or if n is unspecified, by one
+line.
 
-<tr>
-<td><kbd>g g</kbd>, <kbd>G</kbd></td>
-<td>`gotoLineOrStart`, `gotoLineOrEnd`</td>
-<td>If n is specified, jump to line n. Otherwise, jump to the start/end of the
-page.</td>
-</tr>
+click
+: **RET**/**LF**
 
-<tr>
-<td><kbd>&vert;</kbd>, None</td>
-<td>`gotoColumnOrBegin`, `gotoColumnOrEnd`</td>
-<td>If n is specified, jump to column n of the current line.
-Otherwise, jump to the first/last column.</td>
-</tr>
+: Click the HTML element currently under the cursor.  n specifies the
+number of clicks in JS events.
 
-<tr>
-<td><kbd>m</kbd></td>
-<td>`mark`</td>
-<td>Wait for a character `x` and then set a mark with the ID `x`.</td>
-</tr>
+rightClick
+: **c**
 
-<tr>
-<td><kbd>&grave;</kbd>, <kbd>'</kbd></td>
-<td>`gotoMark`, `gotoMarkY`</td>
-<td>Wait for a character `x` and then jump to the mark with the ID `x` (if it
+: Send a right click to the buffer.  If it doesn't catch the event (i.e. no
+JS context menu is shown), toggle the menu instead.
+
+toggleMenu
+: **C**
+
+: Toggle the menu.
+
+viewImage
+: **I**
+
+: View the image currently under the cursor in an external viewer.
+
+reshape
+: **R**
+
+: Reshape the current buffer (=render the current page anew).  Useful if
+the layout is not updating even though it should have.
+
+redraw
+: **r**
+
+: Redraw screen contents.  Useful if something messed up the display.
+
+cursorFirstLine, cursorLastLine
+
+: Move to the beginning/end in the buffer.
+
+cursorTop, cursorMiddle, cursorBottom
+: **H**, **M**, **L**
+
+: Move to the first line/line in the middle of/last line on the screen.
+(Equivalent to `H`, `M`, `L` in vi.)
+
+raisePage, raisePageBegin, centerLine, centerLineBegin, lowerPage, lowerPageBegin
+: **z t**, **z RET**, **z z**, **z .**, **z b**, **z -**
+
+: If n is specified, move cursor to line n. Then,
+
+    * `raisePage` scrolls down so that the cursor is on the top line of
+      the screen.  (vi `z RET`, vim `z t`.)
+    * `centerLine` shifts the screen so that the cursor is in the middle
+      of the screen. (vi `z .`, vim `z z`.)
+    * `lowerPage` scrolls up so that the cursor is on the bottom line of
+      the screen.  (vi `z -`, vim `z b`.)
+
+    The -Begin variants also move the cursor to the line's first
+    non-blank character, as the original keybindings in vi do.
+
+nextPageBegin
+: **z +**
+
+: If n is specified, move to the screen before the nth line and raise the
+page.  Otherwise, go to the next screen's first line and raise the page.
+
+previousPageBegin
+: **z ^**
+
+: If n is specified, move to the screen before the nth line and lower the
+page.  Otherwise, go to the previous screen's last line and lower the page.
+
+cursorLeftEdge, cursorMiddleColumn, cursorRightEdge
+: **g 0**, **g c**, **g $**
+
+: Move to the first/middle/last column on the screen.
+
+centerColumn
+
+: Center screen around the current column.  (w3m `Z`.)
+
+gotoLineOrStart, gotoLineOrEnd
+: **g g**, **G**
+
+: If n is specified, jump to line n.  Otherwise, jump to the start/end
+of the page.
+
+gotoColumnOrBegin, gotoColumnOrEnd
+: **&vert;**
+
+: If n is specified, jump to column n of the current line.  Otherwise, jump
+to the first/last column.
+
+mark
+: **m**
+
+: Wait for a character `x` and then set a mark with the ID `x`.
+
+gotoMark, gotoMarkY
+: **&grave;**, **'**
+
+: Wait for a character `x` and then jump to the mark with the ID `x` (if it
 exists on the page).
-<p>
-`gotoMark` sets both the X and Y positions; gotoMarkY only sets the Y
-position.</td>
-</tr>
 
-<tr>
-<td><kbd>:</kbd></td>
-<td>`markURL`</td>
-<td>Convert URL-like strings to anchors on the current page.</td>
-</tr>
+  `gotoMark` sets both the X and Y positions; gotoMarkY only sets the Y
+  position.
 
-<tr>
-<td><kbd>s RET</kbd></td>
-<td>`saveLink`</td>
-<td>Save resource from the URL pointed to by the cursor to the disk.</td>
-</tr>
+markURL
+: **:**
 
-<tr>
-<td><kbd>s S</kbd></td>
-<td>`saveSource`</td>
-<td>Save the source of the current buffer to the disk.</td>
-</tr>
+: Convert URL-like strings to anchors on the current page.
 
-<tr>
-<td><kbd>s I</kbd></td>
-<td>`saveImage`</td>
-<td>Save the image currently under the cursor.</td>
-</tr>
+saveLink
+: **s RET**
 
-<tr>
-<td><kbd>M-i</kbd></td>
-<td>`toggleImages`</td>
-<td>Toggle display of images in the current buffer.</td>
-</tr>
+: Save resource from the URL pointed to by the cursor to the disk.
 
-<tr>
-<td><kbd>M-j</kbd></td>
-<td>`toggleScripting`</td>
-<td>Reload the current buffer with scripting enabled/disabled.</td>
-</tr>
+saveSource
+: **s S**
 
-<tr>
-<td><kbd>M-k</kbd></td>
-<td>`toggleCookie`</td>
-<td>Reload the current buffer with cookies enabled/disabled.</td>
-</tr>
+: Save the source of the current buffer to the disk.
 
-<tr>
-<td><kbd>C-a</kbd>, <kbd>\*</kbd></td>
-<td>`cursorSearchWordForward`</td>
-<td>Search for the word currently under the cursor.</td>
-</tr>
+saveImage
+: **s I**
 
-<tr>
-<td><kbd>#</kbd></td>
-<td>`cursorSearchWordBackward`</td>
-<td>Search for the word currently under the cursor, backwards.</td>
-</tr>
+: Save the image currently under the cursor.
 
-</table>
+toggleImages
+: **M-i**
 
+: Toggle display of images in the current buffer.
+
+toggleScripting
+: **M-j**
+
+: Reload the current buffer with scripting enabled/disabled.
+
+toggleCookie
+: **M-k**
+
+: Reload the current buffer with cookies enabled/disabled.
+
+cursorSearchWordForward
+: **C-a**, **\***
+
+: Search for the word currently under the cursor.
+
+cursorSearchWordBackward
+: **#**
+
+: Search for the word currently under the cursor, backwards.
 
 ### Line-editing actions
 
-<table border>
-<col width=20%><col width=30%><col width=50%>
+line.submit
+: **RET**, **LF**
 
-<tr>
-<th>Default key</th>
-<th>Name</th>
-<th>Function</th>
-</tr>
+: Submit the line.
 
-<tr>
-<td><kbd>RET</kbd>, <kbd>LF</kbd></td>
-<td>`line.submit`</td>
-<td>Submit the line.</td>
-</tr>
+line.cancel
+: **C-c**
 
-<tr>
-<td><kbd>C-c</kbd></td>
-<td>`line.cancel`</td>
-<td>Cancel the current operation.</td>
-</tr>
+: Cancel the current operation.
 
-<tr>
-<td><kbd>C-h</kbd>, <kbd>C-d</kbd></td>
-<td>`line.backspace`, `line.delete`</td>
-<td>Delete character before (backspace)/after (delete) the cursor.</td>
-</tr>
+line.backspace, line.delete
+: **C-h**, **C-d**
 
-<tr>
-<td><kbd>C-u</kbd>/<kbd>C-x C-?</kbd>, <kbd>C-k</kbd></td>
-<td>`line.clear`, `line.kill`</td>
-<td>Delete text before (clear)/after (kill) the cursor.</td>
-</tr>
+: Delete character before (backspace)/after (delete) the cursor.
 
-<tr>
-<td><kbd>C-x C-e</kbd></td>
-<td>`line.openEditor`</td>
-<td>Open the line editor's contents in `$EDITOR`.</td>
-</tr>
+line.clear, line.kill
+: **C-u**/**C-x C-?**, **C-k**
 
-<tr>
-<td><kbd>C-w</kbd>, <kbd>M-d</kbd></td>
-<td>`line.clearWord`, `line.killWord`</td>
-<td>Delete word before (clear)/after (kill) the cursor.</td>
-</tr>
+: Delete text before (clear)/after (kill) the cursor.
 
-<tr>
-<td><kbd>C-b</kbd>, <kbd>C-f</kbd></td>
-<td>`line.backward`, `line.forward`</td>
-<td>Move cursor backward/forward by one character.</td>
-</tr>
+line.openEditor
+: **C-x C-e**
 
-<tr>
-<td><kbd>M-b</kbd>, <kbd>M-f</kbd></td>
-<td>`line.prevWord`, `line.nextWord`</td>
-<td>Move cursor to the previous/next word by one character</td>
-</tr>
+: Open the line editor's contents in $EDITOR.
 
-<tr>
-<td><kbd>C-a</kbd>/<kbd>Home</kbd>, <kbd>C-e</kbd>/<kbd>End</kbd></td>
-<td>`line.begin`, `line.end`</td>
-<td>Move cursor to the beginning/end of the line.</td>
-</tr>
+line.clearWord, line.killWord
+: **C-w**, **M-d**
 
-<tr>
-<td><kbd>C-v</kbd></td>
-<td>`line.escape`</td>
-<td>Ignore keybindings for next character.</td>
-</tr>
+: Delete word before (clear)/after (kill) the cursor.
 
-<tr>
-<td><kbd>C-p</kbd>, <kbd>C-n</kbd></td>
-<td>`line.prevHist`, `line.nextHist`</td>
-<td>Jump to the previous/next history entry</td>
-</tr>
+line.backward, line.forward
+: **C-b**, **C-f**
 
-</table>
+: Move cursor backward/forward by one character.
+
+line.prevWord, line.nextWord
+: **M-b**, **M-f**
+
+: Move cursor to the previous/next word by one character
+
+line.begin, line.end
+: **C-a**/**Home**, **C-e**/**End**
+
+: Move cursor to the beginning/end of the line.
+
+line.escape
+: **C-v**
+
+: Ignore keybindings for next character.
+
+line.prevHist, line.nextHist
+: **C-p**, **C-n**
+
+: Jump to the previous/next history entry
 
 Note: to facilitate URL editing, the line editor has a different definition
 of what a word is than the pager. For the line editor, a word is either a
@@ -1908,10 +1467,9 @@ from QuickJS.  This means that all regular expressions work as in
 JavaScript.
 
 There are two different modes of regex preprocessing in Chawan: "search"
-mode and "match" mode.  Match mode is used for configurations (meaning
-in all values in this document described as "regex").  Search mode is
-used for the on-page search function (using searchForward/isearchForward
-etc.)
+mode and "match" mode.  Match mode is used for configurations (meaning in
+all values in this document described as "regex").  Search mode is used for
+the on-page search function (using searchForward/isearchForward etc.)
 
 #### Match mode
 
