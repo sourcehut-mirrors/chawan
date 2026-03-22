@@ -66,6 +66,7 @@
 #max-redirect = 10
 #max-net-connections = 12
 #prepend-scheme = "https://"
+#proxy = ""
 #default-headers = {
 #	User-Agent = "chawan",
 #	Accept = "text/html, text/*;q=0.5, */*;q=0.4",

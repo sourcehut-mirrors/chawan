@@ -1657,9 +1657,12 @@ proc parseHeaders(cp: var ConfigParser; x: var ConfigHeadersInit): Opt[void] =
 
 proc parseURL(cp: var ConfigParser; x: var URL): Opt[void] =
   ?cp.typeCheck(ttString)
-  x = parseURL0(cp.buf)
-  if x == nil:
-    return cp.err("invalid URL " & cp.buf)
+  if cp.buf == "":
+    x = nil
+  else:
+    x = parseURL0(cp.buf)
+    if x == nil:
+      return cp.err("invalid URL " & cp.buf)
   ok()
 
 proc parseRegex(cp: var ConfigParser; x: var Regex): Opt[void] =
