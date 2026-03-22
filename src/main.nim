@@ -278,7 +278,7 @@ proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int): ForkServer =
     die("failed to fork fork the server process")
   elif pid == 0:
     # child process
-    discard setsid()
+    discard setpgid(0, 0)
     closeStdin()
     closeStdout()
     westream.moveFd(STDERR_FILENO)
@@ -297,7 +297,12 @@ proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int): ForkServer =
     let estream = newPosixStream(pipeFdErr[0])
     estream.setCloseOnExec()
     estream.setBlocking(false)
-    return ForkServer(stream: stream, estream: estream, westream: westream)
+    return ForkServer(
+      pid: pid,
+      stream: stream,
+      estream: estream,
+      westream: westream
+    )
 
 proc setupStartupScript(ctx: JSContext; script: string) =
   let path = ChaPath("$CHA_LIBEXEC_DIR/" & script).unquoteGet()

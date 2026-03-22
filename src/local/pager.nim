@@ -1845,7 +1845,9 @@ proc jsQuit(ctx: JSContext; pager: Pager; code = 0): JSValue {.
 proc suspend(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
   if pager.term.quit().isErr:
     return ctx.jsQuit(pager, 1)
+  discard kill(-pager.forkserver.pid, cint(SIGTSTP))
   discard kill(0, cint(SIGTSTP))
+  discard kill(-pager.forkserver.pid, cint(SIGCONT))
   discard pager.term.restart() #TODO
   return JS_UNDEFINED
 

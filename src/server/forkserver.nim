@@ -28,6 +28,7 @@ import utils/twtstr
 
 type
   ForkServer* = object
+    pid*: Pid
     stream*: PosixStream
     estream*: PosixStream
     westream*: PosixStream
