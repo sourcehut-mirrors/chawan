@@ -11,8 +11,10 @@ type
     bsNone, bsInBracket
 
   BlockType = enum
-    btNone, btPar, btTableHeader, btTableBody, btList, btPre, btTabPre,
-    btSpacePre, btBlockquote, btHTML, btHTMLPre, btComment, btLinkDef
+    btNone, btPar, btParBlank, btTableHeader, btTableBody, btList, btPre,
+    btTabPre, btSpacePre, btBlockquote, btHTML, btHTMLPre, btComment,
+    btLinkDef, btDefinition, btDefinitionPar, btDefinitionIndent,
+    btDefinitionBlank
 
   ListState = enum
     lsNormal, lsAfterBlank, lsLastLine
@@ -37,15 +39,17 @@ type
   ParseState = object
     ofile: ChaFile
     blockData: string
+    line: string # current line to be processed
     lists: seq[List]
-    numPreLines: int
+    numBlockLines: int
+    numTableCells: int
+    numDLSpaces: int
     linkDefIdx: int
     linkDefName: string
     linkDefLink: string
     refMap: TableRef[string, tuple[link, title: string]]
     slurpBuf: string
     slurpIdx: int
-    numTableCells: int
     reprocess: bool
     hasp: bool
     skipp: bool
@@ -77,8 +81,15 @@ proc writeLine(state: ParseState; s: openArray[char]): Opt[void] =
   ok()
 
 proc slurp(state: var ParseState): Opt[void] =
+  if state.slurpIdx != -1:
+    return ok()
   var state2 = ParseState(slurpIdx: -2, ofile: nil, refMap: state.refMap)
-  ?state2.parse()
+  if state.reprocess:
+    state2.reprocess = true
+    state2.line = state.line
+    ?state2.parse()
+  else:
+    ?state2.parse()
   state.slurpBuf = move(state2.slurpBuf)
   state.slurpIdx = 0
   return ok()
@@ -285,8 +296,7 @@ proc parseLink(ctx: var ParseInlineContext; line: string;
   if i >= line.len:
     return ctx.parseLinkBail(i, state)
   if (let c = line[i]; c != '('):
-    if state.slurpIdx == -1:
-      ?state.slurp()
+    ?state.slurp()
     if c == '[':
       let j = line.find(']', i + 1)
       if j == -1:
@@ -364,8 +374,7 @@ proc parseImage(ctx: var ParseInlineContext; line: string;
   inc i
   let c = line[i]
   if c == '[':
-    if state.slurpIdx == -1:
-      ?state.slurp()
+    ?state.slurp()
     let j = line.find(']', i + 1)
     if j == -1:
       return ctx.append("!", state)
@@ -573,15 +582,35 @@ proc countTableCells(line: string; i: int): int =
     return 0
   return n
 
+proc closeP(state: var ParseState): Opt[void] =
+  if state.hasp:
+    state.hasp = false
+    return state.write("</P>")
+  ok()
+
+# called after ": " or "~ " is seen.
+# par should be set when calling after blank line
+proc openDD(state: var ParseState; line: string; par: bool): Opt[void] =
+  state.blockType = if par: btDefinitionPar else: btDefinition
+  if line[0] == '\t':
+    state.blockData = line.substr(2) & '\n'
+    # pandoc thinks a tab stop is 4 spaces
+    state.numDLSpaces = 4
+  else:
+    var i = line.find(AllChars - {' '}, 1)
+    if i < 0:
+      i = line.high
+    state.blockData = line.substr(i) & '\n'
+    state.numDLSpaces = i
+  return state.write("<DD>")
+
 proc parseNone(state: var ParseState; line: string): Opt[void] =
   let i = line.skipBlanks(0)
   if i == line.len:
     return ok()
   let c0 = line[0]
   if (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
-    if state.hasp:
-      state.hasp = false
-      ?state.write("</P>")
+    ?state.closeP()
     let L = n + 1
     var H = line.rfind(AllChars - {'#'})
     if H != -1 and line[H] == ' ':
@@ -609,23 +638,17 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.reprocess = true
   elif c0 == '\t':
     state.blockType = btTabPre
-    if state.hasp:
-      state.hasp = false
-      ?state.writeLine("</P>")
+    ?state.closeP()
     ?state.write("<PRE>")
     ?state.writeLine(line.substr(1))
   elif line.startsWith("    "):
     state.blockType = btSpacePre
-    if state.hasp:
-      state.hasp = false
-      ?state.writeLine("</P>")
+    ?state.closeP()
     ?state.write("<PRE>")
     ?state.writeLine(line.substr(4))
   elif c0 == '>':
     state.blockType = btBlockquote
-    if state.hasp:
-      state.hasp = false
-      ?state.writeLine("</P>")
+    ?state.closeP()
     let i = if line.len < 2 or line[1] != ' ': 1 else: 2
     state.blockData = line.substr(i) & "\n"
     ?state.write("<BLOCKQUOTE>")
@@ -645,6 +668,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.numTableCells = n
   else:
     state.blockType = btPar
+    state.numBlockLines = 0
     state.reprocess = true
   ok()
 
@@ -667,17 +691,20 @@ proc flushPar(state: var ParseState): Opt[void] =
     state.blockData = ""
   ok()
 
-proc flushList(state: var ParseState): Opt[void] =
-  if state.lists[^1].par and state.blockData != "":
-    ?state.writeLine("<P>")
+proc reparseBlockData(state: var ParseState; skipp: bool): Opt[void] =
   var state2 = ParseState(
     slurpIdx: 0,
     ofile: state.ofile,
     refMap: state.refMap,
     slurpBuf: move(state.blockData),
-    skipp: true
+    skipp: skipp
   )
-  ?state2.parse()
+  state2.parse()
+
+proc flushList(state: var ParseState): Opt[void] =
+  if state.lists[^1].par and state.blockData != "":
+    ?state.writeLine("<P>")
+  ?state.reparseBlockData(skipp = true)
   while state.lists.len > 0:
     ?state.popList()
   state.blockType = btNone
@@ -703,13 +730,7 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
       else:
         if state.listState == lsAfterBlank:
           state.lists[^1].par = true
-          var state2 = ParseState(
-            slurpIdx: 0,
-            ofile: state.ofile,
-            refMap: state.refMap,
-            slurpBuf: move(state.blockData)
-          )
-          ?state2.parse()
+          ?state.reparseBlockData(skipp = false)
           while desc.depth < state.lists[^1].depth:
             ?state.popList()
         state.blockData &= line.substr(desc.len) & '\n'
@@ -718,14 +739,7 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
         state.lists[^1].par = true
       if state.lists[^1].par:
         ?state.writeLine("<P>")
-      var state2 = ParseState(
-        slurpIdx: 0,
-        ofile: state.ofile,
-        refMap: state.refMap,
-        slurpBuf: move(state.blockData),
-        skipp: true
-      )
-      ?state2.parse()
+      ?state.reparseBlockData(skipp = true)
       while state.lists.len > 1 and (desc.depth < state.lists[^1].depth or
           desc.depth == state.lists[^1].depth and desc.t != state.lists[^1].t):
         ?state.popList()
@@ -740,10 +754,17 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
     state.listState = lsNormal
   ok()
 
+const DLStart = {':', '~'}
+
+proc startsDD(line: string): bool =
+  line.len >= 2 and line[0] in DLStart and line[1] in {' ', '\t'}
+
 proc parsePar(state: var ParseState; line: string): Opt[void] =
   if line == "":
-    ?state.flushPar()
-    state.blockType = btNone
+    if state.numBlockLines != 1 or false:
+      state.blockType = btNone
+      return state.flushPar()
+    state.blockType = btParBlank
     return ok()
   let c0 = line[0]
   if c0 == '<' and line[^1] == '>':
@@ -753,6 +774,14 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
     else:
       state.blockType = btHTML
     state.reprocess = true
+  elif state.numBlockLines == 1 and line.startsDD():
+    # DL closes P
+    state.hasp = false
+    ?state.write("<DL>")
+    if state.blockData != "":
+      ?state.write("<DT>")
+      ?state.parseInline(state.blockData)
+    ?state.openDD(line, par = false)
   elif line.startsWith("```") or line.startsWith("~~~"):
     ?state.flushPar()
     state.blockData = line.substr(0, 2)
@@ -784,7 +813,68 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
       state.blockData = line & '\n'
   else:
     state.blockData &= line & '\n'
+  inc state.numBlockLines
   ok()
+
+proc parseParBlank(state: var ParseState; line: string): Opt[void] =
+  if line.startsDD():
+    # DL closes P
+    state.hasp = false
+    ?state.write("<DL>")
+    if state.blockData != "":
+      ?state.write("<DT>")
+      ?state.flushPar()
+    return state.openDD(line, par = true)
+  state.reprocess = true
+  state.blockType = btNone
+  return state.flushPar()
+
+proc parseDefinition(state: var ParseState; line: string): Opt[void] =
+  if line.startsDD():
+    ?state.reparseBlockData(skipp = state.blockType != btDefinitionPar)
+    return state.openDD(line, par = false)
+  if AllChars - {' ', '\t'} notin line:
+    ?state.reparseBlockData(skipp = state.blockType != btDefinitionPar)
+    state.blockType = btDefinitionBlank
+    return ok()
+  state.blockData &= line & '\n'
+  ok()
+
+proc parseDefinitionIndent(state: var ParseState; line: string): Opt[void] =
+  if line.startsDD():
+    ?state.reparseBlockData(skipp = false)
+    return state.openDD(line, par = false)
+  elif AllChars - {' ', '\t'} notin line:
+    ?state.reparseBlockData(skipp = false)
+    state.blockType = btDefinitionBlank
+  elif line.startsWith("\t"):
+    state.blockData &= line.substr(1) & '\n'
+  elif line.find(AllChars - {' '}) >= state.numDLSpaces:
+    state.blockData &= line.substr(state.numDLSpaces) & '\n'
+  else:
+    state.reprocess = true
+    state.blockType = btNone
+    state.hasp = false
+    return state.write("</DL>")
+  ok()
+
+proc parseDefinitionBlank(state: var ParseState; line: string): Opt[void] =
+  if line.startsDD():
+    if state.blockData != "":
+      ?state.write("<DT>")
+      ?state.flushPar()
+    return state.openDD(line, par = true)
+  if (line.find(AllChars - {' '}) >= state.numDLSpaces or
+        line.startsWith("\t")) and
+      AllChars - {' ', '\t'} in line:
+    ?state.flushPar()
+    state.blockType = btDefinitionIndent
+    state.reprocess = true
+    return ok()
+  state.reprocess = true
+  state.blockType = btNone
+  state.hasp = false
+  return state.write("</DL>")
 
 proc parseTableHeaderBail(state: var ParseState; line: string): Opt[void] =
   var oline = move(state.blockData)
@@ -902,9 +992,7 @@ proc parseTableBody(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseHTML(state: var ParseState; line: string): Opt[void] =
-  if state.hasp:
-    state.hasp = false
-    ?state.write("</P>\n")
+  ?state.closeP()
   if AllChars - {' ', '\t'} notin line:
     ?state.parseInline(state.blockData)
     state.blockData = ""
@@ -914,9 +1002,7 @@ proc parseHTML(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseHTMLPre(state: var ParseState; line: string): Opt[void] =
-  if state.hasp:
-    state.hasp = false
-    ?state.writeLine("</P>")
+  ?state.closeP()
   if line.matchHTMLPreEnd():
     ?state.write(state.blockData)
     ?state.write(line)
@@ -928,44 +1014,37 @@ proc parseHTMLPre(state: var ParseState; line: string): Opt[void] =
 
 proc parseTabPre(state: var ParseState; line: string): Opt[void] =
   if line.len == 0:
-    inc state.numPreLines
+    inc state.numBlockLines
   elif line[0] != '\t':
-    state.numPreLines = 0
+    state.numBlockLines = 0
     ?state.write("</PRE>")
     state.reprocess = true
     state.blockType = btNone
   else:
-    while state.numPreLines > 0:
+    while state.numBlockLines > 0:
       ?state.writeLine()
-      dec state.numPreLines
+      dec state.numBlockLines
     ?state.writeLine(line.toOpenArray(1, line.high).htmlEscape())
   ok()
 
 proc parseSpacePre(state: var ParseState; line: string): Opt[void] =
   if line.len == 0:
-    inc state.numPreLines
+    inc state.numBlockLines
   elif not line.startsWith("    "):
-    state.numPreLines = 0
+    state.numBlockLines = 0
     ?state.write("</PRE>")
     state.reprocess = true
     state.blockType = btNone
   else:
-    while state.numPreLines > 0:
+    while state.numBlockLines > 0:
       ?state.writeLine()
-      dec state.numPreLines
+      dec state.numBlockLines
     ?state.writeLine(line.toOpenArray(4, line.high).htmlEscape())
   ok()
 
 proc parseBlockquote(state: var ParseState; line: string): Opt[void] =
   if line.len == 0 or line[0] != '>':
-    var state2 = ParseState(
-      slurpIdx: 0,
-      ofile: state.ofile,
-      refMap: state.refMap,
-      slurpBuf: move(state.blockData),
-      skipp: true
-    )
-    ?state2.parse()
+    ?state.reparseBlockData(skipp = true)
     ?state.write("</BLOCKQUOTE>")
     state.reprocess = true
     state.blockType = btNone
@@ -1034,7 +1113,8 @@ proc parseLinkDef(state: var ParseState; line: string): Opt[void] =
 
 proc readLine(state: var ParseState; line: var string): Opt[bool] =
   let stdin = cast[ChaFile](stdin)
-  let hadLine = line != "" or state.blockType == btList
+  let hadLine = line != "" or
+    state.blockType in {btList, btDefinitionBlank, btParBlank}
   if state.slurpIdx < 0:
     if ?stdin.readLine(line):
       if state.slurpIdx == -2:
@@ -1050,23 +1130,26 @@ proc readLine(state: var ParseState; line: var string): Opt[bool] =
   ok(hadLine) # add one last iteration with a blank after EOF
 
 proc parse(state: var ParseState): Opt[void] =
-  var line = ""
-  while state.reprocess or ?state.readLine(line):
+  while state.reprocess or ?state.readLine(state.line):
     state.reprocess = false
     case state.blockType
-    of btNone: ?state.parseNone(line)
-    of btPre: ?state.parsePre(line)
-    of btTabPre: ?state.parseTabPre(line)
-    of btSpacePre: ?state.parseSpacePre(line)
-    of btBlockquote: ?state.parseBlockquote(line)
-    of btList: ?state.parseList(line)
-    of btPar: ?state.parsePar(line)
-    of btTableHeader: ?state.parseTableHeader(line)
-    of btTableBody: ?state.parseTableBody(line)
-    of btHTML: ?state.parseHTML(line)
-    of btHTMLPre: ?state.parseHTMLPre(line)
-    of btComment: ?state.parseComment(line)
-    of btLinkDef: ?state.parseLinkDef(line)
+    of btNone: ?state.parseNone(state.line)
+    of btPre: ?state.parsePre(state.line)
+    of btTabPre: ?state.parseTabPre(state.line)
+    of btSpacePre: ?state.parseSpacePre(state.line)
+    of btBlockquote: ?state.parseBlockquote(state.line)
+    of btList: ?state.parseList(state.line)
+    of btPar: ?state.parsePar(state.line)
+    of btParBlank: ?state.parseParBlank(state.line)
+    of btDefinition, btDefinitionPar: ?state.parseDefinition(state.line)
+    of btDefinitionIndent: ?state.parseDefinitionIndent(state.line)
+    of btDefinitionBlank: ?state.parseDefinitionBlank(state.line)
+    of btTableHeader: ?state.parseTableHeader(state.line)
+    of btTableBody: ?state.parseTableBody(state.line)
+    of btHTML: ?state.parseHTML(state.line)
+    of btHTMLPre: ?state.parseHTMLPre(state.line)
+    of btComment: ?state.parseComment(state.line)
+    of btLinkDef: ?state.parseLinkDef(state.line)
   ok()
 
 proc main*() =
