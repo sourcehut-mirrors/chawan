@@ -581,7 +581,6 @@ proc resolveBlockSpace(lctx: LayoutContext; input: var LayoutInput;
     let underflow = psc.u - input.margin[dim].sum() - paddingSum -
       input.borderSum(dim, lctx)
     sc = stretch(max(underflow, 0'lu))
-    input.margin[dim].send = -min(underflow, 0'lu)
   let minu = input.bounds.a[dim].start
   let maxu = input.bounds.a[dim].send
   if sc.isDefinite() and maxu < sc.u or
@@ -621,17 +620,6 @@ proc resolveBlockSizes(lctx: LayoutContext; space: Space; box: BlockBox):
     for dim in DimensionType:
       input.space[dim] = lctx.resolveBlockSpace(input, dim, space[dim],
         paddingSum[dim], computed)
-  if input.space.w.isDefinite() and space.w.t == scStretch:
-    let dim = dtHorizontal
-    let underflow = space.w.u - input.space.w.u - input.margin[dim].sum() -
-      paddingSum[dim] - input.borderSum(dim, lctx)
-    if underflow > 0'lu and computed{"margin-left"}.auto:
-      if computed{"margin-right"}.auto:
-        let underflow = underflow div 2'lu
-        input.margin[dim].start = underflow
-        input.margin[dim].send = underflow
-      else:
-        input.margin[dim].start = underflow
   if computed{"display"} == DisplayListItem:
     # Eliminate distracting margins and padding here, because
     # resolveBlockWidth may change them beforehand.
@@ -1747,6 +1735,21 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
     fstate.lbstate.pendingFloatsTail = f
   fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
 
+proc resolveAutoMarginStart(lctx: LayoutContext; input: LayoutInput;
+    parentSpace: LUnit; child: BlockBox; dim: DimensionType): LUnit =
+  let start = child.computed.getLength(MarginStartMap[dim])
+  # need to subtract margin end too to get the true outer size
+  let underflow = parentSpace - child.state.size[dim] -
+    input.margin[dim].send - input.borderSum(dim, lctx) -
+    child.state.offset[dim]
+  if underflow > 0'lu and start.auto:
+    let send = child.computed.getLength(MarginEndMap[dim])
+    if not send.auto:
+      return underflow
+    else:
+      return underflow div 2'lu
+  return 0'lu
+
 # Outer layout for block-level children.
 proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   fstate.finishLine(fstate.lastTextBox, wrap = false)
@@ -1863,11 +1866,17 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
       fstate.box.state.baselineSet = true
     fstate.box.state.baseline = child.state.offset.y + child.state.baseline
   if fstate.space.w.t == scStretch:
-    if fstate.textAlign == TextAlignChaCenter:
+    if child.computed{"margin-left"}.auto or
+        child.computed{"margin-right"}.auto:
+      # auto margin seems to have precedence over center
+      let underflow = lctx.resolveAutoMarginStart(input, space.w.u, child,
+        dtHorizontal)
+      child.state.offset.x += underflow
+    elif fstate.textAlign == TextAlignChaCenter:
       child.state.offset.x += max(space.w.u div 2'lu -
-        child.state.size.w div 2'lu, 0'lu)
+        outerSize.w div 2'lu, 0'lu)
     elif fstate.textAlign == TextAlignChaRight:
-      child.state.offset.x += max(space.w.u - child.state.size.w -
+      child.state.offset.x += max(space.w.u - outerSize.w -
         input.margin.right, 0'lu)
   if child.computed{"position"} == PositionRelative:
     fstate.lctx.positionRelative(fstate.space, child)
@@ -2999,19 +3008,8 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     it.child.state.offset[dim] += offset[dim]
     # resolve auto cross margins for shrink-to-fit items
     if input.space[odim].t == scStretch:
-      let start = it.child.computed.getLength(MarginStartMap[odim])
-      let send = it.child.computed.getLength(MarginEndMap[odim])
-      # We can get by without adding offset, because flex items are
-      # always layouted at (0, 0).
-      let underflow = input.space[odim].u - it.child.state.size[odim] -
-        it.input.margin[odim].sum() - oborder
-      if underflow > 0'lu and start.auto:
-        # we don't really care about the end margin, because that is
-        # already taken into account by Space
-        if not send.auto:
-          it.input.margin[odim].start = underflow
-        else:
-          it.input.margin[odim].start = underflow div 2'lu
+      it.input.margin[odim].start += lctx.resolveAutoMarginStart(it.input,
+        input.space[odim].u, it.child, odim)
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] + it.input.margin[odim].start
     offset[dim] += it.child.state.size[dim]
