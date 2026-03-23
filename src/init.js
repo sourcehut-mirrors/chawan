@@ -1711,7 +1711,7 @@ const ReTextStart = /\S/gu;
             let buf = config.external.downloadDir;
             if (buf.at(-1) != '/')
                 buf += '/';
-            const path = this.init.url.pathname;
+            let path = this.init.url.pathname;
             if (path.at(-1) == '/')
                 buf += "index.html";
             else
@@ -1727,7 +1727,7 @@ const ReTextStart = /\S/gu;
                 });
                 if (text == null)
                     return this.init.closeMailcap();
-                const path = Util.unquote(text, Util.getcwd());
+                path = Util.unquote(text, Util.getcwd());
                 if (path != null) {
                     if (Util.isFile(path)) {
                         const x = await pager.ask(`Override file ${path}?`);
@@ -1751,7 +1751,8 @@ const ReTextStart = /\S/gu;
                 if (downloads != null && old != null)
                     pager.setBuffer(downloads);
                 pager.pinned.downloads = downloads;
-            }
+            } else
+                pager.alert("Saving file to " + path);
             break;
         } case "mailcap": {
             const init = this.init;

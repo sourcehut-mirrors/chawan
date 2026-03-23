@@ -1753,7 +1753,6 @@ proc addConsole2(pager: Pager; interactive: bool) =
 proc saveTo(pager: Pager; init: BufferInit; path: string): bool
     {.jsfunc.} =
   if pager.loader.redirectToFile(init.istreamOutputId, path, init.url):
-    pager.alert("Saving file to " & path)
     pager.loader.resume(init.istreamOutputId)
     init.closeMailcap()
     return true
