@@ -4,11 +4,13 @@ unreleased
 * support VT420
 * support DEC special graphics in ASCII mode
 * support all VP8L indexed color transforms
+* support pandoc-style definition list in markdown
 * support color, width, align, noshade properties on HR element
 * support Element#getAttributeNames
 * add status.format-mode (sets formatting of status bar)
 * add toggleLinkHintsAutoClick command (by Arthur Jacquin)
 * add saveScreen, editScreen commands; rename sourceEdit to editSource
+* add x-type, x-match, x-nc-match mailcap extensions (from w3mmee)
 * improve keybinding format (mostly backwards-compatible; see cha-config(5))
 * remove display.force-clear (shouldn't have ever been needed)
 * remove display.query-da1 (no longer needed)
@@ -27,6 +29,7 @@ unreleased
 * fix color blending over body bgcolor
 * fix matching of nested subsequent sibling combinator
 * fix various CSS image sizing bugs
+* fix percentage calc() output in color values
 * fix inline pre/nowrap not being flushed to the next line on overflow
 * fix bugs in our libregexp UTF-8 patch
 * fix various proxy authentication bugs
@@ -38,6 +41,7 @@ unreleased
 * fix crash on calling status getter for unsent XHR
 * fix various charset decoder bugs
 * fix TypedArray handling
+* fix suspend() not suspending all processes
 
 0.3.0 (2025.11.21)
 
