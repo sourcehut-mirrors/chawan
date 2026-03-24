@@ -6021,6 +6021,7 @@ proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
     var ctx = initCSSParser(toks)
     var dummy: seq[CSSComputedEntry] = @[]
     ?ctx.parseComputedValues0(this.decls[i].p, dummyAttrs, dummy)
+  of cdtNestedRule: return err()
   of cdtVariable:
     if parseDeclWithVar0(toks).len == 0:
       return err()
@@ -6072,6 +6073,8 @@ proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
       var dummy = newSeq[CSSComputedEntry]()
       if ctx.parseComputedValues0(decl.p, dummyAttrs, dummy).isErr:
         return JS_UNDEFINED
+    of cdtNestedRule:
+      return JS_UNDEFINED
     of cdtVariable:
       if parseDeclWithVar0(toks).len == 0:
         return JS_UNDEFINED

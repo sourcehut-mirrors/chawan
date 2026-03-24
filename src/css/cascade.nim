@@ -434,6 +434,7 @@ proc applyStyle(element: Element) =
           name: decl.v,
           items: parseDeclWithVar0(decl.value)
         ))
+      of cdtNestedRule: discard
       of cdtProperty:
         if decl.hasVar:
           if entry := parseDeclWithVar(decl.p, decl.value):

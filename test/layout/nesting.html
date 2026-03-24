@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<style>
+div{
+  color: red;
+  blah { test: test }
+  && & { color: green }
+  && & & { color: red }
+}
+</style>
+<div><div>test</div></div>
+<!-- I don't think this matches the spec, but it does match Blink/Gecko -->
+<div style="color: green; test { hi } color: red">green</div>
+<div style="color: red; test { hi }; color: green">green</div>

@@ -212,6 +212,14 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
     map.add(def)
     def = def.next
 
+proc add(s: var StyleState; ruleDef: CSSRuleDef) =
+  if s.defsTail == nil:
+    s.defsHead = ruleDef
+  else:
+    s.defsTail.next = ruleDef
+  s.defsTail = ruleDef
+  inc s.len
+
 proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
     base: URL; layer: CAtom) =
   for rule in ctx.parseListOfRules(topLevel):
@@ -221,7 +229,7 @@ proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom) =
   if rule.sels.len > 0:
-    let ruleDef = CSSRuleDef(
+    var ruleDef = CSSRuleDef(
       sels: move(rule.sels),
       idx: sheet.s.len,
       origin: sheet.origin,
@@ -235,6 +243,15 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom) =
           name: decl.v,
           items: parseDeclWithVar0(decl.value)
         ))
+      of cdtNestedRule:
+        sheet.s.add(ruleDef)
+        ruleDef = CSSRuleDef(
+          sels: ruleDef.sels,
+          idx: sheet.s.len,
+          origin: sheet.origin,
+          layer: layer
+        )
+        sheet.addRule(decl.r, layer)
       of cdtProperty:
         if decl.hasVar:
           if entry := parseDeclWithVar(decl.p, decl.value):
@@ -242,12 +259,7 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom) =
         else:
           ruleDef.vals[f].parseComputedValues(decl.p, decl.value,
             sheet.settings.attrsp[])
-    if sheet.s.defsTail == nil:
-      sheet.s.defsHead = ruleDef
-    else:
-      sheet.s.defsTail.next = ruleDef
-    sheet.s.defsTail = ruleDef
-    inc sheet.s.len
+    sheet.s.add(ruleDef)
 
 proc nextAnonLayer(sheet: CSSStylesheet): CAtom =
   let res = sheet.s.anonLayerCount

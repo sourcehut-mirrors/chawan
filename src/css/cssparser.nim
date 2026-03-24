@@ -20,31 +20,32 @@ type
   CSSTokenType* = enum
     cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttBadString,
     cttUrl, cttBadUrl, cttDelim, cttNumber, cttPercentage, cttDimension,
-    cttWhitespace
     cttCdo = "<!--"
     cttCdc = "-->"
-    cttColon = ":"
-    cttSemicolon = ";"
-    cttComma = ","
-    cttRbracket = "["
-    cttLbracket = "]"
+    cttWhitespace
+    cttBang = "!"
+    cttDollar = "$"
+    cttAnd = "&"
     cttLparen = "("
     cttRparen = ")"
-    cttLbrace = "{"
-    cttRbrace = "}"
-    cttSlash = "/"
     cttStar = "*"
     cttPlus = "+"
+    cttComma = ","
     cttMinus = "-"
-    cttLt = "<"
-    cttGt = ">"
-    cttTilde = "~"
     cttDot = "."
-    cttPipe = "|"
-    cttCaret = "^"
-    cttDollar = "$"
+    cttSlash = "/"
+    cttColon = ":"
+    cttSemicolon = ";"
+    cttLt = "<"
     cttEquals = "="
-    cttBang = "!"
+    cttGt = ">"
+    cttRbracket = "["
+    cttLbracket = "]"
+    cttCaret = "^"
+    cttLbrace = "{"
+    cttPipe = "|"
+    cttRbrace = "}"
+    cttTilde = "~"
 
   CSSTokenFlag = enum
     ctfId, ctfSign, ctfInteger
@@ -139,7 +140,7 @@ type
     decls*: seq[CSSDeclaration]
 
   CSSDeclarationType* = enum
-    cdtProperty, cdtVariable
+    cdtProperty, cdtVariable, cdtNestedRule
 
   CSSImportantFlag* = enum
     cifNormal, cifImportant
@@ -156,6 +157,8 @@ type
       p*: CSSWidePropertyType
     of cdtVariable:
       v*: CAtom
+    of cdtNestedRule:
+      r*: CSSQualifiedRule
     value*: seq[CSSToken]
 
   CSSFunctionType* = enum
@@ -407,7 +410,8 @@ when defined(gcDestructors):
     copyMem(addr a, unsafeAddr b, sizeof(a))
 
 # Forward declarations
-proc consumeDeclarations(ctx: var CSSParser; nested: bool): seq[CSSDeclaration]
+proc consumeDeclarations(ctx: var CSSParser; nested: bool;
+  parentSels: openArray[CSSToken]): seq[CSSDeclaration]
 proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList
 proc parseSelectorList(state: var SelectorParser; forgiving: bool): SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
@@ -420,6 +424,7 @@ proc `$`*(c: CSSRule): string
 proc `$`*(decl: CSSDeclaration): string
 proc `$`*(c: CSSSimpleBlock): string
 proc `$`*(slist: SelectorList): string
+proc `$`*(c: CSSQualifiedRule): string
 
 template fnum(tok: CSSToken): float32 =
   tok.tu.f
@@ -487,6 +492,7 @@ proc name*(decl: CSSDeclaration): string =
   case decl.t
   of cdtProperty: result &= $decl.p
   of cdtVariable: result &= "--" & $decl.v
+  of cdtNestedRule: result &= $decl.r
 
 proc `$`*(decl: CSSDeclaration): string =
   result = decl.name & ": "
@@ -878,6 +884,7 @@ proc consume(iq: openArray[char]; n: var int): CSSToken =
   of '$': return CSSToken(t: cttDollar)
   of '=': return CSSToken(t: cttEquals)
   of '!': return CSSToken(t: cttBang)
+  of '&': return CSSToken(t: cttAnd)
   else:
     dec n
     return iq.consumeDelimToken(n)
@@ -1026,14 +1033,59 @@ proc seek*(ctx: var CSSParser) =
   if pair != tok.t:
     ctx.skipUntil(pair)
 
-proc consumeQualifiedRule(ctx: var CSSParser): Opt[CSSQualifiedRule] =
+proc addPreludeComponentValue(ctx: var CSSParser;
+    parentSels: openArray[CSSToken]; andSeen: var bool;
+    toks: var seq[CSSToken]) =
+  var tok = ctx.consume()
+  let t = tok.t
+  if parentSels.len > 0 and t == cttAnd:
+    toks.add(CSSToken(t: cttColon))
+    toks.add(cssFunctionToken(cftIs))
+    toks.add(parentSels)
+    toks.add(CSSToken(t: cttRparen))
+    andSeen = true
+  else:
+    toks.add(move(tok))
+    if (let pair = t.tokenPair; pair != t):
+      while ctx.has():
+        let t = ctx.peekTokenType()
+        ctx.addPreludeComponentValue(parentSels, andSeen, toks)
+        if t == pair:
+          break
+
+proc addPrelude(ctx: var CSSParser; parentSels: openArray[CSSToken];
+    nested, semi: bool; andSeen: var bool; toks: var seq[CSSToken]):
+    Opt[CSSToken] =
+  while ctx.has():
+    let tt = ctx.peekTokenType()
+    if tt == cttLbrace or nested and tt == cttSemicolon:
+      return ok(ctx.consume())
+    if tt == cttRbrace and nested:
+      return err()
+    ctx.addPreludeComponentValue(parentSels, andSeen, toks)
+  err()
+
+proc consumeQualifiedRule2(ctx: var CSSParser; prelude: var seq[CSSToken];
+    nested, semi: bool; parentSels: openArray[CSSToken]): Opt[CSSQualifiedRule] =
+  var prelude = move(prelude)
   var r = CSSQualifiedRule()
-  var prelude: seq[CSSToken] = @[]
-  if tok := ctx.addUntil(cttLbrace, prelude):
+  var andSeen: bool
+  if tok := ctx.addPrelude(parentSels, nested, semi, andSeen, prelude):
+    if not andSeen and parentSels.len > 0:
+      var prelude2 = @parentSels
+      if parentSels[^1].t != cttWhitespace:
+        prelude2.add(CSSToken(t: cttWhitespace))
+      prelude2.add(prelude)
+      prelude = move(prelude2)
+    r.decls = ctx.consumeDeclarations(nested = true, prelude)
     r.sels = parseSelectorsConsume(prelude)
-    r.decls = ctx.consumeDeclarations(nested = true)
     return ok(r)
   err()
+
+proc consumeQualifiedRule(ctx: var CSSParser; nested: bool;
+    parentSels: openArray[CSSToken]): Opt[CSSQualifiedRule] =
+  var prelude: seq[CSSToken]
+  ctx.consumeQualifiedRule2(prelude, nested, semi = false, parentSels)
 
 proc skipDeclaration(ctx: var CSSParser) =
   while ctx.has():
@@ -1044,11 +1096,10 @@ proc skipDeclaration(ctx: var CSSParser) =
     if it == cttSemicolon:
       break
 
-proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
-  let tok = ctx.consume()
-  let x = initCSSDeclaration(tok.s)
-  ?ctx.skipBlanksCheckHas()
-  if ctx.peekTokenType() != cttColon or x.isErr:
+proc consumeDeclaration2(ctx: var CSSParser; name: string):
+    Opt[CSSDeclaration] =
+  let x = initCSSDeclaration(name)
+  if x.isErr:
     ctx.skipDeclaration()
     return err()
   var decl = x.get
@@ -1087,6 +1138,15 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
     decl.value.setLen(decl.value.len - 1)
   ok(move(decl))
 
+#TODO for supports
+proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] {.used.} =
+  let tok = ctx.consume()
+  ?ctx.skipBlanksCheckHas()
+  if ctx.peekTokenType() != cttColon:
+    ctx.skipDeclaration()
+    return err()
+  ctx.consumeDeclaration2(tok.s)
+
 proc consumeAtRule(ctx: var CSSParser): CSSAtRule =
   let name = ctx.consume().at
   result = CSSAtRule(name: name)
@@ -1100,8 +1160,8 @@ proc consumeAtRule(ctx: var CSSParser): CSSAtRule =
           break
         ctx.addComponentValue(result.oblock)
 
-proc consumeDeclarations(ctx: var CSSParser; nested: bool):
-    seq[CSSDeclaration] =
+proc consumeDeclarations(ctx: var CSSParser; nested: bool;
+    parentSels: openArray[CSSToken]): seq[CSSDeclaration] =
   result = @[]
   var valid = not nested
   while ctx.has():
@@ -1110,20 +1170,38 @@ proc consumeDeclarations(ctx: var CSSParser; nested: bool):
       ctx.seekToken()
     of cttAtKeyword:
       discard ctx.consumeAtRule()
-    of cttIdent:
-      if decl := ctx.consumeDeclaration():
-        # looks ridiculous, but it's the only way to convince refc not
-        # to copy the seq...  TODO remove when moving to ARC
-        var value = move(decl.value)
-        result.add(move(decl))
-        result[^1].value = move(value)
     of cttRbrace:
       if nested:
         ctx.seekToken()
         valid = true
         break
+    of cttIdent:
+      var tok = ctx.consume()
+      var blank = false
+      if ctx.has() and ctx.peekTokenType() == cttWhitespace:
+        blank = true
+        ctx.seekToken()
+      if ctx.has() and ctx.peekTokenType() == cttColon:
+        if decl := ctx.consumeDeclaration2(tok.s):
+          # looks ridiculous, but it's the only way to convince refc not
+          # to copy the seq...  TODO remove when moving to ARC
+          var value = move(decl.value)
+          result.add(move(decl))
+          result[^1].value = move(value)
+      elif nested:
+        var prelude: seq[CSSToken] = @[move(tok)]
+        if blank:
+          prelude.add(CSSToken(t: cttWhitespace))
+        if rule := ctx.consumeQualifiedRule2(prelude, nested = true,
+            semi = true, parentSels):
+          result.add(CSSDeclaration(t: cdtNestedRule, r: rule))
+      else:
+        # Note: I don't think the branch on nested matches the spec, but
+        # this is what others seem to implement.
+        ctx.skipDeclaration()
     else:
-      ctx.skipDeclaration()
+      if rule := ctx.consumeQualifiedRule(nested = true, parentSels):
+        result.add(CSSDeclaration(t: cdtNestedRule, r: rule))
   if not valid:
     result.setLen(0)
 
@@ -1137,18 +1215,18 @@ proc consumeRule(ctx: var CSSParser; topLevel: bool): Opt[CSSRule] =
   elif topLevel and t in {cttCdo, cttCdc}:
     ctx.seekToken()
     return err()
-  let qualified = ?ctx.consumeQualifiedRule()
-  return ok(CSSRule(t: crtQualified, qualified: qualified))
+  let qualified = ?ctx.consumeQualifiedRule(nested = false, [])
+  ok(CSSRule(t: crtQualified, qualified: qualified))
 
 iterator parseListOfRules*(ctx: var CSSParser; topLevel: bool):
-    CSSRule {.closure.} =
+    CSSRule {.inline.} =
   while ctx.has():
     if rule := ctx.consumeRule(topLevel):
       yield rule
 
 proc parseDeclarations*(iq: string): seq[CSSDeclaration] =
   var ctx = initCSSParser(iq)
-  return ctx.consumeDeclarations(nested = false)
+  return ctx.consumeDeclarations(nested = false, [])
 
 proc parseComponentValues*(iq: string): seq[CSSToken] =
   var ctx = initCSSParser(iq)
@@ -1730,7 +1808,8 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     of cttPlus: result[^1].ct = ctNextSibling
     of cttTilde: result[^1].ct = ctSubsequentSibling
     of cttWhitespace:
-      if not state.has() or state.peekTokenType() == cttComma:
+      if not state.has() or state.peekTokenType() == cttComma or
+          state.nested and state.peekTokenType() == cttRparen:
         break # skip trailing whitespace
       elif state.peekTokenType() in {cttGt, cttPlus, cttTilde}:
         case state.consume().t
