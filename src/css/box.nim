@@ -89,7 +89,6 @@ type
 
   InlineBoxState* = object
     startOffset*: Offset # offset of the first word, for position: absolute
-    startOffsetSet*: bool
     areas*: seq[Area] # background that should be painted by box
 
   Span* = object

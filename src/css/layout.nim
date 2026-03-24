@@ -806,6 +806,7 @@ type
     offset: Offset
     size: Size
     absolutes: seq[BlockBox]
+    iboxStack: seq[InlineBox] # track parent inlines to flush
     next: InlineAtom
 
   FlowState = object
@@ -829,6 +830,7 @@ type
     exclusionsTail: Exclusion
     # Inline context state:
     lbstate: LineBoxState
+    iboxStack: seq[InlineBox]
 
 # Forward declarations
 proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
@@ -1152,14 +1154,8 @@ proc alignLine(fstate: var FlowState) =
       # init new box
       currentBox = box
       currentAreaOffsetX = atom.offset.x
-      var it = currentBox
-      while it != nil:
-        if not it.state.startOffsetSet:
-          it.state.startOffset = atom.offset
-          it.state.startOffsetSet = true
-        if not (it.parent of InlineBox):
-          break
-        it = InlineBox(it.parent)
+      for ibox in atom.iboxStack.ritems:
+        ibox.state.startOffset = atom.offset
     if atom.ibox of InlineTextBox:
       atom.run.offset = atom.offset
     elif atom.box != nil:
@@ -1212,6 +1208,7 @@ proc putAtom2(fstate: var FlowState; atom: InlineAtom; takeAbsolutes: bool) =
     x = fstate.lbstate.size.w,
     y = atom.getBaseline(fstate.lctx)
   )
+  atom.iboxStack = move(fstate.iboxStack)
   fstate.lbstate.size.w += atom.size.w
   fstate.lbstate.baseline = max(fstate.lbstate.baseline, atom.offset.y)
   # In all cases, the line's height must at least equal the atom's height.
@@ -1970,6 +1967,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
   # -moz-center uses the inline parent too, which is nonsense if you
   # consider the CSS 2 anonymous box generation rules, but whatever.
   fstate.textAlign = ibox.computed{"text-align"}
+  fstate.iboxStack.add(ibox)
   if ibox of InlineTextBox:
     let ibox = InlineTextBox(ibox)
     ibox.runs.setLen(0)
