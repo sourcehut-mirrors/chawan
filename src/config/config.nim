@@ -1967,7 +1967,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
         config.defaultHeaders = newHeaders(hgRequest, init.s)
       else:
         for it in init.s:
-          config.defaultHeaders.add(it.name, it.value)
+          config.defaultHeaders[it.name] = it.value
     of cocURL: config.proxy = move(entry.url)
     of cocClear, cocRegex, cocFunction: assert false
 

@@ -1612,7 +1612,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         else:
           let headers = loaderConfig.defaultHeaders.clone()
           for it in init.s:
-            headers.add(it.name, it.value)
+            headers[it.name] = it.value
           loaderConfig.defaultHeaders = headers
       else: assert false
   loaderConfig.allowSchemes.add(pager.imageProtos)
