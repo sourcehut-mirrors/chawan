@@ -1321,6 +1321,7 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
       # my mind (or add a graphical mode.))
       fstate.lbstate.whitespaceNum = 0
     fstate.flushNowrap()
+    fstate.iboxStack.setLen(0)
     # align atoms + calculate width for fit-content + place
     fstate.alignLine()
     var f = fstate.lbstate.pendingFloatsHead
