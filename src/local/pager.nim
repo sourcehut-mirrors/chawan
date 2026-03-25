@@ -143,11 +143,9 @@ type
     cmfNeedsimage, cmfSaveoutput
 
   MailcapResult = object
-    entry: MailcapEntry
     flags: set[CheckMailcapFlag]
     ostream: PosixStream
     ostreamOutputId: int
-    cmd: string
 
 jsDestructor(Pager)
 
@@ -1937,12 +1935,14 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
 
 # Pipe input into the mailcap command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
+# Consumes stream.
 proc runMailcapWritePipe(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd: string) =
   if needsterminal:
     discard pager.term.quit() #TODO
   let pid = fork()
   if pid == -1:
+    stream.sclose()
     pager.alert("Error: failed to fork mailcap write process")
   elif pid == 0:
     # child process
@@ -1965,6 +1965,7 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
   discard unlink(cstring(outpath))
   let ps = newPosixStream(outpath, O_WRONLY or O_CREAT or O_EXCL, 0o600)
   if ps == nil:
+    istream.sclose()
     return false
   var buffer {.noinit.}: array[4096, uint8]
   var n = 0
@@ -1973,6 +1974,7 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
       n = -1
       break
   ps.sclose()
+  istream.sclose()
   n == 0
 
 # Save input in a file, run the command, and redirect its output to a
@@ -1992,7 +1994,6 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
     pager.term.ostream.sclose()
     if not stream.writeToFile(outpath):
       quit(1)
-    stream.sclose()
     let ps = newPosixStream("/dev/null")
     let ret = pager.execPipeWait(cmd, ps, pouts)
     discard unlink(cstring(outpath))
@@ -2003,6 +2004,7 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
 
 # Save input in a file, run the command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
+# Consumes stream.
 proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd, outpath: string) =
   discard mkdir(cstring(pager.config{"tmpdir"}), 0o700)
@@ -2030,7 +2032,6 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
       pager.term.ostream.sclose()
       if not stream.writeToFile(outpath):
         quit(1)
-      stream.sclose()
       let ps = newPosixStream("/dev/null")
       let os = newPosixStream("/dev/null", O_WRONLY)
       let ret = pager.execPipeWait(cmd, ps, os)
