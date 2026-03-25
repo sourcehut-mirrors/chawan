@@ -1055,11 +1055,12 @@ proc addPreludeComponentValue(ctx: var CSSParser;
 
 proc addPrelude(ctx: var CSSParser; parentSels: openArray[CSSToken];
     nested, semi: bool; andSeen: var bool; toks: var seq[CSSToken]):
-    Opt[CSSToken] =
+    Opt[void] =
   while ctx.has():
     let tt = ctx.peekTokenType()
-    if tt == cttLbrace or nested and tt == cttSemicolon:
-      return ok(ctx.consume())
+    if tt == cttLbrace or semi and tt == cttSemicolon:
+      ctx.seekToken()
+      return ok()
     if tt == cttRbrace and nested:
       return err()
     ctx.addPreludeComponentValue(parentSels, andSeen, toks)
@@ -1068,19 +1069,18 @@ proc addPrelude(ctx: var CSSParser; parentSels: openArray[CSSToken];
 proc consumeQualifiedRule2(ctx: var CSSParser; prelude: var seq[CSSToken];
     nested, semi: bool; parentSels: openArray[CSSToken]): Opt[CSSQualifiedRule] =
   var prelude = move(prelude)
-  var r = CSSQualifiedRule()
   var andSeen: bool
-  if tok := ctx.addPrelude(parentSels, nested, semi, andSeen, prelude):
-    if not andSeen and parentSels.len > 0:
-      var prelude2 = @parentSels
-      if parentSels[^1].t != cttWhitespace:
-        prelude2.add(CSSToken(t: cttWhitespace))
-      prelude2.add(prelude)
-      prelude = move(prelude2)
-    r.decls = ctx.consumeDeclarations(nested = true, prelude)
-    r.sels = parseSelectorsConsume(prelude)
-    return ok(r)
-  err()
+  ?ctx.addPrelude(parentSels, nested, semi, andSeen, prelude)
+  if not andSeen and parentSels.len > 0:
+    var prelude2 = @parentSels
+    if parentSels[^1].t != cttWhitespace:
+      prelude2.add(CSSToken(t: cttWhitespace))
+    prelude2.add(prelude)
+    prelude = move(prelude2)
+  let r = CSSQualifiedRule()
+  r.decls = ctx.consumeDeclarations(nested = true, prelude)
+  r.sels = parseSelectorsConsume(prelude)
+  ok(r)
 
 proc consumeQualifiedRule(ctx: var CSSParser; nested: bool;
     parentSels: openArray[CSSToken]): Opt[CSSQualifiedRule] =
