@@ -490,11 +490,15 @@ proc `$`*(p: CSSWidePropertyType): string =
 
 proc name*(decl: CSSDeclaration): string =
   case decl.t
-  of cdtProperty: result &= $decl.p
-  of cdtVariable: result &= "--" & $decl.v
-  of cdtNestedRule: result &= $decl.r
+  of cdtProperty: return $decl.p
+  of cdtVariable: return "--" & $decl.v
+  of cdtNestedRule:
+    assert false
+    return ""
 
 proc `$`*(decl: CSSDeclaration): string =
+  if decl.t == cdtNestedRule:
+    return $decl.r
   result = decl.name & ": "
   for s in decl.value:
     result &= $s
