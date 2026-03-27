@@ -60,9 +60,9 @@ Public functions of this are:
 
 `suspend()`
 : Temporarily suspend the browser, by delivering the client process a
-SIGTSTP signal.
+  SIGTSTP signal.
 
-  Note: this suspends the entire process group.
+  Note: this suspends all processes, including buffers, the loader and CGI.
 
 `readFile(path)`
 : Read a file at `path`.
@@ -139,13 +139,13 @@ Following properties (functions/getters) are defined by `Pager`:
 
 `loadSubmit(url)`
 : Act as if `url` had been entered to the URL bar.  `loadSubmit` differs
-from `gotoURL` in that it also evaluates omni-rules, tries to prepend a
-scheme, etc.
+  from `gotoURL` in that it also evaluates omni-rules, tries to prepend a
+  scheme, etc.
 
 `gotoURL(url, options = {replace: null, contentType: null, save: false, charset: null})`
 : Go to the specified URL immediately (without a prompt).  This differs
-from `loadSubmit` in that it loads the exact URL as passed (no prepending
-https, etc.)
+  from `loadSubmit` in that it loads the exact URL as passed (no prepending
+  https, etc.)
 
   When `replace` is set, the new buffer may replace the old one if it loads
   successfully.
@@ -161,7 +161,7 @@ https, etc.)
 
 `traverse(dir)`
 : Switch to the next buffer in direction `dir`, interpreted as in
-`Buffer#find`.
+  `Buffer#find`.
 
 `nextBuffer()`, `prevBuffer()`
 : Same as `traverse("next")` and `traverse("prev")`.
@@ -171,11 +171,11 @@ https, etc.)
 
 `discardBuffer(buffer = pager.buffer, dir = pager.navDirection)`
 : Discard `buffer`, then move back to the buffer opposite to `dir`
-(interpreted as in `Buffer#find`).
+  (interpreted as in `Buffer#find`).
 
 `discardTree()`
 : Discard all subsequent siblings of the current buffer.  This function is
-deprecated, and may be removed in the future.
+  deprecated, and may be removed in the future.
 
 `addTab(target)`
 : Open a new tab.
@@ -192,7 +192,7 @@ deprecated, and may be removed in the future.
 
 `reload()`
 : Open a new buffer with the current buffer's URL, replacing the current
-buffer.
+  buffer.
 
 `reshape()`
 : Reshape the current buffer (=render the current page anew.)
@@ -202,7 +202,7 @@ buffer.
 
 `toggleSource()`
 : If viewing an HTML buffer, open a new buffer with its source.  Otherwise,
-open the current buffer's contents as HTML.
+  open the current buffer's contents as HTML.
 
 `lineInfo()`
 : Display information about the current line.
@@ -212,89 +212,89 @@ open the current buffer's contents as HTML.
 
 `isearchForward()`, `isearchBackward()`
 : Incremental-search forward/backward for a string, highlighting the first
-result.
+  result.
 
 `gotoLine(n?)`
 : Go to the line passed as the first argument.
 
-    If no arguments were specified, an input window for entering a line is
-    shown.
+  If no arguments were specified, an input window for entering a line is
+  shown.
 
-    `searchNext(n = 1)`, `searchPrev(n = 1)`
-    Jump to the nth next/previous search result.
+`searchNext(n = 1)`, `searchPrev(n = 1)`
+: Jump to the nth next/previous search result.
 
 `peek()`
 : Display an alert message of the current URL.
 
 `peekCursor()`
 : Display an alert message of the URL or title under the cursor.  Multiple
-calls allow cycling through the two. (i.e. by default, press u once ->
-title, press again -> URL)
+  calls allow cycling through the two. (i.e. by default, press u once ->
+  title, press again -> URL)
 
 `showFullAlert()`
 : Show the last alert inside the line editor.
 
 `ask(prompt)`
 : Ask the user for confirmation.  Returns a promise which resolves to a
-boolean value indicating whether the user responded with yes.
+  boolean value indicating whether the user responded with yes.
 
-    Can be used to implement an exit prompt like this:
+  Can be used to implement an exit prompt like this:
 
-    ```
-    q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
-    ```
+  ```
+  q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void 0)'
+  ```
 
 `askChar(prompt)`
 : Ask the user for any character.
 
-    Like `pager.ask`, but the return value is a character.
+  Like `pager.ask`, but the return value is a character.
 
 `clipboardWrite(s)`
 : Write `s` to the clipboard (copy).  By default, it tries using OSC 52;
-if that fails, it tries to run `external.copy-cmd` (defaults to `xsel`).
+  if that fails, it tries to run `external.copy-cmd` (defaults to `xsel`).
 
-    Returns true if the copy succeeded, false otherwise.  (There may be
-    false positives in case OSC 52 is used and the terminal doesn't consume
-    the text, although Chawan will try its best to avoid this.)
+  Returns true if the copy succeeded, false otherwise.  (There may be
+  false positives in case OSC 52 is used and the terminal doesn't consume
+  the text, although Chawan will try its best to avoid this.)
 
 `extern(cmd, options = {env: { ... }, suspend: true, wait: false})`
 : Run an external command `cmd`.
 
-    By default, the `$CHA_URL` and `$CHA_CHARSET` variables are set; change
-    this using the `env` option.
+  By default, the `$CHA_URL` and `$CHA_CHARSET` variables are set; change
+  this using the `env` option.
 
-    `options.suspend` suspends the pager while the command is being
-    executed, and `options.wait` makes it so the user must press a key
-    before the pager is resumed.
+  `options.suspend` suspends the pager while the command is being
+  executed, and `options.wait` makes it so the user must press a key
+  before the pager is resumed.
 
-    Returns true if the command exited successfully, false otherwise.
-
+  Returns true if the command exited successfully, false otherwise.
 
 `externCapture(cmd)`
-: Like extern(), but redirect the command's stdout string into the
-result.  null is returned if the command wasn't executed successfully,
-or if the command returned a non-zero exit value.
+: Like `extern()`, but redirect the command's stdout string into the
+  result.  `null` is returned if the command wasn't executed successfully,
+  or if the command returned a non-zero exit value.
 
 `externInto(cmd, ins)`
-: Like extern(), but redirect `ins` into the command's standard input
-stream.  `true` is returned if the command exits successfully, otherwise
-the return value is `false`.
+: Like `extern()`, but redirect `ins` into the command's standard input
+  stream.  `true` is returned if the command exits successfully, `false`
+  otherwise.
 
 `externFilterSource(cmd, buffer = null, contentType = null)`
 : Redirects the specified (or if `buffer` is null, the current) buffer's
-source into `cmd`.
+  source into `cmd`.
 
-    Then, it pipes the output into a new buffer, with the content type `contentType`
-    (or, if `contentType` is null, the original buffer's content type).
+  Then, it pipes the output into a new buffer, with the content type
+  `contentType` (or, if `contentType` is null, the original buffer's
+  content type).
 
-    Returns `undefined`.  (It should return a promise; TODO.)
+  Returns `undefined`.  (It should return a promise; TODO.)
 
 `openEditor(text)`
 : Open "text" in the command configured as `external.editor` (this is
-typically just `$EDITOR`.)
+  typically just `$EDITOR`.)
 
-    If the editor signals an error (crash or non-zero exit code), `null` is
-    returned.  Otherwise, the user's input is returned as a string.
+  If the editor signals an error (crash or non-zero exit code), `null` is
+  returned.  Otherwise, the user's input is returned as a string.
 
 `openMenu(x = pager.cursorx - pager.fromx, y = pager.cursory - pager.fromy)`
 : Opens the context menu at the specified x/y positions.
@@ -304,14 +304,14 @@ typically just `$EDITOR`.)
 
 `buffer`
 : Getter for the currently displayed buffer.  Returns a `Buffer` object;
-see below.
+  see below.
 
 `menu`
 : Getter for the currently displayed menu.  Returns a `Select` object.
 
 `navDirection`
 : The direction the user last moved in the buffer list using `traverse`.
-Possible values are `prev`, `next`, `any`.
+  Possible values are `prev`, `next`, `any`.
 
 `revDirection`
 : Equivalent to `Pager.oppositeDir(pager.navDirection)`.
@@ -321,8 +321,7 @@ Also, the following static function is defined on `Pager` itself:
 `Pager.oppositeDir(dir)`
 : Return a string representing the direction opposite to `dir`.
 
-    For "next", this is "prev"; for "prev", "next"; for "any", it's the
-    same.
+  For "next", this is "prev"; for "prev", "next"; for "any", it's the same.
 
 ### Buffer
 
@@ -336,16 +335,16 @@ properties onto the current buffer.
 Following properties (functions/getters) are defined by `Buffer`:
 
 `cursorUp(n = 1)`, `cursorDown(n = 1)`
-: Move the cursor upwards/downwards by n lines, or if n is unspecified,
-by 1.
+: Move the cursor upwards/downwards by `n` lines, or if `n` is unspecified,
+  by 1.
 
 `cursorLeft(n = 1)`, `cursorRight(n = 1)`
-: Move the cursor to the left/right by n cells, or if n is unspecified,
-by 1.
+: Move the cursor to the left/right by `n` cells, or if `n` is unspecified,
+  by 1.
 
-    Note: `n` right now represents cells, but really it should
-    represent characters.  (The difference is that numbered cursorLeft or
-    cursorRight is currently broken for double-width chars.)
+  Note: `n` right now represents cells, but really it should
+  represent characters.  (The difference is that numbered cursorLeft or
+  cursorRight is currently broken for double-width chars.)
 
 `cursorLineBegin()`, `cursorLineEnd()`
 : Move the cursor to the first/last cell of the line.
@@ -360,12 +359,12 @@ by 1.
 : Move the cursor to the end of the previous [word](#word-types).
 
 `cursorWordEnd()`, `cursorViWordEnd()`, `cursorBigWordEnd()`
-: Move the cursor to the end of the current [word](#word-types), or if already
-there, to the end of the next word.
+: Move the cursor to the end of the current [word](#word-types), or if
+  already there, to the end of the next word.
 
 `cursorWordBegin()`, `cursorViWordBegin()`, `cursorBigWordBegin()`
 : Move the cursor to the beginning of the current [word](#word-types),
-or if already there, to the end of the previous word.
+  or if already there, to the end of the previous word.
 
 `async getCurrentWord(x = this.cursorx, y = this.cursory)`
 : Returns the word currently under the cursor as a string.
@@ -374,9 +373,9 @@ or if already there, to the end of the previous word.
 : Move the cursor to the beginning of the next/previous clickable element.
 
 `cursorLinkNavDown(n = 1)`, `cursorLinkNavUp(n = 1)`
-: Move the cursor to the beginning of the next/previous clickable element.
-Buffer scrolls pagewise, wrap to beginning/end if content is less than
-one page length.
+: Move the cursor to the beginning of the `n`th next/previous clickable
+  element.  Buffer scrolls pagewise, wrap to beginning/end if content is
+  less than one page length.
 
 `cursorNextParagraph(n = 1)`, `cursorPrevParagraph(n = 1)`
 : Move the cursor to the beginning/end of the nth next/previous paragraph.
@@ -386,7 +385,7 @@ one page length.
 
 `cursorRevNthLink(n = 1)`
 : Move the cursor to the nth link of the document, counting backwards
-from the document's last line.
+  from the document's last line.
 
 `pageUp(n = 1)`, `pageDown(n = 1)`, `pageLeft(n = 1)`, `pageRight(n = 1)`
 : Scroll up/down/left/right by n pages.
@@ -399,43 +398,43 @@ from the document's last line.
 
 `click(n = 1)`
 : Click the HTML element currently under the cursor.  `n` controls the
-number of clicks, e.g. `n = 2` is a double click.  (The number of clicks is
-only relevant in JS apps.)
+  number of clicks, e.g. `n = 2` is a double click.  (The number of clicks
+  is only relevant in JS apps.)
 
 `cursorFirstLine()`, `cursorLastLine()`
 : Move to the first/last line in the buffer.
 
 `cursorTop()`, `cursorMiddle()`, `cursorBottom()`
 : Move to the first/middle/bottom line on the screen.  (Equivalent to H/M/L
-in vi.)
+  in vi.)
 
 `lowerPage(n = this.cursory)`
 : Move cursor to line n, then scroll up so that the cursor is on the
-top line on the screen.  (`zt` in vim.)
+  top line on the screen.  (`zt` in vim.)
 
 `lowerPageBegin(n = this.cursory)`
 : Move cursor to the first non-blank character of line n, then scroll up
-so that the cursor is on the top line on the screen.  (`z<CR>` in vi.)
+  so that the cursor is on the top line on the screen.  (`z<CR>` in vi.)
 
 `centerLine(n = this.cursory)`
 : Center screen around line n. (`zz` in vim.)
 
 `centerLineBegin(n = this.cursory)`
 : Center screen around line n, and move the cursor to the line's first
-non-blank character.  (`z.` in vi.)
+  non-blank character.  (`z.` in vi.)
 
 `raisePage(n = this.cursory)`
 : Move cursor to line n, then scroll down so that the cursor is on the
-top line on the screen.  (`zb` in vim.)
+  top line on the screen.  (`zb` in vim.)
 
 `raisePageBegin(n = this.cursory)`
 : Move cursor to the first non-blank character of line n, then scroll up
-so that the cursor is on the last line on the screen.  (`z^` in vi.)
+  so that the cursor is on the last line on the screen.  (`z^` in vi.)
 
 `nextPageBegin(n = this.cursory)`
 : If n was given, move to the screen before the nth line and raise the
-page.  Otherwise, go to the previous screen's last line and raise the page.
-(`z+` in vi.)
+  page.  Otherwise, go to the previous screen's last line and raise the
+  page.  (`z+` in vi.)
 
 `cursorLeftEdge()`, `cursorMiddleColumn()`, `cursorRightEdge()`
 : Move to the first/middle/last column on the screen.
@@ -446,63 +445,63 @@ page.  Otherwise, go to the previous screen's last line and raise the page.
 `findPrevMatch(regex, x, y, wrap = false, n = 1)`, `findNextMatch(regex, x, y, wrap = false, n = 1)`
 : Find the previous/next match for a regex.
 
-    `regex` is a RegExp object (e.g. from `/this syntax/`).  `x` and `y`
-    are the starting position in the buffer, `wrap` determines whether or
-    not the search should wrap over the document, and `n` is the count of
-    occurrences to be found.
+  `regex` is a RegExp object (e.g. from `/this syntax/`).  `x` and `y` are
+  the starting position in the buffer, `wrap` determines whether or not the
+  search should wrap over the document, and `n` is the count of occurrences
+  to be found.
 
-    Returns an array of the elements `[x, y, w]` where `x` and `y` are the
-    matched coordinates and `w` the width of the matched text.  If no match
-    is found, the result is `[-1, -1, 0]`.
+  Returns an array of the elements `[x, y, w]` where `x` and `y` are the
+  matched coordinates and `w` the width of the matched text.  If no match
+  is found, the result is `[-1, -1, 0]`.
 
 `findNextMark(x = this.cursorx, y = this.cursory)`, `findPrevMark(x = this.cursorx, y = this.cursory)`
 : Find the next/previous mark after/before `x`, `y`, if any; and return its id
-(or null if none were found.)
+  (or null if none were found.)
 
 `setMark(id, x = this.cursorx, y = this.cursory)`
 : Set a mark at (x, y) using the name `id`.
 
-    Returns true if no other mark exists with `id`. If one already exists,
-    it will be overridden and the function returns false.
+  Returns true if no other mark exists with `id`. If one already exists,
+  it will be overridden and the function returns false.
 
 `clearMark(id)`
 : Clear the mark with the name `id`.  Returns true if the mark existed,
-false otherwise.
+  false otherwise.
 
 `gotoMark(id)`
 : If the mark `id` exists, jump to its position and return true.
-Otherwise, do nothing and return false.
+  Otherwise, do nothing and return false.
 
 `gotoMarkY(id)`
 : If the mark `id` exists, jump to the beginning of the line at its Y
-position and return true.  Otherwise, do nothing and return false.
+  position and return true.  Otherwise, do nothing and return false.
 
 `getMarkPos(id)`
-: If the mark `id` exists, return its position as an array where the first
-element is the X position and the second element is the Y position.  If the
-mark does not exist, return null.
+: If the mark `id` exists, this returns its position as an array where
+  the first element is the X position and the second element is the Y
+  position.  Otherwise it returns `null`.
 
 `cursorToggleSelection(n = 1, opts = {selectionType: "normal"})`
 : Start a vim-style visual selection. The cursor is moved to the right by
-`n` cells.
+  `n` cells.
 
-    selectionType may be "normal" (regular selection), "line" (line-based
-    selection) and "column" (column-based selection).
+  selectionType may be "normal" (regular selection), "line" (line-based
+  selection) and "column" (column-based selection).
 
 `getSelectionText()`
 : Get the currently selected text.
 
-    Returns a promise, so consumers must `await` it to get the text.
+  Returns a promise, so consumers must `await` it to get the text.
 
 `markURL()`
 : Convert URL-like strings to anchors on the current page.
 
 `showLinkHints()`
 : Display link hints on the page.  Mainly intended for the built-in
-toggleLinkHints command.
+  toggleLinkHints command.
 
-    Returns an array of objects with `x` representing the x position, `y`
-    the y position of a link.
+  Returns an array of objects with `x` representing the x position, `y` the
+  y position of a link.
 
 `toggleImages()`
 : Toggle display of images in this buffer.
@@ -515,10 +514,10 @@ toggleLinkHints command.
 
 `setCursorX(x)`, `setCursorY(y)`, `setCursorXY(x, y)`, `setCursorXCenter(x)`, `setCursorYCenter(y)`, `setCursorXYCenter(x, y)`
 : Set the cursor position to `x` and `y` respectively, scrolling the view
-if necessary.
+  if necessary.
 
-    Variants that end with "Center" will also center the screen around the
-    position if it is outside the screen.
+  Variants that end with "Center" will also center the screen around the
+  position if it is outside the screen.
 
 `setFromX(x)`, `setFromY(y)`, `setFromXY(x, y)`
 : Set the starting position of the displayed area on the screen.
@@ -526,22 +525,24 @@ if necessary.
 `find(dir)`
 : Find the next buffer in the list in a specific direction.
 
-    Possible values of `dir` are "prev", "next", and "any".
-    "next" and "prev" return the next/previous buffer respectively,
-    while "any" returns either "prev", or if it's null, "next".
+  Possible values of `dir` are "prev", "next", and "any".  "next" and
+  "prev" return the next/previous buffer respectively, while "any" returns
+  either "prev", or if it's null, "next".
 
 `url`
 : Getter for the buffer's URL.  Note: this returns a `URL` object, not a
-string.
+  string.
 
 `hoverTitle`, `hoverLink`, `hoverImage`
 : Getter for the string representation of the element title/link/image
-currently under the cursor.  Returns the empty string if no title is found.
+  currently under the cursor.  Returns the empty string if no title is
+  found.
 
 `cursorx`, `cursory`
 : The x/y position of the cursor inside the buffer.
 
-    Note that although the status line is 1-based, these values are 0-based.
+  Note that while the status line display is 1-indexed, these values are
+  0-indexed (i.e. `cursory = 0` is the first line).
 
 `fromx`, `fromy`
 : The x/y position of the first line displayed on the screen.
@@ -551,7 +552,7 @@ currently under the cursor.  Returns the empty string if no title is found.
 
 `width`, `height`
 : The width and height of the buffer's window (i.e. the visible part of the
-canvas).
+  canvas).
 
 `process`
 : The process ID of the buffer.
@@ -567,11 +568,11 @@ canvas).
 
 `select`
 : Reference to the current `select` element's widget, or null if no
-`select` element is open.
+  `select` element is open.
 
-    This object implements the `Select` interface, which is somewhat
-    compatible with the `Buffer` interface with some exceptions.  (TODO:
-    elaborate)
+  This object implements the `Select` interface, which is somewhat
+  compatible with the `Buffer` interface with some exceptions.  (TODO:
+  elaborate)
 
 </table>
 

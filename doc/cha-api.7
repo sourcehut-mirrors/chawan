@@ -65,7 +65,8 @@ Exit the browser.
 Temporarily suspend the browser, by delivering the client process a
 SIGTSTP signal.
 .RS
-Note: this suspends the entire process group.
+Note: this suspends all processes, including buffers, the loader and
+CGI.
 .RE
 .TP
 \f[CR]readFile(path)\f[R]
@@ -235,9 +236,10 @@ Go to the line passed as the first argument.
 .RS
 If no arguments were specified, an input window for entering a line is
 shown.
-\f[CR]searchNext(n = 1)\f[R], \f[CR]searchPrev(n = 1)\f[R] Jump to the
-nth next/previous search result.
 .RE
+.TP
+\f[CR]searchNext(n = 1)\f[R], \f[CR]searchPrev(n = 1)\f[R]
+Jump to the nth next/previous search result.
 .TP
 \f[CR]peek()\f[R]
 Display an alert message of the current URL.
@@ -258,7 +260,7 @@ the user responded with yes.
 Can be used to implement an exit prompt like this:
 .IP
 .EX
-q = \(aqpager.ask(\(dqDo you want to exit Chawan?\(dq).then(x => x ? pager.quit() : void(0))\(aq
+q = \(aqpager.ask(\(dqDo you want to exit Chawan?\(dq).then(x => x ? pager.quit() : void 0)\(aq
 .EE
 .RE
 .TP
@@ -291,16 +293,16 @@ Returns true if the command exited successfully, false otherwise.
 .RE
 .TP
 \f[CR]externCapture(cmd)\f[R]
-Like extern(), but redirect the command\(cqs stdout string into the
-result.
-null is returned if the command wasn\(cqt executed successfully, or if
-the command returned a non\-zero exit value.
+Like \f[CR]extern()\f[R], but redirect the command\(cqs stdout string
+into the result.
+\f[CR]null\f[R] is returned if the command wasn\(cqt executed
+successfully, or if the command returned a non\-zero exit value.
 .TP
 \f[CR]externInto(cmd, ins)\f[R]
-Like extern(), but redirect \f[CR]ins\f[R] into the command\(cqs
-standard input stream.
-\f[CR]true\f[R] is returned if the command exits successfully, otherwise
-the return value is \f[CR]false\f[R].
+Like \f[CR]extern()\f[R], but redirect \f[CR]ins\f[R] into the
+command\(cqs standard input stream.
+\f[CR]true\f[R] is returned if the command exits successfully,
+\f[CR]false\f[R] otherwise.
 .TP
 \f[CR]externFilterSource(cmd, buffer = null, contentType = null)\f[R]
 Redirects the specified (or if \f[CR]buffer\f[R] is null, the current)
@@ -366,12 +368,12 @@ Following properties (functions/getters) are defined by
 \f[CR]Buffer\f[R]:
 .TP
 \f[CR]cursorUp(n = 1)\f[R], \f[CR]cursorDown(n = 1)\f[R]
-Move the cursor upwards/downwards by n lines, or if n is unspecified, by
-1.
+Move the cursor upwards/downwards by \f[CR]n\f[R] lines, or if
+\f[CR]n\f[R] is unspecified, by 1.
 .TP
 \f[CR]cursorLeft(n = 1)\f[R], \f[CR]cursorRight(n = 1)\f[R]
-Move the cursor to the left/right by n cells, or if n is unspecified, by
-1.
+Move the cursor to the left/right by \f[CR]n\f[R] cells, or if
+\f[CR]n\f[R] is unspecified, by 1.
 .RS
 Note: \f[CR]n\f[R] right now represents cells, but really it should
 represent characters.
@@ -406,7 +408,8 @@ Returns the word currently under the cursor as a string.
 Move the cursor to the beginning of the next/previous clickable element.
 .TP
 \f[CR]cursorLinkNavDown(n = 1)\f[R], \f[CR]cursorLinkNavUp(n = 1)\f[R]
-Move the cursor to the beginning of the next/previous clickable element.
+Move the cursor to the beginning of the \f[CR]n\f[R]th next/previous
+clickable element.
 Buffer scrolls pagewise, wrap to beginning/end if content is less than
 one page length.
 .TP
@@ -522,10 +525,10 @@ its Y position and return true.
 Otherwise, do nothing and return false.
 .TP
 \f[CR]getMarkPos(id)\f[R]
-If the mark \f[CR]id\f[R] exists, return its position as an array where
-the first element is the X position and the second element is the Y
-position.
-If the mark does not exist, return null.
+If the mark \f[CR]id\f[R] exists, this returns its position as an array
+where the first element is the X position and the second element is the
+Y position.
+Otherwise it returns \f[CR]null\f[R].
 .TP
 \f[CR]cursorToggleSelection(n = 1, opts = {selectionType: \(dqnormal\(dq})\f[R]
 Start a vim\-style visual selection.
@@ -595,8 +598,8 @@ Returns the empty string if no title is found.
 \f[CR]cursorx\f[R], \f[CR]cursory\f[R]
 The x/y position of the cursor inside the buffer.
 .RS
-Note that although the status line is 1\-based, these values are
-0\-based.
+Note that while the status line display is 1\-indexed, these values are
+0\-indexed (i.e.\ \f[CR]cursory = 0\f[R] is the first line).
 .RE
 .TP
 \f[CR]fromx\f[R], \f[CR]fromy\f[R]

@@ -567,11 +567,12 @@ image\-mode = \(lqauto\(rq
 Specifies the image output mode.
 \(lqsixel\(rq uses sixels for output, \(lqkitty\(rq uses the Kitty image
 display protocol, \(lqnone\(rq disables image display completely.
-\(lqauto\(rq detects sixel or kitty support automatically, and falls
-back to \(lqnone\(rq when neither are available.
-This is the default setting, and is expected to work on all known
-terminals with functional image support.
-However, you must enable \f[CR]buffer.images\f[R] for images to work.
+\(lqauto\(rq (the default) detects sixel or kitty support automatically,
+and falls back to \(lqnone\(rq when neither are available.
+This is expected to work on all known terminals with functional image
+support.
+Note that \f[CR]buffer.images\f[R] must be enabled for images to load at
+all.
 .RE
 .TP
 sixel\-colors = \(lqauto\(rq
@@ -917,8 +918,8 @@ meta\-refresh = buffer.meta\-refresh
 \f[B]\(lqnever\(rq\f[R] / \f[B]\(lqalways\(rq\f[R] /
 \f[B]\(lqask\(rq\f[R]
 .RS
-Whether or not \f[CR]http\-equiv=refresh\f[R] meta tags should be
-respected.
+Whether or not \f[CR]http\-equiv=refresh\f[R] meta tags and headers
+should be respected.
 \(lqnever\(rq completely disables them, \(lqalways\(rq automatically
 accepts all of them, \(lqask\(rq brings up a pop\-up menu.
 .RE
@@ -1216,7 +1217,7 @@ toggleLinkHintsAutoClick
 Same as \f[CR]toggleLinkHints\f[R], but also click the selected link.
 .SS Buffer actions
 \f[CR]n\f[R] refers to a number preceding the action.
-e.g.\ in \f[CR]10gg\f[R], n = 10.
+e.g.\ in \f[CR]10gg\f[R], \f[CR]n\f[R] is 10.
 If no preceding number is input, then it is left unspecified.
 .PP
 Default keybindings are highlighted in \f[B]bold\f[R].
@@ -1225,15 +1226,15 @@ cursorUp, cursorDown
 \f[B]j\f[R]/\f[B]C\-p\f[R]/\f[B]Up\f[R],
 \f[B]k\f[R]/\f[B]C\-n\f[R]/\f[B]Down\f[R]
 .RS
-Move the cursor upwards/downwards by n lines, or if n is unspecified, by
-1.
+Move the cursor upwards/downwards by \f[CR]n\f[R] lines, or if
+\f[CR]n\f[R] is unspecified, by 1.
 .RE
 .TP
 cursorLeft, cursorRight
 \f[B]h\f[R]/\f[B]Left\f[R], \f[B]l\f[R]/\f[B]Right\f[R]
 .RS
-Move the cursor to the left/right by n cells, or if n is unspecified, by
-1.
+Move the cursor to the left/right by \f[CR]n\f[R] cells, or if
+\f[CR]n\f[R] is unspecified, by 1.
 .RE
 .TP
 cursorLineBegin
@@ -1301,30 +1302,30 @@ pageUp, pageDown, pageLeft, pageRight
 \f[B]C\-b\f[R]/\f[B]PageUp\f[R], \f[B]C\-f\f[R]/\f[B]PageDown\f[R],
 \f[B]z H\f[R], \f[B]z L\f[R]
 .RS
-Scroll up/down/left/right by n pages, or if n is unspecified, by one
-page.
+Scroll up/down/left/right by \f[CR]n\f[R] pages, or if \f[CR]n\f[R] is
+unspecified, by one page.
 .RE
 .TP
 halfPageUp, halfPageDown, halfPageLeft, halfPageUp
 \f[B]C\-u\f[R], \f[B]C\-d\f[R]
 .RS
-Scroll up/down/left/right by n half pages, or if n is unspecified, by
-one page.
+Scroll up/down/left/right by \f[CR]n\f[R] half pages, or if \f[CR]n\f[R]
+is unspecified, by one page.
 .RE
 .TP
 scrollUp, scrollDown, scrollLeft, scrollRight
 \f[B]K\f[R]/\f[B]C\-y\f[R], \f[B]J\f[R]/\f[B]C\-e\f[R], \f[B]z h\f[R],
 \f[B]z l\f[R]
 .RS
-Scroll up/down/left/right by n lines, or if n is unspecified, by one
-line.
+Scroll up/down/left/right by \f[CR]n\f[R] lines, or if \f[CR]n\f[R] is
+unspecified, by one line.
 .RE
 .TP
 click
 \f[B]RET\f[R]/\f[B]LF\f[R]
 .RS
 Click the HTML element currently under the cursor.
-n specifies the number of clicks in JS events.
+\f[CR]n\f[R] specifies the number of clicks in JS events.
 .RE
 .TP
 rightClick
@@ -1375,7 +1376,8 @@ raisePage, raisePageBegin, centerLine, centerLineBegin, lowerPage, lowerPageBegi
 \f[B]z t\f[R], \f[B]z RET\f[R], \f[B]z z\f[R], \f[B]z .\f[R], \f[B]z
 b\f[R], \f[B]z \-\f[R]
 .RS
-If n is specified, move cursor to line n.\ Then,
+If \f[CR]n\f[R] is specified, move cursor to line \f[CR]n\f[R].
+Then,
 .IP \(bu 2
 \f[CR]raisePage\f[R] scrolls down so that the cursor is on the top line
 of the screen.
@@ -1395,16 +1397,16 @@ non\-blank character, as the original keybindings in vi do.
 nextPageBegin
 \f[B]z +\f[R]
 .RS
-If n is specified, move to the screen before the nth line and raise the
-page.
+If \f[CR]n\f[R] is specified, move to the screen before the nth line and
+raise the page.
 Otherwise, go to the next screen\(cqs first line and raise the page.
 .RE
 .TP
 previousPageBegin
 \f[B]z \(ha\f[R]
 .RS
-If n is specified, move to the screen before the nth line and lower the
-page.
+If \f[CR]n\f[R] is specified, move to the screen before the nth line and
+lower the page.
 Otherwise, go to the previous screen\(cqs last line and lower the page.
 .RE
 .TP
@@ -1421,14 +1423,15 @@ Center screen around the current column.
 gotoLineOrStart, gotoLineOrEnd
 \f[B]g g\f[R], \f[B]G\f[R]
 .RS
-If n is specified, jump to line n.\ Otherwise, jump to the start/end of
-the page.
+If \f[CR]n\f[R] is specified, jump to line \f[CR]n\f[R].
+Otherwise, jump to the first/last line of the buffer.
 .RE
 .TP
 gotoColumnOrBegin, gotoColumnOrEnd
 \f[B]|\f[R]
 .RS
-If n is specified, jump to column n of the current line.
+If \f[CR]n\f[R] is specified, jump to column \f[CR]n\f[R] of the current
+line.
 Otherwise, jump to the first/last column.
 .RE
 .TP

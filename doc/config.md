@@ -188,7 +188,7 @@ autofocus = false
 : **boolean**
 
 : When set to true, elements with an "autofocus" attribute are focused on
-automatically after the buffer is loaded.
+  automatically after the buffer is loaded.
 
   If scripting is enabled, this also allows scripts to focus on elements.
 
@@ -208,7 +208,7 @@ mark-links = false
 : **boolean**
 
 : Add numeric markers before links.  In headless/dump mode, this also
-prints a list of URLs after the page.
+  prints a list of URLs after the page.
 
 user-style = ""
 : **CSS stylesheet**
@@ -235,8 +235,8 @@ ignore-case = "auto"
 : **"auto"** / **boolean**
 
 : When set to true, document-wide searches are case-insensitive by
-default.  When set to "auto", searches are only case-sensitive when the
-search term includes a capital letter.
+  default.  When set to "auto", searches are only case-sensitive when the
+  search term includes a capital letter.
 
   Note: this can also be overridden inline in the search bar (vim-style),
   with the escape sequences `\c` (ignore case) and `\C` (strict case).
@@ -283,7 +283,7 @@ editor = "\${VISUAL:-\${EDITOR:-vi}}"
 : **shell command**
 
 : External editor command.  %s is substituted for the file name, %d for
-the line number.
+  the line number.
 
 mailcap = ["~/.mailcap", "/etc/mailcap", "/usr/etc/mailcap", "/usr/local/etc/mailcap"]
 : **array of paths**
@@ -295,7 +295,7 @@ mime-types = ["~/.mime.types", "/etc/mime.types", "/usr/etc/mime.types", "/usr/l
 : **array of paths**
 
 : Search path for mime.types files.  See [**cha-mime.types**](mime.types.md)(5)
-for details.
+  for details.
 
 auto-mailcap = "\$CHA_DIR/mailcap"
 : **path**
@@ -478,14 +478,14 @@ max-net-connections = 12
 : **number**
 
 : Maximum number of simultaneous network connections allowed in one buffer.
-Further connections are held back until the number returns below the
-threshold.
+  Further connections are held back until the number returns below the
+  threshold.
 
 prepend-scheme = "https://"
 : **string**
 
 : Prepend this to URLs passed to Chawan (or typed into the URL bar) without
-a scheme.
+  a scheme.
 
   Note that local files (`file:` scheme) will always be checked first; only
   if this fails, Chawan will retry the request with `prepend-scheme` set as
@@ -495,9 +495,9 @@ proxy = ""
 : **URL**
 
 : Specify a proxy for all network requests Chawan makes.  Currently, the
-formats `http://user:pass@domain` and `socks5://user:pass@domain` are
-accepted.  Unlike in curl, `socks5h` is an alias of `socks5`, and DNS
-requests are always tunneled.
+  formats `http://user:pass@domain` and `socks5://user:pass@domain` are
+  accepted.  Unlike in curl, `socks5h` is an alias of `socks5`, and DNS
+  requests are always tunneled.
 
   Can be overridden by siteconf.
 
@@ -505,7 +505,7 @@ default-headers = {see bonus/config.toml}
 : **table**
 
 : Specify a table of default headers for all HTTP(S) network requests.
-Can be overridden by siteconf.
+  Can be overridden by siteconf.
 
 allow-http-from-file = false
 : **boolean**
@@ -531,22 +531,22 @@ color-mode = "auto"
 **"auto"**
 
 : Set the color mode.  "auto" for automatic detection, "monochrome"
-for black on white, "ansi" for eight ANSI plus eight aixterm colors,
-"eight-bit" for 256-color mode, and "true-color" for 24-bit colors.
+  for black on white, "ansi" for eight ANSI plus eight aixterm colors,
+  "eight-bit" for 256-color mode, and "true-color" for 24-bit colors.
 
 format-mode = "auto"
 : **"auto"** / **["bold", "italic", "underline", "reverse", "strike",
 "overline", "blink"]**
 
-: Specifies allowed output formatting modes.  Accepts the string "auto" or
-an array of specific attributes.  "auto" (the default) tries to detect
-supported formatting modes when launched visually, and omits all formatting
-modes in dump mode.  An empty array (`[]`) disables formatting even in
-visual mode.
+: Specifies allowed output formatting modes.  Accepts the string "auto"
+  or an array of specific attributes.  "auto" (the default) tries to
+  detect supported formatting modes when launched visually, and omits all
+  formatting modes in dump mode.  An empty array (`[]`) disables formatting
+  even in visual mode.
 
 no-format-mode = ["overline"]
 : **["bold", "italic", "underline", "reverse", "strike", "overline",
-"blink"]**
+  "blink"]**
 
 : Disable specific formatting modes.
 
@@ -554,33 +554,34 @@ image-mode = "auto"
 : **"auto"** / **"none"** / **"sixel"** / **"kitty"**
 
 : Specifies the image output mode.  "sixel" uses sixels for output, "kitty"
-uses the Kitty image display protocol, "none" disables image display
-completely.
+  uses the Kitty image display protocol, "none" disables image display
+  completely.
 
-  "auto" detects sixel or kitty support automatically, and falls back to
-  "none" when neither are available.  This is the default setting, and is
-  expected to work on all known terminals with functional image support.
-  However, you must enable `buffer.images` for images to work.
+  "auto" (the default) detects sixel or kitty support automatically, and
+  falls back to "none" when neither are available.  This is expected to
+  work on all known terminals with functional image support.
+
+  Note that `buffer.images` must be enabled for images to load at all.
 
 sixel-colors = "auto"
 : **"auto"** / **2..65535**
 
 : Only applies when `display.image-mode="sixel"`.  Setting this to a number
-overrides the number of sixel color registers reported by the terminal.
+  overrides the number of sixel color registers reported by the terminal.
 
 alt-screen = "auto"
 : **"auto"** / **boolean**
 
 : Enable/disable the alternative screen.  "auto" (the default) tries to
-detect support for this feature.  (However, since Chawan does not link to
-terminfo, you should not expect hacks which remove the respective terminfo
-description to work.)
+  detect support for this feature.  (However, since Chawan does not link
+  to terminfo, you should not expect hacks which remove the respective
+  terminfo description to work.)
 
 highlight-color = "-cha-ansi(bright-cyan)"
 : **CSS color**
 
 : Set the highlight color for incremental search and marks.  CSS color
-names, hex values, and color functions are all accepted.
+  names, hex values, and color functions are all accepted.
 
   In monochrome mode, this setting is ignored; instead, reverse video is
   used.
@@ -594,15 +595,15 @@ double-width-ambiguous = false
 : **boolean**
 
 : Assume the terminal displays characters in the East Asian Ambiguous
-category as double-width characters.  Useful when e.g. ○ occupies two
-cells.
+  category as double-width characters.  Useful when e.g. ○ occupies two
+  cells.
 
 minimum-contrast = 100
 : **0..235**
 
 : Specify the minimum difference between the luminance (Y) of the default
-terminal background and the foreground as represented in YUV.  0 disables
-this function (i.e. allows black letters on black background, etc).
+  terminal background and the foreground as represented in YUV.  0 disables
+  this function (i.e. allows black letters on black background, etc).
 
   Note: in the past, this option used to apply to all colors, but since
   v0.3 Chawan only performs color contrast correction when either the
@@ -620,26 +621,26 @@ default-background-color = "auto"
 : **"auto"** / **RGB color**
 
 : Overrides the assumed background color of the terminal.  "auto" leaves
-background color detection to Chawan.
+  background color detection to Chawan.
 
 default-foreground-color = "auto"
 : **"auto"** / **RGB color**
 
 : Sets the assumed foreground color of the terminal.  "auto" leaves
-foreground color detection to Chawan.
+  foreground color detection to Chawan.
 
 columns = 80, lines = 24, pixels-per-column = 9, pixels-per-line = 18
 : **number**
 
-: Fallback values for the number of columns, lines, pixels per column, and
-pixels per line for the cases where it cannot be determined automatically.
-(For example, these values are used in dump mode.)
+: Fallback values for the number of columns, lines, pixels per column,
+  and pixels per line for the cases where it cannot be determined
+  automatically.  (For example, these values are used in dump mode.)
 
 force-columns = false, force-lines = false, force-pixels-per-column = false, force-pixels-per-line = false
 : **boolean**
 
 : Force-set columns, lines, pixels per column, or pixels per line to the
-fallback values provided above.
+  fallback values provided above.
 
 ## Status
 
@@ -711,7 +712,7 @@ match
 : **regex**
 
 : Regular expression used to match the input string.  Note that websites
-passed as arguments are matched as well.
+  passed as arguments are matched as well.
 
   Note: regexes are handled according to the [match mode](#match-mode)
   regex handling rules.
@@ -720,7 +721,7 @@ substitute-url
 : **JavaScript function**
 
 : A JavaScript function Chawan will pass the input string to.  If a new
-string is returned, it will be parsed instead of the old one.
+  string is returned, it will be parsed instead of the old one.
 
 ## Siteconf
 
@@ -783,7 +784,7 @@ url
 : **regex**
 
 : Regular expression used to match the URL.  Either this or the `host`
-option must be specified.
+  option must be specified.
 
   Note: regexes are handled according to the [match mode](#match-mode)
   regex handling rules.
@@ -792,8 +793,8 @@ host
 : **regex**
 
 : Regular expression used to match the host part of the URL (i.e. domain
-name/ip address).  Either this or the `url` option (but not both) must be
-specified.
+  name/ip address).  Either this or the `url` option (but not both) must be
+  specified.
 
   Note: regexes are handled according to the [match mode](#match-mode) regex
   handling rules.
@@ -802,8 +803,8 @@ rewrite-url
 : **JavaScript function**
 
 : A JavaScript function Chawan will pass the site's URL object to.  If
-a new URL is returned, or the URL object is modified in any way, Chawan
-will transparently redirect the user to this new URL.
+  a new URL is returned, or the URL object is modified in any way, Chawan
+  will transparently redirect the user to this new URL.
 
 cookie = buffer.cookie
 : **boolean** / **"save"**
@@ -815,15 +816,15 @@ share-cookie-jar
 : **host string**
 
 : Cookie jar to use for this domain.  Useful for e.g. sharing cookies with
-subdomains.
+  subdomains.
 
 referer-from = buffer.referer-from
 : **boolean**
 
 : Whether or not Chawan should send a Referer header when opening requests
-originating from this domain.  Simplified example: if you click a link
-on a.com that refers to b.com, and referer-from is true, b.com is sent
-"a.com" as the Referer header.
+  originating from this domain.  Simplified example: if you click a link
+  on a.com that refers to b.com, and referer-from is true, b.com is sent
+  "a.com" as the Referer header.
 
 scripting = buffer.scripting
 : **boolean** / **"app"**
@@ -855,13 +856,13 @@ default-headers = network.default-headers
 : **table**
 
 : Specify a list of default headers for HTTP(S) network requests to this
-buffer.
+  buffer.
 
 insecure-ssl-no-verify = false
 : **boolean**
 
 : When set to true, this disables peer and hostname verification for SSL
-keys on this site, like `curl --insecure` would.
+  keys on this site, like `curl --insecure` would.
 
   Please do not use this unless you are absolutely sure you know what you
   are doing.
@@ -870,16 +871,16 @@ autofocus = buffer.autofocus
 : **boolean**
 
 : When set to true, elements with an "autofocus" attribute are focused on
-automatically after the buffer is loaded.
+  automatically after the buffer is loaded.
 
   If scripting is enabled, this also allows scripts to focus on elements.
 
 meta-refresh = buffer.meta-refresh
 : **"never"** / **"always"** / **"ask"**
 
-: Whether or not `http-equiv=refresh` meta tags should be respected.
-"never" completely disables them, "always" automatically accepts all of
-them, "ask" brings up a pop-up menu.
+: Whether or not `http-equiv=refresh` meta tags and headers should be
+  respected.  "never" completely disables them, "always" automatically
+  accepts all of them, "ask" brings up a pop-up menu.
 
 history = buffer.history
 : **boolean**
@@ -996,19 +997,19 @@ webSearch
 : **C-k**
 
 : Open the URL bar with an arbitrary search engine.  At the moment, this is
-Brave Search, but this may change in the future.
+  Brave Search, but this may change in the future.
 
 dupeBuffer
 : **M-u**
 
 : Duplicate the current buffer.  This is a shallow clone, so modifications
-to one buffer will affect the other.
+  to one buffer will affect the other.
 
 reloadBuffer
 : **U**
 
 : Open a new buffer with the current buffer's URL, replacing the current
-buffer.
+  buffer.
 
 lineInfo
 : **C-g**
@@ -1019,7 +1020,7 @@ toggleSource
 : **&bsol;**
 
 : If viewing an HTML buffer, open a new buffer with its source.  Otherwise,
-open the current buffer's contents as HTML.
+  open the current buffer's contents as HTML.
 
 saveScreen
 : **s s**
@@ -1045,13 +1046,13 @@ discardBuffer
 : **D**
 
 : Discard the current buffer, and move back to the previous/next buffer
-depending on what the previously viewed buffer was.
+  depending on what the previously viewed buffer was.
 
 discardBufferPrev, discardBufferNext
 : **d ,**, **d .**
 
 : Discard the current buffer, and move back to the previous/next buffer,
-or open the link under the cursor.
+  or open the link under the cursor.
 
 discardTree
 : **M-d**
@@ -1067,7 +1068,7 @@ enterCommand
 : **M-c**
 
 : Directly enter a JavaScript command.  Note that this interacts with
-the pager, not the website being displayed.
+  the pager, not the website being displayed.
 
 searchForward, searchBackward
 
@@ -1076,7 +1077,7 @@ searchForward, searchBackward
 isearchForward, searchBackward
 : **/**, **?**
 : Incremental-search for a string, highlighting the first result, forwards
-or backwards.
+  or backwards.
 
 searchNext, searchPrev
 : **n**, **N**
@@ -1091,14 +1092,14 @@ peekCursor
 : **u**
 
 : Display a message of the URL or title under the cursor on the status
-line.  Multiple calls allow cycling through the two. (i.e. by default,
-press u once -> title, press again -> URL)
+  line.  Multiple calls allow cycling through the two. (i.e. by default,
+  press u once -> title, press again -> URL)
 
 showFullAlert
 : **s u**
 
 : Show the last alert inside the line editor.  You can also view previous
-ones using C-p or C-n.
+  ones using C-p or C-n.
 
 copyURL
 : **M-y**
@@ -1134,7 +1135,7 @@ toggleLinkHints
 : **f**
 
 : Show hints before each link (or button).  After typing a hint, the cursor
-is placed on the respective link.
+  is placed on the respective link.
 
   The hint character set may be customized with `input.link-hint-chars`.
 
@@ -1144,7 +1145,7 @@ toggleLinkHintsAutoClick
 
 ### Buffer actions
 
-`n` refers to a number preceding the action.  e.g. in `10gg`, n = 10.
+`n` refers to a number preceding the action.  e.g. in `10gg`, `n` is 10.
 If no preceding number is input, then it is left unspecified.
 
 Default keybindings are highlighted in **bold**.
@@ -1153,14 +1154,14 @@ cursorUp, cursorDown
 : **j**/**C-p**/**Up**,
 **k**/**C-n**/**Down**
 
-: Move the cursor upwards/downwards by n lines, or if n is unspecified,
-by 1.
+: Move the cursor upwards/downwards by `n` lines, or if `n` is unspecified,
+  by 1.
 
 cursorLeft, cursorRight
 : **h**/**Left**, **l**/**Right**
 
-: Move the cursor to the left/right by n cells, or if n is unspecified,
-by 1.
+: Move the cursor to the left/right by `n` cells, or if `n` is unspecified,
+  by 1.
 
 cursorLineBegin
 : **0**/**Home**
@@ -1190,19 +1191,19 @@ cursorWordEnd, cursorViWordEnd, cursorBigWordEnd
 : **e**, **E**
 
 : Move the cursor to the end of the current [word](#word-types), or if
-already there, to the end of the nth next word.
+  already there, to the end of the nth next word.
 
 cursorWordBegin, cursorViWordBegin, cursorBigWordBegin
 : **b**, **B**
 
 : Move the cursor to the beginning of the current [word](#word-types),
-or if already there, to the end of the nth previous word.
+  or if already there, to the end of the nth previous word.
 
 cursorPrevLink, cursorNextLink
 : **[**, **]**
 
 : Move the cursor to the end/beginning of the previous/next clickable
-element (e.g. link, input field, etc).
+  element (e.g. link, input field, etc).
 
 cursorPrevParagraph, cursorNextParagraph
 : **{**, **}**
@@ -1221,32 +1222,32 @@ cursorNthLink
 pageUp, pageDown, pageLeft, pageRight
 : **C-b**/**PageUp**, **C-f**/**PageDown**, **z H**, **z L**
 
-: Scroll up/down/left/right by n pages, or if n is unspecified, by one
-page.
+: Scroll up/down/left/right by `n` pages, or if `n` is unspecified, by one
+  page.
 
 halfPageUp, halfPageDown, halfPageLeft, halfPageUp
 : **C-u**, **C-d**
 
-: Scroll up/down/left/right by n half pages, or if n is unspecified, by
-one page.
+: Scroll up/down/left/right by `n` half pages, or if `n` is unspecified, by
+  one page.
 
 scrollUp, scrollDown, scrollLeft, scrollRight
 : **K**/**C-y**, **J**/**C-e**, **z h**, **z l**
 
-: Scroll up/down/left/right by n lines, or if n is unspecified, by one
-line.
+: Scroll up/down/left/right by `n` lines, or if `n` is unspecified, by one
+  line.
 
 click
 : **RET**/**LF**
 
-: Click the HTML element currently under the cursor.  n specifies the
-number of clicks in JS events.
+: Click the HTML element currently under the cursor.  `n` specifies the
+  number of clicks in JS events.
 
 rightClick
 : **c**
 
 : Send a right click to the buffer.  If it doesn't catch the event (i.e. no
-JS context menu is shown), toggle the menu instead.
+  JS context menu is shown), toggle the menu instead.
 
 toggleMenu
 : **C**
@@ -1262,7 +1263,7 @@ reshape
 : **R**
 
 : Reshape the current buffer (=render the current page anew).  Useful if
-the layout is not updating even though it should have.
+  the layout is not updating even though it should have.
 
 redraw
 : **r**
@@ -1282,7 +1283,7 @@ cursorTop, cursorMiddle, cursorBottom
 raisePage, raisePageBegin, centerLine, centerLineBegin, lowerPage, lowerPageBegin
 : **z t**, **z RET**, **z z**, **z .**, **z b**, **z -**
 
-: If n is specified, move cursor to line n. Then,
+: If `n` is specified, move cursor to line `n`. Then,
 
     * `raisePage` scrolls down so that the cursor is on the top line of
       the screen.  (vi `z RET`, vim `z t`.)
@@ -1297,14 +1298,15 @@ raisePage, raisePageBegin, centerLine, centerLineBegin, lowerPage, lowerPageBegi
 nextPageBegin
 : **z +**
 
-: If n is specified, move to the screen before the nth line and raise the
-page.  Otherwise, go to the next screen's first line and raise the page.
+: If `n` is specified, move to the screen before the nth line and raise the
+  page.  Otherwise, go to the next screen's first line and raise the page.
 
 previousPageBegin
 : **z ^**
 
-: If n is specified, move to the screen before the nth line and lower the
-page.  Otherwise, go to the previous screen's last line and lower the page.
+: If `n` is specified, move to the screen before the nth line and lower
+  the page.  Otherwise, go to the previous screen's last line and lower
+  the page.
 
 cursorLeftEdge, cursorMiddleColumn, cursorRightEdge
 : **g 0**, **g c**, **g $**
@@ -1318,14 +1320,14 @@ centerColumn
 gotoLineOrStart, gotoLineOrEnd
 : **g g**, **G**
 
-: If n is specified, jump to line n.  Otherwise, jump to the start/end
-of the page.
+: If `n` is specified, jump to line `n`.  Otherwise, jump to the first/last
+  line of the buffer.
 
 gotoColumnOrBegin, gotoColumnOrEnd
 : **&vert;**
 
-: If n is specified, jump to column n of the current line.  Otherwise, jump
-to the first/last column.
+: If `n` is specified, jump to column `n` of the current line.  Otherwise,
+  jump to the first/last column.
 
 mark
 : **m**
@@ -1336,7 +1338,7 @@ gotoMark, gotoMarkY
 : **&grave;**, **'**
 
 : Wait for a character `x` and then jump to the mark with the ID `x` (if it
-exists on the page).
+  exists on the page).
 
   `gotoMark` sets both the X and Y positions; gotoMarkY only sets the Y
   position.
@@ -1444,10 +1446,10 @@ line.prevHist, line.nextHist
 : Jump to the previous/next history entry
 
 Note: to facilitate URL editing, the line editor has a different definition
-of what a word is than the pager. For the line editor, a word is either a
-sequence of alphanumeric characters, or any single non-alphanumeric
-character. (This means that e.g. `https://` consists of four words: `https`,
-`:`, `/` and `/`.)
+of what a word is than the pager.  For the line editor, a word is either
+a sequence of alphanumeric characters, or any single non-alphanumeric
+character.  (This means that e.g. `https://` consists of four words:
+`https`, `:`, `/` and `/`.)
 
 ```Examples:
 # Control+A moves the cursor to the beginning of the line.
@@ -1462,9 +1464,8 @@ character. (This means that e.g. `https://` consists of four words: `https`,
 
 ### Regex handling
 
-Regular expressions are currently handled using the libregexp library
-from QuickJS.  This means that all regular expressions work as in
-JavaScript.
+Regular expressions are currently handled using the libregexp library from
+QuickJS.  This means that all regular expressions work as in JavaScript.
 
 There are two different modes of regex preprocessing in Chawan: "search"
 mode and "match" mode.  Match mode is used for configurations (meaning in
@@ -1473,8 +1474,8 @@ the on-page search function (using searchForward/isearchForward etc.)
 
 #### Match mode
 
-Regular expressions are assumed to be exact matches, except when they
-start with a caret (^) sign or end with an unescaped dollar ($) sign.
+Regular expressions are assumed to be exact matches, except when they start
+with a caret (^) sign or end with an unescaped dollar ($) sign.
 
 In other words, the following transformations occur:
 
