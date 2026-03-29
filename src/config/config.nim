@@ -2359,13 +2359,7 @@ const ConfigInitPathSeq = {
     "~/.mime.types", "/etc/mime.types", "/usr/etc/mime.types",
     "/usr/local/etc/mime.types"
   ],
-  #TODO why are we using w3m's urimethodmap?
-  coUrimethodmap: @[
-    "~/.urimethodmap",
-    "~/.w3m/urimethodmap",
-    "/etc/urimethodmap",
-    "/usr/local/etc/w3m/urimethodmap"
-  ],
+  coUrimethodmap: @["urimethodmap", "~/.urimethodmap", "/etc/urimethodmap"],
   coCgiDir: @["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"],
 }
 

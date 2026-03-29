@@ -313,7 +313,7 @@ cgi-dir = ["\$CHA_DIR/cgi-bin", "\$CHA_LIBEXEC_DIR/cgi-bin"]
 : Search path for local CGI scripts.  See [**cha-cgi**](cgi.md)(5) for
 details.
 
-urimethodmap = ["~/.urimethodmap", "~/.w3m/urimethodmap", "/etc/urimethodmap", "/usr/local/etc/w3m/urimethodmap"]
+urimethodmap = ["\$CHA_DIR/urimethodmap", "~/.urimethodmap", "/etc/urimethodmap"]
 : **array of paths**
 
 : Search path for urimethodmap files.  See

@@ -16,7 +16,7 @@ configuration variable `external.urimethodmap`.
 The default search path for urimethodmap files is:
 
 ```
-$HOME/.urimethodmap:$HOME/.w3m/urimethodmap:/etc/urimethodmap:/usr/local/etc/urimethodmap
+$CHA_DIR/urimethodmap:$HOME/.urimethodmap:/etc/urimethodmap
 ```
 ## Format
 
@@ -80,20 +80,11 @@ w3mdict.cgi in the file viewer. (Unlike in w3m, where it could run
 
 ## Examples
 
-### In config.toml
+Following lines should be specified in `$CHA_DIR/urimethodmap` (where
+`$CHA_DIR` is either ~/.chawan or ~/.config/chawan depending on where your
+config.toml is).
 
-```
-# Following sets the urimethodmap search path to the path relative to the
-# configuration file. So if your configuration file is in
-# ~/.config/chawan/config.toml, Chawan will use ~/.config/chawan/urimethodmap.
-# If it's in ~/.chawan/config.toml, then it uses ~/.chawan/urimethodmap.
-[external]
-urimethodmap = "urimethodmap"
-```
-
-### In urimethodmap
-
-#### magnet.cgi
+### magnet.cgi
 
 ```
 # Use the `magnet.cgi` CGI shell script to pass magnet links to Transmission.
@@ -103,7 +94,7 @@ magnet:		/cgi-bin/magnet.cgi?%s
 `magnet.cgi` can be found in the `bonus/` directory. You can also write a
 local CGI wrapper to pass the links to your BitTorrent client of choice.
 
-#### dict
+### dict
 
 In w3m, urimethodmap is commonly (ab)used to define shorthands for CGI scripts.
 

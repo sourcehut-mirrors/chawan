@@ -14,7 +14,7 @@ configuration variable \f[CR]external.urimethodmap\f[R].
 The default search path for urimethodmap files is:
 .IP
 .EX
-$HOME/.urimethodmap:$HOME/.w3m/urimethodmap:/etc/urimethodmap:/usr/local/etc/urimethodmap
+$CHA_DIR/urimethodmap:$HOME/.urimethodmap:/etc/urimethodmap
 .EE
 .SS Format
 The urimethodmap format is taken 1:1 from w3m, with some modifications
@@ -80,17 +80,9 @@ will simply open w3mdict.cgi in the file viewer.
 (Unlike in w3m, where it could run \f[CR]w3mdict.cgi\f[R] depending on
 the user\(cqs configuration.)
 .SS Examples
-.SS In config.toml
-.IP
-.EX
-# Following sets the urimethodmap search path to the path relative to the
-# configuration file. So if your configuration file is in
-# \(ti/.config/chawan/config.toml, Chawan will use \(ti/.config/chawan/urimethodmap.
-# If it\(aqs in \(ti/.chawan/config.toml, then it uses \(ti/.chawan/urimethodmap.
-[external]
-urimethodmap = \(dqurimethodmap\(dq
-.EE
-.SS In urimethodmap
+Following lines should be specified in \f[CR]$CHA_DIR/urimethodmap\f[R]
+(where \f[CR]$CHA_DIR\f[R] is either \(ti/.chawan or \(ti/.config/chawan
+depending on where your config.toml is).
 .SS magnet.cgi
 .IP
 .EX
