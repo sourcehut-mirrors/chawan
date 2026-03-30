@@ -4,40 +4,45 @@ import std/posix
 
 import types/opt
 
-type
-  DynStream* = ref object of RootObj
+type PosixStream* = ref object
+  fd*: cint
+  blocking*: bool
+  isend*: bool
+  closed: bool
 
-# Semantics of this function are those of POSIX read(3): that is, it
-# may return a result that is lower than `len`, and that does not mean
-# the stream is finished.
-# isend must be set by implementations when the end of the stream is
-# reached.  If the user is trying to read after isend is set, the
-# implementation should assert.
-method read*(s: DynStream; buffer: pointer; len: int): int {.base.} =
-  result = 0
-  doAssert false
+# Like read(3), this may return a result that is lower than `len`, and that
+# does not mean the stream is finished.
+# isend is set when the end of the stream is reached.  If the user is
+# trying to read after isend is set, we assert.
+proc read*(s: PosixStream; buffer: pointer; len: int): int =
+  let n = read(s.fd, buffer, len)
+  if n == 0:
+    assert not s.isend
+    s.isend = true
+  return n
 
 # See above, but with write(2)
-method write*(s: DynStream; buffer: pointer; len: int): int {.base.} =
-  result = 0
-  doAssert false
+proc write*(s: PosixStream; buffer: pointer; len: int): int =
+  return write(s.fd, buffer, len)
 
-method sclose*(s: DynStream) {.base.} =
-  doAssert false
+proc sclose*(s: PosixStream) =
+  assert not s.closed
+  discard close(s.fd)
+  s.closed = true
 
-proc read*(s: DynStream; buffer: var openArray[uint8]): int {.inline.} =
+proc read*(s: PosixStream; buffer: var openArray[uint8]): int {.inline.} =
   return s.read(addr buffer[0], buffer.len)
 
-proc read*(s: DynStream; buffer: var openArray[char]): int {.inline.} =
+proc read*(s: PosixStream; buffer: var openArray[char]): int {.inline.} =
   return s.read(addr buffer[0], buffer.len)
 
-proc write*(s: DynStream; buffer: openArray[char]): int {.inline.} =
+proc write*(s: PosixStream; buffer: openArray[char]): int {.inline.} =
   return s.write(unsafeAddr buffer[0], buffer.len)
 
-proc write*(s: DynStream; buffer: openArray[uint8]): int {.inline.} =
+proc write*(s: PosixStream; buffer: openArray[uint8]): int {.inline.} =
   return s.write(unsafeAddr buffer[0], buffer.len)
 
-proc readLoop*(s: DynStream; buffer: pointer; len: int): Opt[void] =
+proc readLoop*(s: PosixStream; buffer: pointer; len: int): Opt[void] =
   var n = 0
   while n < len:
     let m = s.read(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
@@ -46,17 +51,17 @@ proc readLoop*(s: DynStream; buffer: pointer; len: int): Opt[void] =
     n += m
   ok()
 
-proc readLoop*(s: DynStream; buffer: var openArray[uint8]): Opt[void] =
+proc readLoop*(s: PosixStream; buffer: var openArray[uint8]): Opt[void] =
   if buffer.len == 0:
     return ok()
   return s.readLoop(addr buffer[0], buffer.len)
 
-proc readLoop*(s: DynStream; buffer: var openArray[char]): Opt[void] =
+proc readLoop*(s: PosixStream; buffer: var openArray[char]): Opt[void] =
   if buffer.len == 0:
     return ok()
   return s.readLoop(addr buffer[0], buffer.len)
 
-proc writeLoop*(s: DynStream; buffer: pointer; len: int): Opt[void] =
+proc writeLoop*(s: PosixStream; buffer: pointer; len: int): Opt[void] =
   var n = 0
   while n < len:
     let p = addr cast[ptr UncheckedArray[uint8]](buffer)[n]
@@ -66,22 +71,15 @@ proc writeLoop*(s: DynStream; buffer: pointer; len: int): Opt[void] =
     n += m
   ok()
 
-proc writeLoop*(s: DynStream; buffer: openArray[uint8]): Opt[void] =
+proc writeLoop*(s: PosixStream; buffer: openArray[uint8]): Opt[void] =
   if buffer.len > 0:
     return s.writeLoop(unsafeAddr buffer[0], buffer.len)
   ok()
 
-proc writeLoop*(s: DynStream; buffer: openArray[char]): Opt[void] =
+proc writeLoop*(s: PosixStream; buffer: openArray[char]): Opt[void] =
   if buffer.len > 0:
     return s.writeLoop(unsafeAddr buffer[0], buffer.len)
   ok()
-
-type
-  PosixStream* = ref object of DynStream
-    fd*: cint
-    blocking*: bool
-    isend*: bool
-    closed: bool
 
 proc readAll*(s: PosixStream; buffer: var string): bool =
   assert s.blocking
@@ -102,16 +100,6 @@ proc readAll*(s: PosixStream; buffer: var string): bool =
 proc readAll*(s: PosixStream): string =
   discard s.readAll(result)
 
-method read*(s: PosixStream; buffer: pointer; len: int): int =
-  let n = read(s.fd, buffer, len)
-  if n == 0:
-    assert not s.isend
-    s.isend = true
-  return n
-
-method write*(s: PosixStream; buffer: pointer; len: int): int =
-  return write(s.fd, buffer, len)
-
 proc setBlocking*(s: PosixStream; blocking: bool) =
   s.blocking = blocking
   let ofl = fcntl(s.fd, F_GETFL, 0)
@@ -122,11 +110,6 @@ proc setBlocking*(s: PosixStream; blocking: bool) =
 
 proc seek*(s: PosixStream; off: int64): int64 =
   return int64(lseek(s.fd, Off(off), SEEK_SET))
-
-method sclose*(s: PosixStream) =
-  assert not s.closed
-  discard close(s.fd)
-  s.closed = true
 
 proc closeHandle(fd, flags: cint) =
   discard close(fd)

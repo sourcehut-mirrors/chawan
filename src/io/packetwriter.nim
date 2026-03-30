@@ -68,14 +68,14 @@ proc closeFds(w: var PacketWriter) =
   w.fds.setLen(0)
 
 # Returns false on EOF, true if we flushed successfully.
-proc flush*(w: var PacketWriter; stream: DynStream): bool =
+proc flush*(w: var PacketWriter; stream: PosixStream): bool =
   w.writeSize()
   if stream.writeLoop(w.buffer.toOpenArray(0, w.bufLen - 1)).isErr:
     w.closeFds()
     return false
   if w.fds.len > 0:
     w.fds.reverse()
-    let n = PosixStream(stream).sendMsg([0u8], w.fds)
+    let n = stream.sendMsg([0u8], w.fds)
     if n < 1:
       return false
   w.closeFds()
@@ -132,13 +132,13 @@ proc flush*(b: var PacketBuffer; w: var PacketWriter; stream: PosixStream):
   b.ws.add(move(w))
   b.flush(stream)
 
-template withPacketWriter*(stream: DynStream; w, body, fallback: untyped) =
+template withPacketWriter*(stream: PosixStream; w, body, fallback: untyped) =
   var w = initPacketWriter()
   body
   if not w.flush(stream):
     fallback
 
-template withPacketWriterFire*(stream: DynStream; w, body: untyped) =
+template withPacketWriterFire*(stream: PosixStream; w, body: untyped) =
   var w = initPacketWriter()
   body
   discard w.flush(stream)

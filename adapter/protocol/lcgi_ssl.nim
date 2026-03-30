@@ -145,20 +145,4 @@ proc closeSSLSocket*(ssl: ptr SSL) =
   SSL_free(ssl)
   SSL_CTX_free(ctx)
 
-type
-  SSLStream* = ref object of DynStream
-    ssl: ptr SSL
-
-method read*(s: SSLStream; buffer: pointer; len: int): int =
-  return int(SSL_read(s.ssl, buffer, cint(len)))
-
-method write*(s: SSLStream; buffer: pointer; len: int): int =
-  return int(SSL_write(s.ssl, buffer, cint(len)))
-
-method sclose*(s: SSLStream) =
-  s.ssl.closeSSLSocket()
-
-proc newSSLStream*(ssl: ptr SSL): SSLStream =
-  return SSLStream(ssl: ssl)
-
 {.pop.} # raises: []

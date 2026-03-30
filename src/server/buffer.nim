@@ -113,7 +113,7 @@ iterator handles(bc: BufferContext): PagerHandle =
 template document(bc: BufferContext): Document =
   bc.window.document
 
-template withPacketWriterReturnEOF(stream: DynStream; w, body: untyped) =
+template withPacketWriterReturnEOF(stream: PosixStream; w, body: untyped) =
   stream.withPacketWriter w:
     body
   do:

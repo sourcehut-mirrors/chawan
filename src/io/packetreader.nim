@@ -33,7 +33,7 @@ proc sread*(r: var PacketReader; obj: var ref object)
 proc sread*(r: var PacketReader; c: var ARGBColor)
 proc sread*(r: var PacketReader; c: var CellColor)
 
-proc initReader*(stream: DynStream; r: var PacketReader; len, nfds: int): bool =
+proc initReader*(stream: PosixStream; r: var PacketReader; len, nfds: int): bool =
   assert len != 0 or nfds != 0
   r = PacketReader(
     buffer: newSeqUninit[uint8](len),
@@ -47,7 +47,6 @@ proc initReader*(stream: DynStream; r: var PacketReader; len, nfds: int): bool =
     #TODO just use recvmsg for both?
     var dummy {.noinit.}: array[1, uint8]
     var numFds = 0
-    let stream = PosixStream(stream)
     let n = stream.recvMsg(dummy, r.fds, numFds)
     if n < dummy.len:
       return false
@@ -57,7 +56,7 @@ proc initReader*(stream: DynStream; r: var PacketReader; len, nfds: int): bool =
       return false
   true
 
-proc initPacketReader*(stream: DynStream; r: var PacketReader): bool =
+proc initPacketReader*(stream: PosixStream; r: var PacketReader): bool =
   var len {.noinit.}: array[2, int]
   if stream.readLoop(addr len[0], sizeof(len)).isErr:
     return false
@@ -118,7 +117,7 @@ proc initPartialReader*(stream: PosixStream; pr: var PartialPacketReader):
 proc assertEmpty(r: var PacketReader) =
   assert r.bufIdx == r.buffer.len and r.fds.len == 0
 
-template withPacketReader*(stream: DynStream; r, body, fallback: untyped) =
+template withPacketReader*(stream: PosixStream; r, body, fallback: untyped) =
   block:
     var r: PacketReader
     if stream.initPacketReader(r):
@@ -127,7 +126,7 @@ template withPacketReader*(stream: DynStream; r, body, fallback: untyped) =
     else:
       fallback
 
-template withPacketReaderFire*(stream: DynStream; r, body: untyped) =
+template withPacketReaderFire*(stream: PosixStream; r, body: untyped) =
   stream.withPacketReader r:
     body
   do:

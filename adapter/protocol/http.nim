@@ -108,7 +108,8 @@ type
     bodyState: HTTPState # if TE is chunked, hsChunkSize; else hsBody
     lineState: LineState
     chunkSize: uint64 # Content-Length if TE is not chunked
-    ps: DynStream
+    ssl: ptr SSL # used in HTTPS
+    httpStream: PosixStream # used in HTTP
     os: PosixStream
     line: string
     headers: seq[tuple[key, value: string]]
@@ -412,6 +413,29 @@ proc checkCert(ssl: ptr SSL) =
     let s = X509_verify_cert_error_string(res)
     cgiDie(ceInvalidResponse, s)
 
+proc read(op: HTTPHandle; a: var openArray[char]): int =
+  if a.len <= 0:
+    return 0
+  if op.ssl != nil:
+    return int(SSL_read(op.ssl, addr a[0], cint(a.len)))
+  else:
+    return op.httpStream.read(a)
+
+proc writeLoop(op: HTTPHandle; a: openArray[char]): Opt[void] =
+  if a.len > 0:
+    if op.ssl == nil:
+      return op.httpStream.writeLoop(a)
+    # default behavior of OpenSSL does not allow partial writes
+    if SSL_write(op.ssl, unsafeAddr a[0], cint(a.len)) <= 0:
+      return err()
+  ok()
+
+proc close(op: HTTPHandle) =
+  if op.ssl != nil:
+    op.ssl.closeSSLSocket()
+  else:
+    op.httpStream.sclose()
+
 proc main*() =
   let secure = getEnvEmpty("MAPPED_URI_SCHEME") == "https"
   let username = getEnvEmpty("MAPPED_URI_USERNAME")
@@ -421,14 +445,14 @@ proc main*() =
   let path = getEnvEmpty("MAPPED_URI_PATH", "/")
   let query = getEnvEmpty("MAPPED_URI_QUERY")
   let os = newPosixStream(STDOUT_FILENO)
-  let ps = if secure:
+  let op = HTTPHandle(os: os)
+  if secure:
     let ssl = connectSSLSocket(host, port, useDefaultCA = true).orDie()
     if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY", "0") != "1":
       checkCert(ssl)
-    newSSLStream(ssl)
+    op.ssl = ssl
   else:
-    connectSocket(host, port).orDie()
-  let op = HTTPHandle(ps: ps, os: os)
+    op.httpStream = connectSocket(host, port).orDie()
   let requestMethod = getEnvEmpty("REQUEST_METHOD")
   var buf = requestMethod & ' ' & path
   if query != "":
@@ -446,24 +470,23 @@ proc main*() =
     buf &= "Content-Length: " & $n & "\r\n"
   buf &= getEnvEmpty("REQUEST_HEADERS")
   buf &= "\r\n"
-  op.ps.writeLoop(buf)
-    .orDie(ceConnectionRefused, "error sending request header")
+  op.writeLoop(buf).orDie(ceConnectionRefused, "error sending request header")
   var iq {.noinit.}: array[InputBufferSize, char]
   if requestMethod == "POST":
     let ps = newPosixStream(STDIN_FILENO)
     while (let n = ps.read(iq); n > 0):
-      op.ps.writeLoop(iq.toOpenArray(0, n - 1))
+      op.writeLoop(iq.toOpenArray(0, n - 1))
         .orDie(ceConnectionRefused, "error sending request body")
   if os.writeLoop("Cha-Control: Connected\r\n").isErr:
     quit(1)
   block readResponse:
-    while (let n = ps.read(iq); n > 0):
+    while (let n = op.read(iq); n > 0):
       var m = 0
       while m < n:
         let k = op.handleBuffer(iq.toOpenArray(m, n - 1))
         if k == -1: # hsDone
           break readResponse
         m += k
-  op.ps.sclose()
+  op.close()
 
 {.pop.} # raises: []
