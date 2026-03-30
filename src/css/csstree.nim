@@ -109,10 +109,6 @@ when defined(debug):
     of stCounter:
       return "#counter"
 
-iterator mritems(counters: var seq[CSSCounter]): var CSSCounter =
-  for i in countdown(counters.high, 0):
-    yield counters[i]
-
 proc incCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
   var found = false
   for counter in ctx.counters.mritems:

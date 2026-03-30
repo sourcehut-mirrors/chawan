@@ -1217,6 +1217,10 @@ iterator ritems*[T](a: openArray[T]): lent T {.inline.} =
     {.pop.}
     yield a[i]
 
+iterator mritems*[T](a: var openArray[T]): var T {.inline.} =
+  for i in countdown(a.high, 0):
+    yield a[i]
+
 proc getFileExt*(path: string): string =
   let n = path.rfind({'/', '.'})
   if n < 0 or path[n] != '.':

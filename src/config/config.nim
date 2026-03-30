@@ -269,7 +269,7 @@ type
 
   ConfigOptionClass* = enum
     cocBit, cocHWord, cocWord, cocStr, cocStrSeq, cocCharsetSeq, cocHeaders,
-    cocURL, cocRegex, cocFunction, cocClear
+    cocURL, cocRegex, cocFunction, cocCmdInit, cocClear
 
   ConfigHeadersInit* = ref object
     clear*: bool
@@ -299,6 +299,8 @@ type
       regex*: Regex
     of cocFunction:
       fun*: pointer # JSObject *
+    of cocCmdInit:
+      cmdInit*: seq[tuple[k: string; fun: pointer]]
     of cocClear:
       discard
 
@@ -313,9 +315,6 @@ type
   ConfigList = object
     head: ConfigRule
     tail: ConfigRule
-
-  CommandConfig = object
-    init*: seq[tuple[k, cmd: string]] # initial k/v map
 
 const OptionMap = [
   coAllowHttpFromFile: (t: cotBool, section: csNetwork),
@@ -446,7 +445,7 @@ type
     #TODO getset
     lists*: array[csSiteconf..csOmnirule, ConfigList]
     ruleSeen: HashSet[string]
-    cmd*: CommandConfig
+    cmdInit: seq[tuple[k: string; fun: pointer]] # initial k/v map
     actionMap*: array[csPage..csLine, ActionMap]
 
   TomlState = enum
@@ -1863,6 +1862,16 @@ proc addFunction(cp: var ConfigParser): var pointer =
   cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocFunction))
   cp.entries[^1].fun
 
+proc addCmdInit(cp: var ConfigParser):
+    var seq[tuple[k: string; fun: pointer]] =
+  if cp.entries.len == 0 or cp.entries[^1].t != cocCmdInit:
+    cp.entries.add(ConfigEntry(
+      section: cp.section,
+      opt: cp.opt,
+      t: cocCmdInit
+    ))
+  cp.entries[^1].cmdInit
+
 proc parseConfigValue1(cp: var ConfigParser): Opt[void] =
   let ot = optionType(cp.opt)
   return case ot
@@ -1906,17 +1915,25 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
       cp.warn("the namespace " & cp.key.until('.') & " is deprecated")
     elif AsciiUpperAlpha in cp.key.toOpenArray(0, dotIdx):
       cp.warn("the first component of namespaces must be lower-case")
-    #TODO I guess it would be better if we eval'd here?
-    # then a) config reloading can't (normally) choke after parsing,
-    # b) we don't have to store the buffer
-    cp.config.cmd.init.add((move(cp.key), move(cp.buf)))
+    let ctx = cp.ctx
+    let fun = if cp.buf.len > 0:
+      let val = ctx.eval(cp.buf, "<" & cp.key & ">", JS_EVAL_TYPE_GLOBAL)
+      if JS_IsException(val):
+        return cp.err(ctx.getExceptionMsg())
+      if not JS_IsFunction(ctx, val):
+        JS_FreeValue(ctx, val)
+        return cp.err("not a function")
+      JS_VALUE_GET_PTR(val)
+    else:
+      nil
+    cp.addCmdInit().add((move(cp.key), fun))
   of csPage, csLine:
     ?cp.typeCheck(ttString)
     let ctx = cp.ctx
     let val = ctx.evalCmdDecl(cp.buf)
     if JS_IsException(val):
       return cp.err(ctx.getExceptionMsg())
-    #TODO this won't fly for dynamic reloading (and neither will cmd)
+    #TODO this won't fly for dynamic reloading
     let map = cp.config.actionMap[section]
     map.t.add(Action(k: move(cp.key), val: val, n: map.num))
     inc map.num
@@ -1953,6 +1970,12 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
       else:
         assert opt in SiteconfOptions
         rule.entries.add(entry)
+  elif section == csCmd:
+    assert entry.t == cocCmdInit
+    if config.cmdInit.len == 0:
+      config.cmdInit = move(entry.cmdInit)
+    else:
+      config.cmdInit.add(entry.cmdInit)
   else:
     case entry.t
     of cocBit: config.bits[opt] = entry.bit
@@ -1969,7 +1992,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
         for it in init.s:
           config.defaultHeaders[it.name] = it.value
     of cocURL: config.proxy = move(entry.url)
-    of cocClear, cocRegex, cocFunction: assert false
+    of cocClear, cocRegex, cocFunction, cocCmdInit: assert false
 
 proc applyEntries(ctx: JSContext; config: Config;
     entries: var seq[ConfigEntry]) =
@@ -2029,8 +2052,15 @@ proc parseFile(cp: var ConfigParser; file: ChaFile): Opt[void] =
 
 proc cleanup(cp: var ConfigParser) =
   for entry in cp.entries:
-    if entry.t == cocFunction and entry.fun != nil:
-      JS_FreeValue(cp.ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
+    case entry.t
+    of cocFunction:
+      if entry.fun != nil:
+        JS_FreeValue(cp.ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
+    of cocCmdInit:
+      for it in entry.cmdInit:
+        if it.fun != nil:
+          JS_FreeValue(cp.ctx, JS_MKPTR(JS_TAG_OBJECT, it.fun))
+    else: discard
   if cp.error == "":
     cp.error = "failed to read config"
 
@@ -2102,7 +2132,7 @@ proc openConfig*(dir, dataDir: var string; override: Option[string];
   dataDir = dir
   return chafile.fopen(dir / "config.toml", "r")
 
-# called after parseConfig returns
+# called at pager init
 proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
   let global = JS_GetGlobalObject(ctx)
   let obj = JS_GetPropertyStr(ctx, global, "cmd")
@@ -2110,7 +2140,7 @@ proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
   if JS_IsException(obj):
     JS_FreeValue(ctx, obj)
     return err()
-  for (k, cmd) in config.cmd.init.ritems:
+  for (k, cmd) in config.cmdInit.mritems:
     var objIt = JS_DupValue(ctx, obj)
     let name = k.afterLast('.')
     if name.len < k.len:
@@ -2128,26 +2158,16 @@ proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
           return err()
         JS_FreeValue(ctx, objIt)
         objIt = prop
-    if cmd == "":
+    if cmd == nil:
       continue
-    let fun = ctx.eval(cmd, "<" & k & ">", JS_EVAL_TYPE_GLOBAL)
-    if JS_IsException(fun):
-      JS_FreeValue(ctx, objIt)
-      JS_FreeValue(ctx, obj)
-      return err()
-    if not JS_IsFunction(ctx, fun):
-      JS_FreeValue(ctx, objIt)
-      JS_FreeValue(ctx, obj)
-      JS_FreeValue(ctx, fun)
-      JS_ThrowTypeError(ctx, "not a function")
-      return err()
-    let dpr = ctx.definePropertyE(objIt, name, fun)
+    let dpr = ctx.definePropertyE(objIt, name, JS_MKPTR(JS_TAG_OBJECT, cmd))
     JS_FreeValue(ctx, objIt)
+    cmd = nil
     if dpr == dprException:
       JS_FreeValue(ctx, obj)
       return err()
   JS_FreeValue(ctx, obj)
-  config.cmd.init = @[]
+  config.cmdInit = @[]
   ctx.sort(config.page)
   ctx.sort(config.line)
   ok()
