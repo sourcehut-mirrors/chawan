@@ -1,0 +1,2 @@
+test/test2; echo 'never used because of template'; test=echo %s\; true; copiousoutput
+test/test2; echo 'hello from mailcap'; test=true; copiousoutput

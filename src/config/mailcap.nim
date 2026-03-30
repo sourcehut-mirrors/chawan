@@ -368,7 +368,7 @@ proc checkEntry(entry: MailcapEntry; contentType, mt, st: string; url: URL):
     of nfTest:
       var canpipe = true
       let cmd = unquoteCommand(field.value, contentType, "", url, canpipe)
-      if canpipe and myposix.system(cstring(cmd)) == 0:
+      if not canpipe or myposix.system(cstring(cmd)) != 0:
         return false
     of nfMatch, nfNcMatch:
       let i = field.value.find('\0') + 1

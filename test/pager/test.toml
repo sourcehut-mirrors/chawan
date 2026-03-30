@@ -3,6 +3,7 @@ history = false
 
 [external]
 mime-types = "mime.types"
+auto-mailcap = "mailcap"
 
   [[siteconf]] # test
  host = 'example\.org' # test
