@@ -212,8 +212,8 @@ When doing this, mind the following:
 
 * This *is* an implementation detail, and might change at any time in
   the future (e.g. if we add a "no cache files" mode).  Always check
-  for S_ISREG to ensure that you are actually dealing with a file.  (Use
-  io/dynstream.nim's recvDataLoopOrMmap and maybeMmapForSend to deal with
+  for S_ISREG to ensure that you are actually dealing with a file.
+  (Use io/dynstream.nim's readLoopOrMmap and maybeMmapForSend to deal with
   this automatically.)
 
 ## See also

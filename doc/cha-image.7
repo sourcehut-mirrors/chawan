@@ -229,7 +229,7 @@ This \f[I]is\f[R] an implementation detail, and might change at any time
 in the future (e.g.\ if we add a \(lqno cache files\(rq mode).
 Always check for S_ISREG to ensure that you are actually dealing with a
 file.
-(Use io/dynstream.nim\(cqs recvDataLoopOrMmap and maybeMmapForSend to
-deal with this automatically.)
+(Use io/dynstream.nim\(cqs readLoopOrMmap and maybeMmapForSend to deal
+with this automatically.)
 .SS See also
 \f[B]cha\f[R](1) \f[B]cha\-terminal\f[R](7)
