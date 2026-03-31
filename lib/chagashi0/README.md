@@ -19,17 +19,17 @@ inefficient. Lower level interfaces are normally faster.
 # Usage: nim r whatever.nim -f fromCharset -t toCharset <infile.txt >outfile.txt
 import std/os, chagashi/[encoder, decoder, charset]
 
-var fromCharset = CHARSET_UTF_8
-var toCharset = CHARSET_UTF_8
+var fromCharset = csUtf8
+var toCharset = csUtf8
 for i in 1..paramCount():
   case paramStr(i)
   of "-f": fromCharset = getCharset(paramStr(i + 1))
   of "-t": toCharset = getCharset(paramStr(i + 1))
   else: assert false, "wrong parameter"
-assert fromCharset != CHARSET_UNKNOWN and toCharset != CHARSET_UNKNOWN
+assert fromCharset != csUnknown and toCharset != csUnknown
 let ins = stdin.readAll()
 let insDecoded = ins.decodeAll(fromCharset)
-if toCharset == CHARSET_UTF_8: # insDecoded is already UTF-8, nothing to do
+if toCharset == csUtf8: # insDecoded is already UTF-8, nothing to do
   stdout.write(insDecoded)
 else:
   stdout.write(insDecoded.encodeAll(toCharset))

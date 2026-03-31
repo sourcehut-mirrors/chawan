@@ -1494,21 +1494,21 @@ proc cssDecode(iq: openArray[char]; fallback: Charset): string =
   var offset = 0
   const charsetRule = "@charset \""
   if iq.startsWith("\xFE\xFF"):
-    charset = CHARSET_UTF_16_BE
+    charset = csUtf16be
     offset = 2
   elif iq.startsWith("\xFF\xFE"):
-    charset = CHARSET_UTF_16_LE
+    charset = csUtf16le
     offset = 2
   elif iq.startsWith("\xEF\xBB\xBF"):
-    charset = CHARSET_UTF_8
+    charset = csUtf8
     offset = 3
   elif iq.startsWith(charsetRule):
     let s = iq.toOpenArray(charsetRule.len, min(1024, iq.high)).until('"')
     let n = charsetRule.len + s.len
     if n >= 0 and n + 1 < iq.len and iq[n] == '"' and iq[n + 1] == ';':
       charset = getCharset(s)
-      if charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
-        charset = CHARSET_UTF_8
+      if charset in {csUtf16le, csUtf16be}:
+        charset = csUtf8
   iq.toOpenArray(offset, iq.high).decodeAll(charset)
 
 proc onFinishCSSText(response: Response; success: bool) =
@@ -5743,7 +5743,7 @@ proc setHint*(element: Element; hint: bool) =
 
 proc getCharset(element: Element): Charset =
   let charset = getCharset(element.attr(satCharset))
-  if charset != CHARSET_UNKNOWN:
+  if charset != csUnknown:
     return charset
   return element.document.charset
 

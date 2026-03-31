@@ -422,9 +422,9 @@ proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
 proc getCharset(this: XMLHttpRequest): Charset =
   let override = this.contentTypeOverride.toLowerAscii()
   let cs = override.getContentTypeAttr("charset").getCharset()
-  if cs != CHARSET_UNKNOWN:
+  if cs != csUnknown:
     return cs
-  return this.response.getCharset(CHARSET_UTF_8)
+  return this.response.getCharset(csUtf8)
 
 proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
   if this.responseType notin {xhrtUnknown, xhrtText}:

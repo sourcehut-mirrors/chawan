@@ -337,9 +337,13 @@ test_net: test/net/run
 test_pager: test/pager/run.sh
 	(cd test/pager && ./run.sh)
 
+.PHONY: test_charset
+test_charset: test/charset/run.sh
+	(cd test/charset && ./run.sh)
+
 .PHONY: test_nim
 test_nim: test/nim/ttwtstr.nim
 	(cd test/nim && $(NIM) r ttwtstr.nim)
 
 .PHONY: test
-test: test_js test_layout test_net test_md test_pager test_nim
+test: test_js test_layout test_net test_md test_pager test_charset test_nim

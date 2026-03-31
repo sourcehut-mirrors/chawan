@@ -1795,7 +1795,7 @@ proc gotoURLImpl(ctx: JSContext; pager: Pager; v: JSValueConst;
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
   var filterCmd: string
-  pager.initGotoURL(request, t.charset.get(CHARSET_UNKNOWN),
+  pager.initGotoURL(request, t.charset.get(csUnknown),
     t.referrer.get(nil), t.cookie, loaderConfig, bufferConfig, filterCmd)
   bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
   let init = pager.gotoURL0(request, t.save, t.history, bufferConfig,

@@ -9,18 +9,15 @@ import chagashi/encoder
 const iroha = "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす"
 test "roundtrip iroha":
   const css = [
-    CHARSET_SHIFT_JIS, CHARSET_ISO_2022_JP, CHARSET_EUC_JP, CHARSET_EUC_KR,
-    CHARSET_GB18030, CHARSET_GBK, CHARSET_BIG5, CHARSET_UTF_8
+    csShiftJIS, csIso2022JP, csEucJP, csEucKR, csGb18030, csGbk, csBig5, csUtf8
   ]
   let iroha100 = iroha.repeat(100)
   for cs in css:
-    let sencoded = if cs != CHARSET_UTF_8:
-      let te = newTextEncoder(cs)
-      te.encodeAll(iroha)
+    let sencoded = if cs != csUtf8:
+      iroha.encodeAll(cs)
     else:
       iroha
-    let td = newTextDecoder(cs)
-    let sdecoded = td.decodeAll(sencoded)
+    let sdecoded = sencoded.decodeAll(cs)
     check sdecoded == iroha
     var ctx = initTextDecoderContext(cs)
     var dec2 = ""
@@ -35,7 +32,7 @@ test "roundtrip iroha":
 test "validate UTF-8 in parts":
   # Validate "Hellö, world!".
   let ss0 = "Hell\xC3"
-  var td = newTextDecoder(CHARSET_UTF_8)
+  var td = initTextDecoder(csUtf8)
   var n = 0
   var oq = newSeq[uint8](16)
   check td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrReadInput
@@ -49,8 +46,8 @@ test "validate UTF-8 in parts":
   # 0xC3 got moved from the internal buffer to oq
   check n == 1
   check oq[0] == 0xC3
-  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n) == tdrDone
-  check td.finish() == tdfrError
+  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n,
+    finish = true) == tdrError
 
 test "validate valid UTF-8":
   const utf8_valid = [
@@ -64,8 +61,7 @@ test "validate valid UTF-8":
   for s in utf8_valid:
     check s.toValidUTF8() == s
     check s.toValidUTF8() & 'x' == s & 'x'
-    let td = TextDecoderUTF8()
-    var ctx = initTextDecoderContext(td, bufLen = 3)
+    var ctx = initTextDecoderContext(csUtf8, bufLen = 3)
     block:
       var res = ""
       for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
@@ -93,16 +89,15 @@ test "validate invalid UTF-8":
   for (s, t) in utf8_error:
     check s.toValidUTF8() == t
     check (s & 'x').toValidUTF8() == t & 'x'
-    let td = TextDecoderUTF8()
     block:
-      var ctx = initTextDecoderContext(td, bufLen = 2)
+      var ctx = initTextDecoderContext(csUtf8, bufLen = 2)
       var res = ""
       for i in 0 ..< s.len:
         for s in ctx.decode([uint8(s[i])], finish = i == s.high):
           res &= s
       check res == t
     block:
-      var ctx = initTextDecoderContext(td, bufLen = 2)
+      var ctx = initTextDecoderContext(csUtf8, bufLen = 2)
       var res = ""
       var i = 0
       while i < s.len:
@@ -121,8 +116,7 @@ test "UTF-16-BE to UTF-8":
     "\xD8\x3E\xDD\x72": "\u{1F972}", # paired surrogates
   }
   for (s, t) in list:
-    let td = TextDecoderUTF16_BE()
-    check td.decodeAll(s) == t
+    check s.decodeAll(csUtf16be) == t
 
 test "UTF-16-LE to UTF-8":
   const list = {
@@ -134,26 +128,17 @@ test "UTF-16-LE to UTF-8":
     "\x3E\xD8\x72\xDD": "\u{1F972}", # paired surrogates
   }
   for (s, t) in list:
-    let td = TextDecoderUTF16_LE()
-    check td.decodeAll(s) == t
+    check s.decodeAll(csUtf16le) == t
   var s = ""
   var s8 = ""
   for i in 0 ..< 10:
     s &= "t\0e\0s\0t\0"
     s8 &= "test"
-  let td = TextDecoderUTF16_LE()
-  var ctx = initTextDecoderContext(td, bufLen = 32)
+  var ctx = initTextDecoderContext(csUtf16le, bufLen = 32)
   var res = ""
   for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
     res &= s
   check res == s8
-
-test "encode from surrogate to GB18030":
-  let te = TextEncoderGB18030()
-  let sencoded = te.encodeAll("\uD800")
-  let td = TextDecoderGB18030()
-  let sdecoded = td.decodeAll(sencoded)
-  check sdecoded == "\uFFFD\uFFFD\uFFFD"
 
 const tisztaszivvel = """
 Nincsen apám, se anyám,
@@ -178,10 +163,8 @@ gyönyörűszép szívemen.
 """
 
 test "roundtrip windows-1250":
-  let te = TextEncoderWindows1250()
-  let sencoded = te.encodeAll(tisztaszivvel)
-  let td = TextDecoderWindows1250()
-  let sdecoded = td.decodeAll(sencoded)
+  let sencoded = tisztaszivvel.encodeAll(csWindows1250)
+  let sdecoded = sencoded.decodeAll(csWindows1250)
   check sdecoded == tisztaszivvel
 
 const erlkoenig = """
@@ -227,40 +210,48 @@ In seinen Armen, das Kind war tot.
 """
 
 test "roundtrip windows-1252":
-  let te = TextEncoderWindows1252()
-  let sencoded = te.encodeAll(erlkoenig)
-  let td = TextDecoderWindows1252()
-  let sdecoded = td.decodeAll(sencoded)
+  let sencoded = erlkoenig.encodeAll(csWindows1252)
+  let sdecoded = sencoded.decodeAll(csWindows1252)
   check sdecoded == erlkoenig
 
 test "roundtrip ISO-8859-2":
-  let te = TextEncoderISO8859_2()
-  let sencoded = te.encodeAll(tisztaszivvel)
-  let td = TextDecoderISO8859_2()
-  let sdecoded = td.decodeAll(sencoded)
+  let sencoded = tisztaszivvel.encodeAll(csIso8859_2)
+  let sdecoded = sencoded.decodeAll(csIso8859_2)
   check sdecoded == tisztaszivvel
 
 test "getLocaleCharset":
-  check getLocaleCharset("ja_JP.EUC_JP") == CHARSET_EUC_JP
-  check getLocaleCharset("ja_JP.UTF-8") == CHARSET_UTF_8
-  check getLocaleCharset("") == CHARSET_UTF_8
+  check getLocaleCharset("ja_JP.EUC_JP") == csEucJP
+  check getLocaleCharset("ja_JP.UTF-8") == csUtf8
+  check getLocaleCharset("") == csUtf8
 
 test "Shift_JIS U+2212":
-  check "\u2212".encodeAll(CHARSET_SHIFT_JIS) ==
-    "\uFF0D".encodeAll(CHARSET_SHIFT_JIS)
-
-test "GB18030 ranges":
-  let first = "\u0080".encodeAll(CHARSET_GB18030)
-  check first == "\x81\x30\x81\x30"
-  check first.decodeAll(CHARSET_GB18030) == "\u0080"
-  let last = "\u{10000}".encodeAll(CHARSET_GB18030)
-  check last == "\x90\x30\x81\x30"
-  check last.decodeAll(CHARSET_GB18030) == "\u{10000}"
-  check "\xfe\x39\xfe\x40".decodeAll(CHARSET_GB18030) == "\uFFFD9\uFA0C"
+  check "\u2212".encodeAll(csShiftJIS) ==
+    "\uFF0D".encodeAll(csShiftJIS)
 
 test "invalid UTF-8 in stream":
-  var ctx = initTextDecoderContext(CHARSET_UTF_8)
+  var ctx = initTextDecoderContext(csUtf8)
   var res = ""
   for slice in ctx.decode("\xc0a".toOpenArrayByte(0, 0), finish = false):
     res &= slice
   check res == "\uFFFD"
+
+test "ISO-2022-JP":
+  check "\x1B\x24".decodeAll(csIso2022JP) == "\uFFFD$"
+  check "\x1B\x28".decodeAll(csIso2022JP) == "\uFFFD("
+  check "ｶﾀｶﾅ".encodeAll(csIso2022JP) == "\e$B%+%?%+%J\e(B"
+
+test "GB18030":
+  # surrogate
+  let sencoded = "\uD800".encodeAll(csGb18030)
+  let sdecoded = sencoded.decodeAll(csGb18030)
+  check sdecoded == "\uFFFD\uFFFD\uFFFD"
+  # ranges
+  let first = "\u0080".encodeAll(csGb18030)
+  check first == "\x81\x30\x81\x30"
+  check first.decodeAll(csGb18030) == "\u0080"
+  let last = "\u{10000}".encodeAll(csGb18030)
+  check last == "\x90\x30\x81\x30"
+  check last.decodeAll(csGb18030) == "\u{10000}"
+  check "\xfe\x39\xfe\x40".decodeAll(csGb18030) == "\uFFFD9\uFA0C"
+  # error with ASCII
+  check "\x81\x3a".decodeAll(csGb18030) == "\uFFFD:"

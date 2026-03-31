@@ -1551,17 +1551,13 @@ proc hasBracketedPaste(term: Terminal): bool =
 proc hasMouse(term: Terminal): bool =
   term.config{"useMouse"}.get(tfMouse in term.desc)
 
-proc encodeAllQMark(res: var string; te: TextEncoder; iq: openArray[uint8]) =
+proc encodeAllQMark(res: var string; te: var TextEncoder;
+    iq: openArray[uint8]) =
   var n = 0
   while true:
-    case te.encode(iq, res.toOpenArrayByte(0, res.high), n)
+    case te.encode(iq, res.toOpenArrayByte(0, res.high), n, finish = true)
     of terDone:
       res.setLen(n)
-      case te.finish()
-      of tefrOutputISO2022JPSetAscii:
-        res &= "\e(B"
-      of tefrDone:
-        discard
       break
     of terReqOutput:
       res.setLen(res.len * 2)
@@ -1640,7 +1636,7 @@ proc processOutputString*(term: Terminal; s: openArray[char];
     for u in s.points:
       assert u > 0x9F or u != 0x7F and u > 0x1F
       term.frame.cursorx += uint32(u.width())
-  if term.te == nil:
+  if term.cs == csUtf8:
     # The output encoding matches the internal representation.
     return term.write(s)
   var res = ""
@@ -1855,7 +1851,7 @@ proc applyConfig(term: Terminal) =
   if term.config{"osc52Primary"}.isSome:
     term.osc52Primary = term.config{"osc52Primary"}.get
   # charsets
-  if term.config{"displayCharset"} != CHARSET_UNKNOWN:
+  if term.config{"displayCharset"} != csUnknown:
     term.cs = term.config{"displayCharset"}
   else:
     term.cs = DefaultCharset
@@ -1864,18 +1860,17 @@ proc applyConfig(term: Terminal) =
       if env == "":
         continue
       let cs = getLocaleCharset(env)
-      if cs != CHARSET_UNKNOWN:
+      if cs != csUnknown:
         if env == "C":
           term.asciiOnly = true
-          term.cs = CHARSET_WINDOWS_1252
+          term.cs = csWindows1252
         else:
           term.cs = cs
         break
-  if term.cs in {CHARSET_UTF_8, CHARSET_UTF_16_LE, CHARSET_UTF_16_BE,
-      CHARSET_REPLACEMENT}:
-    term.cs = CHARSET_UTF_8
+  if term.cs in {csUtf8, csUtf16le, csUtf16be, csReplacement}:
+    term.cs = csUtf8
   else:
-    term.te = newTextEncoder(term.cs)
+    term.te = initTextEncoder(term.cs)
   term.tdctx = initTextDecoderContext(term.cs)
   term.applyConfigDimensions()
 

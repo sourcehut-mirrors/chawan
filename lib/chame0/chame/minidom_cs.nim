@@ -32,16 +32,16 @@ type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
 method setEncodingImpl(builder: CharsetMiniDOMBuilder; encoding: string):
     SetEncodingResult =
   let charset = getCharset(encoding)
-  if charset == CHARSET_UNKNOWN:
+  if charset == csUnknown:
     return SET_ENCODING_CONTINUE
-  if builder.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
+  if builder.charset in {csUtf16le, csUtf16be}:
     builder.confidence = ccCertain
     return SET_ENCODING_CONTINUE
   builder.confidence = ccCertain
   if charset == builder.charset:
     return SET_ENCODING_CONTINUE
-  if charset == CHARSET_X_USER_DEFINED:
-    builder.charset = CHARSET_WINDOWS_1252
+  if charset == csXUserDefined:
+    builder.charset = csWindows1252
   else:
     builder.charset = charset
   return SET_ENCODING_STOP
@@ -55,14 +55,14 @@ proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
 proc bomSniff(inputStream: Stream): Charset =
   let bom = inputStream.readStr(2)
   if bom == "\xFE\xFF":
-    return CHARSET_UTF_16_BE
+    return csUtf16be
   if bom == "\xFF\xFE":
-    return CHARSET_UTF_16_LE
+    return csUtf16le
   if bom == "\xEF\xBB":
     if inputStream.readChar() == '\xBF':
-      return CHARSET_UTF_8
+      return csUtf8
   inputStream.setPosition(0)
-  return CHARSET_UNKNOWN
+  return csUnknown
 
 proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node, MAtom];
     charsets: seq[Charset]; seekable = true;
@@ -70,13 +70,13 @@ proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node, MAtom];
   ## Read, parse and return an HTML document from `inputStream`.
   ##
   ## `charsets` is a list of input character sets to try. If empty, it will be
-  ## initialized to `@[CHARSET_UTF_8]`.
+  ## initialized to `@[csUtf8]`.
   ##
   ## The list of fallback charsets is used as follows:
   ##
   ## * A charset stack is initialized to `charsets`, reversed. This
   ##   means that the first charset specified in `charsets` is on top of
-  ##   the stack. (e.g. say `charsets = @[CHARSET_UTF_16_LE, CHARSET_UTF_8]`,
+  ##   the stack. (e.g. say `charsets = @[csUtf16le, csUtf8]`,
   ##   then utf-16-le is tried before utf-8.)
   ## * BOM sniffing is attempted. If successful, confidence is set to
   ##   certain and the resulting charset is used (i.e. other character
@@ -108,7 +108,7 @@ proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node, MAtom];
   var inputStream = inputStream
   if seekable:
     let scs = inputStream.bomSniff()
-    if scs != CHARSET_UNKNOWN:
+    if scs != csUnknown:
       charsetStack.add(scs)
       builder.confidence = ccCertain
       seekable = false
@@ -122,12 +122,11 @@ proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node, MAtom];
       builder.confidence = ccCertain
     var parser = initHTML5Parser(builder, opts)
     var iq {.noinit.}: array[4096, char]
-    let decoder = newTextDecoder(builder.charset)
     let errorMode = [
       ccTentative: demFatal,
       ccCertain: demReplacement
     ][builder.confidence]
-    var ctx = initTextDecoderContext(decoder, errorMode)
+    var ctx = initTextDecoderContext(builder.charset, errorMode)
     while true:
       let n = inputStream.readData(addr iq[0], iq.len)
       var finish = n < iq.len

@@ -10,10 +10,9 @@ let dir = getEnv("CGS_TESTDIR")
 
 proc runTestIn(test_in, test_in_ref: FileStream, label: string) =
   let cs = getCharset(label)
-  assert cs != CHARSET_UNKNOWN
+  assert cs != csUnknown
   let s = test_in.readAll()
-  let td = newTextDecoder(cs)
-  let ours = td.decodeAll(s)
+  let ours = s.decodeAll(cs)
   let theirs = test_in_ref.readAll()
   if ours != theirs:
     echo "ours vs theirs len ", ours.len, " ", theirs.len
@@ -23,10 +22,9 @@ proc runTestIn(test_in, test_in_ref: FileStream, label: string) =
 
 proc runTestOut(test_out, test_out_ref: FileStream, label: string) =
   let cs = getCharset(label)
-  assert cs != CHARSET_UNKNOWN
+  assert cs != csUnknown
   let s = test_out.readAll()
-  let te = newTextEncoder(cs)
-  let ours = te.encodeAll(s)
+  let ours = s.encodeAll(cs)
   let theirs = test_out_ref.readAll()
   let match = ours == theirs
   if not match:

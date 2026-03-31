@@ -12,7 +12,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
   var charsets: seq[Charset] = @[]
   for s in labels:
     let cs = getCharset(s)
-    assert cs != CHARSET_UNKNOWN
+    assert cs != csUnknown
     charsets.add(cs)
   let pdoc = parseHTML(ss, opts, charsets, factory = factory)
   #[

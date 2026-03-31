@@ -608,15 +608,15 @@ proc switchCharset(bc: BufferContext) =
 
 proc bomSniff(bc: BufferContext; iq: openArray[uint8]): int =
   if iq[0] == 0xFE and iq[1] == 0xFF:
-    bc.charsetStack = @[CHARSET_UTF_16_BE]
+    bc.charsetStack = @[csUtf16be]
     bc.switchCharset()
     return 2
   if iq[0] == 0xFF and iq[1] == 0xFE:
-    bc.charsetStack = @[CHARSET_UTF_16_LE]
+    bc.charsetStack = @[csUtf16le]
     bc.switchCharset()
     return 2
   if iq[0] == 0xEF and iq[1] == 0xBB and iq[2] == 0xBF:
-    bc.charsetStack = @[CHARSET_UTF_8]
+    bc.charsetStack = @[csUtf8]
     bc.switchCharset()
     return 3
   return 0
@@ -742,12 +742,9 @@ proc dispatchLoadEvent(bc: BufferContext) =
   bc.maybeReshape()
 
 proc finishLoad(bc: BufferContext; data: InputData) =
-  if bc.ctx.td != nil and bc.ctx.td.finish() == tdfrError:
-    var s = "\uFFFD"
-    doAssert bc.processData0(UnsafeSlice(
-      p: cast[ptr UncheckedArray[char]](addr s[0]),
-      len: s.len
-    ))
+  if bc.ctx.td.charset != csUnknown:
+    for chunk in bc.ctx.decode([], finish = true):
+      doAssert bc.processData0(chunk)
   bc.htmlParser.finish()
   bc.document.readyState = rsInteractive
   if bc.config.scripting != smFalse:
@@ -968,8 +965,8 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
     result &= "\r\n"
 
 proc getOutputEncoding(charset: Charset): Charset =
-  if charset in {CHARSET_REPLACEMENT, CHARSET_UTF_16_BE, CHARSET_UTF_16_LE}:
-    return CHARSET_UTF_8
+  if charset in {csReplacement, csUtf16be, csUtf16le}:
+    return csUtf8
   return charset
 
 proc pickCharset(form: HTMLFormElement): Charset =
@@ -977,9 +974,9 @@ proc pickCharset(form: HTMLFormElement): Charset =
     let input = form.attr(satAcceptCharset)
     for label in input.split(AsciiWhitespace):
       let charset = label.getCharset()
-      if charset != CHARSET_UNKNOWN:
+      if charset != csUnknown:
         return charset.getOutputEncoding()
-    return CHARSET_UTF_8
+    return csUtf8
   return form.document.charset.getOutputEncoding()
 
 # entryList is consumed
@@ -1839,7 +1836,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
     pstream, istream, urandom: PosixStream; cacheId: int; contentType: string;
     linkHintChars: sink seq[uint32]; schemes: sink seq[string]) =
-  let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
+  let confidence = if config.charsetOverride == csUnknown:
     ccTentative
   else:
     ccCertain
@@ -1848,7 +1845,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     config: config,
     ishtml: ishtml,
     loader: loader,
-    needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
+    needsBOMSniff: config.charsetOverride == csUnknown,
     charsetStack: charsetStack,
     cacheId: cacheId,
     outputId: -1,

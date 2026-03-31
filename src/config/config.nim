@@ -1447,7 +1447,7 @@ proc parseBoolAuto(cp: var ConfigParser; x: var BoolAuto): Opt[void] =
 proc parseCharset(cp: var ConfigParser; x: var Charset): Opt[void] =
   ?cp.typeCheck(ttString)
   let charset = getCharset(cp.buf)
-  if charset == CHARSET_UNKNOWN and cp.buf != "auto":
+  if charset == csUnknown and cp.buf != "auto":
     # auto represented as unknown
     return cp.err("unknown charset '" & cp.buf & "'")
   x = charset
@@ -2503,7 +2503,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
       csLine: newActionMap(ctx, LineCommands, "writeInputBuffer"),
     ],
     documentCharset: @[
-      CHARSET_UTF_8, CHARSET_SHIFT_JIS, CHARSET_EUC_JP, CHARSET_ISO_8859_2
+      csUtf8, csShiftJIS, csEucJP, csIso8859_2
     ],
     defaultHeaders: newHeaders(hgRequest, {
       "User-Agent": "chawan",

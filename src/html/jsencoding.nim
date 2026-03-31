@@ -31,7 +31,7 @@ type TextDecoderOptions = object of JSDict
 proc newJSTextDecoder(ctx: JSContext; label = "utf-8";
     options = TextDecoderOptions()): Opt[JSTextDecoder] {.jsctor.} =
   let encoding = getCharset(label)
-  if encoding in {CHARSET_UNKNOWN, CHARSET_REPLACEMENT}:
+  if encoding in {csUnknown, csReplacement}:
     JS_ThrowRangeError(ctx, "invalid encoding label")
     return err()
   let errorMode = if options.fatal: demFatal else: demReplacement

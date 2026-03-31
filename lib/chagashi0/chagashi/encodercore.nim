@@ -5,84 +5,59 @@
 ## This is a low-level interface; you may also be interested in
 ## [encoder](encoder.html), which provides useful wrapper procedures.
 ##
-## `TextEncoder` objects have two methods: `encode` and `finish`. To encode
-## a stream, sequentially call `encode` on any number of buffers, then call
-## `finish`.
+## To encode a stream, sequentially call `encode` on any number of chunks
+## with `finish = false`, then with `finish = true` on the last chunk.
+## If you don't know which chunk is the last, use an empty chunk.
 ##
-## Note that the input stream **must** be valid UTF-8, with the exception that
-## (invalid) surrogate codepoints are automagically replaced with replacement
-## characters. So if std/unicode's `validateUtf8` returns -1 on a buffer, it is
-## safe to feed it to `TextEncoder`. Otherwise, it is not.
+## (`finish` only has a significance for the ISO-2022-JP encoder, which
+## is specified to emit a sequence at the end of the queue to reset the
+## decoder state to ASCII.)
 ##
-## `encode` expects an input queue `iq`, an output queue `oq`, and an index in the
-## output queue `n`. Output is placed in the output queue starting from
-## `n`. `encode` may either return `terDone`, `terReqOutput`, or `terError`.
+## The input stream **must** be valid UTF-8, with the exception that
+## (invalid) surrogate codepoints are automagically replaced with
+## replacement characters.  So if std/unicode's `validateUtf8` returns -1
+## on a buffer, it is safe to feed it to `TextEncoder`.
 ##
-## `terDone` means the entire input buffer has been successfully encoded; the
-## output can be found in `oq`, and the number of bytes outputted is stored in
-## `n`.
+## `encode` expects an input queue `iq`, an output queue `oq`, and an index
+## in the output queue `n`.  Output is placed in the output queue starting
+## from `n`.  `encode` may either return `terDone`, `terReqOutput`, or
+## `terError`.
+##
+## `terDone` means the entire input buffer has been successfully encoded;
+## the output can be found in `oq`, and the number of bytes output is
+## stored in `n`.
 ##
 ## `terReqOutput` is a request for more output space to decode the current
-## buffer. Users may handle this by processing the contents of `oq` until `n`,
-## resetting `n` to 0, then calling `encode` on the same input queue `iq` again.
+## buffer.  Users may handle this by processing the contents of `oq` until
+## `n`, resetting `n` to 0, then calling `encode` on the same input queue
+## `iq` again.
 ##
-## `terError` represents an error with a specific code point, as specified by
-## the standard. Conformant implementations must handle this either by
-## immediately aborting the encoding process (error mode "fatal"), or outputting
-## a decimal representation of the code point stored in the `TextEncoder`
-## object's `c` member as an HTML reference (error mode "html"). For an example,
-## see [encoder](encoder.html)'s source code.
-##
-## After having received a `terDone` result, users may call the `finish` method
-## on the `TextEncoder` object. This method has two possible results:
-##
-## * `tefrDone` signals that nothing else is to be done. For all encoders except
-##    ISO-2022-JP, this is the only possible result.
-## * `tefrOutputISO2022JPSetAscii` signals that the character sequence "\e(B"
-##    (=the three bytes `0x1B`, `0x28` and `0x42`) must be written to the output
-##    stream by the consumer. Only the ISO-2022-JP encoder may return this
-##    value. (This sequence resets the decoder's output state to ASCII.)
-##
-## It is valid to re-use `TextEncoder` objects after finish has been
-## called. However, it is invalid (and broken) to call `finish` without having
-## received a `terDone` result from the encoder first.
+## `terError` represents an error with a specific code point, as specified
+## by the standard.  Per spec, implementations should handle this either
+## by immediately aborting the encoding process (error mode "fatal"), or
+## outputting a decimal representation of the code point stored in the
+## `TextEncoder` object's `c` member as an HTML reference (error mode
+## "html").  For an example, see [encoder](encoder.html)'s source code.
 
 {.push raises: [].}
 
 import std/algorithm
 
+import charset
 import charset_map
 
 type
   TextEncoderResult* = enum
     terDone, terReqOutput, terError
 
-  TextEncoderFinishResult* = enum
-    tefrDone, tefrOutputISO2022JPSetAscii
-
-  ISO2022JPState = enum
+  Iso2022JPState* = enum
     i2jsAscii, i2jsRoman, i2jsJis0208
 
-  TextEncoder* = ref object of RootObj
+  TextEncoder* = object
     i*: int
     c*: uint32
-
-  TextEncoderGB18030* = ref object of TextEncoder
-
-  TextEncoderGBK* = ref object of TextEncoder
-
-  TextEncoderBig5* = ref object of TextEncoder
-
-  TextEncoderEUC_JP* = ref object of TextEncoder
-
-  TextEncoderISO2022_JP* = ref object of TextEncoder
-    state: ISO2022JPState
-
-  TextEncoderShiftJIS* = ref object of TextEncoder
-
-  TextEncoderEUC_KR* = ref object of TextEncoder
-
-  TextEncoderXUserDefined* = ref object of TextEncoder
+    charset*: Charset
+    state*: Iso2022JPState
 
 proc gb18030RangesPointer(c: uint32): uint32 =
   if c == 0xE7C7:
@@ -189,15 +164,7 @@ template try_get_utf8(te: TextEncoder; iq: openArray[uint8]; b: uint8): int =
     te.c = 0xFFFD # invalid
     1
 
-method encode*(te: TextEncoder; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextEncoderResult {.base.} =
-  assert false
-  terDone
-
-method finish*(te: TextEncoder): TextEncoderFinishResult {.base.} =
-  tefrDone
-
-proc encodeGB18030(te: TextEncoder; iq: openArray[uint8];
+proc encodeGb18030(te: var TextEncoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int; isGBK: bool): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
@@ -266,15 +233,7 @@ proc encodeGB18030(te: TextEncoder; iq: openArray[uint8];
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderGB18030; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextEncoderResult =
-  te.encodeGB18030(iq, oq, n, isGBK = false)
-
-method encode*(te: TextEncoderGBK; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextEncoderResult =
-  te.encodeGB18030(iq, oq, n, isGBK = true)
-
-method encode*(te: TextEncoderBig5; iq: openArray[uint8];
+proc encodeBig5(te: var TextEncoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
@@ -309,7 +268,7 @@ proc ucsToJis0208(c: uint16): uint16 =
     return Jis0208Encode[i].p + 1
   return 0
 
-method encode*(te: TextEncoderEUC_JP; iq: openArray[uint8];
+proc encodeEucJP(te: var TextEncoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
@@ -337,14 +296,14 @@ method encode*(te: TextEncoderEUC_JP; iq: openArray[uint8];
   te.i = 0
   terDone
 
-proc ucsToISO2022JP(c: uint16): uint16 =
+proc ucsToIso2022JP(c: uint16): uint16 =
   var c = c
-  if c in 0xFF61u32..0xFF9Fu32:
-    c = ISO2022JPKatakanaMap[uint8(c - 0xFF61)]
+  if c in 0xFF61'u32..0xFF9F'u32:
+    c = uint16(Iso2022JPKatakanaMap[c - 0xFF61]) + 0x3000
   return ucsToJis0208(c)
 
-method encode*(te: TextEncoderISO2022_JP; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextEncoderResult =
+proc encodeIso2022JP(te: var TextEncoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80: # ASCII
@@ -371,14 +330,14 @@ method encode*(te: TextEncoderISO2022_JP; iq: openArray[uint8];
     elif te.state == i2jsRoman and c == 0x203E:
       oq.try_put_byte 0x7E, n
     elif te.state != i2jsRoman and (c == 0xA5 or c == 0x203E):
-      oq.try_put_bytes [0x1Bu8, 0x28u8, 0x4Au8], n
+      oq.try_put_bytes [0x1B'u8, 0x28'u8, 0x4A'u8], n
       te.state = i2jsRoman
       # prepend (no inc i)
       continue
-    elif c < uint16.high and (let p0 = ucsToISO2022JP(uint16(c)); p0 != 0):
+    elif c < uint16.high and (let p0 = ucsToIso2022JP(uint16(c)); p0 != 0):
       let p = p0 - 1
       if te.state != i2jsJis0208:
-        oq.try_put_bytes [0x1Bu8, 0x24u8, 0x42u8], n
+        oq.try_put_bytes [0x1B'u8, 0x24'u8, 0x42'u8], n
         te.state = i2jsJis0208
         # prepend (no inc i)
         continue
@@ -387,28 +346,26 @@ method encode*(te: TextEncoderISO2022_JP; iq: openArray[uint8];
       oq.try_put_bytes [uint8(lead), uint8(trail)], n
     else: # pointer is null
       if te.state == i2jsJis0208:
-        oq.try_put_bytes [0x1Bu8, 0x28u8, 0x42u8], n
+        oq.try_put_bytes [0x1B'u8, 0x28'u8, 0x42'u8], n
         te.state = i2jsAscii
         # prepend (no inc i)
         continue
       te.i += cl
       return terError
     te.i += cl
+  if finish and te.state != i2jsAscii:
+    # reset state at end of queue
+    oq.try_put_bytes [0x1B'u8, 0x28'u8, 0x42'u8], n
+    te.state = i2jsAscii
   te.i = 0
   terDone
-
-method finish*(te: TextEncoderISO2022_JP): TextEncoderFinishResult =
-  if te.state != i2jsAscii:
-    te.state = i2jsAscii
-    return tefrOutputISO2022JPSetAscii
-  tefrDone
 
 proc ucsToSJIS(c: uint16): uint16 =
   if (let i = ShiftJISEncode.findPair16(c); i != -1):
     return ShiftJISEncode[i].p + 1
   return ucsToJis0208(c)
 
-method encode*(te: TextEncoderShiftJIS; iq: openArray[uint8];
+proc encodeShiftJIS(te: var TextEncoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
@@ -438,7 +395,7 @@ method encode*(te: TextEncoderShiftJIS; iq: openArray[uint8];
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderEUC_KR; iq: openArray[uint8];
+proc encodeEucKR(te: var TextEncoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
@@ -449,7 +406,7 @@ method encode*(te: TextEncoderEUC_KR; iq: openArray[uint8];
     let cl = te.try_get_utf8(iq, b)
     let c = te.c
     if c >= 0xAC02 and c <= 0xC8A4 and
-        (let p0 = EUCKRRuns.findRun(EUCKRRunsOffset, uint16(c)); p0 != 0):
+        (let p0 = EucKRRuns.findRun(EucKRRunsOffset, uint16(c)); p0 != 0):
       let p = p0 - 1
       let row = p div 178
       var col = p mod 178
@@ -461,7 +418,7 @@ method encode*(te: TextEncoderEUC_KR; iq: openArray[uint8];
       let trail = col + 0x41
       oq.try_put_bytes [uint8(lead), uint8(trail)], n
     elif c >= 0xC8A5 and c <= 0xD7A3 and
-        (let p0 = EUCKRRuns2.findRun(EUCKRRunsOffset2, uint16(c)); p0 != 0):
+        (let p0 = EucKRRuns2.findRun(EucKRRunsOffset2, uint16(c)); p0 != 0):
       let p = p0 - 1
       let row = p div 84 + 32
       var col = p mod 84
@@ -472,8 +429,8 @@ method encode*(te: TextEncoderEUC_KR; iq: openArray[uint8];
       let lead = row + 0x81
       let trail = col + 0x41
       oq.try_put_bytes [uint8(lead), uint8(trail)], n
-    elif (let i = EUCKREncode.findPair16(c); i != -1):
-      let p = EUCKREncode[i].p
+    elif (let i = EucKREncode.findPair16(c); i != -1):
+      let p = EucKREncode[i].p
       let lead = p div 190 + 0x81
       let trail = p mod 190 + 0x41
       oq.try_put_bytes [uint8(lead), uint8(trail)], n
@@ -484,7 +441,7 @@ method encode*(te: TextEncoderEUC_KR; iq: openArray[uint8];
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderXUserDefined; iq: openArray[uint8];
+proc encodeXUserDefined(te: var TextEncoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
@@ -503,8 +460,9 @@ method encode*(te: TextEncoderXUserDefined; iq: openArray[uint8];
   te.i = 0
   terDone
 
-proc encode0(te: TextEncoder; iq: openArray[uint8]; oq: var openArray[uint8];
-    n: var int; map: openArray[UCS16x8]): TextEncoderResult =
+proc encodeSingleByte(te: var TextEncoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; map: openArray[UCS16x8]):
+    TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -521,39 +479,44 @@ proc encode0(te: TextEncoder; iq: openArray[uint8]; oq: var openArray[uint8];
   te.i = 0
   terDone
 
-template makeSingleByte(name: untyped) {.dirty.} =
-  type `TextEncoder name`* = ref object of TextEncoder
-
-  method encode*(td: `TextEncoder name`; iq: openArray[uint8];
-      oq: var openArray[uint8]; n: var int): TextEncoderResult =
-    td.encode0(iq, oq, n, `name Encode`)
-
-makeSingleByte IBM866
-makeSingleByte ISO8859_2
-makeSingleByte ISO8859_3
-makeSingleByte ISO8859_4
-makeSingleByte ISO8859_5
-makeSingleByte ISO8859_6
-makeSingleByte ISO8859_7
-makeSingleByte ISO8859_8
-makeSingleByte ISO8859_10
-makeSingleByte ISO8859_13
-makeSingleByte ISO8859_14
-makeSingleByte ISO8859_15
-makeSingleByte ISO8859_16
-makeSingleByte KOI8_R
-makeSingleByte KOI8_U
-makeSingleByte Macintosh
-makeSingleByte Windows874
-makeSingleByte Windows1250
-makeSingleByte Windows1251
-makeSingleByte Windows1252
-makeSingleByte Windows1253
-makeSingleByte Windows1254
-makeSingleByte Windows1255
-makeSingleByte Windows1256
-makeSingleByte Windows1257
-makeSingleByte Windows1258
-makeSingleByte XMacCyrillic
+proc encode*(te: var TextEncoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish = false): TextEncoderResult =
+  case te.charset
+  of csUnknown, csUtf8, csUtf16le, csUtf16be, csReplacement: terError
+  of csGbk: te.encodeGb18030(iq, oq, n, isGBK = true)
+  of csGb18030: te.encodeGb18030(iq, oq, n, isGBK = false)
+  of csBig5: te.encodeBig5(iq, oq, n)
+  of csEucJP: te.encodeEucJP(iq, oq, n)
+  of csIso2022JP: te.encodeIso2022JP(iq, oq, n, finish)
+  of csShiftJIS: te.encodeShiftJIS(iq, oq, n)
+  of csEucKR: te.encodeEucKR(iq, oq, n)
+  of csXUserDefined: te.encodeXUserDefined(iq, oq, n)
+  of csIbm866: te.encodeSingleByte(iq, oq, n, Ibm866Encode)
+  of csIso8859_2: te.encodeSingleByte(iq, oq, n, Iso8859_2Encode)
+  of csIso8859_3: te.encodeSingleByte(iq, oq, n, Iso8859_3Encode)
+  of csIso8859_4: te.encodeSingleByte(iq, oq, n, Iso8859_4Encode)
+  of csIso8859_5: te.encodeSingleByte(iq, oq, n, Iso8859_5Encode)
+  of csIso8859_6: te.encodeSingleByte(iq, oq, n, Iso8859_6Encode)
+  of csIso8859_7: te.encodeSingleByte(iq, oq, n, Iso8859_7Encode)
+  of csIso8859_8, csIso8859_8i: te.encodeSingleByte(iq, oq, n, Iso8859_8Encode)
+  of csIso8859_10: te.encodeSingleByte(iq, oq, n, Iso8859_10Encode)
+  of csIso8859_13: te.encodeSingleByte(iq, oq, n, Iso8859_13Encode)
+  of csIso8859_14: te.encodeSingleByte(iq, oq, n, Iso8859_14Encode)
+  of csIso8859_15: te.encodeSingleByte(iq, oq, n, Iso8859_15Encode)
+  of csIso8859_16: te.encodeSingleByte(iq, oq, n, Iso8859_16Encode)
+  of csKoi8r: te.encodeSingleByte(iq, oq, n, Koi8rEncode)
+  of csKoi8u: te.encodeSingleByte(iq, oq, n, Koi8uEncode)
+  of csMacintosh: te.encodeSingleByte(iq, oq, n, MacintoshEncode)
+  of csWindows874: te.encodeSingleByte(iq, oq, n, Windows874Encode)
+  of csWindows1250: te.encodeSingleByte(iq, oq, n, Windows1250Encode)
+  of csWindows1251: te.encodeSingleByte(iq, oq, n, Windows1251Encode)
+  of csWindows1252: te.encodeSingleByte(iq, oq, n, Windows1252Encode)
+  of csWindows1253: te.encodeSingleByte(iq, oq, n, Windows1253Encode)
+  of csWindows1254: te.encodeSingleByte(iq, oq, n, Windows1254Encode)
+  of csWindows1255: te.encodeSingleByte(iq, oq, n, Windows1255Encode)
+  of csWindows1256: te.encodeSingleByte(iq, oq, n, Windows1256Encode)
+  of csWindows1257: te.encodeSingleByte(iq, oq, n, Windows1257Encode)
+  of csWindows1258: te.encodeSingleByte(iq, oq, n, Windows1258Encode)
+  of csXMacCyrillic: te.encodeSingleByte(iq, oq, n, XMacCyrillicEncode)
 
 {.pop.}

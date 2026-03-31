@@ -1,56 +1,63 @@
-## TextDecoder decodes non-UTF-8 byte sequences to valid UTF-8, in accordance
-## with the WHATWG [encoding standard](https://encoding.spec.whatwg.org/)
+## `TextDecoder` decodes non-UTF-8 byte sequences to valid UTF-8, in
+## accordance with WHATWG's [encoding standard](https://encoding.spec.whatwg.org/).
 ##
 ## This is a low-level interface; you may also be interested in
-## [decoder](decoder.html), which provides high-level wrapper procedures.
+## [decoder](decoder.html), which provides equally efficient high-level
+## wrapper procedures.
 ##
-## Each TextDecoder has two methods: `decode`, and `finish`. To decode an input
-## stream, call `decode` on any number of input buffers, then call `finish`.
+## The implementation consists of a single procedure: `decode`, which
+## dispatches on the charset field to pick the desired decoder.  To decode
+## an input stream, call `decode` on any number of chunks with `finish =
+## false`, then with `finish = true` on the last chunk.  (If you don't know
+## which is the last chunk, just use an empty chunk at the end.)
 ##
 ## Each decode call may return a tdrDone, tdrReqOutput, or tdrError result.
-## It takes input from `iq` (input queue), and places it in `oq` (output queue).
-## The parameter `n` is always set to the last byte *written* to, in the output
-## queue.
+## It takes input from `iq` (input queue), and places it in `oq` (output
+## queue).  The parameter `n` is always set to the last byte *written* to
+## in the output queue.
 ##
-## `tdrReqOutput` signals that the output queue was too small to fit output of
-## the decoder. You should call `decode` with the same `TextDecoder` on the same
-## input buffer again, but with a larger output buffer.
+## `tdrReqOutput` signals that the output queue was too small to fit output
+## of the decoder.  The consumer should provide more space, e.g. by
+## copying contents of the output queue elsewhere and resetting `n`, or by
+## growing the output queue in size.
 ##
 ## At this point, the internal variable `i` points to the last input byte
-## consumed; bytes before that may be safely discarded, provided you adjust `i`
-## accordingly (subtracting the removed input bytes).
+## consumed; bytes before that may be safely discarded, provided you adjust
+## `i` accordingly (subtracting the removed input bytes).
 ##
 ## `tdrReadInput` instructs the consumer to read the input queue between the
-## bytes `pi..<ri` (exclusive) as decoded output.
+## bytes `pi..<ri` (exclusive) as decoded output.  WARNING: this does not
+## mean that `oq` is left unmodified.
 ##
-## WARNING: this does not mean that `oq` is left unmodified. In particular, in
-## the UTF-8 decoder, if the previous `iq` ended with a split up UTF-8
-## character, then the next pass fills `oq` with its remains before it would
-## return tdrReadInput. Make sure to process `oq` to `n` before you process
-## `iq`.
+## In particular, in the UTF-8 decoder, if the previous `iq` ended with a
+## split up UTF-8 character, then the next pass fills `oq` with its remains
+## before it would return `tdrReadInput`.  Make sure to process `oq` to `n`
+## before you process `iq`.
 ##
-## `tdrError` is returned for *all* decoding errors encountered. For compliance
-## with the encoding standard, callers must either abort decoding the input
-## stream (error mode "fatal"), or manually append a `U+FFFD` replacement
-## character (error mode "replacement").
+## `tdrError` is returned for *all* decoding errors encountered.
+## For compliance with the encoding standard, callers must either abort
+## decoding the input stream (error mode "fatal"), or manually append a
+## `U+FFFD` replacement character (error mode "replacement").
 ##
-## `tdrDone` is returned after decoding of the entire buffer has finished. At
-## this point, the caller has two options:
+## Note that even if `finish` is true, decoding of the chunk is *not
+## complete* after receiving `tdrError` if you're using error mode
+## "replacement".
 ##
-## * Call the decoder again on the next buffer. (`i` is reset to 0
-##   automatically, so there's no need to do anything before the next call.)
-## * Call finish; the decoder will perform the appropriate steps for receiving
-##   "end-of-queue". It may return tdrDone or tdrError.
+## `tdrDone` is returned once decoding of `iq` has finished.  If `finish`
+## was set to true, it can be assumed that decoding is complete; otherwise,
+## you should call `decode` again on the next buffer.  (`i` is reset to 0
+## automatically, so there's no need to do anything before the next call.)
 ##
-## The `finish` call resets all decoder state, so it is possible to re-use
-## TextDecoder objects. It is however incorrect to call `finish` unless the last
-## `decode` call has returned `tdrDone`.
+## Using TextDecoder objects after setting `finish = true` is valid, but
+## not well tested, so it is recommended that you reset your decoder after
+## the last chunk.
 
 {.push raises: [].}
 
 import std/algorithm
 import std/bitops
 
+import charset
 import charset_map
 
 type
@@ -60,81 +67,35 @@ type
   TextDecoderFinishResult* = enum
     tdfrDone, tdfrError
 
-  ISO2022JPState = enum
-    i2jsAscii, i2jsRoman, i2jsKatakana, i2jsLeadByte, i2jsTrailByte,
-    i2jsEscapeStart, i2jsEscape
-
-  TextDecoder* = ref object of RootObj
+  TextDecoder* = object
     i*: int
-    ri*: int
+    ri*: int #TODO could be removed with some effort
     pi*: int
-
-  TextDecoderUTF8* = ref object of TextDecoder
-    bounds: uint8
-    flag: TextDecoderResult
-    needed: uint8
+    charset*: Charset
+    # note: in UTF-8, `lead' is repurposed as `needed'
+    lead: uint8 # Big5, Shift_JIS, EUC-KR, EUC-JP, ISO-2022-JP, UTF-16
+    bounds: uint8 # UTF-8
+    flag: TextDecoderResult # UTF-8
+    # UTF-8: buffer storing at most 3 bytes on chunk boundaries
+    # UTF-16: surrogate at lower 2 bytes, then a flag for whether we've
+    #         already read a lead byte
+    # replacement: bool for whether we've already returned error
+    # EUC-JP: bool for whether the next character uses the JIS X 0212 table
+    # GB18030: four bytes: a buffer to emit after error, then three bytes
+    #          for a pointer into the table
+    # ISO-2022-JP: lowest byte is a char buffer (or 0), second byte is
+    #              output flag, third byte is state, fourth byte is output
+    #              state
     buf: uint32
 
-  TextDecoderGB18030* = ref object of TextDecoder
-    buf: uint8
-    first: uint8
-    second: uint8
-    third: uint8
-
-  TextDecoderBig5* = ref object of TextDecoder
-    lead: uint8
-
-  TextDecoderEUC_JP* = ref object of TextDecoder
-    lead: uint8
-    jis0212: bool
-
-  TextDecoderISO2022_JP* = ref object of TextDecoder
-    buf: uint8
-    lead: uint8
-    output: bool
-    hasbuf: bool
-    state: ISO2022JPState
-    outputstate: ISO2022JPState
-
-  TextDecoderShiftJIS* = ref object of TextDecoder
-    lead: uint8
-
-  TextDecoderEUC_KR* = ref object of TextDecoder
-    lead: uint8
-
-  TextDecoderUTF16_BE* = ref object of TextDecoder
-    surr: uint16
-    lead: uint8
-    haslead: bool
-    hassurr: bool
-
-  TextDecoderUTF16_LE* = ref object of TextDecoder
-    surr: uint16
-    lead: uint8
-    haslead: bool
-    hassurr: bool
-
-  TextDecoderXUserDefined* = ref object of TextDecoder
-
-  TextDecoderReplacement* = ref object of TextDecoder
-    reported: bool
-
 # All decoders must take care of two things:
-# * Put all state changes *before* returning with tdrError. (For obvious
-#   reasons :) You can't change anything after returning from the method.
-# * Put all state changes *after* `try_put_*' templates. This is particularly
-#   important because the templates might return early requesting more place for
-#   the output; instead of using an internal buffer, in this case we simply
+# * Put all state changes *before* returning with tdrError - for obvious
+#   reasons :)  You can't change anything after returning from the proc.
+# * Put all state changes *after* `try_put_*' templates.  This is important
+#   because the templates might return early requesting more place for the
+#   output; instead of using an internal buffer, in this case we simply
 #   repeat the computation on the previous state in the next call (after
 #   receiving more place.)
-
-method decode*(td: TextDecoder; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult {.base.} =
-  assert false
-  tdrDone
-
-method finish*(td: TextDecoder): TextDecoderFinishResult {.base.} =
-  tdfrDone
 
 template try_put_utf8(oq: var openArray[uint8]; c: uint32; n: var int) =
   if c < 0x80:
@@ -272,13 +233,14 @@ const Utf8Table = block:
     of 0xF5'u8 .. 0xFF: res[u] = u8tConsume1 or u8tBadLead
   res
 
-method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
+proc decodeUtf8(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
   var bounds = td.bounds
   var flag = td.flag
   var i = td.i
   var ri = td.ri
-  var needed = td.needed
+  # we use the lead field to store the number of needed bytes
+  var needed = td.lead
   var obuf = td.buf
   var buf = obuf
   let pi = i
@@ -327,7 +289,7 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
     n = n2
   td.ri = ri
   td.i = i
-  td.needed = needed
+  td.lead = needed
   td.bounds = bounds
   td.buf = buf
   if pi < ri:
@@ -340,20 +302,15 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
     td.pi = pi
   of tdrDone:
     td.ri = 0
+    if finish:
+      td.buf = 0
+      td.bounds = 0
+      if needed != 0:
+        td.lead = 0
+        return tdrError
     td.i = 0
   else: discard # unreachable
   flag
-
-method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.needed != 0:
-    result = tdfrError
-  td.needed = 0
-  td.i = 0
-  td.pi = 0
-  td.ri = 0
-  td.buf = 0
-  td.bounds = 0
 
 proc findInRuns(runs: openArray[uint32]; offset, p: uint16): uint16 =
   let i = runs.upperBound(p, proc(x: uint32; y: uint16): int =
@@ -395,88 +352,77 @@ proc gb18030ToU16(row, col: uint16): uint16 =
     return GB18030Decode[p]
   return 0
 
-method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  if td.buf != 0:
-    oq.try_put_byte td.buf, n
-    td.buf = 0
+proc decodeGb18030(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
+  if (td.buf and 0xFF) != 0: # buffer: to output after error
+    oq.try_put_byte uint8(td.buf and 0xFF), n
+    td.buf = td.buf and not 0xFF'u32
   while (let i = td.i; i < iq.len):
     let b = iq[i]
-    if b < 0x80 and td.first == 0 and td.second == 0 and td.third == 0:
+    let s = td.buf
+    let first = (s shr 8) and 0xFF
+    let second = (s shr 16) and 0xFF
+    let third = (s shr 24) and 0xFF
+    if b < 0x80 and s == 0: # first, second, third are all 0 (ASCII)
       oq.try_put_byte b, n
-    elif td.third != 0:
+    elif third != 0:
       if b notin 0x30u8 .. 0x39u8:
-        td.buf = td.second
-        td.first = td.third
-        td.second = 0
-        td.third = 0
+        # set buf to second, first to third, second and third to 0
+        td.buf = s shr 16
         # prepend (no inc i)
         return tdrError
-      let p = ((uint32(td.first) - 0x81) * 10 * 126 * 10) +
-              ((uint32(td.second) - 0x30) * (10 * 126)) +
-              ((uint32(td.third) - 0x81) * 10) + uint32(b) - 0x30
+      let p = ((uint32(first) - 0x81) * 10 * 126 * 10) +
+              ((uint32(second) - 0x30) * (10 * 126)) +
+              ((uint32(third) - 0x81) * 10) + uint32(b) - 0x30
       let c = gb18030RangesCodepoint(p)
       if c == high(uint32): # null
-        td.first = 0
-        td.second = 0
-        td.third = 0
+        td.buf = 0
         inc td.i
         return tdrError
       else:
         oq.try_put_utf8 c, n
-        td.first = 0
-        td.second = 0
-        td.third = 0
-    elif td.second != 0:
+        td.buf = 0
+    elif second != 0:
       if b in 0x81u8 .. 0xFEu8:
-        td.third = b
+        td.buf = s or (uint32(b) shl 24) # set third to b
       else:
-        td.buf = td.second
-        td.first = 0
-        td.second = 0
-        td.third = 0
+        td.buf = second # set buf to second, first/second/third to 0
         return tdrError
-    elif td.first != 0:
+    elif first != 0:
       if b in 0x30u8 .. 0x39u8:
-        td.second = b
+        td.buf = s or (uint32(b) shl 16) # set second to b
       else:
         if b in {0x40u8..0x7Eu8, 0x80..0xFE}:
           let offset = if b < 0x7F: 0x40u16 else: 0x41u16
-          let row = (uint16(td.first) - 0x81)
+          let row = (uint16(first) - 0x81)
           let col = (uint16(b) - offset)
           if (let c = gb18030ToU16(row, col); c != 0):
             oq.try_put_utf8 c, n
-            td.first = 0
+            td.buf = 0 # set first to 0
             inc td.i
             continue
-        td.first = 0
-        if b < 0x80:
-          continue # prepend (no inc i)
+        if b < 0x80: # prepend if ASCII
+          td.buf = b
         else:
-          inc td.i
-          return tdrError
+          td.buf = 0
+        inc td.i
+        return tdrError
     elif b == 0x80:
       oq.try_put_str "\u20AC", n
     elif b in 0x81u8 .. 0xFEu8:
-      td.first = b
+      td.buf = uint32(b) shl 8 # set first to b
     else:
       inc td.i
       return tdrError
     inc td.i
+  if finish and td.buf != 0:
+    td.buf = 0
+    return tdrError
   td.i = 0
   tdrDone
 
-method finish*(td: TextDecoderGB18030): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.first != 0 or td.second != 0 or td.third != 0:
-    result = tdfrError
-  assert td.buf == 0
-  td.first = 0
-  td.second = 0
-  td.third = 0
-
-method decode*(td: TextDecoderBig5; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
+proc decodeBig5(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
     if b < 0x80 and td.lead == 0:
@@ -501,6 +447,7 @@ method decode*(td: TextDecoderBig5; iq: openArray[uint8];
           var c = uint32(Big5Decode[p - Big5DecodeOffset])
           if c == 1:
             # must linear search as it's sorted by ucs
+            #TODO this should be done the other way around
             for (ucs, itp) in Big5EncodeHigh:
               if p == itp:
                 c = uint32(ucs) + 0x20000
@@ -520,14 +467,11 @@ method decode*(td: TextDecoderBig5; iq: openArray[uint8];
       inc td.i
       return tdrError
     inc td.i
+  if finish and td.lead != 0:
+    td.lead = 0
+    return tdrError
   td.i = 0
   tdrDone
-
-method finish*(td: TextDecoderBig5): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.lead != 0:
-    result = tdfrError
-  td.lead = 0
 
 proc jis0212ToU16(row, col: uint16): uint16 =
   let p = row * 94 + col
@@ -558,35 +502,36 @@ proc jis0208ToU16(row, col: uint16): uint16 =
     return Jis0208Decode[p]
   return 0
 
-method decode*(td: TextDecoderEUC_JP; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
+proc decodeEucJP(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
-    if b < 0x80 and td.lead == 0:
+    let lead = td.lead
+    if b < 0x80 and lead == 0:
       oq.try_put_byte b, n
       inc td.i
       continue
-    if td.lead == 0x8E and b in 0xA1u8 .. 0xDFu8:
+    if lead == 0x8E and b in 0xA1u8 .. 0xDFu8:
       oq.try_put_utf8 b, n
       td.lead = 0
-    elif td.lead == 0x8F and b in 0xA1u8 .. 0xFEu8:
-      td.jis0212 = true
+    elif lead == 0x8F and b in 0xA1u8 .. 0xFEu8:
+      td.buf = 1
       td.lead = b
-    elif td.lead != 0:
-      if td.lead in 0xA1u8 .. 0xFEu8 and b in 0xA1u8 .. 0xFEu8:
-        let row = (uint16(td.lead) - 0xA1)
+    elif lead != 0:
+      if lead in 0xA1u8 .. 0xFEu8 and b in 0xA1u8 .. 0xFEu8:
+        let row = (uint16(lead) - 0xA1)
         let col = uint16(b) - 0xA1
-        let c = if td.jis0212:
+        let c = if td.buf != 0:
           jis0212ToU16(row, col)
         else:
           jis0208ToU16(row, col)
         if c != 0:
           oq.try_put_utf8 c, n
-          td.jis0212 = false
+          td.buf = 0
           td.lead = 0
           inc td.i
           continue
-        td.jis0212 = false
+        td.buf = 0
       td.lead = 0
       inc td.i
       return tdrError
@@ -596,162 +541,187 @@ method decode*(td: TextDecoderEUC_JP; iq: openArray[uint8];
       inc td.i
       return tdrError
     inc td.i
+  if finish and td.lead != 0:
+    td.lead = 0
+    return tdrError
   td.i = 0
   tdrDone
 
-method finish*(td: TextDecoderEUC_JP): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.lead != 0:
-    result = tdfrError
-  td.lead = 0
-  td.jis0212 = false
+proc packState(buf: uint8; output: bool; state, outputState: uint8):
+    uint32 =
+  buf or (uint32(output) shl 8) or (uint32(state) shl 16) or
+    (uint32(outputState) shl 24)
 
-method decode*(td: TextDecoderISO2022_JP; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  while (let i = td.i; i < iq.len or td.hasbuf):
+const
+  i2jsAscii = 0'u8
+  i2jsRoman = 1'u8
+  i2jsKatakana = 2'u8
+  i2jsLeadByte = 3'u8
+  i2jsTrailByte = 4'u8
+  i2jsEscapeStart = 5'u8
+  i2jsEscape = 6'u8
+  i2jsNull = 7'u8
+
+proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
+  let s = td.buf
+  var buf = uint8(s and 0xFF)
+  var output = ((s shr 8) and 0xFF) != 0
+  var state = uint8((s shr 16) and 0xFF)
+  var outputState = uint8((s shr 24) and 0xFF)
+  #TODO checking buf in every iteration is not really needed, only in the
+  # first one.  (it's only set before returning error)
+  while (let i = td.i; buf != 0 or i < iq.len):
     template consume =
-      if td.hasbuf:
-        td.hasbuf = false
+      if buf != 0:
+        buf = 0
       else:
         inc td.i
-    let b = if td.hasbuf:
-      td.buf
-    else:
-      iq[i]
-    case td.state
+    let b = if buf != 0: buf else: iq[i]
+    td.buf = packState(buf, output, state, outputState)
+    case state
     of i2jsAscii:
       case b
       of 0x1B:
-        td.state = i2jsEscapeStart
+        state = i2jsEscapeStart
       of {0x00u8..0x7Fu8} - {0x0Eu8, 0x0Fu8, 0x1Bu8}:
         oq.try_put_byte b, n
-        td.output = false
+        output = false
       else:
-        td.output = false
+        output = false
         consume
+        td.buf = packState(buf, output, state, outputState)
         return tdrError
     of i2jsRoman:
       case b
-      of 0x1B: td.state = i2jsEscapeStart
+      of 0x1B: state = i2jsEscapeStart
       of 0x5C:
         oq.try_put_str "\u00A5", n # yen
-        td.output = false
+        output = false
       of 0x7E:
         oq.try_put_str "\u203E", n # overline
-        td.output = false
+        output = false
       of {0x00u8..0x7Fu8} - {0x0Eu8, 0x0Fu8, 0x1Bu8, 0x5Cu8, 0x7Eu8}:
         oq.try_put_byte b, n
-        td.output = false
+        output = false
       else:
-        td.output = false
+        output = false
         consume
+        td.buf = packState(buf, output, state, outputState)
         return tdrError
     of i2jsKatakana:
       case b
-      of 0x1B: td.state = i2jsEscapeStart
+      of 0x1B: state = i2jsEscapeStart
       of 0x21u8..0x5Fu8:
         oq.try_put_utf8 0xFF61u16 - 0x21 + uint16(b), n
-        td.output = false
+        output = false
       else:
-        td.output = false
+        output = false
         consume
+        td.buf = packState(buf, output, state, outputState)
         return tdrError
     of i2jsLeadByte:
       case b
-      of 0x1B: td.state = i2jsEscapeStart
+      of 0x1B: state = i2jsEscapeStart
       of 0x21u8..0x7Eu8:
-        td.output = false
+        output = false
         td.lead = b
-        td.state = i2jsTrailByte
+        state = i2jsTrailByte
       else:
-        td.output = false
+        output = false
         consume
+        td.buf = packState(buf, output, state, outputState)
         return tdrError
     of i2jsTrailByte:
       case b
       of 0x1B:
-        td.state = i2jsEscapeStart
+        state = i2jsEscapeStart
         consume
+        td.buf = packState(buf, output, state, outputState)
         return tdrError
       of 0x21u8..0x7Eu8:
         let row = (uint16(td.lead) - 0x21)
         let col = uint16(b) - 0x21
         if (let c = jis0208ToU16(row, col); c != 0):
           oq.try_put_utf8 c, n
-          td.state = i2jsLeadByte
+          state = i2jsLeadByte
         else:
-          td.state = i2jsLeadByte
+          state = i2jsLeadByte
           consume
+          td.buf = packState(buf, output, state, outputState)
           return tdrError
       else:
-        td.state = i2jsLeadByte
+        state = i2jsLeadByte
         consume
+        td.buf = packState(buf, output, state, outputState)
         return tdrError
     of i2jsEscapeStart:
       if b == 0x24 or b == 0x28:
         td.lead = b
-        td.state = i2jsEscape
+        state = i2jsEscape
       else:
-        td.output = false
-        td.state = td.outputstate
+        output = false
+        state = outputState
+        td.buf = packState(buf, output, state, outputState)
         # prepend (no inc i)
         return tdrError
-    of i2jsEscape:
+    else: # i2jsEscape
       let l = td.lead
       td.lead = 0 # this is ok; we don't put anything in this state.
-      var isstatenull = false
-      var s: ISO2022JPState
-      if l == 0x28:
+      let s = if l == 0x28:
         case b
-        of 0x42: s = i2jsAscii
-        of 0x4A: s = i2jsRoman
-        of 0x49: s = i2jsKatakana
-        else: isstatenull = true
-      elif l == 0x24 and b in {0x40u8, 0x42u8}:
-        s = i2jsLeadByte
-      else: isstatenull = true
-      if not isstatenull:
-        td.state = s
-        td.outputstate = s
-        if td.output:
-          consume
-          return tdrError
-        td.output = true
+        of 0x42: i2jsAscii
+        of 0x4A: i2jsRoman
+        of 0x49: i2jsKatakana
+        else: i2jsNull
+      elif b in {0x40u8, 0x42u8}:
+        i2jsLeadByte
+      else:
+        i2jsNull
+      if s != i2jsNull:
+        state = s
+        outputState = s
         consume
+        if output:
+          td.buf = packState(buf, output, state, outputState)
+          return tdrError
+        output = true
         continue
-      td.output = false
-      td.state = td.outputstate
-      td.hasbuf = true
-      td.buf = l
+      td.buf = packState(l, false, outputState, outputState)
       # prepend (no inc i)
       return tdrError
     consume
+  if finish:
+    let l = td.lead
+    td.lead = 0
+    td.buf = 0
+    case state
+    of i2jsTrailByte, i2jsEscapeStart:
+      return tdrError
+    of i2jsEscape:
+      # restore lead to the input queue
+      td.buf = packState(l, false, outputState, outputState)
+      return tdrError
+    else: discard
+  else:
+    td.buf = packState(buf, output, state, outputState)
   td.i = 0
   tdrDone
 
-method finish*(td: TextDecoderISO2022_JP): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.state in {i2jsTrailByte, i2jsEscapeStart, i2jsEscape}:
-    result = tdfrError
-  assert not td.hasbuf
-  td.lead = 0
-  td.output = false
-  td.state = i2jsAscii
-  td.outputstate = i2jsAscii
-
-method decode*(td: TextDecoderShiftJIS; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
+proc decodeShiftJIS(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
-    if b < 0x80 and td.lead == 0: # ASCII
+    let lead = td.lead
+    if b < 0x80 and lead == 0: # ASCII
       oq.try_put_byte b, n
       inc td.i
       continue
-    if td.lead != 0:
+    if lead != 0:
       let offset = if b < 0x7Fu8: 0x40u16 else: 0x41u16
-      let leadoffset = if td.lead < 0xA0: 0x81u16 else: 0xC1u16
+      let leadoffset = if lead < 0xA0: 0x81u16 else: 0xC1u16
       if b in 0x40u8..0x7Eu8 or b in 0x80u8..0xFCu8:
-        var row = (uint16(td.lead) - leadoffset) * 2
+        var row = (uint16(lead) - leadoffset) * 2
         var col = uint16(b) - offset
         if col >= 94:
           col -= 94
@@ -784,14 +754,11 @@ method decode*(td: TextDecoderShiftJIS; iq: openArray[uint8];
       inc td.i
       return tdrError
     inc td.i
+  if finish and td.lead != 0:
+    td.lead = 0
+    return tdrError
   td.i = 0
   tdrDone
-
-method finish*(td: TextDecoderShiftJIS): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.lead != 0:
-    result = tdfrError
-  td.lead = 0
 
 proc eucKRToU16(row, col: uint16): uint16 =
   var col = col
@@ -807,7 +774,7 @@ proc eucKRToU16(row, col: uint16): uint16 =
         return 0
       col -= 6
     let p = row * 178 + col
-    return EUCKRRuns.findInRuns(EUCKRRunsOffset, p)
+    return EucKRRuns.findInRuns(EucKRRunsOffset, p)
   row -= 0x20
   if col < 0x60: # runs 2
     # Skip empty columns 0x1A..0x1F and 0x3A..0x3F
@@ -820,26 +787,27 @@ proc eucKRToU16(row, col: uint16): uint16 =
         return 0
       col -= 6
     let p = row * 0x54 + col
-    return EUCKRRuns2.findInRuns(EUCKRRunsOffset2, p)
+    return EucKRRuns2.findInRuns(EucKRRunsOffset2, p)
   # bottom right quadrant
   col -= 0x60
   let p = row * 94 + col
-  if p < EUCKRDecode.len:
-    return EUCKRDecode[p]
+  if p < EucKRDecode.len:
+    return EucKRDecode[p]
   return 0
 
-method decode*(td: TextDecoderEUC_KR; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
+proc decodeEucKR(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
-    if td.lead == 0 and b < 0x80:
+    let lead = td.lead
+    if lead == 0 and b < 0x80:
       oq.try_put_utf8 b, n
       inc td.i
       continue
-    if td.lead != 0:
+    if lead != 0:
       if b in 0x41u8..0xFEu8:
         let col = (uint16(b) - 0x41)
-        let row = (uint16(td.lead) - 0x81)
+        let row = (uint16(lead) - 0x81)
         if (let c = eucKRToU16(row, col); c != 0):
           oq.try_put_utf8 c, n
           inc td.i
@@ -855,77 +823,55 @@ method decode*(td: TextDecoderEUC_KR; iq: openArray[uint8];
     else:
       inc td.i
       return tdrError
+  if finish and td.lead != 0:
+    td.lead = 0
+    return tdrError
   td.i = 0
   tdrDone
 
-method finish*(td: TextDecoderEUC_KR): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.lead != 0:
-    result = tdfrError
-  td.lead = 0
-
-proc decode0(td: TextDecoderUTF16_BE|TextDecoderUTF16_LE; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int; be: bool): TextDecoderResult =
+proc decodeUtf16(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; be, finish: bool): TextDecoderResult =
   let shiftLead = uint16(be) * 8
   let shiftTrail = uint16(not be) * 8
   while (let i = td.i; i < iq.len):
-    if not td.haslead:
-      td.haslead = true
+    let s = td.buf
+    if ((s shr 16) and 0xFF) == 0: # no lead yet; read it
+      td.buf = s or 0x10000
       td.lead = iq[i]
       inc td.i
       continue
-    let cu = (uint16(td.lead) shl shiftLead) + uint16(iq[i]) shl shiftTrail
-    if td.hassurr:
+    let lead = td.lead
+    let cu = (uint16(lead) shl shiftLead) + uint16(iq[i]) shl shiftTrail
+    if s != 0x10000: # has surrogate
       if unlikely(cu notin 0xDC00u16 .. 0xDFFFu16):
-        td.haslead = true # prepend the last two bytes
-        td.hassurr = false
+        td.buf = 0x10000
         return tdrError
-      let c = 0x10000 + ((uint32(td.surr) - 0xD800) shl 10) +
-        (uint32(cu) - 0xDC00)
+      let surr = uint32(s and 0xFFFF)
+      let c = 0x10000 + ((surr - 0xD800) shl 10) + (uint32(cu) - 0xDC00)
       oq.try_put_utf8 c, n
-      td.hassurr = false
-      td.haslead = false
+      td.buf = 0 # clear lead, surrogate
       inc td.i
       continue
     if cu in 0xD800u16 .. 0xDBFFu16:
-      td.surr = cu
-      td.hassurr = true
-      td.haslead = false
+      td.buf = uint32(cu) # clear lead, set cu as surrogate
       inc td.i
       continue
     if unlikely(cu in 0xDC00u16 .. 0xDFFFu16):
       inc td.i
-      td.haslead = false
+      td.buf = 0 # clear lead, no surrogate
       return tdrError
     oq.try_put_utf8 uint32(cu), n
-    td.haslead = false
+    td.buf = 0 # clear lead, no surrogate
     inc td.i
+  if finish:
+    td.lead = 0
+    if td.buf != 0:
+      td.buf = 0
+      return tdrError
   td.i = 0
   tdrDone
 
-method decode*(td: TextDecoderUTF16_BE; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  td.decode0(iq, oq, n, be = true)
-
-method finish*(td: TextDecoderUTF16_BE): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.haslead or td.hassurr:
-    result = tdfrError
-  td.haslead = false
-  td.hassurr = false
-
-method decode*(td: TextDecoderUTF16_LE; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  td.decode0(iq, oq, n, be = false)
-
-method finish*(td: TextDecoderUTF16_LE): TextDecoderFinishResult =
-  result = tdfrDone
-  if td.haslead or td.hassurr:
-    result = tdfrError
-  td.haslead = false
-  td.hassurr = false
-
-method decode*(td: TextDecoderXUserDefined; iq: openArray[uint8];
+proc decodeXUserDefined(td: var TextDecoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
@@ -937,7 +883,7 @@ method decode*(td: TextDecoderXUserDefined; iq: openArray[uint8];
   td.i = 0
   tdrDone
 
-proc decode0(td: TextDecoder; iq: openArray[uint8];
+proc decodeSingleByte(td: var TextDecoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int; map: openArray[uint16]):
     TextDecoderResult =
   while (let i = td.i; i < iq.len):
@@ -957,46 +903,54 @@ proc decode0(td: TextDecoder; iq: openArray[uint8];
   td.i = 0
   tdrDone
 
-template makeSingleByte(name: untyped) {.dirty.} =
-  type `TextDecoder name`* = ref object of TextDecoder
-
-  method decode*(td: `TextDecoder name`; iq: openArray[uint8];
-      oq: var openArray[uint8]; n: var int): TextDecoderResult =
-    td.decode0(iq, oq, n, `name Decode`)
-
-makeSingleByte IBM866
-makeSingleByte ISO8859_2
-makeSingleByte ISO8859_3
-makeSingleByte ISO8859_4
-makeSingleByte ISO8859_5
-makeSingleByte ISO8859_6
-makeSingleByte ISO8859_7
-makeSingleByte ISO8859_8
-makeSingleByte ISO8859_10
-makeSingleByte ISO8859_13
-makeSingleByte ISO8859_14
-makeSingleByte ISO8859_15
-makeSingleByte ISO8859_16
-makeSingleByte KOI8_R
-makeSingleByte KOI8_U
-makeSingleByte Macintosh
-makeSingleByte Windows874
-makeSingleByte Windows1250
-makeSingleByte Windows1251
-makeSingleByte Windows1252
-makeSingleByte Windows1253
-makeSingleByte Windows1254
-makeSingleByte Windows1255
-makeSingleByte Windows1256
-makeSingleByte Windows1257
-makeSingleByte Windows1258
-makeSingleByte XMacCyrillic
-
-method decode*(td: TextDecoderReplacement; iq: openArray[uint8];
+proc decodeReplacement(td: var TextDecoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  if not td.reported:
-    td.reported = true
+  if td.buf == 0:
+    td.buf = 1
     return tdrError
   tdrDone
+
+proc decode*(td: var TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; finish = false): TextDecoderResult =
+  case td.charset #TODO maybe reuse unknown as BOM sniff?
+  of csUnknown: tdrError
+  of csUtf8: td.decodeUtf8(iq, oq, n, finish)
+  of csGbk, csGb18030: td.decodeGb18030(iq, oq, n, finish)
+  of csBig5: td.decodeBig5(iq, oq, n, finish)
+  of csEucJP: td.decodeEucJP(iq, oq, n, finish)
+  of csIso2022JP: td.decodeIso2022JP(iq, oq, n, finish)
+  of csShiftJIS: td.decodeShiftJIS(iq, oq, n, finish)
+  of csEucKR: td.decodeEucKR(iq, oq, n, finish)
+  of csUtf16be: td.decodeUtf16(iq, oq, n, be = true, finish)
+  of csUtf16le: td.decodeUtf16(iq, oq, n, be = false, finish)
+  of csXUserDefined: td.decodeXUserDefined(iq, oq, n)
+  of csReplacement: td.decodeReplacement(iq, oq, n)
+  of csIbm866: td.decodeSingleByte(iq, oq, n, Ibm866Decode)
+  of csIso8859_2: td.decodeSingleByte(iq, oq, n, Iso8859_2Decode)
+  of csIso8859_3: td.decodeSingleByte(iq, oq, n, Iso8859_3Decode)
+  of csIso8859_4: td.decodeSingleByte(iq, oq, n, Iso8859_4Decode)
+  of csIso8859_5: td.decodeSingleByte(iq, oq, n, Iso8859_5Decode)
+  of csIso8859_6: td.decodeSingleByte(iq, oq, n, Iso8859_6Decode)
+  of csIso8859_7: td.decodeSingleByte(iq, oq, n, Iso8859_7Decode)
+  of csIso8859_8, csIso8859_8i: td.decodeSingleByte(iq, oq, n, Iso8859_8Decode)
+  of csIso8859_10: td.decodeSingleByte(iq, oq, n, Iso8859_10Decode)
+  of csIso8859_13: td.decodeSingleByte(iq, oq, n, Iso8859_13Decode)
+  of csIso8859_14: td.decodeSingleByte(iq, oq, n, Iso8859_14Decode)
+  of csIso8859_15: td.decodeSingleByte(iq, oq, n, Iso8859_15Decode)
+  of csIso8859_16: td.decodeSingleByte(iq, oq, n, Iso8859_16Decode)
+  of csKoi8r: td.decodeSingleByte(iq, oq, n, Koi8rDecode)
+  of csKoi8u: td.decodeSingleByte(iq, oq, n, Koi8uDecode)
+  of csMacintosh: td.decodeSingleByte(iq, oq, n, MacintoshDecode)
+  of csWindows874: td.decodeSingleByte(iq, oq, n, Windows874Decode)
+  of csWindows1250: td.decodeSingleByte(iq, oq, n, Windows1250Decode)
+  of csWindows1251: td.decodeSingleByte(iq, oq, n, Windows1251Decode)
+  of csWindows1252: td.decodeSingleByte(iq, oq, n, Windows1252Decode)
+  of csWindows1253: td.decodeSingleByte(iq, oq, n, Windows1253Decode)
+  of csWindows1254: td.decodeSingleByte(iq, oq, n, Windows1254Decode)
+  of csWindows1255: td.decodeSingleByte(iq, oq, n, Windows1255Decode)
+  of csWindows1256: td.decodeSingleByte(iq, oq, n, Windows1256Decode)
+  of csWindows1257: td.decodeSingleByte(iq, oq, n, Windows1257Decode)
+  of csWindows1258: td.decodeSingleByte(iq, oq, n, Windows1258Decode)
+  of csXMacCyrillic: td.decodeSingleByte(iq, oq, n, XMacCyrillicDecode)
 
 {.pop.}

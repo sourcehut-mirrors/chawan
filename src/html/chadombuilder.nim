@@ -94,17 +94,17 @@ proc setEncodingImpl(builder: ChaDOMBuilder; encoding: string):
     SetEncodingResult =
   if builder.confidence != ccTentative:
     return SET_ENCODING_CONTINUE
-  if builder.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
+  if builder.charset in {csUtf16le, csUtf16be}:
     builder.confidence = ccCertain
     return SET_ENCODING_CONTINUE
   let charset = getCharset(encoding)
-  if charset == CHARSET_UNKNOWN:
+  if charset == csUnknown:
     return SET_ENCODING_CONTINUE
   builder.confidence = ccCertain
   if charset == builder.charset:
     return SET_ENCODING_CONTINUE
-  builder.charset = if charset == CHARSET_X_USER_DEFINED:
-    CHARSET_WINDOWS_1252
+  builder.charset = if charset == csXUserDefined:
+    csWindows1252
   else:
     charset
   return SET_ENCODING_STOP

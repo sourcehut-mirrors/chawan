@@ -45,11 +45,16 @@ proc loadCharsetMap8(path: string): tuple[
     result.encode.add((uint16(n), uint8(index) + 0x80))
   result.encode.sort()
 
-proc loadCharsetMapISO2022JPKatakana(path: string): array[char, uint16] =
+proc loadCharsetMapISO2022JPKatakana(path: string): seq[uint16] =
+  result = @[]
+  var i = 0
   for index, n in mapPairs(path):
-    result[char(index)] = uint16(n)
+    result.add(uint16(n))
+    assert index == i
+    inc i
 
 proc loadGB18030Ranges(path: string): seq[UCS16x16] =
+  result = @[]
   var pindex = -1
   var pn = -1
   for index, n in mapPairs(path):
@@ -460,11 +465,15 @@ proc writeShiftJISMap(s: Stream; path, outname: string) =
 
 proc writeISO2022JPKatakanaEncode(s: Stream; path: string) =
   let encode = loadCharsetMapISO2022JPKatakana(path)
-  s.write("const ISO2022JPKatakanaMap*: array[uint8, uint16] = [\n")
+  s.write("const Iso2022JPKatakanaMap*: array[" & $encode.len &
+    ", uint8] = [\n")
   var writer = LineWriter(s: s)
-  writer.write("uint16 ")
+  writer.write("uint8 ")
   for index in encode:
-    writer.write($int(index) & ",")
+    if index == 0:
+      break
+    assert index - 0x3000 <= 0xFF
+    writer.write($int(index - 0x3000) & ",")
   writer.flush()
   s.write("]\n\n")
 
@@ -473,21 +482,21 @@ s.writeLine("const Big5DecodeOffset* = 942")
 s.writeLine("type UCS16x16* = tuple[ucs, p: uint16]")
 s.writeLine("type UCS16x8* = tuple[ucs: uint16, p: uint8]")
 s.writeLine()
-s.writeCharsetMap8("index-ibm866.txt", "IBM866")
-s.writeCharsetMap8("index-iso-8859-2.txt", "ISO88592")
-s.writeCharsetMap8("index-iso-8859-3.txt", "ISO88593")
-s.writeCharsetMap8("index-iso-8859-4.txt", "ISO88594")
-s.writeCharsetMap8("index-iso-8859-5.txt", "ISO88595")
-s.writeCharsetMap8("index-iso-8859-6.txt", "ISO88596")
-s.writeCharsetMap8("index-iso-8859-7.txt", "ISO88597")
-s.writeCharsetMap8("index-iso-8859-8.txt", "ISO88598")
-s.writeCharsetMap8("index-iso-8859-10.txt", "ISO885910")
-s.writeCharsetMap8("index-iso-8859-13.txt", "ISO885913")
-s.writeCharsetMap8("index-iso-8859-14.txt", "ISO885914")
-s.writeCharsetMap8("index-iso-8859-15.txt", "ISO885915")
-s.writeCharsetMap8("index-iso-8859-16.txt", "ISO885916")
-s.writeCharsetMap8("index-koi8-r.txt", "KOI8R")
-s.writeCharsetMap8("index-koi8-u.txt", "KOI8U")
+s.writeCharsetMap8("index-ibm866.txt", "Ibm866")
+s.writeCharsetMap8("index-iso-8859-2.txt", "Iso8859_2")
+s.writeCharsetMap8("index-iso-8859-3.txt", "Iso8859_3")
+s.writeCharsetMap8("index-iso-8859-4.txt", "Iso8859_4")
+s.writeCharsetMap8("index-iso-8859-5.txt", "Iso8859_5")
+s.writeCharsetMap8("index-iso-8859-6.txt", "Iso8859_6")
+s.writeCharsetMap8("index-iso-8859-7.txt", "Iso8859_7")
+s.writeCharsetMap8("index-iso-8859-8.txt", "Iso8859_8")
+s.writeCharsetMap8("index-iso-8859-10.txt", "Iso8859_10")
+s.writeCharsetMap8("index-iso-8859-13.txt", "Iso8859_13")
+s.writeCharsetMap8("index-iso-8859-14.txt", "Iso8859_14")
+s.writeCharsetMap8("index-iso-8859-15.txt", "Iso8859_15")
+s.writeCharsetMap8("index-iso-8859-16.txt", "Iso8859_16")
+s.writeCharsetMap8("index-koi8-r.txt", "Koi8r")
+s.writeCharsetMap8("index-koi8-u.txt", "Koi8u")
 s.writeCharsetMap8("index-macintosh.txt", "Macintosh")
 s.writeCharsetMap8("index-windows-874.txt", "Windows874")
 s.writeCharsetMap8("index-windows-1250.txt", "Windows1250")
@@ -503,7 +512,7 @@ s.writeCharsetMap8("index-x-mac-cyrillic.txt", "XMacCyrillic")
 s.writeGB18030Map("index-gb18030.txt", "GB18030")
 s.writeJis0208Map("index-jis0208.txt", "Jis0208")
 s.writeJis0212Map("index-jis0212.txt", "Jis0212")
-s.writeEUCKRMap("index-euc-kr.txt", "EUCKR")
+s.writeEUCKRMap("index-euc-kr.txt", "EucKR")
 s.writeGB18030RangesMap("index-gb18030-ranges.txt", "GB18030Ranges")
 const Big5DecodeOffset* = 942
 s.writeBig5Map("index-big5.txt", "Big5", offset = Big5DecodeOffset)

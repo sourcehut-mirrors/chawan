@@ -14,12 +14,10 @@ proc main() =
   let iter = parseInt(getEnv("BENCH_ITER"))
   let fail_outdir = getEnv("BENCH_ERROR_OUTDIR")
   let ss = newFileStream(file).readAll()
-  let td = newTextDecoder(cs)
   let devnull = open("/dev/null", fmWrite)
   # check
-  let te = newTextEncoder(cs)
-  let check0 = td.decodeAll(ss)
-  let check = te.encodeAll(check0)
+  let check0 = ss.decodeAll(cs)
+  let check = check0.encodeAll(cs)
   if check != ss:
     eprint "ERROR: equivalence check failed"
     if fail_outdir != "":
@@ -38,7 +36,7 @@ proc main() =
   var high = 0f64
   for i in 0 ..< iter:
     let startIt = cpuTime()
-    let res = td.decodeAll(ss)
+    let res = ss.decodeAll(cs)
     devnull.write(res)
     let endIt = cpuTime()
     let time = endIt - startIt

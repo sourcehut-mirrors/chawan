@@ -418,7 +418,7 @@ proc scripting(init: BufferInit): ScriptingMode {.jsfget.} =
 
 proc charsetOverride(ctx: JSContext; init: BufferInit): JSValue {.jsfget.} =
   let charset = init.config.charsetOverride
-  if charset != CHARSET_UNKNOWN:
+  if charset != csUnknown:
     return ctx.toJS(charset)
   return JS_NULL
 
@@ -523,10 +523,10 @@ proc applyResponse*(init: BufferInit; response: Response;
   # * network charset
   # * default charset guesses
   # HTML may override the last two (but not the override charset).
-  if init.config.charsetOverride != CHARSET_UNKNOWN:
+  if init.config.charsetOverride != csUnknown:
     init.charsetStack = @[init.config.charsetOverride]
-  elif (let charset = response.getCharset(CHARSET_UNKNOWN);
-      charset != CHARSET_UNKNOWN):
+  elif (let charset = response.getCharset(csUnknown);
+      charset != csUnknown):
     init.charsetStack = @[charset]
   else:
     init.charsetStack = @[]

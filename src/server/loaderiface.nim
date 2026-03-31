@@ -226,7 +226,7 @@ proc getCharset*(this: Response; fallback: Charset): Charset =
   let header = this.headers.getFirst("Content-Type").toLowerAscii()
   if header != "":
     let cs = header.getContentTypeAttr("charset").getCharset()
-    if cs != CHARSET_UNKNOWN:
+    if cs != csUnknown:
       return cs
   return fallback
 

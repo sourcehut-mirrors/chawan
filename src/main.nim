@@ -154,7 +154,7 @@ proc parseContentType(ctx: var ParamParseContext) =
 proc getCharset(ctx: var ParamParseContext): Charset =
   let s = ctx.getNext()
   let charset = getCharset(s)
-  if charset == CHARSET_UNKNOWN:
+  if charset == csUnknown:
     die("unknown charset " & s)
   return charset
 
