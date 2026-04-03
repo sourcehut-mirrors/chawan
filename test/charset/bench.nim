@@ -4,9 +4,9 @@ import std/streams
 import std/strutils
 import std/times
 
-import chagashi/charset
-import chagashi/decoder
-import chagashi/encoder
+import encoding/charset
+import encoding/decoder
+import encoding/encoder
 
 proc main() =
   let file = getEnv("BENCH_FILE")

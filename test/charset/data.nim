@@ -1,10 +1,9 @@
 import std/os
 import std/streams
-import std/unittest
 
-import chagashi/decoder
-import chagashi/encoder
-import chagashi/charset
+import encoding/decoder
+import encoding/encoder
+import encoding/charset
 
 let dir = getEnv("CGS_TESTDIR")
 
@@ -42,21 +41,18 @@ proc runTest(name: string, label: string, no_out = false) =
     let test_out_ref = newFileStream(dir / name & "_out_ref.txt")
     runTestOut(test_out, test_out_ref, label)
 
-test "big5":
+proc main() =
   runTest("big5", "big5")
 
-test "euc-kr":
   runTest("euc_kr", "euc-kr")
 
-test "euc-jp":
   runTest("jis0208", "euc-jp")
   runTest("jis0212", "euc-jp", no_out = true)
 
-test "gb18030":
   runTest("gb18030", "gb18030")
 
-test "iso-2022-jp":
   runTest("iso_2022_jp", "iso-2022-jp")
 
-test "shift_jis":
   runTest("shift_jis", "shift_jis")
+
+main()

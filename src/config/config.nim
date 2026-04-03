@@ -8,7 +8,7 @@ import std/os
 import std/sets
 import std/tables
 
-import chagashi/charset
+import encoding/charset
 import config/chapath
 import config/conftypes
 import config/cookie

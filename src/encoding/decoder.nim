@@ -3,8 +3,6 @@
 import charset
 import decodercore
 
-export decodercore
-
 type DecoderErrorMode* = enum
   demFatal, demReplacement
 

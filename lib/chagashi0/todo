@@ -1,4 +1,0 @@
-* more tests
-	- wpt? (seems hard to implement for now)
-	- test the single-byte encodings
-* fuzzing

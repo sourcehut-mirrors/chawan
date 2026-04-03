@@ -3,10 +3,10 @@
 import std/options
 import std/tables
 
-import chagashi/charset
 import chame/htmlparser
 import chame/tags
 import config/conftypes
+import encoding/charset
 import html/catom
 import html/dom
 import monoucha/fromjs

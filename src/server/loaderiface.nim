@@ -7,11 +7,11 @@
 
 import std/posix
 
-import chagashi/charset
-import chagashi/decoder
 import config/conftypes
 import config/cookie
 import config/mimetypes
+import encoding/charset
+import encoding/decoder
 import io/dynstream
 import io/packetreader
 import io/packetwriter

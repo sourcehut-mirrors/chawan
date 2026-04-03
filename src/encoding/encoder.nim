@@ -3,8 +3,6 @@
 import charset
 import encodercore
 
-export encodercore
-
 type EncoderErrorMode* = enum
   eemFatal, eemHtml
 

@@ -139,8 +139,7 @@ tinfl = adapter/protocol/tinfl.h
 # lib/*0 has a 0 so that it doesn't conflict with the old submodules.
 # git can't deal with this, it seems.
 $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/* lib/chame0/chame/* \
-		lib/chagashi0/chagashi/* lib/monoucha0/monoucha/* \
-		lib/monoucha0/monoucha/qjs/* $(chaseccomp) \
+		lib/monoucha0/monoucha/* lib/monoucha0/monoucha/qjs/* $(chaseccomp) \
 		res/charwidth_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
@@ -317,6 +316,10 @@ uninstall:
 test/net/run: test/net/run.nim
 	$(NIMC) test/net/run.nim
 
+.PHONY: map
+map:
+	$(NIM) $(FLAGS) r res/createmap.nim > src/encoding/charset_map.nim
+
 .PHONY: test_js
 test_js:
 	(cd test/js && ./run.sh)
@@ -337,13 +340,23 @@ test_net: test/net/run
 test_pager: test/pager/run.sh
 	(cd test/pager && ./run.sh)
 
+$(OBJDIR)/chagashi_test:
+	mkdir -p $(OBJDIR)/chagashi_test
+	cp test/charset/data.tar.xz $(OBJDIR)/chagashi_test
+	unxz $(OBJDIR)/chagashi_test/data.tar.xz
+	tar xf $(OBJDIR)/chagashi_test/data.tar -C $(OBJDIR)/chagashi_test
+
+test_flags = --verbosity:0
+
 .PHONY: test_charset
-test_charset: test/charset/run.sh
+test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
 	(cd test/charset && ./run.sh)
+	$(NIM) r $(test_flags) test/charset/basic.nim
+	CGS_TESTDIR=$(OBJDIR)/chagashi_test $(NIM) r $(test_flags) test/charset/data.nim
 
 .PHONY: test_nim
 test_nim: test/nim/ttwtstr.nim
-	(cd test/nim && $(NIM) r ttwtstr.nim)
+	(cd test/nim && $(NIM) r $(test_flags) ttwtstr.nim)
 
 .PHONY: test
 test: test_js test_layout test_net test_md test_pager test_charset test_nim

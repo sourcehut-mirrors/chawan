@@ -322,7 +322,7 @@ Of particular interest in the documentation are:
 * DOM: <https://dom.spec.whatwg.org/>. Includes events, basic node-related
   stuff, etc.
 * Encoding: <https://encoding.spec.whatwg.org/>.  These algorithms are
-  implemented in Chagashi.
+  implemented in encoding.
 * URL: <https://url.spec.whatwg.org/>.  For some incomprehensible reason,
   it's defined as an equally incomprehensible state machine.  types/url
   implements this.

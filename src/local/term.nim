@@ -4,11 +4,12 @@ import std/os
 import std/posix
 import std/termios
 
-import chagashi/charset
-import chagashi/decoder
-import chagashi/encoder
 import config/config
 import config/conftypes
+import encoding/charset
+import encoding/decoder
+import encoding/encoder
+import encoding/encodercore
 import io/dynstream
 import io/poll
 import server/loaderiface

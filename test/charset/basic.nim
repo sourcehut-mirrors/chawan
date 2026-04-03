@@ -1,13 +1,12 @@
 import std/strutils
-import std/unittest
 
-import chagashi/charset
-import chagashi/decoder
-import chagashi/decodercore
-import chagashi/encoder
+import encoding/charset
+import encoding/decoder
+import encoding/decodercore
+import encoding/encoder
 
 const iroha = "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす"
-test "roundtrip iroha":
+proc testCJK() =
   const css = [
     csShiftJIS, csIso2022JP, csEucJP, csEucKR, csGb18030, csGbk, csBig5, csUtf8
   ]
@@ -18,7 +17,7 @@ test "roundtrip iroha":
     else:
       iroha
     let sdecoded = sencoded.decodeAll(cs)
-    check sdecoded == iroha
+    assert sdecoded == iroha
     var ctx = initTextDecoderContext(cs)
     var dec2 = ""
     for i in 0 ..< 100:
@@ -27,29 +26,29 @@ test "roundtrip iroha":
         dec2 &= slice
       for slice in ctx.decode([], finish = true):
         dec2 &= slice
-    check dec2 == iroha100
+    assert dec2 == iroha100
 
-test "validate UTF-8 in parts":
+proc testUTF8Parts() =
   # Validate "Hellö, world!".
   let ss0 = "Hell\xC3"
   var td = initTextDecoder(csUtf8)
   var n = 0
   var oq = newSeq[uint8](16)
-  check td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrReadInput
+  assert td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrReadInput
   # read Hell (0xC3 is not consumed yet)
-  check td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrDone
+  assert td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrDone
   # n is still 0, but 0xC3 is now buffered
-  check n == 0
+  assert n == 0
   # read 0xB6 + , world! => Hellö world!
   let ss1 = "\xB6, world!\xC3"
-  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n) == tdrReadInput
+  assert td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n) == tdrReadInput
   # 0xC3 got moved from the internal buffer to oq
-  check n == 1
-  check oq[0] == 0xC3
-  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n,
+  assert n == 1
+  assert oq[0] == 0xC3
+  assert td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n,
     finish = true) == tdrError
 
-test "validate valid UTF-8":
+proc testUTF8Valid() =
   const utf8_valid = [
     "aiueo",
     "äöüß",
@@ -59,14 +58,14 @@ test "validate valid UTF-8":
     "\u1F972"
   ]
   for s in utf8_valid:
-    check s.toValidUTF8() == s
-    check s.toValidUTF8() & 'x' == s & 'x'
+    assert s.toValidUTF8() == s
+    assert s.toValidUTF8() & 'x' == s & 'x'
     var ctx = initTextDecoderContext(csUtf8, bufLen = 3)
     block:
       var res = ""
       for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
         res &= s
-      check res == s
+      assert res == s
     for j in 2 .. 10:
       var res = ""
       var i = 0
@@ -74,9 +73,9 @@ test "validate valid UTF-8":
         for s in ctx.decode(s.toOpenArrayByte(i, min(i + j, s.len) - 1), finish = i + j >= s.len):
           res &= s
         i += j
-      check res == s
+      assert res == s
 
-test "validate invalid UTF-8":
+proc testUTF8Invalid() =
   const utf8_error = {
     "\xF8\x80\x80\x80\x80\x80": "\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD",
     "\uD800": "\uFFFD\uFFFD\uFFFD", # lowest surrogate
@@ -87,15 +86,15 @@ test "validate invalid UTF-8":
     "\x41\xC0\xAF\x41\xF4\x80\x80\x41": "A\uFFFD\uFFFDA\uFFFDA",
   }
   for (s, t) in utf8_error:
-    check s.toValidUTF8() == t
-    check (s & 'x').toValidUTF8() == t & 'x'
+    assert s.toValidUTF8() == t
+    assert (s & 'x').toValidUTF8() == t & 'x'
     block:
       var ctx = initTextDecoderContext(csUtf8, bufLen = 2)
       var res = ""
       for i in 0 ..< s.len:
         for s in ctx.decode([uint8(s[i])], finish = i == s.high):
           res &= s
-      check res == t
+      assert res == t
     block:
       var ctx = initTextDecoderContext(csUtf8, bufLen = 2)
       var res = ""
@@ -104,9 +103,9 @@ test "validate invalid UTF-8":
         for s in ctx.decode(s.toOpenArrayByte(i, min(i + 2, s.len) - 1), finish = i + 2 >= s.len):
           res &= s
         i += 2
-      check res == t
+      assert res == t
 
-test "UTF-16-BE to UTF-8":
+proc testUTF16be() =
   const list = {
     "\0H\0e\0l\0l\0o\0,\0 \0w\0o\0r\0l\0d\0!": "Hello, world!",
     "\xD8\x00": "\uFFFD", # lowest surrogate (unpaired)
@@ -116,9 +115,9 @@ test "UTF-16-BE to UTF-8":
     "\xD8\x3E\xDD\x72": "\u{1F972}", # paired surrogates
   }
   for (s, t) in list:
-    check s.decodeAll(csUtf16be) == t
+    assert s.decodeAll(csUtf16be) == t
 
-test "UTF-16-LE to UTF-8":
+proc testUTF16le() =
   const list = {
     "H\0e\0l\0l\0o\0,\0 \0w\0o\0r\0l\0d\0!\0": "Hello, world!",
     "\x00\xD8": "\uFFFD", # lowest surrogate (unpaired)
@@ -128,7 +127,7 @@ test "UTF-16-LE to UTF-8":
     "\x3E\xD8\x72\xDD": "\u{1F972}", # paired surrogates
   }
   for (s, t) in list:
-    check s.decodeAll(csUtf16le) == t
+    assert s.decodeAll(csUtf16le) == t
   var s = ""
   var s8 = ""
   for i in 0 ..< 10:
@@ -138,7 +137,7 @@ test "UTF-16-LE to UTF-8":
   var res = ""
   for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
     res &= s
-  check res == s8
+  assert res == s8
 
 const tisztaszivvel = """
 Nincsen apám, se anyám,
@@ -162,10 +161,10 @@ s halált hozó fű terem
 gyönyörűszép szívemen.
 """
 
-test "roundtrip windows-1250":
+proc testWindows1250() =
   let sencoded = tisztaszivvel.encodeAll(csWindows1250)
   let sdecoded = sencoded.decodeAll(csWindows1250)
-  check sdecoded == tisztaszivvel
+  assert sdecoded == tisztaszivvel
 
 const erlkoenig = """
 Wer reitet so spät durch Nacht und Wind?
@@ -209,49 +208,67 @@ Erreicht den Hof mit Mühe und Not;
 In seinen Armen, das Kind war tot.
 """
 
-test "roundtrip windows-1252":
+proc testWindows1252() =
   let sencoded = erlkoenig.encodeAll(csWindows1252)
   let sdecoded = sencoded.decodeAll(csWindows1252)
-  check sdecoded == erlkoenig
+  assert sdecoded == erlkoenig
 
-test "roundtrip ISO-8859-2":
+proc testIso8859_2() =
   let sencoded = tisztaszivvel.encodeAll(csIso8859_2)
   let sdecoded = sencoded.decodeAll(csIso8859_2)
-  check sdecoded == tisztaszivvel
+  assert sdecoded == tisztaszivvel
 
-test "getLocaleCharset":
-  check getLocaleCharset("ja_JP.EUC_JP") == csEucJP
-  check getLocaleCharset("ja_JP.UTF-8") == csUtf8
-  check getLocaleCharset("") == csUtf8
+proc testGetLocaleCharset() =
+  assert getLocaleCharset("ja_JP.EUC_JP") == csEucJP
+  assert getLocaleCharset("ja_JP.UTF-8") == csUtf8
+  assert getLocaleCharset("") == csUtf8
 
-test "Shift_JIS U+2212":
-  check "\u2212".encodeAll(csShiftJIS) ==
+proc testShiftJIS() =
+  assert "\u2212".encodeAll(csShiftJIS) ==
     "\uFF0D".encodeAll(csShiftJIS)
 
-test "invalid UTF-8 in stream":
+proc testUTF8InvalidStream() =
   var ctx = initTextDecoderContext(csUtf8)
   var res = ""
   for slice in ctx.decode("\xc0a".toOpenArrayByte(0, 0), finish = false):
     res &= slice
-  check res == "\uFFFD"
+  assert res == "\uFFFD"
 
-test "ISO-2022-JP":
-  check "\x1B\x24".decodeAll(csIso2022JP) == "\uFFFD$"
-  check "\x1B\x28".decodeAll(csIso2022JP) == "\uFFFD("
-  check "ｶﾀｶﾅ".encodeAll(csIso2022JP) == "\e$B%+%?%+%J\e(B"
+proc testIso2022JP() =
+  assert "\x1B\x24".decodeAll(csIso2022JP) == "\uFFFD$"
+  assert "\x1B\x28".decodeAll(csIso2022JP) == "\uFFFD("
+  assert "ｶﾀｶﾅ".encodeAll(csIso2022JP) == "\e$B%+%?%+%J\e(B"
 
-test "GB18030":
+proc testGb18030() =
   # surrogate
   let sencoded = "\uD800".encodeAll(csGb18030)
   let sdecoded = sencoded.decodeAll(csGb18030)
-  check sdecoded == "\uFFFD\uFFFD\uFFFD"
+  assert sdecoded == "\uFFFD\uFFFD\uFFFD"
   # ranges
   let first = "\u0080".encodeAll(csGb18030)
-  check first == "\x81\x30\x81\x30"
-  check first.decodeAll(csGb18030) == "\u0080"
+  assert first == "\x81\x30\x81\x30"
+  assert first.decodeAll(csGb18030) == "\u0080"
   let last = "\u{10000}".encodeAll(csGb18030)
-  check last == "\x90\x30\x81\x30"
-  check last.decodeAll(csGb18030) == "\u{10000}"
-  check "\xfe\x39\xfe\x40".decodeAll(csGb18030) == "\uFFFD9\uFA0C"
+  assert last == "\x90\x30\x81\x30"
+  assert last.decodeAll(csGb18030) == "\u{10000}"
+  assert "\xfe\x39\xfe\x40".decodeAll(csGb18030) == "\uFFFD9\uFA0C"
   # error with ASCII
-  check "\x81\x3a".decodeAll(csGb18030) == "\uFFFD:"
+  assert "\x81\x3a".decodeAll(csGb18030) == "\uFFFD:"
+
+proc main() =
+  testCJK()
+  testUTF8Parts()
+  testUTF8Valid()
+  testUTF8Invalid()
+  testUTF16be()
+  testUTF16le()
+  testWindows1250()
+  testWindows1252()
+  testIso8859_2()
+  testGetLocaleCharset()
+  testShiftJIS()
+  testUTF8InvalidStream()
+  testIso2022JP()
+  testGb18030()
+
+main()

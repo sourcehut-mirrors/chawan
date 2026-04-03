@@ -6,8 +6,8 @@ import std/posix
 import std/tables
 import std/times
 
-import chagashi/charset
-import chagashi/decoder
+import encoding/charset
+import encoding/decoder
 import config/chapath
 import config/config
 import config/conftypes

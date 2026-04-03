@@ -10,8 +10,6 @@ import std/setutils
 import std/tables
 import std/times
 
-import chagashi/charset
-import chagashi/decoder
 import chame/tags
 import config/conftypes
 import config/mimetypes
@@ -19,6 +17,8 @@ import css/cssparser
 import css/cssvalues
 import css/mediaquery
 import css/sheet
+import encoding/charset
+import encoding/decoder
 import html/catom
 import html/domcanvas
 import html/domexception

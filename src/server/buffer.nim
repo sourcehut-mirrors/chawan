@@ -5,9 +5,9 @@ import std/options
 import std/posix
 import std/tables
 
-import chagashi/charset
-import chagashi/decoder
-import chagashi/decodercore
+import encoding/charset
+import encoding/decoder
+import encoding/decodercore
 import chame/htmlparser
 import chame/tags
 import config/conftypes

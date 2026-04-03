@@ -1,7 +1,7 @@
 {.push raises: [].}
 
-import chagashi/charset
-import chagashi/decoder
+import encoding/charset
+import encoding/decoder
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jstypes
