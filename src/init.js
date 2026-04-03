@@ -1824,14 +1824,16 @@ const ReTextStart = /\S/gu;
     }
 
     #setVisible() {
-        if (this.iface.loadState == "loaded" && this.iface.gotLines &&
-            pager.bufferInit == this.init) {
-            if (pager.bufferIface != this.iface)
+        if (this.iface.loadState == "loaded" && this.iface.gotLines) {
+            const visible = pager.bufferInit == this.init;
+            if (visible && pager.bufferIface != this.iface)
                 pager.setVisibleBuffer(this);
-            if (pager.alertState == "loadInfo") {
-                pager.alertState = "normal";
+            if (this.init.loadInfo != "") {
                 this.setLoadInfo("");
-                pager.queueStatusUpdate();
+                if (visible && pager.alertState == "loadInfo") {
+                    pager.alertState = "normal";
+                    pager.queueStatusUpdate();
+                }
             }
         }
     }
