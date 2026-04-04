@@ -1522,24 +1522,25 @@ proc getSelectionText(bc: BufferContext; handle: PagerHandle;
     let si = bc.lines[sy].str.findColBytes(sx)
     let ei = bc.lines[ey].str.findColBytes(ex + 1, sx, si) - 1
     if sy == ey:
-      s = bc.lines[sy].str.substr(si, ei)
+      s = bc.lines[sy].str.toOpenArray(si, ei).expandPUATabsHard()
     else:
-      s = bc.lines[sy].str.substr(si) & '\n'
+      s = bc.lines[sy].str.toOpenArray(si, bc.lines[sy].str.high)
+        .expandPUATabsHard() & '\n'
       for y in sy + 1 .. ey - 1:
-        s &= bc.lines[y].str & '\n'
-      s &= bc.lines[ey].str.substr(0, ei)
+        s &= bc.lines[y].str.expandPUATabsHard() & '\n'
+      s &= bc.lines[ey].str.toOpenArray(0, ei).expandPUATabsHard()
   of stBlock:
     for y in sy .. ey:
       let si = bc.lines[y].str.findColBytes(sx)
       let ei = bc.lines[y].str.findColBytes(ex + 1, sx, si) - 1
       if y > sy:
         s &= '\n'
-      s &= bc.lines[y].str.substr(si, ei)
+      s &= bc.lines[y].str.toOpenArray(si, ei).expandPUATabsHard()
   of stLine:
     for y in sy .. ey:
       if y > sy:
         s &= '\n'
-      s &= bc.lines[y].str
+      s &= bc.lines[y].str.expandPUATabsHard()
   move(s)
 
 proc getLinks(bc: BufferContext; handle: PagerHandle): seq[string] {.proxy.} =
