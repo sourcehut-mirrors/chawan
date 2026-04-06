@@ -6,7 +6,6 @@ import std/strutils
 import std/tables
 
 type UCS16x16 = tuple[ucs, p: uint16]
-type UCS16x8 = tuple[ucs: uint16, p: uint8]
 
 iterator mapPairs(path: string): tuple[a, b: int] =
   let s = readFile("res/" / path)
@@ -36,14 +35,29 @@ iterator mapPairs(path: string): tuple[a, b: int] =
 # All single-byte encodings map to ucs-2.
 proc loadCharsetMap8(path: string): tuple[
       decode: seq[uint16],
-      encode: seq[UCS16x8]
+      encode: tuple[start, len: uint8; offset: uint16]
     ] =
+  var start = 0'u8
+  var len = 0'u8
+  var offset = 0'u16
+  var previ = -1
+  var prevu = -1
   for index, n in mapPairs(path):
     while result.decode.len < index:
       result.decode.add(0)
     result.decode.add(uint16(n))
-    result.encode.add((uint16(n), uint8(index) + 0x80))
-  result.encode.sort()
+    if previ + 1 != index or prevu + 1 != n:
+      if len > result.encode.len:
+        result.encode = (start, len, offset)
+      start = uint8(index)
+      offset = uint16(n)
+      len = 0
+    else:
+      inc len
+    previ = index
+    prevu = n
+  if len > result.encode.len:
+    result.encode = (start, len, offset)
 
 proc loadCharsetMapISO2022JPKatakana(path: string): seq[uint16] =
   result = @[]
@@ -166,12 +180,8 @@ proc writeCharsetMap8(s: Stream; path, outname: string) =
     writer.write($c & ",")
   writer.flush()
   s.write("]\n")
-  s.write("const " & outname & "Encode*: array[" & $encode.len &
-    ", UCS16x8] = [\n")
-  for (val, index) in encode:
-    writer.write("(" & $val & "u16," & $index & "u8),")
-  writer.flush()
-  s.write("]\n\n")
+  s.write("const " & outname & "Encode* = (start: " & $encode.start &
+    "u8, len: " & $encode.len & "u8, offset: " & $encode.offset & "u16)\n\n")
 
 type Run = tuple[p, ucs: uint16; len: uint8]
 
@@ -480,7 +490,6 @@ proc writeISO2022JPKatakanaEncode(s: Stream; path: string) =
 let s = newFileStream(stdout)
 s.writeLine("const Big5DecodeOffset* = 942")
 s.writeLine("type UCS16x16* = tuple[ucs, p: uint16]")
-s.writeLine("type UCS16x8* = tuple[ucs: uint16, p: uint8]")
 s.writeLine()
 s.writeCharsetMap8("index-ibm866.txt", "Ibm866")
 s.writeCharsetMap8("index-iso-8859-2.txt", "Iso8859_2")

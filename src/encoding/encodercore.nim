@@ -96,12 +96,6 @@ proc findPair16(map: openArray[UCS16x16]; u: uint32): int =
   let u = uint16(u)
   return map.binarySearch(u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
 
-proc findPair16(map: openArray[UCS16x8]; u: uint32): int =
-  if u > uint16.high:
-    return -1
-  let u = uint16(u)
-  return map.binarySearch(u, proc(x: UCS16x8; y: uint16): int = cmp(x[0], y))
-
 proc findRun(runs: openArray[uint32]; offset, ic: uint16): uint16 =
   let i = runs.upperBound(ic, proc(x: uint32; y: uint16): int =
     let op = x and 0x1FFF # this is the pointer
@@ -461,8 +455,8 @@ proc encodeXUserDefined(te: var TextEncoder; iq: openArray[uint8];
   terDone
 
 proc encodeSingleByte(te: var TextEncoder; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int; map: openArray[UCS16x8]):
-    TextEncoderResult =
+    oq: var openArray[uint8]; n: var int; decode: openArray[uint16];
+    encode: tuple[start, len: uint8; offset: uint16]): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -470,12 +464,28 @@ proc encodeSingleByte(te: var TextEncoder; iq: openArray[uint8];
       inc te.i
       continue
     let cl = te.try_get_utf8(iq, b)
-    if (let j = map.findPair16(te.c); j != -1):
-      oq.try_put_byte map[j].p, n
+    if te.c > uint32(uint16.high):
       te.i += cl
-      continue
+      return terError
+    let c = uint16(te.c)
+    let runc = c - encode.offset
+    var found = 0'u8
+    if runc < uint16(encode.len):
+      found = 128 + encode.start + uint8(runc)
+    else:
+      block search:
+        for u in 0'u8 ..< encode.start:
+          if decode[u] == c:
+            found = 128 + u
+            break search
+        for u in int(encode.start + encode.len) .. decode.high:
+          if decode[u] == c:
+            found = 128 + uint8(u)
+            break search
+        te.i += cl
+        return terError
+    oq.try_put_byte found, n
     te.i += cl
-    return terError
   te.i = 0
   terDone
 
@@ -491,32 +501,56 @@ proc encode*(te: var TextEncoder; iq: openArray[uint8];
   of csShiftJIS: te.encodeShiftJIS(iq, oq, n)
   of csEucKR: te.encodeEucKR(iq, oq, n)
   of csXUserDefined: te.encodeXUserDefined(iq, oq, n)
-  of csIbm866: te.encodeSingleByte(iq, oq, n, Ibm866Encode)
-  of csIso8859_2: te.encodeSingleByte(iq, oq, n, Iso8859_2Encode)
-  of csIso8859_3: te.encodeSingleByte(iq, oq, n, Iso8859_3Encode)
-  of csIso8859_4: te.encodeSingleByte(iq, oq, n, Iso8859_4Encode)
-  of csIso8859_5: te.encodeSingleByte(iq, oq, n, Iso8859_5Encode)
-  of csIso8859_6: te.encodeSingleByte(iq, oq, n, Iso8859_6Encode)
-  of csIso8859_7: te.encodeSingleByte(iq, oq, n, Iso8859_7Encode)
-  of csIso8859_8, csIso8859_8i: te.encodeSingleByte(iq, oq, n, Iso8859_8Encode)
-  of csIso8859_10: te.encodeSingleByte(iq, oq, n, Iso8859_10Encode)
-  of csIso8859_13: te.encodeSingleByte(iq, oq, n, Iso8859_13Encode)
-  of csIso8859_14: te.encodeSingleByte(iq, oq, n, Iso8859_14Encode)
-  of csIso8859_15: te.encodeSingleByte(iq, oq, n, Iso8859_15Encode)
-  of csIso8859_16: te.encodeSingleByte(iq, oq, n, Iso8859_16Encode)
-  of csKoi8r: te.encodeSingleByte(iq, oq, n, Koi8rEncode)
-  of csKoi8u: te.encodeSingleByte(iq, oq, n, Koi8uEncode)
-  of csMacintosh: te.encodeSingleByte(iq, oq, n, MacintoshEncode)
-  of csWindows874: te.encodeSingleByte(iq, oq, n, Windows874Encode)
-  of csWindows1250: te.encodeSingleByte(iq, oq, n, Windows1250Encode)
-  of csWindows1251: te.encodeSingleByte(iq, oq, n, Windows1251Encode)
-  of csWindows1252: te.encodeSingleByte(iq, oq, n, Windows1252Encode)
-  of csWindows1253: te.encodeSingleByte(iq, oq, n, Windows1253Encode)
-  of csWindows1254: te.encodeSingleByte(iq, oq, n, Windows1254Encode)
-  of csWindows1255: te.encodeSingleByte(iq, oq, n, Windows1255Encode)
-  of csWindows1256: te.encodeSingleByte(iq, oq, n, Windows1256Encode)
-  of csWindows1257: te.encodeSingleByte(iq, oq, n, Windows1257Encode)
-  of csWindows1258: te.encodeSingleByte(iq, oq, n, Windows1258Encode)
-  of csXMacCyrillic: te.encodeSingleByte(iq, oq, n, XMacCyrillicEncode)
+  of csIbm866: te.encodeSingleByte(iq, oq, n, Ibm866Decode, Ibm866Encode)
+  of csIso8859_2:
+    te.encodeSingleByte(iq, oq, n, Iso8859_2Decode, Iso8859_2Encode)
+  of csIso8859_3:
+    te.encodeSingleByte(iq, oq, n, Iso8859_3Decode, Iso8859_3Encode)
+  of csIso8859_4:
+    te.encodeSingleByte(iq, oq, n, Iso8859_4Decode, Iso8859_4Encode)
+  of csIso8859_5:
+    te.encodeSingleByte(iq, oq, n, Iso8859_5Decode, Iso8859_5Encode)
+  of csIso8859_6:
+    te.encodeSingleByte(iq, oq, n, Iso8859_6Decode, Iso8859_6Encode)
+  of csIso8859_7:
+    te.encodeSingleByte(iq, oq, n, Iso8859_7Decode, Iso8859_7Encode)
+  of csIso8859_8, csIso8859_8i:
+    te.encodeSingleByte(iq, oq, n, Iso8859_8Decode, Iso8859_8Encode)
+  of csIso8859_10:
+    te.encodeSingleByte(iq, oq, n, Iso8859_10Decode, Iso8859_10Encode)
+  of csIso8859_13:
+    te.encodeSingleByte(iq, oq, n, Iso8859_13Decode, Iso8859_13Encode)
+  of csIso8859_14:
+    te.encodeSingleByte(iq, oq, n, Iso8859_14Decode, Iso8859_14Encode)
+  of csIso8859_15:
+    te.encodeSingleByte(iq, oq, n, Iso8859_15Decode, Iso8859_15Encode)
+  of csIso8859_16:
+    te.encodeSingleByte(iq, oq, n, Iso8859_16Decode, Iso8859_16Encode)
+  of csKoi8r: te.encodeSingleByte(iq, oq, n, Koi8rDecode, Koi8rEncode)
+  of csKoi8u: te.encodeSingleByte(iq, oq, n, Koi8uDecode, Koi8uEncode)
+  of csMacintosh:
+    te.encodeSingleByte(iq, oq, n, MacintoshDecode, MacintoshEncode)
+  of csWindows874:
+    te.encodeSingleByte(iq, oq, n, Windows874Decode, Windows874Encode)
+  of csWindows1250:
+    te.encodeSingleByte(iq, oq, n, Windows1250Decode, Windows1250Encode)
+  of csWindows1251:
+    te.encodeSingleByte(iq, oq, n, Windows1251Decode, Windows1251Encode)
+  of csWindows1252:
+    te.encodeSingleByte(iq, oq, n, Windows1252Decode, Windows1252Encode)
+  of csWindows1253:
+    te.encodeSingleByte(iq, oq, n, Windows1253Decode, Windows1253Encode)
+  of csWindows1254:
+    te.encodeSingleByte(iq, oq, n, Windows1254Decode, Windows1254Encode)
+  of csWindows1255:
+    te.encodeSingleByte(iq, oq, n, Windows1255Decode, Windows1255Encode)
+  of csWindows1256:
+    te.encodeSingleByte(iq, oq, n, Windows1256Decode, Windows1256Encode)
+  of csWindows1257:
+    te.encodeSingleByte(iq, oq, n, Windows1257Decode, Windows1257Encode)
+  of csWindows1258:
+    te.encodeSingleByte(iq, oq, n, Windows1258Decode, Windows1258Encode)
+  of csXMacCyrillic:
+    te.encodeSingleByte(iq, oq, n, XMacCyrillicDecode, XMacCyrillicEncode)
 
 {.pop.}
