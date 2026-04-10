@@ -4,7 +4,8 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/strutils
+
+import utils/twtstr
 
 type Charset* = enum
   csUnknown
