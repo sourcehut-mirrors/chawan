@@ -1519,11 +1519,13 @@ proc getSelectionText(bc: BufferContext; handle: PagerHandle;
   let ey = min(bc.lines.high, ey)
   case t
   of stNormal:
-    let si = bc.lines[sy].str.findColBytes(sx)
-    let ei = bc.lines[ey].str.findColBytes(ex + 1, sx, si) - 1
     if sy == ey:
+      let si = bc.lines[sy].str.findColBytes(sx)
+      let ei = bc.lines[ey].str.findColBytes(sx + 1, sx, si) - 1
       s = bc.lines[sy].str.toOpenArray(si, ei).expandPUATabsHard()
     else:
+      let si = bc.lines[sy].str.findColBytes(sx)
+      let ei = bc.lines[ey].str.findColBytes(ex + 1) - 1
       s = bc.lines[sy].str.toOpenArray(si, bc.lines[sy].str.high)
         .expandPUATabsHard() & '\n'
       for y in sy + 1 .. ey - 1:
