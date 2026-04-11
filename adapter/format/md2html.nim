@@ -478,20 +478,18 @@ proc getListDepth(line: string): ListItemDesc =
     elif c == ' ':
       inc depth
     elif c in {'*', '-', '+'}:
-      inc depth
       if i + 1 < line.len and line[i + 1] in {' ', '\t'}:
-        return ListItemDesc(t: ltUl, depth: depth, len: i + 1)
-      break # fail
+        return ListItemDesc(t: ltUl, depth: depth + 1, len: i + 1)
+      return ListItemDesc(t: ltNoMark, depth: depth, len: i)
     elif c in AsciiDigit:
       let j = i
       var i = i + 1
-      inc depth
       while i < line.len and line[i] in AsciiDigit:
         inc i
       let start = parseInt32(line.toOpenArray(j, i - 1)).get(-1)
       if i + 1 < line.len and line[i] == '.' and line[i + 1] in {' ', '\t'}:
-        return ListItemDesc(t: ltOl, depth: depth, len: i + 1, start: start)
-      break # fail
+        return ListItemDesc(t: ltOl, depth: depth + 1, len: i + 1, start: start)
+      return ListItemDesc(t: ltNoMark, depth: depth, len: j)
     else:
       return ListItemDesc(t: ltNoMark, depth: depth, len: i)
   return ListItemDesc(t: ltNoMark, depth: -1, len: -1)
