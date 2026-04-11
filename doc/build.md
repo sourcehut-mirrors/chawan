@@ -1,7 +1,7 @@
 # Building Chawan
 
-Chawan uses GNU make for builds.  To build and install it, you'll
-typically want to run `make` and then `make install`.
+Chawan uses GNU make for builds.  To build and install it, you'll typically
+want to run `make` and then `make install`.
 
 ## Variables
 
@@ -17,40 +17,52 @@ to accomplish this is to export the appropriate variables beforehand
 Following is a list of variables which may be set.
 
 * `TARGET`: the build target.
-	- `debug`: Generate a debug build, with stack traces and
-	  debugging symbols enabled.  Useful for debugging, but
-	  generates huge and slow executables.
+	- `debug`: Generate a debug build, with stack traces and debugging
+	  symbols enabled.  Useful for debugging, but generates huge and
+	  slow executables.
 	- `release`: The default target.  Uses LTO and strips the final
 	  binaries.
 	- `release0`: A release build with stack traces (**not** line
-	  traces) enabled.  Useful when you need to debug a crash that
-	  needs a lot of processing to manifest.
+	  traces) enabled.  Useful when debugging a crash that needs a lot
+	  of processing to manifest.
 	- `release1`: A release build with debugging symbols enabled.
 	  Useful for profiling with cachegrind, or debugging a release
 	  build with gdb.
+
 * `OUTDIR`: where to output the files.
+
 * `NIM`: path to the Nim compiler.
+
 * `PKG_CONFIG`: path to pkg-config.  You can set it to pkgconf too.
+
 * `CFLAGS`, `LDFLAGS`: flags to pass to the C compiler at compile or
   link time.
+
 * `OBJDIR`: directory to output compilation artifacts.  By default,
   it is `.obj`.
+
 * `PREFIX`: installation prefix, by default it is `/usr/local`.
+
 * `DESTDIR`: directory prepended to `$(PREFIX)`.  e.g. you can set it to
   `/tmp`, so that `make install` installs the binary to the path
   `/tmp/usr/local/bin/cha`.
+
 * `MANPREFIX`, `MANPREFIX1`, `MANPREFIX5`: prefixes for the installation
   of man pages. The default setting expands to
   `/usr/local/share/man/man1`, etc.  (Normally you shouldn't have to
   set `MANPREFIX1` or `MANPREFIX5` at all, as these are derived from
   `MANPREFIX`.)
+
 * `LIBEXECDIR`: Path to your libexec directory; by default, it is
   relative to wherever the binary is placed when it is executed.  (i.e.
   after installation it would resolve to `/usr/local/libexec`.)
+
 * `STATIC_LINK`: Set it to 1 for static linking.
+
 * `DANGER_DISABLE_SANDBOX`: Set it to 1 to forcibly disable syscall
   filtering.  Note that this is *not* taken from the environment
-  variables, and you must use it like `make DANGER_DISABLE_SANDBOX=1`.  
+  variables, and you must use it like `make DANGER_DISABLE_SANDBOX=1`.
+
   As the name suggests, this is rarely an optimal solution to whatever
   problem you are facing.
 
@@ -68,16 +80,29 @@ a limited set of C compilers. If you want to override the C compiler:
 ## Phony targets
 
 * `all`: build all required executables
+
 * `clean`: remove OBJDIR (i.e. object files, but not the built executables)
+
 * `distclean`: remove OBJDIR and OUTDIR (i.e. both object files and executables)
+
 * `manpage`: rebuild man pages; note that this is not part of `all`.
-  Manual pages are included in the repository, so this only needs to be called
-  when you modify the documentation.
+  Manual pages are included in the repository, so this only needs to be
+  called when you modify the documentation.
+
+  **To packagers**: DO NOT use this in your packages.  Our man pages depend
+  on a bugfix that is only present in pandoc's development version, so a
+  packaged version is guaranteed to make a mess of it.
+
 * `unicode_gen`: rebuild the EastAsianWidth mapping from the source.
   Like `manpage`, this is intended for development only.
+
+* `map`: rebuild all charset maps.  See the previous point.
+
 * `install`: install the `cha` binary, and if man pages were generated,
   those as well
+
 * `uninstall`: remove the `cha` binary and Chawan man pages
+
 * `test`: run tests.  For now, these have no additional dependencies, but
   this may change in the future.  Additionally, no guarantees are made
   about their reliability - I *think* they always work, but there have been
