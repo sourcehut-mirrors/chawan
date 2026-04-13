@@ -27,8 +27,8 @@ A list of supported standard properties, with notes on unimplemented values:
 * counter-increment
 * counter-reset
 * counter-set
-* display (`block`, `inline-block`, `list-item`, `table`, `table-*`,
-  `flex`, `inline-flex`, `flow-root`)
+* display (`block`, `inline-block`, `list-item`, `table`, `inline-table`,
+  `table-*`, `flex`, `inline-flex`, `flow-root`)
 * flex-basis (but `content` not supported)
 * flex-direction
 * flex-grow

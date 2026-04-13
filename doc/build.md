@@ -98,8 +98,7 @@ a limited set of C compilers. If you want to override the C compiler:
 
 * `map`: rebuild all charset maps.  See the previous point.
 
-* `install`: install the `cha` binary, and if man pages were generated,
-  those as well
+* `install`: install the `cha` binary and man pages
 
 * `uninstall`: remove the `cha` binary and Chawan man pages
 
