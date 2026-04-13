@@ -8,7 +8,6 @@ import encoding/charset
 import config/chapath
 import config/config
 import config/conftypes
-import config/urimethodmap
 import html/catom
 import html/dom
 import html/env
@@ -391,8 +390,6 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
   else:
     die("failed to initialize JS " & jsctx.getExceptionMsg())
 
-const DefaultURIMethodMap = staticRead"res/urimethodmap"
-
 proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =
   let jsctx = rt.newJSContext()
@@ -429,14 +426,7 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
     die("failed to set ownership of " & config{"tmpdir"})
   if chmod(tmpdir, 0o700) != 0:
     die("failed to set permissions of " & config{"tmpdir"})
-  var urimethodmap: URIMethodMap
-  for path in config{"urimethodmap"}:
-    let ps = newPosixStream(path)
-    if ps != nil:
-      urimethodmap.parseURIMethodMap(ps.readAll())
-      ps.sclose()
-  urimethodmap.parseURIMethodMap(DefaultURIMethodMap)
-  let loaderPid = forkserver.loadConfig(config, urimethodmap)
+  let loaderPid = forkserver.loadConfig(config)
   if loaderPid == -1:
     die("failed to fork loader process")
   onSignal SIGINT:
@@ -447,7 +437,7 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
       quit(1)
   jsctx.setupStartupScript("init.jsb")
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
-    client.console, urimethodmap.imageProtos)
+    client.console)
   client.timeouts = pager.timeouts
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs

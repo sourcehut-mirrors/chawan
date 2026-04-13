@@ -47,6 +47,8 @@ proc insert(this: var URIMethodMap; k, v: string) =
   if not this.map.hasKeyOrPut(k, v) and k.startsWith("img-codec+"):
     this.imageProtos.add(k.until(':'))
 
+const DefaultURIMethodMap* = staticRead"res/urimethodmap"
+
 proc parseURIMethodMap*(this: var URIMethodMap; s: string) =
   for line in s.split('\n'):
     if line.len == 0 or line[0] == '#':

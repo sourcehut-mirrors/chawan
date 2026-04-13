@@ -160,10 +160,10 @@ type
     downloadList: seq[DownloadItem]
     cookieStream: InputHandle
     pendingConnections: seq[ClientHandle]
+    urimethodmap: URIMethodMap
 
   LoaderConfig* = object
     cgiDir*: seq[string]
-    uriMethodMap*: URIMethodMap
     w3mCGICompat*: bool
     tmpdir*: string
     configDir*: string
@@ -1478,7 +1478,7 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadXChaCookie(client, handle, request)
     else:
       prevurl = request.url
-      case ctx.config.uriMethodMap.findAndRewrite(request.url)
+      case ctx.urimethodmap.findAndRewrite(request.url)
       of ummrSuccess:
         inc tries
         redo = true
@@ -1517,7 +1517,8 @@ proc load(ctx: var LoaderContext; request: var RawRequest;
     let handle = ctx.newInputHandle(stream, client, request.url, credentials)
     if not config.allowAllSchemes and
         request.url.scheme != config.originURL.scheme and
-        request.url.scheme notin config.allowSchemes:
+        request.url.scheme notin config.allowSchemes and
+        request.url.scheme notin ctx.urimethodmap.imageProtos:
       ctx.rejectHandle(handle, ceDisallowedURL)
     else:
       request.setupRequestDefaults(config, credentials)
@@ -1973,12 +1974,14 @@ proc loaderLoop(ctx: var LoaderContext) =
   ctx.exitLoader()
 
 proc runFileLoader*(config: LoaderConfig; stream, forkStream: PosixStream;
-    pagerPid: int; pagerConfig: LoaderClientConfig) =
+    pagerPid: int; pagerConfig: LoaderClientConfig;
+    urimethodmap: URIMethodMap) =
   var ctx {.global.}: LoaderContext
   ctx = LoaderContext(
     config: config,
     pid: getCurrentProcessId(),
-    forkStream: forkStream
+    forkStream: forkStream,
+    urimethodmap: urimethodmap
   )
   onSignal SIGTERM:
     discard sig

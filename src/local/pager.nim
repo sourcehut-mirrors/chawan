@@ -136,7 +136,6 @@ type
     mimeTypes: MimeTypes
     bufferInit {.jsget.}: BufferInit # visible BufferInit (may != iface.init)
     bufferIface {.jsget.}: BufferInterface # visible BufferInterface
-    imageProtos: seq[string]
 
   CheckMailcapFlag = enum
     cmfConnect, cmfHTML, cmfRedirected, cmfPrompt, cmfNeedsstyle,
@@ -390,7 +389,7 @@ proc loadAutoMailcap(pager: Pager) =
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int;
-    console: Console; imageProtos: seq[string]): Pager =
+    console: Console): Pager =
   let pager = Pager(
     config: config,
     forkserver: forkserver,
@@ -405,7 +404,6 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     consoleCacheId: -1,
     console: console,
     bufferAtom: JS_NewAtom(ctx, cstring"buffer"),
-    imageProtos: imageProtos
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   pager.jsmap = JSMap(
@@ -1625,7 +1623,6 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
             headers[it.name] = it.value
           loaderConfig.defaultHeaders = headers
       else: assert false
-  loaderConfig.allowSchemes.add(pager.imageProtos)
   if result.scripting != smFalse:
     loaderConfig.allowSchemes.add("x-cha-cookie")
   if result.images:

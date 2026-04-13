@@ -40,8 +40,7 @@ type
     linkHintChars: seq[uint32]
     schemes: seq[string]
 
-proc loadConfig*(forkserver: ForkServer; config: Config;
-    urimethodmap: URIMethodMap): int =
+proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.stream.withPacketWriter w:
     w.swrite(config{"doubleWidthAmbiguous"})
     w.swrite(config{"linkHintChars"})
@@ -53,7 +52,6 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
       dataDir: config.dataDir,
       bookmark: config{"bookmark"},
       maxNetConnections: config{"maxNetConnections"},
-      uriMethodMap: urimethodmap,
     ))
     # client config for pager
     w.swrite(LoaderClientConfig(
@@ -61,6 +59,7 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
       proxy: config{"proxy"},
       allowAllSchemes: true
     ))
+    w.swrite(config{"urimethodmap"})
   do:
     return -1
   var process = -1
@@ -95,8 +94,8 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
   return (bufferPid, newPosixStream(sv[0]))
 
 proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
-    loaderStream: PosixStream; pagerPid: int; pagerConfig: LoaderClientConfig):
-    (int, PosixStream) =
+    loaderStream: PosixStream; pagerPid: int; pagerConfig: LoaderClientConfig;
+    urimethodmap: URIMethodMap): (int, PosixStream) =
   # loaderStream is a connection between main process <-> loader, but we
   # also need a connection between fork server <-> loader.
   # The naming here is very confusing, sorry about that.
@@ -112,7 +111,8 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     discard close(sv[0])
     let forkStream = newPosixStream(sv[1])
     setProcessTitle("cha loader")
-    runFileLoader(config, loaderStream, forkStream, pagerPid, pagerConfig)
+    runFileLoader(config, loaderStream, forkStream, pagerPid, pagerConfig,
+      urimethodmap)
     exitnow(1)
   else:
     discard close(sv[1])
@@ -244,20 +244,29 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
     var config: LoaderConfig
     var clientConfig: LoaderClientConfig
     var linkHintChars: string
+    var urimethodmapPaths: seq[string]
     r.sread(isCJKAmbiguous)
     r.sread(linkHintChars)
     r.sread(config)
     r.sread(clientConfig)
+    r.sread(urimethodmapPaths)
     ctx.linkHintChars = linkHintChars.toPoints()
     # for CGI
     if setupForkServerEnv(config).isErr:
       quit(1)
-    for key in config.uriMethodMap.map.keys:
+    var urimethodmap: URIMethodMap
+    for path in urimethodmapPaths:
+      let ps = newPosixStream(path)
+      if ps != nil:
+        urimethodmap.parseURIMethodMap(ps.readAll())
+        ps.sclose()
+    urimethodmap.parseURIMethodMap(DefaultURIMethodMap)
+    for key in urimethodmap.map.keys:
       ctx.schemes.add(key.until(':'))
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader
     var (pid, loaderStream) = ctx.forkLoader(config, loaderStream, pagerPid,
-      clientConfig)
+      clientConfig, urimethodmap)
     ctx.stream.withPacketWriter w:
       w.swrite(pid)
     do:
