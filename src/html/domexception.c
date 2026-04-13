@@ -217,21 +217,23 @@ int JS_AddIntrinsicDOMException(JSContext *ctx)
         return -1;
     if (JS_SetPropertyFunctionList(ctx, proto, js_domexception_proto_funcs,
                                    COUNTOF(js_domexception_proto_funcs)) < 0)
-        goto fail;
+        goto fail1;
     ctor = JS_NewCFunction2(ctx, js_domexception_constructor, "DOMException", 2,
                             JS_CFUNC_constructor, 0);
     if (JS_IsException(ctor))
-        goto fail;
-    JS_SetConstructor(ctx, ctor, proto);
+        goto fail1;
+    if (JS_SetConstructor(ctx, ctor, proto) < 0)
+        goto fail2;
     for (i = 0; i < COUNTOF(js_dom_exception_names_table); i++) {
         name = JS_NewAtom(ctx, js_dom_exception_names_table[i].code_name);
+        if (name == JS_ATOM_NULL)
+            goto fail2;
         if ((JS_DefinePropertyValue(ctx, proto, name, JS_NewInt32(ctx, i + 1),
                                    JS_PROP_ENUMERABLE) < 0) ||
             (JS_DefinePropertyValue(ctx, ctor, name, JS_NewInt32(ctx, i + 1),
                                    JS_PROP_ENUMERABLE) < 0)) {
-            JS_FreeValue(ctx, ctor);
             JS_FreeAtom(ctx, name);
-            goto fail;
+            goto fail2;
         }
         JS_FreeAtom(ctx, name);
     }
@@ -240,10 +242,12 @@ int JS_AddIntrinsicDOMException(JSContext *ctx)
                                     JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
     JS_FreeValue(ctx, global_obj);
     if (res < 0)
-        goto fail;
+        goto fail1;
     JS_SetClassProto(ctx, js_class_dom_exception, proto);
     return 0;
-fail:
+fail2:
+    JS_FreeValue(ctx, ctor);
+fail1:
     JS_FreeValue(ctx, proto);
     return -1;
 }
