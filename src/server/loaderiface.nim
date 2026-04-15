@@ -262,9 +262,9 @@ proc resume*(loader: FileLoader; response: Response) =
 
 proc close*(loader: FileLoader; response: Response) =
   response.flags.incl(rfBodyUsed)
-  if rfResumed notin response.flags:
-    loader.resume(response)
   if response.stream != nil:
+    if rfResumed notin response.flags:
+      loader.resume(response)
     let fd = response.stream.fd
     let data = loader.get(fd)
     if data != nil:

@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<title>Cookie setter with cookies disabled</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+document.cookie = "test=a";
+assertEquals(document.cookie, "");
+document.getElementById("x").textContent = "Success";
+</script>
