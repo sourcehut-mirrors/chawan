@@ -1521,7 +1521,7 @@ proc getSelectionText(bc: BufferContext; handle: PagerHandle;
   of stNormal:
     if sy == ey:
       let si = bc.lines[sy].str.findColBytes(sx)
-      let ei = bc.lines[ey].str.findColBytes(sx + 1, sx, si) - 1
+      let ei = bc.lines[ey].str.findColBytes(ex + 1, sx, si) - 1
       s = bc.lines[sy].str.toOpenArray(si, ei).expandPUATabsHard()
     else:
       let si = bc.lines[sy].str.findColBytes(sx)
