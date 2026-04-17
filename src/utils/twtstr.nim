@@ -1032,17 +1032,26 @@ proc parseEnumNoCase*[T: enum](s: openArray[char]): Opt[T] =
 const tchar = AsciiAlphaNumeric +
   {'!', '#'..'\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
 
-proc getContentTypeAttr*(contentType, attrname: string): string =
+proc findContentTypeAttr(contentType, attrname: string): int =
   var i = contentType.find(';')
+  while i != -1:
+    i = contentType.skipBlanks(i + 1)
+    if i >= contentType.len:
+      break
+    if contentType.startsWith(attrname, i):
+      i = contentType.skipBlanks(i + attrname.len)
+      if i >= contentType.len:
+        break
+      if contentType[i] == '=':
+        return i + 1
+    i = contentType.find(';', i)
+  return -1
+
+proc getContentTypeAttr*(contentType, attrname: string): string =
+  var i = contentType.findContentTypeAttr(attrname)
   if i < 0:
     return ""
-  i = contentType.find(attrname, i)
-  if i < 0:
-    return ""
-  i = contentType.skipBlanks(i + attrname.len)
-  if i >= contentType.len or contentType[i] != '=':
-    return ""
-  i = contentType.skipBlanks(i + 1)
+  i = contentType.skipBlanks(i)
   if i >= contentType.len:
     return ""
   if contentType[i] != '"':
@@ -1077,23 +1086,14 @@ proc mimeQuote*(value: string): string =
   move(s)
 
 proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
-  var i = contentType.find(';')
-  if i == -1:
+  var i = contentType.findContentTypeAttr(attrname)
+  if i != -1:
+    var j = contentType.find(';', i)
+    if j < 0:
+      j = contentType.len
+    contentType[i..<j] = value.mimeQuote()
+  else:
     contentType &= ';' & attrname & '=' & value
-    return
-  i = contentType.find(attrname, i)
-  if i == -1:
-    contentType &= ';' & attrname & '=' & value
-    return
-  i = contentType.skipBlanks(i + attrname.len)
-  if i >= contentType.len or contentType[i] != '=':
-    contentType &= ';' & attrname & '=' & value
-    return
-  i = contentType.skipBlanks(i + 1)
-  var j = contentType.find(';', i)
-  if j < 0:
-    j = contentType.len
-  contentType[i..<j] = value.mimeQuote()
 
 proc atob(c: char): uint8 {.inline.} =
   # see RFC 4648 table

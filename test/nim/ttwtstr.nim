@@ -1,6 +1,6 @@
 import utils/twtstr
 
-proc run() =
+proc testFind() =
   assert "test".find("te") == 0
   assert "test".find("est") == 1
   assert "test".find("st") == 2
@@ -25,20 +25,41 @@ proc run() =
   assert "test".startsWith("t")
   assert "test".startsWith("")
 
+  assert "a\tb ".containsToken("a")
+  assert "a\tb ".containsToken("")
+  assert "\na\tb ".containsToken("")
+  assert not "ab".containsToken("")
+
+proc testStrip() =
   assert " ".strip() == ""
   assert "\f\t test \r\n".strip() == "test"
   assert " test ".strip(trailing = false) == "test "
   assert " test ".strip(leading = false) == " test"
   assert " \tes\t ".strip(chars = {' '}) == "\tes\t"
 
-  assert "a\tb ".containsToken("a")
-  assert "a\tb ".containsToken("")
-  assert "\na\tb ".containsToken("")
-  assert not "ab".containsToken("")
-
+proc testDelete() =
   var x = "test"
   x.delete(1..4)
   assert x == "t"
+
+proc testContentType() =
+  var s = "text/html; a = b"
+  assert s.getContentTypeAttr("a") == "b"
+  s.setContentTypeAttr("a", "test")
+  assert s == "text/html; a =test"
+  assert s.getContentTypeAttr("a") == "test"
+  s.setContentTypeAttr("b", "test2")
+  assert s.getContentTypeAttr("b") == "test2"
+  assert "text/html; a=b; c=d".getContentTypeAttr("c") == "d"
+  assert "text/html;a=b".getContentTypeAttr("a") == "b"
+  assert "text/html;aa=b;a=c".getContentTypeAttr("a") == "c"
+  assert "text/html;a=\"b\"".getContentTypeAttr("a") == "b"
+
+proc run() =
+  testFind()
+  testStrip()
+  testDelete()
+  testContentType()
 
 static:
   run()
