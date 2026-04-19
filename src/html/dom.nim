@@ -181,9 +181,12 @@ type
     customElements* {.jsget.}: CustomElementRegistry
 
   # Navigator stuff
+  # (most of these are just shims; really there should be a framework for
+  # this so we generate less code)
   Navigator* = ref object
     plugins* {.jsget.}: PluginArray
     mimeTypes* {.jsget.}: MimeTypeArray
+    permissions* {.jsget.}: Permissions
 
   PluginArray* = ref object
 
@@ -198,6 +201,10 @@ type
 
   Crypto* = ref object
     urandom*: PosixStream
+
+  Notification* = ref object
+
+  Permissions* = ref object
 
   CECallbackType = enum
     cctConnected = "connectedCallback"
@@ -649,6 +656,8 @@ jsDestructor(Screen)
 jsDestructor(History)
 jsDestructor(Storage)
 jsDestructor(Crypto)
+jsDestructor(Notification)
+jsDestructor(Permissions)
 
 jsDestructor(Element)
 jsDestructor(HTMLElement)

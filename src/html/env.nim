@@ -92,6 +92,34 @@ proc getter(mimeTypeArray: MimeTypeArray; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   return JS_UNINITIALIZED
 
+# Notification
+# The existence of this feature in mainstream browsers is an insult to all
+# users' intelligence.  Nevertheless, we have to shim the API because some
+# geniuses use it for "browser verification."
+proc newNotification(): Notification {.jsctor.} =
+  Notification()
+
+# Permissions
+# See above.
+proc query(ctx: JSContext; this: Permissions; desc: JSValueConst): JSValue
+    {.jsfunc.} =
+  let name = JS_GetPropertyStr(ctx, desc, "name")
+  if JS_IsException(name):
+    return name
+  JS_FreeValue(ctx, name)
+  var funs {.noinit.}: array[2, JSValue]
+  let res = ctx.newPromiseCapability(funs)
+  if JS_IsException(res):
+    return res
+  JS_FreeValue(ctx, funs[0])
+  # reject immediately
+  JS_ThrowTypeError(ctx, "permissions are not supported")
+  let code = ctx.enqueueRejection(funs[1])
+  if code < 0:
+    JS_FreeValue(ctx, res)
+    return JS_EXCEPTION
+  return res
+
 # Screen
 
 # These are fingerprinting vectors; only app mode gets the real values.
@@ -212,6 +240,8 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(History)
   ?ctx.registerType(Storage)
   ?ctx.registerType(Crypto)
+  ?ctx.registerType(Notification)
+  ?ctx.registerType(Permissions)
   ok()
 
 # Window
@@ -564,7 +594,11 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     userAgent, referrer, contentType: string): Window =
   let window = Window(
     console: newConsole(cast[ChaFile](stderr)),
-    navigator: Navigator(plugins: PluginArray(), mimeTypes: MimeTypeArray()),
+    navigator: Navigator(
+      plugins: PluginArray(),
+      mimeTypes: MimeTypeArray(),
+      permissions: Permissions()
+    ),
     loader: loader,
     settings: EnvironmentSettings(
       attrsp: attrsp,
