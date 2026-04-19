@@ -311,7 +311,7 @@ proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
   of jitValue:
     let values = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
     let itSym = ctxOpaque.symRefs[jsyIterator]
-    if ctx.defineProperty(proto, itSym, values) == dprException:
+    if ctx.definePropertyCW(proto, itSym, values) == dprException:
       return dprException
     const map = {
       jstEntries: jsvArrayPrototypeEntries,
@@ -321,13 +321,14 @@ proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
     }
     for (n, v) in map:
       let val = JS_DupValue(ctx, ctxOpaque.valRefs[v])
-      if ctx.defineProperty(proto, ctxOpaque.strRefs[n], val) == dprException:
+      let name = ctxOpaque.strRefs[n]
+      if ctx.definePropertyCWE(proto, name, val) == dprException:
         return dprException
   of jitPair:
     #TODO this isn't really compliant
     let values = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
     let itSym = ctxOpaque.symRefs[jsyIterator]
-    if ctx.defineProperty(proto, itSym, values) == dprException:
+    if ctx.definePropertyCWE(proto, itSym, values) == dprException:
       return dprException
   dprSuccess
 
@@ -667,13 +668,13 @@ proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
     case fun.flag
     of bffNone:
       info.tabFuns.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, `id`))
+        JS_CFUNC_DEF(`name`, 0, `id`, JS_PROP_C_W_E))
     of bffUnforgeable:
       info.tabUnforgeable.add(quote do:
-        JS_CFUNC_DEF_NOCONF(`name`, 0, `id`))
+        JS_CFUNC_DEF(`name`, 0, `id`, JS_PROP_ENUMERABLE))
     of bffStatic:
       info.tabStatic.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, `id`))
+        JS_CFUNC_DEF(`name`, 0, `id`, JS_PROP_C_W_E))
     of bffReplaceable:
       assert false #TODO
   of bfConstructor, bfConstructorFunction:
@@ -1321,10 +1322,14 @@ proc bindGetSet(stmts: NimNode; info: RegistryInfo) =
   for k, (get, set, flag) in info.getset:
     case flag
     of bffNone:
-      info.tabFuns.add(quote do: JS_CGETSET_DEF(`k`, `get`, `set`))
+      info.tabFuns.add(quote do:
+        JS_CGETSET_DEF(`k`, `get`, `set`,
+          JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
+      )
     of bffUnforgeable:
       info.tabUnforgeable.add(quote do:
-        JS_CGETSET_DEF_NOCONF(`k`, `get`, `set`))
+        JS_CGETSET_DEF(`k`, `get`, `set`, JS_PROP_ENUMERABLE)
+      )
     of bffReplaceable:
       if set != nil:
         error("Replaceable properties must not have a setter.")
@@ -1334,7 +1339,9 @@ proc bindGetSet(stmts: NimNode; info: RegistryInfo) =
         error("Too many replaceable functions defined.")
       let magic = cast[int16](orid)
       info.tabFuns.add(quote do:
-        JS_CGETSET_MAGIC_DEF(`k`, `get`, js_replaceable_set, `magic`))
+        JS_CGETSET_MAGIC_DEF(`k`, `get`, js_replaceable_set, `magic`,
+          JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
+      )
     else:
       error("Static getters and setters are not supported.")
 

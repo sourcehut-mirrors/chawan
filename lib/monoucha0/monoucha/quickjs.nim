@@ -364,10 +364,10 @@ const
   JS_PROP_HAS_SET* = cint(1 shl 12)
   JS_PROP_HAS_VALUE* = cint(1 shl 13)
 
-template JS_CFUNC_DEF*(n: string; len: uint8; func1: JSCFunction):
-    JSCFunctionListEntry =
-  JSCFunctionListEntry(name: cstring(n),
-                       prop_flags: JS_PROP_WRITABLE or JS_PROP_CONFIGURABLE,
+template JS_CFUNC_DEF*(n: cstring; len: uint8; func1: JSCFunction;
+    flags: cint): JSCFunctionListEntry =
+  JSCFunctionListEntry(name: n,
+                       prop_flags: flags,
                        def_type: JS_DEF_CFUNC,
                        u: JSCFunctionListEntryU(
                          `func`: JSCFunctionListEntryFunc(
@@ -375,47 +375,39 @@ template JS_CFUNC_DEF*(n: string; len: uint8; func1: JSCFunction):
                            cproto: JS_CFUNC_generic,
                            cfunc: JSCFunctionType(generic: func1))))
 
-template JS_CFUNC_DEF_NOCONF*(n: string; len: uint8; func1: JSCFunction):
+template JS_CFUNC_DEF*(n: string; len: uint8; func1: JSCFunction):
     JSCFunctionListEntry =
+  JS_CFUNC_DEF(n, len, func1, JS_PROP_WRITABLE or JS_PROP_CONFIGURABLE)
+
+template JS_CGETSET_DEF*(n: string; fgetter: JSGetterFunction;
+    fsetter: JSSetterFunction; flags: cint): JSCFunctionListEntry =
   JSCFunctionListEntry(name: cstring(n),
-                       prop_flags: JS_PROP_ENUMERABLE,
-                       def_type: JS_DEF_CFUNC,
+                       prop_flags: flags,
+                       def_type: JS_DEF_CGETSET,
                        u: JSCFunctionListEntryU(
-                         `func`: JSCFunctionListEntryFunc(
-                           length: len,
-                           cproto: JS_CFUNC_generic,
-                           cfunc: JSCFunctionType(generic: func1))))
+                         getset: JSCFunctionListEntryGetSet(
+                           get: JSCFunctionType(getter: fgetter),
+                           set: JSCFunctionType(setter: fsetter))))
 
 template JS_CGETSET_DEF*(n: string; fgetter: JSGetterFunction;
     fsetter: JSSetterFunction): JSCFunctionListEntry =
-  JSCFunctionListEntry(name: cstring(n),
-                       prop_flags: JS_PROP_CONFIGURABLE,
-                       def_type: JS_DEF_CGETSET,
-                       u: JSCFunctionListEntryU(
-                         getset: JSCFunctionListEntryGetSet(
-                           get: JSCFunctionType(getter: fgetter),
-                           set: JSCFunctionType(setter: fsetter))))
-
-template JS_CGETSET_DEF_NOCONF*(n: string; fgetter: JSGetterFunction;
-    fsetter: JSSetterFunction): JSCFunctionListEntry =
-  JSCFunctionListEntry(name: cstring(n),
-                       prop_flags: JS_PROP_ENUMERABLE,
-                       def_type: JS_DEF_CGETSET,
-                       u: JSCFunctionListEntryU(
-                         getset: JSCFunctionListEntryGetSet(
-                           get: JSCFunctionType(getter: fgetter),
-                           set: JSCFunctionType(setter: fsetter))))
+  JS_CGETSET_DEF(n, fgetter, fsetter, JS_PROP_CONFIGURABLE)
 
 template JS_CGETSET_MAGIC_DEF*(n: cstring; fgetter: JSGetterMagicFunction;
-    fsetter: JSSetterMagicFunction; m: int16): JSCFunctionListEntry =
+    fsetter: JSSetterMagicFunction; m: int16; flags: cint):
+    JSCFunctionListEntry =
   JSCFunctionListEntry(name: n,
-                       prop_flags: JS_PROP_CONFIGURABLE,
+                       prop_flags: flags,
                        def_type: JS_DEF_CGETSET_MAGIC,
                        magic: m,
                        u: JSCFunctionListEntryU(
                          getset: JSCFunctionListEntryGetSet(
                            get: JSCFunctionType(getter_magic: fgetter),
                            set: JSCFunctionType(setter_magic: fsetter))))
+
+template JS_CGETSET_MAGIC_DEF*(n: cstring; fgetter: JSGetterMagicFunction;
+    fsetter: JSSetterMagicFunction; m: int16): JSCFunctionListEntry =
+  JS_CGETSET_MAGIC_DEF(n, fgetter, fsetter, m, JS_PROP_CONFIGURABLE)
 
 template JS_PROP_STRING_DEF*(n, cstr: cstring; f: cint):
     JSCFunctionListEntry =
