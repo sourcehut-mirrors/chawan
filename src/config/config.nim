@@ -1291,12 +1291,12 @@ proc parseOption(cp: var ConfigParser; section: ConfigSection; key: string):
   if section in {csSiteconf, csOmnirule}:
     if opt in cp.ruleOptionsSeen:
       let kebab = camelToKebabCase(key)
-      return cp.err("redefinition of option " & kebab)
+      return cp.err("re-definition of option " & kebab)
     cp.ruleOptionsSeen.incl(opt)
   else:
     if opt in cp.optionsSeen:
       let kebab = camelToKebabCase(key)
-      return cp.err("redefinition of option " & $section & '.' & kebab)
+      return cp.err("re-definition of option " & $section & '.' & kebab)
     cp.optionsSeen.incl(opt)
   x
 
@@ -2039,7 +2039,7 @@ proc initConfigParser(config: Config; dir: string; ctx: JSContext; name: string;
     filename: dir / name,
     line: 1,
     laxnames: laxnames,
-    sectionsSeen: {csNone},
+    sectionsSeen: {},
     opt: coAddEntry
   )
 
