@@ -18,6 +18,7 @@ unreleased
 * remove deprecated parentBuffer, prevSiblingBuffer, nextSiblingBuffer actions
 * make terminal querying asynchronous
 * work around FreeBSD vt(4) freezing on startup
+* work around a bug in URL standard that made us reject ed2k URLs
 * optimize out Sixel repaints when scrolling
 * drop excessive frames when the terminal/link cannot keep up
 * rework seccomp handling to support cross-compilation to incompatible archs
@@ -42,6 +43,7 @@ unreleased
 * fix various charset decoder bugs
 * fix TypedArray handling
 * fix suspend() not suspending all processes
+* fix JS bindings having incorrect property descriptions
 
 0.3.0 (2025.11.21)
 
