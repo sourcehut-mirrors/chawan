@@ -276,8 +276,9 @@ type
     # if set, this *overrides* any content type received from the network.
     # (this is because it stores the content type from the -T flag.)
     # beware, this string may include content type attributes, if you want
-    # to match it you'll have to use contentType.untilLower(';').
+    # to match it you'll have to use shortContentType.
     contentType* {.jsget.}: string
+    shortContentType* {.jsget.}: string
     loadInfo* {.jsgetset.}: string
     request*: Request # source request
     # note: this is not the same as request.url (but should be synced
@@ -360,6 +361,7 @@ proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     redirectDepth: redirectDepth,
     flags: flags,
     contentType: contentType,
+    shortContentType: contentType.untilLower(';'),
     width: attrs.width,
     height: attrs.height - 1,
     request: request,
@@ -381,6 +383,7 @@ proc newBufferInit*(url: URL; init: BufferInit): BufferInit {.jsctor.} =
     redirectDepth: init.redirectDepth,
     flags: init.flags,
     contentType: init.contentType,
+    shortContentType: init.shortContentType,
     width: init.width,
     height: init.height,
     request: init.request,
@@ -430,9 +433,6 @@ proc setSave(init: BufferInit; b: bool) {.jsfset: "save".} =
     init.flags.incl(bifSave)
   else:
     init.flags.excl(bifSave)
-
-proc shortContentType(init: BufferInit): string {.jsfget.} =
-  init.contentType.untilLower(';')
 
 proc ishtml(init: BufferInit): bool {.jsfget.} =
   bifHTML in init.flags
@@ -515,8 +515,11 @@ proc applyResponse*(init: BufferInit; response: Response;
   # setup content type; note that isSome means an override so we skip it
   if init.contentType == "":
     var contentType = response.getLongContentType("application/octet-stream")
-    if contentType.until(';') == "application/octet-stream":
+    var shortContentType = contentType.untilLower(';')
+    if shortContentType == "application/octet-stream":
       contentType = mimeTypes.guessContentType(init.url.pathname, "text/plain")
+      shortContentType = contentType
+    init.shortContentType = move(shortContentType)
     init.contentType = move(contentType)
   # setup charsets:
   # * override charset

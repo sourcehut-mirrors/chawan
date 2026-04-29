@@ -4,6 +4,7 @@
 
 import std/os
 import std/posix
+import std/tables
 
 import io/chafile
 import io/dynstream
@@ -41,13 +42,18 @@ type
     value*: string
     next: NamedField
 
-  MailcapEntry* = object #TODO merge t and cmd?
-    t*: string
+  MailcapEntry* = ref object
     cmd*: string
     flags*: set[MailcapFlag]
+    id*: uint32 # actual count in mailcap
     fieldsHead: NamedField
 
-  Mailcap* = seq[MailcapEntry]
+  MailcapList = ref object
+    s*: seq[MailcapEntry]
+    next: MailcapList # used for chaining lists with identical main types
+
+  Mailcap* = object
+    tab: Table[string, MailcapList]
 
 iterator fields(entry: MailcapEntry): NamedField =
   var field = entry.fieldsHead
@@ -55,14 +61,55 @@ iterator fields(entry: MailcapEntry): NamedField =
     yield field
     field = field.next
 
+proc getList*(mailcap: Mailcap; t: string): MailcapList =
+  let list = mailcap.tab.getOrDefault(t)
+  if list != nil:
+    return list
+  #TODO it would be nice if this didn't allocate
+  mailcap.tab.getOrDefault(t.until('/'))
+
+proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
+  let list0 = mailcap.tab.getOrDefault(t)
+  if list0 != nil:
+    return list0
+  let list = MailcapList()
+  let slash = t.find('/')
+  if slash != -1:
+    let main = t.substr(0, slash - 1)
+    var mainList = mailcap.getList(main)
+    if mainList == nil:
+      # ensure a wildcard type exists for all subtypes.  (if we were to add
+      # main types after subtypes, then we'd have troubles linking them
+      # together)
+      mainList = MailcapList()
+      mailcap.tab[main] = mainList
+    else: # add existing wildcard entries
+      list.s.add(mainList.s)
+    # link together lists of the same main type so we can efficiently add
+    # further wildcard entries
+    list.next = mainList.next
+    mainList.next = list
+  mailcap.tab[t] = list
+  list
+
+proc add(mailcap: var Mailcap; entry: MailcapEntry; t: string) =
+  var list = mailcap.getListOrAdd(t)
+  let slash = t.find('/')
+  if slash == -1: # wildcard; add to sub-entries too
+    while list != nil:
+      list.s.add(entry)
+      list = list.next
+  else: # add to this entry only
+    list.s.add(entry)
+
 proc find*(entry: MailcapEntry; t: NamedFieldType): NamedField =
   for field in entry.fields:
     if field.t == t:
       return field
   nil
 
-proc `$`*(entry: MailcapEntry): string =
-  var s = entry.t & ';' & entry.cmd
+proc toStr(entry: MailcapEntry; t: string): string =
+  var s = t & ';' & entry.cmd
   for flag in MailcapFlag:
     if flag in entry.flags:
       s &= ';' & $flag
@@ -78,23 +125,23 @@ template err(state: MailcapParser; msg: string): untyped =
 
 proc consumeTypeField(state: var MailcapParser; line: openArray[char];
     outs: var string): Opt[int] =
-  var nslash = 0
+  var slash = -1
   var n = 0
   while n < line.len:
     let c = line[n]
     if c in AsciiWhitespace + {';'}:
       break
     if c == '/':
-      inc nslash
+      if slash >= 0:
+        return state.err("too many slash characters")
+      slash = outs.len
     elif c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
       return state.err("invalid character in type field: " & c)
     outs &= c.toLowerAscii()
     inc n
-  if nslash == 0:
-    # Accept types without a subtype - RFC calls this "implicit-wild".
-    outs &= "/*"
-  if nslash > 1:
-    return state.err("too many slash characters")
+  if slash >= 0 and slash + 2 == outs.len and outs[slash + 1] == '*':
+    # normalize type/* to type without a subtype (implicit-wild)
+    outs.setLen(slash)
   n = line.skipBlanks(n)
   if n >= line.len or line[n] != ';':
     return state.err("semicolon not found")
@@ -122,7 +169,7 @@ proc consumeCommand(state: var MailcapParser; line: string;
     inc n
   ok(n)
 
-proc addNamedField(entry: var MailcapEntry; t: NamedFieldType;
+proc addNamedField(entry: MailcapEntry; t: NamedFieldType;
     fieldsTail: var NamedField; cmd: var string) =
   var s = move(cmd)
   if t in {nfMatch, nfNcMatch}:
@@ -143,7 +190,7 @@ proc addNamedField(entry: var MailcapEntry; t: NamedFieldType;
     fieldsTail = field
 
 proc consumeField(state: var MailcapParser; line: string;
-    entry: var MailcapEntry; n: int; fieldsTail: var NamedField): Opt[int] =
+    entry: MailcapEntry; n: int; fieldsTail: var NamedField): Opt[int] =
   var n = line.skipBlanks(n)
   var s = ""
   while n < line.len:
@@ -173,8 +220,8 @@ proc consumeField(state: var MailcapParser; line: string;
   return ok(n)
 
 proc parseEntry*(state: var MailcapParser; line: string;
-    entry: var MailcapEntry): Opt[void] =
-  var n = ?state.consumeTypeField(line, entry.t)
+    entry: MailcapEntry; t: var string): Opt[void] =
+  var n = ?state.consumeTypeField(line, t)
   n = ?state.consumeCommand(line, entry.cmd, n)
   var fieldsTail: NamedField
   while n < line.len:
@@ -183,16 +230,20 @@ proc parseEntry*(state: var MailcapParser; line: string;
 
 proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
   var state = MailcapParser(line: 1)
+  var id = 0'u32
   for line in buf.split('\n'):
     if line.len <= 0:
       continue
-    var entry: MailcapEntry
-    let res = state.parseEntry(line, entry)
+    let entry = MailcapEntry(id: id)
+    inc id
+    var t: string
+    let res = state.parseEntry(line, entry, t)
     doAssert res.isOk, state.error
-    mailcap.add(entry)
+    mailcap.add(entry, t)
 
 proc parseMailcap(state: var MailcapParser; mailcap, typeMailcap: var Mailcap;
     file: ChaFile): Opt[void] =
+  var id = 0'u32
   var line: string
   while file.readLine(line).get(false):
     if line.len <= 0 or line[0] == '#':
@@ -205,12 +256,14 @@ proc parseMailcap(state: var MailcapParser; mailcap, typeMailcap: var Mailcap;
       line.setLen(line.high) # trim backslash
       if not ?file.readLineAppend(line):
         break
-    var entry: MailcapEntry
-    ?state.parseEntry(line, entry)
+    var t: string
+    let entry = MailcapEntry(id: id)
+    inc id
+    ?state.parseEntry(line, entry, t)
     if mfType in entry.flags:
-      typeMailcap.add(entry)
+      typeMailcap.add(entry, t)
     else:
-      mailcap.add(entry)
+      mailcap.add(entry, t)
     inc state.line
   return ok()
 
@@ -318,7 +371,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
         cmd &= quoteFile(outpath, qs)
         canpipe = false
       of 't':
-        cmd &= quoteFile(contentType.until(';'), qs)
+        cmd &= quoteFile(contentType.untilLower(';'), qs)
       of 'u': # Netscape extension
         if url != nil: # nil in getEditorCommand
           cmd &= quoteFile($url, qs)
@@ -358,11 +411,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
   return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
-proc checkEntry(entry: MailcapEntry; contentType, mt, st: string; url: URL):
-    bool =
-  if not entry.t.startsWith("*/") and not entry.t.startsWithIgnoreCase(mt) or
-      not entry.t.endsWith("/*") and not entry.t.endsWithIgnoreCase(st):
-    return false
+proc checkEntry(entry: MailcapEntry; contentType: string; url: URL): bool =
   for field in entry.fields:
     case field.t
     of nfTest:
@@ -379,31 +428,35 @@ proc checkEntry(entry: MailcapEntry; contentType, mt, st: string; url: URL):
     else: discard
   true
 
-proc findPrevMailcapEntry*(mailcap: Mailcap; contentType: string; url: URL;
-    last: int): int =
-  let si = last - 1
-  if si >= 0:
-    let mt = contentType.until('/') & '/'
-    let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
+proc findPrevMailcapEntry*(mailcap: Mailcap;
+    shortContentType, contentType: string; url: URL; last: int): int =
+  let list = mailcap.getList(shortContentType)
+  if list != nil:
     for i in countdown(last - 1, 0):
-      if checkEntry(mailcap[i], contentType, mt, st, url):
+      if checkEntry(list.s[i], contentType, url):
         return i
   return -1
 
-proc findMailcapEntry*(mailcap: Mailcap; contentType: string; url: URL;
-    start = -1): int =
-  let si = start + 1
-  if si < mailcap.len:
-    let mt = contentType.until('/') & '/'
-    let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
-    for i in si ..< mailcap.len:
-      if checkEntry(mailcap[i], contentType, mt, st, url):
-        return i
-  return -1
+proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
+    url: URL; outIdx: var int): MailcapEntry =
+  let list = mailcap.getList(shortContentType)
+  if list != nil:
+    let start = outIdx
+    for i in start + 1 ..< list.s.len:
+      if checkEntry(list.s[i], contentType, url):
+        outIdx = i
+        return list.s[i]
+  outIdx = -1
+  nil
 
-proc saveEntry*(mailcap: var Mailcap; path: string; entry: MailcapEntry):
+proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
+    url: URL): MailcapEntry =
+  var start = -1
+  mailcap.findMailcapEntry(shortContentType, contentType, url, start)
+
+proc saveEntry*(mailcap: var Mailcap; path, t: string; entry: MailcapEntry):
     Opt[void] =
-  let s = $entry
+  let s = entry.toStr(t)
   let pdir = path.parentDir()
   discard mkdir(cstring(pdir), 0o700)
   let ps = newPosixStream(path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
@@ -411,7 +464,7 @@ proc saveEntry*(mailcap: var Mailcap; path: string; entry: MailcapEntry):
     return err()
   let res = ps.writeLoop(s)
   if res.isOk:
-    mailcap.add(entry)
+    mailcap.add(entry, t)
   ps.sclose()
   res
 

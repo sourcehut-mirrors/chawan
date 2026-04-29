@@ -12,7 +12,6 @@ import encoding/charset
 import config/chapath
 import config/conftypes
 import config/cookie
-import config/mailcap
 import css/cssparser
 import css/cssvalues
 import html/script

@@ -1927,13 +1927,13 @@ proc execPipeSink(pager: Pager; cmd: string; istream: PosixStream):
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
 proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
     PosixStream =
-  let i = pager.autoMailcap.findMailcapEntry("text/x-ansi", url)
-  if i == -1:
+  let entry = pager.autoMailcap.findMailcapEntry("text/x-ansi", "text/x-ansi",
+    url)
+  if entry == nil:
     pager.alert("No text/x-ansi entry found")
     return nil
   var canpipe = true
-  let cmd = unquoteCommand(pager.autoMailcap[i].cmd, "text/x-ansi", "", url,
-    canpipe)
+  let cmd = unquoteCommand(entry.cmd, "text/x-ansi", "", url, canpipe)
   if not canpipe:
     pager.alert("Error: could not pipe to text/x-ansi, decoding as text/plain")
     return nil
@@ -2172,16 +2172,18 @@ proc applyMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
   if JS_IsNumber(val):
     var i: int
     ?ctx.fromJS(val, i)
-    if i < 0 or i >= pager.mailcap.len:
+    let list = pager.mailcap.getList(init.shortContentType)
+    if i < 0 or i >= list.s.len:
       return JS_ThrowRangeError(ctx, "invalid mailcap entry")
-    if pager.applyMailcap(init, pager.mailcap[i]).isErr:
+    if pager.applyMailcap(init, list.s[i]).isErr:
       return ctx.jsQuit(pager, 1)
   else:
     var s: string
     ?ctx.fromJS(val, s)
     var entry: MailcapEntry
     var state = MailcapParser()
-    let res = state.parseEntry(s, entry)
+    var dummy: string
+    let res = state.parseEntry(s, entry, dummy)
     if res.isOk:
       if pager.applyMailcap(init, entry).isErr:
         return ctx.jsQuit(pager, 1)
@@ -2259,28 +2261,25 @@ proc connected2(pager: Pager; init: BufferInit): JSValue {.jsfunc.} =
     bcrConnected
   return ctx.toUndefined(ctx.connected(init, cres, arg0))
 
-proc saveEntry(pager: Pager; entry: MailcapEntry) =
+proc saveEntry(pager: Pager; contentType: string; entry: MailcapEntry) =
   let path = pager.config{"autoMailcap"}
-  if pager.autoMailcap.saveEntry(path, entry).isErr:
+  if pager.autoMailcap.saveEntry(path, contentType, entry).isErr:
     pager.alert("Could not write to " & $path)
 
 # private
-proc saveMailcapEntry(ctx: JSContext; pager: Pager; i: int): Opt[void]
-    {.jsfunc.} =
-  if i < 0 or i >= pager.mailcap.len:
+proc saveMailcapEntry(ctx: JSContext; pager: Pager; init: BufferInit;
+    i: int): Opt[void] {.jsfunc.} =
+  let list = pager.mailcap.getList(init.shortContentType)
+  if i < 0 or i >= list.s.len:
     JS_ThrowRangeError(ctx, "invalid mailcap entry")
     return err()
-  pager.saveEntry(pager.mailcap[i])
+  pager.saveEntry(init.shortContentType, list.s[i])
   ok()
 
 # private
 proc addMailcapEntry(pager: Pager; init: BufferInit; cmd: string;
     flag: MailcapFlag) {.jsfunc.} =
-  pager.saveEntry(MailcapEntry(
-    t: init.contentType.untilLower(';'),
-    cmd: cmd,
-    flags: {flag}
-  ))
+  pager.saveEntry(init.shortContentType, MailcapEntry(cmd: cmd, flags: {flag}))
 
 # private
 proc findMailcapPrevNext(pager: Pager; init: BufferInit; i: int):
@@ -2290,18 +2289,22 @@ proc findMailcapPrevNext(pager: Pager; init: BufferInit; i: int):
       pager.loadMailcap(pager.mailcap, p)
     pager.mailcap.parseBuiltin(DefaultMailcap)
     pager.mailcapLoaded = true
-  let prev = pager.mailcap.findPrevMailcapEntry(init.contentType, init.url, i)
-  let next = pager.mailcap.findMailcapEntry(init.contentType, init.url, i)
+  let prev = pager.mailcap.findPrevMailcapEntry(init.shortContentType,
+    init.contentType, init.url, i)
+  var next = i
+  discard pager.mailcap.findMailcapEntry(init.shortContentType,
+    init.contentType, init.url, next)
   return (prev, next)
 
 # private
 proc askMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
     i, sx, prev, next: int): JSValue {.jsfunc.} =
   var sx = sx
-  let shortContentType = init.contentType.untilLower(';')
-  var msg = "Open " & shortContentType & " as (shift=always): (t)ext, (s)ave"
+  let list = pager.mailcap.getList(init.shortContentType)
+  var msg = "Open " & init.shortContentType &
+    " as (shift=always): (t)ext, (s)ave"
   if i != -1:
-    msg &= ", (r)un \"" & pager.mailcap[i].cmd.strip() & '"'
+    msg &= ", (r)un \"" & list.s[i].cmd.strip() & '"'
   msg &= ", (e)dit entry, (C-c)ancel"
   if prev != -1:
     msg &= ", (p)rev"
@@ -2325,25 +2328,38 @@ proc initMailcap(pager: Pager; init: BufferInit): JSValue =
   let ctx = pager.jsctx
   # contentType must have been set by applyResponse.
   var contentType = init.contentType
+  var shortContentType = init.shortContentType
   if bifForceType notin init.flags:
     var i = -1
+    var id = 0'u32
+    #TODO maybe just always do a mailcap lookup, but filter out non-type
+    # entries for HTML/text?  then we wouldn't need a typeMailcap special
+    # case at all
     while true:
-      i = pager.typeMailcap.findMailcapEntry(contentType, init.url, i)
-      if i == -1:
+      let entry = pager.typeMailcap.findMailcapEntry(shortContentType,
+        contentType, init.url, i)
+      if entry == nil:
         break
-      contentType = pager.typeMailcap[i].cmd & contentType.after(';')
+      if entry.id < id:
+        # entry was defined before the last entry we've seen; skip it.
+        continue
+      i = -1 # new content type; jump back to the next list's beginning
+      id = entry.id
+      #TODO unquote?
+      shortContentType = entry.cmd.untilLower(';')
+      contentType = entry.cmd
   if contentType.startsWithIgnoreCase("text/"):
     # prepare content type for %{charset}
     contentType.setContentTypeAttr("charset", $init.charset)
-  let shortContentType = contentType.untilLower(';')
   if shortContentType == "text/html":
     init.flags.incl(bifHTML)
     return pager.connected2(init)
   if shortContentType == "text/plain" or bifSave in init.flags:
     return pager.connected2(init)
-  let i = pager.autoMailcap.findMailcapEntry(contentType, init.url)
-  if i != -1:
-    if pager.applyMailcap(init, pager.autoMailcap[i]).isErr:
+  let entry = pager.autoMailcap.findMailcapEntry(shortContentType, contentType,
+    init.url)
+  if entry != nil:
+    if pager.applyMailcap(init, entry).isErr:
       return ctx.jsQuit(pager, 1)
     return pager.connected2(init)
   elif pager.config{"headless"} != hmFalse:
