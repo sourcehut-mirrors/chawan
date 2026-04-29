@@ -1337,6 +1337,13 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]"; bottom = false): Opt[void] =
     ?term.clearEnd()
     ?term.write(msg)
     ?term.blockIO()
+    #TODO maybe we should allow SIGINT here too
+    while term.eparser.queryState != qsNone:
+      if term.ahandleRead().isErr:
+        break
+      while true:
+        if term.areadEvent().isErr:
+          break
     discard term.readChar()
     term.unblockIO()
   ok()
