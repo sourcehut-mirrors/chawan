@@ -128,25 +128,34 @@ Following fields are recognized.
   images are disabled.
 
 * `x-type` (from w3mmee) specifies a MIME type substitution.  The command
-   part is interpreted as a MIME type (without template expansion) which is
-   used instead of the original type.  Such entries are only respected in
-   `external.auto-mailcap`.
+  part is interpreted as a MIME type (without template expansion) which is
+  used instead of the original type.  Such entries are only respected in
+  `external.auto-mailcap`.
 
-   `x-type` has a higher priority than other entries, and applies even to
-   text/plain and text/html documents (which are normally excluded from
-   mailcap).  However, `x-type` entries do not apply if the content type
-   was forced (e.g. using the `-T` flag).
+  Entries with `x-type` also match text/plain and text/html documents
+  (which are normally excluded from mailcap).  However, `x-type` does not
+  apply if the content type was forced (e.g. using the `-T` flag).
 
-   (Note: `x-type` is experimental.  Future changes to its semantics are
-   to be expected.)
+  (Note: `x-type` is experimental.  Future changes to its semantics are
+  to be expected.)
 
-* `x-match` (from w3mmee) restricts an entry's URL to the specified regex.
-   `x-nc-match` is the same, but it is case-insensitive.  For example,
-   `x-match=https?://example\.org/.*` restricts an entry to example.org
-   (note the backslash.)
+* `x-match` (from w3mmee) restricts the entry's URL to the specified regex.
+  `x-nc-match` is the same, but it is case-insensitive.  For example,
+  `x-match=https?://example\.org/.*` restricts the entry to example.org
+  (note the backslash.)
 
-   When one of these fields is present together with `test`, the result is
-   ANDed together.
+  When one of these fields is present together with `test`, the result is
+  ANDed together.
+
+* `x-netpath` (from w3mmee) restricts the entry to URIs that match the
+  `net_path` production of RFC 2396.  In other words, the URI must have an
+  authority (hostname etc.), so e.g. `example://blah/path` is matched,
+  while `example:/path` isn't.
+
+  For schemes other than `file`, two slashes after the colon signify
+  a `net_path`.  `file:///path` is a special case: it looks like a
+  `net_path`, but it isn't one.  (This is inherited from the WHATWG URL
+  standard.)
 
 ## Examples
 

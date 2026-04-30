@@ -154,25 +154,38 @@ expansion) which is used instead of the original type.
 Such entries are only respected in \f[CR]external.auto\-mailcap\f[R].
 .RS 2
 .PP
-\f[CR]x\-type\f[R] has a higher priority than other entries, and applies
-even to text/plain and text/html documents (which are normally excluded
-from mailcap).
-However, \f[CR]x\-type\f[R] entries do not apply if the content type was
+Entries with \f[CR]x\-type\f[R] also match text/plain and text/html
+documents (which are normally excluded from mailcap).
+However, \f[CR]x\-type\f[R] does not apply if the content type was
 forced (e.g.\ using the \f[CR]\-T\f[R] flag).
 .PP
 (Note: \f[CR]x\-type\f[R] is experimental.
 Future changes to its semantics are to be expected.)
 .RE
 .IP \(bu 2
-\f[CR]x\-match\f[R] (from w3mmee) restricts an entry\(cqs URL to the
+\f[CR]x\-match\f[R] (from w3mmee) restricts the entry\(cqs URL to the
 specified regex.
 \f[CR]x\-nc\-match\f[R] is the same, but it is case\-insensitive.
 For example, \f[CR]x\-match=https?://example\(rs.org/.*\f[R] restricts
-an entry to example.org (note the backslash.)
+the entry to example.org (note the backslash.)
 .RS 2
 .PP
 When one of these fields is present together with \f[CR]test\f[R], the
 result is ANDed together.
+.RE
+.IP \(bu 2
+\f[CR]x\-netpath\f[R] (from w3mmee) restricts the entry to URIs that
+match the \f[CR]net_path\f[R] production of RFC 2396.
+In other words, the URI must have an authority (hostname etc.), so
+e.g.\ \f[CR]example://blah/path\f[R] is matched, while
+\f[CR]example:/path\f[R] isn\(cqt.
+.RS 2
+.PP
+For schemes other than \f[CR]file\f[R], two slashes after the colon
+signify a \f[CR]net_path\f[R].
+\f[CR]file:///path\f[R] is a special case: it looks like a
+\f[CR]net_path\f[R], but it isn\(cqt one.
+(This is inherited from the WHATWG URL standard.)
 .RE
 .SS Examples
 To automatically execute these entries, place them in

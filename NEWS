@@ -16,6 +16,7 @@ unreleased
 * remove display.query-da1 (no longer needed)
 * remove deprecated special case in pager.load() with trailing newline
 * remove deprecated parentBuffer, prevSiblingBuffer, nextSiblingBuffer actions
+* remove MAILCAP_URL env var when executing mailcap entries (use %u instead)
 * make terminal querying asynchronous
 * work around FreeBSD vt(4) freezing on startup
 * work around a bug in URL standard that made us reject ed2k URLs

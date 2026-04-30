@@ -29,6 +29,7 @@ type
     mfNeedsstyle = "x-needsstyle" # Chawan extension
     mfNeedsimage = "x-needsimage" # Chawan extension
     mfType = "x-type" # w3mmee extension
+    mfNetpath = "x-netpath" # w3mmee extension
 
   NamedFieldType* = enum
     nfTest = "test"
@@ -68,6 +69,9 @@ proc getList*(mailcap: Mailcap; t: string): MailcapList =
   #TODO it would be nice if this didn't allocate
   mailcap.tab.getOrDefault(t.until('/'))
 
+proc isHtmlOrText(s: string): bool =
+  s == "text/html" or s == "text/plain"
+
 proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
   let list0 = mailcap.tab.getOrDefault(t)
   if list0 != nil:
@@ -84,7 +88,13 @@ proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
       mainList = MailcapList()
       mailcap.tab[main] = mainList
     else: # add existing wildcard entries
-      list.s.add(mainList.s)
+      if t.isHtmlOrText():
+        # these types only accept x-type
+        for entry in mainList.s:
+          if mfType in entry.flags:
+            list.s.add(entry)
+      else:
+        list.s.add(mainList.s)
     # link together lists of the same main type so we can efficiently add
     # further wildcard entries
     list.next = mainList.next
@@ -93,6 +103,8 @@ proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
   list
 
 proc add(mailcap: var Mailcap; entry: MailcapEntry; t: string) =
+  if t.isHtmlOrText() and mfType notin entry.flags:
+    return
   var list = mailcap.getListOrAdd(t)
   let slash = t.find('/')
   if slash == -1: # wildcard; add to sub-entries too
@@ -241,7 +253,7 @@ proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
     doAssert res.isOk, state.error
     mailcap.add(entry, t)
 
-proc parseMailcap(state: var MailcapParser; mailcap, typeMailcap: var Mailcap;
+proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
     file: ChaFile): Opt[void] =
   var id = 0'u32
   var line: string
@@ -260,21 +272,17 @@ proc parseMailcap(state: var MailcapParser; mailcap, typeMailcap: var Mailcap;
     let entry = MailcapEntry(id: id)
     inc id
     ?state.parseEntry(line, entry, t)
-    if mfType in entry.flags:
-      typeMailcap.add(entry, t)
-    else:
-      mailcap.add(entry, t)
+    mailcap.add(entry, t)
     inc state.line
   return ok()
 
-proc parseMailcap*(mailcap, typeMailcap: var Mailcap; path: string):
-    Err[string] =
+proc parseMailcap*(mailcap: var Mailcap; path: string): Err[string] =
   let file0 = chafile.fopen(path, "r")
   if file0.isErr:
     return ok()
   let file = file0.get
   var state = MailcapParser(line: 1)
-  let res = state.parseMailcap(mailcap, typeMailcap, file)
+  let res = state.parseMailcap(mailcap, file)
   file.close()
   if res.isErr:
     return err(path & '(' & $state.line & "): " & msg)
@@ -412,6 +420,8 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
 proc checkEntry(entry: MailcapEntry; contentType: string; url: URL): bool =
+  if mfNetpath in entry.flags and not url.isNetPath():
+    return false
   for field in entry.fields:
     case field.t
     of nfTest:
@@ -433,6 +443,8 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
   let list = mailcap.getList(shortContentType)
   if list != nil:
     for i in countdown(last - 1, 0):
+      if mfType in list.s[i].flags:
+        continue # only supported in auto-mailcap
       if checkEntry(list.s[i], contentType, url):
         return i
   return -1
@@ -443,10 +455,40 @@ proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
   if list != nil:
     let start = outIdx
     for i in start + 1 ..< list.s.len:
-      if checkEntry(list.s[i], contentType, url):
+      let entry = list.s[i]
+      if mfType in entry.flags:
+        continue # only supported in auto-mailcap
+      if checkEntry(entry, contentType, url):
         outIdx = i
-        return list.s[i]
+        return entry
   outIdx = -1
+  nil
+
+# called for auto-mailcap only; allows modifying the type
+proc findMailcapEntryMut*(mailcap: Mailcap;
+    shortContentType, contentType: var string; url: URL):
+    MailcapEntry =
+  var id = 0'u32
+  var done = false
+  while not done:
+    let list = mailcap.getList(shortContentType)
+    if list == nil:
+      break
+    done = true
+    for i in 0 ..< list.s.len:
+      let entry = list.s[i]
+      if entry.id < id:
+        continue
+      if not checkEntry(entry, contentType, url):
+        continue
+      if mfType in entry.flags:
+        var canpipe: bool
+        contentType = unquoteCommand(entry.cmd, contentType, "", url, canpipe)
+        shortContentType = contentType.untilLower(';')
+        id = entry.id
+        done = false
+        break
+      return entry
   nil
 
 proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
