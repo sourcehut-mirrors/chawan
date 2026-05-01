@@ -438,8 +438,8 @@ proc close(op: HTTPHandle) =
 
 proc main*() =
   let secure = getEnvEmpty("MAPPED_URI_SCHEME") == "https"
-  let username = getEnvEmpty("MAPPED_URI_USERNAME")
-  let password = getEnvEmpty("MAPPED_URI_PASSWORD")
+  let username = percentDecode(getEnvEmpty("MAPPED_URI_USERNAME"))
+  let password = percentDecode(getEnvEmpty("MAPPED_URI_PASSWORD"))
   let host = getEnvEmpty("MAPPED_URI_HOST")
   let port = getEnvEmpty("MAPPED_URI_PORT", if secure: "443" else: "80")
   let path = getEnvEmpty("MAPPED_URI_PATH", "/")

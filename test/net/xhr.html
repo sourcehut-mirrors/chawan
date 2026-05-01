@@ -57,9 +57,9 @@ z.onreadystatechange = function() {
 		return
 	const auth = z.response.split('\n')
 		.find(x => x.startsWith("authorization"));
-	assertEquals(auth, "authorization: Basic Y2hhLXRlc3QtdXNlcjpjaGEtdGVzdC1wYXNz");
+	assertEquals(auth, "authorization: Basic Y2hhLXRlc3QtdXNlckA6Y2hhLXRlc3QtcGFzczo=");
 }
-z.open("GET", "headers", false, "cha-test-user", "cha-test-pass");
+z.open("GET", "headers", false, "cha-test-user@", "cha-test-pass:");
 z.withCredentials = true;
 z.send()
 document.getElementById("x").textContent = "Success";
