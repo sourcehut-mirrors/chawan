@@ -483,6 +483,7 @@ type
     tableArrayCount: array[csSiteconf..csOmnirule, uint32]
     error: string
     line: int
+    entryStart: int # line where siteconf started
     beforeKey: BeforeKey
     ival: int32
     tt: TomlType
@@ -1305,14 +1306,17 @@ proc addRuleEntry(cp: var ConfigParser) =
     t: cocStr,
     str: move(cp.buf)
   ))
+  cp.entryStart = cp.line
   cp.ruleOptionsSeen.incl(coAddEntry)
 
 proc checkRuleRegex(cp: var ConfigParser): Opt[void] =
   if coAddEntry in cp.ruleOptionsSeen:
     let intersection = {coUrl, coHost, coMatch} * cp.ruleOptionsSeen
     if intersection == {}:
+      cp.line = cp.entryStart
       return cp.err("missing match regex for " & $cp.section)
     if intersection notin [{coUrl}, {coHost}, {coMatch}]:
+      cp.line = cp.entryStart
       return cp.err("too many match regexes for " & $cp.section)
   ok()
 
