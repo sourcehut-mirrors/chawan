@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/os
 import std/posix
 
@@ -101,7 +100,7 @@ type ParamParseContext = object
   params: seq[string]
   i: int
   next: string
-  configPath: Option[string]
+  configPath: string
   contentType: string
   charset: Charset
   visual: bool
@@ -139,7 +138,9 @@ proc getNext(ctx: var ParamParseContext): string =
   help(1)
 
 proc parseConfig(ctx: var ParamParseContext) =
-  ctx.configPath = some(ctx.getNext())
+  ctx.configPath = ctx.getNext()
+  if ctx.configPath == "":
+    die("config override cannot be empty")
 
 proc parseMonochrome(ctx: var ParamParseContext) =
   ctx.opts.add("display.color-mode = monochrome")
@@ -243,9 +244,9 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
     jsctx: JSContext): Result[Config, string] =
   var dir, dataDir: string
   let file = openConfig(dir, dataDir, ctx.configPath, warnings)
-  if file.isErr and ctx.configPath.isSome:
+  if file.isErr and ctx.configPath.len > 0:
     # The user specified a non-existent config file.
-    return err("failed to open config file " & ctx.configPath.get)
+    return err("failed to open config file " & ctx.configPath)
   if twtstr.setEnv("CHA_DIR", dir).isErr or
       twtstr.setEnv("CHA_DATA_DIR", dataDir).isErr:
     die("failed to set env vars")
