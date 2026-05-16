@@ -3,10 +3,12 @@ if test -z "$CHA"
 then	test -f ../../cha && CHA=../../cha || CHA=cha
 fi
 
-sed -E -e 's/^#([^ ])/\1/' ../../bonus/config.toml >"${TMPDIR:-/tmp}"/config.toml
-if ! $CHA -C"${TMPDIR:-/tmp}/config.toml" /dev/null | diff /dev/null -
-then	exit 1
+sed -E -e 's/^#([^ ])/\1/' ../../bonus/config.toml >tmp_config.toml
+if ! $CHA -Ctmp_config.toml /dev/null | diff /dev/null -
+then	rm tmp_config.toml
+	exit 1
 fi
+rm tmp_config.toml
 
 $CHA -Ctest.toml test.test >/dev/null || exit 1
 
