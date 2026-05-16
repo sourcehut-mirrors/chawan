@@ -62,7 +62,7 @@ proc main() =
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
         return
-    if width >= 0 and height >= 0:
+    if width > 0 and height > 0:
       let r = nsvgCreateRasterizer()
       if r == nil:
         quit(1)
