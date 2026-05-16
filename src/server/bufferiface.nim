@@ -405,7 +405,7 @@ proc copyCursorPos(ctx: JSContext; this: BufferInit; val: JSValueConst):
     var init: BufferInit
     ?ctx.fromJS(val, init)
     this.startpos = init.startpos
-    if bifPendingStart in iface.init.flags:
+    if bifPendingStart in init.flags:
       this.flags.incl(bifPendingStart)
   # set a separate flag, because startpos may be already used (and
   # therefore unset) by the time hasStart is checked
@@ -1365,8 +1365,8 @@ proc getLinesFromStream(ctx: JSContext; iface: BufferInterface;
     if bifPendingStart in iface.init.flags and
         iface.numLines >= iface.init.startpos.cursor.y:
       iface.pos = iface.init.startpos
-      iface.requestLinesFast()
       iface.init.flags.excl(bifPendingStart)
+      iface.requestLinesFast()
       iface.sendCursorPosition()
     if iface.loadState != lsLoading:
       iface.refreshStatus = true
