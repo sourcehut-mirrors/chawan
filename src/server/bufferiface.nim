@@ -214,8 +214,19 @@ type
     userStyle*: string
 
   BufferInitFlag* = enum
-    bifSave, bifHTML, bifHistory, bifTailOnLoad, bifCrashed, bifHasStart,
-    bifPendingStart, bifRedirected, bifMailcapCancel, bifForceType
+    bifSave
+    bifHTML # buffer is parsed as HTML (applies for x-htmloutput too)
+    bifHistory # buffer should be saved to history
+    bifTailOnLoad # jump to the last line on the next load
+    bifCrashed # buffer process no longer available
+    bifHasStart # buffer has/had a starting position
+    bifPendingStart # buffer will jump to the starting position when possible
+    bifPartialStart # starting position was outside the screen on load, so we
+                    # jumped to the nearest possible line and are waiting
+                    # for the actual line to load
+    bifRedirected
+    bifMailcapCancel
+    bifForceType # override type
 
   LoadState* = enum
     lsLoading = "loading"
@@ -1369,6 +1380,12 @@ proc getLinesFromStream(ctx: JSContext; iface: BufferInterface;
       iface.requestLinesFast()
       iface.sendCursorPosition()
     if iface.loadState != lsLoading:
+      if bifPendingStart in iface.init.flags and
+          bifPartialStart notin iface.init.flags:
+        # try to scroll to the nearest position to the original
+        iface.setCursorY(iface.init.startpos.cursor.y)
+        iface.setCursorX(iface.init.startpos.cursor.x, true, true)
+        iface.init.flags.incl(bifPartialStart)
       iface.refreshStatus = true
     if bifTailOnLoad in iface.init.flags:
       iface.setCursorY(int.high)
