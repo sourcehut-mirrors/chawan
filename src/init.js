@@ -1229,7 +1229,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                     if (this.osc52Primary && !edit.hide)
                         this.clipboardWrite(edit.selectedText, false);
                 } else if (pressedX == input.x && pressedY == input.y) {
-                    if (input.y < ((this.bufHeight + 1) / 3) * 2) {
+                    if (input.y < this.bufHeight - 4) {
                         if (buffer != null)
                             buffer.setAbsoluteCursorXY(input.x, input.y);
                         await edit.cancel();
