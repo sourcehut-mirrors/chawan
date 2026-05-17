@@ -1175,8 +1175,8 @@ proc consumeDeclarations(ctx: var CSSParser; nested: bool;
     of cttAtKeyword:
       discard ctx.consumeAtRule()
     of cttRbrace:
+      ctx.seekToken()
       if nested:
-        ctx.seekToken()
         valid = true
         break
     of cttIdent:

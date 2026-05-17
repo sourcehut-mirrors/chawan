@@ -11,3 +11,6 @@ div{
 <!-- I don't think this matches the spec, but it does match Blink/Gecko -->
 <div style="color: green; test { hi } color: red">green</div>
 <div style="color: red; test { hi }; color: green">green</div>
+<div style="};color: green; test { hi } color: red">green</div>
+<!-- this isn't even consistent between Blink/Gecko.  thanks W3C (not) -->
+<div style="}color: green; test { hi } color: red">green</div>
