@@ -1,4 +1,4 @@
-unreleased
+0.4.0 (2026.05.17)
 
 * dupeBuffer/anchor navigation no longer forks buffer process
 * support VT420
