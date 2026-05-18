@@ -2672,11 +2672,12 @@ const LegacyReflectFuncList = [
   "cursorBottom", "lowerPage", "lowerPageBegin", "centerLine",
   "centerLineBegin", "raisePage", "raisePageBegin", "nextPageBegin",
   "cursorLeftEdge", "cursorMiddleColumn", "cursorRightEdge", "centerColumn",
-  "findNextMark", "setMark", "clearMark", "gotoMark", "gotoMarkY", "getMarkPos",
-  "cursorToggleSelection", "getSelectionText", "markURL", "showLinkHints",
-  "toggleImages", "saveLink", "saveSource", "setCursorX", "setCursorY",
-  "setCursorXY", "setCursorXCenter", "setCursorYCenter", "setCursorXYCenter",
-  "setFromX", "setFromY", "setFromXY", "find", "cancel", "reshape"
+  "findPrevMark", "findNextMark", "setMark", "clearMark", "gotoMark",
+  "gotoMarkY", "getMarkPos", "cursorToggleSelection", "getSelectionText",
+  "markURL", "showLinkHints", "toggleImages", "saveLink", "saveSource",
+  "setCursorX", "setCursorY", "setCursorXY", "setCursorXCenter",
+  "setCursorYCenter", "setCursorXYCenter", "setFromX", "setFromY", "setFromXY",
+  "find", "cancel", "reshape"
 ]
 const LegacyReflectGetList = [
   cstring"url", "hoverTitle", "hoverLink", "hoverImage", "cursorx", "cursory",
