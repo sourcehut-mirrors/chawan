@@ -1,3 +1,15 @@
+siteconf.test = {
+	host = "blah",
+	default-headers = {
+		User-Agent = "test"
+	}
+}
+
+display = {
+	format-mode = ["italic"],
+	color-mode = "auto"
+}
+
 [buffer]
 history = false
 
@@ -12,3 +24,11 @@ default-headers = { # test
 	c = "d", # trailing comma
 } # test
 cookie = true # test
+
+
+[cmd.custom]
+a = '() => console.log("test")'
+b = '() => console.log("Custom command test success")'
+
+[page]
+a = 'custom.b'

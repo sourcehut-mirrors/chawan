@@ -478,6 +478,7 @@ type
     states: seq[TomlState]
     arr: seq[string]
     entries: seq[ConfigEntry]
+    beforeTable: seq[BeforeKey]
     # these sections have user-defined keys, so we prevent dupes like this
     keysSeen: array[csCmd..csOmnirule, HashSet[string]]
     tableArrayCount: array[csSiteconf..csOmnirule, uint32]
@@ -1401,6 +1402,7 @@ proc parseConfigSection(cp: var ConfigParser; line: string; n: int): Opt[void] =
     inc n
   ?cp.checkRuleRegex()
   cp.buf.setLen(0)
+  cp.key.setLen(0)
   cp.ruleOptionsSeen = {}
   cp.section = csNone
   cp.opt = coAddEntry
@@ -1693,6 +1695,15 @@ proc saveKeyState(cp: var ConfigParser) =
     addEntrySeen: coAddEntry in cp.ruleOptionsSeen
   )
 
+proc restoreKeyState(cp: var ConfigParser; beforeKey: BeforeKey): Opt[void] =
+  cp.section = beforeKey.section
+  cp.opt = beforeKey.opt
+  if not beforeKey.addEntrySeen:
+    ?cp.checkRuleRegex()
+    cp.ruleOptionsSeen.excl(coAddEntry)
+  cp.key.setLen(beforeKey.keyLen)
+  ok()
+
 proc parseKVPair(cp: var ConfigParser; single: bool; line: string; n: var int):
     Opt[void] =
   let nstates = cp.states.len
@@ -1737,6 +1748,7 @@ proc consumeArray(cp: var ConfigParser; line: string; n: var int): Opt[void] =
   ok()
 
 proc consumeTable(cp: var ConfigParser; line: string; n: var int): Opt[void] =
+  let nstates = cp.states.len
   while true:
     n = line.skipTomlBlanks(n)
     if n >= line.len:
@@ -1746,16 +1758,9 @@ proc consumeTable(cp: var ConfigParser; line: string; n: var int): Opt[void] =
       inc n
       cp.states.setLen(cp.states.high)
       cp.tt = ttTable
-      if cp.key.len > 0:
-        cp.key.setLen(max(cp.key.rfind('.'), 0))
-      elif cp.opt != coAddEntry:
-        cp.opt = coAddEntry
-      elif coAddEntry in cp.ruleOptionsSeen:
-        ?cp.checkRuleRegex()
-        cp.ruleOptionsSeen.excl(coAddEntry)
-      else:
-        cp.section = csNone
+      ?cp.restoreKeyState(cp.beforeTable.pop())
       cp.saveKeyState()
+      cp.commaSeen = false
       break
     if c == '#':
       break
@@ -1766,7 +1771,8 @@ proc consumeTable(cp: var ConfigParser; line: string; n: var int): Opt[void] =
     if n >= line.len or line[n] == '#':
       break
     ?cp.parseKVPair(single = true, line, n)
-    cp.commaSeen = false
+    if nstates == cp.states.len:
+      cp.commaSeen = false
   ok()
 
 proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void] =
@@ -1784,7 +1790,9 @@ proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void] =
     cp.commaSeen = true
     inc n
     cp.states.add(tsTable)
-    if cp.opt == coAddEntry and cp.section in {csSiteconf, csOmnirule}:
+    cp.beforeTable.add(cp.beforeKey)
+    if cp.opt == coAddEntry and coAddEntry notin cp.ruleOptionsSeen and
+        cp.section in {csSiteconf, csOmnirule}:
       # Note: the old parser could clear all objects, but this seems like
       # a fairly useless feature.
       cp.entries.add(ConfigEntry(section: cp.section, t: cocClear))
@@ -1928,7 +1936,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
       JS_VALUE_GET_PTR(val)
     else:
       nil
-    cp.addCmdInit().add((move(cp.key), fun))
+    cp.addCmdInit().add((cp.key, fun))
   of csPage, csLine:
     ?cp.typeCheck(ttString)
     let ctx = cp.ctx
@@ -1942,13 +1950,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
   elif cp.opt != coAddEntry: # add entry here means "not found"
     ?cp.parseConfigValue1()
   # reset to state before this key
-  cp.section = cp.beforeKey.section
-  cp.opt = cp.beforeKey.opt
-  if not cp.beforeKey.addEntrySeen:
-    ?cp.checkRuleRegex()
-    cp.ruleOptionsSeen.excl(coAddEntry)
-  cp.key.setLen(cp.beforeKey.keyLen)
-  ok()
+  cp.restoreKeyState(cp.beforeKey)
 
 proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
   let section = entry.section

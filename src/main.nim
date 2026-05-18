@@ -255,7 +255,11 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
     return err(jsctx.getExceptionMsg())
   let cwd = myposix.getcwd()
   if file.isOk:
-    ?config.parseConfig(config.dir, file.get, warnings, jsctx, "config.toml")
+    let name = if ctx.configPath.len > 0:
+      ctx.configPath.afterLast('/')
+    else:
+      "config.toml"
+    ?config.parseConfig(config.dir, file.get, warnings, jsctx, name)
     discard file.get.close()
   for opt in ctx.opts:
     ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", laxnames = true)

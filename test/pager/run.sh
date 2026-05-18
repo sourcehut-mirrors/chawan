@@ -12,6 +12,11 @@ rm tmp_config.toml
 
 $CHA -Ctest.toml test.test >/dev/null || exit 1
 
+if ! $CHA -Ctest.toml -r 'cmd.custom.b()' 2>&1|diff test3.expected -
+then	echo "Custom command test failed"
+	exit 1
+fi
+
 if ! $CHA -Ctest.toml test2.test2 | diff test2.expected -
 then	exit 1
 fi
