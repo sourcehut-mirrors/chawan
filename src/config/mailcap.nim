@@ -2,9 +2,9 @@
 
 {.push raises: [].}
 
+import std/hashes
 import std/os
 import std/posix
-import std/tables
 
 import io/chafile
 import io/dynstream
@@ -28,8 +28,10 @@ type
     mfSaveoutput = "x-saveoutput" # Chawan extension
     mfNeedsstyle = "x-needsstyle" # Chawan extension
     mfNeedsimage = "x-needsimage" # Chawan extension
+    mfResource = "x-resource" # Chawan extension
     mfType = "x-type" # w3mmee extension
     mfNetpath = "x-netpath" # w3mmee extension
+    mfCgioutput = "x-cgioutput" # w3mmee extension
 
   NamedFieldType* = enum
     nfTest = "test"
@@ -50,11 +52,14 @@ type
     fieldsHead: NamedField
 
   MailcapList = ref object
-    s*: seq[MailcapEntry]
+    t: string # either "type/subtype" or "type"
+    s*: seq[MailcapEntry] # all entries (inc. for subtypes)
+    resource*: seq[MailcapEntry] # x-resource entries only
     next: MailcapList # used for chaining lists with identical main types
 
   Mailcap* = object
-    tab: Table[string, MailcapList]
+    load: int
+    tab: seq[MailcapList] # multiple of 2
 
 iterator fields(entry: MailcapEntry): NamedField =
   var field = entry.fieldsHead
@@ -62,31 +67,77 @@ iterator fields(entry: MailcapEntry): NamedField =
     yield field
     field = field.next
 
+proc getOrDefault*(mailcap: Mailcap; t: openArray[char]): MailcapList =
+  if mailcap.tab.len <= 0:
+    return nil
+  let H = mailcap.tab.high
+  var h = hash(t) and H
+  while h < mailcap.tab.len:
+    let it = mailcap.tab[h]
+    if it == nil:
+      break
+    if it.t == t:
+      return it
+    h = (h + 1) and H
+  return nil
+
+proc put0(mailcap: var Mailcap; list: MailcapList) =
+  let H = mailcap.tab.high
+  var h = hash(list.t) and H
+  while h < mailcap.tab.len:
+    if mailcap.tab[h] == nil:
+      mailcap.tab[h] = list
+      break
+    h = (h + 1) and H
+
+proc put(mailcap: var Mailcap; list: MailcapList) =
+  if mailcap.load >= mailcap.tab.len div 2:
+    let nlen = if mailcap.tab.len == 0: 16 else: mailcap.tab.len * 2
+    var oldTab = move(mailcap.tab)
+    mailcap.tab = newSeq[MailcapList](nlen)
+    for it in oldTab:
+      if it != nil:
+        mailcap.put0(it)
+  mailcap.put0(list)
+  inc mailcap.load
+
+proc put(mailcap: var Mailcap; t: string): MailcapList =
+  let list = MailcapList(t: t)
+  mailcap.put(list)
+  list
+
 proc getList*(mailcap: Mailcap; t: string): MailcapList =
-  let list = mailcap.tab.getOrDefault(t)
+  let list = mailcap.getOrDefault(t)
   if list != nil:
     return list
-  #TODO it would be nice if this didn't allocate
-  mailcap.tab.getOrDefault(t.until('/'))
+  var i = t.find('/')
+  if i < 0:
+    i = t.len
+  mailcap.getOrDefault(t.toOpenArray(0, i - 1))
 
 proc isHtmlOrText(s: string): bool =
   s == "text/html" or s == "text/plain"
 
+proc add(list: MailcapList; entry: MailcapEntry) =
+  list.s.add(entry)
+  if mfResource in entry.flags:
+    list.resource.add(entry)
+
 proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
-  let list0 = mailcap.tab.getOrDefault(t)
+  let list0 = mailcap.getOrDefault(t)
   if list0 != nil:
     return list0
-  let list = MailcapList()
+  let list = mailcap.put(t)
   let slash = t.find('/')
   if slash != -1:
-    let main = t.substr(0, slash - 1)
+    var main = t.substr(0, slash - 1)
     var mainList = mailcap.getList(main)
     if mainList == nil:
       # ensure a wildcard type exists for all subtypes.  (if we were to add
       # main types after subtypes, then we'd have troubles linking them
       # together)
-      mainList = MailcapList()
-      mailcap.tab[main] = mainList
+      mainList = MailcapList(t: move(main))
+      mailcap.put(mainList)
     else: # add existing wildcard entries
       if t.isHtmlOrText():
         # these types only accept x-type
@@ -99,7 +150,6 @@ proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
     # further wildcard entries
     list.next = mainList.next
     mainList.next = list
-  mailcap.tab[t] = list
   list
 
 proc add(mailcap: var Mailcap; entry: MailcapEntry; t: string) =
@@ -476,8 +526,7 @@ proc findMailcapEntryMut*(mailcap: Mailcap;
     if list == nil:
       break
     done = true
-    for i in 0 ..< list.s.len:
-      let entry = list.s[i]
+    for entry in list.s:
       if entry.id < id:
         continue
       if not checkEntry(entry, contentType, url):
@@ -510,5 +559,34 @@ proc saveEntry*(mailcap: var Mailcap; path, t: string; entry: MailcapEntry):
     mailcap.add(entry, t)
   ps.sclose()
   res
+
+const DefaultURIMethodMap* = staticRead"res/urimethodmap"
+
+proc parseURIMethodMap*(this: var Mailcap; s: string) =
+  for line in s.split('\n'):
+    if line.len == 0 or line[0] == '#':
+      continue # comments
+    var k = line.untilLower(AsciiWhitespace + {':'})
+    var i = k.len
+    if i >= line.len or line[i] != ':':
+      continue # invalid
+    i = line.skipBlanks(i + 1) # skip colon
+    var v = line.until(AsciiWhitespace, i)
+    # Basic w3m compatibility.
+    # If needed, w3m-cgi-compat covers more cases.
+    if v.startsWith("file:/cgi-bin/"):
+      v = "cgi-bin:" & v.substr("file:/cgi-bin/".len)
+    elif v.startsWith("file:///cgi-bin/"):
+      v = "cgi-bin:" & v.substr("file:///cgi-bin/".len)
+    elif v.startsWith("/cgi-bin/"):
+      v = "cgi-bin:" & v.substr("/cgi-bin/".len)
+    if this.getOrDefault(k) == nil:
+      let list = this.put(k)
+      list.add(MailcapEntry(cmd: v, flags: {mfCgioutput, mfResource}))
+
+iterator mainTypes*(mailcap: Mailcap): string =
+  for it in mailcap.tab:
+    if it != nil and it.next == nil: # only the last list in the chain
+      yield it.t.until('/')
 
 {.pop.} # raises: []

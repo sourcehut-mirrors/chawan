@@ -30,7 +30,7 @@ import std/times
 
 import config/conftypes
 import config/cookie
-import config/urimethodmap
+import config/mailcap
 import html/script
 import io/dynstream
 import io/packetreader
@@ -160,7 +160,7 @@ type
     downloadList: seq[DownloadItem]
     cookieStream: InputHandle
     pendingConnections: seq[ClientHandle]
-    urimethodmap: URIMethodMap
+    browsecap: Mailcap
 
   LoaderConfig* = object
     cgiDir*: seq[string]
@@ -396,7 +396,6 @@ proc close(ctx: var LoaderContext; client: ClientHandle) =
 proc isPrivileged(ctx: LoaderContext; client: ClientHandle): bool =
   return ctx.pagerClient == client
 
-#TODO this may be too low if we want to use urimethodmap for everything
 const MaxRewrites = 4
 
 proc canRewriteForCGICompat(ctx: LoaderContext; path: string): bool =
@@ -1441,6 +1440,26 @@ proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
   else:
     ctx.rejectHandle(handle, ceInvalidURL)
 
+proc rewriteURL(pattern: string; url: URL): string =
+  result = ""
+  var wasPerc = false
+  for c in pattern:
+    if wasPerc:
+      if c == '%':
+        result &= '%'
+      elif c == 's':
+        result &= $url
+      else:
+        result &= '%'
+        result &= c
+      wasPerc = false
+    elif c != '%':
+      result &= c
+    else:
+      wasPerc = true
+  if wasPerc:
+    result &= '%'
+
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: var RawRequest; handle: InputHandle) =
   var redo = true
@@ -1479,13 +1498,16 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadXChaCookie(client, handle, request)
     else:
       prevurl = request.url
-      case ctx.urimethodmap.findAndRewrite(request.url)
-      of ummrSuccess:
-        inc tries
-        redo = true
-      of ummrWrongURL:
-        ctx.rejectHandle(handle, ceInvalidURIMethodEntry)
-      of ummrNotFound:
+      let list = ctx.browsecap.getOrDefault(request.url.scheme)
+      if list != nil and list.s.len > 0:
+        let surl = list.s[0].cmd.rewriteURL(request.url)
+        if x := parseURL(surl):
+          request.url = x
+          inc tries
+          redo = true
+        else:
+          ctx.rejectHandle(handle, ceInvalidURIMethodEntry)
+      else:
         ctx.rejectHandle(handle, ceUnknownScheme)
   if tries >= MaxRewrites:
     ctx.rejectHandle(handle, ceTooManyRewrites)
@@ -1519,7 +1541,7 @@ proc load(ctx: var LoaderContext; request: var RawRequest;
     if not config.allowAllSchemes and
         request.url.scheme != config.originURL.scheme and
         request.url.scheme notin config.allowSchemes and
-        request.url.scheme notin ctx.urimethodmap.imageProtos:
+        not request.url.scheme.startsWith("img-codec+"):
       ctx.rejectHandle(handle, ceDisallowedURL)
     else:
       request.setupRequestDefaults(config, credentials)
@@ -1975,14 +1997,13 @@ proc loaderLoop(ctx: var LoaderContext) =
   ctx.exitLoader()
 
 proc runFileLoader*(config: LoaderConfig; stream, forkStream: PosixStream;
-    pagerPid: int; pagerConfig: LoaderClientConfig;
-    urimethodmap: URIMethodMap) =
+    pagerPid: int; pagerConfig: LoaderClientConfig; browsecap: Mailcap) =
   var ctx {.global.}: LoaderContext
   ctx = LoaderContext(
     config: config,
     pid: getCurrentProcessId(),
     forkStream: forkStream,
-    urimethodmap: urimethodmap
+    browsecap: browsecap
   )
   onSignal SIGTERM:
     discard sig

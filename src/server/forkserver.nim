@@ -4,9 +4,9 @@ import std/os
 import std/posix
 import std/tables
 
-import encoding/charset
 import config/config
-import config/urimethodmap
+import config/mailcap
+import encoding/charset
 import io/chafile
 import io/dynstream
 import io/packetreader
@@ -95,7 +95,7 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
 
 proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     loaderStream: PosixStream; pagerPid: int; pagerConfig: LoaderClientConfig;
-    urimethodmap: URIMethodMap): (int, PosixStream) =
+    browsecap: Mailcap): (int, PosixStream) =
   # loaderStream is a connection between main process <-> loader, but we
   # also need a connection between fork server <-> loader.
   # The naming here is very confusing, sorry about that.
@@ -112,7 +112,7 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     let forkStream = newPosixStream(sv[1])
     setProcessTitle("cha loader")
     runFileLoader(config, loaderStream, forkStream, pagerPid, pagerConfig,
-      urimethodmap)
+      browsecap)
     exitnow(1)
   else:
     discard close(sv[1])
@@ -254,19 +254,19 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
     # for CGI
     if setupForkServerEnv(config).isErr:
       quit(1)
-    var urimethodmap: URIMethodMap
+    var browsecap: Mailcap
     for path in urimethodmapPaths:
       let ps = newPosixStream(path)
       if ps != nil:
-        urimethodmap.parseURIMethodMap(ps.readAll())
+        browsecap.parseURIMethodMap(ps.readAll())
         ps.sclose()
-    urimethodmap.parseURIMethodMap(DefaultURIMethodMap)
-    for key in urimethodmap.map.keys:
-      ctx.schemes.add(key.until(':'))
+    browsecap.parseURIMethodMap(DefaultURIMethodMap)
+    for t in browsecap.mainTypes:
+      ctx.schemes.add(t)
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader
     var (pid, loaderStream) = ctx.forkLoader(config, loaderStream, pagerPid,
-      clientConfig, urimethodmap)
+      clientConfig, browsecap)
     ctx.stream.withPacketWriter w:
       w.swrite(pid)
     do:
