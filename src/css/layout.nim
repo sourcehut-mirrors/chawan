@@ -19,6 +19,7 @@ import utils/widthconv
 type
   LayoutContext = ref object
     cellSize: Size # size(w = attrs.ppc, h = attrs.ppl)
+    canvasSize: Size # size of canvas
     luctx: LUContext
 
 const DefaultSpan = Span(start: 0'lu, send: LUnit.high)
@@ -844,9 +845,12 @@ type
     lbstate: LineBoxState
     iboxStack: seq[InlineBox]
 
+  IsRootFlag = enum
+    irfNone, irfRoot, irfForce
+
 # Forward declarations
 proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
-  input: LayoutInput; forceRoot = false)
+  input: LayoutInput; root = irfNone)
 
 iterator exclusions(fstate: FlowState): Exclusion {.inline.} =
   var ex = fstate.exclusionsHead
@@ -2913,7 +2917,7 @@ type
     pending: seq[FlexPendingItem]
 
 proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; input: LayoutInput) =
-  lctx.layout(box, Offset0, input, forceRoot = true)
+  lctx.layout(box, Offset0, input, irfForce)
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
@@ -3148,13 +3152,13 @@ proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
     lctx.positionRelative(input.space, child)
 
 proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
-    input: LayoutInput; forceRoot = false) =
+    input: LayoutInput; root = irfNone) =
   case box.computed{"display"}
   of DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock, DisplayInnerGrid,
       DisplayMarker:
     lctx.layoutFlowRoot(box, offset, input)
   of DisplayBlock, DisplayListItem:
-    if forceRoot or box.computed{"position"} in PositionAbsoluteFixed or
+    if root != irfNone or box.computed{"position"} in PositionAbsoluteFixed or
         box.computed{"float"} != FloatNone or
         box.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
       lctx.layoutFlowRoot(box, offset, input)
@@ -3166,17 +3170,18 @@ proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
   of DisplayImageBlock, DisplayImageInline: lctx.layoutImage(box, offset, input)
   else: assert false
   if input.space.w.t != scMeasure:
-    lctx.popPositioned(box.absolute, box.state.size)
+    let size = if root == irfRoot: lctx.canvasSize else: box.state.size
+    lctx.popPositioned(box.absolute, size)
 
 proc layout*(box: BlockBox; attrs: WindowAttributes; fixedHead: CSSAbsolute;
     luctx: LUContext) =
   var size = size(w = attrs.widthPx.toLUnit(), h = attrs.heightPx.toLUnit())
   let space = initSpace(w = stretch(size.w), h = stretch(size.h))
   let cellSize = size(w = attrs.ppc.toLUnit(), h = attrs.ppl.toLUnit())
-  let lctx = LayoutContext(cellSize: cellSize, luctx: luctx)
+  let lctx = LayoutContext(cellSize: cellSize, luctx: luctx, canvasSize: size)
   let input = lctx.resolveBlockSizes(space, box)
   # the bottom margin is unused.
-  lctx.layout(box, input.margin.topLeft, input, forceRoot = true)
+  lctx.layout(box, input.margin.topLeft, input, irfRoot)
   # Fixed containing block.
   # The idea is to move fixed boxes to the real edges of the page,
   # so that they do not overlap with other boxes *and* we don't have
