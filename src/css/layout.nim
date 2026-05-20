@@ -2896,7 +2896,7 @@ type
     totalMaxSize: Size
     intr: Size # intrinsic minimum size
     relativeChildren: seq[BlockBox]
-    redistSpace: SizeConstraint
+    space: Space
     firstBaseline: LUnit
     baseline: LUnit
     canWrap: bool
@@ -2994,11 +2994,11 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   let dim = fctx.dim
   let odim = dim.opposite
   let lctx = fctx.lctx
-  if fctx.redistSpace.isDefinite:
-    let diff = fctx.redistSpace.u - mctx.totalSize[dim]
+  if fctx.space[dim].isDefinite:
+    let diff = fctx.space[dim].u - mctx.totalSize[dim]
     let wt = if diff > 0'lu: fwtGrow else: fwtShrink
     # Do not grow shrink-to-fit input.
-    if wt == fwtShrink or fctx.redistSpace.t == scStretch:
+    if wt == fwtShrink or fctx.space[dim].t == scStretch:
       mctx.redistributeMainSize(diff, wt, dim, lctx)
   elif input.bounds.a[dim].start > 0'lu:
     # Override with min-width/min-height, but *only* if we are smaller
@@ -3064,18 +3064,18 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     child: BlockBox; input: LayoutInput) =
   let lctx = fctx.lctx
   let dim = fctx.dim
-  var childSizes = lctx.resolveFlexItemSizes(input.space, dim, child)
+  var childSizes = lctx.resolveFlexItemSizes(fctx.space, dim, child)
   let flexBasis = child.computed{"flex-basis"}
   let childMinBounds = childSizes.bounds.a[dim]
   let skipBounds = childSizes.space[dim].t == scMaxContent
   if skipBounds:
     childSizes.bounds.a[dim] = DefaultSpan
   lctx.layoutFlexItem(child, childSizes)
-  if not flexBasis.auto and input.space[dim].isDefinite:
+  if not flexBasis.auto and fctx.space[dim].isDefinite:
     # we can't skip this pass; it is needed to calculate the minimum
     # height.
     let minu = child.state.intr[dim]
-    childSizes.space[dim] = stretch(flexBasis.spx(input.space[dim],
+    childSizes.space[dim] = stretch(flexBasis.spx(fctx.space[dim],
       child.computed, childSizes.padding[dim].sum()))
     if minu > childSizes.space[dim].u:
       # First pass gave us a box that is thinner than the minimum
@@ -3090,9 +3090,9 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     # Absolutely positioned flex children do not participate in flex layout.
     child.input.bfcOffset = Offset0
   else:
-    if fctx.canWrap and (input.space[dim].t == scMinContent or
-        input.space[dim].isDefinite and
-        mctx.totalSize[dim] + child.state.size[dim] > input.space[dim].u):
+    if fctx.canWrap and (fctx.space[dim].t == scMinContent or
+        fctx.space[dim].isDefinite and
+        mctx.totalSize[dim] + child.state.size[dim] > fctx.space[dim].u):
       fctx.flushMain(mctx, input)
     let outerSize = child.outerSize(dim, childSizes, lctx)
     mctx.updateMaxSizes(child, childSizes, lctx)
@@ -3119,15 +3119,24 @@ proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
   var fctx = FlexContext(
     lctx: lctx,
     offset: input.padding.topLeft,
-    redistSpace: input.space[dim],
+    space: input.space,
     canWrap: box.computed{"flex-wrap"} != FlexWrapNowrap,
     reverse: box.computed{"flex-direction"} in FlexReverse,
     dim: dim
   )
-  if fctx.redistSpace.t == scFitContent and input.bounds.a[dim].start > 0'lu:
-    fctx.redistSpace = stretch(input.bounds.a[dim].start)
-  if fctx.redistSpace.isDefinite:
-    fctx.redistSpace.u = fctx.redistSpace.u.minClamp(input.bounds.a[dim])
+  if fctx.space[odim].t == scFitContent:
+    var u = 0'lu
+    for child in box.children:
+      let child = BlockBox(child)
+      var childSizes = lctx.resolveFlexItemSizes(fctx.space, dim, child)
+      lctx.layoutFlexItem(child, childSizes)
+      u = max(u, child.outerSize(odim, childSizes, lctx))
+    u = min(fctx.space[odim].u, u)
+    fctx.space[odim] = stretch(u)
+  if fctx.space[dim].t == scFitContent and input.bounds.a[dim].start > 0'lu:
+    fctx.space[dim] = stretch(input.bounds.a[dim].start)
+  if fctx.space[dim].isDefinite:
+    fctx.space[dim].u = fctx.space[dim].u.minClamp(input.bounds.a[dim])
   var mctx = FlexMainContext()
   for child in box.children:
     let child = BlockBox(child)
