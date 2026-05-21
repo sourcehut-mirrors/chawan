@@ -5110,6 +5110,8 @@ proc getBlockRect(element: Element): DOMRect =
       return res[0]
   return DOMRect()
 
+#TODO clientLeft, clientTop, offsetLeft, offsetTop
+
 proc clientWidth(element: Element): int32 {.jsfget.} =
   let rect = element.getBlockRect()
   if rect != nil and rect.width <= float64(int32.high):
@@ -5117,6 +5119,19 @@ proc clientWidth(element: Element): int32 {.jsfget.} =
   0
 
 proc clientHeight(element: Element): int32 {.jsfget.} =
+  let rect = element.getBlockRect()
+  if rect != nil and rect.height <= float64(int32.high):
+    return int32(rect.height)
+  0
+
+#TODO these should add the border too
+proc offsetWidth(element: Element): int32 {.jsfget.} =
+  let rect = element.getBlockRect()
+  if rect != nil and rect.width <= float64(int32.high):
+    return int32(rect.width)
+  0
+
+proc offsetHeight(element: Element): int32 {.jsfget.} =
   let rect = element.getBlockRect()
   if rect != nil and rect.height <= float64(int32.high):
     return int32(rect.height)
