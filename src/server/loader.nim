@@ -1440,26 +1440,6 @@ proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
   else:
     ctx.rejectHandle(handle, ceInvalidURL)
 
-proc rewriteURL(pattern: string; url: URL): string =
-  result = ""
-  var wasPerc = false
-  for c in pattern:
-    if wasPerc:
-      if c == '%':
-        result &= '%'
-      elif c == 's':
-        result &= $url
-      else:
-        result &= '%'
-        result &= c
-      wasPerc = false
-    elif c != '%':
-      result &= c
-    else:
-      wasPerc = true
-  if wasPerc:
-    result &= '%'
-
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: var RawRequest; handle: InputHandle) =
   var redo = true
@@ -1498,15 +1478,17 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadXChaCookie(client, handle, request)
     else:
       prevurl = request.url
-      let list = ctx.browsecap.getOrDefault(request.url.scheme)
-      if list != nil and list.s.len > 0:
-        let surl = list.s[0].cmd.rewriteURL(request.url)
-        if x := parseURL(surl):
-          request.url = x
+      let entry = ctx.browsecap.findResourceMut(request.url)
+      if entry != nil and mfCgioutput in entry.flags:
+        let cmd = "cgi-bin:" & unquoteCommand(entry.cmd, request.url.scheme,
+          "", request.url)
+        let url = parseURL0(cmd)
+        if url != nil:
+          request.url = url
           inc tries
           redo = true
         else:
-          ctx.rejectHandle(handle, ceInvalidURIMethodEntry)
+          ctx.rejectHandle(handle, ceInvalidBrowsecapEntry)
       else:
         ctx.rejectHandle(handle, ceUnknownScheme)
   if tries >= MaxRewrites:

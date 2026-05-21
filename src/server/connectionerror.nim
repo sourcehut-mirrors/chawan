@@ -12,7 +12,7 @@ type ConnectionError* = enum
   ceCGIMalformedHeader = -9
   ceCGIInvalidChaControl = -8
   ceTooManyRewrites = -7
-  ceInvalidURIMethodEntry = -6
+  ceInvalidBrowsecapEntry = -6
   ceCGIFileNotFound = -5
   ceInvalidCGIPath = -4
   ceFailedToSetUpCGI = -3
@@ -45,7 +45,7 @@ const ErrorMessages* = [
   ceCGIMalformedHeader: "CGI script returned a malformed header",
   ceCGIInvalidChaControl: "CGI got invalid Cha-Control header",
   ceTooManyRewrites: "too many URI method map rewrites",
-  ceInvalidURIMethodEntry: "invalid URI method entry",
+  ceInvalidBrowsecapEntry: "invalid browsecap entry",
   ceCGIFileNotFound: "CGI file not found",
   ceInvalidCGIPath: "invalid CGI path",
   ceFailedToSetUpCGI: "failed to set up CGI script",

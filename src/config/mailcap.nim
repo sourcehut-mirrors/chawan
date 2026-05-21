@@ -32,6 +32,7 @@ type
     mfType = "x-type" # w3mmee extension
     mfNetpath = "x-netpath" # w3mmee extension
     mfCgioutput = "x-cgioutput" # w3mmee extension
+    mfUri = "x-uri" # w3mmee extension
 
   NamedFieldType* = enum
     nfTest = "test"
@@ -500,6 +501,33 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
         return i
   return -1
 
+proc findResourceMut*(mailcap: Mailcap; outUrl: var URL): MailcapEntry =
+  var url = outUrl
+  var id = 0'u32
+  var done = false
+  while not done:
+    #TODO method too
+    let list = mailcap.getList(url.scheme)
+    if list == nil:
+      break
+    done = true
+    for entry in list.resource:
+      if entry.id < id:
+        continue
+      if not checkEntry(entry, url.scheme, url):
+        continue
+      if mfUri in entry.flags:
+        #TODO method
+        let cmd = unquoteCommand(entry.cmd, url.scheme, "", url)
+        url = parseURL0(cmd)
+        if url == nil:
+          return nil
+        id = entry.id
+        done = false
+        break
+      return entry
+  nil
+
 proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
     url: URL; outIdx: var int): MailcapEntry =
   let list = mailcap.getList(shortContentType)
@@ -532,8 +560,7 @@ proc findMailcapEntryMut*(mailcap: Mailcap;
       if not checkEntry(entry, contentType, url):
         continue
       if mfType in entry.flags:
-        var canpipe: bool
-        contentType = unquoteCommand(entry.cmd, contentType, "", url, canpipe)
+        contentType = unquoteCommand(entry.cmd, contentType, "", url)
         shortContentType = contentType.untilLower(';')
         id = entry.id
         done = false
@@ -574,15 +601,36 @@ proc parseURIMethodMap*(this: var Mailcap; s: string) =
     var v = line.until(AsciiWhitespace, i)
     # Basic w3m compatibility.
     # If needed, w3m-cgi-compat covers more cases.
+    var cgi = false
+    if v.startsWith("cgi-bin:"):
+      v.delete(0..<"cgi-bin:".len)
+      cgi = true
     if v.startsWith("file:/cgi-bin/"):
-      v = "cgi-bin:" & v.substr("file:/cgi-bin/".len)
+      v.delete(0..<"file:/cgi-bin/".len)
+      cgi = true
     elif v.startsWith("file:///cgi-bin/"):
-      v = "cgi-bin:" & v.substr("file:///cgi-bin/".len)
+      v.delete(0..<"file:///cgi-bin/".len)
+      cgi = true
     elif v.startsWith("/cgi-bin/"):
-      v = "cgi-bin:" & v.substr("/cgi-bin/".len)
+      v.delete(0..<"/cgi-bin/".len)
+      cgi = true
+    # %s -> %u
+    var perc = false
+    for c in v.mitems:
+      if c == '%':
+        perc = true
+      elif perc:
+        if c == 's':
+          c = 'u'
+        perc = false
     if this.getOrDefault(k) == nil:
+      let entry = MailcapEntry(cmd: move(v), flags: {mfResource})
+      if cgi:
+        entry.flags.incl(mfCgioutput)
+      else:
+        entry.flags.incl(mfUri)
       let list = this.put(k)
-      list.add(MailcapEntry(cmd: v, flags: {mfCgioutput, mfResource}))
+      list.add(entry)
 
 iterator mainTypes*(mailcap: Mailcap): string =
   for it in mailcap.tab:
