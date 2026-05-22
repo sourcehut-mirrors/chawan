@@ -1156,6 +1156,25 @@ proc serializeFormURLEncoded*(kvs: seq[(string, string)]; spaceAsPlus = true):
     result &= '='
     result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
 
+proc findSearchParam(url: URL; name: string): int =
+  var i = 1
+  while i + name.len <= url.search.len:
+    if url.search.startsWith(name, i) and
+        (i + name.len >= url.search.len or url.search[i + name.len] == '&'):
+      return i
+    i = url.search.find('&', i)
+    if i == -1:
+      break
+  return -1
+
+proc getSearchParam*(url: URL; name: string): string =
+  let i = url.findSearchParam(name)
+  if i < 0:
+    return "" # not found
+  if i + name.len >= url.search.len or url.search[i + name.len] != '=':
+    return "" # empty
+  return url.search.until('&', i + name.len + 1)
+
 proc newURLSearchParams(ctx: JSContext; init: JSValueConst = JS_UNDEFINED):
     Opt[URLSearchParams] {.jsctor.} =
   let params = URLSearchParams()

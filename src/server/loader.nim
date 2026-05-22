@@ -1478,10 +1478,13 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadXChaCookie(client, handle, request)
     else:
       prevurl = request.url
-      let entry = ctx.browsecap.findResourceMut(request.url)
+      var typeBuf = request.url.scheme & '/' &
+        ($request.httpMethod).toLowerAscii()
+      let entry = ctx.browsecap.findResourceMut(typeBuf, request.url)
       if entry != nil and mfCgioutput in entry.flags:
-        let cmd = "cgi-bin:" & unquoteCommand(entry.cmd, request.url.scheme,
-          "", request.url)
+        var canpipe: bool
+        let cmd = "cgi-bin:" & unquoteCommand(entry.cmd, typeBuf,
+          request.url.pathname, request.url, canpipe, uriparams = true)
         let url = parseURL0(cmd)
         if url != nil:
           request.url = url

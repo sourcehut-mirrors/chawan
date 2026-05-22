@@ -371,7 +371,7 @@ proc quoteFile*(file: string; qs: QuoteState): string =
   move(s)
 
 proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
-    canpipe: var bool; line = -1): string =
+    canpipe: var bool; line = -1; uriparams = false): string =
   var cmd = ""
   var attrname = ""
   var state = usNormal
@@ -457,7 +457,10 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
       state = usNormal
     of usAttr:
       if c == '}':
-        let s = contentType.getContentTypeAttr(attrname)
+        let s = if uriparams:
+          url.getSearchParam(attrname)
+        else:
+          contentType.getContentTypeAttr(attrname)
         cmd &= quoteFile(s, qs)
         attrname = ""
         state = usNormal
@@ -501,13 +504,13 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
         return i
   return -1
 
-proc findResourceMut*(mailcap: Mailcap; outUrl: var URL): MailcapEntry =
+proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL):
+    MailcapEntry =
   var url = outUrl
   var id = 0'u32
   var done = false
   while not done:
-    #TODO method too
-    let list = mailcap.getList(url.scheme)
+    let list = mailcap.getList(typeBuf)
     if list == nil:
       break
     done = true
@@ -517,11 +520,13 @@ proc findResourceMut*(mailcap: Mailcap; outUrl: var URL): MailcapEntry =
       if not checkEntry(entry, url.scheme, url):
         continue
       if mfUri in entry.flags:
-        #TODO method
-        let cmd = unquoteCommand(entry.cmd, url.scheme, "", url)
+        var canpipe: bool
+        let cmd = unquoteCommand(entry.cmd, typeBuf, url.pathname, url,
+          canpipe, uriparams = true)
         url = parseURL0(cmd)
         if url == nil:
           return nil
+        typeBuf = url.scheme & '/' & typeBuf.after('/')
         id = entry.id
         done = false
         break
