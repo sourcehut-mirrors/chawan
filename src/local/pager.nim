@@ -6,8 +6,6 @@ import std/posix
 import std/tables
 import std/times
 
-import encoding/charset
-import encoding/decoder
 import config/chapath
 import config/config
 import config/conftypes
@@ -16,6 +14,8 @@ import config/history
 import config/mailcap
 import config/mimetypes
 import css/render
+import encoding/charset
+import encoding/decoder
 import html/script
 import io/chafile
 import io/console
@@ -47,6 +47,7 @@ import types/cell
 import types/color
 import types/jsopt
 import types/opt
+import types/referrer
 import types/url
 import types/winattrs
 import utils/lrewrap
@@ -1657,9 +1658,10 @@ proc initGotoURL(pager: Pager; request: Request; charset: Charset;
       break
     request.url = ourl
   if referrer != nil and referrer.config.refererFrom:
-    let referer = $referrer.url
-    request.headers["Referer"] = referer
-    bufferConfig.referrer = referer
+    var referrerHeader = referrer.url.getReferrer(request.url,
+      referrer.loaderConfig.referrerPolicy)
+    request.headers["Referer"] = referrerHeader
+    bufferConfig.referrer = move(referrerHeader)
   loaderConfig.cookieMode = cookie.get(loaderConfig.cookieMode)
   pager.applyCookieJar(loaderConfig, cookieJarId)
   if request.url.username != "":

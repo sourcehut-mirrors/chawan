@@ -524,7 +524,7 @@ proc applyResponse*(init: BufferInit; response: Response;
     let referrerPolicy = response.getReferrerPolicy()
     init.loaderConfig.referrerPolicy = referrerPolicy.get(DefaultPolicy)
   else:
-    init.loaderConfig.referrerPolicy = rpNoReferrer
+    init.loaderConfig.referrerPolicy = rpSameOrigin
   # setup content type; note that isSome means an override so we skip it
   if init.contentType == "":
     var contentType = response.getLongContentType("application/octet-stream")
