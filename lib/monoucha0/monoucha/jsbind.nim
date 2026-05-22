@@ -241,7 +241,6 @@ proc free*(rt: JSRuntime) =
         GC_unref(cast[RootRef](opaque))
     else: # Nim held a ref to the JS object.
       JS_FreeValueRT(rt, val)
-      assert cast[ptr cint](it.jsp)[] >= 0
   # Opaques are unset, and finalizers have run.  Now we can actually
   # release the JS objects.
   for it in rtOpaque.tmplist.toOpenArray(0, np - 1):

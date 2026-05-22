@@ -227,7 +227,7 @@ $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 
 # Do not add FLAGS here, because that breaks cross-compilation.
 $(OBJDIR)/chac: src/chac.nim lib/monoucha0/monoucha/* lib/monoucha0/monoucha/qjs/*
-	$(NIMC) -o:$@ $<
+	$(NIMC) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
 
 $(OUTDIR_LIBEXEC)/%.jsb: src/%.js $(OBJDIR)/chac
 	$(OBJDIR)/chac $(chac_flags) $< $@
@@ -247,6 +247,7 @@ doc/cha-%.7: doc/%.md md2man
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
+	rm -f "$(OBJDIR)/chac"
 	(cd lib/chaseccomp && $(MAKE) clean)
 
 .PHONY: distclean

@@ -12,6 +12,10 @@ export libregexp.JS_BOOL
 
 {.passc: "-DNOT_LRE_ONLY".}
 
+# for some reason, the new js_malloc doesn't recompile some things that
+# should be recompiled, so I'll just add this hack for now
+{.passc: "-DCHA_DUMMY1".}
+
 {.passl: "-lm".}
 
 const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"Monoucha 0.11.0\"' -DCHA_BUILD"

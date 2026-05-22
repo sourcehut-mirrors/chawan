@@ -16,14 +16,6 @@ else:
 
 {.compile("qjs/libregexp.c", CFLAGS).}
 
-# this is hardcoded into quickjs, so we must override it here.
-proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
-  if size == 0:
-    if p != nil:
-      dealloc(p)
-    return nil
-  return realloc(p, size)
-
 # Hack: quickjs provides a lre_check_stack_overflow, but that basically
 # depends on the entire QuickJS runtime. So to avoid pulling that in as
 # a necessary dependency, we must provide one ourselves, but *only* if
@@ -31,6 +23,9 @@ proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
 # So we define NOT_LRE_ONLY in quickjs.nim, and check it in the "second
 # compilation pass" (i.e. in C).
 {.emit: """
+typedef struct JSRuntime JSRuntime;
+typedef struct JSContext JSContext;
+
 #ifndef NOT_LRE_ONLY
 int lre_check_timeout(void *opaque)
 {
@@ -41,8 +36,38 @@ int lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
   return 0;
 }
+
+/* there is no JS runtime */
+JSRuntime *JS_GetRuntime(JSContext *ctx)
+{
+  return NULL;
+}
+
+void *js_realloc_rt(JSRuntime *rt, void *ptr, size_t size)
+{
+  return NULL;
+}
 #endif
 """.}
+
+type
+  JSRuntime {.importc, incompleteStruct.} = object
+  JSContext {.importc, incompleteStruct.} = object
+
+proc JS_GetRuntime(ctx: ptr JSContext): ptr JSRuntime {.importc.}
+proc js_realloc_rt(rt: ptr JSRuntime; p: pointer; size: csize_t): pointer {.
+  importc.}
+
+# this is hardcoded into quickjs, so we must override it here.
+proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
+  if opaque == nil:
+    if size == 0:
+      if p != nil:
+        dealloc(p)
+      return nil
+    return realloc(p, size)
+  let rt = JS_GetRuntime(cast[ptr JSContext](opaque))
+  return js_realloc_rt(rt, p, size)
 
 type
   LREFlag* {.size: sizeof(cint).} = enum
