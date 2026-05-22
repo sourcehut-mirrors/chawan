@@ -1653,6 +1653,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
     return
   let contentType = response.getContentType("image/x-unknown")
   if not contentType.startsWith("image/"):
+    window.loader.close(response)
     window.imageLoaded()
     return
   var t = contentType.after('/')
@@ -1671,6 +1672,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
   cachedURL.cacheId = window.loader.addCacheFile(response.outputId)
   let url = parseURL0("img-codec+" & t & ":decode")
   if url == nil:
+    window.loader.close(response)
     window.imageLoaded()
     return
   let request = newRequest(
