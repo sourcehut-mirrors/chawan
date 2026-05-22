@@ -1318,7 +1318,7 @@ Pager.prototype.handleMouseInput = async function(input) {
             select.y + 1 <= input.y && input.y < select.y + select.height - 1 &&
             select.x + 1 <= input.x && input.x < select.x + select.width - 1;
         let outside =
-            select.y > input.y || input.y >= select.y + select.height &&
+            select.y > input.y || input.y >= select.y + select.height ||
             select.x > input.x || input.x >= select.x + select.width;
         if (button == "right") {
             if (!inside)
