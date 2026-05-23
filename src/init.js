@@ -1441,6 +1441,7 @@ Pager.prototype.handleMouseInput = async function(input) {
                 break;
             case "thumbTip":
                 this.nextBuffer();
+                break;
             case "wheelUp":
                 this.scrollUp(config.input.wheelScroll);
                 break;
