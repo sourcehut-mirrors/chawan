@@ -1,3 +1,15 @@
+unreleased
+
+* rework handling of Referer header
+* fix some bugs in the config parser
+* fix seccomp on LoongArch64
+* fix missing pager.findPrevMark function
+* fix incorrect positioning of `position: absolute' in some cases
+* don't try to render canvas elements without a rendering context
+* fix menu not being dismissed on mouse click in some cases
+* fix some fd leaks in buffers
+* fix unintended scroll on thumb tip mouse button
+
 0.4.0 (2026.05.17)
 
 * dupeBuffer/anchor navigation no longer forks buffer process
