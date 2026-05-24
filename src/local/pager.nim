@@ -1662,6 +1662,9 @@ proc initGotoURL(pager: Pager; request: Request; charset: Charset;
       referrer.loaderConfig.referrerPolicy)
     request.headers["Referer"] = referrerHeader
     bufferConfig.referrer = move(referrerHeader)
+  else:
+    request.flags.excl(rqfReferrer)
+    request.headers.removeAll("Referer")
   loaderConfig.cookieMode = cookie.get(loaderConfig.cookieMode)
   pager.applyCookieJar(loaderConfig, cookieJarId)
   if request.url.username != "":

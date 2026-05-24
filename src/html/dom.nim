@@ -1557,11 +1557,7 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
     i: i,
     finish: finish
   )
-  let request = newRequest(
-    url,
-    referrer = window.document.url
-  )
-  window.corsFetch(request, loadSheet0, env)
+  window.corsFetch(newRequest(url), loadSheet0, env)
 
 proc loadSheet(window: Window; this: SheetElement; url: URL;
     finish: LoadSheetFinish) =
@@ -1746,11 +1742,7 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
   window.imageURLCache[surl] = cachedURL
   let headers = newHeaders(hgRequest, {"Accept": "*/*"})
   inc window.remoteImageNum
-  let request = newRequest(
-    url,
-    headers = headers,
-    referrer = window.document.url
-  )
+  let request = newRequest(url, headers = headers)
   window.corsFetch(request, loadImage0, cachedURL)
 
 type LoadSVGEnv = ref object of RootObj
@@ -1824,8 +1816,7 @@ proc loadSVG*(window: Window; svg: SVGSVGElement) =
     "img-codec+svg+xml:decode",
     httpMethod = hmPost,
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
-    body = RequestBody(t: rbtOutput, outputId: svgres.outputId),
-    referrer = window.document.url
+    body = RequestBody(t: rbtOutput, outputId: svgres.outputId)
   )
   let env = LoadSVGEnv(
     window: window,
@@ -7832,6 +7823,9 @@ getAPIBaseURLImpl = proc(ctx: JSContext): URL =
   if window == nil or window.document == nil:
     return nil
   return window.document.baseURL
+
+getOriginImpl = proc(ctx: JSContext): Origin =
+  ctx.getGlobal().settings.origin
 
 isWindowImpl = proc(target: EventTarget): bool =
   return target of Window

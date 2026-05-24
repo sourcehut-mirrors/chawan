@@ -11,6 +11,8 @@ let n = 0;
 assertThrows(() => new Request({toString: () => {n = 1; return "!!!:/";}},
 	{mode: {toString: () => {n = 2; return null;}}}), TypeError);
 assertEquals(n, 2);
+assertEquals(new Request(url).mode, "cors");
 new Request(url, {body: null}); /* this is OK, body init is null */
+assertThrows(() => new Request(url, {mode: "navigate"}), TypeError);
 document.getElementById("x").textContent = "Success";
 </script>

@@ -357,13 +357,13 @@ proc getFirst*(list: HeaderListConst; name: string): lent string =
 proc getFirst*(headers: Headers; name: string): lent string =
   headers.list.getFirst(name)
 
-proc setupReferrer*(list: var HeaderList; target: URL;
-    referrerPolicy: ReferrerPolicy) =
-  # set referrer based on origin URL and referrer policy
+proc setupReferrer*(list: var HeaderList; originURL, target: URL;
+    hasReferrer: bool; referrerPolicy: ReferrerPolicy) =
   let n = list.lowerBound("Referer")
-  if list.contains("Referer", n):
-    let url = parseURL0(move(list[n].value))
-    list.removeAll("Referer", n)
+  let url = parseURL0(list.getFirst("Referer", n))
+  list.removeAll("Referer", n)
+  if hasReferrer:
+    let url = if url != nil: url else: originURL
     if url != nil:
       let referrer = url.getReferrer(target, referrerPolicy)
       if referrer != "":

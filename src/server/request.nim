@@ -77,13 +77,17 @@ type
     of rbtBlob:
       blob*: Blob
 
+  RequestFlag* = enum
+    rqfToCache # save the result to the cache
+    rqfUrlCredentials # whether to use user/pass in URL
+    rqfReferrer # use Referer header (if not set, use client base URL)
+
   RawRequest* = object
     url*: URL
     headers*: seq[HTTPHeader]
     body*: RequestBody
     httpMethod* {.jsget: "method".}: HttpMethod
-    tocache*: bool
-    urlCredentials*: bool
+    flags*: set[RequestFlag]
     credentials* {.jsget: "credentials".}: CredentialsMode
 
   Request* = ref object
@@ -92,8 +96,7 @@ type
     headers* {.jsget.}: Headers
     body*: RequestBody
     httpMethod* {.jsget: "method".}: HttpMethod
-    tocache*: bool
-    urlCredentials*: bool # whether to use user/pass in URL
+    flags*: set[RequestFlag]
     credentials* {.jsget: "credentials".}: CredentialsMode
     # client-specific
     mode* {.jsget.}: RequestMode
@@ -106,6 +109,7 @@ jsDestructor(Request)
 
 # Forward declaration hack
 var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall, raises: [].}
+var getOriginImpl*: proc(ctx: JSContext): Origin {.nimcall, raises: [].}
 
 proc swrite*(w: var PacketWriter; o: RequestBody) =
   w.swrite(o.t)
@@ -134,8 +138,7 @@ proc swrite*(w: var PacketWriter; o: Request) =
   w.swriteList(o.headers)
   w.swrite(o.body)
   w.swrite(o.httpMethod)
-  w.swrite(o.tocache)
-  w.swrite(o.urlCredentials)
+  w.swrite(o.flags)
   w.swrite(o.credentials)
 
 proc sread*(w: var PacketReader; o: var Request) {.
@@ -147,8 +150,7 @@ proc sread*(r: var PacketReader; o: var RawRequest) =
   r.sread(o.headers)
   r.sread(o.body)
   r.sread(o.httpMethod)
-  r.sread(o.tocache)
-  r.sread(o.urlCredentials)
+  r.sread(o.flags)
   r.sread(o.credentials)
 
 proc contentLength*(body: RequestBody): int =
@@ -158,31 +160,47 @@ proc contentLength*(body: RequestBody): int =
   of rbtMultipart: return body.multipart.calcLength()
   of rbtNone, rbtOutput, rbtCache: return 0
 
+proc tocache*(this: RawRequest): bool =
+  rqfToCache in this.flags
+
+proc urlCredentials*(this: RawRequest): bool =
+  rqfUrlCredentials in this.flags
+
 proc jsUrl(this: Request): string {.jsfget: "url".} =
   return $this.url
 
-#TODO pretty sure this is incorrect
-proc referrer(this: Request): string {.jsfget.} =
-  return this.headers.getFirst("Referer")
+proc referrer(ctx: JSContext; this: Request): JSValue {.jsfget.} =
+  if rqfReferrer notin this.flags:
+    return ctx.toJS("")
+  let res = this.headers.getFirst("Referer")
+  if res != "":
+    return ctx.toJS(res)
+  return ctx.toJS("about:client")
 
 proc getReferrer*(this: Request): URL =
   return parseURL0(this.headers.getFirst("Referer"))
 
-proc newRequest*(url: URL; httpMethod = hmGet;
-    headers = newHeaders(hgRequest); body = RequestBody(); referrer: URL = nil;
+proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
+    body = RequestBody(); hasReferrer = true; referrer: URL = nil;
     tocache = false; credentials = cmSameOrigin; urlCredentials = false;
     destination = rdNone; mode = rmNoCors;
     window = RequestWindow(t: rwtNoWindow)): Request =
   assert url != nil
   if referrer != nil:
     headers["Referer"] = $referrer
+  var flags: set[RequestFlag] = {}
+  if tocache:
+    flags.incl(rqfToCache)
+  if urlCredentials:
+    flags.incl(rqfUrlCredentials)
+  if hasReferrer:
+    flags.incl(rqfReferrer)
   return Request(
     url: url,
     httpMethod: httpMethod,
     headers: headers,
     body: body,
-    tocache: tocache,
-    urlCredentials: urlCredentials,
+    flags: flags,
     credentials: credentials,
     destination: destination,
     mode: mode
@@ -194,10 +212,10 @@ proc newRequest*(raw: RawRequest): Request =
     urlCredentials = raw.urlCredentials)
 
 proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
-    body = RequestBody(); referrer: URL = nil; tocache = false;
-    credentials = cmSameOrigin): Request =
-  return newRequest(parseURL0(s), httpMethod, headers, body, referrer, tocache,
-    credentials)
+    body = RequestBody(); hasReferrer = true; referrer: URL = nil;
+    tocache = false; credentials = cmSameOrigin): Request =
+  return newRequest(parseURL0(s), httpMethod, headers, body, hasReferrer,
+    referrer, tocache, credentials)
 
 proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     cors: CORSAttribute; fallbackFlag = false): Request =
@@ -284,32 +302,45 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   var body = RequestBody()
   var credentials = cmSameOrigin
   var httpMethod = hmGet
+  var referrerStr = ""
+  if not JS_IsUndefined(init.referrer):
+    ?ctx.fromJS(init.referrer, referrerStr)
   if not JS_IsUndefined(init.credentials):
     ?ctx.fromJS(init.credentials, credentials)
   if not JS_IsUndefined(init.`method`):
     #TODO the spec allows this to be any string :(
     ?ctx.fromJS(init.method, httpMethod)
+  var hasReferrer = true
   var referrer: URL = nil
   var url: URL = nil
   var mode = rmNoCors
   if not JS_IsUndefined(init.mode):
     ?ctx.fromJS(init.mode, mode)
+  let apiBaseURL = ctx.getAPIBaseURLImpl()
+  let origin = ctx.getOriginImpl()
   if (var res: Request; ctx.fromJS(resource, res).isOk):
     url = res.url
     if JS_IsUndefined(init.`method`):
       httpMethod = res.httpMethod
     headers[] = res.headers[]
-    referrer = res.getReferrer()
+    if JS_IsUndefined(jsInit):
+      hasReferrer = rqfReferrer in res.flags
+      referrer = res.getReferrer()
+      mode = res.mode
+    if JS_IsUndefined(init.mode):
+      mode = res.mode
+      if not JS_IsUndefined(jsInit) and mode == rmNavigate:
+        mode = rmSameOrigin
     if JS_IsUndefined(init.credentials):
       credentials = res.credentials
     body = res.body
-    if JS_IsUndefined(init.mode):
-      mode = rmCors
     window = res.window
   else:
     var s: string
     ?ctx.fromJS(resource, s)
-    url = ?ctx.parseJSURL(s, ctx.getAPIBaseURLImpl())
+    url = ?ctx.parseJSURL(s, apiBaseURL)
+    if JS_IsUndefined(init.mode):
+      mode = rmCors
   if url.username != "" or url.password != "":
     JS_ThrowTypeError(ctx, "input URL contains a username or password")
     return err()
@@ -320,10 +351,19 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
       JS_ThrowTypeError(ctx, "expected window to be null")
       return err()
     window = RequestWindow(t: rwtNoWindow)
+  #TODO flags
+  if not JS_IsUndefined(init.referrer):
+    if referrerStr == "":
+      hasReferrer = false
+    else:
+      referrer = ?ctx.parseJSURL(referrerStr, apiBaseURL)
+      if referrer.schemeType == stAbout and referrer.pathname == "client" or
+          not referrer.origin.isSameOrigin(origin):
+        referrer = nil
+  #TODO referrerPolicy
   if mode == rmNavigate:
-    mode = rmSameOrigin
-  #TODO flags?
-  #TODO referrer
+    JS_ThrowTypeError(ctx, "request mode must not be `navigate'")
+    return err()
   if init.body.t != bitNull and httpMethod in {hmGet, hmHead}:
     JS_ThrowTypeError(ctx, "HEAD or GET requests cannot have a body")
     return err()
@@ -338,7 +378,8 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
     httpMethod,
     headers,
     body,
-    referrer = referrer,
+    hasReferrer,
+    referrer,
     credentials = credentials,
     mode = mode,
     destination = destination,
