@@ -3,6 +3,8 @@
 area, base, basefont, datalist, head, link, meta, noembed,
 param, rp, script, style, template, title, noframes { display: none }
 
+[hidden]:not(embed) { display: none }
+
 address, article, aside, blockquote, body, center, dd, details, dialog,
 dir, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4,
 h5, h6, header, hgroup, hr, html, legend, listing, main, menu, nav,
