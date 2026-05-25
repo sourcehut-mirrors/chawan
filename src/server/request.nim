@@ -87,7 +87,7 @@ type
     headers*: seq[HTTPHeader]
     body*: RequestBody
     httpMethod* {.jsget: "method".}: HttpMethod
-    flags*: set[RequestFlag]
+    flags: set[RequestFlag]
     credentials* {.jsget: "credentials".}: CredentialsMode
 
   Request* = ref object
@@ -96,7 +96,7 @@ type
     headers* {.jsget.}: Headers
     body*: RequestBody
     httpMethod* {.jsget: "method".}: HttpMethod
-    flags*: set[RequestFlag]
+    flags: set[RequestFlag]
     credentials* {.jsget: "credentials".}: CredentialsMode
     # client-specific
     mode* {.jsget.}: RequestMode
@@ -177,8 +177,22 @@ proc referrer(ctx: JSContext; this: Request): JSValue {.jsfget.} =
     return ctx.toJS(res)
   return ctx.toJS("about:client")
 
+proc hasReferrer*(this: RawRequest): bool =
+  rqfReferrer in this.flags
+
+proc hasReferrer*(this: Request): bool =
+  rqfReferrer in this.flags
+
 proc getReferrer*(this: Request): URL =
   return parseURL0(this.headers.getFirst("Referer"))
+
+proc setReferrer*(this: Request; value: string) =
+  this.flags.excl(rqfReferrer)
+  this.headers["Referer"] = value
+
+proc unsetReferrer*(this: Request) =
+  this.flags.excl(rqfReferrer)
+  this.headers.removeAll("Referer")
 
 proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); hasReferrer = true; referrer: URL = nil;

@@ -1506,7 +1506,7 @@ proc setupRequestDefaults(request: var RawRequest; config: LoaderClientConfig;
     if cookie != "":
       request.headers.addIfNotFound("Cookie", cookie)
   request.headers.setupReferrer(config.originURL, request.url,
-    rqfReferrer in request.flags, config.referrerPolicy)
+    request.hasReferrer, config.referrerPolicy)
 
 proc load(ctx: var LoaderContext; request: var RawRequest;
     client: ClientHandle; config: LoaderClientConfig): CommandResult =
