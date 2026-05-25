@@ -787,9 +787,9 @@ proc serializeFragment(res: var string; node: Node; writeShadow: bool)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
   writeShadow: bool)
 
-proc countChildren(node: ParentNode; nodeType: type): int
-proc hasChild(node: ParentNode; nodeType: type): bool
-proc hasChildExcept(node: ParentNode; nodeType: type; ex: Node): bool
+proc countChildren(node: ParentNode; t: NodeType): int
+proc hasChild(node: ParentNode; t: NodeType): bool
+proc hasChildExcept(node: ParentNode; t: NodeType; ex: Node): bool
 proc insert*(parent: ParentNode; node, before: Node; suppressObservers = false)
 proc replaceAll(parent: ParentNode; node: Node)
 proc replaceAll(parent: ParentNode; s: sink string)
@@ -2160,7 +2160,7 @@ proc ownerDocument(node: Node): Document {.jsfget.} =
     return nil
   return node.document
 
-proc jsNodeType0(node: Node): NodeType =
+proc nodeTypeEnum(node: Node): NodeType =
   if node of CharacterData:
     if node of Text:
       return ntText
@@ -2182,7 +2182,7 @@ proc jsNodeType0(node: Node): NodeType =
     return ntDocumentFragment
 
 proc nodeType(node: Node): uint16 {.jsfget.} =
-  return uint16(node.jsNodeType0)
+  return uint16(node.nodeTypeEnum)
 
 proc nodeName(node: Node): string {.jsfget.} =
   if node of Element:
@@ -2318,23 +2318,23 @@ proc preInsertionValidity(parent, node, before: Node):
   if parent of Document:
     if node of DocumentFragment:
       let node = DocumentFragment(node)
-      let elems = node.countChildren(Element)
-      if elems > 1 or node.hasChild(Text):
+      let elems = node.countChildren(ntElement)
+      if elems > 1 or node.hasChild(ntText):
         return err("document fragment has invalid children")
-      elif elems == 1 and (parent.hasChild(Element) or
+      elif elems == 1 and (parent.hasChild(ntElement) or
           before != nil and (before of DocumentType or
           before.hasNextSibling(DocumentType))):
         return err("document fragment has invalid children")
     elif node of Element:
-      if parent.hasChild(Element):
+      if parent.hasChild(ntElement):
         return err("document already has an element child")
       elif before != nil and (before of DocumentType or
             before.hasNextSibling(DocumentType)):
         return err("cannot insert element before document type")
     elif node of DocumentType:
-      if parent.hasChild(DocumentType) or
+      if parent.hasChild(ntDocumentType) or
           before != nil and before.hasPreviousSibling(Element) or
-          before == nil and parent.hasChild(Element):
+          before == nil and parent.hasChild(ntElement):
         return err("cannot insert document type before an element node")
     else: discard
   ok(parent)
@@ -2474,19 +2474,19 @@ proc replace*(parent, child, node: Node): Err[cstring] =
   if parent of Document:
     if node of DocumentFragment:
       let node = DocumentFragment(node)
-      let elems = node.countChildren(Element)
-      if elems > 1 or node.hasChild(Text):
+      let elems = node.countChildren(ntElement)
+      if elems > 1 or node.hasChild(ntText):
         return err("document fragment has invalid children")
-      elif elems == 1 and (parent.hasChildExcept(Element, child) or
+      elif elems == 1 and (parent.hasChildExcept(ntElement, child) or
           childNextSibling != nil and childNextSibling of DocumentType):
         return err("document fragment has invalid children")
     elif node of Element:
-      if parent.hasChildExcept(Element, child):
+      if parent.hasChildExcept(ntElement, child):
         return err("document already has an element child")
       elif childNextSibling != nil and childNextSibling of DocumentType:
         return err("cannot insert element before document type")
     elif node of DocumentType:
-      if parent.hasChildExcept(DocumentType, child) or
+      if parent.hasChildExcept(ntDocumentType, child) or
           childPreviousSibling != nil and childPreviousSibling of DocumentType:
         return err("cannot insert document type before an element node")
   let referenceChild = if childNextSibling == node:
@@ -2917,23 +2917,23 @@ proc childElementCountImpl(node: ParentNode): int =
     return 0
   return last.elIndex + 1
 
-proc countChildren(node: ParentNode; nodeType: type): int =
+proc countChildren(node: ParentNode; t: NodeType): int =
   result = 0
   for child in node.childList:
-    if child of nodeType:
+    if child.nodeTypeEnum == t:
       inc result
 
-proc hasChild(node: ParentNode; nodeType: type): bool =
+proc hasChild(node: ParentNode; t: NodeType): bool =
   for child in node.childList:
-    if child of nodeType:
+    if child.nodeTypeEnum == t:
       return true
   return false
 
-proc hasChildExcept(node: ParentNode; nodeType: type; ex: Node): bool =
+proc hasChildExcept(node: ParentNode; t: NodeType; ex: Node): bool =
   for child in node.childList:
     if child == ex:
       continue
-    if child of nodeType:
+    if child.nodeTypeEnum == t:
       return true
   return false
 
