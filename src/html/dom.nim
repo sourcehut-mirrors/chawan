@@ -5552,6 +5552,11 @@ proc elementInsertionSteps(element: Element): bool =
       style.updateSheet()
   of TAG_SCRIPT:
     return true
+  elif element.tagType(satNamespaceSVG) == TAG_SVG:
+    let svg = SVGSVGElement(element)
+    let window = element.document.window
+    if window != nil:
+      window.loadSVG(svg)
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.parserInserted:
