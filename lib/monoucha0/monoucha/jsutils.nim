@@ -160,6 +160,21 @@ proc enqueueRejection*(ctx: JSContext; reject: JSValue): cint =
   JS_FreeValue(ctx, ex)
   return code
 
+proc newRejectedPromise*(ctx: JSContext): JSValue =
+  ## Usage: throw an exception, then create the rejected promise.
+  let ex = JS_GetException(ctx)
+  var funs {.noinit.}: array[2, JSValue]
+  let res = ctx.newPromiseCapability(funs)
+  if JS_IsException(res):
+    JS_FreeValue(ctx, ex)
+    return res
+  let code = ctx.enqueueJob(rejectJob, funs[1], ex)
+  ctx.freeValues(funs)
+  if code < 0:
+    JS_FreeValue(ctx, res)
+    return JS_EXCEPTION
+  return res
+
 type DefinePropertyResult* = enum
   dprException, dprSuccess, dprFail
 

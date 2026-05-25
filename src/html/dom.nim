@@ -4012,6 +4012,22 @@ proc getter(ctx: JSContext; document: Document; s: string): JSValue
         return ctx.toJS(child)
   return JS_UNINITIALIZED
 
+proc fullscreen(document: Document): bool {.
+    jsfget, jsfget: "fullscreenEnabled".} =
+  false
+
+# "lenient setter"
+proc setFullscreen(document: Document; b: bool) {.
+    jsfset: "fullscreen", jsfset: "fullscreenEnabled".} =
+  discard
+
+proc fullscreenElement(document: Document): JSValue {.jsfget.} =
+  return JS_NULL
+
+proc exitFullscreen(ctx: JSContext; document: Document): JSValue {.jsfunc.} =
+  JS_ThrowTypeError(ctx, "fullscreen is not supported")
+  return ctx.newRejectedPromise()
+
 # DocumentType
 proc remove(this: DocumentType) {.jsfunc.} =
   Node(this).remove()
@@ -5788,6 +5804,10 @@ proc getProgressPosition*(element: Element): float64 =
   let value = element.attrdgz(satValue).get(0)
   let max = element.attrdgz(satMax).get(1)
   return min(value, max) / max
+
+proc requestFullscreen(ctx: JSContext; element: Element): JSValue {.jsfunc.} =
+  JS_ThrowTypeError(ctx, "fullscreen is not supported")
+  return ctx.newRejectedPromise()
 
 proc getBitmap*(element: Element): NetworkBitmap =
   case element.tagType
