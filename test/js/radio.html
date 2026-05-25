@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<title>Radio test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<form>
+<input id=a name=group type=radio checked>
+<input id=b name=group type=radio>
+</form>
+<script>
+const a = document.getElementById("a");
+const b = document.getElementById("b");
+b.remove();
+b.checked = true;
+assert(a.checked)
+assertEquals(b.form, null);
+a.remove();
+document.getElementById("x").textContent = "Success"
+</script>
