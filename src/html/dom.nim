@@ -3486,7 +3486,7 @@ proc setLocation*(ctx: JSContext; document: Document; s: string): JSValue
     return JS_ThrowTypeError(ctx, "document.location is not an object")
   let url = document.parseURL0(s)
   if url == nil:
-    return JS_ThrowDOMException(ctx, "Invalid URL", "SyntaxError")
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
   document.window.navigate(url)
   return JS_UNDEFINED
 
