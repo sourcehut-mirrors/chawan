@@ -501,6 +501,8 @@ type
 
   FormAssociatedElement* = ref object of HTMLElement
     form*: HTMLFormElement
+    prev: FormAssociatedElement # previous control in form
+    next: FormAssociatedElement # next control in form
     parserInserted*: bool
 
   HTMLInputElement* = ref object of FormAssociatedElement
@@ -552,7 +554,8 @@ type
   HTMLFormElement* = ref object of HTMLElement
     constructingEntryList*: bool
     firing*: bool
-    controls*: seq[FormAssociatedElement]
+    controlsHead: FormAssociatedElement
+    controlsTail: FormAssociatedElement
     cachedElements: HTMLFormControlsCollection
     relList {.jsget.}: DOMTokenList
 
@@ -811,18 +814,19 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32)
 proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(ctx: JSContext; element: Element; i: int)
 proc elIndex*(this: Element): int
-proc elementInsertionSteps(element: Element): bool
 proc ensureStyle(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtom): int
 proc findAttrNS(element: Element; namespace, localName: CAtom): int
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
+proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
 proc nextDisplayedElement(element: Element): Element
 proc outerHTML(element: Element): string
 proc postConnectionSteps(element: Element)
 proc previousElementSibling*(element: Element): Element
+proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
 proc tagName(element: Element): string
@@ -1241,6 +1245,12 @@ iterator displayedElements*(window: Window): Element
   while element != nil:
     yield element
     element = element.nextDisplayedElement
+
+iterator controls*(form: HTMLFormElement): FormAssociatedElement {.inline.} =
+  var control = form.controlsHead
+  while control != nil:
+    yield control
+    control = control.next
 
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for control in form.controls:
@@ -2382,15 +2392,16 @@ proc remove*(node: Node; suppressObservers: bool) =
     #TODO assign slottables for tree with root
     #TODO assign slottables for tree with node
     discard
-  #TODO removing steps
-  let parentConnected = root.isConnected
-  #TODO if node is custom and connected, disconnectedcallback
-  for desc in element.descendantsShadowIncl:
-    #TODO removing steps
-    if desc of Element:
-      let element = Element(desc)
-      if element.custom == cesCustom and parentConnected:
-        discard #TODO call disconnectedCallback
+  if element != nil:
+    element.removingSteps()
+    let parentConnected = root.isConnected
+    #TODO if node is custom and connected, disconnectedcallback
+    for desc in element.descendantsShadowIncl:
+      element.removingSteps()
+      if desc of Element:
+        let element = Element(desc)
+        if element.custom == cesCustom and parentConnected:
+          discard #TODO call disconnectedCallback
   #TODO registered observers
   if not suppressObservers:
     discard #TODO queue tree mutation record
@@ -3025,7 +3036,7 @@ proc insert0(parent: ParentNode; node, before: Node;
   for desc in node.descendantsShadowIncl:
     if desc of Element:
       let el = Element(desc)
-      if el.elementInsertionSteps():
+      if el.insertionSteps():
         postConnectionNodes.add(el)
       if el.custom == cesCustom:
         #TODO append parentDocument to element custom registry
@@ -5537,7 +5548,7 @@ proc resetElement*(element: Element) =
   else: discard
 
 # Returns true if has post-connection steps.
-proc elementInsertionSteps(element: Element): bool =
+proc insertionSteps(element: Element): bool =
   case element.tagType
   of TAG_OPTION:
     if element.parentElement != nil:
@@ -5585,6 +5596,11 @@ proc elementInsertionSteps(element: Element): bool =
       return
     element.resetFormOwner()
   false
+
+proc removingSteps(element: Element) =
+  if element of FormAssociatedElement:
+    let element = FormAssociatedElement(element)
+    element.resetFormOwner()
 
 proc postConnectionSteps(element: Element) =
   let script = HTMLScriptElement(element)
@@ -6444,7 +6460,12 @@ proc reset*(form: HTMLFormElement) =
 # FormAssociatedElement
 proc setForm*(element: FormAssociatedElement; form: HTMLFormElement) =
   element.form = form
-  form.controls.add(element)
+  if form.controlsTail == nil:
+    form.controlsHead = element
+  else:
+    form.controlsTail.next = element
+  element.prev = form.controlsTail
+  form.controlsTail = element
   form.document.invalidateCollections()
 
 proc resetFormOwner(element: FormAssociatedElement) =
@@ -6455,7 +6476,19 @@ proc resetFormOwner(element: FormAssociatedElement) =
     let lastForm = element.findAncestor(TAG_FORM)
     if not element.attrb(satForm) and lastForm == element.form:
       return
-  element.form = nil
+  let form = element.form
+  if form != nil:
+    if element.prev == nil:
+      form.controlsHead = element.next
+    else:
+      element.prev.next = element.next
+    if element.next == nil:
+      form.controlsTail = element.prev
+    else:
+      element.next.prev = element.prev
+    element.prev = nil
+    element.next = nil
+    element.form = nil
   if element.tagType in ListedElements and element.isConnected:
     let form = element.document.getElementById(element.attr(satForm))
     if form of HTMLFormElement:
