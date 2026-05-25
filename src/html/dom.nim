@@ -22,6 +22,7 @@ import encoding/decoder
 import html/catom
 import html/domcanvas
 import html/domexception
+import html/domrect
 import html/event
 import html/performance
 import html/script
@@ -354,15 +355,6 @@ type
 
   DOMImplementation = ref object
     document: Document
-
-  DOMRect* = ref object
-    x* {.jsgetset.}: float64
-    y* {.jsgetset.}: float64
-    width* {.jsgetset.}: float64
-    height* {.jsgetset.}: float64
-
-  DOMRectList = ref object
-    list: seq[DOMRect]
 
   DocumentWriteBuffer* = ref object
     data*: string
@@ -732,8 +724,6 @@ jsDestructor(DocumentType)
 jsDestructor(Attr)
 jsDestructor(NamedNodeMap)
 jsDestructor(CSSStyleDeclaration)
-jsDestructor(DOMRect)
-jsDestructor(DOMRectList)
 jsDestructor(CustomElementRegistry)
 jsDestructor(ShadowRoot)
 
@@ -5901,35 +5891,6 @@ proc globalCustomElements(this: ShadowRoot): CustomElementRegistry =
     return document.customElements
   return nil
 
-# DOMRect
-proc left(rect: DOMRect): float64 {.jsfget.} =
-  return min(rect.x, rect.x + rect.width)
-
-proc right(rect: DOMRect): float64 {.jsfget.} =
-  return max(rect.x, rect.x + rect.width)
-
-proc top(rect: DOMRect): float64 {.jsfget.} =
-  return min(rect.y, rect.y + rect.height)
-
-proc bottom(rect: DOMRect): float64 {.jsfget.} =
-  return max(rect.y, rect.y + rect.height)
-
-# DOMRectList
-proc length(this: DOMRectList): int {.jsfget.} =
-  this.list.len
-
-proc getter(ctx: JSContext; this: DOMRectList; atom: JSAtom): JSValue
-    {.jsgetownprop.} =
-  var u: uint32
-  return case ctx.fromIdx(atom, u)
-  of fiIdx:
-    if int64(u) < int64(this.list.len):
-      ctx.toJS(this.list[int(u)]).uninitIfNull()
-    else:
-      JS_UNINITIALIZED
-  of fiStr: JS_UNINITIALIZED
-  of fiErr: JS_EXCEPTION
-
 # CSSStyleDeclaration
 #
 # To avoid having to invalidate the entire tree on pseudo-class changes,
@@ -7780,8 +7741,6 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   ?ctx.registerType(Attr, parent = nodeCID)
   ?ctx.registerType(NamedNodeMap)
   ?ctx.registerType(CSSStyleDeclaration)
-  ?ctx.registerType(DOMRect)
-  ?ctx.registerType(DOMRectList)
   ?ctx.registerType(CustomElementRegistry)
   ?ctx.registerType(ShadowRoot, parent = documentFragmentCID)
   ?ctx.registerElements(nodeCID)

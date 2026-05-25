@@ -4,6 +4,7 @@ import css/cssparser
 import css/cssvalues
 import css/lunit
 import html/dom
+import html/domrect
 import types/bitmap
 import types/refstring
 

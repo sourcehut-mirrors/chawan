@@ -10,6 +10,7 @@ import html/chadombuilder
 import html/dom
 import html/domcanvas
 import html/domexception
+import html/domrect
 import html/event
 import html/formdata
 import html/jsencoding
@@ -530,6 +531,7 @@ proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addConsoleModule()
   ?ctx.addNavigatorModule()
   ?ctx.addDOMExceptionModule()
+  ?ctx.addDOMRectModule()
   ?ctx.addDOMModule(eventTargetCID)
   ?ctx.addCanvasModule()
   ?ctx.addURLModule()
