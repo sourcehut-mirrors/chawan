@@ -223,15 +223,13 @@ macro makeStaticAtom =
 
 makeStaticAtom
 
-const CAtomFactoryStrMapLength = 2048 # must be a power of 2
-static:
-  doAssert (CAtomFactoryStrMapLength and (CAtomFactoryStrMapLength - 1)) == 0
+const CAtomFactoryInitSize = 2048 # must be a power of 2
 
 type
   CAtom* = distinct uint32
 
   CAtomFactoryObj = object
-    strMap: array[CAtomFactoryStrMapLength, seq[CAtom]]
+    tab: seq[CAtom] # hash table; length is a power of 2
     atomMap: seq[string]
     lowerMap: seq[CAtom]
 
@@ -244,15 +242,41 @@ const CAtomNull* = CAtom(0)
 proc `==`*(a, b: CAtom): bool {.borrow.}
 proc hash*(atom: CAtom): Hash {.borrow.}
 
+proc put0(factory: var CAtomFactoryObj; atom: CAtom; h: Hash) =
+  let mask = (factory.tab.len - 1)
+  var i = h and mask
+  while true:
+    if factory.tab[i] == CAtomNull:
+      factory.tab[i] = atom
+      break
+    i = (i + 1) and mask
+
+proc get(factory: CAtomFactoryObj; s: openArray[char]; h: Hash): CAtom =
+  let mask = (factory.tab.len - 1)
+  var i = h and mask
+  while true:
+    let atom = factory.tab[i]
+    if atom == CAtomNull:
+      break
+    if factory.atomMap[int(atom)] == s:
+      return atom
+    i = (i + 1) and mask
+  return CAtomNull
+
 proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
     CAtom =
   let h = s.hash()
-  let i = h and (factory.strMap.len - 1)
-  for atom in factory.strMap[i]:
-    if factory.atomMap[int(atom)] == s:
-      # Found
-      return atom
+  if (let atom = factory.get(s, h); atom != CAtomNull):
+    return atom
   # Not found
+  if factory.atomMap.len >= factory.tab.len div 2:
+    # grow
+    var oldTab = move(factory.tab)
+    factory.tab = newSeq[CAtom](oldTab.len * 2)
+    for atom in oldTab:
+      if atom != CAtomNull:
+        let h = factory.atomMap[int(atom)].hash()
+        factory.put0(atom, h)
   let atom = CAtom(factory.atomMap.len)
   var ss = newString(s.len)
   if s.len > 0:
@@ -266,7 +290,7 @@ proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
       factory.lowerMap.add(atom)
     else:
       factory.lowerMap.add(factory.toAtom(lower))
-  factory.strMap[i].add(atom)
+  factory.put0(atom, h)
   return atom
 
 var factory {.global.}: CAtomFactoryObj
@@ -275,6 +299,7 @@ template getFactory(): CAtomFactory =
   addr factory
 
 proc initCAtomFactory*() =
+  factory.tab = newSeq[CAtom](CAtomFactoryInitSize)
   # Null atom
   factory.atomMap.add("")
   factory.lowerMap.add(CAtom(0))
@@ -335,13 +360,7 @@ proc toStaticAtom*(atom: CAtom): StaticAtom =
 
 proc toStaticAtom*(s: string): StaticAtom =
   let factory = getFactory()
-  let h = s.hash()
-  let i = h and (factory.strMap.len - 1)
-  for atom in factory.strMap[i]:
-    if factory.atomMap[int(atom)] == s:
-      # Found
-      return atom.toStaticAtom()
-  satUnknown
+  factory[].get(s, s.hash()).toStaticAtom()
 
 proc toNamespace*(atom: CAtom): Namespace =
   case atom.toStaticAtom()
