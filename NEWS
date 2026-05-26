@@ -1,3 +1,12 @@
+0.4.2 (2026.06.01)
+
+* fix display of some dynamically inserted SVGs
+* fix a document.location error message
+* fix form owner not being reset on control removal
+* fix tracking of owner document for collections
+* fix outerHTML, HTMLOptionsCollection setters
+* fix nil deref in canvas getBitmap when scripting is disabled
+
 0.4.1 (2026.05.24)
 
 * fix some bugs in the config parser
