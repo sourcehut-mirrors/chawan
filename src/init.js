@@ -1244,8 +1244,8 @@ Pager.prototype.handleMouseInput = async function(input) {
                         } else if (click == 3) {
                             edit.clearSelection();
                             edit.setAbsoluteCursorX(input.x);
-                        } else
                             mouse.click[button] = 0;
+                        }
                     }
                 } else if (pressedX != -1 && pressedY != -1) {
                     const dcol = input.x - pressedX;
