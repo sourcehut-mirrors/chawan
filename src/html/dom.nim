@@ -2234,18 +2234,18 @@ proc isInclusiveAncestorHost(a, b: Node): bool =
       return true
   return false
 
-proc hasNextSibling(node: Node; nodeType: type): bool =
+proc hasNextSibling(node: Node; t: NodeType): bool =
   var node = node.nextSibling
   while node != nil:
-    if node of nodeType:
+    if node.nodeTypeEnum == t:
       return true
     node = node.nextSibling
   return false
 
-proc hasPreviousSibling(node: Node; nodeType: type): bool =
+proc hasPreviousSibling(node: Node; t: NodeType): bool =
   var node = node.previousSibling
   while node != nil:
-    if node of nodeType:
+    if node.nodeTypeEnum == t:
       return true
     node = node.previousSibling
   return false
@@ -2314,10 +2314,6 @@ proc preInsertionValidity(parent, node, before: Node):
     return err(nil)
   if not node.isValidChild():
     return err("node is not a valid child")
-  if node of Text and parent of Document:
-    return err("cannot insert text into document")
-  if node of DocumentType and not (parent of Document):
-    return err("document type can only be inserted into document")
   if parent of Document:
     if node of DocumentFragment:
       let node = DocumentFragment(node)
@@ -2326,20 +2322,24 @@ proc preInsertionValidity(parent, node, before: Node):
         return err("document fragment has invalid children")
       elif elems == 1 and (parent.hasChild(ntElement) or
           before != nil and (before of DocumentType or
-          before.hasNextSibling(DocumentType))):
+          before.hasNextSibling(ntDocumentType))):
         return err("document fragment has invalid children")
     elif node of Element:
       if parent.hasChild(ntElement):
         return err("document already has an element child")
       elif before != nil and (before of DocumentType or
-            before.hasNextSibling(DocumentType)):
+            before.hasNextSibling(ntDocumentType)):
         return err("cannot insert element before document type")
     elif node of DocumentType:
       if parent.hasChild(ntDocumentType) or
-          before != nil and before.hasPreviousSibling(Element) or
+          before != nil and before.hasPreviousSibling(ntElement) or
           before == nil and parent.hasChild(ntElement):
         return err("cannot insert document type before an element node")
+    elif node of Text:
+      return err("cannot insert text into document")
     else: discard
+  elif node of DocumentType:
+    return err("document type can only be inserted into document")
   ok(parent)
 
 # Pass an index to avoid searching for the node in parent's child list.
@@ -2470,9 +2470,6 @@ proc replace*(parent, child, node: Node): Err[cstring] =
     return err(nil)
   if not node.isValidChild():
     return err("node is not a valid child")
-  if node of Text and parent of Document or
-      node of DocumentType and not (parent of Document):
-    return err("replacement cannot be placed in parent")
   let childNextSibling = child.nextSibling
   let childPreviousSibling = child.previousSibling
   if parent of Document:
@@ -2493,6 +2490,10 @@ proc replace*(parent, child, node: Node): Err[cstring] =
       if parent.hasChildExcept(ntDocumentType, child) or
           childPreviousSibling != nil and childPreviousSibling of DocumentType:
         return err("cannot insert document type before an element node")
+    elif node of Text:
+      return err("replacement cannot be placed in parent")
+  elif node of DocumentType:
+    return err("replacement cannot be placed in parent")
   let referenceChild = if childNextSibling == node:
     node.nextSibling
   else:
