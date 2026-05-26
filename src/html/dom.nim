@@ -299,6 +299,8 @@ type
     # if not nil, this is a live collection.  (uses a ptr instead of a ref
     # because ORC likes to set refs to nil before the destructor is called)
     document: ptr DocumentObj
+    prev: ptr CollectionObj
+    next: ptr CollectionObj
 
   Collection = ref CollectionObj
 
@@ -398,7 +400,7 @@ type
     cachedLinks: HTMLCollection
     cachedImages: HTMLCollection
     parser*: RootRef
-    liveCollections: seq[ptr CollectionObj]
+    liveCollectionsHead: ptr CollectionObj
     cachedAll: HTMLAllCollection
     customElements: CustomElementRegistry #TODO ?
 
@@ -3126,10 +3128,13 @@ proc refreshCollection(ctx: JSContext; this: Collection): Opt[void] =
 
 proc finalize0(collection: Collection) =
   if collection.document != nil:
-    let document = collection.document
-    let i = document.liveCollections.find(cast[ptr CollectionObj](collection))
-    assert i != -1
-    document.liveCollections.del(i)
+    let collection = addr collection[]
+    if collection.prev != nil:
+      collection.prev.next = collection.next
+    else:
+      collection.document.liveCollectionsHead = collection.next
+    if collection.next != nil:
+      collection.next.prev = collection.prev
 
 proc finalize(collection: HTMLCollection) {.jsfin.} =
   collection.finalize0()
@@ -3148,8 +3153,10 @@ proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
 
 proc finalize(document: Document) {.jsfin.} =
-  for it in document.liveCollections:
-    cast[Collection](it).document = nil
+  var it = document.liveCollectionsHead
+  while it != nil:
+    it.document = nil
+    it = it.next
 
 proc getLength(ctx: JSContext; this: Collection): Opt[uint32] =
   ?ctx.refreshCollection(this)
@@ -3170,11 +3177,14 @@ proc newCollection[T: Collection](ctx: JSContext; root: Node;
     inclusive: inclusive,
     match: match,
     root: root,
-    document: if islive: cast[ptr DocumentObj](document) else: nil
+    document: if islive: addr document[] else: nil,
+    invalid: islive
   )
   if islive:
-    document.liveCollections.add(cast[ptr CollectionObj](this))
-    this.invalid = true
+    if document.liveCollectionsHead != nil:
+      document.liveCollectionsHead.prev = addr this[]
+      this.next = document.liveCollectionsHead
+    document.liveCollectionsHead = addr this[]
   else:
     ?ctx.populateCollection(this)
   ok(this)
@@ -3329,12 +3339,16 @@ proc adopt(document: Document; node: Node) =
       for desc in node.descendants:
         if desc.nextSibling == nil:
           desc.internalNext = document
-    for i in countdown(oldDocument.liveCollections.high, 0):
-      let collection = oldDocument.liveCollections[i]
-      if collection.document == cast[ptr DocumentObj](document):
-        collection.document = cast[ptr DocumentObj](document)
-        document.liveCollections.add(collection)
-        oldDocument.liveCollections.del(i)
+    var collection = oldDocument.liveCollectionsHead
+    while collection != nil:
+      let next = collection.next
+      if collection.root == node:
+        collection.document = addr document[]
+        collection.prev = nil
+        collection.next = document.liveCollectionsHead
+        document.liveCollectionsHead.prev = collection
+        document.liveCollectionsHead = collection
+      collection = next
     #TODO custom elements
     #..adopting steps
 
@@ -3604,8 +3618,10 @@ proc `title=`(document: Document; s: sink string) {.jsfset: "title".} =
   title.replaceAll(s)
 
 proc invalidateCollections(document: Document) =
-  for collection in document.liveCollections:
+  var collection = document.liveCollectionsHead
+  while collection != nil:
     collection.invalid = true
+    collection = collection.next
 
 proc isValidCustomElementName(atom: CAtom): bool =
   const Disallowed = [
