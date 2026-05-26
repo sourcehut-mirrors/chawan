@@ -506,6 +506,7 @@ type
 
   SVGSVGElement* = ref object of SVGElement
     bitmap*: NetworkBitmap
+    parserDocument*: Document
     shared: seq[SVGSVGElement] # elements that serialize to the same string
     fetchStarted: bool
 
@@ -5539,6 +5540,7 @@ proc resetElement*(element: Element) =
     let textarea = HTMLTextAreaElement(element)
     textarea.dirty = false
     textarea.invalidate()
+  #TODO TAG_OUTPUT
   else: discard
 
 # Returns true if has post-connection steps.
@@ -5580,10 +5582,12 @@ proc insertionSteps(element: Element): bool =
   of TAG_SCRIPT:
     return true
   elif element.tagType(satNamespaceSVG) == TAG_SVG:
+    #TODO this doesn't work if JS adds descendants to the SVG tag
     let svg = SVGSVGElement(element)
-    let window = element.document.window
-    if window != nil:
-      window.loadSVG(svg)
+    if svg.parserDocument != svg.document:
+      let window = svg.document.window
+      if window != nil:
+        window.loadSVG(svg)
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.parserInserted:

@@ -126,10 +126,6 @@ proc getNamespaceImpl(builder: ChaDOMBuilder; handle: ParentNode): Namespace =
 proc createHTMLElementImpl(builder: ChaDOMBuilder): ParentNode =
   return builder.document.newHTMLElement(TAG_HTML)
 
-const ResettableElements = {
-  TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA
-}
-
 proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: ParentNode;
     htmlAttrs: Table[CAtom, string]; xmlAttrs: seq[ParsedAttr[CAtom]]):
@@ -140,14 +136,18 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     element.attr(k, v)
   for attr in xmlAttrs:
     element.attrns(attr.name, attr.prefix, attr.namespace, attr.value)
-  if element.tagType in ResettableElements:
-    element.resetElement()
+  element.resetElement()
   if element of HTMLScriptElement:
     let script = HTMLScriptElement(element)
     script.parserDocument = document
     script.forceAsync = false
     # Note: per standard, we could set already started to true here when we
     # are parsing from document.write, but that sounds like a horrible idea.
+  elif namespace == Namespace.SVG and localName == satSvg:
+    # hack to distinguish between parser-inserted SVG and dynamically added
+    # SVG; TODO get rid of this
+    let svg = SVGSVGElement(element)
+    svg.parserDocument = document
   return element
 
 proc insertCommentImpl(builder: ChaDOMBuilder; parent: ParentNode;
