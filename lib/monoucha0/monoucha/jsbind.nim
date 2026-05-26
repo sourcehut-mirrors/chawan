@@ -817,7 +817,8 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
     result.thisType = staticName
     if (let i = result.thisType.find('#'); i != -1):
       result.thisType.setLen(i)
-    result.newName = ident($result.t & "_" & result.funcName)
+    result.newName = ident($result.t & "_" & staticName & "_" &
+      result.funcName)
 
 proc makeJSCallAndRet(gen: var JSFuncGenerator; okstmt, errstmt: NimNode) =
   let jfcl = gen.jsFunCallList

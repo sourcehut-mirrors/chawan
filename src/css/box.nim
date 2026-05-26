@@ -331,11 +331,11 @@ proc resetState*(box: BlockBox) =
 const DefaultClipBox* = ClipBox(send: offset(LUnit.high, LUnit.high))
 
 proc newDOMRect(offset: Offset; size: Size): DOMRect =
-  DOMRect(
-    x: offset.x.toFloat64(),
-    y: offset.y.toFloat64(),
-    width: size.w.toFloat64(),
-    height: size.h.toFloat64()
+  newDOMRect(
+    offset.x.toFloat64(),
+    offset.y.toFloat64(),
+    size.w.toFloat64(),
+    size.h.toFloat64()
   )
 
 proc getClientRects(res: var seq[DOMRect]; box: CSSBox;
