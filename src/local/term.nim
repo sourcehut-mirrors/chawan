@@ -535,7 +535,8 @@ proc clone(image: CanvasImage): CanvasImage =
 #   state when we start drawing despite ftCurrent not being fully flushed.
 #   Then:
 #   - If we start drawing again and ftCurrent is *still* not flushed,
-#     we drop ftNext in favor of this new frame.
+#     we drop ftNext in favor of this new frame.  Again, the new frame
+#     inherits from ftCurrent, not the dropped ftNext.
 #   - Once ftCurrent is fully flushed, we "move" ftNext into ftCurrent's
 #     place.
 proc swapFrame(term: Terminal; frameType: FrameType) =
@@ -1801,13 +1802,6 @@ proc getCurrentBgcolor*(term: Terminal): CellColor =
 # returns diff between current and old position (0 = cannot scroll)
 proc updateScroll*(term: Terminal; pid, x, y: int): int =
   var diff = 0
-  #TODO I think we always have to check against ftCurrent here...
-  # with ftNext you get issues because we haven't dropped the frame at this
-  # point yet?  or something
-  # but I guess that also breaks canvas updates
-  # so probably you have to do the frame dropping thing *before* the
-  # printing even starts
-  # and then this is fine eh?
   let pos = term.frame.pos
   if pid != -1 and pos.pid == pid and pos.x == x:
     diff = y - pos.y
