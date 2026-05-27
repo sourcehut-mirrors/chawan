@@ -5839,7 +5839,7 @@ proc getBitmap*(element: Element): NetworkBitmap =
     return HTMLImageElement(element).bitmap
   of TAG_CANVAS:
     let bmp = HTMLCanvasElement(element).bitmap
-    if bmp.cacheId != -1:
+    if bmp != nil and bmp.cacheId != -1:
       return bmp
     return nil
   elif element.tagType(satNamespaceSVG) == TAG_SVG:
