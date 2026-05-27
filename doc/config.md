@@ -1400,6 +1400,11 @@ line.cancel
 
 : Close the editor and cancel the operation it was opened for.
 
+line.copySelection
+: **M-w**
+
+: Copy the current selection.
+
 line.copyOrCancel
 : **C-c**
 

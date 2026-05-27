@@ -188,9 +188,11 @@ globalThis.cmd = {
             }
         },
         copySelection: () => {
-            const text = line.selectedText;
-            if (pager.clipboardWrite(text))
-                line.clearSelection();
+            if (line.hasSelection()) {
+                const text = line.selectedText;
+                if (pager.clipboardWrite(text))
+                    line.clearSelection();
+            }
         },
         copyOrCancel: () => {
             if (line.hasSelection())
