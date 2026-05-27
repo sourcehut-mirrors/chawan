@@ -2467,11 +2467,8 @@ proc appendChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
 proc append(parent, node: Node) =
   discard parent.insertBefore(node, nil)
 
-# WARNING the ordering of the arguments in the standard is whack so this
-# doesn't match that
-# Note: the standard returns child if not err. We don't, it's just a
-# pointless copy.
-proc replace*(parent, child, node: Node): Err[cstring] =
+# Replace child with node.
+proc replace*(parent, node, child: Node): Err[cstring] =
   let parent = ?parent.checkParentValidity()
   if node.isInclusiveAncestorHost(parent):
     return err("parent must be an ancestor")
@@ -2514,13 +2511,13 @@ proc replace*(parent, child, node: Node): Err[cstring] =
   ok()
 
 proc replaceChild(ctx: JSContext; parent, node, child: Node): JSValue {.jsfunc.} =
-  let res = parent.replace(child, node)
+  let res = parent.replace(node, child)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return ctx.toJS(child)
 
 proc replaceChildUndefined(ctx: JSContext; parent, node, child: Node): JSValue =
-  let res = parent.replace(child, node)
+  let res = parent.replace(node, child)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return JS_UNDEFINED
@@ -5022,7 +5019,7 @@ proc outerHTML(ctx: JSContext; element: Element; s: string): JSValue
     # element node
     Element(parent0)
   let fragment = fragmentParsingAlgorithm(parent, s)
-  return ctx.replaceChildUndefined(parent, element, fragment)
+  return ctx.replaceChildUndefined(parent, fragment, element)
 
 type InsertAdjacentPosition = enum
   iapBeforeBegin = "beforebegin"
@@ -6907,7 +6904,7 @@ proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
   let value = value.get
   let parent = this.root
   if element != nil:
-    return ctx.replaceChild(parent, element, value)
+    return ctx.replaceChildUndefined(parent, value, element)
   let len0 = ctx.getLength(this)
   if len0.isErr:
     return JS_EXCEPTION
