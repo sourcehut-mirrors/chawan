@@ -1,9 +1,9 @@
-<!doctype html>
-<title>innerHTML test</title>
-<div id="test">Fail</div>
+<!DOCTYPE html>
+<title>outerHTML test</title>
+<div id=x>Fail</div>
 <script src=asserts.js></script>
 <script>
-const div = document.getElementById("test");
-assertEquals(div.outerHTML, '<div id="test">Fail</div>');
-div.textContent = "Success";
+const div = document.getElementById("x");
+assertEquals(div.outerHTML, '<div id="x">Fail</div>');
+div.outerHTML = "<div id=x>Success</div>";
 </script>
