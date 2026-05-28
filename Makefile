@@ -329,6 +329,10 @@ test_js:
 test_layout:
 	(cd test/layout && ./run.sh)
 
+.PHONY: test_dhtml
+test_dhtml:
+	(cd test/dhtml && ./run.sh)
+
 .PHONY: test_md
 test_md:
 	(cd test/md && ./run.sh)
@@ -360,4 +364,5 @@ test_nim: test/nim/ttwtstr.nim
 	(cd test/nim && $(NIM) r $(test_flags) ttwtstr.nim)
 
 .PHONY: test
-test: test_js test_layout test_net test_md test_pager test_charset test_nim
+test: test_js test_layout test_dhtml test_net test_md test_pager test_charset \
+	test_nim

@@ -1,0 +1,8 @@
+charset/ -> encoding tests (Nim)
+dhtml/ -> dynamic layout tests (scripting="app")
+layout/ -> static layout tests (scripting=false)
+js/ -> DOM tests (scripting=true or scripting="app" depending on extension)
+md/ -> markdown tests
+net/ -> XHR tests etc. (served from an HTTP server)
+nim/ -> module-specific unit tests
+pager/ -> config, pager JS tests

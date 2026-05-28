@@ -13,3 +13,4 @@ format-mode = ["bold", "italic", "underline", "reverse", "strike"]
 [buffer]
 images = true
 history = false
+scripting = 'app'
