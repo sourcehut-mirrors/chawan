@@ -39,8 +39,8 @@ proc mark(rt: JSRuntime; this: PerformanceMark; markFun: JS_MarkFunc)
   JS_MarkValue(rt, this.detail, markFun)
 
 proc getTime(scripting: ScriptingMode): float64 =
-  let t = getTime()
   if scripting == smApp:
+    let t = getTime()
     return float64(t.toUnix() * 1000) + floor(t.nanosecond / 100_000) / 10
   return float64(getUnixMillis())
 
