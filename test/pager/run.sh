@@ -3,7 +3,7 @@ if test -z "$CHA"
 then	test -f ../../cha && CHA=../../cha || CHA=cha
 fi
 
-sed -E -e 's/^#([^ ])/\1/' ../../bonus/config.toml >tmp_config.toml
+sed -E -e 's/^#([^ ])/\1/;s/^(history = ).*/\1false/' ../../bonus/config.toml >tmp_config.toml
 if ! $CHA -Ctmp_config.toml /dev/null | diff /dev/null -
 then	rm tmp_config.toml
 	exit 1
