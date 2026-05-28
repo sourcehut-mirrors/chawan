@@ -2438,6 +2438,18 @@ proc handleStderr(pager: Pager) {.jsfunc.} =
     pager.console.write('\n')
   pager.console.flush()
 
+proc ifaceDead(pager: Pager; iface: BufferInterface) =
+  let isConsole = iface.init == pager.consoleInit
+  if isConsole:
+    pager.dumpConsoleFile = true
+  iface.init.flags.incl(bifCrashed)
+  pager.unregisterBufferIface(iface)
+  pager.console.error("Error in buffer", $iface.init.url)
+  pager.console.flush()
+  if not isConsole:
+    pager.showConsole()
+  dec pager.numload
+
 proc handleRead(pager: Pager; fd: cint): JSValue =
   if pager.term.istream != nil and fd == pager.term.istream.fd:
     return pager.handleUserInput()
@@ -2457,7 +2469,7 @@ proc handleRead(pager: Pager; fd: cint): JSValue =
           pager.showAlerts()
         iface.refreshStatus = false
       of irException: pager.console.writeException(ctx)
-      of irEOF: discard
+      of irEOF: pager.ifaceDead(iface)
     else:
       pager.loader.onRead(fd)
       if data of ConnectData:
@@ -2505,16 +2517,7 @@ proc handleError(pager: Pager; fd: cint): Opt[bool] =
       JS_FreeValue(pager.jsctx, res)
     elif data of BufferInterface:
       let iface = BufferInterface(data)
-      let isConsole = iface.init == pager.consoleInit
-      if isConsole:
-        pager.dumpConsoleFile = true
-      iface.init.flags.incl(bifCrashed)
-      pager.unregisterBufferIface(iface)
-      pager.console.error("Error in buffer", $iface.init.url)
-      pager.console.flush()
-      if not isConsole:
-        pager.showConsole()
-      dec pager.numload
+      pager.ifaceDead(iface)
     else:
       discard pager.loader.onError(fd) #TODO handle connection error?
   else:
