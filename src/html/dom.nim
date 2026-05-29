@@ -3353,7 +3353,8 @@ proc adopt(document: Document; node: Node) =
         collection.document = addr document[]
         collection.prev = nil
         collection.next = document.liveCollectionsHead
-        document.liveCollectionsHead.prev = collection
+        if document.liveCollectionsHead != nil:
+          document.liveCollectionsHead.prev = collection
         document.liveCollectionsHead = collection
       collection = next
     #TODO custom elements
