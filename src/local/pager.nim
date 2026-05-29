@@ -1880,9 +1880,6 @@ proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
 # console onto stderr.
 # ps remains open, but os is consumed.
 proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
-  var oldint, oldquit: Sigaction
-  var act = Sigaction(sa_handler: posix.SIG_IGN, sa_flags: SA_RESTART)
-  var oldmask, dummy: Sigset
   let westream = pager.forkserver.westream
   if sigemptyset(act.sa_mask) < 0 or
       sigaction(SIGINT, act, oldint) < 0 or

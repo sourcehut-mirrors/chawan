@@ -482,8 +482,25 @@ proc checkEntry(entry: MailcapEntry; contentType: string; url: URL): bool =
     of nfTest:
       var canpipe = true
       let cmd = unquoteCommand(field.value, contentType, "", url, canpipe)
-      if not canpipe or myposix.system(cstring(cmd)) != 0:
+      if not canpipe:
         return false
+      let pid = fork()
+      case pid
+      of -1: return false
+      of 0:
+        closeStdin()
+        closeStdout()
+        closeStderr()
+        discard myposix.signal(SIGINT, myposix.SIG_IGN)
+        discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+        exitnow(127)
+      else:
+        var wstatus: cint
+        while waitpid(pid, wstatus, 0) == -1:
+          if errno != EINTR:
+            break
+        if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
+          return false
     of nfMatch, nfNcMatch:
       let i = field.value.find('\0') + 1
       let surl = $url
