@@ -32,6 +32,7 @@ y.style.marginRight = "1px";
 assertEquals(window.getComputedStyle(y).marginRight, "1px");
 y.style.marginRight = "1%";
 assertEquals(window.getComputedStyle(y).marginRight, "1%");
+assertEquals(window.getComputedStyle(y).margin, "0 1% 0 10px");
 y.style.marginRight = "calc(calc(1% - 2px) + 1px)";
 assertEquals(window.getComputedStyle(y).marginRight, "calc(1% - 1px)");
 y.remove();

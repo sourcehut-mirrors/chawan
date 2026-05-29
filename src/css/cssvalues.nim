@@ -602,7 +602,7 @@ proc valueType*(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
 proc isSupportedProperty*(s: string): bool =
-  return propertyType(s).isOk
+  return anyPropertyType(s).isOk
 
 template auto*(length: CSSLength): bool =
   isNaN(length.npx)

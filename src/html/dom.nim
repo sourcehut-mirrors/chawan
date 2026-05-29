@@ -6047,9 +6047,9 @@ proc item(ctx: JSContext; this: CSSStyleDeclaration; u: uint32): JSValue
     return ctx.toJS(this.decls[int(u)].name)
   return ctx.toJS("")
 
-proc find(this: CSSStyleDeclaration; p: CSSWidePropertyType): int =
+proc find(this: CSSStyleDeclaration; p: CSSPropertyType): int =
   for i, decl in this.decls.mypairs:
-    if decl.t == cdtProperty and decl.p == p:
+    if decl.t == cdtProperty and decl.p.sh == cstNone and decl.p.p == p:
       return i
   return -1
 
@@ -6060,17 +6060,30 @@ proc find(this: CSSStyleDeclaration; s: string): int =
       if decl.t == cdtVariable and decl.v == v:
         return i
     return -1
-  if p := anyPropertyType(s):
+  if p := propertyType(s):
     return this.find(p)
   return -1
 
 proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
-  if (let i = this.find(s); i != -1):
-    var s = ""
+  var res = ""
+  if (let sh = shorthandType(s); sh != cstNone):
+    var flags: array[CSSImportantFlag, bool]
+    for p in ShorthandMap[sh]:
+      let i = this.find(p)
+      if i < 0:
+        return ""
+      flags[this.decls[i].f] = true
+      if flags[cifNormal] and flags[cifImportant]:
+        return ""
+      for it in this.decls[i].value:
+        res &= $it
+      res &= ' '
+    if res.len > 0:
+      res.setLen(res.high)
+  elif (let i = this.find(s); i >= 0):
     for it in this.decls[i].value:
-      s &= $it
-    return move(s)
-  return ""
+      res &= $it
+  move(res)
 
 proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
     {.jsgetownprop.} =
@@ -6120,7 +6133,7 @@ proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration; name: string):
   let sh = shorthandType(name)
   if sh != cstNone:
     for t in ShorthandMap[sh]:
-      let i = this.find(wide(t))
+      let i = this.find(t)
       if i != -1:
         this.decls.delete(i)
   else:
