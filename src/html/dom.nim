@@ -6047,6 +6047,12 @@ proc item(ctx: JSContext; this: CSSStyleDeclaration; u: uint32): JSValue
     return ctx.toJS(this.decls[int(u)].name)
   return ctx.toJS("")
 
+proc find(this: CSSStyleDeclaration; p: CSSWidePropertyType): int =
+  for i, decl in this.decls.mypairs:
+    if decl.t == cdtProperty and decl.p == p:
+      return i
+  return -1
+
 proc find(this: CSSStyleDeclaration; s: string): int =
   if s.startsWith("--"):
     let v = s.toOpenArray(2, s.high).toAtom()
@@ -6055,9 +6061,7 @@ proc find(this: CSSStyleDeclaration; s: string): int =
         return i
     return -1
   if p := anyPropertyType(s):
-    for i, decl in this.decls.mypairs:
-      if decl.t == cdtProperty and decl.p == p:
-        return i
+    return this.find(p)
   return -1
 
 proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
@@ -6113,10 +6117,16 @@ proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration; name: string):
       "cannot modify read-only declaration")
   let name = name.toLowerAscii()
   let value = this.getPropertyValue(name)
-  #TODO shorthand
-  let i = this.find(name)
-  if i != -1:
-    this.decls.delete(i)
+  let sh = shorthandType(name)
+  if sh != cstNone:
+    for t in ShorthandMap[sh]:
+      let i = this.find(wide(t))
+      if i != -1:
+        this.decls.delete(i)
+  else:
+    let i = this.find(name)
+    if i != -1:
+      this.decls.delete(i)
   return ctx.toJS(value)
 
 proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =

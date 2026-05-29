@@ -1823,7 +1823,7 @@ proc makeDefaultEntry(t: CSSPropertyType): CSSComputedEntry =
   of cprtWord: return makeEntry(t, getDefaultWord(t))
   of cprtObject: return makeEntry(t, getDefault(t))
 
-const ShorthandMap = [
+const ShorthandMap* = [
   cstNone: @[],
   cstAll: @[],
   cstMargin: @[cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft],
