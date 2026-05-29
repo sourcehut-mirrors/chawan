@@ -1400,19 +1400,6 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     env: openArray[EnvVar]): Opt[bool] =
   if suspend:
     ?pager.term.quit()
-  var oldint, oldquit, act: Sigaction
-  var oldmask, dummy: Sigset
-  act.sa_handler = posix.SIG_IGN
-  act.sa_flags = SA_RESTART
-  if sigemptyset(act.sa_mask) < 0 or
-      sigaction(SIGINT, act, oldint) < 0 or
-      sigaction(SIGQUIT, act, oldquit) < 0 or
-      sigaddset(act.sa_mask, SIGCHLD) < 0 or
-      sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
-    pager.alert("Failed to run process")
-    if suspend:
-      ?pager.term.restart()
-    return ok(false)
   case (let pid = fork(); pid)
   of -1:
     pager.alert("Failed to run process")
@@ -1422,11 +1409,8 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
   of 0:
     if pager.setEnvVars0(env).isErr:
       quit(1)
-    act.sa_handler = posix.SIG_DFL
-    discard sigemptyset(act.sa_mask)
-    discard sigaction(SIGINT, oldint, act)
-    discard sigaction(SIGQUIT, oldquit, act)
-    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
+    discard myposix.signal(SIGINT, myposix.SIG_IGN)
+    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
     if not suspend:
       closeStdin()
       closeStdout()
@@ -1443,9 +1427,6 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
           ?pager.term.restart()
     else:
       pager.pidMap[int(pid)] = cmd
-    discard sigaction(SIGINT, oldint, act)
-    discard sigaction(SIGQUIT, oldquit, act)
-    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     if not suspend:
       return ok(true)
     if wait:
@@ -1881,30 +1862,18 @@ proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
 # ps remains open, but os is consumed.
 proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
   let westream = pager.forkserver.westream
-  if sigemptyset(act.sa_mask) < 0 or
-      sigaction(SIGINT, act, oldint) < 0 or
-      sigaction(SIGQUIT, act, oldquit) < 0 or
-      sigaddset(act.sa_mask, SIGCHLD) < 0 or
-      sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
-    pager.alert("Failed to run process (errno " & $errno & ")")
-    return -1
   case (let pid = fork(); pid)
   of -1:
     pager.alert("Failed to fork process")
     return -1
   of 0:
-    act.sa_handler = posix.SIG_DFL
-    discard sigemptyset(act.sa_mask)
-    discard sigaction(SIGINT, oldint, act)
-    discard sigaction(SIGQUIT, oldquit, act)
-    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
+    discard myposix.signal(SIGINT, myposix.SIG_IGN)
+    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
     ps.moveFd(STDIN_FILENO)
     os.moveFd(STDOUT_FILENO)
     westream.moveFd(STDERR_FILENO)
     myExec(cmd)
   else:
-    discard sigaction(SIGINT, oldint, act)
-    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     os.sclose()
     return pid
 
