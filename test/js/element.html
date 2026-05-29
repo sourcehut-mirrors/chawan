@@ -45,6 +45,9 @@ for (let z = y; z; z = z.nextElementSibling)
 y.textContent = "";
 assertEquals(y.childNodes.length, 0);
 y.remove();
+const newDoc = document.implementation.createHTMLDocument();
+newDoc.body.append(y)
+assertEquals(y.attributes[0].ownerDocument, newDoc);
 const z = document.getElementById("z");
 z.remove();
 assertThrows(() => x.prepend({toString: () => new Error()}), TypeError);

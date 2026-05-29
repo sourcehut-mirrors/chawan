@@ -153,16 +153,16 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
 proc insertCommentImpl(builder: ChaDOMBuilder; parent: ParentNode;
     text: string; before: Option[ParentNode]) =
   let comment = builder.document.createComment(text)
-  parent.insert(comment, before.get(nil))
+  parent.insert(comment, before.get(nil), nil)
 
 proc appendDocumentTypeImpl(builder: ChaDOMBuilder;
     name, publicId, systemId: string) =
   let doctype = builder.document.newDocumentType(name, publicId, systemId)
-  builder.document.insert(doctype, nil)
+  builder.document.insert(doctype, nil, nil)
 
 proc insertBeforeImpl(builder: ChaDOMBuilder; parent, child: ParentNode;
     before: Option[ParentNode]) =
-  parent.insert(child, before.get(nil))
+  parent.insert(child, before.get(nil), nil)
 
 proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: string;
     before: Option[ParentNode]) =
@@ -177,7 +177,7 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: string;
       Element(parent).invalidate()
   else:
     let text = builder.document.newText(text)
-    parent.insert(text, before)
+    parent.insert(text, before, nil)
 
 proc removeImpl(builder: ChaDOMBuilder; child: ParentNode) =
   if child.parentNode != nil:
@@ -188,7 +188,7 @@ proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
   for node in toMove:
     node.remove(suppressObservers = true)
   for child in toMove:
-    toNode.insert(child, nil)
+    toNode.insert(child, nil, nil)
 
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
     attrs: Table[CAtom, string]) =
@@ -263,7 +263,7 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
     PLAINTEXT
   else: DATA
   let root = document.newHTMLElement(TAG_HTML)
-  document.insert(root, nil)
+  document.insert(root, nil, nil)
   let opts = HTML5ParserOpts[ParentNode, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: false,

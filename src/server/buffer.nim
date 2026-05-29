@@ -585,7 +585,7 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
       if lastChild != nil and lastChild of Text:
         Text(lastChild).data.s &= data
       else:
-        plaintext.insert(bc.document.newText($data), nil)
+        plaintext.insert(bc.document.newText($data), nil, nil)
       plaintext.invalidate()
   true
 
@@ -1638,8 +1638,8 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           of '&': data &= "&amp;"
           else: data &= c
           inc j
-        let replacement = html.fragmentParsingAlgorithm(data)
-        discard element.replace(replacement, text)
+        let replacement = bc.window.jsctx.parseFragment(html, data)
+        discard element.replace(replacement, text, nil)
   bc.maybeReshape()
 
 proc toggleImages(bc: BufferContext; handle: PagerHandle): bool {.

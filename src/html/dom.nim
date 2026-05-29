@@ -761,7 +761,7 @@ proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
   readonly = false): CSSStyleDeclaration
 
-proc adopt(document: Document; node: Node)
+proc adopt(document: Document; node: Node; ctx: JSContext)
 proc applyStyleDependencies*(element: Element; depends: DependencyInfo)
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
@@ -786,9 +786,10 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
 proc countChildren(node: ParentNode; t: NodeType): int
 proc hasChild(node: ParentNode; t: NodeType): bool
 proc hasChildExcept(node: ParentNode; t: NodeType; ex: Node): bool
-proc insert*(parent: ParentNode; node, before: Node; suppressObservers = false)
-proc replaceAll(parent: ParentNode; node: Node)
-proc replaceAll(parent: ParentNode; s: sink string)
+proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
+  suppressObservers = false)
+proc replaceAll(parent: ParentNode; node: Node; ctx: JSContext)
+proc replaceAll(parent: ParentNode; s: sink string; ctx: JSContext)
 proc firstChild(parent: ParentNode): Node
 proc firstChildShadow(parent: ParentNode): Node
 proc setFirstChild(node: ParentNode; child: Node)
@@ -2428,25 +2429,25 @@ proc removeChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
   return ctx.toJS(node)
 
 # before may be nil
-proc insertBefore(parent, node, before: Node): Err[cstring] =
+proc insertBefore(parent, node, before: Node; ctx: JSContext): Err[cstring] =
   let parent = ?parent.preInsertionValidity(node, before)
   let referenceChild = if before == node:
     node.nextSibling
   else:
     before
-  parent.insert(node, referenceChild)
+  parent.insert(node, referenceChild, ctx)
   ok()
 
 proc insertBefore(ctx: JSContext; parent, node: Node; before: Option[Node]):
     JSValue {.jsfunc.} =
-  let res = parent.insertBefore(node, before.get(nil))
+  let res = parent.insertBefore(node, before.get(nil), ctx)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return ctx.toJS(node)
 
 proc insertBeforeUndefined(ctx: JSContext; parent, node: Node;
     before: Option[Node]): JSValue =
-  let res = parent.insertBefore(node, before.get(nil))
+  let res = parent.insertBefore(node, before.get(nil), ctx)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return JS_UNDEFINED
@@ -2455,11 +2456,11 @@ proc appendChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
   return ctx.insertBefore(parent, node, none(Node))
 
 #TODO this looks wrong. either pre-insert and throw or just insert...
-proc append(parent, node: Node) =
-  discard parent.insertBefore(node, nil)
+proc append(parent, node: Node; ctx: JSContext) =
+  discard parent.insertBefore(node, nil, ctx)
 
 # Replace child with node.
-proc replace*(parent, node, child: Node): Err[cstring] =
+proc replace*(parent, node, child: Node; ctx: JSContext): Err[cstring] =
   let parent = ?parent.checkParentValidity()
   if node.isInclusiveAncestorHost(parent):
     return err("parent must be an ancestor")
@@ -2498,23 +2499,24 @@ proc replace*(parent, node, child: Node): Err[cstring] =
   #NOTE the standard says "if parent is not null", but the adoption step
   # that made it necessary has been removed.
   child.remove(suppressObservers = true)
-  parent.insert(node, referenceChild, suppressObservers = true)
+  parent.insert(node, referenceChild, ctx, suppressObservers = true)
   #TODO tree mutation record
   ok()
 
 proc replaceChild(ctx: JSContext; parent, node, child: Node): JSValue {.jsfunc.} =
-  let res = parent.replace(node, child)
+  let res = parent.replace(node, child, ctx)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return ctx.toJS(child)
 
 proc replaceChildUndefined(ctx: JSContext; parent, node, child: Node): JSValue =
-  let res = parent.replace(node, child)
+  let res = parent.replace(node, child, ctx)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return JS_UNDEFINED
 
-proc clone(node: Node; document = none(Document); deep = false): Node =
+proc clone(node: Node; ctx: JSContext; document = none(Document);
+    deep = false): Node =
   let document = document.get(node.document)
   let copy = if node of Element:
     #TODO is value
@@ -2588,14 +2590,14 @@ proc clone(node: Node; document = none(Document); deep = false): Node =
   if deep and node of ParentNode:
     let node = ParentNode(node)
     for child in node.childList:
-      copy.append(child.clone(deep = true))
-  return copy
+      copy.append(child.clone(ctx, deep = true), ctx)
+  copy
 
 proc cloneNode(ctx: JSContext; node: Node; deep = false): JSValue {.jsfunc.} =
   if node of ShadowRoot:
     return JS_ThrowDOMException(ctx, "NotSupportedError",
       "cannot clone shadow roots")
-  let copy = node.clone(deep = deep)
+  let copy = node.clone(ctx, deep = deep)
   if node of Element:
     let element = Element(node)
     let shadow = element.shadowRoot
@@ -2614,7 +2616,7 @@ proc cloneNode(ctx: JSContext; node: Node; deep = false): JSValue {.jsfunc.} =
       copyShadow.declarative = shadow.declarative
       copyShadow.unsetCustomElements = shadow.unsetCustomElements
       for child in shadow.childList:
-        copyShadow.append(child.clone(deep = deep))
+        copyShadow.append(child.clone(ctx, deep = deep), ctx)
   return ctx.toJS(copy)
 
 proc isSameNode(node, other: Node): bool {.jsfunc.} =
@@ -2781,11 +2783,11 @@ proc setTextContent(ctx: JSContext; node: Node; data: JSValueConst): Opt[void]
   if node of Element or node of DocumentFragment:
     let node = ParentNode(node)
     if JS_IsNull(data):
-      node.replaceAll(nil)
+      node.replaceAll(nil, ctx)
     else:
       var res: string
       ?ctx.fromJS(data, res)
-      node.replaceAll(move(res))
+      node.replaceAll(move(res), ctx)
     return ok()
   return ctx.setNodeValue(node, data)
 
@@ -2804,9 +2806,9 @@ proc toNode(ctx: JSContext; nodes: openArray[JSValueConst]; document: Document):
     else:
       if not fragment:
         let fragment = document.newDocumentFragment()
-        fragment.append(node)
+        fragment.append(node, ctx)
         node = fragment
-      node.append(node0)
+      node.append(node0, ctx)
   if node == nil:
     node = document.newDocumentFragment()
   ok(node)
@@ -2835,7 +2837,7 @@ proc replaceChildrenImpl(ctx: JSContext; parent: Node;
   if x.isErr:
     return ctx.insertThrow(x.error)
   let parent = x.get
-  parent.replaceAll(node)
+  parent.replaceAll(node, ctx)
   return JS_UNDEFINED
 
 proc assignSlot(node: Node) =
@@ -2893,7 +2895,7 @@ proc getChildList*(node: ParentNode): seq[Node] =
   for child in node.childList:
     result.add(child)
 
-proc replaceAll(parent: ParentNode; node: Node) =
+proc replaceAll(parent: ParentNode; node: Node; ctx: JSContext) =
   let removedNodes = parent.getChildList()
   for child in removedNodes:
     child.remove(true)
@@ -2901,14 +2903,14 @@ proc replaceAll(parent: ParentNode; node: Node) =
     if node of DocumentFragment:
       let nodes = DocumentFragment(node).getChildList()
       for it in nodes:
-        parent.insert(it, nil, suppressObservers = true)
+        parent.insert(it, nil, ctx, suppressObservers = true)
     else:
-      parent.insert(node, nil, suppressObservers = true)
+      parent.insert(node, nil, ctx, suppressObservers = true)
   #TODO tree mutation record
 
-proc replaceAll(parent: ParentNode; s: sink string) =
+proc replaceAll(parent: ParentNode; s: sink string; ctx: JSContext) =
   let node = if s != "": parent.document.newText(s) else: nil
-  parent.replaceAll(node)
+  parent.replaceAll(node, ctx)
 
 proc childrenImpl(ctx: JSContext; node: ParentNode): JSValue =
   return ctx.getWeakCollection(node, wwmChildren)
@@ -2992,9 +2994,9 @@ proc getElementsByClassNameImpl(ctx: JSContext; node: ParentNode;
   ok(this)
 
 proc insert0(parent: ParentNode; node, before: Node;
-    postConnectionNodes: var seq[Element]) =
+    postConnectionNodes: var seq[Element]; ctx: JSContext) =
   let parentDocument = parent.document
-  parentDocument.adopt(node)
+  parentDocument.adopt(node, ctx)
   let element = if node of Element: Element(node) else: nil
   let first = parent.firstChild
   if before == nil:
@@ -3051,7 +3053,7 @@ proc insert0(parent: ParentNode; node, before: Node;
         customElements.addScopedDocument(parentDocument)
 
 # WARNING ditto
-proc insert*(parent: ParentNode; node, before: Node;
+proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
     suppressObservers = false) =
   let nodes = if node of DocumentFragment:
     DocumentFragment(node).getChildList()
@@ -3071,7 +3073,7 @@ proc insert*(parent: ParentNode; node, before: Node;
     Element(parent).invalidate()
   var postConnectionNodes: seq[Element] = @[]
   for node in nodes:
-    parent.insert0(node, before, postConnectionNodes)
+    parent.insert0(node, before, postConnectionNodes, ctx)
   #TODO children changed steps for parent
   if not suppressObservers:
     discard #TODO queue tree mutation record
@@ -3326,18 +3328,40 @@ proc lastElementChild(this: Document): Element {.jsfget.} =
 proc isxml(document: Document): bool =
   return document.contentType != satTextHtml
 
-proc adopt(document: Document; node: Node) =
+proc globalCustomElements(document: Document): CustomElementRegistry =
+  if document.customElements != nil and not document.customElements.scoped:
+    return document.customElements
+  nil
+
+proc adopt(document: Document; node: Node; ctx: JSContext) =
   let oldDocument = node.document
   if node.parentNode != nil:
     remove(node)
   if oldDocument != document:
-    #TODO shadow root
     node.internalNext = document
+    var templates: seq[HTMLTemplateElement]
     if node of ParentNode:
       let node = ParentNode(node)
-      for desc in node.descendants:
+      for desc in node.descendantsShadowIncl:
         if desc.nextSibling == nil:
           desc.internalNext = document
+        if desc of ShadowRoot:
+          let root = ShadowRoot(desc)
+          if root.customElements == nil and not root.unsetCustomElements or
+              root.customElements != nil and not root.customElements.scoped:
+            root.customElements = document.globalCustomElements
+        if node of Element:
+          let element = Element(node)
+          if ctx != nil and element.attrs.len > 0:
+            let scriptAttrs = ctx.getWeakCollection(element, wwmAttributes)
+            var attributes: NamedNodeMap
+            discard ctx.fromJS(scriptAttrs, attributes)
+            if attributes != nil:
+              for it in attributes.attrlist:
+                it.internalNext = document
+          #TODO custom element registry, img relevant mutations
+          if element.tagType == TAG_TEMPLATE:
+            templates.add(HTMLTemplateElement(element))
     var collection = oldDocument.liveCollectionsHead
     while collection != nil:
       let next = collection.next
@@ -3350,7 +3374,8 @@ proc adopt(document: Document; node: Node) =
         document.liveCollectionsHead = collection
       collection = next
     #TODO custom elements
-    #..adopting steps
+    for element in templates:
+      document.adopt(element.content, ctx)
 
 proc compatMode(document: Document): string {.jsfget.} =
   if document.mode == QUIRKS:
@@ -3607,15 +3632,16 @@ proc title*(document: Document): string {.jsfget.} =
     return title.childTextContent.stripAndCollapse()
   return ""
 
-proc `title=`(document: Document; s: sink string) {.jsfset: "title".} =
+proc `title=`(ctx: JSContext; document: Document; s: sink string) {.
+    jsfset: "title".} =
   var title = document.findFirst(TAG_TITLE)
   if title == nil:
     let head = document.head
     if head == nil:
       return
     title = document.newHTMLElement(TAG_TITLE)
-    head.append(title)
-  title.replaceAll(s)
+    head.append(title, ctx)
+  title.replaceAll(s, ctx)
 
 proc invalidateCollections(document: Document) =
   var collection = document.liveCollectionsHead
@@ -3711,9 +3737,9 @@ proc createDocument(ctx: JSContext; implementation: DOMImplementation;
   else:
     nil
   if doctype.isSome:
-    document.append(doctype.get)
+    document.append(doctype.get, ctx)
   if element != nil:
-    document.append(element)
+    document.append(element, ctx)
   document.origin = implementation.document.origin
   case namespace.toStaticAtom()
   of satNamespaceHTML: document.contentType = satApplicationXmlHtml
@@ -3725,18 +3751,18 @@ proc createHTMLDocument(ctx: JSContext; implementation: DOMImplementation;
     title: JSValueConst = JS_UNDEFINED): Opt[Document] {.jsfunc.} =
   let doc = newDocument(ctx)
   doc.contentType = satTextHtml
-  doc.append(doc.newDocumentType("html", "", ""))
+  doc.append(doc.newDocumentType("html", "", ""), ctx)
   let html = doc.newHTMLElement(TAG_HTML)
-  doc.append(html)
+  doc.append(html, ctx)
   let head = doc.newHTMLElement(TAG_HEAD)
-  html.append(head)
+  html.append(head, ctx)
   if not JS_IsUndefined(title):
     var s: string
     ?ctx.fromJS(title, s)
     let titleElement = doc.newHTMLElement(TAG_TITLE)
-    titleElement.append(doc.newText(s))
-    head.append(titleElement)
-  html.append(doc.newHTMLElement(TAG_BODY))
+    titleElement.append(doc.newText(s), ctx)
+    head.append(titleElement, ctx)
+  html.append(doc.newHTMLElement(TAG_BODY), ctx)
   doc.origin = implementation.document.origin
   ok(doc)
 
@@ -4996,22 +5022,23 @@ proc scrollTo(element: Element) {.jsfunc.} =
 proc scrollIntoView(element: Element) {.jsfunc.} =
   discard #TODO ditto
 
-proc fragmentParsingAlgorithm*(element: Element; s: string): DocumentFragment =
+proc parseFragment*(ctx: JSContext; element: Element; s: string):
+    DocumentFragment =
   #TODO xml
   let newChildren = parseHTMLFragmentImpl(element, s)
   let fragment = element.document.newDocumentFragment()
   for child in newChildren:
-    fragment.append(child)
+    fragment.append(child, ctx)
   return fragment
 
-proc innerHTML(element: Element; s: string) {.jsfset.} =
+proc innerHTML(ctx: JSContext; element: Element; s: string) {.jsfset.} =
   #TODO shadow root
-  let fragment = fragmentParsingAlgorithm(element, s)
-  let ctx = if element of HTMLTemplateElement:
+  let fragment = ctx.parseFragment(element, s)
+  let nodeCtx = if element of HTMLTemplateElement:
     HTMLTemplateElement(element).content
   else:
     element
-  ctx.replaceAll(fragment)
+  nodeCtx.replaceAll(fragment, ctx)
 
 proc outerHTML(ctx: JSContext; element: Element; s: string): JSValue
     {.jsfset.} =
@@ -5027,7 +5054,7 @@ proc outerHTML(ctx: JSContext; element: Element; s: string): JSValue
     # neither a document, nor a document fragment => parent must be an
     # element node
     Element(parent0)
-  let fragment = fragmentParsingAlgorithm(parent, s)
+  let fragment = ctx.parseFragment(parent, s)
   return ctx.replaceChildUndefined(parent, fragment, element)
 
 type InsertAdjacentPosition = enum
@@ -5050,12 +5077,12 @@ proc insertAdjacentHTML(ctx: JSContext; this: Element; position, text: string):
     nodeCtx = this.parentElement
   if nodeCtx == nil or not this.document.isxml and nodeCtx.tagType == TAG_HTML:
     nodeCtx = this.document.newHTMLElement(TAG_BODY)
-  let fragment = nodeCtx.fragmentParsingAlgorithm(text)
+  let fragment = ctx.parseFragment(nodeCtx, text)
   case position
-  of iapBeforeBegin: this.parentNode.insert(fragment, this)
-  of iapAfterBegin: this.insert(fragment, this.firstChild)
-  of iapBeforeEnd: this.append(fragment)
-  of iapAfterEnd: this.parentNode.insert(fragment, this.nextSibling)
+  of iapBeforeBegin: this.parentNode.insert(fragment, this, ctx)
+  of iapAfterBegin: this.insert(fragment, this.firstChild, ctx)
+  of iapBeforeEnd: this.append(fragment, ctx)
+  of iapAfterEnd: this.parentNode.insert(fragment, this.nextSibling, ctx)
   return JS_UNDEFINED
 
 proc insertAdjacent(ctx: JSContext; this: Node; position: string; node: Node):
@@ -6725,7 +6752,7 @@ proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
     var text: string
     ?ctx.fromJS(argv[0], text)
     if text != "":
-      this.insert(document.newText(text), nil)
+      this.insert(document.newText(text), nil, ctx)
   if not JS_IsUndefined(argv[1]):
     var value: string
     ?ctx.fromJS(argv[1], value)
@@ -6865,7 +6892,7 @@ proc setLength(ctx: JSContext; this: HTMLOptionsCollection; n: uint32):
       let parent = this.root
       let document = parent.document
       for i in 0 ..< n - len:
-        parent.append(document.newHTMLElement(TAG_OPTION))
+        parent.append(document.newHTMLElement(TAG_OPTION), ctx)
   else:
     for i in 0 ..< len - n:
       let it = ?ctx.item(this, uint32(i))
@@ -6909,7 +6936,8 @@ proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
     return JS_EXCEPTION
   let document = parent.document
   for i in len0.get ..< u:
-    let res = parent.insertBefore(document.newHTMLElement(TAG_OPTION), nil)
+    let res = parent.insertBefore(document.newHTMLElement(TAG_OPTION), nil,
+      ctx)
     if res.isErr:
       return ctx.insertThrow(res.error)
   return ctx.insertBeforeUndefined(parent, value, none(Node))
@@ -7480,7 +7508,7 @@ proc create(this: HTMLTableElement; tagType: TagType; before: Node):
   var element = this.findFirstChildOf(tagType)
   if element == nil:
     element = this.document.newHTMLElement(tagType)
-    this.insert(element, before)
+    this.insert(element, before, nil)
   return element
 
 proc delete(this: HTMLTableElement; tagType: TagType) =
@@ -7520,13 +7548,13 @@ proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
     return err()
   let tr = this.document.newHTMLElement(TAG_TR)
   if nrows == 0:
-    this.createTBody().append(tr)
+    this.createTBody().append(tr, ctx)
   elif index == -1 or uint32(index) == nrows:
     let it = ?ctx.item(rows, nrows - 1)
-    it.parentNode.append(tr)
+    it.parentNode.append(tr, ctx)
   else:
     let it = ?ctx.item(rows, uint32(index))
-    it.parentNode.insert(tr, it)
+    it.parentNode.insert(tr, it, ctx)
   ok(tr)
 
 proc deleteRow(ctx: JSContext; rows: HTMLCollection; index: int32): Opt[void] =
@@ -7569,10 +7597,10 @@ proc insertRow(ctx: JSContext; this: HTMLTableSectionElement;
     return err()
   let tr = this.document.newHTMLElement(TAG_TR)
   if index == -1 or index == int64(nrows):
-    this.append(tr)
+    this.append(tr, ctx)
   else:
     let it = ?ctx.item(rows, uint32(index))
-    this.insert(tr, it)
+    this.insert(tr, it, ctx)
   ok(tr)
 
 proc deleteRow(ctx: JSContext; this: HTMLTableSectionElement;
@@ -7606,22 +7634,22 @@ proc sectionRowIndex(ctx: JSContext; this: HTMLTableRowElement): Opt[int] {.
 proc jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
-proc value*(textarea: HTMLTextAreaElement): string {.jsfget.} =
-  if textarea.dirty:
-    return textarea.internalValue
-  return textarea.childTextContent
+proc value*(this: HTMLTextAreaElement): string {.jsfget.} =
+  if this.dirty:
+    return this.internalValue
+  return this.childTextContent
 
-proc `value=`*(textarea: HTMLTextAreaElement; s: sink string)
+proc `value=`*(this: HTMLTextAreaElement; s: sink string)
     {.jsfset: "value".} =
-  textarea.dirty = true
-  textarea.internalValue = s
+  this.dirty = true
+  this.internalValue = s
 
-proc textAreaString*(textarea: HTMLTextAreaElement): string =
+proc textAreaString*(this: HTMLTextAreaElement): string =
   result = ""
-  let rows = int64(textarea.attrul(satRows).get(1))
-  let cols = textarea.attrul(satCols).get(20)
+  let rows = int64(this.attrul(satRows).get(1))
+  let cols = this.attrul(satCols).get(20)
   var i = 0'i64
-  for line in textarea.value.split('\n'):
+  for line in this.value.split('\n'):
     if i >= rows:
       break
     if cols > 2 and cols <= uint64(int.high):
@@ -7636,19 +7664,20 @@ proc textAreaString*(textarea: HTMLTextAreaElement): string =
       result &= "[]\n"
     inc i
 
-proc defaultValue(textarea: HTMLTextAreaElement): string {.jsfget.} =
-  return textarea.textContent
+proc defaultValue(this: HTMLTextAreaElement): string {.jsfget.} =
+  this.textContent
 
-proc `defaultValue=`(textarea: HTMLTextAreaElement; s: sink string)
+proc `defaultValue=`(ctx: JSContext; this: HTMLTextAreaElement; s: sink string)
     {.jsfset: "defaultValue".} =
-  textarea.replaceAll(s)
+  this.replaceAll(s, ctx)
 
 # <title>
 proc text(this: HTMLTitleElement): string {.jsfget.} =
   return this.textContent
 
-proc `text=`(this: HTMLTitleElement; s: sink string) {.jsfset: "text".} =
-  this.replaceAll(s)
+proc `text=`(ctx: JSContext; this: HTMLTitleElement; s: sink string) {.
+    jsfset: "text".} =
+  this.replaceAll(s, ctx)
 
 # <video>
 proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
