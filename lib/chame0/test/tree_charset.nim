@@ -1,8 +1,8 @@
 include shared/tree_common
 
-import std/streams
 import chame/minidom_cs
-import chagashi/charset
+import encoding/charset
+import std/streams
 
 proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
     labels: openArray[string]) =

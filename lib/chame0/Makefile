@@ -1,5 +1,5 @@
 NIM ?= nim
-FLAGS += -p:. -p:../chagashi0
+FLAGS += -p:. -p:../../src
 
 .PHONY: all
 all: test
