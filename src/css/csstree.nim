@@ -401,6 +401,17 @@ proc addImage(frame: var TreeFrame; bmp: NetworkBitmap) =
     # (If we have bmp, render will take care of it automatically.)
     frame.addText("[img]")
 
+proc addImageOrAlt(frame: var TreeFrame; image: HTMLImageElement) =
+  let bmp = image.bitmap
+  if bmp == nil or bmp.cacheId == -1:
+    # Add a placeholder text if we have no bmp.
+    # (If we have bmp, render will take care of it automatically.)
+    let alt = image.attr(satAlt)
+    if alt != "":
+      frame.addText(alt)
+    else:
+      frame.addText("[img]")
+
 proc addBr(frame: var TreeFrame) =
   frame.add(StyledNode(
     t: stBr,
@@ -470,7 +481,7 @@ proc addChildren(frame: var TreeFrame) =
   of TAG_TEXTAREA:
     #TODO cache (do the same as with input, and add borders in render)
     frame.addText(HTMLTextAreaElement(frame.parent).textAreaString())
-  of TAG_IMG: frame.addImage(HTMLImageElement(frame.parent).bitmap)
+  of TAG_IMG: frame.addImageOrAlt(HTMLImageElement(frame.parent))
   of TAG_CANVAS: frame.addImage(HTMLCanvasElement(frame.parent).bitmap)
   of TAG_VIDEO: frame.addText("[video]")
   of TAG_AUDIO: frame.addText("[audio]")
