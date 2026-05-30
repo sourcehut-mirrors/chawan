@@ -1099,9 +1099,6 @@ proc serialize*(url: URL; excludeHash = false; excludePassword = false):
   if not excludeHash:
     result &= url.hash
 
-proc equals*(a, b: URL; excludeHash = false): bool =
-  return a.serialize(excludeHash) == b.serialize(excludeHash)
-
 proc `$`*(url: URL): string {.jsfunc: "toString".} = url.serialize()
 
 proc href(url: URL): string {.jsfget.} =
