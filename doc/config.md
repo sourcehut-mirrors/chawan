@@ -528,7 +528,7 @@ Following is a list of display options:
 
 color-mode = "auto"
 : **"monochrome"** / **"ansi"** / **"eight-bit"** / **"true-color"** /
-**"auto"**
+  **"auto"**
 
 : Set the color mode.  "auto" for automatic detection, "monochrome"
   for black on white, "ansi" for eight ANSI plus eight aixterm colors,

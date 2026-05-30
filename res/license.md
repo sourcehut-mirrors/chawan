@@ -127,14 +127,8 @@ misrepresented as being the original software.
 
 ## QuickJS
 
-Note that our vendored copy is not identical to upstream, as we include some
-patches for integration of the QuickJS and Nim runtimes.
-
-Also note that we include some patches from QuickJS-NG, maintained by Ben
-Noordhuis and Saúl Ibarra Corretgé.
-
-Special thanks to zamfofex, Bo Yao and Nick Vatamaniuc for their patches
-which we used in the past.
+Note that our vendored copy is not identical to upstream, as we include
+some patches for integration of the QuickJS and Nim runtimes.
 
 ```
 QuickJS Javascript Engine

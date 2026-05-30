@@ -35,7 +35,7 @@ Explanation for the separate directories found in `src/`:
   forkserver, loader.
 * types: mainly definitions of data types and things I didn't know where
   to put.
-* utils: things I didn't know where to put part 2
+* utils: things I didn't know where to put, part 2
 
 Additionally, "adapters" of various protocols and file formats can be found in
 `adapter/`:
@@ -68,7 +68,7 @@ general.  The complete list of buffers is only known to the main process.
 Mailcap commands are executed by the main process.  This depends on knowing
 the content type of the resource, so the main process also reads in all
 network headers of navigation responses before launching a buffer process.
-More on this in [Opening buffers](#opening-buffers).
+More on this in [*Opening buffers*](#opening-buffers).
 
 ### Forkserver
 
@@ -96,42 +96,44 @@ following steps:
 
 * `cgi-bin:` Start a CGI script, and read out its stdout into the
   response body. In certain cases it also streams the response into
-  the cache.  
+  the cache.
+
   This is also used for schemes like http/s, ftp, etc. by internally
   rewriting them into the appropriate `cgi-bin:` URL.
+
 * `stream:` Do the same thing as above, but read from a file descriptor
   passed to the loader beforehand. This is used when stdin is a file,
   e.g. `echo test | cha`. It is also used for mailcap entries with an
   x-htmloutput field.
+
 * `cache:` Read the file from the cache. This is used by the pager
   for the "view source" operation, and by buffers in the rare situation
   where their initial character encoding guess proves to be incorrect
   and they need to rewind the source.
-* `data:` Decode a data URL. This is done directly in the loader process
-  because very long data URLs wouldn't fit into the environment. (Plus,
-  obviously, it's more efficient this way.)
+
+* `data:` Decode a data URL.  This is done directly in the loader process
+  because very long data URLs wouldn't fit into the environment (and
+  because it's more efficient this way).
 
 The loader process distinguishes between clients (i.e processes) through
-their control stream (one end of a socketpair created by loader).
-This control stream is closed when the pager discards the buffer, so
-discarded buffers are unable to make further requests even if their
-process is still alive.
+their control stream (one end of a socketpair created by loader).  This
+control stream is closed when the pager discards the buffer, so discarded
+buffers are unable to make further requests even if their process is still
+alive.
 
 ### Buffer
 
 Buffer processes parse HTML, optionally query external resources from
-loader, run styling, JS, and finally render the page to an internal
-canvas.
+loader, run styling, JS, and finally render the page to an internal canvas.
 
-Buffers are managed by the pager through Container objects. A UNIX
-domain socket is established between each buffer and the pager for
-IPC.
+Buffers are managed by the pager through Container objects. A UNIX domain
+socket is established between each buffer and the pager for IPC.
 
 ## Opening buffers
 
 Scenario: the user attempts to navigate to <https://example.org>.
 
-1. pager creates a new container for the target URL.
+1. pager creates a new buffer for the target URL.
 2. pager sends a request for "https://example.org" to the loader. Then,
    it registers the file descriptor in its selector, and does something
    else until poll() reports activity on the file descriptor.
@@ -143,28 +145,28 @@ Scenario: the user attempts to navigate to <https://example.org>.
 5. loader parses these headers, and sends them to pager.
 6. pager reads in the headers, and decides what to do based on the
    Content-Type:
-	* If Content-Type is found in mailcap, then the response body
-	  is piped into the command in that mailcap entry. If the
-	  entry has x-htmloutput, then the command's stdout is taken
-	  instead of the response body, and Content-Type is set to
-	  text/html. Otherwise, the container is discarded.
-	* If Content-Type is text/html, then a new buffer process is
-	  created, which then parses the response body as HTML. If it
-	  is any `text/*` subtype, then the response is simply inserted
-	  into a `<plaintext>` tag.
-	* If Content-Type is not a `text/*` subtype, and no mailcap
-	  entry for it is found, then the user is prompted about where
-	  they wish to save the file.
+	* If Content-Type is found in mailcap, then the response body is
+	  piped into the command in that mailcap entry.  If the entry has
+	  x-htmloutput, then the command's stdout is taken instead of the
+	  response body, and Content-Type is set to text/html.	Otherwise,
+	  the buffer is discarded.
+	* If Content-Type is text/html, then a new "buffer process" is
+	  created, which then parses the response body as HTML.  If it is
+	  any `text/*` subtype, then the response is simply inserted into a
+	  `<plaintext>` tag.
+	* If Content-Type is not a `text/*` subtype, and no mailcap entry
+	  for it is found, then the user is prompted about where they wish
+	  to save the file.
 
 ## Cache
 
-Chawan's caching mechanism is largely inspired by that of w3m, which
-does not have a network cache. Instead, it simply saves source files
-to the disk before displaying them, and lets users view/edit the source
-without another network request.
+Chawan's caching mechanism is largely inspired by that of w3m, which does
+not have a network cache.  Instead, it simply saves source files to the
+disk before displaying them, and lets users view/edit the source without
+another network request.
 
-The only difference in Chawan is that it simultaneously streams files
-to the cache *and* buffers:
+The only difference in Chawan is that it simultaneously streams files to
+the cache *and* buffers:
 
 1. Client (pager or buffer) initiates request by sending a message to
    loader.
@@ -174,28 +176,28 @@ to the cache *and* buffers:
 4. Client sends "resume", now loader will stream the response both to
    the client and the cache.
 
-Cached items may be shared between clients; this is how rewinding on
-wrong charset guess is implemented. They are also manually reference
-counted and are unlinked when their reference count drops to zero.
+Cache items may be shared between clients; this is how rewinding on wrong
+charset guess is implemented.  They are also manually reference counted and
+are unlinked when their reference count drops to zero.
 
 The cache is used in the following ways:
 
 * For view source and edit source operations.
-* For rewinding buffers on incorrect charset guess. (In practice,
-  this is almost never used, because the first chunk we read tends to
-  determine the charset unambiguously.)
-* For reading images multiple times after download. (At least two reads
+* For rewinding buffers on incorrect charset guess.  (In practice, this
+  almost never happens, because the first chunk we read tends to determine
+  the charset unambiguously.)
+* For reading images multiple times after download.  (At least two reads
   are needed, because the first pass only parses the headers.)
-* As a memory buffer for image coding processes to mmap. (For details,
-  see [image.md](image.md).)
+* As a memory buffer for image coding processes to mmap.  For details,
+  see [image.md](image.md).
 
 Crucially, the cache *does not* understand Cache-Control headers, and
-will never skip a download when requested by a user. Similarly, loading
+will never skip a download when requested by a user.  Similarly, loading
 a "cache:" URL (e.g. view source) is guaranteed to never make a network
 request.
 
 Future directions: for non-JS buffers, we could kill idle processes and
-reload them on-demand from the cache. This could solve the problem of
+reload them on-demand from the cache.  This could solve the problem of
 spawning too many processes that then do nothing.
 
 ## Parsing HTML
@@ -229,45 +231,44 @@ buffers for running on-page scripts when JavaScript is enabled.
 
 The core JS related functionality has been separated out into the
 [Monoucha](https://git.sr.ht/~bptato/monoucha) library, so it can be
-used outside of Chawan too.
+used outside of Chawan too.  However, this library is no longer updated.
 
 ### General
 
 To avoid having to type out all the type conversion & error handling
 code manually, we have JS pragmas to automagically turn Nim procedures
-into JavaScript functions. (For details on the specific pragmas, see the
+into JavaScript functions.  (For details on the specific pragmas, see the
 [manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md).)
 
 Still, sometimes we have to deal with JSValues manually; in this case,
 the fromJS and toJS functions are used.  fromJS in particular returns an
-Opt[void], and uses a var parameter for overloading and efficient
-returns.
+Opt[void], and uses a var parameter for overloading and efficient returns.
 
 ### JS in the pager
 
-Keybindings can be assigned JavaScript functions in the config, and
-then the pager executes those when the keybindings are pressed.
+Keybindings can be assigned JavaScript functions in the config, and then
+the pager executes those when the keybindings are pressed.
 
-Also, contents of the start.startup-script option are executed at
-startup. This is used when `cha` is called with the `-r` flag.
+Also, contents of the start.startup-script option are executed at startup.
+This is used when `cha` is called with the `-r` flag.
 
-There *is* an API, described at [api.md](api.md). Web APIs are exposed
-to pager too, but you cannot operate on the DOMs themselves from the
-pager, unless you create one yourself with DOMParser.parseFromString.
+There *is* an API, described at [api.md](api.md).  Web APIs are exposed
+to the pager too, but you cannot operate on the DOM itself from the pager,
+unless you create one yourself with DOMParser.parseFromString.
 
-[config.md](config.md) describes all commands that are used in the
-default config.
+[config.md](config.md) describes all commands that are used in the default
+config.
 
 ### JS in the buffer
 
-The DOM is implemented through the same wrappers as those in pager,
-except the pager modules are not exposed to buffer JS.
+The DOM is implemented through the same wrappers as those in pager, except
+the pager modules are not exposed to buffer JS.
 
-Aside from document.write, it is mostly straightforward, and usually
-works OK, though too many things are missing to really make it useful.
+Aside from document.write, it is mostly straightforward, and usually works
+OK, though many features are still missing.
 
-As for document.write: don't ask. It works as far as I can tell, but
-I wouldn't know why.
+As for document.write: don't ask. It works as far as I can tell, but I
+wouldn't know why.
 
 ## CSS
 
@@ -279,12 +280,14 @@ The layout engine includes some heuristics around this so that the result
 is usually still acceptable.
 
 Also, some (now) commonly used features like CSS grid are not implemented
-yet, so websites using those look ugly.
+yet, so websites using those look ugly.  For an exact list of supported
+features, see [css.md](css.md).
 
 ### Parsing, cascading
 
-The parser is not very interesting, it's just an implementation of the CSS 3
-parsing module.  Overall it works fairly well.
+The parser is based on the CSS 3 syntax module.  It is optimized for
+single-pass parsing, so the output does not really resemble the CSSOM at
+first glance.
 
 Cascading works OK.  To speed up selector matching, various properties
 are hashed to filter out irrelevant CSS rules.  However, no further style
@@ -308,8 +311,8 @@ two passes:
    `render` fields of the respective boxes.
 
 2. css/layout.nim: position said boxes, always relative to their parent.
-   This pass takes `input` and compares it with input previously taken; if
-   they differ, it recurses through its children and then stores the box
+   This pass takes `input` and compares it with input previously taken;
+   if they differ, it recurses through its children and then stores the box
    size and other output in `state`.
 
    But if `input` is the same as in the previous pass and `keepLayout`

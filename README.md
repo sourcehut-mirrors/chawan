@@ -50,7 +50,7 @@ Known stable packages are:
 
 * Alpine Linux: <https://pkgs.alpinelinux.org/packages?name=chawan>
 * Arch Linux: <https://archlinux.org/packages/extra/x86_64/chawan/>
-* Debian (sid): <https://packages.debian.org/chawan>
+* Debian (testing): <https://packages.debian.org/chawan>
 * FreeBSD: <https://www.freshports.org/www/chawan/>
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
 * NixOS: <https://search.nixos.org/packages?show=chawan>
