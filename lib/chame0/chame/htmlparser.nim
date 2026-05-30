@@ -1089,9 +1089,11 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     of ttWhitespace: discard
     of ttComment: parser.insertComment(token, lastChildOf(parser.getDocument()))
     of ttDoctype:
-      parser.appendDocumentType(token.name, token.pubid, token.sysid)
+      parser.appendDocumentType(parser.tokenizer.tagNameBuf, token.pubid,
+        token.sysid)
       if not parser.opts.isIframeSrcdoc:
-        if quirksConditions(token.name, token.pubid, token.sysid, token.flags):
+        if quirksConditions(parser.tokenizer.tagNameBuf, token.pubid,
+            token.sysid, token.flags):
           parser.setQuirksMode(QUIRKS)
         elif limitedQuirksConditions(token.pubid, token.flags):
           parser.setQuirksMode(LIMITED_QUIRKS)

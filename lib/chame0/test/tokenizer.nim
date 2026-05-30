@@ -56,8 +56,8 @@ proc getAttrs(factory: MAtomFactory, o: JsonNode, esc: bool):
     else:
       result[k] = v.getStr()
 
-proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
-    Token[MAtom] =
+proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
+    name: var string): Token[MAtom] =
   case a[0].getStr()
   of "StartTag":
     return Token[MAtom](
@@ -88,11 +88,11 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
       flags.incl(tfSysid)
     if not a[4].getBool(): # yes, this is reversed. don't ask
       flags.incl(tfQuirks)
+    name = a[1].getStr()
     return Token[MAtom](
       t: ttDoctype,
-      name: if a[1].kind == JNull: "" else: a[1].getStr(),
-      pubid: if a[2].kind == JNull: "" else: a[2].getStr(),
-      sysid: if a[3].kind == JNull: "" else: a[3].getStr(),
+      pubid: a[2].getStr(),
+      sysid: a[3].getStr(),
       flags: flags
     )
   of "Comment":
@@ -103,15 +103,16 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     return Token[MAtom](t: ttComment, s: s)
   else: return nil
 
-proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
+proc checkEquals(factory: MAtomFactory; tok, otok: Token;
+    desc, nameBuf, otherName: string) =
   doAssert otok.t == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
     $otok.t & ")"
   case tok.t
   of ttDoctype:
-    doAssert tok.name == otok.name, desc & " (" & "tok name: " & $tok.name &
-      " otok name: " & $otok.name & ")"
+    doAssert nameBuf == otherName, desc & " (" & "tok name: " & nameBuf &
+      " otok name: " & otherName & ")"
     doAssert tok.pubid == otok.pubid, desc & " (" & "tok pubid: " &
-      $tok.pubid & " otok pubid: " & $otok.pubid & ")"
+      tok.pubid & " otok pubid: " & otok.pubid & ")"
     doAssert tok.sysid == otok.sysid, desc
     doAssert tok.flags == otok.flags, desc
   of ttStartTag, ttEndTag:
@@ -145,44 +146,58 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       otok.s & ")"
   of ttNull: discard
 
-proc runTest(builder: MiniDOMBuilder, desc: string,
-    output: seq[JsonNode], laststart: MAtom, esc: bool,
-    input: string, state = TokenizerState.DATA) =
-  let factory = builder.factory
+type TestContext = object
+  chartok: Token[MAtom]
+  output: seq[JsonNode]
+  i: int
+  factory: MAtomFactory
+  desc: string
+  esc: bool
+
+proc checkTokens(ctx: var TestContext; toks: seq[Token]; nameBuf: string) =
+  for tok in toks:
+    var otherName: string
+    check tok != nil
+    if ctx.chartok != nil and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
+      let otok = getToken(ctx.factory, ctx.output[ctx.i].getElems(), ctx.esc,
+        otherName)
+      checkEquals(ctx.factory, ctx.chartok, otok, ctx.desc, nameBuf, otherName)
+      inc ctx.i
+      ctx.chartok = nil
+    if tok.t in {ttCharacter, ttWhitespace}:
+      if ctx.chartok == nil:
+        ctx.chartok = Token(t: ttCharacter)
+      ctx.chartok.s &= tok.s
+    elif tok.t == ttNull:
+      if ctx.chartok == nil:
+        ctx.chartok = Token(t: ttCharacter)
+      ctx.chartok.s &= char(0)
+    else:
+      let otok = getToken(ctx.factory, ctx.output[ctx.i].getElems(), ctx.esc,
+        otherName)
+      checkEquals(ctx.factory, tok, otok, ctx.desc, nameBuf, otherName)
+      inc ctx.i
+
+proc runTest(builder: MiniDOMBuilder; desc: string; output: seq[JsonNode];
+    startTag: MAtom; esc: bool; input: string; state = TokenizerState.DATA) =
   var tokenizer = newTokenizer(builder, state)
-  tokenizer.laststart = Token[MAtom](t: ttStartTag, tagname: laststart)
-  var i = 0
-  var chartok: Token[MAtom] = nil
-  var toks = newSeq[Token[MAtom]]()
+  var ctx = TestContext(
+    factory: builder.factory,
+    output: output,
+    desc: desc,
+    esc: esc
+  )
+  tokenizer.startTag = startTag
   while true:
     let res = tokenizer.tokenize(input.toOpenArray(0, input.high))
-    toks.add(tokenizer.tokqueue)
+    ctx.checkTokens(tokenizer.tokqueue, tokenizer.tagNameBuf)
     if res == trDone:
       break
   while true:
     let res = tokenizer.finish()
-    toks.add(tokenizer.tokqueue)
+    ctx.checkTokens(tokenizer.tokqueue, tokenizer.tagNameBuf)
     if res == trDone:
       break
-  for tok in toks:
-    check tok != nil
-    if chartok != nil and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
-      let otok = getToken(factory, output[i].getElems(), esc)
-      checkEquals(factory, chartok, otok, desc)
-      inc i
-      chartok = nil
-    if tok.t in {ttCharacter, ttWhitespace}:
-      if chartok == nil:
-        chartok = Token[MAtom](t: ttCharacter)
-      chartok.s &= tok.s
-    elif tok.t == ttNull:
-      if chartok == nil:
-        chartok = Token[MAtom](t: ttCharacter)
-      chartok.s &= char(0)
-    else:
-      let otok = getToken(factory, output[i].getElems(), esc)
-      checkEquals(factory, tok, otok, desc)
-      inc i
 
 func getState(s: string): TokenizerState =
   case s
@@ -213,19 +228,15 @@ proc runTests(filename: string) =
     if esc:
       input = doubleEscape(input)
     let output = t{"output"}.getElems()
-    let laststart0 = if "lastStartTag" in t:
-      t{"lastStartTag"}.getStr()
-    else:
-      ""
     let factory = newMAtomFactory()
     let builder = newMiniDOMBuilder(factory)
-    let laststart = builder.factory.strToAtom(laststart0)
+    let startTag = builder.factory.strToAtom(t{"lastStartTag"}.getStr())
     if "initialStates" notin t:
-      runTest(builder, desc, output, laststart, esc, input)
+      runTest(builder, desc, output, startTag, esc, input)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(builder, desc, output, laststart, esc, input, state)
+        runTest(builder, desc, output, startTag, esc, input, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")
