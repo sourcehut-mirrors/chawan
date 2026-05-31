@@ -441,8 +441,7 @@ proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): FromJSResult =
 type FromIdxResult* = enum
   fiIdx, fiStr, fiErr
 
-proc fromIdx*[T: string|CAtom](ctx: JSContext; atom: JSAtom; idx: var uint32;
-    s: var T): FromIdxResult =
+proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult =
   let val = JS_AtomIsNumericIndex1(ctx, atom)
   if JS_IsException(val):
     return fiErr
@@ -451,13 +450,16 @@ proc fromIdx*[T: string|CAtom](ctx: JSContext; atom: JSAtom; idx: var uint32;
       i in 0..int64(uint32.high - 1):
     idx = uint32(i)
     return fiIdx
-  elif ctx.fromJS(atom, s).isOk:
+  fiStr
+
+proc fromIdx*[T: string|CAtom](ctx: JSContext; atom: JSAtom; idx: var uint32;
+    s: var T): FromIdxResult =
+  let res = ctx.fromIdx(atom, idx)
+  if res != fiStr:
+    return res
+  if ctx.fromJS(atom, s).isOk:
     return fiStr
   fiErr
-
-proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult =
-  var dummy: string
-  ctx.fromIdx(atom, idx, dummy)
 
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
