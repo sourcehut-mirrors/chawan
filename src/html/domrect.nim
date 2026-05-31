@@ -1,9 +1,9 @@
 {.push raises: [].}
 
 import html/catom
-import html/script
 import monoucha/jsbind
 import monoucha/jstypes
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt

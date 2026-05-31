@@ -3,12 +3,14 @@
 import std/posix
 
 import config/mimetypes
+import html/catom
 import io/packetreader
 import io/packetwriter
 import io/timeout
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jstypes
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt
@@ -31,12 +33,22 @@ type
     lastModified* {.jsget.}: int64
     fd*: cint
 
+  FileList* = ref object
+    files: seq[WebFile]
+
 jsDestructor(Blob)
 jsDestructor(WebFile)
+jsDestructor(FileList)
 
 # Forward declarations
 proc deallocBlob*(opaque, p: pointer)
 
+# Iterators
+iterator items*(this: FileList): lent WebFile =
+  for it in this.files:
+    yield it
+
+# Blob
 proc swrite*(w: var PacketWriter; blob: Blob) =
   w.swrite(blob of WebFile)
   if blob of WebFile:
@@ -71,6 +83,10 @@ proc sread*(r: var PacketReader; blob: var Blob) =
     r.readData(buffer, blob.size)
     blob.buffer = buffer
     blob.deallocFun = deallocBlob
+
+type BlobPropertyBag = object of JSDict
+  `type` {.jsdefault.}: string
+  #TODO endings
 
 proc newBlob*(buffer: pointer; size: int; ctype: string;
     deallocFun: DeallocFun; opaque: pointer = nil): Blob =
@@ -112,13 +128,8 @@ proc newWebFile*(name: string; fd: cint): WebFile =
     ctype: DefaultGuess.guessContentType(name)
   )
 
-type
-  BlobPropertyBag = object of JSDict
-    `type` {.jsdefault.}: string
-    #TODO endings
-
-  FilePropertyBag = object of BlobPropertyBag
-    lastModified {.jsdefault: getUnixMillis().}: int64
+type FilePropertyBag = object of BlobPropertyBag
+  lastModified {.jsdefault: getUnixMillis().}: int64
 
 proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     options = FilePropertyBag(lastModified: getUnixMillis())): WebFile
@@ -165,11 +176,46 @@ proc size*(this: WebFile): int {.jsfget.} =
 
 #TODO lastModified
 
+# FileList
+proc newFileList*(): FileList =
+  return FileList()
+
+proc getName*(this: FileList): string =
+  var res = ""
+  for i in 0 ..< this.files.len:
+    if i != 0:
+      res &= ','
+    res &= this.files[i].name
+  move(res)
+
+proc add*(this: FileList; file: WebFile) =
+  this.files.add(file)
+
+proc clear*(this: FileList) =
+  this.files.setLen(0)
+
+proc length(this: FileList): uint32 {.jsfget.} =
+  uint32(this.files.len)
+
+proc item(this: FileList; u: uint32): WebFile {.jsfunc.} =
+  if u >= 0 and int64(u) < int64(this.files.len):
+    return this.files[int(u)]
+  return nil
+
+proc getter(ctx: JSContext; this: FileList; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
+  var u: uint32
+  return case ctx.fromIdx(atom, u)
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+  of fiStr: JS_UNINITIALIZED
+  of fiErr: JS_EXCEPTION
+
 proc addBlobModule*(ctx: JSContext): Opt[void] =
   let blobCID = ctx.registerType(Blob)
   if blobCID == 0:
     return err()
   ?ctx.registerType(WebFile, parent = blobCID, name = "File")
+  ?ctx.registerType(FileList, iterable = jitValue)
   ok()
 
 {.pop.} # raises: []

@@ -223,11 +223,6 @@ proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
 proc logException*(ctx: JSContext) =
   ctx.errorImpl(ctx.getExceptionMsg())
 
-proc uninitIfNull*(val: JSValue): JSValue =
-  if JS_IsNull(val):
-    return JS_UNINITIALIZED
-  return val
-
 proc getEnvSettings*(ctx: JSContext): EnvironmentSettings =
   return ctx.getEnvSettingsImpl()
 

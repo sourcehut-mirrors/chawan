@@ -512,7 +512,7 @@ type
     inputType* {.jsget: "type".}: InputType
     internalValue: RefString
     internalChecked {.jsget: "checked".}: bool
-    files* {.jsget.}: seq[WebFile]
+    internalFiles: FileList # may be nil
     xcoord*: int
     ycoord*: int
 
@@ -5569,7 +5569,8 @@ proc resetElement*(element: Element) =
     of itCheckbox, itRadio:
       input.setChecked(input.attrb(satChecked))
     of itFile:
-      input.files.setLen(0)
+      if input.internalFiles != nil:
+        input.internalFiles.clear()
     else:
       input.setValue(input.attr(satValue))
     input.invalidate()
@@ -6639,6 +6640,11 @@ proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
   input.invalidate()
   input.internalChecked = b
 
+proc files*(this: HTMLInputElement): FileList {.jsfget.} =
+  if this.internalFiles == nil:
+    this.internalFiles = newFileList()
+  this.internalFiles
+
 proc inputString*(input: HTMLInputElement): RefString =
   case input.inputType
   of itCheckbox, itRadio:
@@ -6657,13 +6663,15 @@ proc inputString*(input: HTMLInputElement): RefString =
     return newRefString("SUBMIT")
   of itFile:
     #TODO multiple files?
-    let s = if input.files.len > 0: input.files[0].name else: ""
-    return newRefString(s)
+    return newRefString(input.files.getName())
   else:
     return input.internalValue
 
 proc select(ctx: JSContext; input: HTMLInputElement) {.jsfunc.} =
   ctx.focus(input)
+
+proc addFile*(this: HTMLInputElement; file: WebFile) =
+  this.files.add(file)
 
 # <label>
 proc control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =

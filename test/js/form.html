@@ -63,5 +63,6 @@ assertThrows(() => formData.append("test", "b", {
 }), TypeError);
 assertThrows(() => new FormData(null), TypeError);
 assertEquals(formData.get("test"), "a");
+assertEquals(FileList.prototype[Symbol.iterator], Array.prototype[Symbol.iterator]);
 document.getElementById("x").textContent = "Success";
 </script>

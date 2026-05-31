@@ -1117,7 +1117,8 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
       let input = HTMLInputElement(focus)
       case input.inputType
       of itFile:
-        input.files = @[newWebFile(s, fd)]
+        let file = newWebFile(s, fd)
+        input.addFile(file)
         input.invalidate()
       else:
         input.setValue(s)

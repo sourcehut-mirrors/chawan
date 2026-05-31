@@ -342,6 +342,11 @@ proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;
     {.cdecl.} =
   return JS_DupValue(ctx, func_data[0])
 
+proc uninitIfNull*(val: JSValue): JSValue =
+  if JS_IsNull(val):
+    return JS_UNINITIALIZED
+  return val
+
 proc identityFunction*(ctx: JSContext; val: JSValueConst): JSValue =
   ## Returns a function that always returns `val`.
   return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueConstArray())
