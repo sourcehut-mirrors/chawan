@@ -52,6 +52,7 @@ Known stable packages are:
 * Arch Linux: <https://archlinux.org/packages/extra/x86_64/chawan/>
 * Debian (testing): <https://packages.debian.org/chawan>
 * FreeBSD: <https://www.freshports.org/www/chawan/>
+* Gentoo: (::guru overlay) <https://codeberg.org/gentoo/guru/src/branch/master/www-client/chawan>
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
 * NixOS: <https://search.nixos.org/packages?show=chawan>
 * Slackware (SBo): <https://slackbuilds.org/repository/15.0/network/chawan/>
@@ -61,6 +62,7 @@ Unstable packages (tip of the `master` branch):
 
 * AUR: <https://aur.archlinux.org/packages/chawan-git>
 * AppImage: <https://git.lerch.org/lobo/chawan-appimage/>
+* Gentoo: (::guru overlay, live ebuild) <https://codeberg.org/gentoo/guru/src/branch/dev/www-client/chawan/chawan-9999.ebuild>
 * Homebrew (using `--HEAD`): <https://formulae.brew.sh/formula/chawan>
 
 Each [release](https://chawan.net/news/index.html) also comes with static
