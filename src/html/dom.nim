@@ -2791,27 +2791,31 @@ proc setTextContent(ctx: JSContext; node: Node; data: JSValueConst): Opt[void]
     return ok()
   return ctx.setNodeValue(node, data)
 
-proc toNode(ctx: JSContext; nodes: openArray[JSValueConst]; document: Document):
-    Opt[Node] =
-  var node: Node = nil
-  var fragment = false
+proc toNodes(ctx: JSContext; nodes: openArray[JSValueConst];
+    res: var seq[Node]): Opt[void] =
   for it in nodes:
-    var node0: Node
-    if ctx.fromJS(it, node0).isErr:
+    var node: Node
+    if ctx.fromJS(it, node).isOk:
+      res.add(node)
+    else:
       var s: string
       ?ctx.fromJS(it, s)
-      node0 = ctx.newText(s)
-    if node == nil:
-      node = node0
-    else:
-      if not fragment:
-        let fragment = document.newDocumentFragment()
-        fragment.append(node, ctx)
-        node = fragment
-      node.append(node0, ctx)
-  if node == nil:
-    node = document.newDocumentFragment()
-  ok(node)
+      res.add(ctx.newText(s))
+  ok()
+
+proc toNode(ctx: JSContext; nodes: openArray[Node]; document: Document): Node =
+  if nodes.len == 1:
+    return nodes[0]
+  let fragment = document.newDocumentFragment()
+  for node in nodes:
+    fragment.append(node, ctx)
+  fragment
+
+proc toNode(ctx: JSContext; argv: openArray[JSValueConst];
+    document: Document): Opt[Node] =
+  var nodes: seq[Node] = @[]
+  ?ctx.toNodes(argv, nodes)
+  ok(ctx.toNode(nodes, document))
 
 proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     JSValue =

@@ -7,52 +7,77 @@
 <script src=asserts.js></script>
 <script>
 const x = document.getElementById("x");
-assertEquals(x.localName, "div");
-assertEquals(x.tagName, "DIV");
-assertEquals(x.name, undefined);
-assertEquals(x.classList.item(-1), null);
-assertEquals(x.classList[-1], undefined);
-assertEquals(x.classList[1], "b");
-assertEquals(x.classList[4294967296], undefined);
-assertEquals(document.createElementNS("test", "test:div").tagName, "test:div");
-assertEquals(x.lang, "asdf");
-x.setAttributeNS("ns", "pf:test", "a");
-x.setAttributeNS("ns", "pf:test", "b");
-/*
- * The spec, as far as I can tell, says that this shouldn't change
- * pf:test's prefix.  Neither does Blink.  But Gecko does.
- *sigh* I hate XML.
- */
-x.setAttributeNS("ns", "as:test", "d");
-x.setAttributeNS("ns2", "as:test", "c");
-x.setAttributeNS("ns3", "pf:test", "c");
-assertEquals(x.attributes["pf:test"].prefix, "pf");
-assertEquals(x.attributes["pf:test"].namespaceURI, "ns");
-assertEquals(x.attributes["pf:test"].prefix, "pf");
-assertEquals(x.attributes["pf:test"].localName, "test");
-assertEquals(x.attributes["pf:test"].value, "d");
-assertEquals(x.attributes.unset, undefined);
-assertEquals(x.attributes.length, 6);
-assertEquals(x.getAttributeNS("ns", "test"), "d")
-let attr = x.attributes["pf:test"]
-x.removeAttributeNS("ns", "test")
-assertEquals(attr.value, "d")
-const y = document.getElementById("y");
-assertEquals(y.getElementsByTagName("div").length, 0);
-assertEquals(x.nextElementSibling, y);
-for (let z = y; z; z = z.nextElementSibling)
-	;
-y.textContent = "";
-assertEquals(y.childNodes.length, 0);
-y.remove();
-const newDoc = document.implementation.createHTMLDocument();
-newDoc.body.append(y)
-assertEquals(y.attributes[0].ownerDocument, newDoc);
-const z = document.getElementById("z");
-z.remove();
-assertThrows(() => x.prepend({toString: () => new Error()}), TypeError);
-assertThrows(() => x.append({toString: () => new Error()}), TypeError);
-x.prepend();
-x.append();
+
+function testName() {
+	assertEquals(x.localName, "div");
+	assertEquals(x.tagName, "DIV");
+	assertEquals(x.name, undefined);
+}
+
+function testClass() {
+	assertEquals(x.classList.item(-1), null);
+	assertEquals(x.classList[-1], undefined);
+	assertEquals(x.classList[1], "b");
+	assertEquals(x.classList[4294967296], undefined);
+}
+
+function testAttribute() {
+	assertEquals(document.createElementNS("test", "test:div").tagName, "test:div");
+	assertEquals(x.lang, "asdf");
+	x.setAttributeNS("ns", "pf:test", "a");
+	x.setAttributeNS("ns", "pf:test", "b");
+	/*
+	 * The spec, as far as I can tell, says that this shouldn't change
+	 * pf:test's prefix.  Neither does Blink.  But Gecko does.
+	 *sigh* I hate XML.
+	 */
+	x.setAttributeNS("ns", "as:test", "d");
+	x.setAttributeNS("ns2", "as:test", "c");
+	x.setAttributeNS("ns3", "pf:test", "c");
+	assertEquals(x.attributes["pf:test"].prefix, "pf");
+	assertEquals(x.attributes["pf:test"].namespaceURI, "ns");
+	assertEquals(x.attributes["pf:test"].prefix, "pf");
+	assertEquals(x.attributes["pf:test"].localName, "test");
+	assertEquals(x.attributes["pf:test"].value, "d");
+	assertEquals(x.attributes.unset, undefined);
+	assertEquals(x.attributes.length, 6);
+	assertEquals(x.getAttributeNS("ns", "test"), "d")
+	let attr = x.attributes["pf:test"]
+	x.removeAttributeNS("ns", "test")
+	assertEquals(attr.value, "d")
+	const y = document.getElementById("y");
+	assertEquals(y.getElementsByTagName("div").length, 0);
+	assertEquals(x.nextElementSibling, y);
+	for (let z = y; z; z = z.nextElementSibling)
+		;
+	y.textContent = "";
+	assertEquals(y.childNodes.length, 0);
+	y.remove();
+	const newDoc = document.implementation.createHTMLDocument();
+	newDoc.body.append(y)
+	assertEquals(y.attributes[0].ownerDocument, newDoc);
+}
+
+function testParentNode() { /* ParentNode mixin */
+	const z = document.getElementById("z");
+	const obj = {
+		toString: () => {
+			throw new TypeError()
+		}
+	}
+	assertThrows(() => x.append(z, z, obj), TypeError);
+	assertEquals(z.parentElement, document.body);
+	z.remove();
+	assertThrows(() => x.prepend({toString: () => new Error()}), TypeError);
+	assertThrows(() => x.append({toString: () => new Error()}), TypeError);
+	x.prepend();
+	x.append();
+}
+
+testName();
+testClass();
+testAttribute();
+testParentNode();
+
 x.textContent = "Success";
 </script>
