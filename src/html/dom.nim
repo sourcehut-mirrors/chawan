@@ -2460,7 +2460,9 @@ proc append(parent, node: Node; ctx: JSContext) =
   discard parent.insertBefore(node, nil, ctx)
 
 # Replace child with node.
-proc replace*(parent, node, child: Node; ctx: JSContext): Err[cstring] =
+# Note: the argument ordering here is the opposite of replaceChild.
+proc replaceChildWith*(parent, child, node: Node; ctx: JSContext):
+    Err[cstring] =
   let parent = ?parent.checkParentValidity()
   if node.isInclusiveAncestorHost(parent):
     return err("parent must be an ancestor")
@@ -2503,14 +2505,17 @@ proc replace*(parent, node, child: Node; ctx: JSContext): Err[cstring] =
   #TODO tree mutation record
   ok()
 
-proc replaceChild(ctx: JSContext; parent, node, child: Node): JSValue {.jsfunc.} =
-  let res = parent.replace(node, child, ctx)
+# Warning: the ordering is counter-intuitive here.
+proc jsReplaceChild(ctx: JSContext; parent, node, child: Node): JSValue {.
+    jsfunc: "replaceChild".} =
+  let res = parent.replaceChildWith(child, node, ctx)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return ctx.toJS(child)
 
-proc replaceChildUndefined(ctx: JSContext; parent, node, child: Node): JSValue =
-  let res = parent.replace(node, child, ctx)
+proc replaceChildWithThrow(ctx: JSContext; parent, child, node: Node):
+    JSValue =
+  let res = parent.replaceChildWith(child, node, ctx)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return JS_UNDEFINED
@@ -5059,7 +5064,7 @@ proc outerHTML(ctx: JSContext; element: Element; s: string): JSValue
     # element node
     Element(parent0)
   let fragment = ctx.parseFragment(parent, s)
-  return ctx.replaceChildUndefined(parent, fragment, element)
+  ctx.replaceChildWithThrow(parent, element, fragment)
 
 type InsertAdjacentPosition = enum
   iapBeforeBegin = "beforebegin"
@@ -6965,7 +6970,7 @@ proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
   let value = value.get
   let parent = this.root
   if element != nil:
-    return ctx.replaceChildUndefined(parent, value, element)
+    return ctx.replaceChildWithThrow(parent, element, value)
   let len0 = ctx.getLength(this)
   if len0.isErr:
     return JS_EXCEPTION

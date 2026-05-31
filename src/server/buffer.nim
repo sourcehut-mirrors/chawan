@@ -1640,7 +1640,7 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           else: data &= c
           inc j
         let replacement = bc.window.jsctx.parseFragment(html, data)
-        discard element.replace(replacement, text, nil)
+        discard element.replaceChildWith(text, replacement, nil)
   bc.maybeReshape()
 
 proc toggleImages(bc: BufferContext; handle: PagerHandle): bool {.
