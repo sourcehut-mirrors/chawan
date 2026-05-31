@@ -1862,11 +1862,8 @@ proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
 # ps remains open, but os is consumed.
 proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
   let westream = pager.forkserver.westream
-  case (let pid = fork(); pid)
-  of -1:
-    pager.alert("Failed to fork process")
-    return -1
-  of 0:
+  let pid = fork()
+  if pid == 0:
     discard myposix.signal(SIGINT, myposix.SIG_IGN)
     discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
     ps.moveFd(STDIN_FILENO)
@@ -1874,6 +1871,8 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
     westream.moveFd(STDERR_FILENO)
     myExec(cmd)
   else:
+    if pid == -1:
+      pager.alert("Failed to fork process")
     os.sclose()
     return pid
 
@@ -1893,6 +1892,7 @@ proc execPipeSink(pager: Pager; cmd: string; istream: PosixStream):
     PosixStream =
   let (pins, pouts) = pager.createPipe()
   if pins == nil:
+    istream.sclose()
     return nil
   pins.setCloseOnExec()
   let pid = pager.execPipe(cmd, istream, pouts)
@@ -1907,11 +1907,13 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
   let entry = pager.autoMailcap.findMailcapEntry("text/x-ansi", "text/x-ansi",
     url)
   if entry == nil:
+    istream.sclose()
     pager.alert("No text/x-ansi entry found")
     return nil
   var canpipe = true
   let cmd = unquoteCommand(entry.cmd, "text/x-ansi", "", url, canpipe)
   if not canpipe:
+    istream.sclose()
     pager.alert("Error: could not pipe to text/x-ansi, decoding as text/plain")
     return nil
   return pager.execPipeSink(cmd, istream)
@@ -2356,10 +2358,9 @@ proc handleRead(pager: Pager; init: BufferInit): JSValue =
       init.ostream = stream
       if init.filterCmd != "":
         pager.setEnvVars(pager.defaultEnv())
-        let ostream = pager.execPipeSink(init.filterCmd, init.ostream)
-        if ostream == nil:
+        init.ostream = pager.execPipeSink(init.filterCmd, init.ostream)
+        if init.ostream == nil:
           return pager.fail(init, "failed to filter buffer")
-        init.ostream = ostream
       return pager.initMailcap(init)
     stream.sclose()
     return ctx.connected(init, cres, arg0)
