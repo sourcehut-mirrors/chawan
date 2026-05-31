@@ -2849,6 +2849,59 @@ proc replaceChildrenImpl(ctx: JSContext; parent: Node;
   parent.replaceAll(node, ctx)
   return JS_UNDEFINED
 
+proc previousSiblingExcept(this: Node; nodes: openArray[Node]): Node =
+  var node = this
+  while node != nil:
+    if node notin nodes:
+      break
+    node = node.previousSibling
+  node
+
+proc nextSiblingExcept(this: Node; nodes: openArray[Node]): Node =
+  var node = this
+  while node != nil:
+    if node notin nodes:
+      break
+    node = node.nextSibling
+  node
+
+proc beforeImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
+    Opt[void] =
+  var nodes: seq[Node]
+  ?ctx.toNodes(argv, nodes)
+  let parent = this.parentNode
+  if parent != nil:
+    let prev = this.previousSiblingExcept(nodes)
+    let node = ctx.toNode(nodes, this.document)
+    let before = if prev != nil: prev.nextSibling else: parent.firstChild
+    parent.insert(node, before, ctx)
+  ok()
+
+proc afterImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
+    Opt[void] =
+  var nodes: seq[Node]
+  ?ctx.toNodes(argv, nodes)
+  let parent = this.parentNode
+  if parent != nil:
+    let before = this.nextSiblingExcept(nodes)
+    let node = ctx.toNode(nodes, this.document)
+    parent.insert(node, before, ctx)
+  ok()
+
+proc replaceWithImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
+    JSValue =
+  var nodes: seq[Node]
+  if ctx.toNodes(argv, nodes).isErr:
+    return JS_EXCEPTION
+  let parent = this.parentNode
+  if parent != nil:
+    let before = this.nextSiblingExcept(nodes)
+    let node = ctx.toNode(nodes, this.document)
+    if this.parentNode == parent:
+      return ctx.replaceChildWithThrow(parent, this, node)
+    parent.insert(node, before, ctx)
+  return JS_UNDEFINED
+
 proc assignSlot(node: Node) =
   discard
 
@@ -4081,6 +4134,18 @@ proc exitFullscreen(ctx: JSContext; document: Document): JSValue {.jsfunc.} =
   return ctx.newRejectedPromise()
 
 # DocumentType
+proc before(ctx: JSContext; this: DocumentType; nodes: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
+  ctx.beforeImpl(this, nodes)
+
+proc after(ctx: JSContext; this: DocumentType; nodes: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
+  ctx.afterImpl(this, nodes)
+
+proc replaceWith(ctx: JSContext; this: DocumentType;
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
+  ctx.replaceWithImpl(this, nodes)
+
 proc remove(this: DocumentType) {.jsfunc.} =
   Node(this).remove()
 
@@ -4735,6 +4800,18 @@ proc previousElementSibling(this: CharacterData): Element {.jsfget.} =
 proc nextElementSibling(this: CharacterData): Element {.jsfget.} =
   return this.nextElementSiblingImpl
 
+proc before(ctx: JSContext; this: CharacterData; nodes: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
+  ctx.beforeImpl(this, nodes)
+
+proc after(ctx: JSContext; this: CharacterData; nodes: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
+  ctx.afterImpl(this, nodes)
+
+proc replaceWith(ctx: JSContext; this: CharacterData;
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
+  ctx.replaceWithImpl(this, nodes)
+
 proc remove(this: CharacterData) {.jsfunc.} =
   Node(this).remove()
 
@@ -4934,8 +5011,20 @@ proc previousElementSibling*(element: Element): Element {.jsfget.} =
 proc nextElementSibling*(element: Element): Element {.jsfget.} =
   return element.nextElementSiblingImpl
 
-proc remove(element: Element) {.jsfunc.} =
-  Node(element).remove()
+proc before(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
+  ctx.beforeImpl(this, nodes)
+
+proc after(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
+  ctx.afterImpl(this, nodes)
+
+proc replaceWith(ctx: JSContext; this: Element;
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
+  ctx.replaceWithImpl(this, nodes)
+
+proc remove(this: Element) {.jsfunc.} =
+  Node(this).remove()
 
 proc isDisplayed(element: Element): bool =
   element.ensureStyle()
