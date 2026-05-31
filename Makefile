@@ -351,7 +351,7 @@ $(OBJDIR)/chagashi_test:
 	unxz $(OBJDIR)/chagashi_test/data.tar.xz
 	tar xf $(OBJDIR)/chagashi_test/data.tar -C $(OBJDIR)/chagashi_test
 
-test_flags = --verbosity:0
+test_flags = --verbosity:0 --nimcache:"../../$(OBJDIR)/$(TARGET)/test"
 
 .PHONY: test_charset
 test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
