@@ -846,7 +846,7 @@ proc insertSheet(this: SheetElement)
 proc removeSheet(this: SheetElement)
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet)
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
-  contentType = "image/png"; quality = none(float64))
+  contentType = "image/png"; qualityVal: JSValueConst = JS_UNDEFINED)
 proc getImageRect(this: HTMLImageElement): tuple[w, h: float64]
 proc checked*(input: HTMLInputElement): bool {.inline.}
 proc setChecked*(input: HTMLInputElement; b: bool)
@@ -4289,16 +4289,19 @@ proc remove(ctx: JSContext; tokenList: DOMTokenList;
   ok()
 
 proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: JSValueConst;
-    force = none(bool)): Opt[bool] {.jsfunc.} =
+    force: JSValueConst = JS_UNDEFINED): Opt[bool] {.jsfunc.} =
   let token = ?ctx.validateDOMToken(token)
+  let forceBool = JS_ToBool(ctx, force)
+  if forceBool < 0:
+    return err()
   let i = tokenList.toks.find(token)
   if i != -1:
-    if not force.get(false):
+    if JS_IsUndefined(force) or forceBool == 0:
       tokenList.toks.delete(i)
       tokenList.update()
       return ok(false)
     return ok(true)
-  if force.get(true):
+  if JS_IsUndefined(force) or forceBool == 1:
     tokenList.toks.add(token)
     tokenList.update()
     return ok(true)
@@ -5903,15 +5906,18 @@ proc removeAttributeNS(ctx: JSContext; element: Element;
     ctx.delAttr(element, i)
 
 proc toggleAttribute(ctx: JSContext; element: Element; qualifiedName: string;
-    force = none(bool)): Opt[bool] {.jsfunc.} =
+    force: JSValueConst = JS_UNDEFINED): Opt[bool] {.jsfunc.} =
+  let forceBool = JS_ToBool(ctx, force)
+  if forceBool < 0:
+    return err()
   ?ctx.validateName(qualifiedName)
   let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtom())
   if not element.attrb(qualifiedName):
-    if force.get(true):
+    if JS_IsUndefined(force) or forceBool == 1:
       element.attr(qualifiedName, "")
       return ok(true)
     return ok(false)
-  if not force.get(false):
+  if JS_IsUndefined(force) or forceBool == 0:
     let i = element.findAttr(qualifiedName)
     if i != -1:
       ctx.delAttr(element, i)
@@ -6498,10 +6504,8 @@ proc toBlob1(opaque: RootRef; response: Response) =
   let this = env.this
   if response == nil:
     if not env.isPNG:
-      # redo as PNG.
-      # Note: this sounds dumb, and is dumb, but also standard mandated so
-      # whatever.
-      ctx.toBlob(this, callback, "image/png") # PNG doesn't understand quality
+      # Redo as PNG.  (Yes, this is spec-mandated.)
+      ctx.toBlob(this, callback, "image/png")
     else: # the png encoder doesn't work...
       let window = this.document.window
       window.console.error("missing/broken PNG encoder")
@@ -6533,10 +6537,9 @@ proc toBlob0(opaque: RootRef; response: Response) =
   window.corsFetch(request, toBlob1, env)
   window.loader.close(response)
 
-# Note: the standard says quality should be converted in a strange way for
-# backwards compat, but I don't care.
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
-    contentType = "image/png"; quality = none(float64)) {.jsfunc.} =
+    contentType = "image/png"; qualityVal: JSValueConst = JS_UNDEFINED)
+    {.jsfunc.} =
   let contentType = contentType.toLowerAscii()
   if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:
     return
@@ -6546,10 +6549,14 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
   let headers = newHeaders(hgRequest, {
     "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
   })
-  if (var quality = quality.get(-1); 0 <= quality and quality <= 1):
-    quality *= 99
-    quality += 1
-    headers.add("Cha-Image-Quality", dtoa(quality))
+  if JS_IsNumber(qualityVal):
+    # standard-compliant special case; it also means that we don't have to
+    # propagate exceptions here (as nothing can throw one)
+    var quality: float64
+    if ctx.fromJS(qualityVal, quality).isOk and 0 <= quality and quality <= 1:
+      quality *= 99
+      quality += 1
+      headers.add("Cha-Image-Quality", dtoa(quality))
   # callback will go out of scope when we return, so capture a new reference.
   let callback = JS_DupValue(ctx, callback)
   let request = newRequest(
@@ -6760,7 +6767,6 @@ proc inputString*(input: HTMLInputElement): RefString =
       return input.internalValue
     return newRefString("SUBMIT")
   of itFile:
-    #TODO multiple files?
     return newRefString(input.files.getName())
   else:
     return input.internalValue
