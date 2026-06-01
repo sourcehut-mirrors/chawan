@@ -7,6 +7,8 @@
 # atoms into ref objects; that would work with refc, but it would also
 # add a lot of overhead.)
 
+{.push raises: [].}
+
 import std/hashes
 import std/macros
 import std/sets
@@ -228,10 +230,13 @@ const CAtomFactoryInitSize = 2048 # must be a power of 2
 type
   CAtom* = distinct uint32
 
+  AtomDesc = object
+    s: string
+    lower: CAtom
+
   CAtomFactoryObj = object
     tab: seq[CAtom] # hash table; length is a power of 2
-    atomMap: seq[string]
-    lowerMap: seq[CAtom]
+    atomMap: seq[AtomDesc]
 
   CAtomFactory = ptr CAtomFactoryObj
 
@@ -258,13 +263,12 @@ proc get(factory: CAtomFactoryObj; s: openArray[char]; h: Hash): CAtom =
     let atom = factory.tab[i]
     if atom == CAtomNull:
       break
-    if factory.atomMap[int(atom)] == s:
+    if factory.atomMap[int(atom)].s == s:
       return atom
     i = (i + 1) and mask
   return CAtomNull
 
-proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
-    CAtom =
+proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]): CAtom =
   let h = s.hash()
   if (let atom = factory.get(s, h); atom != CAtomNull):
     return atom
@@ -275,21 +279,12 @@ proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
     factory.tab = newSeq[CAtom](oldTab.len * 2)
     for atom in oldTab:
       if atom != CAtomNull:
-        let h = factory.atomMap[int(atom)].hash()
+        let h = factory.atomMap[int(atom)].s.hash()
         factory.put0(atom, h)
   let atom = CAtom(factory.atomMap.len)
-  var ss = newString(s.len)
-  if s.len > 0:
-    copyMem(addr ss[0], unsafeAddr s[0], s.len)
-  var lower = ""
-  if addLower and AsciiUpperAlpha in ss:
-    lower = ss.toLowerAscii()
-  factory.atomMap.add(move(ss))
-  if addLower:
-    if lower == "":
-      factory.lowerMap.add(atom)
-    else:
-      factory.lowerMap.add(factory.toAtom(lower))
+  let lower = if AsciiUpperAlpha notin s: atom else: CAtomNull
+  factory.atomMap.add(AtomDesc(lower: lower))
+  factory.atomMap[^1].s = s.substr()
   factory.put0(atom, h)
   return atom
 
@@ -301,30 +296,10 @@ template getFactory(): CAtomFactory =
 proc initCAtomFactory*() =
   factory.tab = newSeq[CAtom](CAtomFactoryInitSize)
   # Null atom
-  factory.atomMap.add("")
-  factory.lowerMap.add(CAtom(0))
+  factory.atomMap.add(AtomDesc())
   # StaticAtom includes TagType too.
   for sa in StaticAtom(1) .. StaticAtom.high:
-    discard factory.toAtom($sa, addLower = false)
-  for sa in StaticAtom(1) .. StaticAtom.high:
-    let atom = factory.toAtom(($sa).toLowerAscii(), addLower = false)
-    factory.lowerMap.add(atom)
-  # fill slots of newly added lower mappings
-  while factory.lowerMap.len < factory.atomMap.len:
-    factory.lowerMap.add(CAtom(factory.lowerMap.len))
-
-proc toLowerAscii*(a: CAtom): CAtom =
-  return getFactory().lowerMap[int32(a)]
-
-proc equalsIgnoreCase*(a, b: CAtom): bool =
-  return getFactory().lowerMap[int32(a)] == getFactory().lowerMap[int32(b)]
-
-proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
-  let a = a.toLowerAscii()
-  for it in aa:
-    if a == it.toLowerAscii():
-      return true
-  return false
+    discard factory.toAtom($sa)
 
 proc toAtom*(s: openArray[char]): CAtom =
   return getFactory()[].toAtom(s)
@@ -337,14 +312,32 @@ proc toAtom*(attrType: StaticAtom): CAtom =
   assert attrType != satUnknown
   return CAtom(attrType)
 
+proc `$`*(atom: CAtom): lent string =
+  return getFactory().atomMap[int(atom)].s
+
+proc toLowerAscii*(a: CAtom): CAtom =
+  let factory = getFactory()
+  var lower = factory.atomMap[int(a)].lower
+  if lower == CAtomNull:
+    lower = ($a).toLowerAscii().toAtom()
+    factory.atomMap[int(a)].lower = lower
+  lower
+
+proc equalsIgnoreCase*(a, b: CAtom): bool =
+  a.toLowerAscii() == b.toLowerAscii()
+
+proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
+  let a = a.toLowerAscii()
+  for it in aa:
+    if a == it.toLowerAscii():
+      return true
+  return false
+
 proc toAtomLower*(s: openArray[char]): CAtom =
-  return getFactory().lowerMap[int32(s.toAtom())]
+  s.toAtom().toLowerAscii()
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
   return aa.containsIgnoreCase(a.toAtom())
-
-proc `$`*(atom: CAtom): lent string =
-  return getFactory().atomMap[int(atom)]
 
 proc toTagType*(atom: CAtom): TagType =
   let i = int(atom)
@@ -465,3 +458,5 @@ proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
     return JS_NULL
   return ctx.toJS($atom)
+
+{.pop.} # raises: []
