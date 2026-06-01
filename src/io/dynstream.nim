@@ -212,6 +212,8 @@ proc readLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
   let res = create(MaybeMappedMemoryObj)
   let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
   if ps.readLoop(p, ilen).isErr:
+    dealloc(res)
+    dealloc(p)
     return nil
   res[] = MaybeMappedMemoryObj(
     t: mmmtAlloc,
