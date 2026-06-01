@@ -982,9 +982,10 @@ macro jspropnames*(fun: untyped) =
   gen.jsCallAndRet = quote do:
     block `dl`:
       let retv = `jfcl`
-      ptab[] = retv.buffer
-      plen[] = retv.len
-      return cint(0)
+      if retv.ctx != nil:
+        ptab[] = retv.buffer
+        plen[] = retv.len
+        return cint(0)
     return cint(-1)
   let jsProc = gen.newJSProc(getJSPropNamesParams(), false)
   gen.registerFunction()

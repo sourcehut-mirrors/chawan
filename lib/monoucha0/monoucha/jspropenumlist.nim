@@ -9,7 +9,7 @@ type
     buffer*: JSPropertyEnumArray
     size: uint32
     len*: uint32
-    ctx: JSContext
+    ctx*: JSContext
 
 proc newJSPropertyEnumList*(ctx: JSContext; size: uint32): JSPropertyEnumList =
   let p = if size != 0:

@@ -4419,8 +4419,10 @@ proc getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
   of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; this: NodeList): JSPropertyEnumList {.jspropnames.} =
-  #TODO handle exception
-  let L = ctx.getLength(this).get(0)
+  let len0 = ctx.getLength(this)
+  if len0.isErr:
+    return JSPropertyEnumList()
+  let L = len0.get
   var list = newJSPropertyEnumList(ctx, L)
   for u in 0 ..< L:
     list.add(u)
@@ -4456,8 +4458,10 @@ proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
 
 proc names(ctx: JSContext; this: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
-  #TODO handle exception
-  let L = ctx.getLength(this).get(0)
+  let len0 = ctx.getLength(this)
+  if len0.isErr:
+    return JSPropertyEnumList()
+  let L = len0.get
   var list = newJSPropertyEnumList(ctx, L)
   var ids = initOrderedSet[CAtom]()
   for u in 0 ..< L:
@@ -4538,8 +4542,10 @@ proc getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): JSValue
 
 proc names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
     {.jspropnames.} =
-  #TODO handle exception
-  let L = ctx.getLength(this).get(0)
+  let len0 = ctx.getLength(this)
+  if len0.isErr:
+    return JSPropertyEnumList()
+  let L = len0.get
   var list = newJSPropertyEnumList(ctx, L)
   for u in 0 ..< L:
     list.add(u)
