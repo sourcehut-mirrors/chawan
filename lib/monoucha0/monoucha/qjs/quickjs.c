@@ -243,6 +243,12 @@ typedef enum OPCodeEnum OPCodeEnum;
 #define JS_MALLOC_BLOCK_SIZE_COUNT 31
 #define JS_MALLOC_MIN_SMALL_SIZE 16
 #define JS_MALLOC_MAX_SMALL_SIZE 512
+#if defined(__SANITIZE_ADDRESS__)
+/* use the host malloc() for all allocations */
+#define JS_MALLOC_LARGE_BLOCKS_ONLY 1
+#else
+#define JS_MALLOC_LARGE_BLOCKS_ONLY 0
+#endif
 
 /* allow iteration among the allocated blocks. Currently not used. May
    be used to suppress the memory overhead of JSGCObjectHeader */
@@ -1551,7 +1557,8 @@ static void *__js_malloc(JSMallocContext *s, size_t size)
     } else {
         total_size = ((size + JS_MALLOC_ALIGN - 1) & ~(JS_MALLOC_ALIGN - 1)) +
             sizeof(JSMallocBlockHeader);
-        if (total_size <= JS_MALLOC_MAX_SMALL_SIZE) { /* TEST */
+        if (!JS_MALLOC_LARGE_BLOCKS_ONLY &&
+            total_size <= JS_MALLOC_MAX_SMALL_SIZE) {
             int block_size_idx;
             unsigned int block_idx, block_size;
             JSMallocBlockHeader *b;
@@ -1792,22 +1799,22 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
     }
 }
 
-extern force_inline void *js_malloc_rt(JSRuntime *rt, size_t size)
+void *js_malloc_rt(JSRuntime *rt, size_t size)
 {
     return __js_malloc(&rt->malloc_ctx, size);
 }
 
-extern force_inline void js_free_rt(JSRuntime *rt, void *ptr)
+void js_free_rt(JSRuntime *rt, void *ptr)
 {
     __js_free(&rt->malloc_ctx, ptr);
 }
 
-extern force_inline void *js_realloc_rt(JSRuntime *rt, void *ptr, size_t size)
+void *js_realloc_rt(JSRuntime *rt, void *ptr, size_t size)
 {
     return __js_realloc(&rt->malloc_ctx, ptr, size);
 }
 
-extern force_inline size_t js_malloc_usable_size_rt(JSRuntime *rt, const void *ptr)
+size_t js_malloc_usable_size_rt(JSRuntime *rt, const void *ptr)
 {
     return __js_malloc_usable_size(&rt->malloc_ctx, ptr);
 }
@@ -1822,7 +1829,7 @@ void *js_mallocz_rt(JSRuntime *rt, size_t size)
 }
 
 /* Throw out of memory in case of error */
-extern force_inline void *js_malloc(JSContext *ctx, size_t size)
+void *js_malloc(JSContext *ctx, size_t size)
 {
     void *ptr;
     ptr = js_malloc_rt(ctx->rt, size);
@@ -1834,7 +1841,7 @@ extern force_inline void *js_malloc(JSContext *ctx, size_t size)
 }
 
 /* Throw out of memory in case of error */
-extern force_inline void *js_mallocz(JSContext *ctx, size_t size)
+void *js_mallocz(JSContext *ctx, size_t size)
 {
     void *ptr;
     ptr = js_mallocz_rt(ctx->rt, size);
@@ -1845,7 +1852,7 @@ extern force_inline void *js_mallocz(JSContext *ctx, size_t size)
     return ptr;
 }
 
-extern force_inline void js_free(JSContext *ctx, void *ptr)
+void js_free(JSContext *ctx, void *ptr)
 {
     js_free_rt(ctx->rt, ptr);
 }
@@ -28480,6 +28487,7 @@ static __exception int js_parse_var(JSParseState *s, int parse_flags, int tok,
             }
 
             if (s->token.val == '=') {
+                const uint8_t *source_ptr = s->token.ptr;
                 if (next_token(s))
                     goto var_error;
                 if (need_var_reference(s, tok)) {
@@ -28497,12 +28505,14 @@ static __exception int js_parse_var(JSParseState *s, int parse_flags, int tok,
                         goto var_error;
                     }
                     set_object_name(s, name);
+                    emit_source_pos(s, source_ptr);
                     put_lvalue(s, opcode, scope, name1, label,
                                PUT_LVALUE_NOKEEP, FALSE);
                 } else {
                     if (js_parse_assign_expr2(s, parse_flags))
                         goto var_error;
                     set_object_name(s, name);
+                    emit_source_pos(s, source_ptr);
                     emit_op(s, (tok == TOK_CONST || tok == TOK_LET) ?
                         OP_scope_put_var_init : OP_scope_put_var);
                     emit_atom(s, name);
@@ -32193,7 +32203,7 @@ static void dump_byte_code(JSContext *ctx, int pass,
     const JSOpCode *oi;
     int pos, pos_next, op, size, idx, addr, line, line1, in_source, line_num;
     uint8_t *bits = js_mallocz(ctx, len * sizeof(*bits));
-    BOOL use_short_opcodes = (b != NULL);
+    BOOL use_short_opcodes = (b != NULL), dump_pc;
 
     if (b) {
         int col_num;
@@ -32299,7 +32309,12 @@ static void dump_byte_code(JSContext *ctx, int pass,
             printf("%*s", x0 + 20 - x, "");
         }
 #endif
-        if (bits[pos]) {
+#if defined(DUMP_BYTECODE) && (DUMP_BYTECODE & 32)
+        dump_pc = TRUE;
+#else
+        dump_pc = bits[pos];
+#endif
+        if (dump_pc) {
             printf("%5d:  ", pos);
         } else {
             printf("        ");
@@ -56973,6 +56988,7 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
 {
     JSArrayBuffer *abuf;
     uint64_t new_len, *pmax_len, max_len;
+    JSValue res;
 
     abuf = JS_GetOpaque2(ctx, this_val, JS_CLASS_ARRAY_BUFFER);
     if (!abuf)
@@ -56996,18 +57012,17 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
                 pmax_len = &max_len;
         }
     }
+
     /* create an empty AB */
     if (new_len == 0) {
+        res = js_array_buffer_constructor2(ctx, JS_UNDEFINED, 0, pmax_len, JS_CLASS_ARRAY_BUFFER);
+        if (JS_IsException(res))
+            return res;
         JS_DetachArrayBuffer(ctx, this_val);
-        return js_array_buffer_constructor2(ctx, JS_UNDEFINED, 0, pmax_len, JS_CLASS_ARRAY_BUFFER);
     } else {
         uint64_t old_len;
-        uint8_t *bs, *new_bs;
-        JSFreeArrayBufferDataFunc *free_func;
         
-        bs = abuf->data;
         old_len = abuf->byte_length;
-        free_func = abuf->free_func;
 
         /* if length mismatch, realloc. Otherwise, use the same backing buffer. */
         if (new_len != old_len) {
@@ -57015,35 +57030,53 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
             if (new_len > INT32_MAX)
                 return JS_ThrowRangeError(ctx, "invalid array buffer length");
 
-            if (free_func != js_array_buffer_free) {
+            if (abuf->free_func != js_array_buffer_free) {
+                JSArrayBuffer *new_abuf;
                 /* cannot use js_realloc() because the buffer was
                    allocated with a custom allocator */
-                new_bs = js_mallocz(ctx, new_len);
-                if (!new_bs)
-                    return JS_EXCEPTION;
-                memcpy(new_bs, bs, min_int(old_len, new_len));
-                abuf->free_func(ctx->rt, abuf->opaque, bs);
-                bs = new_bs;
-                free_func = js_array_buffer_free;
+                res = js_array_buffer_constructor2(ctx, JS_UNDEFINED, new_len, pmax_len, JS_CLASS_ARRAY_BUFFER);
+                if (JS_IsException(res))
+                    return res;
+                new_abuf = JS_GetOpaque2(ctx, res, JS_CLASS_ARRAY_BUFFER);
+                memcpy(new_abuf->data, abuf->data, min_int(old_len, new_len));
+                abuf->free_func(ctx->rt, abuf->opaque, abuf->data);
             } else {
-                new_bs = js_realloc(ctx, bs, new_len);
-                if (!new_bs)
+                JSArrayBuffer *new_abuf;
+                uint8_t *new_bs;
+                /* reallocate the buffer after the new array buffer is
+                   created in case the new array buffer creation
+                   fails. */
+                res = js_array_buffer_constructor2(ctx, JS_UNDEFINED, 0, pmax_len, JS_CLASS_ARRAY_BUFFER);
+                if (JS_IsException(res))
+                    return res;
+                new_bs = js_realloc(ctx, abuf->data, new_len);
+                if (!new_bs) {
+                    JS_FreeValue(ctx, res);
                     return JS_EXCEPTION;
-                bs = new_bs;
+                }
                 if (new_len > old_len)
-                    memset(bs + old_len, 0, new_len - old_len);
+                    memset(new_bs + old_len, 0, new_len - old_len);
+                new_abuf = JS_GetOpaque2(ctx, res, JS_CLASS_ARRAY_BUFFER);
+                js_free(ctx, new_abuf->data);
+                new_abuf->data = new_bs;
+                new_abuf->byte_length = new_len;
             }
+        } else {
+            /* can keep the custom free function */
+            res = js_array_buffer_constructor3(ctx, JS_UNDEFINED, new_len, pmax_len,
+                                               JS_CLASS_ARRAY_BUFFER,
+                                               abuf->data, abuf->free_func,
+                                               abuf->opaque, FALSE);
+            if (JS_IsException(res))
+                return res;
         }
         /* neuter the backing buffer */
         abuf->data = NULL;
         abuf->byte_length = 0;
         abuf->detached = TRUE;
         js_array_buffer_update_typed_arrays(abuf);
-        return js_array_buffer_constructor3(ctx, JS_UNDEFINED, new_len, pmax_len,
-                                            JS_CLASS_ARRAY_BUFFER,
-                                            bs, free_func,
-                                            NULL, FALSE);
     }
+    return res;
 }
 
 static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
