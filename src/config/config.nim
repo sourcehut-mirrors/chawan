@@ -2052,6 +2052,7 @@ proc parseFile(cp: var ConfigParser; file: ChaFile): Opt[void] =
   while ?file.readLine(line):
     ?cp.parseConfigLine(line)
     inc cp.line
+  ?cp.checkRuleRegex()
   ok()
 
 proc cleanup(cp: var ConfigParser) =
@@ -2100,6 +2101,11 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
           JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
       return err(move(cp.error))
     inc cp.line
+  if cp.checkRuleRegex().isErr:
+    for entry in cp.entries:
+      if entry.t == cocFunction and entry.fun != nil:
+        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
+    return err(move(cp.error))
   ctx.applyEntries(config, cp.entries)
   warnings.add(cp.warnings)
   ok()

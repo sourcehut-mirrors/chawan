@@ -30,4 +30,9 @@ then	echo "NUL was accepted at EOF"
 	exit 1
 fi
 
+if ! $CHA -Cbad-siteconf.toml about:blank 2>&1 | grep -q 'missing match regex'
+then	echo "bad siteconf accepted"
+	exit 1
+fi
+
 $CHA -r 'quit()'
