@@ -423,6 +423,8 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       let it = if fallback != nil:
         quote do:
           let prop = JS_GetPropertyStr(`ctx`, `val`, `nameStr`)
+          if JS_IsException(prop):
+            return fjErr
           if not JS_IsUndefined(prop):
             res.toFree.vals.add(prop)
             if `ctx`.fromJS(prop, `res`.`name`) == fjErr:
@@ -431,6 +433,8 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
         quote do:
           missing = `nameStr`
           let prop = JS_GetPropertyStr(`ctx`, `val`, missing)
+          if JS_IsException(prop):
+            return fjErr
           if JS_IsUndefined(prop):
             break `success`
           res.toFree.vals.add(prop)
