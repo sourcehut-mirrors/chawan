@@ -6703,7 +6703,7 @@ proc getImageRect(this: HTMLImageElement): tuple[w, h: float64] =
       return (objs[0].width, objs[0].height)
   let bitmap = this.bitmap
   if bitmap == nil:
-    return (0, 0)
+    return (0'f64, 0'f64)
   let width = float64(this.attrul(satWidth).get(uint32(bitmap.width)))
   let height = float64(this.attrul(satHeight).get(uint32(bitmap.height)))
   return (width, height)

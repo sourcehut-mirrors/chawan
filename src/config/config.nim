@@ -2347,15 +2347,15 @@ const ConfigInitTrue = [
 
 const ConfigInitInt32 = {
   coHistorySize: 100'i32,
-  coMaxRedirect: 10,
-  coMaxNetConnections: 12,
-  coWheelScroll: 5,
-  coSideWheelScroll: 5,
-  coMinimumContrast: 100,
-  coColumns: 80,
-  coLines: 24,
-  coPixelsPerColumn: 9,
-  coPixelsPerLine: 18
+  coMaxRedirect: 10'i32,
+  coMaxNetConnections: 12'i32,
+  coWheelScroll: 5'i32,
+  coSideWheelScroll: 5'i32,
+  coMinimumContrast: 100'i32,
+  coColumns: 80'i32,
+  coLines: 24'i32,
+  coPixelsPerColumn: 9'i32,
+  coPixelsPerLine: 18'i32
 }
 
 const ConfigInitStr = {

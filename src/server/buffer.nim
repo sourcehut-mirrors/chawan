@@ -1671,7 +1671,7 @@ proc findLeaf(box: CSSBox; element: Element): CSSBox =
 
 proc showHints(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
     HintResult {.proxy.} =
-  result = @[]
+  result = HintResult.default
   bc.maybeReshape()
   let ppc = bc.attrs.ppc.toLUnit()
   let ppl = bc.attrs.ppl.toLUnit()
