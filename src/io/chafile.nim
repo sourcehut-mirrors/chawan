@@ -111,20 +111,23 @@ proc readLine*(file: ChaFile; s: var string): Opt[bool] =
   var i = 0
   var bufLen = cint(80)
   s.setLen(int(bufLen))
-  zeroMem(addr s[0], 80)
-  while true:
-    if fgets(cast[cstring](addr s[i]), bufLen - cast[cint](i), file) == nil:
+  chaMemset(s, '\n') # sentinel
+  while fgets(cast[cstring](addr s[i]), bufLen - cast[cint](i), file) != nil:
+    if s[^1] == '\n' or s[^2] == '\n':
+      # either line is shorter than buf, then s[^1] is LF
+      # or line is exactly as long as buf, then s[^1] is NUL and s[^1] is LF.
       break
-    i = s.find('\n', i)
-    if i >= 0:
-      s.setLen(i)
-      return ok(true)
     i = int(bufLen - 1)
     bufLen += 128
     s.setLen(int(bufLen))
-  if i > 0: # got EOF before EOL?
+    chaMemset(s.toOpenArray(i + 1, int(bufLen) - 1), '\n') # sentinel
+  i = s.rfind('\0')
+  if i >= 0: # fgets wrote a zero for us at EOL
+    if i > 0 and s[i - 1] == '\n': # strip LF if any
+      i = i - 1
     s.setLen(i)
     return ok(true)
+  # all LFs; we have no more lines.
   s = ""
   if ferror(file) != 0:
     return err()

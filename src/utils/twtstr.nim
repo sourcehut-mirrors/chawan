@@ -328,14 +328,18 @@ proc endsWith*(s1, s2: openArray[char]): bool =
 proc memset(s: pointer; c: cint; size: csize_t): pointer {.
   importc, header: "<string.h>".}
 
-proc repeat*(c: char; n: int): string =
-  result = newString(n)
+proc chaMemset*(s: var openArray[char]; c: char) =
   when nimvm:
-    for ic in result.mitems:
+    for ic in s.mitems:
       ic = c
   else:
-    if n > 0:
-      discard memset(addr result[0], cint(c), csize_t(n))
+    let slen = s.len
+    if slen > 0:
+      discard memset(addr s[0], cint(c), csize_t(slen))
+
+proc repeat*(c: char; n: int): string =
+  result = newString(n)
+  chaMemset(result, c)
 
 proc repeat*(s: string; n: int): string =
   result = newStringOfCap(s.len * n)
