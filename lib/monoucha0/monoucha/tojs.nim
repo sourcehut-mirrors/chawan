@@ -262,7 +262,8 @@ proc toJS(ctx: JSContext; j: JSValue): JSValue =
   return j
 
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue =
-  return JS_NewArrayBuffer(ctx, abuf.p, abuf.len, abuf.dealloc, nil, false)
+  let len = csize_t(abuf.len)
+  return JS_NewArrayBuffer(ctx, abuf.p, len, abuf.dealloc, nil, false)
 
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferView): JSValue =
   let jsabuf = ctx.toJS(u8a.abuf)

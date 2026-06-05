@@ -472,7 +472,13 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBuffer):
   let p = JS_GetArrayBuffer(ctx, len, val)
   if p == nil:
     return fjErr
-  res = JSArrayBuffer(len: len, p: cast[ptr UncheckedArray[uint8]](p))
+  if len > csize_t(int.high):
+    JS_ThrowRangeError(ctx, "array buffer size out of range")
+    return fjErr
+  res = JSArrayBuffer(
+    len: cast[int](len),
+    p: cast[ptr UncheckedArray[uint8]](p)
+  )
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):

@@ -40,7 +40,7 @@ type NarrowString* = distinct string
 type
   JSArrayBuffer* = object
     p*: ptr UncheckedArray[uint8]
-    len*: csize_t
+    len*: int
     dealloc*: JSFreeArrayBufferDataFunc
 
   JSArrayBufferView* = object
@@ -52,6 +52,11 @@ type
 
 template toOpenArray*(view: JSArrayBufferView): openArray[uint8] =
   view.abuf.p.toOpenArray(view.offset, view.offset + view.len - 1)
+
+proc base*(view: JSArrayBufferView): ptr UncheckedArray[uint8] =
+  if view.len <= 0:
+    return nil
+  return cast[ptr UncheckedArray[uint8]](addr view.abuf.p[view.offset])
 
 # A key-value pair: in WebIDL terms, this is a record.
 type JSKeyValuePair*[K, T] = object

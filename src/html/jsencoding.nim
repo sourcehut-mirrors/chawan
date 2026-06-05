@@ -94,7 +94,7 @@ proc encode(this: JSTextEncoder; input = ""): JSArrayBufferView {.jsfunc.} =
     nil
   JSArrayBufferView(
     t: JS_TYPED_ARRAY_UINT8,
-    abuf: JSArrayBuffer(p: p, len: csize_t(input.len), dealloc: deallocWrap),
+    abuf: JSArrayBuffer(p: p, len: input.len, dealloc: deallocWrap),
     offset: 0,
     len: input.len
   )

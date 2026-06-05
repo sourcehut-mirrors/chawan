@@ -976,6 +976,15 @@ proc makeCRLF*(s: openArray[char]): string =
     else:
       result &= s[i]
 
+# Normalize to Unix line endings.
+proc normalizeLF*(s: openArray[char]): string =
+  result = newStringOfCap(s.len)
+  for i, c in s:
+    if c != '\r':
+      result &= c
+    elif i >= s.high or s[i + 1] != '\n':
+      result &= '\n'
+
 type IdentMapItem* = tuple[s: string; n: int]
 
 proc getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
