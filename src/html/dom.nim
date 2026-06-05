@@ -3418,6 +3418,7 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
             let scriptAttrs = ctx.getWeakCollection(element, wwmAttributes)
             var attributes: NamedNodeMap
             discard ctx.fromJS(scriptAttrs, attributes)
+            JS_FreeValue(ctx, scriptAttrs)
             if attributes != nil:
               for it in attributes.attrlist:
                 it.internalNext = document
