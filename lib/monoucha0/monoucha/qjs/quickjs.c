@@ -107,6 +107,8 @@
 //#define DUMP_PROMISE
 //#define DUMP_READ_OBJECT
 //#define DUMP_ROPE_REBALANCE
+/* add asm labels to each opcode so that it is easier to see the generated code */
+//#define OPCODE_ASM_LABEL
 
 /* test the GC by forcing it before each object allocation */
 //#define FORCE_GC_AT_MALLOC
@@ -17881,6 +17883,11 @@ typedef enum {
 #define FUNC_RET_YIELD_STAR    2
 #define FUNC_RET_INITIAL_YIELD 3
 
+#ifdef OPCODE_ASM_LABEL
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-label"
+#endif
+
 /* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
@@ -17914,7 +17921,11 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
         [ OP_COUNT ... 255 ] = &&case_default
     };
 #define SWITCH(pc)      goto *dispatch_table[opcode = *pc++];
+#ifdef OPCODE_ASM_LABEL
+#define CASE(op)        case_ ## op: asm volatile("label_" #op ":\n.globl label_" #op); dummy_case_ ## op
+#else
 #define CASE(op)        case_ ## op
+#endif
 #define DEFAULT         case_default
 #define BREAK           SWITCH(pc)
 #endif
@@ -19842,9 +19853,24 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                         sp[-2] = JS_NewInt32(ctx, r);
                     }
                     sp--;
-                } else if (JS_VALUE_IS_BOTH_FLOAT(op1, op2)) {
-                    sp[-2] = __JS_NewFloat64(ctx, JS_VALUE_GET_FLOAT64(op1) +
-                                             JS_VALUE_GET_FLOAT64(op2));
+                } else if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op1)) ||
+                           JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op2))) {
+                    double d1, d2;
+                    if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op1))) {
+                        d1 = JS_VALUE_GET_FLOAT64(op1);
+                    } else if (JS_VALUE_GET_TAG(op1) == JS_TAG_INT) {
+                        d1 = JS_VALUE_GET_INT(op1);
+                    } else {
+                        goto add_slow_case;
+                    }
+                    if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op2))) {
+                        d2 = JS_VALUE_GET_FLOAT64(op2);
+                    } else if (JS_VALUE_GET_TAG(op2) == JS_TAG_INT) {
+                        d2 = JS_VALUE_GET_INT(op2);
+                    } else {
+                        goto add_slow_case;
+                    }
+                    sp[-2] = __JS_NewFloat64(ctx, d1 + d2);
                     sp--;
                 } else if (JS_IsString(op1) && JS_IsString(op2)) {
                     sp[-2] = JS_ConcatString(ctx, op1, op2);
@@ -19852,6 +19878,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     if (JS_IsException(sp[-1]))
                         goto exception;
                 } else {
+                add_slow_case:
                     sf->cur_pc = pc;
                     if (js_add_slow(ctx, sp))
                         goto exception;
@@ -19922,9 +19949,24 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                         sp[-2] = JS_NewInt32(ctx, r);
                     }
                     sp--;
-                } else if (JS_VALUE_IS_BOTH_FLOAT(op1, op2)) {
-                    sp[-2] = __JS_NewFloat64(ctx, JS_VALUE_GET_FLOAT64(op1) -
-                                             JS_VALUE_GET_FLOAT64(op2));
+                } else if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op1)) ||
+                           JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op2))) {
+                    double d1, d2;
+                    if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op1))) {
+                        d1 = JS_VALUE_GET_FLOAT64(op1);
+                    } else if (JS_VALUE_GET_TAG(op1) == JS_TAG_INT) {
+                        d1 = JS_VALUE_GET_INT(op1);
+                    } else {
+                        goto binary_arith_slow;
+                    }
+                    if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op2))) {
+                        d2 = JS_VALUE_GET_FLOAT64(op2);
+                    } else if (JS_VALUE_GET_TAG(op2) == JS_TAG_INT) {
+                        d2 = JS_VALUE_GET_INT(op2);
+                    } else {
+                        goto binary_arith_slow;
+                    }
+                    sp[-2] = __JS_NewFloat64(ctx, d1 - d2);
                     sp--;
                 } else {
                     goto binary_arith_slow;
@@ -19954,8 +19996,24 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     }
                     sp[-2] = JS_NewInt32(ctx, r);
                     sp--;
-                } else if (JS_VALUE_IS_BOTH_FLOAT(op1, op2)) {
-                    d = JS_VALUE_GET_FLOAT64(op1) * JS_VALUE_GET_FLOAT64(op2);
+                } else if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op1)) ||
+                           JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op2))) {
+                    double d1, d2;
+                    if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op1))) {
+                        d1 = JS_VALUE_GET_FLOAT64(op1);
+                    } else if (JS_VALUE_GET_TAG(op1) == JS_TAG_INT) {
+                        d1 = JS_VALUE_GET_INT(op1);
+                    } else {
+                        goto binary_arith_slow;
+                    }
+                    if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(op2))) {
+                        d2 = JS_VALUE_GET_FLOAT64(op2);
+                    } else if (JS_VALUE_GET_TAG(op2) == JS_TAG_INT) {
+                        d2 = JS_VALUE_GET_INT(op2);
+                    } else {
+                        goto binary_arith_slow;
+                    }
+                    d = d1 * d2;
                 mul_fp_res:
                     sp[-2] = __JS_NewFloat64(ctx, d);
                     sp--;
@@ -20654,6 +20712,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     rt->current_stack_frame = sf->prev_frame;
     return ret_val;
 }
+
+#ifdef OPCODE_ASM_LABEL
+#pragma GCC diagnostic pop
+#endif
 
 JSValue JS_Call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
                 int argc, JSValueConst *argv)
@@ -28782,7 +28844,8 @@ static __exception int js_parse_for_in_of(JSParseState *s, int label_name,
         int chunk_size = pos_expr - pos_next;
         int offset = bc->size - pos_next;
         int i;
-        dbuf_claim(bc, chunk_size);
+        if (dbuf_claim(bc, chunk_size))
+            return -1;
         dbuf_put(bc, bc->buf + pos_next, chunk_size);
         memset(bc->buf + pos_next, OP_nop, chunk_size);
         /* `next` part ends with a goto */
@@ -29188,7 +29251,8 @@ static __exception int js_parse_statement_or_decl(JSParseState *s,
                 int chunk_size = pos_body - pos_cont;
                 int offset = bc->size - pos_cont;
                 int i;
-                dbuf_claim(bc, chunk_size);
+                if (dbuf_claim(bc, chunk_size))
+                    goto fail;
                 dbuf_put(bc, bc->buf + pos_cont, chunk_size);
                 memset(bc->buf + pos_cont, OP_nop, chunk_size);
                 /* increment part ends with a goto */
@@ -38116,11 +38180,14 @@ static int JS_WriteObjectRec(BCWriterState *s, JSValueConst obj)
     case JS_TAG_STRING_ROPE:
         {
             JSValue str;
+            int ret;
             str = JS_ToString(s->ctx, obj);
             if (JS_IsException(str))
                 goto fail;
-            JS_WriteObjectRec(s, str);
+            ret = JS_WriteObjectRec(s, str);
             JS_FreeValue(s->ctx, str);
+            if (ret)
+                goto fail;
         }
         break;
     case JS_TAG_FUNCTION_BYTECODE:

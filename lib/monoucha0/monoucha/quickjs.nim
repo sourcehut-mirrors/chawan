@@ -12,10 +12,6 @@ export libregexp.JS_BOOL
 
 {.passc: "-DNOT_LRE_ONLY".}
 
-# for some reason, the new js_malloc doesn't recompile some things that
-# should be recompiled, so I'll just add this hack for now
-{.passc: "-DCHA_DUMMY1".}
-
 {.passl: "-lm".}
 
 const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"Monoucha 0.11.0\"' -DCHA_BUILD"
@@ -70,9 +66,14 @@ when sizeof(int) < sizeof(int64):
 else:
   type
     JSValueUnion* {.importc, header: qjsheader, union.} = object
-      int32*: int32
+      uint64*: uint64
       float64*: float64
       `ptr`*: pointer
+      when sizeof(int) >= sizeof(int64):
+        short_big_int*: int64
+      else:
+        short_big_int*: int32
+
     JSValue* {.importc, header: qjsheader.} = object
       u*: JSValueUnion
       tag*: int64
@@ -86,7 +87,7 @@ else:
     cast[pointer](JSValue(v).u)
 
   template JS_MKVAL*(t, val: untyped): JSValue =
-    JSValue(u: JSValueUnion(`int32`: val), tag: t)
+    JSValue(u: JSValueUnion(uint64: val), tag: t)
 
   template JS_MKPTR*(t, p: untyped): JSValue =
     JSValue(u: JSValueUnion(`ptr`: p), tag: t)
