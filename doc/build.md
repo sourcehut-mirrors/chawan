@@ -22,6 +22,7 @@ Following is a list of variables which may be set.
 	  slow executables.
 	- `release`: The default target.  Uses LTO and strips the final
 	  binaries.
+	- `release-nolto`: Like `release`, but without LTO.
 	- `release0`: A release build with stack traces (**not** line
 	  traces) enabled.  Useful when debugging a crash that needs a lot
 	  of processing to manifest.
@@ -35,8 +36,19 @@ Following is a list of variables which may be set.
 
 * `PKG_CONFIG`: path to pkg-config.  You can set it to pkgconf too.
 
+* `FLAGS`: flags to pass to the Nim compiler.
+
 * `CFLAGS`, `LDFLAGS`: flags to pass to the C compiler at compile or
   link time.
+
+* `FLAGS_FOR_BUILD`: flags to pass to the Nim compiler when building
+  targets that are executed on the build host.  This is used for e.g.
+  compiling a QuickJS bytecode compiler that will create a JS bytecode
+  artifact, and is only useful when `nim c blah.nim` does not work without
+  passing additional flags.
+
+* `HOSTCFLAGS`, `HOSTLDFLAGS` have the same purpose as `FLAGS_FOR_BUILD`,
+  but for C flags.
 
 * `OBJDIR`: directory to output compilation artifacts.  By default,
   it is `.obj`.
@@ -71,11 +83,24 @@ a limited set of C compilers. If you want to override the C compiler:
 
 1. Set `CC` to the respective compiler anyways, because it is used by
    chaseccomp.
+
 2. If your compiler is supported by Nim, then set e.g. `FLAGS=--cc:clang`.
    Check the list of supported compilers with `nim --cc:help`.
+
 3. If your compiler is not supported by Nim, but emulates another
    compiler driver, then add e.g.
-   `FLAGS=--gcc.path=/usr/local/musl/bin --gcc.exe=musl-gcc --gcc.linkerexe=musl-gcc`
+
+   ```
+   export FLAGS=--gcc.path=/usr/local/musl/bin --gcc.exe=musl-gcc --gcc.linkerexe=musl-gcc
+   ```
+
+4. Do the same for `FLAGS_FOR_BUILD`, making sure that the C compiler you
+   set there produces working executables on the *build machine*.
+
+   (If you're trying to cross-compile, you probably won't have to change
+   this at all, as Nim will (presumably) generate executables for the
+   build machine's architecture by default.  However, it may be useful if
+   `nim c x.nim` does not work without passing additional flags.)
 
 ## Phony targets
 

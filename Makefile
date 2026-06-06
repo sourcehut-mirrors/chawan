@@ -59,6 +59,9 @@ CFLAGS += -DDUMP_LEAKS=1
 else ifeq ($(TARGET),release)
 chac_flags = -s
 FLAGS += -d:release -d:strip -d:lto
+else ifeq ($(TARGET),release-nolto)
+chac_flags = -s
+FLAGS += -d:release -d:strip
 else ifeq ($(TARGET),release0)
 FLAGS += -d:release --stacktrace:on
 else ifeq ($(TARGET),release1)
@@ -225,9 +228,14 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
-# Do not add FLAGS here, because that breaks cross-compilation.
+# A separate variable so that cross-compilation works in the common case.
+# Use this if for some reason `nim c` doesn't work at all without passing
+# some flags.
+FLAGS_FOR_BUILD += $(foreach flag,$(HOSTCFLAGS),-t:$(flag))
+FLAGS_FOR_BUILD += $(foreach flag,$(HOSTLDFLAGS),-l:$(flag))
+
 $(OBJDIR)/chac: src/chac.nim lib/monoucha0/monoucha/* lib/monoucha0/monoucha/qjs/*
-	$(NIMC) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
+	$(NIMC) $(FLAGS_FOR_BUILD) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
 
 $(OUTDIR_LIBEXEC)/%.jsb: src/%.js $(OBJDIR)/chac
 	$(OBJDIR)/chac $(chac_flags) $< $@
