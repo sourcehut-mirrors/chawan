@@ -160,10 +160,10 @@ proc add(mailcap: var Mailcap; entry: MailcapEntry; t: string) =
   let slash = t.find('/')
   if slash == -1: # wildcard; add to sub-entries too
     while list != nil:
-      list.s.add(entry)
+      list.add(entry)
       list = list.next
   else: # add to this entry only
-    list.s.add(entry)
+    list.add(entry)
 
 proc find*(entry: MailcapEntry; t: NamedFieldType): NamedField =
   for field in entry.fields:
@@ -609,10 +609,9 @@ proc saveEntry*(mailcap: var Mailcap; path, t: string; entry: MailcapEntry):
   ps.sclose()
   res
 
-const DefaultURIMethodMap* = staticRead"res/urimethodmap"
-
-proc parseURIMethodMap*(this: var Mailcap; s: string) =
-  for line in s.split('\n'):
+proc parseURIMethodMap*(this: var Mailcap; file: ChaFile): Opt[void] =
+  var line: string
+  while ?file.readLine(line):
     if line.len == 0 or line[0] == '#':
       continue # comments
     var k = line.untilLower(AsciiWhitespace + {':'})
@@ -653,6 +652,7 @@ proc parseURIMethodMap*(this: var Mailcap; s: string) =
         entry.flags.incl(mfUri)
       let list = this.put(k)
       list.add(entry)
+  ok()
 
 iterator mainTypes*(mailcap: Mailcap): string =
   for it in mailcap.tab:
