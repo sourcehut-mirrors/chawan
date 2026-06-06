@@ -521,8 +521,8 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
         return i
   return -1
 
-proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL):
-    MailcapEntry =
+proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
+    netPathSeen, listSeen: var bool): MailcapEntry =
   var url = outUrl
   var id = 0'u32
   var done = false
@@ -531,10 +531,13 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL):
     if list == nil:
       break
     done = true
+    listSeen = true
     for entry in list.resource:
       if entry.id < id:
         continue
       if not checkEntry(entry, url.scheme, url):
+        if mfNetpath in entry.flags and not url.isNetPath():
+          netPathSeen = true
         continue
       if mfUri in entry.flags:
         var canpipe: bool
@@ -546,6 +549,7 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL):
         typeBuf = url.scheme & '/' & typeBuf.after('/')
         id = entry.id
         done = false
+        listSeen = false
         break
       return entry
   nil

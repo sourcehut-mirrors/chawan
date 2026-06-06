@@ -1,9 +1,5 @@
 #!/bin/sh
 
-if test "$REQUEST_METHOD" != GET
-then	printf 'Cha-Control: InvalidMethod\n'
-	exit 1
-fi
 opath=/${MAPPED_URI_PATH#"${MAPPED_URI_PATH%%[!/]*}"}
 path0=$(printf '%s\n' "$opath" | "$CHA_LIBEXEC_DIR"/urldec)
 path=${path0##/?}

@@ -383,8 +383,6 @@ please remove this host from """ & hostsPath & ".")
 
 proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
-  if getEnvEmpty("REQUEST_METHOD") != "GET":
-    cgiDie(ceInvalidMethod)
   let host = getEnvEmpty("MAPPED_URI_HOST")
   let port = getEnvEmpty("MAPPED_URI_PORT", "22")
   let ps = connectSocket(host, port).orDie()

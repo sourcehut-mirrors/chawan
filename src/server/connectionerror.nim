@@ -1,4 +1,5 @@
 type ConnectionError* = enum
+  ceNetPathExpected = -20
   ceLoaderGone = -19
   ceCookieStreamExists = -18
   ceCGICachedBodyUnavailable = -17
@@ -32,6 +33,7 @@ type ConnectionError* = enum
   ceProxyInvalidResponse = (11, "ProxyInvalidResponse")
 
 const ErrorMessages* = [
+  ceNetPathExpected: "expected `//' after colon",
   ceLoaderGone: "loader process crashed",
   ceCookieStreamExists: "cookie stream already exists",
   ceCGICachedBodyUnavailable: "request body is not ready in the cache",
@@ -53,7 +55,7 @@ const ErrorMessages* = [
   ceUnknownScheme: "unknown scheme",
   ceNone: "connection successful",
   ceInternalError: "internal error",
-  ceInvalidMethod: "invalid method",
+  ceInvalidMethod: "invalid request method",
   ceInvalidURL: "invalid URL",
   ceFileNotFound: "file not found",
   ceConnectionRefused: "connection refused",

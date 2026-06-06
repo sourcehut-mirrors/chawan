@@ -1480,7 +1480,10 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       prevurl = request.url
       var typeBuf = request.url.scheme & '/' &
         ($request.httpMethod).toLowerAscii()
-      let entry = ctx.browsecap.findResourceMut(typeBuf, request.url)
+      var netPathSeen = false
+      var listSeen = false
+      let entry = ctx.browsecap.findResourceMut(typeBuf, request.url,
+        netPathSeen, listSeen)
       if entry != nil and mfCgioutput in entry.flags:
         var canpipe: bool
         let cmd = "cgi-bin:" & unquoteCommand(entry.cmd, typeBuf,
@@ -1492,6 +1495,10 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
           redo = true
         else:
           ctx.rejectHandle(handle, ceInvalidBrowsecapEntry)
+      elif netPathSeen:
+        ctx.rejectHandle(handle, ceNetPathExpected)
+      elif listSeen:
+        ctx.rejectHandle(handle, ceInvalidMethod)
       else:
         ctx.rejectHandle(handle, ceUnknownScheme)
   if tries >= MaxRewrites:

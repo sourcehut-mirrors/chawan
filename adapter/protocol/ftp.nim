@@ -142,8 +142,6 @@ proc main() =
   let username = getEnvEmpty("MAPPED_URI_USERNAME")
   let password = getEnvEmpty("MAPPED_URI_PASSWORD")
   let port = getEnvEmpty("MAPPED_URI_PORT", "21")
-  if getEnvEmpty("REQUEST_METHOD") != "GET":
-    cgiDie(ceInvalidMethod)
   var ipv6: bool
   let ps = connectSocket(host, port, ipv6).orDie()
   let f = ps.afdopen("a+b").orDie(ceInternalError, "failed to open file")
