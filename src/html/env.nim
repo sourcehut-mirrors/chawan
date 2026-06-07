@@ -100,6 +100,31 @@ proc getter(mimeTypeArray: MimeTypeArray; atom: JSAtom): JSValue
 proc newNotification(): Notification {.jsctor.} =
   Notification()
 
+proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
+    JSValue {.cdecl.} =
+  let denied = JS_NewString(ctx, "denied")
+  if JS_IsException(denied):
+    return denied
+  let res = ctx.call(argv[0], JS_UNDEFINED, denied)
+  if JS_IsException(res):
+    #TODO "report" (fire error event)
+    JS_FreeValue(ctx, denied)
+    return res
+  return ctx.callSink(argv[1], JS_UNDEFINED, denied)
+
+proc requestPermission(ctx: JSContext; callback: JSValueConst): JSValue
+    {.jsstfunc: "Notification".} =
+  var funs {.noinit.}: array[2, JSValue]
+  let res = ctx.newPromiseCapability(funs)
+  if JS_IsException(res):
+    return res
+  let code = ctx.enqueueJob(resolveToDenied, funs[0], callback)
+  ctx.freeValues(funs)
+  if code < 0:
+    JS_FreeValue(ctx, res)
+    return JS_EXCEPTION
+  return res
+
 # Permissions
 # See above.
 proc query(ctx: JSContext; this: Permissions; desc: JSValueConst): JSValue
