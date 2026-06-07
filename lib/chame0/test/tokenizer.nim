@@ -16,7 +16,7 @@ proc hexValue*(c: char): int =
     return int(uint8(c) - uint8('A') + 0xA)
   return -1
 
-func doubleEscape(input: string): string =
+proc doubleEscape(input: string): string =
   var s = ""
   var esc = 0
   var u: uint32 = 0
@@ -199,7 +199,7 @@ proc runTest(builder: MiniDOMBuilder; desc: string; output: seq[JsonNode];
     if res == trDone:
       break
 
-func getState(s: string): TokenizerState =
+proc getState(s: string): TokenizerState =
   case s
   of "Data state":
     return DATA

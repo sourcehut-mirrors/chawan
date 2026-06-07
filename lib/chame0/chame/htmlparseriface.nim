@@ -31,7 +31,7 @@ when defined(nimdocdummy):
   ## get uglier error messages when a function is missing.
   ##
   ## Note that when using this interface you can't use procs with different side
-  ## effects than declared, so e.g. `func getDocumentImpl(...` **will not work**.
+  ## effects than declared, so e.g. `proc getDocumentImpl(...` **will not work**.
   ## You must use `proc getDocumentImpl(...` instead.
   ##
   ## Also, make sure that parameter names match the ones defined here,

@@ -67,7 +67,7 @@ proc toLowerAscii(c: char): char {.inline.} =
   else:
     result = c
 
-func `$`*(tok: Token): string =
+proc `$`*(tok: Token): string =
   result = $tok.t
   case tok.t
   of ttDoctype:
@@ -137,7 +137,7 @@ const AttributeStates = {
   ATTRIBUTE_VALUE_QUOTED, ATTRIBUTE_VALUE_UNQUOTED
 }
 
-func consumedAsAttribute(tokenizer: Tokenizer): bool =
+proc consumedAsAttribute(tokenizer: Tokenizer): bool =
   return tokenizer.rstate in AttributeStates
 
 proc emit(tokenizer: var Tokenizer; c: char) =

@@ -60,7 +60,7 @@ proc write(writer: var LineWriter, s: string) =
     writer.flush()
   writer.line &= s
 
-func makePropertyTable(ranges: RangeMap): PropertyTable =
+proc makePropertyTable(ranges: RangeMap): PropertyTable =
   var ucs = 0u32
   var k = 0
   while ucs <= 0xFFFF:

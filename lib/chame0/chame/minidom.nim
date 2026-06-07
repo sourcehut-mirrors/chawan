@@ -34,10 +34,10 @@ type
     atomMap: seq[string]
 
 # Mandatory Atom functions
-func `==`*(a, b: MAtom): bool {.borrow.}
-func hash*(atom: MAtom): Hash {.borrow.}
+proc `==`*(a, b: MAtom): bool {.borrow.}
+proc hash*(atom: MAtom): Hash {.borrow.}
 
-func strToAtom*(factory: MAtomFactory; s: string): MAtom
+proc strToAtom*(factory: MAtomFactory; s: string): MAtom
 
 proc newMAtomFactory*(): MAtomFactory =
   const minCap = int(TagType.high) + 1
@@ -49,7 +49,7 @@ proc newMAtomFactory*(): MAtomFactory =
     discard factory.strToAtom($tagType)
   return factory
 
-func strToAtom*(factory: MAtomFactory; s: string): MAtom =
+proc strToAtom*(factory: MAtomFactory; s: string): MAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
   for atom in factory.strMap[i]:
@@ -62,11 +62,11 @@ func strToAtom*(factory: MAtomFactory; s: string): MAtom =
   factory.strMap[i].add(atom)
   return atom
 
-func tagTypeToAtom*(factory: MAtomFactory; tagType: TagType): MAtom =
+proc tagTypeToAtom*(factory: MAtomFactory; tagType: TagType): MAtom =
   assert tagType != TAG_UNKNOWN
   return MAtom(tagType)
 
-func atomToStr*(factory: MAtomFactory; atom: MAtom): string =
+proc atomToStr*(factory: MAtomFactory; atom: MAtom): string =
   return factory.atomMap[int(atom)]
 
 # Node types
@@ -175,15 +175,15 @@ proc clone*(node: Node; deep: bool): Node =
       copy.childList.add(child.clone(deep = true))
   return copy
 
-func toTagType*(atom: MAtom): TagType {.inline.} =
+proc toTagType*(atom: MAtom): TagType {.inline.} =
   if int(atom) <= int(high(TagType)):
     return TagType(atom)
   return TAG_UNKNOWN
 
-func tagType*(element: Element): TagType =
+proc tagType*(element: Element): TagType =
   return element.localName.toTagType()
 
-func cmp*(a, b: MAtom): int {.inline.} =
+proc cmp*(a, b: MAtom): int {.inline.} =
   return cmp(int(a), int(b))
 
 # We use this to validate input strings, since htmltokenizer/htmlparser does no
@@ -278,7 +278,7 @@ proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: MAtom;
   element.attrs = xmlAttrs
   for k, v in htmlAttrs:
     element.attrs.add((NO_PREFIX, NO_NAMESPACE, k, v.toValidUTF8()))
-  element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
+  element.attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
   return element
 
 proc getLocalNameImpl(builder: MiniDOMBuilder; handle: Node): MAtom =
@@ -290,31 +290,31 @@ proc getNamespaceImpl(builder: MiniDOMBuilder; handle: Node): Namespace =
 proc getTemplateContentImpl(builder: MiniDOMBuilder, handle: Node): Node =
   return HTMLTemplateElement(handle).content
 
-func countElementChildren(node: Node): int =
+proc countElementChildren(node: Node): int =
   result = 0
   for child in node.childList:
     if child of Element:
       inc result
 
-func hasTextChild(node: Node): bool =
+proc hasTextChild(node: Node): bool =
   for child in node.childList:
     if child of Text:
       return true
   return false
 
-func hasElementChild(node: Node): bool =
+proc hasElementChild(node: Node): bool =
   for child in node.childList:
     if child of Element:
       return true
   return false
 
-func hasDocumentTypeChild(node: Node): bool =
+proc hasDocumentTypeChild(node: Node): bool =
   for child in node.childList:
     if child of DocumentType:
       return true
   return false
 
-func isHostIncludingInclusiveAncestor(a, b: Node): bool =
+proc isHostIncludingInclusiveAncestor(a, b: Node): bool =
   var b = b
   while b != nil:
     if b == a:
@@ -322,7 +322,7 @@ func isHostIncludingInclusiveAncestor(a, b: Node): bool =
     b = b.parentNode
   return false
 
-func hasPreviousElementSibling(node: Node): bool =
+proc hasPreviousElementSibling(node: Node): bool =
   for n in node.parentNode.childList:
     if n == node:
       break
@@ -330,7 +330,7 @@ func hasPreviousElementSibling(node: Node): bool =
       return true
   return false
 
-func hasNextDocumentTypeSibling(node: Node): bool =
+proc hasNextDocumentTypeSibling(node: Node): bool =
   for i in countdown(node.parentNode.childList.len, 0):
     let n = node.parentNode.childList[i]
     if n == node:
@@ -339,15 +339,15 @@ func hasNextDocumentTypeSibling(node: Node): bool =
       return true
   return false
 
-func isValidParent(node: Node): bool =
+proc isValidParent(node: Node): bool =
   return node of Element or node of Document or node of DocumentFragment
 
-func isValidChild(node: Node): bool =
+proc isValidChild(node: Node): bool =
   return node.isValidParent or node of DocumentType or node of CharacterData
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
-func preInsertionValidity*(parent, node, before: Node): bool =
+proc preInsertionValidity*(parent, node, before: Node): bool =
   if not parent.isValidParent:
     return false
   if node.isHostIncludingInclusiveAncestor(parent):
@@ -484,7 +484,7 @@ proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
   for name, value in attrs:
     if name notin oldNames:
       element.attrs.add((NO_PREFIX, NO_NAMESPACE, name, value.toValidUTF8()))
-  element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
+  element.attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
 
 method setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
     SetEncodingResult {.base.} =

@@ -7,7 +7,7 @@ import std/streams
 import chame/tags
 import chame/minidom
 
-func escapeText(s: string, attributeMode = false): string =
+proc escapeText(s: string, attributeMode = false): string =
   result = ""
   var nbspMode = false
   var nbspPrev = '\0'
@@ -32,7 +32,7 @@ func escapeText(s: string, attributeMode = false): string =
     else:
       result &= c
 
-func `$`*(node: Node): string =
+proc `$`*(node: Node): string =
   result = ""
   if node of Element:
     let element = Element(node)

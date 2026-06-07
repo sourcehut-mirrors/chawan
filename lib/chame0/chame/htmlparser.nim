@@ -260,25 +260,25 @@ proc resetInsertionMode0(parser: var HTML5Parser): InsertionMode =
 proc resetInsertionMode(parser: var HTML5Parser) =
   parser.insertionMode = parser.resetInsertionMode0()
 
-func currentNodeToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
+proc currentNodeToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     OpenElement[Handle, Atom] =
   return parser.openElements[^1]
 
-func currentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
+proc currentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
   return parser.currentNodeToken.element
 
-func currentToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
+proc currentToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     Token[Atom] =
   return parser.currentNodeToken.token
 
-func adjustedCurrentNodeToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
+proc adjustedCurrentNodeToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     OpenElement[Handle, Atom] =
   if parser.ctx.isSome and parser.openElements.len == 1:
     return parser.ctx.get
   else:
     return parser.currentNodeToken
 
-func adjustedCurrentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
+proc adjustedCurrentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     Handle =
   return parser.adjustedCurrentNodeToken.element
 
@@ -290,10 +290,10 @@ proc lastElementOfTag[Handle, Atom](parser: HTML5Parser[Handle, Atom];
       return (some(element), i)
   return (none(Handle), -1)
 
-func lastChildOf[Handle](n: Handle): InsertionLocation[Handle] =
+proc lastChildOf[Handle](n: Handle): InsertionLocation[Handle] =
   InsertionLocation[Handle](inside: n, before: none(Handle))
 
-func lastChildOf[Handle, Atom](n: OpenElement[Handle, Atom]):
+proc lastChildOf[Handle, Atom](n: OpenElement[Handle, Atom]):
     InsertionLocation[Handle] =
   lastChildOf(n.element)
 
@@ -627,7 +627,7 @@ proc toLowerAscii(c: char): char {.inline.} =
   else:
     result = c
 
-func startsWithNoCase(str, prefix: string): bool =
+proc startsWithNoCase(str, prefix: string): bool =
   if str.len < prefix.len:
     return false
   # prefix.len is always lower
@@ -638,7 +638,7 @@ func startsWithNoCase(str, prefix: string): bool =
     inc i
   true
 
-func equalsIgnoreCase(s1, s2: string): bool =
+proc equalsIgnoreCase(s1, s2: string): bool =
   if s1.len != s2.len:
     return false
   var i = 0
@@ -648,7 +648,7 @@ func equalsIgnoreCase(s1, s2: string): bool =
     inc i
   true
 
-func quirksConditions(name, pubid, sysid: string; flags: set[TokenFlag]): bool =
+proc quirksConditions(name, pubid, sysid: string; flags: set[TokenFlag]): bool =
   if tfQuirks in flags:
     return true
   if name != "html":
@@ -668,7 +668,7 @@ func quirksConditions(name, pubid, sysid: string; flags: set[TokenFlag]): bool =
           return true
   return false
 
-func limitedQuirksConditions(pubid: string; flags: set[TokenFlag]): bool =
+proc limitedQuirksConditions(pubid: string; flags: set[TokenFlag]): bool =
   if tfPubid notin flags: return false
   for id in PublicIdentifierStartsWithLimited:
     if pubid.startsWithNoCase(id):
@@ -833,7 +833,7 @@ proc isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom];
 
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
-func until(s: string; c1, c2: char; starti: int): string =
+proc until(s: string; c1, c2: char; starti: int): string =
   result = ""
   for i in starti ..< s.len:
     let c = s[i]
@@ -841,7 +841,7 @@ func until(s: string; c1, c2: char; starti: int): string =
       break
     result &= c
 
-func extractEncFromMeta(s: string): string =
+proc extractEncFromMeta(s: string): string =
   var i = 0
   while true: # Loop:
     var j = 0
@@ -880,7 +880,7 @@ func extractEncFromMeta(s: string): string =
   return s.until(';', ' ', i)
 
 # Find a node in the list of active formatting elements, or return -1.
-func findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
+proc findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     node: Handle): int =
   for i in countdown(parser.activeFormatting.high, 0):
     let it = parser.activeFormatting[i][0]
@@ -891,7 +891,7 @@ func findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom
 # > the last element in the list of active formatting elements that:
 # > is between the end of the list and the last marker in the list, if any,
 # > or the start of the list otherwise, and has the tag name subject.
-func findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
+proc findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
     token: Token): int =
   for i in countdown(parser.activeFormatting.high, 0):
     let it = parser.activeFormatting[i][1]
@@ -2326,7 +2326,7 @@ proc parseChunk*[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         return pres
   return PRES_CONTINUE
 
-func getInsertionPoint*(parser: HTML5Parser): int =
+proc getInsertionPoint*(parser: HTML5Parser): int =
   return parser.tokenizer.inputBufIdx
 
 proc finish*[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
