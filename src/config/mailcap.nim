@@ -285,7 +285,7 @@ proc parseMailcap*(mailcap: var Mailcap; path: string): Err[string] =
   let res = state.parseMailcap(mailcap, file)
   file.close()
   if res.isErr:
-    return err(path & '(' & $state.line & "): " & msg)
+    return err(path & '(' & $state.line & "): " & state.error)
   ok()
 
 # Mostly based on w3m's mailcap quote/unquote
