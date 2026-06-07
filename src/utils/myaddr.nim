@@ -10,9 +10,8 @@
 # Additionally, this adds a backport of newSeqUninit which is exactly
 # the same as newSeqUninitialized but with a different name.
 
-const msg = "expression has no address; maybe use `unsafeAddr'"
-
-template addr(x: auto): auto {.used, error: msg.} =
+template addr(x: auto): auto {.
+    used, error: "expression has no address; maybe use `unsafeAddr'".} =
   discard
 
 template addr(x: var auto): auto {.used.} =
