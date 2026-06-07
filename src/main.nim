@@ -431,7 +431,7 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
     die("failed to set ownership of " & config{"tmpdir"})
   if chmod(tmpdir, 0o700) != 0:
     die("failed to set permissions of " & config{"tmpdir"})
-  let loaderPid = forkserver.loadConfig(config)
+  let loaderPid = forkserver.loadConfig(config, warnings)
   if loaderPid == -1:
     die("failed to fork loader process")
   onSignal SIGINT:

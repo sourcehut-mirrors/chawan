@@ -40,7 +40,8 @@ type
     linkHintChars: seq[uint32]
     schemes: seq[string]
 
-proc loadConfig*(forkserver: ForkServer; config: Config): int =
+proc loadConfig*(forkserver: ForkServer; config: Config;
+    warnings: var seq[string]): int =
   forkserver.stream.withPacketWriter w:
     w.swrite(config{"doubleWidthAmbiguous"})
     w.swrite(config{"linkHintChars"})
@@ -60,11 +61,15 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       allowAllSchemes: true
     ))
     w.swrite(config{"urimethodmap"})
+    w.swrite(config{"autoBrowsecap"})
   do:
     return -1
   var process = -1
+  var fswarnings: seq[string]
   forkserver.stream.withPacketReaderFire r:
     r.sread(process)
+    r.sread(fswarnings)
+  warnings.add(fswarnings)
   return process
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
@@ -269,16 +274,23 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
     var clientConfig: LoaderClientConfig
     var linkHintChars: string
     var urimethodmapPaths: seq[string]
+    var autoBrowsecapPath: string
     r.sread(isCJKAmbiguous)
     r.sread(linkHintChars)
     r.sread(config)
     r.sread(clientConfig)
     r.sread(urimethodmapPaths)
+    r.sread(autoBrowsecapPath)
     ctx.linkHintChars = linkHintChars.toPoints()
     # for CGI
     if setupForkServerEnv(config).isErr:
       quit(1)
+    var warnings: seq[string]
     var browsecap: Mailcap
+    block:
+      let res = browsecap.parseMailcap(autoBrowsecapPath)
+      if res.isErr:
+        warnings.add(res.error)
     for path in urimethodmapPaths:
       if file := chafile.fopen(path, "r"):
         discard browsecap.parseURIMethodMap(file)
@@ -292,6 +304,7 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
       clientConfig, browsecap)
     ctx.stream.withPacketWriter w:
       w.swrite(pid)
+      w.swrite(warnings)
     do:
       pid = -1
     if pid == -1:

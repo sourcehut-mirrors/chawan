@@ -220,6 +220,7 @@ type
     coHighlightColor = "highlightColor"
 
     # string
+    coAutoBrowsecap = "autoBrowsecap"
     coAutoMailcap = "autoMailcap"
     coBookmark = "bookmark"
     coCookieFile = "cookieFile"
@@ -369,6 +370,7 @@ const OptionMap = [
   coDefaultForegroundColor: (cotRGBColorAuto, csDisplay),
   coHighlightColor: (cotCSSColor, csDisplay),
 
+  coAutoBrowsecap: (cotPath, csExternal),
   coAutoMailcap: (cotPath, csExternal),
   coBookmark: (cotPath, csExternal),
   coCookieFile: (cotPath, csExternal),
@@ -2374,6 +2376,7 @@ const ConfigInitStr = {
 }
 
 const ConfigInitPath = {
+  coAutoBrowsecap: "browsecap",
   coAutoMailcap: "mailcap",
   coBookmark: "$CHA_DATA_DIR/bookmark.md",
   coHistoryFile: "$CHA_DATA_DIR/history.uri",
