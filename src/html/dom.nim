@@ -1965,7 +1965,7 @@ proc tryGetCallback(ctx: JSContext; proto: JSValueConst; t: CECallbackType;
   if not JS_IsUndefined(val):
     callbacks[t] = val # val is freed by caller
     if not JS_IsFunction(ctx, val):
-      JS_ThrowTypeError(ctx, "lifecycle callback is not a function")
+      JS_ThrowTypeError(ctx, "not a function")
       return err()
   ok()
 
@@ -3789,8 +3789,8 @@ proc createDocumentType(ctx: JSContext; implementation: DOMImplementation;
   ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
 proc createDocument(ctx: JSContext; implementation: DOMImplementation;
-    namespace: CAtom; qname0: JSValueConst = JS_NULL;
-    doctype = none(DocumentType)): Opt[XMLDocument] {.jsfunc.} =
+    namespace: CAtom; qname0: JSValueConst; doctype = none(DocumentType)):
+    Opt[XMLDocument] {.jsfunc.} =
   let document = newXMLDocument()
   var qname = ""
   if not JS_IsNull(qname0):

@@ -105,15 +105,18 @@ proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
   let denied = JS_NewString(ctx, "denied")
   if JS_IsException(denied):
     return denied
-  let res = ctx.call(argv[0], JS_UNDEFINED, denied)
-  if JS_IsException(res):
-    #TODO "report" (fire error event)
-    JS_FreeValue(ctx, denied)
-    return res
+  if not JS_IsUndefined(argv[0]):
+    let res = ctx.call(argv[0], JS_UNDEFINED, denied)
+    if JS_IsException(res):
+      #TODO "report" (fire error event)
+      JS_FreeValue(ctx, denied)
+      return res
   return ctx.callSink(argv[1], JS_UNDEFINED, denied)
 
-proc requestPermission(ctx: JSContext; callback: JSValueConst): JSValue
-    {.jsstfunc: "Notification".} =
+proc requestPermission(ctx: JSContext; callback: JSValueConst = JS_UNDEFINED):
+    JSValue {.jsstfunc: "Notification".} =
+  if not JS_IsUndefined(callback) and not JS_IsFunction(ctx, callback):
+    return JS_ThrowTypeError(ctx, "not a function")
   var funs {.noinit.}: array[2, JSValue]
   let res = ctx.newPromiseCapability(funs)
   if JS_IsException(res):
@@ -432,7 +435,7 @@ proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
 proc requestAnimationFrame(ctx: JSContext; window: Window;
     callback: JSValueConst): JSValue {.jsfunc.} =
   if not JS_IsFunction(ctx, callback):
-    return JS_ThrowTypeError(ctx, "callback is not a function")
+    return JS_ThrowTypeError(ctx, "not a function")
   let handler = JS_NewCFunction(ctx, animationFrameHandler,
     "animation frame handler", 1)
   if JS_IsException(handler):

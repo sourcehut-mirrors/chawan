@@ -104,6 +104,7 @@ type
   BoundFunction = object
     t: BoundFunctionType
     flag: BoundFunctionFlag
+    length: uint8
     magic: uint16
     name: string
     id: NimNode
@@ -403,6 +404,9 @@ type
     t: BoundFunctionType
     hasThis: bool
     flag: BoundFunctionFlag
+    actualMinArgs: uint8 # minArgs without JSContext
+    minArgs: cint
+    i: cint # nim parameters accounted for
     funcName: string
     funcParams: seq[FuncParam]
     thisType: string
@@ -413,9 +417,6 @@ type
     jsFunCallList: NimNode
     jsFunCall: NimNode
     jsCallAndRet: NimNode
-    minArgs: cint
-    actualMinArgs: cint # minArgs without JSContext
-    i: cint # nim parameters accounted for
 
   RegistryInfo = ref object
     t: NimNode # NimNode of type
@@ -493,17 +494,18 @@ proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
       minArgsSeen = true
     elif not minArgsSeen:
       gen.minArgs = cint(gen.funcParams.len)
-  gen.actualMinArgs = gen.minArgs
+  var actualMinArgs = gen.minArgs
   if gen.hasThis and gen.flag != bffStatic:
-    dec gen.actualMinArgs
+    dec actualMinArgs
   if gen.funcParams.len > gen.i:
     if gen.funcParams[gen.i].t.eqIdent("JSContext"):
-      dec gen.actualMinArgs
+      dec actualMinArgs
       gen.jsFunCall.add(ident("ctx"))
       inc gen.i
     elif gen.funcParams[gen.i].t.eqIdent("JSRuntime"):
       inc gen.i # special case for finalizers that have a JSRuntime param
-  assert gen.actualMinArgs >= 0
+  assert actualMinArgs in 0..255
+  gen.actualMinArgs = uint8(actualMinArgs)
 
 template getJSParams(): untyped =
   [
@@ -664,16 +666,17 @@ proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
   let id = fun.id
   case fun.t
   of bfFunction:
+    let len = fun.length
     case fun.flag
     of bffNone:
       info.tabFuns.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, `id`, JS_PROP_C_W_E))
+        JS_CFUNC_DEF(`name`, `len`, `id`, JS_PROP_C_W_E))
     of bffUnforgeable:
       info.tabUnforgeable.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, `id`, JS_PROP_ENUMERABLE))
+        JS_CFUNC_DEF(`name`, `len`, `id`, JS_PROP_ENUMERABLE))
     of bffStatic:
       info.tabStatic.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, `id`, JS_PROP_C_W_E))
+        JS_CFUNC_DEF(`name`, `len`, `id`, JS_PROP_C_W_E))
     of bffReplaceable:
       assert false #TODO
   of bfConstructor, bfConstructorFunction:
@@ -740,6 +743,7 @@ proc registerFunction(gen: JSFuncGenerator) =
     t: gen.t,
     name: gen.funcName,
     id: gen.newName,
+    length: uint8(gen.actualMinArgs),
     flag: gen.flag
   ))
 
@@ -752,7 +756,7 @@ proc jsCheckNumArgs*(ctx: JSContext; argc, minargs: cint): bool =
 
 proc newJSProc(gen: var JSFuncGenerator; params: openArray[NimNode];
     isva = true): NimNode =
-  let ma = gen.actualMinArgs
+  let ma = cint(gen.actualMinArgs)
   let jsBody = newStmtList()
   if isva and ma > 0:
     jsBody.add(quote do:
