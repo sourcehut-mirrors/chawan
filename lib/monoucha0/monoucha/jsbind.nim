@@ -743,7 +743,7 @@ proc registerFunction(gen: JSFuncGenerator) =
     t: gen.t,
     name: gen.funcName,
     id: gen.newName,
-    length: uint8(gen.actualMinArgs),
+    length: gen.actualMinArgs,
     flag: gen.flag
   ))
 

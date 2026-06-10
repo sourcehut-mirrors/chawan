@@ -2532,7 +2532,6 @@ proc clone(node: Node; ctx: JSContext; document = none(Document);
     x.name = element.name
     x.classList = x.newDOMTokenList(satClass)
     x.attrs = element.attrs
-    #TODO namespaced attrs?
     # Cloning steps
     if x of HTMLScriptElement:
       let x = HTMLScriptElement(x)
@@ -3021,6 +3020,7 @@ proc getElementsByTagNameImpl(ctx: JSContext; root: ParentNode; tagName: string)
     proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
       if node of Element:
         let element = Element(node)
+        #TODO we should be using qualified name here
         if element.namespaceURI == satNamespaceHTML:
           return ok(element.localName == this.atoms[1])
         return ok(element.localName == this.atoms[0])
