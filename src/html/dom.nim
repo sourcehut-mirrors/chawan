@@ -3307,7 +3307,7 @@ proc newDocument*(url: URL): Document =
   return document
 
 proc newDocument(ctx: JSContext): Document {.jsctor.} =
-  let global = ctx.getGlobal()
+  let global = ctx.getWindow()
   let document = Document(
     url: parseURL0("about:blank"),
     contentType: satApplicationXml,
