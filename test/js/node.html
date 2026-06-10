@@ -9,5 +9,7 @@ let elem = document.createElement("div");
 elem.append(text);
 assertEquals(text.ownerDocument, document);
 assertEquals(new Document().createCDATASection("test").cloneNode().data, "test");
+assert(!new Document().createCDATASection("a").isEqualNode(new Text("a")));
+assert(new Text("a").isEqualNode(new Text("a")));
 document.getElementById("x").textContent = "Success";
 </script>
