@@ -3440,6 +3440,17 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
           if element.tagType == TAG_TEMPLATE:
             document.adopt(HTMLTemplateElement(element).content, ctx)
 
+proc adoptNode(ctx: JSContext; document: Document; node: Node): JSValue
+    {.jsfunc.} =
+  if node of Document:
+    return JS_ThrowDOMException(ctx, "NotSupportedError",
+      "document nodes cannot be adopted")
+  if node of ShadowRoot:
+    return JS_ThrowDOMException(ctx, "HierarchyRequestError",
+      "shadow root nodes cannot be adopted")
+  document.adopt(node, ctx)
+  return ctx.toJS(node)
+
 proc compatMode(document: Document): string {.jsfget.} =
   if document.mode == QUIRKS:
     return "BackCompat"
@@ -3476,7 +3487,8 @@ proc images(ctx: JSContext; document: Document): Opt[HTMLCollection] {.
     )
   ok(document.cachedImages)
 
-proc getURL(ctx: JSContext; document: Document): JSValue {.jsfget: "URL".} =
+proc getURL(ctx: JSContext; document: Document): JSValue {.
+    jsfget: "URL", jsfget: "documentURI".} =
   return ctx.toJS($document.url)
 
 proc getCookieWindow(ctx: JSContext; document: Document): Opt[Window] =
