@@ -2679,13 +2679,14 @@ proc isEqualNode(node, other: Node): bool {.jsfunc.} =
       return false
     let node = ProcessingInstruction(node)
     let other = ProcessingInstruction(other)
-    if node.target != other.target or node.data != other.data:
+    if node.target != other.target or node.data.s != other.data.s:
       return false
   elif node of CharacterData:
     if node of Text and not (other of Text) or
-        node of Comment and not (other of Comment):
+        node of Comment and not (other of Comment) or
+        node of CDATASection and not (other of CDATASection):
       return false
-    return CharacterData(node).data == CharacterData(other).data
+    return CharacterData(node).data.s == CharacterData(other).data.s
   true
 
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
