@@ -8,5 +8,6 @@ let text = doc.createTextNode("test");
 let elem = document.createElement("div");
 elem.append(text);
 assertEquals(text.ownerDocument, document);
+assertEquals(new Document().createCDATASection("test").cloneNode().data, "test");
 document.getElementById("x").textContent = "Success";
 </script>

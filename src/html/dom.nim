@@ -2560,9 +2560,10 @@ proc clone(node: Node; ctx: JSContext; document = none(Document);
     let x = document.newText(text.data.s)
     Node(x)
   elif node of CDATASection:
-    let x = document.newCDATASection("")
-    #TODO is this really correct??
-    # really, I don't know. only relevant with xhtml anyway...
+    # Note: the spec does not mention this for some reason, but this is
+    # what others do.
+    let node = CDATASection(node)
+    let x = document.newCDATASection(node.data.s)
     Node(x)
   elif node of Comment:
     let comment = Comment(node)
