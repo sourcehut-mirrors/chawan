@@ -3,10 +3,10 @@
 import std/os
 import std/posix
 
-import encoding/charset
 import config/chapath
 import config/config
 import config/conftypes
+import encoding/charset
 import html/catom
 import html/dom
 import html/env
@@ -30,6 +30,7 @@ import server/forkserver
 import server/loaderiface
 import types/jsopt
 import types/opt
+import types/url
 import utils/myposix
 import utils/sandbox
 import utils/strwidth
@@ -388,7 +389,8 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
     settings: EnvironmentSettings(
       scripting: smApp,
     ),
-    dangerAlwaysSameOrigin: true
+    dangerAlwaysSameOrigin: true,
+    document: newDocument(parseURL0("about:blank"))
   )
   if client.addJSModules(jsctx).isOk:
     return client
