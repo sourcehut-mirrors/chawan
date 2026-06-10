@@ -3403,9 +3403,21 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
     remove(node)
   if oldDocument != document:
     node.internalNext = document
-    var templates: seq[HTMLTemplateElement]
     if node of ParentNode:
       let node = ParentNode(node)
+      # The node document is already set, so we must update collections
+      # before doing anything that might be observable.
+      var collection = oldDocument.liveCollectionsHead
+      while collection != nil:
+        let next = collection.next
+        if collection.root == node:
+          collection.document = addr document[]
+          collection.prev = nil
+          collection.next = document.liveCollectionsHead
+          if document.liveCollectionsHead != nil:
+            document.liveCollectionsHead.prev = collection
+          document.liveCollectionsHead = collection
+        collection = next
       for desc in node.descendantsShadowIncl:
         if desc.nextSibling == nil:
           desc.internalNext = document
@@ -3424,23 +3436,9 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
             if attributes != nil:
               for it in attributes.attrlist:
                 it.internalNext = document
-          #TODO custom element registry, img relevant mutations
+          #TODO custom element registry, img relevant mutations, adoptedCallback
           if element.tagType == TAG_TEMPLATE:
-            templates.add(HTMLTemplateElement(element))
-    var collection = oldDocument.liveCollectionsHead
-    while collection != nil:
-      let next = collection.next
-      if collection.root == node:
-        collection.document = addr document[]
-        collection.prev = nil
-        collection.next = document.liveCollectionsHead
-        if document.liveCollectionsHead != nil:
-          document.liveCollectionsHead.prev = collection
-        document.liveCollectionsHead = collection
-      collection = next
-    #TODO custom elements
-    for element in templates:
-      document.adopt(element.content, ctx)
+            document.adopt(HTMLTemplateElement(element).content, ctx)
 
 proc compatMode(document: Document): string {.jsfget.} =
   if document.mode == QUIRKS:
