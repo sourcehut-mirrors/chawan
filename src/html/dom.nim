@@ -1198,10 +1198,11 @@ iterator branchHost(node: Node): Node {.inline.} =
     yield node
     node = node.parentNodeHost
 
-iterator branchElems*(node: Node): Element {.inline.} =
-  for node in node.branch:
-    if node of Element:
-      yield Element(node)
+iterator branchElems*(element: Element): Element {.inline.} =
+  var element = element
+  while element != nil:
+    yield element
+    element = element.parentElement
 
 iterator descendants*(node: ParentNode): Node {.inline.} =
   var it = node.firstChild
@@ -6062,6 +6063,23 @@ proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
   )
   this.setShadowRoot(shadow)
   ok(shadow)
+
+proc closest(ctx: JSContext; this: Element; q: string): JSValue {.jsfunc.} =
+  let selectors = parseSelectors(q)
+  if selectors.len == 0:
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
+      cstring(q))
+  for element in this.branchElems:
+    if element.matchesImpl(selectors):
+      return ctx.toJS(element)
+  return JS_NULL
+
+proc matches(ctx: JSContext; this: Element; q: string): JSValue {.jsfunc.} =
+  let selectors = parseSelectors(q)
+  if selectors.len == 0:
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
+      cstring(q))
+  return ctx.toJS(this.matchesImpl(selectors))
 
 # ShadowRoot
 proc host(this: ShadowRoot): Element {.jsfget.} =
