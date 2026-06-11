@@ -1666,14 +1666,14 @@ proc popPositioned(lctx: LayoutContext; head: CSSAbsolute; size: Size) =
         input.borderLeft(lctx)
     elif not child.computed{"right"}.auto:
       child.state.offset.x = size.w - positioned.right - child.state.size.w -
-        input.margin.right + input.borderRight(lctx)
+        input.margin.right - input.borderRight(lctx)
     # margin.left is added in layout
     if not child.computed{"top"}.auto:
       child.state.offset.y = positioned.top + input.margin.top +
         input.borderTop(lctx)
     elif not child.computed{"bottom"}.auto:
       child.state.offset.y = size.h - positioned.bottom - child.state.size.h -
-        input.margin.bottom + input.borderBottom(lctx)
+        input.margin.bottom - input.borderBottom(lctx)
     else:
       child.state.offset.y += input.margin.top
     it = it.next
