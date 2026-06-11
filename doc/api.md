@@ -128,30 +128,23 @@ getter.
 Following properties (functions/getters) are defined by `Pager`:
 
 `load(url = pager.buffer.url)`
-: Put the specified address into the URL bar, and optionally load it.
-
-  Note that this performs auto-expansion of URLs, so Chawan will expand any
-  matching omni-rules (e.g. search), try to open schemeless URLs with the
-  default scheme/local files, etc.
-
-  Opens a prompt with the current URL when no parameters are specified;
-  otherwise, the string passed is displayed in the prompt.
+: Opens a prompt to load a resource, with `url` pre-filled.
 
 `loadSubmit(url)`
 : Act as if `url` had been entered to the URL bar.  `loadSubmit` differs
   from `gotoURL` in that it also evaluates omni-rules, tries to prepend a
-  scheme, etc.
+  scheme for URLs without one/local files, etc.
 
 `gotoURL(url, options = {replace: null, contentType: null, save: false, charset: null})`
 : Go to the specified URL immediately (without a prompt).  This differs
   from `loadSubmit` in that it loads the exact URL as passed (no prepending
   https, etc.)
 
-  When `replace` is set, the new buffer may replace the old one if it loads
-  successfully.
+  When `replace` is set to a `Buffer` object, the new buffer will replace
+  the old one if it loads successfully.
 
-  When `contentType` is set, the new buffer's content type is forcefully
-  set to that string.
+  When `contentType` is set, the new buffer's content type is forcibly set
+  to that string.
 
   When `save` is true, the user is prompted to save the resource instead of
   displaying it in a buffer.
@@ -241,13 +234,14 @@ Following properties (functions/getters) are defined by `Pager`:
   Can be used to implement an exit prompt like this:
 
   ```
-  q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void 0)'
+  q = 'pager.ask("Do you want to exit Chawan?").then(x => x && pager.quit())'
   ```
 
 `askChar(prompt)`
 : Ask the user for any character.
 
-  Like `pager.ask`, but the return value is a character.
+  Like `pager.ask`, but the return value is a character, and (y/n) is not
+  appended to the prompt.
 
 `clipboardWrite(s)`
 : Write `s` to the clipboard (copy).  By default, it tries using OSC 52;
