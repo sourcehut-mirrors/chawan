@@ -5629,6 +5629,8 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLModElement()
   of TAG_PROGRESS:
     HTMLProgressElement()
+  of TAG_SLOT:
+    HTMLSlotElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()

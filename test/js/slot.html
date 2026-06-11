@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<title>Slot test</title>
+<slot id=y>slot</slot>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const y = document.getElementById("y");
+assertInstanceof(y, HTMLSlotElement);
+y.remove();
+document.getElementById("x").textContent = "Success";
+</script>
