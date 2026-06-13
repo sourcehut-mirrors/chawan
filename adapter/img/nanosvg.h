@@ -1911,7 +1911,7 @@ static void nsvg__parseStyle(NSVGparser* p, const char* str)
 
 		// Right Trim
 		while (end > start &&  (*end == ';' || nsvg__isspace(*end))) --end;
-		++end;
+		if (*end) ++end;
 
 		nsvg__parseNameValue(p, start, end);
 		if (*str) ++str;
