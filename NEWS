@@ -1,3 +1,15 @@
+0.4.3 (2026.06.21)
+
+* fix parsing of config files without EOL at EOF
+* fix missing siteconf regex not being reported at EOF
+* fix mailcap error message display
+* fix crash on some Window functions when called from pager
+* fix incorrect positioning of absolute boxes with bottom/right borders
+* fix an OOB in nanosvg
+* fix parsing of var() nested into another var()'s fallback
+* fix CDATASection not being derived from Text
+* fix exceptions being swallowed for JS getters called on the wrong interface
+
 0.4.2 (2026.06.01)
 
 * fix display of some dynamically inserted SVGs
