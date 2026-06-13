@@ -16,12 +16,12 @@ and when enabled by the user, can also execute JavaScript and display
 images (on terminals supporting Sixel or the Kitty image protocol.)
 
 Chawan can also be used as a general text-based document viewer as
-described in **cha-mailcap**(5), or as a hyperlinked man page viewer
-using **mancha**(1).
+described in [**cha-mailcap**](mailcap.md)(5), or as a hyperlinked man page
+viewer using [**mancha**](mancha.md)(1).
 
 This document describes the invocation of Chawan.  For a list of default
 keybindings, type *cha about:chawan*.  For a detailed description of
-the configuration format, see **cha-config**(5).
+the configuration format, see [**cha-config**](config.md)(5).
 
 # ARGUMENTS
 

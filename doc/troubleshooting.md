@@ -134,7 +134,7 @@ There are three ways of dealing with this:
    command to a key of your choice in the [config](config.md#keybindings)
    (e.g. `<space> r`):
 
-   `' r' = "pager.externFilterSource('rdrview -Hu \"$CHA_URL\"')"`
+   `'SPC r' = "pager.externFilterSource('rdrview -Hu \"$CHA_URL\"')"`
 
    This does not fix the core problem, but will significantly improve your
    reading experience anyway.

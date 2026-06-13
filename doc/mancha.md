@@ -13,11 +13,12 @@ mancha - view manual pages via cha(1)
 # DESCRIPTION
 
 **mancha** enables viewing man pages using the Chawan browser.  It is
-analogous to the **w3mman**(1) utility.
+analogous to the [**w3mman**](man:w3mman(1))(1) utility.
 
-**mancha** executes **cha**(1) with the appropriate *man:*, *man-k:* or
-*man-l:* URLs.  The protocol adapter then opens the man page and injects
-markup into it, e.g. man page references are converted into *man:* links.
+**mancha** executes [**cha**](cha.md)(1) with the appropriate *man:*,
+*man-k:* or *man-l:* URLs.  The protocol adapter then opens the man page
+and injects markup into it, e.g. man page references are converted into
+*man:* links.
 
 # OPTIONS
 
