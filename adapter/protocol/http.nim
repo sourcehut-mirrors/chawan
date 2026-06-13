@@ -112,7 +112,9 @@ type
     httpStream: PosixStream # used in HTTP
     os: PosixStream
     line: string
-    headers: seq[tuple[key, value: string]]
+    contentEncodings: seq[ContentEncoding]
+    transferEncodings: seq[TransferEncoding]
+    headersBuf: string # buffer of all headers to be printed on stdout
 
   LineState = enum
     lsNone, lsCrSeen
@@ -248,22 +250,48 @@ proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
       else:
         op.line &= c
     of lsCrSeen:
+      const HttpStart = "HTTP/1.0 "
       if c != '\n' or
-          not op.line.startsWithIgnoreCase("HTTP/1.1") and
-          not op.line.startsWithIgnoreCase("HTTP/1.0"):
-        quit(1)
-      let codes = op.line.until(' ', "HTTP/1.0 ".len)
-      let code = parseUInt16(codes)
-      if codes.len > 3 or code.isErr:
-        quit(1)
-      let buf = "Status: " & $code.get & "\r\nCha-Control: ControlDone\r\n"
-      if op.os.writeLoop(buf).isErr:
-        quit(1)
+          not op.line.startsWithIgnoreCase("HTTP/1.1 ") and
+          not op.line.startsWithIgnoreCase("HTTP/1.0 "):
+        cgiDie(ceInvalidResponse)
+      var codeIdx = op.line.find(' ', HttpStart.len)
+      if codeIdx < 0:
+        codeIdx = op.line.len
+      if codeIdx > 3 + HttpStart.len:
+        cgiDie(ceInvalidResponse)
+      let code = parseUInt16(op.line.toOpenArray(HttpStart.len, codeIdx - 1))
+        .orDie(ceInvalidResponse)
+      op.headersBuf = "Status: " & $code & "\r\nCha-Control: ControlDone\r\n"
       op.lineState = lsNone
       op.state = hsHeaders
       op.line = ""
       return i + 1
   return iq.len
+
+proc addHeader(op: HTTPHandle) =
+  var name = move(op.line)
+  let i = name.find(':')
+  var j = i - 1
+  while j > 0 and name[j] in HTTPWhitespace:
+    dec j
+  if i > 0 and name[0] notin HTTPWhitespace:
+    var valueIdx = i + 1
+    while valueIdx < name.len and name[valueIdx] in HTTPWhitespace:
+      inc valueIdx
+    let value = name.substr(valueIdx)
+    name.setLen(j + 1)
+    if name.equalsIgnoreCase("Content-Encoding"):
+      for it in value.split(','):
+        if ce := parseEnumNoCase[ContentEncoding](it):
+          op.contentEncodings.add(ce)
+    elif name.equalsIgnoreCase("Transfer-Encoding"):
+      for it in value.split(','):
+        if te := parseEnumNoCase[TransferEncoding](it):
+          op.transferEncodings.add(te)
+    elif name.equalsIgnoreCase("Content-Length"):
+      op.chunkSize = parseUInt64(value).get(uint64.high)
+    op.headersBuf &= name & ": " & value & "\r\n"
 
 proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
   for i, c in iq:
@@ -276,55 +304,30 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
     of lsCrSeen:
       if c != '\n': # malformed header
         quit(1)
-      if op.line != "":
-        var name = op.line.until(':')
-        if name.len > 0 and name[0] notin HTTPWhitespace and
-            name.len != op.line.len:
-          name = name.strip(leading = false, trailing = true,
-            chars = HTTPWhitespace)
-          let value = op.line.after(':').strip(leading = true,
-            trailing = false, chars = HTTPWhitespace)
-          op.headers.add((move(name), value))
-        op.line = ""
+      if op.line.len > 0:
+        op.addHeader() # sets line to ""
         op.lineState = lsNone
       else:
-        var buf = ""
-        var contentEncodings: seq[ContentEncoding] = @[]
-        var transferEncodings: seq[TransferEncoding] = @[]
-        var contentLength = uint64.high
-        for it in op.headers:
-          buf &= it.key & ": " & it.value & "\r\n"
-          if it.key.equalsIgnoreCase("Content-Encoding"):
-            for it in it.value.split(','):
-              if ce := parseEnumNoCase[ContentEncoding](it):
-                contentEncodings.add(ce)
-          elif it.key.equalsIgnoreCase("Transfer-Encoding"):
-            for it in it.value.split(','):
-              if te := parseEnumNoCase[TransferEncoding](it):
-                transferEncodings.add(te)
-          elif it.key.equalsIgnoreCase("Content-Length"):
-            contentLength = parseUInt64(it.value).get(uint64.high)
-        buf &= "\r\n"
-        if op.os.writeLoop(buf).isErr:
+        op.headersBuf &= "\r\n"
+        if op.os.writeLoop(op.headersBuf).isErr:
           quit(1)
-        for ce in contentEncodings.ritems:
+        for ce in op.contentEncodings.ritems:
           case ce
           of ceBr: op.unbrotli()
           of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
           of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
         op.bodyState = hsBody
-        for i in countdown(transferEncodings.high, 0):
-          case transferEncodings[i]
+        for i in countdown(op.transferEncodings.high, 0):
+          case op.transferEncodings[i]
           of teBr: op.unbrotli()
           of teChunked:
             if i == 0:
               op.bodyState = hsChunkSize
+              op.chunkSize = 0
           of teGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
           of teDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
         op.lineState = lsNone
         op.state = op.bodyState
-        if op.bodyState == hsBody:
-          op.chunkSize = contentLength
         return i + 1
   return iq.len
 
@@ -445,7 +448,7 @@ proc main*() =
   let path = getEnvEmpty("MAPPED_URI_PATH", "/")
   let query = getEnvEmpty("MAPPED_URI_QUERY")
   let os = newPosixStream(STDOUT_FILENO)
-  let op = HTTPHandle(os: os)
+  let op = HTTPHandle(os: os, chunkSize: uint64.high)
   if secure:
     let ssl = connectSSLSocket(host, port, useDefaultCA = true).orDie()
     if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY", "0") != "1":
