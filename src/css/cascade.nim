@@ -116,8 +116,9 @@ proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
 proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
     vars: CSSVariableMap; items: openArray[CSSVarItem]): Opt[void] =
   for item in items:
-    let varName = item.name
-    if varName != CAtomNull:
+    case item.t
+    of cvitVar:
+      let varName = item.name
       var success = false
       for it in ctx.varsSeen.mitems:
         if it == varName:
@@ -129,18 +130,20 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
       if not success:
         return err()
       var cv: CSSVariable = nil
-      var vars = vars
-      while vars != nil:
-        cv = vars.table.getOrDefault(varName)
+      var varsIt = vars
+      while varsIt != nil:
+        cv = varsIt.table.getOrDefault(varName)
         if cv != nil:
           break
-        vars = vars.parent
+        varsIt = varsIt.parent
       if cv != nil:
-        ?ctx.addItems(toks, vars, cv.items)
+        ?ctx.addItems(toks, varsIt, cv.items)
         continue
-    if item.toks.len == 0:
-      return err()
-    toks.add(item.toks)
+      if item.fallback.len == 0:
+        return err()
+      ?ctx.addItems(toks, vars, item.fallback)
+    of cvitToks:
+      toks.add(item.toks)
   ok()
 
 proc resolveVariable(ctx: var ApplyValueContext; p: CSSWidePropertyType;
