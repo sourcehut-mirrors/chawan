@@ -417,7 +417,6 @@ proc parseSelectorList(state: var SelectorParser; forgiving: bool): SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 proc parseCompoundSelector(state: var SelectorParser;
   pseudoElement: var PseudoElement; specificityOut: var uint): Selector
-proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken])
 proc seek*(ctx: var CSSParser)
 proc `$`*(tok: CSSToken): string
 proc `$`*(c: CSSRule): string
@@ -893,7 +892,7 @@ proc consume(iq: openArray[char]; n: var int): CSSToken =
     dec n
     return iq.consumeDelimToken(n)
 
-proc tokenPair(t: CSSTokenType): CSSTokenType =
+proc tokenPair*(t: CSSTokenType): CSSTokenType =
   case t
   of cttLparen, cttFunction: return cttRparen
   of cttLbracket: return cttRbracket
@@ -994,7 +993,7 @@ proc checkFunctionEnd*(ctx: var CSSParser): Opt[void] =
   ctx.seekToken()
   ok()
 
-proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken]) =
+proc addComponentValue*(ctx: var CSSParser; toks: var seq[CSSToken]) =
   var tok = ctx.consume()
   let t = tok.t
   toks.add(move(tok))

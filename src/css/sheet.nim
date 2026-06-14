@@ -241,7 +241,7 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom) =
       of cdtVariable:
         ruleDef.vars[f].add(CSSVariable(
           name: decl.v,
-          items: parseDeclWithVar0(decl.value)
+          items: parseDeclWithVar1(decl.value)
         ))
       of cdtNestedRule:
         sheet.s.add(ruleDef)

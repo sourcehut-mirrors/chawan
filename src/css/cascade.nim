@@ -435,7 +435,7 @@ proc applyStyle(element: Element) =
       of cdtVariable:
         map[peNone].a[coAuthor].unlayered.vars[f].add(CSSVariable(
           name: decl.v,
-          items: parseDeclWithVar0(decl.value)
+          items: parseDeclWithVar1(decl.value)
         ))
       of cdtNestedRule: discard
       of cdtProperty:
