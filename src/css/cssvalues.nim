@@ -356,9 +356,16 @@ type
   CSSEntryType* = enum
     ceBit, ceWord, ceHWord, ceObject, ceVar, ceGlobal
 
-  CSSVarItem* = object
+  CSSVarItemType* = enum
+    cvitVar, cvitToks
+
+  CSSVarItem* = ref object
     name*: CAtom
-    toks*: seq[CSSToken]
+    case t*: CSSVarItemType
+    of cvitToks:
+      toks*: seq[CSSToken]
+    of cvitVar:
+      fallback*: seq[CSSVarItem]
 
   CSSVarEntry* = ref object
     resolved*: seq[tuple[vars: CSSVariableMap; entries: seq[CSSComputedEntry]]]
@@ -1673,19 +1680,23 @@ proc parseDeclWithVar0*(toks: openArray[CSSToken]): seq[CSSVarItem] =
       if tok.t != cttIdent:
         return @[]
       let name = tok.s.substr(2).toAtom()
-      items.add(CSSVarItem(name: name))
       ctx.skipBlanks()
-      var toks: seq[CSSToken] = @[]
+      var fallback: seq[CSSVarItem]
       if ctx.has() and (let tok = ctx.consume(); tok.t != cttRparen):
         if tok.t != cttComma:
           return @[]
         ctx.skipBlanks()
-        while ctx.has() and (let tok = ctx.consume(); tok.t != cttRparen):
-          toks.add(tok)
-      items[^1].toks = move(toks)
+        var toks: seq[CSSToken]
+        discard ctx.addUntil(cttRparen, toks)
+        fallback = parseDeclWithVar0(toks)
+      items.add(CSSVarItem(
+        t: cvitVar,
+        name: name,
+        fallback: move(fallback)
+      ))
     else:
       if items.len == 0 or items[^1].name != CAtomNull:
-        items.add(CSSVarItem(name: CAtomNull))
+        items.add(CSSVarItem(t: cvitToks, name: CAtomNull))
       items[^1].toks.add(tok)
   move(items)
 
