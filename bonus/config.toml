@@ -115,7 +115,8 @@
 #force-pixels-per-line = false
 
 # Omnirules are used for automatic rewriting of the URL bar.
-# They are useful for search engines:
+# They are useful for searching on websites.
+# These are the defaults:
 
 #[omnirule.ddg]
 #match = '^ddg:'
