@@ -6474,6 +6474,17 @@ proc toString(area: HTMLAreaElement): string {.jsfunc.} =
 proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
   area.attr(satRel, s)
 
+# <audio>
+proc newAudio(ctx: JSContext; this_target: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let document = ctx.getDocument()
+  let this = document.newHTMLElement(TAG_AUDIO)
+  if argc >= 1 and not JS_IsUndefined(argv[0]):
+    var x: string
+    ?ctx.fromJS(argv[0], x)
+    this.attr(satSrc, x)
+  ctx.toJS(this)
+
 # <base>
 proc href(base: HTMLBaseElement): string {.jsfget.} =
   #TODO with fallback base url
@@ -6715,11 +6726,11 @@ proc newImage(ctx: JSContext; _: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let document = ctx.getDocument()
   let this = document.newHTMLElement(TAG_IMG)
-  if not JS_IsUndefined(argv[0]):
+  if argc >= 1 and not JS_IsUndefined(argv[0]):
     var x: uint32
     ?ctx.fromJS(argv[0], x)
     this.attrul(satWidth, x)
-  if not JS_IsUndefined(argv[1]):
+  if argc >= 2 and not JS_IsUndefined(argv[1]):
     var x: uint32
     ?ctx.fromJS(argv[1], x)
     this.attrul(satHeight, x)
@@ -6920,20 +6931,22 @@ proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let document = ctx.getDocument()
   let this = HTMLOptionElement(document.newHTMLElement(TAG_OPTION))
-  if not JS_IsUndefined(argv[0]):
+  if argc >= 1 and not JS_IsUndefined(argv[0]):
     var text: string
     ?ctx.fromJS(argv[0], text)
     if text != "":
       this.insert(document.newText(text), nil, ctx)
-  if not JS_IsUndefined(argv[1]):
+  if argc >= 2 and not JS_IsUndefined(argv[1]):
     var value: string
     ?ctx.fromJS(argv[1], value)
     this.attr(satValue, value)
-  var defaultSelected: bool
-  ?ctx.fromJS(argv[2], defaultSelected)
-  if defaultSelected:
-    this.attr(satSelected, "")
-  ?ctx.fromJS(argv[3], this.selected)
+  if argc >= 3:
+    var defaultSelected: bool
+    ?ctx.fromJS(argv[2], defaultSelected)
+    if defaultSelected:
+      this.attr(satSelected, "")
+  if argc >= 4:
+    ?ctx.fromJS(argv[3], this.selected)
   ctx.toJS(this)
 
 proc text(option: HTMLOptionElement): string {.jsfget.} =
@@ -7885,6 +7898,23 @@ proc addAttributeReflection(ctx: JSContext; class: JSClassID;
   JS_FreeValue(ctx, proto)
   ok()
 
+proc addConstructorAlias(ctx: JSContext; fun: JSCFunction; class: JSClassID;
+    name: string): Opt[void] =
+  let val = JS_NewCFunction2(ctx, fun, name, 0, JS_CFUNC_constructor, 0)
+  if JS_IsException(val):
+    return err()
+  discard JS_SetConstructorBit(ctx, val, true)
+  let proto = JS_GetClassProto(ctx, class)
+  if ctx.defineProperty(val, "prototype", proto) == dprException:
+    JS_FreeValue(ctx, val)
+    return err()
+  let global = JS_GetGlobalObject(ctx)
+  let res = ctx.definePropertyCW(global, name, val)
+  JS_FreeValue(ctx, global)
+  if res == dprException:
+    return err()
+  ok()
+
 proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
   if elementCID == 0:
@@ -7900,6 +7930,14 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
     const attrs = TagReflectMap[tags[0]]
     when attrs.len > 0:
       ?ctx.addAttributeReflection(class, attrs, htmlElementCID)
+  template register2(t: typed; tag: TagType): JSClassID =
+    let class = ctx.registerType(t, parent = htmlElementCID)
+    if class == 0:
+      return err()
+    const attrs = TagReflectMap[tag]
+    when attrs.len > 0:
+      ?ctx.addAttributeReflection(class, attrs, htmlElementCID)
+    class
   template register(t: typed; tag: TagType) =
     register(t, [tag])
   register(HTMLInputElement, TAG_INPUT)
@@ -7907,7 +7945,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   register(HTMLSelectElement, TAG_SELECT)
   register(HTMLSpanElement, TAG_SPAN)
   register(HTMLOptGroupElement, TAG_OPTGROUP)
-  register(HTMLOptionElement, TAG_OPTION)
+  let optionCID = register2(HTMLOptionElement, TAG_OPTION)
   register(HTMLHeadingElement, [TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6])
   register(HTMLBRElement, TAG_BR)
   register(HTMLMenuElement, TAG_MENU)
@@ -7926,9 +7964,9 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   register(HTMLTextAreaElement, TAG_TEXTAREA)
   register(HTMLLabelElement, TAG_LABEL)
   register(HTMLCanvasElement, TAG_CANVAS)
-  register(HTMLImageElement, TAG_IMG)
+  let imageCID = register2(HTMLImageElement, TAG_IMG)
   register(HTMLVideoElement, TAG_VIDEO)
-  register(HTMLAudioElement, TAG_AUDIO)
+  let audioCID = register2(HTMLAudioElement, TAG_AUDIO)
   register(HTMLIFrameElement, TAG_IFRAME)
   register(HTMLTableElement, TAG_TABLE)
   register(HTMLTableCaptionElement, TAG_CAPTION)
@@ -7953,7 +7991,9 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   if svgElementCID == 0:
     return err()
   ?ctx.registerType(SVGSVGElement, parent = svgElementCID)
-  ok()
+  ?ctx.addConstructorAlias(newAudio, audioCID, "Audio")
+  ?ctx.addConstructorAlias(newImage, imageCID, "Image")
+  ctx.addConstructorAlias(newOption, optionCID, "Option")
 
 proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
@@ -7998,18 +8038,6 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   ?ctx.registerType(ShadowRoot, parent = documentFragmentCID)
   ?ctx.registerElements(nodeCID)
   let global = JS_GetGlobalObject(ctx)
-  let imageFun = JS_NewCFunction(ctx, newImage, "Image", 2)
-  if JS_IsException(imageFun):
-    return err()
-  if ctx.definePropertyCW(global, "Image", imageFun) == dprException:
-    return err()
-  discard JS_SetConstructorBit(ctx, imageFun, true)
-  let optionFun = JS_NewCFunction(ctx, newOption, "Option", 4)
-  if JS_IsException(optionFun):
-    return err()
-  discard JS_SetConstructorBit(ctx, optionFun, true)
-  if ctx.definePropertyCW(global, "Option", optionFun) == dprException:
-    return err()
   let document = JS_GetPropertyStr(ctx, global, "Document")
   if ctx.definePropertyCW(global, "HTMLDocument", document) == dprException:
     return err()
