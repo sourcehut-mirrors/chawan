@@ -11,6 +11,8 @@ import types/opt
 import utils/twtstr
 
 type
+  Collator = ref object
+
   NumberStyle = enum
     nsDecimal = "decimal"
     nsPercent = "percent"
@@ -82,13 +84,20 @@ type
 
   RelativeTimeFormat = ref object
 
+jsDestructor(Collator)
 jsDestructor(NumberFormat)
 jsDestructor(DateTimeFormat)
 jsDestructor(PluralRules)
 jsDestructor(RelativeTimeFormat)
 
-# NumberFormat
+# Collator
+proc newCollator(): Collator {.jsctor.} =
+  return Collator()
 
+proc compare(this: Collator; a, b: string): bool {.jsfunc.} =
+  return a == b
+
+# NumberFormat
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     FromJSResult =
   var s: string
@@ -227,12 +236,10 @@ proc format(nf: NumberFormat; s: string): string {.jsfunc.} =
   of nsCurrency: discard #TODO?
 
 # DateTimeFormat
-
 proc newDateTimeFormat(): Opt[DateTimeFormat] {.jsfctor.} =
   return ok(DateTimeFormat())
 
 # PluralRules
-
 proc newPluralRules(): PluralRules {.jsctor.} =
   return PluralRules()
 
@@ -245,7 +252,6 @@ proc select(this: PluralRules; num: float64): string {.jsfunc.} =
   return "many"
 
 # RelativeTimeFormat
-
 proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
   return RelativeTimeFormat()
 
@@ -254,6 +260,7 @@ proc addIntlModule*(ctx: JSContext): Opt[void] =
   let intl = JS_NewObject(ctx)
   if JS_IsException(intl):
     return err()
+  ?ctx.registerType(Collator, namespace = intl)
   ?ctx.registerType(NumberFormat, namespace = intl)
   ?ctx.registerType(DateTimeFormat, namespace = intl)
   ?ctx.registerType(PluralRules, namespace = intl)
