@@ -1285,7 +1285,7 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
   for child in select.elementList:
     if child of HTMLOptionElement:
       yield HTMLOptionElement(child)
-    elif child of HTMLOptGroupElement:
+    elif child.tagType == TAG_OPTGROUP:
       for opt in child.elementList:
         if opt of HTMLOptionElement:
           yield HTMLOptionElement(opt)
@@ -1339,9 +1339,9 @@ proc isRow(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
 
 proc isOptionOf(node, select: Node): bool =
   if node of HTMLOptionElement:
-    let parent = node.parentNode
+    let parent = node.parentElement
     return Node(parent) == select or
-      parent of HTMLOptGroupElement and Node(parent.parentNode) == select
+      parent.tagType == TAG_OPTGROUP and Node(parent.parentNode) == select
   return false
 
 proc isElement(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
@@ -4054,7 +4054,7 @@ proc findAnchor*(document: Document; id: string): Element =
   for child in document.elementDescendants:
     if child.id == id:
       return child
-    if child of HTMLAnchorElement and child.name == id:
+    if child.tagType == TAG_A and child.name == id:
       return child
   return nil
 
@@ -5069,7 +5069,7 @@ proc scriptingEnabled(element: Element): bool =
   return element.document.scriptingEnabled
 
 proc isSubmitButton*(element: Element): bool =
-  if element of HTMLButtonElement:
+  if element.tagType == TAG_BUTTON:
     return element.attr(satType).equalsIgnoreCase("submit")
   elif element of HTMLInputElement:
     let element = HTMLInputElement(element)
@@ -5077,7 +5077,7 @@ proc isSubmitButton*(element: Element): bool =
   return false
 
 proc isButton*(element: Element): bool =
-  if element of HTMLButtonElement:
+  if element.tagType == TAG_BUTTON:
     return true
   if element of HTMLInputElement:
     let element = HTMLInputElement(element)
@@ -5093,12 +5093,12 @@ proc action*(element: Element): string =
     if element.form != nil:
       if element.form.attrb(satAction):
         return element.form.attr(satAction)
-  if element of HTMLFormElement:
+  if element.tagType == TAG_FORM:
     return element.attr(satAction)
   return ""
 
 proc enctype*(element: Element): FormEncodingType =
-  if element of HTMLFormElement:
+  if element.tagType == TAG_FORM:
     # Note: see below, this is not in the standard.
     if element.attrb(satEnctype):
       let s = element.attr(satEnctype)
@@ -7031,8 +7031,8 @@ proc getter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom): JSValue
 
 proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
     before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
-  if not (element of HTMLOptionElement or element of HTMLOptGroupElement):
-    return JS_ThrowTypeError(ctx, "Expected option or optgroup element")
+  if element.tagType notin {TAG_OPTION, TAG_OPTGROUP}:
+    return JS_ThrowTypeError(ctx, "expected option or optgroup element")
   var beforeEl: HTMLElement = nil
   var beforeIdx = -1
   if not JS_IsNull(before) and ctx.fromJS(before, beforeEl).isErr and
@@ -7803,7 +7803,7 @@ proc rowIndex(ctx: JSContext; this: HTMLTableRowElement): Opt[int] {.jsfget.} =
 proc sectionRowIndex(ctx: JSContext; this: HTMLTableRowElement): Opt[int] {.
     jsfget.} =
   let parent = this.parentElement
-  if parent of HTMLTableElement:
+  if parent.tagType == TAG_TABLE:
     return ctx.rowIndex(this)
   if parent of HTMLTableSectionElement:
     let parent = HTMLTableSectionElement(parent)

@@ -212,7 +212,7 @@ proc associateWithFormImpl(builder: ChaDOMBuilder;
 proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
   let element = Element(element)
   let document = builder.document
-  if element of HTMLTextAreaElement:
+  if element.tagType == TAG_TEXTAREA:
     element.resetElement()
   elif element of HTMLScriptElement:
     if document.scriptingEnabled:

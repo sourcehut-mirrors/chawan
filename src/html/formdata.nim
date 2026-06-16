@@ -187,7 +187,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     else:
       assert false, "Tag type " & $field.tagType &
         " not accounted for in constructEntryList"
-    if field of HTMLTextAreaElement or
+    if field.tagType == TAG_TEXTAREA or
         field of HTMLInputElement and
         HTMLInputElement(field).inputType in AutoDirInput:
       let dirname = field.attr(satDirname)
