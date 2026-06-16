@@ -1669,7 +1669,8 @@ template makeEntry*[T: enum|set](t: CSSPropertyType; val: T): CSSComputedEntry =
 
 proc parseDeclWithVar0(ctx: var CSSParser; nested: bool): seq[CSSVarItem] =
   ctx.skipBlanks()
-  var nparens = 0u
+  var parenStackTop = cttColon
+  var parenStack: seq[CSSTokenType] = @[]
   var items: seq[CSSVarItem] = @[]
   while ctx.has():
     let tok = ctx.consume()
@@ -1685,21 +1686,35 @@ proc parseDeclWithVar0(ctx: var CSSParser; nested: bool): seq[CSSVarItem] =
       if ctx.has() and (let tok = ctx.consume(); tok.t != cttRparen):
         if tok.t != cttComma:
           return @[]
-        fallback = ctx.parseDeclWithVar0(nested = true)
+        if ctx.skipBlanksCheckHas().isOk:
+          if ctx.peekTokenType() != cttRparen:
+            fallback = ctx.parseDeclWithVar0(nested = true)
+            if fallback.len == 0:
+              return @[] # error in parsing fallback
+          else:
+            ctx.seekToken()
       items.add(CSSVarItem(
         t: cvitVar,
         name: name,
         fallback: move(fallback)
       ))
-    elif nested and tok.t == cttRparen and nparens == 0:
+    elif nested and tok.t == cttRparen and parenStackTop == cttColon:
       break
     else:
       if items.len == 0 or items[^1].name != CAtomNull:
         items.add(CSSVarItem(t: cvitToks, name: CAtomNull))
-      if tok.t.tokenPair == cttRparen:
-        inc nparens
-      elif tok.t == cttRparen and nparens > 0:
-        dec nparens
+      let pair = tok.t.tokenPair
+      if pair != tok.t:
+        if parenStackTop != cttColon:
+          parenStack.add(parenStackTop)
+        parenStackTop = pair
+      elif tok.t in {cttRparen, cttRbracket, cttRbrace}:
+        if nested and parenStackTop != tok.t:
+          return @[] # invalid
+        if parenStack.len > 0:
+          parenStackTop = parenStack.pop()
+        else:
+          parenStackTop = cttColon
       items[^1].toks.add(tok)
   move(items)
 
