@@ -414,7 +414,7 @@ type
 
   Comment* = ref object of CharacterData
 
-  CDATASection = ref object of CharacterData
+  CDATASection = ref object of Text
 
   ProcessingInstruction = ref object of CharacterData
     target {.jsget.}: string
@@ -2168,11 +2168,11 @@ proc ownerDocument(node: Node): Document {.jsfget.} =
 proc nodeTypeEnum(node: Node): NodeType =
   if node of CharacterData:
     if node of Text:
+      if node of CDATASection:
+        return ntCdataSection
       return ntText
     elif node of Comment:
       return ntComment
-    elif node of CDATASection:
-      return ntCdataSection
     else: # ProcessingInstruction
       return ntProcessingInstruction
   elif node of Element:
@@ -2555,15 +2555,11 @@ proc clone(node: Node; ctx: JSContext; document = none(Document);
     )
     Node(dummy.newAttr(0))
   elif node of Text:
-    let text = Text(node)
-    let x = document.newText(text.data.s)
-    Node(x)
-  elif node of CDATASection:
-    # Note: the spec does not mention this for some reason, but this is
-    # what others do.
-    let node = CDATASection(node)
-    let x = document.newCDATASection(node.data.s)
-    Node(x)
+    let node = Text(node)
+    if node of CDATASection:
+      Node(document.newCDATASection(node.data.s))
+    else:
+      Node(document.newText(node.data.s))
   elif node of Comment:
     let comment = Comment(node)
     let x = document.newComment(comment.data.s)
@@ -8024,12 +8020,14 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   if characterDataCID == 0:
     return err()
   ?ctx.registerType(Comment, parent = characterDataCID)
-  ?ctx.registerType(CDATASection, parent = characterDataCID)
   let documentFragmentCID = ctx.registerType(DocumentFragment, parent = nodeCID)
   if documentFragmentCID == 0:
     return err()
   ?ctx.registerType(ProcessingInstruction, parent = characterDataCID)
-  ?ctx.registerType(Text, parent = characterDataCID)
+  let textCID = ctx.registerType(Text, parent = characterDataCID)
+  if textCID == 0:
+    return err()
+  ?ctx.registerType(CDATASection, parent = textCID)
   ?ctx.registerType(DocumentType, parent = nodeCID)
   ?ctx.registerType(Attr, parent = nodeCID)
   ?ctx.registerType(NamedNodeMap)
