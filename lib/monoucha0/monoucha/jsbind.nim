@@ -999,7 +999,7 @@ macro jsfgetn(jsname: static string; flag: static BoundFunctionFlag;
     error("jsfget functions must have a return type.")
   gen.addThisParam()
   gen.finishFunCallList()
-  gen.makeJSCallAndRet(nil, quote do: discard)
+  gen.makeJSCallAndRet(nil, quote do: return JS_EXCEPTION)
   let jsProc = if flag != bffReplaceable:
     gen.newJSProc(getJSGetterParams(), false)
   else:
