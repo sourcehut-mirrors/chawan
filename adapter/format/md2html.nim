@@ -608,7 +608,6 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     return ok()
   let c0 = line[0]
   if (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
-    ?state.closeP()
     let L = n + 1
     var H = line.rfind(AllChars - {'#'})
     if H != -1 and line[H] == ' ':
@@ -636,17 +635,17 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.reprocess = true
   elif c0 == '\t':
     state.blockType = btTabPre
-    ?state.closeP()
+    state.hasp = false # PRE closes P
     ?state.write("<PRE>")
     ?state.writeLine(line.substr(1))
   elif line.startsWith("    "):
     state.blockType = btSpacePre
-    ?state.closeP()
+    state.hasp = false # PRE closes P
     ?state.write("<PRE>")
     ?state.writeLine(line.substr(4))
   elif c0 == '>':
     state.blockType = btBlockquote
-    ?state.closeP()
+    state.hasp = false # BLOCKQUOTE closes P
     let i = if line.len < 2 or line[1] != ' ': 1 else: 2
     state.blockData = line.substr(i) & "\n"
     ?state.write("<BLOCKQUOTE>")
