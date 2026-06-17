@@ -35,6 +35,7 @@ javascript:
 - ReadableStream
 - separate console for each buffer
 - CORS
+- PutForwards
 layout:
 - flexbox: align-self, align-items, justify-content, margin: auto
 - details element

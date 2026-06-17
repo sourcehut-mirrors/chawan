@@ -1245,7 +1245,7 @@ proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
       bc.setFocus(button)
       return initClickResult(open)
     of btReset:
-      button.form.reset()
+      button.form.resetForm(nil)
     of btButton: discard
     bc.setFocus(button)
   return initClickResult()
@@ -1334,7 +1334,7 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
     return initClickResult()
   of itReset:
     if input.form != nil:
-      input.form.reset()
+      input.form.resetForm(nil)
       bc.maybeReshape()
     return initClickResult()
   of itSubmit, itButton:

@@ -595,6 +595,10 @@ type
 
   HTMLLabelElement* = ref object of HTMLElement
 
+  HTMLOutputElement = ref object of FormAssociatedElement
+    dirty: bool
+    internalValue: string
+
   HTMLCanvasElement* = ref object of HTMLElement
     ctx2d*: CanvasRenderingContext2D
     bitmap*: NetworkBitmap
@@ -704,6 +708,7 @@ jsDestructor(HTMLSourceElement)
 jsDestructor(HTMLModElement)
 jsDestructor(HTMLProgressElement)
 jsDestructor(HTMLSlotElement)
+jsDestructor(HTMLOutputElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -854,6 +859,7 @@ proc value*(this: HTMLInputElement): lent string
 proc setValue*(this: HTMLInputElement; value: sink string)
 proc isDisabled(link: HTMLLinkElement): bool
 proc value*(option: HTMLOptionElement): string
+proc defaultValue(this: HTMLOutputElement): string
 proc setSelectedness(select: HTMLSelectElement)
 proc updateSheet*(this: HTMLStyleElement)
 proc execute*(element: HTMLScriptElement)
@@ -887,7 +893,7 @@ var clickImpl*: proc(bc: RootRef; element: HTMLElement) {.nimcall, raises: [].}
 type
   ReflectType = enum
     rtStr, rtUrl, rtBool, rtLong, rtUlongGz, rtUlong, rtDoubleGz, rtFunction,
-    rtReferrerPolicy, rtCrossOrigin, rtMethod
+    rtReferrerPolicy, rtCrossOrigin, rtMethod, rtForm
 
   ReflectEntry = object
     attrname: StaticAtom
@@ -1031,6 +1037,12 @@ proc makedgz(name: StaticAtom; t: TagType; u: uint32): ReflectEntryTag =
 proc makem(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
   makem(name, name, ts)
 
+proc makeform(ts: varargs[TagType]): ReflectEntryTag =
+  ReflectEntryTag(
+    tags: @ts,
+    e: ReflectEntry(attrname: satForm, funcname: satForm, t: rtForm)
+  )
+
 # Note: this table only works for tag types with a registered interface.
 const ReflectMap0 = [
   # non-global attributes
@@ -1041,12 +1053,12 @@ const ReflectMap0 = [
   makeb(satRequired, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makes(satName, TAG_A, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META,
     TAG_IFRAME, TAG_FRAME, TAG_IMG, TAG_OBJECT, TAG_PARAM, TAG_OBJECT, TAG_MAP,
-    TAG_FORM, TAG_OUTPUT, TAG_FIELDSET, TAG_DETAILS, TAG_SLOT),
+    TAG_FORM, TAG_OUTPUT, TAG_FIELDSET, TAG_DETAILS, TAG_SLOT, TAG_OUTPUT),
   makes(satOpen, TAG_DETAILS),
   makeb(satNovalidate, satHNoValidate, TAG_FORM),
   makeb(satSelected, satDefaultSelected, TAG_OPTION),
   makes(satRel, TAG_A, TAG_LINK, TAG_LABEL),
-  makes(satFor, satHtmlFor, TAG_LABEL),
+  makes(satFor, satHtmlFor, TAG_LABEL, TAG_OUTPUT),
   makes(satHttpEquiv, satHHttpEquiv, TAG_META),
   makes(satContent, TAG_META),
   makes(satMedia, TAG_META, TAG_SOURCE),
@@ -1075,6 +1087,7 @@ const ReflectMap0 = [
   makeurl(satData, TAG_OBJECT),
   makedgz(satValue, TAG_PROGRESS, 0),
   makedgz(satMax, TAG_PROGRESS, 1),
+  makeform(TAG_BUTTON, TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA),
   # super-global attributes
   makes(satClass, satClassName),
   makef(satOnclick, satClick),
@@ -3919,6 +3932,7 @@ proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     if entry.attrname == satFormmethod and s == "":
       return ctx.toJS("")
     return ctx.toJS($parseFormMethod(s))
+  of rtForm: return ctx.toJS(FormAssociatedElement(element).form)
   of rtBool: return ctx.toJS(element.attrb(entry.attrname))
   of rtLong:
     let i = cast[int32](entry.u)
@@ -3982,6 +3996,7 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
   of rtFunction:
     let ctype = cast[StaticAtom](entry.u)
     return ctx.eventReflectSet0(element, val, magic, jsReflectSet, ctype)
+  of rtForm: discard
   return JS_DupValue(ctx, val)
 
 proc findMagic(ctype: StaticAtom): cint =
@@ -5627,6 +5642,8 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLProgressElement()
   of TAG_SLOT:
     HTMLSlotElement()
+  of TAG_OUTPUT:
+    HTMLOutputElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
@@ -5678,7 +5695,7 @@ proc ensureStyle(element: Element) =
   if element.computed == nil or element.computed.invalid:
     element.applyStyleImpl()
 
-proc resetElement*(element: Element) =
+proc resetElement*(element: Element; ctx: JSContext) =
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
@@ -5706,7 +5723,11 @@ proc resetElement*(element: Element) =
     let textarea = HTMLTextAreaElement(element)
     textarea.dirty = false
     textarea.invalidate()
-  #TODO TAG_OUTPUT
+  of TAG_OUTPUT:
+    let output = HTMLOutputElement(element)
+    output.replaceAll(output.defaultValue, ctx)
+    output.dirty = false
+    output.internalValue = ""
   else: discard
 
 # Returns true if has post-connection steps.
@@ -6489,9 +6510,6 @@ proc href(base: HTMLBaseElement): string {.jsfget.} =
   return ""
 
 # <button>
-proc jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
-  return this.form
-
 proc setType(this: HTMLButtonElement; s: string) {.jsfset: "type".} =
   this.attr(satType, s)
 
@@ -6671,9 +6689,9 @@ proc length(ctx: JSContext; this: HTMLFormElement): Opt[uint32] {.jsfget.} =
     return err()
   return ctx.getLength(elements0.get)
 
-proc reset*(form: HTMLFormElement) =
+proc resetForm*(form: HTMLFormElement; ctx: JSContext) =
   for control in form.controls:
-    control.resetElement()
+    control.resetElement(ctx)
     control.invalidate()
 
 # FormAssociatedElement
@@ -6759,9 +6777,6 @@ proc setHeight(this: HTMLImageElement; u: uint32) {.jsfset: "height".} =
   this.attrul(satHeight, u)
 
 # <input>
-proc jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
-  return this.form
-
 proc value*(this: HTMLInputElement): lent string {.jsfget.} =
   if this.internalValue == nil:
     this.internalValue = newRefString("")
@@ -6989,6 +7004,33 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
       firstOption.selected = true
       firstOption.invalidate(dtChecked)
 
+# <output>
+proc getType(this: HTMLOutputElement): string {.jsfget: "type".} =
+  return "output"
+
+proc defaultValue(this: HTMLOutputElement): string {.jsfget.} =
+  if this.dirty:
+    return this.internalValue
+  return this.textContent
+
+proc setDefaultValue(ctx: JSContext; this: HTMLOutputElement; s: string) {.
+    jsfset: "defaultValue".} =
+  if this.dirty:
+    this.dirty = true
+    this.internalValue = s
+  else:
+    this.replaceAll(s, ctx)
+
+proc value(this: HTMLOutputElement): string {.jsfget.} =
+  return this.textContent
+
+proc setValue(ctx: JSContext; this: HTMLOutputElement; s: string) {.
+    jsfset: "value".} =
+  if not this.dirty:
+    this.dirty = true
+    this.internalValue = this.textContent
+  this.replaceAll(s, ctx)
+
 # <progress>
 proc position(this: HTMLProgressElement): float64 {.jsfget.} =
   return this.getProgressPosition()
@@ -7012,9 +7054,6 @@ proc setSelectedness(select: HTMLSelectElement) =
         prevSelected = option
     if select.displaySize == 1 and prevSelected == nil and firstOption != nil:
       firstOption.selected = true
-
-proc jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
-  return this.form
 
 proc jsType(this: HTMLSelectElement): string {.jsfget: "type".} =
   if this.attrb(satMultiple):
@@ -7812,9 +7851,6 @@ proc sectionRowIndex(ctx: JSContext; this: HTMLTableRowElement): Opt[int] {.
   return ok(-1)
 
 # <textarea>
-proc jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
-  return this.form
-
 proc value*(this: HTMLTextAreaElement): string {.jsfget.} =
   if this.dirty:
     return this.internalValue
@@ -7981,7 +8017,8 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   register(HTMLModElement, [TAG_INS, TAG_DEL])
   register(HTMLProgressElement, TAG_PROGRESS)
   register(HTMLSlotElement, TAG_SLOT)
-  # 45/127 (warning: the 128th interface doesn't fit in the top 7 bits of
+  register(HTMLOutputElement, TAG_OUTPUT)
+  # 46/127 (warning: the 128th interface won't fit in the top 7 bits of
   # the getter/setter magic)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   if svgElementCID == 0:

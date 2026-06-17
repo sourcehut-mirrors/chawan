@@ -72,7 +72,7 @@ proc parseColor(target: EventTarget; s: string): Opt[ARGBColor] =
 proc resetTransform(state: var DrawingState) =
   state.transformMatrix = newIdentityMatrix(3)
 
-proc reset*(state: var DrawingState) =
+proc resetState(state: var DrawingState) =
   state.resetTransform()
   state.fillStyle = rgba(0, 0, 0, 255)
   state.strokeStyle = rgba(0, 0, 0, 255)
@@ -110,7 +110,7 @@ proc create2DContext*(loader: FileLoader; target: EventTarget;
     ps: ps,
     state: DrawingState()
   )
-  ctx2d.state.reset()
+  ctx2d.state.resetState()
   return ctx2d
 
 proc fillRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int;
@@ -191,10 +191,10 @@ proc restore(ctx: CanvasRenderingContext2D) {.jsfunc.} =
   if ctx.state.next != nil:
     ctx.state = ctx.state.next
 
-proc reset(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+proc resetState(ctx: CanvasRenderingContext2D) {.jsfunc.} =
   ctx.clear()
   ctx.state.next = nil
-  ctx.state.reset()
+  ctx.state.resetState()
 
 #TODO scale
 proc rotate(ctx: CanvasRenderingContext2D; angle: float64) {.jsfunc.} =

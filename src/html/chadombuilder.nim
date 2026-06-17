@@ -136,7 +136,7 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     element.attr(k, v)
   for attr in xmlAttrs:
     element.attrns(attr.name, attr.prefix, attr.namespace, attr.value)
-  element.resetElement()
+  element.resetElement(nil)
   if element of HTMLScriptElement:
     let script = HTMLScriptElement(element)
     script.parserDocument = document
@@ -213,7 +213,7 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
   let element = Element(element)
   let document = builder.document
   if element.tagType == TAG_TEXTAREA:
-    element.resetElement()
+    element.resetElement(nil)
   elif element of HTMLScriptElement:
     if document.scriptingEnabled:
       assert builder.poppedScript == nil
