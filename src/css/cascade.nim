@@ -41,6 +41,7 @@ type
 
   AncestorCache = object
     last: Element
+    quirks: bool
     classes: HashSet[CAtom]
 
   ToSorts = object
@@ -71,12 +72,16 @@ proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
   var found = false
   if ancestors.last != nil:
     var ancestor = ancestors.last
-    var quirks = ancestor.document.mode == QUIRKS
+    let quirks = ancestors.quirks
     while true:
-      for it in ancestor.classList:
-        let it = if quirks: it.toLowerAscii() else: it
-        found = found or it == class
-        ancestors.classes.incl(it)
+      if quirks:
+        for it in ancestor.classList:
+          found = found or it.equalsIgnoreCase(class)
+          ancestors.classes.incl(it.toLowerAscii())
+      else:
+        for it in ancestor.classList:
+          found = found or it == class
+          ancestors.classes.incl(it)
       ancestor = ancestor.parentElement
       if ancestor == nil or found:
         break
@@ -109,7 +114,9 @@ proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     depends: var DependencyInfo) =
   let parentElement = element.parentElement
   let quirks = element.document.mode == QUIRKS
-  var tosorts = ToSorts(cache: AncestorCache(last: parentElement))
+  var tosorts = ToSorts(
+    cache: AncestorCache(last: parentElement, quirks: sheet.quirks)
+  )
   sheet.tagTable.withValue(element.localName, v):
     tosorts.calcRules(element, depends, v[])
   if element.id != CAtomNull:

@@ -60,7 +60,7 @@ type
     typeList*: array[SelectorHashType, seq[CSSRuleDef]]
     sheetId: uint32
     anonLayers: uint16
-    quirks: bool
+    quirks*: bool
     layers: seq[CAtom]
 
   SelectorHashes = object
