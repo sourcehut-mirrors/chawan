@@ -17,7 +17,7 @@ type
     width* {.jsget.}: float64
     height* {.jsget.}: float64
 
-  DOMRect* = ref object of DOMRectReadOnly
+  DOMRect* {.final.} = ref object of DOMRectReadOnly
 
   DOMRectList* = ref object
     list*: seq[DOMRect]

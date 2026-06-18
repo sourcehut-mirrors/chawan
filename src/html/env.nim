@@ -39,7 +39,7 @@ import types/url
 import types/winattrs
 import utils/twtstr
 
-type JSFetchOpaque = ref object of RootObj
+type JSFetchOpaque {.final.} = ref object of RootObj
   ctx: JSContext
   resolve: JSValue
   reject: JSValue
@@ -449,7 +449,7 @@ proc getComputedStyle(ctx: JSContext; window: Window; element: Element;
     {.jsfunc.} =
   return ctx.getComputedStyle0(window, element, pseudoElt)
 
-type MediaQueryList = ref object of EventTarget
+type MediaQueryList {.final.} = ref object of EventTarget
   media {.jsget.}: string
   matches {.jsget.}: bool
   #TODO onchange

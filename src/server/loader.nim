@@ -72,7 +72,7 @@ type
     stream: PosixStream # input/output stream depending on type
     url: URL # URL nominally retrieved by handle before rewrites
 
-  InputHandle = ref object of LoaderHandle
+  InputHandle {.final.} = ref object of LoaderHandle
     outputs: seq[OutputHandle] # list of outputs to be streamed into
     cacheId: int # if cached, our ID in a client cacheMap
     cacheRef: CachedItem # if this is a tocache handle, a ref to our cache item
@@ -85,7 +85,7 @@ type
     connectionOwner: ClientHandle # set if the handle counts in numConnections
     lastBuffer: LoaderBuffer # tail of buffer linked list
 
-  OutputHandle = ref object of LoaderHandle
+  OutputHandle {.final.} = ref object of LoaderHandle
     parent: InputHandle
     currentBuffer: LoaderBuffer
     currentBufferIdx: int
@@ -114,7 +114,7 @@ type
     username: string
     password: string
 
-  ClientHandle = ref object of LoaderHandle
+  ClientHandle {.final.} = ref object of LoaderHandle
     pid: int
     # List of cached resources.
     cacheMap: seq[CachedItem]

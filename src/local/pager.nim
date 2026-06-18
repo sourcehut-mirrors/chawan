@@ -86,7 +86,7 @@ type
     ussNone, ussUpdate, ussSkip
 
   # stream is written to ostream before cmd is started
-  MailcapWriteItem = ref object of MapData
+  MailcapWriteItem {.final.} = ref object of MapData
     cmd: string
     path: string
     ostream: PosixStream
@@ -98,7 +98,7 @@ type
     showConsole: JSValue
     askPromise: JSValue # function to resolve on ask finish
 
-  Pager* = ref object of RootObj
+  Pager* {.final.} = ref object of RootObj
     mailcapLoaded: bool
     hasload: bool # has a page been successfully loaded since startup?
     dumpConsoleFile: bool
@@ -270,7 +270,7 @@ proc evalJSFree(opaque: RootRef; src, filename: string) =
     pager.console.writeException(ctx)
   JS_FreeValue(ctx, ret)
 
-type CookieStreamOpaque = ref object of RootObj
+type CookieStreamOpaque {.final.} = ref object of RootObj
   pager: Pager
   buffer: string
 
@@ -920,7 +920,7 @@ proc getTempFile(pager: Pager; ext = ""): string {.jsfunc.} =
     result &= ext
   inc pager.tmpfSeq
 
-type CachedImageEnv = ref object of RootObj
+type CachedImageEnv {.final.} = ref object of RootObj
   pager: Pager
   cachedImage: CachedImage
   iface: BufferInterface

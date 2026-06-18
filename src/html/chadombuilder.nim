@@ -22,13 +22,13 @@ type CharsetConfidence* = enum
   ccTentative, ccCertain, ccIrrelevant
 
 type
-  HTML5ParserWrapper* = ref object of RootObj
+  HTML5ParserWrapper* {.final.} = ref object of RootObj
     parser: HTML5Parser[ParentNode, CAtom]
     builder*: ChaDOMBuilder
     opts: HTML5ParserOpts[ParentNode, CAtom]
     stoppedFromScript: bool
 
-  ChaDOMBuilder = ref object of DOMBuilder[ParentNode, CAtom]
+  ChaDOMBuilder {.final.} = ref object of DOMBuilder[ParentNode, CAtom]
     charset*: Charset
     confidence*: CharsetConfidence
     document*: Document

@@ -132,7 +132,7 @@ type
   Location = ref object
     window: Window
 
-  CachedURLImage = ref object of RootObj
+  CachedURLImage {.final.} = ref object of RootObj
     window: Window
     expiry: int64
     loading: bool
@@ -145,7 +145,7 @@ type
     wwmChildren, wwmChildNodes, wwmSelectedOptions, wwmTBodies, wwmCells,
     wwmDataset, wwmAttributes
 
-  Window* = ref object of EventTarget
+  Window* {.final.} = ref object of EventTarget
     bc*: RootRef # backref to BufferContext
     console*: Console
     navigator* {.jsget.}: Navigator
@@ -267,7 +267,7 @@ type
   CollectionMatchFun = proc(ctx: JSContext; this: Collection; node: Node):
     Opt[bool] {.nimcall, raises: [].}
 
-  LoadSheetEnv = ref object of BlobOpaque
+  LoadSheetEnv {.final.} = ref object of BlobOpaque
     window: Window
     this: SheetElement
     url: URL
@@ -304,7 +304,7 @@ type
 
   Collection = ref CollectionObj
 
-  NodeIterator = ref object of Collection
+  NodeIterator {.final.} = ref object of Collection
     filter: JSValue
     whatToShow: uint32
     u: uint32
@@ -313,15 +313,15 @@ type
 
   HTMLCollection = ref object of Collection
 
-  HTMLFormControlsCollection = ref object of HTMLCollection
+  HTMLFormControlsCollection {.final.} = ref object of HTMLCollection
     form: HTMLFormElement
 
-  HTMLOptionsCollection = ref object of HTMLCollection
+  HTMLOptionsCollection {.final.} = ref object of HTMLCollection
 
-  RadioNodeList = ref object of NodeList
+  RadioNodeList {.final.} = ref object of NodeList
     parent: HTMLFormControlsCollection
 
-  HTMLAllCollection = ref object of Collection
+  HTMLAllCollection {.final.} = ref object of Collection
 
   DOMTokenList = ref object
     toks: seq[CAtom]
@@ -349,7 +349,7 @@ type
   ParentNode* = ref object of Node
     internalFirst: Node # either firstChild or shadow root
 
-  Attr = ref object of Node
+  Attr {.final.} = ref object of Node
     dataIdx: int
     ownerElement: Element
     prefix {.jsget.}: CAtom
@@ -404,7 +404,7 @@ type
     cachedAll: HTMLAllCollection
     customElements: CustomElementRegistry #TODO ?
 
-  XMLDocument = ref object of Document
+  XMLDocument {.final.} = ref object of Document
 
   CharacterData* = ref object of Node
     # Note: layout assumes this is only modified directly by appending text.
@@ -412,11 +412,11 @@ type
 
   Text* = ref object of CharacterData
 
-  Comment* = ref object of CharacterData
+  Comment* {.final.} = ref object of CharacterData
 
-  CDATASection = ref object of Text
+  CDATASection {.final.} = ref object of Text
 
-  ProcessingInstruction = ref object of CharacterData
+  ProcessingInstruction {.final.} = ref object of CharacterData
     target {.jsget.}: string
 
   DocumentFragment* = ref object of ParentNode
@@ -436,7 +436,7 @@ type
   SlotAssignmentMode = enum
     samNamed = "named", samManual = "manual"
 
-  ShadowRoot = ref object of DocumentFragment
+  ShadowRoot {.final.} = ref object of DocumentFragment
     mode {.jsget.}: ShadowRootMode
     delegatesFocus {.jsget.}: bool
     slotAssignment {.jsget.}: SlotAssignmentMode
@@ -447,7 +447,7 @@ type
     customElements: CustomElementRegistry
     #TODO onslotchange
 
-  DocumentType* = ref object of Node
+  DocumentType* {.final.} = ref object of Node
     name* {.jsget.}: string
     publicId* {.jsget.}: string
     systemId* {.jsget.}: string
@@ -484,7 +484,7 @@ type
     computed*: CSSValues # 64
     box*: RootRef # 72, CSSBox
 
-  AttrDummyElement = ref object of Element
+  AttrDummyElement {.final.} = ref object of Element
 
   CSSStyleDeclaration* = ref object
     computed: bool
@@ -496,7 +496,7 @@ type
 
   SVGElement = ref object of Element
 
-  SVGSVGElement* = ref object of SVGElement
+  SVGSVGElement* {.final.} = ref object of SVGElement
     bitmap*: NetworkBitmap
     parserDocument*: Document
     shared: seq[SVGSVGElement] # elements that serialize to the same string
@@ -508,7 +508,7 @@ type
     next: FormAssociatedElement # next control in form
     parserInserted*: bool
 
-  HTMLInputElement* = ref object of FormAssociatedElement
+  HTMLInputElement* {.final.} = ref object of FormAssociatedElement
     inputType* {.jsget: "type".}: InputType
     internalValue: RefString
     internalChecked {.jsget: "checked".}: bool
@@ -516,45 +516,45 @@ type
     xcoord*: int
     ycoord*: int
 
-  HTMLAnchorElement* = ref object of HTMLElement
+  HTMLAnchorElement* {.final.} = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
 
-  HTMLSelectElement* = ref object of FormAssociatedElement
+  HTMLSelectElement* {.final.} = ref object of FormAssociatedElement
     userValidity: bool
     cachedOptions: HTMLOptionsCollection
 
-  HTMLSpanElement = ref object of HTMLElement
+  HTMLSpanElement {.final.} = ref object of HTMLElement
 
-  HTMLOptGroupElement = ref object of HTMLElement
+  HTMLOptGroupElement {.final.} = ref object of HTMLElement
 
-  HTMLOptionElement* = ref object of HTMLElement
+  HTMLOptionElement* {.final.} = ref object of HTMLElement
     selected* {.jsget.}: bool
     dirty: bool
 
-  HTMLHeadingElement = ref object of HTMLElement
+  HTMLHeadingElement {.final.} = ref object of HTMLElement
 
-  HTMLBRElement = ref object of HTMLElement
+  HTMLBRElement {.final.} = ref object of HTMLElement
 
-  HTMLMenuElement = ref object of HTMLElement
+  HTMLMenuElement {.final.} = ref object of HTMLElement
 
-  HTMLUListElement = ref object of HTMLElement
+  HTMLUListElement {.final.} = ref object of HTMLElement
 
-  HTMLOListElement = ref object of HTMLElement
+  HTMLOListElement {.final.} = ref object of HTMLElement
 
-  HTMLLIElement* = ref object of HTMLElement
+  HTMLLIElement* {.final.} = ref object of HTMLElement
 
   SheetElement = ref object of HTMLElement
     sheetHead: CSSStylesheet
     sheetTail: CSSStylesheet
 
-  HTMLStyleElement* = ref object of SheetElement
+  HTMLStyleElement* {.final.} = ref object of SheetElement
 
-  HTMLLinkElement* = ref object of SheetElement
+  HTMLLinkElement* {.final.} = ref object of SheetElement
     relList {.jsget.}: DOMTokenList
     fetchStarted: bool
     enabled: Option[bool]
 
-  HTMLFormElement* = ref object of HTMLElement
+  HTMLFormElement* {.final.} = ref object of HTMLElement
     constructingEntryList*: bool
     firing*: bool
     controlsHead: FormAssociatedElement
@@ -562,10 +562,10 @@ type
     cachedElements: HTMLFormControlsCollection
     relList {.jsget.}: DOMTokenList
 
-  HTMLTemplateElement* = ref object of HTMLElement
+  HTMLTemplateElement* {.final.} = ref object of HTMLElement
     content* {.jsget.}: DocumentFragment
 
-  HTMLScriptElement* = ref object of HTMLElement
+  HTMLScriptElement* {.final.} = ref object of HTMLElement
     parserDocument*: Document
     preparationTimeDocument*: Document
     forceAsync*: bool
@@ -581,75 +581,75 @@ type
 
   OnCompleteProc = proc(element: HTMLScriptElement; res: ScriptResult)
 
-  HTMLBaseElement = ref object of HTMLElement
+  HTMLBaseElement {.final.} = ref object of HTMLElement
 
-  HTMLAreaElement = ref object of HTMLElement
+  HTMLAreaElement {.final.} = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
 
-  HTMLButtonElement* = ref object of FormAssociatedElement
+  HTMLButtonElement* {.final.} = ref object of FormAssociatedElement
     ctype* {.jsget: "type".}: ButtonType
 
-  HTMLTextAreaElement* = ref object of FormAssociatedElement
+  HTMLTextAreaElement* {.final.} = ref object of FormAssociatedElement
     dirty: bool
     internalValue: string
 
-  HTMLLabelElement* = ref object of HTMLElement
+  HTMLLabelElement* {.final.} = ref object of HTMLElement
 
-  HTMLOutputElement = ref object of FormAssociatedElement
+  HTMLOutputElement {.final.} = ref object of FormAssociatedElement
     dirty: bool
     internalValue: string
 
-  HTMLCanvasElement* = ref object of HTMLElement
+  HTMLCanvasElement* {.final.} = ref object of HTMLElement
     ctx2d*: CanvasRenderingContext2D
     bitmap*: NetworkBitmap
 
-  HTMLImageElement* = ref object of HTMLElement
+  HTMLImageElement* {.final.} = ref object of HTMLElement
     bitmap*: NetworkBitmap
     fetchStarted: bool
 
-  HTMLVideoElement* = ref object of HTMLElement
+  HTMLVideoElement* {.final.} = ref object of HTMLElement
 
-  HTMLAudioElement* = ref object of HTMLElement
+  HTMLAudioElement* {.final.} = ref object of HTMLElement
 
-  HTMLIFrameElement = ref object of HTMLElement
+  HTMLIFrameElement {.final.} = ref object of HTMLElement
 
-  HTMLTableElement = ref object of HTMLElement
+  HTMLTableElement {.final.} = ref object of HTMLElement
     cachedRows: HTMLCollection
 
-  HTMLTableCaptionElement = ref object of HTMLElement
+  HTMLTableCaptionElement {.final.} = ref object of HTMLElement
 
-  HTMLTableSectionElement = ref object of HTMLElement
+  HTMLTableSectionElement {.final.} = ref object of HTMLElement
     cachedRows: HTMLCollection
 
-  HTMLTableRowElement = ref object of HTMLElement
+  HTMLTableRowElement {.final.} = ref object of HTMLElement
 
-  HTMLMetaElement = ref object of HTMLElement
+  HTMLMetaElement {.final.} = ref object of HTMLElement
 
-  HTMLDetailsElement = ref object of HTMLElement
+  HTMLDetailsElement {.final.} = ref object of HTMLElement
 
-  HTMLFrameElement = ref object of HTMLElement
+  HTMLFrameElement {.final.} = ref object of HTMLElement
 
-  HTMLTimeElement = ref object of HTMLElement
+  HTMLTimeElement {.final.} = ref object of HTMLElement
 
-  HTMLQuoteElement = ref object of HTMLElement
+  HTMLQuoteElement {.final.} = ref object of HTMLElement
 
-  HTMLDataElement = ref object of HTMLElement
+  HTMLDataElement {.final.} = ref object of HTMLElement
 
-  HTMLHeadElement = ref object of HTMLElement
+  HTMLHeadElement {.final.} = ref object of HTMLElement
 
-  HTMLTitleElement = ref object of HTMLElement
+  HTMLTitleElement {.final.} = ref object of HTMLElement
 
-  HTMLObjectElement = ref object of HTMLElement
+  HTMLObjectElement {.final.} = ref object of HTMLElement
 
-  HTMLSourceElement = ref object of HTMLElement
+  HTMLSourceElement {.final.} = ref object of HTMLElement
 
-  HTMLModElement = ref object of HTMLElement
+  HTMLModElement {.final.} = ref object of HTMLElement
 
-  HTMLProgressElement = ref object of HTMLElement
+  HTMLProgressElement {.final.} = ref object of HTMLElement
 
-  HTMLSlotElement = ref object of HTMLElement
+  HTMLSlotElement {.final.} = ref object of HTMLElement
 
-  HTMLUnknownElement = ref object of HTMLElement
+  HTMLUnknownElement {.final.} = ref object of HTMLElement
 
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
@@ -1763,7 +1763,7 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
   let request = newRequest(url, headers = headers)
   window.corsFetch(request, loadImage0, cachedURL)
 
-type LoadSVGEnv = ref object of RootObj
+type LoadSVGEnv {.final.} = ref object of RootObj
   window: Window
   svg: SVGSVGElement
   cacheId: int
@@ -2180,14 +2180,14 @@ proc ownerDocument(node: Node): Document {.jsfget.} =
 
 proc nodeTypeEnum(node: Node): NodeType =
   if node of CharacterData:
-    if node of Text:
-      if node of CDATASection:
-        return ntCdataSection
-      return ntText
+    if node of CDATASection:
+      return ntCdataSection
     elif node of Comment:
       return ntComment
-    else: # ProcessingInstruction
+    elif node of ProcessingInstruction:
       return ntProcessingInstruction
+    else: # Text
+      return ntText
   elif node of Element:
     return ntElement
   elif node of Document:
@@ -2219,7 +2219,6 @@ proc nodeName(node: Node): string {.jsfget.} =
     return "#document-fragment"
   if node of ProcessingInstruction:
     return ProcessingInstruction(node).target
-  assert node of Text
   return "#text"
 
 proc isValidChild(node: Node): bool =
@@ -6019,10 +6018,8 @@ proc getBitmap*(element: Element): NetworkBitmap =
 
 proc shadowRoot(this: Element): ShadowRoot {.jsfget.} =
   let first = this.internalFirst
-  # note: you could optimize this by just checking if first.parentNode != this,
-  # but it seems very risky so I won't
   if first of ShadowRoot:
-    return cast[ShadowRoot](first)
+    return ShadowRoot(first)
   return nil
 
 proc setShadowRoot(this: Element; shadow: ShadowRoot) =
@@ -6528,7 +6525,7 @@ proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
     return this.ctx2d
   return nil
 
-type ToBlobEnv = ref object of BlobOpaque
+type ToBlobEnv {.final.} = ref object of BlobOpaque
   ctx: JSContext
   callback: JSValue
   isPNG: bool
@@ -7386,7 +7383,7 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   JS_FreeValue(ctx, res)
 
 type
-  FetchModuleEnv = ref object of BlobOpaque
+  FetchModuleEnv {.final.} = ref object of BlobOpaque
     window: Window
     element: HTMLScriptElement
     settings: EnvironmentSettings

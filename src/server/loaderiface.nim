@@ -31,7 +31,7 @@ import types/url
 import utils/twtstr
 
 type
-  FileLoader* = ref object of RootObj
+  FileLoader* = ref object
     clientPid*: int
     map: seq[MapData]
     mapFds*: int # number of fds in map
@@ -55,7 +55,7 @@ type
 
   FetchFinish* = proc(opaque: RootRef; res: Response) {.nimcall, raises: [].}
 
-  ConnectData* = ref object of LoaderData
+  ConnectData* {.final.} = ref object of LoaderData
     state: ConnectDataState
     outputId: int
     redirectNum: int
@@ -110,7 +110,7 @@ type
 
   ResponseRead* = proc(response: Response) {.nimcall, raises: [].}
 
-  Response* = ref object of LoaderData
+  Response* {.final.} = ref object of LoaderData
     flags*: set[ResponseFlag]
     responseType* {.jsget: "type".}: ResponseType
     status* {.jsget.}: uint16
@@ -133,7 +133,7 @@ type
     size: int
     contentType*: string
 
-  JSBlobOpaque = ref object of BlobOpaque
+  JSBlobOpaque {.final.} = ref object of BlobOpaque
     ctx: JSContext
     resolve: pointer # JSObject *
     reject: pointer # JSObject *

@@ -246,7 +246,7 @@ type
     id: string
     pos: PagePos
 
-  BufferInterface* = ref object of MapData
+  BufferInterface* {.final.} = ref object of MapData
     map: seq[BufferIfaceItem]
     packetid: int
     loader: FileLoader
@@ -277,7 +277,7 @@ type
     marks: seq[Mark]
     init*: BufferInit
 
-  BufferInit* = ref object of MapData
+  BufferInit* {.final.} = ref object of MapData
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
     filterCmd*: string # filter command (called on load)

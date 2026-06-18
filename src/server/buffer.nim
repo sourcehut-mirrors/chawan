@@ -55,9 +55,9 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  InputData = ref object of MapData
+  InputData {.final.} = ref object of MapData
 
-  PagerHandle = ref object of MapData
+  PagerHandle {.final.} = ref object of MapData
     tasks: array[BufferCommand, int]
     reportedLoad: LoadResult
     onReshapeImmediately: bool
@@ -65,7 +65,7 @@ type
     next: PagerHandle
     hoverText: array[HoverType, string]
 
-  BufferContext = ref object of RootObj
+  BufferContext {.final.} = ref object of RootObj
     firstBufferRead: bool
     headlessLoading: bool
     ishtml: bool

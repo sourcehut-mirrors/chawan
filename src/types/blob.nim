@@ -28,7 +28,7 @@ type
     opaque*: pointer
     deallocFun*: DeallocFun
 
-  WebFile* = ref object of Blob
+  WebFile* {.final.} = ref object of Blob
     webkitRelativePath {.jsget.}: string
     name* {.jsget.}: string
     lastModified* {.jsget.}: int64

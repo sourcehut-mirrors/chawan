@@ -44,21 +44,21 @@ type
     isTrusted* {.jsufget.}: bool
     timeStamp {.jsget.}: float64
 
-  CustomEvent* = ref object of Event
+  CustomEvent* {.final.} = ref object of Event
     detail {.jsget.}: JSValue
 
-  MessageEvent* = ref object of Event
+  MessageEvent* {.final.} = ref object of Event
     data {.jsget.}: JSValue
     origin {.jsget.}: string
 
-  SubmitEvent* = ref object of Event
+  SubmitEvent* {.final.} = ref object of Event
     submitter {.jsget.}: EventTarget
 
   UIEvent* = ref object of Event
     detail {.jsget.}: int32
     view {.jsget.}: EventTarget
 
-  MouseEvent* = ref object of UIEvent
+  MouseEvent* {.final.} = ref object of UIEvent
     screenX {.jsget.}: int32
     screenY {.jsget.}: int32
     clientX {.jsget, jsget: "x".}: int32
@@ -72,7 +72,7 @@ type
     relatedTarget {.jsget.}: EventTarget
     #TODO and the others
 
-  InputEvent* = ref object of UIEvent
+  InputEvent* {.final.} = ref object of UIEvent
     data {.jsget.}: Option[string]
     isComposing {.jsget.}: bool
     inputType {.jsget.}: string
@@ -91,7 +91,7 @@ type
     next: EventListener
     signal: AbortSignal
 
-  AbortSignal = ref object of EventTarget
+  AbortSignal {.final.} = ref object of EventTarget
     reason {.jsget.}: JSValue
     aborted {.jsget.}: bool
     abortSteps: seq[JSValue]

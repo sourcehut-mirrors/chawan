@@ -12,7 +12,7 @@ import types/jsopt
 import types/opt
 
 type
-  Performance* = ref object of EventTarget
+  Performance* {.final.} = ref object of EventTarget
     timeOrigin {.jsget.}: float64
     scripting: ScriptingMode
     id: uint64
@@ -24,7 +24,7 @@ type
     duration {.jsget.}: float64
     navigationId {.jsget.}: uint64
 
-  PerformanceMark = ref object of PerformanceEntry
+  PerformanceMark {.final.} = ref object of PerformanceEntry
     detail {.jsget.}: JSValue
 
 jsDestructor(Performance)

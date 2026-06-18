@@ -47,9 +47,9 @@ type
 
   XMLHttpRequestEventTarget = ref object of EventTarget
 
-  XMLHttpRequestUpload = ref object of XMLHttpRequestEventTarget
+  XMLHttpRequestUpload {.final.} = ref object of XMLHttpRequestEventTarget
 
-  XMLHttpRequest = ref object of XMLHttpRequestEventTarget
+  XMLHttpRequest {.final.} = ref object of XMLHttpRequestEventTarget
     readyState: XMLHttpRequestState
     upload {.jsget.}: XMLHttpRequestUpload
     flags: set[XMLHttpRequestFlag]
@@ -64,7 +64,7 @@ type
     received: string
     contentTypeOverride: string
 
-  ProgressEvent = ref object of Event
+  ProgressEvent {.final.} = ref object of Event
     lengthComputable {.jsget.}: bool
     loaded {.jsget.}: int64 #TODO should be uint64
     total {.jsget.}: int64 #TODO ditto
@@ -253,7 +253,7 @@ proc handleErrors(window: Window; this: XMLHttpRequest; ctx: JSContext):
       return err()
   ok()
 
-type XHROpaque = ref object of RootObj
+type XHROpaque {.final.} = ref object of RootObj
   this: XMLHttpRequest
   window: Window
   len: int64 #TODO should be uint64
