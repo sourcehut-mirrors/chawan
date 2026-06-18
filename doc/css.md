@@ -28,7 +28,8 @@ A list of supported standard properties, with notes on unimplemented values:
 * counter-reset
 * counter-set
 * display (`block`, `inline-block`, `list-item`, `table`, `inline-table`,
-  `table-*`, `flex`, `inline-flex`, `flow-root`)
+  `table-*`, `flex`, `inline-flex`, `flow-root`, as well as multi-keyword
+  aliases (including list-item variants))
 * flex-basis (but `content` not supported)
 * flex-direction
 * flex-grow

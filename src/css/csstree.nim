@@ -166,7 +166,7 @@ proc initTreeFrame(ctx: TreeContext; parent: Element; computed: CSSValues):
 
 proc getAnonInlineComputed(frame: var TreeFrame): CSSValues =
   if frame.anonInlineComputed == nil:
-    if frame.computed{"display"} == DisplayInline:
+    if frame.computed{"display"} in DisplayInlineLike:
       frame.anonInlineComputed = frame.computed
     else:
       frame.anonInlineComputed = frame.computed.inheritProperties()
@@ -175,7 +175,7 @@ proc getAnonInlineComputed(frame: var TreeFrame): CSSValues =
 proc displayed(frame: TreeFrame; text: RefString): bool =
   if text.len == 0:
     return false
-  return frame.computed{"display"} == DisplayInline or
+  return frame.computed{"display"} in DisplayInlineLike or
     frame.lastChildWasInline or
     frame.computed{"white-space"} in WhiteSpacePreserve or
     not text.s.onlyWhitespace()
@@ -213,7 +213,7 @@ proc addAnonTable(frame: var TreeFrame; parentDisplay, display: CSSDisplay):
     var seq[StyledNode] =
   if frame.anonComputed == nil or
       frame.anonComputed{"display"} notin DisplayInnerTable + {DisplayTableRow}:
-    let anonDisplay = if parentDisplay == DisplayInline:
+    let anonDisplay = if parentDisplay in DisplayInlineLike:
       DisplayInlineTable
     else:
       DisplayTable
@@ -245,7 +245,8 @@ proc madd(s: var seq[StyledNode]; node: StyledNode): var StyledNode =
 
 proc getParent(frame: var TreeFrame; display: CSSDisplay): var seq[StyledNode] =
   let parentDisplay = frame.computed{"display"}
-  if display in DisplayInlineBlockLike and parentDisplay != DisplayInline:
+  if display in DisplayInlineBlockLike and
+      parentDisplay notin DisplayInlineLike:
     let computed = frame.getAnonInlineComputed()
     return frame.getParent(DisplayInline)
       .madd(initStyledAnon(frame.parent, computed)).anonChildren
@@ -331,9 +332,10 @@ proc add(frame: var TreeFrame; node: sink StyledNode) =
     return
   if node.t == stElement and node.anonChildren.len == 0:
     case display
-    of DisplayListItem:
+    of DisplayListItemLike:
       frame.addListItem(node)
-      frame.lastChildWasInline = false
+      if display in {DisplayInlineListItem, DisplayInlineBlockListItem}:
+        frame.lastChildWasInline = false
       return # already added
     of DisplayInnerTable:
       frame.addTable(node)
@@ -548,7 +550,7 @@ proc newBoxOrTakeCached(cached: CSSBox; display: CSSDisplay; node: StyledNode):
   if cached != nil:
     cached.firstChild = nil
     return cached
-  elif display == DisplayInline:
+  elif display in DisplayInlineLike:
     return InlineBox(
       t: t,
       computed: node.computed,
@@ -662,7 +664,7 @@ proc applyCounters(ctx: TreeContext; styledNode: StyledNode;
   for counter in styledNode.computed{"counter-increment"}:
     liSeen = liSeen or counter.name == satListItem
     ctx.incCounter(counter.name, counter.num, styledNode.element)
-  if not liSeen and styledNode.computed{"display"} == DisplayListItem:
+  if not liSeen and styledNode.computed{"display"} in DisplayListItemLike:
     ctx.incCounter(satListItem.toAtom(), 1, styledNode.element)
   for counter in styledNode.computed{"counter-set"}:
     ctx.setCounter(counter.name, counter.num, styledNode.element)

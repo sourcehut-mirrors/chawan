@@ -1793,10 +1793,6 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     # (margin must be collapsed with subsequent boxes as usual, so we
     # can't just skip addMargin)
     offset.y -= fstate.marginTodo.sum()
-  const DisplayWithBFC = {
-    DisplayFlowRoot, DisplayTable, DisplayFlex, DisplayGrid, DisplayImageBlock,
-    DisplayImageInline
-  }
   if child.computed{"display"} in DisplayWithBFC or
       child.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
     # This box establishes a new BFC.
@@ -1954,7 +1950,16 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBox; box: BlockBox) =
     var input = lctx.resolveFloatSizes(fstate.space, box)
     fstate.initLine(flag = ilfAbsolute)
     lctx.layout(box, input.margin.topLeft, input)
-    box.state.offset.x = fstate.lbstate.size.w - box.state.size.w
+    if ibox.computed{"display"} == DisplayInlineListItem:
+      let atom = InlineAtom(
+        ibox: ibox,
+        box: box,
+        size: box.outerSize(input, lctx)
+      )
+      discard fstate.prepareSpace(ibox, atom.size.w)
+      fstate.putAtom(atom)
+    else:
+      box.state.offset.x = fstate.lbstate.size.w - box.state.size.w
   else:
     # A real inline block.
     var input = lctx.resolveFloatSizes(fstate.space, box)
@@ -3163,8 +3168,9 @@ proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
 proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
     input: LayoutInput; root = irfNone) =
   case box.computed{"display"}
-  of DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock, DisplayInnerGrid,
-      DisplayMarker:
+  of DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock,
+      DisplayInlineBlockListItem, DisplayInnerGrid, DisplayMarker,
+      DisplayFlowRootListItem:
     lctx.layoutFlowRoot(box, offset, input)
   of DisplayBlock, DisplayListItem:
     if root != irfNone or box.computed{"position"} in PositionAbsoluteFixed or

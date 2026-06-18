@@ -80,6 +80,10 @@ type
     DisplayInlineFlex = "inline-flex"
     DisplayGrid = "grid"
     DisplayInlineGrid = "inline-grid"
+    # multi-word displays (must come after inline-grid)
+    DisplayInlineListItem = "inline list-item"
+    DisplayFlowRootListItem = "flow-root list-item"
+    DisplayInlineBlockListItem = "inline flow-root list-item"
     # internal, for layout
     DisplayTableWrapper = ""
     DisplayMarker = ""
@@ -509,21 +513,32 @@ const InheritedProperties = {
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
+const DisplayInlineLike* = {DisplayInline, DisplayInlineListItem}
 const DisplayInlineBlockLike* = {
   DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex, DisplayInlineGrid,
-  DisplayMarker, DisplayImageInline
+  DisplayMarker, DisplayImageInline, DisplayInlineBlockListItem
 }
-const DisplayOuterInline* = DisplayInlineBlockLike + {DisplayInline}
+const DisplayOuterInline* = DisplayInlineBlockLike + DisplayInlineLike
 const DisplayOuterBlock* = {
   DisplayFlex, DisplayGrid, DisplayBlock, DisplayImageBlock, DisplayTable,
-  DisplayFlowRoot, DisplayTableWrapper, DisplayListItem
+  DisplayFlowRoot, DisplayTableWrapper, DisplayListItem,
+  DisplayFlowRootListItem
 }
 const DisplayInnerBlock* = {
   DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayTableCell,
-  DisplayInlineBlock, DisplayListItem, DisplayMarker
+  DisplayInlineBlock, DisplayListItem, DisplayFlowRootListItem,
+  DisplayInlineBlockListItem, DisplayMarker
 }
 const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
 const DisplayInnerGrid* = {DisplayGrid, DisplayInlineGrid}
+const DisplayListItemLike* = {
+  DisplayListItem, DisplayInlineListItem, DisplayFlowRootListItem,
+  DisplayInlineBlockListItem
+}
+const DisplayWithBFC* = {
+  DisplayFlowRoot, DisplayTable, DisplayFlex, DisplayGrid, DisplayImageBlock,
+  DisplayImageInline, DisplayFlowRootListItem
+}
 const RowGroupBox* = {
   # Note: caption is not included here
   DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
@@ -823,13 +838,15 @@ proc blockify*(display: CSSDisplay): CSSDisplay =
   case display
   of DisplayBlock, DisplayTable, DisplayListItem, DisplayNone, DisplayFlowRoot,
       DisplayFlex, DisplayTableWrapper, DisplayGrid, DisplayMarker,
-      DisplayImageBlock, DisplayImageInline:
+      DisplayImageBlock, DisplayImageInline, DisplayFlowRootListItem:
     return display
   of DisplayInline, DisplayInlineBlock, DisplayTableRow,
       DisplayTableRowGroup, DisplayTableColumn,
       DisplayTableColumnGroup, DisplayTableCell, DisplayTableCaption,
       DisplayTableHeaderGroup, DisplayTableFooterGroup:
     return DisplayBlock
+  of DisplayInlineBlockListItem, DisplayInlineListItem:
+    return DisplayListItem
   of DisplayInlineTable:
     return DisplayTable
   of DisplayInlineFlex:
@@ -1040,9 +1057,9 @@ proc parseIdent(map: openArray[IdentMapItem]; tok: CSSToken): int =
 
 proc parseIdent[T: enum](tok: CSSToken): Opt[T] =
   const IdentMap = getIdentMap(T)
-  let i = IdentMap.parseIdent(tok)
-  if i != -1:
-    return ok(T(i))
+  let n = IdentMap.parseIdent(tok)
+  if n != -1:
+    return ok(T(n))
   return err()
 
 proc parseIdent[T: enum](ctx: var CSSParser): Opt[T] =
@@ -1631,6 +1648,54 @@ proc parseLineWidth(ctx: var CSSParser; attrs: WindowAttributes): Opt[float32] =
     return err()
   ok(l.npx)
 
+proc parseDisplayIdent(tok: CSSToken): Opt[CSSDisplay] =
+  const DisplayIdentMap = getIdentMap(CSSDisplay.low, DisplayInlineGrid)
+  let n = DisplayIdentMap.parseIdent(tok)
+  if n == -1:
+    return err()
+  ok(CSSDisplay(n))
+
+proc parseDisplay(ctx: var CSSParser): Opt[CSSDisplay] =
+  var outer = DisplayNone
+  var res = DisplayNone
+  var listItem = false
+  var i = 0
+  while i < 3 and ctx.skipBlanksCheckHas().isOk:
+    let tok = ctx.consume()
+    if d1 := parseDisplayIdent(tok):
+      if i == 0 and ctx.skipBlanksCheckDone().isOk:
+        return ok(d1)
+      if outer == DisplayNone and d1 in {DisplayInline, DisplayBlock}:
+        outer = d1
+      elif res == DisplayNone and
+          d1 in {DisplayFlowRoot, DisplayTable, DisplayFlex, DisplayGrid}:
+        res = d1
+      elif not listItem and d1 == DisplayListItem:
+        listItem = true
+      else:
+        return err()
+    elif res == DisplayNone and tok.s.equalsIgnoreCase("flow"):
+      res = DisplayBlock
+    else:
+      return err()
+    inc i
+  if outer == DisplayInline:
+    case res
+    of DisplayFlowRoot: res = DisplayInlineBlock
+    of DisplayTable: res = DisplayInlineTable
+    of DisplayFlex: res = DisplayInlineFlex
+    of DisplayGrid: res = DisplayInlineGrid
+    of DisplayNone: res = DisplayInline
+    else: discard
+  if listItem:
+    case res
+    of DisplayBlock, DisplayNone: res = DisplayListItem
+    of DisplayInline: res = DisplayInlineListItem
+    of DisplayFlowRoot: res = DisplayFlowRootListItem
+    of DisplayInlineBlock: res = DisplayInlineBlockListItem
+    else: return err()
+  ok(res)
+
 proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
   return CSSComputedEntry(et: ceObject, p: wide(t), obj: obj)
 
@@ -1735,7 +1800,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   ?ctx.skipBlanksCheckHas()
   let v = valueType(t)
   entry = case v
-  of cvtDisplay: makeEntry(t, ?parseIdent[CSSDisplay](ctx))
+  of cvtDisplay: makeEntry(t, ?parseDisplay(ctx))
   of cvtWhiteSpace: makeEntry(t, ?parseIdent[CSSWhiteSpace](ctx))
   of cvtWordBreak: makeEntry(t, ?parseIdent[CSSWordBreak](ctx))
   of cvtListStyleType: makeEntry(t, ?parseIdent[CSSListStyleType](ctx))
@@ -2298,7 +2363,7 @@ when defined(debug):
     for p in CSSPropertyType:
       let a = computed.serialize(p)
       let b = default.serialize(p)
-      if a != b:
+      if a != b and not b.equalsIgnoreCase("currentcolor"):
         result &= $p & ':'
         result &= a
         result &= ';'

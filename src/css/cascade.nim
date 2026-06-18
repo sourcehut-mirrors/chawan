@@ -405,6 +405,8 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   if result{"position"} in PositionAbsoluteFixed:
     if result{"display"} == DisplayInline:
       result{"display"} = DisplayInlineBlock
+    elif result{"display"} == DisplayInlineListItem:
+      result{"display"} = DisplayInlineBlockListItem
   elif result{"float"} != FloatNone or
       ctx.parentComputed != nil and
         ctx.parentComputed{"display"} in DisplayInnerFlex + DisplayInnerGrid:

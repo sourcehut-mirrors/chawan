@@ -987,11 +987,14 @@ proc normalizeLF*(s: openArray[char]): string =
 
 type IdentMapItem* = tuple[s: string; n: int]
 
-proc getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
+proc getIdentMap*[T: enum](lo, hi: T): seq[IdentMapItem] =
   result = @[]
-  for e in T.low .. T.high:
+  for e in lo .. hi:
     result.add(($e, int(e)))
   result.sort(proc(x, y: IdentMapItem): int = cmp(x.s, y.s))
+
+proc getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
+  getIdentMap(T.low, T.high)
 
 proc cmpItem(x: IdentMapItem; y: openArray[char]): int =
   let slen = x.s.len
