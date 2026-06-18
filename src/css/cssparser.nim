@@ -398,6 +398,8 @@ type
   ComplexSelector* = object
     specificity*: uint
     pseudo*: PseudoElement
+    # simple optimization: an ancestor must have this as the first class
+    ancestorClass*: CAtom
     csels: seq[CompoundSelector]
 
   SelectorList* = seq[ComplexSelector]
@@ -416,7 +418,8 @@ proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList
 proc parseSelectorList(state: var SelectorParser; forgiving: bool): SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 proc parseCompoundSelector(state: var SelectorParser;
-  pseudoElement: var PseudoElement; specificityOut: var uint): Selector
+  pseudoElement: var PseudoElement; specificityOut: var uint;
+  classOut: var CAtom): Selector
 proc seek*(ctx: var CSSParser)
 proc `$`*(tok: CSSToken): string
 proc `$`*(c: CSSRule): string
@@ -1560,7 +1563,8 @@ proc parseHost(state: var SelectorParser): Selector =
   state.nested = true
   var pseudo = peNone
   var specificity: uint
-  let head = state.parseCompoundSelector(pseudo, specificity)
+  var classOut: CAtom
+  let head = state.parseCompoundSelector(pseudo, specificity, classOut)
   state.skipFunction()
   state.nested = onested
   if head == nil or pseudo != peNone: fail
@@ -1747,7 +1751,8 @@ proc parseClassSelector(state: var SelectorParser): Selector =
 
 # returns head
 proc parseCompoundSelector(state: var SelectorParser;
-    pseudoElement: var PseudoElement; specificityOut: var uint): Selector =
+    pseudoElement: var PseudoElement; specificityOut: var uint;
+    classOut: var CAtom): Selector =
   var head: Selector = nil
   var tail: Selector = nil
   var specificity = 0u
@@ -1769,6 +1774,8 @@ proc parseCompoundSelector(state: var SelectorParser;
     of cttDot:
       state.seekToken()
       sel = state.parseClassSelector()
+      if sel != nil:
+        classOut = sel.class
     of cttStar:
       state.seekToken()
       sel = Selector(t: stUniversal)
@@ -1794,10 +1801,12 @@ proc parseCompoundSelector(state: var SelectorParser;
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
   var pseudo = peNone
   result = ComplexSelector()
+  var prevClass = CAtomNull
   while true:
     state.skipBlanks()
     var specificity: uint
-    let head = state.parseCompoundSelector(pseudo, specificity)
+    var class = CAtomNull
+    let head = state.parseCompoundSelector(pseudo, specificity, class)
     if state.failed:
       break
     if head == nil and pseudo == peNone: fail
@@ -1806,27 +1815,46 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     if not state.has() or state.nested and state.peekTokenType() == cttRparen:
       break # finish
     let tok = state.consume()
+    var ct = ctNone
     case tok.t
-    of cttGt: result[^1].ct = ctChild
-    of cttPlus: result[^1].ct = ctNextSibling
-    of cttTilde: result[^1].ct = ctSubsequentSibling
+    of cttGt: ct = ctChild
+    of cttPlus: ct = ctNextSibling
+    of cttTilde: ct = ctSubsequentSibling
     of cttWhitespace:
       if not state.has() or state.peekTokenType() == cttComma or
           state.nested and state.peekTokenType() == cttRparen:
         break # skip trailing whitespace
       elif state.peekTokenType() in {cttGt, cttPlus, cttTilde}:
         case state.consume().t
-        of cttGt: result[^1].ct = ctChild
-        of cttPlus: result[^1].ct = ctNextSibling
-        else: result[^1].ct = ctSubsequentSibling # cttTilde
+        of cttGt: ct = ctChild
+        of cttPlus: ct = ctNextSibling
+        else: ct = ctSubsequentSibling # cttTilde
       else:
-        result[^1].ct = ctDescendant
+        ct = ctDescendant
     of cttComma:
       break # finish
     else: fail
+    # save a necessary ancestor class, in the hope that we can use it to
+    # skip some backwards tree traversals.
+    # a) limit the scope of the query, so that different descendants in the
+    #    same tree are caught
+    # b) stick to descendant combinators as they are very slow, but also
+    #    cache child when we only have that
+    # c) unset the class on next/subsequent sibling, as those imply we have
+    #    switched trees
+    if ct == ctDescendant:
+      if class != CAtomNull:
+        prevClass = class
+    elif ct == ctChild:
+      if prevClass == CAtomNull:
+        prevClass = class
+    else:
+      prevClass = CAtomNull
+    result[^1].ct = ct
   if result.len == 0 or result[^1].ct != ctNone:
     fail
   result.pseudo = pseudo
+  result.ancestorClass = prevClass
   if pseudo != peNone: # pseudo-elements have a specificity of 1
     inc result.specificity
 

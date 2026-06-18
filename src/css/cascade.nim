@@ -2,6 +2,7 @@
 
 import std/algorithm
 import std/math
+import std/sets
 import std/tables
 
 import chame/tags
@@ -38,7 +39,13 @@ type
     specificity: uint
     rule: CSSRuleDef
 
-  ToSorts = array[PseudoElement, seq[RulePair]]
+  AncestorCache = object
+    last: Element
+    classes: HashSet[CAtom]
+
+  ToSorts = object
+    map: array[PseudoElement, seq[RulePair]]
+    cache: AncestorCache
 
   RevertType = enum
     rtUnset, rtUser, rtUserAgent, rtSet
@@ -58,6 +65,23 @@ proc ensureStyle*(element: Element)
 proc applyValues(ctx: var ApplyValueContext;
   entries: openArray[CSSComputedEntry]; revertType: RevertType)
 
+proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
+  if class in ancestors.classes:
+    return true
+  var found = false
+  if ancestors.last != nil:
+    var ancestor = ancestors.last
+    while true:
+      for it in ancestor.classList:
+        let it = it.toLowerAscii()
+        found = found or it == class
+        ancestors.classes.incl(it)
+      ancestor = ancestor.parentElement
+      if ancestor == nil or found:
+        break
+    ancestors.last = ancestor
+  found
+
 proc calcRules(tosorts: var ToSorts; element: Element;
     depends: var DependencyInfo; rules: openArray[CSSRuleDef]) =
   for rule in rules:
@@ -65,8 +89,14 @@ proc calcRules(tosorts: var ToSorts; element: Element;
     for sel in rule.sels:
       if sel.pseudo in seen:
         continue
+      # skip an arbitrary class from the selector ancestors as an
+      # optimization
+      let ancestorClass = sel.ancestorClass
+      if ancestorClass != CAtomNull and
+          not tosorts.cache.hasClass(ancestorClass):
+        continue
       if element.matches(sel, depends):
-        tosorts[sel.pseudo].add((sel.specificity, rule))
+        tosorts.map[sel.pseudo].add((sel.specificity, rule))
         seen.incl(sel.pseudo)
 
 proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
@@ -76,7 +106,8 @@ proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
 
 proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     depends: var DependencyInfo) =
-  var tosorts = ToSorts.default
+  let parentElement = element.parentElement
+  var tosorts = ToSorts(cache: AncestorCache(last: parentElement))
   sheet.tagTable.withValue(element.localName, v):
     tosorts.calcRules(element, depends, v[])
   if element.id != CAtomNull:
@@ -88,12 +119,16 @@ proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
   for attr in element.attrs:
     sheet.attrTable.withValue(attr.qualifiedName, v):
       tosorts.calcRules(element, depends, v[])
-  if element.parentElement == nil:
-    tosorts.calcRules(element, depends, sheet.rootList)
+  if parentElement == nil:
+    tosorts.calcRules(element, depends, sheet.typeList[shtRoot])
+  if parentElement == nil or parentElement.firstElementChild == element:
+    tosorts.calcRules(element, depends, sheet.typeList[shtFirstChild])
+  if parentElement == nil or parentElement.lastElementChild == element:
+    tosorts.calcRules(element, depends, sheet.typeList[shtLastChild])
   if element.hint:
-    tosorts.calcRules(element, depends, sheet.hintList)
-  tosorts.calcRules(element, depends, sheet.generalList)
-  for pseudo, it in tosorts.mpairs:
+    tosorts.calcRules(element, depends, sheet.typeList[shtHint])
+  tosorts.calcRules(element, depends, sheet.typeList[shtGeneral])
+  for pseudo, it in tosorts.map.mpairs:
     it.sort(proc(x, y: RulePair): int =
       let n = cmp(x.specificity, y.specificity)
       if n != 0:

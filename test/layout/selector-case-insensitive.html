@@ -6,6 +6,7 @@ div { color: red }
 .TEST4 { color: green }
 [test5] { color: green }
 [TEST6] { color: green }
+.a .b { color: green }
 </style>
 <div id=TEST1>id html upper, css lower</div>
 <div class=TEST2>class html upper, css lower</div>
@@ -13,3 +14,4 @@ div { color: red }
 <div class=test4>class html lower, css upper</div>
 <div TEST5>attr html upper, css lower</div>
 <div test6>attr html lower, css upper</div>
+<div class=A><div><div class=B>class HTML upper for descendant</div></div></div>
