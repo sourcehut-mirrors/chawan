@@ -4048,7 +4048,7 @@ proc applyUserSheet*(document: Document; user: string) =
 
 proc getRuleMap*(document: Document): CSSRuleMap =
   if document.ruleMap == nil:
-    let map = CSSRuleMap()
+    let map = newCSSRuleMap(document.mode == QUIRKS)
     var sheet = document.uaSheetsHead
     while sheet != nil:
       map.add(sheet)

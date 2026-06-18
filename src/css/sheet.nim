@@ -59,8 +59,9 @@ type
     attrTable*: Table[CAtom, seq[CSSRuleDef]]
     typeList*: array[SelectorHashType, seq[CSSRuleDef]]
     sheetId: uint32
-    layers: seq[CAtom]
     anonLayers: uint16
+    quirks: bool
+    layers: seq[CAtom]
 
   SelectorHashes = object
     tags: seq[CAtom]
@@ -74,6 +75,9 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom)
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
   layer: CAtom): Opt[void]
+
+proc newCSSRuleMap*(quirks: bool): CSSRuleMap =
+  CSSRuleMap(quirks: quirks)
 
 proc getSelectorIds(hashes: var SelectorHashes; sels: CompoundSelector) =
   for sel in sels:
@@ -178,12 +182,17 @@ proc add(sheet: CSSRuleMap; rule: CSSRuleDef) =
     var hashes = SelectorHashes()
     hashes.getSelectorIds(cxsel)
     if hashes.id != CAtomNull:
-      sheet.idTable.mgetOrPut(hashes.id, @[]).add(rule)
+      let id = if sheet.quirks: hashes.id.toLowerAscii() else: hashes.id
+      sheet.idTable.mgetOrPut(id, @[]).add(rule)
     elif hashes.tags.len > 0:
       for tag in hashes.tags:
         sheet.tagTable.mgetOrPut(tag, @[]).addIfNotLast(rule)
     elif hashes.class != CAtomNull:
-      sheet.classTable.mgetOrPut(hashes.class, @[]).add(rule)
+      let class = if sheet.quirks:
+        hashes.class.toLowerAscii()
+      else:
+        hashes.class
+      sheet.classTable.mgetOrPut(class, @[]).add(rule)
     elif hashes.attr != CAtomNull:
       sheet.attrTable.mgetOrPut(hashes.attr, @[]).add(rule)
     else:

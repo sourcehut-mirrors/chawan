@@ -71,9 +71,10 @@ proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
   var found = false
   if ancestors.last != nil:
     var ancestor = ancestors.last
+    var quirks = ancestor.document.mode == QUIRKS
     while true:
       for it in ancestor.classList:
-        let it = it.toLowerAscii()
+        let it = if quirks: it.toLowerAscii() else: it
         found = found or it == class
         ancestors.classes.incl(it)
       ancestor = ancestor.parentElement
@@ -107,14 +108,17 @@ proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
 proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     depends: var DependencyInfo) =
   let parentElement = element.parentElement
+  let quirks = element.document.mode == QUIRKS
   var tosorts = ToSorts(cache: AncestorCache(last: parentElement))
   sheet.tagTable.withValue(element.localName, v):
     tosorts.calcRules(element, depends, v[])
   if element.id != CAtomNull:
-    sheet.idTable.withValue(element.id.toLowerAscii(), v):
+    let id = if quirks: element.id.toLowerAscii() else: element.id
+    sheet.idTable.withValue(id, v):
       tosorts.calcRules(element, depends, v[])
   for class in element.classList:
-    sheet.classTable.withValue(class.toLowerAscii(), v):
+    let class = if quirks: class.toLowerAscii() else: class
+    sheet.classTable.withValue(class, v):
       tosorts.calcRules(element, depends, v[])
   for attr in element.attrs:
     sheet.attrTable.withValue(attr.qualifiedName, v):

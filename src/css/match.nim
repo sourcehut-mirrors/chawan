@@ -225,12 +225,19 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stType:
     return element.localName == sel.tag
   of stClass:
-    for it in element.classList:
-      if sel.class == it.toLowerAscii():
-        return true
+    if element.document.mode == QUIRKS:
+      for it in element.classList:
+        if sel.class.equalsIgnoreCase(it):
+          return true
+    else:
+      for it in element.classList:
+        if sel.class == it:
+          return true
     return false
   of stId:
-    return sel.id == element.id.toLowerAscii()
+    if element.document.mode == QUIRKS:
+      return sel.id.equalsIgnoreCase(element.id)
+    return sel.id == element.id
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:

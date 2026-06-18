@@ -1746,7 +1746,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = state.consume()
   if tok.t != cttIdent: fail
-  let class = tok.s.toAtomLower()
+  let class = tok.s.toAtom()
   Selector(t: stClass, class: class)
 
 # returns head
@@ -1770,7 +1770,7 @@ proc parseCompoundSelector(state: var SelectorParser;
       state.seekToken()
       if ctfId notin tok.flags:
         fail
-      sel = Selector(t: stId, id: tok.s.toAtomLower())
+      sel = Selector(t: stId, id: tok.s.toAtom())
     of cttDot:
       state.seekToken()
       sel = state.parseClassSelector()
