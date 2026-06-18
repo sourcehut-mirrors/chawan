@@ -109,8 +109,7 @@ type
 
   BoxRenderState* = object
     # Whether the following two variables have been initialized.
-    #TODO find a better name that doesn't conflict with box.positioned
-    positioned*: bool
+    rendered*: bool
     offset*: Offset
     clipBox*: ClipBox
 

@@ -420,7 +420,7 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
   ibox.render = BoxRenderState(
     offset: offset + ibox.state.startOffset,
     clipBox: clipBox,
-    positioned: true
+    rendered: true
   )
   let bgcolor = ibox.computed{"background-color"}
   var bgcolor0 = bgcolor0
@@ -456,7 +456,7 @@ proc inheritClipBox(box: BlockBox; parent: CSSBox; state: RenderState) =
   if parent == nil:
     box.render.clipBox = DefaultClipBox
     return
-  assert parent.render.positioned
+  assert parent.render.rendered
   var clipBox = parent.render.clipBox
   let overflowX = box.computed{"overflow-x"}
   let overflowY = box.computed{"overflow-y"}
@@ -579,7 +579,7 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
   let offset = offset + box.state.offset
   if not pass2:
     box.render.offset = offset
-    box.render.positioned = true
+    box.render.rendered = true
     box.inheritClipBox(box.parent, state)
   let opacity = box.computed{"opacity"}
   if box.computed{"visibility"} == VisibilityVisible and opacity != 0:
@@ -650,7 +650,7 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       if clipAncestor == nil and
           (not absolute or it.positioned or it.parent == nil):
         clipAncestor = it
-      if it.render.positioned and (not absolute or absAncestor != nil):
+      if it.render.rendered and (not absolute or absAncestor != nil):
         offset = it.render.offset
         break
     toPosition.add(it)
@@ -661,7 +661,7 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       it.render = BoxRenderState(
         offset: offset + it.state.startOffset,
         clipBox: if parent != nil: parent.render.clipBox else: DefaultClipBox,
-        positioned: true
+        rendered: true
       )
     else:
       let it = BlockBox(it)
@@ -669,7 +669,7 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       it.render = BoxRenderState(
         offset: offset,
         clipBox: DefaultClipBox,
-        positioned: true
+        rendered: true
       )
       it.inheritClipBox(parent, state)
     parent = it
@@ -682,7 +682,7 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
   if box of BlockBox:
     let box = BlockBox(box)
     box.render = BoxRenderState(
-      positioned: true,
+      rendered: true,
       offset: offset + box.state.offset,
       clipBox: DefaultClipBox
     )
