@@ -195,10 +195,10 @@ proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
   JS_FreeValue(ctx, it)
   JS_FreeValue(ctx, nextMethod)
 
-type SeqItResult = enum
+type SeqItResult* = enum
   sirDone, sirContinue, sirException
 
-proc fromJSSeqIt(ctx: JSContext; it, nextMethod: JSValueConst;
+proc fromJSSeqIt*(ctx: JSContext; it, nextMethod: JSValueConst;
     res: var JSValue): SeqItResult =
   let next = JS_Call(ctx, nextMethod, it, 0, nil)
   let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
@@ -212,12 +212,23 @@ proc fromJSSeqIt(ctx: JSContext; it, nextMethod: JSValueConst;
     return sirException # conversion error
   sirDone # actually done
 
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): FromJSResult =
+proc fromJSSeqInit*(ctx: JSContext; val: JSValueConst;
+    oit, onextMethod: var JSValue): FromJSResult =
   let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
+  if JS_IsException(it):
+    return fjErr
   let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
     JS_FreeValue(ctx, it)
     return fjErr
+  oit = it
+  onextMethod = nextMethod
+  fjOk
+
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): FromJSResult =
+  var it: JSValue
+  var nextMethod: JSValue
+  ?ctx.fromJSSeqInit(val, it, nextMethod)
   var status = fjOk
   var tmp = newSeq[T]()
   while status.isOk:

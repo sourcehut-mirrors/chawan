@@ -195,7 +195,7 @@ const ClickableElements = {
 }
 
 proc isClickable(element: Element): bool =
-  if element.hasEventListener(satClick.toAtom()):
+  if element.hasEventListener(satClick.view()):
     return true
   if element of HTMLAnchorElement:
     return HTMLAnchorElement(element).reinitURL().isOk
@@ -735,7 +735,7 @@ proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
 
 proc dispatchLoadEvent(bc: BufferContext) =
   let window = bc.window
-  let event = newEvent(satLoad.toAtom(), window.document, bubbles = false,
+  let event = newEvent(satLoad.view(), window.document, bubbles = false,
     cancelable = false)
   event.isTrusted = true
   discard window.jsctx.dispatch(window, event, targetOverride = true)
@@ -1059,7 +1059,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
     form.firing = true
     #TODO user validity/validity constraints
     let jsSubmitter = EventTarget(if submitter != form: submitter else: nil)
-    let event = newSubmitEvent(satSubmit.toAtom(), SubmitEventInit(
+    let event = newSubmitEvent(satSubmit.view(), SubmitEventInit(
       submitter: EventTargetHTMLElement(jsSubmitter),
       bubbles: true,
       cancelable: true
@@ -1128,7 +1128,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
           window.fireEvent(satInput, input, bubbles = true, cancelable = true,
             trusted = true)
         else:
-          let inputEvent = newInputEvent(satInput.toAtom(),
+          let inputEvent = newInputEvent(satInput.view(),
             InputEventInit(
               data: some(s),
               inputType: "insertText",
@@ -1419,12 +1419,12 @@ proc click(bc: BufferContext; handle: PagerHandle;
       bc.clickResult = initClickResult()
       let window = bc.window
       let init = bc.initMouseEventInit(0, 0, cursorx, cursory, n)
-      let event = newMouseEvent(satClick.toAtom(), init)
+      let event = newMouseEvent(satClick.view(), init)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
       if n == 2:
         let init = bc.initMouseEventInit(0, 0, cursorx, cursory, n)
-        let event = newMouseEvent(satDblclick.toAtom(), init)
+        let event = newMouseEvent(satDblclick.view(), init)
         event.isTrusted = true
         discard window.jsctx.dispatch(element, event)
       bc.maybeReshape()
@@ -1453,7 +1453,7 @@ proc contextMenu(bc: BufferContext; handle: PagerHandle;
       bc.clickResult = initClickResult()
       let window = bc.window
       let init = bc.initMouseEventInit(2, 2, cursorx, cursory, 1)
-      let event = newMouseEvent(satContextmenu.toAtom(), init)
+      let event = newMouseEvent(satContextmenu.view(), init)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
       bc.maybeReshape()

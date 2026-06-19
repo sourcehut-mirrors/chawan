@@ -131,11 +131,12 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     htmlAttrs: Table[CAtom, string]; xmlAttrs: seq[ParsedAttr[CAtom]]):
     ParentNode =
   let document = builder.document
-  let element = document.newElement(localName, namespace)
+  let element = document.newElement(localName.view(), namespace.toStaticAtom())
   for k, v in htmlAttrs:
-    element.attr(k, v)
+    element.attr(k.view(), v)
   for attr in xmlAttrs:
-    element.attrns(attr.name, attr.prefix, attr.namespace, attr.value)
+    element.attrns(attr.name.view(), attr.prefix,
+      attr.namespace.toStaticAtom().view(), attr.value)
   element.resetElement(nil)
   if element of HTMLScriptElement:
     let script = HTMLScriptElement(element)
@@ -194,8 +195,8 @@ proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
     attrs: Table[CAtom, string]) =
   let element = Element(handle)
   for k, v in attrs:
-    if not element.attrb(k):
-      element.attr(k, v)
+    if not element.attrb(k.view()):
+      element.attr(k.view(), v)
 
 proc setScriptAlreadyStartedImpl(builder: ChaDOMBuilder; script: ParentNode) =
   HTMLScriptElement(script).alreadyStarted = true

@@ -44,18 +44,18 @@ proc attrCase(sel: Selector; element: Element): CaseSensitivity =
 
 proc matchesAttr(element: Element; sel: Selector): bool =
   case sel.rel.t
-  of rtExists: return element.attrb(sel.attr)
+  of rtExists: return element.attrb(sel.attr.view())
   of rtEquals:
     case sel.attrCase(element)
-    of csI: return element.attr(sel.attr).equalsIgnoreCase(sel.value)
-    of csS: return element.attr(sel.attr) == sel.value
+    of csI: return element.attr(sel.attr.view()).equalsIgnoreCase(sel.value)
+    of csS: return element.attr(sel.attr.view()) == sel.value
   of rtToken:
-    let val = element.attr(sel.attr)
+    let val = element.attr(sel.attr.view())
     case sel.attrCase(element)
     of csI: return val.containsTokenIgnoreCase(sel.value)
     of csS: return val.containsToken(sel.value)
   of rtBeginDash:
-    let val = element.attr(sel.attr)
+    let val = element.attr(sel.attr.view())
     case sel.attrCase(element)
     of csI:
       return val.startsWithIgnoreCase(sel.value) and
@@ -64,17 +64,17 @@ proc matchesAttr(element: Element; sel: Selector): bool =
       return val.startsWith(sel.value) and
         (val.len <= sel.value.len or val[sel.value.len] == '-')
   of rtStartsWith:
-    let val = element.attr(sel.attr)
+    let val = element.attr(sel.attr.view())
     case sel.attrCase(element)
     of csI: return val.startsWithIgnoreCase(sel.value)
     of csS: return val.startsWith(sel.value)
   of rtEndsWith:
-    let val = element.attr(sel.attr)
+    let val = element.attr(sel.attr.view())
     case sel.attrCase(element)
     of csI: return val.endsWithIgnoreCase(sel.value)
     of csS: return val.endsWith(sel.value)
   of rtContains:
-    let val = element.attr(sel.attr)
+    let val = element.attr(sel.attr.view())
     case sel.attrCase(element)
     of csI: return sel.value.toLowerAscii() in val.toLowerAscii()
     of csS: return sel.value in val

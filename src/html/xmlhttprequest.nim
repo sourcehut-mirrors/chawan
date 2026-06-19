@@ -95,10 +95,10 @@ proc mark(rt: JSRuntime; this: XMLHttpRequest; markFun: JS_MarkFunc)
     {.jsmark.} =
   JS_MarkValue(rt, this.responseObject, markFun)
 
-proc newProgressEvent(ctype: CAtom; init = ProgressEventInit()): ProgressEvent
-    {.jsctor.} =
+proc newProgressEvent(ctype: CAtomTraced; init = ProgressEventInit()):
+    ProgressEvent {.jsctor.} =
   let event = ProgressEvent(
-    ctype: ctype,
+    ctype: ctype.dup(),
     lengthComputable: init.lengthComputable,
     loaded: init.loaded,
     total: init.total
@@ -210,7 +210,7 @@ proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32): JSValue
 
 proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     loaded, length: int64) =
-  let event = newProgressEvent(name.toAtom(), ProgressEventInit(
+  let event = newProgressEvent(name.view(), ProgressEventInit(
     loaded: loaded,
     total: length,
     lengthComputable: length != 0
