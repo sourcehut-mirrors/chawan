@@ -497,7 +497,7 @@ proc applyStyle(element: Element) =
         else:
           map[peNone].a[coAuthor].unlayered.vals[f].parseComputedValues(decl.p,
             decl.value, window.settings.attrsp[])
-  element.applyStyleDependencies(depends)
+  document.applyStyleDependencies(element, depends)
   var computed = map.applyDeclarations(peNone, element.parentElement, element,
     window, element.computed)
   element.computed = computed

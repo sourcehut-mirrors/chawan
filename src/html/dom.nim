@@ -346,14 +346,17 @@ type
   # property to elide two other pointers as follows:
   # * The tail of the child linked list is stored as the prev pointer of
   #   the first child.
-  # * The owner document is stored as the next pointer of the last
-  #   child.  (However, a Document has no owner document, so its
-  #   internalNext is always nil.)
-  # Additionally, we separate out the firstChild property into a subtype
-  # (ParentNode) so that it doesn't take up space in e.g. Text nodes.
+  # * The root of the tree is stored as the next pointer of the last
+  #   child.  The root in turn stores either the owner document (detached
+  #   tree) or nil (ShadowRoot, Document).
+  #
+  # Since a root always has a nil parentNode, it can be distinguished from
+  # the next sibling by testing its parent against 0.  Do note that this
+  # is also true for internalFirst if it holds a shadow root, but the two
+  # cases do not conflict because a root node cannot be firstChild.
   Node* = ref object of EventTarget
     parentNode*: ParentNode
-    internalNext: Node # either nextSibling or ownerDocument
+    internalNext: Node # either nextSibling, rootNode or ownerDocument
     internalPrev: Node # either previousSibling or parentNode.lastChild
 
   ParentNode* = ref object of Node
@@ -732,11 +735,13 @@ proc replaceAll(parent: ParentNode; node: Node; ctx: JSContext)
 proc replaceAll(parent: ParentNode; ds: DOMString; ctx: JSContext)
 proc firstChild(parent: ParentNode): Node
 proc firstChildShadow(parent: ParentNode): Node
+proc nextSibling(node: Node): Node
 proc setFirstChild(node: ParentNode; child: Node)
 
 proc addElementId(document: Document; element: Element)
 proc adopt(document: Document; node: Node; ctx: JSContext)
-proc applyStyleDependencies*(element: Element; depends: DependencyInfo)
+proc applyStyleDependencies*(document: Document; element: Element;
+  depends: DependencyInfo)
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
 proc getElementById*(document: Document; id: CAtomTraced): Element
@@ -1085,30 +1090,28 @@ iterator childList*(node: ParentNode): Node {.inline.} =
     while true:
       yield it
       it = it.internalNext
-      if it.internalNext == nil:
-        break # it is ownerDocument
+      if it.parentNode == nil:
+        break # found root
 
 iterator safeChildList*(node: ParentNode): Node {.inline.} =
-  var it = node.firstChild
-  if it != nil:
-    while true:
-      let next = it.internalNext
-      yield it
-      it = next
-      if it.internalNext == nil:
-        break # it is ownerDocument
+  var node = node.firstChild
+  while node != nil:
+    let next = node.nextSibling
+    yield node
+    node = next
 
 # either the shadow root, or our child list
 iterator shadowChildList*(node: ParentNode): Node {.inline.} =
   var it = node.firstChildShadow
   if it != nil:
-    if it.parentNode != node: # shadow root
+    if it.parentNode == nil: # shadow root
       it = ParentNode(it).firstChildShadow
-    while true:
-      yield it
-      it = it.internalNext
-      if it.internalNext == nil:
-        break # it is ownerDocument
+    if it != nil:
+      while true:
+        yield it
+        it = it.internalNext
+        if it.parentNode == nil:
+          break # found root
 
 iterator rchildList*(node: ParentNode): Node {.inline.} =
   let first = node.firstChild
@@ -1135,7 +1138,7 @@ iterator precedingSiblings*(node: Node): Node {.inline.} =
 iterator subsequentSiblings*(node: Node): Node {.inline.} =
   var it = node.internalNext
   if it != nil:
-    while it.internalNext != nil:
+    while it.parentNode != nil:
       yield it
       it = it.internalNext
 
@@ -1180,12 +1183,6 @@ iterator descendants*(node: ParentNode): Node {.inline.} =
     yield it
     it = it.nextDescendant(node)
 
-iterator descendantsIncl(node: Node): Node {.inline.} =
-  var it = node
-  while it != nil:
-    yield it
-    it = it.nextDescendant(node)
-
 iterator descendantsShadowIncl(node: Node): Node {.inline.} =
   var it = node
   while it != nil:
@@ -1194,11 +1191,6 @@ iterator descendantsShadowIncl(node: Node): Node {.inline.} =
 
 iterator elementDescendants*(node: ParentNode): Element {.inline.} =
   for child in node.descendants:
-    if child of Element:
-      yield Element(child)
-
-iterator elementDescendantsIncl(node: Node): Element {.inline.} =
-  for child in node.descendantsIncl:
     if child of Element:
       yield Element(child)
 
@@ -2043,19 +2035,34 @@ when defined(debug):
   proc `$`*(node: Node): string =
     if node == nil:
       return "null"
+    if node of Document:
+      return "Document"
     result = ""
     result.serializeFragmentInner(node, TAG_UNKNOWN, writeShadow = true)
 
 proc baseURI(node: Node): string {.jsfget.} =
   return $node.document.baseURL
 
+proc rootNode(node: Node): Node {.jsfunc.} =
+  # If connected, return root; otherwise, return the owner document.
+  let parent = node.parentNode
+  if parent == nil:
+    return node
+  parent.lastChild.internalNext
+
 proc document*(node: Node): Document =
-  let next = node.internalNext
-  if next == nil:
-    return Document(node)
-  if next.internalNext == nil:
-    return Document(next)
-  return Document(next.parentNode.firstChild.internalPrev.internalNext)
+  # Return the owner document, or node itself if it is a document.
+  var node = node
+  while true:
+    node = node.rootNode
+    if node of Document:
+      break
+    if node of ShadowRoot:
+      node = ShadowRoot(node).host
+    else:
+      node = node.internalNext
+      break
+  Document(node)
 
 proc parentNodeShadow(node: Node): Node =
   let parent = node.parentNode
@@ -2076,13 +2083,14 @@ proc parentElement*(node: Node): Element {.jsfget.} =
   return nil
 
 proc nextSiblingShadow(node: Node): Node =
-  if node.internalNext == nil or node.internalNext.internalNext == nil:
+  let next = node.internalNext
+  if next == nil or next.parentNode == nil:
     # if next is nil, then node is a Document.
-    # if next.next is nil, then next is ownerDocument.
+    # if next.parentNode is nil, then next is the root.
     return nil
-  return node.internalNext
+  return next
 
-proc nextSibling*(node: Node): Node {.jsfget.} =
+proc nextSibling(node: Node): Node {.jsfget.} =
   if node.parentNode == nil:
     # if parent is nil, then may be a shadow root
     return nil
@@ -2214,16 +2222,10 @@ proc checkParentValidity(parent: Node): Result[ParentNode, cstring] =
     return ok(cast[ParentNode](parent))
   return err("parent must be a document, a document fragment, or an element")
 
-proc rootNode(node: Node): Node =
-  var node = node
-  while node.parentNode != nil:
-    node = node.parentNode
-  return node
-
 proc rootNodeShadow(node: Node): Node =
-  var node = node
-  while (let parent = node.parentNodeShadow; parent != nil):
-    node = parent
+  var node = node.rootNode
+  while node of ShadowRoot:
+    node = ShadowRoot(node).host.rootNode
   node
 
 proc isInclusiveAncestorHost(a, b: Node): bool =
@@ -2350,7 +2352,8 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   let parent = node.parentNode
   if parent == nil:
     return
-  let document = node.document
+  let oldRootNode = node.rootNode
+  let document = oldRootNode.document
   # document is only nil for Document nodes, but those cannot call
   # remove().
   assert document != nil
@@ -2362,12 +2365,12 @@ proc removeImpl*(node: Node; suppressObservers = false) =
     parentElement.invalidate()
   let prev = node.internalPrev
   let next = node.internalNext
-  if next != nil and next.internalNext != nil:
+  if next != nil and next.parentNode != nil:
     next.internalPrev = prev
   else:
     parent.firstChild.internalPrev = prev
   if parent.firstChild == node:
-    if next != nil and next.internalNext != nil:
+    if next != nil and next.parentNode != nil:
       parent.setFirstChild(next)
     else:
       parent.setFirstChild(nil)
@@ -2376,41 +2379,35 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   node.internalPrev = nil
   node.internalNext = document
   node.parentNode = nil
-  let root = parent.rootNode
-  var hasSlot = false
+  document.invalidateCollections()
   if element != nil:
     if parentElement == nil:
       element.invalidate()
-    if element.id != satUempty and not (root of ShadowRoot):
-      document.removeElementId(element)
     element.box = nil
     if element.internalElIndex == 0 and parentElement != nil:
       parentElement.childElIndicesInvalid = true
     element.internalElIndex = -1
     if element of SheetElement:
       SheetElement(element).removeSheet()
-    for desc in element.elementDescendantsIncl:
-      desc.applyStyleDependencies(DependencyInfo.default)
-      hasSlot = desc.tagType == TAG_SLOT
   #TODO assigned
-  if root of ShadowRoot:
-    let shadow = ShadowRoot(root)
+  if oldRootNode of ShadowRoot:
+    let shadow = ShadowRoot(oldRootNode)
     discard shadow
     #TODO signal slot change if parent is slot without assigned nodes
-  if hasSlot:
-    #TODO assign slottables for tree with root
-    #TODO assign slottables for tree with node
-    discard
-  if element != nil:
-    element.removingSteps()
-    let parentConnected = root.isConnected
-    #TODO if node is custom and connected, disconnectedcallback
-    for desc in element.descendantsShadowIncl:
+  let parentConnected = oldRootNode.isConnected
+  for desc in node.descendantsShadowIncl:
+    #TODO assign slottables with parent's root & node
+    let last = desc.lastChild
+    if last != nil: # update root
+      last.internalNext = node
+    if desc of Element:
+      let element = Element(desc)
+      if element.id != satUempty and oldRootNode == document:
+        document.removeElementId(element)
+      document.applyStyleDependencies(element, DependencyInfo.default)
       element.removingSteps()
-      if desc of Element:
-        let element = Element(desc)
-        if element.custom == cesCustom and parentConnected:
-          discard #TODO call disconnectedCallback
+      if element.custom == cesCustom and parentConnected:
+        discard #TODO call disconnectedCallback
   #TODO registered observers
   if not suppressObservers:
     discard #TODO queue tree mutation record
@@ -2897,7 +2894,7 @@ proc assignSlot(node: Node) =
 # ParentNode
 proc firstChild(parent: ParentNode): Node =
   let child = parent.internalFirst
-  if child != nil and child.parentNode != parent:
+  if child != nil and child.parentNode == nil:
     when defined(debug):
       assert child of ShadowRoot
     return child.internalNext
@@ -2908,7 +2905,7 @@ proc firstChildShadow(parent: ParentNode): Node =
 
 proc setFirstChild(node: ParentNode; child: Node) =
   let first = node.internalFirst
-  if first != nil and first.parentNode != node: # shadow root
+  if first != nil and first.parentNode == nil: # shadow root
     first.internalNext = child
   else:
     node.internalFirst = child
@@ -3046,6 +3043,7 @@ proc insert0(parent: ParentNode; node, before: Node;
     postConnectionNodes: var seq[Element]; ctx: JSContext) =
   let parentDocument = parent.document
   parentDocument.adopt(node, ctx)
+  let rootNode = parent.rootNode
   let element = if node of Element: Element(node) else: nil
   let first = parent.firstChild
   if before == nil:
@@ -3076,21 +3074,23 @@ proc insert0(parent: ParentNode; node, before: Node;
     else:
       element.internalElIndex = 0
   parentDocument.invalidateCollections()
-  #TODO maybe we should set root as internalNext after all?
-  let root = node.rootNode
   if parentElement != nil:
     let shadow = parentElement.shadowRoot
     if shadow != nil and shadow.slotAssignment == samNamed and
         (element != nil or node of Text):
       node.assignSlot()
-    if parentElement.tagType == TAG_SLOT and root of ShadowRoot:
+    if parentElement.tagType == TAG_SLOT and rootNode of ShadowRoot:
       discard #TODO signal a slot change
     #TODO assign slottables for a tree with root
-  var inShadow = root of ShadowRoot
+  if node.nextSibling == nil:
+    node.internalNext = rootNode
   for desc in node.descendantsShadowIncl:
+    let last = desc.lastChild
+    if last != nil: # update root
+      last.internalNext = rootNode
     if desc of Element:
       let el = Element(desc)
-      if el.id != satUempty and not inShadow and node.contains(el):
+      if el.id != satUempty and desc.rootNode == parentDocument:
         parentDocument.addElementId(el)
       if el.insertionSteps():
         postConnectionNodes.add(el)
@@ -3396,9 +3396,10 @@ proc globalCustomElements(document: Document): CustomElementRegistry =
 
 proc adopt(document: Document; node: Node; ctx: JSContext) =
   let oldDocument = node.document
-  if node.parentNode != nil:
-    node.removeImpl()
+  node.removeImpl()
   if oldDocument != document:
+    # node is detached from the tree, so its internalNext is guaranteed to
+    # be oldDocument; we want to override that.
     node.internalNext = document
     if node of ParentNode:
       let node = ParentNode(node)
@@ -3416,8 +3417,6 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
           document.liveCollectionsHead = collection
         collection = next
       for desc in node.descendantsShadowIncl:
-        if desc.nextSibling == nil:
-          desc.internalNext = document
         if desc of ShadowRoot:
           let root = ShadowRoot(desc)
           if root.customElements == nil and not root.unsetCustomElements or
@@ -6084,12 +6083,7 @@ proc insertionSteps(element: Element): bool =
   of TAG_SCRIPT:
     return true
   elif element.tagType(satNamespaceSVG) == TAG_SVG:
-    #TODO this doesn't work if JS adds descendants to the SVG tag
-    let svg = SVGSVGElement(element)
-    if svg.parserDocument != svg.document:
-      let window = svg.document.window
-      if window != nil:
-        window.loadSVG(svg)
+    return true
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if not element.parserInserted:
@@ -6102,9 +6096,21 @@ proc removingSteps(element: Element) =
     element.resetFormOwner()
 
 proc postConnectionSteps(element: Element) =
-  let script = HTMLScriptElement(element)
-  if script.isConnected and script.parserDocument == nil:
-    script.prepare()
+  case element.tagType
+  of TAG_SCRIPT:
+    let script = HTMLScriptElement(element)
+    if script.isConnected and script.parserDocument == nil:
+      script.prepare()
+  elif element.tagType(satNamespaceSVG) == TAG_SVG:
+    # we invoke loadSVG here to avoid the case where the descendants still
+    # point to an already inserted node
+    #TODO this doesn't work if JS adds descendants to the SVG tag
+    let svg = SVGSVGElement(element)
+    if svg.parserDocument != svg.document:
+      let window = svg.document.window
+      if window != nil:
+        window.loadSVG(svg)
+  else: discard
 
 proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
     JSValue {.jsfunc.} =
@@ -6379,7 +6385,6 @@ proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
     old.declarative = false
     return ok(old)
   let shadow = ShadowRoot(
-    internalNext: document,
     host: this,
     mode: init.mode,
     delegatesFocus: init.delegatesFocus,
@@ -6461,8 +6466,8 @@ proc invalidate*(element: Element; dep: DependencyType) =
 proc findAndDelete(map: var seq[Element]; element: Element) =
   map.del(map.find(element))
 
-proc applyStyleDependencies*(element: Element; depends: DependencyInfo) =
-  let document = element.document
+proc applyStyleDependencies*(document: Document; element: Element;
+    depends: DependencyInfo) =
   element.selfDepends = {}
   for t, map in document.styleDependencies.mpairs:
     map.dependsOn.withValue(element, p):
