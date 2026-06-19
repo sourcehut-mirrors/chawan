@@ -3911,6 +3911,17 @@ static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
     return 0;
 }
 
+int JS_SetGlobalExotic(JSContext *ctx, const JSClassExoticMethods *exotic)
+{
+    JSRuntime *rt = ctx->rt;
+    JSObject *p;
+
+    assert(!rt->class_array[JS_CLASS_GLOBAL_OBJECT].exotic);
+    rt->class_array[JS_CLASS_GLOBAL_OBJECT].exotic = exotic;
+    p = JS_VALUE_GET_OBJ(ctx->global_obj);
+    p->is_exotic = 1;
+}
+
 int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def)
 {
     int ret, len;

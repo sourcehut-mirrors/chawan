@@ -365,8 +365,10 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     let global = ctxOpaque.global
     assert ctxOpaque.gclass == 0
     ctxOpaque.gclass = res
+    let name2 = JS_DupValue(ctx, name)
     # Global already exists, so set unforgeable functions here
-    if ctx.definePropertyC(global, strSym, name) == dprException or
+    if ctx.definePropertyC(global, strSym, name2) == dprException or
+        ctx.definePropertyC(proto, strSym, name) == dprException or
         JS_SetPrototype(ctx, global, proto) != 1 or
         not ctx.setPropertyFunctionList(global, funcs) or
         not ctx.setUnforgeable(global, res):

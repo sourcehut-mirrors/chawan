@@ -376,6 +376,8 @@ type
     url*: URL # not nil
     currentScript {.jsget.}: HTMLScriptElement
     implementation {.jsget.}: DOMImplementation
+    elementIdMap: seq[Element]
+    elementIdMapLoad: int
     origin: Origin
     # document.write
     ignoreDestructiveWrites: int
@@ -770,6 +772,7 @@ proc adopt(document: Document; node: Node; ctx: JSContext)
 proc applyStyleDependencies*(element: Element; depends: DependencyInfo)
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
+proc getElementById*(document: Document; id: CAtomTraced): Element
 proc invalidateCollections(document: Document)
 proc isConnected(node: Node): bool
 proc lastChild*(node: Node): Node
@@ -778,12 +781,14 @@ proc parseURL*(document: Document; s: string): Opt[URL]
 proc reflectEvent(document: Document; target: EventTarget;
   name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
 
+proc addElementId(document: Document; element: Element)
 proc document*(node: Node): Document
 proc nextDescendant(node, start: Node): Node
 proc nextDescendantShadow(node, start: Node): Node
 proc parentNodeShadow(node: Node): Node
 proc parentNodeHost(node: Node): Node
 proc parentElement*(node: Node): Element
+proc removeElementId(document: Document; element: Element)
 proc serializeFragment(res: var string; node: Node; writeShadow: bool)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
   writeShadow: bool)
@@ -835,6 +840,7 @@ proc invalidate*(element: Element; dep: DependencyType)
 proc nextDisplayedElement(element: Element): Element
 proc outerHTML(element: Element): string
 proc postConnectionSteps(element: Element)
+proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
 proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
@@ -1278,7 +1284,7 @@ iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
 
 iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
   let name = input.name
-  if name != CAtomNull and name != satUempty:
+  if name != satUempty:
     if input.form != nil:
       for input in input.form.inputs:
         if input.name == name and input.inputType == itRadio:
@@ -2394,11 +2400,14 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   node.internalPrev = nil
   node.internalNext = document
   node.parentNode = nil
+  let root = parent.rootNode
   document.invalidateCollections()
   var hasSlot = false
   if element != nil:
     if parentElement == nil:
       element.invalidate()
+    if element.id != satUempty and not (root of ShadowRoot):
+      document.removeElementId(element)
     element.box = nil
     if element.internalElIndex == 0 and parentElement != nil:
       parentElement.childElIndicesInvalid = true
@@ -2409,7 +2418,6 @@ proc removeImpl*(node: Node; suppressObservers = false) =
       desc.applyStyleDependencies(DependencyInfo.default)
       hasSlot = desc.tagType == TAG_SLOT
   #TODO assigned
-  let root = parent.rootNode
   if root of ShadowRoot:
     let shadow = ShadowRoot(root)
     discard shadow
@@ -3106,23 +3114,28 @@ proc insert0(parent: ParentNode; node, before: Node;
     else:
       element.internalElIndex = 0
   parentDocument.invalidateCollections()
+  #TODO maybe we should set root as internalNext after all?
+  let root = node.rootNode
   if parentElement != nil:
     let shadow = parentElement.shadowRoot
     if shadow != nil and shadow.slotAssignment == samNamed and
         (element != nil or node of Text):
       node.assignSlot()
-    let root = parent.rootNode
     if parentElement.tagType == TAG_SLOT and root of ShadowRoot:
       discard #TODO signal a slot change
     #TODO assign slottables for a tree with root
+  var inShadow = root of ShadowRoot
   for desc in node.descendantsShadowIncl:
     if desc of Element:
       let el = Element(desc)
+      if el.id != satUempty and not inShadow and node.contains(el):
+        parentDocument.addElementId(el)
       if el.insertionSteps():
         postConnectionNodes.add(el)
       if el.custom == cesCustom:
         #TODO append parentDocument to element custom registry
-        discard #TODO call connectedCallback (custom elements)
+        #TODO enqueue connectedCallback (custom elements)
+        discard
       else:
         discard #TODO try to upgrade (custom elements)
     elif desc of ShadowRoot:
@@ -3456,6 +3469,70 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
           if element.tagType == TAG_TEMPLATE:
             document.adopt(HTMLTemplateElement(element).content, ctx)
 
+proc addElementId0(document: Document; element: Element) =
+  let mask = document.elementIdMap.len - 1
+  var home = element.id.hash() and mask
+  var i = home
+  var dist = 0u32
+  var element = element
+  while true:
+    let it = document.elementIdMap[i]
+    if it == nil:
+      document.elementIdMap[i] = element
+      break
+    # if either
+    # * "it"'s id is farther to its home than element's id
+    # * or if "it" has the same id as element, but element comes earlier
+    # then swap out "it" for element.
+    let itHome = it.id.hash() and mask
+    let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
+    if dist < itDist or it.id == element.id and element.precedes(it):
+      swap(document.elementIdMap[i], element)
+      home = itHome
+      dist = itDist
+    i = (i + 1) and mask
+    inc dist
+
+proc addElementId(document: Document; element: Element) =
+  if document.elementIdMapLoad >= document.elementIdMap.len div 2:
+    var newLen = document.elementIdMap.len * 2
+    if newLen == 0:
+      newLen = 32
+    var oldTab = move(document.elementIdMap)
+    document.elementIdMap = newSeq[Element](newLen)
+    for it in oldTab:
+      if it != nil:
+        document.addElementId0(it)
+  inc document.elementIdMapLoad
+  document.addElementId0(element)
+
+proc removeElementId(document: Document; element: Element) =
+  if document.elementIdMap.len == 0:
+    return
+  let mask = document.elementIdMap.len - 1
+  var i = element.id.hash() and mask
+  while true:
+    let it = document.elementIdMap[i]
+    if it == nil:
+      return # not found
+    if it == element:
+      dec document.elementIdMapLoad
+      document.elementIdMap[i] = nil
+      break
+    i = (i + 1) and mask
+  var j = i
+  while true:
+    j = (j + 1) and mask
+    let it = document.elementIdMap[j]
+    if it == nil:
+      break
+    let k = it.id.hash() and mask
+    if j == k: # already at home
+      break
+    # backwards shift
+    document.elementIdMap[i] = move(document.elementIdMap[j])
+    i = j
+
 proc adoptNode(ctx: JSContext; document: Document; node: Node): JSValue
     {.jsfunc.} =
   if node of Document:
@@ -3638,14 +3715,18 @@ proc head*(document: Document): HTMLElement {.jsfget.} =
 proc body*(document: Document): HTMLElement {.jsfget.} =
   return document.findFirst(TAG_BODY)
 
-proc getElementById*(document: Document; id: string): Element {.jsfunc.} =
-  if id.len == 0:
-    return nil
-  let id = id.toAtomTrace()
-  for child in document.elementDescendants:
-    if child.id == id:
-      return child
-  return nil
+proc getElementById*(document: Document; id: CAtomTraced): Element {.jsfunc.} =
+  if id != satUempty and document.elementIdMap.len > 0:
+    let mask = document.elementIdMap.len - 1
+    var i = id.view().hash() and mask
+    while true:
+      let it = document.elementIdMap[i]
+      if it == nil:
+        break
+      if it.id == id:
+        return it
+      i = (i + 1) and mask
+  nil
 
 proc getElementsByName(ctx: JSContext; document: Document; name: CAtomTraced):
     Opt[NodeList] {.jsfunc.} =
@@ -4127,9 +4208,8 @@ proc names(ctx: JSContext; document: Document): JSPropertyEnumList
   list.add("location")
   #TODO exposed embed, exposed object
   for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
-    if child.name != CAtomNull and child.name != satUempty:
-      if child.tagType == TAG_IMG and child.id != CAtomNull and
-          child.id != satUempty:
+    if child.name != satUempty:
+      if child.tagType == TAG_IMG and child.id != satUempty:
         list.add($child.id)
       list.add($child.name)
   return list
@@ -4140,7 +4220,7 @@ proc getter(ctx: JSContext; document: Document; id: CAtomTraced): JSValue
     #TODO exposed embed, exposed object
     for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
       if child.tagType == TAG_IMG and child.id == id and
-          child.name != CAtomNull and child.name != satUempty:
+          child.name != satUempty:
         return ctx.toJS(child)
       if child.name == id:
         return ctx.toJS(child)
@@ -4502,7 +4582,7 @@ proc names(ctx: JSContext; this: HTMLCollection): JSPropertyEnumList
     let element = ctx.item(this, u).get(nil)
     if element == nil:
       continue
-    if element.id != CAtomNull and element.id != satUempty:
+    if element.id != satUempty:
       ids.incl(element.id)
     if element.namespaceURI == satNamespaceHTML:
       ids.incl(element.name)
@@ -5123,6 +5203,22 @@ proc nextDisplayedElement(element: Element): Element =
   # done
   return nil
 
+# Does this precede other?
+proc precedes(this, other: Element): bool =
+  var other = other
+  while other != nil:
+    if other == this:
+      return true
+    let otherParent = other.parentElement
+    var this = this
+    while this != nil:
+      let thisParent = this.parentElement
+      if thisParent == otherParent:
+        return this.elIndex < other.elIndex
+      this = thisParent
+    other = otherParent
+  false
+
 proc scriptingEnabled(element: Element): bool =
   return element.document.scriptingEnabled
 
@@ -5492,17 +5588,25 @@ proc reflectAttr(element: Element; name: CAtomTraced; has: bool;
   let name = name.toStaticAtom()
   case name
   of satId:
-    freeAtom(element.id)
+    var had = false
+    if element.id != satUempty:
+      freeAtom(element.id)
+      element.document.removeElementId(element)
+      had = true
     if has:
       element.id = value.toAtom()
     else:
-      element.id = CAtomNull
+      element.id = satUempty.toAtom()
+    if had and element.id != satUempty:
+      let root = element.rootNode
+      if root of Document:
+        Document(root).addElementId(element)
   of satName:
     freeAtom(element.name)
     if has:
       element.name = value.toAtom()
     else:
-      element.name = CAtomNull
+      element.name = satUempty.toAtom()
   of satClass: element.classList.reflectTokens(value)
   #TODO internalNonce
   of satStyle:
@@ -5697,6 +5801,8 @@ proc newElement*(document: Document;
       SVGElement()
   else:
     HTMLElement()
+  element.id = satUempty.toAtom()
+  element.name = satUempty.toAtom()
   element.localName = localName.dup()
   element.namespaceURI = namespaceURI.dup()
   element.prefix = prefix.dup()
@@ -6773,7 +6879,8 @@ proc resetFormOwner(element: FormAssociatedElement) =
     element.next = nil
     element.form = nil
   if element.tagType in ListedElements and element.isConnected:
-    let form = element.document.getElementById(element.attr(satForm))
+    let id = element.attr(satForm).toAtomTrace()
+    let form = element.document.getElementById(id)
     if form of HTMLFormElement:
       element.setForm(HTMLFormElement(form))
   if element.form == nil:
@@ -6886,8 +6993,8 @@ proc addFile*(this: HTMLInputElement; file: WebFile) =
 proc control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
   let f = label.attr(satFor)
   if f != "":
-    let elem = label.document.getElementById(f)
-    #TODO the supported check shouldn't be needed, just labelable
+    let id = f.toAtomTrace()
+    let elem = label.document.getElementById(id)
     if elem of FormAssociatedElement and elem.tagType in LabelableElements:
       return FormAssociatedElement(elem)
     return nil

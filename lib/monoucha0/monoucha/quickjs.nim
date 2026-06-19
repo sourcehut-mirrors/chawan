@@ -358,6 +358,9 @@ const
   JS_PROP_VARREF* = (2 shl 4) # used internally
   JS_PROP_AUTOINIT* = (3 shl 4) # used internally
   JS_PROP_THROW* = (1 shl 14)
+  JS_PROP_THROW_STRICT* = (1 shl 15) # throw an exception if false would be
+                                     # returned in strict mode (JS_SetProperty)
+  JS_PROP_NO_EXOTIC* = (1 shl 16) # internal use
 
 # Flags for JS_DefineProperty
 const

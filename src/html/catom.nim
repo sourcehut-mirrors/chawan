@@ -238,7 +238,7 @@ type
     s: string
     lower: uint32 # if free'd, points to next item in free list
     refc: uint32
-    hcache: int
+    hcache: Hash
 
   CAtomFactoryObj = object
     tab: seq[uint32] # hash table; length is a power of 2
@@ -254,7 +254,6 @@ const CAtomNull* = CAtom(0)
 
 # Mandatory Atom functions
 proc `==`*(a, b: CAtom): bool {.borrow.}
-proc hash*(atom: CAtom): Hash {.borrow.}
 proc freeAtomImpl(u: uint32)
 
 var factory {.global.}: CAtomFactoryObj
@@ -272,6 +271,9 @@ proc freeAtom*(atom: CAtom) =
     dec desc.refc
     if desc.refc == 0:
       freeAtomImpl(u)
+
+proc hash*(atom: CAtom): Hash =
+  getFactory().atomMap[uint32(atom)].hcache
 
 proc freeAtomImpl(u: uint32) =
   let factory = getFactory()
@@ -348,7 +350,7 @@ proc put0(factory: var CAtomFactoryObj; atom: uint32; h: Hash) =
       factory.tab[i] = atom
       break
     let itHome = factory.atomMap[int(it)].hcache and mask
-    let itDist = (uint32(itHome) - uint32(i)) and uint32(mask)
+    let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
     if dist < itDist: # displace
       swap(factory.tab[i], atom)
       home = itHome

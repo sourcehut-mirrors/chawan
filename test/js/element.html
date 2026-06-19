@@ -12,6 +12,7 @@ function testName() {
 	assertEquals(x.localName, "div");
 	assertEquals(x.tagName, "DIV");
 	assertEquals(x.name, undefined);
+	assertEquals(document.createElement("div").id, "");
 }
 
 function testClass() {

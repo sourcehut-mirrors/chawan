@@ -292,6 +292,62 @@ proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
   for it in window.weakMap:
     JS_MarkValue(rt, it, markFunc)
 
+#TODO CORS: get prototype proxy
+
+proc windowSetPrototype(ctx: JSContext; obj, proto: JSValueConst): cint
+    {.cdecl.} =
+  let ours = JS_GetPrototype(ctx, obj)
+  if JS_IsException(ours):
+    return -1
+  if JS_SameValue(ctx, obj, ours):
+    return 1
+  return 0
+
+proc windowIsExtensible(ctx: JSContext; obj: JSValueConst): cint {.cdecl.} =
+  return 1
+
+proc windowPreventExtensions(ctx: JSContext; obj: JSValueConst): cint
+    {.cdecl.} =
+  return 0
+
+proc windowGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
+    this: JSValueConst; prop: JSAtom): cint {.cdecl.} =
+  var window: Window
+  discard ctx.fromJS(this, window)
+  let document = window.document
+  #TODO CORS
+  #TODO navigables?
+  if document != nil:
+    var atom: CAtomTraced
+    if ctx.fromJS(prop, atom).isErr:
+      return -1
+    let element = document.getElementById(atom)
+    if element != nil:
+      if desc != nil:
+        let element = ctx.toJS(element)
+        if JS_IsException(element):
+          return -1
+        desc.flags = JS_PROP_CONFIGURABLE
+        desc.setter = JS_UNDEFINED
+        desc.getter = JS_UNDEFINED
+        desc.value = element
+      return 1
+  return 0
+
+proc windowDefineOwnProperty(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
+    val, getter, setter: JSValueConst; flags: cint): cint {.cdecl.} =
+  let propVal = JS_AtomIsNumericIndex1(ctx, prop)
+  if JS_IsException(propVal):
+    return -1
+  if JS_IsUndefined(propVal):
+    return JS_DefineProperty(ctx, obj, prop, val, getter, setter,
+      flags or JS_PROP_NO_EXOTIC)
+  JS_FreeValue(ctx, propVal)
+  if (flags and JS_PROP_THROW) != 0:
+    JS_ThrowTypeError(ctx, "cannot set indexed property on window")
+    return -1
+  return 0
+
 proc throwNetworkError(ctx: JSContext): JSValue =
   return JS_ThrowTypeError(ctx,
     "NetworkError when attempting to fetch resource")
@@ -544,6 +600,9 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
       window.console.error("(Unhandled promise)", s)
     window.console.flush()
 
+proc JS_SetGlobalExotic(ctx: JSContext; exotic: JSClassExoticMethodsConst)
+  {.importc.}
+
 proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   ctx.setGlobal(window)
   let (eventCID, eventTargetCID) = ?ctx.addEventModule()
@@ -652,6 +711,15 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       window.console.error("failed to initialize JS")
       window.console.writeException(ctx)
       quit(1)
+    var globalExotic {.global.} = JSClassExoticMethods(
+      set_prototype: windowSetPrototype,
+      is_extensible: windowIsExtensible,
+      prevent_extensions: windowPreventExtensions,
+      get_own_property: windowGetOwnProperty,
+      define_own_property: windowDefineOwnProperty,
+      #TODO get, set, delete, own property keys
+    )
+    JS_SetGlobalExotic(ctx, addr globalExotic)
   return window
 
 # Forward declaration hack

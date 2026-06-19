@@ -1,6 +1,8 @@
 <!doctype html>
 <title>Window test</title>
 <div id=x>Fail</div>
+<div id=testEl>test 1</div>
+<div id=testEl>test 2</div>
 <script src=asserts.js></script>
 <script>
 assertEquals(window.toString(), "[object Window]");
@@ -29,5 +31,16 @@ assertEquals(second, window.onload);
 let old = window.document;
 new DOMParser().parseFromString("asdf", "text/html");
 assertEquals(old, window.document);
+{
+	assertThrows(() => window.__proto__ = {}, TypeError);
+	assertThrows(() => Object.seal(window), TypeError);
+	assertThrows(() => Object.defineProperty(window, "1", {value: "hi"}), TypeError);
+}
+{
+	assertEquals(testEl.textContent, "test 1")
+	testEl.remove();
+	assertEquals(testEl.textContent, "test 2")
+	testEl.remove();
+}
 document.getElementById("x").textContent = "Success";
 </script>
