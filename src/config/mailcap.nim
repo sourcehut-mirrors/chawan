@@ -54,6 +54,7 @@ type
 
   MailcapList = ref object
     t: string # either "type/subtype" or "type"
+    hcache: Hash # hash of t
     s*: seq[MailcapEntry] # all entries (inc. for subtypes)
     resource*: seq[MailcapEntry] # x-resource entries only
     next: MailcapList # used for chaining lists with identical main types
@@ -71,27 +72,28 @@ iterator fields(entry: MailcapEntry): NamedField =
 proc getOrDefault*(mailcap: Mailcap; t: openArray[char]): MailcapList =
   if mailcap.tab.len <= 0:
     return nil
-  let H = mailcap.tab.high
-  var h = hash(t) and H
-  while h < mailcap.tab.len:
+  let mask = mailcap.tab.len - 1
+  var h = hash(t) and mask
+  while true:
     let it = mailcap.tab[h]
     if it == nil:
       break
     if it.t == t:
       return it
-    h = (h + 1) and H
+    h = (h + 1) and mask
   return nil
 
 proc put0(mailcap: var Mailcap; list: MailcapList) =
-  let H = mailcap.tab.high
-  var h = hash(list.t) and H
-  while h < mailcap.tab.len:
+  let mask = mailcap.tab.len - 1
+  var h = list.hcache and mask
+  while true:
     if mailcap.tab[h] == nil:
       mailcap.tab[h] = list
       break
-    h = (h + 1) and H
+    h = (h + 1) and mask
 
 proc put(mailcap: var Mailcap; list: MailcapList) =
+  list.hcache = list.t.hash()
   if mailcap.load >= mailcap.tab.len div 2:
     let nlen = if mailcap.tab.len == 0: 16 else: mailcap.tab.len * 2
     var oldTab = move(mailcap.tab)
