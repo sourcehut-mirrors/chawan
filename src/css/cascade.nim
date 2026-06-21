@@ -178,7 +178,7 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
       var cv: CSSVariable = nil
       var varsIt = vars
       while varsIt != nil:
-        cv = varsIt.table.getOrDefault(varName)
+        cv = varsIt.getOrDefault(varName)
         if cv != nil:
           break
         varsIt = varsIt.parent
@@ -394,13 +394,13 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyColorHint(cptColor, element.attr(satColor))
   else: discard
 
-proc applyVars(ctx: var ApplyValueContext; vars: seq[CSSVariable];
+proc applyVars(ctx: var ApplyValueContext; vars: openArray[CSSVariable];
     parentVars: CSSVariableMap) =
   if vars.len > 0:
     if ctx.vals.vars == nil:
       ctx.vals.vars = newCSSVariableMap(parentVars)
     for cvar in vars.ritems:
-      ctx.vals.vars.putIfAbsent(cvar.name, cvar)
+      ctx.vals.vars.putIfAbsent(cvar)
 
 proc applyDeclarations(rules: RuleList; parent, element: Element;
     window: Window; old: CSSValues): CSSValues =

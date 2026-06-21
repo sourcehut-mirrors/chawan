@@ -3,7 +3,6 @@
 import std/algorithm
 import std/macros
 import std/math
-import std/tables
 
 import css/cssparser
 import css/lunit
@@ -339,7 +338,8 @@ type
   # Linked list of variable maps, except empty maps are skipped.
   CSSVariableMap* = ref object
     parent*: CSSVariableMap
-    table*: Table[CAtom, CSSVariable]
+    tab: seq[CSSVariable]
+    load: int
 
   CSSValues* = ref object
     pseudo*: PseudoElement
@@ -605,8 +605,42 @@ proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
 proc newCSSVariableMap*(parent: CSSVariableMap): CSSVariableMap =
   return CSSVariableMap(parent: parent)
 
-proc putIfAbsent*(map: CSSVariableMap; name: CAtom; cvar: CSSVariable) =
-  discard map.table.hasKeyOrPut(name, cvar)
+proc put0(map: CSSVariableMap; cvar: CSSVariable): bool =
+  let mask = map.tab.len - 1
+  var i = cvar.name.hash() and mask
+  while true:
+    let it = map.tab[i]
+    if it == nil:
+      map.tab[i] = cvar
+      return true
+    if it.name == cvar.name:
+      break # already exists
+    i = (i + 1) and mask
+  false
+
+proc getOrDefault*(map: CSSVariableMap; name: CAtom): CSSVariable =
+  if map.tab.len > 0:
+    let mask = map.tab.len - 1
+    var i = name.hash() and mask
+    while true:
+      let it = map.tab[i]
+      if it == nil:
+        break
+      if it.name == name:
+        return it
+      i = (i + 1) and mask
+  nil
+
+proc putIfAbsent*(map: CSSVariableMap; cvar: CSSVariable) =
+  if map.load >= map.tab.len div 2:
+    let nlen = if map.tab.len == 0: 2 else: map.tab.len * 2
+    var oldTab = move(map.tab)
+    map.tab = newSeq[CSSVariable](nlen)
+    for it in oldTab:
+      if it != nil:
+        discard map.put0(it)
+  if map.put0(cvar):
+    inc map.load
 
 type CSSPropertyReprType* = enum
   cprtBit, cprtHWord, cprtWord, cprtObject
