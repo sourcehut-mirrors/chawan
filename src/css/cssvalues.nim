@@ -693,7 +693,7 @@ proc `$`*(length: CSSLength): string =
     if calc:
       result = "calc(" & result & ')'
   if result.len == 0:
-    result &= '0'
+    result = "0px"
 
 proc `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
