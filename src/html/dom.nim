@@ -368,7 +368,7 @@ type
   DocumentObj = object of ParentNode
     activeParserWasAborted: bool
     invalid*: bool # whether the document must be rendered again
-    charset*: Charset
+    charset* {.jsget, jsget: "characterSet", jsget: "inputEncoding".}: Charset
     mode*: QuirksMode
     readyState* {.jsget.}: DocumentReadyState
     contentType* {.jsget.}: StaticAtom
@@ -3379,7 +3379,8 @@ proc children(ctx: JSContext; parentNode: DocumentFragment): JSValue
 proc newXMLDocument(): XMLDocument =
   let document = XMLDocument(
     url: parseURL0("about:blank"),
-    contentType: satApplicationXml
+    contentType: satApplicationXml,
+    charset: csUtf8
   )
   document.implementation = DOMImplementation(document: document)
   return document
@@ -3388,7 +3389,8 @@ proc newDocument*(url: URL): Document =
   let document = Document(
     url: url,
     contentType: satApplicationXml,
-    origin: url.origin
+    origin: url.origin,
+    charset: csUtf8
   )
   document.implementation = DOMImplementation(document: document)
   return document
@@ -3398,7 +3400,8 @@ proc newDocument(ctx: JSContext): Document {.jsctor.} =
   let document = Document(
     url: parseURL0("about:blank"),
     contentType: satApplicationXml,
-    origin: global.document.origin
+    origin: global.document.origin,
+    charset: csUtf8
   )
   document.implementation = DOMImplementation(document: document)
   return document
@@ -4196,6 +4199,12 @@ proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
 
 proc childElementCount(this: Document): int {.jsfget.} =
   return this.childElementCountImpl
+
+proc doctype(document: Document): DocumentType {.jsfget.} =
+  let first = document.firstChild
+  if first of DocumentType:
+    return DocumentType(first)
+  nil
 
 proc documentElement*(document: Document): Element {.jsfget.} =
   return document.firstElementChild()

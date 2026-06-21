@@ -9,12 +9,13 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt
 import types/opt
+import utils/twtstr
 
 type
   JSTextEncoder = ref object
 
   JSTextDecoder = ref object
-    encoding {.jsget.}: Charset
+    encoding: Charset
     ignoreBOM {.jsget.}: bool
     errorMode: DecoderErrorMode
     stream: bool
@@ -24,6 +25,7 @@ type
 jsDestructor(JSTextDecoder)
 jsDestructor(JSTextEncoder)
 
+# TextDecoder
 type TextDecoderOptions = object of JSDict
   fatal {.jsdefault.}: bool
   ignoreBOM {.jsdefault.}: bool
@@ -41,6 +43,9 @@ proc newJSTextDecoder(ctx: JSContext; label = "utf-8";
     tdctx: initTextDecoderContext(encoding, errorMode),
     encoding: encoding
   ))
+
+proc encoding(this: JSTextDecoder): string {.jsfget.} =
+  return ($this.encoding).toLowerAscii()
 
 proc fatal(this: JSTextDecoder): bool {.jsfget.} =
   return this.errorMode == demFatal
@@ -72,6 +77,7 @@ proc decode(ctx: JSContext; this: JSTextDecoder;
     return JS_ThrowTypeError(ctx, "failed to decode string")
   return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
 
+# TextEncoder
 proc newTextEncoder(): JSTextEncoder {.jsctor.} =
   return JSTextEncoder()
 
