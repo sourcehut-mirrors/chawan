@@ -675,6 +675,9 @@ proc parseUInt32*(s: openArray[char]; allowSign = false): Opt[uint32] =
 proc parseUInt64*(s: openArray[char]; allowSign = false): Opt[uint64] =
   return parseUIntImpl[uint64](s, allowSign, 10)
 
+proc parseHexInt64*(s: openArray[char]; allowSign = false): Opt[uint64] =
+  return parseUIntImpl[uint64](s, allowSign, 16)
+
 proc parseIntImpl[T: SomeSignedInt; U: SomeUnsignedInt](s: openArray[char];
     radix: U): Opt[T] =
   var sign: T = 1

@@ -4,9 +4,12 @@ import std/strutils
 
 import io/chafile
 import types/opt
-import utils/myposix
 import utils/proptable
 import utils/twtstr
+
+proc die(s: string) {.noreturn.} =
+  discard cast[ChaFile](stderr).writeLine("gencharwidth: " & s)
+  quit(1)
 
 var DoubleWidthRanges: seq[(uint32, uint32)] = @[]
 var DoubleWidthAmbiguousRanges: seq[(uint32, uint32)] = @[]
