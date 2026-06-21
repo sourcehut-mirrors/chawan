@@ -3481,12 +3481,12 @@ proc addElementId0(document: Document; element: Element) =
       document.elementIdMap[i] = element
       break
     # if either
-    # * "it"'s id is farther to its home than element's id
+    # * "it"'s id is closer to its home than element's id
     # * or if "it" has the same id as element, but element comes earlier
     # then swap out "it" for element.
     let itHome = it.id.hash() and mask
     let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
-    if dist < itDist or it.id == element.id and element.precedes(it):
+    if dist > itDist or it.id == element.id and element.precedes(it):
       swap(document.elementIdMap[i], element)
       home = itHome
       dist = itDist

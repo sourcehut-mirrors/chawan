@@ -351,7 +351,7 @@ proc put0(factory: var CAtomFactoryObj; atom: uint32; h: Hash) =
       break
     let itHome = factory.atomMap[int(it)].hcache and mask
     let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
-    if dist < itDist: # displace
+    if dist > itDist: # displace
       swap(factory.tab[i], atom)
       home = itHome
       dist = itDist
