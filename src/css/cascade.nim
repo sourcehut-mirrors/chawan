@@ -3,7 +3,6 @@
 import std/algorithm
 import std/math
 import std/sets
-import std/tables
 
 import chame/tags
 import config/conftypes
@@ -88,22 +87,31 @@ proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
     ancestors.last = ancestor
   found
 
+proc calcRule(tosorts: var ToSorts; element: Element;
+    depends: var DependencyInfo; rule: CSSRuleDef) =
+  var seen: set[PseudoElement] = {}
+  for sel in rule.sels:
+    if sel.pseudo in seen:
+      continue
+    # skip an arbitrary class from the selector ancestors as an
+    # optimization
+    let ancestorClass = sel.ancestorClass
+    if ancestorClass != CAtomNull and
+        not tosorts.cache.hasClass(ancestorClass):
+      continue
+    if element.matches(sel, depends):
+      tosorts.map[sel.pseudo].add((sel.specificity, rule))
+      seen.incl(sel.pseudo)
+
+proc calcRules(tosorts: var ToSorts; element: Element;
+    depends: var DependencyInfo; rules: RuleTable; name: CAtom) =
+  for rule in rules.getAll(name):
+    tosorts.calcRule(element, depends, rule)
+
 proc calcRules(tosorts: var ToSorts; element: Element;
     depends: var DependencyInfo; rules: openArray[CSSRuleDef]) =
   for rule in rules:
-    var seen: set[PseudoElement] = {}
-    for sel in rule.sels:
-      if sel.pseudo in seen:
-        continue
-      # skip an arbitrary class from the selector ancestors as an
-      # optimization
-      let ancestorClass = sel.ancestorClass
-      if ancestorClass != CAtomNull and
-          not tosorts.cache.hasClass(ancestorClass):
-        continue
-      if element.matches(sel, depends):
-        tosorts.map[sel.pseudo].add((sel.specificity, rule))
-        seen.incl(sel.pseudo)
+    tosorts.calcRule(element, depends, rule)
 
 proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
   for f in CSSImportantFlag: # normal, important
@@ -117,19 +125,15 @@ proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
   var tosorts = ToSorts(
     cache: AncestorCache(last: parentElement, quirks: sheet.quirks)
   )
-  sheet.tagTable.withValue(element.localName, v):
-    tosorts.calcRules(element, depends, v[])
-  if element.id != CAtomNull:
+  tosorts.calcRules(element, depends, sheet.tagTable, element.localName)
+  if element.id != satUempty:
     let id = if quirks: element.id.toLowerAscii() else: element.id
-    sheet.idTable.withValue(id, v):
-      tosorts.calcRules(element, depends, v[])
+    tosorts.calcRules(element, depends, sheet.idTable, id)
   for class in element.classList:
     let class = if quirks: class.toLowerAscii() else: class
-    sheet.classTable.withValue(class, v):
-      tosorts.calcRules(element, depends, v[])
+    tosorts.calcRules(element, depends, sheet.classTable, class)
   for attr in element.attrs:
-    sheet.attrTable.withValue(attr.qualifiedName, v):
-      tosorts.calcRules(element, depends, v[])
+    tosorts.calcRules(element, depends, sheet.attrTable, attr.qualifiedName)
   if parentElement == nil:
     tosorts.calcRules(element, depends, sheet.typeList[shtRoot])
   if parentElement == nil or parentElement.firstElementChild == element:

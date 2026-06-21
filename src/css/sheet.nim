@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import std/tables
-
 import chame/tags
 import css/cssparser
 import css/cssvalues
@@ -52,11 +50,19 @@ type
   SelectorHashType* = enum
     shtGeneral, shtRoot, shtHint, shtFirstChild, shtLastChild
 
+  RuleTableItem = object
+    name: CAtom
+    value: CSSRuleDef
+
+  RuleTable* = object
+    tab: seq[RuleTableItem]
+    load: int
+
   CSSRuleMap* = ref object
-    tagTable*: Table[CAtom, seq[CSSRuleDef]]
-    idTable*: Table[CAtom, seq[CSSRuleDef]]
-    classTable*: Table[CAtom, seq[CSSRuleDef]]
-    attrTable*: Table[CAtom, seq[CSSRuleDef]]
+    tagTable*: RuleTable
+    idTable*: RuleTable
+    classTable*: RuleTable
+    attrTable*: RuleTable
     typeList*: array[SelectorHashType, seq[CSSRuleDef]]
     sheetId: uint32
     anonLayers: uint16
@@ -78,6 +84,52 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
 
 proc newCSSRuleMap*(quirks: bool): CSSRuleMap =
   CSSRuleMap(quirks: quirks)
+
+iterator getAll*(map: RuleTable; name: CAtom): CSSRuleDef =
+  if map.tab.len > 0:
+    let mask = map.tab.len - 1
+    var i = name.hash() and mask
+    while true:
+      let it = map.tab[i]
+      if it.value == nil:
+        break
+      if it.name == name:
+        yield it.value
+      i = (i + 1) and mask
+
+proc put0(map: var RuleTable; name: CAtom; def: CSSRuleDef): bool =
+  let mask = map.tab.len - 1
+  var home = name.hash() and mask
+  var i = home
+  var dist = 0'u32
+  var rtitem = RuleTableItem(name: name, value: def)
+  while true:
+    let it = map.tab[i]
+    if it.value == nil:
+      map.tab[i] = rtitem
+      return true
+    if it == rtitem:
+      break # already added (for tags)
+    let itHome = it.name.hash() and mask
+    let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
+    if dist > itDist: # displace
+      swap(map.tab[i], rtitem)
+      home = itHome
+      dist = itDist
+    i = (i + 1) and mask
+    inc dist
+  false
+
+proc add(map: var RuleTable; name: CAtom; def: CSSRuleDef) =
+  if map.load >= map.tab.len div 2:
+    let nlen = if map.tab.len == 0: 16 else: map.tab.len * 2
+    var oldTab = move(map.tab)
+    map.tab = newSeq[RuleTableItem](nlen)
+    for it in oldTab:
+      if it.value != nil:
+        discard map.put0(it.name, it.value)
+  if map.put0(name, def):
+    inc map.load
 
 proc getSelectorIds(hashes: var SelectorHashes; sels: CompoundSelector) =
   for sel in sels:
@@ -173,28 +225,24 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
   of stUniversal, stNot, stLang, stNthChild, stNthLastChild, stHost:
     return false
 
-proc addIfNotLast(s: var seq[CSSRuleDef]; rule: CSSRuleDef) =
-  if s.len == 0 or s[^1] != rule:
-    s.add(rule)
-
 proc add(sheet: CSSRuleMap; rule: CSSRuleDef) =
   for cxsel in rule.sels:
     var hashes = SelectorHashes()
     hashes.getSelectorIds(cxsel)
     if hashes.id != CAtomNull:
       let id = if sheet.quirks: hashes.id.toLowerAscii() else: hashes.id
-      sheet.idTable.mgetOrPut(id, @[]).add(rule)
+      sheet.idTable.add(id, rule)
     elif hashes.tags.len > 0:
       for tag in hashes.tags:
-        sheet.tagTable.mgetOrPut(tag, @[]).addIfNotLast(rule)
+        sheet.tagTable.add(tag, rule)
     elif hashes.class != CAtomNull:
       let class = if sheet.quirks:
         hashes.class.toLowerAscii()
       else:
         hashes.class
-      sheet.classTable.mgetOrPut(class, @[]).add(rule)
+      sheet.classTable.add(class, rule)
     elif hashes.attr != CAtomNull:
-      sheet.attrTable.mgetOrPut(hashes.attr, @[]).add(rule)
+      sheet.attrTable.add(hashes.attr, rule)
     else:
       sheet.typeList[hashes.t].add(rule)
 
