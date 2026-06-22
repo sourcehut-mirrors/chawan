@@ -230,7 +230,7 @@ macro makeStaticAtom =
 
 makeStaticAtom
 
-const CAtomFactoryInitSize = 2048 # must be a power of 2
+const CAtomFactoryInitSize* = 2048 # must be a power of 2
 
 type
   CAtom* = distinct uint32
@@ -688,5 +688,18 @@ proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
 
 proc toJS*(ctx: JSContext; atom: CAtomTraced): JSValue =
   ctx.toJS(CAtom(atom))
+
+when defined(test):
+  proc testSetHash*(atom: CAtom; h: Hash) =
+    getFactory().atomMap[uint32(atom)].hcache = h
+
+  proc testGetIdx*(atom: CAtom): int =
+    let mask = getFactory().tab.high
+    var i = atom.hash() and mask
+    while true:
+      if factory.tab[i] == uint32(atom):
+        break
+      i = (i + 1) and mask
+    i
 
 {.pop.} # raises: []

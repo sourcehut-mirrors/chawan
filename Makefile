@@ -359,7 +359,7 @@ $(OBJDIR)/chagashi_test:
 	unxz $(OBJDIR)/chagashi_test/data.tar.xz
 	tar xf $(OBJDIR)/chagashi_test/data.tar -C $(OBJDIR)/chagashi_test
 
-test_flags = --verbosity:0 --nimcache:"../../$(OBJDIR)/$(TARGET)/test"
+test_flags = --verbosity:0 --nimcache:"../../$(OBJDIR)/$(TARGET)/test" -d:test
 
 .PHONY: test_charset
 test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
@@ -368,8 +368,9 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
 	CGS_TESTDIR=$(OBJDIR)/chagashi_test $(NIM) r $(test_flags) test/charset/data.nim
 
 .PHONY: test_nim
-test_nim: test/nim/ttwtstr.nim
+test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim
 	(cd test/nim && $(NIM) r $(test_flags) ttwtstr.nim)
+	(cd test/nim && $(NIM) r $(test_flags) tcatom.nim)
 
 .PHONY: test
 test: test_js test_layout test_dhtml test_net test_md test_pager test_charset \
