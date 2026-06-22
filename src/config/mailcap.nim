@@ -13,6 +13,7 @@ import types/opt
 import types/url
 import utils/lrewrap
 import utils/myposix
+import utils/tabutil
 import utils/twtstr
 
 type
@@ -94,13 +95,9 @@ proc put0(mailcap: var Mailcap; list: MailcapList) =
 
 proc put(mailcap: var Mailcap; list: MailcapList) =
   list.hcache = list.t.hash()
-  if mailcap.load >= mailcap.tab.len div 2:
-    let nlen = if mailcap.tab.len == 0: 16 else: mailcap.tab.len * 2
-    var oldTab = move(mailcap.tab)
-    mailcap.tab = newSeq[MailcapList](nlen)
-    for it in oldTab:
-      if it != nil:
-        mailcap.put0(it)
+  for it in mailcap.tab.prepareTableAdd(mailcap.load, init = 16):
+    if it != nil:
+      mailcap.put0(it)
   mailcap.put0(list)
   inc mailcap.load
 

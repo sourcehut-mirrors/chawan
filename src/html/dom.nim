@@ -53,6 +53,7 @@ import types/url
 import types/winattrs
 import utils/dtoawrap
 import utils/strwidth
+import utils/tabutil
 import utils/twtstr
 
 type
@@ -3479,7 +3480,6 @@ proc addElementId0(document: Document; element: Element) =
   let mask = document.elementIdMap.len - 1
   var home = element.id.hash() and mask
   var i = home
-  var dist = 0u32
   var element = element
   while true:
     let it = document.elementIdMap[i]
@@ -3490,25 +3490,18 @@ proc addElementId0(document: Document; element: Element) =
     # * "it"'s id is closer to its home than element's id
     # * or if "it" has the same id as element, but element comes earlier
     # then swap out "it" for element.
-    let itHome = it.id.hash() and mask
-    let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
-    if dist > itDist or it.id == element.id and element.precedes(it):
+    let ihash = it.id.hash()
+    if tabSwap(home, ihash, i, mask) or
+        it.id == element.id and element.precedes(it):
       swap(document.elementIdMap[i], element)
-      home = itHome
-      dist = itDist
+      home = ihash and mask
     i = (i + 1) and mask
-    inc dist
 
 proc addElementId(document: Document; element: Element) =
-  if document.elementIdMapLoad >= document.elementIdMap.len div 2:
-    var newLen = document.elementIdMap.len * 2
-    if newLen == 0:
-      newLen = 32
-    var oldTab = move(document.elementIdMap)
-    document.elementIdMap = newSeq[Element](newLen)
-    for it in oldTab:
-      if it != nil:
-        document.addElementId0(it)
+  let oldLoad = document.elementIdMapLoad
+  for it in document.elementIdMap.prepareTableAdd(oldLoad, init = 32):
+    if it != nil:
+      document.addElementId0(it)
   inc document.elementIdMapLoad
   document.addElementId0(element)
 

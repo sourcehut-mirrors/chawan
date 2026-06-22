@@ -8,6 +8,7 @@ import html/catom
 import html/script
 import types/opt
 import types/url
+import utils/tabutil
 
 type
   CSSRuleDef* = ref object
@@ -101,7 +102,6 @@ proc put0(map: var RuleTable; name: CAtom; def: CSSRuleDef): bool =
   let mask = map.tab.len - 1
   var home = name.hash() and mask
   var i = home
-  var dist = 0'u32
   var rtitem = RuleTableItem(name: name, value: def)
   while true:
     let it = map.tab[i]
@@ -110,24 +110,15 @@ proc put0(map: var RuleTable; name: CAtom; def: CSSRuleDef): bool =
       return true
     if it == rtitem:
       break # already added (for tags)
-    let itHome = it.name.hash() and mask
-    let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
-    if dist > itDist: # displace
+    if tabSwap(home, it.name.hash(), i, mask): # displace
       swap(map.tab[i], rtitem)
-      home = itHome
-      dist = itDist
     i = (i + 1) and mask
-    inc dist
   false
 
 proc add(map: var RuleTable; name: CAtom; def: CSSRuleDef) =
-  if map.load >= map.tab.len div 2:
-    let nlen = if map.tab.len == 0: 16 else: map.tab.len * 2
-    var oldTab = move(map.tab)
-    map.tab = newSeq[RuleTableItem](nlen)
-    for it in oldTab:
-      if it.value != nil:
-        discard map.put0(it.name, it.value)
+  for it in map.tab.prepareTableAdd(map.load, init = 16):
+    if it.value != nil:
+      discard map.put0(it.name, it.value)
   if map.put0(name, def):
     inc map.load
 

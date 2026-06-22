@@ -13,6 +13,7 @@ import types/opt
 import types/refstring
 import types/winattrs
 import utils/dtoawrap
+import utils/tabutil
 import utils/twtstr
 
 export CSSPropertyType
@@ -632,13 +633,9 @@ proc getOrDefault*(map: CSSVariableMap; name: CAtom): CSSVariable =
   nil
 
 proc putIfAbsent*(map: CSSVariableMap; cvar: CSSVariable) =
-  if map.load >= map.tab.len div 2:
-    let nlen = if map.tab.len == 0: 2 else: map.tab.len * 2
-    var oldTab = move(map.tab)
-    map.tab = newSeq[CSSVariable](nlen)
-    for it in oldTab:
-      if it != nil:
-        discard map.put0(it)
+  for it in map.tab.prepareTableAdd(map.load, init = 2):
+    if it != nil:
+      discard map.put0(it)
   if map.put0(cvar):
     inc map.load
 

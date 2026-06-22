@@ -20,6 +20,7 @@ import monoucha/fromjs
 import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt
+import utils/tabutil
 import utils/twtstr
 
 # create a static enum compatible with chame/tags
@@ -338,25 +339,19 @@ proc view*(atom: CAtom): lent CAtomTraced =
 template view*(atom: CAtomTraced): CAtom =
   CAtom(atom)
 
-proc put0(factory: var CAtomFactoryObj; atom: uint32; h: Hash) =
-  let mask = (factory.tab.len - 1)
-  var home = h and mask
+proc put0(factory: var CAtomFactoryObj; atom: uint32) =
+  let mask = factory.tab.len - 1
+  var home = CAtom(atom).hash() and mask
   var i = home
-  var dist = 0u32
   var atom = atom
   while true:
     let it = factory.tab[i]
     if it == 0:
       factory.tab[i] = atom
       break
-    let itHome = factory.atomMap[int(it)].hcache and mask
-    let itDist = (uint32(i) - uint32(itHome)) and uint32(mask)
-    if dist > itDist: # displace
+    if tabSwap(home, CAtom(it).hash(), i, mask): # displace
       swap(factory.tab[i], atom)
-      home = itHome
-      dist = itDist
     i = (i + 1) and mask
-    inc dist
 
 proc get(factory: var CAtomFactoryObj; s: openArray[char]; h: Hash): CAtom =
   let mask = (factory.tab.len - 1)
@@ -380,20 +375,15 @@ proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]): CAtom =
     factory.freeHead = factory.atomMap[factory.freeHead].lower
   else:
     # Not found
-    if factory.atomMap.len >= factory.tab.len div 2:
-      # grow
-      var oldTab = move(factory.tab)
-      factory.tab = newSeq[uint32](oldTab.len * 2)
-      for atom in oldTab:
-        if atom != 0:
-          let h = factory.atomMap[int(atom)].hcache
-          factory.put0(atom, h)
+    for atom in factory.tab.prepareTableAdd(factory.atomMap.len, 0):
+      if atom != 0:
+        factory.put0(atom)
     u = uint32(factory.atomMap.len)
     factory.atomMap.add(AtomDesc())
   let lower = if AsciiUpperAlpha notin s: u else: 0'u32
   factory.atomMap[u] = AtomDesc(lower: lower, refc: 1, hcache: h)
   factory.atomMap[u].s = s.substr()
-  factory.put0(u, h)
+  factory.put0(u)
   return CAtom(u)
 
 proc initCAtomFactory*() =
