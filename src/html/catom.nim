@@ -422,6 +422,9 @@ proc toAtom*(satom: StaticAtom): CAtom =
   assert satom != satUnknown
   return CAtom(satom)
 
+proc toAtomTrace*(satom: StaticAtom): CAtomTraced =
+  satom.toAtom().trace()
+
 template view*(satom: StaticAtom): lent CAtomTraced =
   satom.toAtom().view()
 
@@ -430,6 +433,40 @@ proc `$`*(atom: CAtom): lent string =
 
 proc `$`*(atom: CAtomTraced): lent string =
   $CAtom(atom)
+
+proc find*(atom: CAtom; c: char): int =
+  ($atom).find(c)
+
+proc find*(atom: CAtomTraced; c: char): int =
+  CAtom(atom).find(c)
+
+proc len*(atom: CAtom): int =
+  ($atom).len
+
+proc len*(atom: CAtomTraced): int =
+  CAtom(atom).len
+
+proc substr*(atom: CAtom; first, last: int): CAtom =
+  let atomLen = atom.len
+  if first >= atomLen:
+    return satUempty.toAtom()
+  let last = min(last, atomLen - 1)
+  ($atom).toOpenArray(first, last).toAtom()
+
+proc substr*(atom: CAtom; first: int): CAtom =
+  atom.substr(first, ($atom).high)
+
+proc substrTrace*(atom: CAtomTraced; first, last: int): CAtomTraced =
+  CAtom(atom).substr(first, last).trace()
+
+proc substrTrace*(atom: CAtomTraced; first: int): CAtomTraced =
+  CAtom(atom).substr(first).trace()
+
+proc contains*(atom: CAtomTraced; c: char): bool =
+  c in $atom
+
+proc contains*(atom: CAtomTraced; cs: set[char]): bool =
+  cs in $atom
 
 proc toLowerAscii*(a: CAtom): CAtom =
   let factory = getFactory()
@@ -441,6 +478,12 @@ proc toLowerAscii*(a: CAtom): CAtom =
 
 proc toLowerAscii*(a: CAtomTraced): CAtomTraced =
   CAtom(a).toLowerAscii().trace()
+
+proc toUpperAsciiTrace*(a: CAtom): CAtomTraced =
+  ($a).toUpperAscii().toAtomTrace()
+
+proc toUpperAscii*(a: CAtomTraced): CAtomTraced =
+  CAtom(a).toUpperAsciiTrace()
 
 proc equalsIgnoreCase*(a, b: CAtom): bool =
   a == b or a.toLowerAscii() == b.toLowerAscii()

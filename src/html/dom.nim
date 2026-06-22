@@ -471,7 +471,7 @@ type
 
   Element* = ref object of ParentNode
     namespaceURI* {.jsget.}: CAtom # 4
-    prefix {.jsget.}: CAtom # 8
+    tagName: CAtom # 8, like DOM tagName but not upper-cased
     childElIndicesInvalid: bool # 9
     flags: set[ElementFlag] # 10
     selfDepends: set[DependencyType] # 11
@@ -755,9 +755,9 @@ proc newDocumentFragment(document: Document): DocumentFragment
 proc newProcessingInstruction(document: Document; target: string;
   data: sink string): ProcessingInstruction
 proc newElement*(document: Document; localName: CAtomTraced;
-  namespace = satNamespaceHTML; prefix = satUempty): Element
-proc newElement*(document: Document;
-  localName, namespaceURI, prefix: CAtomTraced): Element
+  namespace = satNamespaceHTML): Element
+proc newElement(document: Document;
+  localName, namespaceURI, tagName: CAtomTraced): Element
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc newHTMLCollection(ctx: JSContext; root: Node; match: CollectionMatchFun;
   islive, childonly: bool): Opt[HTMLCollection]
@@ -845,7 +845,6 @@ proc previousElementSibling*(element: Element): Element
 proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
-proc tagName(element: Element): string
 proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
 
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
@@ -2215,24 +2214,24 @@ proc nodeTypeEnum(node: Node): NodeType =
 proc nodeType(node: Node): uint16 {.jsfget.} =
   return uint16(node.nodeTypeEnum)
 
-proc nodeName(node: Node): string {.jsfget.} =
+proc nodeName(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   if node of Element:
-    return Element(node).tagName
+    return ctx.toJS(Element(node).tagName)
   if node of Attr:
-    return $Attr(node).data.qualifiedName
+    return ctx.toJS(Attr(node).data.qualifiedName)
   if node of DocumentType:
-    return DocumentType(node).name
+    return ctx.toJS(DocumentType(node).name)
   if node of CDATASection:
-    return "#cdata-section"
+    return JS_NewString(ctx, "#cdata-section")
   if node of Comment:
-    return "#comment"
+    return JS_NewString(ctx, "#comment")
   if node of Document:
-    return "#document"
+    return JS_NewString(ctx, "#document")
   if node of DocumentFragment:
-    return "#document-fragment"
+    return JS_NewString(ctx, "#document-fragment")
   if node of ProcessingInstruction:
-    return ProcessingInstruction(node).target
-  return "#text"
+    return ctx.toJS(ProcessingInstruction(node).target)
+  return JS_NewString(ctx, "#text")
 
 proc isValidChild(node: Node): bool =
   return node of DocumentFragment or node of DocumentType or node of Element or
@@ -2553,7 +2552,7 @@ proc clone(node: Node; ctx: JSContext; document = none(Document);
     #TODO is value
     let element = Element(node)
     let x = document.newElement(element.localName.view(),
-      element.namespaceURI.view(), element.prefix.view())
+      element.namespaceURI.view(), element.tagName.view())
     x.id = element.id.dup()
     x.name = element.name.dup()
     for it in element.classList.toks:
@@ -2681,8 +2680,8 @@ proc isEqualNode(node, other: Node): bool {.jsfunc.} =
       if not (other of ParentNode):
         return false
       let other = Element(other)
-      if node.namespaceURI != other.namespaceURI or node.prefix != other.prefix or
-          node.localName != other.localName or node.attrs.len != other.attrs.len:
+      if node.namespaceURI != other.namespaceURI or
+          node.tagName != other.tagName or node.attrs.len != other.attrs.len:
         return false
       for i, attr in node.attrs.mypairs:
         if attr != other.attrs[i]:
@@ -3045,10 +3044,9 @@ proc getElementsByTagNameImpl(ctx: JSContext; root: ParentNode; tagName: string)
     proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
       if node of Element:
         let element = Element(node)
-        #TODO we should be using qualified name here
         if element.namespaceURI == satNamespaceHTML:
-          return ok(element.localName == this.atoms[1])
-        return ok(element.localName == this.atoms[0])
+          return ok(element.tagName == this.atoms[1])
+        return ok(element.tagName == this.atoms[0])
       return ok(false),
     islive = true,
     childonly = false
@@ -3771,13 +3769,6 @@ proc validateName(ctx: JSContext; name: string): Opt[void] =
     return err()
   ok()
 
-proc validateQName(ctx: JSContext; qname: string): Opt[void] =
-  if not qname.matchQNameProduction():
-    JS_ThrowDOMException(ctx, "InvalidCharacterError",
-      "invalid character in qualified name")
-    return err()
-  ok()
-
 proc baseURL*(document: Document): URL =
   #TODO frozen base url...
   var href = ""
@@ -3842,10 +3833,22 @@ proc isValidCustomElementName(atom: CAtomTraced): bool =
     dash = dash or c == '-'
   dash
 
+proc isValidElementName(s: string): bool =
+  if s.len <= 0:
+    return false
+  let c = s[0]
+  if c in AsciiAlpha:
+    return AsciiWhitespace + {'\0', '/', '>'} notin s
+  if c in AsciiDigit + {'-', '.'}:
+    return false
+  return Ascii - AsciiAlphaNumeric - {'-', '.', ':', '_'} notin s
+
 #TODO options/custom elements
 proc createElement(ctx: JSContext; document: Document; localName: string):
-    Opt[Element] {.jsfunc.} =
-  ?ctx.validateName(localName)
+    JSValue {.jsfunc.} =
+  if not isValidElementName(localName):
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "invalid local name")
   let localName = if not document.isxml:
     localName.toAtomLowerTrace()
   else:
@@ -3855,59 +3858,75 @@ proc createElement(ctx: JSContext; document: Document; localName: string):
     satNamespaceHTML
   else:
     satUempty
-  ok(document.newElement(localName, namespace))
+  ctx.toJS(document.newElement(localName, namespace))
 
-proc validateAndExtract(ctx: JSContext; document: Document; qname: string;
-    namespace, prefixOut, localNameOut: var CAtomTraced): Opt[void] =
-  ?ctx.validateQName(qname)
+proc isValidAttributeName(s: string): bool =
+  const AttrDisallowed = AsciiWhitespace + {'\0', '/', '=', '>'}
+  s.len > 0 and AttrDisallowed notin s
+
+type NameValidator = enum
+  nvAttribute, nvElement
+
+proc validateAndExtract(ctx: JSContext; qualifiedName: CAtomTraced;
+    namespace, localNameOut: var CAtomTraced; t: NameValidator): Opt[void] =
   if namespace == satUempty:
     namespace = CAtomNull.dupTrace()
-  var prefix = ""
-  var localName = qname.until(':')
-  if localName.len < qname.len:
-    prefix = move(localName)
-    localName = qname.substr(prefix.len + 1)
-  if namespace == CAtomNull and prefix != "":
-    JS_ThrowDOMException(ctx, "NamespaceError",
-      "got namespace prefix, but no namespace")
+  var prefix = CAtomNull.dupTrace()
+  var localName = qualifiedName.dupTrace()
+  let i = qualifiedName.find(':')
+  if i >= 0:
+    prefix = qualifiedName.substrTrace(0, i - 1)
+    localName = qualifiedName.substrTrace(i + 1)
+    if prefix == satUempty or AsciiWhitespace + {'\0', '/', '>'} in prefix:
+      JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid prefix")
+      return err()
+  let nameOk = case t
+  of nvAttribute:
+    isValidAttributeName($localName)
+  of nvElement:
+    isValidElementName($localName)
+  if not nameOk:
+    JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid local name")
     return err()
   let sns = namespace.toStaticAtom()
-  if prefix == "xml" and sns != satNamespaceXML:
-    JS_ThrowDOMException(ctx, "NamespaceError", "expected XML namespace")
+  let atoms = [prefix.view(), qualifiedName.view()]
+  if namespace == CAtomNull and prefix != satUempty or
+      prefix == satXml and sns != satNamespaceXML or
+      (satXmlns in atoms) != (sns == satNamespaceXMLNS):
+    JS_ThrowDOMException(ctx, "NamespaceError", "unexpected namespace")
     return err()
-  if (qname == "xmlns" or prefix == "xmlns") != (sns == satNamespaceXMLNS):
-    JS_ThrowDOMException(ctx, "NamespaceError", "expected XMLNS namespace")
-    return err()
-  prefixOut = if prefix == "": CAtomNull.dupTrace() else: prefix.toAtomTrace()
-  localNameOut = localName.toAtomTrace()
+  localNameOut = move(localName)
   ok()
 
 proc createElementNS(ctx: JSContext; document: Document;
-    namespace: CAtomTraced; qname: string): Opt[Element] {.jsfunc.} =
+    namespace: CAtomTraced; qualifiedName: CAtomTraced): Opt[Element] {.
+    jsfunc.} =
   var namespace = namespace.dupTrace()
-  var prefix, localName: CAtomTraced
-  ?ctx.validateAndExtract(document, qname, namespace, prefix, localName)
+  var localName: CAtomTraced
+  ?ctx.validateAndExtract(qualifiedName, namespace, localName, nvElement)
   #TODO custom elements (is)
-  ok(document.newElement(localName, namespace, prefix))
+  ok(document.newElement(localName, namespace, qualifiedName))
 
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
 proc createDocumentType(ctx: JSContext; implementation: DOMImplementation;
-    qualifiedName, publicId, systemId: string): Opt[DocumentType] {.jsfunc.} =
-  ?ctx.validateQName(qualifiedName)
+    qualifiedName, publicId, systemId: string): JSValue {.jsfunc.} =
+  if AsciiWhitespace + {'\0', '>'} in qualifiedName:
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "invalid character in qualified name")
   let document = implementation.document
-  ok(document.newDocumentType(qualifiedName, publicId, systemId))
+  ctx.toJS(document.newDocumentType(qualifiedName, publicId, systemId))
 
 proc createDocument(ctx: JSContext; implementation: DOMImplementation;
     namespace: CAtomTraced; qname0: JSValueConst; doctype = none(DocumentType)):
     Opt[XMLDocument] {.jsfunc.} =
   let document = newXMLDocument()
-  var qname = ""
+  var qualifiedName = satUempty.toAtomTrace()
   if not JS_IsNull(qname0):
-    ?ctx.fromJS(qname0, qname)
-  let element = if qname != "":
-    ?ctx.createElementNS(document, namespace, qname)
+    ?ctx.fromJS(qname0, qualifiedName)
+  let element = if qualifiedName != satUempty:
+    ?ctx.createElementNS(document, namespace, qualifiedName)
   else:
     nil
   if doctype.isSome:
@@ -4833,7 +4852,7 @@ proc newAttr(element: Element; dataIdx: int): Attr =
     let prefixs = ($qualifiedName).until(':')
     let prefixLen = prefixs.len
     attr.prefix = prefixs.toAtom()
-    attr.localName = ($qualifiedName).substr(prefixLen + 1).toAtom()
+    attr.localName = qualifiedName.view().substr(prefixLen + 1)
   return attr
 
 proc finalize(attr: Attr) {.jsfin.} =
@@ -4959,7 +4978,7 @@ proc freeAttr(data: AttrData) =
 proc finalize(element: Element) {.jsfin.} =
   freeAtom(element.namespaceURI)
   freeAtom(element.localName)
-  freeAtom(element.prefix)
+  freeAtom(element.tagName)
   freeAtom(element.id)
   freeAtom(element.name)
   for it in element.attrs:
@@ -5028,13 +5047,17 @@ proc tagType*(element: Element; namespace = satNamespaceHTML): TagType =
     return TAG_UNKNOWN
   return element.tagTypeNoNS
 
-proc tagName(element: Element): string {.jsfget.} =
-  result = $element.prefix
-  if result.len > 0:
-    result &= ':'
-  result &= $element.localName
+proc prefix(element: Element): string {.jsfget.} =
+  let i = element.tagName.find(':')
+  if i < 0:
+    return ""
+  return ($element.tagName).substr(0, i - 1)
+
+proc jsTagName(ctx: JSContext; element: Element): JSValue {.
+    jsfget: "tagName".} =
   if element.namespaceURI == satNamespaceHTML:
-    result = result.toUpperAscii()
+    return ctx.toJS(element.tagName.toUpperAsciiTrace())
+  return ctx.toJS(element.tagName)
 
 proc normalizeAttrQName(element: Element; qualifiedName: CAtomTraced):
     CAtomTraced =
@@ -5053,7 +5076,7 @@ proc findAttr(element: Element; qualifiedName: CAtomTraced): int =
   return -1
 
 proc matchesLocalName(qualifiedName: CAtom; localName: CAtomTraced): bool =
-  let i = ($qualifiedName).find(':') + 1
+  let i = qualifiedName.find(':') + 1
   if i == 0:
     return qualifiedName == localName
   return ($qualifiedName).toOpenArray(i, ($qualifiedName).high) == $localName
@@ -5690,8 +5713,8 @@ proc isDisabled*(this: Element): bool =
     return false
 
 #TODO custom elements
-proc newElement*(document: Document;
-    localName, namespaceURI, prefix: CAtomTraced): Element =
+proc newElement(document: Document;
+    localName, namespaceURI, tagName: CAtomTraced): Element =
   let tagType = localName.toTagType()
   let sns = namespaceURI.toStaticAtom()
   let element: Element = case tagType
@@ -5820,7 +5843,7 @@ proc newElement*(document: Document;
   element.name = satUempty.toAtom()
   element.localName = localName.dup()
   element.namespaceURI = namespaceURI.dup()
-  element.prefix = prefix.dup()
+  element.tagName = tagName.dup()
   element.internalNext = document
   element.classList = element.newDOMTokenList(satClass)
   element.internalElIndex = -1
@@ -5831,8 +5854,8 @@ proc newElement*(document: Document;
   element
 
 proc newElement*(document: Document; localName: CAtomTraced;
-    namespace = satNamespaceHTML; prefix = satUempty): Element =
-  return document.newElement(localName, namespace.view(), prefix.view())
+    namespace = satNamespaceHTML): Element =
+  return document.newElement(localName, namespace.view(), localName.dupTrace())
 
 proc renderBlocking(element: Element): bool =
   if element.attr(satBlocking).containsToken("render"):
@@ -6076,23 +6099,10 @@ proc setAttribute(ctx: JSContext; element: Element; qualifiedName: string;
   ok()
 
 proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtomTraced;
-    qualifiedName: string; value: sink string): Opt[void] {.jsfunc.} =
-  ?ctx.validateQName(qualifiedName)
-  let j = qualifiedName.find(':')
-  let sprefix = if j != -1: qualifiedName.substr(0, j - 1) else: ""
-  let qualifiedName = qualifiedName.toAtomTrace()
-  let prefix = sprefix.toAtomTrace()
-  let localName = if j == -1:
-    qualifiedName.dupTrace()
-  else:
-    ($qualifiedName).substr(j + 1).toAtomTrace()
-  let atoms = [prefix.view(), qualifiedName.view()]
-  if prefix != satUempty and namespace == satUempty or
-      prefix == satXml and namespace != satNamespaceXML or
-      satXmlns in atoms and namespace != satNamespaceXMLNS or
-      satXmlns notin atoms and namespace == satNamespaceXMLNS:
-    JS_ThrowDOMException(ctx, "NamespaceError", "unexpected namespace")
-    return err()
+    qualifiedName: CAtomTraced; value: sink string): Opt[void] {.jsfunc.} =
+  var namespace = namespace.dupTrace()
+  var localName: CAtomTraced
+  ?ctx.validateAndExtract(qualifiedName, namespace, localName, nvAttribute)
   element.attrns0(namespace, localName, qualifiedName, value)
   ok()
 
@@ -6544,7 +6554,7 @@ proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues =
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
   #TODO take StaticAtom for tagType
   let element = document.newElement(tagType.toStaticAtom().view(),
-    satNamespaceHTML, satUempty)
+    satNamespaceHTML)
   return HTMLElement(element)
 
 proc crossOrigin(element: HTMLElement): CORSAttribute =
