@@ -5228,6 +5228,12 @@ proc precedes(this, other: Element): bool =
     other = otherParent
   false
 
+proc findAncestorIncl*(element: Element; tagType: TagType): Element =
+  for element in element.branchElems:
+    if element.tagType == tagType:
+      return element
+  return nil
+
 proc scriptingEnabled(element: Element): bool =
   return element.document.scriptingEnabled
 
@@ -5938,9 +5944,8 @@ proc insertionSteps(element: Element): bool =
         window.loadSVG(svg)
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
-    if element.parserInserted:
-      return
-    element.resetFormOwner()
+    if not element.parserInserted:
+      element.resetFormOwner()
   false
 
 proc removingSteps(element: Element) =

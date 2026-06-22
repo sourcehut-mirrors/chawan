@@ -253,25 +253,26 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
   document.mode = element.document.mode
   let state = case element.tagType
   of TAG_TITLE, TAG_TEXTAREA: RCDATA
-  of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES: RAWTEXT
-  of TAG_SCRIPT: SCRIPT_DATA
+  of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES, TAG_SCRIPT,
+      TAG_PLAINTEXT:
+    PLAINTEXT
   of TAG_NOSCRIPT:
     if element.document != nil and element.document.scriptingEnabled:
-      RAWTEXT
+      PLAINTEXT
     else:
       DATA
-  of TAG_PLAINTEXT:
-    PLAINTEXT
   else: DATA
   let root = document.newHTMLElement(TAG_HTML)
   document.insert(root, nil, nil)
+  let form = element.findAncestorIncl(TAG_FORM)
   let opts = HTML5ParserOpts[ParentNode, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: false,
     ctx: some((ParentNode(element), element.localName)),
     initialTokenizerState: state,
     openElementsInit: @[(ParentNode(root), root.localName)],
-    pushInTemplate: element.tagType == TAG_TEMPLATE
+    pushInTemplate: element.tagType == TAG_TEMPLATE,
+    formInit: option(ParentNode(form))
   )
   var parser = initHTML5Parser(builder, opts)
   let res = parser.parseChunk(s.toOpenArray(0, s.high))
