@@ -2566,14 +2566,16 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     const HasNoBaseline = {
       VerticalAlignTop, VerticalAlignMiddle, VerticalAlignBottom
     }
+    #TODO rowspan=0 should make the cell fill all remaining rows.
+    let rowspan = max(cellw.rowspan, 1)
     if cell != nil:
       if cell.computed{"vertical-align"} notin HasNoBaseline:
         baseline = max(cell.state.firstBaseline, baseline)
       row.state.size.h = max(row.state.size.h,
-        cell.state.size.h div cellw.rowspan.toLUnit())
+        cell.state.size.h div rowspan.toLUnit())
     else:
       row.state.size.h = max(row.state.size.h,
-        cellw.real.box.state.size.h div cellw.rowspan.toLUnit())
+        cellw.real.box.state.size.h div rowspan.toLUnit())
     cellw = cellw.next
   cellw = ctx.cellHead
   while cellw != nil:
