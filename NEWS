@@ -1,14 +1,30 @@
 unreleased
 
 * rework handling of Referer header
+* optimize some inefficient descendant CSS selectors
+* optimize getElementById
+* support multi-keyword CSS display values
+* support WindowProxy operations (accessing elements by id on global object)
+* reduce leaks from interned strings
 * fix some bugs in the config parser
 * fix seccomp on LoongArch64
 * fix missing pager.findPrevMark function
 * fix incorrect positioning of `position: absolute' in some cases
 * don't try to render canvas elements without a rendering context
 * fix menu not being dismissed on mouse click in some cases
-* fix some fd leaks in buffers
 * fix unintended scroll on thumb tip mouse button
+* fix display of some dynamically inserted SVGs
+* fix form owner not being reset on control removal
+* fix tracking of owner document for collections
+* fix outerHTML, HTMLOptionsCollection setters
+* fix crash on some Window functions when called from pager
+* fix incorrect positioning of absolute boxes with bottom/right borders
+* fix an OOB in nanosvg
+* fix parsing of var() nested into another var()'s fallback
+* fix CDATASection not being derived from Text
+* fix exceptions being swallowed for JS getters called on the wrong interface
+* fix selector case-sensitivity
+* fix crash on td with rowspan=0
 
 0.4.0 (2026.05.17)
 
