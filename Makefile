@@ -254,7 +254,7 @@ doc/cha-%.7: doc/%.md md2man
 
 .PHONY: clean
 clean:
-	rm -rf "$(OBJDIR)/$(TARGET)"
+	rm -rf "$(OBJDIR)/$(TARGET)" "$(OBJDIR)/chac_cache" "$(OBJDIR)/chagashi_test"
 	rm -f "$(OBJDIR)/chac"
 	(cd lib/chaseccomp && $(MAKE) clean)
 
