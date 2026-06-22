@@ -194,11 +194,8 @@ proc swrite*[T](w: var PacketWriter; s: openArray[T]) =
   for x in s:
     w.swrite(x)
 
-proc swrite*[U, V](w: var PacketWriter; t: Table[U, V]) =
-  w.swrite(t.len)
-  for k, v in t:
-    w.swrite(k)
-    w.swrite(v)
+proc swrite*[U, V](w: var PacketWriter; t: Table[U, V]) {.error.} =
+  discard
 
 proc swrite*(w: var PacketWriter; obj: object) =
   for f in obj.fields:

@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/posix
-import std/tables
 
 import encoding/charset
 import config/config
@@ -208,7 +207,7 @@ type
     charsetOverride*: Charset
     metaRefresh*: MetaRefresh
     charsets*: seq[Charset]
-    imageTypes*: Table[string, string]
+    imageTypes*: MimeTypesImages
     userAgent*: string
     referrer*: string
     userStyle*: string

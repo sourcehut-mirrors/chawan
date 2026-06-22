@@ -2,7 +2,6 @@
 
 import std/os
 import std/posix
-import std/tables
 
 import config/config
 import config/mailcap

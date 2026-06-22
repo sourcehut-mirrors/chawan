@@ -187,16 +187,8 @@ proc sread*[T](r: var PacketReader; s: var seq[T]) =
   for x in s.mitems:
     r.sread(x)
 
-proc sread*[U; V](r: var PacketReader; t: var Table[U, V]) =
-  var len {.noinit.}: int
-  r.sread(len)
-  t = initTable[U, V](len)
-  for i in 0..<len:
-    var k: U
-    r.sread(k)
-    var v: V
-    r.sread(v)
-    t[k] = v
+proc sread*[U; V](r: var PacketReader; t: var Table[U, V]) {.error.} =
+  discard
 
 proc sread*(r: var PacketReader; obj: var object) =
   obj = default(typeof(obj))

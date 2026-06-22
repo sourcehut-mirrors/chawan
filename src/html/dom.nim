@@ -174,7 +174,7 @@ type
     imageId: int
     # list of streams that must be closed for canvas rendering on load
     pendingCanvasCtls*: seq[CanvasRenderingContext2D]
-    imageTypes*: Table[string, string]
+    imageTypes*: MimeTypesImages
     userAgent*: string
     referrer* {.jsget.}: string
     performance* {.jsget.}: Performance
@@ -1682,8 +1682,8 @@ proc loadImage0(opaque: RootRef; response: Response) =
     window.loader.close(response)
     window.imageLoaded()
     return
-  var t = contentType.after('/')
-  if t == "x-unknown":
+  var subtype = contentType.after('/')
+  if subtype == "x-unknown":
     let ext = response.url.pathname.getFileExt()
     # Note: imageTypes is taken from mime.types.
     # To avoid fingerprinting, we
@@ -1694,9 +1694,14 @@ proc loadImage0(opaque: RootRef; response: Response) =
     #    ourselves
     # In fact, a) would by itself be enough, but I'm not sure if
     # it's the best way, so I added b) as a fallback measure.
-    t = window.imageTypes.getOrDefault(ext, "x-unknown")
+    let i = window.imageTypes.binarySearch(ext,
+      proc(x: MimeTypesImageItem; ext: string): int {.nimcall.} =
+        cmp(x.ext, ext)
+    )
+    if i >= 0:
+      subtype = window.imageTypes[i].subtype
   cachedURL.cacheId = window.loader.addCacheFile(response.outputId)
-  let url = parseURL0("img-codec+" & t & ":decode")
+  let url = parseURL0("img-codec+" & subtype & ":decode")
   if url == nil:
     window.loader.close(response)
     window.imageLoaded()
@@ -1707,7 +1712,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
     body = RequestBody(t: rbtOutput, outputId: response.outputId),
   )
-  cachedURL.t = t
+  cachedURL.t = subtype
   window.corsFetch(request, loadImageFinish, opaque)
   window.loader.close(response)
   var expiry = -1i64

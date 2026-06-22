@@ -41,9 +41,16 @@ const DefaultImages = [
 type
   MimeTypesTable* = Table[string, string] # ext -> type
 
+  MimeTypesImageItem* = tuple[ext, subtype: string]
+
+  MimeTypesImages* = seq[MimeTypesImageItem]
+
   MimeTypes* = object
     t*: MimeTypesTable
-    image*: Table[string, string] # ext -> image/(\w*)
+    image*: MimeTypesImages # ext -> image/(\w*)
+
+proc cmpMimeTypesImageItem*(x: MimeTypesImageItem; ext: string): int =
+  cmp(x.ext, ext)
 
 proc parseMimeTypes*(mimeTypes: var MimeTypes; file: ChaFile): Opt[void] =
   var line: string
@@ -62,7 +69,10 @@ proc parseMimeTypes*(mimeTypes: var MimeTypes; file: ChaFile): Opt[void] =
         # As a fingerprinting countermeasure: prevent additional
         # extensions for predefined inline image type detection.
         if t notin DefaultImages:
-          mimeTypes.image[ext] = t
+          mimeTypes.image.add((ext, t))
+  mimeTypes.image.sort(proc(a, b: MimeTypesImageItem): int {.nimcall.} =
+    cmp(a.ext, b.ext)
+  )
   ok()
 
 proc guessContentType*(mimeTypes: MimeTypesTable; path: string;

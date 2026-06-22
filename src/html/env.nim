@@ -1,8 +1,7 @@
 {.push raises: [].}
 
-import std/tables
-
 import config/conftypes
+import config/mimetypes
 import css/cssparser
 import css/mediaquery
 import html/catom
@@ -672,7 +671,7 @@ proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     headless: HeadlessMode; attrsp: ptr WindowAttributes; loader: FileLoader;
-    url: URL; urandom: PosixStream; imageTypes: Table[string, string];
+    url: URL; urandom: PosixStream; imageTypes: MimeTypesImages;
     userAgent, referrer, contentType: string): Window =
   let window = Window(
     console: newConsole(cast[ChaFile](stderr)),
