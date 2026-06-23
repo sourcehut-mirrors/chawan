@@ -1808,7 +1808,7 @@ proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueConst;
   if JS_IsUndefined(val):
     s = pager.defaultEnv()
     return fjOk
-  var record: JSKeyValuePair[string, string]
+  var record: JSKeyValuePair[string]
   ?ctx.fromJS(val, record)
   s = move(record.s)
   fjOk

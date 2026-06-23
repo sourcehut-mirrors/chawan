@@ -1178,7 +1178,7 @@ proc newURLSearchParams(ctx: JSContext; init: JSValueConst = JS_UNDEFINED):
   if not JS_IsUndefined(init):
     if ctx.fromJS(init, params.list).isOk:
       discard
-    elif (var t: JSKeyValuePair[string, string]; ctx.fromJS(init, t).isOk):
+    elif (var t: JSKeyValuePair[string]; ctx.fromJS(init, t).isOk):
       params.list = move(t.s)
     else:
       var res: string

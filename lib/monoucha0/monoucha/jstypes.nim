@@ -59,7 +59,7 @@ proc base*(view: JSArrayBufferView): ptr UncheckedArray[uint8] =
   return cast[ptr UncheckedArray[uint8]](addr view.abuf.p[view.offset])
 
 # A key-value pair: in WebIDL terms, this is a record.
-type JSKeyValuePair*[K, T] = object
+type JSKeyValuePair*[T] = object
   s*: seq[tuple[name: string; value: T]]
 
 {.pop.} # raises

@@ -26,8 +26,8 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]):
   FromJSResult
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]):
   FromJSResult
-proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
-  res: var JSKeyValuePair[A, B]): FromJSResult
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSKeyValuePair[T]):
+  FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): FromJSResult
 proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
   FromJSResult
@@ -272,32 +272,29 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): FromJSResul
   JS_FreeValue(ctx, nextMethod)
   status
 
-proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
-    res: var JSKeyValuePair[A, B]): FromJSResult =
-  if JS_IsException(val):
-    return fjErr
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSKeyValuePair[T]):
+    FromJSResult =
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
   let flags = JS_GPN_STRING_MASK
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
     return fjErr
-  var tmp = newSeqOfCap[tuple[name: A, value: B]](plen)
+  var tmp = newSeqOfCap[tuple[name: string; value: T]](plen)
   for i in 0 ..< plen:
     let atom = ptab[i].atom
-    let k = JS_AtomToValue(ctx, atom)
-    var kn: A
-    if ctx.fromJSFree(k, kn).isErr:
+    var kn: string
+    if ctx.fromJS(atom, kn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
       return fjErr
     let v = JS_GetProperty(ctx, val, atom)
-    var vn: B
+    var vn: T
     if ctx.fromJSFree(v, vn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
       return fjErr
     tmp.add((move(kn), move(vn)))
   JS_FreePropertyEnum(ctx, ptab, plen)
-  res = JSKeyValuePair[A, B](s: move(tmp))
+  res = JSKeyValuePair[T](s: move(tmp))
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): FromJSResult =

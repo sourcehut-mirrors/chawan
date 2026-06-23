@@ -76,7 +76,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     if ctx.fromJS(val, res.s).isOk:
       return fjOk
   res = HeadersInit()
-  var record: JSKeyValuePair[string, string]
+  var record: JSKeyValuePair[string]
   ?ctx.fromJS(val, record)
   res.s = move(record.s)
   fjOk
