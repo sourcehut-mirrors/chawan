@@ -453,7 +453,7 @@ link-hint-chars = "abcdefghijklmnoprstuvxyz"
 
 Examples:
 
-```
+```toml
 [input]
 vi-numeric-prefix = true
 
@@ -673,7 +673,7 @@ anything as long it doesn't conflict with other keys.)
 
 Examples:
 
-```
+```toml
 # Search using DuckDuckGo Lite.
 # (This rule is included in the default config, although C-k invokes
 # Brave search.)
@@ -734,7 +734,8 @@ Most siteconf options can also be specified globally; see the
 "overrides" field.
 
 Examples:
-```
+
+```toml
 # Enable cookies on the orange website for log-in.
 [siteconf.hn]
 url = 'https://news\.ycombinator\.com/.*'

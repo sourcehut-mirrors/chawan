@@ -456,14 +456,14 @@ this option.
 Examples:
 .IP
 .EX
-[input]
+\f[B][input]\f[R]
 vi\-numeric\-prefix = true
 
-[page]
-# Here, the arrow function will be called with the vi numbered prefix if
-# one was input, and with no argument otherwise.
-# The numeric prefix can never be zero, so it is safe to test for undefined
-# using the ternary operator.
+\f[B][page]\f[R]
+\f[I]# Here, the arrow function will be called with the vi numbered prefix if\f[R]
+\f[I]# one was input, and with no argument otherwise.\f[R]
+\f[I]# The numeric prefix can never be zero, so it is safe to test for undefined\f[R]
+\f[I]# using the ternary operator.\f[R]
 G = \(aqn => n ? pager.gotoLine(n) : pager.cursorLastLine()\(aq
 .EE
 .SS Network
@@ -697,23 +697,23 @@ doesn\(cqt conflict with other keys.)
 Examples:
 .IP
 .EX
-# Search using DuckDuckGo Lite.
-# (This rule is included in the default config, although C\-k invokes
-# Brave search.)
-[omnirule.ddg]
+\f[I]# Search using DuckDuckGo Lite.\f[R]
+\f[I]# (This rule is included in the default config, although C\-k invokes\f[R]
+\f[I]# Brave search.)\f[R]
+\f[B][omnirule.ddg]\f[R]
 match = \(aq\(haddg:\(aq
 substitute\-url = \(aq(x) => \(dqhttps://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1&q=\(dq + encodeURIComponent(x.split(\(dq:\(dq).slice(1).join(\(dq:\(dq))\(aq
 
-# To use the above rule, open the URL bar with C\-k, clear it with
-# C\-u, and type ddg:keyword.
-# Alternatively, you can also redefine C\-k like:
-[page]
+\f[I]# To use the above rule, open the URL bar with C\-k, clear it with\f[R]
+\f[I]# C\-u, and type ddg:keyword.\f[R]
+\f[I]# Alternatively, you can also redefine C\-k like:\f[R]
+\f[B][page]\f[R]
 \(aqC\-k\(aq = \(aq() => pager.load(\(dqddg:\(dq)\(aq
 
-# Search using Wikipedia, Firefox\-style.
-# The [[omnirule]] syntax introduces an anonymous omnirule; it is
-# equivalent to the named one.
-[[omnirule]]
+\f[I]# Search using Wikipedia, Firefox\-style.\f[R]
+\f[I]# The [[omnirule]] syntax introduces an anonymous omnirule; it is\f[R]
+\f[I]# equivalent to the named one.\f[R]
+\f[B][[omnirule]]\f[R]
 match = \(aq\(ha\(atwikipedia\(aq
 substitute\-url = \(aq(x) => \(dqhttps://en.wikipedia.org/wiki/Special:Search?search=\(dq + encodeURIComponent(x.replace(/\(atwikipedia/, \(dq\(dq))\(aq
 .EE
@@ -762,13 +762,13 @@ Most siteconf options can also be specified globally; see the
 Examples:
 .IP
 .EX
-# Enable cookies on the orange website for log\-in.
-[siteconf.hn]
+\f[I]# Enable cookies on the orange website for log\-in.\f[R]
+\f[B][siteconf.hn]\f[R]
 url = \(aqhttps://news\(rs.ycombinator\(rs.com/.*\(aq
 cookie = true
 
-# Redirect npr.org to text.npr.org.
-[siteconf.npr]
+\f[I]# Redirect npr.org to text.npr.org.\f[R]
+\f[B][siteconf.npr]\f[R]
 host = \(aq(www\(rs.)?npr\(rs.org\(aq
 rewrite\-url = \(aq\(aq\(aq
 (x) => {
@@ -779,21 +779,21 @@ rewrite\-url = \(aq\(aq\(aq
 }
 \(aq\(aq\(aq
 
-# Allow cookie sharing on *sr.ht domains.
-[siteconf.sr\-ht]
-host = \(aq(.*\(rs.)?sr\(rs.ht\(aq # either \(aqsomething.sr.ht\(aq or \(aqsr.ht\(aq
-cookie = true # enable cookies (read\-only; use \(dqsave\(dq to persist them)
-share\-cookie\-jar = \(aqsr.ht\(aq # use the cookie jar of \(aqsr.ht\(aq for all matched hosts
+\f[I]# Allow cookie sharing on *sr.ht domains.\f[R]
+\f[B][siteconf.sr\-ht]\f[R]
+host = \(aq(.*\(rs.)?sr\(rs.ht\(aq \f[I]# either \(aqsomething.sr.ht\(aq or \(aqsr.ht\(aq\f[R]
+cookie = true \f[I]# enable cookies (read\-only; use \(dqsave\(dq to persist them)\f[R]
+share\-cookie\-jar = \(aqsr.ht\(aq \f[I]# use the cookie jar of \(aqsr.ht\(aq for all matched hosts\f[R]
 
-# Use the \(dqvector\(dq skin on Wikipedia.
-# The [[siteconf]] syntax introduces an anonymous siteconf; it is
-# equivalent to the above ones.
-[[siteconf]]
+\f[I]# Use the \(dqvector\(dq skin on Wikipedia.\f[R]
+\f[I]# The [[siteconf]] syntax introduces an anonymous siteconf; it is\f[R]
+\f[I]# equivalent to the above ones.\f[R]
+\f[B][[siteconf]]\f[R]
 url = \(aq\(hahttps?://[a\-z]+\(rs.wikipedia\(rs.org/wiki/(?!.*useskin=.*)\(aq
 rewrite\-url = \(aqx => x.searchParams.append(\(dquseskin\(dq, \(dqvector\(dq)\(aq
 
-# Make imgur send us images.
-[siteconf.imgur]
+\f[I]# Make imgur send us images.\f[R]
+\f[B][siteconf.imgur]\f[R]
 host = \(aq(i\(rs.)?imgur\(rs.com\(aq
 default\-headers = {
 	User\-Agent = \(dqMozilla/5.0 chawan\(dq,
