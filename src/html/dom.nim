@@ -327,7 +327,7 @@ type
   DOMTokenList = ref object
     toks: seq[CAtom]
     element: Element
-    localName: CAtom
+    localName: StaticAtom
 
   DOMStringMap = ref object
     target: HTMLElement
@@ -4364,10 +4364,9 @@ proc detach(this: NodeIterator) {.jsfunc.} =
 
 # DOMTokenList
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList =
-  return DOMTokenList(element: element, localName: name.toAtom())
+  return DOMTokenList(element: element, localName: name)
 
 proc finalize(tokenList: DOMTokenList) {.jsfin.} =
-  freeAtom(tokenList.localName)
   freeAtoms(tokenList.toks)
 
 iterator items*(tokenList: DOMTokenList): CAtom {.inline.} =
@@ -4482,7 +4481,7 @@ const SupportedTokensMap = {
 
 proc supports(ctx: JSContext; tokenList: DOMTokenList; token: string): JSValue
     {.jsfunc.} =
-  let localName = tokenList.localName.toStaticAtom()
+  let localName = tokenList.localName
   for it in SupportedTokensMap:
     if it[0] == localName:
       let lowercase = token.toLowerAscii()
