@@ -109,11 +109,18 @@ if (params[0] == "log") {
 	const file = params.findLast(x => x[0] != '-');
 	cmd = encodeURIComponent(`blame ${flags}%s --`);
 	/* silence some useless info */
-	params.splice(1, 0, "-s");
-	const re = /([a-f0-9]{7}[a-f0-9]*) ([^ ]+)? *([0-9]+)\)/g;
+	params.splice(1, 0, "-sP");
+	const re = /([a-f0-9]{7}[a-f0-9]*) *([^ ]+ +)?([0-9]+)\)/g;
 	function sub(_, x, y, z) {
+		if (y != null)
+			y = y.trimEnd();
 		const f = y ? op + y : file;
-		return `<a id=${z} href='${showUrl}%20${x}&backlink=${cmd}%20${f}%20${z}'>${x}</a>`;
+		let backlink = cmd;
+		if (f.length > 0)
+			backlink += '%20' + f;
+		if (z.length > 0)
+			backlink += '%20' + z;
+		return `<a id=${z} href='${showUrl}%20${x}&backlink=${backlink}'>${x}</a>`;
 	}
 	runGitCmd(config, params, re, sub);
 } else if (params[0] == "branch" &&
@@ -150,7 +157,7 @@ if (params[0] == "log") {
 	}
 	runGitCmd(config, params, re, sub);
 } else {
-	const safeForGet = ["show", "diff", "blame", "status"];
+	const safeForGet = ["show", "diff", "status"];
 	if (std.getenv("REQUEST_METHOD") != "POST" &&
 		!safeForGet.includes(params[0])) {
 		std.out.puts(`Status: 403\nContent-Type: text/plain\n\nnot allowed`);
