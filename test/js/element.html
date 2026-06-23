@@ -11,6 +11,7 @@ const x = document.getElementById("x");
 function testName() {
 	assertEquals(x.localName, "div");
 	assertEquals(x.tagName, "DIV");
+	assertEquals(x.nodeName, "DIV");
 	assertEquals(x.name, undefined);
 	assertEquals(document.createElement("div").id, "");
 }

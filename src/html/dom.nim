@@ -838,6 +838,7 @@ proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
+proc jsTagName(ctx: JSContext; element: Element): JSValue
 proc nextDisplayedElement(element: Element): Element
 proc outerHTML(element: Element): string
 proc postConnectionSteps(element: Element)
@@ -2222,7 +2223,7 @@ proc nodeType(node: Node): uint16 {.jsfget.} =
 
 proc nodeName(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   if node of Element:
-    return ctx.toJS(Element(node).tagName)
+    return ctx.jsTagName(Element(node))
   if node of Attr:
     return ctx.toJS(Attr(node).data.qualifiedName)
   if node of DocumentType:
