@@ -3044,20 +3044,20 @@ proc getElementsByTagNameImpl(ctx: JSContext; root: ParentNode; tagName: string)
     return ctx.newHTMLCollection(root, isElement, islive = true,
       childonly = false)
   let localName = tagName.toAtom()
-  let localNameLower = localName.toLowerAscii()
   let this = ?ctx.newHTMLCollection(
     root,
     proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
       if node of Element:
         let element = Element(node)
+        let atom = this.atoms[0]
         if element.namespaceURI == satNamespaceHTML:
-          return ok(element.tagName == this.atoms[1])
-        return ok(element.tagName == this.atoms[0])
+          return ok(element.tagName.equalsIgnoreCase(atom))
+        return ok(element.tagName == atom)
       return ok(false),
     islive = true,
     childonly = false
   )
-  this.atoms = @[localName, localNameLower]
+  this.atoms = @[localName]
   ok(this)
 
 proc getElementsByClassNameImpl(ctx: JSContext; node: ParentNode;
@@ -3714,7 +3714,7 @@ proc head*(document: Document): HTMLElement {.jsfget.} =
 proc body*(document: Document): HTMLElement {.jsfget.} =
   return document.findFirst(TAG_BODY)
 
-proc getElementById*(document: Document; id: CAtomTraced): Element {.jsfunc.} =
+proc getElementById*(document: Document; id: CAtomTraced): Element =
   if id != satUempty and document.elementIdMap.len > 0:
     let mask = document.elementIdMap.len - 1
     var i = id.view().hash() and mask
@@ -3726,6 +3726,18 @@ proc getElementById*(document: Document; id: CAtomTraced): Element {.jsfunc.} =
         return it
       i = (i + 1) and mask
   nil
+
+proc getElementById(ctx: JSContext; document: Document; val: JSValueConst):
+    JSValue {.jsfunc.} =
+  let atom = JS_ValueToAtom(ctx, val)
+  var id: CAtom
+  let status = ctx.fromJSView(atom, id)
+  JS_FreeAtom(ctx, atom)
+  if status == fjErr:
+    return JS_EXCEPTION
+  if id == CAtomNull:
+    return JS_NULL
+  ctx.toJS(document.getElementById(id.view()))
 
 proc getElementsByName(ctx: JSContext; document: Document; name: CAtomTraced):
     Opt[NodeList] {.jsfunc.} =
@@ -4240,9 +4252,11 @@ proc names(ctx: JSContext; document: Document): JSPropertyEnumList
       list.add($child.name)
   return list
 
-proc getter(ctx: JSContext; document: Document; id: CAtomTraced): JSValue
+proc getter(ctx: JSContext; document: Document; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  if id != satUempty:
+  var id: CAtom
+  ?ctx.fromJSView(atom, id)
+  if id != CAtomNull and id != satUempty:
     #TODO exposed embed, exposed object
     for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
       if child.tagType == TAG_IMG and child.id == id and
@@ -4938,7 +4952,7 @@ proc names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
   let element = map.element
   for attr in element.attrs:
     let name = attr.qualifiedName
-    if element.namespaceURI == satNamespaceHTML and name.toLowerAscii() != name:
+    if element.namespaceURI == satNamespaceHTML and AsciiUpperAlpha in name:
       continue
     list.add($name)
   return list
@@ -5054,7 +5068,7 @@ proc prefix(element: Element): string {.jsfget.} =
 proc jsTagName(ctx: JSContext; element: Element): JSValue {.
     jsfget: "tagName".} =
   if element.namespaceURI == satNamespaceHTML:
-    return ctx.toJS(element.tagName.toUpperAsciiTrace())
+    return ctx.toJS(($element.tagName).toUpperAscii())
   return ctx.toJS(element.tagName)
 
 proc normalizeAttrQName(element: Element; qualifiedName: CAtomTraced):

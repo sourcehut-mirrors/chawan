@@ -521,7 +521,7 @@ proc JS_FreeAtom*(ctx: JSContext; atom: JSAtom)
 proc JS_FreeAtomRT*(rt: JSRuntime; atom: JSAtom)
 proc JS_AtomToValue*(ctx: JSContext; atom: JSAtom): JSValue
 proc JS_AtomToString*(ctx: JSContext; atom: JSAtom): JSValue
-proc JS_AtomToCStringLen*(ctx: JSContext; plen: ptr csize_t; atom: JSAtom):
+proc JS_AtomToCStringLen*(ctx: JSContext; plen: var csize_t; atom: JSAtom):
   cstringConst
 proc JS_AtomToCString*(ctx: JSContext; atom: JSAtom): cstringConst
 proc JS_ValueToAtom*(ctx: JSContext; val: JSValueConst): JSAtom

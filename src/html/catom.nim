@@ -237,7 +237,7 @@ type
 
   AtomDesc = object
     s: string
-    lower: uint32 # if free'd, points to next item in free list
+    freeNext: uint32 # if free'd, points to next item in free list
     refc: uint32
     hcache: Hash
 
@@ -255,23 +255,11 @@ const CAtomNull* = CAtom(0)
 
 # Mandatory Atom functions
 proc `==`*(a, b: CAtom): bool {.borrow.}
-proc freeAtomImpl(u: uint32)
 
 var factory {.global.}: CAtomFactoryObj
 
 template getFactory(): CAtomFactory =
   addr factory
-
-proc freeAtom*(atom: CAtom) =
-  let u = uint32(atom)
-  if u > uint32(StaticAtom.high):
-    let factory = getFactory()
-    let desc = addr factory.atomMap[uint32(atom)]
-    when defined(debug):
-      assert desc.refc > 0
-    dec desc.refc
-    if desc.refc == 0:
-      freeAtomImpl(u)
 
 proc hash*(atom: CAtom): Hash =
   getFactory().atomMap[uint32(atom)].hcache
@@ -279,11 +267,7 @@ proc hash*(atom: CAtom): Hash =
 proc freeAtomImpl(u: uint32) =
   let factory = getFactory()
   factory.atomMap[u].s = ""
-  let lower = factory.atomMap[u].lower
-  if lower != 0 and lower != u:
-    freeAtom(CAtom(lower))
-  let head = factory.freeHead
-  factory.atomMap[u].lower = head
+  factory.atomMap[u].freeNext = factory.freeHead
   factory.freeHead = u
   let mask = (factory.tab.len - 1)
   var i = factory.atomMap[u].hcache and mask
@@ -305,14 +289,24 @@ proc freeAtomImpl(u: uint32) =
     factory.tab[i] = move(factory.tab[j])
     i = j
 
+proc freeAtom*(atom: CAtom) =
+  let u = uint32(atom)
+  if u > uint32(StaticAtom.high):
+    let factory = getFactory()
+    let desc = addr factory.atomMap[uint32(atom)]
+    when defined(debug):
+      assert desc.refc > 0
+    dec desc.refc
+    if desc.refc == 0:
+      freeAtomImpl(u)
+
 proc freeAtoms*(atoms: openArray[CAtom]) =
   for a in atoms:
     freeAtom(a)
 
 proc dup*(atom: CAtom): CAtom =
   let factory = getFactory()
-  let desc = addr factory.atomMap[uint32(atom)]
-  inc desc.refc
+  inc factory.atomMap[uint32(atom)].refc
   atom
 
 proc `=copy`*(x: var CAtomTraced; y: CAtomTraced) {.error.} =
@@ -339,7 +333,7 @@ proc view*(atom: CAtom): lent CAtomTraced =
 template view*(atom: CAtomTraced): CAtom =
   CAtom(atom)
 
-proc put0(factory: var CAtomFactoryObj; atom: uint32) =
+proc put0(factory: CAtomFactory; atom: uint32) =
   let mask = factory.tab.len - 1
   var home = CAtom(atom).hash() and mask
   var i = home
@@ -353,7 +347,7 @@ proc put0(factory: var CAtomFactoryObj; atom: uint32) =
       swap(factory.tab[i], atom)
     i = (i + 1) and mask
 
-proc get(factory: var CAtomFactoryObj; s: openArray[char]; h: Hash): CAtom =
+proc get(factory: CAtomFactory; s: openArray[char]; h: Hash): CAtom =
   let mask = (factory.tab.len - 1)
   var i = h and mask
   while true:
@@ -361,18 +355,19 @@ proc get(factory: var CAtomFactoryObj; s: openArray[char]; h: Hash): CAtom =
     if atom == 0:
       break
     if factory.atomMap[int(atom)].s == s:
-      inc factory.atomMap[int(atom)].refc
       return CAtom(atom)
     i = (i + 1) and mask
   return CAtomNull
 
-proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]): CAtom =
+proc toAtomImpl(factory: CAtomFactory; s: openArray[char];
+    added: var bool): CAtom =
   let h = s.hash()
   if (let atom = factory.get(s, h); atom != CAtomNull):
+    inc factory.atomMap[int(atom)].refc
     return atom
   var u = factory.freeHead
   if u != 0:
-    factory.freeHead = factory.atomMap[factory.freeHead].lower
+    factory.freeHead = factory.atomMap[factory.freeHead].freeNext
   else:
     # Not found
     for atom in factory.tab.prepareTableAdd(factory.atomMap.len, 0):
@@ -380,13 +375,24 @@ proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]): CAtom =
         factory.put0(atom)
     u = uint32(factory.atomMap.len)
     factory.atomMap.add(AtomDesc())
-  let lower = if AsciiUpperAlpha notin s: u else: 0'u32
-  factory.atomMap[u] = AtomDesc(lower: lower, refc: 1, hcache: h)
-  factory.atomMap[u].s = s.substr()
+  factory.atomMap[u] = AtomDesc(refc: 1, hcache: h)
   factory.put0(u)
-  return CAtom(u)
+  added = true
+  CAtom(u)
+
+proc toAtom(factory: CAtomFactory; s: openArray[char]): CAtom =
+  var added = false
+  let atom = factory.toAtomImpl(s, added)
+  if added:
+    factory.atomMap[int(atom)].s = s.substr()
+  atom
+
+proc toAtomView*(s: openArray[char]): CAtom =
+  let h = s.hash()
+  getFactory().get(s, h)
 
 proc initCAtomFactory*() =
+  let factory = getFactory()
   factory.tab = newSeq[uint32](CAtomFactoryInitSize)
   # Null atom
   factory.atomMap.add(AtomDesc())
@@ -395,7 +401,7 @@ proc initCAtomFactory*() =
     discard factory.toAtom($sa)
 
 proc toAtom*(s: openArray[char]): CAtom =
-  return getFactory()[].toAtom(s)
+  return getFactory().toAtom(s)
 
 proc toAtomTrace*(s: openArray[char]): CAtomTraced =
   s.toAtom().trace()
@@ -411,6 +417,15 @@ proc toAtom*(tagType: TagType): CAtom =
 proc toAtom*(satom: StaticAtom): CAtom =
   assert satom != satUnknown
   return CAtom(satom)
+
+proc toAtomLower*(s: openArray[char]): CAtom =
+  let factory = getFactory()
+  var added = false
+  var s = s.toLowerAscii()
+  let atom = factory.toAtomImpl(s, added)
+  if added:
+    factory.atomMap[int(atom)].s = move(s)
+  atom
 
 proc toAtomTrace*(satom: StaticAtom): CAtomTraced =
   satom.toAtom().trace()
@@ -455,38 +470,27 @@ proc substrTrace*(atom: CAtomTraced; first: int): CAtomTraced =
 proc contains*(atom: CAtomTraced; c: char): bool =
   c in $atom
 
-proc contains*(atom: CAtomTraced; cs: set[char]): bool =
+proc contains*(atom: CAtom; cs: set[char]): bool =
   cs in $atom
 
+proc contains*(atom: CAtomTraced; cs: set[char]): bool {.borrow.}
+
 proc toLowerAscii*(a: CAtom): CAtom =
-  let factory = getFactory()
-  var lower = factory.atomMap[int(a)].lower
-  if lower == 0:
-    lower = uint32(($a).toLowerAscii().toAtom())
-    factory.atomMap[int(a)].lower = lower
-  return CAtom(lower).dup()
+  if AsciiUpperAlpha notin a:
+    return a.dup()
+  return ($a).toAtomLower()
 
 proc toLowerAscii*(a: CAtomTraced): CAtomTraced =
   CAtom(a).toLowerAscii().trace()
 
-proc toUpperAsciiTrace*(a: CAtom): CAtomTraced =
-  ($a).toUpperAscii().toAtomTrace()
-
-proc toUpperAscii*(a: CAtomTraced): CAtomTraced =
-  CAtom(a).toUpperAsciiTrace()
-
 proc equalsIgnoreCase*(a, b: CAtom): bool =
-  a == b or a.toLowerAscii() == b.toLowerAscii()
+  a == b or ($a).equalsIgnoreCase($b)
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
-  let a = a.toLowerAscii()
   for it in aa:
-    if a == it.toLowerAscii():
+    if a.equalsIgnoreCase(it):
       return true
   return false
-
-proc toAtomLower*(s: openArray[char]): CAtom =
-  s.toAtom().toLowerAscii()
 
 proc toAtomLowerTrace*(s: openArray[char]): CAtomTraced =
   s.toAtom().toLowerAscii().trace()
@@ -511,14 +515,12 @@ proc toStaticAtom*(atom: CAtom): StaticAtom =
 proc toStaticAtom*(atom: CAtomTraced): StaticAtom {.borrow.}
 
 proc toStaticAtomLower*(atom: CAtomTraced): StaticAtom =
-  let atom = CAtom(atom).toLowerAscii()
-  let res = atom.toStaticAtom()
-  freeAtom(atom)
-  res
+  let atom = CAtom(atom).toLowerAscii().trace()
+  atom.toStaticAtom()
 
 proc toStaticAtom*(s: string): StaticAtom =
   let factory = getFactory()
-  factory[].get(s, s.hash()).toStaticAtom()
+  factory.get(s, s.hash()).toStaticAtom()
 
 proc toNamespace*(atom: CAtom): Namespace =
   case atom.toStaticAtom()
@@ -609,13 +611,33 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtomTraced):
   res = atom.trace()
   status
 
-proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtomTraced): FromJSResult =
-  if val == JS_ATOM_NULL:
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var CAtomTraced): FromJSResult =
+  if atom == JS_ATOM_NULL:
     res = CAtomNull.trace()
   else:
-    var s: string
-    ?ctx.fromJS(val, s)
-    res = s.toAtom().trace()
+    let val = JS_AtomToString(ctx, atom)
+    if JS_IsException(val):
+      return fjErr
+    ?ctx.fromJSFree(val, res)
+  fjOk
+
+proc fromJSView*(ctx: JSContext; atom: JSAtom; res: var CAtom): FromJSResult =
+  if atom == JS_ATOM_NULL:
+    res = CAtomNull
+  else:
+    var len: csize_t
+    let cs = JS_AtomToCStringLen(ctx, len, atom)
+    if cs == nil:
+      return fjErr
+    if len > csize_t(int.high):
+      JS_FreeCString(ctx, cs)
+      JS_ThrowRangeError(ctx, "string length out of bounds")
+      return fjErr
+    {.push overflowChecks: off.}
+    let H = cast[int](len) - 1
+    {.pop.}
+    res = cs.toOpenArray(0, H).toAtomView()
+    JS_FreeCString(ctx, cs)
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var seq[CAtom]): FromJSResult =

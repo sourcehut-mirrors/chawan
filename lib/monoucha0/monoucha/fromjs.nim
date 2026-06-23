@@ -530,7 +530,7 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): FromJSResult =
   var len: csize_t
-  let cs = JS_AtomToCStringLen(ctx, addr len, atom)
+  let cs = JS_AtomToCStringLen(ctx, len, atom)
   if cs == nil:
     return fjErr
   if len > csize_t(int.high):

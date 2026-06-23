@@ -317,10 +317,12 @@ proc windowGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
   #TODO CORS
   #TODO navigables?
   if document != nil:
-    var atom: CAtomTraced
-    if ctx.fromJS(prop, atom).isErr:
+    var id: CAtom
+    if ctx.fromJSView(prop, id).isErr:
       return -1
-    let element = document.getElementById(atom)
+    if id == CAtomNull:
+      return 0
+    let element = document.getElementById(id.view())
     if element != nil:
       if desc != nil:
         let element = ctx.toJS(element)
