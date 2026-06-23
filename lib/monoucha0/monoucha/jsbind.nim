@@ -209,7 +209,6 @@ proc free*(rt: JSRuntime) =
   except Exception:
     quit(1)
   JS_RunGC(rt)
-  assert rtOpaque.destroying == nil
   # Now comes a very elaborate dance to ensure that ordering
   # dependencies are satisfied:
   # * plist must be cleared before finalizers run.
@@ -436,7 +435,7 @@ type
     propHasFun: NimNode # custom has function ident
     propNamesFun: NimNode # custom property names function ident
     finFun: NimNode # finalizer wrapper ident
-    dfin: NimNode # CheckDestroy finalizer ident
+    dfin: NimNode # CanDestroy finalizer ident
     replaceableSetFun: NimNode # replaceable setter function ident
     tabReplaceableNames: NimNode # replaceable names array
     markFun: NimNode # gc_mark for class
@@ -1282,11 +1281,7 @@ proc nimFinalizeForJS*(obj, typeptr: pointer) =
         fin(rt, obj)
       JS_SetOpaque(val, nil)
       rtOpaque.plist.del(obj)
-      if rtOpaque.destroying == obj:
-        # Allow QJS to collect the JSValue through checkDestroy.
-        rtOpaque.destroying = nil
-      else:
-        JS_FreeValueRT(rt, val)
+      JS_FreeValueRT(rt, val)
     do:
       # No JSValue exists for the object, but it likely still expects us to
       # free it.
@@ -1352,44 +1347,42 @@ proc bindGetSet(stmts: NimNode; info: RegistryInfo) =
     else:
       error("Static getters and setters are not supported.")
 
-proc jsCheckDestroy*(rt: JSRuntime; val: JSValueConst): JS_BOOL {.cdecl.} =
+proc jsCanDestroy*(rt: JSRuntime; val: JSValueConst; refCount: ptr cint) {.
+    cdecl.} =
+  {.push overflowChecks, boundChecks: off.}
   let classId = JS_GetClassID(val)
   let opaque = JS_GetOpaque(val, classId)
   if opaque != nil:
-    # Before this function is called, the ownership model is
-    # JSObject -> Nim object.
-    # Here we change it to Nim object -> JSObject.
-    # As a result, Nim object's reference count can now reach zero (it is
-    # no longer "referenced" by the JS object).
-    # nimFinalizeForJS will be invoked by the Nim GC when the Nim
-    # refcount reaches zero. Then, the JS object's opaque will be set
-    # to nil, and its refcount decreased again, so next time this
-    # function will return true.
+    # Before this function is called, the ownership model is JSObject ->
+    # Nim object.  Here we change it to Nim object -> JSObject, so that
+    # the Nim object's reference count can now reach zero.
     #
-    # Actually, we need another hack to ensure correct
-    # operation. GC_unref may call the destructor of this object, and
-    # in this case we cannot ask QJS to keep the JSValue alive. So we set
-    # the "destroying" pointer to the current opaque, and return true if
-    # the opaque was collected.
-    let rtOpaque = rt.getOpaque()
-    rtOpaque.destroying = opaque
+    # To do this, we first increase the JS refcount by two, then decrement
+    # the Nim refcount.  This has a possibility of invoking
+    # nimFinalizeForJS, which decrements the refcount to 1.
+    # Finally, we decrement the refcount here again.
+    #
+    # As a result, QJS sees either
+    # a) refcount is 1, nimFinalizeForJS wasn't invoked and the object must
+    #    be resurrected.
+    # b) refcount is 0 as before, i.e. nimFinalizeForJS was invoked.  The
+    #    object must be free'd.
+    #
+    # An observant reader will note that we could simplify this by just
+    # incrementing by 1 and not decrementing.  The problem with that is
+    # that nimFinalizeForJS can also be invoked by Nim free'ing opaque,
+    # and then we want to free the JSValue on 0-refcount.  But here we
+    # are already inside a free (or cycle collection) and so calling it
+    # again would bring catastrophic consequences.
+    refCount[] += 2
     # We can lie about the type in refc, as it type erases the reference.
     # In ARC, we must do an indirect call.
     when defined(gcDestructors):
-      rtOpaque.classes[classId].dtor(opaque)
+      rt.getOpaque().classes[classId].dtor(opaque)
     else:
       GC_unref(cast[RootRef](opaque))
-    if rtOpaque.destroying == nil:
-      # Looks like GC_unref called nimFinalizeForJS for this pointer.
-      # This means we can allow QJS to collect this JSValue.
-      return true
-    rtOpaque.destroying = nil
-    # Returning false from this function signals to the QJS GC that it
-    # should not be collected yet.  Accordingly, the JSObject's refcount
-    # (and that of its children) will be set to one again, and later its
-    # opaque to NULL.
-    return false
-  return true
+    refCount[] -= 1
+  {.pop.}
 
 proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
   let jsname = info.jsname
@@ -1461,7 +1454,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   if name != "":
     info.name = name
   if not asglobal:
-    info.dfin = quote do: jsCheckDestroy
+    info.dfin = quote do: jsCanDestroy
     if info.tname notin jsDtors:
       warning("No destructor has been defined for type " & info.tname)
   else:

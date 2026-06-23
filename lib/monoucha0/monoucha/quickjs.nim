@@ -128,8 +128,9 @@ type
   JSAtom* {.importc: "JSAtom", header: qjsheader.} = distinct uint32
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
     cdecl, raises: [].}
-  JSClassCheckDestroy* = proc(rt: JSRuntime; val: JSValueConst): JS_BOOL
-    {.cdecl, raises: [].}
+  JSClassCanDestroy* =
+    proc(rt: JSRuntime; val: JSValueConst; refCount: ptr cint) {.
+      cdecl, raises: [].}
   JSClassGCMark* = proc(rt: JSRuntime; val: JSValueConst;
     mark_func: JS_MarkFunc) {.cdecl, raises: [].}
   JS_MarkFunc* = proc(rt: JSRuntime; gp: ptr JSGCObjectHeader) {.
@@ -206,7 +207,7 @@ type
     # if the object constructor bit is set (see JS_SetConstructorBit()).
     call*: JSClassCallP
     exotic*: JSClassExoticMethodsConst
-    can_destroy*: JSClassCheckDestroy
+    can_destroy*: JSClassCanDestroy
 
   JSClassDefConst* {.importc: "const JSClassDef *",
     header: qjsheader.} = ptr JSClassDef

@@ -528,7 +528,7 @@ typedef void JSClassGCMark(JSRuntime *rt, JSValueConst val,
 typedef JSValue JSClassCall(JSContext *ctx, JSValueConst func_obj,
                             JSValueConst this_val, int argc, JSValueConst *argv,
                             int flags);
-typedef JS_BOOL JSClassCanDestroy(JSRuntime *rt, JSValueConst val);
+typedef void JSClassCanDestroy(JSRuntime *rt, JSValueConst val, int *ref_count);
 
 typedef struct JSClassDef {
     const char *class_name;

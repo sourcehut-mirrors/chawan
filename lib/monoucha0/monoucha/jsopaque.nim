@@ -69,7 +69,6 @@ type
     typemap*: Table[pointer, JSClassID] # getTypePtr -> JSClassID
     enumMap*: seq[EnumMapEntry]
     plist*: Table[pointer, pointer] # Nim -> JS
-    destroying*: pointer
     # temp list for uninit
     tmplist*: seq[tuple[nimp, jsp: pointer]]
 
