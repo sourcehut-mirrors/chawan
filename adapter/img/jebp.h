@@ -771,7 +771,7 @@ static jebp_error_t jebp__read_riff_chunk(jebp__riff_reader_t *riff,
 //  G = 255 * ((Y-16)/219 - (Cr-128)/224 * (1.402*0.299/0.587) - (Cb-128)/224 *
 //      (1.772*0.114/0.587))
 #define JEBP__CONVERT_G(y, u, v)                                               \
-    JEBP__CLAMP_UBYTE(((y)*298 - (u)*208 - (v)*100 + 34707) >> 8)
+    JEBP__CLAMP_UBYTE(((y)*298 - (u)*100 - (v)*208 + 34707) >> 8)
 //  B = 255 * ((Y-16)/219 + (Cb-128)/224 * 1.772)
 #define JEBP__CONVERT_B(y, u)                                                  \
     JEBP__CLAMP_UBYTE(((y)*298 + (u)*516 - 70870) >> 8)
