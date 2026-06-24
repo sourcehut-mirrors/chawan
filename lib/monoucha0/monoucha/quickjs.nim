@@ -877,5 +877,26 @@ proc JS_SetModulePrivateValue*(ctx: JSContext; m: JSModuleDef;
   val: JSValue): cint ## associate a JSValue to a C module
 proc JS_GetModulePrivateValue*(ctx: JSContext; m: JSModuleDef): JSValue
 
+# debug value output
+type
+  JSPrintValueOptions {.importc.} = object
+    show_hidden {.bitsize: 8.}: JS_BOOL # only show enumerable properties
+    raw_dump {.bitsize: 8.}: JS_BOOL # avoid doing autoinit and avoid any
+                                     # malloc() call (for internal use)
+    max_depth: uint32 # recurse up to this depth, 0 = no limit
+    max_string_length: uint32 # print no more than this length for
+                              # strings, 0 = no limit
+    max_item_count: uint32 # print no more than this count for arrays or
+                           # objects, 0 = no limit
+
+  JSPrintValueWrite = proc(opaque: pointer; buf: cstringConst; len: csize_t) {.
+    cdecl, raises: [].}
+
+proc JS_PrintValueSetDefaultOptions*(options: ptr JSPrintValueOptions)
+proc JS_PrintValueRT*(rt: JSRuntime; write_func: JSPrintValueWrite;
+  write_opaque: pointer; val: JSValueConst; options: ptr JSPrintValueOptions)
+proc JS_PrintValue*(ctx: JSContext; write_func: JSPrintValueWrite;
+  write_opaque: pointer; val: JSValueConst; options: ptr JSPrintValueOptions)
+
 {.pop.} # header, importc
 {.pop.} # raises

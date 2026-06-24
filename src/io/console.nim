@@ -45,19 +45,26 @@ proc log*(console: Console; ss: varargs[string]) =
 proc error*(console: Console; ss: varargs[string]) =
   console.log(ss)
 
+proc consoleWriteCb(opaque: pointer; buf: cstringConst; len: csize_t) {.
+    cdecl.} =
+  if len > 0 and len <= csize_t(int.high):
+    let H = int(len) - 1
+    cast[Console](opaque).write(buf.toOpenArray(0, H))
+
 proc jsConsoleLog(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let console = ctx.getConsoleImpl()
-  var buf = ""
   let H = argc - 1
   for i, val in argv.toOpenArray(0, H):
-    var res: string
-    ?ctx.fromJS(val, res)
-    buf &= res
+    if JS_IsString(val):
+      var res: string
+      ?ctx.fromJS(val, res)
+      console.write(res)
+    else:
+      JS_PrintValue(ctx, consoleWriteCb, cast[pointer](console), val, nil)
     if i != H:
-      buf &= ' '
-  buf &= '\n'
-  console.write(buf)
+      console.write(' ')
+  console.write('\n')
   console.flush()
   return JS_UNDEFINED
 
@@ -72,6 +79,7 @@ let jsConsoleFuncs {.global.} = [
     JS_CFUNC_DEF("error", 0, jsConsoleLog),
     JS_CFUNC_DEF("info", 0, jsConsoleLog),
     JS_CFUNC_DEF("warn", 0, jsConsoleLog),
+    JS_CFUNC_DEF("assert", 0, jsConsoleLog),
     JS_CFUNC_DEF("clear", 0, jsConsoleClear),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "console", JS_PROP_CONFIGURABLE),
 ]
