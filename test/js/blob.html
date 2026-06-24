@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<title>Blob test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+assertEquals(new Blob(["a", "b"]).size, 2);
+document.getElementById("x").textContent = "Success";
+</script>

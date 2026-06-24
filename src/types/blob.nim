@@ -175,7 +175,7 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart]; blobType: string):
       return err()
     assert i + n <= len
     copyMem(addr buffer[i], p, n)
-    i += len
+    i += n
   blob.size = len
   if AllChars - {char(0x20)..char(0x7E)} notin blobType:
     blob.ctype = blobType.toLowerAscii()
