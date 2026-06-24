@@ -2312,12 +2312,17 @@ proc inSameTree*(a, b: Node): bool =
   a.rootNode == b.rootNode
 
 # a == b or a in b's ancestors
-proc contains(a, b: Node): bool {.jsfunc.} =
-  if b != nil:
-    for node in b.branch:
-      if node == a:
-        return true
+proc contains(a, b: Node): bool =
+  for node in b.branch:
+    if node == a:
+      return true
   return false
+
+proc contains(a: Node; b: Option[Node]): bool {.jsfunc.} =
+  let b = b.get(nil)
+  if b == nil:
+    return false
+  a.contains(b)
 
 proc jsParentNode(node: Node): Node {.jsfget: "parentNode".} =
   return node.parentNode
@@ -3622,6 +3627,9 @@ proc setCookie(ctx: JSContext; document: Document; cookie: string):
 
 proc focus*(document: Document): Element {.jsfget: "activeElement".} =
   return document.internalFocus
+
+proc hasFocus(document: Document): bool {.jsfunc.} =
+  document.internalFocus != nil
 
 proc setFocus*(document: Document; element: Element) =
   if document.focus != nil:

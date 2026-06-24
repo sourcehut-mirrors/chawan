@@ -8,6 +8,7 @@ let text = doc.createTextNode("test");
 let elem = document.createElement("div");
 elem.append(text);
 assertEquals(text.ownerDocument, document);
+assert(!document.contains(null)); /* no idea why this is allowed */
 assertEquals(new Document().createCDATASection("test").cloneNode().data, "test");
 assertInstanceof(new Document().createCDATASection("test"), Text);
 assert(!new Document().createCDATASection("a").isEqualNode(new Text("a")));
