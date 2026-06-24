@@ -90,6 +90,55 @@ jsDestructor(DateTimeFormat)
 jsDestructor(PluralRules)
 jsDestructor(RelativeTimeFormat)
 
+# Intl
+proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
+  if JS_IsUndefined(val):
+    return JS_NewArray(ctx)
+  #TODO InitializedLocale, actually validate locales, dedup
+  let lengthVal = JS_GetPropertyStr(ctx, val, "length")
+  if JS_IsException(lengthVal):
+    return lengthVal
+  var len64: uint64
+  let lenOk = JS_ToIndex(ctx, len64, lengthVal)
+  JS_FreeValue(ctx, lengthVal)
+  if lenOk < 0:
+    return JS_EXCEPTION
+  if len64 > uint64(int.high) or len64 > uint32.high:
+    return JS_ThrowRangeError(ctx, "array too large")
+  var tags: seq[string]
+  let len = cast[int](len64)
+  for k in 0 ..< len:
+    let prop = JS_NewAtomUInt32(ctx, uint32(k))
+    if prop == JS_ATOM_NULL:
+      return JS_EXCEPTION
+    let has = JS_HasProperty(ctx, val, prop)
+    JS_FreeAtom(ctx, prop)
+    if has < 0:
+      return JS_EXCEPTION
+    if has > 0:
+      let locale = JS_GetPropertyUint32(ctx, val, uint32(k))
+      if JS_IsException(locale):
+        return locale
+      if not JS_IsString(locale) and not JS_IsObject(locale):
+        JS_FreeValue(ctx, locale)
+        return JS_ThrowTypeError(ctx, "unexpected locale type")
+      #TODO InitializedLocale
+      var tag: string
+      ?ctx.fromJSFree(locale, tag)
+      #TODO validate
+      if tag notin tags:
+        tags.add(tag)
+  ctx.toJS(tags)
+
+proc getCanonicalLocales(ctx: JSContext; val: JSValueConst): JSValue {.
+    jsstfunc: "Intl".} =
+  ctx.canonicalizeLocales(val)
+
+let jsIntlFuncs {.global.} = [
+    JS_CFUNC_DEF("getCanonicalLocales", 0, js_func_Intl_getCanonicalLocales),
+    JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Intl", JS_PROP_CONFIGURABLE),
+]
+
 # Collator
 proc newCollator(): Collator {.jsctor.} =
   return Collator()
@@ -235,6 +284,12 @@ proc format(nf: NumberFormat; s: string): string {.jsfunc.} =
   of nsPercent: result &= '%'
   of nsCurrency: discard #TODO?
 
+proc supportedLocalesOf(ctx: JSContext; locales: JSValueConst;
+    options: JSValueConst = JS_UNDEFINED): JSValue {.
+    jsstfunc: "NumberFormat".} =
+  #TODO
+  return ctx.getCanonicalLocales(locales)
+
 # DateTimeFormat
 proc newDateTimeFormat(): Opt[DateTimeFormat] {.jsfctor.} =
   return ok(DateTimeFormat())
@@ -259,6 +314,9 @@ proc addIntlModule*(ctx: JSContext): Opt[void] =
   let global = JS_GetGlobalObject(ctx)
   let intl = JS_NewObject(ctx)
   if JS_IsException(intl):
+    return err()
+  if not ctx.setPropertyFunctionList(intl, jsIntlFuncs):
+    JS_FreeValue(ctx, intl)
     return err()
   ?ctx.registerType(Collator, namespace = intl)
   ?ctx.registerType(NumberFormat, namespace = intl)
