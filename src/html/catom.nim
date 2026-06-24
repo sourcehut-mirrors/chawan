@@ -640,7 +640,8 @@ proc fromJSView*(ctx: JSContext; atom: JSAtom; res: var CAtom): FromJSResult =
     JS_FreeCString(ctx, cs)
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: var seq[CAtom]): FromJSResult =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var seq[CAtom]):
+    FromJSResult =
   var it: JSValue
   var nextMethod: JSValue
   ?ctx.fromJSSeqInit(val, it, nextMethod)
@@ -664,6 +665,18 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: var seq[CAtom]): FromJSResult =
   JS_FreeValue(ctx, it)
   JS_FreeValue(ctx, nextMethod)
   status
+
+proc fromJS*(ctx: JSContext; vals: openArray[JSValueConst];
+    res: var seq[CAtom]): FromJSResult =
+  var tmp: seq[CAtom] = @[]
+  for val in vals:
+    var atom: CAtomTraced
+    if ctx.fromJS(val, atom).isErr:
+      freeAtoms(tmp)
+      return fjErr
+    tmp.add(atom.dup())
+  res = move(tmp)
+  fjOk
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): FromJSResult =
   var ca: CAtomTraced

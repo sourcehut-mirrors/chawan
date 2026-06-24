@@ -21,6 +21,7 @@ function testClass() {
 	assertEquals(x.classList[-1], undefined);
 	assertEquals(x.classList[1], "b");
 	assertEquals(x.classList[4294967296], undefined);
+	assertEquals(x.classList + "", "a b c d");
 }
 
 function testAttribute() {
