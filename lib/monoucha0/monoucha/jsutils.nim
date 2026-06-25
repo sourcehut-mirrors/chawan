@@ -385,4 +385,19 @@ proc runJSJobs*(rt: JSRuntime): JSContext =
       return ctx
   nil
 
+proc toIntIndex*(ctx: JSContext; value: JSValue): int =
+  ## Convert value to an index that is guaranteed to be smaller than
+  ## uint32.high or int.high (on 32-bit systems).
+  ##
+  ## Returns -1 on exception.
+  var tmp {.noinit.}: uint64
+  let lenOk = JS_ToIndex(ctx, tmp, value)
+  JS_FreeValue(ctx, value)
+  if lenOk < 0:
+    return -1
+  if tmp > uint64(int.high) or tmp > uint32.high:
+    JS_ThrowInternalError(ctx, "index out of acceptable range")
+    return -1
+  int(tmp)
+
 {.pop.} # raises

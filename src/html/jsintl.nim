@@ -98,15 +98,10 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
   let lengthVal = JS_GetPropertyStr(ctx, val, "length")
   if JS_IsException(lengthVal):
     return lengthVal
-  var len64: uint64
-  let lenOk = JS_ToIndex(ctx, len64, lengthVal)
-  JS_FreeValue(ctx, lengthVal)
-  if lenOk < 0:
+  let len = ctx.toIntIndex(lengthVal)
+  if len < 0:
     return JS_EXCEPTION
-  if len64 > uint64(int.high) or len64 > uint32.high:
-    return JS_ThrowRangeError(ctx, "array too large")
   var tags: seq[string]
-  let len = cast[int](len64)
   for k in 0 ..< len:
     let prop = JS_NewAtomUInt32(ctx, uint32(k))
     if prop == JS_ATOM_NULL:
