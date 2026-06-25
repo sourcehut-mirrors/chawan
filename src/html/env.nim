@@ -328,7 +328,7 @@ proc windowGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
         let element = ctx.toJS(element)
         if JS_IsException(element):
           return -1
-        desc.flags = JS_PROP_CONFIGURABLE
+        desc.flags = JS_PROP_C_W_E
         desc.setter = JS_UNDEFINED
         desc.getter = JS_UNDEFINED
         desc.value = element

@@ -5,6 +5,7 @@
 <div id=testEl>test 2</div>
 <script src=asserts.js></script>
 <script>
+"use strict";
 assertEquals(window.toString(), "[object Window]");
 const desc = Object.getOwnPropertyDescriptor(window, "window");
 assert(desc.enumerable, "window must be enumerable");
@@ -35,6 +36,12 @@ assertEquals(old, window.document);
 	assertThrows(() => window.__proto__ = {}, TypeError);
 	assertThrows(() => Object.seal(window), TypeError);
 	assertThrows(() => Object.defineProperty(window, "1", {value: "hi"}), TypeError);
+}
+{
+	const desc = Object.getOwnPropertyDescriptor(window, "testEl");
+	assert(desc.configurable);
+	assert(desc.writable);
+	assert(desc.enumerable);
 }
 {
 	assertEquals(testEl.textContent, "test 1")
