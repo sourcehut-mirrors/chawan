@@ -440,7 +440,7 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   return ret
 
 proc removeEventListenerData(ctx: JSContext; _: JSValueConst;
-    argc: cint; argv: JSValueConstArray; margic: cint;
+    argc: cint; argv: JSValueConstArray; magic: cint;
     funcData: JSValueConstArray): JSValue {.cdecl.} =
   var this: EventTarget
   ?ctx.fromJS(funcData[0], this)
