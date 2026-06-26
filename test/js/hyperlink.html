@@ -32,5 +32,11 @@ a.protocol = "http"
 assertEquals(a.href, "http://example.org/");
 assertEquals(a.toString(), "http://example.org/");
 assertEquals(JSON.stringify(Object.getOwnPropertyDescriptors(a)), "{}");
+{
+	const desc = Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype, "protocol");
+	assert(desc.configurable);
+	assert(desc.enumerable);
+	assertEquals(desc.writable, undefined);
+}
 document.getElementById("x").textContent = "Success";
 </script>

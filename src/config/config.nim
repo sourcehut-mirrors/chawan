@@ -2481,24 +2481,10 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
     let obj = objs[desc.section]
     let s = $opt
     let start = s.find('.') + 1
-    let p = cast[cstring](unsafeAddr s[start])
-    let atom = JS_NewAtomLen(ctx, p, csize_t(s.len - start))
-    var f: JSCFunctionType
-    f.getter_magic = getConfigOption
-    let get = JS_NewCFunction2(ctx, f.generic, p, 0, JS_CFUNC_getter_magic,
-      cint(opt))
-    if JS_IsException(get):
+    let name = cast[cstring](unsafeAddr s[start])
+    if ctx.definePropertyGetSetCE(obj, name, getConfigOption, setConfigOption,
+        cint(opt)) == dprException:
       return err()
-    f.setter_magic = setConfigOption
-    let set = JS_NewCFunction2(ctx, f.generic, p, 0, JS_CFUNC_setter_magic,
-      cint(opt))
-    if JS_IsException(set):
-      return err()
-    if JS_DefineProperty(ctx, obj, atom, JS_UNDEFINED, get, set,
-        JS_PROP_HAS_GET or JS_PROP_HAS_GET) < 0:
-      return err()
-    ctx.freeValues(get, set)
-    JS_FreeAtom(ctx, atom)
   let configObj = ctx.toJS(config)
   for section in csBuffer..csStatus:
     let s = $section

@@ -796,7 +796,8 @@ proc addEventGetSet*(ctx: JSContext; obj: JSValueConst;
     while EventReflectMap[i] != atom:
       inc i
     let name = "on" & $atom
-    ?ctx.addReflectFunction(obj, name, eventReflectGet, eventReflectSet, i)
+    ?ctx.addReflectFunction(obj, cstring(name), eventReflectGet,
+      eventReflectSet, i)
   ok()
 
 proc addEventGetSet*(ctx: JSContext; classid: JSClassID;

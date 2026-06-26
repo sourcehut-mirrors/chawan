@@ -6623,25 +6623,6 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
       element.attr(satHref, outs)
   return JS_DupValue(ctx, val)
 
-proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom;
-    desc: ptr JSPropertyDescriptor): JSValue =
-  var s: string
-  if ctx.fromJS(a, s).isOk:
-    let sa = s.toStaticAtom()
-    if sa in {satHref, satOrigin, satProtocol, satUsername, satPassword,
-        satHost, satHostname, satPort, satPathname, satSearch, satHash}:
-      if desc != nil:
-        let u1 = JSCFunctionType(getter_magic: hyperlinkGet)
-        let u2 = JSCFunctionType(setter_magic: hyperlinkSet)
-        desc.getter = JS_NewCFunction2(ctx, u1.generic,
-          cstring(s), 0, JS_CFUNC_getter_magic, cint(sa))
-        desc.setter = JS_NewCFunction2(ctx, u2.generic,
-          cstring(s), 0, JS_CFUNC_setter_magic, cint(sa))
-        desc.value = JS_UNDEFINED
-        desc.flags = JS_PROP_GETSET
-      return JS_TRUE # dummy value
-  return JS_UNINITIALIZED
-
 proc click(ctx: JSContext; element: HTMLElement) {.jsfunc.} =
   let event = newEvent(satClick.view(), element, bubbles = true,
     cancelable = true)
@@ -6652,10 +6633,6 @@ proc click(ctx: JSContext; element: HTMLElement) {.jsfunc.} =
       window.click(element)
 
 # <a>
-proc getter(ctx: JSContext; this: HTMLAnchorElement; a: JSAtom;
-    desc: ptr JSPropertyDescriptor): JSValue {.jsgetownprop.} =
-  return ctx.hyperlinkGetProp(this, a, desc)
-
 proc toString(anchor: HTMLAnchorElement): string {.jsfunc.} =
   if href := anchor.reinitURL():
     return $href
@@ -6665,10 +6642,6 @@ proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
   anchor.attr(satRel, s)
 
 # <area>
-proc getter(ctx: JSContext; this: HTMLAreaElement; a: JSAtom;
-    desc: ptr JSPropertyDescriptor): JSValue {.jsgetownprop.} =
-  return ctx.hyperlinkGetProp(this, a, desc)
-
 proc toString(area: HTMLAreaElement): string {.jsfunc.} =
   if href := area.reinitURL():
     return $href
@@ -8098,7 +8071,7 @@ proc addElementReflection(ctx: JSContext; class: JSClassID): Opt[void] =
   let proto = JS_GetClassProto(ctx, class)
   for i in ReflectAllStartIndex ..< int16(ReflectMap.len):
     let name = $ReflectMap[i].funcname
-    if ctx.addReflectFunction(proto, name, jsReflectGet, jsReflectSet,
+    if ctx.addReflectFunction(proto, cstring(name), jsReflectGet, jsReflectSet,
         cint(i)).isErr:
       JS_FreeValue(ctx, proto)
       return err()
@@ -8110,8 +8083,8 @@ proc addAttributeReflection(ctx: JSContext; class: JSClassID;
   let proto = JS_GetClassProto(ctx, class)
   let diff = (uint16(class) - uint16(base)) shl 9
   for i in attrs:
-    if ctx.addReflectFunction(proto, $ReflectMap[i].funcname, jsReflectGet,
-        jsReflectSet, cint(diff or uint16(i))).isErr:
+    if ctx.addReflectFunction(proto, cstring($ReflectMap[i].funcname),
+        jsReflectGet, jsReflectSet, cint(diff or uint16(i))).isErr:
       JS_FreeValue(ctx, proto)
       return err()
   JS_FreeValue(ctx, proto)
@@ -8132,6 +8105,20 @@ proc addConstructorAlias(ctx: JSContext; fun: JSCFunction; class: JSClassID;
   JS_FreeValue(ctx, global)
   if res == dprException:
     return err()
+  ok()
+
+proc addHyperlinkUtils(ctx: JSContext; class: JSClassID): Opt[void] =
+  const atoms = [
+    satHref, satOrigin, satProtocol, satUsername, satPassword, satHost,
+    satHostname, satPort, satPathname, satSearch, satHash
+  ]
+  let proto = JS_GetClassProto(ctx, class)
+  for atom in atoms:
+    if ctx.definePropertyGetSetCE(proto, cstring($atom), hyperlinkGet,
+        hyperlinkSet, cint(atom)) == dprException:
+      JS_FreeValue(ctx, proto)
+      return err()
+  JS_FreeValue(ctx, proto)
   ok()
 
 proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
@@ -8160,7 +8147,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   template register(t: typed; tag: TagType) =
     register(t, [tag])
   register(HTMLInputElement, TAG_INPUT)
-  register(HTMLAnchorElement, TAG_A)
+  let anchorCID = register2(HTMLAnchorElement, TAG_A)
   register(HTMLSelectElement, TAG_SELECT)
   register(HTMLSpanElement, TAG_SPAN)
   register(HTMLOptGroupElement, TAG_OPTGROUP)
@@ -8178,7 +8165,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   register(HTMLUnknownElement, TAG_UNKNOWN)
   register(HTMLScriptElement, TAG_SCRIPT)
   register(HTMLBaseElement, TAG_BASE)
-  register(HTMLAreaElement, TAG_AREA)
+  let areaCID = register2(HTMLAreaElement, TAG_AREA)
   register(HTMLButtonElement, TAG_BUTTON)
   register(HTMLTextAreaElement, TAG_TEXTAREA)
   register(HTMLLabelElement, TAG_LABEL)
@@ -8213,7 +8200,9 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   ?ctx.registerType(SVGSVGElement, parent = svgElementCID)
   ?ctx.addConstructorAlias(newAudio, audioCID, "Audio")
   ?ctx.addConstructorAlias(newImage, imageCID, "Image")
-  ctx.addConstructorAlias(newOption, optionCID, "Option")
+  ?ctx.addConstructorAlias(newOption, optionCID, "Option")
+  ?ctx.addHyperlinkUtils(anchorCID)
+  ctx.addHyperlinkUtils(areaCID)
 
 proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)

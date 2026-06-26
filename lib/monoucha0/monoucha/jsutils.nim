@@ -242,6 +242,36 @@ proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
   ## Frees `prop'.
   ctx.defineProperty(this, ctx.getOpaque().strRefs[name], prop, JS_PROP_C_W_E)
 
+proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
+    getter: JSGetterMagicFunction; setter: JSSetterMagicFunction; magic: cint):
+    DefinePropertyResult =
+  let prop = JS_NewAtom(ctx, name)
+  if prop == JS_ATOM_NULL:
+    return dprException
+  var f: JSCFunctionType
+  f.getter_magic = getter
+  let getterVal = JS_NewCFunction2(ctx, f.generic, name, 0,
+    JS_CFUNC_getter_magic, magic)
+  if JS_IsException(getterVal):
+    JS_FreeAtom(ctx, prop)
+    return dprException
+  var setterVal = JS_UNDEFINED
+  if setter != nil:
+    f.setter_magic = setter
+    setterVal = JS_NewCFunction2(ctx, f.generic, name, 1, JS_CFUNC_setter_magic,
+      magic)
+    if JS_IsException(setterVal):
+      JS_FreeAtom(ctx, prop)
+      JS_FreeValue(ctx, getterVal)
+      return dprException
+  let res = JS_DefinePropertyGetSet(ctx, this, prop, getterVal, setterVal,
+    JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
+  JS_FreeAtom(ctx, prop)
+  case res
+  of 0: dprFail
+  of 1: dprSuccess
+  else: dprException
+
 proc strictEquals*(ctx: JSContext; a, b: JSValueConst): bool =
   ## Returns true if `a === b', false otherwise.
   return JS_StrictEq(ctx, a, b)

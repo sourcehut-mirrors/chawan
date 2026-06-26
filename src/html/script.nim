@@ -226,25 +226,11 @@ proc logException*(ctx: JSContext) =
 proc getEnvSettings*(ctx: JSContext): EnvironmentSettings =
   return ctx.getEnvSettingsImpl()
 
-proc addReflectFunction*(ctx: JSContext; proto: JSValueConst; name: string;
-    get: JSGetterMagicFunction; set: JSSetterMagicFunction; i: cint):
+proc addReflectFunction*(ctx: JSContext; proto: JSValueConst; name: cstring;
+    get: JSGetterMagicFunction; set: JSSetterMagicFunction; magic: cint):
     Opt[void] =
-  var f: JSCFunctionType
-  f.getter_magic = get
-  let getter = JS_NewCFunction2(ctx, f.generic, cstring(name), 0,
-    JS_CFUNC_getter_magic, i)
-  f.setter_magic = set
-  let setter = JS_NewCFunction2(ctx, f.generic, cstring(name), 1,
-    JS_CFUNC_setter_magic, i)
-  let atom = JS_NewAtom(ctx, cstring(name))
-  if JS_IsException(getter) or JS_IsException(setter) or atom == JS_ATOM_NULL:
-    JS_FreeValue(ctx, setter)
-    JS_FreeAtom(ctx, atom)
+  if ctx.definePropertyGetSetCE(proto, name, get, set, magic) == dprException:
     return err()
-  if JS_DefinePropertyGetSet(ctx, proto, atom, getter, setter,
-      JS_PROP_ENUMERABLE or JS_PROP_CONFIGURABLE) < 0:
-    return err()
-  JS_FreeAtom(ctx, atom)
   ok()
 
 {.pop.} # raises: []

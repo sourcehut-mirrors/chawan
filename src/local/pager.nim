@@ -2777,14 +2777,9 @@ proc addPagerModule*(ctx: JSContext): Opt[void] =
       return err()
   f.getter_magic = legacyReflectGetter
   for i, name in LegacyReflectGetList.mypairs:
-    let fun = JS_NewCFunction2(ctx, f.generic, name, 0, JS_CFUNC_getter_magic,
-      cint(i))
-    let atom = JS_NewAtom(ctx, name)
-    if JS_DefineProperty(ctx, proto, atom, JS_UNDEFINED, fun, JS_UNDEFINED,
-        JS_PROP_HAS_GET) < 0:
+    if ctx.definePropertyGetSetCE(proto, name, legacyReflectGetter, nil,
+        cint(i)) == dprException:
       return err()
-    JS_FreeValue(ctx, fun)
-    JS_FreeAtom(ctx, atom)
   JS_FreeValue(ctx, proto)
   ok()
 
