@@ -226,14 +226,14 @@ proc fromJSSeqInit*(ctx: JSContext; val: JSValueConst;
   fjOk
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): FromJSResult =
-  var it: JSValue
+  var iter: JSValue
   var nextMethod: JSValue
-  ?ctx.fromJSSeqInit(val, it, nextMethod)
+  ?ctx.fromJSSeqInit(val, iter, nextMethod)
   var status = fjOk
   var tmp = newSeq[T]()
   while status.isOk:
     var val: JSValue
-    case ctx.fromJSSeqIt(it, nextMethod, val)
+    case ctx.fromJSSeqIt(iter, nextMethod, val)
     of sirException:
       status = fjErr
       break
@@ -243,7 +243,7 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): FromJSResul
     of sirContinue:
       tmp.add(default(T))
       status = ctx.fromJSFree(val, tmp[^1])
-  JS_FreeValue(ctx, it)
+  JS_FreeValue(ctx, iter)
   JS_FreeValue(ctx, nextMethod)
   status
 

@@ -8224,7 +8224,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   let nodeListCID = ctx.registerType(NodeList, iterable = jitValue)
   if nodeListCID == 0:
     return err()
-  let htmlCollectionCID = ctx.registerType(HTMLCollection, iterable = jitPair)
+  let htmlCollectionCID = ctx.registerType(HTMLCollection, iterable = jitIndexed)
   if htmlCollectionCID == 0:
     return err()
   ?ctx.registerType(HTMLAllCollection)

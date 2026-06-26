@@ -122,7 +122,7 @@ type
   JSSetterMagicFunction* = proc(ctx: JSContext; this_val, val: JSValueConst;
     magic: cint): JSValue {.cdecl, raises: [].}
   JSIteratorNextFunction* = proc(ctx: JSContext; this_val: JSValueConst;
-    argc: cint; argv: JSValueConstArray; pdone: ptr cint; magic: cint):
+    argc: cint; argv: JSValueConstArray; pdone: var JS_BOOL; magic: cint):
     JSValue {.cdecl, raises: [].}
   JSClassID* = uint32
   JSAtom* {.importc: "JSAtom", header: qjsheader.} = distinct uint32
@@ -425,6 +425,18 @@ template JS_PROP_STRING_DEF*(n, cstr: cstring; f: cint):
                        def_type: JS_DEF_PROP_STRING,
                        magic: 0,
                        u: JSCFunctionListEntryU(str: cstr))
+
+template JS_ITERATOR_NEXT_DEF*(n: cstring; len: uint8;
+    func1: JSIteratorNextFunction; m: cint): JSCFunctionListEntry =
+  JSCFunctionListEntry(name: n,
+                       prop_flags: JS_PROP_WRITABLE or JS_PROP_CONFIGURABLE,
+                       magic: m,
+                       def_type: JS_DEF_CFUNC,
+                       u: JSCFunctionListEntryU(
+                         `func`: JSCFunctionListEntryFunc(
+                           length: len,
+                           cproto: JS_CFUNC_iterator_next,
+                           cfunc: JSCFunctionType(iterator_next: func1))))
 
 {.push header: qjsheader, importc.}
 

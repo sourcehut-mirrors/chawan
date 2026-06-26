@@ -46,9 +46,17 @@ type
     stWss = "wss"
     stXChaCookie = "x-cha-cookie"
 
+  SearchIteratorType = enum
+    sitEntries, sitValues, sitKeys
+
   URLSearchParams* = ref object
     list: seq[tuple[name, value: string]]
     url: URL
+
+  URLSearchParamsIterator = ref object
+    t: SearchIteratorType
+    params: URLSearchParams
+    i: int
 
   URL* = ref object
     scheme: string
@@ -73,6 +81,7 @@ type
 
 jsDestructor(URL)
 jsDestructor(URLSearchParams)
+jsDestructor(URLSearchParamsIterator)
 
 # Forward declarations
 proc parseURL0*(input: string; base: URL = nil): URL
@@ -1248,7 +1257,7 @@ proc has(ctx: JSContext; params: URLSearchParams; name: string;
         return JS_TRUE
   return JS_FALSE
 
-proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
+proc set(params: URLSearchParams; name: string; value: string) {.jsfunc.} =
   var found = false
   for param in params.list.mitems:
     if param.name == name:
@@ -1259,6 +1268,30 @@ proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
     params.update()
   else:
     params.append(name, value)
+
+proc next(ctx: JSContext; iter: URLSearchParamsIterator; done: var JS_BOOL):
+    JSValue {.jsiter.} =
+  let params = iter.params
+  let i = iter.i
+  if i >= params.list.len:
+    done = true
+    return JS_UNDEFINED
+  inc iter.i
+  done = false
+  case iter.t
+  of sitEntries: ctx.toJS(params.list[i])
+  of sitValues: ctx.toJS(params.list[i].name)
+  of sitKeys: ctx.toJS(params.list[i].value)
+
+#TODO magic
+proc entries(params: URLSearchParams): URLSearchParamsIterator {.jsfunc.} =
+  URLSearchParamsIterator(t: sitEntries, params: params)
+
+proc values(params: URLSearchParams): URLSearchParamsIterator {.jsfunc.} =
+  URLSearchParamsIterator(t: sitValues, params: params)
+
+proc keys(params: URLSearchParams): URLSearchParamsIterator {.jsfunc.} =
+  URLSearchParamsIterator(t: sitKeys, params: params)
 
 proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
     Opt[URL] {.jsctor.} =
@@ -1409,7 +1442,9 @@ proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
 
 proc addURLModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(URL)
-  ?ctx.registerType(URLSearchParams)
+  ?ctx.registerType(URLSearchParams, iterable = jitPair)
+  ?ctx.registerType(URLSearchParamsIterator, name = "URLSearchParams Iterator",
+    namespace = JS_UNDEFINED)
   ok()
 
 {.pop.} # raises: []

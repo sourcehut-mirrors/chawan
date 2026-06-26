@@ -64,6 +64,9 @@
 ##
 ## {.jspropnames.} overrides get_own_property_names.  Must return a
 ##   JSPropertyEnumList object.
+##
+## {.jsiter.} overrides iterator_next.  Must have a `var JS_BOOL` "done"
+##   parameter.
 
 {.push raises: [].}
 
@@ -95,6 +98,7 @@ type
     bfPropertyDel = "js_prop_del"
     bfPropertyHas = "js_prop_has"
     bfPropertyNames = "js_prop_names"
+    bfIteratorNext = "js_iter"
     bfFinalizer = "js_fin"
     bfMark = "js_mark"
 
@@ -110,7 +114,10 @@ type
     id: NimNode
 
   JSIterableType* = enum
-    jitNone, jitValue, jitPair
+    jitNone # not iterable
+    jitValue # array-like
+    jitIndexed # array-like, but no values()/entries()
+    jitPair # pair
 
 proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
   return alloc(size)
@@ -302,8 +309,54 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
       ctx.getOpaque().ctors[int(parent)], 0)
   return JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
 
+proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; data: JSValueConstArray): JSValue
+    {.cdecl.} =
+  #TODO ToObject, CORS (security check)
+  if JS_GetClassID(this) != JSClassID(magic):
+    return JS_ThrowTypeError(ctx, "unexpected pairs class")
+  #TODO convert argv[0] to function
+  let fun = argv[0]
+  let iter = JS_Call(ctx, data[0], this, 0, nil)
+  if JS_IsException(iter):
+    return iter
+  let nextMethod = JS_GetProperty(ctx, iter, ctx.getOpaque().strRefs[jstNext])
+  if JS_IsException(nextMethod):
+    JS_FreeValue(ctx, iter)
+    return JS_EXCEPTION
+  var res = JS_UNDEFINED
+  while true:
+    var entry: JSValue
+    case ctx.fromJSSeqIt(iter, nextMethod, entry)
+    of sirException:
+      res = JS_EXCEPTION
+      break
+    of sirDone:
+      break
+    of sirContinue:
+      let key = JS_GetPropertyUint32(ctx, entry, 0)
+      if JS_IsException(key):
+        JS_FreeValue(ctx, entry)
+        res = JS_EXCEPTION
+        break
+      let value = JS_GetPropertyUint32(ctx, entry, 1)
+      JS_FreeValue(ctx, entry)
+      if JS_IsException(value):
+        JS_FreeValue(ctx, key)
+        res = JS_EXCEPTION
+        break
+      let res2 = ctx.call(fun, JS_UNDEFINED, key, value, this)
+      ctx.freeValues(key, value)
+      if JS_IsException(res2):
+        res = JS_EXCEPTION
+        break
+      JS_FreeValue(ctx, res2)
+  JS_FreeValue(ctx, iter)
+  JS_FreeValue(ctx, nextMethod)
+  return res
+
 proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
-    proto: JSValueConst): DefinePropertyResult =
+    proto: JSValueConst; class: JSClassID): DefinePropertyResult =
   let ctxOpaque = ctx.getOpaque()
   case iterable
   of jitNone: discard
@@ -320,14 +373,22 @@ proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
     }
     for (n, v) in map:
       let val = JS_DupValue(ctx, ctxOpaque.valRefs[v])
-      let name = ctxOpaque.strRefs[n]
-      if ctx.definePropertyCWE(proto, name, val) == dprException:
+      if ctx.definePropertyCWE(proto, n, val) == dprException:
         return dprException
-  of jitPair:
-    #TODO this isn't really compliant
+  of jitIndexed:
     let values = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
     let itSym = ctxOpaque.symRefs[jsyIterator]
     if ctx.definePropertyCWE(proto, itSym, values) == dprException:
+      return dprException
+  of jitPair:
+    let pairs = JS_GetProperty(ctx, proto, ctxOpaque.strRefs[jstEntries])
+    let forEach = JS_NewCFunctionData(ctx, pairsForEach, 1, cint(class), 1,
+      cast[JSValueConstArray](unsafeAddr pairs))
+    if ctx.definePropertyCWE(proto, jstForEach, forEach) == dprException:
+      JS_FreeValue(ctx, pairs)
+      return dprException
+    let itSym = ctxOpaque.symRefs[jsyIterator]
+    if ctx.definePropertyCWE(proto, itSym, pairs) == dprException:
       return dprException
   dprSuccess
 
@@ -340,7 +401,7 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     unforgeable, staticfuns: JSFunctionList; dtor: BoundRefDestructor):
     JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
-  var res: uint32
+  var res: JSClassID
   discard JS_NewClassID(res)
   let ctxOpaque = ctx.getOpaque()
   let rtOpaque = rt.getOpaque()
@@ -351,9 +412,6 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     rtOpaque.classes.setLen(int(res) + 1)
   rtOpaque.classes[res].parent = parent
   let proto = ctx.newProtoFromParentClass(parent)
-  if ctx.defineIterableProps(iterable, proto) == dprException:
-    JS_FreeValue(ctx, proto)
-    return JS_INVALID_CLASS_ID
   JS_SetClassProto(ctx, res, proto)
   if not ctx.addClassUnforgeableAndFinalizer(proto, res, parent, unforgeable,
       finalizer):
@@ -384,13 +442,18 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   JS_SetConstructor(ctx, jctor, proto)
   if ctxOpaque.ctors.len <= int(res):
     ctxOpaque.ctors.setLen(int(res) + 1)
+  if ctx.defineIterableProps(iterable, proto, res) == dprException:
+    JS_FreeValue(ctx, proto)
+    return JS_INVALID_CLASS_ID
   let target = if JS_IsNull(namespace):
     JSValueConst(ctxOpaque.global)
   else:
     namespace
-  if JS_DefinePropertyValueStr(ctx, target, cdef.class_name,
-      JS_DupValue(ctx, jctor), JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
-    return JS_INVALID_CLASS_ID
+  if not JS_IsUndefined(namespace):
+    let jctor2 = JS_DupValue(ctx, jctor)
+    if JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor2,
+        JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
+      return JS_INVALID_CLASS_ID
   ctxOpaque.ctors[res] = jctor
   when defined(gcDestructors):
     rtOpaque.classes[res].dtor = dtor
@@ -595,6 +658,17 @@ template getJSPropNamesParams(): untyped =
     newIdentDefs(ident("this"), quote do: JSValueConst)
   ]
 
+template getJSIterParams(): untyped =
+  [
+    (quote do: JSValue),
+    newIdentDefs(ident("ctx"), quote do: JSContext),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
+    newIdentDefs(ident("argc"), quote do: cint),
+    newIdentDefs(ident("argv"), quote do: JSValueConstArray),
+    newIdentDefs(ident("pdone"), newNimNode(nnkVarTy).add(ident"JS_BOOL")),
+    newIdentDefs(ident("magic"), quote do: cint),
+  ]
+
 proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
@@ -665,9 +739,9 @@ var jsDtors {.compileTime.}: HashSet[string]
 proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
   let name = fun.name
   let id = fun.id
+  let len = fun.length
   case fun.t
   of bfFunction:
-    let len = fun.length
     case fun.flag
     of bffNone:
       info.tabFuns.add(quote do:
@@ -731,6 +805,9 @@ proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
     if info.markFun.kind != nnkNilLit:
       error("Class " & info.name & " has 2+ mark functions.")
     info.markFun = id
+  of bfIteratorNext:
+    info.tabFuns.add(quote do:
+      JS_ITERATOR_NEXT_DEF(`name`, `len`, `id`, 0))
 
 proc registerFunction(typ: string; fun: BoundFunction) =
   var info = BoundFunctions.getOrDefault(typ)
@@ -1119,6 +1196,21 @@ macro jsmark*(fun: untyped) =
       let opaque = JS_GetOpaque(val, JS_GetClassID(val))
       if opaque != nil:
         `markFun`(rt, cast[`t`](opaque), markFunc)
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
+
+macro jsiter*(fun: untyped) =
+  var gen = initGenerator(fun, bfIteratorNext, hasThis = true)
+  gen.addThisParam()
+  gen.jsFunCall.add(ident("pdone"))
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      return `jfcl`
+    JS_EXCEPTION
+  let jsProc = gen.newJSProc(getJSIterParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 

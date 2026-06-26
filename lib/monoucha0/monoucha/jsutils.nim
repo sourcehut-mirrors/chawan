@@ -237,6 +237,11 @@ proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: string;
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
+proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
+    prop: JSValue): DefinePropertyResult =
+  ## Frees `prop'.
+  ctx.defineProperty(this, ctx.getOpaque().strRefs[name], prop, JS_PROP_C_W_E)
+
 proc strictEquals*(ctx: JSContext; a, b: JSValueConst): bool =
   ## Returns true if `a === b', false otherwise.
   return JS_StrictEq(ctx, a, b)
