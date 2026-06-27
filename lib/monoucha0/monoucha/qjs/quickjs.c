@@ -4580,6 +4580,16 @@ void JS_FreeCString(JSContext *ctx, const char *ptr)
     JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
 }
 
+void JS_FreeCStringRT(JSRuntime *rt, const char *ptr)
+{
+    JSString *p;
+    if (!ptr)
+        return;
+    /* purposely removing constness */
+    p = container_of(ptr, JSString, u);
+    JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_STRING, p));
+}
+
 /* create a string from a narrow Unicode (latin-1) buffer */
 JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *buf, size_t buf_len)
 {

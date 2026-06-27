@@ -619,9 +619,10 @@ proc JS_ToCStringLen2*(ctx: JSContext; plen: var csize_t; val1: JSValueConst;
 proc JS_ToCStringLen*(ctx: JSContext; plen: var csize_t; val1: JSValueConst):
   cstringConst
 proc JS_ToCString*(ctx: JSContext; val1: JSValueConst): cstringConst
-proc JS_FreeCString*(ctx: JSContext, p: cstringConst)
+proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
 
 # Monoucha extensions - unstable API!
+proc JS_FreeCStringRT*(rt: JSRuntime; p: cstringConst)
 proc JS_NewNarrowStringLen*(ctx: JSContext; s: cstring; len: csize_t): JSValue
 proc JS_GetNarrowStringBuffer*(str: JSValueConst): ptr UncheckedArray[uint8]
 proc JS_GetStringLength*(str: JSValueConst): uint32

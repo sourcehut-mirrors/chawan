@@ -246,7 +246,7 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
   )
 
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
-proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
+proc parseHTMLFragment*(element: Element; s: openArray[char]): seq[Node] =
   let url = parseURL0("about:blank")
   let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
   let document = builder.document
@@ -275,7 +275,7 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
     formInit: option(ParentNode(form))
   )
   var parser = initHTML5Parser(builder, opts)
-  let res = parser.parseChunk(s.toOpenArray(0, s.high))
+  let res = parser.parseChunk(s)
   # scripting is false and confidence is certain -> this must be continue
   assert res == PRES_CONTINUE
   parser.finish()

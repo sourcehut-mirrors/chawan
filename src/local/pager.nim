@@ -557,11 +557,11 @@ proc queueStatusUpdate(pager: Pager) {.jsfunc.} =
 
 # private
 # called from JS command()
-proc evalCommand(ctx: JSContext; pager: Pager; src: string): JSValue
+proc evalCommand(ctx: JSContext; pager: Pager; s: DOMString): JSValue
     {.jsfunc.} =
   if pager.consoleInit != nil:
     pager.consoleInit.flags.incl(bifTailOnLoad)
-  return ctx.eval(src, "<command>",
+  return JS_Eval(ctx, s.p, csize_t(s.len), "<command>",
     JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_BACKTRACE_BARRIER)
 
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =

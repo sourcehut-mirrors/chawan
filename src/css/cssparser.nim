@@ -905,14 +905,17 @@ proc tokenPair*(t: CSSTokenType): CSSTokenType =
 template iq(ctx: CSSParser): openArray[char] =
   ctx.iqp.toOpenArray(0, ctx.iqlen - 1)
 
-# iq *must* be a string, because parseFloat32 needs the NUL terminator.
-proc initCSSParser*(iq: string): CSSParser =
-  if iq.len <= 0:
+# iqp *must* be a cstring, because parseFloat32 needs the NUL terminator.
+proc initCSSParser*(iq: cstring; len: int): CSSParser =
+  if len <= 0:
     return CSSParser()
   return CSSParser(
     iqp: cast[ptr UncheckedArray[char]](unsafeAddr iq[0]),
-    iqlen: iq.len
+    iqlen: len
   )
+
+proc initCSSParser*(iq: string): CSSParser =
+  initCSSParser(cstring(iq), iq.len)
 
 proc initCSSParser*(toks: openArray[CSSToken]): CSSParser =
   return CSSParser(toks: @toks)
@@ -1888,8 +1891,11 @@ proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList =
   var state = SelectorParser(ctx: initCSSParserSink(toks))
   state.parseSelectorList(forgiving = false)
 
-proc parseSelectors*(ibuf: string): SelectorList =
-  var state = SelectorParser(ctx: initCSSParser(ibuf))
+proc parseSelectors*(iq: cstring; len: int): SelectorList =
+  var state = SelectorParser(ctx: initCSSParser(iq, len))
   state.parseSelectorList(forgiving = false)
+
+proc parseSelectors*(iq: string): SelectorList =
+  parseSelectors(cstring(iq), iq.len)
 
 {.pop.} # raises: []

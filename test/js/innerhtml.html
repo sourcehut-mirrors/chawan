@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<title>innerHTML test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const x = document.getElementById("x");
+x.innerHTML = null;
+assertEquals(x.innerHTML, "");
+x.innerHTML = "Success";
+</script>

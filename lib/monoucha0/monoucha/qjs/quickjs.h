@@ -762,6 +762,7 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
 }
 void JS_FreeCString(JSContext *ctx, const char *ptr);
 
+void JS_FreeCStringRT(JSRuntime *rt, const char *ptr);
 JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
 uint8_t *JS_GetNarrowStringBuffer(JSValueConst value);
 uint8_t *JS_GetRegExpBytecode(JSContext *ctx, JSValueConst obj, int *plen);

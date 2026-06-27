@@ -748,7 +748,8 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
 proc newCDATASection(document: Document; data: string): CDATASection
 proc newComment(document: Document; data: sink string): Comment
 proc newText*(document: Document; data: sink string): Text
-proc newText(ctx: JSContext; data: sink string = ""): Text
+proc newText(document: Document; data: DOMString): Text
+proc newText(ctx: JSContext; data = initDOMStringLit("")): Text
 proc newDocument*(url: URL): Document
 proc newDocumentType*(document: Document;
   name, publicId, systemId: sink string): DocumentType
@@ -883,8 +884,8 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
 var matchesImpl*: proc(element: Element; cxsels: SelectorList): bool {.nimcall,
   raises: [].}
 # set in html/chadombuilder
-var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
-  {.nimcall, raises: [].}
+var parseHTMLFragmentImpl*: proc(element: Element; s: openArray[char]):
+  seq[Node] {.nimcall, raises: [].}
 var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
 var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
 var getClientRectsImpl*: proc(element: Element; firstOnly, blockOnly: bool):
@@ -2838,9 +2839,9 @@ proc toNodes(ctx: JSContext; nodes: openArray[JSValueConst];
     if ctx.fromJS(it, node).isOk:
       res.add(node)
     else:
-      var s: string
-      ?ctx.fromJS(it, s)
-      res.add(ctx.newText(s))
+      var ds: DOMString
+      ?ctx.fromJS(it, ds)
+      res.add(ctx.newText(ds))
   ok()
 
 proc toNode(ctx: JSContext; nodes: openArray[Node]; document: Document): Node =
@@ -3067,7 +3068,7 @@ proc getElementsByTagNameImpl(ctx: JSContext; root: ParentNode; tagName: string)
   ok(this)
 
 proc getElementsByClassNameImpl(ctx: JSContext; node: ParentNode;
-    classNames: string): Opt[HTMLCollection] =
+    classNames: DOMString): Opt[HTMLCollection] =
   let this = ?ctx.newHTMLCollection(
     node,
     proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
@@ -3086,7 +3087,7 @@ proc getElementsByClassNameImpl(ctx: JSContext; node: ParentNode;
     islive = true,
     childonly = false
   )
-  for class in classNames.split(AsciiWhitespace):
+  for class in classNames.toOpenArray().split(AsciiWhitespace):
     this.atoms.add(class.toAtom())
   ok(this)
 
@@ -3182,22 +3183,26 @@ proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
   for el in postConnectionNodes:
     el.postConnectionSteps()
 
-proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: string): JSValue =
-  let selectors = parseSelectors(q)
+proc parseSelectors(ctx: JSContext; ds: DOMString): SelectorList =
+  result = parseSelectors(ds.p, ds.len)
+  if result.len == 0:
+    JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s", ds.p)
+
+proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: DOMString):
+    JSValue =
+  let selectors = ctx.parseSelectors(q)
   if selectors.len == 0:
-    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
-      cstring(q))
+    return JS_EXCEPTION
   for element in node.elementDescendants:
     if element.matchesImpl(selectors):
       return ctx.toJS(element)
   return JS_NULL
 
-proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: string):
+proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
     JSValue =
-  let selectors = parseSelectors(q)
+  let selectors = ctx.parseSelectors(q)
   if selectors.len == 0:
-    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
-      cstring(q))
+    return JS_EXCEPTION
   let this = newEmptyNodeList()
   for element in node.elementDescendants:
     if element.matchesImpl(selectors):
@@ -3313,7 +3318,12 @@ proc newNodeList(ctx: JSContext; root: Node; match: CollectionMatchFun;
 proc newText*(document: Document; data: sink string): Text =
   return Text(internalNext: document, data: newRefString(data))
 
-proc newText(ctx: JSContext; data: sink string = ""): Text {.jsctor.} =
+proc newText(document: Document; data: DOMString): Text =
+  let rs = newRefString("")
+  rs.s = $data
+  return Text(internalNext: document, data: rs)
+
+proc newText(ctx: JSContext; data = initDOMStringLit("")): Text {.jsctor.} =
   let window = ctx.getGlobal()
   return window.document.newText(data)
 
@@ -3361,11 +3371,11 @@ proc lastElementChild(this: DocumentFragment): Element {.jsfget.} =
 proc childElementCount(this: DocumentFragment): int {.jsfget.} =
   return this.childElementCountImpl
 
-proc querySelector(ctx: JSContext; this: DocumentFragment; q: string): JSValue
-    {.jsfunc.} =
+proc querySelector(ctx: JSContext; this: DocumentFragment; q: DOMString):
+    JSValue {.jsfunc.} =
   return ctx.querySelectorImpl(this, q)
 
-proc querySelectorAll(ctx: JSContext; this: DocumentFragment; q: string):
+proc querySelectorAll(ctx: JSContext; this: DocumentFragment; q: DOMString):
     JSValue {.jsfunc.} =
   return ctx.querySelectorAllImpl(this, q)
 
@@ -3767,17 +3777,17 @@ proc getElementsByTagName(ctx: JSContext; document: Document; tagName: string):
   return ctx.getElementsByTagNameImpl(document, tagName)
 
 proc getElementsByClassName(ctx: JSContext; document: Document;
-    classNames: string): Opt[HTMLCollection] {.jsfunc.} =
+    classNames: DOMString): Opt[HTMLCollection] {.jsfunc.} =
   return ctx.getElementsByClassNameImpl(document, classNames)
 
 proc children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
   return childrenImpl(ctx, parentNode)
 
-proc querySelector(ctx: JSContext; this: Document; q: string): JSValue
+proc querySelector(ctx: JSContext; this: Document; q: DOMString): JSValue
     {.jsfunc.} =
   return ctx.querySelectorImpl(this, q)
 
-proc querySelectorAll(ctx: JSContext; this: Document; q: string): JSValue
+proc querySelectorAll(ctx: JSContext; this: Document; q: DOMString): JSValue
     {.jsfunc.} =
   return ctx.querySelectorAllImpl(this, q)
 
@@ -3969,10 +3979,10 @@ proc createHTMLDocument(ctx: JSContext; implementation: DOMImplementation;
   let head = doc.newHTMLElement(TAG_HEAD)
   html.append(head, ctx)
   if not JS_IsUndefined(title):
-    var s: string
-    ?ctx.fromJS(title, s)
+    var ds: DOMString
+    ?ctx.fromJS(title, ds)
     let titleElement = doc.newHTMLElement(TAG_TITLE)
-    titleElement.append(doc.newText(s), ctx)
+    titleElement.append(doc.newText(ds), ctx)
     head.append(titleElement, ctx)
   html.append(doc.newHTMLElement(TAG_BODY), ctx)
   doc.origin = implementation.document.origin
@@ -5193,7 +5203,7 @@ proc getElementsByTagName(ctx: JSContext; element: Element; tagName: string):
   return ctx.getElementsByTagNameImpl(element, tagName)
 
 proc getElementsByClassName(ctx: JSContext; element: Element;
-    classNames: string): Opt[HTMLCollection] {.jsfunc.} =
+    classNames: DOMString): Opt[HTMLCollection] {.jsfunc.} =
   return ctx.getElementsByClassNameImpl(element, classNames)
 
 proc children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
@@ -5336,7 +5346,7 @@ proc scrollTo(element: Element) {.jsfunc.} =
 proc scrollIntoView(element: Element) {.jsfunc.} =
   discard #TODO ditto
 
-proc parseFragment*(ctx: JSContext; element: Element; s: string):
+proc parseFragment*(ctx: JSContext; element: Element; s: openArray[char]):
     DocumentFragment =
   #TODO xml
   let newChildren = parseHTMLFragmentImpl(element, s)
@@ -5345,16 +5355,16 @@ proc parseFragment*(ctx: JSContext; element: Element; s: string):
     fragment.append(child, ctx)
   return fragment
 
-proc innerHTML(ctx: JSContext; element: Element; s: string) {.jsfset.} =
+proc innerHTML(ctx: JSContext; element: Element; s: DOMStringNull) {.jsfset.} =
   #TODO shadow root
-  let fragment = ctx.parseFragment(element, s)
+  let fragment = ctx.parseFragment(element, s.toOpenArray())
   let nodeCtx = if element of HTMLTemplateElement:
     HTMLTemplateElement(element).content
   else:
     element
   nodeCtx.replaceAll(fragment, ctx)
 
-proc outerHTML(ctx: JSContext; element: Element; s: string): JSValue
+proc outerHTML(ctx: JSContext; element: Element; s: DOMStringNull): JSValue
     {.jsfset.} =
   let parent0 = element.parentNode
   if parent0 == nil:
@@ -5368,7 +5378,7 @@ proc outerHTML(ctx: JSContext; element: Element; s: string): JSValue
     # neither a document, nor a document fragment => parent must be an
     # element node
     Element(parent0)
-  let fragment = ctx.parseFragment(parent, s)
+  let fragment = ctx.parseFragment(parent, s.toOpenArray())
   ctx.replaceChildWithThrow(parent, element, fragment)
 
 type InsertAdjacentPosition = enum
@@ -5377,9 +5387,9 @@ type InsertAdjacentPosition = enum
   iapAfterBegin = "afterbegin"
   iapBeforeEnd = "beforeend"
 
-proc insertAdjacentHTML(ctx: JSContext; this: Element; position, text: string):
-    JSValue {.jsfunc.} =
-  let pos0 = parseEnumNoCase[InsertAdjacentPosition](position)
+proc insertAdjacentHTML(ctx: JSContext; this: Element;
+    position, text: DOMString): JSValue {.jsfunc.} =
+  let pos0 = parseEnumNoCase[InsertAdjacentPosition](position.toOpenArray())
   if pos0.isErr:
     return JS_ThrowDOMException(ctx, "SyntaxError", "invalid position")
   let position = pos0.get
@@ -5391,7 +5401,7 @@ proc insertAdjacentHTML(ctx: JSContext; this: Element; position, text: string):
     nodeCtx = this.parentElement
   if nodeCtx == nil or not this.document.isxml and nodeCtx.tagType == TAG_HTML:
     nodeCtx = this.document.newHTMLElement(TAG_BODY)
-  let fragment = ctx.parseFragment(nodeCtx, text)
+  let fragment = ctx.parseFragment(nodeCtx, text.toOpenArray())
   case position
   of iapBeforeBegin: this.parentNode.insert(fragment, this, ctx)
   of iapAfterBegin: this.insert(fragment, this.firstChild, ctx)
@@ -5399,9 +5409,9 @@ proc insertAdjacentHTML(ctx: JSContext; this: Element; position, text: string):
   of iapAfterEnd: this.parentNode.insert(fragment, this.nextSibling, ctx)
   return JS_UNDEFINED
 
-proc insertAdjacent(ctx: JSContext; this: Node; position: string; node: Node):
-    JSValue =
-  let pos0 = parseEnumNoCase[InsertAdjacentPosition](position)
+proc insertAdjacent(ctx: JSContext; this: Node; position: DOMString;
+    node: Node): JSValue =
+  let pos0 = parseEnumNoCase[InsertAdjacentPosition](position.toOpenArray())
   if pos0.isErr:
     return JS_ThrowDOMException(ctx, "SyntaxError", "invalid position")
   let position = pos0.get
@@ -5416,11 +5426,11 @@ proc insertAdjacent(ctx: JSContext; this: Node; position: string; node: Node):
   of iapAfterEnd:
     ctx.insertBefore(this.parentNode, node, option(this.nextSibling))
 
-proc insertAdjacentElement(ctx: JSContext; this: Element; position: string;
+proc insertAdjacentElement(ctx: JSContext; this: Element; position: DOMString;
     element: Element): JSValue {.jsfunc.} =
   ctx.insertAdjacent(this, position, element)
 
-proc insertAdjacentText(ctx: JSContext; this: Element; position, s: string):
+proc insertAdjacentText(ctx: JSContext; this: Element; position, s: DOMString):
     JSValue {.jsfunc.} =
   ctx.toUndefined(ctx.insertAdjacent(this, position, this.document.newText(s)))
 
@@ -5688,11 +5698,11 @@ proc elIndex*(this: Element): int =
 proc isPreviousSiblingOf*(this, other: Element): bool =
   return this.parentNode == other.parentNode and this.elIndex <= other.elIndex
 
-proc querySelector(ctx: JSContext; this: Element; q: string): JSValue
+proc querySelector(ctx: JSContext; this: Element; q: DOMString): JSValue
     {.jsfunc.} =
   return ctx.querySelectorImpl(this, q)
 
-proc querySelectorAll(ctx: JSContext; this: Element; q: string): JSValue
+proc querySelectorAll(ctx: JSContext; this: Element; q: DOMString): JSValue
     {.jsfunc.} =
   return ctx.querySelectorAllImpl(this, q)
 
@@ -6264,21 +6274,19 @@ proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
   this.setShadowRoot(shadow)
   ok(shadow)
 
-proc closest(ctx: JSContext; this: Element; q: string): JSValue {.jsfunc.} =
-  let selectors = parseSelectors(q)
+proc closest(ctx: JSContext; this: Element; q: DOMString): JSValue {.jsfunc.} =
+  let selectors = ctx.parseSelectors(q)
   if selectors.len == 0:
-    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
-      cstring(q))
+    return JS_EXCEPTION
   for element in this.branchElems:
     if element.matchesImpl(selectors):
       return ctx.toJS(element)
   return JS_NULL
 
-proc matches(ctx: JSContext; this: Element; q: string): JSValue {.jsfunc.} =
-  let selectors = parseSelectors(q)
+proc matches(ctx: JSContext; this: Element; q: DOMString): JSValue {.jsfunc.} =
+  let selectors = ctx.parseSelectors(q)
   if selectors.len == 0:
-    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
-      cstring(q))
+    return JS_EXCEPTION
   return ctx.toJS(this.matchesImpl(selectors))
 
 # ShadowRoot

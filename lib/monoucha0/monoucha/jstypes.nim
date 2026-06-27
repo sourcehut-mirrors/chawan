@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+import utils/twtstr
+
 import jsopaque
 import quickjs
 
@@ -61,5 +63,42 @@ proc base*(view: JSArrayBufferView): ptr UncheckedArray[uint8] =
 # A key-value pair: in WebIDL terms, this is a record.
 type JSKeyValuePair*[T] = object
   s*: seq[tuple[name: string; value: T]]
+
+type
+  DOMString* = object
+    p*: cstring
+    ilen: int
+
+  DOMStringNull* = distinct DOMString
+
+const DOMStringConstFlag = 1 shl (sizeof(int) * 8 - 1)
+
+proc `=destroy`*(s: var DOMString) =
+  if (s.ilen and DOMStringConstFlag) == 0:
+    JS_FreeCStringRT(globalRuntime, s.p)
+
+proc `=copy`*(a: var DOMString; b: DOMString) {.error.} =
+  discard
+
+template len*(ds: DOMString): int =
+  ds.ilen and not DOMStringConstFlag
+
+proc initDOMString*(s: cstring; len: int): DOMString =
+  DOMString(p: s, ilen: s.len)
+
+proc initDOMStringLit*(s: cstring): DOMString =
+  DOMString(p: s, ilen: s.len or DOMStringConstFlag)
+
+template toOpenArray*(s: DOMString): openArray[char] =
+  {.push overflowChecks: off.}
+  let H = s.len - 1
+  {.pop.}
+  s.p.toOpenArray(0, H)
+
+proc `$`*(ds: DOMString): string =
+  ds.toOpenArray().substr()
+
+template toOpenArray*(s: DOMStringNull): openArray[char] =
+  DOMString(s).toOpenArray()
 
 {.pop.} # raises

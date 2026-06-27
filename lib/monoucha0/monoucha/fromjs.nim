@@ -13,6 +13,10 @@ type FromJSResult* = enum
   fjErr, fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
+  FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
+  FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): FromJSResult
@@ -91,6 +95,27 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): FromJSResult =
   if plen != 0:
     copyMem(addr res[0], cstring(outp), plen)
   JS_FreeCString(ctx, outp)
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
+    FromJSResult =
+  var len {.noinit.}: csize_t
+  let cs = JS_ToCStringLen(ctx, len, val) # cstring
+  if cs == nil:
+    return fjErr
+  if len > csize_t(int.high):
+    JS_FreeCString(ctx, cs)
+    JS_ThrowRangeError(ctx, "string length out of bounds")
+    return fjErr
+  res = initDOMString(cs, cast[int](len))
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
+    FromJSResult =
+  var ds = initDOMStringLit("")
+  if not JS_IsNull(val):
+    ?ctx.fromJS(val, ds)
+  res = DOMStringNull(ds)
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): FromJSResult =
