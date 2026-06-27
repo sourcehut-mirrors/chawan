@@ -144,73 +144,74 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): FromJSResult 
   res = n
   fjOk
 
-proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): FromJSResult =
-  let next = JS_Call(ctx, nextMethod, it, 0, nil)
-  let ctxOpaque = ctx.getOpaque()
-  let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
-  var done = false
-  if ctx.fromJSFree(doneVal, done).isErr or done:
-    JS_FreeValue(ctx, next)
-    if not done:
-      return fjErr
-    return fjOk
-  while true:
-    let next = JS_Call(ctx, nextMethod, it, 0, nil)
-    let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
-    var done = false
-    if ctx.fromJSFree(doneVal, done).isErr or done:
-      JS_FreeValue(ctx, next)
-      if done:
-        JS_ThrowTypeError(ctx, "too many tuple members")
-      return fjErr
-    JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstValue]))
-    JS_FreeValue(ctx, next)
-  fjOk
-
-proc fromJSTupleBody[T](ctx: JSContext; it, nextMethod: JSValueConst;
-    res: var T): FromJSResult =
-  for f in res.fields:
-    let next = JS_Call(ctx, nextMethod, it, 0, nil)
-    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
-    var done = false
-    if ctx.fromJSFree(doneVal, done).isErr or done:
-      if done:
-        JS_ThrowTypeError(ctx, "too few arguments in sequence")
-      JS_FreeValue(ctx, next)
-      return fjErr
-    let valueVal = JS_GetProperty(ctx, next,
-      ctx.getOpaque().strRefs[jstValue])
-    JS_FreeValue(ctx, next)
-    ?ctx.fromJSFree(valueVal, f)
-  ctx.readTupleDone(it, nextMethod)
-
-proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
-    FromJSResult =
-  let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
-  let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
-  if JS_IsException(nextMethod):
-    JS_FreeValue(ctx, it)
-    return fjErr
-  result = ctx.fromJSTupleBody(it, nextMethod, res)
-  JS_FreeValue(ctx, it)
-  JS_FreeValue(ctx, nextMethod)
-
 type SeqItResult* = enum
   sirDone, sirContinue, sirException
 
-proc fromJSSeqIt*(ctx: JSContext; it, nextMethod: JSValueConst;
+proc fromJSSeqIt*(ctx: JSContext; iter, nextMethod: JSValueConst;
     res: var JSValue): SeqItResult =
-  let next = JS_Call(ctx, nextMethod, it, 0, nil)
+  let next = JS_Call(ctx, nextMethod, iter, 0, nil)
+  if JS_IsException(next):
+    return sirException
   let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
-  var done = false
-  if ctx.fromJSFree(doneVal, done).isOk and not done:
+  if JS_IsException(doneVal):
+    JS_FreeValue(ctx, next)
+    return sirException
+  var done: bool
+  if ctx.fromJSFree(doneVal, done).isErr:
+    JS_FreeValue(ctx, next)
+    return sirException
+  if not done:
     res = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
     JS_FreeValue(ctx, next)
+    if JS_IsException(res):
+      return sirException
     return sirContinue
   JS_FreeValue(ctx, next)
-  if not done:
-    return sirException # conversion error
-  sirDone # actually done
+  sirDone
+
+proc readTupleDone(ctx: JSContext; iter, nextMethod: JSValue): FromJSResult =
+  var res = sirDone
+  while true:
+    var val: JSValue
+    case ctx.fromJSSeqIt(iter, nextMethod, val)
+    of sirException:
+      res = sirException
+      break
+    of sirContinue:
+      JS_FreeValue(ctx, val)
+      res = sirContinue
+    of sirDone:
+      break
+  JS_FreeValue(ctx, iter)
+  JS_FreeValue(ctx, nextMethod)
+  case res
+  of sirContinue:
+    JS_ThrowTypeError(ctx, "too few arguments in sequence")
+    fjErr
+  of sirException: fjErr
+  of sirDone: fjOk
+
+proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
+    FromJSResult =
+  var iter: JSValue
+  var nextMethod: JSValue
+  var status = sirContinue
+  ?ctx.fromJSSeqInit(val, iter, nextMethod)
+  for f in res.fields:
+    var val: JSValue
+    status = ctx.fromJSSeqIt(iter, nextMethod, val)
+    if status != sirContinue:
+      break
+    if ctx.fromJSFree(val, f).isErr:
+      status = sirException
+      break
+  if status != sirContinue:
+    JS_FreeValue(ctx, iter)
+    JS_FreeValue(ctx, nextMethod)
+    if status != sirException:
+      JS_ThrowTypeError(ctx, "too few arguments in sequence")
+    return fjErr
+  ctx.readTupleDone(iter, nextMethod)
 
 proc fromJSSeqInit*(ctx: JSContext; val: JSValueConst;
     oit, onextMethod: var JSValue): FromJSResult =
@@ -248,16 +249,14 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): FromJSResul
   status
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): FromJSResult =
-  let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
-  let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
-  if JS_IsException(nextMethod):
-    JS_FreeValue(ctx, it)
-    return fjErr
+  var iter: JSValue
+  var nextMethod: JSValue
+  ?ctx.fromJSSeqInit(val, iter, nextMethod)
   var status = fjOk
   var tmp: set[T] = {}
   while status.isOk:
     var val: JSValue
-    case ctx.fromJSSeqIt(it, nextMethod, val)
+    case ctx.fromJSSeqIt(iter, nextMethod, val)
     of sirException:
       status = fjErr
       break
@@ -268,7 +267,8 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): FromJSResul
       var x: T
       status = ctx.fromJSFree(val, x)
       tmp.incl(x)
-  JS_FreeValue(ctx, it)
+  res = tmp
+  JS_FreeValue(ctx, iter)
   JS_FreeValue(ctx, nextMethod)
   status
 
