@@ -5,6 +5,10 @@
 
 import std/algorithm
 
+import monoucha/fromjs
+import monoucha/quickjs
+import monoucha/tojs
+import types/jsopt
 import utils/twtstr
 
 type Charset* = enum
@@ -502,5 +506,23 @@ proc getLocaleCharset*(s: string): Charset =
   # than any other charset, irrespective of the language. So we just assume
   # UTF-8.
   return DefaultCharset
+
+proc toJS*(ctx: JSContext; charset: Charset): JSValue =
+  if charset == csUnknown:
+    return JS_NULL
+  tojs.toJS(ctx, charset)
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; charset: var Charset):
+    FromJSResult =
+  if JS_IsNull(val):
+    charset = csUnknown
+  else:
+    var s: string
+    ?ctx.fromJS(val, s)
+    charset = getCharset(s)
+    if charset == csUnknown:
+      JS_ThrowTypeError(ctx, "unknown charset: %s", cstring(s))
+      return fjErr
+  fjOk
 
 {.pop.}
