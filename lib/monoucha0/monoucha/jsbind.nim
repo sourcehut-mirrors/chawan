@@ -73,6 +73,7 @@
 import std/macros
 import std/sets
 import std/tables
+import std/typetraits
 
 import fromjs
 import jsopaque
@@ -675,13 +676,11 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   let id = ident(thisName)
   let dl = gen.dielabel
   gen.jsFunCallList.add(quote do:
-    var `s`: `t`
+    var `s` {.noinit.}: ptr `t`.pointerBase
     if ctx.fromJSThis(`id`, `s`) == fjErr:
       break `dl`
   )
-  if gen.funcParams[gen.i].t.kind == nnkPtrTy:
-    s = quote do: `s`[]
-  gen.jsFunCall.add(s)
+  gen.jsFunCall.add(quote do: cast[`t`](`s`))
   inc gen.i
 
 proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
@@ -689,13 +688,16 @@ proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
   let t = gen.funcParams[gen.i].t
   let dl = gen.dielabel
   gen.jsFunCallList.add(quote do:
-    var `s`: `t`
+    when `t` is ref:
+      var `s` {.noinit.}: ptr `t`.pointerBase
+    elif `t` is SomeNumber or `t` is enum or `t` is bool:
+      var `s` {.noinit.}: `t`
+    else:
+      var `s`: `t`
     if ctx.fromJS(`id`, `s`) == fjErr:
       break `dl`
   )
-  if gen.funcParams[gen.i].t.kind == nnkPtrTy:
-    s = quote do: `s`[]
-  gen.jsFunCall.add(s)
+  gen.jsFunCall.add(quote do: cast[`t`](`s`))
   inc gen.i
 
 proc addArgv(gen: var JSFuncGenerator) =
@@ -725,8 +727,6 @@ proc addArgv(gen: var JSFuncGenerator) =
         else:
           `s` = `fallback`
       )
-      if t.kind == nnkPtrTy:
-        s = quote do: `s`[]
     gen.jsFunCall.add(s)
     inc j
     inc gen.i
@@ -1267,13 +1267,13 @@ proc registerGetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
   let id = ident($bfGetter & "_" & tname & "_" & fn)
   stmts.add(quote do:
     proc `id`(ctx: JSContext; this: JSValueConst): JSValue {.cdecl.} =
-      var arg_0: `t`
+      var arg_0: ptr `t`.pointerBase
       if ctx.fromJSThis(this, arg_0) == fjErr:
         return JS_EXCEPTION
       when arg0.`node` is JSValue:
         return JS_DupValue(ctx, arg0.`node`)
       else:
-        return ctx.toJS(arg_0.`node`)
+        return ctx.toJS(cast[`t`](arg_0).`node`)
   )
   info.registerFunction(BoundFunction(
     t: bfGetter,
@@ -1290,7 +1290,7 @@ proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
   let id = ident($bfSetter & "_" & tname & "_" & fn)
   stmts.add(quote do:
     proc `id`(ctx: JSContext; this, val: JSValueConst): JSValue {.cdecl.} =
-      var arg_0: `t`
+      var arg_0: ptr `t`.pointerBase
       if ctx.fromJSThis(this, arg_0) == fjErr:
         return JS_EXCEPTION
       # We can't just set arg_0.`node` directly, or fromJS may damage it.
@@ -1301,7 +1301,7 @@ proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
       else:
         if ctx.fromJS(val, nodeVal) == fjErr:
           return JS_EXCEPTION
-      arg_0.`node` = move(nodeVal)
+      cast[`t`](arg_0).`node` = move(nodeVal)
       return JS_DupValue(ctx, val)
   )
   info.registerFunction(BoundFunction(t: bfSetter, name: fn, id: id))
@@ -1401,7 +1401,7 @@ proc bindReplaceableSet(stmts: NimNode; info: var RegistryInfo) =
     const replaceableNames = `trns`
     proc `rsf`(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
         {.cdecl.} =
-      var dummy: `t`
+      var dummy: ptr `t`.pointerBase
       if ctx.fromJSThis(this, dummy) == fjErr:
         return JS_EXCEPTION
       let name = replaceableNames[int(magic)]

@@ -9,6 +9,7 @@ import std/sets
 import std/setutils
 import std/tables
 import std/times
+import std/typetraits
 
 import chame/tags
 import config/conftypes
@@ -855,6 +856,8 @@ proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
 
 proc crossOrigin(element: HTMLElement): CORSAttribute
+proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
+  JSValue {.cdecl.}
 proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy]
 
 proc resetFormOwner(element: FormAssociatedElement)
@@ -4016,7 +4019,7 @@ proc parseFormMethod(s: string): FormMethod =
   return parseEnumNoCase[FormMethod](s).get(fmGet)
 
 proc getReflectElement(ctx: JSContext; this: JSValueConst; magic: cint):
-    HTMLElement =
+    ptr HTMLElement.pointerBase =
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   let magic = uint16(magic)
   let myClass = JS_GetClassID(this)
@@ -4025,17 +4028,14 @@ proc getReflectElement(ctx: JSContext; this: JSValueConst; magic: cint):
   if class != parent and class != myClass:
     JS_ThrowTypeError(ctx, "invalid tag type")
     return nil
-  var element: HTMLElement
+  var element: ptr HTMLElement.pointerBase
   if ctx.fromJS(this, element).isErr:
     return nil
   return element
 
-proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
-    {.cdecl.} =
+proc jsReflectGet0(ctx: JSContext; element: HTMLElement; magic: cint):
+    JSValue =
   let entry = ReflectMap[uint16(magic) and 0x1FF]
-  let element = ctx.getReflectElement(this, magic)
-  if element == nil:
-    return JS_EXCEPTION
   case entry.t
   of rtStr: return ctx.toJS(element.attr(entry.attrname))
   of rtUrl:
@@ -4070,12 +4070,9 @@ proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     return ctx.toJS(element.attrdgz(entry.attrname).get(f))
   of rtFunction: return JS_NULL
 
-proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
-    JSValue {.cdecl.} =
+proc jsReflectSet0(ctx: JSContext; element: HTMLElement; val: JSValueConst;
+    magic: cint): JSValue {.cdecl.} =
   let entry = ReflectMap[uint16(magic) and 0x1FF]
-  let element = ctx.getReflectElement(this, magic)
-  if element == nil:
-    return JS_EXCEPTION
   case entry.t
   of rtStr, rtUrl, rtReferrerPolicy, rtMethod:
     var x: DOMString
@@ -4122,6 +4119,20 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
     return ctx.eventReflectSet0(element, val, magic, jsReflectSet, ctype)
   of rtForm: discard
   return JS_DupValue(ctx, val)
+
+proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
+    {.cdecl.} =
+  let element = ctx.getReflectElement(this, magic)
+  if element == nil:
+    return JS_EXCEPTION
+  ctx.jsReflectGet0(cast[HTMLElement](element), magic)
+
+proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
+    JSValue {.cdecl.} =
+  let element = ctx.getReflectElement(this, magic)
+  if element == nil:
+    return JS_EXCEPTION
+  ctx.jsReflectSet0(cast[HTMLElement](element), val, magic)
 
 proc findMagic(ctype: StaticAtom): cint =
   for i in ReflectAllStartIndex ..< int16(ReflectMap.len):
@@ -7311,11 +7322,11 @@ proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
   if element0.isErr:
     return JS_EXCEPTION
   let element = element0.get
-  if value.isNone:
+  let value = value.get(nil)
+  if value == nil:
     if element != nil:
       element.remove()
     return JS_UNDEFINED
-  let value = value.get
   let parent = this.root
   if element != nil:
     return ctx.replaceChildWithThrow(parent, element, value)
