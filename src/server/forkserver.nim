@@ -97,9 +97,17 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     return (-1, nil)
   return (bufferPid, newPosixStream(sv[0]))
 
+when defined(nimUseStrictDefs):
+  template myProveInit(x: untyped): untyped =
+    {.warning[ProveInit]:off.}:
+      x
+else:
+  template myProveInit(x: untyped): untyped =
+    x
+
 proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     loaderStream: PosixStream; pagerPid: int; pagerConfig: LoaderClientConfig;
-    browsecap: Mailcap): (int, PosixStream) =
+    browsecap: Mailcap): (int, PosixStream) {.myProveInit.} =
   # loaderStream is a connection between main process <-> loader, but we
   # also need a connection between fork server <-> loader.
   # The naming here is very confusing, sorry about that.
@@ -168,7 +176,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   discard close(fd)
   return pid
 
-proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
+proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
   var hasIstream: bool
   r.sread(hasIstream)
   let istream = if hasIstream: newPosixStream(r.recvFd()) else: nil

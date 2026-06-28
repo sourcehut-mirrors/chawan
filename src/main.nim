@@ -130,7 +130,15 @@ proc addDefaultPages(ctx: var ParamParseContext; config: Config;
     return ctx.addPage(wwwHome)
   ok()
 
-proc getNext(ctx: var ParamParseContext): string =
+when defined(nimUseStrictDefs):
+  template myProveInit(x: untyped): untyped =
+    {.warning[ProveInit]:off.}:
+      x
+else:
+  template myProveInit(x: untyped): untyped =
+    x
+
+proc getNext(ctx: var ParamParseContext): string {.myProveInit.} =
   if ctx.next != "":
     return ctx.next
   inc ctx.i
@@ -270,7 +278,8 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
 
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
-proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int): ForkServer =
+proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int):
+    ForkServer {.myProveInit.} =
   var sockVec {.noinit.}: array[2, cint] # stdin in forkserver
   var pipeFdErr {.noinit.}: array[2, cint] # stderr in forkserver
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sockVec) != 0:
@@ -379,7 +388,7 @@ proc addJSModules(client: Window; ctx: JSContext): Opt[void] =
   ok()
 
 proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
-    urandom: PosixStream): Window =
+    urandom: PosixStream): Window {.myProveInit.} =
   let console = newConsole(cast[ChaFile](stderr))
   let client = Window(
     jsctx: jsctx,

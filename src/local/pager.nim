@@ -1403,7 +1403,7 @@ proc setEnvVars(pager: Pager; env: openArray[EnvVar]) =
 # Run process (and suspend the terminal controller).
 # For the most part, this emulates system(3).
 proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
-    env: openArray[EnvVar]): Opt[bool] =
+    env: openArray[EnvVar]): Opt[bool] {.noinit.} =
   if suspend:
     ?pager.term.quit()
   case (let pid = fork(); pid)
@@ -1866,7 +1866,7 @@ proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
 # Execute cmd, with ps moved onto stdin, os onto stdout, and the browser
 # console onto stderr.
 # ps remains open, but os is consumed.
-proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
+proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int {.noinit.} =
   let westream = pager.forkserver.westream
   let pid = fork()
   if pid == 0:
@@ -1909,7 +1909,7 @@ proc execPipeSink(pager: Pager; cmd: string; istream: PosixStream):
 
 # ps and os are both consumed.
 # If not the empty string, path will be removed once cmd exits.
-proc execCmdUnlink(pager: Pager; cmd, path: string): int =
+proc execCmdUnlink(pager: Pager; cmd, path: string): int {.noinit.} =
   let westream = pager.forkserver.westream
   let pid = fork()
   if pid == 0:
@@ -2006,7 +2006,7 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
 # new buffer.
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager; stream: PosixStream;
-    cmd, outpath: string; pouts: PosixStream): int =
+    cmd, outpath: string; pouts: PosixStream): int {.noinit.} =
   let westream = pager.forkserver.westream
   case (let pid = fork(); pid)
   of -1:
