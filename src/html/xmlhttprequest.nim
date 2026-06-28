@@ -66,13 +66,13 @@ type
 
   ProgressEvent {.final.} = ref object of Event
     lengthComputable {.jsget.}: bool
-    loaded {.jsget.}: int64 #TODO should be uint64
-    total {.jsget.}: int64 #TODO ditto
+    loaded {.jsget.}: float64
+    total {.jsget.}: float64
 
   ProgressEventInit = object of EventInit
-    lengthComputable: bool
-    loaded: int64
-    total: int64
+    lengthComputable {.jsdefault.}: bool
+    loaded {.jsdefault.}: float64
+    total {.jsdefault.}: float64
 
 proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
   let upload = XMLHttpRequestUpload()
@@ -206,8 +206,8 @@ proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32): JSValue
 proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     loaded, length: int64) =
   let event = newProgressEvent(name.view(), ProgressEventInit(
-    loaded: loaded,
-    total: length,
+    loaded: float64(loaded),
+    total: float64(length),
     lengthComputable: length != 0
   ))
   event.isTrusted = true
@@ -251,7 +251,7 @@ proc handleErrors(window: Window; this: XMLHttpRequest; ctx: JSContext):
 type XHROpaque {.final.} = ref object of RootObj
   this: XMLHttpRequest
   window: Window
-  len: int64 #TODO should be uint64
+  len: int64
 
 proc onReadXHR(response: Response) =
   const BufferSize = 4096

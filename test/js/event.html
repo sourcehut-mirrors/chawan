@@ -57,6 +57,10 @@ function bodyOnload(event) {
 	assert(ok6);
 	ok7 = true;
 }
+{
+	assertEquals(new ProgressEvent("test", {loaded: .5}).loaded, .5);
+}
+
 let ok8 = true;
 document.addEventListener("load", e => {
 	ok8 = false;
