@@ -109,8 +109,8 @@ proc newProgressEvent(ctype: CAtomTraced; init = ProgressEventInit()):
 proc readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
   return uint16(this.readyState)
 
-proc parseMethod(ctx: JSContext; s: string): Opt[HttpMethod] =
-  let m = ?parseEnumNoCase[HttpMethod](s)
+proc parseMethod(ctx: JSContext; s: DOMString): Opt[HttpMethod] =
+  let m = ?parseEnumNoCase[HttpMethod](s.toOpenArray())
   if m in {hmGet, hmDelete, hmHead, hmOptions, hmPatch, hmPost, hmPut}:
     return ok(m)
   if m in {hmConnect, hmTrace, hmTrack}:
@@ -123,11 +123,11 @@ proc fireReadyStateChangeEvent(window: Window; target: EventTarget) =
   window.fireEvent(satReadystatechange, target, bubbles = false,
     cancelable = false, trusted = true)
 
-proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
+proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: DOMString;
     misc: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
   let httpMethod = ?ctx.parseMethod(httpMethod)
   let global = ctx.getGlobal()
-  let parsedURL = parseURL0(url, global.document.baseURL)
+  let parsedURL = parseURL0(url.toOpenArray(), global.document.baseURL)
   if parsedURL == nil:
     JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
     return err()

@@ -1246,10 +1246,16 @@ proc getFileExt*(path: string): string =
     return ""
   return path.substr(n + 1)
 
-proc chaArrayCopy*[T](dest, src: var openArray[T]) =
+proc chaArrayCopy*[T](dest: var openArray[T]; src: openArray[T]) =
   assert dest.len == src.len
   if dest.len > 0:
-    copyMem(addr dest[0], addr src[0], dest.len * sizeof(T))
+    copyMem(addr dest[0], unsafeAddr src[0], dest.len * sizeof(T))
+
+proc add*(s: var string; a: openArray[char]) =
+  let olen = s.len
+  let nlen = olen + a.len
+  s.setLen(nlen)
+  chaArrayCopy(s.toOpenArray(olen, nlen - 1), a)
 
 when not defined(nimHasXorSet):
   proc toggle*[T](x: var set[T]; y: set[T]) =

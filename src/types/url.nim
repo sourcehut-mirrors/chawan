@@ -84,7 +84,7 @@ jsDestructor(URLSearchParams)
 jsDestructor(URLSearchParamsIterator)
 
 # Forward declarations
-proc parseURL0*(input: string; base: URL = nil): URL
+proc parseURL0*(input: openArray[char]; base: URL = nil): URL
 proc serialize*(url: URL; excludeHash = false; excludePassword = false):
   string
 proc serializeip(ipv4: uint32): string
@@ -1009,7 +1009,7 @@ proc parseURLImpl(input: openArray[char]; base, url: URL;
   return state
 
 #TODO encoding
-proc parseURL0*(input: string; base: URL = nil): URL =
+proc parseURL0*(input: openArray[char]; base: URL = nil): URL =
   let url = URL(port: -1)
   const NoStrip = AllChars - C0Controls - {' '}
   let starti0 = input.find(NoStrip)

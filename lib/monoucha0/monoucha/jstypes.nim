@@ -65,11 +65,11 @@ type JSKeyValuePair*[T] = object
   s*: seq[tuple[name: string; value: T]]
 
 type
-  DOMString* = object
+  DOMString* {.pure, inheritable.} = object
     p*: cstring
     ilen: int
 
-  DOMStringNull* = distinct DOMString
+  DOMStringNull* {.pure, final.} = object of DOMString
 
 const DOMStringConstFlag = 1 shl (sizeof(int) * 8 - 1)
 
@@ -84,7 +84,7 @@ template len*(ds: DOMString): int =
   ds.ilen and not DOMStringConstFlag
 
 proc initDOMString*(s: cstring; len: int): DOMString =
-  DOMString(p: s, ilen: s.len)
+  DOMString(p: s, ilen: len)
 
 proc initDOMStringLit*(s: cstring): DOMString =
   DOMString(p: s, ilen: s.len or DOMStringConstFlag)
@@ -95,10 +95,16 @@ template toOpenArray*(s: DOMString): openArray[char] =
   {.pop.}
   s.p.toOpenArray(0, H)
 
+template toOpenArray*(s: DOMString; start: int): openArray[char] =
+  {.push overflowChecks: off.}
+  let H = s.len - 1
+  {.pop.}
+  s.p.toOpenArray(start, H)
+
 proc `$`*(ds: DOMString): string =
   ds.toOpenArray().substr()
 
-template toOpenArray*(s: DOMStringNull): openArray[char] =
-  DOMString(s).toOpenArray()
+proc toDOMStringView*(s: string): DOMString =
+  DOMString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
 
 {.pop.} # raises

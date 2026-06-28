@@ -197,6 +197,7 @@ macro makeStaticAtom =
       satUievents = "uievents"
       satUsemap = "usemap"
       satUsername = "username"
+      satUstar = "*"
       satValign = "valign"
       satValue = "value"
       satValuetype = "valuetype"

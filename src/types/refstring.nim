@@ -1,4 +1,7 @@
+{.push raises: [].}
+
 import monoucha/fromjs
+import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 
@@ -6,7 +9,10 @@ type RefString* = ref object
   s*: string
 
 proc newRefString*(s: sink string): RefString =
-  return RefString(s: s)
+  RefString(s: s)
+
+proc newRefString*(ds: DOMString): RefString =
+  RefString(s: $ds)
 
 proc `$`*(rs: RefString): lent string =
   rs.s
@@ -27,3 +33,5 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; rs: var RefString):
     FromJSResult =
   rs = RefString()
   ctx.fromJS(val, rs.s)
+
+{.pop.} # raises: []

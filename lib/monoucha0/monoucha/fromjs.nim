@@ -551,7 +551,7 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =
   fjOk
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): FromJSResult =
-  var len: csize_t
+  var len {.noinit.}: csize_t
   let cs = JS_AtomToCStringLen(ctx, len, atom)
   if cs == nil:
     return fjErr
@@ -563,6 +563,18 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): FromJSResult =
   if len > 0:
     copyMem(addr res[0], cast[pointer](cs), len)
   JS_FreeCString(ctx, cs)
+  fjOk
+
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): FromJSResult =
+  var len {.noinit.}: csize_t
+  let cs = JS_AtomToCStringLen(ctx, len, atom)
+  if cs == nil:
+    return fjErr
+  if len > csize_t(int.high):
+    JS_FreeCString(ctx, cs)
+    JS_ThrowRangeError(ctx, "string length out of bounds")
+    return fjErr
+  res = initDOMString(cs, cast[int](len))
   fjOk
 
 {.pop.} # raises: []

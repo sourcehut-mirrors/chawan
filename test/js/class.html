@@ -10,6 +10,9 @@ for (let i = 0; i < classes.length; ++i)
 	assertEquals(cl[i], classes[i]);
 cl.remove("a");
 assertEquals(div.getAttribute("class"), "b c");
+cl.remove("b");
+cl.remove("c");
+assertEquals(div.getAttribute("class"), "");
 const classes2 = ["x", "y", "z"];
 div.setAttribute("class", classes2.join(' '));
 let i = 0;
