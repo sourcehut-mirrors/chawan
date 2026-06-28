@@ -33,7 +33,7 @@ type
     efInitialized
     efDispatch
 
-  Event* = ref object of RootObj
+  Event* = ref object of JSRootObj
     ctype* {.jsget: "type".}: CAtom
     target* {.jsget.}: EventTarget
     currentTarget* {.jsget.}: EventTarget
@@ -77,7 +77,7 @@ type
     isComposing {.jsget.}: bool
     inputType {.jsget.}: string
 
-  EventTarget* = ref object of RootObj
+  EventTarget* = ref object of JSRootObj
     eventListener: EventListener
 
   EventListener {.acyclic.} = ref object
@@ -100,15 +100,6 @@ type
   AbortController = ref object
     signal {.jsget.}: AbortSignal
 
-jsDestructor(Event)
-jsDestructor(CustomEvent)
-jsDestructor(MessageEvent)
-jsDestructor(SubmitEvent)
-jsDestructor(UIEvent)
-jsDestructor(MouseEvent)
-jsDestructor(InputEvent)
-jsDestructor(EventTarget)
-jsDestructor(AbortSignal)
 jsDestructor(AbortController)
 
 # Forward declaration hack

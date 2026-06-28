@@ -1381,6 +1381,22 @@ proc nimFinalizeForJS*(obj, typeptr: pointer) =
       for fin in rtOpaque.finalizers(classid):
         fin(rt, obj)
 
+type
+  JSRootObj* = object of RootObj
+
+  JSRoot* = ref JSRootObj
+
+when (NimMajor, NimMinor, NimPatch) < (2, 0, 8):
+  proc cha_jsDestroy*(p: pointer) {.exportc.} =
+    let p = cast[ptr JSRootObj](p)
+    nimFinalizeForJS(p, getTypePtr(p[]))
+
+  proc `=destroy`*(obj: var JSRootObj) {.importc: "cha_jsDestroy",
+      header: "quickjs-aux.h".}
+else:
+  proc `=destroy`*(obj: var JSRootObj) =
+    nimFinalizeForJS(addr obj, getTypePtr(obj))
+
 template jsDestructor*[U](T: typedesc[ref U]) =
   static:
     jsDtors.incl($T)
@@ -1545,10 +1561,10 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
       info.name = name
   if name != "":
     info.name = name
+  var checkClass = 0
   if not asglobal:
     info.dfin = quote do: jsCanDestroy
-    if info.tname notin jsDtors:
-      warning("No destructor has been defined for type " & info.tname)
+    checkClass = int(info.tname notin jsDtors)
   else:
     info.dfin = newNilLit()
     if info.tname in jsDtors:
@@ -1569,6 +1585,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let uflen = uflist0.len
   let ctorType = info.ctorType
   endstmts.add(quote do:
+    when `checkClass` != 0 and `t` isnot JSRoot:
+      {.warning("no destructor defined for type").}
     let flist {.global, inject.}: array[`flen`, JSCFunctionListEntry] = `flist0`
     let sflist {.global, inject.}: array[`sflen`, JSCFunctionListEntry] =
       `sflist0`

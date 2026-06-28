@@ -74,11 +74,6 @@ type
     loaded: int64
     total: int64
 
-jsDestructor(XMLHttpRequestEventTarget)
-jsDestructor(XMLHttpRequestUpload)
-jsDestructor(XMLHttpRequest)
-jsDestructor(ProgressEvent)
-
 proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
   let upload = XMLHttpRequestUpload()
   return XMLHttpRequest(

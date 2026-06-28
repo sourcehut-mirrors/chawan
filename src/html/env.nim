@@ -511,8 +511,6 @@ type MediaQueryList {.final.} = ref object of EventTarget
   matches {.jsget.}: bool
   #TODO onchange
 
-jsDestructor(MediaQueryList)
-
 proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
   var ctx = initCSSParser(s)
   let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)

@@ -11,7 +11,7 @@ import types/jsopt
 import types/opt
 
 type
-  DOMRectReadOnly* = ref object of RootObj
+  DOMRectReadOnly* = ref object of JSRootObj
     x* {.jsget.}: float64
     y* {.jsget.}: float64
     width* {.jsget.}: float64
@@ -28,8 +28,6 @@ type
     width {.jsdefault.}: float64
     height {.jsdefault.}: float64
 
-jsDestructor(DOMRectReadOnly)
-jsDestructor(DOMRect)
 jsDestructor(DOMRectList)
 
 # DOMRectReadOnly

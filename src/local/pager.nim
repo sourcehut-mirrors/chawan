@@ -98,7 +98,7 @@ type
     showConsole: JSValue
     askPromise: JSValue # function to resolve on ask finish
 
-  Pager* {.final.} = ref object of RootObj
+  Pager* {.final.} = ref object of JSRootObj
     mailcapLoaded: bool
     hasload: bool # has a page been successfully loaded since startup?
     dumpConsoleFile: bool
@@ -144,8 +144,6 @@ type
     mimeTypes: MimeTypes
     bufferInit {.jsget.}: BufferInit # visible BufferInit (may != iface.init)
     bufferIface {.jsget.}: BufferInterface # visible BufferInterface
-
-jsDestructor(Pager)
 
 # Forward declarations
 proc addConsole2(pager: Pager; interactive: bool)

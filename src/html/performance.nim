@@ -17,7 +17,7 @@ type
     scripting: ScriptingMode
     id: uint64
 
-  PerformanceEntry = ref object of RootObj
+  PerformanceEntry = ref object of JSRootObj
     id {.jsget.}: uint64
     name {.jsget.}: string
     startTime {.jsget.}: float64
@@ -26,10 +26,6 @@ type
 
   PerformanceMark {.final.} = ref object of PerformanceEntry
     detail {.jsget.}: JSValue
-
-jsDestructor(Performance)
-jsDestructor(PerformanceEntry)
-jsDestructor(PerformanceMark)
 
 proc finalize(rt: JSRuntime; this: PerformanceMark) {.jsfin.} =
   JS_FreeValueRT(rt, this.detail)

@@ -21,7 +21,7 @@ import utils/twtstr
 type
   DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}
 
-  Blob* = ref object of RootObj
+  Blob* = ref object of JSRootObj
     size* {.jsget.}: int
     ctype* {.jsget: "type".}: string
     buffer*: pointer
@@ -41,8 +41,6 @@ type
     etTransparent = "transparent"
     etNative = "native"
 
-jsDestructor(Blob)
-jsDestructor(WebFile)
 jsDestructor(FileList)
 
 # Forward declarations
