@@ -1261,4 +1261,10 @@ when not defined(nimHasXorSet):
   proc toggle*[T](x: var set[T]; y: set[T]) =
     x = x + y - (x * y)
 
+proc toggleIf*[T](x: var set[T]; y: T; b: bool) =
+  if b:
+    x.incl(y)
+  else:
+    x.excl(y)
+
 {.pop.} # raises: []

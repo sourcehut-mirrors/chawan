@@ -210,7 +210,7 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     total: float64(length),
     lengthComputable: length != 0
   ))
-  event.isTrusted = true
+  event.setTrusted()
   window.fireEvent(event, target)
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =

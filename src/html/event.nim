@@ -24,7 +24,7 @@ type
     AT_TARGET = 2u16
     BUBBLING_PHASE = 3u16
 
-  EventFlag* = enum
+  EventFlag = enum
     efStopPropagation
     efStopImmediatePropagation
     efCanceled
@@ -32,17 +32,17 @@ type
     efComposed
     efInitialized
     efDispatch
+    efBubbles
+    efCancelable
+    efTrusted
 
   Event* = ref object of JSRootObj
-    ctype* {.jsget: "type".}: CAtom
+    timeStamp {.jsget.}: float64
     target* {.jsget.}: EventTarget
     currentTarget* {.jsget.}: EventTarget
+    ctype* {.jsget: "type".}: CAtom
     eventPhase {.jsget.}: uint16
-    bubbles {.jsget.}: bool
-    cancelable {.jsget.}: bool
-    flags*: set[EventFlag]
-    isTrusted* {.jsufget.}: bool
-    timeStamp {.jsget.}: float64
+    flags: set[EventFlag]
 
   CustomEvent* {.final.} = ref object of Event
     detail {.jsget.}: JSValue
@@ -152,35 +152,65 @@ proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
   event.flags = {efInitialized}
   #TODO this should measure time starting from when the script was started.
   event.timeStamp = float64(getUnixMillis())
-  event.bubbles = eventInitDict.bubbles
-  event.cancelable = eventInitDict.cancelable
+  if eventInitDict.bubbles:
+    event.flags.incl(efBubbles)
+  if eventInitDict.cancelable:
+    event.flags.incl(efCancelable)
   if eventInitDict.composed:
     event.flags.incl(efComposed)
 
-#TODO eventInitDict type
-proc newEvent(ctx: JSContext; ctype: CAtomTraced; eventInitDict = EventInit()):
-    Event {.jsctor.} =
+proc newEvent(ctype: CAtomTraced; eventInitDict = EventInit()): Event {.
+    jsctor.} =
   let event = Event(ctype: ctype.dup())
   event.innerEventCreationSteps(eventInitDict)
   return event
 
-proc newEvent*(ctype: CAtomTraced; target: EventTarget;
+proc newEvent*(ctype: StaticAtom; target: EventTarget;
     bubbles, cancelable: bool): Event =
-  return Event(
-    ctype: ctype.dup(),
+  let event = Event(
+    ctype: ctype.toAtom(),
     target: target,
     currentTarget: target,
-    bubbles: bubbles,
-    cancelable: cancelable
   )
+  if bubbles:
+    event.flags.incl(efBubbles)
+  if cancelable:
+    event.flags.incl(efCancelable)
+  event
+
+proc newTrustedEvent*(ctype: StaticAtom; target: EventTarget;
+    bubbles, cancelable: bool): Event =
+  let event = Event(
+    ctype: ctype.toAtom(),
+    target: target,
+    currentTarget: target,
+    flags: {efTrusted}
+  )
+  if bubbles:
+    event.flags.incl(efBubbles)
+  if cancelable:
+    event.flags.incl(efCancelable)
+  event
+
+proc bubbles(event: Event): bool {.jsfget.} =
+  efBubbles in event.flags
+
+proc cancelable(event: Event): bool {.jsfget.} =
+  efCancelable in event.flags
+
+proc isTrusted(event: Event): bool {.jsfget.} =
+  efTrusted in event.flags
+
+proc setTrusted*(event: Event) =
+  event.flags.incl(efTrusted)
 
 proc initialize(this: Event; ctype: CAtomTraced; bubbles, cancelable: bool) =
   this.flags.incl(efInitialized)
-  this.isTrusted = false
+  this.flags.excl(efTrusted)
   this.target = nil
   this.ctype = ctype.dup()
-  this.bubbles = bubbles
-  this.cancelable = cancelable
+  this.flags.toggleIf(efBubbles, bubbles)
+  this.flags.toggleIf(efCancelable, cancelable)
 
 proc initEvent(this: Event; ctype: CAtomTraced; bubbles, cancelable: bool)
     {.jsfunc.} =
@@ -320,8 +350,8 @@ proc newUIEvent*(ctype: CAtomTraced; eventInit = UIEventInit()): UIEvent
 proc initUIEvent(this: UIEvent; ctype: CAtomTraced; bubbles = false;
     cancelable = false; view = none(EventTarget); detail = 0i32) {.jsfunc.} =
   this.ctype = ctype.dup()
-  this.bubbles = bubbles
-  this.cancelable = cancelable
+  this.flags.toggleIf(efBubbles, bubbles)
+  this.flags.toggleIf(efCancelable, cancelable)
   this.view = view.get(nil)
   this.detail = detail
 
@@ -725,7 +755,7 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event): JSValue
   if efInitialized notin event.flags:
     return JS_ThrowDOMException(ctx, "InvalidStateError",
       "event is not initialized")
-  event.isTrusted = false
+  event.flags.excl(efTrusted)
   if ctx.dispatch(this, event):
     return JS_FALSE
   return JS_TRUE
@@ -773,9 +803,8 @@ proc abort(ctx: JSContext; this: AbortController; reason: JSValueConst): JSValue
       if JS_IsException(res):
         return res
       JS_FreeValue(ctx, res)
-    let event = newEvent(satAbort.view(), signal, bubbles = false,
+    let event = newTrustedEvent(satAbort, signal, bubbles = false,
       cancelable = false)
-    event.isTrusted = true
     discard ctx.dispatch(signal, event)
   return JS_UNDEFINED
 

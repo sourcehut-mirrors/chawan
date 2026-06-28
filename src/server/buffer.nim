@@ -735,9 +735,8 @@ proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
 
 proc dispatchLoadEvent(bc: BufferContext) =
   let window = bc.window
-  let event = newEvent(satLoad.view(), window.document, bubbles = false,
+  let event = newTrustedEvent(satLoad, window.document, bubbles = false,
     cancelable = false)
-  event.isTrusted = true
   discard window.jsctx.dispatch(window, event, targetOverride = true)
   bc.maybeReshape()
 
@@ -1064,7 +1063,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
       bubbles: true,
       cancelable: true
     ))
-    event.isTrusted = true
+    event.setTrusted()
     let canceled = bc.window.jsctx.dispatch(form, event)
     form.firing = false
     if canceled:
@@ -1136,7 +1135,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
               cancelable: true
             )
           )
-          inputEvent.isTrusted = true
+          inputEvent.setTrusted()
           window.fireEvent(inputEvent, input)
         bc.window.fireEvent(satChange, input, bubbles = true,
           cancelable = true, trusted = true)
@@ -1420,12 +1419,12 @@ proc click(bc: BufferContext; handle: PagerHandle;
       let window = bc.window
       let init = bc.initMouseEventInit(0, 0, cursorx, cursory, n)
       let event = newMouseEvent(satClick.view(), init)
-      event.isTrusted = true
+      event.setTrusted()
       canceled = window.jsctx.dispatch(element, event)
       if n == 2:
         let init = bc.initMouseEventInit(0, 0, cursorx, cursory, n)
         let event = newMouseEvent(satDblclick.view(), init)
-        event.isTrusted = true
+        event.setTrusted()
         discard window.jsctx.dispatch(element, event)
       bc.maybeReshape()
       if bc.clickResult.t != crtNone:
@@ -1454,7 +1453,7 @@ proc contextMenu(bc: BufferContext; handle: PagerHandle;
       let window = bc.window
       let init = bc.initMouseEventInit(2, 2, cursorx, cursory, 1)
       let event = newMouseEvent(satContextmenu.view(), init)
-      event.isTrusted = true
+      event.setTrusted()
       canceled = window.jsctx.dispatch(element, event)
       bc.maybeReshape()
   canceled

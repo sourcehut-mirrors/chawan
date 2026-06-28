@@ -1572,8 +1572,7 @@ proc fireEvent*(window: Window; event: Event; target: EventTarget) =
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget;
     bubbles, cancelable, trusted: bool) =
-  let event = newEvent(name.view(), target, bubbles, cancelable)
-  event.isTrusted = trusted
+  let event = newTrustedEvent(name, target, bubbles, cancelable)
   window.fireEvent(event, target)
 
 proc loadImageFinish(opaque: RootRef; response: Response) =
@@ -3614,8 +3613,8 @@ proc createEvent(ctx: JSContext; document: Document; atom: CAtomTraced):
   of satCustomevent:
     return ctx.toJS(ctx.newCustomEvent(satUempty.view()))
   of satEvent, satEvents, satHtmlevents, satSvgevents:
-    return ctx.toJS(newEvent(satUempty.view(), nil,
-      bubbles = false, cancelable = false))
+    return ctx.toJS(newEvent(satUempty, nil, bubbles = false,
+      cancelable = false))
   of satUievent, satUievents:
     return ctx.toJS(newUIEvent(satUempty.view()))
   of satMouseevent, satMouseevents:
@@ -6573,8 +6572,7 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
   return JS_DupValue(ctx, val)
 
 proc click(ctx: JSContext; element: HTMLElement) {.jsfunc.} =
-  let event = newEvent(satClick.view(), element, bubbles = true,
-    cancelable = true)
+  let event = newEvent(satClick, element, bubbles = true, cancelable = true)
   let canceled = ctx.dispatch(element, event)
   if not canceled:
     let window = ctx.getWindow()
