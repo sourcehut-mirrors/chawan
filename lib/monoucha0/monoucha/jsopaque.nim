@@ -31,6 +31,7 @@ type
     jsvObjectPrototypeValueOf = "Object.prototype.valueOf"
     jsvSet = "Set"
     jsvFunction = "Function"
+    jsvIteratorPrototype = "Iterator.prototype"
 
   BoundRefDestructor* = proc(x: pointer) {.nimcall, raises: [].}
 
@@ -97,7 +98,7 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   for s in JSValueRef:
     let ss = $s
     let ret = JS_Eval(ctx, cstring(ss), csize_t(ss.len), "<init>", 0)
-    assert JS_IsFunction(ctx, ret)
+    assert not JS_IsException(ret)
     opaque.valRefs[s] = ret
   return opaque
 

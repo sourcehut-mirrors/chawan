@@ -119,6 +119,7 @@ type
     jitValue # array-like
     jitIndexed # array-like, but no values()/entries()
     jitPair # pair
+    jitIterator # iterator object
 
 proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
   return alloc(size)
@@ -295,12 +296,16 @@ proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
     rtOpaque.classes[classid].fins = move(fins)
   true
 
-proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID): JSValue =
+proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
+    iterable: JSIterableType): JSValue =
   if parent != 0:
     let parentProto = JS_GetClassProto(ctx, parent)
     let proto = JS_NewObjectProtoClass(ctx, parentProto, parent)
     JS_FreeValue(ctx, parentProto)
     return proto
+  if iterable == jitIterator:
+    let parentProto = ctx.getOpaque().valRefs[jsvIteratorPrototype]
+    return JS_NewObjectProtoClass(ctx, parentProto, parent)
   return JS_NewObject(ctx)
 
 proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
@@ -313,16 +318,22 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
 proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; data: JSValueConstArray): JSValue
     {.cdecl.} =
-  #TODO ToObject, CORS (security check)
+  let this = ctx.toObject(this)
+  if JS_IsException(this):
+    return JS_EXCEPTION
+  #TODO CORS (security check)
   if JS_GetClassID(this) != JSClassID(magic):
+    JS_FreeValue(ctx, this)
     return JS_ThrowTypeError(ctx, "unexpected pairs class")
   #TODO convert argv[0] to function
   let fun = argv[0]
   let iter = JS_Call(ctx, data[0], this, 0, nil)
   if JS_IsException(iter):
+    JS_FreeValue(ctx, this)
     return iter
   let nextMethod = JS_GetProperty(ctx, iter, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
+    JS_FreeValue(ctx, this)
     JS_FreeValue(ctx, iter)
     return JS_EXCEPTION
   var res = JS_UNDEFINED
@@ -354,6 +365,7 @@ proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
       JS_FreeValue(ctx, res2)
   JS_FreeValue(ctx, iter)
   JS_FreeValue(ctx, nextMethod)
+  JS_FreeValue(ctx, this)
   return res
 
 proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
@@ -391,6 +403,8 @@ proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
     let itSym = ctxOpaque.symRefs[jsyIterator]
     if ctx.definePropertyCWE(proto, itSym, pairs) == dprException:
       return dprException
+  of jitIterator:
+    discard
   dprSuccess
 
 # On exception, this returns JS_INVALID_CLASS_ID, but doesn't undo changes
@@ -412,7 +426,7 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   if rtOpaque.classes.len <= int(res):
     rtOpaque.classes.setLen(int(res) + 1)
   rtOpaque.classes[res].parent = parent
-  let proto = ctx.newProtoFromParentClass(parent)
+  let proto = ctx.newProtoFromParentClass(parent, iterable)
   JS_SetClassProto(ctx, res, proto)
   if not ctx.addClassUnforgeableAndFinalizer(proto, res, parent, unforgeable,
       finalizer):

@@ -435,4 +435,9 @@ proc toIntIndex*(ctx: JSContext; value: JSValue): int =
     return -1
   int(tmp)
 
+proc toObject*(ctx: JSContext; val: JSValueConst): JSValue =
+  ## Roundabout way to invoke ToObject.
+  let fun = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
+  JS_Call(ctx, fun, val, 0, nil)
+
 {.pop.} # raises

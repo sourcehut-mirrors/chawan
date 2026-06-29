@@ -155,22 +155,43 @@ assertThrows(() => new URL("https://example.org", null), TypeError);
 	assert(x.searchParams.has("ho", "hi"));
 	assertEquals(new URLSearchParams(undefined) + "", "")
 	x.search = "a=b";
-	let i = 0;
-	for (const it of x.searchParams) {
-		i++;
-		assertEquals(it[0], "a");
-		assertEquals(it[1], "b");
+	{
+		let i = 0;
+		for (const it of x.searchParams) {
+			i++;
+			assertEquals(it[0], "a");
+			assertEquals(it[1], "b");
+		}
+		assertEquals(i, 1);
 	}
-	assertEquals(i, 1);
-	x.searchParams.forEach((key, value, params, unset) => {
-		i++;
-		assertEquals(key, "a");
-		assertEquals(value, "b");
-		assertEquals(params, x.searchParams);
-		assertEquals(unset, undefined);
-		assertEquals(this, window);
-	});
-	assertEquals(i, 2);
+	{
+		let i = 0;
+		x.searchParams.forEach((key, value, params, unset) => {
+			i++;
+			assertEquals(key, "a");
+			assertEquals(value, "b");
+			assertEquals(params, x.searchParams);
+			assertEquals(unset, undefined);
+			assertEquals(this, window);
+		});
+		assertEquals(i, 1);
+	}
+	{
+		let i = 0;
+		for (const it of x.searchParams.keys()) {
+			assertEquals(it[0], "a");
+			i++;
+		}
+		assertEquals(i, 1);
+	}
+	{
+		let i = 0;
+		for (const it of x.searchParams.values()) {
+			assertEquals(it[0], "b");
+			i++;
+		}
+		assertEquals(i, 1);
+	}
 }
 {
 	const url = new URL("data:blah  #a");

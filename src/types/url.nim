@@ -395,7 +395,7 @@ proc mapIdna(ctx: LUContext; mapped: var seq[uint32]; u: uint32): Opt[void] =
   of 0x03C2: mapped &= u # sigma maps to itself
   elif ctx.isBidiControl(u): return err() # bidi_control is disallowed
   else:
-    var res {.noinit.}: array[3, uint32]
+    var res {.noinit.}: array[LRE_CC_RES_LEN_MAX, uint32]
     let p = cast[ptr UncheckedArray[uint32]](addr res[0])
     let len = lre_case_conv(p, u, 2) # case fold
     let mapping = res.toOpenArray(0, len - 1).normalize(UNICODE_NFKC)
@@ -1280,8 +1280,8 @@ proc next(ctx: JSContext; iter: URLSearchParamsIterator; done: var JS_BOOL):
   done = false
   case iter.t
   of sitEntries: ctx.toJS(params.list[i])
-  of sitValues: ctx.toJS(params.list[i].name)
-  of sitKeys: ctx.toJS(params.list[i].value)
+  of sitKeys: ctx.toJS(params.list[i].name)
+  of sitValues: ctx.toJS(params.list[i].value)
 
 #TODO magic
 proc entries(params: URLSearchParams): URLSearchParamsIterator {.jsfunc.} =
@@ -1444,7 +1444,7 @@ proc addURLModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(URL)
   ?ctx.registerType(URLSearchParams, iterable = jitPair)
   ?ctx.registerType(URLSearchParamsIterator, name = "URLSearchParams Iterator",
-    namespace = JS_UNDEFINED)
+    namespace = JS_UNDEFINED, iterable = jitIterator)
   ok()
 
 {.pop.} # raises: []
