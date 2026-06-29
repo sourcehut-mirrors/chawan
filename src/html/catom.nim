@@ -8,6 +8,20 @@
 # variables are tracked with `=destroy`, but copy/dup hooks are not used
 # and interned string members are still managed manually in finalizers.
 # This makes it so a compiler bug will, at worst, just cause a leak.
+#
+# On the different types:
+#
+# * StaticAtom is a pre-defined atom without a reference count.
+# * CAtomTraced is an atom with automatic reference counting.  It is
+#   still not possible to copy these; instead, when you have to dup the
+#   atom, use dupTraced().
+# * CAtom is an atom with manual refcounting.
+#
+# TODO: in the past, we didn't bother with refcounting atoms, and there is
+# still some code that straight out leaks them.  Also, as noted above, we
+# don't trust the compiler enough to do automatic refcounting outside of
+# regular procs, so currently you have to free them in the finalizer.
+# (This *is* a problem in non-JS-bound types that have no finalizer.)
 
 {.push raises: [].}
 
