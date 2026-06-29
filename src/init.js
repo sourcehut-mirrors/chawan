@@ -384,7 +384,7 @@ const ConsoleTitle = "Browser Console";
 
 /* public */
 console.clear = function() {
-    const pager = pager;
+    const pager = globalThis.pager;
     if (pager.consoleCacheId == -1)
         return;
     if (!pager.addConsole())
