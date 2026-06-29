@@ -247,10 +247,10 @@ type
     element: Element
     attrlist: seq[Attr]
 
-  NodeFilterType = enum
-    nftAccept = (1, "FILTER_ACCEPT")
-    nftReject = (2, "FILTER_REJECT")
-    nftSkip = (3, "FILTER_SKIP")
+  NodeFilterResult = enum
+    nfrAccept = (1, "FILTER_ACCEPT")
+    nfrReject = (2, "FILTER_REJECT")
+    nfrSkip = (3, "FILTER_SKIP")
 
   NodeFilterNode = enum
     SHOW_ELEMENT = 0
@@ -266,8 +266,8 @@ type
     SHOW_DOCUMENT_FRAGMENT = 10
     SHOW_NOTATION = 11
 
-  CollectionMatchFun = proc(ctx: JSContext; this: Collection; node: Node):
-    Opt[bool] {.nimcall, raises: [].}
+  CollectionMatchFun = proc(this: Collection; node: Node): bool {.
+    nimcall, raises: [].}
 
   LoadSheetEnv {.final.} = ref object of BlobOpaque
     window: Window
@@ -290,26 +290,34 @@ type
   LoadSheetFinish = proc(window: Window; this: SheetElement;
     res: LoadSheetResult; env: ParseSheetEnv; i: int) {.  nimcall, raises: [].}
 
-  CollectionObj = object of JSRootObj
-    childonly: bool
-    invalid: bool
-    inclusive: bool
+  CollectionLikeObj = object of JSRootObj
     root: Node
-    match: CollectionMatchFun
-    snapshot: seq[Node]
-    atoms: seq[CAtom]
     # if not nil, this is a live collection.  (uses a ptr instead of a ref
     # because ORC likes to set refs to nil before the destructor is called)
     document: ptr DocumentObj
-    prev: ptr CollectionObj
-    next: ptr CollectionObj
+    prev: ptr CollectionLikeObj
+    next: ptr CollectionLikeObj
 
-  Collection = ref CollectionObj
+  CollectionLike = ref CollectionLikeObj
 
-  NodeIterator {.final.} = ref object of Collection
-    filter: JSValue
+  Collection = ref object of CollectionLikeObj
+    childonly: bool
+    invalid: bool
+    match: CollectionMatchFun
+    snapshot: seq[Node]
+    atoms: seq[CAtom]
+
+  NodeIteratorLike = ref object of CollectionLikeObj
+    active: bool
     whatToShow: uint32
-    u: uint32
+    filter: JSValue
+
+  NodeIterator {.final.} = ref object of NodeIteratorLike
+    referenceNode {.jsget.}: Node
+    before {.jsget: "pointerBeforeReferenceNode".}: bool
+
+  TreeWalker {.final.} = ref object of NodeIteratorLike
+    currentNode {.jsgetset.}: Node
 
   NodeList = ref object of Collection
 
@@ -404,7 +412,7 @@ type
     cachedLinks: HTMLCollection
     cachedImages: HTMLCollection
     parser*: RootRef
-    liveCollectionsHead: ptr CollectionObj
+    liveCollectionsHead: ptr CollectionLikeObj
     cachedAll: HTMLAllCollection
     customElements: CustomElementRegistry #TODO ?
 
@@ -693,36 +701,24 @@ proc newElement*(document: Document; localName: CAtomTraced;
 proc newElement(document: Document;
   localName, namespaceURI, tagName: CAtomTraced): Element
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
-proc newHTMLCollection(ctx: JSContext; root: Node; match: CollectionMatchFun;
-  islive, childonly: bool): Opt[HTMLCollection]
+proc newHTMLCollection(root: Node; match: CollectionMatchFun;
+  islive, childonly: bool): HTMLCollection
 proc newEmptyNodeList(): NodeList
-proc newNodeList(ctx: JSContext; root: Node; match: CollectionMatchFun;
-  islive, childonly: bool): Opt[NodeList]
+proc newNodeList(root: Node; match: CollectionMatchFun;
+  islive, childonly: bool): NodeList
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
   readonly = false): CSSStyleDeclaration
 
-proc adopt(document: Document; node: Node; ctx: JSContext)
-proc applyStyleDependencies*(element: Element; depends: DependencyInfo)
-proc baseURL*(document: Document): URL
-proc documentElement*(document: Document): Element
-proc getElementById*(document: Document; id: CAtomTraced): Element
-proc invalidateCollections(document: Document)
+proc document*(node: Node): Document
 proc isConnected(node: Node): bool
 proc lastChild*(node: Node): Node
-proc parseURL0*(document: Document; s: string): URL
-proc parseURL*(document: Document; s: string): Opt[URL]
-proc reflectEvent(document: Document; target: EventTarget;
-  name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
-
-proc addElementId(document: Document; element: Element)
-proc document*(node: Node): Document
 proc nextDescendant(node, start: Node): Node
+proc nextDescendantExcl(node, start: Node): Node
 proc nextDescendantShadow(node, start: Node): Node
-proc parentNodeShadow(node: Node): Node
-proc parentNodeHost(node: Node): Node
 proc parentElement*(node: Node): Element
-proc removeElementId(document: Document; element: Element)
+proc parentNodeHost(node: Node): Node
+proc parentNodeShadow(node: Node): Node
 proc serializeFragment(res: var string; node: Node; writeShadow: bool)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
   writeShadow: bool)
@@ -737,6 +733,22 @@ proc replaceAll(parent: ParentNode; ds: DOMString; ctx: JSContext)
 proc firstChild(parent: ParentNode): Node
 proc firstChildShadow(parent: ParentNode): Node
 proc setFirstChild(node: ParentNode; child: Node)
+
+proc addElementId(document: Document; element: Element)
+proc adopt(document: Document; node: Node; ctx: JSContext)
+proc applyStyleDependencies*(element: Element; depends: DependencyInfo)
+proc baseURL*(document: Document): URL
+proc documentElement*(document: Document): Element
+proc getElementById*(document: Document; id: CAtomTraced): Element
+proc invalidateCollections(document: Document)
+proc invalidateCollectionsRemove(document: Document; node: Node)
+proc parseURL0*(document: Document; s: string): URL
+proc parseURL*(document: Document; s: string): Opt[URL]
+proc reflectEvent(document: Document; target: EventTarget;
+  name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
+proc removeElementId(document: Document; element: Element)
+
+proc iterRemove(iter: NodeIterator; node: Node)
 
 proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool
 
@@ -1286,14 +1298,14 @@ proc getWeak(ctx: JSContext; wwm: WindowWeakMap; key: JSValueConst): JSValue =
   let global = ctx.getGlobal()
   return ctx.invoke(global.weakMap[wwm], ctx.getOpaque().strRefs[jstGet], key)
 
-proc isCell(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-  ok(node of Element and Element(node).tagType in {TAG_TD, TAG_TH})
+proc isCell(this: Collection; node: Node): bool =
+  node of Element and Element(node).tagType in {TAG_TD, TAG_TH}
 
-proc isTBody(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-  ok(node of Element and Element(node).tagType == TAG_TBODY)
+proc isTBody(this: Collection; node: Node): bool =
+  node of Element and Element(node).tagType == TAG_TBODY
 
-proc isRow(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-  ok(node of Element and Element(node).tagType == TAG_TR)
+proc isRow(this: Collection; node: Node): bool =
+  node of HTMLTableRowElement
 
 proc isOptionOf(node, select: Node): bool =
   if node of HTMLOptionElement:
@@ -1302,23 +1314,20 @@ proc isOptionOf(node, select: Node): bool =
       parent.tagType == TAG_OPTGROUP and Node(parent.parentNode) == select
   return false
 
-proc isElement(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-  ok(node of Element)
+proc isElement(this: Collection; node: Node): bool =
+  node of Element
 
-proc isForm(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-  ok(node of HTMLFormElement)
+proc isForm(this: Collection; node: Node): bool =
+  node of HTMLFormElement
 
-proc isLink(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
+proc isLink(this: Collection; node: Node): bool =
   if not (node of Element):
-    return ok(false)
+    return false
   let element = Element(node)
-  ok(element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref))
+  element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
 
-proc isImage(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-  if not (node of Element):
-    return ok(false)
-  let element = Element(node)
-  ok(element.tagType == TAG_IMG)
+proc isImage(this: Collection; node: Node): bool =
+  node of HTMLImageElement
 
 proc logException(window: Window; url: URL) =
   #TODO excludepassword seems pointless?
@@ -1329,14 +1338,14 @@ proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
     JSValue =
   case wwm
   of wwmChildren:
-    return ctx.toJS(ctx.newHTMLCollection(
+    return ctx.toJS(newHTMLCollection(
       this,
       match = isElement,
       islive = true,
       childonly = true
     ))
   of wwmChildNodes:
-    return ctx.toJS(ctx.newNodeList(
+    return ctx.toJS(newNodeList(
       this,
       match = nil,
       islive = true,
@@ -1344,22 +1353,22 @@ proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
     ))
   of wwmSelectedOptions:
     let this = HTMLSelectElement(this)
-    return ctx.toJS(ctx.newHTMLCollection(
+    return ctx.toJS(newHTMLCollection(
       this,
-      match = proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-        ok(node.isOptionOf(this.root) and HTMLOptionElement(node).selected),
+      match = proc(this: Collection; node: Node): bool =
+        node.isOptionOf(this.root) and HTMLOptionElement(node).selected,
       islive = true,
       childonly = false
     ))
   of wwmTBodies:
-    return ctx.toJS(ctx.newHTMLCollection(
+    return ctx.toJS(newHTMLCollection(
       this,
       match = isTBody,
       islive = true,
       childonly = true
     ))
   of wwmCells:
-    return ctx.toJS(ctx.newHTMLCollection(
+    return ctx.toJS(newHTMLCollection(
       this,
       match = isCell,
       islive = true,
@@ -2084,6 +2093,18 @@ proc previousSibling*(node: Node): Node {.jsfget.} =
     return nil
   return node.internalPrev
 
+# performance-sensitive, so we inline this with a template
+template nextDescendantExclImpl(node, start: Node): Node =
+  # climb up until we find a non-last leaf (this might be node itself)
+  var it = node
+  while it != start:
+    let next = it.nextSibling
+    if next != nil:
+      return next
+    it = it.parentNode
+  # done
+  nil
+
 # Return the next descendant if it isn't `start', and nil otherwise.
 # Note: `start' must be either an ancestor of `node', `node` itself, or nil.
 proc nextDescendant(node, start: Node): Node =
@@ -2091,15 +2112,11 @@ proc nextDescendant(node, start: Node): Node =
     let node = cast[ParentNode](node)
     if node.firstChild != nil:
       return node.firstChild
-  # climb up until we find a non-last leaf (this might be node itself)
-  var node = node
-  while node != start:
-    let next = node.nextSibling
-    if next != nil:
-      return next
-    node = node.parentNode
-  # done
-  return nil
+  node.nextDescendantExclImpl(start)
+
+# Like nextDescendant, but skips all children of node.
+proc nextDescendantExcl(node, start: Node): Node =
+  node.nextDescendantExclImpl(start)
 
 proc nextDescendantShadow(node, start: Node): Node =
   if node of ParentNode: # parent
@@ -2117,16 +2134,28 @@ proc nextDescendantShadow(node, start: Node): Node =
   return nil
 
 proc previousDescendant(node: Node): Node =
-  let prev = node.previousSibling
+  var prev = node.previousSibling
   if prev == nil:
     return node.parentNode
-  var node = prev
-  while node of ParentNode:
-    let pnode = cast[ParentNode](node)
+  while prev of ParentNode:
+    let pnode = cast[ParentNode](prev)
     if pnode.firstChild == nil:
       break
-    node = pnode.lastChild
-  return node
+    prev = pnode.lastChild
+  prev
+
+proc previousDescendant(node, start: Node): Node =
+  if node == start:
+    return nil
+  var prev = node.previousSibling
+  if prev == nil:
+    return node.parentNode
+  while prev of ParentNode:
+    let pnode = cast[ParentNode](prev)
+    if pnode.firstChild == nil:
+      break
+    prev = pnode.lastChild
+  return prev
 
 proc ownerDocument(node: Node): Document {.jsfget.} =
   if node of Document:
@@ -2326,7 +2355,7 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   # remove().
   assert document != nil
   #TODO live ranges
-  #TODO NodeIterator
+  document.invalidateCollectionsRemove(node)
   let element = if node of Element: Element(node) else: nil
   let parentElement = node.parentElement
   if parentElement != nil:
@@ -2348,7 +2377,6 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   node.internalNext = document
   node.parentNode = nil
   let root = parent.rootNode
-  document.invalidateCollections()
   var hasSlot = false
   if element != nil:
     if parentElement == nil:
@@ -2970,50 +2998,49 @@ proc childTextContent*(node: ParentNode): string =
     if child of Text:
       result &= Text(child).data.s
 
-proc getElementsByTagNameImpl(ctx: JSContext; root: ParentNode;
-    tagName: CAtomTraced): Opt[HTMLCollection] =
+proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtomTraced):
+    HTMLCollection =
   if tagName == satUstar:
-    return ctx.newHTMLCollection(root, isElement, islive = true,
-      childonly = false)
-  let this = ?ctx.newHTMLCollection(
+    return newHTMLCollection(root, isElement, islive = true, childonly = false)
+  let this = newHTMLCollection(
     root,
-    proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
+    proc(this: Collection; node: Node): bool =
       if node of Element:
         let element = Element(node)
         let atom = this.atoms[0]
         if element.namespaceURI == satNamespaceHTML:
-          return ok(element.tagName.equalsIgnoreCase(atom))
-        return ok(element.tagName == atom)
-      return ok(false),
+          return element.tagName.equalsIgnoreCase(atom)
+        return element.tagName == atom
+      return false,
     islive = true,
     childonly = false
   )
   this.atoms = @[tagName.dup()]
-  ok(this)
+  this
 
-proc getElementsByClassNameImpl(ctx: JSContext; node: ParentNode;
-    classNames: DOMString): Opt[HTMLCollection] =
-  let this = ?ctx.newHTMLCollection(
+proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
+    HTMLCollection =
+  let this = newHTMLCollection(
     node,
-    proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
+    proc(this: Collection; node: Node): bool =
       if not (node of Element):
-        return ok(false)
+        return false
       let element = Element(node)
       if element.document.mode == QUIRKS:
         for class in this.atoms:
           if not element.classList.toks.containsIgnoreCase(class):
-            return ok(false)
+            return false
       else:
         for class in this.atoms:
           if class notin element.classList.toks:
-            return ok(false)
-      ok(true),
+            return false
+      true,
     islive = true,
     childonly = false
   )
   for class in classNames.toOpenArray().split(AsciiWhitespace):
     this.atoms.add(class.toAtom())
-  ok(this)
+  this
 
 proc insert0(parent: ParentNode; node, before: Node;
     postConnectionNodes: var seq[Element]; ctx: JSContext) =
@@ -3134,56 +3161,56 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
   return ctx.toJS(this)
 
 # Collection
-proc populateCollection(ctx: JSContext; this: Collection): Opt[void] =
-  if this.inclusive:
-    if this.match == nil or ?this.match(ctx, this, this.root):
-      this.snapshot.add(this.root)
+proc populateCollection(this: Collection) =
   if this.root of ParentNode:
     let root = ParentNode(this.root)
     if this.childonly:
       for child in root.childList:
-        if this.match == nil or ?this.match(ctx, this, child):
+        if this.match == nil or this.match(this, child):
           this.snapshot.add(child)
     else:
       for desc in root.descendants:
-        if this.match == nil or ?this.match(ctx, this, desc):
+        if this.match == nil or this.match(this, desc):
           this.snapshot.add(desc)
-  ok()
 
-proc refreshCollection(ctx: JSContext; this: Collection): Opt[void] =
+proc refreshCollection(this: Collection) =
   if this.invalid:
     assert this.document != nil
     this.snapshot.setLen(0)
-    ?ctx.populateCollection(this)
+    this.populateCollection()
     this.invalid = false
-  ok()
 
-proc finalize0(collection: Collection) =
+proc finalize0(collection: CollectionLike) =
   if collection.document != nil:
-    let collection = addr collection[]
+    let collection = cast[ptr CollectionLikeObj](collection)
     if collection.prev != nil:
       collection.prev.next = collection.next
     else:
       collection.document.liveCollectionsHead = collection.next
     if collection.next != nil:
       collection.next.prev = collection.prev
-  freeAtoms(collection.atoms)
 
 proc finalize(collection: HTMLCollection) {.jsfin.} =
   collection.finalize0()
+  freeAtoms(collection.atoms)
 
 proc finalize(collection: NodeList) {.jsfin.} =
   collection.finalize0()
+  freeAtoms(collection.atoms)
 
-proc finalize(rt: JSRuntime; collection: NodeIterator) {.jsfin.} =
-  collection.finalize0()
-  JS_FreeValueRT(rt, collection.filter)
+proc finalize(rt: JSRuntime; this: NodeIterator) {.jsfin.} =
+  this.finalize0()
+  JS_FreeValueRT(rt, this.filter)
+
+proc finalize(rt: JSRuntime; this: TreeWalker) {.jsfin.} =
+  JS_FreeValueRT(rt, this.filter)
 
 proc mark(rt: JSRuntime; this: NodeIterator; markFun: JS_MarkFunc) {.jsmark.} =
   JS_MarkValue(rt, this.filter, markFun)
 
 proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
+  freeAtoms(collection.atoms)
 
 proc finalize(document: Document) {.jsfin.} =
   var it = document.liveCollectionsHead
@@ -3191,52 +3218,50 @@ proc finalize(document: Document) {.jsfin.} =
     it.document = nil
     it = it.next
 
-proc getLength(ctx: JSContext; this: Collection): Opt[uint32] =
-  ?ctx.refreshCollection(this)
-  if uint64(this.snapshot.len) > uint64(uint32.high):
-    JS_ThrowInternalError(ctx, "collection too large")
-  ok(uint32(this.snapshot.len))
+proc getLength(this: Collection): uint32 =
+  this.refreshCollection()
+  uint32(min(uint64(this.snapshot.len), uint32.high))
 
-proc findNode(ctx: JSContext; this: Collection; node: Node): Opt[int] =
-  ?ctx.refreshCollection(this)
-  ok(this.snapshot.find(node))
+proc findNode(this: Collection; node: Node): int =
+  this.refreshCollection()
+  this.snapshot.find(node)
 
-proc newCollection[T: Collection](ctx: JSContext; root: Node;
-    match: CollectionMatchFun; islive, childonly: bool; inclusive = false):
-    Opt[T] =
+proc attachLiveCollection(root: Node; collection: CollectionLike) =
   let document = root.document
+  if document.liveCollectionsHead != nil:
+    document.liveCollectionsHead.prev = addr collection[]
+    collection.next = document.liveCollectionsHead
+  document.liveCollectionsHead = addr collection[]
+  collection.document = addr document[]
+
+proc newCollection[T: Collection](root: Node; match: CollectionMatchFun;
+    islive, childonly: bool): T =
   let this = T(
     childonly: childonly,
-    inclusive: inclusive,
     match: match,
     root: root,
-    document: if islive: addr document[] else: nil,
     invalid: islive
   )
   if islive:
-    if document.liveCollectionsHead != nil:
-      document.liveCollectionsHead.prev = addr this[]
-      this.next = document.liveCollectionsHead
-    document.liveCollectionsHead = addr this[]
+    root.attachLiveCollection(this)
   else:
-    ?ctx.populateCollection(this)
-  ok(this)
+    this.populateCollection()
+  this
 
 proc newEmptyNodeList(): NodeList =
   return NodeList(
     childonly: false,
-    inclusive: false,
     match: nil,
     document: nil
   )
 
-proc newHTMLCollection(ctx: JSContext; root: Node; match: CollectionMatchFun;
-    islive, childonly: bool): Opt[HTMLCollection] =
-  newCollection[HTMLCollection](ctx, root, match, islive, childonly)
+proc newHTMLCollection(root: Node; match: CollectionMatchFun;
+    islive, childonly: bool): HTMLCollection =
+  newCollection[HTMLCollection](root, match, islive, childonly)
 
-proc newNodeList(ctx: JSContext; root: Node; match: CollectionMatchFun;
-    islive, childonly: bool): Opt[NodeList] =
-  newCollection[NodeList](ctx, root, match, islive, childonly)
+proc newNodeList(root: Node; match: CollectionMatchFun;
+    islive, childonly: bool): NodeList =
+  newCollection[NodeList](root, match, islive, childonly)
 
 # Text
 proc newText*(document: Document; data: string): Text =
@@ -3484,36 +3509,35 @@ proc compatMode(document: Document): string {.jsfget.} =
     return "BackCompat"
   return "CSS1Compat"
 
-proc forms(ctx: JSContext; document: Document): Opt[HTMLCollection] {.jsfget.} =
+proc forms(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
   if document.cachedForms == nil:
-    document.cachedForms = ?ctx.newHTMLCollection(
+    document.cachedForms = newHTMLCollection(
       document,
       match = isForm,
       islive = true,
       childonly = false
     )
-  ok(document.cachedForms)
+  document.cachedForms
 
-proc links(ctx: JSContext; document: Document): Opt[HTMLCollection] {.jsfget.} =
+proc links(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
   if document.cachedLinks == nil:
-    document.cachedLinks = ?ctx.newHTMLCollection(
+    document.cachedLinks = newHTMLCollection(
       document,
       match = isLink,
       islive = true,
       childonly = false
     )
-  ok(document.cachedLinks)
+  document.cachedLinks
 
-proc images(ctx: JSContext; document: Document): Opt[HTMLCollection] {.
-    jsfget.} =
+proc images(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
   if document.cachedImages == nil:
-    document.cachedImages = ?ctx.newHTMLCollection(
+    document.cachedImages = newHTMLCollection(
       document,
       match = isImage,
       islive = true,
       childonly = false
     )
-  ok(document.cachedImages)
+  document.cachedImages
 
 proc getURL(ctx: JSContext; document: Document): JSValue {.
     jsfget: "URL", jsfget: "documentURI".} =
@@ -3678,27 +3702,27 @@ proc getElementById(ctx: JSContext; document: Document; val: JSValueConst):
     return JS_NULL
   ctx.toJS(document.getElementById(id.view()))
 
-proc getElementsByName(ctx: JSContext; document: Document; name: CAtomTraced):
-    Opt[NodeList] {.jsfunc.} =
+proc getElementsByName(document: Document; name: CAtomTraced): NodeList
+    {.jsfunc.} =
   if name == satUempty:
-    return ok(newEmptyNodeList())
-  let this = ?ctx.newNodeList(
+    return newEmptyNodeList()
+  let this = newNodeList(
     document,
-    proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-      ok(node of Element and Element(node).name == this.atoms[0]),
+    proc(this: Collection; node: Node): bool =
+      node of Element and Element(node).name == this.atoms[0],
     islive = true,
     childonly = false
   )
   this.atoms = @[name.dup()]
-  ok(this)
+  this
 
-proc getElementsByTagName(ctx: JSContext; document: Document;
-    tagName: CAtomTraced): Opt[HTMLCollection] {.jsfunc.} =
-  return ctx.getElementsByTagNameImpl(document, tagName)
+proc getElementsByTagName(document: Document; tagName: CAtomTraced):
+    HTMLCollection {.jsfunc.} =
+  return getElementsByTagNameImpl(document, tagName)
 
-proc getElementsByClassName(ctx: JSContext; document: Document;
-    classNames: DOMString): Opt[HTMLCollection] {.jsfunc.} =
-  return ctx.getElementsByClassNameImpl(document, classNames)
+proc getElementsByClassName(document: Document; classNames: DOMString):
+    HTMLCollection {.jsfunc.} =
+  return getElementsByClassNameImpl(document, classNames)
 
 proc children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
   return childrenImpl(ctx, parentNode)
@@ -3761,7 +3785,18 @@ proc setTitle(ctx: JSContext; document: Document; ds: DOMString) {.
 proc invalidateCollections(document: Document) =
   var collection = document.liveCollectionsHead
   while collection != nil:
-    collection.invalid = true
+    if collection of Collection:
+      cast[Collection](collection).invalid = true
+    collection = collection.next
+
+proc invalidateCollectionsRemove(document: Document; node: Node) =
+  # node will be removed
+  var collection = document.liveCollectionsHead
+  while collection != nil:
+    if cast[CollectionLike](collection) of NodeIterator:
+      cast[NodeIterator](collection).iterRemove(node)
+    elif cast[CollectionLike](collection) of Collection:
+      cast[Collection](collection).invalid = true
     collection = collection.next
 
 proc isValidCustomElementName(atom: CAtomTraced): bool =
@@ -3782,7 +3817,7 @@ proc isValidCustomElementName(atom: CAtomTraced): bool =
     dash = dash or c == '-'
   dash
 
-proc isValidElementName(s: string): bool =
+proc isValidElementName(s: openArray[char]): bool =
   if s.len <= 0:
     return false
   let c = s[0]
@@ -3793,15 +3828,15 @@ proc isValidElementName(s: string): bool =
   return Ascii - AsciiAlphaNumeric - {'-', '.', ':', '_'} notin s
 
 #TODO options/custom elements
-proc createElement(ctx: JSContext; document: Document; localName: string):
+proc createElement(ctx: JSContext; document: Document; localName: DOMString):
     JSValue {.jsfunc.} =
-  if not isValidElementName(localName):
+  if not isValidElementName(localName.toOpenArray()):
     return JS_ThrowDOMException(ctx, "InvalidCharacterError",
       "invalid local name")
   let localName = if not document.isxml:
-    localName.toAtomLowerTrace()
+    localName.toOpenArray().toAtomLowerTrace()
   else:
-    localName.toAtomTrace()
+    localName.toOpenArray().toAtomTrace()
   let namespace = if not document.isxml:
     #TODO or content type is application/xhtml+xml
     satNamespaceHTML
@@ -4243,18 +4278,47 @@ proc replaceWith(ctx: JSContext; this: DocumentType;
 proc remove(this: DocumentType) {.jsfunc.} =
   this.removeImpl()
 
-proc nodeIteratorMatch(ctx: JSContext; this: Collection; node: Node):
-    Opt[bool] =
-  let this = NodeIterator(this)
+# NodeIterator
+proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
+    whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL):
+    JSValue {.jsfunc.} =
+  if not JS_IsObject(filter) and not JS_IsNull(filter):
+    return JS_ThrowTypeError(ctx, "filter is not an object")
+  let this = NodeIterator(
+    root: root,
+    referenceNode: root,
+    whatToShow: whatToShow,
+    filter: JS_DupValue(ctx, filter),
+    before: true
+  )
+  root.attachLiveCollection(this)
+  ctx.toJS(this)
+
+proc jsRoot(this: NodeIterator): Node {.jsfget: "root".} =
+  this.root
+
+proc jsWhatToShow(this: NodeIterator): uint32 {.jsfget: "whatToShow".} =
+  this.whatToShow
+
+proc jsFilter(ctx: JSContext; this: NodeIterator): JSValue {.
+    jsfget: "filter".} =
+  JS_DupValue(ctx, this.filter)
+
+proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
+  if this.active:
+    JS_ThrowDOMException(ctx, "InvalidStateError", "nested filter call")
+    return err()
   let n = 1u32 shl (uint32(node.nodeType) - 1)
   if (this.whatToShow and n) == 0:
-    return ok(false)
+    return ok(uint32(nfrSkip))
   if JS_IsNull(this.filter):
-    return ok(true)
+    return ok(uint32(nfrAccept))
   let filter = this.filter
   let node = ctx.toJS(node)
   if JS_IsException(node):
     return err()
+  this.active = true
+  #TODO call user object's operation (prepare etc.)
   let val = if JS_IsFunction(ctx, filter):
     ctx.callSink(filter, JS_UNDEFINED, node)
   else:
@@ -4263,48 +4327,185 @@ proc nodeIteratorMatch(ctx: JSContext; this: Collection; node: Node):
     JS_FreeAtom(ctx, atom)
     val
   if JS_IsException(val):
+    this.active = false
     return err()
   var res: uint32
-  ?ctx.fromJSFree(val, res)
-  ok(res == uint32(nftAccept))
-
-# NodeIterator
-proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
-    whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL):
-    Opt[NodeIterator] {.jsfunc.} =
-  let this = ?newCollection[NodeIterator](
-    ctx,
-    root,
-    match = nodeIteratorMatch,
-    islive = true,
-    childonly = false,
-    inclusive = true
-  )
-  this.whatToShow = whatToShow
-  this.filter = JS_DupValue(ctx, filter)
-  ok(this)
-
-proc referenceNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfget.} =
-  let len = ?ctx.getLength(this)
-  if this.u < uint32(len):
-    return ok(this.snapshot[this.u])
-  ok(nil)
-
-proc nextNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
-  let res = ?ctx.referenceNode(this)
-  if res != nil:
-    inc this.u
+  let status = ctx.fromJSFree(val, res)
+  this.active = false
+  if status.isErr:
+    return err()
   ok(res)
 
+proc nextNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
+  var node = this.referenceNode
+  var before = this.before
+  while true:
+    if before:
+      before = false
+    else:
+      node = node.nextDescendant(this.root)
+      if node == nil:
+        return ok(nil)
+    if ?ctx.filter(this, node) == uint32(nfrAccept):
+      break
+  this.referenceNode = node
+  this.before = before
+  ok(node)
+
 proc previousNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
-  ?ctx.populateCollection(this)
-  if this.u > 0:
-    dec this.u
-    return ok(this.snapshot[this.u])
-  ok(nil)
+  var node = this.referenceNode
+  var before = this.before
+  while true:
+    if not before:
+      before = true
+    else:
+      node = node.previousDescendant(this.root)
+      if node == nil:
+        return ok(nil)
+    if ?ctx.filter(this, node) == uint32(nfrAccept):
+      break
+  this.referenceNode = node
+  this.before = before
+  ok(node)
 
 proc detach(this: NodeIterator) {.jsfunc.} =
   discard
+
+proc iterRemove(iter: NodeIterator; node: Node) =
+  if not node.contains(iter.root) and node.contains(iter.referenceNode):
+    if iter.before:
+      let next = node.nextDescendantExcl(iter.root)
+      if next != nil:
+        iter.referenceNode = next
+        return
+      iter.before = false
+    iter.referenceNode = node.previousDescendant(iter.root)
+
+# TreeWalker
+proc createTreeWalker(ctx: JSContext; document: Document; root: Node;
+    whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL):
+    JSValue {.jsfunc.} =
+  if not JS_IsObject(filter) and not JS_IsNull(filter):
+    return JS_ThrowTypeError(ctx, "filter is not an object")
+  ctx.toJS(TreeWalker(
+    root: root,
+    currentNode: root,
+    whatToShow: whatToShow,
+    filter: JS_DupValue(ctx, filter)
+  ))
+
+proc jsRoot(this: TreeWalker): Node {.jsfget: "root".} =
+  this.root
+
+proc jsWhatToShow(this: TreeWalker): uint32 {.jsfget: "whatToShow".} =
+  this.whatToShow
+
+proc jsFilter(ctx: JSContext; this: TreeWalker): JSValue {.jsfget: "filter".} =
+  JS_DupValue(ctx, this.filter)
+
+proc parentNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
+  var node = this.currentNode
+  while node != nil and node != this.root:
+    node = node.parentNode
+    if node != nil and ?ctx.filter(this, node) == uint32(nfrAccept):
+      this.currentNode = node
+      return ok(node)
+  ok(nil)
+
+#TODO magic?
+proc traverse(ctx: JSContext; this: TreeWalker; next: bool): Opt[Node] =
+  let currentNode = this.currentNode
+  var node = if next: currentNode.firstChild else: currentNode.lastChild
+  while node != nil:
+    let res = ?ctx.filter(this, node)
+    if res == uint32(nfrAccept):
+      this.currentNode = node
+      return ok(node)
+    if res == uint32(nfrSkip):
+      let child = if next: node.firstChild else: node.lastChild
+      if child != nil:
+        node = child
+        continue
+    while node != nil:
+      let sibling = if next: node.nextSibling else: node.previousSibling
+      if sibling != nil:
+        node = sibling
+        break
+      let parent = Node(node.parentNode)
+      if parent == this.root or parent == currentNode:
+        node = nil
+      else:
+        node = parent
+  ok(nil)
+
+proc traverseSibling(ctx: JSContext; this: TreeWalker; next: bool): Opt[Node] =
+  var node = this.currentNode
+  if node != this.root:
+    while true:
+      var sibling = if next: node.nextSibling else: node.previousSibling
+      while sibling != nil:
+        node = sibling
+        let res = ?ctx.filter(this, node)
+        if res == uint32(nfrAccept):
+          this.currentNode = node
+          return ok(node)
+        sibling = if next: node.firstChild else: node.lastChild
+        if res == uint32(nfrReject) or sibling == nil:
+          sibling = if next: node.nextSibling else: node.previousSibling
+      node = node.parentNode
+      if node == this.root or node == nil or
+          ?ctx.filter(this, node) == uint32(nfrAccept):
+        return ok(nil)
+  ok(nil)
+
+proc firstChild(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
+  ctx.traverse(this, next = true)
+
+proc lastChild(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
+  ctx.traverse(this, next = false)
+
+proc nextSibling(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
+  ctx.traverseSibling(this, next = true)
+
+proc previousSibling(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
+  ctx.traverseSibling(this, next = false)
+
+proc nextNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
+  var node = this.currentNode.nextDescendant(this.root)
+  while node != nil:
+    let res = ?ctx.filter(this, node)
+    if res == uint32(nfrAccept):
+      this.currentNode = node
+      return ok(node)
+    if res == uint32(nfrReject):
+      node = node.nextDescendantExcl(this.root)
+    else:
+      node = node.nextDescendant(this.root)
+  ok(nil)
+
+proc previousNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
+  var node = this.currentNode
+  while node != this.root:
+    while (let sibling = node.previousSibling; sibling != nil):
+      node = sibling
+      var res = ?ctx.filter(this, node)
+      while res != uint32(nfrReject):
+        let last = node.lastChild
+        if last == nil:
+          break
+        res = ?ctx.filter(this, last)
+        node = last
+      if res == uint32(nfrAccept):
+        this.currentNode = node
+        return ok(node)
+    let parent = node.parentNode
+    if node == this.root or parent == nil:
+      return ok(nil)
+    node = parent
+    if ?ctx.filter(this, node) == uint32(nfrAccept):
+      this.currentNode = node
+      return ok(node)
+  ok(nil)
 
 # DOMTokenList
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList =
@@ -4484,13 +4685,13 @@ proc names(ctx: JSContext; map: DOMStringMap): JSPropertyEnumList
   return list
 
 # NodeList
-proc length(ctx: JSContext; this: NodeList): Opt[uint32] {.jsfget.} =
-  return ctx.getLength(this)
+proc length(this: NodeList): uint32 {.jsfget.} =
+  return this.getLength()
 
-proc item(ctx: JSContext; this: NodeList; u: uint32): Opt[Node] {.jsfunc.} =
-  if u < ?ctx.getLength(this):
-    return ok(this.snapshot[u])
-  ok(nil)
+proc item(ctx: JSContext; this: NodeList; u: uint32): Node {.jsfunc.} =
+  if u < this.getLength():
+    return this.snapshot[u]
+  nil
 
 proc getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
@@ -4501,54 +4702,46 @@ proc getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
   of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; this: NodeList): JSPropertyEnumList {.jspropnames.} =
-  let len0 = ctx.getLength(this)
-  if len0.isErr:
-    return JSPropertyEnumList()
-  let L = len0.get
+  let L = this.getLength()
   var list = newJSPropertyEnumList(ctx, L)
   for u in 0 ..< L:
     list.add(u)
   return list
 
 # HTMLCollection
-proc length(ctx: JSContext; this: HTMLCollection): Opt[uint32] {.jsfget.} =
-  return ctx.getLength(this)
+proc length(this: HTMLCollection): uint32 {.jsfget.} =
+  return this.getLength()
 
-proc item(ctx: JSContext; this: HTMLCollection; u: uint32): Opt[Element]
-    {.jsfunc.} =
-  if u < ?ctx.getLength(this):
-    return ok(Element(this.snapshot[int(u)]))
-  ok(nil)
+proc item(this: HTMLCollection; u: uint32): Element {.jsfunc.} =
+  if u < this.getLength():
+    return Element(this.snapshot[int(u)])
+  nil
 
-proc namedItem(ctx: JSContext; this: HTMLCollection; atom: CAtomTraced):
-    Opt[Element] {.jsfunc.} =
-  ?ctx.refreshCollection(this)
+proc namedItem(this: HTMLCollection; atom: CAtomTraced): Element {.jsfunc.} =
+  this.refreshCollection()
   for it in this.snapshot:
     let it = Element(it)
     if it.id == atom or it.namespaceURI == satNamespaceHTML and it.name == atom:
-      return ok(it)
-  ok(nil)
+      return it
+  nil
 
 proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
   var s: CAtomTraced
   return case ctx.fromIdx(atom, u, s)
-  of fiIdx: ctx.toJS(ctx.item(this, u)).uninitIfNull()
-  of fiStr: ctx.toJS(ctx.namedItem(this, s)).uninitIfNull()
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+  of fiStr: ctx.toJS(this.namedItem(s)).uninitIfNull()
   of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; this: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
-  let len0 = ctx.getLength(this)
-  if len0.isErr:
-    return JSPropertyEnumList()
-  let L = len0.get
+  let L = this.getLength()
   var list = newJSPropertyEnumList(ctx, L)
   var ids = initOrderedSet[CAtom]()
   for u in 0 ..< L:
     list.add(u)
-    let element = ctx.item(this, u).get(nil)
+    let element = this.item(u)
     if element == nil:
       continue
     if element.id != satUempty:
@@ -4562,29 +4755,22 @@ proc names(ctx: JSContext; this: HTMLCollection): JSPropertyEnumList
 # HTMLFormControlsCollection
 proc namedItem(ctx: JSContext; this: HTMLFormControlsCollection;
     name: CAtomTraced): JSValue {.jsfunc.} =
-  let nodes0 = newCollection[RadioNodeList](
-    ctx,
+  let nodes = newCollection[RadioNodeList](
     this.root,
-    proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
+    proc(this: Collection; node: Node): bool =
       let this = RadioNodeList(this)
-      if not ?this.parent.match(ctx, this.parent, node):
-        return ok(false)
+      if not this.parent.match(this.parent, node):
+        return false
       let element = Element(node)
       let name = this.atoms[0]
-      ok(element.id == name or
-        element.namespaceURI == satNamespaceHTML and element.name == name),
+      element.id == name or
+        element.namespaceURI == satNamespaceHTML and element.name == name,
     islive = true,
     childonly = false
   )
-  if nodes0.isErr:
-    return JS_EXCEPTION
-  let nodes = nodes0.get
   nodes.parent = this
   nodes.atoms = @[name.dup()]
-  let len0 = ctx.getLength(nodes)
-  if len0.isErr:
-    return JS_EXCEPTION
-  let len = len0.get
+  let len = nodes.getLength()
   if len == 0:
     return JS_NULL
   if len == 1:
@@ -4600,34 +4786,30 @@ proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
   var u: uint32
   var s: CAtomTraced
   return case ctx.fromIdx(atom, u, s)
-  of fiIdx: ctx.toJS(ctx.item(this, u)).uninitIfNull()
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
   of fiStr: ctx.namedItem(this, s).uninitIfNull()
   of fiErr: JS_EXCEPTION
 
 # HTMLAllCollection
-proc length(ctx: JSContext; this: HTMLAllCollection): Opt[uint32] {.jsfget.} =
-  return ctx.getLength(this)
+proc length(this: HTMLAllCollection): uint32 {.jsfget.} =
+  this.getLength()
 
-proc item(ctx: JSContext; this: HTMLAllCollection; u: uint32): Opt[Element] {.
-    jsfunc.} =
-  if u < ?ctx.getLength(this):
-    return ok(Element(this.snapshot[u]))
-  ok(nil)
+proc item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
+  if u < this.getLength():
+    return Element(this.snapshot[u])
+  nil
 
 proc getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
   return case ctx.fromIdx(atom, u)
-  of fiIdx: ctx.toJS(ctx.item(this, u)).uninitIfNull()
+  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
   of fiStr: JS_UNINITIALIZED
   of fiErr: JS_EXCEPTION
 
 proc names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
     {.jspropnames.} =
-  let len0 = ctx.getLength(this)
-  if len0.isErr:
-    return JSPropertyEnumList()
-  let L = len0.get
+  let L = this.getLength()
   var list = newJSPropertyEnumList(ctx, L)
   for u in 0 ..< L:
     list.add(u)
@@ -4636,16 +4818,13 @@ proc names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
 proc all(ctx: JSContext; document: Document): JSValue {.jsfget.} =
   if document.cachedAll == nil:
     let res = newCollection[HTMLAllCollection](
-      ctx,
       root = document,
       match = isElement,
       islive = true,
       childonly = false
     )
-    if res.isErr:
-      return JS_EXCEPTION
-    document.cachedAll = res.get
-    let val = ctx.toJS(document.cachedAll)
+    document.cachedAll = res
+    let val = ctx.toJS(res)
     JS_SetIsHTMLDDA(ctx, val)
     return val
   return ctx.toJS(document.cachedAll)
@@ -4674,8 +4853,7 @@ proc url(location: Location): URL =
     return document.url
   return parseURL0("about:blank")
 
-# Note: we do not implement security checks (as documents are in separate
-# windows anyway).
+#TODO CORS (SecurityError)
 proc `$`(location: Location): string {.jsuffunc: "toString".} =
   return location.url.serialize()
 
@@ -5122,13 +5300,13 @@ proc attrb*(element: Element; s: CAtomTraced): bool =
 proc attrb*(element: Element; at: StaticAtom): bool =
   return element.attrb(at.view())
 
-proc getElementsByTagName(ctx: JSContext; element: Element;
-    tagName: CAtomTraced): Opt[HTMLCollection] {.jsfunc.} =
-  return ctx.getElementsByTagNameImpl(element, tagName)
+proc getElementsByTagName(element: Element; tagName: CAtomTraced):
+    HTMLCollection {.jsfunc.} =
+  return getElementsByTagNameImpl(element, tagName)
 
-proc getElementsByClassName(ctx: JSContext; element: Element;
-    classNames: DOMString): Opt[HTMLCollection] {.jsfunc.} =
-  return ctx.getElementsByClassNameImpl(element, classNames)
+proc getElementsByClassName(element: Element; classNames: DOMString):
+    HTMLCollection {.jsfunc.} =
+  return getElementsByClassNameImpl(element, classNames)
 
 proc children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
   return childrenImpl(ctx, parentNode)
@@ -6764,37 +6942,31 @@ proc canSubmitImplicitly*(form: HTMLFormElement): bool =
 proc setRelList(form: HTMLFormElement; s: DOMString) {.jsfset: "relList".} =
   form.attr(satRel, s)
 
-proc elements(ctx: JSContext; form: HTMLFormElement):
-    Opt[HTMLFormControlsCollection] {.jsfget.} =
+proc elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
   if form.cachedElements == nil:
-    form.cachedElements = ?newCollection[HTMLFormControlsCollection](
-      ctx,
+    form.cachedElements = newCollection[HTMLFormControlsCollection](
       root = form.rootNode,
-      match = proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
+      match = proc(this: Collection; node: Node): bool =
         if node of FormAssociatedElement:
           let element = FormAssociatedElement(node)
           if element.tagType in ListedElements:
             let this = HTMLFormControlsCollection(this)
-            return ok(element.form == this.form)
-        return ok(false),
+            return element.form == this.form
+        return false,
       islive = true,
       childonly = false
     )
     form.cachedElements.form = form
-  ok(form.cachedElements)
+  form.cachedElements
 
 proc getter(ctx: JSContext; this: HTMLFormElement; atom: JSAtom): JSValue
     {.jsgetownprop.} =
-  let elements0 = ctx.elements(this)
-  if elements0.isErr:
-    return JS_EXCEPTION
-  return ctx.getter(elements0.get, atom)
+  let elements = this.elements()
+  return ctx.getter(elements, atom)
 
-proc length(ctx: JSContext; this: HTMLFormElement): Opt[uint32] {.jsfget.} =
-  let elements0 = ctx.elements(this)
-  if elements0.isErr:
-    return err()
-  return ctx.getLength(elements0.get)
+proc length(this: HTMLFormElement): uint32 {.jsfget.} =
+  let elements = this.elements()
+  elements.getLength()
 
 proc resetForm*(form: HTMLFormElement; ctx: JSContext) =
   for control in form.controls:
@@ -7192,53 +7364,44 @@ proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
     return ctx.insertThrow(nil)
   if element != beforeEl:
     if beforeEl == nil:
-      let it = ctx.item(this, uint32(beforeIdx))
-      if it.isErr:
-        return JS_EXCEPTION
-      if it.get of HTMLElement:
-        beforeEl = HTMLElement(it.get)
+      let it = this.item(uint32(beforeIdx))
+      if it of HTMLElement:
+        beforeEl = HTMLElement(it)
     let parent = if beforeEl != nil: beforeEl.parentNode else: this.root
     return ctx.insertBeforeUndefined(parent, element, option(Node(beforeEl)))
   return JS_UNDEFINED
 
-proc remove(ctx: JSContext; this: HTMLOptionsCollection; i: int32): Opt[void] {.
-    jsfunc.} =
-  let element = ?ctx.item(this, uint32(i))
+proc remove(this: HTMLOptionsCollection; i: int32) {.jsfunc.} =
+  let element = this.item(uint32(i))
   if element != nil:
     element.remove()
-  ok()
 
-proc length(ctx: JSContext; this: HTMLOptionsCollection): Opt[uint32] {.
-    jsfget.} =
-  return ctx.getLength(this)
+proc length(this: HTMLOptionsCollection): uint32 {.jsfget.} =
+  this.getLength()
 
-proc setLength(ctx: JSContext; this: HTMLOptionsCollection; n: uint32):
-    Opt[void] {.jsfset: "length".} =
-  let len = ?ctx.getLength(this)
+proc setLength(this: HTMLOptionsCollection; n: uint32) {.jsfset: "length".} =
+  let len = this.getLength()
   if n > len:
     if n <= 100_000: # LOL
       let parent = this.root
       let document = parent.document
       for i in 0 ..< n - len:
-        parent.append(document.newHTMLElement(TAG_OPTION), ctx)
+        parent.append(document.newHTMLElement(TAG_OPTION), nil)
   else:
     for i in 0 ..< len - n:
-      let it = ?ctx.item(this, uint32(i))
+      let it = this.item(uint32(i))
       it.remove()
-  ok()
 
-proc options(ctx: JSContext; this: HTMLSelectElement):
-    Opt[HTMLOptionsCollection] {.jsfget.} =
+proc options(this: HTMLSelectElement): HTMLOptionsCollection {.jsfget.} =
   if this.cachedOptions == nil:
-    this.cachedOptions = ?newCollection[HTMLOptionsCollection](
-      ctx,
+    this.cachedOptions = newCollection[HTMLOptionsCollection](
       root = this,
-      match = proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
-        ok(node.isOptionOf(this.root)),
+      match = proc(this: Collection; node: Node): bool =
+        node.isOptionOf(this.root),
       islive = true,
       childonly = false
     )
-  ok(this.cachedOptions)
+  this.cachedOptions
 
 proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
     value: Option[HTMLOptionElement]): JSValue {.jssetprop.} =
@@ -7247,10 +7410,7 @@ proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
   of fiIdx: discard
   of fiStr: return JS_UNINITIALIZED
   of fiErr: return JS_EXCEPTION
-  let element0 = ctx.item(this, u)
-  if element0.isErr:
-    return JS_EXCEPTION
-  let element = element0.get
+  let element = this.item(u)
   let value = value.get(nil)
   if value == nil:
     if element != nil:
@@ -7259,42 +7419,37 @@ proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
   let parent = this.root
   if element != nil:
     return ctx.replaceChildWithThrow(parent, element, value)
-  let len0 = ctx.getLength(this)
-  if len0.isErr:
-    return JS_EXCEPTION
+  let len = this.getLength()
   let document = parent.document
-  for i in len0.get ..< u:
+  for i in len ..< u:
     let res = parent.insertBefore(document.newHTMLElement(TAG_OPTION), nil,
       ctx)
     if res.isErr:
       return ctx.insertThrow(res.error)
   return ctx.insertBeforeUndefined(parent, value, none(Node))
 
-proc length(ctx: JSContext; this: HTMLSelectElement): Opt[uint32] {.jsfget.} =
-  let options = ?ctx.options(this)
-  ctx.getLength(options)
+proc length(ctx: JSContext; this: HTMLSelectElement): uint32 {.jsfget.} =
+  let options = this.options()
+  options.getLength()
 
-proc setLength(ctx: JSContext; this: HTMLSelectElement; n: uint32): Opt[void] {.
+proc setLength(ctx: JSContext; this: HTMLSelectElement; n: uint32) {.
     jsfset: "length".} =
-  let options = ?ctx.options(this)
-  ctx.setLength(options, n)
+  let options = this.options()
+  options.setLength(n)
 
 proc getter(ctx: JSContext; this: HTMLSelectElement; u: JSAtom): JSValue
     {.jsgetownprop.} =
-  let options = ctx.options(this)
-  if options.isErr:
-    return JS_EXCEPTION
-  return ctx.getter(options.get, u)
+  let options = this.options()
+  return ctx.getter(options, u)
 
-proc item(ctx: JSContext; this: HTMLSelectElement; u: uint32): Opt[Element]
-    {.jsfunc.} =
-  let options = ?ctx.options(this)
-  ctx.item(options, u)
+proc item(this: HTMLSelectElement; u: uint32): Element {.jsfunc.} =
+  let options = this.options()
+  options.item(u)
 
 proc namedItem(ctx: JSContext; this: HTMLSelectElement; atom: CAtomTraced):
-    Opt[Element] {.jsfunc.} =
-  let options = ?ctx.options(this)
-  ctx.namedItem(options, atom)
+    Element {.jsfunc.} =
+  let options = this.options()
+  options.namedItem(atom)
 
 proc selectedOptions(ctx: JSContext; this: HTMLSelectElement): JSValue
     {.jsfget.} =
@@ -7351,18 +7506,16 @@ proc showPicker(ctx: JSContext; this: HTMLSelectElement): JSValue {.jsfunc.} =
 
 proc add(ctx: JSContext; this: HTMLSelectElement; element: Element;
     before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
-  let options = ctx.options(this)
-  if options.isErr:
-    return JS_EXCEPTION
-  return ctx.add(options.get, element, before)
+  let options = this.options()
+  return ctx.add(options, element, before)
 
 proc remove(ctx: JSContext; this: HTMLSelectElement;
     idx: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
   if idx.len > 0:
     var i: int32
     ?ctx.fromJS(idx[0], i)
-    let options = ?ctx.options(this)
-    ?ctx.remove(options, i)
+    let options = this.options()
+    options.remove(i)
   else:
     this.remove()
   ok()
@@ -7815,21 +7968,19 @@ proc setTFoot(ctx: JSContext; this: HTMLTableElement;
 proc tBodies(ctx: JSContext; this: HTMLTableElement): JSValue {.jsfget.} =
   return ctx.getWeakCollection(this, wwmTBodies)
 
-proc rows(ctx: JSContext; this: HTMLTableElement): Opt[HTMLCollection]
-    {.jsfget.} =
+proc rows(this: HTMLTableElement): HTMLCollection {.jsfget.} =
   if this.cachedRows == nil:
-    this.cachedRows = ?newHTMLCollection(
-      ctx,
+    this.cachedRows = newHTMLCollection(
       this,
-      match = proc(ctx: JSContext; this: Collection; node: Node): Opt[bool] =
+      match = proc(this: Collection; node: Node): bool =
         if Node(node.parentNode) == this.root or
             Node(node.parentNode.parentNode) == this.root:
-          return ctx.isRow(this, node)
-        ok(false),
+          return this.isRow(node)
+        false,
       islive = true,
       childonly = false
     )
-  ok(this.cachedRows)
+  this.cachedRows
 
 proc create(this: HTMLTableElement; tagType: TagType; before: Node):
     Element =
@@ -7869,8 +8020,8 @@ proc deleteTFoot(this: HTMLTableElement) {.jsfunc.} =
 
 proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
     Opt[HTMLElement] {.jsfunc.} =
-  let rows = ?ctx.rows(this)
-  let nrows = ?ctx.getLength(rows)
+  let rows = this.rows()
+  let nrows = rows.getLength()
   if index < -1 or index > int64(nrows):
     JS_ThrowDOMException(ctx, "IndexSizeError", "index out of bounds")
     return err()
@@ -7878,48 +8029,46 @@ proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
   if nrows == 0:
     this.createTBody().append(tr, ctx)
   elif index == -1 or uint32(index) == nrows:
-    let it = ?ctx.item(rows, nrows - 1)
+    let it = rows.item(nrows - 1)
     it.parentNode.append(tr, ctx)
   else:
-    let it = ?ctx.item(rows, uint32(index))
+    let it = rows.item(uint32(index))
     it.parentNode.insert(tr, it, ctx)
   ok(tr)
 
 proc deleteRow(ctx: JSContext; rows: HTMLCollection; index: int32): Opt[void] =
-  let nrows = ?ctx.getLength(rows)
+  let nrows = rows.getLength()
   if index < -1 or index >= int64(nrows):
     JS_ThrowDOMException(ctx, "IndexSizeError", "index out of bounds")
     return err()
   if index == -1:
-    let it = ?ctx.item(rows, uint32(nrows - 1))
+    let it = rows.item(uint32(nrows - 1))
     it.remove()
   elif nrows > 0:
-    let it = ?ctx.item(rows, uint32(index))
+    let it = rows.item(uint32(index))
     it.remove()
   ok()
 
 proc deleteRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
     Opt[void] {.jsfunc.} =
-  let rows = ?ctx.rows(this)
+  let rows = this.rows()
   return ctx.deleteRow(rows, index)
 
 # <tbody>
-proc rows(ctx: JSContext; this: HTMLTableSectionElement): Opt[HTMLCollection]
-    {.jsfget.} =
+proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsfget.} =
   if this.cachedRows == nil:
-    this.cachedRows = ?newHTMLCollection(
-      ctx,
+    this.cachedRows = newHTMLCollection(
       this,
       match = isRow,
       islive = true,
       childonly = true
     )
-  ok(this.cachedRows)
+  this.cachedRows
 
 proc insertRow(ctx: JSContext; this: HTMLTableSectionElement;
     index: int32 = -1): Opt[HTMLElement] {.jsfunc.} =
-  let rows = ?ctx.rows(this)
-  let nrows = ?ctx.getLength(rows)
+  let rows = this.rows()
+  let nrows = rows.getLength()
   if index < -1 or index > int64(nrows):
     JS_ThrowDOMException(ctx, "index out of bounds", "IndexSizeError")
     return err()
@@ -7927,36 +8076,35 @@ proc insertRow(ctx: JSContext; this: HTMLTableSectionElement;
   if index == -1 or index == int64(nrows):
     this.append(tr, ctx)
   else:
-    let it = ?ctx.item(rows, uint32(index))
+    let it = rows.item(uint32(index))
     this.insert(tr, it, ctx)
   ok(tr)
 
 proc deleteRow(ctx: JSContext; this: HTMLTableSectionElement;
     index: int32 = -1): Opt[void] {.jsfunc.} =
-  let rows = ?ctx.rows(this)
+  let rows = this.rows()
   return ctx.deleteRow(rows, index)
 
 # <tr>
 proc cells(ctx: JSContext; this: HTMLTableRowElement): JSValue {.jsfget.} =
   return ctx.getWeakCollection(this, wwmCells)
 
-proc rowIndex(ctx: JSContext; this: HTMLTableRowElement): Opt[int] {.jsfget.} =
+proc rowIndex(this: HTMLTableRowElement): int {.jsfget.} =
   let table = HTMLTableElement(this.findAncestor(TAG_TABLE))
   if table == nil:
-    return ok(-1)
-  let rows = ?ctx.rows(table)
-  ctx.findNode(rows, this)
+    return -1
+  let rows = table.rows()
+  rows.findNode(this)
 
-proc sectionRowIndex(ctx: JSContext; this: HTMLTableRowElement): Opt[int] {.
-    jsfget.} =
+proc sectionRowIndex(this: HTMLTableRowElement): int {.jsfget.} =
   let parent = this.parentElement
   if parent.tagType == TAG_TABLE:
-    return ctx.rowIndex(this)
+    return this.rowIndex()
   if parent of HTMLTableSectionElement:
     let parent = HTMLTableSectionElement(parent)
-    let rows = ?ctx.rows(parent)
-    return ctx.findNode(rows, this)
-  return ok(-1)
+    let rows = parent.rows()
+    return rows.findNode(this)
+  return -1
 
 # <textarea>
 proc value*(this: HTMLTextAreaElement): string {.jsfget.} =
@@ -8169,6 +8317,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   ?ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
   ?ctx.registerType(RadioNodeList, parent = nodeListCID)
   ?ctx.registerType(NodeIterator)
+  ?ctx.registerType(TreeWalker)
   ?ctx.registerType(Location)
   let documentCID = ctx.registerType(Document, parent = nodeCID)
   if documentCID == 0:
@@ -8205,6 +8354,10 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
     return err()
   for e in NodeFilterNode:
     let n = ctx.toJS(1u32 shl uint32(e))
+    if ctx.definePropertyE(nodeFilter, $e, n) == dprException:
+      return err()
+  for e in NodeFilterResult:
+    let n = ctx.toJS(uint32(e))
     if ctx.definePropertyE(nodeFilter, $e, n) == dprException:
       return err()
   case ctx.definePropertyE(nodeFilter, "SHOW_ALL", ctx.toJS(0xFFFFFFFFu32))

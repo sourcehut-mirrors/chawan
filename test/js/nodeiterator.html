@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<title>Test template</title>
+<div id=x>Fail</div>
+
+<div id=test1>
+<div id=a>first</div>
+<div id=b>second</div>
+<div id=c>third</div>
+</div>
+
+<div id=test2>
+<div id=inner>
+<div id=d>first</div>
+<div id=e>second</div>
+<div id=f>third</div>
+</div>
+</div>
+
+<div id=test3>
+<div id=inner>
+<div id=g>first</div>
+<div id=h>second</div>
+<div id=i>third</div>
+</div>
+</div>
+
+<script src=asserts.js></script>
+<script>
+{
+	const iter = document.createNodeIterator(test1, 1, x => {
+		if (x instanceof Element && x.id && !x.id.startsWith("test"))
+			return 1;
+		return 2;
+	}, 1);
+	assertEquals(iter.referenceNode, test1);
+	assertEquals(iter.nextNode(), a);
+	assertEquals(iter.nextNode(), b);
+	a.remove();
+	assertEquals(iter.nextNode(), c)
+	assertEquals(iter.previousNode(), c);
+	assertEquals(iter.previousNode(), b);
+	assertEquals(iter.previousNode(), null);
+	b.remove();
+	assertInstanceof(iter.referenceNode, Text);
+	assertEquals(iter.nextNode(), c);
+	c.remove();
+}
+{
+	const iter = document.createNodeIterator(inner, 0xFFFFFFFF, x => {
+		if (x instanceof Element && x.id)
+			return 1;
+		return 2;
+	}, 1);
+	iter.nextNode();
+	iter.nextNode();
+	assertEquals(iter.referenceNode.id, "d");
+	test2.remove();
+	assertEquals(iter.referenceNode.id, "d");
+}
+{
+	const iter = document.createNodeIterator(test3.firstElementChild, 0xFFFFFFFF, x => {
+		if (x instanceof Element && x.id)
+			return 1;
+		return 2;
+	}, 1);
+	iter.nextNode();
+	iter.nextNode();
+	assertEquals(iter.referenceNode.id, "g");
+	iter.previousNode();
+	assert(iter.pointerBeforeReferenceNode);
+	test3.remove();
+	assert(iter.pointerBeforeReferenceNode);
+	assertEquals(iter.referenceNode.id, "g");
+}
+
+
+x.textContent = "Success";
+</script>
