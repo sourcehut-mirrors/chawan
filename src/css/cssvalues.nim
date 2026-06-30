@@ -639,6 +639,9 @@ proc putIfAbsent*(map: CSSVariableMap; cvar: CSSVariable) =
   if map.put0(cvar):
     inc map.load
 
+proc isSame*(map, other: CSSVariableMap): bool =
+  other != nil and map.load == other.load and map.tab == other.tab
+
 type CSSPropertyReprType* = enum
   cprtBit, cprtHWord, cprtWord, cprtObject
 

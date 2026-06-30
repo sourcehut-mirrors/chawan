@@ -423,7 +423,7 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     ctx.applyVars(rules.a[origin].unlayered.vars[cifNormal], parentVars)
     for layer in rules.a[origin].layers:
       ctx.applyVars(layer.vars[cifNormal], parentVars)
-  if result.vars == nil:
+  if result.vars == nil or result.vars.isSame(parentVars):
     result.vars = parentVars # inherit parent
   ctx.applyImportantValues(rules.a[coUserAgent], rtSet)
   ctx.applyImportantValues(rules.a[coUser], rtUserAgent)
