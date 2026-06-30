@@ -14,7 +14,7 @@
 # * StaticAtom is a pre-defined atom without a reference count.
 # * CAtomTraced is an atom with automatic reference counting.  It is
 #   still not possible to copy these; instead, when you have to dup the
-#   atom, use dupTraced().
+#   atom, use dupTrace().
 # * CAtom is an atom with manual refcounting.
 #
 # TODO: in the past, we didn't bother with refcounting atoms, and there is
