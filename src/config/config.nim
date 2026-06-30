@@ -2199,9 +2199,11 @@ C-n cursorDown
 C-p cursorUp
 0 cursorLineBegin
 Home cursorLineBegin
+M-[1~ cursorLineBegin
 ^ cursorLineTextStart
 $ cursorLineEnd
 End cursorLineEnd
+M-[4~ cursorLineEnd
 b cursorViWordBegin
 e cursorViWordEnd
 w cursorNextViWord
@@ -2333,8 +2335,10 @@ M-C-? line.clearWord
 M-d line.killWord
 C-a line.begin
 Home line.begin
+M-[1~ line.begin
 C-e line.end
 End line.end
+M-[4~ line.end
 C-v line.escape
 C-p line.prevHist
 C-n line.nextHist
