@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/hashes
 import std/macros
 import std/math
 
@@ -283,9 +284,7 @@ type
     name*: CAtom
     num*: int32
 
-  CSSZIndex* = object
-    `auto`*: bool
-    num*: int32
+  CSSZIndex* = distinct int64
 
   CSSValueBit* {.union.} = object
     dummy*: uint8
@@ -342,16 +341,33 @@ type
     tab: seq[CSSVariable]
     load: int
 
-  CSSValues* = ref object
+  # Hash map for all existing CSSValues in the document.
+  # New CSSValues objects are checked for an exact match; if there is one,
+  # the old one is used (and the new one dropped).
+  #TODO: we could split up CSSValues into smaller parts and intern those
+  # too for more savings.
+  CSSValuesMapObj* = object
+    tab: seq[ptr CSSValuesRootObj]
+    load: int
+
+  CSSValuesMap* = ref CSSValuesMapObj
+
+  CSSValuesRootObj {.pure, inheritable.} = object
+    map: ptr CSSValuesMapObj
+    hcache: Hash
+
+  CSSValuesRoot = ref CSSValuesRootObj
+
+  CSSValuesObj* {.pure.} = object of CSSValuesRoot
     pseudo*: PseudoElement
-    invalid*: bool
-    relayout*: bool
     bits*: array[CSSPropertyType.low..LastBitPropType, CSSValueBit]
     hwords*: array[FirstHWordPropType..LastHWordPropType, CSSValueHWord]
     words*: array[FirstWordPropType..LastWordPropType, CSSValueWord]
     objs*: array[FirstObjPropType..CSSPropertyType.high, CSSValue]
     vars*: CSSVariableMap
     next*: CSSValues
+
+  CSSValues* = ref CSSValuesObj
 
   CSSOrigin* = enum
     coUserAgent
@@ -396,6 +412,35 @@ type
     name*: CAtom
     items*: seq[CSSVarItem]
 
+  CSSCalcSumType = enum
+    ccstNumber, ccstLength, ccstDegree
+
+  CSSCalcKeyword = enum
+    ccskE = "e"
+    ccskPi = "pi"
+    ccskInfinity = "infinity"
+    ccskMinusInfinity = "-infinity"
+    ccskNaN = "NaN"
+
+  CSSCalcSum = object
+    case t: CSSCalcSumType
+    of ccstNumber:
+      n: float32
+    of ccstLength:
+      l: CSSLength
+    of ccstDegree:
+      deg: float32
+
+# Forward declarations
+proc del(map: CSSValuesMap; computed: ptr CSSValuesRootObj)
+proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
+  entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
+proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
+  Opt[CSSCalcSum]
+
+when defined(debug):
+  proc serializeEmpty*(computed: CSSValues): string
+
 when defined(gcDestructors):
   proc `=destroy`*(a: var CSSValueBit) =
     discard
@@ -414,6 +459,16 @@ when defined(gcDestructors):
 
   proc `=copy`*(a: var CSSValueWord; b: CSSValueWord) =
     copyMem(addr a, unsafeAddr b, sizeof(a))
+
+proc `=destroy`*(map: var CSSValuesMapObj) =
+  for it in map.tab:
+    if it != nil:
+      it.map = nil
+  map.tab.reset()
+
+proc `=destroy`*(computed: var CSSValuesRootObj) =
+  if computed.map != nil:
+    cast[CSSValuesMap](computed.map).del(addr computed)
 
 static:
   doAssert sizeof(CSSValueBit) == 1
@@ -577,31 +632,110 @@ const LayoutProperties* = {
   cptCaptionSide, cptPosition
 }
 
-type
-  CSSCalcSumType = enum
-    ccstNumber, ccstLength, ccstDegree
+proc isSame(a, b: CSSValues): bool =
+  if a.hcache != b.hcache or a.pseudo != b.pseudo or a.vars != b.vars or
+      a.next != b.next:
+    return false
+  if cmpMem(addr a.bits, addr b.bits, sizeof(a.bits)) != 0:
+    return false
+  if cmpMem(addr a.hwords, addr b.hwords, sizeof(a.hwords)) != 0:
+    return false
+  if cmpMem(addr a.words, addr b.words, sizeof(a.words)) != 0:
+    return false
+  if cmpMem(addr a.objs, addr b.objs, sizeof(a.objs)) != 0:
+    return false
+  true
 
-  CSSCalcKeyword = enum
-    ccskE = "e"
-    ccskPi = "pi"
-    ccskInfinity = "infinity"
-    ccskMinusInfinity = "-infinity"
-    ccskNaN = "NaN"
+proc putAgain(map: CSSValuesMap; computed: ptr CSSValuesRootObj) =
+  let mask = map.tab.len - 1
+  var home = computed.hcache and mask
+  var i = home
+  var current = computed
+  while true:
+    let it = map.tab[i]
+    if it == nil:
+      map.tab[i] = current
+      break
+    if tabSwap(home, it.hcache, i, mask): # displace
+      swap(map.tab[i], current)
+    i = (i + 1) and mask
 
-  CSSCalcSum = object
-    case t: CSSCalcSumType
-    of ccstNumber:
-      n: float32
-    of ccstLength:
-      l: CSSLength
-    of ccstDegree:
-      deg: float32
+proc put0(map: CSSValuesMap; computed: ptr CSSValuesRootObj):
+    ptr CSSValuesRootObj =
+  let mask = map.tab.len - 1
+  var home = computed.hcache and mask
+  var i = home
+  var current = computed
+  while true:
+    let it = map.tab[i]
+    if it == nil:
+      map.tab[i] = current
+      break
+    # if current was swapped out, then it cannot be in the table (otherwise
+    # the other instance would come earlier)
+    if current == computed and
+        cast[CSSValues](current).isSame(cast[CSSValues](it)):
+      return it # already added (for tags)
+    if tabSwap(home, it.hcache, i, mask): # displace
+      swap(map.tab[i], current)
+    i = (i + 1) and mask
+  computed
 
-# Forward declarations
-proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
-  entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
-proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
-  Opt[CSSCalcSum]
+# If an equivalent computed is in map, return that.
+# Otherwise, insert computed into map.
+proc atomize*(map: CSSValuesMap; computed: CSSValues): CSSValues =
+  if computed.next != nil:
+    # next is part of the hash, so atomize computed first
+    computed.next = map.atomize(computed.next)
+  # compute hash
+  var h: Hash = 0
+  h = h !& int(computed.pseudo)
+  h = h !& cast[int](computed.vars)
+  h = h !& cast[int](computed.next)
+  for it in computed.bits:
+    h = h !& int(it.dummy)
+  for it in computed.hwords:
+    h = h !& cast[int](it.dummy)
+  for it in computed.words:
+    h = h !& cast[int](it.dummy)
+  for it in computed.objs:
+    h = h !& cast[int](it)
+  computed.hcache = !$h
+  for it in map.tab.prepareTableAdd(map.load, 32):
+    if it != nil:
+      map.putAgain(it)
+  let res = map.put0(cast[ptr CSSValuesRootObj](computed))
+  if res == cast[ptr CSSValuesRootObj](computed):
+    res.map = cast[ptr CSSValuesMapObj](map)
+    inc map.load
+  cast[CSSValues](res)
+
+proc del(map: CSSValuesMap; computed: ptr CSSValuesRootObj) =
+  if map.tab.len == 0:
+    return
+  let mask = map.tab.len - 1
+  var i = computed.hcache and mask
+  while true:
+    let it = map.tab[i]
+    assert it != nil
+    if it == computed:
+      it.map = nil
+      dec map.load
+      map.tab[i] = nil
+      break
+    i = (i + 1) and mask
+  var j = i
+  while true:
+    j = (j + 1) and mask
+    let it = map.tab[j]
+    if it == nil:
+      break
+    let k = it.hcache and mask
+    if j == k: # already at home
+      break
+    # backwards shift
+    map.tab[i] = move(map.tab[j])
+    i = j
 
 proc newCSSVariableMap*(parent: CSSVariableMap): CSSVariableMap =
   return CSSVariableMap(parent: parent)
@@ -721,6 +855,14 @@ proc `$`(counterreset: seq[CSSCounterSet]): string =
     result &= $it.name
     result &= ' '
     result &= $it.num
+
+const CSSZIndexAuto = CSSZIndex(0xFFFFFFFF00000000'i64)
+
+proc `auto`*(zIndex: CSSZIndex): bool =
+  int64(zIndex) == int64(CSSZIndexAuto)
+
+proc num*(zIndex: CSSZIndex): int32 =
+  cast[int32](zIndex)
 
 proc `$`(zIndex: CSSZIndex): string =
   if zIndex.auto:
@@ -1654,9 +1796,9 @@ proc parseInteger(ctx: var CSSParser; range: Slice[int32]): Opt[int32] =
 proc parseZIndex(ctx: var CSSParser): Opt[CSSZIndex] =
   if ctx.peekIdentNoCase("auto"):
     ctx.seekToken()
-    return ok(CSSZIndex(auto: true))
-  let n = ?ctx.parseInteger(-65534i32 .. 65534i32)
-  return ok(CSSZIndex(num: n))
+    return ok(CSSZIndexAuto)
+  let n = ?ctx.parseInteger(int32.low .. int32.high)
+  return ok(CSSZIndex(n))
 
 proc parseNumber(ctx: var CSSParser; range: Slice[float32]): Opt[float32] =
   let tok = ctx.peekToken()
@@ -1746,13 +1888,17 @@ proc makeEntry(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
   return CSSComputedEntry(et: ceGlobal, p: wide(t), global: global)
 
 proc makeEntry*(t: CSSPropertyType; length: CSSLength): CSSComputedEntry =
-  makeEntry(t, CSSValueWord(length: length))
+  var w: CSSValueWord
+  w.length = length
+  makeEntry(t, w)
 
 proc makeEntry*(t: CSSPropertyType; color: CSSColor): CSSComputedEntry =
   makeEntry(t, CSSValueWord(color: color))
 
 proc makeEntry(t: CSSPropertyType; zIndex: CSSZIndex): CSSComputedEntry =
-  makeEntry(t, CSSValueWord(zIndex: zIndex))
+  var w: CSSValueWord
+  w.zIndex = zIndex
+  makeEntry(t, w)
 
 proc makeEntry*(t: CSSPropertyType; integer: int32): CSSComputedEntry =
   makeEntry(t, CSSValueHWord(integer: integer))
@@ -1945,7 +2091,7 @@ proc getDefaultWord(t: CSSPropertyType): CSSValueWord =
   case valueType(t)
   of cvtColor: return CSSValueWord(color: getInitialColor(t))
   of cvtLength: return CSSValueWord(length: getInitialLength(t))
-  of cvtZIndex: return CSSValueWord(zIndex: CSSZIndex(auto: true))
+  of cvtZIndex: return CSSValueWord(zIndex: CSSZIndexAuto)
   else: return CSSValueWord(dummy: 0)
 
 proc makeDefaultEntry(t: CSSPropertyType): CSSComputedEntry =
@@ -2286,7 +2432,7 @@ proc initialOrCopyFrom*(a, b: CSSValues; t: CSSPropertyType) =
     a.setInitial(t)
 
 proc inheritProperties*(parent: CSSValues): CSSValues =
-  result = CSSValues(relayout: parent.relayout)
+  result = CSSValues()
   for t in CSSPropertyType:
     if t.inherited:
       result.copyFrom(parent, t)

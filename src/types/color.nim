@@ -42,9 +42,7 @@ type
   # (Actually, it would, but then we'd have to copy over the ANSI color
   # table and then re-quantize on render. I'm fine with wasting a few
   # bytes instead.)
-  CSSColor* = object
-    t*: CSSColorType
-    n: uint32
+  CSSColor* = distinct uint64
 
 proc rgba*(r, g, b, a: uint8): ARGBColor
 
@@ -104,20 +102,29 @@ proc cellColor*(c: ANSIColor): CellColor =
 
 const defaultColor* = cellColor(ctNone, 0)
 
+proc cssColor(t: CSSColorType; n: uint32): CSSColor =
+  CSSColor((uint64(t) shl 32) or uint64(n))
+
 proc cssColor*(c: ARGBColor): CSSColor =
-  return CSSColor(t: cctARGB, n: uint32(c))
+  return cssColor(cctARGB, uint32(c))
 
 proc cssColor*(c: RGBColor): CSSColor =
   return c.argb.cssColor()
 
 proc cssColor*(c: CellColor): CSSColor =
-  return CSSColor(t: cctCell, n: uint32(c))
+  return cssColor(cctCell, uint32(c))
 
 proc cssColor*(c: ANSIColor): CSSColor =
   return c.cellColor().cssColor()
 
 proc cssCurrentColor*(): CSSColor =
-  return CSSColor(t: cctCurrent)
+  return cssColor(cctCurrent, 0)
+
+template t*(c: CSSColor): CSSColorType =
+  cast[CSSColorType](uint64(c) shr 32)
+
+template n*(c: CSSColor): uint32 =
+  uint32(uint64(c) and 0xFFFFFFFF'u32)
 
 proc argb*(c: CSSColor): ARGBColor =
   return ARGBColor(c.n)

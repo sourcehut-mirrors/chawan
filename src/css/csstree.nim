@@ -572,7 +572,7 @@ proc matchCache(node: StyledNode; box: CSSBox): bool =
   of cbtAnonymous:
     if node.skipChildren and
         node.computed{"display"} == box.computed{"display"}:
-      if node.computed.relayout:
+      if node.pseudo in node.element.relayout:
         box.keepLayout = false
       box.computed = node.computed
       box.absolute = nil
@@ -585,7 +585,7 @@ proc matchCache(node: StyledNode; box: CSSBox): bool =
     if node.t == stElement and not node.skipChildren and
         node.pseudo == box.pseudo and
         node.computed{"display"} == box.computed{"display"}:
-      if node.computed.relayout:
+      if node.pseudo in node.element.relayout:
         box.keepLayout = false
       box.computed = node.computed
       box.absolute = nil
@@ -635,7 +635,6 @@ proc buildInnerBox(ctx: TreeContext; frame: TreeFrame; cached: CSSBox;
   let display = frame.computed{"display"}
   var cachedIt = if cached != nil: cached.firstChild else: nil
   let box = newBoxOrTakeCached(cached, display, node)
-  box.computed.relayout = false
   # Grid and flex items always respect z-index.  Other boxes only
   # respect it with position != static.
   let forceZ = display in DisplayInnerFlex + DisplayInnerGrid
@@ -653,6 +652,7 @@ proc buildInnerBox(ctx: TreeContext; frame: TreeFrame; cached: CSSBox;
     keepLayout = keepLayout and childBox.keepLayout
     cachedIt = next
   box.keepLayout = box.keepLayout and keepLayout and cachedIt == nil
+  node.element.relayout.excl(node.pseudo)
   box
 
 proc applyCounters(ctx: TreeContext; styledNode: StyledNode;

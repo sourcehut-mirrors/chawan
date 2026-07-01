@@ -411,6 +411,7 @@ type
     authorSheetsHead: CSSStylesheet
     sheetTitle: string
     ruleMap: CSSRuleMap
+    computedMap: CSSValuesMap
     cachedForms: HTMLCollection
     cachedLinks: HTMLCollection
     cachedImages: HTMLCollection
@@ -480,12 +481,12 @@ type
     cesCustom = "custom"
 
   ElementFlag = enum
-    efHint, efHover, efShadowRoot
+    efHint, efHover, efShadowRoot, efChildElIndicesInvalid, efRestyle
 
   Element* = ref object of ParentNode
     namespaceURI* {.jsget.}: CAtom # 4
     tagName: CAtom # 8, like DOM tagName but not upper-cased
-    childElIndicesInvalid: bool # 9
+    relayout*: set[PseudoElement] # 9
     flags: set[ElementFlag] # 10
     selfDepends: set[DependencyType] # 11
     custom: CustomElementState # 12
@@ -782,7 +783,7 @@ proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(ctx: JSContext; element: Element; i: int)
 proc dupAttrs(element: Element): seq[AttrData]
 proc elIndex*(this: Element): int
-proc ensureStyle(element: Element)
+proc ensureStyle*(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtomTraced): int
 proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int
 proc getCharset(element: Element): Charset
@@ -2385,7 +2386,7 @@ proc removeImpl*(node: Node; suppressObservers = false) =
       element.invalidate()
     element.box = nil
     if element.internalElIndex == 0 and parentElement != nil:
-      parentElement.childElIndicesInvalid = true
+      parentElement.flags.incl(efChildElIndicesInvalid)
     element.internalElIndex = -1
     if element of SheetElement:
       SheetElement(element).removeSheet()
@@ -3068,7 +3069,7 @@ proc insert0(parent: ParentNode; node, before: Node;
   let parentElement = node.parentElement
   if element != nil:
     if element.nextSibling != nil and parentElement != nil:
-      parentElement.childElIndicesInvalid = true
+      parentElement.flags.incl(efChildElIndicesInvalid)
     elif (let prev = element.previousElementSibling; prev != nil):
       element.internalElIndex = prev.internalElIndex + 1
     else:
@@ -4160,6 +4161,11 @@ proc getRuleMap*(document: Document): CSSRuleMap =
       sheet = sheet.next
     document.ruleMap = map
   return document.ruleMap
+
+proc getComputedMap*(document: Document): CSSValuesMap =
+  if document.computedMap == nil:
+    document.computedMap = CSSValuesMap()
+  document.computedMap
 
 proc findAnchor*(document: Document; id: string): Element =
   if id.len == 0:
@@ -5794,12 +5800,12 @@ proc elIndex*(this: Element): int =
   let parent = this.parentElement
   if parent == nil:
     return 0 # <html>
-  if parent.childElIndicesInvalid:
+  if efChildElIndicesInvalid in parent.flags:
     var n = 0
     for element in parent.elementList:
       element.internalElIndex = n
       inc n
-    parent.childElIndicesInvalid = false
+    parent.flags.excl(efChildElIndicesInvalid)
   return this.internalElIndex
 
 proc isPreviousSiblingOf*(this, other: Element): bool =
@@ -5997,16 +6003,16 @@ proc blockRendering(element: Element) =
     element.document.renderBlockingElements.add(element)
 
 proc invalidate*(element: Element) =
-  let valid = element.computed != nil and not element.computed.invalid
-  if element.computed != nil:
-    element.computed.invalid = true
+  let valid = element.computed != nil and efRestyle notin element.flags
+  element.flags.incl(efRestyle)
   element.document.invalid = true
   if valid:
     for it in element.elementList:
       it.invalidate()
 
-proc ensureStyle(element: Element) =
-  if element.computed == nil or element.computed.invalid:
+proc ensureStyle*(element: Element) =
+  if element.computed == nil or efRestyle in element.flags:
+    element.flags.excl(efRestyle)
     element.applyStyleImpl()
 
 proc resetElement*(element: Element; ctx: JSContext) =

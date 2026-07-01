@@ -61,7 +61,6 @@ type
     varsSeen: array[20, CAtom]
 
 # Forward declarations
-proc ensureStyle*(element: Element)
 proc applyValues(ctx: var ApplyValueContext;
   entries: openArray[CSSComputedEntry]; revertType: RevertType)
 
@@ -406,9 +405,9 @@ proc applyVars(ctx: var ApplyValueContext; vars: openArray[CSSVariable];
     for cvar in vars.ritems:
       ctx.vals.vars.putIfAbsent(cvar)
 
-proc applyDeclarations(rules: RuleList; parent, element: Element;
-    window: Window; old: CSSValues): CSSValues =
-  result = CSSValues()
+proc applyDeclarations(rules: RuleList; pseudo: PseudoElement;
+    parent, element: Element; window: Window; old: CSSValues): CSSValues =
+  result = CSSValues(pseudo: pseudo)
   var parentVars: CSSVariableMap = nil
   var ctx = ApplyValueContext(window: window, vals: result, old: old)
   if parent != nil:
@@ -439,7 +438,7 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   if ctx.revertMap[cptColor] != rtSet or result{"color"}.t == cctCurrent:
     # do this first so currentcolor works
     result.initialOrInheritFrom(ctx.parentComputed, cptColor)
-  var relayout = old != nil and old.relayout
+  var relayout = false
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
       result.initialOrInheritFrom(ctx.parentComputed, t)
@@ -447,7 +446,8 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
       result.words[t].color = result{"color"}
     if old != nil and t in LayoutProperties:
       relayout = relayout or not result.equals(old, t)
-  result.relayout = relayout
+  if relayout:
+    element.relayout.incl(pseudo)
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.
   # Well, neither will I, because the spec breaks on actual websites.
@@ -470,8 +470,7 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
 
 proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
     parent, element: Element; window: Window; old: CSSValues): CSSValues =
-  result = map[pseudo].applyDeclarations(parent, element, window, old)
-  result.pseudo = pseudo
+  map[pseudo].applyDeclarations(pseudo, parent, element, window, old)
 
 proc applyStyle(element: Element) =
   let document = element.document
@@ -510,10 +509,8 @@ proc applyStyle(element: Element) =
         pcomputed{"display"} = DisplayMarker
       computed.next = pcomputed
       computed = pcomputed
-
-proc ensureStyle*(element: Element) =
-  if element.computed == nil or element.computed.invalid:
-    element.applyStyle()
+  let computedMap = document.getComputedMap()
+  element.computed = computedMap.atomize(element.computed)
 
 # Forward declaration hack
 applyStyleImpl = applyStyle

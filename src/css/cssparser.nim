@@ -404,6 +404,19 @@ type
 
   SelectorList* = seq[ComplexSelector]
 
+static:
+  # If you add more pseudo-elements, you'll want to ensure that it doesn't
+  # bloat Element's size (in dom) by another word.  Some ways to do this:
+  # * peNone does not actually need a relayout flag, it can be updated
+  #   directly.
+  # * Element's other bitmaps still have plenty of padding to fill in
+  #   too.
+  # * If all else fails, it's possible to dynamically search for the
+  #   pseudo-element boxes in the tree by skipping all anonymous boxes,
+  #   and then you could remove the `relayout' bitmap.  It does seem
+  #   painful though.
+  assert sizeof(PseudoElement) == 1
+
 when defined(gcDestructors):
   proc `=destroy`*(a: var CSSTokenUnion) =
     discard
