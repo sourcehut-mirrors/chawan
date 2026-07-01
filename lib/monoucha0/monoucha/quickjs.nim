@@ -273,10 +273,10 @@ type
     atom*: JSAtom
 
   JSMallocState* {.importc.} = object
-    malloc_count: csize_t
-    malloc_size: csize_t
-    malloc_limit: csize_t
-    opaque: pointer
+    malloc_count*: csize_t
+    malloc_size*: csize_t
+    malloc_limit*: csize_t
+    opaque*: pointer
 
   JSMallocStateP* = ptr JSMallocState
 

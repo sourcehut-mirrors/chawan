@@ -122,15 +122,30 @@ type
     jitIterator # iterator object
 
 proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
-  return alloc(size)
+  if s.malloc_size + size > s.malloc_limit:
+    return nil
+  let res = alloc(size)
+  inc s.malloc_count
+  s.malloc_size = csize_t(getOccupiedMem())
+  res
 
 proc bindFree(s: JSMallocStateP; p: pointer) {.cdecl.} =
   if p != nil:
     dealloc(p)
+    dec s.malloc_count
+    s.malloc_size = csize_t(getOccupiedMem())
 
 proc bindRealloc(s: JSMallocStateP; p: pointer; size: csize_t): pointer
     {.cdecl.} =
-  return realloc(p, size)
+  if s.malloc_size + size > s.malloc_limit:
+    return nil
+  let res = realloc(p, size)
+  s.malloc_size = csize_t(getOccupiedMem())
+  if p == nil:
+    inc s.malloc_count
+  elif size == 0:
+    dec s.malloc_count
+  res
 
 proc newJSRuntime*(): JSRuntime =
   ## Instantiate a Monoucha `JSRuntime`.
