@@ -1,9 +1,11 @@
 {.push raises: [].}
 
+import std/hashes
 import std/algorithm
 import std/tables
 
 import quickjs
+import utils/tabutil
 
 type
   JSSymbolRef* = enum
@@ -42,6 +44,7 @@ type
     # `unforgeable[classid]'.)
     unforgeable*: seq[JSCFunctionListEntry]
     fins*: seq[JSFinalizerFunction]
+    nimt*: pointer # pointer to the Nim type
     when defined(gcDestructors):
       dtor*: BoundRefDestructor
 
@@ -65,13 +68,18 @@ type
     atoms*: seq[JSAtom] # enum number -> atom
     enums*: seq[EnumMapItem] # atom number -> enum
 
+  # Stores hash code and Nim/JS pointers.
+  JSPointerItem = object
+    hcache: Hash
+    nimp*: pointer
+    jsp*: pointer
+
   JSRuntimeOpaque* = ref object
     classes*: seq[JSClassData] # JSClassID -> data
     typemap*: Table[pointer, JSClassID] # getTypePtr -> JSClassID
     enumMap*: seq[EnumMapEntry]
-    plist*: Table[pointer, pointer] # Nim -> JS
-    # temp list for uninit
-    tmplist*: seq[tuple[nimp, jsp: pointer]]
+    plist*: seq[JSPointerItem] # Nim -> JS
+    load: int
 
 var globalRuntime* {.global.}: JSRuntime
 
@@ -81,6 +89,75 @@ iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
   if classid < rtOpaque.classes.len:
     for fin in rtOpaque.classes[classid].fins:
       yield fin
+
+# Return the JSObject pointer associated with nimp, or nil.
+# If nimt is not nil, then an associated weakly referenced Nim object is
+# returned instead.
+proc getOrDefault*(rtOpaque: JSRuntimeOpaque; nimp: pointer): pointer =
+  if rtOpaque.plist.len <= 0:
+    return nil
+  let mask = rtOpaque.plist.len - 1
+  var i = nimp.hash() and mask
+  while true:
+    let it = rtOpaque.plist[i]
+    if it.nimp == nimp:
+      return it.jsp
+    if it.nimp == nil:
+      break
+    i = (i + 1) and mask
+  nil
+
+proc put0(rtOpaque: JSRuntimeOpaque; item: JSPointerItem) =
+  let mask = rtOpaque.plist.len - 1
+  var home = item.hcache and mask
+  var i = home
+  var current = item
+  while true:
+    let it = rtOpaque.plist[i]
+    if it.nimp == nil:
+      rtOpaque.plist[i] = current
+      break
+    if tabSwap(home, it.hcache, i, mask): # displace
+      swap(rtOpaque.plist[i], current)
+    i = (i + 1) and mask
+
+proc add*(rtOpaque: JSRuntimeOpaque; nimp, jsp: pointer) =
+  for it in rtOpaque.plist.prepareTableAdd(rtOpaque.load, init = 32):
+    if it.nimp != nil:
+      rtOpaque.put0(it)
+  rtOpaque.put0(JSPointerItem(
+    hcache: nimp.hash(),
+    nimp: nimp,
+    jsp: jsp
+  ))
+  inc rtOpaque.load
+
+proc del*(rtOpaque: JSRuntimeOpaque; nimp: pointer) =
+  if rtOpaque.plist.len == 0:
+    return
+  let mask = rtOpaque.plist.len - 1
+  var i = nimp.hash() and mask
+  while true:
+    let it = rtOpaque.plist[i]
+    if it.nimp == nil:
+      return # not found
+    if it.nimp == nimp:
+      dec rtOpaque.load
+      rtOpaque.plist[i] = JSPointerItem()
+      break
+    i = (i + 1) and mask
+  var j = i
+  while true:
+    j = (j + 1) and mask
+    let it = rtOpaque.plist[j]
+    if it.nimp == nil:
+      break
+    let k = it.hcache and mask
+    if j == k: # already at home
+      break
+    # backwards shift
+    rtOpaque.plist[i] = move(rtOpaque.plist[j])
+    i = j
 
 proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))

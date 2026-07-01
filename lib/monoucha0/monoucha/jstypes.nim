@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import utils/twtstr
-
 import jsopaque
 import quickjs
 

@@ -160,9 +160,10 @@ proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue =
 
 proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValueConst): JSValue =
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  rtOpaque.plist.withValue(p, obj):
+  let obj = rtOpaque.getOrDefault(p)
+  if obj != nil:
     # a JSValue already points to this object.
-    let val = JS_MKPTR(JS_TAG_OBJECT, obj[])
+    let val = JS_MKPTR(JS_TAG_OBJECT, obj)
     if val.getOpaque() != nil:
       # JS owns the Nim value, because it still holds an active
       # reference to it.
@@ -182,7 +183,7 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValueConst): JSValue =
   if not ctx.setUnforgeable(jsObj, class):
     JS_FreeValue(ctx, jsObj)
     return JS_EXCEPTION
-  rtOpaque.plist[p] = JS_VALUE_GET_PTR(jsObj)
+  rtOpaque.add(p, JS_VALUE_GET_PTR(jsObj))
   JS_SetOpaque(jsObj, p)
   GC_ref(cast[RootRef](p))
   return jsObj

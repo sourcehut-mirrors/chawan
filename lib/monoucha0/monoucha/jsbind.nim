@@ -189,27 +189,19 @@ proc free*(ctx: JSContext) =
         rtOpaque.classes[opaque.gclass].dtor(opaque.globalObj)
       else:
         GC_unref(cast[RootRef](opaque.globalObj))
-      rtOpaque.plist.del(opaque.globalObj)
+      rtOpaque.del(opaque.globalObj)
     JS_FreeValue(ctx, opaque.global)
     GC_unref(opaque)
   JS_FreeContext(ctx)
 
 proc free*(rt: JSRuntime) =
   ## Free the `JSRuntime` rt and remove it from the global JSRuntime pool.
-  #
-  # We must prepare space for opaque refs & pointers here, so that we
-  # can avoid allocations during cleanup. Otherwise we risk triggering a
-  # GC cycle and that would break cleanup too...
-  #
-  # (But we must *not* collect them yet; wait until the cycles are collected
-  # once.)
   let rtOpaque = rt.getOpaque()
   for map in rtOpaque.enumMap:
     for atom in map.atoms:
       JS_FreeAtomRT(rt, atom)
     for it in map.enums:
       JS_FreeAtomRT(rt, it.atom)
-  rtOpaque.tmplist.setLen(rtOpaque.plist.len)
   GC_unref(rtOpaque)
   # For refc: ensure there are no ghost Nim objects holding onto JS
   # values.
@@ -227,15 +219,18 @@ proc free*(rt: JSRuntime) =
   #   claw back their refcount in can_destroy.
   # * Allocations must not occur during deinitialization.
   #
-  # For this we need three passes over the object map.  Theoretically, two
-  # passes would be enough if move worked reliably across Nim versions.
+  # For this we need three passes over the object map.
   var np = 0
-  for nimp, jsp in rtOpaque.plist:
-    discard JS_DupValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, jsp))
-    rtOpaque.tmplist[np] = (nimp, jsp)
-    inc np
-  rtOpaque.plist.clear()
-  for it in rtOpaque.tmplist.toOpenArray(0, np - 1):
+  var plist = move(rtOpaque.plist)
+  for i in 0 ..< plist.len:
+    let it = plist[i]
+    if it.nimp != nil:
+      discard JS_DupValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.jsp))
+      if np < i:
+        plist[np] = move(plist[i])
+      inc np
+  plist.setLen(np)
+  for it in plist:
     let val = JS_MKPTR(JS_TAG_OBJECT, it.jsp)
     let classid = JS_GetClassID(val)
     let opaque = JS_GetOpaque(val, classid)
@@ -252,7 +247,7 @@ proc free*(rt: JSRuntime) =
       JS_FreeValueRT(rt, val)
   # Opaques are unset, and finalizers have run.  Now we can actually
   # release the JS objects.
-  for it in rtOpaque.tmplist.toOpenArray(0, np - 1):
+  for it in plist:
     JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.jsp))
   # GC will run again now (in QJS code).
   JS_FreeRuntime(rt)
@@ -267,7 +262,7 @@ proc setGlobal*[T](ctx: JSContext; obj: T) =
   let rtOpaque = rt.getOpaque()
   let ctxOpaque = ctx.getOpaque()
   let opaque = cast[pointer](obj)
-  rtOpaque.plist[opaque] = JS_VALUE_GET_PTR(ctxOpaque.global)
+  rtOpaque.add(opaque, JS_VALUE_GET_PTR(ctxOpaque.global))
   GC_ref(obj)
   ctxOpaque.globalObj = opaque
 
@@ -426,6 +421,7 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   if rtOpaque.classes.len <= int(res):
     rtOpaque.classes.setLen(int(res) + 1)
   rtOpaque.classes[res].parent = parent
+  rtOpaque.classes[res].nimt = nimt
   let proto = ctx.newProtoFromParentClass(parent, iterable)
   JS_SetClassProto(ctx, res, proto)
   if not ctx.addClassUnforgeableAndFinalizer(proto, res, parent, unforgeable,
@@ -437,6 +433,7 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     let global = ctxOpaque.global
     assert ctxOpaque.gclass == 0
     ctxOpaque.gclass = res
+    rtOpaque.classes[JS_GetClassID(global)].nimt = nimt
     let name2 = JS_DupValue(ctx, name)
     # Global already exists, so set unforgeable functions here
     if ctx.definePropertyC(global, strSym, name2) == dprException or
@@ -1416,14 +1413,15 @@ proc nimFinalizeForJS*(obj, typeptr: pointer) =
   let rt = globalRuntime
   if rt != nil:
     let rtOpaque = rt.getOpaque()
-    rtOpaque.plist.withValue(obj, pp):
-      let val = JS_MKPTR(JS_TAG_OBJECT, pp[])
+    let pp = rtOpaque.getOrDefault(obj)
+    if pp != nil:
+      let val = JS_MKPTR(JS_TAG_OBJECT, pp)
       for fin in rtOpaque.finalizers(JS_GetClassID(val)):
         fin(rt, obj)
       JS_SetOpaque(val, nil)
-      rtOpaque.plist.del(obj)
+      rtOpaque.del(obj)
       JS_FreeValueRT(rt, val)
-    do:
+    else:
       # No JSValue exists for the object, but it likely still expects us to
       # free it.
       let classid = rtOpaque.typemap.getOrDefault(typeptr)
