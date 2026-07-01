@@ -1856,16 +1856,12 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     #    same tree are caught
     # b) stick to descendant combinators as they are very slow, but also
     #    cache child when we only have that
-    # c) unset the class on next/subsequent sibling, as those imply we have
-    #    switched trees
     if ct == ctDescendant:
       if class != CAtomNull:
         prevClass = class
     elif ct == ctChild:
       if prevClass == CAtomNull:
         prevClass = class
-    else:
-      prevClass = CAtomNull
     result[^1].ct = ct
   if result.len == 0 or result[^1].ct != ctNone:
     fail
