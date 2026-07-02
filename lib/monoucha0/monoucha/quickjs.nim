@@ -384,6 +384,18 @@ template JS_CFUNC_DEF*(n: cstring; len: uint8; func1: JSCFunction;
                            cproto: JS_CFUNC_generic,
                            cfunc: JSCFunctionType(generic: func1))))
 
+template JS_CFUNC_MAGIC_DEF*(n: cstring; len: uint8; func1: JSCFunctionMagic;
+    m: int16; flags: cint): JSCFunctionListEntry =
+  JSCFunctionListEntry(name: n,
+                       prop_flags: flags,
+                       def_type: JS_DEF_CFUNC,
+                       magic: m,
+                       u: JSCFunctionListEntryU(
+                         `func`: JSCFunctionListEntryFunc(
+                           length: len,
+                           cproto: JS_CFUNC_generic_magic,
+                           cfunc: JSCFunctionType(generic_magic: func1))))
+
 template JS_CFUNC_DEF*(n: string; len: uint8; func1: JSCFunction):
     JSCFunctionListEntry =
   JS_CFUNC_DEF(n, len, func1, JS_PROP_WRITABLE or JS_PROP_CONFIGURABLE)

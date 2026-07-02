@@ -422,11 +422,17 @@ proc copyCursorPos(ctx: JSContext; this: BufferInit; val: JSValueConst):
   this.flags.incl(bifHasStart)
   ok()
 
-proc hasStart(init: BufferInit): bool {.jsfget.} =
-  bifHasStart in init.flags
+proc bufferInitFlag(init: BufferInit; flag: BufferInitFlag): bool {.
+    jsmfget("hasStart", bifHasStart), jsmfget("history", bifHistory),
+    jsmfget("save", bifSave), jsmfget("ishtml", bifHTML).} =
+  flag in init.flags
 
-proc history(init: BufferInit): bool {.jsfget.} =
-  bifHistory in init.flags
+proc setBufferInitFlag(init: BufferInit; flag: BufferInitFlag; b: bool) {.
+    jsmfset("save", bifSave).} =
+  if b:
+    init.flags.incl(flag)
+  else:
+    init.flags.excl(flag)
 
 proc scripting(init: BufferInit): ScriptingMode {.jsfget.} =
   init.config.scripting
@@ -436,18 +442,6 @@ proc charsetOverride(ctx: JSContext; init: BufferInit): JSValue {.jsfget.} =
   if charset != csUnknown:
     return ctx.toJS(charset)
   return JS_NULL
-
-proc save(init: BufferInit): bool {.jsfget.} =
-  bifSave in init.flags
-
-proc setSave(init: BufferInit; b: bool) {.jsfset: "save".} =
-  if b:
-    init.flags.incl(bifSave)
-  else:
-    init.flags.excl(bifSave)
-
-proc ishtml(init: BufferInit): bool {.jsfget.} =
-  bifHTML in init.flags
 
 proc cookie(init: BufferInit): CookieMode {.jsfget.} =
   init.loaderConfig.cookieMode
@@ -710,17 +704,11 @@ proc getHoverText*(iface: BufferInterface): string =
       return s
   ""
 
-proc hoverLink(iface: BufferInterface): lent string {.jsfget.} =
-  iface.hoverText[htLink]
-
-proc hoverTitle(iface: BufferInterface): lent string {.jsfget.} =
-  iface.hoverText[htTitle]
-
-proc hoverImage(iface: BufferInterface): lent string {.jsfget.} =
-  iface.hoverText[htImage]
-
-proc hoverCachedImage(iface: BufferInterface): lent string {.jsfget.} =
-  iface.hoverText[htCachedImage]
+proc getHoverText(iface: BufferInterface; t: HoverType): lent string {.
+    jsmfget("hoverLink", htLink), jsmfget("hoverTitle", htTitle),
+    jsmfget("hoverImage", htImage),
+    jsmfget("hoverCachedImage", htCachedImage).} =
+  iface.hoverText[t]
 
 proc clearHover*(iface: BufferInterface) =
   iface.lastPeek = HoverType.high

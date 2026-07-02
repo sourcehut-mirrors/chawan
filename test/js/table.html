@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<title>Table test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const tab = document.createElement("table");
+assertThrows(() => tab.tHead = "test", TypeError);
+assertThrows(() => tab.tHead = document.createElement("div"), TypeError);
+assertThrows(() => tab.tHead = document.createElement("tfoot"), DOMException);
+assertInstanceof(tab.tHead = document.createElement("thead"), HTMLTableSectionElement);
+assertEquals(tab.tHead.tagName, "THEAD");
+tab.tHead = null;
+assertEquals(tab.tHead, null);
+document.createElement("table").tFoot = document.createElement("tfoot");
+document.getElementById("x").textContent = "Success";
+</script>

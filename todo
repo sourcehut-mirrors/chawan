@@ -30,7 +30,6 @@ network:
 - nntp
 - websockets
 javascript:
-- support defining function with magic
 - "this" value as JSValue
 - ReadableStream
 - separate console for each buffer

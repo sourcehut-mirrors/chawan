@@ -1283,15 +1283,10 @@ proc next(ctx: JSContext; iter: URLSearchParamsIterator; done: var JS_BOOL):
   of sitKeys: ctx.toJS(params.list[i].name)
   of sitValues: ctx.toJS(params.list[i].value)
 
-#TODO magic
-proc entries(params: URLSearchParams): URLSearchParamsIterator {.jsfunc.} =
-  URLSearchParamsIterator(t: sitEntries, params: params)
-
-proc values(params: URLSearchParams): URLSearchParamsIterator {.jsfunc.} =
-  URLSearchParamsIterator(t: sitValues, params: params)
-
-proc keys(params: URLSearchParams): URLSearchParamsIterator {.jsfunc.} =
-  URLSearchParamsIterator(t: sitKeys, params: params)
+proc entries(params: URLSearchParams; t: SearchIteratorType):
+    URLSearchParamsIterator {.jsmfunc("entries", sitEntries),
+    jsmfunc("values", sitValues), jsmfunc("keys", sitKeys).} =
+  URLSearchParamsIterator(t: t, params: params)
 
 proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
     Opt[URL] {.jsctor.} =

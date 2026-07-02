@@ -192,14 +192,12 @@ proc newTrustedEvent*(ctype: StaticAtom; target: EventTarget;
     event.flags.incl(efCancelable)
   event
 
-proc bubbles(event: Event): bool {.jsfget.} =
-  efBubbles in event.flags
-
-proc cancelable(event: Event): bool {.jsfget.} =
-  efCancelable in event.flags
-
-proc isTrusted(event: Event): bool {.jsfget.} =
-  efTrusted in event.flags
+proc eventFlag(event: Event; flag: EventFlag): bool {.
+    jsmfget("bubbles", efBubbles), jsmfget("cancelable", efCancelable),
+    jsmfget("isTrusted", efTrusted), jsmfget("defaultPrevented", efCanceled),
+    jsmfget("cancelBubble", efStopPropagation),
+    jsmfget("composed", efComposed).} =
+  flag in event.flags
 
 proc setTrusted*(event: Event) =
   event.flags.incl(efTrusted)
@@ -229,10 +227,8 @@ proc composedPath(this: Event): seq[EventTarget] {.jsfunc.} =
 proc stopPropagation(this: Event) {.jsfunc.} =
   this.flags.incl(efStopPropagation)
 
-proc cancelBubble(this: Event): bool {.jsfget.} =
-  return efStopPropagation in this.flags
-
-proc `cancelBubble=`(this: Event; cancel: bool) {.jsfset: "cancelBubble".} =
+proc `cancelBubble=`(this: Event; flag: EventFlag; cancel: bool) {.
+    jsmfset("cancelBubble", efStopPropagation).} =
   if cancel:
     this.stopPropagation()
 
@@ -240,21 +236,15 @@ proc stopImmediatePropagation(this: Event) {.jsfunc.} =
   this.flags.incl({efStopPropagation, efStopImmediatePropagation})
 
 proc preventDefault(this: Event) {.jsfunc.} =
-  if this.cancelable and efInPassiveListener notin this.flags:
+  if efCancelable in this.flags and efInPassiveListener notin this.flags:
     this.flags.incl(efCanceled)
 
 proc returnValue(this: Event): bool {.jsfget.} =
-  return efCanceled notin this.flags
+  efCanceled notin this.flags
 
 proc `returnValue=`(this: Event; value: bool) {.jsfset: "returnValue".} =
   if not value:
     this.preventDefault()
-
-proc defaultPrevented(this: Event): bool {.jsfget.} =
-  return efCanceled in this.flags
-
-proc composed(this: Event): bool {.jsfget.} =
-  return efComposed in this.flags
 
 # CustomEvent
 proc newCustomEvent*(ctx: JSContext; ctype: CAtomTraced;
@@ -680,7 +670,7 @@ type
 
 proc collectItems(dctx: var DispatchContext; target: EventTarget) =
   let ctype = dctx.event.ctype
-  let bubbles = dctx.event.bubbles
+  let bubbles = efBubbles in dctx.event.flags
   let isLoad = dctx.event.ctype == satLoad.toAtom()
   var it = target
   while it != nil:

@@ -3668,16 +3668,11 @@ proc scriptingEnabled*(document: Document): bool =
     return false
   return document.window.settings.scripting != smFalse
 
-proc findFirst*(document: Document; tagType: TagType): HTMLElement =
+proc findFirst*(document: Document; tagType: TagType): HTMLElement {.
+    jsmfget("head", TAG_HEAD), jsmfget("body", TAG_BODY).} =
   for element in document.elementDescendants(tagType):
     return HTMLElement(element)
   nil
-
-proc head*(document: Document): HTMLElement {.jsfget.} =
-  return document.findFirst(TAG_HEAD)
-
-proc body*(document: Document): HTMLElement {.jsfget.} =
-  return document.findFirst(TAG_BODY)
 
 proc getElementById*(document: Document; id: CAtomTraced): Element =
   if id != satUempty and document.elementIdMap.len > 0:
@@ -3777,7 +3772,7 @@ proc setTitle(ctx: JSContext; document: Document; ds: DOMString) {.
     jsfset: "title".} =
   var title = document.findFirst(TAG_TITLE)
   if title == nil:
-    let head = document.head
+    let head = document.findFirst(TAG_HEAD)
     if head == nil:
       return
     title = document.newHTMLElement(TAG_TITLE)
@@ -4344,7 +4339,8 @@ proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
     return err()
   ok(res)
 
-proc traverse(ctx: JSContext; this: NodeIterator; next: bool): Opt[Node] =
+proc traverse(ctx: JSContext; this: NodeIterator; next: bool): Opt[Node] {.
+    jsmfunc("previousNode", false), jsmfunc("nextNode", true).} =
   this.iterNode = this.referenceNode
   this.iterBefore = this.before
   while true:
@@ -4366,13 +4362,6 @@ proc traverse(ctx: JSContext; this: NodeIterator; next: bool): Opt[Node] =
   this.referenceNode = this.iterNode
   this.before = this.iterBefore
   ok(move(this.iterNode))
-
-#TODO magic
-proc nextNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
-  ctx.traverse(this, next = true)
-
-proc previousNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
-  ctx.traverse(this, next = false)
 
 proc detach(this: NodeIterator) {.jsfunc.} =
   discard
@@ -4424,22 +4413,22 @@ proc parentNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
       return ok(node)
   ok(nil)
 
-#TODO magic?
-proc traverse(ctx: JSContext; this: TreeWalker; next: bool): Opt[Node] =
+proc traverse(ctx: JSContext; this: TreeWalker; last: bool): Opt[Node] {.
+    jsmfunc("firstChild", false), jsmfunc("lastChild", true).} =
   let currentNode = this.currentNode
-  var node = if next: currentNode.firstChild else: currentNode.lastChild
+  var node = if last: currentNode.lastChild else: currentNode.firstChild
   while node != nil:
     let res = ?ctx.filter(this, node)
     if res == uint32(nfrAccept):
       this.currentNode = node
       return ok(node)
     if res == uint32(nfrSkip):
-      let child = if next: node.firstChild else: node.lastChild
+      let child = if last: node.lastChild else: node.firstChild
       if child != nil:
         node = child
         continue
     while node != nil:
-      let sibling = if next: node.nextSibling else: node.previousSibling
+      let sibling = if last: node.previousSibling else: node.nextSibling
       if sibling != nil:
         node = sibling
         break
@@ -4450,7 +4439,8 @@ proc traverse(ctx: JSContext; this: TreeWalker; next: bool): Opt[Node] =
         node = parent
   ok(nil)
 
-proc traverseSibling(ctx: JSContext; this: TreeWalker; next: bool): Opt[Node] =
+proc traverseSibling(ctx: JSContext; this: TreeWalker; next: bool): Opt[Node]
+    {.jsmfunc("previousSibling", false), jsmfunc("nextSibling", true).} =
   var node = this.currentNode
   if node != this.root:
     while true:
@@ -4469,18 +4459,6 @@ proc traverseSibling(ctx: JSContext; this: TreeWalker; next: bool): Opt[Node] =
           ?ctx.filter(this, node) == uint32(nfrAccept):
         return ok(nil)
   ok(nil)
-
-proc firstChild(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
-  ctx.traverse(this, next = true)
-
-proc lastChild(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
-  ctx.traverse(this, next = false)
-
-proc nextSibling(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
-  ctx.traverseSibling(this, next = true)
-
-proc previousSibling(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
-  ctx.traverseSibling(this, next = false)
 
 proc nextNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
   var node = this.currentNode.nextDescendant(this.root)
@@ -4547,7 +4525,8 @@ proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool =
 proc contains(tokenList: DOMTokenList; s: CAtomTraced): bool {.jsfunc.} =
   return s in tokenList.toks
 
-proc `$`(tokenList: DOMTokenList): string {.jsfunc: "toString".} =
+proc `$`(tokenList: DOMTokenList): string {.jsfunc: "toString",
+    jsfget: "value".} =
   var s = ""
   for i, tok in tokenList.toks:
     if i != 0:
@@ -4635,9 +4614,6 @@ proc supports(ctx: JSContext; tokenList: DOMTokenList; token: string): JSValue
     return ctx.toJS(token.toLowerAscii().toStaticAtom() in SupportedTokens)
   else:
     return JS_ThrowTypeError(ctx, "no supported tokens defined for attribute")
-
-proc value(tokenList: DOMTokenList): string {.jsfget.} =
-  return $tokenList
 
 proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
@@ -6006,7 +5982,8 @@ proc renderBlocking(element: Element): bool =
 
 proc blockRendering(element: Element) =
   let document = element.document
-  if document.contentType == satTextHtml and document.body == nil:
+  if document.contentType == satTextHtml and
+      document.findFirst(TAG_BODY) == nil:
     element.document.renderBlockingElements.add(element)
 
 proc invalidate*(element: Element) =
@@ -7950,38 +7927,27 @@ proc prepare*(element: HTMLScriptElement) =
     element.execute()
 
 # <table>
-proc caption(this: HTMLTableElement): Element {.jsfget.} =
-  return this.findFirstChildOf(TAG_CAPTION)
+proc getTableChild(this: HTMLTableElement; tagType: TagType): Element {.
+    jsmfget("caption", TAG_CAPTION), jsmfget("tHead", TAG_THEAD),
+    jsmfget("tFoot", TAG_TFOOT).} =
+  this.findFirstChildOf(tagType)
 
-proc setCaption(ctx: JSContext; this: HTMLTableElement;
-    caption: HTMLTableCaptionElement): JSValue {.jsfset: "caption".} =
-  let old = this.caption
-  if old != nil:
-    old.remove()
-  return ctx.insertBeforeUndefined(this, caption, option(this.firstChild))
-
-proc tHead(this: HTMLTableElement): Element {.jsfget.} =
-  return this.findFirstChildOf(TAG_THEAD)
-
-proc tFoot(this: HTMLTableElement): Element {.jsfget.} =
-  return this.findFirstChildOf(TAG_TFOOT)
-
-proc setTSectImpl(ctx: JSContext; this: HTMLTableElement;
-    sect: HTMLTableSectionElement; tagType: TagType): JSValue =
+proc setTableChild(ctx: JSContext; this: HTMLTableElement; tagType: TagType;
+    sectVal: JSValueConst): JSValue {.jsmfset("caption", TAG_CAPTION),
+    jsmfset("tHead", TAG_THEAD), jsmfset("tFoot", TAG_TFOOT).} =
+  var sect: HTMLElement
+  if not JS_IsNull(sectVal):
+    ?ctx.fromJS(sectVal, sect)
   if sect != nil and sect.tagType != tagType:
-    return ctx.insertThrow("wrong element type")
+    if tagType != TAG_CAPTION and sect of HTMLTableSectionElement:
+      return ctx.insertThrow("wrong element type")
+    return JS_ThrowTypeError(ctx, "%s tag expected", cstring($tagType))
   let old = this.findFirstChildOf(tagType)
   if old != nil:
     old.remove()
+  if sect == nil:
+    return JS_UNDEFINED
   return ctx.insertBeforeUndefined(this, sect, option(this.firstChild))
-
-proc setTHead(ctx: JSContext; this: HTMLTableElement;
-    tHead: HTMLTableSectionElement): JSValue {.jsfset: "tHead".} =
-  return ctx.setTSectImpl(this, tHead, TAG_THEAD)
-
-proc setTFoot(ctx: JSContext; this: HTMLTableElement;
-    tFoot: HTMLTableSectionElement): JSValue {.jsfset: "tFoot".} =
-  return ctx.setTSectImpl(this, tFoot, TAG_TFOOT)
 
 proc tBodies(ctx: JSContext; this: HTMLTableElement): JSValue {.jsfget.} =
   return ctx.getWeakCollection(this, wwmTBodies)
@@ -8000,41 +7966,27 @@ proc rows(this: HTMLTableElement): HTMLCollection {.jsfget.} =
     )
   this.cachedRows
 
-proc create(this: HTMLTableElement; tagType: TagType; before: Node):
-    Element =
+proc createTableChild(this: HTMLTableElement; tagType: TagType): Element {.
+    jsmfunc("createCaption", TAG_CAPTION), jsmfunc("createTHead", TAG_THEAD),
+    jsmfunc("createTBody", TAG_TBODY), jsmfunc("createTFoot", TAG_TFOOT).} =
+  let tagType = cast[TagType](tagType)
+  let before = case tagType
+  of TAG_CAPTION: this.firstChild
+  of TAG_THEAD: this.findFirstChildNotOf({TAG_CAPTION, TAG_COLGROUP})
+  of TAG_TBODY: this.findLastChildOf(TAG_TBODY)
+  else: nil # tfoot
   var element = this.findFirstChildOf(tagType)
   if element == nil:
     element = this.document.newHTMLElement(tagType)
     this.insert(element, before, nil)
   return element
 
-proc delete(this: HTMLTableElement; tagType: TagType) =
-  let element = this.findFirstChildOf(tagType)
+proc deleteTableChild(this: HTMLTableElement; tag: TagType) {.
+    jsmfunc("deleteCaption", TAG_CAPTION), jsmfunc("deleteTHead", TAG_THEAD),
+    jsmfunc("deleteTFoot", TAG_TFOOT).} =
+  let element = this.findFirstChildOf(cast[TagType](tag))
   if element != nil:
     element.remove()
-
-proc createCaption(this: HTMLTableElement): Element {.jsfunc.} =
-  return this.create(TAG_CAPTION, this.firstChild)
-
-proc createTHead(this: HTMLTableElement): Element {.jsfunc.} =
-  let before = this.findFirstChildNotOf({TAG_CAPTION, TAG_COLGROUP})
-  return this.create(TAG_THEAD, before)
-
-proc createTBody(this: HTMLTableElement): Element {.jsfunc.} =
-  let before = this.findLastChildOf(TAG_TBODY)
-  return this.create(TAG_TBODY, before)
-
-proc createTFoot(this: HTMLTableElement): Element {.jsfunc.} =
-  return this.create(TAG_TFOOT, nil)
-
-proc deleteCaption(this: HTMLTableElement) {.jsfunc.} =
-  this.delete(TAG_CAPTION)
-
-proc deleteTHead(this: HTMLTableElement) {.jsfunc.} =
-  this.delete(TAG_THEAD)
-
-proc deleteTFoot(this: HTMLTableElement) {.jsfunc.} =
-  this.delete(TAG_TFOOT)
 
 proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
     Opt[HTMLElement] {.jsfunc.} =
@@ -8045,7 +7997,7 @@ proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
     return err()
   let tr = this.document.newHTMLElement(TAG_TR)
   if nrows == 0:
-    this.createTBody().append(tr, ctx)
+    this.createTableChild(TAG_TBODY).append(tr, ctx)
   elif index == -1 or uint32(index) == nrows:
     let it = rows.item(nrows - 1)
     it.parentNode.append(tr, ctx)
@@ -8393,7 +8345,7 @@ isDefaultPassiveImpl = proc(target: EventTarget): bool =
   let node = Node(target)
   return target of Window or EventTarget(node.document) == target or
     EventTarget(node.document.documentElement) == target or
-    EventTarget(node.document.body) == target
+    EventTarget(node.document.findFirst(TAG_BODY)) == target
 
 getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; isLoad: bool):
     EventTarget =
