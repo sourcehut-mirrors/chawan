@@ -314,7 +314,9 @@ type
 
   NodeIterator {.final.} = ref object of NodeIteratorLike
     referenceNode {.jsget.}: Node
+    iterNode: Node
     before {.jsget: "pointerBeforeReferenceNode".}: bool
+    iterBefore: bool
 
   TreeWalker {.final.} = ref object of NodeIteratorLike
     currentNode {.jsgetset.}: Node
@@ -754,7 +756,7 @@ proc reflectEvent(document: Document; target: EventTarget;
   name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
 proc removeElementId(document: Document; element: Element)
 
-proc iterRemove(iter: NodeIterator; node: Node)
+proc adjustForRemoval(iter: NodeIterator; node: Node)
 
 proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool
 
@@ -3794,7 +3796,7 @@ proc invalidateCollectionsRemove(document: Document; node: Node) =
   var collection = document.liveCollectionsHead
   while collection != nil:
     if cast[CollectionLike](collection) of NodeIterator:
-      cast[NodeIterator](collection).iterRemove(node)
+      cast[NodeIterator](collection).adjustForRemoval(node)
     elif cast[CollectionLike](collection) of Collection:
       cast[Collection](collection).invalid = true
     collection = collection.next
@@ -4292,6 +4294,7 @@ proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
   let this = NodeIterator(
     root: root,
     referenceNode: root,
+    iterNode: root,
     whatToShow: whatToShow,
     filter: JS_DupValue(ctx, filter),
     before: true
@@ -4341,50 +4344,54 @@ proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
     return err()
   ok(res)
 
-proc nextNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
-  var node = this.referenceNode
-  var before = this.before
+proc traverse(ctx: JSContext; this: NodeIterator; next: bool): Opt[Node] =
+  this.iterNode = this.referenceNode
+  this.iterBefore = this.before
   while true:
-    if before:
-      before = false
+    if this.iterBefore == next:
+      this.iterBefore = not next
     else:
-      node = node.nextDescendant(this.root)
-      if node == nil:
+      this.iterNode = if next:
+        this.iterNode.nextDescendant(this.root)
+      else:
+        this.iterNode.previousDescendant(this.root)
+      if this.iterNode == nil:
         return ok(nil)
-    if ?ctx.filter(this, node) == uint32(nfrAccept):
+    let res = ctx.filter(this, this.iterNode)
+    if res.isErr:
+      this.iterNode = nil
+      return err()
+    if res.get == uint32(nfrAccept):
       break
-  this.referenceNode = node
-  this.before = before
-  ok(node)
+  this.referenceNode = this.iterNode
+  this.before = this.iterBefore
+  ok(move(this.iterNode))
+
+#TODO magic
+proc nextNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
+  ctx.traverse(this, next = true)
 
 proc previousNode(ctx: JSContext; this: NodeIterator): Opt[Node] {.jsfunc.} =
-  var node = this.referenceNode
-  var before = this.before
-  while true:
-    if not before:
-      before = true
-    else:
-      node = node.previousDescendant(this.root)
-      if node == nil:
-        return ok(nil)
-    if ?ctx.filter(this, node) == uint32(nfrAccept):
-      break
-  this.referenceNode = node
-  this.before = before
-  ok(node)
+  ctx.traverse(this, next = false)
 
 proc detach(this: NodeIterator) {.jsfunc.} =
   discard
 
-proc iterRemove(iter: NodeIterator; node: Node) =
-  if not node.contains(iter.root) and node.contains(iter.referenceNode):
-    if iter.before:
+proc adjustForRemovalImpl(iter: NodeIterator; node: Node;
+    referenceNode: var Node; before: var bool) =
+  if not node.contains(iter.root) and node.contains(referenceNode):
+    if before:
       let next = node.nextDescendantExcl(iter.root)
       if next != nil:
-        iter.referenceNode = next
+        referenceNode = next
         return
-      iter.before = false
-    iter.referenceNode = node.previousDescendant(iter.root)
+      before = false
+    referenceNode = node.previousDescendant(iter.root)
+
+proc adjustForRemoval(iter: NodeIterator; node: Node) =
+  iter.adjustForRemovalImpl(node, iter.referenceNode, iter.before)
+  if iter.iterNode != nil:
+    iter.adjustForRemovalImpl(node, iter.iterNode, iter.iterBefore)
 
 # TreeWalker
 proc createTreeWalker(ctx: JSContext; document: Document; root: Node;

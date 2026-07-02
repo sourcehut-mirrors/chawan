@@ -24,6 +24,15 @@
 </div>
 </div>
 
+<div id=test4>
+<div id=inner>
+<div id=j>first</div>
+<div id=skip>second</div>
+<div id=k>third</div>
+<div id=l>fourth</div>
+</div>
+</div>
+
 <script src=asserts.js></script>
 <script>
 {
@@ -44,6 +53,7 @@
 	assertInstanceof(iter.referenceNode, Text);
 	assertEquals(iter.nextNode(), c);
 	c.remove();
+	test1.remove();
 }
 {
 	const iter = document.createNodeIterator(inner, 0xFFFFFFFF, x => {
@@ -57,6 +67,7 @@
 	test2.remove();
 	assertEquals(iter.referenceNode.id, "d");
 }
+
 {
 	const iter = document.createNodeIterator(test3.firstElementChild, 0xFFFFFFFF, x => {
 		if (x instanceof Element && x.id)
@@ -71,6 +82,25 @@
 	test3.remove();
 	assert(iter.pointerBeforeReferenceNode);
 	assertEquals(iter.referenceNode.id, "g");
+}
+
+{
+	const iter = document.createNodeIterator(test4.firstElementChild, 0xFFFFFFFF, x => {
+		if (x instanceof Element && x.id && x.id != "skip")
+			return 1;
+		if (x.id == "skip")
+			x.remove();
+		return 2;
+	}, 1);
+	assertEquals(iter.nextNode().id, "inner");
+	assertEquals(iter.nextNode().id, "j");
+	assertEquals(iter.nextNode().id, "k");
+	assertEquals(iter.nextNode().id, "l");
+	iter.referenceNode.remove();
+	iter.referenceNode.remove();
+	iter.referenceNode.remove();
+	assertEquals(iter.referenceNode.id, "k");
+	test4.remove();
 }
 
 
