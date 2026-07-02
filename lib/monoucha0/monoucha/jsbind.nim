@@ -124,23 +124,26 @@ type
 proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
   if s.malloc_size + size > s.malloc_limit:
     return nil
+  let diff = csize_t(getOccupiedMem()) - s.malloc_size
   let res = alloc(size)
   inc s.malloc_count
-  s.malloc_size = csize_t(getOccupiedMem())
+  s.malloc_size = csize_t(getOccupiedMem()) - diff
   res
 
 proc bindFree(s: JSMallocStateP; p: pointer) {.cdecl.} =
   if p != nil:
+    let diff = csize_t(getOccupiedMem()) - s.malloc_size
     dealloc(p)
     dec s.malloc_count
-    s.malloc_size = csize_t(getOccupiedMem())
+    s.malloc_size = csize_t(getOccupiedMem()) - diff
 
 proc bindRealloc(s: JSMallocStateP; p: pointer; size: csize_t): pointer
     {.cdecl.} =
   if s.malloc_size + size > s.malloc_limit:
     return nil
+  let diff = csize_t(getOccupiedMem()) - s.malloc_size
   let res = realloc(p, size)
-  s.malloc_size = csize_t(getOccupiedMem())
+  s.malloc_size = csize_t(getOccupiedMem()) - diff
   if p == nil:
     inc s.malloc_count
   elif size == 0:
