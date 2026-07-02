@@ -2135,20 +2135,31 @@ proc openConfig*(dir, dataDir: var string; override: string;
     dataDir = getEnvEmpty("CHA_DATA_DIR", dir)
     return chafile.fopen(dir / "config.toml", "r")
   dir = getEnvEmpty("XDG_CONFIG_HOME")
+  var xdg: string
   if dir != "":
     dir = dir / "chawan"
+    xdg = dir
   else:
-    dir = expandPath("~/.config/chawan")
-  if (let fs = chafile.fopen(dir / "config.toml", "r"); fs.isOk):
+    xdg = "~/.config/chawan"
+    dir = expandPath(xdg)
+  let hasXdg = dirExists(dir)
+  if hasXdg and (let fs = chafile.fopen(dir / "config.toml", "r"); fs.isOk):
     let s = getEnvEmpty("XDG_DATA_HOME")
     if s != "":
       dataDir = s / "chawan"
     else:
       dataDir = expandPath("~/.local/share/chawan")
+    if dirExists(expandPath("~/.chawan")):
+      warnings.add("found both ~/.chawan and " & xdg & ", but only " & xdg &
+        " will be used")
     return fs
   dir = expandPath("~/.chawan")
   dataDir = dir
-  return chafile.fopen(dir / "config.toml", "r")
+  let fs = chafile.fopen(dir / "config.toml", "r")
+  if fs.isOk and hasXdg:
+    warnings.add("found both ~/.chawan and " & xdg &
+      ", but only ~/.chawan will be used")
+  fs
 
 # called at pager init
 proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
