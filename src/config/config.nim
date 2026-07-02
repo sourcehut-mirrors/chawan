@@ -877,6 +877,7 @@ type
     ckPageDown = "Pagedown"
     ckHome = "Home"
     ckEnd = "End"
+    ckDelete = "Delete"
     ckF1 = "F1"
     ckF2 = "F2"
     ckF3 = "F3"
@@ -973,6 +974,11 @@ proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string =
             realk &= "\eO" & c
           else:
             realk &= "\e[1;" & $n & c
+        of ckDelete:
+          realk &= "\e[3"
+          let n = mods.toXTermMod()
+          if n > 0:
+            realk &= ";" & $n & '~'
         else:
           realk &= "\e["
           # see ctlseqs(ms) (from XTerm)
@@ -2316,6 +2322,7 @@ LF line.submit
 C-h line.backspace
 C-? line.backspace
 C-d line.delete
+Delete line.delete
 C-c line.copyOrCancel
 M-w line.copySelection
 C-g line.cancel
@@ -2333,6 +2340,7 @@ C-w line.clearWord
 M-C-h line.clearWord
 M-C-? line.clearWord
 M-d line.killWord
+C-Delete line.killWord
 C-a line.begin
 Home line.begin
 M-[1~ line.begin
