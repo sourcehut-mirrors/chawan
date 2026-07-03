@@ -495,7 +495,8 @@ type
     localName* {.jsget.}: CAtom # 16
     id* {.jsget.}: CAtom # 20
     name: CAtom # 24
-    internalElIndex: int # 32
+    internalElIndex: uint32 # 28
+    # 4 bytes free
     classList* {.jsget.}: DOMTokenList # 40
     attrs*: seq[AttrData] # 48, sorted by int(qualifiedName)
     cachedStyle*: CSSStyleDeclaration # 56
@@ -784,7 +785,7 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32)
 proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(ctx: JSContext; element: Element; i: int)
 proc dupAttrs(element: Element): seq[AttrData]
-proc elIndex*(this: Element): int
+proc elIndex*(this: Element): uint32
 proc ensureStyle*(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtomTraced): int
 proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int
@@ -2387,9 +2388,9 @@ proc removeImpl*(node: Node; suppressObservers = false) =
     if parentElement == nil:
       element.invalidate()
     element.box = nil
-    if element.internalElIndex == 0 and parentElement != nil:
+    if parentElement != nil and next.parentNode == parent:
       parentElement.flags.incl(efChildElIndicesInvalid)
-    element.internalElIndex = -1
+    element.internalElIndex = 0
     if element of SheetElement:
       SheetElement(element).removeSheet()
   #TODO assigned
@@ -2553,7 +2554,6 @@ proc clone(node: Node; ctx: JSContext; document = none(Document);
     let data = attr.data
     let dummy = AttrDummyElement(
       internalNext: attr.ownerElement.document,
-      internalElIndex: -1,
       attrs: @[data]
     )
     Node(dummy.newAttr(0))
@@ -2966,7 +2966,7 @@ proc replaceAll(parent: ParentNode; ds: DOMString; ctx: JSContext) =
 proc childrenImpl(ctx: JSContext; node: ParentNode): JSValue =
   return ctx.getWeakCollection(node, wwmChildren)
 
-proc childElementCountImpl(node: ParentNode): int =
+proc childElementCountImpl(node: ParentNode): uint32 =
   let last = node.lastElementChild
   if last == nil:
     return 0
@@ -3316,7 +3316,7 @@ proc firstElementChild(this: DocumentFragment): Element {.jsfget.} =
 proc lastElementChild(this: DocumentFragment): Element {.jsfget.} =
   return ParentNode(this).lastElementChild
 
-proc childElementCount(this: DocumentFragment): int {.jsfget.} =
+proc childElementCount(this: DocumentFragment): uint32 {.jsfget.} =
   return this.childElementCountImpl
 
 proc querySelector(ctx: JSContext; this: DocumentFragment; q: DOMString):
@@ -4208,7 +4208,7 @@ proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
     parseDocumentWriteChunkImpl(document.parser)
   return JS_UNDEFINED
 
-proc childElementCount(this: Document): int {.jsfget.} =
+proc childElementCount(this: Document): uint32 {.jsfget.} =
   return this.childElementCountImpl
 
 proc doctype(document: Document): DocumentType {.jsfget.} =
@@ -5113,12 +5113,12 @@ proc firstElementChild(this: Element): Element {.jsfget.} =
 proc lastElementChild(this: Element): Element {.jsfget.} =
   return ParentNode(this).lastElementChild
 
-proc childElementCount(this: Element): int {.jsfget.} =
+proc childElementCount(this: Element): uint32 {.jsfget.} =
   return this.childElementCountImpl
 
 proc isFirstVisualNode*(element: Element): bool =
-  if element.elIndex == 0:
-    let parent = element.parentNode
+  let parent = element.parentNode
+  if parent != nil and element.elIndex == 0:
     for child in parent.childList:
       if child == element:
         return true
@@ -5128,13 +5128,14 @@ proc isFirstVisualNode*(element: Element): bool =
 
 proc isLastVisualNode*(element: Element): bool =
   let parent = element.parentNode
-  for child in parent.rchildList:
-    if child == element:
-      return true
-    if child of Element:
-      break
-    if child of Text and not Text(child).data.s.onlyWhitespace():
-      break
+  if parent != nil:
+    for child in parent.rchildList:
+      if child == element:
+        return true
+      if child of Element:
+        break
+      if child of Text and not Text(child).data.s.onlyWhitespace():
+        break
   return false
 
 proc innerHTML(element: Element): string {.jsfget.} =
@@ -5777,14 +5778,16 @@ proc reflectAttrDel(element: Element; name: CAtomTraced) =
 proc reflectAttr(element: Element; attr: AttrData) =
   element.reflectAttr(attr.qualifiedName.view(), true, attr.value)
 
-proc elIndex*(this: Element): int =
+proc elIndex*(this: Element): uint32 =
   if this.parentNode == nil:
-    return -1
+    return 0
   let parent = this.parentElement
   if parent == nil:
     return 0 # <html>
+  if parent.firstChild == this:
+    return 0
   if efChildElIndicesInvalid in parent.flags:
-    var n = 0
+    var n = 0'u32
     for element in parent.elementList:
       element.internalElIndex = n
       inc n
@@ -5959,7 +5962,6 @@ proc newElement(document: Document;
   element.tagName = tagName.dup()
   element.internalNext = document
   element.classList = element.newDOMTokenList(satClass)
-  element.internalElIndex = -1
   element.custom = if localName.isValidCustomElementName():
     cesUndefined
   else:
@@ -6130,7 +6132,6 @@ proc delAttr(ctx: JSContext; element: Element; i: int) =
       let data = attr.data
       attr.ownerElement = AttrDummyElement(
         internalNext: attr.ownerElement.document,
-        internalElIndex: -1,
         attrs: @[data]
       )
       attr.dataIdx = 0

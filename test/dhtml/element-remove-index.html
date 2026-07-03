@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<style>
+#outer > div:nth-child(odd) { color: green }
+</style>
+<div id=outer>
+<div id=a>green</div>
+<div id=b>removed</div>
+<div id=c>default</div>
+</div>
+<script>
+a.getBoundingClientRect();
+b.remove()
+</script>

@@ -164,7 +164,7 @@ proc matchesNthChild(element: Element; nthChild: CSSNthChild;
   let A = nthChild.anb.A # step
   let B = nthChild.anb.B # start
   if nthChild.ofsels.len == 0:
-    let i = element.elIndex + 1
+    let i = int64(element.elIndex + 1)
     if A == 0:
       return i == B
     let j = (i - B)
@@ -196,7 +196,7 @@ proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
   let B = nthChild.anb.B # start
   if nthChild.ofsels.len == 0:
     let last = element.parentNode.lastElementChild
-    let i = last.elIndex + 1 - element.elIndex
+    let i = int64(last.elIndex + 1 - element.elIndex)
     if A == 0:
       return i == B
     let j = (i - B)
