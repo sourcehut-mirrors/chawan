@@ -5,7 +5,7 @@
 <script>
 "use strict";
 
-function test_code() {
+function testCode() {
 	let ex = new DOMException();
 	assertEquals(ex.code, 0);
 	ex = new DOMException("", "HierarchyRequestError\0test");
@@ -22,7 +22,8 @@ function test_code() {
 	assertEquals(ex.code, 1);
 }
 
-function test_properties() {
+function testProperties() {
+	assertEquals(DOMException.length, 0);
 	let ex = new DOMException("test");
 	assertEquals(ex.message, "test");
 	assertEquals(ex.name, "Error");
@@ -36,8 +37,8 @@ function test_properties() {
 	assert(Object.getOwnPropertyNames(ex), ["stack"]);
 }
 
-test_code();
-test_properties();
+testCode();
+testProperties();
 
 document.getElementById("x").textContent = "Success";
 </script>

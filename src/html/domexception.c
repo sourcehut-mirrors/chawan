@@ -76,13 +76,13 @@ static JSValue js_domexception_constructor0(JSContext *ctx, JSValueConst new_tar
     obj = JS_NewObjectFromCtor(ctx, new_target, js_class_dom_exception);
     if (JS_IsException(obj))
         return JS_EXCEPTION;
-    if (!JS_IsUndefined(argv[0]))
+    if (argc > 0 && !JS_IsUndefined(argv[0]))
         message = JS_ToString(ctx, argv[0]);
     else
         message = JS_NewString(ctx, "");
     if (JS_IsException(message))
         goto fail1;
-    if (!JS_IsUndefined(argv[1]))
+    if (argc > 1 && !JS_IsUndefined(argv[1]))
         name = JS_ToString(ctx, argv[1]);
     else
         name = JS_NewString(ctx, "Error");
@@ -218,7 +218,7 @@ int JS_AddIntrinsicDOMException(JSContext *ctx)
     if (JS_SetPropertyFunctionList(ctx, proto, js_domexception_proto_funcs,
                                    COUNTOF(js_domexception_proto_funcs)) < 0)
         goto fail1;
-    ctor = JS_NewCFunction2(ctx, js_domexception_constructor, "DOMException", 2,
+    ctor = JS_NewCFunction2(ctx, js_domexception_constructor, "DOMException", 0,
                             JS_CFUNC_constructor, 0);
     if (JS_IsException(ctor))
         goto fail1;
