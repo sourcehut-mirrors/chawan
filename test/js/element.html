@@ -44,6 +44,7 @@ function testAttribute() {
 	assertEquals(x.attributes["pf:test"].value, "d");
 	assertEquals(x.attributes.unset, undefined);
 	assertEquals(x.attributes.length, 6);
+	assertEquals(x.attributes.item(0xFFFFFFFF), null);
 	assertEquals(x.getAttributeNS("ns", "test"), "d")
 	let attr = x.attributes["pf:test"]
 	x.removeAttributeNS("ns", "test")

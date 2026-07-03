@@ -5022,9 +5022,9 @@ proc getNamedItemNS(map: NamedNodeMap; namespace, localName: CAtomTraced): Attr
 proc length(map: NamedNodeMap): uint32 {.jsfget.} =
   return uint32(map.element.attrs.len)
 
-proc item(map: NamedNodeMap; i: uint32): Attr {.jsfunc.} =
-  if int(i) < map.element.attrs.len:
-    return map.getAttr(int(i))
+proc item(map: NamedNodeMap; u: uint32): Attr {.jsfunc.} =
+  if int64(u) < int64(map.element.attrs.len):
+    return map.getAttr(int(u))
   return nil
 
 proc getter(ctx: JSContext; this: NamedNodeMap; atom: JSAtom): JSValue
