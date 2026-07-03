@@ -358,7 +358,7 @@ type
     t*: RelationType
     flag*: RelationFlag
 
-  CSSNthChild* = object
+  CSSNthChild* = ref object
     anb*: CSSAnB
     ofsels*: SelectorList
 
@@ -367,27 +367,19 @@ type
     csel*: CompoundSelector
 
   Selector* = ref object # Simple selector
+    #TODO namespaces?
+    atom*: CAtomTraced
+    rel*: SelectorRelation
+    pc*: PseudoClass
     case t*: SelectorType
-    of stType:
-      tag*: CAtom
-    of stId:
-      id*: CAtom
-    of stClass:
-      class*: CAtom
-    of stAttr:
-      attr*: CAtom
-      rel*: SelectorRelation
-      value*: string
-    of stUniversal: #TODO namespaces?
+    of stType, stId, stClass, stPseudoClass, stUniversal:
       discard
-    of stPseudoClass:
-      pc*: PseudoClass
+    of stAttr, stLang:
+      value*: string
     of stIs, stWhere, stNot:
       fsels*: SelectorList
     of stHost:
       host*: HostSelector
-    of stLang:
-      lang*: string
     of stNthChild, stNthLastChild:
       nthChild*: CSSNthChild
     next: Selector
@@ -1457,8 +1449,8 @@ proc `$`*(nthChild: CSSNthChild): string =
 
 proc `$`*(sel: Selector): string =
   case sel.t
-  of stType: return $sel.tag
-  of stId: return "#" & $sel.id
+  of stType: return $sel.atom
+  of stId: return "#" & $sel.atom
   of stAttr:
     let rel = case sel.rel.t
     of rtExists: ""
@@ -1472,8 +1464,8 @@ proc `$`*(sel: Selector): string =
     of rfNone: ""
     of rfI: " i"
     of rfS: " s"
-    return '[' & $sel.attr & rel & sel.value & flag & ']'
-  of stClass: return "." & $sel.class
+    return '[' & $sel.atom & rel & sel.value & flag & ']'
+  of stClass: return "." & $sel.atom
   of stUniversal:
     return "*"
   of stPseudoClass:
@@ -1481,7 +1473,7 @@ proc `$`*(sel: Selector): string =
   of stIs, stNot, stWhere, stHost:
     return ":" & $sel.t & '(' & $sel.fsels & ')'
   of stLang:
-    return ":lang(" & sel.lang & ')'
+    return ":lang(" & sel.value & ')'
   of stNthChild, stNthLastChild:
     return ':' & $sel.t & '(' & $sel.nthChild & ')'
 
@@ -1635,7 +1627,7 @@ proc parseLang(state: var SelectorParser): Selector =
     state.peekTokenType() != cttRparen
   state.skipFunction()
   if b: fail
-  return Selector(t: stLang, lang: tok.s)
+  return Selector(t: stLang, value: tok.s)
 
 proc parseSelectorFunction(state: var SelectorParser; ft: CSSFunctionType):
     Selector =
@@ -1707,14 +1699,14 @@ proc parseAttributeSelector(state: var SelectorParser): Selector =
   if attrToken.t != cttIdent:
     state.skipUntil(cttRbracket)
     fail
-  let attr = attrToken.s.toAtomLower()
+  let attr = attrToken.s.toAtomLowerTrace()
   state.skipBlanks()
   if not state.has(): fail
   let delim = state.consume()
   if delim.t == cttRbracket:
     return Selector(
       t: stAttr,
-      attr: attr,
+      atom: attr,
       rel: SelectorRelation(t: rtExists)
     )
   let rel = case delim.t
@@ -1757,7 +1749,7 @@ proc parseAttributeSelector(state: var SelectorParser): Selector =
     fail
   return Selector(
     t: stAttr,
-    attr: attr,
+    atom: attr,
     value: value.s,
     rel: SelectorRelation(t: rel, flag: flag)
   )
@@ -1766,8 +1758,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = state.consume()
   if tok.t != cttIdent: fail
-  let class = tok.s.toAtom()
-  Selector(t: stClass, class: class)
+  Selector(t: stClass, atom: tok.s.toAtomTrace())
 
 # returns head
 proc parseCompoundSelector(state: var SelectorParser;
@@ -1782,7 +1773,7 @@ proc parseCompoundSelector(state: var SelectorParser;
     case tok.t
     of cttIdent:
       state.seekToken()
-      sel = Selector(t: stType, tag: tok.s.toAtomLower())
+      sel = Selector(t: stType, atom: tok.s.toAtomLowerTrace())
     of cttColon:
       state.seekToken()
       sel = state.parsePseudoSelector(pseudoElement)
@@ -1790,12 +1781,12 @@ proc parseCompoundSelector(state: var SelectorParser;
       state.seekToken()
       if ctfId notin tok.flags:
         fail
-      sel = Selector(t: stId, id: tok.s.toAtom())
+      sel = Selector(t: stId, atom: tok.s.toAtomTrace())
     of cttDot:
       state.seekToken()
       sel = state.parseClassSelector()
       if sel != nil:
-        classOut = sel.class
+        classOut = sel.atom.view()
     of cttStar:
       state.seekToken()
       sel = Selector(t: stUniversal)

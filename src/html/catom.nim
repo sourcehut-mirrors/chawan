@@ -6,8 +6,8 @@
 #
 # As an inbetween solution, we do "semi-automatic" refcounting where local
 # variables are tracked with `=destroy`, but copy/dup hooks are not used
-# and interned string members are still managed manually in finalizers.
-# This makes it so a compiler bug will, at worst, just cause a leak.
+# and atom members are sometimes managed manually in finalizers.  This
+# makes it so a compiler bug will, at worst, just cause a leak.
 #
 # On the different types:
 #
@@ -18,10 +18,8 @@
 # * CAtom is an atom with manual refcounting.
 #
 # TODO: in the past, we didn't bother with refcounting atoms, and there is
-# still some code that straight out leaks them.  Also, as noted above, we
-# don't trust the compiler enough to do automatic refcounting outside of
-# regular procs, so currently you have to free them in the finalizer.
-# (This *is* a problem in non-JS-bound types that have no finalizer.)
+# still some code that straight out leaks them, in particular the HTML
+# parser.  Of course, the goal is to plug all leaks eventually.
 
 {.push raises: [].}
 
@@ -504,6 +502,9 @@ proc toLowerAscii*(a: CAtomTraced): CAtomTraced =
 
 proc equalsIgnoreCase*(a, b: CAtom): bool =
   a == b or ($a).equalsIgnoreCase($b)
+
+proc equalsIgnoreCase*(a: CAtomTraced; b: CAtom): bool =
+  a.view().equalsIgnoreCase(b)
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
   for it in aa:

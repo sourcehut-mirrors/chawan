@@ -44,18 +44,18 @@ proc attrCase(sel: Selector; element: Element): CaseSensitivity =
 
 proc matchesAttr(element: Element; sel: Selector): bool =
   case sel.rel.t
-  of rtExists: return element.attrb(sel.attr.view())
+  of rtExists: return element.attrb(sel.atom)
   of rtEquals:
     case sel.attrCase(element)
-    of csI: return element.attr(sel.attr.view()).equalsIgnoreCase(sel.value)
-    of csS: return element.attr(sel.attr.view()) == sel.value
+    of csI: return element.attr(sel.atom).equalsIgnoreCase(sel.value)
+    of csS: return element.attr(sel.atom) == sel.value
   of rtToken:
-    let val = element.attr(sel.attr.view())
+    let val = element.attr(sel.atom)
     case sel.attrCase(element)
     of csI: return val.containsTokenIgnoreCase(sel.value)
     of csS: return val.containsToken(sel.value)
   of rtBeginDash:
-    let val = element.attr(sel.attr.view())
+    let val = element.attr(sel.atom)
     case sel.attrCase(element)
     of csI:
       return val.startsWithIgnoreCase(sel.value) and
@@ -64,17 +64,17 @@ proc matchesAttr(element: Element; sel: Selector): bool =
       return val.startsWith(sel.value) and
         (val.len <= sel.value.len or val[sel.value.len] == '-')
   of rtStartsWith:
-    let val = element.attr(sel.attr.view())
+    let val = element.attr(sel.atom)
     case sel.attrCase(element)
     of csI: return val.startsWithIgnoreCase(sel.value)
     of csS: return val.startsWith(sel.value)
   of rtEndsWith:
-    let val = element.attr(sel.attr.view())
+    let val = element.attr(sel.atom)
     case sel.attrCase(element)
     of csI: return val.endsWithIgnoreCase(sel.value)
     of csS: return val.endsWith(sel.value)
   of rtContains:
-    let val = element.attr(sel.attr.view())
+    let val = element.attr(sel.atom)
     case sel.attrCase(element)
     of csI: return sel.value.toLowerAscii() in val.toLowerAscii()
     of csS: return sel.value in val
@@ -223,21 +223,21 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
     ohasDeps: var bool): bool =
   case sel.t
   of stType:
-    return element.localName == sel.tag
+    return element.localName == sel.atom
   of stClass:
     if element.document.mode == QUIRKS:
       for it in element.classList:
-        if sel.class.equalsIgnoreCase(it):
+        if sel.atom.equalsIgnoreCase(it):
           return true
     else:
       for it in element.classList:
-        if sel.class == it:
+        if sel.atom == it:
           return true
     return false
   of stId:
     if element.document.mode == QUIRKS:
-      return sel.id.equalsIgnoreCase(element.id)
-    return sel.id == element.id
+      return sel.atom.equalsIgnoreCase(element.id)
+    return sel.atom == element.id
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:
@@ -253,7 +253,7 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stIs, stWhere:
     return element.matches(sel.fsels, depends, ohasDeps)
   of stLang:
-    return element.matchesLang(sel.lang)
+    return element.matchesLang(sel.value)
   of stHost:
     return false #TODO shadow DOM
 

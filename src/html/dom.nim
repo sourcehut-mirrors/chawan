@@ -4170,7 +4170,7 @@ proc getComputedMap*(document: Document): CSSValuesMap =
 proc findAnchor*(document: Document; id: string): Element =
   if id.len == 0:
     return nil
-  let id = id.toAtom()
+  let id = id.toAtomTrace()
   for child in document.elementDescendants:
     if child.id == id:
       return child
@@ -6511,7 +6511,7 @@ proc find(this: CSSStyleDeclaration; p: CSSPropertyType): int =
 
 proc find(this: CSSStyleDeclaration; s: string): int =
   if s.startsWith("--"):
-    let v = s.toOpenArray(2, s.high).toAtom()
+    let v = s.toOpenArray(2, s.high).toAtomTrace()
     for i, decl in this.decls.mypairs:
       if decl.t == cdtVariable and decl.v == v:
         return i

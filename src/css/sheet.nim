@@ -21,7 +21,7 @@ type
     idx*: uint64
     origin*: CSSOrigin
     layerId*: uint16
-    layer*: CAtom
+    layer*: CAtom #TODO trace
     next: CSSRuleDef
 
   CSSImport* = object
@@ -30,7 +30,7 @@ type
 
   StyleState = object
     importList*: seq[CSSImport]
-    layers: seq[CAtom]
+    layers: seq[CAtom] #TODO trace
     defsHead: CSSRuleDef
     defsTail: CSSRuleDef
     len: uint32
@@ -43,7 +43,7 @@ type
     next*: CSSStylesheet
     media*: string # media attr
     toks: seq[CSSToken]
-    baseLayer: CAtom
+    baseLayer: CAtom #TODO trace
     origin: CSSOrigin
     disabled*: bool # whether or not we have disabled attr etc.
     applies*: bool # whether or not media attr/import applies
@@ -136,16 +136,17 @@ proc getSelectorIds(hashes: var SelectorHashes; cxsel: ComplexSelector) =
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
   case sel.t
   of stType:
-    hashes.tags.add(sel.tag)
+    let atom = sel.atom.view()
+    hashes.tags.add(atom)
     return true
   of stClass:
-    hashes.class = sel.class
+    hashes.class = sel.atom.view()
     return true
   of stId:
-    hashes.id = sel.id
+    hashes.id = sel.atom.view()
     return true
   of stAttr:
-    hashes.attr = sel.attr
+    hashes.attr = sel.atom.view()
     return true
   of stIs, stWhere:
     # Hash whatever the selectors have in common:
