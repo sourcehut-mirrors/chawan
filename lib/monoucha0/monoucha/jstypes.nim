@@ -3,6 +3,9 @@
 import jsopaque
 import quickjs
 
+when NimMajor < 2:
+  import utils/twtstr
+
 # This is the WebIDL dictionary type.
 # We only use it for type inference in generics.
 type

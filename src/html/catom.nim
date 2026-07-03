@@ -31,6 +31,7 @@ import std/sets
 
 import chame/tags
 import monoucha/fromjs
+import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt
@@ -421,6 +422,9 @@ proc toAtom*(s: openArray[char]): CAtom =
 proc toAtomTrace*(s: openArray[char]): CAtomTraced =
   s.toAtom().trace()
 
+proc toAtomTrace*(s: DOMString): CAtomTraced =
+  s.toOpenArray().toAtomTrace()
+
 proc toStaticAtom*(tagType: TagType): StaticAtom =
   assert tagType != TAG_UNKNOWN
   StaticAtom(uint32(tagType))
@@ -509,6 +513,9 @@ proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
 
 proc toAtomLowerTrace*(s: openArray[char]): CAtomTraced =
   s.toAtom().toLowerAscii().trace()
+
+proc toAtomLowerTrace*(s: DOMString): CAtomTraced =
+  s.toOpenArray().toAtomLowerTrace()
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
   return aa.containsIgnoreCase(a.toAtom())
@@ -713,12 +720,12 @@ proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult =
     return fiIdx
   fiStr
 
-proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32; s: var string):
-    FromIdxResult =
+proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32;
+    ds: var DOMString): FromIdxResult =
   let res = ctx.fromIdx(atom, idx)
   if res != fiStr:
     return res
-  if ctx.fromJS(atom, s).isOk:
+  if ctx.fromJS(atom, ds).isOk:
     return fiStr
   fiErr
 

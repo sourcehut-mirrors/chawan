@@ -3,6 +3,7 @@
 import std/algorithm
 
 import html/catom
+import monoucha/jstypes
 import types/opt
 import utils/dtoawrap
 import utils/twtstr
@@ -919,13 +920,16 @@ template iq(ctx: CSSParser): openArray[char] =
   ctx.iqp.toOpenArray(0, ctx.iqlen - 1)
 
 # iqp *must* be a cstring, because parseFloat32 needs the NUL terminator.
-proc initCSSParser*(iq: cstring; len: int): CSSParser =
+proc initCSSParser(iq: cstring; len: int): CSSParser =
   if len <= 0:
     return CSSParser()
   return CSSParser(
     iqp: cast[ptr UncheckedArray[char]](unsafeAddr iq[0]),
     iqlen: len
   )
+
+proc initCSSParser*(iq: DOMString): CSSParser =
+  initCSSParser(iq.p, iq.len)
 
 proc initCSSParser*(iq: string): CSSParser =
   initCSSParser(cstring(iq), iq.len)
@@ -1250,7 +1254,7 @@ proc parseDeclarations*(iq: string): seq[CSSDeclaration] =
   var ctx = initCSSParser(iq)
   return ctx.consumeDeclarations(nested = false, [])
 
-proc parseComponentValues*(iq: string): seq[CSSToken] =
+proc parseComponentValues*(iq: DOMString): seq[CSSToken] =
   var ctx = initCSSParser(iq)
   result = @[]
   while ctx.has():
@@ -1900,11 +1904,8 @@ proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList =
   var state = SelectorParser(ctx: initCSSParserSink(toks))
   state.parseSelectorList(forgiving = false)
 
-proc parseSelectors*(iq: cstring; len: int): SelectorList =
-  var state = SelectorParser(ctx: initCSSParser(iq, len))
+proc parseSelectors*(iq: DOMString): SelectorList =
+  var state = SelectorParser(ctx: initCSSParser(iq))
   state.parseSelectorList(forgiving = false)
-
-proc parseSelectors*(iq: string): SelectorList =
-  parseSelectors(cstring(iq), iq.len)
 
 {.pop.} # raises: []

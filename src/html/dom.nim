@@ -3141,7 +3141,7 @@ proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
     el.postConnectionSteps()
 
 proc parseSelectors(ctx: JSContext; ds: DOMString): SelectorList =
-  result = parseSelectors(ds.p, ds.len)
+  result = parseSelectors(ds)
   if result.len == 0:
     JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s", ds.p)
 
@@ -3735,7 +3735,7 @@ proc querySelectorAll(ctx: JSContext; this: Document; q: DOMString): JSValue
     {.jsfunc.} =
   return ctx.querySelectorAllImpl(this, q)
 
-proc validateName(ctx: JSContext; name: string): Opt[void] =
+proc validateName(ctx: JSContext; name: openArray[char]): Opt[void] =
   if not name.matchNameProduction():
     JS_ThrowDOMException(ctx, "InvalidCharacterError",
       "invalid character in name")
@@ -3834,9 +3834,9 @@ proc createElement(ctx: JSContext; document: Document; localName: DOMString):
     return JS_ThrowDOMException(ctx, "InvalidCharacterError",
       "invalid local name")
   let localName = if not document.isxml:
-    localName.toOpenArray().toAtomLowerTrace()
+    localName.toAtomLowerTrace()
   else:
-    localName.toOpenArray().toAtomTrace()
+    localName.toAtomTrace()
   let namespace = if not document.isxml:
     #TODO or content type is application/xhtml+xml
     satNamespaceHTML
@@ -3906,7 +3906,7 @@ proc createDocument(ctx: JSContext; implementation: DOMImplementation;
     namespace: CAtomTraced; qualifiedName: DOMStringNull;
     doctype = none(DocumentType)): Opt[XMLDocument] {.jsfunc.} =
   let document = newXMLDocument()
-  let qualifiedName = qualifiedName.toOpenArray().toAtomTrace()
+  let qualifiedName = qualifiedName.toAtomTrace()
   let element = if qualifiedName != satUempty:
     ?ctx.createElementNS(document, namespace, qualifiedName)
   else:
@@ -4619,7 +4619,7 @@ proc supports(ctx: JSContext; tokenList: DOMTokenList; token: string): JSValue
 proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  return case ctx.fromIdx(atom, u)
+  case ctx.fromIdx(atom, u)
   of fiIdx: ctx.item(this, u).uninitIfNull()
   of fiStr: JS_UNINITIALIZED
   of fiErr: JS_EXCEPTION
@@ -4685,7 +4685,7 @@ proc item(ctx: JSContext; this: NodeList; u: uint32): Node {.jsfunc.} =
 proc getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  return case ctx.fromIdx(atom, u)
+  case ctx.fromIdx(atom, u)
   of fiIdx: ctx.toJS(ctx.item(this, u)).uninitIfNull()
   of fiStr: JS_UNINITIALIZED
   of fiErr: JS_EXCEPTION
@@ -4718,7 +4718,7 @@ proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
   var s: CAtomTraced
-  return case ctx.fromIdx(atom, u, s)
+  case ctx.fromIdx(atom, u, s)
   of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
   of fiStr: ctx.toJS(this.namedItem(s)).uninitIfNull()
   of fiErr: JS_EXCEPTION
@@ -4774,7 +4774,7 @@ proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
     JSValue {.jsgetownprop.} =
   var u: uint32
   var s: CAtomTraced
-  return case ctx.fromIdx(atom, u, s)
+  case ctx.fromIdx(atom, u, s)
   of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
   of fiStr: ctx.namedItem(this, s).uninitIfNull()
   of fiErr: JS_EXCEPTION
@@ -4791,7 +4791,7 @@ proc item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
 proc getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  return case ctx.fromIdx(atom, u)
+  case ctx.fromIdx(atom, u)
   of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
   of fiStr: JS_UNINITIALIZED
   of fiErr: JS_EXCEPTION
@@ -5031,7 +5031,7 @@ proc getter(ctx: JSContext; this: NamedNodeMap; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
   var s: CAtomTraced
-  return case ctx.fromIdx(atom, u, s)
+  case ctx.fromIdx(atom, u, s)
   of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
   of fiStr: ctx.toJS(this.getNamedItem(s)).uninitIfNull()
   of fiErr: JS_EXCEPTION
@@ -5506,8 +5506,7 @@ proc insertAdjacent(ctx: JSContext; this: Node; position: DOMString;
   let pos0 = parseEnumNoCase[InsertAdjacentPosition](position.toOpenArray())
   if pos0.isErr:
     return JS_ThrowDOMException(ctx, "SyntaxError", "invalid position")
-  let position = pos0.get
-  return case position
+  case pos0.get
   of iapBeforeBegin:
     if this.parentNode == nil:
       JS_NULL
@@ -6143,22 +6142,12 @@ proc delAttr(ctx: JSContext; element: Element; i: int) =
   element.deleteAttr(i) # ordering matters
   element.reflectAttrDel(name)
 
-# Returns the attr index if found, or the negation - 1 of an upper bound
-# (where a new attr with the passed name may be inserted).
-proc findAttrOrNext(element: Element; qualName: CAtomTraced): int =
-  for i, data in element.attrs.mypairs:
-    if data.qualifiedName == qualName:
-      return i
-    if uint32(data.qualifiedName) > uint32(qualName):
-      return -(i + 1)
-  return -(element.attrs.len + 1)
-
 proc attr(element: Element; name: CAtomTraced; value: DOMString) =
-  var i = element.findAttrOrNext(name)
-  if i >= 0:
+  var i = element.attrs.upperBound(name, cmpAttrName)
+  if i > 0 and element.attrs[i - 1].qualifiedName == name:
+    dec i
     element.attrs[i].value = $value
   else:
-    i = -(i + 1)
     element.attrs.insert(AttrData(
       namespace: CAtomNull,
       qualifiedName: name.dup(),
@@ -6170,11 +6159,11 @@ proc attr(element: Element; name: StaticAtom; value: DOMString) =
   element.attr(name.view(), value)
 
 proc attr*(element: Element; name: CAtomTraced; value: sink string) =
-  var i = element.findAttrOrNext(name)
-  if i >= 0:
+  var i = element.attrs.upperBound(name, cmpAttrName)
+  if i > 0 and element.attrs[i - 1].qualifiedName == name:
+    dec i
     element.attrs[i].value = value
   else:
-    i = -(i + 1)
     element.attrs.insert(AttrData(
       namespace: CAtomNull,
       qualifiedName: name.dup(),
@@ -6223,9 +6212,9 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
 proc attrd(element: Element; name: StaticAtom; value: float64) =
   element.attr(name, dtoa(value))
 
-proc setAttribute(ctx: JSContext; element: Element; qualifiedName: string;
-    value: DOMString): Opt[void] {.jsfunc.} =
-  ?ctx.validateName(qualifiedName)
+proc setAttribute(ctx: JSContext; element: Element;
+    qualifiedName, value: DOMString): Opt[void] {.jsfunc.} =
+  ?ctx.validateName(qualifiedName.toOpenArray())
   let qualifiedName = if element.namespaceURI == satNamespaceHTML and
       not element.document.isxml:
     qualifiedName.toAtomLowerTrace()
@@ -6254,12 +6243,13 @@ proc removeAttributeNS(ctx: JSContext; element: Element;
   if i != -1:
     ctx.delAttr(element, i)
 
-proc toggleAttribute(ctx: JSContext; element: Element; qualifiedName: string;
-    force: JSValueConst = JS_UNDEFINED): Opt[bool] {.jsfunc.} =
+proc toggleAttribute(ctx: JSContext; element: Element;
+    qualifiedName: DOMString; force: JSValueConst = JS_UNDEFINED): Opt[bool]
+    {.jsfunc.} =
   let forceBool = JS_ToBool(ctx, force)
   if forceBool < 0:
     return err()
-  ?ctx.validateName(qualifiedName)
+  ?ctx.validateName(qualifiedName.toOpenArray())
   let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtomTrace())
   if not element.attrb(qualifiedName):
     if JS_IsUndefined(force) or forceBool == 1:
@@ -6554,13 +6544,14 @@ proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
 proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  var s: string
-  case ctx.fromIdx(atom, u, s)
+  var ds: DOMString
+  case ctx.fromIdx(atom, u, ds)
   of fiIdx:
     if u < this.length:
       return ctx.toJS(this.decls[int(u)].name)
     return JS_UNINITIALIZED
   of fiStr:
+    var s = $ds
     if s == "cssFloat":
       s = "float"
     if s.isSupportedProperty():
@@ -6616,13 +6607,13 @@ proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
   ok()
 
 proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
-    name, value: string): JSValue {.jsfunc.} =
+    name, value: DOMString): JSValue {.jsfunc.} =
   if ctx.checkReadOnly(this).isErr:
     return JS_EXCEPTION
-  let name = name.toLowerAscii()
+  let name = name.toOpenArray().toLowerAscii()
   if not name.isSupportedProperty():
     return JS_UNDEFINED
-  if value == "":
+  if value.len == 0:
     return ctx.removeProperty(this, name)
   var toks = parseComponentValues(value)
   if (let i = this.find(name); i != -1):
@@ -6651,22 +6642,23 @@ proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
   return JS_UNDEFINED
 
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
-    value: string): JSValue {.jssetprop.} =
+    value: DOMString): JSValue {.jssetprop.} =
   if ctx.checkReadOnly(this).isErr:
     return JS_EXCEPTION
   var u: uint32
-  var name: string
-  case ctx.fromIdx(atom, u, name)
+  var ds: DOMString
+  case ctx.fromIdx(atom, u, ds)
   of fiIdx:
     var toks = parseComponentValues(value)
     if this.setValue(int(u), toks).isErr:
       this.element.attr(satStyle, this.cssText)
     return JS_UNDEFINED
   of fiStr:
+    var name = $ds
     if name == "cssFloat":
       name = "float"
     name = camelToKebabCase(name)
-    return ctx.setProperty(this, name, value)
+    return ctx.setProperty(this, name.toDOMStringView(), value)
   of fiErr:
     return JS_EXCEPTION
 
@@ -7486,10 +7478,10 @@ proc value(this: HTMLSelectElement): string {.jsfget.} =
       return it.value
   return ""
 
-proc setValue(this: HTMLSelectElement; value: string) {.jsfset: "value".} =
+proc setValue(this: HTMLSelectElement; value: DOMString) {.jsfset: "value".} =
   var found = false
   for it in this.options:
-    if not found and it.value == value:
+    if not found and it.value == value.toOpenArray():
       found = true
       it.selected = true
       it.dirty = true

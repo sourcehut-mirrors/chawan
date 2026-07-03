@@ -6,6 +6,7 @@ import html/event
 import io/timeout
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt
@@ -49,12 +50,12 @@ proc now(performance: Performance): float64 {.jsfunc.} =
 proc getEntries(ctx: JSContext; performance: Performance): JSValue {.jsfunc.} =
   return JS_NewArray(ctx)
 
-proc getEntriesByType(ctx: JSContext; performance: Performance; t: string):
+proc getEntriesByType(ctx: JSContext; performance: Performance; t: DOMString):
     JSValue {.jsfunc.} =
   return JS_NewArray(ctx)
 
-proc getEntriesByName(ctx: JSContext; performance: Performance; name: string;
-    t: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+proc getEntriesByName(ctx: JSContext; performance: Performance;
+    name: DOMString; t: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
   return JS_NewArray(ctx)
 
 proc getEntryId(this: Performance): uint64 =
@@ -70,7 +71,7 @@ proc entryType(this: PerformanceEntry): string {.jsfget.} =
 # PerformanceMark
 #TODO constructor
 
-proc mark(ctx: JSContext; this: Performance; name: string;
+proc mark(ctx: JSContext; this: Performance; name: DOMString;
     init: JSValueConst = JS_UNDEFINED): Opt[PerformanceMark] {.jsfunc.} =
   var startTime: float64
   if ?ctx.fromJSGetProp(init, "startTime", startTime):
@@ -85,7 +86,7 @@ proc mark(ctx: JSContext; this: Performance; name: string;
   #TODO serialize/deserialize detail
   let mark = PerformanceMark(
     id: this.getEntryId(),
-    name: name,
+    name: $name,
     startTime: startTime,
     detail: detail
   )
