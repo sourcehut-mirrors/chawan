@@ -797,6 +797,14 @@ Pager.prototype.loadSubmit = function(url, init) {
     }
     const first = URL.parse(url0);
     if (first != null) {
+        if (/^[1-9]+($|\/)/.test(first.pathname)) {
+            const prependScheme = config.network.prependScheme;
+            if (prependScheme != "") {
+                const retry = URL.parse(prependScheme + url0);
+                if (retry && retry + "" != first + "")
+                    init = {...init, retry};
+            }
+        }
         if (!this.gotoURLHash(first, this.buffer))
             this.gotoURL(first, init);
         return;
@@ -816,7 +824,7 @@ Pager.prototype.loadSubmit = function(url, init) {
         retry = null;
     }
     if (url1 != null)
-        this.gotoURL(url1, {...init, retry: retry});
+        this.gotoURL(url1, {...init, retry});
     else
         this.alert("Invalid URL " + urls);
 }
