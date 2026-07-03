@@ -79,6 +79,7 @@ type
     absoluteTail: CSSAbsolute
     fixedHead: CSSAbsolute
     fixedTail: CSSAbsolute
+    computedMap: CSSValuesMap
 
   TreeFrame = object
     parent: Element
@@ -151,9 +152,17 @@ proc counter(ctx: TreeContext; name: CAtom): int32 =
       return counter.n
   return 0
 
+proc atomize(frame: TreeFrame; computed: CSSValues): CSSValues =
+  frame.ctx.computedMap.atomize(computed)
+
+proc inheritFor(frame: TreeFrame; computed: CSSValues; display: CSSDisplay):
+    CSSValues =
+  let inherited = computed.inheritProperties()
+  inherited{"display"} = display
+  frame.atomize(inherited)
+
 proc inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
-  result = frame.computed.inheritProperties()
-  result{"display"} = display
+  frame.inheritFor(frame.computed, display)
 
 proc initTreeFrame(ctx: TreeContext; parent: Element; computed: CSSValues):
     TreeFrame =
@@ -169,7 +178,8 @@ proc getAnonInlineComputed(frame: var TreeFrame): CSSValues =
     if frame.computed{"display"} in DisplayInlineLike:
       frame.anonInlineComputed = frame.computed
     else:
-      frame.anonInlineComputed = frame.computed.inheritProperties()
+      let computed = frame.computed.inheritProperties()
+      frame.anonInlineComputed = frame.atomize(computed)
   return frame.anonInlineComputed
 
 proc displayed(frame: TreeFrame; text: RefString): bool =
@@ -289,11 +299,11 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   # Generate a marker box.
   var markerComputed = node.element.getComputedStyle(peMarker)
   if markerComputed == nil:
-    markerComputed = node.computed.inheritProperties()
-    markerComputed{"display"} = DisplayMarker
-  let textComputed = markerComputed.inheritProperties()
+    markerComputed = frame.inheritFor(node.computed, DisplayMarker)
+  var textComputed = markerComputed.inheritProperties()
   textComputed{"white-space"} = WhiteSpacePre
   textComputed{"content"} = markerComputed{"content"}
+  textComputed = frame.atomize(textComputed)
   let markerText = if markerComputed{"content"}.len == 0:
     StyledNode(
       t: stCounter,
@@ -435,10 +445,11 @@ proc addElementChildren(frame: var TreeFrame) =
 proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
   let cdata = input.inputString()
   if input.inputType in InputTypeWithSize:
-    let computed = frame.computed.inheritProperties()
+    var computed = frame.computed.inheritProperties()
     let n = frame.computed{"-cha-input-intrinsic-size"}
     computed{"display"} = DisplayBlock
     computed{"width"} = cssLength(n)
+    computed = frame.atomize(computed)
     var aframe = frame.ctx.initTreeFrame(input, computed)
     if cdata != nil:
       aframe.addText(cdata)
@@ -451,9 +462,10 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
   if option.select != nil and option.select.attrb(satMultiple):
     frame.addText("[")
     let cdata = newRefString(if option.selected: "*" else: " ")
-    let computed = option.computed.inheritProperties()
+    var computed = option.computed.inheritProperties()
     computed{"color"} = cssColor(ANSIColor(1)) # red
     computed{"white-space"} = WhiteSpacePre
+    computed = frame.atomize(computed)
     block anon:
       var aframe = frame.ctx.initTreeFrame(option, computed)
       aframe.addText(cdata)
@@ -473,7 +485,7 @@ proc addProgress(frame: var TreeFrame; element: Element) =
     let n = frame.computed{"-cha-input-intrinsic-size"}
     computed{"width"} = cssLengthFrac(clamp(n, 0, 1))
     computed{"border-bottom-style"} = BorderStyleHash
-    frame.addAnon(computed, @[])
+    frame.addAnon(frame.atomize(computed), @[])
   else:
     frame.addElementChildren()
 
@@ -814,7 +826,8 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
   let ctx = TreeContext(
     markLinks: markLinks,
     stackItem: stack,
-    linkHintChars: linkHintChars
+    linkHintChars: linkHintChars,
+    computedMap: element.document.getComputedMap()
   )
   ctx.resetCounter(satDashChaLinkCounter.toAtom(), 0, element)
   let hintHigh = max(linkHintChars[].high, 0)
