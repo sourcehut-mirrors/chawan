@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<textarea id=t1>test test test</textarea>
+<textarea id=t2>test</textarea>
+<br>
+<input id=i1 value='test test test'>
+<input id=i2 value=test>
+<script>
+window.onload = () => {
+	document.documentElement.getBoundingClientRect()
+	t1.value = "shorter";
+	t2.value = "longer";
+	i1.value = "shorter";
+	i2.value = "longer";
+}
+</script>

@@ -1118,7 +1118,6 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
       of itFile:
         let file = newWebFile(s, fd)
         input.addFile(file)
-        input.invalidate()
       else:
         input.setValue(s)
       if bc.config.scripting != smFalse:
@@ -1143,8 +1142,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
       return bc.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(focus)
-      textarea.value = s
-      textarea.invalidate()
+      textarea.setValue(s)
       if bc.config.scripting != smFalse:
         bc.window.fireEvent(satChange, textarea, bubbles = true,
           cancelable = true, trusted = true)

@@ -721,7 +721,6 @@ proc document*(node: Node): Document
 proc isConnected(node: Node): bool
 proc lastChild*(node: Node): Node
 proc nextDescendant(node, start: Node): Node
-proc nextDescendantExcl(node, start: Node): Node
 proc nextDescendantShadow(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc parentNodeHost(node: Node): Node
@@ -2121,13 +2120,17 @@ template nextDescendantExclImpl(node, start: Node): Node =
 # Note: `start' must be either an ancestor of `node', `node` itself, or nil.
 proc nextDescendant(node, start: Node): Node =
   if node of ParentNode: # parent
-    let node = cast[ParentNode](node)
-    if node.firstChild != nil:
-      return node.firstChild
+    let first = cast[ParentNode](node).firstChild
+    if first != nil:
+      return first
   node.nextDescendantExclImpl(start)
 
-# Like nextDescendant, but skips all children of node.
-proc nextDescendantExcl(node, start: Node): Node =
+# Like nextDescendant, but skip children when `skip` is true.
+proc nextDescendant(node, start: Node; skip: bool): Node =
+  if not skip and node of ParentNode: # parent
+    let first = cast[ParentNode](node).firstChild
+    if first != nil:
+      return first
   node.nextDescendantExclImpl(start)
 
 proc nextDescendantShadow(node, start: Node): Node =
@@ -4370,7 +4373,7 @@ proc adjustForRemovalImpl(iter: NodeIterator; node: Node;
     referenceNode: var Node; before: var bool) =
   if not node.contains(iter.root) and node.contains(referenceNode):
     if before:
-      let next = node.nextDescendantExcl(iter.root)
+      let next = node.nextDescendant(iter.root, skip = true)
       if next != nil:
         referenceNode = next
         return
@@ -4467,10 +4470,8 @@ proc nextNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
     if res == uint32(nfrAccept):
       this.currentNode = node
       return ok(node)
-    if res == uint32(nfrReject):
-      node = node.nextDescendantExcl(this.root)
-    else:
-      node = node.nextDescendant(this.root)
+    let skip = res == uint32(nfrReject)
+    node = node.nextDescendant(this.root, skip)
   ok(nil)
 
 proc previousNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
@@ -5989,12 +5990,15 @@ proc blockRendering(element: Element) =
     element.document.renderBlockingElements.add(element)
 
 proc invalidate*(element: Element) =
-  let valid = element.computed != nil and efRestyle notin element.flags
-  element.flags.incl(efRestyle)
   element.document.invalid = true
-  if valid:
-    for it in element.elementList:
-      it.invalidate()
+  var node = Node(element)
+  while node != nil:
+    var skip = false
+    if node of Element:
+      let desc = Element(node)
+      skip = desc.computed == nil or efRestyle in desc.flags
+      desc.flags.incl(efRestyle)
+    node = node.nextDescendant(Node(element), skip)
 
 proc ensureStyle*(element: Element) =
   if element.computed == nil or efRestyle in element.flags:
@@ -7111,6 +7115,7 @@ proc select(ctx: JSContext; input: HTMLInputElement) {.jsfunc.} =
 
 proc addFile*(this: HTMLInputElement; file: WebFile) =
   this.files.add(file)
+  this.invalidate()
 
 # <label>
 proc control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
@@ -8083,10 +8088,11 @@ proc value*(this: HTMLTextAreaElement): string {.jsfget.} =
     return this.internalValue
   return this.childTextContent
 
-proc `value=`*(this: HTMLTextAreaElement; s: sink string)
+proc setValue*(this: HTMLTextAreaElement; s: sink string)
     {.jsfset: "value".} =
   this.dirty = true
   this.internalValue = s
+  this.invalidate()
 
 proc textAreaString*(this: HTMLTextAreaElement): string =
   result = ""
