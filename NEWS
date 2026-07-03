@@ -1,11 +1,15 @@
 unreleased
 
 * rework handling of Referer header
+* rework NodeIterator, add TreeWalker
 * optimize some inefficient descendant CSS selectors
 * optimize getElementById
 * support multi-keyword CSS display values
 * support WindowProxy operations (accessing elements by id on global object)
+* support Delete key, add default aliases for alternate Home/End
 * reduce leaks from interned strings
+* reduce copying of strings between Nim <-> JS
+* reduce memory usage of CSS values & variables
 * fix some bugs in the config parser
 * fix seccomp on LoongArch64
 * fix missing pager.findPrevMark function
@@ -25,6 +29,8 @@ unreleased
 * fix exceptions being swallowed for JS getters called on the wrong interface
 * fix selector case-sensitivity
 * fix crash on td with rowspan=0
+* fix green component calculation in VP8 YUV image conversion
+* fix QJS cycle collector not running at all
 
 0.4.0 (2026.05.17)
 
