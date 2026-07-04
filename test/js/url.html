@@ -199,5 +199,16 @@ assertThrows(() => new URL("https://example.org", null), TypeError);
 	url.hash = "";
 	assertEquals(url.pathname, "blah %20");
 }
+{
+	const url = new URL("https://example.org");
+	url.pathname = "\uD800";
+	assertEquals(decodeURIComponent(url.pathname), "/\uFFFD");
+	url.pathname = "aaaaa\uD800";
+	assertEquals(decodeURIComponent(url.pathname), "/aaaaa\uFFFD");
+	url.pathname = "\uD800aaaaa";
+	assertEquals(decodeURIComponent(url.pathname), "/\uFFFDaaaaa");
+	url.pathname = "aaa\uD800aaaaa";
+	assertEquals(decodeURIComponent(url.pathname), "/aaa\uFFFDaaaaa");
+}
 document.getElementById("x").textContent = "Success";
 </script>

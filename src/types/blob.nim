@@ -89,7 +89,7 @@ proc sread*(r: var PacketReader; blob: var Blob) =
 
 type
   BlobPropertyBag = object of JSDict
-    `type` {.jsdefault.}: string
+    `type` {.jsdefault.}: DOMString
     endings {.jsdefault.}: EndingType
 
   BlobPartType = enum
@@ -153,8 +153,8 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var BlobPart):
     ?ctx.fromJS(val, res.s)
   fjOk
 
-proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart]; blobType: string):
-    Opt[void] =
+proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
+    blobType: DOMString): Opt[void] =
   var len = 0
   for part in parts:
     var p: pointer
@@ -175,12 +175,12 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart]; blobType: string):
     copyMem(addr buffer[i], p, n)
     i += n
   blob.size = len
-  if AllChars - {char(0x20)..char(0x7E)} notin blobType:
-    blob.ctype = blobType.toLowerAscii()
+  if AllChars - {char(0x20)..char(0x7E)} notin blobType.toOpenArray():
+    blob.ctype = blobType.toOpenArray().toLowerAscii()
   ok()
 
-proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart]; blobType: string;
-    endings: EndingType): Opt[void] =
+proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
+    blobType: DOMString; endings: EndingType): Opt[void] =
   if endings == etNative:
     for part in parts:
       if part.t == bptString:

@@ -34,7 +34,7 @@ type
     guard*: HeaderGuard
 
   HeadersInit* = object
-    s: seq[HTTPHeader]
+    s: seq[tuple[name, value: ByteString]]
 
 jsDestructor(Headers)
 
@@ -69,14 +69,16 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     FromJSResult =
   var headers: Headers
   if ctx.fromJS(val, headers).isOk:
-    res = HeadersInit(s: headers.list)
+    res = HeadersInit()
+    for it in headers.list:
+      res.s.add((ByteString(s: it.name), ByteString(s: it.value)))
     return fjOk
   if ctx.isSequence(val):
     res = HeadersInit()
     if ctx.fromJS(val, res.s).isOk:
       return fjOk
   res = HeadersInit()
-  var record: JSKeyValuePair[string]
+  var record: JSKeyValuePair[ByteString, ByteString]
   ?ctx.fromJS(val, record)
   res.s = move(record.s)
   fjOk
@@ -245,64 +247,64 @@ proc get(this: Headers; name: string; n: int): string =
     s &= it.value
   move(s)
 
-proc get*(ctx: JSContext; this: Headers; name: string): JSValue {.jsfunc.} =
-  if not name.isValidHeaderName():
+proc get*(ctx: JSContext; this: Headers; name: ByteString): JSValue {.
+    jsfunc.} =
+  if not name.s.isValidHeaderName():
     JS_ThrowTypeError(ctx, "Invalid header name")
     return JS_EXCEPTION
-  let n = this.lowerBound(name)
-  if this.contains(name, n):
-    return ctx.toJS(this.get(name, n))
+  let n = this.lowerBound(name.s)
+  if this.contains(name.s, n):
+    return ctx.toJS(this.get(name.s, n))
   return JS_NULL
 
 proc removeRange(this: Headers) =
   if this.guard == hgRequestNoCors:
     this.removeAll("Range") # privileged no-CORS request headers
 
-proc append(ctx: JSContext; this: Headers; name, value: string): Opt[void]
+proc append(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
     {.jsfunc.} =
-  let value = value.strip(chars = HTTPWhitespace)
-  if not ?ctx.validate(this, name, value):
+  let value = value.s.strip(chars = HTTPWhitespace)
+  if not ?ctx.validate(this, name.s, value):
     return ok()
-  let n = this.lowerBound(name)
+  let n = this.lowerBound(name.s)
   if this.guard == hgRequestNoCors:
-    var tmp = this.get(name, n)
+    var tmp = this.get(name.s, n)
     if tmp.len > 0:
       tmp &= ", "
     tmp &= value
-    if not name.isNoCorsSafelisted(tmp):
+    if not name.s.isNoCorsSafelisted(tmp):
       return ok()
-  this.add(name, value, n)
+  this.add(name.s, value, n)
   this.removeRange()
   ok()
 
-proc delete(ctx: JSContext; this: Headers; name: string): Opt[void] {.jsfunc.} =
-  if not ?ctx.validate(this, name, "") or
-      this.guard == hgRequestNoCors and not name.isNoCorsSafelistedName() and
-      not name.equalsIgnoreCase("Range"):
+proc delete(ctx: JSContext; this: Headers; name: ByteString): Opt[void] {.
+    jsfunc.} =
+  if not ?ctx.validate(this, name.s, "") or
+      this.guard == hgRequestNoCors and not name.s.isNoCorsSafelistedName() and
+      not name.s.equalsIgnoreCase("Range"):
     return ok()
-  let n = this.lowerBound(name)
-  if this.contains(name, n):
-    this.removeAll(name, n)
+  let n = this.lowerBound(name.s)
+  if this.contains(name.s, n):
+    this.removeAll(name.s, n)
     this.removeRange()
   ok()
 
-proc has(ctx: JSContext; this: Headers; name: string): JSValue {.jsfunc.} =
-  if not name.isValidHeaderName():
+proc has(ctx: JSContext; this: Headers; name: ByteString): JSValue {.jsfunc.} =
+  if not name.s.isValidHeaderName():
     return JS_ThrowTypeError(ctx, "invalid header name")
-  if name in this:
-    return JS_TRUE
-  return JS_FALSE
+  ctx.toJS(name.s in this)
 
-proc set(ctx: JSContext; this: Headers; name, value: string): Opt[void]
+proc set(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
     {.jsfunc.} =
-  let value = value.strip(chars = HTTPWhitespace)
-  if not ?ctx.validate(this, name, value):
+  let value = value.s.strip(chars = HTTPWhitespace)
+  if not ?ctx.validate(this, name.s, value):
     return ok()
-  if this.guard == hgRequestNoCors and not name.isNoCorsSafelisted(value):
+  if this.guard == hgRequestNoCors and not name.s.isNoCorsSafelisted(value):
     return ok()
-  let n = this.lowerBound(name)
-  this.removeAll(name, n)
-  this.add(name, value, n)
+  let n = this.lowerBound(name.s)
+  this.removeAll(name.s, n)
+  this.add(name.s, value, n)
   this.removeRange()
   ok()
 

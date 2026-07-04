@@ -174,24 +174,21 @@ proc go(history: History) {.jsfunc.} = discard
 proc back(history: History) {.jsfunc.} = discard
 proc forward(history: History) {.jsfunc.} = discard
 
-proc pushState(ctx: JSContext; history: History; data, unused: JSValueConst;
-    s: string): JSValue {.jsfunc.} =
-  let window = ctx.getWindow()
-  if window != nil:
-    return ctx.setLocation(window, s)
-  return JS_UNDEFINED
-
-proc replaceState(ctx: JSContext; history: History; data, unused: JSValueConst;
-    s: string): JSValue {.jsfunc.} =
+proc pushState(ctx: JSContext; history: History; data: JSValueConst;
+    unused: DOMString; url: JSValueConst = JS_NULL): JSValue {.jsfunc,
+    jsfunc: "replaceState".} =
+  var s: string
+  if not JS_IsNull(url):
+    ?ctx.fromJS(url, s)
   let window = ctx.getWindow()
   if window != nil:
     return ctx.setLocation(window, s)
   return JS_UNDEFINED
 
 # Storage
-proc find(this: Storage; key: string): int =
+proc find(this: Storage; key: DOMString): int =
   for i in 0 ..< this.map.len:
-    if this.map[i].key == key:
+    if this.map[i].key == key.toOpenArray():
       return i
   return -1
 
@@ -203,24 +200,24 @@ proc key(ctx: JSContext; this: Storage; u: uint32): JSValue {.jsfunc.} =
     return ctx.toJS(this.map[int(u)].key)
   return JS_NULL
 
-proc getItem(ctx: JSContext; this: Storage; s: string): JSValue {.jsfunc.} =
+proc getItem(ctx: JSContext; this: Storage; s: DOMString): JSValue {.jsfunc.} =
   let i = this.find(s)
   if i != -1:
     return ctx.toJS(this.map[i].value)
   return JS_NULL
 
-proc setItem(ctx: JSContext; this: Storage; key, value: string): JSValue
+proc setItem(ctx: JSContext; this: Storage; key, value: DOMString): JSValue
     {.jsfunc.} =
   let i = this.find(key)
   if i != -1:
-    this.map[i].value = value
+    this.map[i].value = $value
   else:
     if this.map.len >= 64:
       return JS_ThrowDOMException(ctx, "QuotaExceededError", "quota exceeded")
-    this.map.add((key, value))
+    this.map.add(($key, $value))
   return JS_UNDEFINED
 
-proc removeItem(this: Storage; key: string) {.jsfunc.} =
+proc removeItem(this: Storage; key: DOMString) {.jsfunc.} =
   let i = this.find(key)
   if i != -1:
     this.map.del(i)
@@ -232,15 +229,15 @@ proc names(ctx: JSContext; this: Storage): JSPropertyEnumList
     list.add(it.key)
   return list
 
-proc getter(ctx: JSContext; this: Storage; s: string): JSValue
+proc getter(ctx: JSContext; this: Storage; s: DOMString): JSValue
     {.jsgetownprop.} =
   return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
 
-proc setter(ctx: JSContext; this: Storage; k, v: string): JSValue
+proc setter(ctx: JSContext; this: Storage; k, v: DOMString): JSValue
     {.jssetprop.} =
   return ctx.setItem(this, k, v)
 
-proc delete(this: Storage; k: string): bool {.jsdelprop.} =
+proc delete(this: Storage; k: DOMString): bool {.jsdelprop.} =
   this.removeItem(k)
   return true
 
@@ -476,8 +473,8 @@ proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
   JS_FreeValue(ctx, data)
   return ctx.toJS(res)
 
-proc alert(window: Window; s: string) {.jsfunc.} =
-  window.console.error(s)
+proc alert(window: Window; s: DOMString) {.jsfunc.} =
+  window.console.error($s)
 
 proc getEvent(ctx: JSContext; window: Window): JSValue {.jsrfget: "event".} =
   if window.event == nil:
@@ -511,7 +508,7 @@ type MediaQueryList {.final.} = ref object of EventTarget
   matches {.jsget.}: bool
   #TODO onchange
 
-proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
+proc matchMedia(window: Window; s: CSSOMString): MediaQueryList {.jsfunc.} =
   var ctx = initCSSParser(s)
   let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)
   return MediaQueryList(

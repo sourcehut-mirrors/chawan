@@ -32,6 +32,10 @@ proc toJS*(ctx: JSContext; rs: RefString): JSValue =
 proc fromJS*(ctx: JSContext; val: JSValueConst; rs: var RefString):
     FromJSResult =
   rs = RefString()
-  ctx.fromJS(val, rs.s)
+  var ds: DOMString
+  if ctx.fromJS(val, ds).isErr:
+    return fjErr
+  rs.s = $ds
+  fjOk
 
 {.pop.} # raises: []

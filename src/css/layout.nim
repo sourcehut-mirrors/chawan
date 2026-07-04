@@ -1614,12 +1614,17 @@ proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
       word.hasSoftHyphen = true
       continue
     else:
-      if u in TabPUARange: # filter out chars placed in our PUA range
+      # filter out surrogates & chars placed in our PUA range
+      var filter = false
+      if u in 0xD800'u32 .. 0xDFFF'u32 or u in TabPUARange:
         u = 0xFFFD
+        filter = true
       let w = u.width()
       fstate.checkWrap(word, u, w)
-      for j in pi ..< i:
-        word.s &= s[j]
+      if filter:
+        word.s.addUTF8(u)
+      else:
+        word.s &= s.toOpenArray(pi, i - 1)
       let cw = w.toLUnit() * fstate.cellSize.w
       word.width += cw
       word.intrWidth += cw

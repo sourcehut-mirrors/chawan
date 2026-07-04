@@ -546,16 +546,16 @@ const FirstWordPropType* = LastHWordPropType.succ
 const LastWordPropType* = cptZIndex
 const FirstObjPropType* = LastWordPropType.succ
 
-proc shorthandType*(s: string): CSSShorthandType =
+proc shorthandType*(s: openArray[char]): CSSShorthandType =
   return parseEnumNoCase[CSSShorthandType](s).get(cstNone)
 
-proc propertyType*(s: string): Opt[CSSPropertyType] =
+proc propertyType*(s: openArray[char]): Opt[CSSPropertyType] =
   return parseEnumNoCase[CSSPropertyType](s)
 
 proc wide*(p: CSSPropertyType): CSSWidePropertyType =
   CSSWidePropertyType(sh: cstNone, p: p)
 
-proc anyPropertyType*(s: string): Opt[CSSWidePropertyType] =
+proc anyPropertyType*(s: openArray[char]): Opt[CSSWidePropertyType] =
   let sh = shorthandType(s)
   if sh == cstNone:
     let p = ?propertyType(s)
@@ -1246,7 +1246,7 @@ proc parseDeclarations*(iq: string): seq[CSSDeclaration] =
   var ctx = initCSSParser(iq)
   return ctx.consumeDeclarations(nested = false, [])
 
-proc parseComponentValues*(iq: DOMString): seq[CSSToken] =
+proc parseComponentValues*(iq: CSSOMString): seq[CSSToken] =
   var ctx = initCSSParser(iq)
   result = @[]
   while ctx.has():

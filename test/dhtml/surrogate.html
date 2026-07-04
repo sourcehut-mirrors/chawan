@@ -1,0 +1,6 @@
+<!DOCTYPE html>
+<div id=x>test</div>
+<!-- currently, this is represented as a lone surrogate in the DOM. -->
+<script>
+x.textContent = "\uD800 blah";
+</script>

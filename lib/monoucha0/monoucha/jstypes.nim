@@ -62,15 +62,28 @@ proc base*(view: JSArrayBufferView): ptr UncheckedArray[uint8] =
   return cast[ptr UncheckedArray[uint8]](addr view.abuf.p[view.offset])
 
 # A key-value pair: in WebIDL terms, this is a record.
-type JSKeyValuePair*[T] = object
-  s*: seq[tuple[name: string; value: T]]
+type JSKeyValuePair*[K, T] = object
+  s*: seq[tuple[name: K; value: T]]
 
+# * DOMString: may include surrogates (encoded as UTF-8).
+# * DOMStringNull: same as DOMString, but JS_NULL is translated to the empty
+#   string (instead of being rejected).
+# * string: the spec calls this USVString.  Encodes surrogates as U+FFFD.
+# * ByteString: like string, but rejects codepoints greater than U+00FF.
+# * CSSOMString: the spec allows aliasing this to DOMString or USVString.
+#   We use DOMString for the simple reason that our USVString isn't
+#   zero-copy.
 type
   DOMString* {.pure, inheritable.} = object
     p*: cstring
     ilen: int
 
   DOMStringNull* {.pure, final.} = object of DOMString
+
+  ByteString* = object
+    s*: string
+
+  CSSOMString* = DOMString
 
 const DOMStringConstFlag = 1 shl (sizeof(int) * 8 - 1)
 
@@ -107,5 +120,11 @@ proc `$`*(ds: DOMString): string =
 
 proc toDOMStringView*(s: string): DOMString =
   DOMString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
+
+proc toDOMStringNull*(ds: sink DOMString): DOMStringNull =
+  DOMStringNull(p: move(ds.p), ilen: ds.ilen)
+
+proc `$`*(bs: ByteString): lent string =
+  bs.s
 
 {.pop.} # raises

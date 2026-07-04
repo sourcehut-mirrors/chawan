@@ -701,8 +701,8 @@ proc newDocument*(url: URL): Document
 proc newDocumentType*(document: Document; name, publicId, systemId: string):
   DocumentType
 proc newDocumentFragment(document: Document): DocumentFragment
-proc newProcessingInstruction(document: Document; target, data: string):
-  ProcessingInstruction
+proc newProcessingInstruction(document: Document; target: string;
+  data: RefString): ProcessingInstruction
 proc newElement*(document: Document; localName: CAtomTraced;
   namespace = satNamespaceHTML): Element
 proc newElement(document: Document;
@@ -2571,9 +2571,10 @@ proc clone(node: Node; ctx: JSContext; document = none(Document);
     let x = document.newComment(newRefString(comment.data.s))
     Node(x)
   elif node of ProcessingInstruction:
-    let procinst = ProcessingInstruction(node)
-    let x = document.newProcessingInstruction(procinst.target, procinst.data.s)
-    Node(x)
+    let pi = ProcessingInstruction(node)
+    let clone = document.newProcessingInstruction(pi.target,
+      newRefString(pi.data.s))
+    Node(clone)
   elif node of Document:
     let document = Document(node)
     let x = newDocument(document.url)
@@ -3285,13 +3286,9 @@ proc newCDATASection(document: Document; data: RefString): CDATASection =
   return CDATASection(internalNext: document, data: data)
 
 # ProcessingInstruction
-proc newProcessingInstruction(document: Document; target, data: string):
-    ProcessingInstruction =
-  return ProcessingInstruction(
-    internalNext: document,
-    target: target,
-    data: newRefString(data)
-  )
+proc newProcessingInstruction(document: Document; target: string;
+    data: RefString): ProcessingInstruction =
+  ProcessingInstruction(internalNext: document, target: target, data: data)
 
 # Comment
 proc newComment(document: Document; data: RefString): Comment =
@@ -3630,11 +3627,13 @@ proc createComment*(document: Document; data: string): Comment {.jsfunc.} =
   return newComment(document, newRefString(data))
 
 proc createProcessingInstruction(ctx: JSContext; document: Document;
-    target, data: string): JSValue {.jsfunc.} =
-  if not target.matchNameProduction() or "?>" in data:
+    target, data: DOMString): JSValue {.jsfunc.} =
+  if not target.toOpenArray().matchNameProduction() or
+      "?>" in data.toOpenArray():
     return JS_ThrowDOMException(ctx, "InvalidCharacterError",
       "invalid data for processing instruction")
-  return ctx.toJS(newProcessingInstruction(document, target, data))
+  let pi = newProcessingInstruction(document, $target, newRefString(data))
+  ctx.toJS(pi)
 
 proc createEvent(ctx: JSContext; document: Document; atom: CAtomTraced):
     JSValue {.jsfunc.} =
@@ -3895,12 +3894,12 @@ proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
 proc createDocumentType(ctx: JSContext; implementation: DOMImplementation;
-    qualifiedName, publicId, systemId: string): JSValue {.jsfunc.} =
-  if AsciiWhitespace + {'\0', '>'} in qualifiedName:
+    qualifiedName, publicId, systemId: DOMString): JSValue {.jsfunc.} =
+  if AsciiWhitespace + {'\0', '>'} in qualifiedName.toOpenArray():
     return JS_ThrowDOMException(ctx, "InvalidCharacterError",
       "invalid character in qualified name")
   let document = implementation.document
-  ctx.toJS(document.newDocumentType(qualifiedName, publicId, systemId))
+  ctx.toJS(document.newDocumentType($qualifiedName, $publicId, $systemId))
 
 proc createDocument(ctx: JSContext; implementation: DOMImplementation;
     namespace: CAtomTraced; qualifiedName: DOMStringNull;
@@ -4193,6 +4192,10 @@ proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
     if ctx.fromJS(arg, s).isErr:
       return JS_EXCEPTION
     text &= s.toOpenArray()
+  # Note: this diverges from behavior in other browsers, but I'm not
+  # convinced that modifying the parser to adjust for this edge case is
+  # worth the trouble.
+  text.replaceSurrogates()
   if document.isxml:
     return JS_ThrowDOMException(ctx, "InvalidStateError",
       "document.write not supported in XML documents")
@@ -4607,12 +4610,13 @@ proc replace(ctx: JSContext; tokenList: DOMTokenList;
   tokenList.update()
   return ok(true)
 
-proc supports(ctx: JSContext; tokenList: DOMTokenList; token: string): JSValue
-    {.jsfunc.} =
+proc supports(ctx: JSContext; tokenList: DOMTokenList; token: DOMString):
+    JSValue {.jsfunc.} =
   case tokenList.localName
   of satRel:
     const SupportedTokens = [satAlternate, satStylesheet]
-    return ctx.toJS(token.toLowerAscii().toStaticAtom() in SupportedTokens)
+    let lower = token.toOpenArray().toLowerAscii()
+    return ctx.toJS(lower.toStaticAtom() in SupportedTokens)
   else:
     return JS_ThrowTypeError(ctx, "no supported tokens defined for attribute")
 
@@ -4633,16 +4637,21 @@ proc reflectTokens(this: DOMTokenList; value: string) =
         this.toks.add(a.dup())
 
 # DOMStringMap
-proc delete(ctx: JSContext; map: DOMStringMap; name: string): bool {.jsfunc.} =
-  let name = ("data-" & name.camelToKebabCase()).toAtomTrace()
+proc toDataStr(name: DOMString): CAtomTraced =
+  let s = "data-" & name.toOpenArray().camelToKebabCase()
+  s.toAtomTrace()
+
+proc delete(ctx: JSContext; map: DOMStringMap; name: DOMString): bool {.
+    jsfunc.} =
+  let name = name.toDataStr()
   let i = map.target.findAttr(name)
   if i != -1:
     ctx.delAttr(map.target, i)
   return i != -1
 
-proc getter(ctx: JSContext; map: DOMStringMap; name: string): JSValue
+proc getter(ctx: JSContext; map: DOMStringMap; name: DOMString): JSValue
     {.jsgetownprop.} =
-  let name = ("data-" & name.camelToKebabCase()).toAtomTrace()
+  let name = name.toDataStr()
   let i = map.target.findAttr(name)
   if i != -1:
     return ctx.toJS(map.target.attrs[i].value)
@@ -4658,10 +4667,9 @@ proc setter(ctx: JSContext; map: DOMStringMap; name, value: DOMString):
     JS_ThrowDOMException(ctx, "InvalidCharacterError",
       "lower case after hyphen is not allowed in dataset")
     return err()
-  let name = "data-" & name.toOpenArray().camelToKebabCase()
-  ?ctx.validateName(name)
-  let aname = name.toAtomTrace()
-  map.target.attr(aname, value)
+  let name = name.toDataStr()
+  ?ctx.validateName($name)
+  map.target.attr(name, value)
   ok()
 
 proc names(ctx: JSContext; map: DOMStringMap): JSPropertyEnumList
@@ -6224,11 +6232,11 @@ proc setAttribute(ctx: JSContext; element: Element;
   ok()
 
 proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtomTraced;
-    qualifiedName: CAtomTraced; value: sink string): Opt[void] {.jsfunc.} =
+    qualifiedName: CAtomTraced; value: DOMString): Opt[void] {.jsfunc.} =
   var namespace = namespace.dupTrace()
   var localName = qualifiedName.dupTrace()
   ?ctx.validateAndExtract(namespace, localName, nvAttribute)
-  element.attrns0(namespace, localName, qualifiedName, value)
+  element.attrns0(namespace, localName, qualifiedName, $value)
   ok()
 
 proc removeAttribute(ctx: JSContext; element: Element;
@@ -6509,7 +6517,7 @@ proc find(this: CSSStyleDeclaration; p: CSSPropertyType): int =
       return i
   return -1
 
-proc find(this: CSSStyleDeclaration; s: string): int =
+proc find(this: CSSStyleDeclaration; s: openArray[char]): int =
   if s.startsWith("--"):
     let v = s.toOpenArray(2, s.high).toAtomTrace()
     for i, decl in this.decls.mypairs:
@@ -6520,9 +6528,10 @@ proc find(this: CSSStyleDeclaration; s: string): int =
     return this.find(p)
   return -1
 
-proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
+proc getPropertyValue(this: CSSStyleDeclaration; s: CSSOMString): string
+    {.jsfunc.} =
   var res = ""
-  if (let sh = shorthandType(s); sh != cstNone):
+  if (let sh = shorthandType(s.toOpenArray()); sh != cstNone):
     var flags: array[CSSImportantFlag, bool]
     for p in ShorthandMap[sh]:
       let i = this.find(p)
@@ -6536,7 +6545,7 @@ proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
       res &= ' '
     if res.len > 0:
       res.setLen(res.high)
-  elif (let i = this.find(s); i >= 0):
+  elif (let i = this.find(s.toOpenArray()); i >= 0):
     for it in this.decls[i].value:
       res &= $it
   move(res)
@@ -6551,14 +6560,13 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
       return ctx.toJS(this.decls[int(u)].name)
     return JS_UNINITIALIZED
   of fiStr:
-    var s = $ds
-    if s == "cssFloat":
-      s = "float"
+    if ds.toOpenArray() == "cssFloat":
+      return ctx.toJS(this.getPropertyValue(initDOMStringLit("float")))
+    if ds.toOpenArray().isSupportedProperty():
+      return ctx.toJS(this.getPropertyValue(ds))
+    let s = ds.toOpenArray().camelToKebabCase()
     if s.isSupportedProperty():
-      return ctx.toJS(this.getPropertyValue(s))
-    s = camelToKebabCase(s)
-    if s.isSupportedProperty():
-      return ctx.toJS(this.getPropertyValue(s))
+      return ctx.toJS(this.getPropertyValue(s.toDOMStringView()))
     return JS_UNINITIALIZED
   of fiErr: return JS_EXCEPTION
 
@@ -6580,13 +6588,19 @@ proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
   this.decls[i].value = move(toks)
   return ok()
 
-proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration; name: string):
-    JSValue {.jsfunc.} =
+proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
   if this.readonly:
-    return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
+    JS_ThrowDOMException(ctx, "NoModificationAllowedError",
       "cannot modify read-only declaration")
-  let name = name.toLowerAscii()
-  let value = this.getPropertyValue(name)
+    return err()
+  ok()
+
+proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration;
+    name: CSSOMString): JSValue {.jsfunc.} =
+  if ctx.checkReadOnly(this).isErr:
+    return JS_EXCEPTION
+  let name = name.toOpenArray().toLowerAscii()
+  let value = this.getPropertyValue(name.toDOMStringView())
   let sh = shorthandType(name)
   if sh != cstNone:
     for t in ShorthandMap[sh]:
@@ -6599,22 +6613,15 @@ proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration; name: string):
       this.decls.delete(i)
   return ctx.toJS(value)
 
-proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
-  if this.readonly:
-    JS_ThrowDOMException(ctx, "NoModificationAllowedError",
-      "cannot modify read-only declaration")
-    return err()
-  ok()
-
 proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
-    name, value: DOMString): JSValue {.jsfunc.} =
+    name, value: CSSOMString): JSValue {.jsfunc.} =
   if ctx.checkReadOnly(this).isErr:
     return JS_EXCEPTION
-  let name = name.toOpenArray().toLowerAscii()
-  if not name.isSupportedProperty():
+  if not name.toOpenArray().isSupportedProperty():
     return JS_UNDEFINED
   if value.len == 0:
     return ctx.removeProperty(this, name)
+  let name = name.toOpenArray().toLowerAscii()
   var toks = parseComponentValues(value)
   if (let i = this.find(name); i != -1):
     if this.setValue(i, toks).isErr:
@@ -6642,7 +6649,7 @@ proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
   return JS_UNDEFINED
 
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
-    value: DOMString): JSValue {.jssetprop.} =
+    value: CSSOMString): JSValue {.jssetprop.} =
   if ctx.checkReadOnly(this).isErr:
     return JS_EXCEPTION
   var u: uint32
@@ -6791,9 +6798,10 @@ proc setType(this: HTMLButtonElement; s: DOMString) {.jsfset: "type".} =
   this.attr(satType, s)
 
 # <canvas>
-proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
-    options: JSValueConst = JS_UNDEFINED): CanvasRenderingContext2D {.jsfunc.} =
-  if contextId == "2d":
+proc getContext*(jctx: JSContext; this: HTMLCanvasElement;
+    contextId: DOMString; options: JSValueConst = JS_UNDEFINED):
+    CanvasRenderingContext2D {.jsfunc.} =
+  if contextId.toOpenArray() == "2d":
     if this.ctx2d == nil:
       let window = jctx.getWindow()
       let loader = window.loader
@@ -7054,9 +7062,12 @@ proc value*(this: HTMLInputElement): lent string {.jsfget.} =
     this.internalValue = newRefString("")
   return this.internalValue.s
 
-proc setValue*(this: HTMLInputElement; value: sink string) {.jsfset: "value".} =
+proc setValue*(this: HTMLInputElement; value: sink string) =
   this.internalValue = newRefString(value)
   this.invalidate()
+
+proc setValue(this: HTMLInputElement; ds: DOMString) {.jsfset: "value".} =
+  this.setValue($ds)
 
 proc setType(this: HTMLInputElement; s: DOMString) {.jsfset: "type".} =
   this.attr(satType, s)
@@ -8080,11 +8091,13 @@ proc value*(this: HTMLTextAreaElement): string {.jsfget.} =
     return this.internalValue
   return this.childTextContent
 
-proc setValue*(this: HTMLTextAreaElement; s: sink string)
-    {.jsfset: "value".} =
+proc setValue*(this: HTMLTextAreaElement; s: sink string) =
   this.dirty = true
   this.internalValue = s
   this.invalidate()
+
+proc setValue(this: HTMLTextAreaElement; ds: DOMString) {.jsfset: "value".} =
+  this.setValue($ds)
 
 proc textAreaString*(this: HTMLTextAreaElement): string =
   result = ""

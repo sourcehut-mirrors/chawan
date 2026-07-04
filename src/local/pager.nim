@@ -1753,9 +1753,9 @@ proc addConsole2(pager: Pager; interactive: bool) =
     pager.alert("Failed to open temp file for console")
 
 # private
-proc saveTo(pager: Pager; init: BufferInit; path: string): bool
+proc saveTo(pager: Pager; init: BufferInit; path: DOMString): bool
     {.jsfunc.} =
-  if pager.loader.redirectToFile(init.istreamOutputId, path, init.url):
+  if pager.loader.redirectToFile(init.istreamOutputId, $path, init.url):
     pager.loader.resume(init.istreamOutputId)
     init.closeMailcap()
     return true
@@ -1806,7 +1806,7 @@ proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueConst;
   if JS_IsUndefined(val):
     s = pager.defaultEnv()
     return fjOk
-  var record: JSKeyValuePair[string]
+  var record: JSKeyValuePair[string, string]
   ?ctx.fromJS(val, record)
   s = move(record.s)
   fjOk

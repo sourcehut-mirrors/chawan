@@ -174,15 +174,15 @@ proc checkSendFlag(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
   ok()
 
 proc setRequestHeader(ctx: JSContext; this: XMLHttpRequest;
-    name, value: string): Opt[void] {.jsfunc.} =
+    name, value: ByteString): Opt[void] {.jsfunc.} =
   ?ctx.checkOpened(this)
   ?ctx.checkSendFlag(this)
-  if not name.isValidHeaderName() or not value.isValidHeaderValue():
+  if not name.s.isValidHeaderName() or not value.s.isValidHeaderValue():
     JS_ThrowDOMException(ctx, "SyntaxError", "invalid header name or value")
     return err()
-  if isForbiddenRequestHeader(name, value):
+  if isForbiddenRequestHeader(name.s, value.s):
     return ok()
-  this.headers[name] = value
+  this.headers[name.s] = value.s
   ok()
 
 proc setWithCredentials(ctx: JSContext; this: XMLHttpRequest;
@@ -381,7 +381,7 @@ proc status(this: XMLHttpRequest): uint16 {.jsfget.} =
 proc statusText(this: XMLHttpRequest): string {.jsfget.} =
   return ""
 
-proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: string):
+proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: ByteString):
     JSValue {.jsfunc.} =
   let res = ctx.get(this.response.headers, name)
   if JS_IsException(res):

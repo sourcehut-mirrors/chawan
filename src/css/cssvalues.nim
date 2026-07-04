@@ -791,7 +791,7 @@ proc reprType*(t: CSSPropertyType): CSSPropertyReprType =
 proc valueType*(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
-proc isSupportedProperty*(s: string): bool =
+proc isSupportedProperty*(s: openArray[char]): bool =
   return anyPropertyType(s).isOk
 
 template auto*(length: CSSLength): bool =

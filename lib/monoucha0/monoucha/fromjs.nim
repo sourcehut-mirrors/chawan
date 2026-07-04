@@ -9,6 +9,7 @@ import jsopaque
 import jstypes
 import quickjs
 import tojs
+import utils/twtstr
 
 type FromJSResult* = enum
   fjErr, fjOk
@@ -17,6 +18,8 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
   FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
+  FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ByteString):
   FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): FromJSResult
@@ -31,8 +34,8 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]):
   FromJSResult
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]):
   FromJSResult
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSKeyValuePair[T]):
-  FromJSResult
+proc fromJS*[K, T](ctx: JSContext; val: JSValueConst;
+  res: var JSKeyValuePair[K, T]): FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): FromJSResult
 proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
   FromJSResult
@@ -49,6 +52,9 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
   FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): FromJSResult
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): FromJSResult
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): FromJSResult
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var ByteString): FromJSResult
 
 template isOk*(res: FromJSResult): bool =
   res == fjOk
@@ -88,16 +94,28 @@ proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): FromJSResult =
   result = ctx.fromJS(val, res)
   JS_FreeValue(ctx, val)
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): FromJSResult =
-  var plen {.noinit.}: csize_t
-  let outp = JS_ToCStringLen(ctx, plen, val) # cstring
-  if outp == nil:
+proc fromJS(ctx: JSContext; cs: cstring; len: csize_t; narrow: bool;
+    res: var string): FromJSResult =
+  if cs == nil:
     return fjErr
-  res = newString(plen)
-  if plen != 0:
-    copyMem(addr res[0], cstring(outp), plen)
-  JS_FreeCString(ctx, outp)
+  if len > csize_t(int.high):
+    JS_FreeCString(ctx, cs)
+    JS_ThrowRangeError(ctx, "string length out of bounds")
+    return fjErr
+  let ilen = cast[int](len)
+  res = newString(ilen)
+  if ilen > 0:
+    copyMem(addr res[0], cstring(cs), ilen)
+    if not narrow:
+      res.replaceSurrogates()
+  JS_FreeCString(ctx, cs)
   fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): FromJSResult =
+  var len {.noinit.}: csize_t
+  let cs = JS_ToCStringLen(ctx, len, val) # cstring
+  let narrow = JS_GetNarrowStringBuffer(val) != nil
+  ctx.fromJS(cs, len, narrow, res)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
     FromJSResult =
@@ -117,8 +135,33 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
   var ds = initDOMStringLit("")
   if not JS_IsNull(val):
     ?ctx.fromJS(val, ds)
-  res = DOMStringNull(ds)
+  res = ds.toDOMStringNull()
   fjOk
+
+proc fromJS(ctx: JSContext; cs: cstring; len: csize_t; res: var ByteString):
+    FromJSResult =
+  if cs == nil:
+    return fjErr
+  if len > csize_t(int.high):
+    JS_FreeCString(ctx, cs)
+    JS_ThrowRangeError(ctx, "string length out of bounds")
+    return fjErr
+  let ilen = cast[int](len)
+  res.s = newString(ilen)
+  for u in cs.toOpenArray(0, ilen - 1).points:
+    if u > 0xFF:
+      JS_ThrowTypeError(ctx, "ByteString character out of bounds")
+      return fjErr
+  if ilen > 0:
+    copyMem(addr res.s[0], cast[pointer](cs), ilen)
+  JS_FreeCString(ctx, cs)
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ByteString):
+    FromJSResult =
+  var len {.noinit.}: csize_t
+  let cs = JS_ToCStringLen(ctx, len, val) # cstring
+  ctx.fromJS(cs, len, res)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): FromJSResult =
   var n {.noinit.}: int32
@@ -299,18 +342,18 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): FromJSResul
   JS_FreeValue(ctx, nextMethod)
   status
 
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSKeyValuePair[T]):
-    FromJSResult =
+proc fromJS*[K, T](ctx: JSContext; val: JSValueConst;
+    res: var JSKeyValuePair[K, T]): FromJSResult =
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
   let flags = JS_GPN_STRING_MASK
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
     return fjErr
-  var tmp = newSeqOfCap[tuple[name: string; value: T]](plen)
+  var tmp = newSeqOfCap[tuple[name: K; value: T]](plen)
   for i in 0 ..< plen:
     let atom = ptab[i].atom
-    var kn: string
+    var kn: K
     if ctx.fromJS(atom, kn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
       return fjErr
@@ -321,7 +364,7 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSKeyValuePair[T]):
       return fjErr
     tmp.add((move(kn), move(vn)))
   JS_FreePropertyEnum(ctx, ptab, plen)
-  res = JSKeyValuePair[T](s: move(tmp))
+  res = JSKeyValuePair[K, T](s: move(tmp))
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): FromJSResult =
@@ -556,17 +599,7 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): FromJSResult =
   var len {.noinit.}: csize_t
   let cs = JS_AtomToCStringLen(ctx, len, atom)
-  if cs == nil:
-    return fjErr
-  if len > csize_t(int.high):
-    JS_FreeCString(ctx, cs)
-    JS_ThrowRangeError(ctx, "string length out of bounds")
-    return fjErr
-  res = newString(int(len))
-  if len > 0:
-    copyMem(addr res[0], cast[pointer](cs), len)
-  JS_FreeCString(ctx, cs)
-  fjOk
+  ctx.fromJS(cs, len, narrow = false, res)
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): FromJSResult =
   var len {.noinit.}: csize_t
@@ -579,5 +612,10 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): FromJSResult =
     return fjErr
   res = initDOMString(cs, cast[int](len))
   fjOk
+
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var ByteString): FromJSResult =
+  var len {.noinit.}: csize_t
+  let cs = JS_AtomToCStringLen(ctx, len, atom)
+  ctx.fromJS(cs, len, res)
 
 {.pop.} # raises: []

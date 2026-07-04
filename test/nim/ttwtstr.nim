@@ -55,6 +55,23 @@ proc testContentType() =
   assert "text/html;aa=b;a=c".getContentTypeAttr("a") == "c"
   assert "text/html;a=\"b\"".getContentTypeAttr("a") == "b"
 
+proc testReplaceSurrogates() =
+  var s = "\uD800abcd"
+  s.replaceSurrogates()
+  assert s == "\uFFFDabcd"
+  s = "abcd\uDBFF"
+  s.replaceSurrogates()
+  assert cstring(s) == cstring("abcd\uFFFD")
+  s = ""
+  s.replaceSurrogates()
+  assert s == ""
+  s = "ab\uDC00cd"
+  s.replaceSurrogates()
+  assert s == "ab\uFFFDcd"
+  s = "abcd"
+  s.replaceSurrogates()
+  assert s == "abcd"
+
 proc run() =
   testFind()
   testStrip()
@@ -65,3 +82,4 @@ static:
   run()
 
 run()
+testReplaceSurrogates()
