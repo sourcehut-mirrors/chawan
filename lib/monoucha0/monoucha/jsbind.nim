@@ -510,7 +510,6 @@ type
     thisTypeNode: NimNode
     returnType: NimNode # may be nil
     newName: NimNode
-    dielabel: NimNode # die: jump to exception return code (JS_EXCEPTION or -1)
     jsFunCallList: NimNode
     jsFunCall: NimNode
     jsCallAndRet: NimNode
@@ -770,11 +769,10 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   let s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
   let id = ident(thisName)
-  let dl = gen.dielabel
   gen.jsFunCallList.add(quote do:
     var `s` {.noinit.}: ptr `t`.pointerBase
-    if ctx.fromJSThis(`id`, `s`) == fjErr:
-      break `dl`
+    if dl != fjErr and ctx.fromJSThis(`id`, `s`) == fjErr:
+      dl = fjErr
   )
   gen.jsFunCall.add(quote do: cast[`t`](`s`))
   inc gen.i
@@ -786,7 +784,6 @@ proc addMagicParam(gen: var JSFuncGenerator; id, magic: NimNode) =
 proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
-  let dl = gen.dielabel
   gen.jsFunCallList.add(quote do:
     when `t` is ref:
       var `s` {.noinit.}: ptr `t`.pointerBase
@@ -794,8 +791,8 @@ proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
       var `s` {.noinit.}: `t`
     else:
       var `s`: `t`
-    if ctx.fromJS(`id`, `s`) == fjErr:
-      break `dl`
+    if dl != fjErr and ctx.fromJS(`id`, `s`) == fjErr:
+      dl = fjErr
   )
   gen.jsFunCall.add(quote do: cast[`t`](`s`))
   inc gen.i
@@ -818,21 +815,18 @@ proc addArgv(gen: var JSFuncGenerator) =
           "optional parameter?")
       if t.typeKind == ntyGenericParam:
         error("Union parameters are not supported.  Use JSValue instead.")
-      let dl = gen.dielabel
       gen.jsFunCallList.add(quote do:
         var `s`: `t`
-        if `j` < argc and not JS_IsUndefined(argv[`j`]):
-          if ctx.fromJS(argv[`j`], `s`) == fjErr:
-            break `dl`
-        else:
-          `s` = `fallback`
+        if dl != fjErr:
+          if `j` < argc and not JS_IsUndefined(argv[`j`]):
+            if ctx.fromJS(argv[`j`], `s`) == fjErr:
+              dl = fjErr
+          else:
+            `s` = `fallback`
       )
     gen.jsFunCall.add(s)
     inc j
     inc gen.i
-
-proc finishFunCallList(gen: var JSFuncGenerator) =
-  gen.jsFunCallList.add(gen.jsFunCall)
 
 var jsDtors {.compileTime.}: HashSet[string]
 
@@ -948,22 +942,15 @@ proc registerFunction(gen: JSFuncGenerator) =
       flag: gen.flag
     ))
 
-proc jsCheckNumArgs*(ctx: JSContext; argc, minargs: cint): bool =
+proc jsCheckNumArgs*(ctx: JSContext; argc, minargs: cint): FromJSResult =
   if argc < minargs:
     JS_ThrowTypeError(ctx, "At least %d arguments required, but only %d passed",
       minargs, argc)
-    return false
-  true
+    return fjErr
+  fjOk
 
-proc newJSProc(gen: var JSFuncGenerator; params: openArray[NimNode];
-    isva = true): NimNode =
-  let ma = cint(gen.actualMinArgs)
+proc newJSProc(gen: var JSFuncGenerator; params: openArray[NimNode]): NimNode =
   let jsBody = newStmtList()
-  if isva and ma > 0:
-    jsBody.add(quote do:
-      if not ctx.jsCheckNumArgs(argc, `ma`):
-        return JS_EXCEPTION
-    )
   jsBody.add(gen.jsCallAndRet)
   let jsPragmas = newNimNode(nnkPragma)
     .add(ident("cdecl"))
@@ -1001,7 +988,6 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
     t: t,
     funcName: getFuncName(fun, jsname, flag),
     hasThis: hasThis,
-    dielabel: ident("ondie"),
     jsFunCallList: newStmtList(),
     jsFunCall: newCall(funCallName),
     flag: flag,
@@ -1017,31 +1003,47 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
       result.thisType.setLen(i)
     result.newName = ident($result.t & "_" & jsname & "_" & result.funcName)
 
-proc makeJSCallAndRet(gen: var JSFuncGenerator) =
+proc makeJSCallAndRet(gen: var JSFuncGenerator; isva: bool) =
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
+  let ma = cint(gen.actualMinArgs)
   gen.jsCallAndRet = if gen.returnType != nil:
     quote do:
-      block `dl`:
-        return ctx.toJS(`jfcl`)
-      JS_EXCEPTION
+      var dl {.inject.} = fjOk
+      when `isva` and `ma` > 0:
+        dl = ctx.jsCheckNumArgs(argc, `ma`)
+      `jfcl`
+      if dl != fjErr:
+        ctx.toJS(`jfc`)
+      else:
+        JS_EXCEPTION
   else:
     quote do:
-      block `dl`:
-        `jfcl`
-        return JS_UNDEFINED
-      JS_EXCEPTION
+      var dl {.inject.} = fjOk
+      when `isva` and `ma` > 0:
+        dl = ctx.jsCheckNumArgs(argc, `ma`)
+      `jfcl`
+      if dl != fjErr:
+        `jfc`
+        JS_UNDEFINED
+      else:
+        JS_EXCEPTION
 
 macro jsctor0*(fun: untyped; t: static BoundFunctionType) =
   var gen = initGenerator(fun, t, hasThis = false)
   gen.addArgv()
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
+  let ma = cint(gen.actualMinArgs)
   gen.jsCallAndRet = quote do:
-    block `dl`:
-      return ctx.toJSNew(`jfcl`, this)
-    return JS_EXCEPTION
+    var dl {.inject.} = fjOk
+    when `ma` > 0:
+      dl = ctx.jsCheckNumArgs(argc, `ma`)
+    `jfcl`
+    if dl != fjErr:
+      ctx.toJSNew(`jfc`, this)
+    else:
+      JS_EXCEPTION
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
@@ -1056,15 +1058,16 @@ macro jshasprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyHas, hasThis = true)
   gen.addThisParam()
   gen.addFixParam(ident"atom")
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
   gen.jsCallAndRet = quote do:
-    block `dl`:
-      let retv = `jfcl`
-      return cint(retv)
-    return cint(-1)
-  let jsProc = gen.newJSProc(getJSHasPropParams(), false)
+    var dl {.inject.} = fjOk
+    `jfcl`
+    if dl != fjErr:
+      cint(`jfc`)
+    else:
+      cint(-1)
+  let jsProc = gen.newJSProc(getJSHasPropParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1089,22 +1092,25 @@ macro jsgetownprop*(fun: untyped) =
         desc[].flags = 0
       else:
         JS_FreeValue(ctx, retv)
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
   gen.jsCallAndRet = quote do:
-    block `dl`:
-      if JS_GetOpaque(this, JS_GetClassID(this)) == nil:
-        return cint(0)
-      let retv {.inject.} = ctx.toJS(`jfcl`)
+    var dl {.inject.} = fjOk
+    if JS_GetOpaque(this, JS_GetClassID(this)) == nil:
+      return cint(0)
+    `jfcl`
+    if dl != fjErr:
+      let retv {.inject.} = ctx.toJS(`jfc`)
       if JS_IsException(retv):
-        return cint(-1)
-      if JS_IsUninitialized(retv):
-        return cint(0)
-      `handleRetv`
-      return cint(1)
-    return cint(-1)
-  let jsProc = gen.newJSProc(getJSGetOwnPropParams(), false)
+        cint(-1)
+      elif JS_IsUninitialized(retv):
+        cint(0)
+      else:
+        `handleRetv`
+        cint(1)
+    else:
+      cint(-1)
+  let jsProc = gen.newJSProc(getJSGetOwnPropParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1114,14 +1120,16 @@ macro jsgetprop*(fun: untyped) =
   gen.addFixParam(ident"prop")
   if gen.i < gen.funcParams.len:
     gen.addFixParam(ident"this")
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
   gen.jsCallAndRet = quote do:
-    block `dl`:
-      return ctx.toJS(`jfcl`)
-    return JS_EXCEPTION
-  let jsProc = gen.newJSProc(getJSGetPropParams(), false)
+    var dl {.inject.} = fjOk
+    `jfcl`
+    if dl != fjErr:
+      ctx.toJS(`jfc`)
+    else:
+      JS_EXCEPTION
+  let jsProc = gen.newJSProc(getJSGetPropParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1132,25 +1140,31 @@ macro jssetprop*(fun: untyped) =
   gen.addFixParam(ident"value")
   if gen.i < gen.funcParams.len:
     gen.addFixParam(ident"this")
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
   gen.jsCallAndRet = if gen.returnType != nil:
     quote do:
-      block `dl`:
-        let v = toJS(ctx, `jfcl`)
-        if not JS_IsException(v):
-          return cint(1)
-        if JS_IsUninitialized(v):
-          return cint(0)
-      return cint(-1)
+      var dl {.inject.} = fjOk
+      `jfcl`
+      if dl != fjErr:
+        let v = toJS(ctx, `jfc`)
+        if JS_IsException(v):
+          cint(-1)
+        elif JS_IsUninitialized(v):
+          cint(0)
+        else:
+          cint(1)
+      else:
+        cint(-1)
   else:
     quote do:
-      block `dl`:
-        `jfcl`
-        return cint(1)
-      return cint(-1)
-  let jsProc = gen.newJSProc(getJSSetPropParams(), false)
+      var dl {.inject.} = fjOk
+      `jfcl`
+      if dl != fjErr:
+        cint(1)
+      else:
+        cint(-1)
+  let jsProc = gen.newJSProc(getJSSetPropParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1158,33 +1172,34 @@ macro jsdelprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyDel, hasThis = true)
   gen.addThisParam()
   gen.addFixParam(ident"prop")
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
   gen.jsCallAndRet = quote do:
-    block `dl`:
-      let retv = `jfcl`
-      return cint(retv)
-    return cint(-1)
-  let jsProc = gen.newJSProc(getJSDelPropParams(), false)
+    var dl {.inject.} = fjOk
+    `jfcl`
+    if dl != fjErr:
+      cint(`jfc`)
+    else:
+      cint(-1)
+  let jsProc = gen.newJSProc(getJSDelPropParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
 macro jspropnames*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyNames, hasThis = true)
   gen.addThisParam()
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
   gen.jsCallAndRet = quote do:
-    block `dl`:
-      let retv = `jfcl`
-      if retv.ctx != nil:
-        ptab[] = retv.buffer
-        plen[] = retv.len
-        return cint(0)
-    return cint(-1)
-  let jsProc = gen.newJSProc(getJSPropNamesParams(), false)
+    var dl {.inject.} = fjOk
+    `jfcl`
+    if dl != fjErr and (let retv = `jfc`; retv.ctx != nil):
+      ptab[] = retv.buffer
+      plen[] = retv.len
+      cint(0)
+    else:
+      cint(-1)
+  let jsProc = gen.newJSProc(getJSPropNamesParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1198,12 +1213,11 @@ macro jsfgetn(jsname: static string; flag: static BoundFunctionFlag;
   gen.addThisParam()
   if gen.flag == bffMagic:
     gen.addMagicParam(ident"magic", magic)
-  gen.finishFunCallList()
-  gen.makeJSCallAndRet()
+  gen.makeJSCallAndRet(isva = false)
   let jsProc = if flag notin {bffReplaceable, bffMagic}:
-    gen.newJSProc(getJSGetterParams(), false)
+    gen.newJSProc(getJSGetterParams())
   else:
-    gen.newJSProc(getJSMagicGetterParams(), false)
+    gen.newJSProc(getJSMagicGetterParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1241,12 +1255,11 @@ macro jsfsetn(jsname: static string; flag: static BoundFunctionFlag;
   if gen.flag == bffMagic:
     gen.addMagicParam(ident"magic", magic)
   gen.addFixParam(ident"val")
-  gen.finishFunCallList()
-  gen.makeJSCallAndRet()
+  gen.makeJSCallAndRet(isva = false)
   let jsProc = if flag != bffMagic:
-    gen.newJSProc(getJSSetterParams(), false)
+    gen.newJSProc(getJSSetterParams())
   else:
-    gen.newJSProc(getJSMagicSetterParams(), false)
+    gen.newJSProc(getJSMagicSetterParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1269,8 +1282,7 @@ macro jsfuncn*(jsname: static string; flag: static BoundFunctionFlag;
   if gen.flag == bffMagic:
     gen.addMagicParam(ident"magic", magic)
   gen.addArgv()
-  gen.finishFunCallList()
-  gen.makeJSCallAndRet()
+  gen.makeJSCallAndRet(isva = true)
   let jsProc = if gen.flag == bffMagic:
     gen.newJSProc(getJSMagicParams())
   else:
@@ -1332,14 +1344,16 @@ macro jsiter*(fun: untyped) =
   var gen = initGenerator(fun, bfIteratorNext, hasThis = true)
   gen.addThisParam()
   gen.jsFunCall.add(ident("pdone"))
-  gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
+  let jfc = gen.jsFunCall
   gen.jsCallAndRet = quote do:
-    block `dl`:
-      return `jfcl`
-    JS_EXCEPTION
-  let jsProc = gen.newJSProc(getJSIterParams(), false)
+    var dl {.inject.} = fjOk
+    `jfcl`
+    if dl != fjErr:
+      `jfc`
+    else:
+      JS_EXCEPTION
+  let jsProc = gen.newJSProc(getJSIterParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
