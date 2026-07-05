@@ -65,22 +65,6 @@ proc width*(s: string; start, len: int): int =
     w += u.width()
   return w
 
-proc padToWidth*(s: string; size: uint32): string =
-  result = newStringOfCap(s.len)
-  var w = 0u32
-  var i = 0
-  var pi = 0
-  while i < s.len:
-    pi = i
-    w += uint32(s.nextUTF8(i).width())
-    if w > size:
-      break
-    for j in pi ..< i:
-      result &= s[j]
-  while w < size:
-    result &= ' '
-    inc w
-
 # Expand all PUA tabs into hard tabs, disregarding their position.
 # (This is mainly intended for copy/paste, where the actual characters
 # are more interesting than cell alignment.)

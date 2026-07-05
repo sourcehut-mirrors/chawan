@@ -4,7 +4,6 @@ import std/algorithm
 import std/hashes
 import std/math
 import std/options
-import std/posix
 import std/sets
 import std/setutils
 import std/tables
@@ -53,7 +52,6 @@ import types/refstring
 import types/url
 import types/winattrs
 import utils/dtoawrap
-import utils/strwidth
 import utils/tabutil
 import utils/twtstr
 
@@ -8098,26 +8096,6 @@ proc setValue*(this: HTMLTextAreaElement; s: sink string) =
 
 proc setValue(this: HTMLTextAreaElement; ds: DOMString) {.jsfset: "value".} =
   this.setValue($ds)
-
-proc textAreaString*(this: HTMLTextAreaElement): string =
-  result = ""
-  let rows = int64(this.attrul(satRows).get(1))
-  let cols = this.attrul(satCols).get(20)
-  var i = 0'i64
-  for line in this.value.split('\n'):
-    if i >= rows:
-      break
-    if cols > 2 and cols <= uint64(int.high):
-      result &= '[' & line.padToWidth(cols - 2) & "]\n"
-    else:
-      result &= "[]\n"
-    inc i
-  while i < rows:
-    if cols > 2 and cols <= uint64(int.high):
-      result &= '[' & ' '.repeat(int(cols - 2)) & "]\n"
-    else:
-      result &= "[]\n"
-    inc i
 
 proc defaultValue(this: HTMLTextAreaElement): string {.jsfget.} =
   this.textContent

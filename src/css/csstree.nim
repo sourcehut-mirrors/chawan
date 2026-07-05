@@ -492,9 +492,7 @@ proc addProgress(frame: var TreeFrame; element: Element) =
 proc addChildren(frame: var TreeFrame) =
   case frame.parent.tagType
   of TAG_INPUT: frame.addInputChildren(HTMLInputElement(frame.parent))
-  of TAG_TEXTAREA:
-    #TODO cache (do the same as with input, and add borders in render)
-    frame.addText(HTMLTextAreaElement(frame.parent).textAreaString())
+  of TAG_TEXTAREA: frame.addText(HTMLTextAreaElement(frame.parent).value)
   of TAG_IMG: frame.addImageOrAlt(HTMLImageElement(frame.parent))
   of TAG_CANVAS: frame.addImage(HTMLCanvasElement(frame.parent).bitmap)
   of TAG_VIDEO: frame.addText("[video]")

@@ -119,7 +119,12 @@ input:is([type=submit i], [type=button i], [type=reset i]), button {
 	color: -cha-ansi(red)
 }
 
-textarea { color: -cha-ansi(red); white-space: pre }
+textarea {
+	color: -cha-ansi(red);
+	white-space: pre;
+	border-style: none -cha-bracket -cha-bracket !important;
+	border-color: -cha-ansi(default) -cha-ansi(default) -cha-ansi(red)
+}
 
 li, summary { display: list-item }
 
