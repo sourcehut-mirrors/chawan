@@ -996,7 +996,7 @@ macro `{}=`*(vals: CSSValues; s: static string, val: typed) =
       `vals`.bits[CSSPropertyType(`t`)] = CSSValueBit(`vs`: `val`)
   of cprtHWord:
     return quote do:
-      `vals`.words[CSSPropertyType(`t`)] = CSSValueHWord(`vs`: `val`)
+      `vals`.hwords[CSSPropertyType(`t`)] = CSSValueHWord(`vs`: `val`)
   of cprtWord:
     return quote do:
       `vals`.words[CSSPropertyType(`t`)] = CSSValueWord(`vs`: `val`)
