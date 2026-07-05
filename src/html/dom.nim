@@ -4741,7 +4741,8 @@ proc names(ctx: JSContext; this: HTMLCollection): JSPropertyEnumList
       continue
     if element.id != satUempty:
       ids.incl(element.id)
-    if element.namespaceURI == satNamespaceHTML:
+    if element.namespaceURI == satNamespaceHTML and
+        element.name != satUempty:
       ids.incl(element.name)
   for id in ids:
     list.add($id)
@@ -5740,16 +5741,14 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
   let name = name.toStaticAtom()
   case name
   of satId:
-    var had = false
     if element.id != satUempty:
       freeAtom(element.id)
       element.document.removeElementId(element)
-      had = true
     if has:
       element.id = value.toAtom()
     else:
       element.id = satUempty.toAtom()
-    if had and element.id != satUempty:
+    if element.id != satUempty:
       let root = element.rootNode
       if root of Document:
         Document(root).addElementId(element)
