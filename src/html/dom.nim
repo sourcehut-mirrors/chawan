@@ -7078,7 +7078,7 @@ proc checked*(input: HTMLInputElement): bool {.inline.} =
 proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
   # Note: input elements are implemented as a replaced text, so we must
   # fully invalidate them on checked change.
-  if input.inputType == itRadio:
+  if input.inputType == itRadio and b:
     for radio in input.radiogroup:
       radio.invalidate(dtChecked)
       radio.invalidate()
