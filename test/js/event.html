@@ -69,13 +69,18 @@ let ok9 = false;
 window.addEventListener("click", e => {
 	ok9 = true;
 });
+let ok10 = false;
 window.addEventListener("load", e => {
 	assert(ok7);
 	assert(ok8);
 	assert(ok9);
+	assert(ok10);
 	assertEquals(e.target, document);
 	assertEquals(e.currentTarget, window);
 	let x = document.getElementById("x");
 	x.textContent = "Success";
+});
+document.addEventListener("DOMContentLoaded", e => {
+	ok10 = e.bubbles && e.isTrusted;
 });
 </script>

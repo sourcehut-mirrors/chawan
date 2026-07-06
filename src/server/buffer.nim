@@ -727,12 +727,6 @@ proc cloneCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
     w.swrite(packetid)
   cmdrDone
 
-proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
-  let window = bc.window
-  window.fireEvent(satDOMContentLoaded, bc.document, bubbles = false,
-    cancelable = false, trusted = true)
-  bc.maybeReshape(suppressFouc = true)
-
 proc dispatchLoadEvent(bc: BufferContext) =
   let window = bc.window
   let event = newTrustedEvent(satLoad, window.document, bubbles = false,
@@ -746,8 +740,6 @@ proc finishLoad(bc: BufferContext; data: InputData) =
       doAssert bc.processData0(chunk)
   bc.htmlParser.finish()
   bc.document.readyState = rsInteractive
-  if bc.config.scripting != smFalse:
-    bc.dispatchDOMContentLoadedEvent()
   bc.loader.unregister(data)
   bc.loader.removeCachedItem(bc.cacheId)
   bc.cacheId = -1

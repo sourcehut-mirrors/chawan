@@ -60,15 +60,21 @@ proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
   return s.toAtom()
 
 proc finish(builder: ChaDOMBuilder) =
-  while builder.document.scriptsToExecOnLoad != nil:
+  let document = builder.document
+  while document.scriptsToExecOnLoad != nil:
     #TODO spin event loop
-    let script = builder.document.scriptsToExecOnLoad
+    let script = document.scriptsToExecOnLoad
     script.execute()
     let next = script.next
-    builder.document.scriptsToExecOnLoad = next
+    document.scriptsToExecOnLoad = next
     if next == nil:
-      builder.document.scriptsToExecOnLoadTail = nil
-  #TODO events
+      document.scriptsToExecOnLoadTail = nil
+  let window = document.window
+  if document.scriptingEnabled:
+    #TODO queue DOM task, then spin event loop
+    window.fireEvent(satDOMContentLoaded, document, bubbles = true,
+      cancelable = false, trusted = true)
+  #TODO ServiceWorkerContainer etc.
 
 proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   let builder = wrapper.builder
