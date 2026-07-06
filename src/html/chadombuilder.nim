@@ -1,7 +1,7 @@
 {.push raises: [].}
 
+import std/algorithm
 import std/options
-import std/tables
 
 import chame/htmlparser
 import chame/tags
@@ -56,6 +56,9 @@ proc atomToTagTypeImpl(builder: ChaDOMBuilder; atom: CAtom): TagType =
 
 proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtom =
   return tagType.toAtom()
+
+proc namespaceToAtomImpl(builder: ChaDOMBuilder; ns: Namespace): CAtom =
+  return ns.toStaticAtom().toAtom()
 
 proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
   return s.toAtom()
@@ -135,15 +138,10 @@ proc createHTMLElementImpl(builder: ChaDOMBuilder): ParentNode =
 
 proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: ParentNode;
-    htmlAttrs: Table[CAtom, string]; xmlAttrs: seq[ParsedAttr[CAtom]]):
-    ParentNode =
+    attrs: sink seq[ParsedAttr[CAtom]]): ParentNode =
   let document = builder.document
   let element = document.newElement(localName.view(), namespace.toStaticAtom())
-  for k, v in htmlAttrs:
-    element.attr(k.view(), v)
-  for attr in xmlAttrs:
-    element.attrns(attr.name.view(), attr.prefix,
-      attr.namespace.toStaticAtom().view(), attr.value)
+  element.sinkAttrs(move(attrs))
   element.resetElement(nil)
   if element of HTMLScriptElement:
     let script = HTMLScriptElement(element)
@@ -151,7 +149,7 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     script.forceAsync = false
     # Note: per standard, we could set already started to true here when we
     # are parsing from document.write, but that sounds like a horrible idea.
-  elif namespace == Namespace.SVG and localName == satSvg:
+  elif namespace == nsSVG and localName == satSvg:
     # hack to distinguish between parser-inserted SVG and dynamically added
     # SVG; TODO get rid of this
     let svg = SVGSVGElement(element)
@@ -198,12 +196,28 @@ proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
   for child in toMove:
     toNode.insert(child, nil, nil)
 
+proc sortAttrsImpl(builder: ChaDOMBuilder; attrs: var seq[ParsedAttr[CAtom]]) =
+  if attrs.len > 1:
+    attrs.sort(proc(a, b: ParsedAttr[CAtom]): int {.nimcall.} =
+      cmp(uint32(a.name), uint32(b.name))
+    )
+    var j = 1
+    var prev = attrs[0].name
+    for i in 1 ..< attrs.len:
+      let name = attrs[i].name
+      if name != prev:
+        if j < i:
+          attrs[j] = move(attrs[i])
+        inc j
+      prev = name
+    attrs.setLen(j)
+
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
-    attrs: Table[CAtom, string]) =
+    attrs: seq[ParsedAttr[CAtom]]) =
   let element = Element(handle)
-  for k, v in attrs:
-    if not element.attrb(k.view()):
-      element.attr(k.view(), v)
+  for attr in attrs:
+    if not element.attrb(attr.name.view()):
+      element.attr(attr.name.view(), attr.value)
 
 proc setScriptAlreadyStartedImpl(builder: ChaDOMBuilder; script: ParentNode) =
   HTMLScriptElement(script).alreadyStarted = true

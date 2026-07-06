@@ -217,7 +217,6 @@ macro makeStaticAtom =
       satVlink = "vlink"
       satWheel = "wheel"
       satWidth = "width"
-      satXlink = "xlink"
       satXml = "xml"
       satXmlns = "xmlns"
   let decl = quote do:
@@ -269,6 +268,7 @@ const CAtomNull* = CAtom(0)
 
 # Mandatory Atom functions
 proc `==`*(a, b: CAtom): bool {.borrow.}
+proc cmp*(a, b: CAtom): int {.borrow.}
 
 var factory {.global.}: CAtomFactoryObj
 
@@ -547,36 +547,24 @@ proc toStaticAtom*(s: string): StaticAtom =
 
 proc toNamespace*(atom: CAtom): Namespace =
   case atom.toStaticAtom()
-  of satUempty: return NO_NAMESPACE
-  of satNamespaceHTML: return Namespace.HTML
-  of satNamespaceMathML: return Namespace.MATHML
-  of satNamespaceSVG: return Namespace.SVG
-  of satNamespaceXLink: return Namespace.XLINK
-  of satNamespaceXML: return Namespace.XML
-  of satNamespaceXMLNS: return Namespace.XMLNS
-  else: return NAMESPACE_UNKNOWN
+  of satUempty: return nsNone
+  of satNamespaceHTML: return nsHTML
+  of satNamespaceMathML: return nsMathML
+  of satNamespaceSVG: return nsSVG
+  of satNamespaceXLink: return nsXLink
+  of satNamespaceXML: return nsXml
+  of satNamespaceXMLNS: return nsXmlns
+  else: return nsUnknown
 
 proc toStaticAtom*(namespace: Namespace): StaticAtom =
   return case namespace
-  of NO_NAMESPACE: satUempty
-  of Namespace.HTML: satNamespaceHTML
-  of Namespace.MATHML: satNamespaceMathML
-  of Namespace.SVG: satNamespaceSVG
-  of Namespace.XLINK: satNamespaceXLink
-  of Namespace.XML: satNamespaceXML
-  of Namespace.XMLNS: satNamespaceXMLNS
-  of NAMESPACE_UNKNOWN: satUempty
-
-proc toAtom*(namespace: Namespace): CAtom {.deprecated.} =
-  namespace.toStaticAtom().toAtom()
-
-proc toAtom*(prefix: NamespacePrefix): CAtom =
-  return (case prefix
-  of NO_PREFIX: satUempty
-  of PREFIX_XLINK: satXlink
-  of PREFIX_XML: satXml
-  of PREFIX_XMLNS: satXmlns
-  of PREFIX_UNKNOWN: satUempty).toAtom()
+  of nsNone, nsUnknown: satUempty
+  of nsHTML: satNamespaceHTML
+  of nsMathML: satNamespaceMathML
+  of nsSVG: satNamespaceSVG
+  of nsXLink: satNamespaceXLink
+  of nsXml: satNamespaceXML
+  of nsXmlns: satNamespaceXMLNS
 
 proc `==`*(a, b: CAtomTraced): bool {.borrow.}
 

@@ -47,17 +47,17 @@ proc doubleEscape(input: string): string =
   return s
 
 proc getAttrs(factory: MAtomFactory, o: JsonNode, esc: bool):
-    Table[MAtom, string] =
-  result = Table[MAtom, string]()
+    ParsedAttrs[MAtom] =
+  result = @[]
   for k, v in o:
     let k = factory.strToAtom(k)
+    var v = v.getStr()
     if esc:
-      result[k] = v.getStr().doubleEscape()
-    else:
-      result[k] = v.getStr()
+      v = v.doubleEscape()
+    result.add(ParsedAttr[MAtom](name: k, value: v))
 
 proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
-    name, pubid, sysid: var string; otherAttrs: var Table[MAtom, string]):
+    name, pubid, sysid: var string; otherAttrs: var ParsedAttrs[MAtom]):
     Token[MAtom] =
   case a[0].getStr()
   of "StartTag":
@@ -104,7 +104,7 @@ proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
 proc checkEquals(factory: MAtomFactory; tok, otok: Token;
     tokenizer: Tokenizer[Node, MAtom];
     desc, otherName, otherPubid, otherSysid: string;
-    otherAttrs: Table[MAtom, string]) =
+    otherAttrs: ParsedAttrs[MAtom]) =
   doAssert otok.t == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
     $otok.t & ")"
   case tok.t
@@ -124,21 +124,21 @@ proc checkEquals(factory: MAtomFactory; tok, otok: Token;
     if tok.t == ttStartTag:
       var attrs = ""
       var i = 0
-      for name, value in tokenizer.attrs:
+      for attr in tokenizer.attrs:
         if i > 0:
           attrs &= " "
-        attrs &= factory.atomToStr(name)
+        attrs &= factory.atomToStr(attr.name)
         attrs &= "="
-        attrs &= "'" & value & "'"
+        attrs &= "'" & attr.value & "'"
         inc i
       var oattrs = ""
       i = 0
-      for name, value in otherAttrs:
+      for attr in otherAttrs:
         if i > 0:
           oattrs &= " "
-        oattrs &= factory.atomToStr(name)
+        oattrs &= factory.atomToStr(attr.name)
         oattrs &= "="
-        oattrs &= "'" & value & "'"
+        oattrs &= "'" & attr.value & "'"
         inc i
       doAssert tokenizer.attrs == otherAttrs, desc & " (tok attrs: " & attrs &
         " otok attrs (" & oattrs & ")"
@@ -158,7 +158,7 @@ type TestContext = object
 proc checkTokens(ctx: var TestContext; tokenizer: var Tokenizer[Node, MAtom]) =
   for tok in tokenizer.tokqueue:
     var otherName, otherPubid, otherSysid: string
-    var otherAttrs: Table[MAtom, string]
+    var otherAttrs: ParsedAttrs[MAtom]
     check tok != nil
     if ctx.chartok != nil and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
       let otok = getToken(ctx.factory, ctx.output[ctx.i].getElems(), ctx.esc,

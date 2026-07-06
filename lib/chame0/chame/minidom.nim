@@ -11,7 +11,6 @@
 import std/algorithm
 import std/hashes
 import std/options
-import std/sets
 import std/streams
 import std/strutils
 import std/tables
@@ -37,11 +36,6 @@ type
 # Mandatory Atom functions
 proc `==`*(a, b: MAtom): bool {.borrow.}
 proc hash*(atom: MAtom): Hash {.borrow.}
-
-var gfac {.global.}: MAtomFactory #TODO
-
-proc `$`*(a: MAtom): string =
-  gfac.atomMap[int(a)]
 
 proc strToAtom*(factory: MAtomFactory; s: string): MAtom
 
@@ -237,11 +231,7 @@ proc localNameStr*(element: Element): string =
 iterator attrsStr*(element: Element): tuple[name, value: string] =
   let factory = element.document.factory
   for attr in element.attrs:
-    var name = ""
-    if attr.prefix != NO_PREFIX:
-      name &= $attr.prefix & ':'
-    name &= factory.atomToStr(attr.name)
-    yield (name, attr.value)
+    yield (factory.atomToStr(attr.name), attr.value)
 
 # htmlparseriface implementation
 proc strToAtomImpl(builder: MiniDOMBuilder, s: string): MAtom =
@@ -249,6 +239,9 @@ proc strToAtomImpl(builder: MiniDOMBuilder, s: string): MAtom =
 
 proc tagTypeToAtomImpl(builder: MiniDOMBuilder; tagType: TagType): MAtom =
   return builder.factory.tagTypeToAtom(tagType)
+
+proc namespaceToAtomImpl(builder: MiniDOMBuilder; ns: Namespace): MAtom =
+  return builder.factory.strToAtom($ns)
 
 proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: MAtom): TagType =
   return atom.toTagType()
@@ -262,7 +255,7 @@ proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): Option[Node] =
 proc createElement(document: Document; localName: MAtom; namespace: Namespace):
     Element =
   let element = if localName.toTagType() == TAG_TEMPLATE and
-      namespace == Namespace.HTML:
+      namespace == nsHTML:
     HTMLTemplateElement(
       content: DocumentFragment()
     )
@@ -275,16 +268,13 @@ proc createElement(document: Document; localName: MAtom; namespace: Namespace):
 
 proc createHTMLElementImpl(builder: MiniDOMBuilder): Node =
   let localName = builder.factory.tagTypeToAtom(TAG_HTML)
-  return builder.document.createElement(localName, Namespace.HTML)
+  return builder.document.createElement(localName, nsHTML)
 
 proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: MAtom;
-    namespace: Namespace; intendedParent: Node; htmlAttrs: Table[MAtom, string];
-    xmlAttrs: seq[Attribute]): Node =
+    namespace: Namespace; intendedParent: Node; attrs: sink seq[Attribute]):
+    Node =
   let element = builder.document.createElement(localName, namespace)
-  element.attrs = xmlAttrs
-  for k, v in htmlAttrs:
-    element.attrs.add((NO_PREFIX, NO_NAMESPACE, k, v.toValidUTF8()))
-  element.attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
+  element.attrs = move(attrs)
   return element
 
 proc getLocalNameImpl(builder: MiniDOMBuilder; handle: Node): MAtom =
@@ -452,21 +442,21 @@ proc moveChildrenImpl(builder: MiniDOMBuilder; fromNode, toNode: Node) =
 
 proc elementPoppedImpl(builder: MiniDOMBuilder; node: Node) =
   let popped = Element(node)
-  if popped.namespace != Namespace.HTML or popped.tagType != TAG_OPTION:
+  if popped.namespace != nsHTML or popped.tagType != TAG_OPTION:
     return
   let selected = popped.hasAttribute("selected")
   for ancestor in popped.ancestors:
     if not (ancestor of Element):
       break
     let ancestor = Element(ancestor)
-    if ancestor.namespace != Namespace.HTML or ancestor.tagType != TAG_SELECT:
+    if ancestor.namespace != nsHTML or ancestor.tagType != TAG_SELECT:
       continue
     var found: Element = nil
     for child in ancestor.descendants:
       if not (child of Element):
         continue
       let child = Element(child)
-      if child.namespace == Namespace.HTML:
+      if child.namespace == nsHTML:
         if child.tagType == TAG_OPTION and child != popped and not selected:
           # emulate selectedness by declaring the first option selected
           found = nil
@@ -481,16 +471,27 @@ proc elementPoppedImpl(builder: MiniDOMBuilder; node: Node) =
         found.childList.add(child.clone(deep = true))
     break
 
+proc sortAttrsImpl(builder: MiniDOMBuilder; attrs: var seq[Attribute]) =
+  if attrs.len > 1:
+    attrs.sort(proc(a, b: Attribute): int {.nimcall.} =
+      cmp(a.name, b.name)
+    )
+    var j = 1
+    var prev = attrs[0].name
+    for i in 1 ..< attrs.len:
+      let name = attrs[i].name
+      if name != prev:
+        if j < i:
+          attrs[j] = move(attrs[i])
+        inc j
+      prev = name
+    attrs.setLen(j)
+
 proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
-    attrs: Table[MAtom, string]) =
+    attrs: seq[Attribute]) =
   let element = Element(handle)
-  var oldNames = initHashSet[MAtom]()
-  for attr in element.attrs:
-    oldNames.incl(attr.name)
-  for name, value in attrs:
-    if name notin oldNames:
-      element.attrs.add((NO_PREFIX, NO_NAMESPACE, name, value.toValidUTF8()))
-  element.attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
+  element.attrs.add(attrs)
+  builder.sortAttrsImpl(element.attrs)
 
 method setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
     SetEncodingResult {.base.} =
@@ -557,17 +558,17 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   let htmlAtom = builder.factory.tagTypeToAtom(TAG_HTML)
   let root = Element(
     localName: htmlAtom,
-    namespace: HTML,
+    namespace: nsHTML,
     document: document
   )
   document.childList = @[Node(root)]
   var opts = opts
   opts.ctx = option(Node(element))
   opts.openElementsInit = option(Node(root))
-  if element.namespace == Namespace.MATHML and
+  if element.namespace == nsMathML and
       element.localName.toTagType() == TAG_ANNOTATION_XML:
     let i = element.findAttribute("encoding")
-    if i >= 0 and element.attrs[i].prefix == NO_PREFIX:
+    if i >= 0:
       let val = element.attrs[i].value.toLowerAscii()
       opts.ctxIsIntegrationPoint =
         val == "text/html" or val == "application/xhtml+xml"

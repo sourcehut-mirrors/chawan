@@ -4,6 +4,7 @@ import std/tables
 
 import dombuilder
 import entity_gen
+import tags
 
 type TokenizerState* = enum
   tsData, tsCharacterReference, tsTagOpen, tsRcdata, tsRcdataLessThanSign,
@@ -55,8 +56,7 @@ type
     isws: bool # is the current character token whitespace-only?
     quote: char # dedupe states that only differ in their quoting
     tokqueue*: seq[Token[Atom]] # queue of tokens to be emitted in this iteration
-    #TODO should be seq[(namespace, qualifiedName: Atom; value: string)]
-    attrs*: Table[Atom, string]
+    attrs*: seq[ParsedAttr[Atom]]
     charbuf: string # buffer for character tokens
     tagNameBuf*: string # buffer for storing the tag name & doctype name
     pubid*: string # buffer for storing doctype public id
@@ -268,12 +268,18 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
       char(u and 0x3F or 0x80)
   tokenizer.appendAttrOrEmit(s)
 
-proc flushAttr(tokenizer: var Tokenizer) =
+proc flushAttr[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   # This can also be called with tok.t == ttEndTag, in that case we do
   # not want to flush attributes.
   if tokenizer.tok.t == ttStartTag and tokenizer.attr:
-    discard tokenizer.attrs.hasKeyOrPut(tokenizer.attrName,
-      move(tokenizer.attrValue))
+    tokenizer.attrs.add(ParsedAttr[Atom](name: tokenizer.attrName))
+    tokenizer.attrs[^1].value = move(tokenizer.attrValue)
+
+proc flushAttrs[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
+  mixin sortAttrsImpl
+  tokenizer.flushAttr()
+  if tokenizer.tok.t == ttStartTag and tokenizer.attr:
+    tokenizer.dombuilder.sortAttrsImpl(tokenizer.attrs)
 
 proc startNewAttribute(tokenizer: var Tokenizer) =
   tokenizer.flushAttr()
@@ -312,7 +318,7 @@ proc eatStrNoCase(tokenizer: var Tokenizer; c: char; s, ibuf: openArray[char]):
       return esrFail
   return esrSuccess
 
-proc flushStartTagName(tokenizer: var Tokenizer) =
+proc flushStartTagName[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   let tagName = tokenizer.strToAtom(tokenizer.tagNameBuf)
   tokenizer.tok.tagname = tagName
   tokenizer.startTag = tagName
@@ -462,7 +468,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of AsciiAlpha:
         tokenizer.flushChars()
         tokenizer.tok = Token[Atom](t: ttStartTag)
-        tokenizer.attrs.clear()
+        tokenizer.attrs.setLen(0)
         tokenizer.attr = false
         tokenizer.tagNameBuf = $c.toLowerAscii()
         # note: was reconsume
@@ -878,7 +884,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '=': switch_state tsBeforeAttributeValue
       of '>':
         switch_state tsData
-        tokenizer.flushAttr()
+        tokenizer.flushAttrs()
         emit_tok
       else:
         tokenizer.startNewAttribute()
@@ -896,7 +902,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
         switch_state tsAttributeValueQuoted
       of '>':
         switch_state tsData
-        tokenizer.flushAttr()
+        tokenizer.flushAttrs()
         emit_tok
       else: reconsume_in tsAttributeValueUnquoted
 
@@ -913,7 +919,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '&': switch_state_return tsCharacterReference
       of '>':
         switch_state tsData
-        tokenizer.flushAttr()
+        tokenizer.flushAttrs()
         emit_tok
       of '\0': tokenizer.attrValue &= "\uFFFD"
       else: tokenizer.attrValue &= c
@@ -926,7 +932,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
         switch_state tsSelfClosingStartTag
       of '>':
         switch_state tsData
-        tokenizer.flushAttr()
+        tokenizer.flushAttrs()
         emit_tok
       else: reconsume_in tsBeforeAttributeName
 
@@ -935,7 +941,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '>':
         tokenizer.tok.flags.incl(tfSelfClosing)
         switch_state tsData
-        tokenizer.flushAttr()
+        tokenizer.flushAttrs()
         emit_tok
       else: reconsume_in tsBeforeAttributeName
 

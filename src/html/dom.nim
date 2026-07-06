@@ -467,10 +467,8 @@ type
     publicId* {.jsget.}: string
     systemId* {.jsget.}: string
 
-  AttrData* = object
-    qualifiedName*: CAtom
-    namespace*: CAtom
-    value*: string
+  # Note: the `name` field in AttrData is treated as the qualified name.
+  AttrData* = ParsedAttr[CAtom]
 
   CustomElementState = enum
     cesUndefined = "undefined"
@@ -2202,7 +2200,7 @@ proc nodeName(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   if node of Element:
     return ctx.jsTagName(Element(node))
   if node of Attr:
-    return ctx.toJS(Attr(node).data.qualifiedName)
+    return ctx.toJS(Attr(node).data.name)
   if node of DocumentType:
     return ctx.toJS(DocumentType(node).name)
   if node of CDATASection:
@@ -2698,7 +2696,7 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
     res &= tags
     #TODO custom elements
     for attr in element.attrs:
-      res &= ' ' & $attr.qualifiedName & "=\"" &
+      res &= ' ' & $attr.name & "=\"" &
         attr.value.htmlEscape(mode = emAttribute) & "\""
     res &= '>'
     res.serializeFragment(element, writeShadow)
@@ -4673,7 +4671,7 @@ proc names(ctx: JSContext; map: DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(map.target.attrs.len))
   for attr in map.target.attrs:
-    let k = $attr.qualifiedName
+    let k = $attr.name
     if k.startsWith("data-") and AsciiUpperAlpha notin k:
       list.add(k["data-".len .. ^1].kebabToCamelCase())
   return list
@@ -4958,7 +4956,7 @@ proc newAttr(element: Element; dataIdx: int): Attr =
     ownerElement: element,
   )
   let namespace = attr.data.namespace.dup()
-  let qualifiedName = attr.data.qualifiedName.dupTrace()
+  let qualifiedName = attr.data.name.dupTrace()
   if namespace == CAtomNull: # no namespace -> qualifiedName == localName
     attr.prefix = CAtomNull
     attr.localName = qualifiedName.dup()
@@ -4991,10 +4989,10 @@ proc value(attr: Attr): string {.jsfget.} =
   return attr.data.value
 
 proc name(attr: Attr): CAtom {.jsfget.} =
-  return attr.data.qualifiedName
+  return attr.data.name
 
 proc setValue(attr: Attr; ds: DOMString) {.jsfset: "value".} =
-  attr.ownerElement.attr(attr.data.qualifiedName.view(), ds)
+  attr.ownerElement.attr(attr.data.name.view(), ds)
 
 # NamedNodeMap
 proc findAttr(map: NamedNodeMap; dataIdx: int): int =
@@ -5053,7 +5051,7 @@ proc names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     list.add(u)
   let element = map.element
   for attr in element.attrs:
-    let name = attr.qualifiedName
+    let name = attr.name
     if element.namespaceURI == satNamespaceHTML and AsciiUpperAlpha in name:
       continue
     list.add($name)
@@ -5086,7 +5084,7 @@ proc remove*(this: CharacterData) {.jsfunc.} =
 
 # Element
 proc freeAttr(data: AttrData) =
-  freeAtom(data.qualifiedName)
+  freeAtom(data.name)
   freeAtom(data.namespace)
 
 proc finalize(element: Element) {.jsfin.} =
@@ -5102,7 +5100,7 @@ proc dupAttrs(element: Element): seq[AttrData] =
   result = newSeqOfCap[AttrData](element.attrs.len)
   for attr in element.attrs:
     result.add(AttrData(
-      qualifiedName: attr.qualifiedName.dup(),
+      name: attr.name.dup(),
       namespace: attr.namespace.dup(),
       value: attr.value
     ))
@@ -5181,12 +5179,12 @@ proc normalizeAttrQName(element: Element; qualifiedName: CAtomTraced):
   return qualifiedName.dupTrace()
 
 proc cmpAttrName(a: AttrData; b: CAtomTraced): int =
-  return cmp(uint32(a.qualifiedName), uint32(b))
+  return cmp(uint32(a.name), uint32(b))
 
 proc findAttr(element: Element; qualifiedName: CAtomTraced): int =
   let qualifiedName = element.normalizeAttrQName(qualifiedName)
   let n = element.attrs.lowerBound(qualifiedName, cmpAttrName)
-  if n < element.attrs.len and element.attrs[n].qualifiedName == qualifiedName:
+  if n < element.attrs.len and element.attrs[n].name == qualifiedName:
     return n
   return -1
 
@@ -5199,14 +5197,13 @@ proc matchesLocalName(qualifiedName: CAtom; localName: CAtomTraced): bool =
 proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int =
   if namespace == CAtomNull:
     for i, attr in element.attrs.mypairs:
-      if attr.namespace == CAtomNull and attr.qualifiedName == localName:
+      if attr.namespace == CAtomNull and attr.name == localName:
         return i
     return -1
   # Potentially slow path, since we don't store namespace prefixes separately.
-  # Still preferable to wasting memory for XML brain damage.
+  # Still preferable to wasting memory on XML brain damage.
   for i, attr in element.attrs.mypairs:
-    if attr.namespace == namespace and
-        attr.qualifiedName.matchesLocalName(localName):
+    if attr.namespace == namespace and attr.name.matchesLocalName(localName):
       return i
   return -1
 
@@ -5238,7 +5235,7 @@ proc hasAttributeNS(element: Element; namespace, localName: CAtomTraced): bool
 proc getAttributeNames(ctx: JSContext; element: Element): JSValue {.jsfunc.} =
   var s = newSeqOfCap[JSValue](element.attrs.len)
   for it in element.attrs:
-    s.add(ctx.toJS(it.qualifiedName))
+    s.add(ctx.toJS(it.name))
   return ctx.newArrayFrom(s)
 
 proc getAttribute(ctx: JSContext; element: Element;
@@ -5780,7 +5777,7 @@ proc reflectAttrDel(element: Element; name: CAtomTraced) =
   element.reflectAttr(name, false, "")
 
 proc reflectAttr(element: Element; attr: AttrData) =
-  element.reflectAttr(attr.qualifiedName.view(), true, attr.value)
+  element.reflectAttr(attr.name.view(), true, attr.value)
 
 proc elIndex*(this: Element): uint32 =
   if this.parentNode == nil:
@@ -6124,7 +6121,7 @@ proc replaceChildren(ctx: JSContext; this: Element;
   return ctx.replaceChildrenImpl(this, nodes)
 
 proc delAttr(ctx: JSContext; element: Element; i: int) =
-  let name = element.attrs[i].qualifiedName.dupTrace()
+  let name = element.attrs[i].name.dupTrace()
   let map = ctx.cachedAttributes(element)
   if map != nil:
     # delete from attrlist + adjust indices invalidated
@@ -6148,13 +6145,13 @@ proc delAttr(ctx: JSContext; element: Element; i: int) =
 
 proc attr(element: Element; name: CAtomTraced; value: DOMString) =
   var i = element.attrs.upperBound(name, cmpAttrName)
-  if i > 0 and element.attrs[i - 1].qualifiedName == name:
+  if i > 0 and element.attrs[i - 1].name == name:
     dec i
     element.attrs[i].value = $value
   else:
     element.attrs.insert(AttrData(
       namespace: CAtomNull,
-      qualifiedName: name.dup(),
+      name: name.dup(),
       value: $value
     ), i)
   element.reflectAttr(element.attrs[i])
@@ -6164,13 +6161,13 @@ proc attr(element: Element; name: StaticAtom; value: DOMString) =
 
 proc attr*(element: Element; name: CAtomTraced; value: sink string) =
   var i = element.attrs.upperBound(name, cmpAttrName)
-  if i > 0 and element.attrs[i - 1].qualifiedName == name:
+  if i > 0 and element.attrs[i - 1].name == name:
     dec i
     element.attrs[i].value = value
   else:
     element.attrs.insert(AttrData(
       namespace: CAtomNull,
-      qualifiedName: name.dup(),
+      name: name.dup(),
       value: value
     ), i)
   element.reflectAttr(element.attrs[i])
@@ -6178,30 +6175,10 @@ proc attr*(element: Element; name: CAtomTraced; value: sink string) =
 proc attr(element: Element; name: StaticAtom; value: sink string) =
   element.attr(name.view(), value)
 
-proc attrns0(element: Element;
-    namespace, localName, qualifiedName: CAtomTraced; value: sink string) =
-  var i = element.findAttrNS(namespace, localName)
-  if i != -1:
-    element.attrs[i].value = value
-  else:
-    i = element.attrs.upperBound(qualifiedName, cmpAttrName)
-    element.attrs.insert(AttrData(
-      namespace: namespace.dup(),
-      qualifiedName: qualifiedName.dup(),
-      value: value
-    ), i)
-  element.reflectAttr(element.attrs[i])
-
-proc attrns*(element: Element; localName: CAtomTraced; prefix: NamespacePrefix;
-    namespace: CAtomTraced; value: sink string) =
-  if prefix == NO_PREFIX and namespace == satUempty:
-    element.attr(localName, value)
-    return
-  let qualifiedName = if prefix != NO_PREFIX:
-    ($prefix & ':' & $localName).toAtomTrace()
-  else:
-    localName.dupTrace()
-  element.attrns0(namespace, localName, qualifiedName, value)
+proc sinkAttrs*(element: Element; attrs: sink seq[AttrData]) =
+  element.attrs = move(attrs)
+  for attr in element.attrs:
+    element.reflectAttr(attr)
 
 proc attrl(element: Element; name: StaticAtom; value: int32) =
   element.attr(name, $value)
@@ -6232,7 +6209,17 @@ proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtomTraced;
   var namespace = namespace.dupTrace()
   var localName = qualifiedName.dupTrace()
   ?ctx.validateAndExtract(namespace, localName, nvAttribute)
-  element.attrns0(namespace, localName, qualifiedName, $value)
+  var i = element.findAttrNS(namespace, localName)
+  if i != -1:
+    element.attrs[i].value = $value
+  else:
+    i = element.attrs.upperBound(qualifiedName, cmpAttrName)
+    element.attrs.insert(AttrData(
+      namespace: namespace.dup(),
+      name: qualifiedName.dup(),
+      value: $value
+    ), i)
+  element.reflectAttr(element.attrs[i])
   ok()
 
 proc removeAttribute(ctx: JSContext; element: Element;

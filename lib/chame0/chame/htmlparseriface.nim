@@ -140,6 +140,13 @@ proc tagTypeToAtomImpl(builder: DOMBuilderImpl; tagType: TagType): AtomImpl
   ##   return builder.strToAtomImpl($tt)
   ## ```
 
+proc namespaceToAtomImpl(builder: DOMBuilderImpl; ns: Namespace): AtomImpl
+    {.doc.}
+  ## Turn a namespace `ns` into an Atom.
+  ##
+  ## This is conceptually the same as `builder.strToAtomImpl($ns)`, and
+  ## is only present to enable optimization.
+
 proc atomToTagTypeImpl(builder: DOMBuilderImpl; atom: AtomImpl): TagType {.doc.}
   ## Turn an Atom `atom` into a TagType. This is the inverse function of
   ## `tagTypeToAtomImpl`.
@@ -162,8 +169,7 @@ proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
 
 proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
     namespace: Namespace; intendedParent: HandleImpl;
-    htmlAttrs: Table[AtomImpl, string]; xmlAttrs: seq[ParsedAttr[AtomImpl]]):
-    HandleImpl {.doc.}
+    attrs: sink seq[ParsedAttr[AtomImpl]]): HandleImpl {.doc.}
   ## Create a new element node.
   ##
   ## `localName` is an Atom representing the tag name of the start token.
@@ -178,18 +184,12 @@ proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
   ## it's HTML; for embedded SVG/MathML elements, it is Namespace.SVG or
   ## Namespace.MATHML. No other namespace is used currently.
   ##
-  ## `htmlAttrs` is a seq of the new elements attributes. It only contains
-  ## attributes with prefix NO_PREFIX and namespace NO_NAMESPACE; adjusted
-  ## foreign of embedded SVG/MathML elements that *do* have namespaces are
-  ## *not* included, these can be found in `xmlAttrs`. All attribute names in
-  ## `htmlAttrs` are guaranteed to be unique, but the parser makes no guarantees
-  ## about the order of the attributes. (TODO maybe attrs should be a hash
-  ## table after all?)
-  ##
-  ## `xmlAttrs` is a list of (XML) adjusted attributes. They are only set
-  ## for elements in the MathML or SVG namespace, for which there are
-  ## pre-defined attributes in the standard with names whose casing, namespace,
-  ## and namespace prefixes must be adjusted by the parser.
+  ## `attrs` is a seq of the new elements attributes.  It is `sink` so that
+  ## directly moving it is allowed.  Each attribute has a `name` field and
+  ## a `namespace`.  For HTML elements, `namespace` will be zero and `name`
+  ## is simply the attribute name.  For SVG/MathML elements, `namespace`
+  ## is the appropriate XML namespace and `name` is a "qualified name",
+  ## which just means it includes the namespace prefix when there is one.
   ##
   ## `intendedParent` is the intended parent of the element, as passed to the
   ## "create an element for a token" step. This may be used for looking up
@@ -198,15 +198,18 @@ proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
   ## Implementers of this function are encouraged to consult the
   ## [create an element for a token](https://html.spec.whatwg.org/multipage/parsing.html#create-an-element-for-the-token)
   ## section of the standard. In particular, steps 3 (Let document be intended
-  ## parent's node document.) to 13 (If element is a resettable element...)
+  ## parent's node document.) to 14 (If element is a resettable element...)
   ## should be implemented.
   ##
-  ## Note that step 14. (If element is a form-associated element...) should
-  ## *not* be implemented here. In fact, it is impossible to do so without
+  ## Note that step 15. (If element is a form-associated element...) should
+  ## *not* be implemented here.  In fact, it is impossible to do so without
   ## access to the parser internals, so for this step, the parser will call
   ## associateWithFormImpl if all conditions (except "the intended parent is
   ## in the same tree as the element pointed to by the form element pointer")
-  ## are fulfilled.
+  ## are fulfilled.  TODO: regrettably this no longer works because of
+  ## custom element attribute callbacks.  I suppose we should either add a
+  ## "getFormToAssociate" callback that the other side can call, or pass
+  ## form directly.
 
 proc getLocalNameImpl(builder: DOMBuilderImpl; handle: HandleImpl): AtomImpl
     {.doc.}
@@ -229,18 +232,16 @@ proc getTemplateContentImpl(builder: DOMBuilderImpl; handle: HandleImpl):
   ## and `builder.getNamespaceImpl(element)` equals `Namespace.HTML` must have
   ## an associated "template contents" node which this function must return.
 
+proc sortAttrsImpl(builder: DOMBuilderImpl;
+    attrs: var seq[ParsedAttr[AtomImpl]]) {.doc.}
+  ## Sort attributes specified in `attrs`, then remove any duplicates found.
+
+#TODO I guess this could be `sink attrs` too
 proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
-    attrs: Table[AtomImpl, string]) {.doc.}
+    attrs: seq[ParsedAttr[AtomImpl]]) {.doc.}
   ## Add the attributes in `attrs` to the element node `element`.
   ## This is only called with the HTML and BODY tags, when more than one
   ## exists in a document.
-  ##
-  ## Pseudocode implementation:
-  ## ```nim
-  ## for attr in attrs:
-  ##   if attr.name notin element.attrs:
-  ##     element.attrs.add(attr)
-  ## ```
 
 proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
     text: string; before: Option[HandleImpl]) {.doc.}
@@ -304,8 +305,7 @@ when defined(nimdocdummy):
 
   proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
       namespace: Namespace; intendedParent: HandleImpl;
-      htmlAttrs: Table[AtomImpl, string]; xmlAttrs: seq[ParsedAttr[AtomImpl]]):
-      HandleImpl = discard
+      attrs: sink seq[ParsedAttr[AtomImpl]]): HandleImpl = discard
 
   proc getLocalNameImpl(builder: DOMBuilderImpl; handle: HandleImpl): AtomImpl =
     discard

@@ -166,21 +166,21 @@ type
     NO_QUIRKS, QUIRKS, LIMITED_QUIRKS
 
   Namespace* = enum
-    NO_NAMESPACE = "",
-    HTML = "http://www.w3.org/1999/xhtml",
-    MATHML = "http://www.w3.org/1998/Math/MathML",
-    SVG = "http://www.w3.org/2000/svg",
-    XLINK = "http://www.w3.org/1999/xlink",
-    XML = "http://www.w3.org/XML/1998/namespace",
-    XMLNS = "http://www.w3.org/2000/xmlns/"
-    NAMESPACE_UNKNOWN = ""
+    nsNone = ""
+    nsHTML = "http://www.w3.org/1999/xhtml",
+    nsMathML = "http://www.w3.org/1998/Math/MathML",
+    nsSVG = "http://www.w3.org/2000/svg",
+    nsXLink = "http://www.w3.org/1999/xlink",
+    nsXml = "http://www.w3.org/XML/1998/namespace",
+    nsXmlns = "http://www.w3.org/2000/xmlns/"
+    nsUnknown = ""
 
-  NamespacePrefix* = enum
-    NO_PREFIX = ""
-    PREFIX_XLINK = "xlink"
-    PREFIX_XML = "xml"
-    PREFIX_XMLNS = "xmlns"
-    PREFIX_UNKNOWN = ""
+  ParsedAttr*[Atom] = object
+    name*: Atom ## This is the qualified name.
+    namespace*: Atom
+    value*: string
+
+  ParsedAttrs*[Atom] = seq[ParsedAttr[Atom]]
 
 const AllTagTypes* = {TagType.low..TagType.high}
 

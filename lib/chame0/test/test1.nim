@@ -37,9 +37,9 @@ proc `$`*(node: Node): string =
   if node of Element:
     let element = Element(node)
     var x = ""
-    if element.namespace == Namespace.SVG:
+    if element.namespace == nsSVG:
       x = "svg "
-    elif element.namespace == Namespace.MATHML:
+    elif element.namespace == nsMathML:
       x = "math "
     result = "<" & x & element.localNameStr
     for k, v in element.attrsStr:

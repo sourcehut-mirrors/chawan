@@ -132,7 +132,7 @@ proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     let class = if quirks: class.toLowerAscii() else: class
     tosorts.calcRules(element, depends, sheet.classTable, class)
   for attr in element.attrs:
-    tosorts.calcRules(element, depends, sheet.attrTable, attr.qualifiedName)
+    tosorts.calcRules(element, depends, sheet.attrTable, attr.name)
   if parentElement == nil:
     tosorts.calcRules(element, depends, sheet.typeList[shtRoot])
   if parentElement == nil or parentElement.firstElementChild == element:

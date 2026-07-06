@@ -100,9 +100,9 @@ proc parseTestFragment(ctx: var TCTestParser): TCFragment =
     fragmentType = FT_MATHML
     line = line.substr("math ".len)
   let namespace = case fragmentType
-  of FT_SVG: Namespace.SVG
-  of FT_MATHML: Namespace.MATHML
-  of FT_HTML: Namespace.HTML
+  of FT_SVG: nsSvg
+  of FT_MATHML: nsMathML
+  of FT_HTML: nsHtml
   let element = Element(
     namespace: namespace,
     localName: ctx.factory.strToAtom(line)
@@ -217,13 +217,13 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       assert false, "todo"
     elif str.startsWith("<") and str.endsWith(">"):
       var nameStr = str.substr(1, str.high - 1)
-      var namespace = Namespace.HTML
+      var namespace = nsHtml
       if nameStr.startsWith("svg "):
         nameStr = nameStr.substr("svg ".len)
-        namespace = Namespace.SVG
+        namespace = nsSvg
       elif nameStr.startsWith("math "):
         nameStr = nameStr.substr("math ".len)
-        namespace = Namespace.MATHML
+        namespace = nsMathML
       let element = if nameStr == "template":
         HTMLTemplateElement()
       else:
@@ -250,23 +250,23 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
     else:
       assert '=' in str
       var name = str.until('=')
-      var prefix = NO_PREFIX
-      var ns = NO_NAMESPACE
+      var prefix = ""
+      var ns: MAtom
       if name.startsWith("xml "):
-        ns = Namespace.XML
-        prefix = PREFIX_XML
+        ns = ctx.factory.strToAtom($nsXml)
+        prefix = "xml:"
         name = name.substr("xml ".len)
       elif name.startsWith("xmlns "):
-        ns = Namespace.XMLNS
-        prefix = PREFIX_XMLNS
+        ns = ctx.factory.strToAtom($nsXmlns)
+        prefix = "xmlns:"
         name = name.substr("xmlns ".len)
       elif name.startsWith("xlink "):
-        ns = Namespace.XLINK
-        prefix = PREFIX_XLINK
+        ns = ctx.factory.strToAtom($nsXLink)
+        prefix = "xlink:"
         name = name.substr("xlink ".len)
-      let na = ctx.factory.strToAtom(name)
+      let na = ctx.factory.strToAtom(prefix & name)
       let value = str.after('=')[1..^2]
-      Element(top).attrs.add((prefix, ns, na, value))
+      Element(top).attrs.add(Attribute(name: na, value: value, namespace: ns))
   while indent > 1:
     pop_node
 
