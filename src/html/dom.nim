@@ -4,7 +4,6 @@ import std/algorithm
 import std/hashes
 import std/math
 import std/options
-import std/sets
 import std/setutils
 import std/tables
 import std/times
@@ -4733,17 +4732,17 @@ proc names(ctx: JSContext; this: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
   let L = this.getLength()
   var list = newJSPropertyEnumList(ctx, L)
-  var ids = initOrderedSet[CAtom]()
+  var ids: seq[CAtom] = @[]
   for u in 0 ..< L:
     list.add(u)
     let element = this.item(u)
     if element == nil:
       continue
-    if element.id != satUempty:
-      ids.incl(element.id)
+    if element.id != satUempty and element.id notin ids:
+      ids.add(element.id)
     if element.namespaceURI == satNamespaceHTML and
-        element.name != satUempty:
-      ids.incl(element.name)
+        element.name != satUempty and element.name notin ids:
+      ids.add(element.name)
   for id in ids:
     list.add($id)
   return list
