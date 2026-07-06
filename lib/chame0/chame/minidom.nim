@@ -13,6 +13,7 @@ import std/hashes
 import std/options
 import std/sets
 import std/streams
+import std/strutils
 import std/tables
 
 import htmlparser
@@ -36,6 +37,11 @@ type
 # Mandatory Atom functions
 proc `==`*(a, b: MAtom): bool {.borrow.}
 proc hash*(atom: MAtom): Hash {.borrow.}
+
+var gfac {.global.}: MAtomFactory #TODO
+
+proc `$`*(a: MAtom): string =
+  gfac.atomMap[int(a)]
 
 proc strToAtom*(factory: MAtomFactory; s: string): MAtom
 
@@ -505,7 +511,7 @@ proc parseFromStream(parser: var HTML5Parser[Node, MAtom];
   while true:
     let n = inputStream.readData(addr buffer[0], buffer.len)
     if n == 0: break
-    # res can be PRES_CONTINUE or PRES_SCRIPTING. PRES_STOP is only returned
+    # res can be PRES_CONTINUE or PRES_SCRIPT. PRES_STOP is only returned
     # on charset switching, and minidom does not support that.
     var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
     # Important: we must repeat parseChunk with the same contents for the script
@@ -544,20 +550,10 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   ## For details on the HTML fragment parsing algorithm, see
   ## https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
   ##
-  ## Note: the members `ctx`, `initialTokenizerState`, `openElementsInit` and
-  ## `pushInTemplate` of `opts` are overridden (in accordance with the standard).
+  ## Note: the members `ctx` and `openElementsInit` of `opts` are
+  ## overridden (in accordance with the standard).
   let builder = newMiniDOMBuilder(factory)
   let document = builder.document
-  let state = if element.namespace != Namespace.HTML:
-    DATA
-  else:
-    case element.tagType
-    of TAG_TITLE, TAG_TEXTAREA: RCDATA
-    of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES: RAWTEXT
-    of TAG_SCRIPT: SCRIPT_DATA
-    of TAG_NOSCRIPT: DATA # no scripting
-    of TAG_PLAINTEXT: PLAINTEXT
-    else: DATA
   let htmlAtom = builder.factory.tagTypeToAtom(TAG_HTML)
   let root = Element(
     localName: htmlAtom,
@@ -566,10 +562,15 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   )
   document.childList = @[Node(root)]
   var opts = opts
-  opts.ctx = some((Node(element), element.localName))
-  opts.initialTokenizerState = state
-  opts.openElementsInit = @[(Node(root), htmlAtom)]
-  opts.pushInTemplate = element.tagType == TAG_TEMPLATE
+  opts.ctx = option(Node(element))
+  opts.openElementsInit = option(Node(root))
+  if element.namespace == Namespace.MATHML and
+      element.localName.toTagType() == TAG_ANNOTATION_XML:
+    let i = element.findAttribute("encoding")
+    if i >= 0 and element.attrs[i].prefix == NO_PREFIX:
+      let val = element.attrs[i].value.toLowerAscii()
+      opts.ctxIsIntegrationPoint =
+        val == "text/html" or val == "application/xhtml+xml"
   var parser = initHTML5Parser(builder, opts)
   parser.parseFromStream(inputStream)
   return root.childList
@@ -585,7 +586,6 @@ proc parseHTMLFragment*(s: string; element: Element): seq[Node] =
   let inputStream = newStringStream(s)
   let opts = HTML5ParserOpts[Node, MAtom](
     isIframeSrcdoc: false,
-    scripting: false,
-    pushInTemplate: element.tagType == TAG_TEMPLATE
+    scripting: false
   )
   return parseHTMLFragment(inputStream, element, opts)

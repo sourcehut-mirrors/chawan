@@ -15,6 +15,7 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/refstring
 import types/url
+import utils/twtstr
 
 # DOMBuilder implementation for Chawan.
 
@@ -257,29 +258,22 @@ proc parseHTMLFragment*(element: Element; s: openArray[char]): seq[Node] =
   let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
   let document = builder.document
   document.mode = element.document.mode
-  let state = case element.tagType
-  of TAG_TITLE, TAG_TEXTAREA: RCDATA
-  of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES, TAG_SCRIPT,
-      TAG_PLAINTEXT:
-    PLAINTEXT
-  of TAG_NOSCRIPT:
-    if element.document != nil and element.document.scriptingEnabled:
-      PLAINTEXT
-    else:
-      DATA
-  else: DATA
   let root = document.newHTMLElement(TAG_HTML)
   document.insert(root, nil, nil)
   let form = element.findAncestorIncl(TAG_FORM)
-  let opts = HTML5ParserOpts[ParentNode, CAtom](
+  var opts = HTML5ParserOpts[ParentNode, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: false,
-    ctx: some((ParentNode(element), element.localName)),
-    initialTokenizerState: state,
-    openElementsInit: @[(ParentNode(root), root.localName)],
-    pushInTemplate: element.tagType == TAG_TEMPLATE,
+    ctx: option(ParentNode(element)),
+    openElementsInit: option(ParentNode(root)),
     formInit: option(ParentNode(form))
   )
+  if element.namespaceURI == satNamespaceMathML and
+      element.localName == satAnnotationXml:
+    let encoding = element.attr(satEncoding)
+    opts.ctxIsIntegrationPoint =
+      encoding.equalsIgnoreCase("text/html") or
+      encoding.equalsIgnoreCase("application/xhtml+xml")
   var parser = initHTML5Parser(builder, opts)
   let res = parser.parseChunk(s)
   # scripting is false and confidence is certain -> this must be continue

@@ -6,7 +6,7 @@ all: test
 
 .PHONY: test
 test:
-	if ! test -d test/html5lib-tests; then cd test && git clone https://github.com/html5lib/html5lib-tests.git; fi
+	if ! test -d test/html5lib-tests; then cd test && git clone https://github.com/html5lib/html5lib-tests.git --revision=9329e64694e7835d0dcff9811e22856ef6ad16f9; fi
 	$(NIM) r $(FLAGS) test/test1.nim
 	$(NIM) r $(FLAGS) test/tree.nim
 	$(NIM) r $(FLAGS) test/tokenizer.nim

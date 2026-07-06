@@ -57,13 +57,14 @@ proc getAttrs(factory: MAtomFactory, o: JsonNode, esc: bool):
       result[k] = v.getStr()
 
 proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
-    name: var string): Token[MAtom] =
+    name, pubid, sysid: var string; otherAttrs: var Table[MAtom, string]):
+    Token[MAtom] =
   case a[0].getStr()
   of "StartTag":
+    otherAttrs = getAttrs(factory, a[2], esc)
     return Token[MAtom](
       t: ttStartTag,
       tagname: factory.strToAtom(a[1].getStr()),
-      attrs: getAttrs(factory, a[2], esc),
       flags: if a.len > 3 and a[3].getBool(): {tfSelfClosing} else: {}
     )
   of "EndTag":
@@ -89,12 +90,9 @@ proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
     if not a[4].getBool(): # yes, this is reversed. don't ask
       flags.incl(tfQuirks)
     name = a[1].getStr()
-    return Token[MAtom](
-      t: ttDoctype,
-      pubid: a[2].getStr(),
-      sysid: a[3].getStr(),
-      flags: flags
-    )
+    pubid = a[2].getStr()
+    sysid = a[3].getStr()
+    return Token[MAtom](t: ttDoctype, flags: flags)
   of "Comment":
     let s = if esc:
       doubleEscape(a[1].getStr())
@@ -104,16 +102,18 @@ proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
   else: return nil
 
 proc checkEquals(factory: MAtomFactory; tok, otok: Token;
-    desc, nameBuf, otherName: string) =
+    tokenizer: Tokenizer[Node, MAtom];
+    desc, otherName, otherPubid, otherSysid: string;
+    otherAttrs: Table[MAtom, string]) =
   doAssert otok.t == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
     $otok.t & ")"
   case tok.t
   of ttDoctype:
-    doAssert nameBuf == otherName, desc & " (" & "tok name: " & nameBuf &
-      " otok name: " & otherName & ")"
-    doAssert tok.pubid == otok.pubid, desc & " (" & "tok pubid: " &
-      tok.pubid & " otok pubid: " & otok.pubid & ")"
-    doAssert tok.sysid == otok.sysid, desc
+    doAssert tokenizer.tagNameBuf == otherName, desc & " (" & "tok name: " &
+      tokenizer.tagNameBuf & " otok name: " & otherName & ")"
+    doAssert tokenizer.pubid == otherPubid, desc & " (" & "tok pubid: " &
+      tokenizer.pubid & " otok pubid: " & otherPubid & ")"
+    doAssert tokenizer.sysid == otherSysid, desc
     doAssert tok.flags == otok.flags, desc
   of ttStartTag, ttEndTag:
     doAssert tok.tagname == otok.tagname, desc & " (tok tagname: " &
@@ -121,26 +121,27 @@ proc checkEquals(factory: MAtomFactory; tok, otok: Token;
       factory.atomToStr(otok.tagname) & ")"
     if tok.t == ttStartTag: # otherwise a test incorrectly fails
       doAssert tok.flags == otok.flags, desc
-    var attrs = ""
-    var i = 0
-    for name, value in tok.attrs:
-      if i > 0:
-        attrs &= " "
-      attrs &= factory.atomToStr(name)
-      attrs &= "="
-      attrs &= "'" & value & "'"
-      inc i
-    var oattrs = ""
-    i = 0
-    for name, value in otok.attrs:
-      if i > 0:
-        oattrs &= " "
-      oattrs &= factory.atomToStr(name)
-      oattrs &= "="
-      oattrs &= "'" & value & "'"
-      inc i
-    doAssert tok.attrs == otok.attrs, desc & " (tok attrs: " & attrs &
-      " otok attrs (" & oattrs & ")"
+    if tok.t == ttStartTag:
+      var attrs = ""
+      var i = 0
+      for name, value in tokenizer.attrs:
+        if i > 0:
+          attrs &= " "
+        attrs &= factory.atomToStr(name)
+        attrs &= "="
+        attrs &= "'" & value & "'"
+        inc i
+      var oattrs = ""
+      i = 0
+      for name, value in otherAttrs:
+        if i > 0:
+          oattrs &= " "
+        oattrs &= factory.atomToStr(name)
+        oattrs &= "="
+        oattrs &= "'" & value & "'"
+        inc i
+      doAssert tokenizer.attrs == otherAttrs, desc & " (tok attrs: " & attrs &
+        " otok attrs (" & oattrs & ")"
   of ttCharacter, ttWhitespace, ttComment:
     doAssert tok.s == otok.s, desc & " (tok s: " & tok.s & " otok s: " &
       otok.s & ")"
@@ -154,32 +155,35 @@ type TestContext = object
   desc: string
   esc: bool
 
-proc checkTokens(ctx: var TestContext; toks: seq[Token]; nameBuf: string) =
-  for tok in toks:
-    var otherName: string
+proc checkTokens(ctx: var TestContext; tokenizer: var Tokenizer[Node, MAtom]) =
+  for tok in tokenizer.tokqueue:
+    var otherName, otherPubid, otherSysid: string
+    var otherAttrs: Table[MAtom, string]
     check tok != nil
     if ctx.chartok != nil and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
       let otok = getToken(ctx.factory, ctx.output[ctx.i].getElems(), ctx.esc,
-        otherName)
-      checkEquals(ctx.factory, ctx.chartok, otok, ctx.desc, nameBuf, otherName)
+        otherName, otherPubid, otherSysid, otherAttrs)
+      checkEquals(ctx.factory, ctx.chartok, otok, tokenizer, ctx.desc,
+        otherName, otherPubid, otherSysid, otherAttrs)
       inc ctx.i
       ctx.chartok = nil
     if tok.t in {ttCharacter, ttWhitespace}:
       if ctx.chartok == nil:
-        ctx.chartok = Token(t: ttCharacter)
+        ctx.chartok = Token[MAtom](t: ttCharacter)
       ctx.chartok.s &= tok.s
     elif tok.t == ttNull:
       if ctx.chartok == nil:
-        ctx.chartok = Token(t: ttCharacter)
+        ctx.chartok = Token[MAtom](t: ttCharacter)
       ctx.chartok.s &= char(0)
     else:
       let otok = getToken(ctx.factory, ctx.output[ctx.i].getElems(), ctx.esc,
-        otherName)
-      checkEquals(ctx.factory, tok, otok, ctx.desc, nameBuf, otherName)
+        otherName, otherPubid, otherSysid, otherAttrs)
+      checkEquals(ctx.factory, tok, otok, tokenizer, ctx.desc, otherName,
+        otherPubid, otherSysid, otherAttrs)
       inc ctx.i
 
 proc runTest(builder: MiniDOMBuilder; desc: string; output: seq[JsonNode];
-    startTag: MAtom; esc: bool; input: string; state = TokenizerState.DATA) =
+    startTag: MAtom; esc: bool; input: string; state = tsData) =
   var tokenizer = newTokenizer(builder, state)
   var ctx = TestContext(
     factory: builder.factory,
@@ -190,29 +194,29 @@ proc runTest(builder: MiniDOMBuilder; desc: string; output: seq[JsonNode];
   tokenizer.startTag = startTag
   while true:
     let res = tokenizer.tokenize(input.toOpenArray(0, input.high))
-    ctx.checkTokens(tokenizer.tokqueue, tokenizer.tagNameBuf)
+    ctx.checkTokens(tokenizer)
     if res == trDone:
       break
   while true:
     let res = tokenizer.finish()
-    ctx.checkTokens(tokenizer.tokqueue, tokenizer.tagNameBuf)
+    ctx.checkTokens(tokenizer)
     if res == trDone:
       break
 
 proc getState(s: string): TokenizerState =
   case s
   of "Data state":
-    return DATA
+    return tsData
   of "PLAINTEXT state":
-    return PLAINTEXT
+    return tsPlaintext
   of "RCDATA state":
-    return RCDATA
+    return tsRcdata
   of "RAWTEXT state":
-    return RAWTEXT
+    return tsRawtext
   of "Script data state":
-    return SCRIPT_DATA
+    return tsScriptData
   of "CDATA section state":
-    return CDATA_SECTION
+    return tsCdataSection
   else:
     doAssert false, "Unknown state: " & s
     quit(1)
