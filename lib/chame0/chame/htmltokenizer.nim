@@ -38,7 +38,7 @@ type TokenizerState* = enum
 
 type
   Tokenizer*[Handle, Atom] = object
-    dombuilder: DOMBuilder[Handle, Atom]
+    dombuilder*: DOMBuilder[Handle, Atom]
     # temporary buffer (mentioned by the standard, but also used for attribute
     # names)
     tmp: string
@@ -59,8 +59,6 @@ type
     attrs*: seq[ParsedAttr[Atom]]
     charbuf: string # buffer for character tokens
     tagNameBuf*: string # buffer for storing the tag name & doctype name
-    pubid*: string # buffer for storing doctype public id
-    sysid*: string # buffer for storing doctype system id
     peekBuf: array[64, char] # a stack with the last element at peekBufLen - 1
     peekBufLen: int
     inputBufIdx*: int # last character consumed in input buf
@@ -98,9 +96,9 @@ proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom];
   mixin strToAtomImpl
   return tokenizer.dombuilder.strToAtomImpl(s)
 
-proc newTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
-    initialState = tsData): Tokenizer[Handle, Atom] =
-  return Tokenizer[Handle, Atom](state: initialState, dombuilder: dombuilder)
+proc initTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom]):
+    Tokenizer[Handle, Atom] =
+  Tokenizer[Handle, Atom](dombuilder: dombuilder)
 
 proc reconsume(tokenizer: var Tokenizer; s: openArray[char]) =
   for i in countdown(s.high, 0):
@@ -1122,7 +1120,9 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
         of esrFail: anything_else
       of 's', 'S':
         case tokenizer.eatStrNoCase(c, "ystem", ibuf)
-        of esrSuccess: switch_state tsAfterDoctypeSystemKeyword
+        of esrSuccess:
+          tokenizer.tagNameBuf &= '\0' # pubid is empty
+          switch_state tsAfterDoctypeSystemKeyword
         of esrRetry: break
         of esrFail: anything_else
       else:
@@ -1136,6 +1136,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '"', '\'':
         tokenizer.tok.flags.incl(tfPubid)
         tokenizer.quote = c
+        tokenizer.tagNameBuf &= '\0'
         switch_state tsDoctypePublicIdentifierQuoted
       of '>':
         tokenizer.tok.flags.incl(tfQuirks)
@@ -1151,6 +1152,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '"', '\'':
         tokenizer.tok.flags.incl(tfPubid)
         tokenizer.quote = c
+        tokenizer.tagNameBuf &= '\0'
         switch_state tsDoctypePublicIdentifierQuoted
       of '>':
         tokenizer.tok.flags.incl(tfQuirks)
@@ -1162,13 +1164,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
 
     of tsDoctypePublicIdentifierQuoted:
       case c
-      of '\0': tokenizer.pubid &= "\uFFFD"
+      of '\0': tokenizer.tagNameBuf &= "\uFFFD"
       of '>':
         tokenizer.tok.flags.incl(tfQuirks)
         switch_state tsData
         emit_tok
       elif c == tokenizer.quote: switch_state tsAfterDoctypePublicIdentifier
-      else: tokenizer.pubid &= c
+      else: tokenizer.tagNameBuf &= c
 
     of tsAfterDoctypePublicIdentifier:
       case c
@@ -1180,6 +1182,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '"', '\'':
         tokenizer.tok.flags.incl(tfSysid)
         tokenizer.quote = c
+        tokenizer.tagNameBuf &= '\0'
         switch_state tsDoctypeSystemIdentifierQuoted
       else:
         tokenizer.tok.flags.incl(tfQuirks)
@@ -1199,6 +1202,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '"', '\'':
         tokenizer.tok.flags.incl(tfSysid)
         tokenizer.quote = c
+        tokenizer.tagNameBuf &= '\0'
         switch_state tsDoctypeSystemIdentifierQuoted
       else:
         tokenizer.tok.flags.incl(tfQuirks)
@@ -1206,13 +1210,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
 
     of tsDoctypeSystemIdentifierQuoted:
       case c
-      of '\0': tokenizer.sysid &= "\uFFFD"
+      of '\0': tokenizer.tagNameBuf &= "\uFFFD"
       of '>':
         tokenizer.tok.flags.incl(tfQuirks)
         switch_state tsData
         emit_tok
       elif c == tokenizer.quote: switch_state tsAfterDoctypeSystemIdentifier
-      else: tokenizer.sysid &= c
+      else: tokenizer.tagNameBuf &= c
 
     of tsAfterDoctypeSystemIdentifier:
       case c

@@ -19,11 +19,11 @@ type
       ## Note: in the spec, this has four values, but Chame distills these
       ## to two.  "Inert"/"Fragment" are reflected by scripting when
       ## ctx.isSome, otherwise "Normal"/"Disabled" are assumed.
-    ctx*: Option[Handle] ## Context element for fragment parsing.
-      ## When set to some Handle, the fragment case is used while parsing.
     ctxIsIntegrationPoint*: bool ## Must be set if ctx.isSome and ctx has
       ## an "encoding" attribute that case-insensitively matches
       ## either "text/html" or "application/xhtml+xml".
+    ctx*: Option[Handle] ## Context element for fragment parsing.
+      ## When set to some Handle, the fragment case is used while parsing.
     openElementsInit*: Option[Handle] ## Node to push to the stack of open
       ## elements.  This should be set to a new HTML element in fragment
       ## parsing mode, and left empty otherwise.
@@ -41,8 +41,6 @@ type
     attrs: ParsedAttrs[Atom]
 
   HTML5Parser*[Handle, Atom] = object
-    dombuilder: DOMBuilder[Handle, Atom]
-    opts: HTML5ParserOpts[Handle, Atom]
     ctx: Option[OpenElement[Handle, Atom]]
     openElements: seq[OpenElement[Handle, Atom]]
     templateModes: seq[InsertionMode]
@@ -56,6 +54,8 @@ type
     framesetOk: bool
     ignoreLF: bool
     pendingTableCharsWhitespace: bool
+    scripting: bool
+    isIframeSrcdoc: bool
     activeFormatting: seq[Formatting[Handle, Atom]] # nil => marker
     pendingTableChars: string
     caseTable: Table[Atom, Atom]
@@ -96,6 +96,10 @@ type ParseResult* = enum
   PRES_SCRIPT
 
 # DOMBuilder interface functions
+template dombuilder[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
+    DOMBuilder[Handle, Atom] =
+  parser.tokenizer.dombuilder
+
 proc strToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom]; s: string):
     Atom =
   mixin strToAtomImpl
@@ -1199,13 +1203,20 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     of ttWhitespace: discard
     of ttComment: parser.insertComment(token, lastChildOf(parser.getDocument()))
     of ttDoctype:
-      parser.appendDocumentType(parser.tokenizer.tagNameBuf,
-        parser.tokenizer.pubid, parser.tokenizer.sysid)
-      if not parser.opts.isIframeSrcdoc:
-        if quirksConditions(parser.tokenizer.tagNameBuf,
-            parser.tokenizer.pubid, parser.tokenizer.sysid, token.flags):
+      var name = move(parser.tokenizer.tagNameBuf)
+      var pubid = ""
+      var sysid = ""
+      if (let i = name.find('\0'); i >= 0):
+        pubid = name.substr(i + 1)
+        name.setLen(i)
+      if (let i = pubid.find('\0'); i >= 0):
+        sysid = pubid.substr(i + 1)
+        pubid.setLen(i)
+      parser.appendDocumentType(name, pubid, sysid)
+      if not parser.isIframeSrcdoc:
+        if quirksConditions(name, pubid, sysid, token.flags):
           parser.setQuirksMode(QUIRKS)
-        elif limitedQuirksConditions(parser.tokenizer.pubid, token.flags):
+        elif limitedQuirksConditions(pubid, token.flags):
           parser.setQuirksMode(LIMITED_QUIRKS)
       parser.insertionMode = imBeforeHtml
     else:
@@ -1285,7 +1296,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           return PRES_STOP
       of TAG_TITLE: parser.genericRCDATAElementParsingAlgorithm(token)
       of TAG_NOSCRIPT:
-        if parser.opts.scripting:
+        if parser.scripting:
           parser.genericRawtextElementParsingAlgorithm(token)
         else:
           discard parser.insertHTMLElement(token)
@@ -1296,7 +1307,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         let location = parser.appropriatePlaceForInsert()
         let element = parser.createHTMLElement(token.tagname, location.inside,
           move(parser.tokenizer.attrs))
-        if parser.ctx.isSome and not parser.opts.scripting:
+        if parser.ctx.isSome and not parser.scripting:
           parser.setScriptAlreadyStarted(element)
         parser.insert(location, element)
         parser.pushHTMLElement(element)
@@ -1584,7 +1595,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         parser.genericRawtextElementParsingAlgorithm(token)
       of TAG_NOEMBED: parser.genericRawtextElementParsingAlgorithm(token)
       of TAG_NOSCRIPT:
-        if parser.opts.scripting:
+        if parser.scripting:
           parser.genericRawtextElementParsingAlgorithm(token)
         else:
           parser.reconstructActiveFormatting()
@@ -1695,9 +1706,8 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     of ttEndTag:
       discard parser.popElement()
       parser.insertionMode = parser.oldInsertionMode
-      if parser.opts.scripting:
-        if parser.toTagType(token.tagname) == TAG_SCRIPT:
-          return PRES_SCRIPT
+      if parser.scripting and parser.toTagType(token.tagname) == TAG_SCRIPT:
+        return PRES_SCRIPT
     else: assert false # unreachable
 
   of imInTable:
@@ -2256,7 +2266,7 @@ proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       # value as TAG_SCRIPT, so this is correct.
       if namespace == nsSVG and parser.toTagType(localName) == TAG_SCRIPT:
         discard parser.popElement()
-        if parser.opts.scripting:
+        if parser.scripting:
           return PRES_SCRIPT
       # fall through
     else: discard
@@ -2301,22 +2311,23 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
   ## The generic `Handle` must be the node handle type of the DOM builder. The
   ## generic `Atom` must be the interned string type of the DOM builder.
   var parser = HTML5Parser[Handle, Atom](
-    dombuilder: dombuilder,
-    opts: opts,
+    scripting: opts.scripting,
+    isIframeSrcdoc: opts.isIframeSrcdoc,
     form: opts.formInit,
-    framesetOk: true
+    framesetOk: true,
+    tokenizer: initTokenizer[Handle, Atom](dombuilder)
   )
-  var tokstate = tsData
   if opts.ctx.isSome:
     let ctxInit = opts.ctx.get
     case parser.getTagType(ctxInit)
-    of TAG_TITLE, TAG_TEXTAREA: tokstate = tsRcdata
+    of TAG_TITLE, TAG_TEXTAREA:
+      parser.tokenizer.state = tsRcdata
     of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES, TAG_SCRIPT,
         TAG_PLAINTEXT:
-      tokstate = tsPlaintext
+      parser.tokenizer.state = tsPlaintext
     of TAG_NOSCRIPT:
       if opts.scripting:
-        tokstate = tsPlaintext
+        parser.tokenizer.state = tsPlaintext
     of TAG_TEMPLATE:
       parser.templateModes.add(imInTemplate)
     else: discard
@@ -2326,11 +2337,9 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
       integrationPoint: opts.ctxIsIntegrationPoint
     )
     parser.ctx = some(ctx)
-  parser.createForeignTable()
   if opts.openElementsInit.isSome:
     parser.pushHTMLElement(opts.openElementsInit.get)
     parser.resetInsertionMode()
-  parser.tokenizer = newTokenizer[Handle, Atom](dombuilder, tokstate)
   return parser
 
 proc parseChunk*[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
