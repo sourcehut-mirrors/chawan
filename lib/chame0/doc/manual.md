@@ -121,8 +121,8 @@ at all.
 
 ```nim
 # Signature
-proc parseChunk[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
-    inputBuf: openArray[char], reprocess = false): ParseResult
+proc parseChunk[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
+    inputBuf: openArray[char]): ParseResult
 ```
 
 `parseChunk` consumes all data passed in `inputBuf`. During this, the

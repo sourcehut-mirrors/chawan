@@ -25,10 +25,11 @@ This document describes some aspects of how Chawan works.
 
 Explanation for the separate directories found in `src/`:
 
-* config: configuration-related code. Mainly parsers for config files.
+* config: parsers for config files.
 * css: CSS parsing, cascading, layout, rendering.
-* html: DOM building, the DOM itself, forms, misc. JS APIs, etc. (It
-  does not include the [HTML parser](https://git.sr.ht/~bptato/chame).)
+* encoding: charset encoding library.
+* html: DOM building, the DOM itself, forms, misc. JS APIs, etc.  (The HTML
+  parser itself resides in lib/chame0.)
 * io: code for IPC, interaction with the file system, etc.
 * local: code for the main process (i.e. the pager).
 * server: code for processes other than the main process: buffer,
@@ -91,8 +92,8 @@ processes.
 ### Loader
 
 The loader process takes requests from the main process and the buffer
-processes. Then, depending on the scheme, it performs one of the
-following steps:
+processes.  Then, depending on the scheme, it performs one of the following
+steps:
 
 * `cgi-bin:` Start a CGI script, and read out its stdout into the
   response body. In certain cases it also streams the response into
@@ -102,14 +103,14 @@ following steps:
   rewriting them into the appropriate `cgi-bin:` URL.
 
 * `stream:` Do the same thing as above, but read from a file descriptor
-  passed to the loader beforehand. This is used when stdin is a file,
+  passed to the loader beforehand.  This is used when stdin is a file,
   e.g. `echo test | cha`. It is also used for mailcap entries with an
   x-htmloutput field.
 
-* `cache:` Read the file from the cache. This is used by the pager
-  for the "view source" operation, and by buffers in the rare situation
-  where their initial character encoding guess proves to be incorrect
-  and they need to rewind the source.
+* `cache:` Read the file from the cache.  This is used by the pager for the
+  "view source" operation, and by buffers in the rare situation where their
+  initial character encoding guess proves to be incorrect and they need to
+  rewind the source.
 
 * `data:` Decode a data URL.  This is done directly in the loader process
   because very long data URLs wouldn't fit into the environment (and
@@ -202,27 +203,25 @@ spawning too many processes that then do nothing.
 
 ## Parsing HTML
 
-The character decoder and the HTML parser are implementations of the
-WHATWG standards, and are available as
-[separate](https://git.sr.ht/~bptato/chagashi)
-[libraries](https://git.sr.ht/~bptato/chame).
+Note: the HTML parser ("chame") and character encoding modules ("chagashi")
+are also available as a separate libraries.  However, as it stands, only
+the version in Chawan is actively maintained.
 
 Buffer processes decode and parse HTML documents asynchronously. When
 bytes from the network are exhausted, the buffer will 1) partially
 render the current document as-is, 2) return it to the pager so that the
 user can interact with the document.
 
-Character encoding detection is rather primitive; the list specified in
-`encoding.document-charset` is enumerated until either no errors are
-produced by the decoder, or no more charsets exist. In some extremely
-rare edge cases, the document is re-downloaded from the cache, but this
-pretty much never happens. (The most common case is that the UTF-8
-validator just runs through the entire document without reporting
-errors.)
+For character encoding detection, we simply enumerate the list specified in
+`encoding.document-charset` until either no errors are produced by the
+decoder, or no more charsets exist.  In some extremely rare edge cases, the
+document is re-downloaded from the cache, but this pretty much never
+happens.  (The most common case is that the UTF-8 validator just runs
+through the entire document without reporting errors.)
 
 The HTML parser then consumes the decoded (or validated) input buffer.
-In some cases, a script calls document.write and then the parser is
-called recursively. (Debugging this is not very fun.)
+In some cases, a script calls document.write and then the parser is called
+recursively.  (Debugging this is not very fun.)
 
 ## JavaScript
 
@@ -231,18 +230,19 @@ buffers for running on-page scripts when JavaScript is enabled.
 
 The core JS related functionality has been separated out into the
 [Monoucha](https://git.sr.ht/~bptato/monoucha) library, so it can be
-used outside of Chawan too.  However, this library is no longer updated.
+used outside of Chawan too.  However, like with the other libraries, the
+separated out variant is no longer up to date.
 
 ### General
 
 To avoid having to type out all the type conversion & error handling
 code manually, we have JS pragmas to automagically turn Nim procedures
 into JavaScript functions.  (For details on the specific pragmas, see the
-[manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md).)
+[manual](../lib/monoucha0/doc/manual.md).)
 
 Still, sometimes we have to deal with JSValues manually; in this case,
-the fromJS and toJS functions are used.  fromJS in particular returns an
-Opt[void], and uses a var parameter for overloading and efficient returns.
+the fromJS and toJS functions are used.  fromJS in particular returns a
+status code after filling a var parameter.
 
 ### JS in the pager
 
@@ -264,10 +264,15 @@ config.
 The DOM is implemented through the same wrappers as those in pager, except
 the pager modules are not exposed to buffer JS.
 
-Aside from document.write, it is mostly straightforward, and usually works
-OK, though many features are still missing.
+Aside from the Node structure and document.write, it is mostly
+straightforward, and usually works OK, though many features are still
+missing.
 
-As for document.write: don't ask. It works as far as I can tell, but I
+Some special attention is needed when dealing with the Node structure,
+which cramps a bunch of different pointers in a few internal slots to save
+memory.  See the source code comments for details.
+
+As for document.write: don't ask.  It works as far as I can tell, but I
 wouldn't know why.
 
 ## CSS
@@ -290,8 +295,9 @@ single-pass parsing, so the output does not really resemble the CSSOM at
 first glance.
 
 Cascading works OK.  To speed up selector matching, various properties
-are hashed to filter out irrelevant CSS rules.  However, no further style
-optimization exists yet (such as Bloom filters or style interning).
+are hashed to filter out irrelevant CSS rules.  In addition, class
+descendant selectors are optimized using a hash set, and identical style
+objects are hashed and shared with unrelated elements.
 
 Style calculation is incremental, and results are cached until an element's
 style is invalidated, so re-styles are quite fast.  (The invalidation logic
