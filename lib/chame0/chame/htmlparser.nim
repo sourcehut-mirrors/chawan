@@ -45,7 +45,7 @@ type
     openElements: seq[OpenElement[Handle, Atom]]
     templateModes: seq[InsertionMode]
     head: Option[Handle]
-    tokenizer: Tokenizer[Handle, Atom]
+    tok: Tokenizer[Handle, Atom]
     form: Option[Handle]
     quirksMode: QuirksMode
     insertionMode: InsertionMode
@@ -98,7 +98,7 @@ type ParseResult* = enum
 # DOMBuilder interface functions
 template dombuilder[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     DOMBuilder[Handle, Atom] =
-  parser.tokenizer.dombuilder
+  parser.tok.dombuilder
 
 proc strToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom]; s: string):
     Atom =
@@ -170,9 +170,9 @@ proc createHTMLElement[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
   return parser.dombuilder.createHTMLElementImpl()
 
 proc insertCommentImpl[Handle, Atom](parser: HTML5Parser[Handle, Atom];
-    parent: Handle; text: string; before: Option[Handle]) =
+    parent: Handle; before: Option[Handle]) =
   mixin insertCommentImpl
-  parser.dombuilder.insertCommentImpl(parent, text, before)
+  parser.dombuilder.insertCommentImpl(parent, parser.tok.tagNameBuf, before)
 
 proc appendDocumentType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     name, publicId, systemId: string) =
@@ -453,14 +453,14 @@ proc find[Atom](attrs: ParsedAttrs[Atom]; atom: Atom): int =
 
 proc findAttr[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     tagType: TagType): int =
-  parser.tokenizer.attrs.find(parser.toAtom(tagType))
+  parser.tok.attrs.find(parser.toAtom(tagType))
 
 proc contains[Atom](attrs: ParsedAttrs[Atom]; atom: Atom): bool =
   attrs.find(atom) >= 0
 
 proc sortAttrs[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
   mixin sortAttrsImpl
-  parser.dombuilder.sortAttrsImpl(parser.tokenizer.attrs)
+  parser.dombuilder.sortAttrsImpl(parser.tok.attrs)
 
 proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     localName: Atom; namespace: Namespace; intendedParent: Handle;
@@ -491,7 +491,7 @@ proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     integrationPoint: integrationPoint
   ))
   let node = parser.adjustedCurrentNode()
-  parser.tokenizer.hasnonhtml = parser.getNamespace(node) != nsHTML
+  parser.tok.hasnonhtml = parser.getNamespace(node) != nsHTML
 
 proc pushHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     node: Handle) =
@@ -503,10 +503,10 @@ proc popElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom]): Handle =
   when compiles(parser.dombuilder.elementPoppedImpl(result)):
     parser.dombuilder.elementPoppedImpl(result)
   if parser.openElements.len == 0:
-    parser.tokenizer.hasnonhtml = false
+    parser.tok.hasnonhtml = false
   else:
     let node = parser.adjustedCurrentNode()
-    parser.tokenizer.hasnonhtml = parser.getNamespace(node) != nsHTML
+    parser.tok.hasnonhtml = parser.getNamespace(node) != nsHTML
 
 proc insert[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     location: InsertionLocation[Handle]; node: Handle) =
@@ -536,26 +536,26 @@ proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
   return element
 
 proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token; namespace: Namespace; stackOnly: bool): Handle =
-  parser.insertForeignElement(token.tagname, token.tagname, namespace,
-    stackOnly, move(parser.tokenizer.attrs))
+    namespace: Namespace; stackOnly: bool): Handle =
+  let tagname = parser.tok.tagname
+  parser.insertForeignElement(tagname, tagname, namespace, stackOnly,
+    move(parser.tok.attrs))
 
 proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     tagname: Atom; attrs: ParsedAttrs[Atom]): Handle =
   parser.insertForeignElement(tagname, tagname, nsHTML, false, attrs)
 
-proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token): Handle =
-  parser.insertForeignElement(token, nsHTML, false)
+proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
+    Handle =
+  parser.insertForeignElement(nsHTML, false)
 
 proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     tagType: TagType): Handle =
   let tagname = parser.toAtom(tagType)
   parser.insertForeignElement(tagname, tagname, nsHTML, false, @[])
 
-proc insertHTMLElementPop[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token) =
-  discard parser.insertHTMLElement(token)
+proc insertHTMLElementPop[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
+  discard parser.insertHTMLElement()
   discard parser.popElement()
 
 const ForeignTable = {
@@ -583,7 +583,7 @@ proc adjustMathMLAttributes[Handle, Atom](
     parser: var HTML5Parser[Handle, Atom]) =
   if parser.foreignTable.len == 0:
     parser.createForeignTable()
-  for it in parser.tokenizer.attrs.mitems:
+  for it in parser.tok.attrs.mitems:
     parser.foreignTable.withValue(it.name, p):
       it.namespace = parser.namespaceToAtom(p[])
     do:
@@ -660,7 +660,7 @@ proc adjustSVGAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
       let ka = parser.strToAtom(k)
       let va = parser.strToAtom(v)
       parser.adjustedTable[ka] = va
-  for it in parser.tokenizer.attrs.mitems:
+  for it in parser.tok.attrs.mitems:
     parser.foreignTable.withValue(it.name, p):
       it.namespace = parser.namespaceToAtom(p[])
     do:
@@ -670,17 +670,16 @@ proc adjustSVGAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
 
 proc insertCharacter(parser: var HTML5Parser; data: string) =
   let location = parser.appropriatePlaceForInsert()
-  if location.inside == parser.getDocument():
-    return
-  parser.insertText(location.inside, data, location.before)
+  if location.inside != parser.getDocument():
+    parser.insertText(location.inside, data, location.before)
 
 proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token; position: InsertionLocation[Handle]) =
-  parser.insertCommentImpl(position.inside, token.s, position.before)
+    position: InsertionLocation[Handle]) =
+  parser.insertCommentImpl(position.inside, position.before)
 
-proc insertComment(parser: var HTML5Parser; token: Token) =
+proc insertComment(parser: var HTML5Parser) =
   let position = parser.appropriatePlaceForInsert()
-  parser.insertComment(token, position)
+  parser.insertComment(position)
 
 const PublicIdentifierEquals = [
   "-//W3O//DTD W3 HTML Strict 3.0//EN//",
@@ -793,17 +792,15 @@ proc limitedQuirksConditions(pubid: string; flags: set[TokenFlag]): bool =
   return false
 
 # 13.2.6.2
-proc genericRawtextElementParsingAlgorithm(parser: var HTML5Parser;
-    token: Token) =
-  discard parser.insertHTMLElement(token)
-  parser.tokenizer.state = tsRawtext
+proc genericRawtextElementParsingAlgorithm(parser: var HTML5Parser) =
+  discard parser.insertHTMLElement()
+  parser.tok.state = tsRawtext
   parser.oldInsertionMode = parser.insertionMode
   parser.insertionMode = imText
 
-proc genericRCDATAElementParsingAlgorithm(parser: var HTML5Parser;
-    token: Token) =
-  discard parser.insertHTMLElement(token)
-  parser.tokenizer.state = tsRcdata
+proc genericRCDATAElementParsingAlgorithm(parser: var HTML5Parser) =
+  discard parser.insertHTMLElement()
+  parser.tok.state = tsRcdata
   parser.oldInsertionMode = parser.insertionMode
   parser.insertionMode = imText
 
@@ -869,7 +866,7 @@ proc pushActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       continue
     if parser.getNamespace(it.element) != parser.getNamespace(element):
       continue
-    if it.attrs != parser.tokenizer.attrs:
+    if it.attrs != parser.tok.attrs:
       continue
     inc count
     if count == 3:
@@ -879,7 +876,7 @@ proc pushActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     element: element,
     startTagName: tagname,
   )
-  fmt.attrs = move(parser.tokenizer.attrs)
+  fmt.attrs = move(parser.tok.attrs)
   parser.activeFormatting.add(fmt)
 
 proc findOpenElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
@@ -1066,15 +1063,15 @@ proc findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom
   return -1
 
 # If true is returned, call "any other end tag".
-proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token): bool =
-  if parser.currentTagName == token.tagname and
+proc adoptionAgencyAlgorithm[Handle, Atom](
+    parser: var HTML5Parser[Handle, Atom]): bool =
+  if parser.currentTagName == parser.tok.tagname and
       parser.findLastActiveFormatting(parser.currentNode) == -1:
     discard parser.popElement()
     return false
   for i in 0 ..< 8: # outer loop
     var formattingIndex =
-      parser.findLastActiveFormattingAfterMarker(token.tagname)
+      parser.findLastActiveFormattingAfterMarker(parser.tok.tagname)
     if formattingIndex < 0:
       # no such element
       return true
@@ -1152,7 +1149,7 @@ proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom]
     parser.activeFormatting.delete(formattingIndex)
     parser.openElements.insert(OpenElement[Handle, Atom](
       element: element,
-      startTagName: token.tagname
+      startTagName: parser.tok.tagname
     ), furthestBlockIndex + 1)
     parser.openElements.delete(stackIndex)
   return false
@@ -1188,22 +1185,22 @@ proc closeCell[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
   parser.insertionMode = imInRow
 
 proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token; insertionMode: InsertionMode): ParseResult =
-  template reprocess(tok: Token): ParseResult =
-    parser.processInHTML(tok, parser.insertionMode)
+    insertionMode: InsertionMode): ParseResult =
+  template reprocess(): ParseResult =
+    parser.processInHTML(parser.insertionMode)
 
   template reprocess(mode: InsertionMode): ParseResult =
-    parser.processInHTML(token, mode)
+    parser.processInHTML(mode)
 
   var anythingElse = false
 
   case insertionMode
   of imInitial:
-    case token.t
+    case parser.tok.t
     of ttWhitespace: discard
-    of ttComment: parser.insertComment(token, lastChildOf(parser.getDocument()))
+    of ttComment: parser.insertComment(lastChildOf(parser.getDocument()))
     of ttDoctype:
-      var name = move(parser.tokenizer.tagNameBuf)
+      var name = move(parser.tok.tagNameBuf)
       var pubid = ""
       var sysid = ""
       if (let i = name.find('\0'); i >= 0):
@@ -1214,32 +1211,32 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         pubid.setLen(i)
       parser.appendDocumentType(name, pubid, sysid)
       if not parser.isIframeSrcdoc:
-        if quirksConditions(name, pubid, sysid, token.flags):
+        if quirksConditions(name, pubid, sysid, parser.tok.flags):
           parser.setQuirksMode(QUIRKS)
-        elif limitedQuirksConditions(pubid, token.flags):
+        elif limitedQuirksConditions(pubid, parser.tok.flags):
           parser.setQuirksMode(LIMITED_QUIRKS)
       parser.insertionMode = imBeforeHtml
     else:
       parser.setQuirksMode(QUIRKS)
       parser.insertionMode = imBeforeHtml
-      return reprocess token
+      return reprocess
 
   of imBeforeHtml:
-    case token.t
+    case parser.tok.t
     of ttDoctype, ttWhitespace: discard
-    of ttComment: parser.insertComment(token, lastChildOf(parser.getDocument()))
+    of ttComment: parser.insertComment(lastChildOf(parser.getDocument()))
     of ttStartTag:
-      if parser.toTagType(token.tagname) == TAG_HTML:
+      if parser.toTagType(parser.tok.tagname) == TAG_HTML:
         let intendedParent = parser.getDocument()
-        let element = parser.createHTMLElement(token.tagname, intendedParent,
-          move(parser.tokenizer.attrs))
+        let element = parser.createHTMLElement(parser.tok.tagname, intendedParent,
+          move(parser.tok.attrs))
         parser.append(parser.getDocument(), element)
         parser.pushHTMLElement(element)
         parser.insertionMode = imBeforeHead
       else:
         anythingElse = true
     of ttEndTag:
-      anythingElse = parser.toTagType(token.tagname) in
+      anythingElse = parser.toTagType(parser.tok.tagname) in
         {TAG_HEAD, TAG_BODY, TAG_HTML, TAG_BR}
     else: anythingElse = true
     if anythingElse:
@@ -1247,75 +1244,75 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       parser.append(parser.getDocument(), element)
       parser.pushHTMLElement(element)
       parser.insertionMode = imBeforeHead
-      return reprocess token
+      return reprocess
 
   of imBeforeHead:
-    case token.t
+    case parser.tok.t
     of ttWhitespace, ttDoctype: discard
-    of ttComment: parser.insertComment(token)
+    of ttComment: parser.insertComment()
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HTML:
         return reprocess imInBody
       of TAG_HEAD:
-        parser.head = some(parser.insertHTMLElement(token))
+        parser.head = some(parser.insertHTMLElement())
         parser.insertionMode = imInHead
       else: anythingElse = true
     of ttEndTag:
-      anythingElse = parser.toTagType(token.tagname) in
+      anythingElse = parser.toTagType(parser.tok.tagname) in
         {TAG_HEAD, TAG_BODY, TAG_HTML, TAG_BR}
     else: anythingElse = true
     if anythingElse:
       parser.head = some(parser.insertHTMLElement(TAG_HEAD))
       parser.insertionMode = imInHead
-      return reprocess token
+      return reprocess
 
   of imInHead:
-    case token.t
-    of ttWhitespace: parser.insertCharacter(token.s)
-    of ttComment: parser.insertComment(token)
+    case parser.tok.t
+    of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+    of ttComment: parser.insertComment()
     of ttDoctype: discard
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HTML: return reprocess imInBody
       of TAG_BASE, TAG_BASEFONT, TAG_BGSOUND, TAG_LINK:
-        parser.insertHTMLElementPop(token)
+        parser.insertHTMLElementPop()
       of TAG_META:
         var res = SET_ENCODING_CONTINUE
         if (let i = parser.findAttr(TAG_CHARSET); i >= 0):
-          res = parser.setEncoding(parser.tokenizer.attrs[i].value)
+          res = parser.setEncoding(parser.tok.attrs[i].value)
         elif (let i = parser.findAttr(TAG_HTTP_EQUIV); i >= 0):
-          if parser.tokenizer.attrs[i].value.equalsIgnoreCase("Content-Type"):
+          if parser.tok.attrs[i].value.equalsIgnoreCase("Content-Type"):
             let i = parser.findAttr(TAG_CONTENT)
             if i >= 0:
-              let cs = extractEncFromMeta(parser.tokenizer.attrs[i].value)
+              let cs = extractEncFromMeta(parser.tok.attrs[i].value)
               if cs != "":
                 res = parser.setEncoding(cs)
-        parser.insertHTMLElementPop(token)
+        parser.insertHTMLElementPop()
         if res == SET_ENCODING_STOP:
           return PRES_STOP
-      of TAG_TITLE: parser.genericRCDATAElementParsingAlgorithm(token)
+      of TAG_TITLE: parser.genericRCDATAElementParsingAlgorithm()
       of TAG_NOSCRIPT:
         if parser.scripting:
-          parser.genericRawtextElementParsingAlgorithm(token)
+          parser.genericRawtextElementParsingAlgorithm()
         else:
-          discard parser.insertHTMLElement(token)
+          discard parser.insertHTMLElement()
           parser.insertionMode = imInHeadNoscript
       of TAG_NOFRAMES, TAG_STYLE:
-        parser.genericRawtextElementParsingAlgorithm(token)
+        parser.genericRawtextElementParsingAlgorithm()
       of TAG_SCRIPT:
         let location = parser.appropriatePlaceForInsert()
-        let element = parser.createHTMLElement(token.tagname, location.inside,
-          move(parser.tokenizer.attrs))
+        let element = parser.createHTMLElement(parser.tok.tagname, location.inside,
+          move(parser.tok.attrs))
         if parser.ctx.isSome and not parser.scripting:
           parser.setScriptAlreadyStarted(element)
         parser.insert(location, element)
         parser.pushHTMLElement(element)
-        parser.tokenizer.state = tsScriptData
+        parser.tok.state = tsScriptData
         parser.oldInsertionMode = parser.insertionMode
         parser.insertionMode = imText
       of TAG_TEMPLATE:
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.activeFormatting.add(nil)
         parser.framesetOk = false
         parser.insertionMode = imInTemplate
@@ -1323,7 +1320,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       of TAG_HEAD: discard
       else: anythingElse = true
     of ttEndTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HEAD:
         discard parser.popElement()
         parser.insertionMode = imAfterHead
@@ -1340,20 +1337,20 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     if anythingElse:
       discard parser.popElement()
       parser.insertionMode = imAfterHead
-      return reprocess token
+      return reprocess
 
   of imInHeadNoscript:
-    case token.t
+    case parser.tok.t
     of ttDoctype: discard
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HEAD, TAG_NOSCRIPT: discard
       of TAG_HTML: return reprocess imInBody
       of TAG_BASEFONT, TAG_BGSOUND, TAG_LINK, TAG_META, TAG_NOFRAMES, TAG_STYLE:
         return reprocess imInHead
       else: anythingElse = true
     of ttEndTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_BR: anythingElse = true
       of TAG_NOSCRIPT:
         discard parser.popElement()
@@ -1364,23 +1361,23 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     if anythingElse:
       discard parser.popElement()
       parser.insertionMode = imInHead
-      return reprocess token
+      return reprocess
 
   of imAfterHead:
-    case token.t
-    of ttWhitespace: parser.insertCharacter(token.s)
-    of ttComment: parser.insertComment(token)
+    case parser.tok.t
+    of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+    of ttComment: parser.insertComment()
     of ttDoctype: discard
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HEAD: discard
       of TAG_HTML: return reprocess imInBody
       of TAG_BODY:
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.framesetOk = false
         parser.insertionMode = imInBody
       of TAG_FRAMESET:
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.insertionMode = imInFrameset
       of TAG_BASE, TAG_BASEFONT, TAG_BGSOUND, TAG_LINK, TAG_META, TAG_NOFRAMES,
           TAG_SCRIPT, TAG_STYLE, TAG_TEMPLATE, TAG_TITLE:
@@ -1391,7 +1388,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           parser.openElements.delete(i)
       else: anythingElse = true
     of ttEndTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_TEMPLATE: return reprocess imInHead
       of TAG_BODY, TAG_HTML, TAG_BR: anythingElse = true
       else: discard
@@ -1399,26 +1396,26 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     if anythingElse:
       discard parser.insertHTMLElement(TAG_BODY)
       parser.insertionMode = imInBody
-      return reprocess token
+      return reprocess
 
   of imInBody:
-    case token.t
+    case parser.tok.t
     of ttWhitespace:
       parser.reconstructActiveFormatting()
-      parser.insertCharacter(token.s)
+      parser.insertCharacter(parser.tok.charbufOut)
     of ttNull, ttDoctype: discard
     of ttCharacter:
       parser.reconstructActiveFormatting()
-      parser.insertCharacter(token.s)
+      parser.insertCharacter(parser.tok.charbufOut)
       parser.framesetOk = false
-    of ttComment: parser.insertComment(token)
+    of ttComment: parser.insertComment()
     of ttStartTag:
-      let tagType = parser.toTagType(token.tagname)
+      let tagType = parser.toTagType(parser.tok.tagname)
       case tagType
       of TAG_HTML:
         if not parser.hasElement(TAG_TEMPLATE):
           parser.addAttrsIfMissing(parser.openElements[0].element,
-            parser.tokenizer.attrs)
+            parser.tok.attrs)
       of TAG_BASE, TAG_BASEFONT, TAG_BGSOUND, TAG_LINK, TAG_META, TAG_NOFRAMES,
           TAG_SCRIPT, TAG_STYLE, TAG_TEMPLATE, TAG_TITLE:
         return reprocess imInHead
@@ -1430,7 +1427,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         else:
           parser.framesetOk = false
           parser.addAttrsIfMissing(parser.openElements[1].element,
-            parser.tokenizer.attrs)
+            parser.tok.attrs)
       of TAG_FRAMESET:
         if parser.openElements.len == 1 or
             parser.getTagType(parser.openElements[1].element) != TAG_BODY or
@@ -1440,7 +1437,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           parser.remove(parser.openElements[1].element)
           while parser.openElements.len > 1:
             discard parser.popElement()
-          discard parser.insertHTMLElement(token)
+          discard parser.insertHTMLElement()
           parser.insertionMode = imInFrameset
       of TAG_ADDRESS, TAG_ARTICLE, TAG_ASIDE, TAG_BLOCKQUOTE, TAG_CENTER,
           TAG_DETAILS, TAG_DIALOG, TAG_DIR, TAG_DIV, TAG_DL, TAG_FIELDSET,
@@ -1448,22 +1445,22 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           TAG_MAIN, TAG_MENU, TAG_NAV, TAG_OL, TAG_P, TAG_SEARCH, TAG_SECTION,
           TAG_SUMMARY, TAG_UL:
         parser.closeP()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
       of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
         parser.closeP()
         if parser.getTagType(parser.currentNode) in HTagTypes:
           discard parser.popElement()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
       of TAG_PRE, TAG_LISTING:
         parser.closeP()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.ignoreLF = true
         parser.framesetOk = false
       of TAG_FORM:
         let hasTemplate = parser.hasElement(TAG_TEMPLATE)
         if parser.form.isNone or hasTemplate:
           parser.closeP()
-          let element = parser.insertHTMLElement(token)
+          let element = parser.insertHTMLElement()
           if not hasTemplate:
             parser.form = some(element)
       of TAG_LI:
@@ -1480,7 +1477,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
             break
           else: discard
         parser.closeP()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
       of TAG_DD, TAG_DT:
         parser.framesetOk = false
         for node in parser.ropenElements:
@@ -1498,23 +1495,23 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
             break
           else: discard
         parser.closeP()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
       of TAG_PLAINTEXT:
         parser.closeP()
-        discard parser.insertHTMLElement(token)
-        parser.tokenizer.state = tsPlaintext
+        discard parser.insertHTMLElement()
+        parser.tok.state = tsPlaintext
       of TAG_BUTTON:
         discard parser.hasElementInScopePop(TAG_BUTTON)
         parser.reconstructActiveFormatting()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.framesetOk = false
       of TAG_A:
         let tagname = parser.toAtom(TAG_A)
         let i = parser.findLastActiveFormattingAfterMarker(tagname)
         if i != -1:
           let anchor = parser.activeFormatting[i].element
-          if parser.adoptionAgencyAlgorithm(token):
-            parser.otherBodyEndTag(token.tagname)
+          if parser.adoptionAgencyAlgorithm():
+            parser.otherBodyEndTag(parser.tok.tagname)
           let j = parser.findLastActiveFormatting(anchor)
           if j != -1:
             parser.activeFormatting.delete(j)
@@ -1522,41 +1519,41 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           if k != -1:
             parser.openElements.delete(k)
         parser.reconstructActiveFormatting()
-        var attrs = parser.tokenizer.attrs
-        let element = parser.insertHTMLElement(token)
-        parser.tokenizer.attrs = move(attrs)
-        parser.pushActiveFormatting(element, token.tagname)
+        var attrs = parser.tok.attrs
+        let element = parser.insertHTMLElement()
+        parser.tok.attrs = move(attrs)
+        parser.pushActiveFormatting(element, parser.tok.tagname)
       of TAG_B, TAG_BIG, TAG_CODE, TAG_EM, TAG_FONT, TAG_I, TAG_S, TAG_SMALL,
           TAG_STRIKE, TAG_STRONG, TAG_TT, TAG_U:
         parser.reconstructActiveFormatting()
-        var attrs = parser.tokenizer.attrs
-        let element = parser.insertHTMLElement(token)
-        parser.tokenizer.attrs = move(attrs)
-        parser.pushActiveFormatting(element, token.tagname)
+        var attrs = parser.tok.attrs
+        let element = parser.insertHTMLElement()
+        parser.tok.attrs = move(attrs)
+        parser.pushActiveFormatting(element, parser.tok.tagname)
       of TAG_NOBR:
         parser.reconstructActiveFormatting()
-        var attrs = parser.tokenizer.attrs
+        var attrs = parser.tok.attrs
         if parser.hasElementInScope(TAG_NOBR):
-          if parser.adoptionAgencyAlgorithm(token):
-            parser.otherBodyEndTag(token.tagname)
+          if parser.adoptionAgencyAlgorithm():
+            parser.otherBodyEndTag(parser.tok.tagname)
           parser.reconstructActiveFormatting()
-        let element = parser.insertHTMLElement(token)
-        parser.tokenizer.attrs = move(attrs)
-        parser.pushActiveFormatting(element, token.tagname)
+        let element = parser.insertHTMLElement()
+        parser.tok.attrs = move(attrs)
+        parser.pushActiveFormatting(element, parser.tok.tagname)
       of TAG_APPLET, TAG_MARQUEE, TAG_OBJECT:
         parser.reconstructActiveFormatting()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.activeFormatting.add(nil)
         parser.framesetOk = false
       of TAG_TABLE:
         if parser.quirksMode != QUIRKS:
           parser.closeP()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.framesetOk = false
         parser.insertionMode = imInTable
       of TAG_AREA, TAG_BR, TAG_EMBED, TAG_IMG, TAG_KEYGEN, TAG_WBR:
         parser.reconstructActiveFormatting()
-        parser.insertHTMLElementPop(token)
+        parser.insertHTMLElementPop()
         parser.framesetOk = false
       of TAG_INPUT:
         if parser.ctx.isNone or
@@ -1565,23 +1562,23 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           parser.reconstructActiveFormatting()
           let i = parser.findAttr(TAG_TYP)
           if i < 0 or
-              not parser.tokenizer.attrs[i].value.equalsIgnoreCase("hidden"):
+              not parser.tok.attrs[i].value.equalsIgnoreCase("hidden"):
             parser.framesetOk = false
-          parser.insertHTMLElementPop(token)
-      of TAG_PARAM, TAG_SOURCE, TAG_TRACK: parser.insertHTMLElementPop(token)
+          parser.insertHTMLElementPop()
+      of TAG_PARAM, TAG_SOURCE, TAG_TRACK: parser.insertHTMLElementPop()
       of TAG_HR:
         parser.closeP()
         if parser.hasElementInScope(TAG_SELECT):
           parser.generateImpliedEndTags()
-        parser.insertHTMLElementPop(token)
+        parser.insertHTMLElementPop()
         parser.framesetOk = false
       of TAG_IMAGE:
-        token.tagname = parser.toAtom(TAG_IMG)
-        return reprocess token
+        parser.tok.tagname = parser.toAtom(TAG_IMG)
+        return reprocess
       of TAG_TEXTAREA:
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.ignoreLF = true
-        parser.tokenizer.state = tsRcdata
+        parser.tok.state = tsRcdata
         parser.oldInsertionMode = parser.insertionMode
         parser.framesetOk = false
         parser.insertionMode = imText
@@ -1589,24 +1586,24 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         parser.closeP()
         parser.reconstructActiveFormatting()
         parser.framesetOk = false
-        parser.genericRawtextElementParsingAlgorithm(token)
+        parser.genericRawtextElementParsingAlgorithm()
       of TAG_IFRAME:
         parser.framesetOk = false
-        parser.genericRawtextElementParsingAlgorithm(token)
-      of TAG_NOEMBED: parser.genericRawtextElementParsingAlgorithm(token)
+        parser.genericRawtextElementParsingAlgorithm()
+      of TAG_NOEMBED: parser.genericRawtextElementParsingAlgorithm()
       of TAG_NOSCRIPT:
         if parser.scripting:
-          parser.genericRawtextElementParsingAlgorithm(token)
+          parser.genericRawtextElementParsingAlgorithm()
         else:
           parser.reconstructActiveFormatting()
-          discard parser.insertHTMLElement(token)
+          discard parser.insertHTMLElement()
       of TAG_SELECT:
         if parser.ctx.isSome and
             parser.getTagType(parser.ctx.get.element) == TAG_SELECT:
           discard
         elif not parser.hasElementInScopePop(TAG_SELECT):
           parser.reconstructActiveFormatting()
-          discard parser.insertHTMLElement(token)
+          discard parser.insertHTMLElement()
           parser.framesetOk = false
       of TAG_OPTION, TAG_OPTGROUP:
         if parser.hasElementInScope(TAG_SELECT):
@@ -1617,35 +1614,35 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         elif parser.getTagType(parser.currentNode) == TAG_OPTION:
           discard parser.popElement()
         parser.reconstructActiveFormatting()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
       of TAG_RB, TAG_RTC:
         if parser.hasElementInScope(TAG_RUBY):
           parser.generateImpliedEndTags()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
       of TAG_RP, TAG_RT:
         if parser.hasElementInScope(TAG_RUBY):
           parser.generateImpliedEndTags(TAG_RTC)
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
       of TAG_MATH:
         parser.reconstructActiveFormatting()
         parser.adjustMathMLAttributes()
-        discard parser.insertForeignElement(token, nsMathML, false)
-        if tfSelfClosing in token.flags:
+        discard parser.insertForeignElement(nsMathML, false)
+        if tfSelfClosing in parser.tok.flags:
           discard parser.popElement()
       of TAG_SVG:
         parser.reconstructActiveFormatting()
         parser.adjustSVGAttributes()
-        discard parser.insertForeignElement(token, nsSVG, false)
-        if tfSelfClosing in token.flags:
+        discard parser.insertForeignElement(nsSVG, false)
+        if tfSelfClosing in parser.tok.flags:
           discard parser.popElement()
       of TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_FRAME, TAG_HEAD, TAG_TBODY,
           TAG_TD, TAG_TFOOT, TAG_TH, TAG_THEAD, TAG_TR:
         discard
       else:
         parser.reconstructActiveFormatting()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
     of ttEndTag:
-      case (let tokTagType = parser.toTagType(token.tagname); tokTagType)
+      case (let tokTagType = parser.toTagType(parser.tok.tagname); tokTagType)
       of TAG_TEMPLATE: return reprocess imInHead
       of TAG_BODY:
         if parser.hasElementInScope(TAG_BODY):
@@ -1653,7 +1650,7 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       of TAG_HTML:
         if parser.hasElementInScope(TAG_BODY):
           parser.insertionMode = imAfterBody
-          return reprocess token
+          return reprocess
       of TAG_ADDRESS, TAG_ARTICLE, TAG_ASIDE, TAG_BLOCKQUOTE, TAG_BUTTON,
           TAG_CENTER, TAG_DETAILS, TAG_DIALOG, TAG_DIR, TAG_DIV, TAG_DL,
           TAG_FIELDSET, TAG_FIGCAPTION, TAG_FIGURE, TAG_FOOTER, TAG_HEADER,
@@ -1688,8 +1685,8 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       of TAG_A, TAG_B, TAG_BIG, TAG_CODE, TAG_EM, TAG_FONT, TAG_I,
           TAG_NOBR, TAG_S, TAG_SMALL, TAG_STRIKE, TAG_STRONG, TAG_TT,
           TAG_U:
-        if parser.adoptionAgencyAlgorithm(token):
-          parser.otherBodyEndTag(token.tagname)
+        if parser.adoptionAgencyAlgorithm():
+          parser.otherBodyEndTag(parser.tok.tagname)
       of TAG_APPLET, TAG_MARQUEE, TAG_OBJECT:
         if parser.hasElementInScopePop(tokTagType):
           parser.clearActiveFormattingTillMarker()
@@ -1698,20 +1695,21 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         discard parser.insertHTMLElement(TAG_BR)
         discard parser.popElement()
         parser.framesetOk = false
-      else: parser.otherBodyEndTag(token.tagname)
+      else: parser.otherBodyEndTag(parser.tok.tagname)
 
   of imText:
-    case token.t
-    of ttCharacter, ttWhitespace: parser.insertCharacter(token.s)
+    case parser.tok.t
+    of ttCharacter, ttWhitespace:
+      parser.insertCharacter(parser.tok.charbufOut)
     of ttEndTag:
       discard parser.popElement()
       parser.insertionMode = parser.oldInsertionMode
-      if parser.scripting and parser.toTagType(token.tagname) == TAG_SCRIPT:
+      if parser.scripting and parser.toTagType(parser.tok.tagname) == TAG_SCRIPT:
         return PRES_SCRIPT
     else: assert false # unreachable
 
   of imInTable:
-    case token.t
+    case parser.tok.t
     of ttCharacter, ttWhitespace, ttNull:
       const CanHaveText = {
         TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR
@@ -1721,19 +1719,19 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         parser.pendingTableCharsWhitespace = true
         parser.oldInsertionMode = parser.insertionMode
         parser.insertionMode = imInTableInText
-        return reprocess token
+        return reprocess
       else: # anything else
         parser.fosterParenting = true
         result = reprocess imInBody
         parser.fosterParenting = false
-    of ttComment: parser.insertComment(token)
+    of ttComment: parser.insertComment()
     of ttDoctype: discard
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_CAPTION:
         parser.popTableContext()
         parser.activeFormatting.add(nil)
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.insertionMode = imInCaption
       of TAG_COLGROUP:
         parser.popTableContext()
@@ -1743,36 +1741,36 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         parser.popTableContext()
         discard parser.insertHTMLElement(TAG_COLGROUP)
         parser.insertionMode = imInColumnGroup
-        return reprocess token
+        return reprocess
       of TAG_TBODY, TAG_TFOOT, TAG_THEAD:
         parser.popTableContext()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.insertionMode = imInTableBody
       of TAG_TD, TAG_TH, TAG_TR:
         parser.popTableContext()
         discard parser.insertHTMLElement(TAG_TBODY)
         parser.insertionMode = imInTableBody
-        return reprocess token
+        return reprocess
       of TAG_TABLE:
         if parser.hasElementInTableScope(TAG_TABLE):
           parser.popElementsIncl(TAG_TABLE)
           parser.resetInsertionMode()
-          return reprocess token
+          return reprocess
       of TAG_INPUT:
         let i = parser.findAttr(TAG_TYP)
         if i >= 0 and
-            parser.tokenizer.attrs[i].value.equalsIgnoreCase("hidden"):
-          parser.insertHTMLElementPop(token)
+            parser.tok.attrs[i].value.equalsIgnoreCase("hidden"):
+          parser.insertHTMLElementPop()
         else:
           anythingElse = true
       of TAG_STYLE, TAG_SCRIPT, TAG_TEMPLATE: return reprocess imInHead
       of TAG_FORM:
         if parser.form.isNone and not parser.hasElement(TAG_TEMPLATE):
-          parser.form = some(parser.insertHTMLElement(token))
+          parser.form = some(parser.insertHTMLElement())
           discard parser.popElement()
       else: anythingElse = true
     of ttEndTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_TABLE:
         if parser.hasElementInTableScope(TAG_TABLE):
           parser.popElementsIncl(TAG_TABLE)
@@ -1788,12 +1786,12 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       parser.fosterParenting = false
 
   of imInTableInText:
-    case token.t
+    case parser.tok.t
     of ttNull: discard
-    of ttWhitespace: parser.pendingTableChars &= token.s
+    of ttWhitespace: parser.pendingTableChars &= parser.tok.charbufOut
     of ttCharacter:
       parser.pendingTableCharsWhitespace = false
-      parser.pendingTableChars &= token.s
+      parser.pendingTableChars &= parser.tok.charbufOut
     else:
       if not parser.pendingTableCharsWhitespace:
         # I *think* this is effectively the same thing the specification
@@ -1806,29 +1804,29 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       else:
         parser.insertCharacter(parser.pendingTableChars)
       parser.insertionMode = parser.oldInsertionMode
-      return reprocess token
+      return reprocess
 
   of imInCaption:
-    case token.t
+    case parser.tok.t
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_TBODY, TAG_TD, TAG_TFOOT,
           TAG_TH, TAG_THEAD, TAG_TR:
         if parser.hasElementInTableScope(TAG_CAPTION):
           parser.popElementsIncl(TAG_CAPTION)
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = imInTable
-          return reprocess token
+          return reprocess
       else: anythingElse = true
     of ttEndTag:
-      case (let tokTagType = parser.toTagType(token.tagname); tokTagType)
+      case (let tokTagType = parser.toTagType(parser.tok.tagname); tokTagType)
       of TAG_CAPTION, TAG_TABLE:
         if parser.hasElementInTableScope(TAG_CAPTION):
           parser.popElementsIncl(TAG_CAPTION)
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = imInTable
           if tokTagType == TAG_TABLE:
-            return reprocess token
+            return reprocess
       of TAG_BODY, TAG_COL, TAG_COLGROUP, TAG_HTML, TAG_TBODY, TAG_TD,
           TAG_TFOOT, TAG_TH, TAG_THEAD, TAG_TR:
         discard
@@ -1838,18 +1836,18 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       return reprocess imInBody
 
   of imInColumnGroup:
-    case token.t
-    of ttWhitespace: parser.insertCharacter(token.s)
-    of ttComment: parser.insertComment(token)
+    case parser.tok.t
+    of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+    of ttComment: parser.insertComment()
     of ttDoctype: discard
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HTML: return reprocess imInBody
-      of TAG_COL: parser.insertHTMLElementPop(token)
+      of TAG_COL: parser.insertHTMLElementPop()
       of TAG_TEMPLATE: return reprocess imInHead
       else: anythingElse = true
     of ttEndTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_COL: discard
       of TAG_COLGROUP:
         if parser.getTagType(parser.currentNode) == TAG_COLGROUP:
@@ -1862,37 +1860,37 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       if parser.getTagType(parser.currentNode) == TAG_COLGROUP:
         discard parser.popElement()
         parser.insertionMode = imInTable
-        return reprocess token
+        return reprocess
 
   of imInTableBody:
-    case token.t
+    case parser.tok.t
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_TR:
         parser.popTableBodyContext()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.insertionMode = imInRow
       of TAG_TH, TAG_TD:
         parser.popTableBodyContext()
         discard parser.insertHTMLElement(TAG_TR)
         parser.insertionMode = imInRow
-        return reprocess token
+        return reprocess
       of TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_TBODY, TAG_TFOOT, TAG_THEAD:
         if parser.hasElementInTableScope({TAG_TBODY, TAG_THEAD, TAG_TFOOT}):
           parser.popTableBodyContext()
           discard parser.popElement()
           parser.insertionMode = imInTable
-          return reprocess token
+          return reprocess
       else: return reprocess imInTable
     of ttEndTag:
-      case (let tokTagType = parser.toTagType(token.tagname); tokTagType)
+      case (let tokTagType = parser.toTagType(parser.tok.tagname); tokTagType)
       of TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TABLE:
         if parser.hasElementInTableScope(tokTagType):
           parser.popTableBodyContext()
           discard parser.popElement()
           parser.insertionMode = imInTable
           if tokTagType == TAG_TABLE:
-            return reprocess token
+            return reprocess
       of TAG_BODY, TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_HTML, TAG_TD,
           TAG_TH, TAG_TR:
         discard
@@ -1900,12 +1898,12 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     else: return reprocess imInTable
 
   of imInRow:
-    case token.t
+    case parser.tok.t
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_TH, TAG_TD:
         parser.popTableRowContext()
-        discard parser.insertHTMLElement(token)
+        discard parser.insertHTMLElement()
         parser.insertionMode = imInCell
         parser.activeFormatting.add(nil)
       of TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_TBODY, TAG_TFOOT, TAG_THEAD,
@@ -1914,10 +1912,10 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           parser.popTableRowContext()
           discard parser.popElement()
           parser.insertionMode = imInTableBody
-          return reprocess token
+          return reprocess
       else: return reprocess imInTable
     of ttEndTag:
-      case (let tokTagType = parser.toTagType(token.tagname); tokTagType)
+      case (let tokTagType = parser.toTagType(parser.tok.tagname); tokTagType)
       of TAG_TR:
         if parser.hasElementInTableScope(TAG_TR):
           parser.popTableRowContext()
@@ -1928,13 +1926,13 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           parser.popTableRowContext()
           discard parser.popElement()
           parser.insertionMode = imInTableBody
-          return reprocess token
+          return reprocess
       of TAG_TBODY, TAG_TFOOT, TAG_THEAD:
         if parser.hasElementInTableScope({tokTagType, TAG_TR}):
           parser.popTableRowContext()
           discard parser.popElement()
           parser.insertionMode = imInTableBody
-          return reprocess token
+          return reprocess
       of TAG_BODY, TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_HTML, TAG_TD,
           TAG_TH:
         discard
@@ -1942,17 +1940,17 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     else: return reprocess imInTable
 
   of imInCell:
-    case token.t
+    case parser.tok.t
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_TBODY, TAG_TD, TAG_TFOOT,
           TAG_TH, TAG_THEAD, TAG_TR:
         if parser.hasElementInTableScope({TAG_TD, TAG_TH}):
           parser.closeCell()
-          return reprocess token
+          return reprocess
       else: return reprocess imInBody
     of ttEndTag:
-      case (let tokTagType = parser.toTagType(token.tagname); tokTagType)
+      case (let tokTagType = parser.toTagType(parser.tok.tagname); tokTagType)
       of TAG_TD, TAG_TH:
         if parser.hasElementInTableScope(tokTagType):
           parser.popElementsIncl(tokTagType)
@@ -1962,16 +1960,16 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       of TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR:
         if parser.hasElementInTableScope(tokTagType):
           parser.closeCell()
-          return reprocess token
+          return reprocess
       else: return reprocess imInBody
     else: return reprocess imInBody
 
   of imInTemplate:
-    case token.t
+    case parser.tok.t
     of ttCharacter, ttWhitespace, ttNull, ttDoctype, ttComment:
       return reprocess imInBody
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_BASE, TAG_BASEFONT, TAG_BGSOUND, TAG_LINK, TAG_META, TAG_NOFRAMES,
           TAG_SCRIPT, TAG_STYLE, TAG_TEMPLATE, TAG_TITLE:
         return reprocess imInHead
@@ -1979,67 +1977,66 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         discard parser.templateModes.pop()
         parser.templateModes.add(imInTable)
         parser.insertionMode = imInTable
-        return reprocess token
+        return reprocess
       of TAG_COL:
         discard parser.templateModes.pop()
         parser.templateModes.add(imInColumnGroup)
         parser.insertionMode = imInColumnGroup
-        return reprocess token
+        return reprocess
       of TAG_TR:
         discard parser.templateModes.pop()
         parser.templateModes.add(imInTableBody)
         parser.insertionMode = imInTableBody
-        return reprocess token
+        return reprocess
       of TAG_TD, TAG_TH:
         discard parser.templateModes.pop()
         parser.templateModes.add(imInRow)
         parser.insertionMode = imInRow
-        return reprocess token
+        return reprocess
       else:
         discard parser.templateModes.pop()
         parser.templateModes.add(imInBody)
         parser.insertionMode = imInBody
-        return reprocess token
+        return reprocess
     of ttEndTag:
-      if parser.toTagType(token.tagname) == TAG_TEMPLATE:
+      if parser.toTagType(parser.tok.tagname) == TAG_TEMPLATE:
         return reprocess imInHead
 
   of imAfterBody:
-    case token.t
+    case parser.tok.t
     of ttWhitespace: return reprocess imInBody
-    of ttComment:
-      parser.insertComment(token, lastChildOf(parser.openElements[0]))
+    of ttComment: parser.insertComment(lastChildOf(parser.openElements[0]))
     of ttDoctype: discard
     of ttStartTag:
-      if parser.toTagType(token.tagname) == TAG_HTML:
+      if parser.toTagType(parser.tok.tagname) == TAG_HTML:
         return reprocess imInBody
       parser.insertionMode = imInBody
-      return reprocess token
+      return reprocess
     of ttEndTag:
-      if parser.toTagType(token.tagname) == TAG_HTML:
+      if parser.toTagType(parser.tok.tagname) == TAG_HTML:
         if parser.ctx.isNone:
           parser.insertionMode = imAfterAfterBody
       else:
         parser.insertionMode = imInBody
-        return reprocess token
+        return reprocess
     else:
       parser.insertionMode = imInBody
-      return reprocess token
+      return reprocess
 
   of imInFrameset:
-    case token.t
-    of ttWhitespace: parser.insertCharacter(token.s)
-    of ttComment: parser.insertComment(token)
+    case parser.tok.t
+    of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+    of ttComment: parser.insertComment()
     of ttDoctype: discard
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HTML: return reprocess imInBody
-      of TAG_FRAMESET: discard parser.insertHTMLElement(token)
-      of TAG_FRAME: parser.insertHTMLElementPop(token)
+      of TAG_FRAMESET: discard parser.insertHTMLElement()
+      of TAG_FRAME: parser.insertHTMLElementPop()
       of TAG_NOFRAMES: return reprocess imInHead
       else: discard
     of ttEndTag:
-      if parser.toTagType(token.tagname) == TAG_FRAMESET:
+      if parser.toTagType(parser.tok.tagname) == TAG_FRAMESET:
         if parser.getTagType(parser.currentNode) != TAG_HTML:
           discard parser.popElement()
         if parser.ctx.isNone and
@@ -2048,38 +2045,38 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     else: discard
 
   of imAfterFrameset:
-    case token.t
-    of ttWhitespace: parser.insertCharacter(token.s)
-    of ttComment: parser.insertComment(token)
+    case parser.tok.t
+    of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+    of ttComment: parser.insertComment()
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HTML: return reprocess imInBody
       of TAG_NOFRAMES: return reprocess imInHead
       else: discard
     of ttEndTag:
-      if parser.toTagType(token.tagname) == TAG_HTML:
+      if parser.toTagType(parser.tok.tagname) == TAG_HTML:
         parser.insertionMode = imAfterAfterFrameset
     else: discard
 
   of imAfterAfterBody:
-    case token.t
-    of ttComment: parser.insertComment(token, lastChildOf(parser.getDocument()))
+    case parser.tok.t
+    of ttComment: parser.insertComment(lastChildOf(parser.getDocument()))
     of ttDoctype, ttWhitespace: return reprocess imInBody
     of ttStartTag:
-      if parser.toTagType(token.tagname) == TAG_HTML:
+      if parser.toTagType(parser.tok.tagname) == TAG_HTML:
         return reprocess imInBody
       parser.insertionMode = imInBody
-      return reprocess token
+      return reprocess
     else:
       parser.insertionMode = imInBody
-      return reprocess token
+      return reprocess
 
   of imAfterAfterFrameset:
-    case token.t
-    of ttComment: parser.insertComment(token, lastChildOf(parser.getDocument()))
+    case parser.tok.t
+    of ttComment: parser.insertComment(lastChildOf(parser.getDocument()))
     of ttDoctype, ttWhitespace: return reprocess imInBody
     of ttStartTag:
-      case parser.toTagType(token.tagname)
+      case parser.toTagType(parser.tok.tagname)
       of TAG_HTML: return reprocess imInBody
       of TAG_NOFRAMES: return reprocess imInHead
       else: discard
@@ -2138,13 +2135,13 @@ proc processEOF[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
     parser.processEOF()
   else: discard
 
-proc processHTMLForeignTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token): ParseResult =
+proc processHTMLForeignTag[Handle, Atom](
+    parser: var HTML5Parser[Handle, Atom]): ParseResult =
   while not parser.isMathMLIntegrationPoint(parser.currentNode) and
       not parser.isHTMLIntegrationPoint(parser.currentNodeToken) and
       parser.getNamespace(parser.currentNode) != nsHTML:
     discard parser.popElement()
-  return parser.processInHTML(token, parser.insertionMode)
+  return parser.processInHTML(parser.insertionMode)
 
 const CaseTable = {
   "altglyph": "altGlyph",
@@ -2186,10 +2183,10 @@ const CaseTable = {
   "textpath": "textPath",
 }
 
-proc otherForeignStartTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token): ParseResult =
+proc otherForeignStartTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
+    ParseResult =
   let namespace = parser.getNamespace(parser.adjustedCurrentNode)
-  var tagname = token.tagname
+  var tagname = parser.tok.tagname
   if namespace == nsSVG:
     if parser.caseTable.len == 0:
       for (k, v) in CaseTable:
@@ -2201,16 +2198,16 @@ proc otherForeignStartTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     parser.adjustSVGAttributes()
   elif namespace == nsMathML:
     parser.adjustMathMLAttributes()
-  discard parser.insertForeignElement(tagname, token.tagname, namespace, false,
-    move(parser.tokenizer.attrs))
-  if tfSelfClosing in token.flags:
+  discard parser.insertForeignElement(tagname, parser.tok.tagname, namespace, false,
+    move(parser.tok.attrs))
+  if tfSelfClosing in parser.tok.flags:
     discard parser.popElement()
     if namespace == nsSVG and parser.toTagType(tagname) == TAG_SCRIPT:
       return PRES_SCRIPT
   return PRES_CONTINUE
 
-proc otherForeignEndTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token): ParseResult =
+proc otherForeignEndTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
+    ParseResult =
   for i in countdown(parser.openElements.high, 0): # loop
     if i == 0: # fragment case
       assert parser.ctx.isSome
@@ -2218,47 +2215,47 @@ proc otherForeignEndTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     let oe = parser.openElements[i]
     if i != parser.openElements.high and
         parser.getNamespace(oe.element) == nsHTML:
-      return parser.processInHTML(token, parser.insertionMode)
-    if oe.startTagName == token.tagname:
+      return parser.processInHTML(parser.insertionMode)
+    if oe.startTagName == parser.tok.tagname:
       # Compare the start tag token, since it is guaranteed to be lower case.
       # (The local name might have been adjusted to a non-lower-case string.)
       parser.popElementsIncl(oe.element)
       break
   return PRES_CONTINUE
 
-proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token): ParseResult =
-  case token.t
+proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
+    ParseResult =
+  case parser.tok.t
   of ttNull: parser.insertCharacter("\uFFFD")
-  of ttWhitespace: parser.insertCharacter(token.s)
+  of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
   of ttCharacter:
-    parser.insertCharacter(token.s)
+    parser.insertCharacter(parser.tok.charbufOut)
     parser.framesetOk = false
-  of ttComment: parser.insertComment(token)
+  of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
-    case parser.toTagType(token.tagname)
+    case parser.toTagType(parser.tok.tagname)
     of TAG_B, TAG_BIG, TAG_BLOCKQUOTE, TAG_BODY, TAG_BR, TAG_CENTER, TAG_CODE,
         TAG_DD, TAG_DIV, TAG_DL, TAG_DT, TAG_EM, TAG_EMBED, TAG_H1, TAG_H2,
         TAG_H3, TAG_H4, TAG_H5, TAG_H6, TAG_HEAD, TAG_HR, TAG_I, TAG_IMG,
         TAG_LI, TAG_LISTING, TAG_MENU, TAG_META, TAG_NOBR, TAG_OL, TAG_P,
         TAG_PRE, TAG_RUBY, TAG_S, TAG_SMALL, TAG_SPAN, TAG_STRONG, TAG_STRIKE,
         TAG_SUB, TAG_SUP, TAG_TABLE, TAG_TT, TAG_U, TAG_UL, TAG_VAR:
-      return parser.processHTMLForeignTag(token)
+      return parser.processHTMLForeignTag()
     of TAG_FONT:
       let atColor = parser.toAtom(TAG_COLOR)
       let atFace = parser.toAtom(TAG_FACE)
       let atSize = parser.toAtom(TAG_SIZE)
-      if atColor in parser.tokenizer.attrs or
-          atFace in parser.tokenizer.attrs or
-          atSize in parser.tokenizer.attrs:
-        return parser.processHTMLForeignTag(token)
+      if atColor in parser.tok.attrs or
+          atFace in parser.tok.attrs or
+          atSize in parser.tok.attrs:
+        return parser.processHTMLForeignTag()
       # fall through
     else: discard
-    return parser.otherForeignStartTag(token)
+    return parser.otherForeignStartTag()
   of ttEndTag:
-    case parser.toTagType(token.tagname)
-    of TAG_BR, TAG_P: return parser.processHTMLForeignTag(token)
+    case parser.toTagType(parser.tok.tagname)
+    of TAG_BR, TAG_P: return parser.processHTMLForeignTag()
     of TAG_SCRIPT:
       let namespace = parser.getNamespace(parser.currentNode)
       let localName = parser.currentTagName
@@ -2270,23 +2267,23 @@ proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
           return PRES_SCRIPT
       # fall through
     else: discard
-    return parser.otherForeignEndTag(token)
+    return parser.otherForeignEndTag()
   return PRES_CONTINUE
 
-proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    token: Token[Atom]): ParseResult =
+proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
+    ParseResult =
   if parser.ignoreLF:
     parser.ignoreLF = false
-    if token.t == ttWhitespace and token.s[0] == '\n':
-      if token.s.len == 1:
+    if parser.tok.t == ttWhitespace and parser.tok.charbufOut[0] == '\n':
+      if parser.tok.charbufOut.len == 1:
         return PRES_CONTINUE
       else:
-        for i in 1 ..< token.s.len:
-          token.s[i - 1] = token.s[i]
-        token.s.setLen(token.s.high)
+        for i in 1 ..< parser.tok.charbufOut.len:
+          parser.tok.charbufOut[i - 1] = parser.tok.charbufOut[i]
+        parser.tok.charbufOut.setLen(parser.tok.charbufOut.high)
   if parser.openElements.len == 0 or
       parser.getNamespace(parser.adjustedCurrentNode) == nsHTML:
-    return parser.processInHTML(token, parser.insertionMode)
+    return parser.processInHTML(parser.insertionMode)
   let oe = parser.adjustedCurrentNodeToken
   let oeTagType = parser.toTagType(oe.startTagName)
   let namespace = parser.getNamespace(oe.element)
@@ -2294,14 +2291,14 @@ proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
   let mmlnoatoms = {TAG_MGLYPH, TAG_MALIGNMARK}
   let ismmlip = parser.isMathMLIntegrationPoint(oe.element)
   let ishtmlip = parser.isHTMLIntegrationPoint(oe)
-  if token.t == ttStartTag and (
-        let tagType = parser.toTagType(token.tagname)
+  if parser.tok.t == ttStartTag and (
+        let tagType = parser.toTagType(parser.tok.tagname)
         ismmlip and tagType notin mmlnoatoms or ishtmlip or
         namespace == nsMathML and oeTagType == TAG_ANNOTATION_XML and
           tagType == TAG_SVG
-      ) or token.t in CharacterToken and (ismmlip or ishtmlip):
-    return parser.processInHTML(token, parser.insertionMode)
-  return parser.processInForeign(token)
+      ) or parser.tok.t in CharacterToken and (ismmlip or ishtmlip):
+    return parser.processInHTML(parser.insertionMode)
+  return parser.processInForeign()
 
 proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
     opts: HTML5ParserOpts[Handle, Atom]): HTML5Parser[Handle, Atom] =
@@ -2315,19 +2312,19 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
     isIframeSrcdoc: opts.isIframeSrcdoc,
     form: opts.formInit,
     framesetOk: true,
-    tokenizer: initTokenizer[Handle, Atom](dombuilder)
+    tok: initTokenizer[Handle, Atom](dombuilder)
   )
   if opts.ctx.isSome:
     let ctxInit = opts.ctx.get
     case parser.getTagType(ctxInit)
     of TAG_TITLE, TAG_TEXTAREA:
-      parser.tokenizer.state = tsRcdata
+      parser.tok.state = tsRcdata
     of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES, TAG_SCRIPT,
         TAG_PLAINTEXT:
-      parser.tokenizer.state = tsPlaintext
+      parser.tok.state = tsPlaintext
     of TAG_NOSCRIPT:
       if opts.scripting:
-        parser.tokenizer.state = tsPlaintext
+        parser.tok.state = tsPlaintext
     of TAG_TEMPLATE:
       parser.templateModes.add(imInTemplate)
     else: discard
@@ -2345,47 +2342,40 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
 proc parseChunk*[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     inputBuf: openArray[char]): ParseResult =
   ## Parse a chunk of characters stored in `inputBuf` with `parser`.
-  var running = true
-  parser.tokenizer.inputBufIdx = 0
-  while running:
-    running = parser.tokenizer.tokenize(inputBuf) != trDone
-    for i, token in parser.tokenizer.tokqueue:
-      let pres = parser.processToken(token)
-      if pres != PRES_CONTINUE:
-        assert pres != PRES_SCRIPT or i == parser.tokenizer.tokqueue.high
-        return pres
+  parser.tok.inputBufIdx = 0
+  while parser.tok.tokenize(inputBuf) == trEmit:
+    let pres = parser.processToken()
+    if pres != PRES_CONTINUE:
+      return pres
   return PRES_CONTINUE
 
 proc getInsertionPoint*(parser: HTML5Parser): int =
-  return parser.tokenizer.inputBufIdx
+  return parser.tok.inputBufIdx
 
 proc finish*[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
   ## Finish parsing the document associated with `parser`.
   ## This will process an EOF token, and pop all elements from the stack of
   ## open elements one by one.
-  var running = true
-  while running:
-    running = parser.tokenizer.finish() != trDone
-    for token in parser.tokenizer.tokqueue:
-      let pres = parser.processToken(token)
-      assert pres == PRES_CONTINUE
-      # pres == PRES_SCRIPT: this is unreachable.
-      # * Tokenizer's tokenizeEOF() can not emit end tag tokens, ergo no
-      #   </script> will be processed here.
-      # * In some cases, tokenize() is called before tokenizeEOF(), to flush
-      #   characters stuck in the internal peekBuf. This can happen if:
-      #   1. eatStr returns esrRetry in a previous pass. Here, peekBuf can
-      #      contain any prefix of strings passed to eatStr/NoCase(), which
-      #      crucially is never a potential </script> tag (or indeed,
-      #      nothing that can start with </).
-      #   2. The "named character reference" state is interrupted. In this
-      #      case, peekBuf is a prefix of at least one named character
-      #      reference; obviously these can not be </script> tags either,
-      #      since they all match the regex `&[a-zA-Z]+'.
-      # pres == PRES_STOP: unreachable for reasons almost identical to those
-      # outlined in PRES_SCRIPT. PRES_STOP can only be returned after a <meta>
-      # tag is processed; just like with end tags, the tokenizer cannot emit
-      # start tags in finish().
+  while parser.tok.finish() != trDone:
+    let pres = parser.processToken()
+    assert pres == PRES_CONTINUE
+    # pres == PRES_SCRIPT: this is unreachable.
+    # * Tokenizer's finish() can not emit end tag tokens, ergo no
+    #   </script> will be processed here.
+    # * In some cases, tokenize() is called before finish(), to flush
+    #   characters stuck in the internal peekBuf. This can happen if:
+    #   1. eatStr returns esrRetry in a previous pass. Here, peekBuf can
+    #      contain any prefix of strings passed to eatStr/NoCase(), which
+    #      crucially is never a potential </script> tag (or indeed,
+    #      nothing that can start with </).
+    #   2. The "named character reference" state is interrupted. In this
+    #      case, peekBuf is a prefix of at least one named character
+    #      reference; obviously these can not be </script> tags either,
+    #      since they all match the regex `&[a-zA-Z]+'.
+    # pres == PRES_STOP: unreachable for reasons almost identical to those
+    # outlined in PRES_SCRIPT. PRES_STOP can only be returned after a <meta>
+    # tag is processed; just like with end tags, the tokenizer cannot emit
+    # start tags in finish().
   parser.processEOF()
   while parser.openElements.len > 0:
     discard parser.popElement()

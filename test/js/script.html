@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<title>Script tag test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+assertEquals("&amp".length, 4);
+document.getElementById("x").textContent = "Success";
+</script>
