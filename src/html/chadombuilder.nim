@@ -326,24 +326,25 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
   var ip = wrapper.parser.getInsertionPoint()
   while res == PRES_SCRIPT:
     let script = builder.poppedScript
-    builder.poppedScript = nil
-    document.addWriteBuffer()
-    script.prepare()
-    while document.parserBlockingScript != nil:
-      let script = document.parserBlockingScript
-      document.parserBlockingScript = nil
-      #TODO style sheet
-      script.execute()
-      assert document.parserBlockingScript != script
-    if wrapper.stoppedFromScript:
-      # document.write inserted a meta charset tag
-      break
-    assert document.writeBuffersTop.toOpenArray().len == 0
-    document.writeBuffersTop = document.writeBuffersTop.prev
-    assert document.writeBuffersTop == nil
-    if ip == buffer.len:
-      # script was at the end of the buffer; nothing to parse
-      break
+    if script != nil: # SVG script?
+      builder.poppedScript = nil
+      document.addWriteBuffer()
+      script.prepare()
+      while document.parserBlockingScript != nil:
+        let script = document.parserBlockingScript
+        document.parserBlockingScript = nil
+        #TODO style sheet
+        script.execute()
+        assert document.parserBlockingScript != script
+      if wrapper.stoppedFromScript:
+        # document.write inserted a meta charset tag
+        break
+      assert document.writeBuffersTop.toOpenArray().len == 0
+      document.writeBuffersTop = document.writeBuffersTop.prev
+      assert document.writeBuffersTop == nil
+      if ip == buffer.len:
+        # script was at the end of the buffer; nothing to parse
+        break
     # parse rest of input buffer
     res = wrapper.parser.parseChunk(buffer.toOpenArray(ip, buffer.high))
     ip += wrapper.parser.getInsertionPoint() # move insertion point
@@ -362,14 +363,15 @@ proc parseDocumentWriteChunk(wrapper: RootRef) =
     while true:
       buffer.i += wrapper.parser.getInsertionPoint()
       let script = builder.poppedScript
-      builder.poppedScript = nil
-      script.prepare()
-      while document.parserBlockingScript != nil:
-        let script = document.parserBlockingScript
-        document.parserBlockingScript = nil
-        #TODO style sheet
-        script.execute()
-        assert document.parserBlockingScript != script
+      if script != nil: # SVG script?
+        builder.poppedScript = nil
+        script.prepare()
+        while document.parserBlockingScript != nil:
+          let script = document.parserBlockingScript
+          document.parserBlockingScript = nil
+          #TODO style sheet
+          script.execute()
+          assert document.parserBlockingScript != script
       res = wrapper.parser.parseChunk(buffer.toOpenArray())
       if res != PRES_SCRIPT:
         break

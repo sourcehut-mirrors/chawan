@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>document.write test</title>
+<script>
+window.onload = function() {
+	document.body.innerHTML = "Success";
+}
+document.write(`<svg><scri` + `pt>document.write("test")</scr` + `ipt></svg>`);
+document.write(`<scri` + `pt>document.write('<svg><scri'+` + `'pt></scri'+` + `'pt>')</scri'+` + `'pt>`);
+</script>
+</head>
+<body>
+</body>

@@ -663,6 +663,10 @@ type
 
   HTMLSlotElement {.final.} = ref object of HTMLElement
 
+  HTMLHtmlElement {.final.} = ref object of HTMLElement
+
+  HTMLParagraphElement {.final.} = ref object of HTMLElement
+
   HTMLUnknownElement {.final.} = ref object of HTMLElement
 
 jsDestructor(Navigator)
@@ -5829,12 +5833,8 @@ proc isDisabled*(this: Element): bool =
   else: #TODO form-associated custom element
     return false
 
-#TODO custom elements
-proc newElement(document: Document;
-    localName, namespaceURI, tagName: CAtomTraced): Element =
-  let tagType = localName.toTagType()
-  let sns = namespaceURI.toStaticAtom()
-  let element: Element = case tagType
+proc newHTMLElement(tagType: TagType; document: Document): HTMLElement =
+  case tagType
   of TAG_INPUT:
     HTMLInputElement()
   of TAG_A:
@@ -5949,13 +5949,27 @@ proc newElement(document: Document;
     HTMLSlotElement()
   of TAG_OUTPUT:
     HTMLOutputElement()
+  of TAG_HTML:
+    HTMLHtmlElement()
+  of TAG_P:
+    HTMLParagraphElement()
+  else:
+    HTMLElement()
+
+#TODO custom elements
+proc newElement(document: Document;
+    localName, namespaceURI, tagName: CAtomTraced): Element =
+  let tagType = localName.toTagType()
+  let sns = namespaceURI.toStaticAtom()
+  let element: Element = if namespaceURI == satNamespaceHTML:
+    newHTMLElement(tagType, document)
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
     else:
       SVGElement()
   else:
-    HTMLElement()
+    Element()
   element.id = satUempty.toAtom()
   element.name = satUempty.toAtom()
   element.localName = localName.dup()
@@ -8233,7 +8247,9 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   register(HTMLProgressElement, TAG_PROGRESS)
   register(HTMLSlotElement, TAG_SLOT)
   register(HTMLOutputElement, TAG_OUTPUT)
-  # 46/127 (warning: the 128th interface won't fit in the top 7 bits of
+  register(HTMLHtmlElement, TAG_HTML)
+  register(HTMLParagraphElement, TAG_P)
+  # 48/127 (warning: the 128th interface won't fit in the top 7 bits of
   # the getter/setter magic)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   if svgElementCID == 0:
