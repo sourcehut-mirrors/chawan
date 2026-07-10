@@ -1053,7 +1053,7 @@ Pager.prototype.toggleLinkHints = async function() {
             it = map;
             for (const c2 of s)
                 it = it[c2];
-        } else if (c == '\x03') {
+        } else if (c == '\x03' || c == '\x07') { /* C-c or C-g */
             alert = false;
             break;
         } else {
@@ -1212,7 +1212,7 @@ Pager.prototype.promptPaste = async function(input) {
     this.startMousePaste();
     const text = await this.askChar("Waiting for paste (C-c to cancel)");
     this.stopMousePaste();
-    if (!this.paste && text == '\x03')
+    if (!this.paste && (text == '\x03' || text == '\x07'))
         return null;
     return text;
 }
@@ -1889,7 +1889,7 @@ const ReTextStart = /\S/gu;
                 const s = await pager.askMailcap(init, i, sx, prev, next);
                 let mailcapFlag;
                 switch (s) {
-                case '\x03': case 'q':
+                case '\x03': case '\x07': case 'q':
                     pager.alert("Canceled");
                     init.closeMailcap();
                     break loop;
