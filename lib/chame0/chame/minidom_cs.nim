@@ -33,18 +33,18 @@ method setEncodingImpl(builder: CharsetMiniDOMBuilder; encoding: string):
     SetEncodingResult =
   let charset = getCharset(encoding)
   if charset == csUnknown:
-    return SET_ENCODING_CONTINUE
+    return seContinue
   if builder.charset in {csUtf16le, csUtf16be}:
     builder.confidence = ccCertain
-    return SET_ENCODING_CONTINUE
+    return seContinue
   builder.confidence = ccCertain
   if charset == builder.charset:
-    return SET_ENCODING_CONTINUE
+    return seContinue
   if charset == csXUserDefined:
     builder.charset = csWindows1252
   else:
     builder.charset = charset
-  return SET_ENCODING_STOP
+  return seStop
 
 proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
   let document = Document(factory: factory)
@@ -131,17 +131,17 @@ proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node, MAtom];
       let n = inputStream.readData(addr iq[0], iq.len)
       var finish = n < iq.len
       for chunk in ctx.decode(iq.toOpenArrayByte(0, n - 1), finish = finish):
-        # res can be PRES_SCRIPT, PRES_STOP or PRES_CONTINUE.
+        # res can be pcrScript, pcrStop or pcrContinue.
         var res = parser.parseChunk(chunk.toOpenArray())
-        # For PRES_SCRIPT, we must re-feed the same chunk as in minidom, but
+        # For pcrScript, we must re-feed the same chunk as in minidom, but
         # starting from the current insertion point.
         var ip = 0
-        while res == PRES_SCRIPT and
+        while res == pcrScript and
             (ip += parser.getInsertionPoint(); ip != chunk.len):
           res = parser.parseChunk(chunk.toOpenArray(ip, chunk.high))
-        # PRES_STOP is returned when we return SET_ENCODING_STOP from
+        # pcrStop is returned when we return seStop from
         # setEncodingImpl. We immediately stop parsing in this case.
-        if res == PRES_STOP:
+        if res == pcrStop:
           finish = true
           break
       if finish:

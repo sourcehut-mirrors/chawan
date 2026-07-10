@@ -200,8 +200,8 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       hashes.t = shtRoot
       return true
     of pcLink, pcVisited:
-      hashes.tags.add(TAG_A.toAtom())
-      hashes.tags.add(TAG_AREA.toAtom())
+      hashes.tags.add(ttA.toAtom())
+      hashes.tags.add(ttArea.toAtom())
       hashes.attr = satHref.toAtom()
       return true
     of pcFirstChild:

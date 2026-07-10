@@ -122,22 +122,22 @@ at all.
 ```nim
 # Signature
 proc parseChunk[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    inputBuf: openArray[char]): ParseResult
+    inputBuf: openArray[char]): ParseChunkResult
 ```
 
 `parseChunk` consumes all data passed in `inputBuf`. During this, the
 appropriate functions (`createElementImpl`, etc.) will be called by the parser.
 
-`parseChunk` returns a `ParseResult`, which is one of the following values:
+`parseChunk` returns a `ParseChunkResult`, which is one of the following values:
 
-* `PRES_CONTINUE`: the caller should continue with parsing the next chunk of
+* `pcrContinue`: the caller should continue with parsing the next chunk of
   data when it is available. (It's also fine to do delay processing the next
   call by processing something different first.)
-* `PRES_STOP`: parsing was stopped by your setEncodingImpl implementation. The
+* `pcrStop`: parsing was stopped by your setEncodingImpl implementation. The
   caller is expected to restart parsing from the beginning using a **new**
   `HTML5Parser` object. WARNING: do *not* re-use the current HTML5Parser for
   this.
-* `PRES_SCRIPT`: a `</script>` end tag has been encountered, which immediately
+* `pcrScript`: a `</script>` end tag has been encountered, which immediately
   suspended parsing. In the next `parseChunk` call, the caller is expected to
   pass the **same** buffer (`inputBuf`) as in the current one. For details,
   see below.
@@ -145,7 +145,7 @@ appropriate functions (`createElementImpl`, etc.) will be called by the parser.
 Special care is required when implementing programs with scripting support. The
 HTML5 standard requires the parser to be re-entrant for supporting the
 `document.write` JavaScript function; therefore the parser suspends itself upon
-encountering a `</script>` end tag, returning a `PRES_SCRIPT` `ParseResult`.
+encountering a `</script>` end tag, returning a `pcrScript` `ParseChunkResult`.
 
 At this point, implementations have two options.
 
@@ -168,25 +168,25 @@ var buffer: array[4096, char]
 while true:
   let n = inputStream.readData(addr buffer[0], buffer.len)
   if n == 0: break
-  # res can be PRES_CONTINUE or PRES_SCRIPTING. PRES_STOP is only returned
+  # res can be pcrContinue or pcrScriptING. pcrStop is only returned
   # on charset switching, and minidom does not support that.
   var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
   # Important: we must repeat parseChunk with the same contents for the script
   # end tag result, with reprocess = true.
   #
   # (This is only relevant for calls where scripting = true; with scripting =
-  # false, PRES_SCRIPT would never be returned.)
+  # false, pcrScript would never be returned.)
   var ip = 0
-  while res == PRES_SCRIPT and (ip += parser.getInsertionPoint(); ip != n):
+  while res == pcrScript and (ip += parser.getInsertionPoint(); ip != n):
     res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
 parser.finish()
 ```
 
-Note the while loop; `parseChunk` will return `PRES_SCRIPT` multiple times
+Note the while loop; `parseChunk` will return `pcrScript` multiple times
 for a single chunk if it contains several scripts.
 
-Also note that `minidom` does not handle `PRES_STOP`, since it does not support
-legacy encodings. For an implementation that *does* handle `PRES_STOP`, see
+Also note that `minidom` does not handle `pcrStop`, since it does not support
+legacy encodings. For an implementation that *does* handle `pcrStop`, see
 `minidom_cs`.
 
 ##### Option 2: Parse buffers passed by `document.write`
@@ -228,7 +228,7 @@ Similarly, `Atom` is a unique pointer to a string. This means that
 contents are equivalent. Additionally, `atomToTagType` and `tagTypeToAtom` must
 operate as if `TagType` values were equivalent to the contents of its
 stringifier. (i.e. `tagTypeToAtom(tagType) == strToAtom($tagType)` for all tag
-types except `TAG_UNKNOWN`, which is never passed to `tagTypeToAtom`.)
+types except `ttUnknown`, which is never passed to `tagTypeToAtom`.)
 
 Note that htmlparser does not *require* an `atomToStr` procedure, so it is not
 even necessary to store interned strings in a format compatible with the Nim

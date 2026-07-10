@@ -138,7 +138,7 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     depends.add(element, dtTarget)
     return element.document.target == element
   of pcLink:
-    return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
+    return element.tagType in {ttA, ttArea} and element.attrb(satHref)
   of pcVisited:
     return false
   of pcDisabled:
@@ -225,7 +225,7 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stType:
     return element.localName == sel.atom
   of stClass:
-    if element.document.mode == QUIRKS:
+    if element.document.mode == qmQuirks:
       for it in element.classList:
         if sel.atom.equalsIgnoreCase(it):
           return true
@@ -235,7 +235,7 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
           return true
     return false
   of stId:
-    if element.document.mode == QUIRKS:
+    if element.document.mode == qmQuirks:
       return sel.atom.equalsIgnoreCase(element.id)
     return sel.atom == element.id
   of stAttr:

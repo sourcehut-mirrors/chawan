@@ -1,6 +1,6 @@
 type
   SetEncodingResult* = enum
-    SET_ENCODING_CONTINUE, SET_ENCODING_STOP
+    seContinue, seStop
 
   DOMBuilderBase* = ref object of RootObj
 

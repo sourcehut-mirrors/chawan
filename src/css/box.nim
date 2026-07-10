@@ -378,7 +378,7 @@ when defined(debug):
       return ""
     result = "<"
     let name = if box.computed{"display"} != DisplayInline:
-      if box.element.tagType in {TAG_HTML, TAG_BODY}:
+      if box.element.tagType in {ttHtml, ttBody}:
         $box.element.tagType
       else:
         "div"

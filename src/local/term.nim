@@ -927,10 +927,10 @@ proc parseCSI(eparser: var EventParser; c: char) =
     eparser.state = esCSINum
   else: eparser.backtrack(c)
 
-type EscParseResult = enum
+type EscParseChunkResult = enum
   eprNone, eprWindowChange, eprRedraw
 
-proc parseCSINum(term: Terminal; c: char): EscParseResult =
+proc parseCSINum(term: Terminal; c: char): EscParseChunkResult =
   if term.eparser.parseNum(c):
     return eprNone
   var changed = eprNone
@@ -998,7 +998,7 @@ proc parseCSINum(term: Terminal; c: char): EscParseResult =
   term.eparser.state = esNone
   changed
 
-proc parseCSIQMark(term: Terminal; c: char): EscParseResult =
+proc parseCSIQMark(term: Terminal; c: char): EscParseChunkResult =
   if term.eparser.parseNum(c):
     return eprNone
   let colorMode = term.attrs.colorMode
@@ -1067,7 +1067,7 @@ proc parseOSC6(eparser: var EventParser; c: char) =
   of '1': eparser.nextState(qsXtermWindowOps, c, esOSC61)
   else: eparser.backtrack(c)
 
-proc parseOSCNumSemi(term: Terminal; c: char): EscParseResult =
+proc parseOSCNumSemi(term: Terminal; c: char): EscParseChunkResult =
   if term.eparser.flag and term.eparser.parseColor(c):
     return eprNone
   term.eparser.flag = false
@@ -1163,7 +1163,7 @@ proc parseDCS(eparser: var EventParser; c: char) =
   of '1': eparser.state = esDCS1
   else: eparser.backtrack(c)
 
-proc parseDCS1PlusR(term: Terminal; c: char): EscParseResult =
+proc parseDCS1PlusR(term: Terminal; c: char): EscParseChunkResult =
   if term.eparser.parseHexNum(c):
     return eprNone
   let nums = move(term.eparser.nums)
@@ -1176,7 +1176,7 @@ proc parseDCS1PlusR(term: Terminal; c: char): EscParseResult =
     return eprWindowChange
   eprNone
 
-proc parseAPCG(term: Terminal; c: char): EscParseResult =
+proc parseAPCG(term: Terminal; c: char): EscParseChunkResult =
   let imageMode = term.imageMode
   if term.config{"imageMode"}.isNone:
     term.imageMode = imKitty

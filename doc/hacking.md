@@ -20,8 +20,6 @@ Exceptions:
 * Types/constants use PascalCase. enums in cssvalues use PascalCase too, to
   avoid name collisions.
 * We keep style of external C libraries, which is often snake_case.
-* Chame is stuck with `SCREAMING_SNAKE_CASE` for its enums.  This is
-  unfortunate, but does not warrant an API breakage.
 
 Rationale: consistency.
 

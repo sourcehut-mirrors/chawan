@@ -97,27 +97,27 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
   builder.document.mode = quirksMode
-  if quirksMode == QUIRKS:
+  if quirksMode == qmQuirks:
     builder.document.applyQuirksSheet()
 
 proc setEncodingImpl(builder: ChaDOMBuilder; encoding: string):
     SetEncodingResult =
   if builder.confidence != ccTentative:
-    return SET_ENCODING_CONTINUE
+    return seContinue
   if builder.charset in {csUtf16le, csUtf16be}:
     builder.confidence = ccCertain
-    return SET_ENCODING_CONTINUE
+    return seContinue
   let charset = getCharset(encoding)
   if charset == csUnknown:
-    return SET_ENCODING_CONTINUE
+    return seContinue
   builder.confidence = ccCertain
   if charset == builder.charset:
-    return SET_ENCODING_CONTINUE
+    return seContinue
   builder.charset = if charset == csXUserDefined:
     csWindows1252
   else:
     charset
-  return SET_ENCODING_STOP
+  return seStop
 
 proc getTemplateContentImpl(builder: ChaDOMBuilder; handle: ParentNode):
     ParentNode =
@@ -134,7 +134,7 @@ proc getNamespaceImpl(builder: ChaDOMBuilder; handle: ParentNode): Namespace =
   return Element(handle).namespaceURI.toNamespace()
 
 proc createHTMLElementImpl(builder: ChaDOMBuilder): ParentNode =
-  return builder.document.newHTMLElement(TAG_HTML)
+  return builder.document.newHTMLElement(ttHtml)
 
 proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: ParentNode;
@@ -234,7 +234,7 @@ proc associateWithFormImpl(builder: ChaDOMBuilder;
 proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
   let element = Element(element)
   let document = builder.document
-  if element.tagType == TAG_TEXTAREA:
+  if element.tagType == ttTextarea:
     element.resetElement(nil)
   elif element of HTMLScriptElement:
     if document.scriptingEnabled:
@@ -272,9 +272,9 @@ proc parseHTMLFragment*(element: Element; s: openArray[char]): seq[Node] =
   let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
   let document = builder.document
   document.mode = element.document.mode
-  let root = document.newHTMLElement(TAG_HTML)
+  let root = document.newHTMLElement(ttHtml)
   document.insert(root, nil, nil)
-  let form = element.findAncestorIncl(TAG_FORM)
+  let form = element.findAncestorIncl(ttForm)
   var opts = HTML5ParserOpts[ParentNode, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: false,
@@ -291,7 +291,7 @@ proc parseHTMLFragment*(element: Element; s: openArray[char]): seq[Node] =
   var parser = initHTML5Parser(builder, opts)
   let res = parser.parseChunk(s)
   # scripting is false and confidence is certain -> this must be continue
-  assert res == PRES_CONTINUE
+  assert res == pcrContinue
   parser.finish()
   builder.finish()
   return root.getChildList()
@@ -318,13 +318,13 @@ proc addWriteBuffer(document: Document) =
   document.writeBuffersTop = buffer
 
 proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
-    ParseResult =
+    ParseChunkResult =
   let builder = wrapper.builder
   let document = builder.document
   var res = wrapper.parser.parseChunk(buffer)
   # set insertion point for when it's needed
   var ip = wrapper.parser.getInsertionPoint()
-  while res == PRES_SCRIPT:
+  while res == pcrScript:
     let script = builder.poppedScript
     if script != nil: # SVG script?
       builder.poppedScript = nil
@@ -358,7 +358,7 @@ proc parseDocumentWriteChunk(wrapper: RootRef) =
   let document = builder.document
   let buffer = document.writeBuffersTop
   var res = wrapper.parser.parseChunk(buffer.toOpenArray())
-  if res == PRES_SCRIPT:
+  if res == pcrScript:
     document.addWriteBuffer()
     while true:
       buffer.i += wrapper.parser.getInsertionPoint()
@@ -373,13 +373,13 @@ proc parseDocumentWriteChunk(wrapper: RootRef) =
           script.execute()
           assert document.parserBlockingScript != script
       res = wrapper.parser.parseChunk(buffer.toOpenArray())
-      if res != PRES_SCRIPT:
+      if res != pcrScript:
         break
     assert document.writeBuffersTop.i == document.writeBuffersTop.data.len
     document.writeBuffersTop = document.writeBuffersTop.prev
   assert builder.poppedScript == nil
   buffer.i = buffer.data.len
-  if res == PRES_STOP:
+  if res == pcrStop:
     wrapper.stoppedFromScript = true
 
 proc finish*(wrapper: HTML5ParserWrapper) =
@@ -401,7 +401,7 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
     let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
     var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode, CAtom]())
     let res = parser.parseChunk(str)
-    assert res == PRES_CONTINUE
+    assert res == pcrContinue
     parser.finish()
     builder.finish()
     return ctx.toJS(builder.document)

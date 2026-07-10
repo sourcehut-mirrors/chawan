@@ -131,7 +131,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
   form.constructingEntryList = true
   var entrylist: seq[FormDataEntry] = @[]
   for field in form.controls:
-    if field.findAncestor(TAG_DATALIST) != nil or
+    if field.findAncestor(ttDatalist) != nil or
         field.attrb(satDisabled) or
         field.isButton() and Element(field) != submitter:
       continue
@@ -187,7 +187,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     else:
       assert false, "Tag type " & $field.tagType &
         " not accounted for in constructEntryList"
-    if field.tagType == TAG_TEXTAREA or
+    if field.tagType == ttTextarea or
         field of HTMLInputElement and
         HTMLInputElement(field).inputType in AutoDirInput:
       let dirname = field.attr(satDirname)

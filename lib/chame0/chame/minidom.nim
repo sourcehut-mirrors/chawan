@@ -44,8 +44,8 @@ proc newMAtomFactory*(): MAtomFactory =
   let factory = MAtomFactory(
     atomMap: newSeqOfCap[string](minCap),
   )
-  factory.atomMap.add("") # skip TAG_UNKNOWN
-  for tagType in TagType(int(TAG_UNKNOWN) + 1) .. TagType.high:
+  factory.atomMap.add("") # skip ttUnknown
+  for tagType in TagType(int(ttUnknown) + 1) .. TagType.high:
     discard factory.strToAtom($tagType)
   return factory
 
@@ -63,7 +63,7 @@ proc strToAtom*(factory: MAtomFactory; s: string): MAtom =
   return atom
 
 proc tagTypeToAtom*(factory: MAtomFactory; tagType: TagType): MAtom =
-  assert tagType != TAG_UNKNOWN
+  assert tagType != ttUnknown
   return MAtom(tagType)
 
 proc atomToStr*(factory: MAtomFactory; atom: MAtom): string =
@@ -178,7 +178,7 @@ proc clone*(node: Node; deep: bool): Node =
 proc toTagType*(atom: MAtom): TagType {.inline.} =
   if int(atom) <= int(high(TagType)):
     return TagType(atom)
-  return TAG_UNKNOWN
+  return ttUnknown
 
 proc tagType*(element: Element): TagType =
   return element.localName.toTagType()
@@ -254,7 +254,7 @@ proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): Option[Node] =
 
 proc createElement(document: Document; localName: MAtom; namespace: Namespace):
     Element =
-  let element = if localName.toTagType() == TAG_TEMPLATE and
+  let element = if localName.toTagType() == ttTemplate and
       namespace == nsHTML:
     HTMLTemplateElement(
       content: DocumentFragment()
@@ -267,7 +267,7 @@ proc createElement(document: Document; localName: MAtom; namespace: Namespace):
   return element
 
 proc createHTMLElementImpl(builder: MiniDOMBuilder): Node =
-  let localName = builder.factory.tagTypeToAtom(TAG_HTML)
+  let localName = builder.factory.tagTypeToAtom(ttHtml)
   return builder.document.createElement(localName, nsHTML)
 
 proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: MAtom;
@@ -442,14 +442,14 @@ proc moveChildrenImpl(builder: MiniDOMBuilder; fromNode, toNode: Node) =
 
 proc elementPoppedImpl(builder: MiniDOMBuilder; node: Node) =
   let popped = Element(node)
-  if popped.namespace != nsHTML or popped.tagType != TAG_OPTION:
+  if popped.namespace != nsHTML or popped.tagType != ttOption:
     return
   let selected = popped.hasAttribute("selected")
   for ancestor in popped.ancestors:
     if not (ancestor of Element):
       break
     let ancestor = Element(ancestor)
-    if ancestor.namespace != nsHTML or ancestor.tagType != TAG_SELECT:
+    if ancestor.namespace != nsHTML or ancestor.tagType != ttSelect:
       continue
     var found: Element = nil
     for child in ancestor.descendants:
@@ -457,11 +457,11 @@ proc elementPoppedImpl(builder: MiniDOMBuilder; node: Node) =
         continue
       let child = Element(child)
       if child.namespace == nsHTML:
-        if child.tagType == TAG_OPTION and child != popped and not selected:
+        if child.tagType == ttOption and child != popped and not selected:
           # emulate selectedness by declaring the first option selected
           found = nil
           break
-        if child.tagType == TAG_SELECTEDCONTENT:
+        if child.tagType == ttSelectedcontent:
           found = child
     if found != nil:
       for it in found.childList:
@@ -496,7 +496,7 @@ proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
 method setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
     SetEncodingResult {.base.} =
   # Provided as a method for minidom_cs to override.
-  return SET_ENCODING_CONTINUE
+  return seContinue
 
 proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
   let document = Document(factory: factory)
@@ -512,16 +512,16 @@ proc parseFromStream(parser: var HTML5Parser[Node, MAtom];
   while true:
     let n = inputStream.readData(addr buffer[0], buffer.len)
     if n == 0: break
-    # res can be PRES_CONTINUE or PRES_SCRIPT. PRES_STOP is only returned
+    # res can be pcrContinue or pcrScript. pcrStop is only returned
     # on charset switching, and minidom does not support that.
     var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
     # Important: we must repeat parseChunk with the same contents for the script
     # end tag result, with reprocess = true.
     #
     # (This is only relevant for calls where scripting = true; with scripting =
-    # false, PRES_SCRIPT would never be returned.)
+    # false, pcrScript would never be returned.)
     var ip = 0
-    while res == PRES_SCRIPT and (ip += parser.getInsertionPoint(); ip != n):
+    while res == pcrScript and (ip += parser.getInsertionPoint(); ip != n):
       res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
   parser.finish()
 
@@ -555,7 +555,7 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   ## overridden (in accordance with the standard).
   let builder = newMiniDOMBuilder(factory)
   let document = builder.document
-  let htmlAtom = builder.factory.tagTypeToAtom(TAG_HTML)
+  let htmlAtom = builder.factory.tagTypeToAtom(ttHtml)
   let root = Element(
     localName: htmlAtom,
     namespace: nsHTML,
@@ -566,7 +566,7 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   opts.ctx = option(Node(element))
   opts.openElementsInit = option(Node(root))
   if element.namespace == nsMathML and
-      element.localName.toTagType() == TAG_ANNOTATION_XML:
+      element.localName.toTagType() == ttAnnotationXml:
     let i = element.findAttribute("encoding")
     if i >= 0:
       let val = element.attrs[i].value.toLowerAscii()

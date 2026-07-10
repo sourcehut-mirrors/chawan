@@ -57,8 +57,8 @@ when defined(nimdocdummy):
   ##
   ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
   ## containing a non-empty character set is encountered. A SetEncodingResult
-  ## return value is expected, which is either `SET_ENCODING_STOP`, stopping
-  ## the parser, or `SET_ENCODING_CONTINUE`, allowing the parser to continue.
+  ## return value is expected, which is either `seStop`, stopping
+  ## the parser, or `seContinue`, allowing the parser to continue.
   ##
   ## Note that htmlparser no longer contains any encoding-related logic, not
   ## even UTF-8 validation. Implementing this is left to the caller. (For an
@@ -136,7 +136,7 @@ proc tagTypeToAtomImpl(builder: DOMBuilderImpl; tagType: TagType): AtomImpl
   ## that represented by its stringifier. An implementation could be:
   ## ```nim
   ## proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tt: TagType): AtomImpl =
-  ##   assert tt != TAG_UNKNOWN # parser never calls this with TAG_UNKNOWN.
+  ##   assert tt != ttUnknown # parser never calls this with ttUnknown.
   ##   return builder.strToAtomImpl($tt)
   ## ```
 
@@ -162,7 +162,7 @@ proc getParentNodeImpl(builder: DOMBuilderImpl; handle: HandleImpl):
 
 proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
   ## Create a new <html> element node. The tag type of the created element must
-  ## be TAG_HTML, and its namespace must be Namespace.HTML.
+  ## be ttHtml, and its namespace must be Namespace.HTML.
   ##
   ## This should not be confused with the "create an element for a token"
   ## step, which is not executed here.
@@ -175,9 +175,9 @@ proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
   ## `localName` is an Atom representing the tag name of the start token.
   ##
   ## Note that the parser determines the TagType of an element by its namespace
-  ## and localName; for non-HTML elements it is always considered TAG_UNKNOWN.
+  ## and localName; for non-HTML elements it is always considered ttUnknown.
   ##
-  ## (However, tokens have no namespace, so TAG_SVG and TAG_MATHML can still
+  ## (However, tokens have no namespace, so ttSvg and TAG_MATHML can still
   ## used on them.)
   ##
   ## `namespace` is the namespace of the new element. For HTML elements,
@@ -228,7 +228,7 @@ proc getNamespaceImpl(builder: DOMBuilderImpl; handle: HandleImpl): Namespace
 proc getTemplateContentImpl(builder: DOMBuilderImpl; handle: HandleImpl):
     HandleImpl {.doc.}
   ## Retrieve a handle to the template element's contents. Every element
-  ## where `builder.atomToTagTypeImpl(element.localName)` equals TAG_TEMPLATE
+  ## where `builder.atomToTagTypeImpl(element.localName)` equals ttTemplate
   ## and `builder.getNamespaceImpl(element)` equals `Namespace.HTML` must have
   ## an associated "template contents" node which this function must return.
 

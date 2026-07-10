@@ -190,8 +190,8 @@ proc getTitleAttr(bc: BufferContext; element: Element): string =
   return ""
 
 const ClickableElements = {
-  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL,
-  TAG_VIDEO, TAG_AUDIO, TAG_IFRAME, TAG_FRAME
+  ttA, ttInput, ttOption, ttButton, ttTextarea, ttLabel,
+  ttVideo, ttAudio, ttIframe, ttFrame
 }
 
 proc isClickable(element: Element): bool =
@@ -234,17 +234,17 @@ proc getClickHover(bc: BufferContext; element: Element): string =
   let clickable = element.getClickable()
   if clickable != nil:
     case clickable.tagType
-    of TAG_A:
+    of ttA:
       if url := HTMLAnchorElement(clickable).reinitURL():
         return $url
-    of TAG_OPTION:
+    of ttOption:
       return "<option>"
-    of TAG_VIDEO, TAG_AUDIO:
+    of ttVideo, ttAudio:
       let (src, _) = HTMLElement(clickable).getSrc()
       if src != "":
         if url := clickable.document.parseURL(src):
           return $url
-    of TAG_FRAME, TAG_IFRAME:
+    of ttFrame, ttIframe:
       let src = clickable.attr(satSrc)
       if src != "":
         if url := clickable.document.parseURL(src):
@@ -571,15 +571,15 @@ proc ensureLayout(bc: RootRef; element: Element) =
 
 proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
   if bc.ishtml:
-    if bc.htmlParser.parseBuffer(data.toOpenArray()) == PRES_STOP:
+    if bc.htmlParser.parseBuffer(data.toOpenArray()) == pcrStop:
       bc.charsetStack = @[bc.htmlParser.builder.charset]
       return false
   else:
-    var plaintext = bc.document.findFirst(TAG_PLAINTEXT)
+    var plaintext = bc.document.findFirst(ttPlaintext)
     if plaintext == nil:
       const s = "<plaintext>"
-      doAssert bc.htmlParser.parseBuffer(s) != PRES_STOP
-      plaintext = bc.document.findFirst(TAG_PLAINTEXT)
+      doAssert bc.htmlParser.parseBuffer(s) != pcrStop
+      plaintext = bc.document.findFirst(ttPlaintext)
     if data.len > 0:
       let lastChild = plaintext.lastChild
       if lastChild != nil and lastChild of Text:
@@ -895,7 +895,7 @@ proc onload(bc: BufferContext; data: InputData) =
 proc getTitle(bc: BufferContext; handle: PagerHandle): string {.
     proxy: pfTask.} =
   if bc.document != nil:
-    let title = bc.document.findFirst(TAG_TITLE)
+    let title = bc.document.findFirst(ttTitle)
     if title != nil:
       return title.childTextContent.stripAndCollapse()
     if bc.state == bsLoaded:
@@ -1104,7 +1104,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
     let focus = bc.document.focus
     bc.restoreFocus()
     case focus.tagType
-    of TAG_INPUT:
+    of ttInput:
       let input = HTMLInputElement(focus)
       case input.inputType
       of itFile:
@@ -1132,7 +1132,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
           cancelable = true, trusted = true)
       bc.maybeReshape()
       return bc.implicitSubmit(input)
-    of TAG_TEXTAREA:
+    of ttTextarea:
       let textarea = HTMLTextAreaElement(focus)
       textarea.setValue(s)
       if bc.config.scripting != smFalse:
@@ -1350,25 +1350,25 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
 
 proc click(bc: BufferContext; clickable: Element): ClickResult =
   case clickable.tagType
-  of TAG_LABEL:
+  of ttLabel:
     return bc.click(HTMLLabelElement(clickable))
-  of TAG_SELECT:
+  of ttSelect:
     return bc.click(HTMLSelectElement(clickable))
-  of TAG_A:
+  of ttA:
     return bc.click(HTMLAnchorElement(clickable))
-  of TAG_OPTION:
+  of ttOption:
     return bc.click(HTMLOptionElement(clickable))
-  of TAG_BUTTON:
+  of ttButton:
     return bc.click(HTMLButtonElement(clickable))
-  of TAG_TEXTAREA:
+  of ttTextarea:
     return bc.click(HTMLTextAreaElement(clickable))
-  of TAG_INPUT:
+  of ttInput:
     return bc.click(HTMLInputElement(clickable))
-  of TAG_AUDIO:
+  of ttAudio:
     return bc.click(HTMLAudioElement(clickable))
-  of TAG_VIDEO:
+  of ttVideo:
     return bc.click(HTMLVideoElement(clickable))
-  of TAG_IFRAME, TAG_FRAME:
+  of ttIframe, ttFrame:
     return bc.clickFrame(clickable)
   else:
     bc.restoreFocus()
@@ -1539,7 +1539,7 @@ proc getLinks(bc: BufferContext; handle: PagerHandle): seq[string] {.proxy.} =
   result = newSeq[string]()
   if bc.document != nil:
     for element in bc.window.displayedElements:
-      if element.tagType == TAG_A and element.attrb(satHref):
+      if element.tagType == ttA and element.attrb(satHref):
         if url := HTMLAnchorElement(element).reinitURL():
           result.add($url)
         else:
@@ -1558,7 +1558,7 @@ proc onReshape(bc: BufferContext; handle: PagerHandle) {.proxy: pfTask.} =
 proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.document == nil:
     return
-  let body = bc.document.findFirst(TAG_BODY)
+  let body = bc.document.findFirst(ttBody)
   if body == nil:
     return
   var buf = "("
@@ -1571,7 +1571,7 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   doAssert compileRegex(buf, {LRE_FLAG_GLOBAL}, regex)
   # Dummy element for the fragment parsing algorithm. We can't just use parent
   # there, because e.g. plaintext would not parse the text correctly.
-  let html = bc.document.newHTMLElement(TAG_DIV)
+  let html = bc.document.newHTMLElement(ttDiv)
   var stack = @[body]
   while stack.len > 0:
     let element = stack.pop()
@@ -1588,9 +1588,9 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           lastText = text
       elif node of HTMLElement:
         let element = HTMLElement(node)
-        if element.tagType in {TAG_NOBR, TAG_WBR}:
+        if element.tagType in {ttNobr, ttWbr}:
           element.remove()
-        elif element.tagType notin {TAG_HEAD, TAG_SCRIPT, TAG_STYLE, TAG_A}:
+        elif element.tagType notin {ttHead, ttScript, ttStyle, ttA}:
           stack.add(element)
           lastText = nil
         else:
@@ -1687,7 +1687,7 @@ proc submitForm(bc: BufferContext; handle: PagerHandle; cursorx, cursory: int):
   var element = bc.getCursorElement(cursorx, cursory)
   var form: HTMLFormElement = nil
   while element != nil:
-    if element.tagType == TAG_FORM:
+    if element.tagType == ttForm:
       form = HTMLFormElement(element)
       break
     if element of FormAssociatedElement:

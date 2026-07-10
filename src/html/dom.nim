@@ -1010,48 +1010,48 @@ proc makeform(ts: varargs[TagType]): ReflectEntryTag =
 # Note: this table only works for tag types with a registered interface.
 const ReflectMap0 = [
   # non-global attributes
-  makes(satTarget, TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
-  makes(satHref, TAG_LINK),
-  makes(satValue, TAG_BUTTON, TAG_DATA),
-  makel(satValue, TAG_LI),
-  makeb(satRequired, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
-  makes(satName, TAG_A, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META,
-    TAG_IFRAME, TAG_FRAME, TAG_IMG, TAG_OBJECT, TAG_PARAM, TAG_OBJECT, TAG_MAP,
-    TAG_FORM, TAG_OUTPUT, TAG_FIELDSET, TAG_DETAILS, TAG_SLOT, TAG_OUTPUT),
-  makes(satOpen, TAG_DETAILS),
-  makeb(satNovalidate, satHNoValidate, TAG_FORM),
-  makeb(satSelected, satDefaultSelected, TAG_OPTION),
-  makes(satRel, TAG_A, TAG_LINK, TAG_LABEL),
-  makes(satFor, satHtmlFor, TAG_LABEL, TAG_OUTPUT),
-  makes(satHttpEquiv, satHHttpEquiv, TAG_META),
-  makes(satContent, TAG_META),
-  makes(satMedia, TAG_META, TAG_SOURCE),
-  makes(satDatetime, satHDateTime, TAG_TIME, TAG_INS, TAG_DEL),
-  makes(satType, TAG_SOURCE, TAG_A, TAG_OL, TAG_LINK, TAG_SCRIPT, TAG_OBJECT),
-  makeul(satCols, TAG_TEXTAREA, 20u32),
-  makeul(satRows, TAG_TEXTAREA, 1u32),
-  makeulgz(satSize, TAG_SELECT, 0u32),
-  makeulgz(satSize, TAG_INPUT, 20u32),
-  makeul(satWidth, TAG_CANVAS, TAG_SOURCE, 300u32),
-  makeul(satHeight, TAG_CANVAS, TAG_SOURCE, 150u32),
-  makes(satAlt, TAG_IMG),
-  makes(satSrcset, TAG_IMG, TAG_SOURCE),
-  makes(satSizes, TAG_IMG, TAG_SOURCE),
-  makeco(satCrossorigin, satHCrossOrigin, TAG_IMG, TAG_SCRIPT),
-  makerp(satReferrerpolicy, satHReferrerPolicy, TAG_IMG, TAG_SCRIPT),
-  makem(satMethod, TAG_FORM),
-  makem(satFormmethod, satHFormMethod, TAG_INPUT, TAG_BUTTON),
-  makes(satUsemap, satHUseMap, TAG_IMG),
-  makeb(satIsmap, satHIsMap, TAG_IMG),
-  makeb(satDisabled, TAG_LINK, TAG_OPTION, TAG_SELECT, TAG_OPTGROUP),
-  makeurl(satSrc, TAG_IMG, TAG_SCRIPT, TAG_IFRAME, TAG_FRAME, TAG_INPUT,
-    TAG_SOURCE),
-  makeurl(satCite, TAG_BLOCKQUOTE, TAG_Q, TAG_INS, TAG_DEL),
-  makeurl(satHref, TAG_LINK),
-  makeurl(satData, TAG_OBJECT),
-  makedgz(satValue, TAG_PROGRESS, 0),
-  makedgz(satMax, TAG_PROGRESS, 1),
-  makeform(TAG_BUTTON, TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA),
+  makes(satTarget, ttA, ttArea, ttLabel, ttLink),
+  makes(satHref, ttLink),
+  makes(satValue, ttButton, ttData),
+  makel(satValue, ttLi),
+  makeb(satRequired, ttInput, ttSelect, ttTextarea),
+  makes(satName, ttA, ttInput, ttSelect, ttTextarea, ttMeta,
+    ttIframe, ttFrame, ttImg, ttObject, ttParam, ttObject, ttMap,
+    ttForm, ttOutput, ttFieldset, ttDetails, ttSlot, ttOutput),
+  makes(satOpen, ttDetails),
+  makeb(satNovalidate, satHNoValidate, ttForm),
+  makeb(satSelected, satDefaultSelected, ttOption),
+  makes(satRel, ttA, ttLink, ttLabel),
+  makes(satFor, satHtmlFor, ttLabel, ttOutput),
+  makes(satHttpEquiv, satHHttpEquiv, ttMeta),
+  makes(satContent, ttMeta),
+  makes(satMedia, ttMeta, ttSource),
+  makes(satDatetime, satHDateTime, ttTime, ttIns, ttDel),
+  makes(satType, ttSource, ttA, ttOl, ttLink, ttScript, ttObject),
+  makeul(satCols, ttTextarea, 20u32),
+  makeul(satRows, ttTextarea, 1u32),
+  makeulgz(satSize, ttSelect, 0u32),
+  makeulgz(satSize, ttInput, 20u32),
+  makeul(satWidth, ttCanvas, ttSource, 300u32),
+  makeul(satHeight, ttCanvas, ttSource, 150u32),
+  makes(satAlt, ttImg),
+  makes(satSrcset, ttImg, ttSource),
+  makes(satSizes, ttImg, ttSource),
+  makeco(satCrossorigin, satHCrossOrigin, ttImg, ttScript),
+  makerp(satReferrerpolicy, satHReferrerPolicy, ttImg, ttScript),
+  makem(satMethod, ttForm),
+  makem(satFormmethod, satHFormMethod, ttInput, ttButton),
+  makes(satUsemap, satHUseMap, ttImg),
+  makeb(satIsmap, satHIsMap, ttImg),
+  makeb(satDisabled, ttLink, ttOption, ttSelect, ttOptgroup),
+  makeurl(satSrc, ttImg, ttScript, ttIframe, ttFrame, ttInput,
+    ttSource),
+  makeurl(satCite, ttBlockquote, ttQ, ttIns, ttDel),
+  makeurl(satHref, ttLink),
+  makeurl(satData, ttObject),
+  makedgz(satValue, ttProgress, 0),
+  makedgz(satMax, ttProgress, 1),
+  makeform(ttButton, ttInput, ttOutput, ttSelect, ttTextarea),
   # super-global attributes
   makes(satClass, satClassName),
   makef(satOnclick, satClick),
@@ -1076,13 +1076,13 @@ static:
 
 const LabelableElements = {
   # input only if type not hidden
-  TAG_BUTTON, TAG_INPUT, TAG_METER, TAG_OUTPUT, TAG_PROGRESS, TAG_SELECT,
-  TAG_TEXTAREA
+  ttButton, ttInput, ttMeter, ttOutput, ttProgress, ttSelect,
+  ttTextarea
 }
 
 const VoidElements = {
-  TAG_AREA, TAG_BASE, TAG_BR, TAG_COL, TAG_EMBED, TAG_HR, TAG_IMG, TAG_INPUT,
-  TAG_LINK, TAG_META, TAG_SOURCE, TAG_TRACK, TAG_WBR
+  ttArea, ttBase, ttBr, ttCol, ttEmbed, ttHr, ttImg, ttInput,
+  ttLink, ttMeta, ttSource, ttTrack, ttWbr
 }
 
 # Iterators
@@ -1234,7 +1234,7 @@ iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
         if input.name == name and input.inputType == itRadio:
           yield input
     else:
-      for input in input.document.elementDescendants(TAG_INPUT):
+      for input in input.document.elementDescendants(ttInput):
         let input = HTMLInputElement(input)
         if input.form == nil and input.name == name and
             input.inputType == itRadio:
@@ -1249,7 +1249,7 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
   for child in select.elementList:
     if child of HTMLOptionElement:
       yield HTMLOptionElement(child)
-    elif child.tagType == TAG_OPTGROUP:
+    elif child.tagType == ttOptgroup:
       for opt in child.elementList:
         if opt of HTMLOptionElement:
           yield HTMLOptionElement(opt)
@@ -1293,10 +1293,10 @@ proc getWeak(ctx: JSContext; wwm: WindowWeakMap; key: JSValueConst): JSValue =
   return ctx.invoke(global.weakMap[wwm], ctx.getOpaque().strRefs[jstGet], key)
 
 proc isCell(this: Collection; node: Node): bool =
-  node of Element and Element(node).tagType in {TAG_TD, TAG_TH}
+  node of Element and Element(node).tagType in {ttTd, ttTh}
 
 proc isTBody(this: Collection; node: Node): bool =
-  node of Element and Element(node).tagType == TAG_TBODY
+  node of Element and Element(node).tagType == ttTbody
 
 proc isRow(this: Collection; node: Node): bool =
   node of HTMLTableRowElement
@@ -1305,7 +1305,7 @@ proc isOptionOf(node, select: Node): bool =
   if node of HTMLOptionElement:
     let parent = node.parentElement
     return Node(parent) == select or
-      parent.tagType == TAG_OPTGROUP and Node(parent.parentNode) == select
+      parent.tagType == ttOptgroup and Node(parent.parentNode) == select
   return false
 
 proc isElement(this: Collection; node: Node): bool =
@@ -1318,7 +1318,7 @@ proc isLink(this: Collection; node: Node): bool =
   if not (node of Element):
     return false
   let element = Element(node)
-  element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
+  element.tagType in {ttA, ttArea} and element.attrb(satHref)
 
 proc isImage(this: Collection; node: Node): bool =
   node of HTMLImageElement
@@ -2040,7 +2040,7 @@ when defined(debug):
     if node of Document:
       return "Document"
     result = ""
-    result.serializeFragmentInner(node, TAG_UNKNOWN, writeShadow = true)
+    result.serializeFragmentInner(node, ttUnknown, writeShadow = true)
 
 proc baseURI(node: Node): string {.jsfget.} =
   return $node.document.baseURL
@@ -2708,8 +2708,8 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
   elif child of Text:
     let text = Text(child)
     const LiteralTags = {
-      TAG_STYLE, TAG_SCRIPT, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES,
-      TAG_PLAINTEXT, TAG_NOSCRIPT
+      ttStyle, ttScript, ttXmp, ttIframe, ttNoembed, ttNoframes,
+      ttPlaintext, ttNoscript
     }
     if parentType in LiteralTags:
       res &= text.data.s
@@ -2725,20 +2725,20 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
 
 proc serializeFragment(res: var string; node: Node; writeShadow: bool) =
   var node = node
-  var parentType = TAG_UNKNOWN
+  var parentType = ttUnknown
   if node of Element:
     let element = Element(node)
-    const Extra = {TAG_BASEFONT, TAG_BGSOUND, TAG_FRAME, TAG_KEYGEN, TAG_PARAM}
+    const Extra = {ttBasefont, ttBgsound, ttFrame, ttKeygen, ttParam}
     if element.tagType in VoidElements + Extra:
       return
     if element of HTMLTemplateElement:
       node = HTMLTemplateElement(element).content
     else:
       parentType = element.tagType
-      if parentType == TAG_NOSCRIPT and not element.scriptingEnabled:
+      if parentType == ttNoscript and not element.scriptingEnabled:
         # Pretend parentType is not noscript, so we do not append literally
         # in serializeFragmentInner.
-        parentType = TAG_UNKNOWN
+        parentType = ttUnknown
       let shadow = element.shadowRoot
       if shadow != nil and writeShadow and shadow.serializable:
         res &= "<template shadowrootmode=\"" & $shadow.mode & '"'
@@ -3029,7 +3029,7 @@ proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
       if not (node of Element):
         return false
       let element = Element(node)
-      if element.document.mode == QUIRKS:
+      if element.document.mode == qmQuirks:
         for class in this.atoms:
           if not element.classList.toks.containsIgnoreCase(class):
             return false
@@ -3085,7 +3085,7 @@ proc insert0(parent: ParentNode; node, before: Node;
     if shadow != nil and shadow.slotAssignment == samNamed and
         (element != nil or node of Text):
       node.assignSlot()
-    if parentElement.tagType == TAG_SLOT and rootNode of ShadowRoot:
+    if parentElement.tagType == ttSlot and rootNode of ShadowRoot:
       discard #TODO signal a slot change
     #TODO assign slottables for a tree with root
   if node.nextSibling == nil:
@@ -3435,7 +3435,7 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
               for it in attributes.attrlist:
                 it.internalNext = document
           #TODO custom element registry, img relevant mutations, adoptedCallback
-          if element.tagType == TAG_TEMPLATE:
+          if element.tagType == ttTemplate:
             document.adopt(HTMLTemplateElement(element).content, ctx)
 
 proc addElementId0(document: Document; element: Element) =
@@ -3506,7 +3506,7 @@ proc adoptNode(ctx: JSContext; document: Document; node: Node): JSValue
   return ctx.toJS(node)
 
 proc compatMode(document: Document): string {.jsfget.} =
-  if document.mode == QUIRKS:
+  if document.mode == qmQuirks:
     return "BackCompat"
   return "CSS1Compat"
 
@@ -3670,7 +3670,7 @@ proc scriptingEnabled*(document: Document): bool =
   return document.window.settings.scripting != smFalse
 
 proc findFirst*(document: Document; tagType: TagType): HTMLElement {.
-    jsmfget("head", TAG_HEAD), jsmfget("body", TAG_BODY).} =
+    jsmfget("head", ttHead), jsmfget("body", ttBody).} =
   for element in document.elementDescendants(tagType):
     return HTMLElement(element)
   nil
@@ -3743,7 +3743,7 @@ proc validateName(ctx: JSContext; name: openArray[char]): Opt[void] =
 proc baseURL*(document: Document): URL =
   #TODO frozen base url...
   var href = ""
-  for base in document.elementDescendants(TAG_BASE):
+  for base in document.elementDescendants(ttBase):
     if base.attrb(satHref):
       href = base.attr(satHref)
   if href == "":
@@ -3765,18 +3765,18 @@ proc parseURL*(document: Document; s: string): Opt[URL] =
   ok(url)
 
 proc title*(document: Document): string {.jsfget.} =
-  if (let title = document.findFirst(TAG_TITLE); title != nil):
+  if (let title = document.findFirst(ttTitle); title != nil):
     return title.childTextContent.stripAndCollapse()
   return ""
 
 proc setTitle(ctx: JSContext; document: Document; ds: DOMString) {.
     jsfset: "title".} =
-  var title = document.findFirst(TAG_TITLE)
+  var title = document.findFirst(ttTitle)
   if title == nil:
-    let head = document.findFirst(TAG_HEAD)
+    let head = document.findFirst(ttHead)
     if head == nil:
       return
-    title = document.newHTMLElement(TAG_TITLE)
+    title = document.newHTMLElement(ttTitle)
     head.append(title, ctx)
   title.replaceAll(ds, ctx)
 
@@ -3925,17 +3925,17 @@ proc createHTMLDocument(ctx: JSContext; implementation: DOMImplementation;
   let doc = newDocument(ctx)
   doc.contentType = satTextHtml
   doc.append(doc.newDocumentType("html", "", ""), ctx)
-  let html = doc.newHTMLElement(TAG_HTML)
+  let html = doc.newHTMLElement(ttHtml)
   doc.append(html, ctx)
-  let head = doc.newHTMLElement(TAG_HEAD)
+  let head = doc.newHTMLElement(ttHead)
   html.append(head, ctx)
   if not JS_IsUndefined(title):
     var ds: DOMString
     ?ctx.fromJS(title, ds)
-    let titleElement = doc.newHTMLElement(TAG_TITLE)
+    let titleElement = doc.newHTMLElement(ttTitle)
     titleElement.append(doc.newText(ds), ctx)
     head.append(titleElement, ctx)
-  html.append(doc.newHTMLElement(TAG_BODY), ctx)
+  html.append(doc.newHTMLElement(ttBody), ctx)
   doc.origin = implementation.document.origin
   ok(doc)
 
@@ -4146,7 +4146,7 @@ proc applyUserSheet*(document: Document; user: string) =
 
 proc getRuleMap*(document: Document): CSSRuleMap =
   if document.ruleMap == nil:
-    let map = newCSSRuleMap(document.mode == QUIRKS)
+    let map = newCSSRuleMap(document.mode == qmQuirks)
     var sheet = document.uaSheetsHead
     while sheet != nil:
       map.add(sheet)
@@ -4172,12 +4172,12 @@ proc findAnchor*(document: Document; id: string): Element =
   for child in document.elementDescendants:
     if child.id == id:
       return child
-    if child.tagType == TAG_A and child.name == id:
+    if child.tagType == ttA and child.name == id:
       return child
   return nil
 
 proc findMetaRefresh*(document: Document): Element =
-  for child in document.elementDescendants(TAG_META):
+  for child in document.elementDescendants(ttMeta):
     if child.attr(satHttpEquiv).equalsIgnoreCase("refresh"):
       return child
   return nil
@@ -4232,9 +4232,9 @@ proc names(ctx: JSContext; document: Document): JSPropertyEnumList
   # manually for now.
   list.add("location")
   #TODO exposed embed, exposed object
-  for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
+  for child in document.elementDescendants({ttForm, ttIframe, ttImg}):
     if child.name != satUempty:
-      if child.tagType == TAG_IMG and child.id != satUempty:
+      if child.tagType == ttImg and child.id != satUempty:
         list.add($child.id)
       list.add($child.name)
   return list
@@ -4245,8 +4245,8 @@ proc getter(ctx: JSContext; document: Document; atom: JSAtom): JSValue
   ?ctx.fromJSView(atom, id)
   if id != CAtomNull and id != satUempty:
     #TODO exposed embed, exposed object
-    for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
-      if child.tagType == TAG_IMG and child.id == id and
+    for child in document.elementDescendants({ttForm, ttIframe, ttImg}):
+      if child.tagType == ttImg and child.id == id and
           child.name != satUempty:
         return ctx.toJS(child)
       if child.name == id:
@@ -5154,14 +5154,14 @@ proc innerHTML(element: Element): string {.jsfget.} =
 proc outerHTML(element: Element): string {.jsfget.} =
   #TODO xml
   result = ""
-  result.serializeFragmentInner(element, TAG_UNKNOWN, writeShadow = true)
+  result.serializeFragmentInner(element, ttUnknown, writeShadow = true)
 
 proc tagTypeNoNS(element: Element): TagType =
   return element.localName.toTagType()
 
 proc tagType*(element: Element; namespace = satNamespaceHTML): TagType =
   if element.namespaceURI != namespace:
-    return TAG_UNKNOWN
+    return ttUnknown
   return element.tagTypeNoNS
 
 proc prefix(element: Element): string {.jsfget.} =
@@ -5377,7 +5377,7 @@ proc scriptingEnabled(element: Element): bool =
   return element.document.scriptingEnabled
 
 proc isSubmitButton*(element: Element): bool =
-  if element.tagType == TAG_BUTTON:
+  if element.tagType == ttButton:
     return element.attr(satType).equalsIgnoreCase("submit")
   elif element of HTMLInputElement:
     let element = HTMLInputElement(element)
@@ -5385,7 +5385,7 @@ proc isSubmitButton*(element: Element): bool =
   return false
 
 proc isButton*(element: Element): bool =
-  if element.tagType == TAG_BUTTON:
+  if element.tagType == ttButton:
     return true
   if element of HTMLInputElement:
     let element = HTMLInputElement(element)
@@ -5401,12 +5401,12 @@ proc action*(element: Element): string =
     if element.form != nil:
       if element.form.attrb(satAction):
         return element.form.attr(satAction)
-  if element.tagType == TAG_FORM:
+  if element.tagType == ttForm:
     return element.attr(satAction)
   return ""
 
 proc enctype*(element: Element): FormEncodingType =
-  if element.tagType == TAG_FORM:
+  if element.tagType == ttForm:
     # Note: see below, this is not in the standard.
     if element.attrb(satEnctype):
       let s = element.attr(satEnctype)
@@ -5424,7 +5424,7 @@ proc enctype*(element: Element): FormEncodingType =
   return fetUrlencoded
 
 proc getFormMethod*(element: Element): FormMethod =
-  if element.tagType == TAG_FORM:
+  if element.tagType == ttForm:
     # The standard says nothing about this, but this code path is reached
     # on implicit form submission and other browsers seem to agree on this
     # behavior.
@@ -5472,7 +5472,7 @@ proc outerHTML(ctx: JSContext; element: Element; s: DOMStringNull): JSValue
     return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
       "outerHTML is disallowed for document elements")
   let parent: Element = if parent0 of DocumentFragment:
-    element.document.newHTMLElement(TAG_BODY)
+    element.document.newHTMLElement(ttBody)
   else:
     # neither a document, nor a document fragment => parent must be an
     # element node
@@ -5498,8 +5498,8 @@ proc insertAdjacentHTML(ctx: JSContext; this: Element;
       return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
         "parent is not a valid element")
     nodeCtx = this.parentElement
-  if nodeCtx == nil or not this.document.isxml and nodeCtx.tagType == TAG_HTML:
-    nodeCtx = this.document.newHTMLElement(TAG_BODY)
+  if nodeCtx == nil or not this.document.isxml and nodeCtx.tagType == ttHtml:
+    nodeCtx = this.document.newHTMLElement(ttBody)
   let fragment = ctx.parseFragment(nodeCtx, text.toOpenArray())
   case position
   of iapBeforeBegin: this.parentNode.insert(fragment, this, ctx)
@@ -5643,7 +5643,7 @@ proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
     if n == name:
       var target = EventTarget(element)
       var target2 = none(EventTarget)
-      if element.tagType == TAG_BODY and t in WindowEvents:
+      if element.tagType == ttBody and t in WindowEvents:
         target = document.window
         target2 = option(EventTarget(element))
       document.reflectEvent(target, n, t, value, target2)
@@ -5653,7 +5653,7 @@ proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
 proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
     value: string) =
   case element.tagType
-  of TAG_INPUT:
+  of ttInput:
     let input = HTMLInputElement(element)
     case name
     of satValue: input.setValue(value)
@@ -5661,15 +5661,15 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
     of satType:
       input.inputType = parseEnumNoCase[InputType](value).get(itText)
     else: discard
-  of TAG_OPTION:
+  of ttOption:
     let option = HTMLOptionElement(element)
     if name == satSelected:
       option.selected = has
-  of TAG_BUTTON:
+  of ttButton:
     let button = HTMLButtonElement(element)
     if name == satType:
       button.ctype = parseEnumNoCase[ButtonType](value).get(btSubmit)
-  of TAG_LINK:
+  of ttLink:
     let link = HTMLLinkElement(element)
     if name == satRel:
       link.relList.reflectTokens(value) # do not return
@@ -5692,15 +5692,15 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
       let window = document.window
       if window != nil:
         window.loadLink(link)
-  of TAG_A:
+  of ttA:
     let anchor = HTMLAnchorElement(element)
     if name == satRel:
       anchor.relList.reflectTokens(value)
-  of TAG_AREA:
+  of ttArea:
     let area = HTMLAreaElement(element)
     if name == satRel:
       area.relList.reflectTokens(value)
-  of TAG_CANVAS:
+  of ttCanvas:
     if element.scriptingEnabled and name in {satWidth, satHeight}:
       let w = element.attrul(satWidth).get(300)
       let h = element.attrul(satHeight).get(150)
@@ -5723,7 +5723,7 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
             width: w,
             height: h
           )
-  of TAG_IMG:
+  of ttImg:
     let image = HTMLImageElement(element)
     # https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
     if name == satSrc:
@@ -5812,82 +5812,82 @@ proc querySelectorAll(ctx: JSContext; this: Element; q: DOMString): JSValue
 
 proc isDisabled*(this: Element): bool =
   case this.tagType
-  of TAG_BUTTON, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_FIELDSET:
+  of ttButton, ttInput, ttSelect, ttTextarea, ttFieldset:
     if this.attrb(satDisabled):
       return true
     var lastLegend: Element = nil
     for it in this.ancestors:
       case it.tagType
-      of TAG_LEGEND: lastLegend = it
-      of TAG_FIELDSET:
+      of ttLegend: lastLegend = it
+      of ttFieldset:
         if it.attrb(satDisabled):
           return it.firstChild != lastLegend
       else: discard
     return false
-  of TAG_OPTGROUP:
+  of ttOptgroup:
     return this.attrb(satDisabled)
-  of TAG_OPTION:
+  of ttOption:
     let parent = this.parentElement
-    return parent.tagType == TAG_OPTGROUP and parent.attrb(satDisabled) or
+    return parent.tagType == ttOptgroup and parent.attrb(satDisabled) or
       this.attrb(satDisabled)
   else: #TODO form-associated custom element
     return false
 
 proc newHTMLElement(tagType: TagType; document: Document): HTMLElement =
   case tagType
-  of TAG_INPUT:
+  of ttInput:
     HTMLInputElement()
-  of TAG_A:
+  of ttA:
     let anchor = HTMLAnchorElement(internalNext: document)
     anchor.relList = anchor.newDOMTokenList(satRel)
     anchor
-  of TAG_SELECT:
+  of ttSelect:
     HTMLSelectElement()
-  of TAG_OPTGROUP:
+  of ttOptgroup:
     HTMLOptGroupElement()
-  of TAG_OPTION:
+  of ttOption:
     HTMLOptionElement()
-  of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
+  of ttH1, ttH2, ttH3, ttH4, ttH5, ttH6:
     HTMLHeadingElement()
-  of TAG_BR:
+  of ttBr:
     HTMLBRElement()
-  of TAG_SPAN:
+  of ttSpan:
     HTMLSpanElement()
-  of TAG_OL:
+  of ttOl:
     HTMLOListElement()
-  of TAG_UL:
+  of ttUl:
     HTMLUListElement()
-  of TAG_MENU:
+  of ttMenu:
     HTMLMenuElement()
-  of TAG_LI:
+  of ttLi:
     HTMLLIElement()
-  of TAG_STYLE:
+  of ttStyle:
     HTMLStyleElement()
-  of TAG_LINK:
+  of ttLink:
     let link = HTMLLinkElement(internalNext: document)
     link.relList = link.newDOMTokenList(satRel)
     link
-  of TAG_FORM:
+  of ttForm:
     let form = HTMLFormElement(internalNext: document)
     form.relList = form.newDOMTokenList(satRel)
     form
-  of TAG_TEMPLATE:
+  of ttTemplate:
     let templ = HTMLTemplateElement(content: newDocumentFragment(document))
     templ.content.host = templ
     templ
-  of TAG_UNKNOWN:
+  of ttUnknown:
     HTMLUnknownElement()
-  of TAG_SCRIPT:
+  of ttScript:
     HTMLScriptElement(forceAsync: true)
-  of TAG_BASE:
+  of ttBase:
     HTMLBaseElement()
-  of TAG_BUTTON:
+  of ttButton:
     HTMLButtonElement()
-  of TAG_TEXTAREA:
+  of ttTextarea:
     HTMLTextAreaElement()
-  of TAG_LABEL:
+  of ttLabel:
     HTMLLabelElement()
-  of TAG_CANVAS:
+  of ttCanvas:
     let imageId = if document.window != nil:
       -1
     else:
@@ -5903,55 +5903,55 @@ proc newHTMLElement(tagType: TagType; document: Document): HTMLElement =
     else:
       nil
     HTMLCanvasElement(bitmap: bitmap)
-  of TAG_IMG:
+  of ttImg:
     HTMLImageElement()
-  of TAG_VIDEO:
+  of ttVideo:
     HTMLVideoElement()
-  of TAG_AUDIO:
+  of ttAudio:
     HTMLAudioElement()
-  of TAG_AREA:
+  of ttArea:
     let area = HTMLAreaElement(internalNext: document)
     area.relList = area.newDOMTokenList(satRel)
     area
-  of TAG_TABLE:
+  of ttTable:
     HTMLTableElement()
-  of TAG_CAPTION:
+  of ttCaption:
     HTMLTableCaptionElement()
-  of TAG_TR:
+  of ttTr:
     HTMLTableRowElement()
-  of TAG_TBODY, TAG_THEAD, TAG_TFOOT:
+  of ttTbody, ttThead, ttTfoot:
     HTMLTableSectionElement()
-  of TAG_META:
+  of ttMeta:
     HTMLMetaElement()
-  of TAG_IFRAME:
+  of ttIframe:
     HTMLIFrameElement()
-  of TAG_DETAILS:
+  of ttDetails:
     HTMLDetailsElement()
-  of TAG_FRAME:
+  of ttFrame:
     HTMLFrameElement()
-  of TAG_Q, TAG_BLOCKQUOTE:
+  of ttQ, ttBlockquote:
     HTMLQuoteElement()
-  of TAG_DATA:
+  of ttData:
     HTMLDataElement()
-  of TAG_HEAD:
+  of ttHead:
     HTMLHeadElement()
-  of TAG_TITLE:
+  of ttTitle:
     HTMLTitleElement()
-  of TAG_OBJECT:
+  of ttObject:
     HTMLObjectElement()
-  of TAG_SOURCE:
+  of ttSource:
     HTMLSourceElement()
-  of TAG_INS, TAG_DEL:
+  of ttIns, ttDel:
     HTMLModElement()
-  of TAG_PROGRESS:
+  of ttProgress:
     HTMLProgressElement()
-  of TAG_SLOT:
+  of ttSlot:
     HTMLSlotElement()
-  of TAG_OUTPUT:
+  of ttOutput:
     HTMLOutputElement()
-  of TAG_HTML:
+  of ttHtml:
     HTMLHtmlElement()
-  of TAG_P:
+  of ttP:
     HTMLParagraphElement()
   else:
     HTMLElement()
@@ -5964,7 +5964,7 @@ proc newElement(document: Document;
   let element: Element = if namespaceURI == satNamespaceHTML:
     newHTMLElement(tagType, document)
   elif sns == satNamespaceSVG:
-    if tagType == TAG_SVG:
+    if tagType == ttSvg:
       SVGSVGElement()
     else:
       SVGElement()
@@ -6000,7 +6000,7 @@ proc renderBlocking(element: Element): bool =
 proc blockRendering(element: Element) =
   let document = element.document
   if document.contentType == satTextHtml and
-      document.findFirst(TAG_BODY) == nil:
+      document.findFirst(ttBody) == nil:
     element.document.renderBlockingElements.add(element)
 
 proc invalidate*(element: Element) =
@@ -6021,7 +6021,7 @@ proc ensureStyle*(element: Element) =
 
 proc resetElement*(element: Element; ctx: JSContext) =
   case element.tagType
-  of TAG_INPUT:
+  of ttInput:
     let input = HTMLInputElement(element)
     case input.inputType
     of itCheckbox, itRadio:
@@ -6032,7 +6032,7 @@ proc resetElement*(element: Element; ctx: JSContext) =
     else:
       input.setValue(input.attr(satValue))
     input.invalidate()
-  of TAG_SELECT:
+  of ttSelect:
     let select = HTMLSelectElement(element)
     select.userValidity = false
     for option in select.options:
@@ -6043,11 +6043,11 @@ proc resetElement*(element: Element; ctx: JSContext) =
       option.dirty = false
       option.invalidate(dtChecked)
     select.setSelectedness()
-  of TAG_TEXTAREA:
+  of ttTextarea:
     let textarea = HTMLTextAreaElement(element)
     textarea.dirty = false
     textarea.invalidate()
-  of TAG_OUTPUT:
+  of ttOutput:
     let output = HTMLOutputElement(element)
     output.replaceAll(output.defaultValue.toDOMStringView(), ctx)
     output.dirty = false
@@ -6057,18 +6057,18 @@ proc resetElement*(element: Element; ctx: JSContext) =
 # Returns true if has post-connection steps.
 proc insertionSteps(element: Element): bool =
   case element.tagType
-  of TAG_OPTION:
+  of ttOption:
     if element.parentElement != nil:
       let parent = element.parentElement
       var select: HTMLSelectElement
       if parent of HTMLSelectElement:
         select = HTMLSelectElement(parent)
-      elif parent.tagType == TAG_OPTGROUP and parent.parentElement != nil and
+      elif parent.tagType == ttOptgroup and parent.parentElement != nil and
           parent.parentElement of HTMLSelectElement:
         select = HTMLSelectElement(parent.parentElement)
       if select != nil:
         select.setSelectedness()
-  of TAG_LINK:
+  of ttLink:
     let link = HTMLLinkElement(element)
     let document = link.document
     if link.isConnected() and document.sheetTitle == "" and
@@ -6078,21 +6078,21 @@ proc insertionSteps(element: Element): bool =
     let window = document.window
     if window != nil:
       window.loadLink(link)
-  of TAG_IMG:
+  of ttImg:
     let window = element.document.window
     if window != nil:
       let image = HTMLImageElement(element)
       window.loadImage(image)
-  of TAG_STYLE:
+  of ttStyle:
     let style = HTMLStyleElement(element)
     if style.isConnected():
       let document = style.document
       if document.sheetTitle == "":
         document.sheetTitle = style.attr(satTitle)
       style.updateSheet()
-  of TAG_SCRIPT:
+  of ttScript:
     return true
-  elif element.tagType(satNamespaceSVG) == TAG_SVG:
+  elif element.tagType(satNamespaceSVG) == ttSvg:
     return true
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
@@ -6107,11 +6107,11 @@ proc removingSteps(element: Element) =
 
 proc postConnectionSteps(element: Element) =
   case element.tagType
-  of TAG_SCRIPT:
+  of ttScript:
     let script = HTMLScriptElement(element)
     if script.isConnected and script.parserDocument == nil:
       script.prepare()
-  elif element.tagType(satNamespaceSVG) == TAG_SVG:
+  elif element.tagType(satNamespaceSVG) == ttSvg:
     # we invoke loadSVG here to avoid the case where the descendants still
     # point to an already inserted node
     #TODO this doesn't work if JS adds descendants to the SVG tag
@@ -6312,14 +6312,14 @@ proc requestFullscreen(ctx: JSContext; element: Element): JSValue {.jsfunc.} =
 
 proc getBitmap*(element: Element): NetworkBitmap =
   case element.tagType
-  of TAG_IMG:
+  of ttImg:
     return HTMLImageElement(element).bitmap
-  of TAG_CANVAS:
+  of ttCanvas:
     let bmp = HTMLCanvasElement(element).bitmap
     if bmp != nil and bmp.cacheId != -1:
       return bmp
     return nil
-  elif element.tagType(satNamespaceSVG) == TAG_SVG:
+  elif element.tagType(satNamespaceSVG) == ttSvg:
     return SVGSVGElement(element).bitmap
   else:
     return nil
@@ -6352,9 +6352,9 @@ proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
       "only HTML elements can have shadow trees")
     return err()
   const AllowedTags = {
-    TAG_ARTICLE, TAG_ASIDE, TAG_BLOCKQUOTE, TAG_BODY, TAG_DIV, TAG_FOOTER,
-    TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6, TAG_HEADER, TAG_MAIN,
-    TAG_NAV, TAG_P, TAG_SECTION, TAG_SPAN
+    ttArticle, ttAside, ttBlockquote, ttBody, ttDiv, ttFooter,
+    ttH1, ttH2, ttH3, ttH4, ttH5, ttH6, ttHeader, ttMain,
+    ttNav, ttP, ttSection, ttSpan
   }
   let validCustom = this.localName.view().isValidCustomElementName()
   if not validCustom and this.tagType notin AllowedTags:
@@ -6776,7 +6776,7 @@ proc setRelList(area: HTMLAreaElement; ds: DOMString) {.jsfset: "relList".} =
 proc newAudio(ctx: JSContext; this_target: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let document = ctx.getDocument()
-  let this = document.newHTMLElement(TAG_AUDIO)
+  let this = document.newHTMLElement(ttAudio)
   if argc >= 1 and not JS_IsUndefined(argv[0]):
     var ds: DOMString
     ?ctx.fromJS(argv[0], ds)
@@ -6986,7 +6986,7 @@ proc resetFormOwner(element: FormAssociatedElement) =
   if element.form != nil:
     if element.tagType notin ListedElements:
       return
-    let lastForm = element.findAncestor(TAG_FORM)
+    let lastForm = element.findAncestor(ttForm)
     if not element.attrb(satForm) and lastForm == element.form:
       return
   let form = element.form
@@ -7016,7 +7016,7 @@ proc resetFormOwner(element: FormAssociatedElement) =
 proc newImage(ctx: JSContext; _: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let document = ctx.getDocument()
-  let this = document.newHTMLElement(TAG_IMG)
+  let this = document.newHTMLElement(ttImg)
   if argc >= 1 and not JS_IsUndefined(argv[0]):
     var x: uint32
     ?ctx.fromJS(argv[0], x)
@@ -7222,7 +7222,7 @@ proc setRelList(link: HTMLLinkElement; s: DOMString) {.jsfset: "relList".} =
 proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let document = ctx.getDocument()
-  let this = HTMLOptionElement(document.newHTMLElement(TAG_OPTION))
+  let this = HTMLOptionElement(document.newHTMLElement(ttOption))
   if argc >= 1 and not JS_IsUndefined(argv[0]):
     var text: DOMString
     ?ctx.fromJS(argv[0], text)
@@ -7245,7 +7245,7 @@ proc text(option: HTMLOptionElement): string {.jsfget.} =
   var s = ""
   for child in option.descendants:
     let parent = child.parentElement
-    if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
+    if child of Text and (parent.tagTypeNoNS != ttScript or
         parent.namespaceURI notin [satNamespaceHTML, satNamespaceSVG]):
       s &= Text(child).data.s
   return s.stripAndCollapse()
@@ -7351,7 +7351,7 @@ proc getter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom): JSValue
 
 proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
     before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
-  if element.tagType notin {TAG_OPTION, TAG_OPTGROUP}:
+  if element.tagType notin {ttOption, ttOptgroup}:
     return JS_ThrowTypeError(ctx, "expected option or optgroup element")
   var beforeEl: HTMLElement = nil
   var beforeIdx = -1
@@ -7387,7 +7387,7 @@ proc setLength(this: HTMLOptionsCollection; n: uint32) {.jsfset: "length".} =
       let parent = this.root
       let document = parent.document
       for i in 0 ..< n - len:
-        parent.append(document.newHTMLElement(TAG_OPTION), nil)
+        parent.append(document.newHTMLElement(ttOption), nil)
   else:
     for i in 0 ..< len - n:
       let it = this.item(uint32(i))
@@ -7423,7 +7423,7 @@ proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
   let len = this.getLength()
   let document = parent.document
   for i in len ..< u:
-    let res = parent.insertBefore(document.newHTMLElement(TAG_OPTION), nil,
+    let res = parent.insertBefore(document.newHTMLElement(ttOption), nil,
       ctx)
     if res.isErr:
       return ctx.insertThrow(res.error)
@@ -7934,18 +7934,18 @@ proc prepare*(element: HTMLScriptElement) =
 
 # <table>
 proc getTableChild(this: HTMLTableElement; tagType: TagType): Element {.
-    jsmfget("caption", TAG_CAPTION), jsmfget("tHead", TAG_THEAD),
-    jsmfget("tFoot", TAG_TFOOT).} =
+    jsmfget("caption", ttCaption), jsmfget("tHead", ttThead),
+    jsmfget("tFoot", ttTfoot).} =
   this.findFirstChildOf(tagType)
 
 proc setTableChild(ctx: JSContext; this: HTMLTableElement; tagType: TagType;
-    sectVal: JSValueConst): JSValue {.jsmfset("caption", TAG_CAPTION),
-    jsmfset("tHead", TAG_THEAD), jsmfset("tFoot", TAG_TFOOT).} =
+    sectVal: JSValueConst): JSValue {.jsmfset("caption", ttCaption),
+    jsmfset("tHead", ttThead), jsmfset("tFoot", ttTfoot).} =
   var sect: HTMLElement
   if not JS_IsNull(sectVal):
     ?ctx.fromJS(sectVal, sect)
   if sect != nil and sect.tagType != tagType:
-    if tagType != TAG_CAPTION and sect of HTMLTableSectionElement:
+    if tagType != ttCaption and sect of HTMLTableSectionElement:
       return ctx.insertThrow("wrong element type")
     return JS_ThrowTypeError(ctx, "%s tag expected", cstring($tagType))
   let old = this.findFirstChildOf(tagType)
@@ -7973,13 +7973,13 @@ proc rows(this: HTMLTableElement): HTMLCollection {.jsfget.} =
   this.cachedRows
 
 proc createTableChild(this: HTMLTableElement; tagType: TagType): Element {.
-    jsmfunc("createCaption", TAG_CAPTION), jsmfunc("createTHead", TAG_THEAD),
-    jsmfunc("createTBody", TAG_TBODY), jsmfunc("createTFoot", TAG_TFOOT).} =
+    jsmfunc("createCaption", ttCaption), jsmfunc("createTHead", ttThead),
+    jsmfunc("createTBody", ttTbody), jsmfunc("createTFoot", ttTfoot).} =
   let tagType = cast[TagType](tagType)
   let before = case tagType
-  of TAG_CAPTION: this.firstChild
-  of TAG_THEAD: this.findFirstChildNotOf({TAG_CAPTION, TAG_COLGROUP})
-  of TAG_TBODY: this.findLastChildOf(TAG_TBODY)
+  of ttCaption: this.firstChild
+  of ttThead: this.findFirstChildNotOf({ttCaption, ttColgroup})
+  of ttTbody: this.findLastChildOf(ttTbody)
   else: nil # tfoot
   var element = this.findFirstChildOf(tagType)
   if element == nil:
@@ -7988,8 +7988,8 @@ proc createTableChild(this: HTMLTableElement; tagType: TagType): Element {.
   return element
 
 proc deleteTableChild(this: HTMLTableElement; tag: TagType) {.
-    jsmfunc("deleteCaption", TAG_CAPTION), jsmfunc("deleteTHead", TAG_THEAD),
-    jsmfunc("deleteTFoot", TAG_TFOOT).} =
+    jsmfunc("deleteCaption", ttCaption), jsmfunc("deleteTHead", ttThead),
+    jsmfunc("deleteTFoot", ttTfoot).} =
   let element = this.findFirstChildOf(cast[TagType](tag))
   if element != nil:
     element.remove()
@@ -8001,9 +8001,9 @@ proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
   if index < -1 or index > int64(nrows):
     JS_ThrowDOMException(ctx, "IndexSizeError", "index out of bounds")
     return err()
-  let tr = this.document.newHTMLElement(TAG_TR)
+  let tr = this.document.newHTMLElement(ttTr)
   if nrows == 0:
-    this.createTableChild(TAG_TBODY).append(tr, ctx)
+    this.createTableChild(ttTbody).append(tr, ctx)
   elif index == -1 or uint32(index) == nrows:
     let it = rows.item(nrows - 1)
     it.parentNode.append(tr, ctx)
@@ -8048,7 +8048,7 @@ proc insertRow(ctx: JSContext; this: HTMLTableSectionElement;
   if index < -1 or index > int64(nrows):
     JS_ThrowDOMException(ctx, "index out of bounds", "IndexSizeError")
     return err()
-  let tr = this.document.newHTMLElement(TAG_TR)
+  let tr = this.document.newHTMLElement(ttTr)
   if index == -1 or index == int64(nrows):
     this.append(tr, ctx)
   else:
@@ -8066,7 +8066,7 @@ proc cells(ctx: JSContext; this: HTMLTableRowElement): JSValue {.jsfget.} =
   return ctx.getWeakCollection(this, wwmCells)
 
 proc rowIndex(this: HTMLTableRowElement): int {.jsfget.} =
-  let table = HTMLTableElement(this.findAncestor(TAG_TABLE))
+  let table = HTMLTableElement(this.findAncestor(ttTable))
   if table == nil:
     return -1
   let rows = table.rows()
@@ -8074,7 +8074,7 @@ proc rowIndex(this: HTMLTableRowElement): int {.jsfget.} =
 
 proc sectionRowIndex(this: HTMLTableRowElement): int {.jsfget.} =
   let parent = this.parentElement
-  if parent.tagType == TAG_TABLE:
+  if parent.tagType == ttTable:
     return this.rowIndex()
   if parent of HTMLTableSectionElement:
     let parent = HTMLTableSectionElement(parent)
@@ -8116,7 +8116,7 @@ proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
   let src = this.attr(satSrc)
   if src != "":
     return (src, "")
-  for el in this.elementDescendants(TAG_SOURCE):
+  for el in this.elementDescendants(ttSource):
     let src = el.attr(satSrc)
     if src != "":
       return (src, el.attr(satType))
@@ -8201,54 +8201,54 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
     class
   template register(t: typed; tag: TagType) =
     register(t, [tag])
-  register(HTMLInputElement, TAG_INPUT)
-  let anchorCID = register2(HTMLAnchorElement, TAG_A)
-  register(HTMLSelectElement, TAG_SELECT)
-  register(HTMLSpanElement, TAG_SPAN)
-  register(HTMLOptGroupElement, TAG_OPTGROUP)
-  let optionCID = register2(HTMLOptionElement, TAG_OPTION)
-  register(HTMLHeadingElement, [TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6])
-  register(HTMLBRElement, TAG_BR)
-  register(HTMLMenuElement, TAG_MENU)
-  register(HTMLUListElement, TAG_UL)
-  register(HTMLOListElement, TAG_OL)
-  register(HTMLLIElement, TAG_LI)
-  register(HTMLStyleElement, TAG_STYLE)
-  register(HTMLLinkElement, TAG_LINK)
-  register(HTMLFormElement, TAG_FORM)
-  register(HTMLTemplateElement, TAG_TEMPLATE)
-  register(HTMLUnknownElement, TAG_UNKNOWN)
-  register(HTMLScriptElement, TAG_SCRIPT)
-  register(HTMLBaseElement, TAG_BASE)
-  let areaCID = register2(HTMLAreaElement, TAG_AREA)
-  register(HTMLButtonElement, TAG_BUTTON)
-  register(HTMLTextAreaElement, TAG_TEXTAREA)
-  register(HTMLLabelElement, TAG_LABEL)
-  register(HTMLCanvasElement, TAG_CANVAS)
-  let imageCID = register2(HTMLImageElement, TAG_IMG)
-  register(HTMLVideoElement, TAG_VIDEO)
-  let audioCID = register2(HTMLAudioElement, TAG_AUDIO)
-  register(HTMLIFrameElement, TAG_IFRAME)
-  register(HTMLTableElement, TAG_TABLE)
-  register(HTMLTableCaptionElement, TAG_CAPTION)
-  register(HTMLTableRowElement, TAG_TR)
-  register(HTMLTableSectionElement, [TAG_TBODY, TAG_THEAD, TAG_TFOOT])
-  register(HTMLMetaElement, TAG_META)
-  register(HTMLDetailsElement, TAG_DETAILS)
-  register(HTMLFrameElement, TAG_FRAME)
-  register(HTMLTimeElement, TAG_TIME)
-  register(HTMLQuoteElement, [TAG_BLOCKQUOTE, TAG_Q])
-  register(HTMLDataElement, TAG_DATA)
-  register(HTMLHeadElement, TAG_HEAD)
-  register(HTMLTitleElement, TAG_TITLE)
-  register(HTMLObjectElement, TAG_OBJECT)
-  register(HTMLSourceElement, TAG_SOURCE)
-  register(HTMLModElement, [TAG_INS, TAG_DEL])
-  register(HTMLProgressElement, TAG_PROGRESS)
-  register(HTMLSlotElement, TAG_SLOT)
-  register(HTMLOutputElement, TAG_OUTPUT)
-  register(HTMLHtmlElement, TAG_HTML)
-  register(HTMLParagraphElement, TAG_P)
+  register(HTMLInputElement, ttInput)
+  let anchorCID = register2(HTMLAnchorElement, ttA)
+  register(HTMLSelectElement, ttSelect)
+  register(HTMLSpanElement, ttSpan)
+  register(HTMLOptGroupElement, ttOptgroup)
+  let optionCID = register2(HTMLOptionElement, ttOption)
+  register(HTMLHeadingElement, [ttH1, ttH2, ttH3, ttH4, ttH5, ttH6])
+  register(HTMLBRElement, ttBr)
+  register(HTMLMenuElement, ttMenu)
+  register(HTMLUListElement, ttUl)
+  register(HTMLOListElement, ttOl)
+  register(HTMLLIElement, ttLi)
+  register(HTMLStyleElement, ttStyle)
+  register(HTMLLinkElement, ttLink)
+  register(HTMLFormElement, ttForm)
+  register(HTMLTemplateElement, ttTemplate)
+  register(HTMLUnknownElement, ttUnknown)
+  register(HTMLScriptElement, ttScript)
+  register(HTMLBaseElement, ttBase)
+  let areaCID = register2(HTMLAreaElement, ttArea)
+  register(HTMLButtonElement, ttButton)
+  register(HTMLTextAreaElement, ttTextarea)
+  register(HTMLLabelElement, ttLabel)
+  register(HTMLCanvasElement, ttCanvas)
+  let imageCID = register2(HTMLImageElement, ttImg)
+  register(HTMLVideoElement, ttVideo)
+  let audioCID = register2(HTMLAudioElement, ttAudio)
+  register(HTMLIFrameElement, ttIframe)
+  register(HTMLTableElement, ttTable)
+  register(HTMLTableCaptionElement, ttCaption)
+  register(HTMLTableRowElement, ttTr)
+  register(HTMLTableSectionElement, [ttTbody, ttThead, ttTfoot])
+  register(HTMLMetaElement, ttMeta)
+  register(HTMLDetailsElement, ttDetails)
+  register(HTMLFrameElement, ttFrame)
+  register(HTMLTimeElement, ttTime)
+  register(HTMLQuoteElement, [ttBlockquote, ttQ])
+  register(HTMLDataElement, ttData)
+  register(HTMLHeadElement, ttHead)
+  register(HTMLTitleElement, ttTitle)
+  register(HTMLObjectElement, ttObject)
+  register(HTMLSourceElement, ttSource)
+  register(HTMLModElement, [ttIns, ttDel])
+  register(HTMLProgressElement, ttProgress)
+  register(HTMLSlotElement, ttSlot)
+  register(HTMLOutputElement, ttOutput)
+  register(HTMLHtmlElement, ttHtml)
+  register(HTMLParagraphElement, ttP)
   # 48/127 (warning: the 128th interface won't fit in the top 7 bits of
   # the getter/setter magic)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
@@ -8336,7 +8336,7 @@ isDefaultPassiveImpl = proc(target: EventTarget): bool =
   let node = Node(target)
   return target of Window or EventTarget(node.document) == target or
     EventTarget(node.document.documentElement) == target or
-    EventTarget(node.document.findFirst(TAG_BODY)) == target
+    EventTarget(node.document.findFirst(ttBody)) == target
 
 getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; isLoad: bool):
     EventTarget =

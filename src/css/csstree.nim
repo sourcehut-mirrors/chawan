@@ -491,22 +491,22 @@ proc addProgress(frame: var TreeFrame; element: Element) =
 
 proc addChildren(frame: var TreeFrame) =
   case frame.parent.tagType
-  of TAG_INPUT: frame.addInputChildren(HTMLInputElement(frame.parent))
-  of TAG_TEXTAREA: frame.addText(HTMLTextAreaElement(frame.parent).value)
-  of TAG_IMG: frame.addImageOrAlt(HTMLImageElement(frame.parent))
-  of TAG_CANVAS: frame.addImage(HTMLCanvasElement(frame.parent).bitmap)
-  of TAG_VIDEO: frame.addText("[video]")
-  of TAG_AUDIO: frame.addText("[audio]")
-  of TAG_BR: frame.addBr()
-  of TAG_IFRAME: frame.addText("[iframe]")
-  of TAG_FRAME: frame.addText("[frame]")
-  of TAG_PROGRESS: frame.addProgress(frame.parent)
-  of TAG_OPTION:
+  of ttInput: frame.addInputChildren(HTMLInputElement(frame.parent))
+  of ttTextarea: frame.addText(HTMLTextAreaElement(frame.parent).value)
+  of ttImg: frame.addImageOrAlt(HTMLImageElement(frame.parent))
+  of ttCanvas: frame.addImage(HTMLCanvasElement(frame.parent).bitmap)
+  of ttVideo: frame.addText("[video]")
+  of ttAudio: frame.addText("[audio]")
+  of ttBr: frame.addBr()
+  of ttIframe: frame.addText("[iframe]")
+  of ttFrame: frame.addText("[frame]")
+  of ttProgress: frame.addProgress(frame.parent)
+  of ttOption:
     let option = HTMLOptionElement(frame.parent)
     frame.addOptionChildren(option)
-  of TAG_A:
+  of ttA:
     frame.addAnchorChildren(HTMLAnchorElement(frame.parent))
-  elif frame.parent.tagType(satNamespaceSVG) == TAG_SVG:
+  elif frame.parent.tagType(satNamespaceSVG) == ttSvg:
     frame.addImage(SVGSVGElement(frame.parent).bitmap)
   else:
     frame.addElementChildren()

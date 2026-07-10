@@ -120,7 +120,7 @@ proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
 proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     depends: var DependencyInfo) =
   let parentElement = element.parentElement
-  let quirks = element.document.mode == QUIRKS
+  let quirks = element.document.mode == qmQuirks
   var tosorts = ToSorts(
     cache: AncestorCache(last: parentElement, quirks: sheet.quirks)
   )
@@ -317,7 +317,7 @@ const InputTypeWithSize* = {
 
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   case element.tagType
-  of TAG_TABLE:
+  of ttTable:
     ctx.applyDimensionHintGz(cptWidth, element.attr(satWidth))
     ctx.applyDimensionHintGz(cptHeight, element.attr(satHeight))
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
@@ -325,7 +325,7 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       let n = cssLength(float32(s))
       ctx.applyPresHint(makeEntry(cptBorderSpacingInline, n))
       ctx.applyPresHint(makeEntry(cptBorderSpacingBlock, n))
-  of TAG_TD, TAG_TH:
+  of ttTd, ttTh:
     ctx.applyDimensionHintGz(cptWidth, element.attr(satWidth))
     ctx.applyDimensionHintGz(cptHeight, element.attr(satHeight))
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
@@ -335,45 +335,45 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     let rowspan = element.attrul(satRowspan).get(65535)
     if rowspan < 65535:
       ctx.applyPresHint(makeEntry(cptChaRowspan, int32(rowspan)))
-  of TAG_THEAD, TAG_TBODY, TAG_TFOOT, TAG_TR:
+  of ttThead, ttTbody, ttTfoot, ttTr:
     ctx.applyDimensionHint(cptHeight, element.attr(satHeight))
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
-  of TAG_COL:
+  of ttCol:
     ctx.applyDimensionHint(cptWidth, element.attr(satWidth))
-  of TAG_IMG, TAG_CANVAS, TAG_SVG:
+  of ttImg, ttCanvas, ttSvg:
     ctx.applyDimensionHint(cptWidth, element.attr(satWidth))
     ctx.applyDimensionHint(cptHeight, element.attr(satHeight))
-  of TAG_HTML:
+  of ttHtml:
     ctx.applyPresHint(makeEntry(cptBgcolorIsCanvas,
       CSSValueBit(bgcolorIsCanvas: true)))
-  of TAG_BODY:
+  of ttBody:
     ctx.applyPresHint(makeEntry(cptBgcolorIsCanvas,
       CSSValueBit(bgcolorIsCanvas: true)))
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
     ctx.applyColorHint(cptColor, element.attr(satText))
-  of TAG_TEXTAREA:
+  of ttTextarea:
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
     ctx.applyLengthHint(cptWidth, cuCh, cols)
     ctx.applyLengthHint(cptHeight, cuEm, rows)
-  of TAG_FONT:
+  of ttFont:
     ctx.applyColorHint(cptColor, element.attr(satColor))
-  of TAG_INPUT:
+  of ttInput:
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
       let n = float32(element.attrulgz(satSize).get(20))
       let length = resolveLength(cuCh, n, ctx.window.settings.attrsp[])
       ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, length.npx))
-  of TAG_PROGRESS:
+  of ttProgress:
     let position = element.getProgressPosition()
     if position > 0:
       ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, float32(position)))
-  of TAG_SELECT:
+  of ttSelect:
     if element.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)
       ctx.applyLengthHint(cptHeight, cuEm, size)
-  of TAG_OL:
+  of ttOl:
     if n := element.attrl(satStart):
       if n > int32.low:
         let n = n - 1
@@ -382,14 +382,14 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
           counterSet: @[CSSCounterSet(name: satListItem.toAtom(), num: n)]
         )
         ctx.applyPresHint(makeEntry(cptCounterReset, val))
-  of TAG_LI:
+  of ttLi:
     if n := element.attrl(satValue):
       let val = CSSValue(
         v: cvtCounterSet,
         counterSet: @[CSSCounterSet(name: satListItem.toAtom(), num: n)]
       )
       ctx.applyPresHint(makeEntry(cptCounterSet, val))
-  of TAG_HR:
+  of ttHr:
     if dim := parseDimensionValues(element.attr(satWidth)):
       if dim.isPx:
         dim.npx = max(dim.npx, float32(ctx.window.settings.attrsp.ppc))

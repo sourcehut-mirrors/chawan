@@ -225,7 +225,7 @@ macro makeStaticAtom =
   let decl0 = decl[0][2]
   var seen = HashSet[string].default
   for t in TagType:
-    if t == TAG_UNKNOWN:
+    if t == ttUnknown:
       continue
     let tn = $t
     let name = "sat" & tn[0].toUpperAscii() & tn.substr(1).kebabToCamelCase()
@@ -424,11 +424,11 @@ proc toAtomTrace*(s: DOMString): CAtomTraced =
   s.toOpenArray().toAtomTrace()
 
 proc toStaticAtom*(tagType: TagType): StaticAtom =
-  assert tagType != TAG_UNKNOWN
+  assert tagType != ttUnknown
   StaticAtom(uint32(tagType))
 
 proc toAtom*(tagType: TagType): CAtom =
-  assert tagType != TAG_UNKNOWN
+  assert tagType != ttUnknown
   return CAtom(tagType)
 
 proc toAtom*(satom: StaticAtom): CAtom =
@@ -525,7 +525,7 @@ proc toTagType*(atom: CAtom): TagType =
   let i = int(atom)
   if i <= int(TagType.high):
     return TagType(i)
-  return TAG_UNKNOWN
+  return ttUnknown
 
 proc toTagType*(atom: CAtomTraced): TagType {.borrow.}
 
