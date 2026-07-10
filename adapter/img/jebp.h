@@ -62,13 +62,19 @@
  * where:
  *   `const char *path` is the path of the file to be read.
  *
- * It is currently not possible to read from a `FILE *` object.
  * If you only want to get the size of the image without a full read, these
  * functions can be used instead:
  * ```c
  * err = jebp_decode_size(&image, size, data);
  * err = jebp_read_size(&image, path);
  * ```
+ *
+ * For parsing data from a stream, the callback API can be used. First, fill a
+ * `struct jebp_io_callbacks` with your callbacks; then, pass it to
+ * `jebp_read_from_callbacks` or `jebp_read_size_from_callbacks`. The `read`
+ * callback's semantics are equivalent to those of `fread`, while `check_error`
+ * is analogous to `ferror`. The `user` opaque pointer is passed on all
+ * callback invocations.
  *
  * The `jebp_image_t` structure has the following properties:
  *   `jebp_int width` is the width of the image.
@@ -309,7 +315,7 @@ typedef struct jebp_io_callbacks {
 } jebp_io_callbacks;
 
 jebp_error_t jebp_read_from_callbacks(jebp_image_t *image,
-                                 const jebp_io_callbacks *cb, void *user);
+                                      const jebp_io_callbacks *cb, void *user);
 jebp_error_t jebp_read_size_from_callbacks(jebp_image_t *image,
                                            const jebp_io_callbacks *cb,
                                            void *user);
