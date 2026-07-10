@@ -342,7 +342,8 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
     this.runStartupScript();
     if (pipe) {
         this.loadSubmit("stream:-", {
-            contentType: contentType || "text/x-ansi"
+            contentType: contentType || "text/x-ansi",
+            charset
         });
     }
     const init = {contentType, charset, history};
