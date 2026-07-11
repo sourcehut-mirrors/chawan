@@ -450,7 +450,8 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
     if acceptSigint:
       sigintCaught = true
     else:
-      quit(1)
+      discard myposix.signal(SIGINT, myposix.SIG_DFL);
+      discard kill(getpid(), SIGINT)
   jsctx.setupStartupScript("init.jsb")
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
     client.console)

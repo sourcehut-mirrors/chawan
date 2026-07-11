@@ -1404,6 +1404,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     env: openArray[EnvVar]): Opt[bool] {.noinit.} =
   if suspend:
     ?pager.term.quit()
+    pager.term.blockSigint()
   case (let pid = fork(); pid)
   of -1:
     pager.alert("Failed to run process")
@@ -1413,8 +1414,6 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
   of 0:
     if pager.setEnvVars0(env).isErr:
       quit(1)
-    discard myposix.signal(SIGINT, myposix.SIG_IGN)
-    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
     if not suspend:
       closeStdin()
       closeStdout()
@@ -1435,6 +1434,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
       return ok(true)
     if wait:
       ?pager.term.anyKey()
+    pager.term.unblockSigint()
     ?pager.term.restart()
     pager.redraw()
     return ok(WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0)
@@ -1868,8 +1868,6 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int {.noinit.} =
   let westream = pager.forkserver.westream
   let pid = fork()
   if pid == 0:
-    discard myposix.signal(SIGINT, myposix.SIG_IGN)
-    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
     ps.moveFd(STDIN_FILENO)
     os.moveFd(STDOUT_FILENO)
     westream.moveFd(STDERR_FILENO)
@@ -1911,8 +1909,6 @@ proc execCmdUnlink(pager: Pager; cmd, path: string): int {.noinit.} =
   let westream = pager.forkserver.westream
   let pid = fork()
   if pid == 0:
-    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
-    discard myposix.signal(SIGINT, myposix.SIG_IGN)
     closeStdin()
     closeStdout()
     westream.moveFd(STDERR_FILENO)
@@ -1962,6 +1958,7 @@ proc runMailcapWritePipe(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd: string): Opt[void] =
   if needsterminal:
     ?pager.term.quit()
+    pager.term.blockSigint()
   let pid = fork()
   if pid == -1:
     stream.sclose()
@@ -1981,6 +1978,7 @@ proc runMailcapWritePipe(pager: Pager; stream: PosixStream;
       while waitpid(pid, x, 0) == -1:
         if errno != EINTR:
           break
+      pager.term.unblockSigint()
       ?pager.term.restart()
   ok()
 
@@ -2013,8 +2011,6 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
     return pid
   of 0:
     # child process
-    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
-    discard myposix.signal(SIGINT, myposix.SIG_IGN)
     westream.moveFd(STDIN_FILENO)
     pager.term.istream.sclose()
     pager.term.ostream.sclose()
@@ -2043,8 +2039,10 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
       ?pager.term.restart()
       pager.alert("Error: failed to write file for mailcap process")
     else:
+      pager.term.blockSigint()
       let ret = pager.execPipeWait(cmd, pager.term.istream, os)
       discard unlink(cstring(outpath))
+      pager.term.unblockSigint()
       ?pager.term.restart()
       if ret != 0:
         pager.alert("Error: " & cmd & " exited with status " & $ret)

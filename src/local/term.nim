@@ -19,7 +19,6 @@ import types/cell
 import types/color
 import types/opt
 import types/winattrs
-import utils/myposix
 import utils/strwidth
 import utils/twtstr
 
@@ -2437,14 +2436,19 @@ proc enableRawMode(term: Terminal): Opt[void] =
 var sigintCaught* {.global.} = false
 var acceptSigint* {.global.} = false
 
-proc catchSigint*(term: Terminal) =
-  term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
+proc blockSigint*(term: Terminal) =
   acceptSigint = true
+
+proc unblockSigint*(term: Terminal) =
+  sigintCaught = false
+  acceptSigint = false
+
+proc catchSigint*(term: Terminal) =
+  term.blockSigint()
+  term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
   discard tcSetAttr(term.istream.fd, TCSADRAIN, addr term.newTermios)
 
 proc respectSigint*(term: Terminal) =
-  sigintCaught = false
-  acceptSigint = false
   term.newTermios.c_lflag = term.newTermios.c_lflag and not ISIG
   discard tcSetAttr(term.istream.fd, TCSADRAIN, addr term.newTermios)
 
@@ -2476,7 +2480,6 @@ proc quit*(term: Terminal): Opt[void] =
     ?term.blockIO()
     term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
     discard tcSetAttr(term.istream.fd, TCSANOW, addr term.newTermios)
-    discard myposix.signal(SIGINT, myposix.SIG_DFL)
     while term.eparser.queryState != qsNone:
       if term.ahandleRead().isErr:
         break
