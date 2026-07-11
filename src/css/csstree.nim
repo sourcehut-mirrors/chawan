@@ -79,7 +79,6 @@ type
     absoluteTail: CSSAbsolute
     fixedHead: CSSAbsolute
     fixedTail: CSSAbsolute
-    computedMap: CSSValuesMap
 
   TreeFrame = object
     parent: Element
@@ -152,17 +151,13 @@ proc counter(ctx: TreeContext; name: CAtom): int32 =
       return counter.n
   return 0
 
-proc atomize(frame: TreeFrame; computed: CSSValues): CSSValues =
-  frame.ctx.computedMap.atomize(computed)
-
-proc inheritFor(frame: TreeFrame; computed: CSSValues; display: CSSDisplay):
-    CSSValues =
+proc inheritFor(computed: CSSValues; display: CSSDisplay): CSSValues =
   let inherited = computed.inheritProperties()
   inherited{"display"} = display
-  frame.atomize(inherited)
+  inherited.atomize()
 
 proc inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
-  frame.inheritFor(frame.computed, display)
+  frame.computed.inheritFor(display)
 
 proc initTreeFrame(ctx: TreeContext; parent: Element; computed: CSSValues):
     TreeFrame =
@@ -179,7 +174,7 @@ proc getAnonInlineComputed(frame: var TreeFrame): CSSValues =
       frame.anonInlineComputed = frame.computed
     else:
       let computed = frame.computed.inheritProperties()
-      frame.anonInlineComputed = frame.atomize(computed)
+      frame.anonInlineComputed = computed.atomize()
   return frame.anonInlineComputed
 
 proc displayed(frame: TreeFrame; text: RefString): bool =
@@ -299,11 +294,11 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   # Generate a marker box.
   var markerComputed = node.element.getComputedStyle(peMarker)
   if markerComputed == nil:
-    markerComputed = frame.inheritFor(node.computed, DisplayMarker)
+    markerComputed = node.computed.inheritFor(DisplayMarker)
   var textComputed = markerComputed.inheritProperties()
   textComputed{"white-space"} = WhiteSpacePre
   textComputed{"content"} = markerComputed{"content"}
-  textComputed = frame.atomize(textComputed)
+  textComputed = textComputed.atomize()
   let markerText = if markerComputed{"content"}.len == 0:
     StyledNode(
       t: stCounter,
@@ -449,7 +444,7 @@ proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
     let n = frame.computed{"-cha-input-intrinsic-size"}
     computed{"display"} = DisplayBlock
     computed{"width"} = cssLength(n)
-    computed = frame.atomize(computed)
+    computed = computed.atomize()
     var aframe = frame.ctx.initTreeFrame(input, computed)
     if cdata != nil:
       aframe.addText(cdata)
@@ -465,7 +460,7 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
     var computed = option.computed.inheritProperties()
     computed{"color"} = cssColor(ANSIColor(1)) # red
     computed{"white-space"} = WhiteSpacePre
-    computed = frame.atomize(computed)
+    computed = computed.atomize()
     block anon:
       var aframe = frame.ctx.initTreeFrame(option, computed)
       aframe.addText(cdata)
@@ -485,7 +480,7 @@ proc addProgress(frame: var TreeFrame; element: Element) =
     let n = frame.computed{"-cha-input-intrinsic-size"}
     computed{"width"} = cssLengthFrac(clamp(n, 0, 1))
     computed{"border-bottom-style"} = BorderStyleHash
-    frame.addAnon(frame.atomize(computed), @[])
+    frame.addAnon(computed.atomize(), @[])
   else:
     frame.addElementChildren()
 
@@ -825,7 +820,6 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
     markLinks: markLinks,
     stackItem: stack,
     linkHintChars: linkHintChars,
-    computedMap: element.document.getComputedMap()
   )
   ctx.resetCounter(satDashChaLinkCounter.toAtom(), 0, element)
   let hintHigh = max(linkHintChars[].high, 0)

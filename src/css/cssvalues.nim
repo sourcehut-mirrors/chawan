@@ -350,10 +350,7 @@ type
     tab: seq[ptr CSSValuesRootObj]
     load: int
 
-  CSSValuesMap* = ref CSSValuesMapObj
-
   CSSValuesRootObj {.pure, inheritable.} = object
-    map: ptr CSSValuesMapObj
     hcache: Hash
 
   CSSValuesRoot = ref CSSValuesRootObj
@@ -432,11 +429,13 @@ type
       deg: float32
 
 # Forward declarations
-proc del(map: CSSValuesMap; computed: ptr CSSValuesRootObj)
+proc del(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj)
 proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
 proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
   Opt[CSSCalcSum]
+
+var computedMap {.global.}: CSSValuesMapObj
 
 when defined(debug):
   proc serializeEmpty*(computed: CSSValues): string
@@ -460,15 +459,8 @@ when defined(gcDestructors):
   proc `=copy`*(a: var CSSValueWord; b: CSSValueWord) =
     copyMem(addr a, unsafeAddr b, sizeof(a))
 
-proc `=destroy`*(map: var CSSValuesMapObj) =
-  for it in map.tab:
-    if it != nil:
-      it.map = nil
-  map.tab.reset()
-
 proc `=destroy`*(computed: var CSSValuesRootObj) =
-  if computed.map != nil:
-    cast[CSSValuesMap](computed.map).del(addr computed)
+  computedMap.del(addr computed)
 
 static:
   doAssert sizeof(CSSValueBit) == 1
@@ -646,7 +638,7 @@ proc isSame(a, b: CSSValues): bool =
     return false
   true
 
-proc putAgain(map: CSSValuesMap; computed: ptr CSSValuesRootObj) =
+proc putAgain(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj) =
   let mask = map.tab.len - 1
   var home = computed.hcache and mask
   var i = home
@@ -660,7 +652,7 @@ proc putAgain(map: CSSValuesMap; computed: ptr CSSValuesRootObj) =
       swap(map.tab[i], current)
     i = (i + 1) and mask
 
-proc put0(map: CSSValuesMap; computed: ptr CSSValuesRootObj):
+proc put0(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj):
     ptr CSSValuesRootObj =
   let mask = map.tab.len - 1
   var home = computed.hcache and mask
@@ -683,7 +675,7 @@ proc put0(map: CSSValuesMap; computed: ptr CSSValuesRootObj):
 
 # If an equivalent computed is in map, return that.
 # Otherwise, insert computed into map.
-proc atomize*(map: CSSValuesMap; computed: CSSValues): CSSValues =
+proc atomize(map: var CSSValuesMapObj; computed: CSSValues): CSSValues =
   if computed.next != nil:
     # next is part of the hash, so atomize computed first
     computed.next = map.atomize(computed.next)
@@ -706,20 +698,23 @@ proc atomize*(map: CSSValuesMap; computed: CSSValues): CSSValues =
       map.putAgain(it)
   let res = map.put0(cast[ptr CSSValuesRootObj](computed))
   if res == cast[ptr CSSValuesRootObj](computed):
-    res.map = cast[ptr CSSValuesMapObj](map)
     inc map.load
   cast[CSSValues](res)
 
-proc del(map: CSSValuesMap; computed: ptr CSSValuesRootObj) =
+proc atomize*(computed: CSSValues): CSSValues =
+  computedMap.atomize(computed)
+
+proc del(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj) =
   if map.tab.len == 0:
     return
   let mask = map.tab.len - 1
   var i = computed.hcache and mask
   while true:
     let it = map.tab[i]
-    assert it != nil
+    if it == nil:
+      # not atomized
+      return
     if it == computed:
-      it.map = nil
       dec map.load
       map.tab[i] = nil
       break

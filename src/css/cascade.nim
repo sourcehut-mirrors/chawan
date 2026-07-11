@@ -509,8 +509,7 @@ proc applyStyle(element: Element) =
         pcomputed{"display"} = DisplayMarker
       computed.next = pcomputed
       computed = pcomputed
-  let computedMap = document.getComputedMap()
-  element.computed = computedMap.atomize(element.computed)
+  element.computed = element.computed.atomize()
 
 # Forward declaration hack
 applyStyleImpl = applyStyle

@@ -410,7 +410,6 @@ type
     authorSheetsHead: CSSStylesheet
     sheetTitle: string
     ruleMap: CSSRuleMap
-    computedMap: CSSValuesMap
     cachedForms: HTMLCollection
     cachedLinks: HTMLCollection
     cachedImages: HTMLCollection
@@ -4159,11 +4158,6 @@ proc getRuleMap*(document: Document): CSSRuleMap =
       sheet = sheet.next
     document.ruleMap = map
   return document.ruleMap
-
-proc getComputedMap*(document: Document): CSSValuesMap =
-  if document.computedMap == nil:
-    document.computedMap = CSSValuesMap()
-  document.computedMap
 
 proc findAnchor*(document: Document; id: string): Element =
   if id.len == 0:
