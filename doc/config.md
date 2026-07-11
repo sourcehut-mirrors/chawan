@@ -307,6 +307,11 @@ auto-mailcap = "\$CHA_DIR/mailcap"
   For backwards-compatibility, if this is "mailcap" and the file does not
   exist, Chawan will also check "auto.mailcap".
 
+auto-browsecap = "\$CHA_DIR/browsecap"
+: **path**
+
+: Browsecap file for entries that are automatically executed.
+
 cgi-dir = ["\$CHA_DIR/cgi-bin", "\$CHA_LIBEXEC_DIR/cgi-bin"]
 : **array of paths**
 

@@ -170,7 +170,7 @@ proc find*(entry: MailcapEntry; t: NamedFieldType): NamedField =
       return field
   nil
 
-proc toStr(entry: MailcapEntry; t: string): string =
+proc toStr*(entry: MailcapEntry; t: string): string =
   var s = t & ';' & entry.cmd
   for flag in MailcapFlag:
     if flag in entry.flags:
@@ -178,7 +178,6 @@ proc toStr(entry: MailcapEntry; t: string): string =
   for field in entry.fields:
     # if value is regex, then the source is until the first NUL
     s &= ';' & $field.t & '=' & $cstring(field.value)
-  s &= '\n'
   move(s)
 
 template err(state: MailcapParser; msg: string): untyped =
@@ -370,7 +369,8 @@ proc quoteFile*(file: string; qs: QuoteState): string =
   move(s)
 
 proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
-    canpipe: var bool; line = -1; uriparams = false): string =
+    canpipe: var bool; line = -1; uriparams = false; shellQuote = true):
+    string =
   var cmd = ""
   var attrname = ""
   var state = usNormal
@@ -427,25 +427,47 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
       case c
       of '%': cmd &= c
       of 's':
-        cmd &= quoteFile(outpath, qs)
+        if shellQuote:
+          cmd &= quoteFile(outpath, qs)
+        else:
+          cmd &= outpath
         canpipe = false
       of 't':
-        cmd &= quoteFile(contentType.untilLower(';'), qs)
+        let shortType = contentType.untilLower(';')
+        if shellQuote:
+          cmd &= quoteFile(shortType, qs)
+        else:
+          cmd &= shortType
       of 'u': # Netscape extension
         if url != nil: # nil in getEditorCommand
-          cmd &= quoteFile($url, qs)
+          if shellQuote:
+            cmd &= quoteFile($url, qs)
+          else:
+            cmd &= $url
       of 'h': # w3mmee extension
         if url != nil:
-          cmd &= quoteFile(url.hostname, qs)
+          if shellQuote:
+            cmd &= quoteFile(url.hostname, qs)
+          else:
+            cmd &= url.hostname
       of 'H': # Chawan extension
         if url != nil:
-          cmd &= quoteFile(url.host, qs)
+          if shellQuote:
+            cmd &= quoteFile(url.host, qs)
+          else:
+            cmd &= url.host
       of 'p': # w3mmee extension
         if url != nil:
-          cmd &= quoteFile(url.port, qs)
+          if shellQuote:
+            cmd &= quoteFile(url.port, qs)
+          else:
+            cmd &= url.port
       of '?': # w3mmee(-ish) extension
         if url != nil:
-          cmd &= quoteFile(url.search, qs)
+          if shellQuote:
+            cmd &= quoteFile(url.search, qs)
+          else:
+            cmd &= url.search
       of 'd': # Chawan extension
         if line != -1: # -1 in mailcap
           cmd &= $line
@@ -521,7 +543,7 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
   return -1
 
 proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
-    netPathSeen, listSeen: var bool): MailcapEntry =
+    netPathSeen, listSeen: var bool; resourceOnly: bool): MailcapEntry =
   var url = outUrl
   var id = 0'u32
   var done = false
@@ -531,7 +553,11 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
       break
     done = true
     listSeen = true
-    for entry in list.resource:
+    var i = 0
+    let slen = if resourceOnly: list.resource.len else: list.s.len
+    while i < slen:
+      let entry = if resourceOnly: list.resource[i] else: list.s[i]
+      inc i
       if entry.id < id:
         continue
       if not checkEntry(entry, url.scheme, url):
@@ -600,7 +626,8 @@ proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
 
 proc saveEntry*(mailcap: var Mailcap; path, t: string; entry: MailcapEntry):
     Opt[void] =
-  let s = entry.toStr(t)
+  var s = entry.toStr(t)
+  s &= '\n'
   let pdir = path.parentDir()
   discard mkdir(cstring(pdir), 0o700)
   let ps = newPosixStream(path, O_WRONLY or O_APPEND or O_CREAT, 0o644)

@@ -1441,7 +1441,8 @@ proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
     ctx.rejectHandle(handle, ceInvalidURL)
 
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
-    config: LoaderClientConfig; request: var RawRequest; handle: InputHandle) =
+    config: LoaderClientConfig; request: var RawRequest; handle: InputHandle;
+    resource: bool) =
   var redo = true
   var tries = 0
   var prevurl: URL = nil
@@ -1483,11 +1484,12 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       var netPathSeen = false
       var listSeen = false
       let entry = ctx.browsecap.findResourceMut(typeBuf, request.url,
-        netPathSeen, listSeen)
+        netPathSeen, listSeen, resource)
       if entry != nil and mfCgioutput in entry.flags:
         var canpipe: bool
         let cmd = "cgi-bin:" & unquoteCommand(entry.cmd, typeBuf,
-          request.url.pathname, request.url, canpipe, uriparams = true)
+          request.url.pathname, request.url, canpipe, uriparams = true,
+          shellQuote = false)
         let url = parseURL0(cmd)
         if url != nil:
           request.url = url
@@ -1495,6 +1497,8 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
           redo = true
         else:
           ctx.rejectHandle(handle, ceInvalidBrowsecapEntry)
+      elif entry != nil and not resource:
+        ctx.rejectHandle(handle, ceMailcap, entry.toStr(typeBuf))
       elif netPathSeen:
         ctx.rejectHandle(handle, ceNetPathExpected)
       elif listSeen:
@@ -1516,7 +1520,8 @@ proc setupRequestDefaults(request: var RawRequest; config: LoaderClientConfig;
     request.hasReferrer, config.referrerPolicy)
 
 proc load(ctx: var LoaderContext; request: var RawRequest;
-    client: ClientHandle; config: LoaderClientConfig): CommandResult =
+    client: ClientHandle; config: LoaderClientConfig;
+    resource: bool): CommandResult =
   var pipev {.noinit.}: array[2, cint]
   var fail = false
   client.withPacketWriterReturnEOF w:
@@ -1538,14 +1543,14 @@ proc load(ctx: var LoaderContext; request: var RawRequest;
       ctx.rejectHandle(handle, ceDisallowedURL)
     else:
       request.setupRequestDefaults(config, credentials)
-      ctx.loadResource(client, config, request, handle)
+      ctx.loadResource(client, config, request, handle, resource)
   cmdrDone
 
 proc loadCmd(ctx: var LoaderContext; client: ClientHandle; r: var PacketReader):
     CommandResult =
   var request: RawRequest
   r.sread(request)
-  ctx.load(request, client, client.config)
+  ctx.load(request, client, client.config, resource = true)
 
 proc loadConfigCmd(ctx: var LoaderContext; client: ClientHandle;
     r: var PacketReader): CommandResult =
@@ -1553,7 +1558,7 @@ proc loadConfigCmd(ctx: var LoaderContext; client: ClientHandle;
   var config: LoaderClientConfig
   r.sread(request)
   r.sread(config)
-  ctx.load(request, client, config)
+  ctx.load(request, client, config, resource = false)
 
 proc getCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =

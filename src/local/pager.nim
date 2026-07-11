@@ -1348,6 +1348,9 @@ proc alert(pager: Pager; msg: string) {.jsfunc.} =
     pager.alerts.add(msg)
     pager.updateStatus = ussUpdate
 
+proc alertExitCode(pager: Pager; cmd: string; ret: cint) =
+  pager.alert("Command " & cmd & " exited with code " & $ret)
+
 # public
 proc peekCursor(pager: Pager) {.jsfunc.} =
   if pager.bufferIface != nil:
@@ -1401,7 +1404,7 @@ proc setEnvVars(pager: Pager; env: openArray[EnvVar]) =
 # Run process (and suspend the terminal controller).
 # For the most part, this emulates system(3).
 proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
-    env: openArray[EnvVar]): Opt[bool] {.noinit.} =
+    env: openArray[EnvVar]): Opt[cint] {.noinit.} =
   if suspend:
     ?pager.term.quit()
     pager.term.blockSigint()
@@ -1410,7 +1413,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     pager.alert("Failed to run process")
     if suspend:
       ?pager.term.restart()
-    return ok(false)
+    return ok(1)
   of 0:
     if pager.setEnvVars0(env).isErr:
       quit(1)
@@ -1431,13 +1434,18 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     else:
       pager.pidMap[int(pid)] = cmd
     if not suspend:
-      return ok(true)
+      return ok(0)
     if wait:
       ?pager.term.anyKey()
     pager.term.unblockSigint()
     ?pager.term.restart()
     pager.redraw()
-    return ok(WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0)
+    var code = cint(0)
+    if WIFEXITED(wstatus):
+      code = WEXITSTATUS(wstatus)
+    elif WIFSIGNALED(wstatus):
+      code = 128 + WTERMSIG(wstatus)
+    return ok(code)
 
 # Run process, and capture its output.
 proc runProcessCapture(cmd: string; outs: var string): bool =
@@ -1823,7 +1831,7 @@ proc extern(ctx: JSContext; pager: Pager; cmd: string;
   let res = pager.runCommand(cmd, t.suspend, t.wait, env)
   if res.isErr:
     return ctx.jsQuit(pager, 1)
-  return JS_NewBool(ctx, res.get)
+  return JS_NewBool(ctx, res.get == 0)
 
 # public
 proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue
@@ -1864,7 +1872,8 @@ proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
 # Execute cmd, with ps moved onto stdin, os onto stdout, and the browser
 # console onto stderr.
 # ps remains open, but os is consumed.
-proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int {.noinit.} =
+proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): cint
+    {.noinit.} =
   let westream = pager.forkserver.westream
   let pid = fork()
   if pid == 0:
@@ -1876,9 +1885,9 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int {.noinit.} =
     if pid == -1:
       pager.alert("Failed to fork process")
     os.sclose()
-    return pid
+    return cint(pid)
 
-proc execPipeWait(pager: Pager; cmd: string; ps, os: PosixStream): int =
+proc execPipeWait(pager: Pager; cmd: string; ps, os: PosixStream): cint =
   let pid = pager.execPipe(cmd, ps, os)
   if pid == -1:
     return 1
@@ -1926,6 +1935,8 @@ proc execCmdUnlink(pager: Pager; cmd, path: string): int {.noinit.} =
           code = WEXITSTATUS(wstatus)
         elif WIFSIGNALED(wstatus):
           code = 128 + WTERMSIG(wstatus)
+        else:
+          code = 0
       discard unlink(cstring(path))
       quit(code)
   else:
@@ -2002,13 +2013,13 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
 # new buffer.
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager; stream: PosixStream;
-    cmd, outpath: string; pouts: PosixStream): int {.noinit.} =
+    cmd, outpath: string; pouts: PosixStream): cint {.noinit.} =
   let westream = pager.forkserver.westream
   case (let pid = fork(); pid)
   of -1:
     pager.alert("Error: failed to fork mailcap read process")
     pouts.sclose()
-    return pid
+    return cint(pid)
   of 0:
     # child process
     westream.moveFd(STDIN_FILENO)
@@ -2019,10 +2030,10 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
     let ps = newPosixStream("/dev/null")
     let ret = pager.execPipeWait(cmd, ps, pouts)
     discard unlink(cstring(outpath))
-    quit(ret)
+    quit(int(ret))
   else: # parent
     pouts.sclose()
-    return pid
+    return cint(pid)
 
 # Save input in a file, run the command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
@@ -2045,7 +2056,7 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
       pager.term.unblockSigint()
       ?pager.term.restart()
       if ret != 0:
-        pager.alert("Error: " & cmd & " exited with status " & $ret)
+        pager.alertExitCode(cmd, ret)
   else:
     # don't block
     discard unlink(cstring(outpath))
@@ -2062,6 +2073,13 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     else:
       pager.alert("Failed to create temp file")
       stream.sclose()
+  ok()
+
+proc runBrowsecapWrite(pager: Pager; needsterminal: bool; cmd: string):
+    Opt[void] =
+  let code = ?pager.runCommand(cmd, needsterminal, wait = false, [])
+  if code != 0:
+    pager.alertExitCode(cmd, code)
   ok()
 
 # Search for a mailcap entry, and if found, execute the specified command
@@ -2113,6 +2131,67 @@ proc runMailcap(pager: Pager; init: BufferInit; entry: MailcapEntry):
       pager.execPipe(cmd, stream, pouts)
     else:
       pager.runMailcapReadFile(stream, cmd, outpath, pouts)
+    stream.sclose()
+    if pid == -1:
+      break needsConnect
+    let isansi = mfAnsioutput in entry.flags
+    if not ishtml and isansi:
+      let pins2 = pager.ansiDecode(url, ishtml, pins)
+      if pins2 == nil:
+        break needsConnect
+      pins = pins2
+      # kind of a hack; we aren't modifying contentType here because
+      # that would break reload.
+      init.shortContentType = "text/x-ansi"
+    let url = parseURL0("stream:" & $pid)
+    pager.loader.passFd(url.pathname, pins.fd)
+    let response = pager.loader.doRequest(newRequest(url))
+    if mfNeedsstyle in entry.flags or isansi:
+      # ansi always needs styles
+      init.config.styling = true
+    if mfNeedsimage in entry.flags:
+      init.config.images = true
+    if mfSaveoutput in entry.flags:
+      init.flags.incl(bifSave)
+    if ishtml or isansi:
+      init.flags.incl(bifHTML)
+    else:
+      init.flags.excl(bifHTML)
+    init.flags.incl(bifRedirected)
+    init.ostream = response.stream
+    init.ostreamOutputId = response.outputId
+    return ok()
+  init.flags.incl(bifMailcapCancel)
+  ok()
+
+proc runBrowsecap(pager: Pager; init: BufferInit; entry: MailcapEntry):
+    Opt[void] =
+  let url = init.url
+  let stream = init.ostream
+  var dummy: bool
+  let cmd = unquoteCommand(entry.cmd, init.contentType, url.pathname, url,
+    dummy)
+  let ishtml = mfHtmloutput in entry.flags
+  let needsterminal = mfNeedsterminal in entry.flags
+  block needsConnect:
+    if entry.flags * {mfCopiousoutput, mfHtmloutput, mfAnsioutput,
+        mfSaveoutput} == {}:
+      # No output.
+      stream.sclose()
+      let res = pager.runBrowsecapWrite(needsterminal, cmd)
+      if res.isErr:
+        init.flags.incl(bifMailcapCancel)
+        return err()
+      # stream is already closed
+      break needsConnect # never connect here, since there's no output
+    var (pins, pouts) = pager.createPipe()
+    if pins == nil:
+      stream.sclose() # connect: false implies that we consumed the stream
+      break needsConnect
+    pins.setCloseOnExec()
+    # Pipe input into the mailcap command, then read its output into a buffer.
+    # needsterminal is ignored.
+    let pid = pager.execPipe(cmd, stream, pouts)
     stream.sclose()
     if pid == -1:
       break needsConnect
@@ -2227,7 +2306,7 @@ proc connected2(pager: Pager; init: BufferInit): JSValue {.jsfunc.} =
       stream.sclose()
       ostream.sclose()
       return pager.fail(init, "failed to create new loader client")
-    if init.cacheId == -1:
+    if init.cacheId == -1 and istreamOutputId != -1:
       init.cacheId = loader.addCacheFile(istreamOutputId)
     if init.request.url.schemeType == stCache:
       # loading from cache; now both the buffer and us hold a new reference
@@ -2237,12 +2316,16 @@ proc connected2(pager: Pager; init: BufferInit): JSValue {.jsfunc.} =
     var outCacheId = init.cacheId
     if not redirected:
       discard loader.shareCachedItem(init.cacheId, pid)
-      loader.resume(istreamOutputId)
+      if istreamOutputId != -1:
+        loader.resume(istreamOutputId)
     else:
       outCacheId = loader.addCacheFile(init.ostreamOutputId)
       discard loader.shareCachedItem(outCacheId, pid)
       loader.removeCachedItem(outCacheId)
-      loader.resume([istreamOutputId, init.ostreamOutputId])
+      if istreamOutputId != -1:
+        loader.resume([istreamOutputId, init.ostreamOutputId])
+      else:
+        loader.resume(init.ostreamOutputId)
     stream.withPacketWriterFire w: # if EOF, poll will notify us later
       w.swrite(outCacheId)
       w.sendFd(cstream.fd)
@@ -2367,6 +2450,22 @@ proc handleRead(pager: Pager; init: BufferInit): JSValue =
       else:
         r.sread(msg)
     if res != 0: # done
+      if res == int(ceMailcap):
+        var state = MailcapParser()
+        let entry = MailcapEntry()
+        var t: string
+        let res = state.parseEntry(msg, entry, t)
+        if res.isOk:
+          init.ostream = newPosixStream("/dev/null")
+          if init.ostream != nil:
+            if pager.runBrowsecap(init, entry).isErr:
+              return pager.jsctx.jsQuit(pager, 1)
+            let response = newResponse(init.request, nil, -1)
+            init.applyResponse(response, pager.mimeTypes.t)
+            return pager.connected2(init)
+          else:
+            state.error = "out of file descriptors"
+        msg = "internal error: " & state.error
       if msg == "":
         msg = getLoaderErrorMessage(res)
       return pager.fail(init, msg)

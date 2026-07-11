@@ -7,6 +7,16 @@ The \f[I]mailcap\f[R] file can be used to view other file formats using
 external commands, or to convert them to HTML/plain text before
 displaying them in Chawan.
 .PP
+In addition, the \f[I]browsecap\f[R] file fulfills a similar purpose for
+URI scheme handling.
+Browsecap can be used to override handling of any built\-in scheme, or
+to add custom handlers (e.g.\ \f[B]mutt\f[R](1) for \f[I]mailto\f[R]).
+When combined with \f[B]cha\-cgi\f[R](5), \f[I]browsecap\f[R] also
+enables extending Chawan with user\-specified schemes.
+.PP
+(\f[I]browsecap\f[R] is a more capable replacement for
+\f[B]cha\-urimethodmap\f[R](5); the latter is deprecated.)
+.PP
 Note that Chawan\(cqs default mime.types file only recognizes a few file
 extensions, which may result in your entries not being executed if your
 system lacks an /etc/mime.types file.
@@ -17,6 +27,13 @@ For an exact description of the mailcap format, see \c
 RFC 1524
 .UE \c
 \&.
+.PP
+Browsecap is not standardized.
+The semantics are derived from \c
+.UR https://pub.ks-and-ks.ne.jp/prog/w3mmee/config.shtml.en#mailcap_enhancement
+w3mmee
+.UE \c
+, but the two do not necessarily match in every aspect.
 .SS Search path
 The search path for mailcap files is set by the configuration variable
 \f[CR]external.mailcap\f[R].
@@ -41,11 +58,19 @@ entries corresponding to the other display options.
 Entries in auto\-mailcap are automatically executed, so it is
 recommended to add your Chawan\-specific entries there (or just set it
 to your personal mailcap file).
+.PP
+For browsecap, there is only an automatic variant so far.
 .SS Format
 Chawan adheres to the format described in RFC 1524, with a few
 extensions.
 .PP
 \f[CR]text/html\f[R] and \f[CR]text/plain\f[R] entries are ignored.
+.PP
+In browsecap, the MIME type field is treated as
+\f[I]protocol\f[R]/\f[I]method\f[R].
+For example, \f[CR]http/get\f[R] dispatches to GET requests to an HTTP
+scheme, \f[CR]ftp/post\f[R] to POST requests to an FTP scheme, and
+\f[CR]https/*\f[R] to all HTTPS schemes.
 .SS Templating
 The command part of entries may include template strings which are
 substituted by the browser at execution.
@@ -67,6 +92,11 @@ Specifying \f[CR]%s\f[R] forces download of the external resource
 If \f[CR]%s\f[R] is not specified, the resource is instead piped to
 standard input.
 (In this case, \f[CR]needsterminal\f[R] does not apply.)
+.RS 2
+.PP
+In browsecap, \f[CR]%s\f[R] expands to the path segment of the URI
+instead.
+.RE
 .IP \(bu 2
 \f[CR]%t\f[R] expands to the content type.
 Named content type fields can also be specified with the syntax
@@ -80,6 +110,10 @@ text/html; charset=utf\-8
 .PP
 \f[CR]%t\f[R] would expand to the above string, while
 \f[CR]%{charset}\f[R] would expand to \(lqutf\-8\(rq.
+.PP
+In browsecap, \f[CR]%t\f[R] expands to
+\f[I]protocol\f[R]/\f[I]method\f[R], where the \f[I]method\f[R] part is
+typically upper\-cased.
 .RE
 .IP \(bu 2
 Non\-standard templates for the resource\(cqs original URL:
@@ -90,16 +124,16 @@ the port, \f[CR]%H\f[R] expands to the hostname including the port, and
 question mark.
 .RS 2
 .PP
-(w3mmee did not actually include the question mark in \f[CR]%?\f[R].
-However, that design could not express the difference between the empty
-query string and the null query string, so it has been changed in
-Chawan.)
+(w3mmee did not actually include the question mark in \f[CR]%?\f[R], but
+this was changed in Chawan because the other design could not express
+the difference between the empty query string and the null query
+string.)
 .RE
 .SS Fields
 Following fields are recognized.
 .IP \(bu 2
-When the \f[CR]test\f[R] named field is specified, the mailcap entry is
-only used if the test command returns 0.
+Entries with the \f[CR]test\f[R] named field are only used if the test
+command exits with 0.
 For example, you can restrict entries that require X11 as follows:
 .RS 2
 .IP
@@ -107,13 +141,15 @@ For example, you can restrict entries that require X11 as follows:
 image; feh \-; test=test \-n \(dq$DISPLAY\(dq
 .EE
 .PP
-Warning: \f[CR]%s\f[R] does not work with \f[CR]test\f[R].
-\f[CR]test\f[R] named fields with a \f[CR]%s\f[R] template are skipped,
-and no data is piped into \f[CR]test\f[R] commands.
+Note: entries with a \f[CR]test\f[R] named field that include
+\f[CR]%s\f[R] are skipped, and no data is piped into \f[CR]test\f[R]
+commands.
+(The RFC does not specify how this should work, but the alternative
+behavior cannot be efficiently implemented in a browser.)
 .RE
 .IP \(bu 2
-\f[CR]copiousoutput\f[R] makes Chawan redirect the output of the
-external command\(cqs output into a new buffer.
+\f[CR]copiousoutput\f[R] redirects the external command\(cqs output into
+a new buffer.
 If either \f[CR]x\-htmloutput\f[R] or \f[CR]x\-ansioutput\f[R] is
 defined too, then \f[CR]copiousoutput\f[R] is ignored.
 .IP \(bu 2
@@ -126,6 +162,7 @@ It does nothing if one of \f[CR]copiousoutput\f[R],
 \f[CR]nametemplate\f[R] provides a specific template for the temporary
 file created when \f[CR]%s\f[R] is specified.
 See the RFC for details.
+This option has no effect in browsecap.
 .IP \(bu 2
 \f[CR]x\-htmloutput\f[R] (from w3m) behaves the same as
 \f[CR]copiousoutput\f[R], but makes Chawan interpret the command\(cqs
@@ -149,45 +186,75 @@ Only useful when combined with \f[CR]x\-htmloutput\f[R].
 \f[CR]x\-htmloutput\f[R], even if images are disabled.
 .IP \(bu 2
 \f[CR]x\-type\f[R] (from w3mmee) specifies a MIME type substitution.
-The command part is interpreted as a MIME type (without template
-expansion) which is used instead of the original type.
+The command part is interpreted as a MIME type after template expansion,
+which is used instead of the original type.
 Such entries are only respected in \f[CR]external.auto\-mailcap\f[R].
 .RS 2
 .PP
-Entries with \f[CR]x\-type\f[R] also match text/plain and text/html
-documents (which are normally excluded from mailcap).
-However, \f[CR]x\-type\f[R] does not apply if the content type was
+\f[CR]x\-type\f[R] has a higher priority than other entries, and applies
+even to text/plain and text/html documents (which are normally excluded
+from mailcap).
+However, \f[CR]x\-type\f[R] entries do not apply if the content type was
 forced (e.g.\ using the \f[CR]\-T\f[R] flag).
 .PP
 (Note: \f[CR]x\-type\f[R] is experimental.
 Future changes to its semantics are to be expected.)
 .RE
 .IP \(bu 2
-\f[CR]x\-match\f[R] (from w3mmee) restricts the entry\(cqs URL to the
+\f[CR]x\-match\f[R] (from w3mmee) restricts an entry\(cqs URI to the
 specified regex.
 \f[CR]x\-nc\-match\f[R] is the same, but it is case\-insensitive.
 For example, \f[CR]x\-match=https?://example\(rs.org/.*\f[R] restricts
-the entry to example.org (note the backslash.)
+the entry to example.org (note the backslash).
 .RS 2
 .PP
 When one of these fields is present together with \f[CR]test\f[R], the
 result is ANDed together.
 .RE
 .IP \(bu 2
-\f[CR]x\-netpath\f[R] (from w3mmee) restricts the entry to URIs that
-match the \f[CR]net_path\f[R] production of RFC 2396.
-In other words, the URI must have an authority (hostname etc.), so
-e.g.\ \f[CR]example://blah/path\f[R] is matched, while
-\f[CR]example:/path\f[R] isn\(cqt.
+\f[CR]x\-uri\f[R] (from w3mmee) substitutes matching URIs with the URI
+specified inside the command field after template expansion.
+Like \f[CR]x\-type\f[R], this does not execute a shell command.
+\f[CR]x\-uri\f[R] entries are only accepted in
+\f[CR]external.auto\-browsecap\f[R].
 .RS 2
 .PP
-For schemes other than \f[CR]file\f[R], two slashes after the colon
-signify a \f[CR]net_path\f[R].
-\f[CR]file:///path\f[R] is a special case: it looks like a
-\f[CR]net_path\f[R], but it isn\(cqt one.
-(This is inherited from the WHATWG URL standard.)
+Unlike in w3mmee, \f[CR]x\-uri\f[R] does not actually redirect to the
+other URL; instead, it transparently rewrites it in the background.
 .RE
-.SS Examples
+.IP \(bu 2
+\f[CR]x\-resource\f[R] must be used in combination with
+\f[CR]x\-uri\f[R] or \f[CR]x\-cgioutput\f[R].
+Such entries also apply to requests initiated by a buffer,
+e.g.\ downloading CSS, IMG tags, etc.
+.IP \(bu 2
+\f[CR]x\-netpath\f[R] (from w3mmee) restricts an entry to URIs which
+follow the \f[CR]net_path\f[R] production of \c
+.UR https://www.ietf.org/rfc/rfc2396.txt
+RFC 2396
+.UE \c
+\&.
+.RS 2
+.PP
+In practice, this means that the URI must start with two slashes and
+then follow with an \f[I]authority\f[R] (user, pass, host, port).
+For example, \f[CR]x\-netpath\f[R] matches
+\f[CR]proto://example.org/path\f[R], but not \f[CR]proto:/path\f[R].
+.PP
+The \f[CR]file\f[R] scheme is special\-cased such that it is never
+matched as \f[CR]net_path\f[R], even though it looks like one for legacy
+reasons.
+.RE
+.IP \(bu 2
+\f[CR]x\-cgioutput\f[R] is only accepted in
+\f[CR]external.auto\-browsecap\f[R], and applies to all network
+requests.
+The command part is interpreted as a CGI script like in urimethodmap.
+.RS 2
+.PP
+TODO: we should allow passing parameters here.
+.RE
+.SS Mailcap examples
 To automatically execute these entries, place them in
 \f[CR]\(ti/.chawan/mailcap\f[R] (or
 \f[CR]\(ti/.config/chawan/mailcap\f[R] if you use XDG basedirs).
@@ -230,6 +297,23 @@ text/x\-hexdump; od \-w12 \-A x \-t x1z \-v; copiousoutput
 
 # Following entry will be ignored, as text/html is supported natively by Chawan.
 text/html; cha \-dT text/html \-I %{charset}; copiousoutput
+.EE
+.SS Browsecap examples
+Place these entries in \f[CR]\(ti/.chawan/browsecap\f[R] (or
+\f[CR]\(ti/.config/chawan/browsecap\f[R] if you use XDG basedirs).
+.IP
+.EX
+# Use the \(gamagnet.cgi\(aq script to pass magnet links to Transmission.
+# (\(gamagnet.cgi\(aq can be found in the \(gabonus/\(aq directory.  You can also
+# modify it to pass the links to your BitTorrent client of choice.)
+magnet/*;	/cgi\-bin/magnet.cgi?%s; x\-cgioutput
+
+# Open mailto: URIs using mutt.
+# (This is the same as mailto/*; the trailing \(ga/*\(aq can be freely omitted.)
+mailto;		mutt \-\- %s; needsterminal
+
+# Open YouTube URLs with mpv.  (GET method only.)
+https/get;	mpv \-\- %u; needsterminal; x\-nc\-match=https://youtube\(rs.com/watch?v=.*
 .EE
 .SS See also
 \f[B]cha\f[R](1)

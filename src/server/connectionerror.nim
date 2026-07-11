@@ -1,4 +1,5 @@
 type ConnectionError* = enum
+  ceMailcap = -21 # not necessarily an error; sends entries to choose from
   ceNetPathExpected = -20
   ceLoaderGone = -19
   ceCookieStreamExists = -18
