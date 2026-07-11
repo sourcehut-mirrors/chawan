@@ -641,7 +641,7 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
             code = ConnectionError(n)
         else:
           let x = strictParseEnum[ConnectionError](ns).get(ceNone)
-          if x != ceNone:
+          if x > ceNone:
             code = x
       i += ns.len + 1
       if i < v.len:
