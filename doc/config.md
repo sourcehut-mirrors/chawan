@@ -703,7 +703,7 @@ Currently, these are:
 * `ddg:` - DuckDuckGo Lite.
 * `br:` - Brave Search.
 * `wk:` - English Wikipedia.
-* `wd:` - English Wikitionary.
+* `wd:` - English Wiktionary.
 * `mo:` - Mojeek.
 
 Omnirule options:
@@ -1077,6 +1077,7 @@ searchForward, searchBackward
 
 isearchForward, searchBackward
 : **/**, **?**
+
 : Incremental-search for a string, highlighting the first result, forwards
   or backwards.
 
@@ -1152,8 +1153,7 @@ If no preceding number is input, then it is left unspecified.
 Default keybindings are highlighted in **bold**.
 
 cursorUp, cursorDown
-: **j**/**C-p**/**Up**,
-**k**/**C-n**/**Down**
+: **j**/**C-p**/**Up**, **k**/**C-n**/**Down**
 
 : Move the cursor upwards/downwards by `n` lines, or if `n` is unspecified,
   by 1.
