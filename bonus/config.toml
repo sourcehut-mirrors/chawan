@@ -57,7 +57,6 @@
 #cgi-dir = ["$CHA_DIR/cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 #download-dir = "${TMPDIR:-/tmp}/"
 #show-download-panel = true
-#w3m-cgi-compat = false
 #copy-cmd = 'xsel -bi'
 #paste-cmd = 'xsel -bo'
 

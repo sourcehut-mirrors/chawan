@@ -1293,8 +1293,8 @@ proc parseOption(cp: var ConfigParser; section: ConfigSection; key: string):
   if opt.section != section and
       not (section == csSiteconf and opt in SiteconfOptions):
     let kebab = camelToKebabCase(key)
-    cp.warnings.add("unknown option " & $section & '.' & kebab &
-      ", maybe try " & $opt.section & '.' & kebab & '?')
+    cp.warn("unknown option " & $section & '.' & kebab & ", maybe try " &
+      $opt.section & '.' & kebab & '?')
     return ok(coAddEntry) # dummy value
   if section in {csSiteconf, csOmnirule}:
     if opt in cp.ruleOptionsSeen:
@@ -1305,6 +1305,8 @@ proc parseOption(cp: var ConfigParser; section: ConfigSection; key: string):
     if opt in cp.optionsSeen:
       let kebab = camelToKebabCase(key)
       return cp.err("re-definition of option " & $section & '.' & kebab)
+    if opt == coW3mCgiCompat:
+      cp.warn("w3m-cgi-compat is deprecated")
     cp.optionsSeen.incl(opt)
   x
 

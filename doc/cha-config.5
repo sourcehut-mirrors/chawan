@@ -321,6 +321,16 @@ Enable local CGI compatibility with w3m.
 In short, it redirects \f[CR]file:///cgi\-bin/*\f[R] and
 \f[CR]file:///$LIB/cgi\-bin/*\f[R] to \f[CR]cgi\-bin:*\f[R].
 See \f[B]cha\-cgi\f[R](5) for details.
+Note: parts of Chawan\(cqs security model depend on not confusing
+protocols with each other, so this option is deprecated.
+If you \f[I]really\f[R] need it for some reason, you can use an
+\f[CR]auto\-browsecap\f[R] entry like
+.IP
+.EX
+file; %s%?; x\-resource; x\-cgioutput; \(rs
+  x\-match=\(ha(file:///home/me/.chawan/cgi\-bin/.*)|(file:///cgi\-bin/.*)$
+.EE
+to achive the same results (with the same caveat).
 .RE
 .TP
 download\-dir = \(lq${TMPDIR:\-/tmp}/\(rq
