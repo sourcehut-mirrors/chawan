@@ -714,13 +714,6 @@ const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
   {'$'..'&', '+', ','}
 const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +
   {'!', '\''..')', '~'}
-# used by pager
-when defined(windows):
-  const LocalPathPercentEncodeSet* = Ascii - AsciiAlpha - AsciiDigit -
-    {'.', '\\', '/'}
-else:
-  const LocalPathPercentEncodeSet* = Ascii - AsciiAlpha - AsciiDigit -
-    {'.', '/'}
 
 proc percentEncode*(append: var string; c: char; set: set[char];
     spaceAsPlus = false) {.inline.} =

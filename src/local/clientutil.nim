@@ -75,7 +75,7 @@ proc isSameAuthOrigin(a, b: URL): bool {.jsstfunc: "Util".} =
   return a.authOrigin.isSameOrigin(b.authOrigin);
 
 proc encodeURIPath(s: string): string {.jsstfunc: "Util".} =
-  return percentEncode(s, LocalPathPercentEncodeSet)
+  return percentEncode(s, PathPercentEncodeSet + {'%'})
 
 proc expandPath(s: string): string {.jsstfunc: "Util".} =
   return twtstr.expandPath(s)
