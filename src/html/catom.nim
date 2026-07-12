@@ -595,6 +595,12 @@ proc contains*(a: openArray[CAtom]; b: CAtomTraced): bool =
 proc contains*(a: openArray[StaticAtom]; b: CAtom): bool =
   b.toStaticAtom() in a
 
+proc matchesLocalName*(qualifiedName: CAtom; localName: CAtomTraced): bool =
+  let i = qualifiedName.find(':') + 1
+  if i == 0:
+    return qualifiedName == localName
+  return ($qualifiedName).toOpenArray(i, ($qualifiedName).high) == $localName
+
 proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtom):
     FromJSResult =
   if JS_IsNull(val):

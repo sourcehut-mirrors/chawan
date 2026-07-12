@@ -2693,17 +2693,40 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
     writeShadow: bool) =
   if child of Element:
     let element = Element(child)
-    let tags = $element.localName
+    const LocalNamespace = [
+      satNamespaceHTML, satNamespaceMathML, satNamespaceSVG
+    ]
+    let tag = if element.namespaceURI in LocalNamespace:
+      element.localName
+    else:
+      element.tagName
     res &= '<'
-    #TODO qualified name if not HTML, SVG or MathML
-    res &= tags
+    res &= $tag
     #TODO custom elements
     for attr in element.attrs:
-      res &= ' ' & $attr.name & "=\"" &
-        attr.value.htmlEscape(mode = emAttribute) & "\""
+      res &= ' '
+      let namespace = attr.namespace.toStaticAtom()
+      var local = false
+      case namespace
+      of satNamespaceXML:
+        res &= "xml:"
+        local = true
+      of satNamespaceXMLNS:
+        if not attr.name.matchesLocalName(satXmlns.toAtomTrace()):
+          res &= "xmlns:"
+        local = true
+      of satNamespaceXLink:
+        res &= "xlink:"
+        local = true
+      else:
+        res &= $attr.name
+      if local:
+        let i = attr.name.find(':') + 1
+        res &= ($attr.name).substr(i)
+      res &= "=\"" & attr.value.htmlEscape(mode = emAttribute) & "\""
     res &= '>'
     res.serializeFragment(element, writeShadow)
-    res &= "</" & tags & '>'
+    res &= "</" & $tag & '>'
   elif child of Text:
     let text = Text(child)
     const LiteralTags = {
@@ -5185,12 +5208,6 @@ proc findAttr(element: Element; qualifiedName: CAtomTraced): int =
   if n < element.attrs.len and element.attrs[n].name == qualifiedName:
     return n
   return -1
-
-proc matchesLocalName(qualifiedName: CAtom; localName: CAtomTraced): bool =
-  let i = qualifiedName.find(':') + 1
-  if i == 0:
-    return qualifiedName == localName
-  return ($qualifiedName).toOpenArray(i, ($qualifiedName).high) == $localName
 
 proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int =
   if namespace == CAtomNull:
