@@ -119,7 +119,7 @@ subsequent space.  For example, **\-obuffer.images=true** is valid.
 **\-\-**
 
 : Interpret all following arguments as files.  For example, you can
-  open a file named *\-o*, using *cha* **\-\-** *\-o*.
+  open a file named *\-o* using *cha* **\-\-** *\-o*.
 
 # ENVIRONMENT
 

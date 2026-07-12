@@ -16,7 +16,7 @@ Note however, that JavaScript functions must be called with an appropriate
 `this` value.  So e.g. the following does not work:
 
 ```
-'g p n' = 'pager.alert' # broken!!!
+'g p n' = 'pager.alert' # broken
 ```
 
 To work around this limitation, actions have to wrap the target function in
@@ -27,21 +27,21 @@ re-bind it or call it from a different function.
 To fix this, it is possible to define a command in the `[cmd]` section:
 
 ```toml
-[cmd.my.namespace]
+[cmd.me]
 showNumber = 'n => pager.alert(n)'
 ```
 
-`my.namespace` can be anything you want; it is to avoid collisions when
-including multiple configs.  The only restriction is that the first
-component (in this case, "my") must not contain an upper-case letter.
+`me` can be anything you want; it exists only to avoid collisions with
+built-in commands.  The only restriction is that the first component (in
+this case, "me") must not contain an upper-case letter.
 
-Now you can call `cmd.my.namespace.showNumber()` from any other function, or
-include it in a keybinding (in that case, `cmd.` is optional):
+Now you can call `cmd.me.showNumber()` from any other function, or include
+it in a keybinding (in that case, `cmd.` is optional):
 
 ```toml
-'g p n' = 'my.namespace.showNumber'
+'g p n' = 'me.showNumber'
 # same as
-'g p n' = 'cmd.my.namespace.showNumber'
+'g p n' = 'cmd.me.showNumber'
 ```
 
 ## Interfaces
@@ -567,8 +567,6 @@ Following properties (functions/getters) are defined by `Buffer`:
   This object implements the `Select` interface, which is somewhat
   compatible with the `Buffer` interface with some exceptions.  (TODO:
   elaborate)
-
-</table>
 
 ### LineEdit
 

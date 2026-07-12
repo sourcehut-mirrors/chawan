@@ -18,7 +18,7 @@ appropriate \f[CR]this\f[R] value.
 So e.g.\ the following does not work:
 .IP
 .EX
-\(aqg p n\(aq = \(aqpager.alert\(aq # broken!!!
+\(aqg p n\(aq = \(aqpager.alert\(aq # broken
 .EE
 .PP
 To work around this limitation, actions have to wrap the target function
@@ -31,23 +31,23 @@ To fix this, it is possible to define a command in the \f[CR][cmd]\f[R]
 section:
 .IP
 .EX
-\f[B][cmd.my.namespace]\f[R]
+\f[B][cmd.me]\f[R]
 showNumber = \(aqn => pager.alert(n)\(aq
 .EE
 .PP
-\f[CR]my.namespace\f[R] can be anything you want; it is to avoid
-collisions when including multiple configs.
+\f[CR]me\f[R] can be anything you want; it exists only to avoid
+collisions with built\-in commands.
 The only restriction is that the first component (in this case,
-\(lqmy\(rq) must not contain an upper\-case letter.
+\(lqme\(rq) must not contain an upper\-case letter.
 .PP
-Now you can call \f[CR]cmd.my.namespace.showNumber()\f[R] from any other
-function, or include it in a keybinding (in that case, \f[CR]cmd.\f[R]
-is optional):
+Now you can call \f[CR]cmd.me.showNumber()\f[R] from any other function,
+or include it in a keybinding (in that case, \f[CR]cmd.\f[R] is
+optional):
 .IP
 .EX
-\(aqg p n\(aq = \(aqmy.namespace.showNumber\(aq
+\(aqg p n\(aq = \(aqme.showNumber\(aq
 \f[I]# same as\f[R]
-\(aqg p n\(aq = \(aqcmd.my.namespace.showNumber\(aq
+\(aqg p n\(aq = \(aqcmd.me.showNumber\(aq
 .EE
 .SS Interfaces
 Note that there are also many private functions not documented here.
