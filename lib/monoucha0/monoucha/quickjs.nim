@@ -640,6 +640,8 @@ proc JS_GetNarrowStringBuffer*(str: JSValueConst): ptr UncheckedArray[uint8]
 proc JS_GetStringLength*(str: JSValueConst): uint32
 proc JS_GetRegExpBytecode*(ctx: JSContext; obj: JSValueConst; plen: var cint):
   ptr uint8
+proc JS_ThrowTypeErrorOrFalse*(ctx: JSContext; flags: cint; fmt: cstring):
+  cint {.varargs.}
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
   class_id: JSClassID): JSValue

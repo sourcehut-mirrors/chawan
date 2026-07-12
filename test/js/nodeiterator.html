@@ -9,7 +9,7 @@
 </div>
 
 <div id=test2>
-<div id=inner>
+<div id=inner2>
 <div id=d>first</div>
 <div id=e>second</div>
 <div id=f>third</div>
@@ -17,7 +17,7 @@
 </div>
 
 <div id=test3>
-<div id=inner>
+<div id=inner3>
 <div id=g>first</div>
 <div id=h>second</div>
 <div id=i>third</div>
@@ -25,7 +25,7 @@
 </div>
 
 <div id=test4>
-<div id=inner>
+<div id=inner4>
 <div id=j>first</div>
 <div id=skip>second</div>
 <div id=k>third</div>
@@ -56,7 +56,7 @@
 	test1.remove();
 }
 {
-	const iter = document.createNodeIterator(inner, 0xFFFFFFFF, x => {
+	const iter = document.createNodeIterator(inner2, 0xFFFFFFFF, x => {
 		if (x instanceof Element && x.id)
 			return 1;
 		return 2;
@@ -92,7 +92,7 @@
 			x.remove();
 		return 2;
 	}, 1);
-	assertEquals(iter.nextNode().id, "inner");
+	assertEquals(iter.nextNode().id, "inner4");
 	assertEquals(iter.nextNode().id, "j");
 	assertEquals(iter.nextNode().id, "k");
 	assertEquals(iter.nextNode().id, "l");

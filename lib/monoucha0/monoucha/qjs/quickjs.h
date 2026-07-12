@@ -768,6 +768,7 @@ uint8_t *JS_GetNarrowStringBuffer(JSValueConst value);
 uint8_t *JS_GetRegExpBytecode(JSContext *ctx, JSValueConst obj, int *plen);
 uint32_t JS_GetStringLength(JSValueConst value);
 void JS_BuildBacktrace(JSContext *ctx, JSValueConst obj, int skip_first_level);
+int __js_printf_like(3, 4) JS_ThrowTypeErrorOrFalse(JSContext *ctx, int flags, const char *fmt, ...);
 
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto, JSClassID class_id);
 JSValue JS_NewObjectClass(JSContext *ctx, int class_id);

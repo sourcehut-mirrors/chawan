@@ -5,7 +5,7 @@ unreleased
 * optimize some inefficient descendant CSS selectors
 * optimize getElementById
 * support multi-keyword CSS display values
-* support WindowProxy operations (accessing elements by id on global object)
+* support accessing elements by id on Window object
 * support Delete key, add default aliases for alternate Home/End
 * reduce leaks from interned strings
 * reduce copying of strings between Nim <-> JS

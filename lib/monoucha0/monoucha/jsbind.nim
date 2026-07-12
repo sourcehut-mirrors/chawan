@@ -310,18 +310,18 @@ proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
   true
 
 proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
-    iterable: JSIterableType): JSValue =
+    iterable: JSIterableType; asglobal: bool; parentProto: JSValueConst):
+    JSValue =
+  if asglobal and not JS_IsUndefined(parentProto):
+    return JS_NewObjectProtoClass(ctx, parentProto, parent)
   if parent != 0:
-    let parentProto = JS_GetClassProto(ctx, parent)
-    let proto = JS_NewObjectProtoClass(ctx, parentProto, parent)
-    JS_FreeValue(ctx, parentProto)
-    return proto
+    return JS_NewObjectClass(ctx, parent)
   if iterable == jitIterator:
     let parentProto = ctx.getOpaque().valRefs[jsvIteratorPrototype]
     return JS_NewObjectProtoClass(ctx, parentProto, parent)
   return JS_NewObject(ctx)
 
-proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
+proc newCtorFunFromParentClass*(ctx: JSContext; ctor: JSCFunction;
     className: cstring; parent: JSClassID; ctorType: JSCFunctionEnum): JSValue =
   if parent != 0:
     return JS_NewCFunction3(ctx, ctor, className, 0, ctorType, 0,
@@ -440,7 +440,8 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     rtOpaque.classes.setLen(int(res) + 1)
   rtOpaque.classes[res].parent = parent
   rtOpaque.classes[res].nimt = nimt
-  let proto = ctx.newProtoFromParentClass(parent, iterable)
+  let proto = ctx.newProtoFromParentClass(parent, iterable, asglobal,
+    namespace)
   JS_SetClassProto(ctx, res, proto)
   if not ctx.addClassUnforgeableAndFinalizer(proto, res, parent, unforgeable,
       finalizer):
@@ -475,11 +476,11 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   if ctx.defineIterableProps(iterable, proto, res) == dprException:
     JS_FreeValue(ctx, proto)
     return JS_INVALID_CLASS_ID
-  let target = if JS_IsNull(namespace):
-    JSValueConst(ctxOpaque.global)
-  else:
-    namespace
-  if not JS_IsUndefined(namespace):
+  if not asglobal and not JS_IsUndefined(namespace):
+    let target = if JS_IsNull(namespace):
+      JSValueConst(ctxOpaque.global)
+    else:
+      namespace
     let jctor2 = JS_DupValue(ctx, jctor)
     if JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor2,
         JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
@@ -1534,7 +1535,7 @@ proc nimFinalizeForJS*(obj, typeptr: pointer) =
 type
   JSRootObj* = object of RootObj
 
-  JSRoot* = ref JSRootObj
+  JSRootRef* = ref JSRootObj
 
 when (NimMajor, NimMinor, NimPatch) < (2, 0, 8):
   proc cha_jsDestroy*(p: pointer) {.exportc.} =
@@ -1740,7 +1741,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let uflen = uflist0.len
   let ctorType = info.ctorType
   endstmts.add(quote do:
-    when `checkClass` != 0 and `t` isnot JSRoot:
+    when `checkClass` != 0 and `t` isnot JSRootRef:
       {.warning("no destructor defined for type").}
     let flist {.global, inject.}: array[`flen`, JSCFunctionListEntry] = `flist0`
     let sflist {.global, inject.}: array[`sflen`, JSCFunctionListEntry] =

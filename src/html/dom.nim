@@ -706,8 +706,8 @@ proc newElement*(document: Document; localName: CAtomTraced;
 proc newElement(document: Document;
   localName, namespaceURI, tagName: CAtomTraced): Element
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
-proc newHTMLCollection(root: Node; match: CollectionMatchFun;
-  islive, childonly: bool): HTMLCollection
+proc newHTMLCollection(root: Node; match: CollectionMatchFun; childonly: bool):
+  HTMLCollection
 proc newEmptyNodeList(): NodeList
 proc newNodeList(root: Node; match: CollectionMatchFun;
   islive, childonly: bool): NodeList
@@ -1334,7 +1334,6 @@ proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
     return ctx.toJS(newHTMLCollection(
       this,
       match = isElement,
-      islive = true,
       childonly = true
     ))
   of wwmChildNodes:
@@ -1350,21 +1349,18 @@ proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
       this,
       match = proc(this: Collection; node: Node): bool =
         node.isOptionOf(this.root) and HTMLOptionElement(node).selected,
-      islive = true,
       childonly = false
     ))
   of wwmTBodies:
     return ctx.toJS(newHTMLCollection(
       this,
       match = isTBody,
-      islive = true,
       childonly = true
     ))
   of wwmCells:
     return ctx.toJS(newHTMLCollection(
       this,
       match = isCell,
-      islive = true,
       childonly = true
     ))
   of wwmDataset:
@@ -3026,7 +3022,7 @@ proc childTextContent*(node: ParentNode): string =
 proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtomTraced):
     HTMLCollection =
   if tagName == satUstar:
-    return newHTMLCollection(root, isElement, islive = true, childonly = false)
+    return newHTMLCollection(root, isElement, childonly = false)
   let this = newHTMLCollection(
     root,
     proc(this: Collection; node: Node): bool =
@@ -3037,7 +3033,6 @@ proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtomTraced):
           return element.tagName.equalsIgnoreCase(atom)
         return element.tagName == atom
       return false,
-    islive = true,
     childonly = false
   )
   this.atoms = @[tagName.dup()]
@@ -3060,7 +3055,6 @@ proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
           if class notin element.classList.toks:
             return false
       true,
-    islive = true,
     childonly = false
   )
   for class in classNames.toOpenArray().split(AsciiWhitespace):
@@ -3284,8 +3278,8 @@ proc newEmptyNodeList(): NodeList =
   )
 
 proc newHTMLCollection(root: Node; match: CollectionMatchFun;
-    islive, childonly: bool): HTMLCollection =
-  newCollection[HTMLCollection](root, match, islive, childonly)
+    childonly: bool): HTMLCollection =
+  newCollection[HTMLCollection](root, match, islive = true, childonly)
 
 proc newNodeList(root: Node; match: CollectionMatchFun;
     islive, childonly: bool): NodeList =
@@ -3537,7 +3531,6 @@ proc forms(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
     document.cachedForms = newHTMLCollection(
       document,
       match = isForm,
-      islive = true,
       childonly = false
     )
   document.cachedForms
@@ -3547,7 +3540,6 @@ proc links(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
     document.cachedLinks = newHTMLCollection(
       document,
       match = isLink,
-      islive = true,
       childonly = false
     )
   document.cachedLinks
@@ -3557,7 +3549,6 @@ proc images(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
     document.cachedImages = newHTMLCollection(
       document,
       match = isImage,
-      islive = true,
       childonly = false
     )
   document.cachedImages
@@ -3709,6 +3700,34 @@ proc getElementById*(document: Document; id: CAtomTraced): Element =
         return it
       i = (i + 1) and mask
   nil
+
+proc getElementsById*(document: Document; id: CAtomTraced): JSRootRef =
+  # for WindowProperties
+  if id != satUempty and document.elementIdMap.len > 0:
+    let mask = document.elementIdMap.len - 1
+    var i = id.view().hash() and mask
+    while true:
+      let it = document.elementIdMap[i]
+      if it == nil:
+        break
+      if it.id == id:
+        let next = document.elementIdMap[(i + 1) and mask]
+        if next != nil and next.id == id:
+          # sad, but what can you do
+          let collection = newHTMLCollection(
+            document,
+            match = proc(this: Collection; node: Node): bool =
+              if node of Element:
+                return Element(node).id == this.atoms[0]
+              false,
+            childonly = false
+          )
+          collection.atoms = @[id.dup()]
+          return JSRootRef(collection)
+        return JSRootRef(it)
+      i = (i + 1) and mask
+  nil
+
 
 proc getElementById(ctx: JSContext; document: Document; val: JSValueConst):
     JSValue {.jsfunc.} =
@@ -7978,7 +7997,6 @@ proc rows(this: HTMLTableElement): HTMLCollection {.jsfget.} =
             Node(node.parentNode.parentNode) == this.root:
           return this.isRow(node)
         false,
-      islive = true,
       childonly = false
     )
   this.cachedRows
@@ -8047,7 +8065,6 @@ proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsfget.} =
     this.cachedRows = newHTMLCollection(
       this,
       match = isRow,
-      islive = true,
       childonly = true
     )
   this.cachedRows

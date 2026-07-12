@@ -23,6 +23,7 @@ import io/dynstream
 import io/timeout
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsopaque
 import monoucha/jspropenumlist
 import monoucha/jstypes
 import monoucha/jsutils
@@ -306,32 +307,6 @@ proc windowPreventExtensions(ctx: JSContext; obj: JSValueConst): cint
     {.cdecl.} =
   return 0
 
-proc windowGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
-    this: JSValueConst; prop: JSAtom): cint {.cdecl.} =
-  var window: Window
-  discard ctx.fromJS(this, window)
-  let document = window.document
-  #TODO CORS
-  #TODO navigables?
-  if document != nil:
-    var id: CAtom
-    if ctx.fromJSView(prop, id).isErr:
-      return -1
-    if id == CAtomNull:
-      return 0
-    let element = document.getElementById(id.view())
-    if element != nil:
-      if desc != nil:
-        let element = ctx.toJS(element)
-        if JS_IsException(element):
-          return -1
-        desc.flags = JS_PROP_C_W_E
-        desc.setter = JS_UNDEFINED
-        desc.getter = JS_UNDEFINED
-        desc.value = element
-      return 1
-  return 0
-
 proc windowDefineOwnProperty(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
     val, getter, setter: JSValueConst; flags: cint): cint {.cdecl.} =
   let propVal = JS_AtomIsNumericIndex1(ctx, prop)
@@ -341,10 +316,8 @@ proc windowDefineOwnProperty(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
     return JS_DefineProperty(ctx, obj, prop, val, getter, setter,
       flags or JS_PROP_NO_EXOTIC)
   JS_FreeValue(ctx, propVal)
-  if (flags and JS_PROP_THROW) != 0:
-    JS_ThrowTypeError(ctx, "cannot set indexed property on window")
-    return -1
-  return 0
+  return JS_ThrowTypeErrorOrFalse(ctx, flags,
+    "cannot set indexed property on window")
 
 proc throwNetworkError(ctx: JSContext): JSValue =
   return JS_ThrowTypeError(ctx,
@@ -596,14 +569,88 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
       window.console.error("(Unhandled promise)", s)
     window.console.flush()
 
+proc windowPropsGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
+    this: JSValueConst; prop: JSAtom): cint {.cdecl.} =
+  let global = ctx.getOpaque().global
+  var window: Window
+  discard ctx.fromJS(global, window)
+  let document = window.document
+  if document != nil:
+    var id: CAtom
+    if ctx.fromJSView(prop, id).isErr:
+      return -1
+    if id == CAtomNull:
+      return 0
+    let element = document.getElementsById(id.view())
+    if element != nil:
+      if desc != nil:
+        let element = ctx.toJS(element)
+        if JS_IsException(element):
+          return -1
+        desc.flags = JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE
+        desc.setter = JS_UNDEFINED
+        desc.getter = JS_UNDEFINED
+        desc.value = element
+      return 1
+  return 0
+
+proc windowPropsDeleteProperty(ctx: JSContext; obj: JSValueConst;
+    prop: JSAtom): cint {.cdecl.} =
+  return 0
+
+proc windowPropsDefineOwnProperty(ctx: JSContext; obj: JSValueConst;
+    prop: JSAtom; val, getter, setter: JSValueConst; flags: cint): cint
+    {.cdecl.} =
+  return JS_ThrowTypeErrorOrFalse(ctx, flags,
+    "cannot set indexed property on window")
+
 proc JS_SetGlobalExotic(ctx: JSContext; exotic: JSClassExoticMethodsConst)
   {.importc.}
+
+proc addWindowProperties(ctx: JSContext; parent: JSClassID): JSValue =
+  var exotic {.global.} = JSClassExoticMethods(
+    get_own_property: windowPropsGetOwnProperty,
+    delete_property: windowPropsDeleteProperty,
+    define_own_property: windowPropsDefineOwnProperty,
+    set_prototype: windowSetPrototype, # same as Window
+    prevent_extensions: windowPreventExtensions # same as Window
+  )
+  var cd {.global.} = JSClassDef(
+    class_name: "WindowProperties",
+    can_destroy: nil,
+    gc_mark: nil,
+    exotic: JSClassExoticMethodsConst(addr exotic)
+  )
+  let cdef = JSClassDefConst(addr cd)
+  let rt = JS_GetRuntime(ctx)
+  var res: JSClassID
+  discard JS_NewClassID(res)
+  if JS_NewClass(rt, res, cdef) != 0:
+    return JS_EXCEPTION
+  let name = JS_NewString(ctx, "WindowProperties")
+  if JS_IsException(name):
+    return name
+  let parentProto = JS_GetClassProto(ctx, parent)
+  let proto = JS_NewObjectProtoClass(ctx, parentProto, res)
+  JS_FreeValue(ctx, parentProto)
+  if JS_IsException(proto):
+    JS_FreeValue(ctx, name)
+    return JS_EXCEPTION
+  # must circumvent the exotic handler here
+  let strSym = ctx.getOpaque().symRefs[jsyToStringTag]
+  if JS_DefinePropertyValue(ctx, proto, strSym, name,
+      JS_PROP_CONFIGURABLE or JS_PROP_NO_EXOTIC) < 0:
+    JS_FreeValue(ctx, proto)
+    return JS_EXCEPTION
+  return proto
 
 proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   ctx.setGlobal(window)
   let (eventCID, eventTargetCID) = ?ctx.addEventModule()
+  let proto = ctx.addWindowProperties(eventTargetCID)
   let windowCID = ctx.registerType(Window, parent = eventTargetCID,
-    asglobal = true)
+    asglobal = true, namespace = proto)
+  JS_FreeValue(ctx, proto)
   if windowCID == 0:
     return err()
   let global = JS_GetGlobalObject(ctx)
@@ -708,12 +755,11 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       window.console.writeException(ctx)
       quit(1)
     var globalExotic {.global.} = JSClassExoticMethods(
+      define_own_property: windowDefineOwnProperty,
+      #TODO get_own_property, get, set, delete, own property keys
       set_prototype: windowSetPrototype,
       is_extensible: windowIsExtensible,
       prevent_extensions: windowPreventExtensions,
-      get_own_property: windowGetOwnProperty,
-      define_own_property: windowDefineOwnProperty,
-      #TODO get, set, delete, own property keys
     )
     JS_SetGlobalExotic(ctx, addr globalExotic)
   return window
