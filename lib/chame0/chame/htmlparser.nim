@@ -52,7 +52,6 @@ type
     oldInsertionMode: InsertionMode
     fosterParenting: bool
     framesetOk: bool
-    ignoreLF: bool
     pendingTableCharsWhitespace: bool
     scripting: bool
     isIframeSrcdoc: bool
@@ -69,10 +68,10 @@ type
 # 13.2.4.1
   InsertionMode = enum
     imInitial, imBeforeHtml, imBeforeHead, imInHead, imInHeadNoscript,
-    imAfterHead, imInBody, imText, imInTable, imInTableInText, imInCaption,
-    imInColumnGroup, imInTableBody, imInRow, imInCell, imInTemplate,
-    imAfterBody, imInFrameset, imAfterFrameset, imAfterAfterBody,
-    imAfterAfterFrameset
+    imAfterHead, imInBody, imPreStart, imText, imTextareaStart, imInTable,
+    imInTableInText, imInCaption, imInColumnGroup, imInTableBody, imInRow,
+    imInCell, imInTemplate, imAfterBody, imInFrameset, imAfterFrameset,
+    imAfterAfterBody, imAfterAfterFrameset
 
 type ParseChunkResult* = enum
   ## Result of parsing the passed chunk.
@@ -486,7 +485,6 @@ proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     startTagName: tagname,
     integrationPoint: integrationPoint
   ))
-  let node = parser.adjustedCurrentNode()
   parser.tok.hasnonhtml = parser.getNamespace(node) != nsHTML
 
 proc pushHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
@@ -1447,7 +1445,8 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       of ttPre, ttListing:
         parser.closeP()
         discard parser.insertHTMLElement()
-        parser.ignoreLF = true
+        parser.oldInsertionMode = parser.insertionMode
+        parser.insertionMode = imPreStart
         parser.framesetOk = false
       of ttForm:
         let hasTemplate = parser.hasElement(ttTemplate)
@@ -1570,11 +1569,10 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         return reprocess
       of ttTextarea:
         discard parser.insertHTMLElement()
-        parser.ignoreLF = true
         parser.tok.state = tsRcdata
         parser.oldInsertionMode = parser.insertionMode
+        parser.insertionMode = imTextareaStart
         parser.framesetOk = false
-        parser.insertionMode = imText
       of ttXmp:
         parser.closeP()
         parser.reconstructActiveFormatting()
@@ -1689,6 +1687,19 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         discard parser.popElement()
         parser.framesetOk = false
       else: parser.otherBodyEndTag(parser.tok.tagname)
+
+  of imPreStart, imTextareaStart:
+    if insertionMode == imPreStart:
+      parser.insertionMode = parser.oldInsertionMode
+    else:
+      parser.insertionMode = imText
+    if parser.tok.t == ttWhitespace and parser.tok.charbufOut[0] == '\n':
+      if parser.tok.charbufOut.len == 1:
+        return pcrContinue
+      for i in 1 ..< parser.tok.charbufOut.len:
+        parser.tok.charbufOut[i - 1] = parser.tok.charbufOut[i]
+      parser.tok.charbufOut.setLen(parser.tok.charbufOut.high)
+    return reprocess
 
   of imText:
     case parser.tok.t
@@ -2099,15 +2110,15 @@ proc processEOF[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
     discard parser.insertHTMLElement(ttBody)
     insertionMode = imInBody
   case insertionMode
-  of imInBody, imInCaption, imInColumnGroup, imInCell, imInTable, imInTableBody,
-      imInRow, imInTemplate:
+  of imInBody, imPreStart, imInCaption, imInColumnGroup, imInCell, imInTable,
+      imInTableBody, imInRow, imInTemplate:
     if parser.templateModes.len > 0 and parser.hasElement(ttTemplate):
       parser.popElementsIncl(ttTemplate)
       parser.clearActiveFormattingTillMarker()
       discard parser.templateModes.pop()
       parser.resetInsertionMode()
       parser.processEOF()
-  of imText:
+  of imText, imTextareaStart:
     if parser.getTagType(parser.currentNode) == ttScript:
       parser.setScriptAlreadyStarted(parser.currentNode)
     discard parser.popElement()
@@ -2265,15 +2276,6 @@ proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
 
 proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
-  if parser.ignoreLF:
-    parser.ignoreLF = false
-    if parser.tok.t == ttWhitespace and parser.tok.charbufOut[0] == '\n':
-      if parser.tok.charbufOut.len == 1:
-        return pcrContinue
-      else:
-        for i in 1 ..< parser.tok.charbufOut.len:
-          parser.tok.charbufOut[i - 1] = parser.tok.charbufOut[i]
-        parser.tok.charbufOut.setLen(parser.tok.charbufOut.high)
   if parser.openElements.len == 0 or
       parser.getNamespace(parser.adjustedCurrentNode) == nsHTML:
     return parser.processInHTML(parser.insertionMode)
@@ -2352,23 +2354,9 @@ proc finish*[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
   while parser.tok.finish() != trDone:
     let pres = parser.processToken()
     assert pres == pcrContinue
-    # pres == pcrScript: this is unreachable.
-    # * Tokenizer's finish() can not emit end tag tokens, ergo no
-    #   </script> will be processed here.
-    # * In some cases, tokenize() is called before finish(), to flush
-    #   characters stuck in the internal peekBuf. This can happen if:
-    #   1. eatStr returns esrRetry in a previous pass. Here, peekBuf can
-    #      contain any prefix of strings passed to eatStr/NoCase(), which
-    #      crucially is never a potential </script> tag (or indeed,
-    #      nothing that can start with </).
-    #   2. The "named character reference" state is interrupted. In this
-    #      case, peekBuf is a prefix of at least one named character
-    #      reference; obviously these can not be </script> tags either,
-    #      since they all match the regex `&[a-zA-Z]+'.
-    # pres == pcrStop: unreachable for reasons almost identical to those
-    # outlined in pcrScript. pcrStop can only be returned after a <meta>
-    # tag is processed; just like with end tags, the tokenizer cannot emit
-    # start tags in finish().
+    # Tokenizer's finish() cannot emit tag tokens, so pres cannot be
+    # pcrScript or pcrStop (which are returned on seeing </script> and
+    # <meta>).
   parser.processEOF()
   while parser.openElements.len > 0:
     discard parser.popElement()

@@ -100,9 +100,9 @@ proc parseTestFragment(ctx: var TCTestParser): TCFragment =
     fragmentType = FT_MATHML
     line = line.substr("math ".len)
   let namespace = case fragmentType
-  of FT_SVG: nsSvg
+  of FT_SVG: nsSVG
   of FT_MATHML: nsMathML
-  of FT_HTML: nsHtml
+  of FT_HTML: nsHTML
   let element = Element(
     namespace: namespace,
     localName: ctx.factory.strToAtom(line)
@@ -217,10 +217,10 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       assert false, "todo"
     elif str.startsWith("<") and str.endsWith(">"):
       var nameStr = str.substr(1, str.high - 1)
-      var namespace = nsHtml
+      var namespace = nsHTML
       if nameStr.startsWith("svg "):
         nameStr = nameStr.substr("svg ".len)
-        namespace = nsSvg
+        namespace = nsSVG
       elif nameStr.startsWith("math "):
         nameStr = nameStr.substr("math ".len)
         namespace = nsMathML

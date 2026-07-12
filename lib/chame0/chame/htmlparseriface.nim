@@ -31,43 +31,44 @@ when defined(nimdocdummy):
   ## get uglier error messages when a function is missing.
   ##
   ## Note that when using this interface you can't use procs with different side
-  ## effects than declared, so e.g. `proc getDocumentImpl(...` **will not work**.
+  ## effects than declared, so e.g. `func getDocumentImpl(...` **will not work**.
   ## You must use `proc getDocumentImpl(...` instead.
   ##
   ## Also, make sure that parameter names match the ones defined here,
   ## otherwise you are likely to get strange compilation errors.
   ##
   ## ## Optional hooks
+  ##
   ## Following procedures are optional hooks; implementations of this interface
   ## can choose to leave them out without getting compilation errors.
   ##
   ##
   ## ```nim
-  ## proc setQuirksModeImpl(builder: DOMBuilderBase, quirksMode: QuirksMode)
+  ## proc setQuirksModeImpl(builder: DOMBuilderBase; quirksMode: QuirksMode)
   ## ```
   ##
-  ## Set quirks mode to either `QUIRKS` or `LIMITED_QUIRKS`. `NO_QUIRKS` is the
-  ## default and is therefore never passed here.
+  ## Set quirks mode to either `qmQuirks` or `qmLimitedQuirks`.  `qmNoQuirks`
+  ## is the default and is therefore never passed here.
   ##
   ##
   ## ```nim
-  ## proc setEncodingImpl(builder: DOMBuilderBase, encoding: string):
+  ## proc setEncodingImpl(builder: DOMBuilderBase; encoding: string):
   ##    SetEncodingResult
   ## ```
   ##
   ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
   ## containing a non-empty character set is encountered. A SetEncodingResult
-  ## return value is expected, which is either `seStop`, stopping
-  ## the parser, or `seContinue`, allowing the parser to continue.
+  ## return value is expected, which is either `seStop`, stopping the
+  ## parser, or `seContinue`, allowing the parser to continue.
   ##
-  ## Note that htmlparser no longer contains any encoding-related logic, not
-  ## even UTF-8 validation. Implementing this is left to the caller. (For an
-  ## example, see minidom_cs which implements decoding of all character sets
-  ## in the WHATWG recommendation.)
+  ## Note that htmlparser does not contain any encoding-related logic, not
+  ## even UTF-8 validation.  Implementing this is left to the caller.
+  ## (For an example, see minidom_cs which implements decoding of all
+  ## character sets in the WHATWG recommendation.)
   ##
   ##
   ## ```nim
-  ## proc elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl)
+  ## proc elementPoppedImpl(builder: DOMBuilderBase; handle: HandleImpl)
   ## ```
   ##
   ## Called when an element is popped from the stack of open elements
@@ -75,7 +76,8 @@ when defined(nimdocdummy):
   ##
   ##
   ## ```nim
-  ## proc setScriptAlreadyStartedImpl(builder: DOMBuilderBase, handle: HandleImpl)
+  ## proc setScriptAlreadyStartedImpl(builder: DOMBuilderBase;
+  ##     handle: HandleImpl)
   ## ```
   ##
   ## Set the "already started" flag for the script element.
@@ -85,8 +87,8 @@ when defined(nimdocdummy):
   ##
   ##
   ## ```nim
-  ## proc associateWithFormImpl(builder: DOMBuilderBase, element, form,
-  ##    intendedParent: HandleImpl)
+  ## proc associateWithFormImpl(builder: DOMBuilderBase; element, form,
+  ##     intendedParent: HandleImpl)
   ## ```
   ##
   ## Called after createElement. Attempts to set form for form-associated

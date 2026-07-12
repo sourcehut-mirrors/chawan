@@ -1,5 +1,3 @@
-{.experimental: "overloadableEnums".}
-
 import dombuilder
 import entity_gen
 import tags
@@ -31,15 +29,18 @@ type TokenizerState* = enum
   tsDoctypeSystemIdentifierQuoted, tsAfterDoctypeSystemIdentifier,
   tsCdataSectionBracket, tsCdataSectionEnd, tsNamedCharacterReference,
   tsNumericCharacterReference, tsAmbiguousAmpersand,
-  tsHexadecimalCharacterReferenceStart, tsHexadecimalCharacterReference,
+  tsHexadecimalCharacterReferenceStartLower,
+  tsHexadecimalCharacterReferenceStartUpper, tsHexadecimalCharacterReference,
   tsDecimalCharacterReference
 
 type
+  TokenFlag* = enum
+    tfQuirks, tfPubid, tfSysid, tfSelfClosing
+
   Tokenizer*[Handle, Atom] = object
     dombuilder*: DOMBuilder[Handle, Atom]
-    # temporary buffer (mentioned by the standard, but also used for attribute
-    # names)
-    tmp: string
+    tmp: string # temporary buffer (mentioned by the standard, but also used
+                # for attribute names/values)
     startTag*: Atom # last start tag
     attrName: Atom # atom representing attrn after the attribute name is closed
     tagname*: Atom
@@ -48,12 +49,9 @@ type
     entityMatchIdx: int16 # last matching index in entityMap
     state*: TokenizerState
     rstate: TokenizerState # return state
-    t*: TokenType # current token's type
-    next: TokenType # next token to be emitted
-    attr: bool # is there already an attr in the previous values?
+    t*: TokenType # emitted token's type
     hasnonhtml*: bool # does the stack of open elements have a non-HTML node?
     ignoreLF: bool # ignore the next consumed line feed (for CRLF normalization)
-    isend: bool # if consume returns -1 and isend, we are at EOF
     isws: bool # is the current character token whitespace-only?
     flags*: set[TokenFlag]
     quote: char # dedupe states that only differ in their quoting
@@ -68,9 +66,6 @@ type
   TokenType* = enum
     ttDoctype, ttStartTag, ttEndTag, ttComment, ttCharacter, ttWhitespace,
     ttNull
-
-  TokenFlag* = enum
-    tfQuirks, tfPubid, tfSysid, tfSelfClosing
 
   TokenizeResult* = enum
     trDone, trEmit
@@ -138,10 +133,8 @@ proc findCharRef(tok: var Tokenizer; c: char; ibuf: openArray[char]):
         tok.entityMatchIdx = tok.entityEntryIdx
         tok.entityMatchLen = tok.entityNameIdx
       if tok.inputBufIdx >= ibuf.len:
-        if not tok.isend:
-          # consume at the next iteration
-          return false
-        break
+        # consume at the next iteration
+        return false
       let c = ibuf[tok.inputBufIdx]
       if c notin AsciiAlphaNumeric + {';'}:
         # cannot match (also guards against matching NUL in cstring)
@@ -186,14 +179,14 @@ proc emit(tok: var Tokenizer; c: char) =
 proc appendAttrOrEmit(tok: var Tokenizer; s: openArray[char]) =
   if tok.consumedAsAttribute():
     for c in s:
-      tok.charbuf &= c
+      tok.tmp &= c
   else:
     for c in s:
       tok.emit(c)
 
 proc appendAttrOrEmit(tok: var Tokenizer; c: char) =
   if tok.consumedAsAttribute():
-    tok.charbuf &= c
+    tok.tmp &= c
   else:
     tok.emit(c)
 
@@ -255,7 +248,7 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]) =
       # findCharRef only ever flushes entities after buffering a char.
       # So this is guaranteed to be EOF in the singly/doubly quoted
       # attribute state, meaning we have nothing to do.
-      assert tok.isend
+      discard
     elif sc and cast[char](n) in {'='} + AsciiAlphaNumeric:
       # There is a full match, but we're in an attribute and the character
       # reference looks like a URI component.  Restore the full match,
@@ -289,24 +282,18 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]) =
 proc flushAttr[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
   # This can also be called with tok == ttEndTag, in that case we do
   # not want to flush attributes.
-  if tok.next == ttStartTag and tok.attr:
+  if tok.t == ttStartTag:
     tok.attrs.add(ParsedAttr[Atom](name: tok.attrName))
-    tok.attrs[^1].value = move(tok.charbuf)
-  else:
-    tok.charbuf = ""
+    tok.attrs[^1].value = move(tok.tmp)
 
 proc flushAttrs[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
   mixin sortAttrsImpl
-  tok.flushAttr()
-  if tok.next == ttStartTag and tok.attr:
+  if tok.t == ttStartTag:
     tok.dombuilder.sortAttrsImpl(tok.attrs)
 
 proc startNewAttribute(tok: var Tokenizer) =
-  tok.flushAttr()
   tok.tmp = ""
-  tok.charbuf = ""
   tok.isws = false
-  tok.attr = true
 
 type EatStrResult = enum
   esrFail, esrNext, esrSuccess
@@ -361,8 +348,11 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     tok.charbuf &= s
   template emit(ch: char) =
     tok.charbuf &= ch
+  template emit(tt: TokenType) =
+    tok.t = tt
+    res = trEmit
+    break
   template emit_tok =
-    tok.t = tok.next
     res = trEmit
     break
   template emit_nws(c: char) =
@@ -441,16 +431,14 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '/': switch_state tsEndTagOpen
       of AsciiAlpha:
         flush_chars
-        tok.next = ttStartTag
+        tok.t = ttStartTag
         tok.flags = {}
         tok.attrs.setLen(0)
-        tok.attr = false
         tok.tagNameBuf = $c.toLowerAscii()
         # note: was reconsume
         switch_state tsTagName
       of '?':
         flush_chars
-        tok.next = ttComment
         tok.tagNameBuf = "?"
         # note: was reconsume
         switch_state tsBogusComment
@@ -462,14 +450,13 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiAlpha:
         flush_chars
-        tok.next = ttEndTag
+        tok.t = ttEndTag
         tok.tagNameBuf = $c.toLowerAscii()
         # note: was reconsume
         switch_state tsTagName
       of '>': switch_state tsData
       else:
         flush_chars
-        tok.next = ttComment
         tok.tagNameBuf = ""
         reconsume_in tsBogusComment
 
@@ -501,7 +488,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiAlpha:
         flush_chars
-        tok.next = ttEndTag
+        tok.t = ttEndTag
         tok.tagNameBuf = $c.toLowerAscii()
         tok.tmp &= c
         # note: was reconsume
@@ -531,7 +518,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tok.flushEndTagName()
         if tok.startTagMatches():
           switch_state tsData
-          emit_tok
+          emit ttEndTag
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
@@ -553,7 +540,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiAlpha:
         flush_chars
-        tok.next = ttEndTag
+        tok.t = ttEndTag
         tok.tagNameBuf = $c.toLowerAscii()
         tok.tmp &= c
         # note: was reconsume
@@ -583,7 +570,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tok.flushEndTagName()
         if tok.startTagMatches():
           switch_state tsData
-          emit_tok
+          emit ttEndTag
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
@@ -608,7 +595,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiAlpha:
         flush_chars
-        tok.next = ttEndTag
+        tok.t = ttEndTag
         tok.tagNameBuf = $c.toLowerAscii()
         tok.tmp &= c
         # note: was reconsume
@@ -638,7 +625,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tok.flushEndTagName()
         if tok.startTagMatches():
           switch_state tsData
-          emit_tok
+          emit ttEndTag
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
@@ -703,7 +690,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsScriptDataEscapedEndTagOpen:
       if c in AsciiAlpha:
         flush_chars
-        tok.next = ttEndTag
+        tok.t = ttEndTag
         tok.tagNameBuf = $c.toLowerAscii()
         tok.tmp &= c
         # note: was reconsume
@@ -733,7 +720,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tok.flushEndTagName()
         if tok.startTagMatches():
           switch_state tsData
-          emit_tok
+          emit ttEndTag
         else:
           anything_else
       of AsciiAlpha:
@@ -840,9 +827,11 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiWhitespace, '/', '>', '=':
         tok.attrName = tok.strToAtom(tok.tmp)
+        tok.tmp = ""
         if c == '=':
           switch_state tsBeforeAttributeValue
         else:
+          tok.flushAttr()
           reconsume_in tsAfterAttributeName
       of '\0':
         tok.tmp &= "\uFFFD"
@@ -874,6 +863,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         switch_state tsAttributeValueQuoted
       of '>':
         switch_state tsData
+        tok.flushAttr()
         tok.flushAttrs()
         emit_tok
       else: reconsume_in tsAttributeValueUnquoted
@@ -881,37 +871,39 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsAttributeValueQuoted:
       case c
       of '&': switch_state_return tsCharacterReference
-      of '\0': tok.charbuf &= "\uFFFD"
+      of '\0': tok.tmp &= "\uFFFD"
       of '\r':
         tok.ignoreLF = true
-        tok.charbuf &= '\n'
+        tok.tmp &= '\n'
       of '\n':
         if not ignoreLF:
-          tok.charbuf &= '\n'
+          tok.tmp &= '\n'
       elif c == tok.quote: switch_state tsAfterAttributeValueQuoted
-      else: tok.charbuf &= c
+      else: tok.tmp &= c
 
     of tsAttributeValueUnquoted:
       case c
-      of AsciiWhitespace: switch_state tsBeforeAttributeName
+      of AsciiWhitespace:
+        tok.flushAttr()
+        switch_state tsBeforeAttributeName
       of '&': switch_state_return tsCharacterReference
       of '>':
         switch_state tsData
+        tok.flushAttr()
         tok.flushAttrs()
         emit_tok
-      of '\0': tok.charbuf &= "\uFFFD"
-      else: tok.charbuf &= c
+      of '\0': tok.tmp &= "\uFFFD"
+      else: tok.tmp &= c
 
     of tsAfterAttributeValueQuoted:
+      tok.flushAttr()
       case c
-      of AsciiWhitespace:
-        switch_state tsBeforeAttributeName
-      of '/':
-        switch_state tsSelfClosingStartTag
+      of '/': switch_state tsSelfClosingStartTag
       of '>':
         switch_state tsData
         tok.flushAttrs()
         emit_tok
+      of AsciiWhitespace: switch_state tsBeforeAttributeName
       else: reconsume_in tsBeforeAttributeName
 
     of tsSelfClosingStartTag:
@@ -924,11 +916,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       else: reconsume_in tsBeforeAttributeName
 
     of tsBogusComment:
-      assert tok.next == ttComment
       case c
       of '>':
         switch_state tsData
-        emit_tok
+        emit ttComment
       of '\0': tok.tagNameBuf &= "\uFFFD"
       of '\r':
         tok.ignoreLF = true
@@ -941,7 +932,6 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsMarkupDeclarationOpen:
       case tok.eatStr(c, "--", ibuf)
       of esrSuccess:
-        tok.next = ttComment
         tok.tagNameBuf = ""
         tok.state = tsCommentStart
       of esrNext: discard
@@ -956,12 +946,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
             if tok.hasnonhtml:
               switch_state tsCdataSection
             else:
-              tok.next = ttComment
               tok.tagNameBuf = "[CDATA["
               switch_state tsBogusComment
           of esrNext: discard
           of esrFail:
-            tok.next = ttComment
             tok.tagNameBuf = move(tok.tmp)
             reconsume_in tsBogusComment
 
@@ -970,7 +958,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '-': switch_state tsCommentStartDash
       of '>':
         switch_state tsData
-        emit_tok
+        emit ttComment
       else: reconsume_in tsComment
 
     of tsCommentStartDash:
@@ -978,7 +966,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '-': switch_state tsCommentEnd
       of '>':
         switch_state tsData
-        emit_tok
+        emit ttComment
       else:
         tok.tagNameBuf &= '-'
         reconsume_in tsComment
@@ -1021,7 +1009,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '>':
         # note: was reconsume (comment end)
         switch_state tsData
-        emit_tok
+        emit ttComment
       else: reconsume_in tsCommentEnd
 
     of tsCommentEndDash:
@@ -1035,7 +1023,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of '>':
         switch_state tsData
-        emit_tok
+        emit ttComment
       of '!': switch_state tsCommentEndBang
       of '-': tok.tagNameBuf &= '-'
       else:
@@ -1045,7 +1033,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsCommentEndBang:
       if c == '>':
         switch_state tsData
-        emit_tok
+        emit ttComment
       else:
         tok.tagNameBuf &= "--!"
         if c == '-':
@@ -1064,18 +1052,15 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of AsciiWhitespace: discard
       of '\0':
         tok.tagNameBuf = "\uFFFD"
-        tok.next = ttDoctype
         tok.flags = {}
         switch_state tsDoctypeName
       of '>':
         tok.tagNameBuf = ""
-        tok.next = ttDoctype
         tok.flags = {tfQuirks}
         switch_state tsData
         emit_tok
       else:
         tok.tagNameBuf = $c.toLowerAscii()
-        tok.next = ttDoctype
         tok.flags = {}
         switch_state tsDoctypeName
 
@@ -1086,7 +1071,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         switch_state tsAfterDoctypeName
       of '>':
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       of '\0': tok.tagNameBuf &= "\uFFFD"
       else: tok.tagNameBuf &= c.toLowerAscii()
 
@@ -1105,7 +1090,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
           of AsciiWhitespace: discard
           of '>':
             switch_state tsData
-            emit_tok
+            emit ttDoctype
           else:
             tok.flags.incl(tfQuirks)
             reconsume_in tsBogusDoctype
@@ -1121,7 +1106,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '>':
         tok.flags.incl(tfQuirks)
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       else:
         tok.flags.incl(tfQuirks)
         reconsume_in tsBogusDoctype
@@ -1137,7 +1122,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '>':
         tok.flags.incl(tfQuirks)
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       else:
         tok.flags.incl(tfQuirks)
         reconsume_in tsBogusDoctype
@@ -1148,7 +1133,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '>':
         tok.flags.incl(tfQuirks)
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       of '\r':
         tok.ignoreLF = true
         tok.tagNameBuf &= '\n'
@@ -1164,7 +1149,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         switch_state tsBetweenDoctypePublicAndSystemIdentifiers
       of '>':
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       of '"', '\'':
         tok.flags.incl(tfSysid)
         tok.quote = c
@@ -1184,7 +1169,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         if tok.state != tsBetweenDoctypePublicAndSystemIdentifiers:
           tok.flags.incl(tfQuirks)
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       of '"', '\'':
         tok.flags.incl(tfSysid)
         tok.quote = c
@@ -1200,7 +1185,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '>':
         tok.flags.incl(tfQuirks)
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       of '\r':
         tok.ignoreLF = true
         tok.tagNameBuf &= '\n'
@@ -1215,14 +1200,14 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of AsciiWhitespace: discard
       of '>':
         switch_state tsData
-        emit_tok
+        emit ttDoctype
       else:
         switch_state tsBogusDoctype
 
     of tsBogusDoctype:
       if c == '>':
         switch_state tsData
-        emit_tok
+        emit ttDoctype
 
     of tsCdataSection:
       case c
@@ -1252,12 +1237,8 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       if tok.isws:
         flush_chars
       case c
-      of AsciiAlpha:
-        tok.tmp = "&"
-        reconsume_in tsNamedCharacterReference
-      of '#':
-        tok.tmp = "&#"
-        switch_state tsNumericCharacterReference
+      of AsciiAlpha: reconsume_in tsNamedCharacterReference
+      of '#': switch_state tsNumericCharacterReference
       else:
         tok.appendAttrOrEmit('&')
         reconsume_in tok.rstate
@@ -1283,18 +1264,18 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsNumericCharacterReference:
       tok.code = 0
       case c
-      of 'x', 'X':
-        tok.tmp &= c
-        switch_state tsHexadecimalCharacterReferenceStart
+      of 'x': switch_state tsHexadecimalCharacterReferenceStartLower
+      of 'X': switch_state tsHexadecimalCharacterReferenceStartUpper
       of AsciiDigit:
         tok.code = uint32(c) - uint32('0')
         # note: was reconsume
         switch_state tsDecimalCharacterReference
       else:
-        tok.appendAttrOrEmit(tok.tmp)
+        tok.appendAttrOrEmit("&#")
         reconsume_in tok.rstate
 
-    of tsHexadecimalCharacterReferenceStart:
+    of tsHexadecimalCharacterReferenceStartLower,
+        tsHexadecimalCharacterReferenceStartUpper:
       let c2 = c.toLowerAscii()
       case c2
       of AsciiDigit:
@@ -1306,7 +1287,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         # note: was reconsume
         switch_state tsHexadecimalCharacterReference
       else:
-        tok.appendAttrOrEmit(tok.tmp)
+        if tok.state == tsHexadecimalCharacterReferenceStartLower:
+          tok.appendAttrOrEmit("&#x")
+        else:
+          tok.appendAttrOrEmit("&#X")
         reconsume_in tok.rstate
 
     of tsHexadecimalCharacterReference:
@@ -1363,11 +1347,14 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
   of tsRcdataEndTagName, tsRawtextEndTagName, tsScriptDataEndTagName,
       tsScriptDataEscapedEndTagName:
     tok.emitTmp()
-  of tsBogusComment, tsBogusDoctype, tsCommentEndDash, tsCommentEnd,
+  of tsBogusDoctype:
+    tok.t = ttDoctype
+    return trEmit
+  of tsBogusComment, tsCommentEndDash, tsCommentEnd,
       tsCommentEndBang, tsCommentLessThanSignBangDash,
       tsCommentLessThanSignBangDashDash, tsCommentStartDash, tsComment,
       tsCommentStart, tsCommentLessThanSign, tsCommentLessThanSignBang:
-    tok.t = tok.next
+    tok.t = ttComment
     return trEmit
   of tsMarkupDeclarationOpen:
     tok.t = ttComment
@@ -1396,18 +1383,17 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
       tok.charbuf &= '&'
   of tsNamedCharacterReference:
     tok.flushNamedCharacterReference([])
-  of tsHexadecimalCharacterReferenceStart, tsNumericCharacterReference:
+  of tsHexadecimalCharacterReferenceStartLower,
+      tsHexadecimalCharacterReferenceStartUpper, tsNumericCharacterReference:
     if not tok.consumedAsAttribute():
-      tok.appendAttrOrEmit(tok.tmp)
+      tok.charbuf &= "&#"
+      if state == tsHexadecimalCharacterReferenceStartLower:
+        tok.charbuf &= 'x'
+      elif state == tsHexadecimalCharacterReferenceStartUpper:
+        tok.charbuf &= 'X'
   of tsHexadecimalCharacterReference, tsDecimalCharacterReference:
     if not tok.consumedAsAttribute():
       tok.flushNumericCharacterReference()
-  of tsSelfClosingStartTag, tsAfterAttributeValueQuoted, tsBeforeAttributeName,
-      tsAttributeValueQuoted, tsAttributeValueUnquoted, tsBeforeAttributeValue,
-      tsAfterAttributeName:
-    # we used charbuf as a buffer for attr values, so avoid flushing it
-    # as data
-    tok.charbuf = ""
   else: discard
   if tok.charbuf.len > 0:
     return tok.flushChars()
