@@ -1007,27 +1007,30 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; isva: bool) =
   let jfcl = gen.jsFunCallList
   let jfc = gen.jsFunCall
   let ma = cint(gen.actualMinArgs)
-  gen.jsCallAndRet = if gen.returnType != nil:
+  let stmts = if isva and ma > 0:
+    quote do:
+      var dl {.inject.} = ctx.jsCheckNumArgs(argc, `ma`)
+      `jfcl`
+  else:
     quote do:
       var dl {.inject.} = fjOk
-      when `isva` and `ma` > 0:
-        dl = ctx.jsCheckNumArgs(argc, `ma`)
       `jfcl`
+  if gen.returnType != nil:
+    stmts.add(quote do:
       if dl != fjErr:
         ctx.toJS(`jfc`)
       else:
         JS_EXCEPTION
+    )
   else:
-    quote do:
-      var dl {.inject.} = fjOk
-      when `isva` and `ma` > 0:
-        dl = ctx.jsCheckNumArgs(argc, `ma`)
-      `jfcl`
+    stmts.add(quote do:
       if dl != fjErr:
         `jfc`
         JS_UNDEFINED
       else:
         JS_EXCEPTION
+    )
+  gen.jsCallAndRet = stmts
 
 macro jsctor0*(fun: untyped; t: static BoundFunctionType) =
   var gen = initGenerator(fun, t, hasThis = false)
