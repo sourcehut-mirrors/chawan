@@ -891,34 +891,14 @@ proc findAuth(client: ClientHandle; request: RawRequest; url: URL): AuthItem =
       return client.authMap.findItem(url.authOrigin)
   return nil
 
-proc putMappedURL(s: var seq[tuple[name, value: string]]; url: URL;
-    auth: AuthItem) =
-  s.add(("MAPPED_URI_SCHEME", url.scheme))
-  if auth != nil:
-    s.add(("MAPPED_URI_USERNAME", auth.username))
-    s.add(("MAPPED_URI_PASSWORD", auth.password))
-  s.add(("MAPPED_URI_HOST", url.hostname))
-  s.add(("MAPPED_URI_PORT", url.port))
-  s.add(("MAPPED_URI_PATH", url.pathname))
-  s.add(("MAPPED_URI_QUERY", url.search.substr(1)))
+type EnvVar = tuple
+  name: string
+  value: string
 
-type CGIPath = object
-  basename: string
-  pathInfo: string
-  cmd: string
-  scriptName: string
-  requestURI: string
-  myDir: string
-
-proc setupEnv(cpath: CGIPath; request: RawRequest; contentLen: int;
-    prevURL: URL; config: LoaderClientConfig; auth: AuthItem):
-    seq[tuple[name, value: string]] =
-  result = @[]
+proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
+    prevURL: URL; config: LoaderClientConfig; auth: AuthItem) =
   let url = request.url
-  result.add(("SCRIPT_NAME", cpath.scriptName))
-  result.add(("SCRIPT_FILENAME", cpath.cmd))
-  result.add(("REQUEST_URI", cpath.requestURI))
-  result.add(("REQUEST_METHOD", $request.httpMethod))
+  env.add(("REQUEST_METHOD", $request.httpMethod))
   var contentTypeSeen = false
   var contentType = ""
   var cookieSeen = false
@@ -930,61 +910,182 @@ proc setupEnv(cpath: CGIPath; request: RawRequest; contentLen: int;
       contentType = it.value
       contentTypeSeen = true
     elif not cookieSeen and it.name.equalsIgnoreCase("Cookie"):
-      result.add(("HTTP_COOKIE", it.value))
+      env.add(("HTTP_COOKIE", it.value))
       cookieSeen = true
     elif not refererSeen and it.name.equalsIgnoreCase("Referer"):
-      result.add(("HTTP_REFERER", it.value))
+      env.add(("HTTP_REFERER", it.value))
       refererSeen = true
-  result.add(("REQUEST_HEADERS", headers))
+  env.add(("REQUEST_HEADERS", headers))
   if prevURL != nil:
-    result.putMappedURL(prevURL, auth)
-  if cpath.pathInfo != "":
-    result.add(("PATH_INFO", cpath.pathInfo))
+    env.add(("MAPPED_URI_SCHEME", prevURL.scheme))
+    if auth != nil:
+      env.add(("MAPPED_URI_USERNAME", auth.username))
+      env.add(("MAPPED_URI_PASSWORD", auth.password))
+    env.add(("MAPPED_URI_HOST", prevURL.hostname))
+    env.add(("MAPPED_URI_PORT", prevURL.port))
+    env.add(("MAPPED_URI_PATH", prevURL.pathname))
+    env.add(("MAPPED_URI_QUERY", prevURL.search.substr(1)))
   if url.search != "":
-    result.add(("QUERY_STRING", url.search.substr(1)))
+    env.add(("QUERY_STRING", url.search.substr(1)))
   if request.httpMethod == hmPost:
     if request.body.t == rbtMultipart:
-      result.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
+      env.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
     else:
-      result.add(("CONTENT_TYPE", contentType))
-    result.add(("CONTENT_LENGTH", $contentLen))
+      env.add(("CONTENT_TYPE", contentType))
+    env.add(("CONTENT_LENGTH", $contentLen))
   if config.proxy != nil:
-    result.add(("ALL_PROXY", $config.proxy))
+    env.add(("ALL_PROXY", $config.proxy))
   if config.insecureSslNoVerify:
-    result.add(("CHA_INSECURE_SSL_NO_VERIFY", "1"))
+    env.add(("CHA_INSECURE_SSL_NO_VERIFY", "1"))
 
-proc parseCGIPath(ctx: LoaderContext; request: RawRequest): CGIPath =
+proc writeBody(ctx: var LoaderContext; ostream, istream2: PosixStream;
+    body: RequestBody; client: ClientHandle; outputIn: OutputHandle;
+    cachedHandle: InputHandle) =
+  case body.t
+  of rbtString:
+    discard ostream.writeLoop(body.s)
+    ostream.sclose()
+  of rbtBlob:
+    discard ostream.writeLoop(body.blob.toOpenArray())
+    ostream.sclose()
+  of rbtMultipart:
+    discard ostream.write(body.multipart)
+    ostream.sclose()
+  of rbtOutput:
+    ostream.setBlocking(false)
+    let output = ctx.tee(outputIn, ostream, client)
+    output.suspended = false
+    if not output.isEmpty:
+      ctx.register(output)
+  of rbtCache:
+    if ostream != nil:
+      let handle = ctx.newInputHandle(ostream, client,
+        parseURL0("cache:/dev/null"), credentials = false, suspended = false)
+      handle.stream = istream2
+      ostream.setBlocking(false)
+      ctx.loadStreamRegular(handle, cachedHandle)
+      assert handle.stream == nil
+      ctx.close(handle)
+  of rbtNone:
+    discard
+
+proc setupCmd(ctx: LoaderContext; request: RawRequest; cmd: var string;
+    env: var seq[EnvVar]): ConnectionError =
   var path = percentDecode(request.url.pathname)
+  env.add(("REQUEST_URI", path))
   if path.startsWith("/cgi-bin/"):
     path.delete(0 .. "/cgi-bin/".high)
   elif path.startsWith("/$LIB/"):
     path.delete(0 .. "/$LIB/".high)
-  var cpath = CGIPath()
   if path.len <= 0 or request.url.hostname != "":
-    return cpath
+    return ceInvalidCGIPath
   if path[0] == '/':
     for dir in ctx.config.cgiDir:
       if path.startsWith(dir):
-        cpath.basename = path.substr(dir.len).until('/')
-        cpath.pathInfo = path.substr(dir.len + cpath.basename.len)
-        cpath.cmd = dir / cpath.basename
-        if not fileExists(cpath.cmd):
-          continue
-        cpath.myDir = dir
-        cpath.scriptName = path.substr(0, dir.len + cpath.basename.len)
-        cpath.requestURI = cpath.cmd / cpath.pathInfo & request.url.search
-        break
+        let basename = path.until('/', dir.len)
+        cmd = dir / basename
+        if fileExists(cmd):
+          env.add(("SCRIPT_NAME", path.substr(0, dir.len + basename.len)))
+          let pathInfo = path.substr(dir.len + basename.len)
+          if pathInfo != "":
+            env.add(("PATH_INFO", pathInfo))
+          return ceNone
   else:
-    cpath.basename = path.until('/')
-    cpath.pathInfo = path.substr(cpath.basename.len)
-    cpath.scriptName = "/cgi-bin/" & cpath.basename
-    cpath.requestURI = "/cgi-bin/" & path & request.url.search
+    let basename = path.until('/')
     for dir in ctx.config.cgiDir:
-      cpath.cmd = dir / cpath.basename
-      if fileExists(cpath.cmd):
-        cpath.myDir = dir
-        break
-  return cpath
+      cmd = dir / basename
+      if fileExists(cmd):
+        env.add(("SCRIPT_NAME", "/cgi-bin/" & basename))
+        let pathInfo = path.substr(basename.len)
+        if pathInfo != "":
+          env.add(("PATH_INFO", pathInfo))
+        return ceNone
+  ceCGIFileNotFound
+
+proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
+    handle: InputHandle; request: RawRequest; prevURL: URL;
+    config: LoaderClientConfig): ConnectionError =
+  var env: seq[EnvVar] = @[]
+  var cmd: string
+  if (let res = ctx.setupCmd(request, cmd, env); res != ceNone):
+    return res
+  # Pipe the response body as stdout.
+  var pipefd: array[2, cint] # child -> parent
+  if pipe(pipefd) == -1:
+    return ceFailedToSetUpCGI
+  let istreamOut = newPosixStream(pipefd[0]) # read by loader
+  var ostreamOut = newPosixStream(pipefd[1]) # written by child
+  var ostreamOut2: PosixStream = nil
+  if request.tocache:
+    # Set stdout to a file, and repurpose the pipe as a dummy to detect when
+    # the process ends. outputId is the cache id.
+    let tmpf = ctx.getTempFile()
+    ostreamOut2 = ostreamOut
+    discard unlink(cstring(tmpf))
+    # RDWR, otherwise mmap won't work
+    ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR or O_EXCL, 0o600)
+    if ostreamOut == nil:
+      return ceCGIFailedToOpenCacheOutput
+    let cacheId = handle.output.outputId # welp
+    let item = CachedItem(id: cacheId, path: tmpf, refc: 1, offset: -1)
+    handle.cacheRef = item
+    client.cacheMap.add(item)
+  # Pipe the request body as stdin for POST.
+  var istream: PosixStream = nil # child end (read)
+  var ostream: PosixStream = nil # parent end (write)
+  var istream2: PosixStream = nil # child end (read) for rbtCache
+  var cachedHandle: InputHandle = nil # for rbtCache
+  var outputIn: OutputHandle = nil # for rbtOutput
+  if request.body.t == rbtCache:
+    var n: int
+    (istream, n) = client.openCachedItem(request.body.cacheId)
+    if istream == nil:
+      return ceCGICachedBodyNotFound
+    cachedHandle = ctx.findCachedHandle(request.body.cacheId)
+    if cachedHandle != nil: # cached item still open, switch to streaming mode
+      if client.cacheMap[n].offset == -1:
+        return ceCGICachedBodyUnavailable
+      istream2 = istream
+  elif request.body.t == rbtOutput:
+    outputIn = ctx.findOutput(request.body.outputId, client)
+    if outputIn == nil:
+      return ceCGIOutputHandleNotFound
+  if request.body.t notin {rbtNone, rbtCache} or istream2 != nil:
+    var pipefdRead: array[2, cint] # parent -> child
+    if pipe(pipefdRead) == -1:
+      return ceFailedToSetUpCGI
+    istream = newPosixStream(pipefdRead[0])
+    ostream = newPosixStream(pipefdRead[1])
+  let contentLen = request.body.contentLength()
+  let auth = if prevURL != nil: client.findAuth(request, prevURL) else: nil
+  env.setupEnv(request, contentLen, prevURL, config, auth)
+  var pid: int
+  ctx.forkStream.withPacketWriter w:
+    w.swrite(istream != nil)
+    if istream != nil:
+      w.sendFd(istream.fd)
+    w.sendFd(ostreamOut.fd)
+    w.swrite(ostreamOut2 != nil)
+    if ostreamOut2 != nil:
+      w.sendFd(ostreamOut2.fd)
+    w.swrite(env)
+    w.swrite(cmd)
+  do:
+    pid = -1
+  if pid != -1:
+    ctx.forkStream.withPacketReader r:
+      r.sread(pid)
+    do:
+      pid = -1
+  if pid == -1:
+    if ostream != nil:
+      ostream.sclose()
+    return ceFailedToSetUpCGI
+  handle.parser = HeaderParser()
+  handle.stream = istreamOut
+  ctx.writeBody(ostream, istream2, request.body, client, outputIn,
+    cachedHandle)
+  ceNone
 
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     request: RawRequest; prevURL: URL; config: LoaderClientConfig) =
@@ -1000,138 +1101,13 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       client.pending.add((handle, request, prevURL))
       return
     inc client.numConnections
-  let cpath = ctx.parseCGIPath(request)
-  if cpath.cmd == "" or cpath.basename.len <= 0 or cpath.basename == "." or
-      cpath.basename == ".." or cpath.basename[0] == '~':
-    ctx.rejectHandle(handle, ceInvalidCGIPath)
-    ctx.close(handle)
-    return
-  if not fileExists(cpath.cmd):
-    ctx.rejectHandle(handle, ceCGIFileNotFound)
-    ctx.close(handle)
-    return
-  # Pipe the response body as stdout.
-  var pipefd: array[2, cint] # child -> parent
-  if pipe(pipefd) == -1:
-    ctx.rejectHandle(handle, ceFailedToSetUpCGI)
-    ctx.close(handle)
-    return
-  let istreamOut = newPosixStream(pipefd[0]) # read by loader
-  var ostreamOut = newPosixStream(pipefd[1]) # written by child
-  var ostreamOut2: PosixStream = nil
-  if request.tocache:
-    # Set stdout to a file, and repurpose the pipe as a dummy to detect when
-    # the process ends. outputId is the cache id.
-    let tmpf = ctx.getTempFile()
-    ostreamOut2 = ostreamOut
-    discard unlink(cstring(tmpf))
-    # RDWR, otherwise mmap won't work
-    ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR or O_EXCL, 0o600)
-    if ostreamOut == nil:
-      ctx.rejectHandle(handle, ceCGIFailedToOpenCacheOutput)
-      ctx.close(handle)
-      return
-    let cacheId = handle.output.outputId # welp
-    let item = CachedItem(
-      id: cacheId,
-      path: tmpf,
-      refc: 1,
-      offset: -1
-    )
-    handle.cacheRef = item
-    client.cacheMap.add(item)
-  # Pipe the request body as stdin for POST.
-  var istream: PosixStream = nil # child end (read)
-  var ostream: PosixStream = nil # parent end (write)
-  var istream2: PosixStream = nil # child end (read) for rbtCache
-  var cachedHandle: InputHandle = nil # for rbtCache
-  var outputIn: OutputHandle = nil # for rbtOutput
-  if request.body.t == rbtCache:
-    var n: int
-    (istream, n) = client.openCachedItem(request.body.cacheId)
-    if istream == nil:
-      ctx.rejectHandle(handle, ceCGICachedBodyNotFound)
-      ctx.close(handle)
-      return
-    cachedHandle = ctx.findCachedHandle(request.body.cacheId)
-    if cachedHandle != nil: # cached item still open, switch to streaming mode
-      if client.cacheMap[n].offset == -1:
-        ctx.rejectHandle(handle, ceCGICachedBodyUnavailable)
-        ctx.close(handle)
-        return
-      istream2 = istream
-  elif request.body.t == rbtOutput:
-    outputIn = ctx.findOutput(request.body.outputId, client)
-    if outputIn == nil:
-      ctx.rejectHandle(handle, ceCGIOutputHandleNotFound)
-      ctx.close(handle)
-      return
-  if request.body.t notin {rbtNone, rbtCache} or istream2 != nil:
-    var pipefdRead: array[2, cint] # parent -> child
-    if pipe(pipefdRead) == -1:
-      ctx.rejectHandle(handle, ceFailedToSetUpCGI)
-      ctx.close(handle)
-      return
-    istream = newPosixStream(pipefdRead[0])
-    ostream = newPosixStream(pipefdRead[1])
-  let contentLen = request.body.contentLength()
-  let auth = if prevURL != nil: client.findAuth(request, prevURL) else: nil
-  let env = setupEnv(cpath, request, contentLen, prevURL, config, auth)
-  var pid: int
-  ctx.forkStream.withPacketWriter w:
-    w.swrite(istream != nil)
-    if istream != nil:
-      w.sendFd(istream.fd)
-    w.sendFd(ostreamOut.fd)
-    w.swrite(ostreamOut2 != nil)
-    if ostreamOut2 != nil:
-      w.sendFd(ostreamOut2.fd)
-    w.swrite(env)
-    w.swrite(cpath.myDir)
-    w.swrite(cpath.cmd)
-    w.swrite(cpath.basename)
-  do:
-    pid = -1
-  if pid != -1:
-    ctx.forkStream.withPacketReader r:
-      r.sread(pid)
-    do:
-      pid = -1
-  if pid == -1:
-    ctx.rejectHandle(handle, ceFailedToSetUpCGI)
-    if ostream != nil:
-      ostream.sclose()
-    ctx.close(handle)
+  let code = ctx.loadCGIImpl(client, handle, request, prevURL, config)
+  if code == ceNone:
+    if handle.stream != nil:
+      ctx.addFd(handle)
   else:
-    handle.parser = HeaderParser()
-    handle.stream = istreamOut
-    case request.body.t
-    of rbtString:
-      discard ostream.writeLoop(request.body.s)
-      ostream.sclose()
-    of rbtBlob:
-      discard ostream.writeLoop(request.body.blob.toOpenArray())
-      ostream.sclose()
-    of rbtMultipart:
-      discard ostream.write(request.body.multipart)
-      ostream.sclose()
-    of rbtOutput:
-      ostream.setBlocking(false)
-      let output = ctx.tee(outputIn, ostream, client)
-      output.suspended = false
-      if not output.isEmpty:
-        ctx.register(output)
-    of rbtCache:
-      if ostream != nil:
-        let handle = ctx.newInputHandle(ostream, client,
-          parseURL0("cache:/dev/null"), credentials = false, suspended = false)
-        handle.stream = istream2
-        ostream.setBlocking(false)
-        ctx.loadStreamRegular(handle, cachedHandle)
-        assert handle.stream == nil
-        ctx.close(handle)
-    of rbtNone:
-      discard
+    ctx.rejectHandle(handle, code)
+    ctx.close(handle)
 
 proc findPassedFd(client: ClientHandle; name: string): int =
   for i in 0 ..< client.passedFdMap.len:
@@ -1448,20 +1424,10 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
   var prevurl: URL = nil
   while redo and tries < MaxRewrites:
     redo = false
-    if ctx.config.w3mCGICompat and request.url.schemeType == stFile:
-      let path = request.url.pathname.percentDecode()
-      if ctx.canRewriteForCGICompat(path):
-        let url = parseURL0("cgi-bin:" & path & request.url.search)
-        if url != nil:
-          request.url = url
-          inc tries
-          redo = true
-          continue
+    const BuiltinScheme = {stCgiBin, stStream, stCache, stData, stAbout}
     case request.url.schemeType
     of stCgiBin:
       ctx.loadCGI(client, handle, request, prevurl, config)
-      if handle.stream != nil:
-        ctx.addFd(handle)
     of stStream:
       ctx.loadStream(client, handle, request)
       if handle.stream != nil:
@@ -1478,6 +1444,15 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     of stXChaCookie:
       ctx.loadXChaCookie(client, handle, request)
     else:
+      if ctx.config.w3mCGICompat and request.url.schemeType == stFile:
+        let path = request.url.pathname.percentDecode()
+        if ctx.canRewriteForCGICompat(path):
+          let url = parseURL0("cgi-bin:" & path & request.url.search)
+          if url != nil:
+            request.url = url
+            inc tries
+            redo = true
+            continue
       prevurl = request.url
       var typeBuf = request.url.scheme & '/' &
         ($request.httpMethod).toLowerAscii()
@@ -1499,6 +1474,8 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
           ctx.rejectHandle(handle, ceInvalidBrowsecapEntry)
       elif entry != nil and not resource:
         ctx.rejectHandle(handle, ceMailcap, entry.toStr(typeBuf))
+      elif request.url.schemeType in BuiltinScheme:
+        continue # rewritten to a built-in scheme
       elif netPathSeen:
         ctx.rejectHandle(handle, ceNetPathExpected)
       elif listSeen:
@@ -1956,8 +1933,6 @@ proc finishCycle(ctx: var LoaderContext) =
       if client.numConnections >= ctx.config.maxNetConnections:
         break
       ctx.loadCGI(client, handle, request, prevURL, client.config)
-      if handle.stream != nil:
-        ctx.addFd(handle)
     let L = max(client.pending.len - j, 0)
     for i in 0 ..< L:
       client.pending[i] = client.pending[j]

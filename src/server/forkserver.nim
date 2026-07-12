@@ -186,13 +186,9 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
   r.sread(hasOstreamOut2)
   let ostreamOut2 = if hasOstreamOut2: newPosixStream(r.recvFd()) else: nil
   var env: seq[tuple[name, value: string]]
-  var dir: string
   var cmd: string
-  var basename: string
   r.sread(env)
-  r.sread(dir)
   r.sread(cmd)
-  r.sread(basename)
   let pid = fork()
   if pid == 0: # child
     ctx.stream.sclose()
@@ -212,15 +208,19 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
     const ExecErrorMsg = "Cha-Control: ConnectionError " &
       $int(ceFailedToExecuteCGIScript)
     let stdout = cast[ChaFile](stdout)
+    env.add(("SCRIPT_FILENAME", cmd))
     for it in env:
       if twtstr.setEnv(it.name, it.value).isErr:
         discard stdout.writeLine(ExecErrorMsg & " failed to set env vars")
         exitnow(1)
-    if chdir(cstring(dir)) != 0:
+    let i = cmd.rfind('/')
+    cmd[i] = '\0'
+    if chdir(cstring(cmd)) != 0:
       discard stdout.writeLine(ExecErrorMsg &
         " failed to set working directory")
       exitnow(1)
-    discard execl(cstring(cmd), cstring(basename), nil)
+    cmd[i] = '/'
+    discard execl(cstring(cmd), cast[cstring](addr cmd[i + 1]), nil)
     let es = $strerror(errno)
     discard stdout.writeLine(ExecErrorMsg & ' ' & es.deleteChars({'\n', '\r'}))
     exitnow(1)
