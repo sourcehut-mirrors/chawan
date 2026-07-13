@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/math
 
 import types/opt
 import utils/dtoawrap
@@ -480,6 +481,28 @@ proc hsla*(h: uint32; s, l, a: uint8): ARGBColor =
   let g = uint8((hue2rgb(magic1, magic2, h) * 255 + 50) div 100)
   let b = uint8((hue2rgb(magic1, magic2, h + 240) * 255 + 50) div 100)
   return rgba(r, g, b, a)
+
+# https://bottosson.github.io/posts/oklab/
+#TODO avoid float
+proc unlinear(x: float32): float32 =
+  if x >= 0.0031308:
+    return 1.055 * pow(x, (1.0/2.4)) - 0.055
+  return 12.92 * x
+
+proc oklab*(L, a, b: float32; alpha: uint8): ARGBColor =
+  let lc = L + 0.3963377774'f32 * a + 0.2158037573'f32 * b
+  let mc = L - 0.1055613458'f32 * a - 0.0638541728'f32 * b
+  let sc = L - 0.0894841775'f32 * a - 1.2914855480'f32 * b
+  let l = lc * lc * lc
+  let m = mc * mc * mc
+  let s = sc * sc * sc
+  let rf = +4.0767416621'f32 * l - 3.3077115913'f32 * m + 0.2309699292'f32 * s
+  let gf = -1.2684380046'f32 * l + 2.6097574011'f32 * m - 0.3413193965'f32 * s
+  let bf = -0.0041960863'f32 * l - 0.7034186147'f32 * m + 1.7076147010'f32 * s
+  let r = uint8(unlinear(rf) * 255 + 0.5'f32)
+  let g = uint8(unlinear(gf) * 255 + 0.5'f32)
+  let b = uint8(unlinear(bf) * 255 + 0.5'f32)
+  return rgba(r, g, b, alpha)
 
 # Note: this assumes n notin 0..15 (which would be ANSI 4-bit)
 proc toRGB*(param0: ANSIColor): RGBColor =

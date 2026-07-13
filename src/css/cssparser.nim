@@ -172,16 +172,18 @@ type
     cftHsla = "hsla"
     cftIs = "is"
     cftLang = "lang"
+    cftLayer = "layer"
     cftNot = "not"
     cftNthChild = "nth-child"
     cftNthLastChild = "nth-last-child"
+    cftOklab = "oklab"
+    cftOklch = "oklch"
     cftRgb = "rgb"
     cftRgba = "rgba"
     cftSrc = "src"
     cftUrl = "url"
     cftVar = "var"
     cftWhere = "where"
-    cftLayer = "layer"
 
   CSSSimpleBlock* = ref object
     value*: seq[CSSToken]
