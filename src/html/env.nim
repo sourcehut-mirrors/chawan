@@ -651,7 +651,7 @@ proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   let windowCID = ctx.registerType(Window, parent = eventTargetCID,
     asglobal = true, namespace = proto)
   JS_FreeValue(ctx, proto)
-  if windowCID == 0:
+  if windowCID == JS_INVALID_CLASS_ID:
     return err()
   let global = JS_GetGlobalObject(ctx)
   ?ctx.addEventGetSet(global, WindowEvents)

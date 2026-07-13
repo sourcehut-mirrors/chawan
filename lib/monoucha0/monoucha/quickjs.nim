@@ -124,7 +124,7 @@ type
   JSIteratorNextFunction* = proc(ctx: JSContext; this_val: JSValueConst;
     argc: cint; argv: JSValueConstArray; pdone: var JS_BOOL; magic: cint):
     JSValue {.cdecl, raises: [].}
-  JSClassID* = uint32
+  JSClassID* = distinct uint32
   JSAtom* {.importc: "JSAtom", header: qjsheader.} = distinct uint32
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
     cdecl, raises: [].}
@@ -302,6 +302,7 @@ proc `==`*(a, b: JSValue): bool {.error.} =
   discard
 
 proc `==`*(a, b: JSAtom): bool {.borrow.}
+proc `==`*(a, b: JSClassID): bool {.borrow.}
 
 converter toJSValueConst*(val: JSValue): JSValueConst {.importc,
     header: "quickjs-aux.h".} =
@@ -870,14 +871,8 @@ proc JS_LoadModule*(ctx: JSContext; basename, filename: cstringConst): JSValue
 # C function definition
 proc JS_NewCFunction2*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
   length: cint; proto: JSCFunctionEnum; magic: cint): JSValue
-proc JS_NewCFunction3*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
-  length: cint; proto: JSCFunctionEnum; magic: cint; proto_val: JSValueConst;
-  n_fields: cint): JSValue
 proc JS_NewCFunctionData*(ctx: JSContext; cfunc: JSCFunctionData;
   length, magic, data_len: cint; data: JSValueConstArray): JSValue
-proc JS_NewCFunctionData2*(ctx: JSContext; cfunc: JSCFunctionData;
-  name: cstring; length, magic, data_len: cint; data: JSValueConstArray):
-  JSValue
 proc JS_NewCFunction*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
   length: cint): JSValue
 proc JS_SetConstructor*(ctx: JSContext; func_obj, proto: JSValueConst)

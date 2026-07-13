@@ -820,23 +820,23 @@ proc addEventGetSet*(ctx: JSContext; classid: JSClassID;
 proc addEventModule*(ctx: JSContext):
     Opt[tuple[eventCID, eventTargetCID: JSClassID]] =
   let eventCID = ctx.registerType(Event)
-  if eventCID == 0:
+  if eventCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(CustomEvent, parent = eventCID)
   ?ctx.registerType(MessageEvent, parent = eventCID)
   ?ctx.registerType(SubmitEvent, parent = eventCID)
   let uiEventCID = ctx.registerType(UIEvent, parent = eventCID)
-  if uiEventCID == 0:
+  if uiEventCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(MouseEvent, parent = uiEventCID)
   ?ctx.registerType(InputEvent, parent = uiEventCID)
   if ctx.defineConsts(eventCID, EventPhase) == dprException:
     return err()
   let eventTargetCID = ctx.registerType(EventTarget)
-  if eventTargetCID == 0:
+  if eventTargetCID == JS_INVALID_CLASS_ID:
     return err()
   let abortSignalCID = ctx.registerType(AbortSignal, parent = eventTargetCID)
-  if abortSignalCID == 0:
+  if abortSignalCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.addEventGetSet(abortSignalCID, [satAbort])
   ?ctx.registerType(AbortController)

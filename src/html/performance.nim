@@ -96,7 +96,7 @@ proc addPerformanceModule*(ctx: JSContext; eventTargetCID: JSClassID):
     Opt[void] =
   ?ctx.registerType(Performance, parent = eventTargetCID)
   let performanceEntryCID = ctx.registerType(PerformanceEntry)
-  if performanceEntryCID == 0:
+  if performanceEntryCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(PerformanceMark, performanceEntryCID)
   ok()

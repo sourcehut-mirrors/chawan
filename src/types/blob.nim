@@ -299,7 +299,7 @@ proc getter(ctx: JSContext; this: FileList; atom: JSAtom): JSValue
 
 proc addBlobModule*(ctx: JSContext): Opt[void] =
   let blobCID = ctx.registerType(Blob)
-  if blobCID == 0:
+  if blobCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(WebFile, parent = blobCID, name = "File")
   ?ctx.registerType(FileList, iterable = jitValue)

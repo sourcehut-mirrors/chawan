@@ -74,13 +74,12 @@ proc isInstanceOf(ctx: JSContext; classid, tclassid: JSClassID): bool =
     if classid == tclassid:
       found = true
       break
-    if int(classid) < rtOpaque.classes.len:
-      classid = rtOpaque.classes[int(classid)].parent
-    else:
-      classid = 0 # not defined by us; assume parent is Object.
-    if classid == 0:
+    if int(classid) >= rtOpaque.classes.len:
       break
-  return found
+    classid = rtOpaque.classes[int(classid)].parent
+    if classid == JS_INVALID_CLASS_ID:
+      break
+  found
 
 proc isSequence*(ctx: JSContext; o: JSValueConst): bool =
   if not JS_IsObject(o):
@@ -424,7 +423,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
     classid = ctxOpaque.gclass
     p = ctxOpaque.globalObj
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let tclassid = rtOpaque.typemap.getOrDefault(nimt, 0)
+  let tclassid = rtOpaque.typemap.getOrDefault(nimt, JS_INVALID_CLASS_ID)
   if p == nil or not ctx.isInstanceOf(classid, tclassid):
     # dumb way to invoke JS_ThrowTypeErrorInvalidClass
     discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)

@@ -174,7 +174,8 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValueConst): JSValue =
     GC_ref(cast[RootRef](p))
     JS_SetOpaque(val, p)
     return val
-  let class = rtOpaque.typemap.getOrDefault(tp, 0)
+  let class = rtOpaque.typemap.getOrDefault(tp, JS_INVALID_CLASS_ID)
+  assert class != JS_INVALID_CLASS_ID
   let jsObj = JS_NewObjectFromCtor(ctx, ctor, class)
   if JS_IsException(jsObj):
     return jsObj

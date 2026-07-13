@@ -4027,8 +4027,8 @@ proc getReflectElement(ctx: JSContext; this: JSValueConst; magic: cint):
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   let magic = uint16(magic)
   let myClass = JS_GetClassID(this)
-  let parent = rtOpaque.classes[myClass].parent
-  let class = JSClassID(magic shr 9) + parent
+  let parent = rtOpaque.getParent(myClass)
+  let class = JSClassID(uint32(magic shr 9) + uint32(parent))
   if class != parent and class != myClass:
     JS_ThrowTypeError(ctx, "invalid tag type")
     return nil
@@ -8206,22 +8206,22 @@ proc addHyperlinkUtils(ctx: JSContext; class: JSClassID): Opt[void] =
 
 proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
-  if elementCID == 0:
+  if elementCID == JS_INVALID_CLASS_ID:
     return err()
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID)
-  if htmlElementCID == 0:
+  if htmlElementCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.addElementReflection(htmlElementCID)
   template register(t: typed; tags: openArray[TagType]) =
     let class = ctx.registerType(t, parent = htmlElementCID)
-    if class == 0:
+    if class == JS_INVALID_CLASS_ID:
       return err()
     const attrs = TagReflectMap[tags[0]]
     when attrs.len > 0:
       ?ctx.addAttributeReflection(class, attrs, htmlElementCID)
   template register2(t: typed; tag: TagType): JSClassID =
     let class = ctx.registerType(t, parent = htmlElementCID)
-    if class == 0:
+    if class == JS_INVALID_CLASS_ID:
       return err()
     const attrs = TagReflectMap[tag]
     when attrs.len > 0:
@@ -8280,7 +8280,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
   # 48/127 (warning: the 128th interface won't fit in the top 7 bits of
   # the getter/setter magic)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
-  if svgElementCID == 0:
+  if svgElementCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(SVGSVGElement, parent = svgElementCID)
   ?ctx.addConstructorAlias(newAudio, audioCID, "Audio")
@@ -8291,15 +8291,15 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID): Opt[void] =
 
 proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
-  if nodeCID == 0:
+  if nodeCID == JS_INVALID_CLASS_ID:
     return err()
   if ctx.defineConsts(nodeCID, NodeType) == dprException:
     return err()
   let nodeListCID = ctx.registerType(NodeList, iterable = jitValue)
-  if nodeListCID == 0:
+  if nodeListCID == JS_INVALID_CLASS_ID:
     return err()
   let htmlCollectionCID = ctx.registerType(HTMLCollection, iterable = jitIndexed)
-  if htmlCollectionCID == 0:
+  if htmlCollectionCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(HTMLAllCollection)
   ?ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
@@ -8309,22 +8309,22 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   ?ctx.registerType(TreeWalker)
   ?ctx.registerType(Location)
   let documentCID = ctx.registerType(Document, parent = nodeCID)
-  if documentCID == 0:
+  if documentCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(XMLDocument, parent = documentCID)
   ?ctx.registerType(DOMImplementation)
   ?ctx.registerType(DOMTokenList, iterable = jitValue)
   ?ctx.registerType(DOMStringMap)
   let characterDataCID = ctx.registerType(CharacterData, parent = nodeCID)
-  if characterDataCID == 0:
+  if characterDataCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(Comment, parent = characterDataCID)
   let documentFragmentCID = ctx.registerType(DocumentFragment, parent = nodeCID)
-  if documentFragmentCID == 0:
+  if documentFragmentCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(ProcessingInstruction, parent = characterDataCID)
   let textCID = ctx.registerType(Text, parent = characterDataCID)
-  if textCID == 0:
+  if textCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.registerType(CDATASection, parent = textCID)
   ?ctx.registerType(DocumentType, parent = nodeCID)

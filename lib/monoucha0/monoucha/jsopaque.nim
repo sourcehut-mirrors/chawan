@@ -159,6 +159,9 @@ proc del*(rtOpaque: JSRuntimeOpaque; nimp: pointer) =
     rtOpaque.plist[i] = move(rtOpaque.plist[j])
     i = j
 
+proc getParent*(rtOpaque: JSRuntimeOpaque; class: JSClassID): JSClassID =
+  rtOpaque.classes[int(class)].parent
+
 proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))
   let sym = JS_GetPropertyStr(ctx, opaque.global, "Symbol")

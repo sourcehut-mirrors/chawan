@@ -5993,10 +5993,10 @@ static int js_method_set_properties(JSContext *ctx, JSValueConst func_obj,
 }
 
 /* Note: at least 'length' arguments will be readable in 'argv' */
-JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
-                         const char *name,
-                         int length, JSCFunctionEnum cproto, int magic,
-                         JSValueConst proto_val, int n_fields)
+static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
+                                const char *name,
+                                int length, JSCFunctionEnum cproto, int magic,
+                                JSValueConst proto_val, int n_fields)
 {
     JSValue func_obj;
     JSObject *p;

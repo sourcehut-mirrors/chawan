@@ -2860,7 +2860,7 @@ proc legacyReflectGetter(ctx: JSContext; this: JSValueConst; magic: cint):
 
 proc addPagerModule*(ctx: JSContext): Opt[void] =
   let pagerCID = ctx.registerType(Pager)
-  if pagerCID == 0:
+  if pagerCID == JS_INVALID_CLASS_ID:
     return err()
   let proto = JS_GetClassProto(ctx, pagerCID)
   var f: JSCFunctionType

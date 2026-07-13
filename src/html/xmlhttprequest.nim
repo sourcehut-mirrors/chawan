@@ -511,14 +511,14 @@ proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
 proc addXMLHttpRequestModule*(ctx: JSContext;
     eventCID, eventTargetCID: JSClassID): Opt[void] =
   let xhretCID = ctx.registerType(XMLHttpRequestEventTarget, eventTargetCID)
-  if xhretCID == 0:
+  if xhretCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.addEventGetSet(xhretCID, [satLoadstart, satProgress, satAbort, satError,
     satLoad, satTimeout, satLoadend])
   ?ctx.registerType(XMLHttpRequestUpload, xhretCID)
   ?ctx.registerType(ProgressEvent, eventCID)
   let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID)
-  if xhrCID == 0:
+  if xhrCID == JS_INVALID_CLASS_ID:
     return err()
   ?ctx.addEventGetSet(xhrCID, [satReadystatechange])
   case ctx.defineConsts(xhrCID, XMLHttpRequestState)

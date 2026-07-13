@@ -204,7 +204,7 @@ proc free*(ctx: JSContext) =
       for fin in rtOpaque.finalizers(opaque.gclass):
         fin(rt, cast[pointer](opaque.globalObj))
       when defined(gcDestructors):
-        rtOpaque.classes[opaque.gclass].dtor(opaque.globalObj)
+        rtOpaque.classes[int(opaque.gclass)].dtor(opaque.globalObj)
       else:
         GC_unref(cast[RootRef](opaque.globalObj))
       rtOpaque.del(opaque.globalObj)
@@ -306,7 +306,7 @@ proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
   if int(parent) < rtOpaque.classes.len:
     fins.add(rtOpaque.classes[int(parent)].fins)
   if fins.len > 0:
-    rtOpaque.classes[classid].fins = move(fins)
+    rtOpaque.classes[int(classid)].fins = move(fins)
   true
 
 proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
@@ -314,19 +314,21 @@ proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
     JSValue =
   if asglobal and not JS_IsUndefined(parentProto):
     return JS_NewObjectProtoClass(ctx, parentProto, parent)
-  if parent != 0:
+  if parent != JS_INVALID_CLASS_ID:
     return JS_NewObjectClass(ctx, parent)
   if iterable == jitIterator:
     let parentProto = ctx.getOpaque().valRefs[jsvIteratorPrototype]
-    return JS_NewObjectProtoClass(ctx, parentProto, parent)
+    return JS_NewObjectProto(ctx, parentProto)
   return JS_NewObject(ctx)
 
 proc newCtorFunFromParentClass*(ctx: JSContext; ctor: JSCFunction;
     className: cstring; parent: JSClassID; ctorType: JSCFunctionEnum): JSValue =
-  if parent != 0:
-    return JS_NewCFunction3(ctx, ctor, className, 0, ctorType, 0,
-      ctx.getOpaque().ctors[int(parent)], 0)
-  return JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
+  let fun = JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
+  if parent != JS_INVALID_CLASS_ID:
+    let proto = ctx.getOpaque().ctors[int(parent)]
+    if JS_SetPrototype(ctx, fun, proto) < 0:
+      return JS_EXCEPTION
+  return fun
 
 proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; data: JSValueConstArray): JSValue
@@ -438,8 +440,8 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   rtOpaque.typemap[nimt] = res
   if rtOpaque.classes.len <= int(res):
     rtOpaque.classes.setLen(int(res) + 1)
-  rtOpaque.classes[res].parent = parent
-  rtOpaque.classes[res].nimt = nimt
+  rtOpaque.classes[int(res)].parent = parent
+  rtOpaque.classes[int(res)].nimt = nimt
   let proto = ctx.newProtoFromParentClass(parent, iterable, asglobal,
     namespace)
   JS_SetClassProto(ctx, res, proto)
@@ -450,9 +452,10 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   let strSym = ctxOpaque.symRefs[jsyToStringTag]
   if asglobal:
     let global = ctxOpaque.global
-    assert ctxOpaque.gclass == 0
+    assert ctxOpaque.gclass == JS_INVALID_CLASS_ID
     ctxOpaque.gclass = res
-    rtOpaque.classes[JS_GetClassID(global)].nimt = nimt
+    let globalClassID = JS_GetClassID(global)
+    rtOpaque.classes[int(globalClassID)].nimt = nimt
     let name2 = JS_DupValue(ctx, name)
     # Global already exists, so set unforgeable functions here
     if ctx.definePropertyC(global, strSym, name2) == dprException or
@@ -485,9 +488,9 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     if JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor2,
         JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
       return JS_INVALID_CLASS_ID
-  ctxOpaque.ctors[res] = jctor
+  ctxOpaque.ctors[int(res)] = jctor
   when defined(gcDestructors):
-    rtOpaque.classes[res].dtor = dtor
+    rtOpaque.classes[int(res)].dtor = dtor
   return res
 
 type
@@ -1642,7 +1645,7 @@ proc jsCanDestroy*(rt: JSRuntime; val: JSValueConst; refCount: ptr cint) {.
     # We can lie about the type in refc, as it type erases the reference.
     # In ARC, we must do an indirect call.
     when defined(gcDestructors):
-      rt.getOpaque().classes[classId].dtor(opaque)
+      rt.getOpaque().classes[int(classId)].dtor(opaque)
     else:
       GC_unref(cast[RootRef](opaque))
     refCount[] -= 1
@@ -1706,7 +1709,7 @@ else:
   template mncGetDtor*(T: untyped): BoundRefDestructor =
     nil
 
-macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
+macro registerType*(ctx: JSContext; t: typed; parent = JS_INVALID_CLASS_ID;
     asglobal: static bool = false; name: static string = "";
     namespace = JS_NULL; iterable: static JSIterableType = jitNone): JSClassID =
   var stmts = newStmtList()
