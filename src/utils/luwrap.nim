@@ -12,21 +12,28 @@ proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
 proc normalize*(rs: openArray[uint32]; form = UNICODE_NFC): seq[uint32] =
   if rs.len <= 0:
     return @[]
-  var outbuf: ptr uint32
-  let p = cast[ptr uint32](unsafeAddr rs[0])
-  let out_len = unicode_normalize(addr outbuf, p, cint(rs.len), form, nil,
-    passRealloc)
-  if out_len <= 0:
+  var obuf: ptr uint32
+  let olen = unicode_normalize(addr obuf, unsafeAddr rs[0], cint(rs.len), form,
+    nil, passRealloc)
+  if olen <= 0:
     return @[]
-  var rs = newSeqUninit[uint32](int(out_len))
-  copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
-  dealloc(outbuf)
-  return rs
+  var rs = newSeqUninit[uint32](int(olen))
+  copyMem(addr rs[0], obuf, olen * sizeof(uint32))
+  dealloc(obuf)
+  move(rs)
 
 proc mnormalize*(s: var string) =
-  if NonAscii notin s:
-    return # no need to normalize ascii
-  s = s.toPoints().normalize().toUTF8()
+  if NonAscii in s: # no need to normalize ascii
+    let rs = s.toPoints()
+    var obuf: ptr uint32
+    let olen = unicode_normalize(addr obuf, unsafeAddr rs[0], cint(rs.len),
+      UNICODE_NFC, nil, passRealloc)
+    if olen > 0:
+      let p = cast[ptr UncheckedArray[uint32]](obuf)
+      s = p.toOpenArray(0, int(olen) - 1).toUTF8()
+      dealloc(obuf)
+    else:
+      s = ""
 
 # n == 0: upper, 1: lower, 2: case fold
 proc toUpperLU(s: string; n: cint): string =
