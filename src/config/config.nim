@@ -2422,9 +2422,13 @@ const ConfigInitPathSeq = {
   coCgiDir: @["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"],
 }
 
+var configSectionCID {.global.}: JSClassID
+
 proc getConfigOption(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
-  let config = cast[ptr ConfigObj](JS_GetOpaque(this, JS_GetClassID(this)))
+  let config = cast[ptr ConfigObj](JS_GetOpaque2(ctx, this, configSectionCID))
+  if config == nil:
+    return JS_EXCEPTION
   let opt = cast[ConfigOption](magic)
   case opt.optionType
   of cotBool: return ctx.toJS(config.bits[opt].bool)
@@ -2457,7 +2461,9 @@ proc getConfigOption(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
 
 proc setConfigOption(ctx: JSContext; this, val: JSValueConst; magic: cint):
     JSValue {.cdecl.} =
-  let config = cast[ptr ConfigObj](JS_GetOpaque(this, JS_GetClassID(this)))
+  let config = cast[ptr ConfigObj](JS_GetOpaque2(ctx, this, configSectionCID))
+  if config == nil:
+    return JS_EXCEPTION
   let opt = cast[ConfigOption](magic)
   let res = case opt.optionType
   of cotBool: ctx.fromJS(val, config.bits[opt].bool)
@@ -2493,9 +2499,10 @@ proc setConfigOption(ctx: JSContext; this, val: JSValueConst; magic: cint):
   return JS_DupValue(ctx, val)
 
 proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
+  discard JS_NewClassID(configSectionCID)
   var objs {.noinit.}: array[csBuffer..csStatus, JSValue]
   for obj in objs.mitems:
-    obj = JS_NewObject(ctx)
+    obj = JS_NewObjectClass(ctx, configSectionCID)
     if JS_IsException(obj):
       return err()
     JS_SetOpaque(obj, addr config[])
