@@ -22,7 +22,8 @@ A list of supported standard properties, with notes on unimplemented values:
 * box-sizing
 * caption-side
 * clear
-* color (hex values and functions `rgb`, `rgba`, `hsl`, `hsla`)
+* color (hex values and functions `rgb`, `rgba`, `hsl`, `hsla`, `oklab`,
+  `oklch`)
 * content (string, (no-)open/close-quote, counter())
 * counter-increment
 * counter-reset

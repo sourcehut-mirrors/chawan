@@ -48,17 +48,16 @@ Rationale: makes it easier to edit in vi.
 Semicolons, not commas. e.g.
 
 ```nim
-# Good
-proc foo(p1: int; p2, p3: string; p4 = true)
-# Bad
-proc bar(p1: int, p2, p3: string, p4 = true)
+proc foo(p1: int; p2, p3: string; p4 = true) # Good
+proc bar(p1: int, p2, p3: string, p4 = true) # Bad
 ```
 
 Rationale: makes it easier to edit in vi.
 
 ### Naming
 
-Prefer short names.  Don't copy verbose naming from the standard.
+Prefer short (but descriptive) names.  Don't copy verbose naming from the
+standard.
 
 Rationale: we aren't a fruit company.
 
@@ -78,7 +77,7 @@ Note that most C code included in this repository is from vendored external
 libraries like QuickJS; following points only apply to code we own, such
 as chaseccomp.
 
-* 80 spaces per line.  Indent with 4 spaces (not mixed with tabs).
+* 80 characters per line.  Indent with 4 spaces (not mixed with tabs).
 * Local variable declarations come before their use (a la C89).  The two
   sections have a blank line inbetween.
 * Braces go on the same line as the statement, except for functions where
@@ -91,7 +90,7 @@ as chaseccomp.
 
 Similar to C style.
 
-* 80 spaces per line.  Indent with 4 spaces (not mixed with tabs).
+* 80 characters per line.  Indent with 4 spaces (not mixed with tabs).
 * Prefer `const`/`let` to `var`.
 * Braces go on the same line as the statement or function.
 * `if`, `for`, etc. must have braces unless each part fits on a single line.
@@ -101,6 +100,25 @@ Similar to C style.
 Note: although QJS has an optimizer, compared to that of a static language
 it is very limited.  Some ugliness is acceptable if it results in more
 efficient code.
+
+### Fixing cyclic imports
+
+In Nim, you can't have circular dependencies between modules.  This gets
+unwieldy as the HTML/DOM/etc. specs are a huge cyclic OOP mess.
+
+The preferred workaround is global function pointer variables:
+
+```nim
+# Forward declaration hack
+var forwardDeclImpl*: proc(window: Window; x, y: int) {.nimcall, raises: [].}
+# in the other module:
+forwardDeclImpl = proc(window: Window; x, y: int) =
+  # [...]
+```
+
+Don't forget to make it `.nimcall`, and to comment "Forward declaration
+hack" above.  (Hopefully we can remove these once Nim supports cyclic module
+dependencies.)
 
 ## Features to avoid
 
@@ -217,24 +235,25 @@ type
     opaque: RootRef # add an explicit environment like this if needed
 ```
 
-## Fixing cyclic imports
+### Globals
 
-In Nim, you can't have circular dependencies between modules.  This gets
-unwieldy as the HTML/DOM/etc. specs are a huge cyclic OOP mess.
+In most cases, context-style objects should be preferred.  Nevertheless,
+globals are acceptable if the following circumstances are fulfilled:
 
-The preferred workaround is global function pointer variables:
+1. Creating multiple instances of the variable makes no sense in a single
+   process.
+2. Passing the variable everywhere would be extremely tedious, wasteful,
+   or straight up impossible (e.g. signal handlers).
+
+Examples are interning maps (which exist to dedupe immutable objects) and
+QuickJS class ids (which by design are shared across runtimes).
+
+Globals should always be tagged with the `.global` pragma, even in the
+global scope:
 
 ```nim
-# Forward declaration hack
-var forwardDeclImpl*: proc(window: Window; x, y: int) {.nimcall, raises: [].}
-# in the other module:
-forwardDeclImpl = proc(window: Window; x, y: int) =
-  # [...]
+var myVariable {.global.}: int
 ```
-
-Don't forget to make it `.nimcall`, and to comment "Forward declaration
-hack" above.  (Hopefully we can remove these once Nim supports cyclic module
-dependencies.)
 
 ## Debugging
 
