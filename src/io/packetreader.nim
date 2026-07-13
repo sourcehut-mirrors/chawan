@@ -180,6 +180,13 @@ proc sread*[I; T](r: var PacketReader; a: var array[I, T]) =
   for x in a.mitems:
     r.sread(x)
 
+proc sread*(r: var PacketReader; s: var seq[char]) =
+  var len {.noinit.}: int
+  r.sread(len)
+  s = newSeq[char](len)
+  if len > 0:
+    r.readData(addr s[0], s.len)
+
 proc sread*[T](r: var PacketReader; s: var seq[T]) =
   var len {.noinit.}: int
   r.sread(len)

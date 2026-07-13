@@ -24,7 +24,7 @@ type
   # * The position of every FormatCell should be greater than the position
   #   of the previous FormatCell.
   FlexibleLine* = object
-    str*: string
+    str*: seq[char]
     formats*: seq[FormatCell]
 
   FlexibleGrid* = seq[FlexibleLine]
@@ -41,7 +41,7 @@ type
   RenderState = object
     bgcolor: CellColor
     images: seq[PosBitmap]
-    spaces: string # buffer filled with spaces for padding
+    spaces: seq[char] # buffer filled with spaces for padding
     cellSize: Size # size(w = attrs.ppc, h = attrs.ppl)
 
 # Forward declarations

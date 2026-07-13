@@ -21,7 +21,7 @@ type
     pos*: int
 
   SimpleFlexibleLine* = object
-    str*: string
+    str*: seq[char]
     formats*: seq[SimpleFormatCell]
 
   SimpleFlexibleGrid* = seq[SimpleFlexibleLine]

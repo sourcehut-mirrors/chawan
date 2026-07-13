@@ -35,6 +35,7 @@ proc swrite*(w: var PacketWriter; s: string)
 proc swrite*(w: var PacketWriter; b: bool)
 proc swrite*(w: var PacketWriter; tup: tuple)
 proc swrite*[I, T](w: var PacketWriter; a: array[I, T])
+proc swrite*(w: var PacketWriter; s: openArray[char])
 proc swrite*[T](w: var PacketWriter; s: openArray[T])
 proc swrite*[U, V](w: var PacketWriter; t: Table[U, V])
 proc swrite*(w: var PacketWriter; obj: object)
@@ -188,6 +189,11 @@ proc swrite*(w: var PacketWriter; tup: tuple) =
 proc swrite*[I, T](w: var PacketWriter; a: array[I, T]) =
   for x in a:
     w.swrite(x)
+
+proc swrite*(w: var PacketWriter; s: openArray[char]) =
+  w.swrite(s.len)
+  if s.len > 0:
+    w.writeData(unsafeAddr s[0], s.len)
 
 proc swrite*[T](w: var PacketWriter; s: openArray[T]) =
   w.swrite(s.len)

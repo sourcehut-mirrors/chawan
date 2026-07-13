@@ -612,7 +612,7 @@ proc getLine(iface: BufferInterface; y: int): lent SimpleFlexibleLine =
   let line {.global.} = SimpleFlexibleLine()
   return line
 
-proc getLineStr(iface: BufferInterface; y: int): lent string =
+proc getLineStr(iface: BufferInterface; y: int): lent seq[char] =
   return iface.getLine(y).str
 
 #TODO following procs should probably be computed on setCursorX for
@@ -1099,7 +1099,7 @@ iterator ilines(iface: BufferInterface; slice: Slice[int]):
   for y in slice:
     yield iface.getLine(y)
 
-proc findColStartByte(s: string; endx: int): int =
+proc findColStartByte(s: openArray[char]; endx: int): int =
   var w = 0
   var i = 0
   while i < s.len and w < endx:
@@ -1113,7 +1113,8 @@ proc findColStartByte(s: string; endx: int): int =
 proc cursorStartByte(iface: BufferInterface; y, cc: int): int =
   return iface.getLineStr(y).findColStartByte(cc)
 
-proc findColBytes*(s: string; endx: int; startx = 0; starti = 0): int =
+proc findColBytes*(s: openArray[char]; endx: int; startx = 0; starti = 0):
+    int =
   var w = startx
   var i = starti
   while i < s.len and w < endx:
@@ -1406,11 +1407,13 @@ proc requestLines(ctx: JSContext; iface: BufferInterface; force = false):
   return ctx.addPromise(iface, getLinesFromStream)
 
 # dump mode
-type HandleReadLine = proc(line: SimpleFlexibleLine): Opt[void]
+type HandleReadLine = proc(opaque: RootRef; iface: BufferInterface;
+  s: openArray[char]; formats: openArray[SimpleFormatCell]): Opt[void] {.
+  nimcall, raises: [].}
 
 # Synchronously read all lines in the buffer.
 proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
-    handle: HandleReadLine): IfaceResult =
+    handle: HandleReadLine; opaque: RootRef): IfaceResult =
   if iface.dead:
     return irEOF
   iface.stream.setBlocking(true)
@@ -1439,7 +1442,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
     do:
       return irEOF
     for line in iface.lines:
-      if handle(line).isErr:
+      if handle(opaque, iface, line.str, line.formats).isErr:
         return irEOF
     if iface.numLines <= slice.b:
       break
@@ -1448,7 +1451,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
   if iface.init.config.markLinks:
     # avoid coloring link markers
     iface.bgcolor = defaultColor
-    if handle(SimpleFlexibleLine()).isErr:
+    if handle(opaque, iface, "", []).isErr:
       return irEOF
     let packetid = iface.packetid
     iface.withPacketWriterSync bcGetLinks, w:
@@ -1464,7 +1467,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
       r.sread(links)
     for i, link in links.mypairs:
       var s = "[" & $(i + 1) & "] " & link
-      if handle(SimpleFlexibleLine(str: move(s))).isErr:
+      if handle(opaque, iface, s, []).isErr:
         return irEOF
   irOk
 
@@ -1740,13 +1743,14 @@ proc setFormat(cell: var FixedCell; cf: SimpleFormatCell; bgcolor: CellColor) =
   if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
     cell.format.bgcolor = bgcolor
 
-proc setText(cell: var FixedCell; u: uint32; i, pi, uw: int; s: string) =
+proc setText(cell: var FixedCell; u: uint32; i, pi, uw: int;
+    s: openArray[char]) =
   if u.isControlChar():
     cell.str = u.controlToVisual()
   elif u in TabPUARange:
     cell.str = ' '.repeat(uw)
   else:
-    cell.str = s.substr(pi, i - 1)
+    cell.str = s.toOpenArray(pi, i - 1).substr()
 
 proc drawLines*(iface: BufferInterface; display: var FixedGrid;
     hlcolor: CellColor) =

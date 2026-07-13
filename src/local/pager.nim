@@ -857,39 +857,40 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   ox = x
   move(ls)
 
+proc drawBufferLine(opaque: RootRef; iface: BufferInterface;
+    s: openArray[char]; formats: openArray[SimpleFormatCell]): Opt[void] =
+  let pager = Pager(opaque)
+  let term = pager.term
+  var x = 0
+  var i = 0
+  let bgcolor = iface.bgcolor
+  let bgformat = term.reduceFormat(initFormat(bgcolor, defaultColor, {}))
+  if bgcolor != defaultColor and (formats.len == 0 or formats[0].pos > 0):
+    ?term.processFormat(bgformat)
+  for f in formats:
+    var ff = f.format
+    if ff.bgcolor == defaultColor:
+      ff.bgcolor = iface.bgcolor
+    let termBgcolor = term.getCurrentBgcolor()
+    let ls = s.drawBufferAdvance(termBgcolor, i, x, f.pos)
+    ?term.processOutputString(ls, trackCursor = false)
+    if i < s.len:
+      ?term.processFormat(term.reduceFormat(ff))
+  if i < s.len:
+    let termBgcolor = term.getCurrentBgcolor()
+    let ls = s.drawBufferAdvance(termBgcolor, i, x, int.high)
+    ?term.processOutputString(ls, trackCursor = false)
+  if bgcolor != defaultColor and x < iface.init.width:
+    ?term.processFormat(bgformat)
+    let spaces = ' '.repeat(iface.init.width - x)
+    ?term.processOutputString(spaces, trackCursor = false)
+  ?term.processFormat(Format())
+  term.cursorNextLine()
+
 # private
 proc drawBuffer(pager: Pager; iface: BufferInterface): Opt[bool] {.jsfunc.} =
   let ctx = pager.jsctx
-  let res = ctx.requestLinesSync(iface, proc(line: SimpleFlexibleLine):
-      Opt[void] =
-    let term = pager.term
-    var x = 0
-    var i = 0
-    let bgcolor = iface.bgcolor
-    let bgformat = term.reduceFormat(initFormat(bgcolor, defaultColor, {}))
-    if bgcolor != defaultColor and
-        (line.formats.len == 0 or line.formats[0].pos > 0):
-      ?term.processFormat(bgformat)
-    for f in line.formats:
-      var ff = f.format
-      if ff.bgcolor == defaultColor:
-        ff.bgcolor = iface.bgcolor
-      let termBgcolor = term.getCurrentBgcolor()
-      let ls = line.str.drawBufferAdvance(termBgcolor, i, x, f.pos)
-      ?term.processOutputString(ls, trackCursor = false)
-      if i < line.str.len:
-        ?term.processFormat(term.reduceFormat(ff))
-    if i < line.str.len:
-      let termBgcolor = term.getCurrentBgcolor()
-      let ls = line.str.drawBufferAdvance(termBgcolor, i, x, int.high)
-      ?term.processOutputString(ls, trackCursor = false)
-    if bgcolor != defaultColor and x < iface.init.width:
-      ?term.processFormat(bgformat)
-      let spaces = ' '.repeat(iface.init.width - x)
-      ?term.processOutputString(spaces, trackCursor = false)
-    ?term.processFormat(Format())
-    term.cursorNextLine()
-  )
+  let res = ctx.requestLinesSync(iface, drawBufferLine, pager)
   if pager.term.flush().isErr:
     return ok(false)
   case res

@@ -54,7 +54,7 @@ proc width*(s: openArray[char]): int =
     w += u.width()
   return w
 
-proc width*(s: string; start, len: int): int =
+proc width*(s: openArray[char]; start, len: int): int =
   var w = 0
   var i = start
   var m = len

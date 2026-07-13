@@ -468,8 +468,8 @@ proc contains*(s1: openArray[char]; s2: string): bool =
 proc contains*(s: openArray[char]; cs: set[char]): bool =
   s.find(cs) != -1
 
-proc onlyWhitespace*(s: string): bool =
-  return AllChars - AsciiWhitespace notin s
+proc onlyWhitespace*(s: openArray[char]): bool =
+  AllChars - AsciiWhitespace notin s
 
 proc containsIgnoreCase*(ss: openArray[string]; s: string): bool =
   for it in ss:
