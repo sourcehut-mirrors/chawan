@@ -146,8 +146,9 @@ proc namespaceToAtomImpl(builder: DOMBuilderImpl; ns: Namespace): AtomImpl
     {.doc.}
   ## Turn a namespace `ns` into an Atom.
   ##
-  ## This is conceptually the same as `builder.strToAtomImpl($ns)`, and
-  ## is only present to enable optimization.
+  ## This is conceptually the same as `builder.strToAtomImpl($ns)`, except
+  ## that nsNone is supposed to map to a distinct value from the empty
+  ## string (in JS, it is represented by `null`).
 
 proc atomToTagTypeImpl(builder: DOMBuilderImpl; atom: AtomImpl): TagType {.doc.}
   ## Turn an Atom `atom` into a TagType. This is the inverse function of

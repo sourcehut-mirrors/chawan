@@ -46,6 +46,8 @@ function testAttribute() {
 	assertEquals(x.attributes.length, 6);
 	assertEquals(x.attributes.item(0xFFFFFFFF), null);
 	assertEquals(x.getAttributeNS("ns", "test"), "d")
+	x.setAttribute("nonstest", "e");
+	assertEquals(x.attributes["nonstest"].namespaceURI, null);
 	let attr = x.attributes["pf:test"]
 	x.removeAttributeNS("ns", "test")
 	assertEquals(attr.value, "d")

@@ -145,7 +145,6 @@ type
     ttCharset = "charset"
     ttHttpEquiv = "http-equiv"
     ttTyp = "type"
-    ttDefinitionurl = "definitionurl"
     ttAnnotationXml = "annotation-xml"
     ttForeignObject = "foreignObject"
     ttDesc = "desc"

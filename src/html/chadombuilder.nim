@@ -288,6 +288,9 @@ proc parseHTMLFragment*(element: Element; s: openArray[char]): seq[Node] =
     opts.ctxIsIntegrationPoint =
       encoding.equalsIgnoreCase("text/html") or
       encoding.equalsIgnoreCase("application/xhtml+xml")
+  elif element.namespaceURI == satNamespaceSVG:
+    let tagType = element.localName.toTagType()
+    opts.ctxIsIntegrationPoint = tagType in {ttForeignObject, ttDesc, ttTitle}
   var parser = initHTML5Parser(builder, opts)
   let res = parser.parseChunk(s)
   # scripting is false and confidence is certain -> this must be continue

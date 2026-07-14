@@ -196,7 +196,13 @@ proc runTest(builder: MiniDOMBuilder; desc: string; output: seq[JsonNode];
     desc: desc,
     esc: esc
   )
-  tok.startTag = startTag
+  tok.startTag = startTag.toTagType()
+  if tok.startTag == ttUnknown:
+    # hack: the parser is guaranteed to set a specific set of start tags,
+    # but some tokenizer tests don't set it.
+    # setting it to script could still fail in some cases, but it doesn't
+    # in practice.
+    tok.startTag = ttScript
   while tok.tokenize(input.toOpenArray(0, input.high)) != trDone:
     ctx.checkTokens(tok)
   while tok.finish() != trDone:

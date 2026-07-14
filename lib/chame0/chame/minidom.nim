@@ -13,7 +13,6 @@ import std/hashes
 import std/options
 import std/streams
 import std/strutils
-import std/tables
 
 import htmlparser
 import tags
@@ -38,6 +37,8 @@ proc `==`*(a, b: MAtom): bool {.borrow.}
 proc hash*(atom: MAtom): Hash {.borrow.}
 
 proc strToAtom*(factory: MAtomFactory; s: string): MAtom
+
+const MAtomNull = MAtom(0)
 
 proc newMAtomFactory*(): MAtomFactory =
   const minCap = int(TagType.high) + 1
@@ -241,7 +242,9 @@ proc tagTypeToAtomImpl(builder: MiniDOMBuilder; tagType: TagType): MAtom =
   return builder.factory.tagTypeToAtom(tagType)
 
 proc namespaceToAtomImpl(builder: MiniDOMBuilder; ns: Namespace): MAtom =
-  return builder.factory.strToAtom($ns)
+  case ns
+  of nsNone: return MAtomNull
+  else: return builder.factory.strToAtom($ns)
 
 proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: MAtom): TagType =
   return atom.toTagType()
@@ -572,6 +575,9 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
       let val = element.attrs[i].value.toLowerAscii()
       opts.ctxIsIntegrationPoint =
         val == "text/html" or val == "application/xhtml+xml"
+  elif element.namespace == nsSVG:
+    let tagType = element.localName.toTagType()
+    opts.ctxIsIntegrationPoint = tagType in {ttForeignObject, ttDesc, ttTitle}
   var parser = initHTML5Parser(builder, opts)
   parser.parseFromStream(inputStream)
   return root.childList

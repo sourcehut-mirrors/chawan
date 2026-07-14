@@ -41,7 +41,7 @@ type
     dombuilder*: DOMBuilder[Handle, Atom]
     tmp: string # temporary buffer (mentioned by the standard, but also used
                 # for attribute names/values)
-    startTag*: Atom # last start tag
+    startTag*: TagType # last start tag
     attrName: Atom # atom representing attrn after the attribute name is closed
     tagname*: Atom
     code: uint32 # codepoint of current numeric character reference
@@ -50,7 +50,11 @@ type
     state*: TokenizerState
     rstate: TokenizerState # return state
     t*: TokenType # emitted token's type
-    hasnonhtml*: bool # does the stack of open elements have a non-HTML node?
+    namespace*: Namespace # namespace of the top of the stack of open elements
+    tagNamespace: Namespace # namespace of next token
+    attrNamespace: Namespace # namespace of attributes to add
+    htmlIntegrationPoint*: bool # is the stack top an HTML integration point?
+    mathMLIntegrationPoint*: bool # is the stack top a MathML int. point?
     ignoreLF: bool # ignore the next consumed line feed (for CRLF normalization)
     isws: bool # is the current character token whitespace-only?
     flags*: set[TokenFlag]
@@ -86,7 +90,17 @@ proc toLowerAscii(c: char): char {.inline.} =
 proc strToAtom[Handle, Atom](tok: Tokenizer[Handle, Atom];
     s: string): Atom =
   mixin strToAtomImpl
-  return tok.dombuilder.strToAtomImpl(s)
+  tok.dombuilder.strToAtomImpl(s)
+
+proc namespaceToAtom[Handle, Atom](tok: Tokenizer[Handle, Atom];
+    namespace: Namespace): Atom =
+  mixin namespaceToAtomImpl
+  tok.dombuilder.namespaceToAtomImpl(namespace)
+
+proc toTagType[Handle, Atom](tok: Tokenizer[Handle, Atom]; atom: Atom):
+    TagType =
+  mixin atomToTagTypeImpl
+  tok.dombuilder.atomToTagTypeImpl(atom)
 
 proc initTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom]):
     Tokenizer[Handle, Atom] =
@@ -94,6 +108,7 @@ proc initTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom]):
     dombuilder: dombuilder,
     entityEntryIdx: -1,
     entityMatchIdx: -1,
+    namespace: nsHTML
   )
 
 template reconsume(tok: var Tokenizer) =
@@ -283,7 +298,10 @@ proc flushAttr[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
   # This can also be called with tok == ttEndTag, in that case we do
   # not want to flush attributes.
   if tok.t == ttStartTag:
-    tok.attrs.add(ParsedAttr[Atom](name: tok.attrName))
+    tok.attrs.add(ParsedAttr[Atom](
+      name: tok.attrName,
+      namespace: tok.namespaceToAtom(tok.attrNamespace)
+    ))
     tok.attrs[^1].value = move(tok.tmp)
 
 proc flushAttrs[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
@@ -316,10 +334,99 @@ proc eatStrNoCase(tok: var Tokenizer; c: char; s: string;
     return esrSuccess
   esrNext
 
+const AdjustedTagNames = [
+  "altGlyph", "altGlyphDef", "altGlyphItem", "animateColor", "animateMotion",
+  "animateTransform", "clipPath", "feBlend", "feColorMatrix",
+  "feComponentTransfer", "feComposite", "feConvolveMatrix",
+  "feDiffuseLighting", "feDisplacementMap", "feDistantLight", "feDropShadow",
+  "feFlood", "feFuncA", "feFuncB", "feFuncG", "feFuncR", "feGaussianBlur",
+  "feImage", "feMerge", "feMergeNode", "feMorphology", "feOffset",
+  "fePointLight", "feSpecularLighting", "feSpotLight", "feTile",
+  "feTurbulence", "foreignObject", "glyphRef", "linearGradient",
+  "radialGradient", "textPath"
+]
+
+proc cmpIgnoreCase(a, b: string): int =
+  let alen = a.len
+  let blen = b.len
+  let L = min(alen, blen)
+  for i in 0 ..< L:
+    let n = cmp(a[i].toLowerAscii(), b[i].toLowerAscii())
+    if n != 0:
+      return n
+  cmp(alen, blen)
+
+const AttrNamespaceMap = [
+  (name: "xlink:actuate", namespace: nsXLink),
+  (name: "xlink:arcrole", namespace: nsXLink),
+  (name: "xlink:href", namespace: nsXLink),
+  (name: "xlink:role", namespace: nsXLink),
+  (name: "xlink:show", namespace: nsXLink),
+  (name: "xlink:title", namespace: nsXLink),
+  (name: "xlink:type", namespace: nsXLink),
+  (name: "xml:lang", namespace: nsXml),
+  (name: "xml:space", namespace: nsXml),
+  (name: "xmlns", namespace: nsXmlns),
+  (name: "xmlns:xlink", namespace: nsXmlns),
+]
+
+const AdjustedAttrNames = [
+  "attributeName", "attributeType", "baseFrequency", "baseProfile", "calcMode",
+  "clipPathUnits", "diffuseConstant", "edgeMode", "filterUnits", "glyphRef",
+  "gradientTransform", "gradientUnits", "kernelMatrix", "kernelUnitLength",
+  "keyPoints", "keySplines", "keyTimes", "lengthAdjust", "limitingConeAngle",
+  "markerHeight", "markerUnits", "markerWidth", "maskContentUnits",
+  "maskUnits", "numOctaves", "pathLength", "patternContentUnits",
+  "patternTransform", "patternUnits", "pointsAtX", "pointsAtY", "pointsAtZ",
+  "preserveAlpha", "preserveAspectRatio", "primitiveUnits", "refX", "refY",
+  "repeatCount", "repeatDur", "requiredExtensions", "requiredFeatures",
+  "specularConstant", "specularExponent", "spreadMethod", "startOffset",
+  "stdDeviation", "stitchTiles", "surfaceScale", "systemLanguage",
+  "tableValues", "targetX", "targetY", "textLength", "viewBox", "viewTarget",
+  "xChannelSelector", "yChannelSelector", "zoomAndPan"
+]
+
+proc cmpAttrName(attr: tuple[name: string; namespace: Namespace]; s: string):
+    int =
+  cmp(attr.name, s)
+
+proc adjustAttrName[Handle, Atom](tok: var Tokenizer[Handle, Atom]): Atom =
+  # it could be that the attr is in a specific namespace
+  let i = AttrNamespaceMap.binarySearch(tok.tmp, cmpAttrName)
+  if i >= 0:
+    tok.attrNamespace = AttrNamespaceMap[i].namespace
+  else:
+    tok.attrNamespace = nsNone
+    if tok.tagNamespace == nsMathML:
+      if tok.tmp == "definitionurl":
+        return tok.strToAtom("definitionURL")
+    else: # SVG
+      let i = AdjustedAttrNames.binarySearch(tok.tmp, cmpIgnoreCase)
+      if i >= 0:
+        return tok.strToAtom(AdjustedAttrNames[i])
+  tok.strToAtom(tok.tmp)
+
 proc flushStartTagName[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
-  let tagName = tok.strToAtom(tok.tagNameBuf)
-  tok.tagname = tagName
-  tok.startTag = tagName
+  if tok.namespace != nsHTML and not tok.mathMLIntegrationPoint and
+      not tok.htmlIntegrationPoint:
+    tok.tagNamespace = tok.namespace
+    let i = if tok.namespace == nsSVG:
+      AdjustedTagNames.binarySearch(tok.tagNameBuf, cmpIgnoreCase)
+    else:
+      -1
+    if i >= 0:
+      tok.tagname = tok.strToAtom(AdjustedTagNames[i])
+    else:
+      tok.tagname = tok.strToAtom(tok.tagNameBuf)
+  else:
+    let tagname = tok.strToAtom(tok.tagNameBuf)
+    tok.tagname = tagname
+    let startTag = tok.toTagType(tagname)
+    case startTag
+    of ttSvg: tok.tagNamespace = nsSVG
+    of ttMath: tok.tagNamespace = nsMathML
+    else: tok.tagNamespace = nsNone
+    tok.startTag = startTag
 
 proc flushEndTagName(tok: var Tokenizer) =
   tok.tagname = tok.strToAtom(tok.tagNameBuf)
@@ -329,7 +436,7 @@ proc emitTmp(tok: var Tokenizer) =
   tok.charbuf &= tok.tmp
 
 template startTagMatches(tok: Tokenizer): bool =
-  tok.startTag == tok.tagname
+  tok.startTag == tok.toTagType(tok.tagname)
 
 proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     ibuf: openArray[char]): TokenizeResult =
@@ -826,7 +933,11 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsAttributeName:
       case c
       of AsciiWhitespace, '/', '>', '=':
-        tok.attrName = tok.strToAtom(tok.tmp)
+        if tok.tagNamespace == nsNone:
+          tok.attrName = tok.strToAtom(tok.tmp)
+          tok.attrNamespace = nsNone
+        else:
+          tok.attrName = tok.adjustAttrName()
         tok.tmp = ""
         if c == '=':
           switch_state tsBeforeAttributeValue
@@ -943,7 +1054,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         of esrFail:
           case tok.eatStr(c, "[CDATA[", ibuf)
           of esrSuccess:
-            if tok.hasnonhtml:
+            if tok.namespace != nsHTML:
               switch_state tsCdataSection
             else:
               tok.tagNameBuf = "[CDATA["

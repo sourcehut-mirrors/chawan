@@ -313,7 +313,7 @@ proc checkTest(nodein, nodep: Node) =
     let nodep = Element(nodep)
     check nodein.localName == nodep.localName
     check nodein.namespace == nodep.namespace
-    if nodein.attrs != nodep.attrs:
+    if nodein.localName != nodep.localName or nodein.attrs != nodep.attrs:
       echo "NODEIN", $nodein
       echo "NODEP", $nodep
     check nodein.attrs == nodep.attrs

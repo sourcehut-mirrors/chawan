@@ -1,6 +1,5 @@
 import std/algorithm
 import std/options
-import std/tables
 
 import dombuilder
 import htmltokenizer
@@ -19,9 +18,11 @@ type
       ## Note: in the spec, this has four values, but Chame distills these
       ## to two.  "Inert"/"Fragment" are reflected by scripting when
       ## ctx.isSome, otherwise "Normal"/"Disabled" are assumed.
-    ctxIsIntegrationPoint*: bool ## Must be set if ctx.isSome and ctx has
-      ## an "encoding" attribute that case-insensitively matches
-      ## either "text/html" or "application/xhtml+xml".
+    ctxIsIntegrationPoint*: bool ## Must be set if ctx.isSome and
+      ## a) ctx is in the MathML namespace with an "encoding" attribute
+      ## that case-insensitively matches "text/html" or "application/xhtml+xml"
+      ## b) ctx is in the SVG namespace and its tag name is foreignObject,
+      ## desc, or title.
     ctx*: Option[Handle] ## Context element for fragment parsing.
       ## When set to some Handle, the fragment case is used while parsing.
     openElementsInit*: Option[Handle] ## Node to push to the stack of open
@@ -34,7 +35,6 @@ type
     startTagName: Atom
     integrationPoint: bool
 
-type
   Formatting[Handle, Atom] = ref object
     element: Handle
     startTagName: Atom
@@ -57,9 +57,6 @@ type
     isIframeSrcdoc: bool
     activeFormatting: seq[Formatting[Handle, Atom]] # nil => marker
     pendingTableChars: string
-    caseTable: Table[Atom, Atom]
-    adjustedTable: Table[Atom, Atom]
-    foreignTable: Table[Atom, Namespace]
 
   InsertionLocation[Handle] = object
     inside: Handle
@@ -103,11 +100,6 @@ proc strToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom]; s: string):
     Atom =
   mixin strToAtomImpl
   return parser.dombuilder.strToAtomImpl(s)
-
-proc namespaceToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom];
-    ns: Namespace): Atom =
-  mixin namespaceToAtomImpl
-  parser.dombuilder.namespaceToAtomImpl(ns)
 
 proc toAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom]; tagType: TagType):
     Atom =
@@ -231,7 +223,7 @@ proc toLowerAscii(c: char): char {.inline.} =
   else:
     c
 
-proc startsWithNoCase(str, prefix: string): bool =
+proc startsWithIgnoreCase(str, prefix: string): bool =
   if str.len < prefix.len:
     return false
   # prefix.len is always lower
@@ -243,14 +235,7 @@ proc startsWithNoCase(str, prefix: string): bool =
   true
 
 proc equalsIgnoreCase(s1, s2: string): bool =
-  if s1.len != s2.len:
-    return false
-  var i = 0
-  while i < s1.len:
-    if s1[i].toLowerAscii() != s2[i].toLowerAscii():
-      return false
-    inc i
-  true
+  s1.len == s2.len and s1.startsWithIgnoreCase(s2)
 
 # https://html.spec.whatwg.org/multipage/parsing.html#reset-the-insertion-mode-appropriately
 proc resetInsertionMode0(parser: var HTML5Parser): InsertionMode =
@@ -453,10 +438,6 @@ proc findAttr[Handle, Atom](parser: HTML5Parser[Handle, Atom];
 proc contains[Atom](attrs: ParsedAttrs[Atom]; atom: Atom): bool =
   attrs.find(atom) >= 0
 
-proc sortAttrs[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
-  mixin sortAttrsImpl
-  parser.dombuilder.sortAttrsImpl(parser.tok.attrs)
-
 proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     localName: Atom; namespace: Namespace; intendedParent: Handle;
     attrs: sink ParsedAttrs[Atom]): Handle =
@@ -478,14 +459,24 @@ proc createHTMLElement[Handle, Atom](parser: HTML5Parser[Handle, Atom];
   # attrs not adjusted
   parser.createElement(tagname, nsHTML, intendedParent, attrs)
 
+proc isMathMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom];
+    element: Handle): bool =
+  if parser.getNamespace(element) != nsMathML:
+    return false
+  let tagType = parser.toTagType(parser.getLocalName(element))
+  return tagType in {ttMi, ttMo, ttMn, ttMs, ttMtext}
+
 proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     node: Handle; tagname: Atom; integrationPoint: bool) =
-  parser.openElements.add(OpenElement[Handle, Atom](
+  let openElement = OpenElement[Handle, Atom](
     element: node,
     startTagName: tagname,
     integrationPoint: integrationPoint
-  ))
-  parser.tok.hasnonhtml = parser.getNamespace(node) != nsHTML
+  )
+  parser.tok.namespace = parser.getNamespace(node)
+  parser.tok.htmlIntegrationPoint = integrationPoint
+  parser.tok.mathMLIntegrationPoint = parser.isMathMLIntegrationPoint(node)
+  parser.openElements.add(openElement)
 
 proc pushHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     node: Handle) =
@@ -497,10 +488,15 @@ proc popElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom]): Handle =
   when compiles(parser.dombuilder.elementPoppedImpl(result)):
     parser.dombuilder.elementPoppedImpl(result)
   if parser.openElements.len == 0:
-    parser.tok.hasnonhtml = false
+    parser.tok.namespace = nsHTML
+    parser.tok.htmlIntegrationPoint = false
+    parser.tok.mathMLIntegrationPoint = false
   else:
-    let node = parser.adjustedCurrentNode()
-    parser.tok.hasnonhtml = parser.getNamespace(node) != nsHTML
+    let oe = parser.adjustedCurrentNodeToken()
+    parser.tok.namespace = parser.getNamespace(oe.element)
+    parser.tok.htmlIntegrationPoint = oe.integrationPoint
+    parser.tok.mathMLIntegrationPoint =
+      parser.isMathMLIntegrationPoint(oe.element)
 
 proc insert[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     location: InsertionLocation[Handle]; node: Handle) =
@@ -514,12 +510,18 @@ proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     localName, tagname: Atom; namespace: Namespace; stackOnly: bool;
     attrs: sink ParsedAttrs[Atom]): Handle =
   var integrationPoint = false
-  if namespace == nsMathML and localName == parser.toAtom(ttAnnotationXml):
-    let i = attrs.find(parser.toAtom(ttEncoding))
-    if i >= 0:
-      let s = attrs[i].value
-      integrationPoint = s.equalsIgnoreCase("text/html") or
-        s.equalsIgnoreCase("application/xhtml+xml")
+  case namespace
+  of nsMathML:
+    if localName == parser.toAtom(ttAnnotationXml):
+      let i = attrs.find(parser.toAtom(ttEncoding))
+      if i >= 0:
+        let s = attrs[i].value
+        integrationPoint = s.equalsIgnoreCase("text/html") or
+          s.equalsIgnoreCase("application/xhtml+xml")
+  of nsSVG:
+    if parser.toTagType(localName) in {ttForeignObject, ttDesc, ttTitle}:
+      integrationPoint = true
+  else: discard
   let location = parser.appropriatePlaceForInsert()
   let parent = location.inside
   let element = parser.createElement(localName, namespace, parent, attrs)
@@ -550,116 +552,6 @@ proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
 proc insertHTMLElementPop[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
   discard parser.insertHTMLElement()
   discard parser.popElement()
-
-const ForeignTable = {
-  "xlink:actuate": nsXLink,
-  "xlink:arcrole": nsXLink,
-  "xlink:href": nsXLink,
-  "xlink:role": nsXLink,
-  "xlink:show": nsXLink,
-  "xlink:title": nsXLink,
-  "xlink:type": nsXLink,
-  "xml:lang": nsXml,
-  "xml:space": nsXml,
-  "xmlns": nsXmlns,
-  "xmlns:xlink": nsXmlns,
-}
-
-proc createForeignTable[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
-  for (name, namespace) in ForeignTable:
-    let nameAtom = parser.strToAtom(name)
-    parser.foreignTable[nameAtom] = namespace
-
-# Note: adjustMathMLAttributes and adjustSVGAttributes both include the "adjust
-# foreign attributes" step as well.
-proc adjustMathMLAttributes[Handle, Atom](
-    parser: var HTML5Parser[Handle, Atom]) =
-  if parser.foreignTable.len == 0:
-    parser.createForeignTable()
-  for it in parser.tok.attrs.mitems:
-    parser.foreignTable.withValue(it.name, p):
-      it.namespace = parser.namespaceToAtom(p[])
-    do:
-      if it.name == parser.toAtom(ttDefinitionurl):
-        it.name = parser.strToAtom("definitionURL")
-  parser.sortAttrs()
-
-const AdjustedTable = {
-  "attributename": "attributeName",
-  "attributetype": "attributeType",
-  "basefrequency": "baseFrequency",
-  "baseprofile": "baseProfile",
-  "calcmode": "calcMode",
-  "clippathunits": "clipPathUnits",
-  "diffuseconstant": "diffuseConstant",
-  "edgemode": "edgeMode",
-  "filterunits": "filterUnits",
-  "glyphref": "glyphRef",
-  "gradienttransform": "gradientTransform",
-  "gradientunits": "gradientUnits",
-  "kernelmatrix": "kernelMatrix",
-  "kernelunitlength": "kernelUnitLength",
-  "keypoints": "keyPoints",
-  "keysplines": "keySplines",
-  "keytimes": "keyTimes",
-  "lengthadjust": "lengthAdjust",
-  "limitingconeangle": "limitingConeAngle",
-  "markerheight": "markerHeight",
-  "markerunits": "markerUnits",
-  "markerwidth": "markerWidth",
-  "maskcontentunits": "maskContentUnits",
-  "maskunits": "maskUnits",
-  "numoctaves": "numOctaves",
-  "pathlength": "pathLength",
-  "patterncontentunits": "patternContentUnits",
-  "patterntransform": "patternTransform",
-  "patternunits": "patternUnits",
-  "pointsatx": "pointsAtX",
-  "pointsaty": "pointsAtY",
-  "pointsatz": "pointsAtZ",
-  "preservealpha": "preserveAlpha",
-  "preserveaspectratio": "preserveAspectRatio",
-  "primitiveunits": "primitiveUnits",
-  "refx": "refX",
-  "refy": "refY",
-  "repeatcount": "repeatCount",
-  "repeatdur": "repeatDur",
-  "requiredextensions": "requiredExtensions",
-  "requiredfeatures": "requiredFeatures",
-  "specularconstant": "specularConstant",
-  "specularexponent": "specularExponent",
-  "spreadmethod": "spreadMethod",
-  "startoffset": "startOffset",
-  "stddeviation": "stdDeviation",
-  "stitchtiles": "stitchTiles",
-  "surfacescale": "surfaceScale",
-  "systemlanguage": "systemLanguage",
-  "tablevalues": "tableValues",
-  "targetx": "targetX",
-  "targety": "targetY",
-  "textlength": "textLength",
-  "viewbox": "viewBox",
-  "viewtarget": "viewTarget",
-  "xchannelselector": "xChannelSelector",
-  "ychannelselector": "yChannelSelector",
-  "zoomandpan": "zoomAndPan",
-}
-
-proc adjustSVGAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
-  if parser.foreignTable.len == 0:
-    parser.createForeignTable()
-  if parser.adjustedTable.len == 0:
-    for (k, v) in AdjustedTable:
-      let ka = parser.strToAtom(k)
-      let va = parser.strToAtom(v)
-      parser.adjustedTable[ka] = va
-  for it in parser.tok.attrs.mitems:
-    parser.foreignTable.withValue(it.name, p):
-      it.namespace = parser.namespaceToAtom(p[])
-    do:
-      parser.adjustedTable.withValue(it.name, p):
-        it.name = p[]
-  parser.sortAttrs()
 
 proc insertCharacter(parser: var HTML5Parser; data: string) =
   let location = parser.appropriatePlaceForInsert()
@@ -765,22 +657,22 @@ proc quirksConditions(name, pubid, sysid: string; flags: set[TokenFlag]): bool =
       if pubid.equalsIgnoreCase(id):
         return true
     for id in PublicIdentifierStartsWith:
-      if pubid.startsWithNoCase(id):
+      if pubid.startsWithIgnoreCase(id):
         return true
     if tfSysid notin flags:
       for id in SystemIdentifierMissingAndPublicIdentifierStartsWith:
-        if pubid.startsWithNoCase(id):
+        if pubid.startsWithIgnoreCase(id):
           return true
   return false
 
 proc limitedQuirksConditions(pubid: string; flags: set[TokenFlag]): bool =
   if tfPubid notin flags: return false
   for id in PublicIdentifierStartsWithLimited:
-    if pubid.startsWithNoCase(id):
+    if pubid.startsWithIgnoreCase(id):
       return true
   if tfSysid notin flags: return false
   for id in SystemIdentifierNotMissingAndPublicIdentifierStartsWith:
-    if pubid.startsWithNoCase(id):
+    if pubid.startsWithIgnoreCase(id):
       return true
   return false
 
@@ -916,24 +808,6 @@ proc clearActiveFormattingTillMarker(parser: var HTML5Parser) =
   while parser.activeFormatting.len > 0 and
       parser.activeFormatting.pop() != nil:
     discard
-
-proc isMathMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom];
-    element: Handle): bool =
-  if parser.getNamespace(element) != nsMathML:
-    return false
-  let tagType = parser.toTagType(parser.getLocalName(element))
-  return tagType in {ttMi, ttMo, ttMn, ttMs, ttMtext}
-
-proc isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom];
-    oe: OpenElement[Handle, Atom]): bool =
-  let localName = parser.getLocalName(oe.element)
-  let namespace = parser.getNamespace(oe.element)
-  let tagType = parser.toTagType(localName)
-  if namespace == nsMathML:
-    return oe.integrationPoint
-  if namespace == nsSVG:
-    return tagType in {ttForeignObject, ttDesc, ttTitle}
-  return false
 
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
@@ -1616,13 +1490,11 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         discard parser.insertHTMLElement()
       of ttMath:
         parser.reconstructActiveFormatting()
-        parser.adjustMathMLAttributes()
         discard parser.insertForeignElement(nsMathML, false)
         if tfSelfClosing in parser.tok.flags:
           discard parser.popElement()
       of ttSvg:
         parser.reconstructActiveFormatting()
-        parser.adjustSVGAttributes()
         discard parser.insertForeignElement(nsSVG, false)
         if tfSelfClosing in parser.tok.flags:
           discard parser.popElement()
@@ -2141,69 +2013,20 @@ proc processEOF[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
 
 proc processHTMLForeignTag[Handle, Atom](
     parser: var HTML5Parser[Handle, Atom]): ParseChunkResult =
-  while not parser.isMathMLIntegrationPoint(parser.currentNode) and
-      not parser.isHTMLIntegrationPoint(parser.currentNodeToken) and
+  while not parser.tok.mathMLIntegrationPoint and
+      not parser.tok.htmlIntegrationPoint and
       parser.getNamespace(parser.currentNode) != nsHTML:
     discard parser.popElement()
   return parser.processInHTML(parser.insertionMode)
-
-const CaseTable = {
-  "altglyph": "altGlyph",
-  "altglyphdef": "altGlyphDef",
-  "altglyphitem": "altGlyphItem",
-  "animatecolor": "animateColor",
-  "animatemotion": "animateMotion",
-  "animatetransform": "animateTransform",
-  "clippath": "clipPath",
-  "feblend": "feBlend",
-  "fecolormatrix": "feColorMatrix",
-  "fecomponenttransfer": "feComponentTransfer",
-  "fecomposite": "feComposite",
-  "feconvolvematrix": "feConvolveMatrix",
-  "fediffuselighting": "feDiffuseLighting",
-  "fedisplacementmap": "feDisplacementMap",
-  "fedistantlight": "feDistantLight",
-  "fedropshadow": "feDropShadow",
-  "feflood": "feFlood",
-  "fefunca": "feFuncA",
-  "fefuncb": "feFuncB",
-  "fefuncg": "feFuncG",
-  "fefuncr": "feFuncR",
-  "fegaussianblur": "feGaussianBlur",
-  "feimage": "feImage",
-  "femerge": "feMerge",
-  "femergenode": "feMergeNode",
-  "femorphology": "feMorphology",
-  "feoffset": "feOffset",
-  "fepointlight": "fePointLight",
-  "fespecularlighting": "feSpecularLighting",
-  "fespotlight": "feSpotLight",
-  "fetile": "feTile",
-  "feturbulence": "feTurbulence",
-  "foreignobject": "foreignObject",
-  "glyphref": "glyphRef",
-  "lineargradient": "linearGradient",
-  "radialgradient": "radialGradient",
-  "textpath": "textPath",
-}
 
 proc otherForeignStartTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   let namespace = parser.getNamespace(parser.adjustedCurrentNode)
   var tagname = parser.tok.tagname
-  if namespace == nsSVG:
-    if parser.caseTable.len == 0:
-      for (k, v) in CaseTable:
-        let ka = parser.strToAtom(k)
-        let va = parser.strToAtom(v)
-        parser.caseTable[ka] = va
-    parser.caseTable.withValue(tagname, p):
-      tagname = p[]
-    parser.adjustSVGAttributes()
-  elif namespace == nsMathML:
-    parser.adjustMathMLAttributes()
-  discard parser.insertForeignElement(tagname, parser.tok.tagname, namespace, false,
-    move(parser.tok.attrs))
+  if namespace in {nsSVG, nsMathML}:
+    tagname = parser.strToAtom(parser.tok.tagNameBuf)
+  discard parser.insertForeignElement(parser.tok.tagname, tagname,
+    namespace, false, move(parser.tok.attrs))
   if tfSelfClosing in parser.tok.flags:
     discard parser.popElement()
     if namespace == nsSVG and parser.toTagType(tagname) == ttScript:
@@ -2283,15 +2106,15 @@ proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   let oeTagType = parser.toTagType(oe.startTagName)
   let namespace = parser.getNamespace(oe.element)
   const CharacterToken = {ttCharacter, ttWhitespace, ttNull}
-  let mmlnoatoms = {ttMglyph, ttMalignmark}
-  let ismmlip = parser.isMathMLIntegrationPoint(oe.element)
-  let ishtmlip = parser.isHTMLIntegrationPoint(oe)
   if parser.tok.t == ttStartTag and (
         let tagType = parser.toTagType(parser.tok.tagname)
-        ismmlip and tagType notin mmlnoatoms or ishtmlip or
+        parser.tok.mathMLIntegrationPoint and
+          tagType notin {ttMglyph, ttMalignmark} or
+        parser.tok.htmlIntegrationPoint or
         namespace == nsMathML and oeTagType == ttAnnotationXml and
           tagType == ttSvg
-      ) or parser.tok.t in CharacterToken and (ismmlip or ishtmlip):
+      ) or parser.tok.t in CharacterToken and (
+        parser.tok.mathMLIntegrationPoint or parser.tok.htmlIntegrationPoint):
     return parser.processInHTML(parser.insertionMode)
   return parser.processInForeign()
 
@@ -2309,6 +2132,8 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
     framesetOk: true,
     tok: initTokenizer[Handle, Atom](dombuilder)
   )
+  var isMathMLIntegrationPoint = false
+  var namespace = nsHTML
   if opts.ctx.isSome:
     let ctxInit = opts.ctx.get
     case parser.getTagType(ctxInit)
@@ -2329,9 +2154,14 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
       integrationPoint: opts.ctxIsIntegrationPoint
     )
     parser.ctx = some(ctx)
+    namespace = parser.getNamespace(ctx.element)
+    isMathMLIntegrationPoint = parser.isMathMLIntegrationPoint(ctx.element)
   if opts.openElementsInit.isSome:
     parser.pushHTMLElement(opts.openElementsInit.get)
     parser.resetInsertionMode()
+    parser.tok.htmlIntegrationPoint = opts.ctxIsIntegrationPoint
+    parser.tok.mathMLIntegrationPoint = isMathMLIntegrationPoint
+    parser.tok.namespace = namespace
   return parser
 
 proc parseChunk*[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
