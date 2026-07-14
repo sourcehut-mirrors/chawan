@@ -272,7 +272,7 @@ type
     url: URL
     finish: LoadSheetFinish
     charset: Charset
-    layer: CAtom
+    layer: CAtomTraced
     i: int
     parseEnv: ParseSheetEnv
 
@@ -688,7 +688,7 @@ jsDestructor(CustomElementRegistry)
 
 # Forward declarations
 proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
-  layer: CAtom; finish: LoadSheetFinish; i: int; parseEnv: ParseSheetEnv)
+  layer: CAtomTraced; finish: LoadSheetFinish; i: int; parseEnv: ParseSheetEnv)
 
 proc newCDATASection(document: Document; data: RefString): CDATASection
 proc newComment(document: Document; data: RefString): Comment
@@ -1439,8 +1439,8 @@ proc importSheetFinish(window: Window; this: SheetElement;
   window.sheetLoaded()
 
 proc parseStylesheet(window: Window; this: SheetElement; s: string;
-    baseURL: URL; charset: Charset; layer: CAtom; finish: LoadSheetFinish;
-    parseEnv: ParseSheetEnv; i: int) =
+    baseURL: URL; charset: Charset; layer: CAtomTraced;
+    finish: LoadSheetFinish; parseEnv: ParseSheetEnv; i: int) =
   let sheet = s.parseStylesheet(baseURL, addr window.settings, coAuthor, layer)
   if sheet.s.importList.len == 0:
     let res = LoadSheetResult(head: sheet, tail: sheet)
@@ -1454,11 +1454,9 @@ proc parseStylesheet(window: Window; this: SheetElement; s: string;
       i: i
     )
     for i, it in sheet.s.importList.mypairs:
-      let url = it.url
-      let layer = it.layer
       inc window.remoteSheetNum
-      window.loadSheet(this, url, charset, layer, importSheetFinish, i, env)
-      freeAtom(layer)
+      window.loadSheet(this, it.url, charset, it.layer, importSheetFinish,
+        i, env)
 
 proc cssDecode(iq: openArray[char]; fallback: Charset): string =
   var charset = fallback
@@ -1495,7 +1493,6 @@ proc onFinishCSSText(response: Response; success: bool) =
       env.parseEnv, env.i)
   else:
     finish(window, this, LoadSheetResult(), env.parseEnv, env.i)
-  freeAtom(env.layer)
 
 proc loadSheet0(opaque: RootRef; response: Response) =
   let env = LoadSheetEnv(opaque)
@@ -1509,13 +1506,14 @@ proc loadSheet0(opaque: RootRef; response: Response) =
   env.finish(window, env.this, LoadSheetResult(), env.parseEnv, env.i)
 
 proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
-    layer: CAtom; finish: LoadSheetFinish; i: int; parseEnv: ParseSheetEnv) =
+    layer: CAtomTraced; finish: LoadSheetFinish; i: int;
+    parseEnv: ParseSheetEnv) =
   let env = LoadSheetEnv(
     window: window,
     this: this,
     url: url,
     charset: charset,
-    layer: layer.dup(),
+    layer: layer.dupTrace(),
     parseEnv: parseEnv,
     i: i,
     finish: finish
@@ -1525,7 +1523,7 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
 proc loadSheet(window: Window; this: SheetElement; url: URL;
     finish: LoadSheetFinish) =
   let charset = this.getCharset()
-  window.loadSheet(this, url, charset, CAtomNull, finish, 0, nil)
+  window.loadSheet(this, url, charset, CAtomNullTraced, finish, 0, nil)
 
 proc loadLinkFinish(window: Window; this: SheetElement;
     res: LoadSheetResult; env: ParseSheetEnv; i: int) =
@@ -3894,8 +3892,8 @@ type NameValidator = enum
 proc validateAndExtract(ctx: JSContext; namespace, localName: var CAtomTraced;
     t: NameValidator): Opt[void] =
   if namespace == satUempty:
-    namespace = CAtomNull.dupTrace()
-  var prefix = CAtomNull.dupTrace()
+    namespace = CAtomNullTraced
+  var prefix = CAtomNullTraced
   let i = localName.find(':')
   if i >= 0:
     prefix = localName.substrTrace(0, i - 1)
@@ -4164,7 +4162,7 @@ proc reflectEvent(document: Document; target: EventTarget;
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
   let sheet = parseStylesheet(ua, nil, addr document.window.settings,
-    coUserAgent, CAtomNull)
+    coUserAgent, CAtomNullTraced)
   document.uaSheetsHead = sheet
   if document.documentElement != nil:
     document.documentElement.invalidate()
@@ -4174,14 +4172,14 @@ proc applyQuirksSheet*(document: Document) =
     return
   const quirks = staticRead"res/quirk.css"
   let sheet = parseStylesheet(quirks, nil, addr document.window.settings,
-    coUserAgent, CAtomNull)
+    coUserAgent, CAtomNullTraced)
   document.uaSheetsHead.next = sheet
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
 proc applyUserSheet*(document: Document; user: string) =
   document.userSheet = parseStylesheet(user, nil,
-    addr document.window.settings, coUser, CAtomNull)
+    addr document.window.settings, coUser, CAtomNullTraced)
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -7566,7 +7564,7 @@ proc updateSheet*(this: HTMLStyleElement) =
   let window = document.window
   if window != nil:
     window.parseStylesheet(this, this.textContent, document.baseURL,
-      DefaultCharset, CAtomNull, updateSheetFinish, nil, 0)
+      DefaultCharset, CAtomNullTraced, updateSheetFinish, nil, 0)
 
 # <script>
 proc finalize(element: HTMLScriptElement) {.jsfin.} =

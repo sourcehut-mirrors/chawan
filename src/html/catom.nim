@@ -265,6 +265,7 @@ type
 
 # This maps to JS null.
 const CAtomNull* = CAtom(0)
+const CAtomNullTraced* = CAtomTraced(CAtomNull)
 
 # Mandatory Atom functions
 proc `==`*(a, b: CAtom): bool {.borrow.}
