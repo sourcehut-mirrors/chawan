@@ -241,31 +241,38 @@ proc unbrotli(op: HTTPHandle) =
     pins.sclose()
     op.os = pouts
 
+proc flushStatus(op: HTTPHandle) =
+  const HttpStart = "HTTP/1.0 "
+  if not op.line.startsWithIgnoreCase("HTTP/1.1 ") and
+      not op.line.startsWithIgnoreCase("HTTP/1.0 "):
+    cgiDie(ceInvalidResponse)
+  var codeIdx = op.line.find(' ', HttpStart.len)
+  if codeIdx < 0:
+    codeIdx = op.line.len
+  if codeIdx > 3 + HttpStart.len:
+    cgiDie(ceInvalidResponse)
+  let code = parseUInt16(op.line.toOpenArray(HttpStart.len, codeIdx - 1))
+    .orDie(ceInvalidResponse)
+  op.headersBuf = "Status: " & $code & "\r\nCha-Control: ControlDone\r\n"
+  op.lineState = lsNone
+  op.state = hsHeaders
+  op.line = ""
+
 proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
   for i, c in iq:
     case op.lineState
     of lsNone:
       if c == '\r':
         op.lineState = lsCrSeen
+      elif c == '\n':
+        op.flushStatus()
+        return i + 1
       else:
         op.line &= c
     of lsCrSeen:
-      const HttpStart = "HTTP/1.0 "
-      if c != '\n' or
-          not op.line.startsWithIgnoreCase("HTTP/1.1 ") and
-          not op.line.startsWithIgnoreCase("HTTP/1.0 "):
+      if c != '\n':
         cgiDie(ceInvalidResponse)
-      var codeIdx = op.line.find(' ', HttpStart.len)
-      if codeIdx < 0:
-        codeIdx = op.line.len
-      if codeIdx > 3 + HttpStart.len:
-        cgiDie(ceInvalidResponse)
-      let code = parseUInt16(op.line.toOpenArray(HttpStart.len, codeIdx - 1))
-        .orDie(ceInvalidResponse)
-      op.headersBuf = "Status: " & $code & "\r\nCha-Control: ControlDone\r\n"
-      op.lineState = lsNone
-      op.state = hsHeaders
-      op.line = ""
+      op.flushStatus()
       return i + 1
   return iq.len
 
@@ -293,12 +300,39 @@ proc addHeader(op: HTTPHandle) =
       op.chunkSize = parseUInt64(value).get(uint64.high)
     op.headersBuf &= name & ": " & value & "\r\n"
 
+proc flushHeaders(op: HTTPHandle) =
+  op.headersBuf &= "\r\n"
+  if op.os.writeLoop(op.headersBuf).isErr:
+    quit(1)
+  for ce in op.contentEncodings.ritems:
+    case ce
+    of ceBr: op.unbrotli()
+    of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
+    of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
+  op.bodyState = hsBody
+  for i in countdown(op.transferEncodings.high, 0):
+    case op.transferEncodings[i]
+    of teBr: op.unbrotli()
+    of teChunked:
+      if i == 0:
+        op.bodyState = hsChunkSize
+        op.chunkSize = 0
+    of teGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
+    of teDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
+  op.state = op.bodyState
+
 proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
   for i, c in iq:
     case op.lineState
     of lsNone:
       if c == '\r':
         op.lineState = lsCrSeen
+      elif c == '\n':
+        if op.line.len > 0:
+          op.addHeader()
+        else:
+          op.flushHeaders()
+          return i + 1
       else:
         op.line &= c
     of lsCrSeen:
@@ -308,26 +342,8 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
         op.addHeader() # sets line to ""
         op.lineState = lsNone
       else:
-        op.headersBuf &= "\r\n"
-        if op.os.writeLoop(op.headersBuf).isErr:
-          quit(1)
-        for ce in op.contentEncodings.ritems:
-          case ce
-          of ceBr: op.unbrotli()
-          of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
-          of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
-        op.bodyState = hsBody
-        for i in countdown(op.transferEncodings.high, 0):
-          case op.transferEncodings[i]
-          of teBr: op.unbrotli()
-          of teChunked:
-            if i == 0:
-              op.bodyState = hsChunkSize
-              op.chunkSize = 0
-          of teGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
-          of teDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
+        op.flushHeaders()
         op.lineState = lsNone
-        op.state = op.bodyState
         return i + 1
   return iq.len
 
@@ -337,6 +353,11 @@ proc handleChunkSize(op: HTTPHandle; iq: openArray[char]): int =
     of lsNone:
       if c == '\r':
         op.lineState = lsCrSeen
+      elif c == '\n':
+        if op.chunkSize > 0:
+          op.state = hsBody
+          return i + 1
+        op.state = hsTrailers
       else:
         let n = hexValue(c)
         let osize = op.chunkSize
