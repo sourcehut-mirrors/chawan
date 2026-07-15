@@ -35,7 +35,7 @@ type TokenizerState* = enum
 
 type
   TokenFlag* = enum
-    tfQuirks, tfPubid, tfSysid, tfSelfClosing
+    tfQuirks, tfSelfClosing
 
   Tokenizer*[Handle, Atom] = object
     dombuilder*: DOMBuilder[Handle, Atom]
@@ -1210,7 +1210,6 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiWhitespace: switch_state tsBeforeDoctypePublicIdentifier
       of '"', '\'':
-        tok.flags.incl(tfPubid)
         tok.quote = c
         tok.tagNameBuf &= '\0'
         switch_state tsDoctypePublicIdentifierQuoted
@@ -1226,7 +1225,6 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiWhitespace: discard
       of '"', '\'':
-        tok.flags.incl(tfPubid)
         tok.quote = c
         tok.tagNameBuf &= '\0'
         switch_state tsDoctypePublicIdentifierQuoted
@@ -1262,7 +1260,6 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         switch_state tsData
         emit ttDoctype
       of '"', '\'':
-        tok.flags.incl(tfSysid)
         tok.quote = c
         tok.tagNameBuf &= '\0'
         switch_state tsDoctypeSystemIdentifierQuoted
@@ -1282,7 +1279,6 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         switch_state tsData
         emit ttDoctype
       of '"', '\'':
-        tok.flags.incl(tfSysid)
         tok.quote = c
         tok.tagNameBuf &= '\0'
         switch_state tsDoctypeSystemIdentifierQuoted

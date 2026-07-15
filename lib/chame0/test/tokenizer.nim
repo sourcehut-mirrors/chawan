@@ -74,10 +74,6 @@ proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
       a[1].getStr()
     return ttCharacter
   of "DOCTYPE":
-    if a[2].kind != JNull:
-      flags.incl(tfPubid)
-    if a[3].kind != JNull:
-      flags.incl(tfSysid)
     if not a[4].getBool(): # yes, this is reversed. don't ask
       flags.incl(tfQuirks)
     name = a[1].getStr()

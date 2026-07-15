@@ -630,7 +630,7 @@ const PublicIdentifierStartsWith = [
   "-//WebTechs//DTD Mozilla HTML//",
 ]
 
-const SystemIdentifierMissingAndPublicIdentifierStartsWith = [
+const PublicIdentifierStartsWith2 = [
   "-//W3C//DTD HTML 4.01 Frameset//",
   "-//W3C//DTD HTML 4.01 Transitional//"
 ]
@@ -640,40 +640,32 @@ const PublicIdentifierStartsWithLimited = [
   "-//W3C//DTD XHTML 1.0 Transitional//"
 ]
 
-const SystemIdentifierNotMissingAndPublicIdentifierStartsWith = [
-  "-//W3C//DTD HTML 4.01 Frameset//",
-  "-//W3C//DTD HTML 4.01 Transitional//"
-]
-
-proc quirksConditions(name, pubid, sysid: string; flags: set[TokenFlag]): bool =
-  if tfQuirks in flags:
-    return true
+proc quirksConditions(name, pubid, sysid: string): bool =
   if name != "html":
     return true
   if sysid == "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd":
     return true
-  if tfPubid in flags:
+  if pubid != "":
     for id in PublicIdentifierEquals:
       if pubid.equalsIgnoreCase(id):
         return true
     for id in PublicIdentifierStartsWith:
       if pubid.startsWithIgnoreCase(id):
         return true
-    if tfSysid notin flags:
-      for id in SystemIdentifierMissingAndPublicIdentifierStartsWith:
+    if sysid == "":
+      for id in PublicIdentifierStartsWith2:
         if pubid.startsWithIgnoreCase(id):
           return true
   return false
 
-proc limitedQuirksConditions(pubid: string; flags: set[TokenFlag]): bool =
-  if tfPubid notin flags: return false
+proc limitedQuirksConditions(pubid, sysid: string): bool =
   for id in PublicIdentifierStartsWithLimited:
     if pubid.startsWithIgnoreCase(id):
       return true
-  if tfSysid notin flags: return false
-  for id in SystemIdentifierNotMissingAndPublicIdentifierStartsWith:
-    if pubid.startsWithIgnoreCase(id):
-      return true
+  if sysid != "":
+    for id in PublicIdentifierStartsWith2:
+      if pubid.startsWithIgnoreCase(id):
+        return true
   return false
 
 # 13.2.6.2
@@ -1076,9 +1068,10 @@ proc processInHTML[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
         pubid.setLen(i)
       parser.appendDocumentType(name, pubid, sysid)
       if not parser.isIframeSrcdoc:
-        if quirksConditions(name, pubid, sysid, parser.tok.flags):
+        if tfQuirks in parser.tok.flags or
+            quirksConditions(name, pubid, sysid):
           parser.setQuirksMode(qmQuirks)
-        elif limitedQuirksConditions(pubid, parser.tok.flags):
+        elif limitedQuirksConditions(pubid, sysid):
           parser.setQuirksMode(qmLimitedQuirks)
       parser.insertionMode = imBeforeHtml
     else:
