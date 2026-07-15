@@ -813,40 +813,32 @@ proc until(s: string; c1, c2: char; starti: int): string =
 
 proc extractEncFromMeta(s: string): string =
   var i = 0
-  while true: # Loop:
+  while true:
     var j = 0
-    while i < s.len:
+    while j < 7:
+      if i >= s.len:
+        return "" # "charset" not found
       let cc = s[i].toLowerAscii()
-      template check(cc: char; c: static char) =
-        if cc == c:
-          inc j
-        else:
-          j = 0
-      case j
-      of 0: check cc, 'c'
-      of 1: check cc, 'h'
-      of 2: check cc, 'a'
-      of 3: check cc, 'r'
-      of 4: check cc, 's'
-      of 5: check cc, 'e'
-      of 6: check cc, 't'
-      of 7:
+      if cc == "charset"[j]:
         inc j
-        break
-      else: discard
+      else:
+        j = int(cc == 'c') # reset to 1 on 'c' in the middle of "charset"
       inc i
-    if j < 7: return ""
-    while i < s.len and s[i] in AsciiWhitespace: inc i
-    if i >= s.len or s[i] != '=': continue
-    while i < s.len and s[i] in AsciiWhitespace: inc i
+    while i < s.len and s[i] in AsciiWhitespace:
+      inc i
+    if i >= s.len or s[i] != '=':
+      continue
+    while i < s.len and s[i] in AsciiWhitespace:
+      inc i
     break
   inc i
-  if i >= s.len: return ""
+  if i >= s.len:
+    return ""
   if s[i] in {'"', '\''}:
-    let s2 = s.until('"', '\'', i + 1)
+    var s2 = s.until('"', '\'', i + 1)
     if s2.len == 0 or s2[^1] != s[i]:
       return ""
-    return s2
+    return move(s2)
   return s.until(';', ' ', i)
 
 # Find a node in the list of active formatting elements, or return -1.

@@ -7,3 +7,7 @@ fi
 if ! $CHA -Iiso-2022-jp ./x | diff x.expected -
 then	exit 1
 fi
+
+if ! $CHA ./charsecharset.html | diff charsecharset.expected -
+then	exit 1
+fi
