@@ -502,6 +502,7 @@ type
   CSSStyleDeclaration* = ref object
     computed: bool
     readonly: bool
+    updating: bool
     decls*: seq[CSSDeclaration]
     element: Element
 
@@ -5790,7 +5791,12 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
   #TODO internalNonce
   of satStyle:
     if has:
-      element.cachedStyle = newCSSStyleDeclaration(element, value)
+      if element.cachedStyle == nil:
+        element.cachedStyle = newCSSStyleDeclaration(element, value)
+      elif element.cachedStyle.updating: # no need to re-parse
+        element.cachedStyle.updating = false
+      else:
+        element.cachedStyle.decls = value.parseDeclarations()
     else:
       element.cachedStyle = nil
   of satUnknown: discard # early return
@@ -6596,22 +6602,20 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
   of fiErr: return JS_EXCEPTION
 
 # Consumes toks.
-proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
-    Opt[void] =
-  if i notin 0 .. this.decls.high:
-    return err()
-  # dummyAttrs can be safely used because the result is discarded.
-  case this.decls[i].t
+proc parseDeclValue(decl: var CSSDeclaration; value: CSSOMString): Opt[void] =
+  var toks = parseComponentValues(value)
+  case decl.t
   of cdtProperty:
     var ctx = initCSSParser(toks)
     var dummy: seq[CSSComputedEntry] = @[]
-    ?ctx.parseComputedValues0(this.decls[i].p, dummyAttrs, dummy)
-  of cdtNestedRule: return err()
+    ?ctx.parseComputedValues0(decl.p, dummyAttrs, dummy)
+  of cdtNestedRule:
+    return err()
   of cdtVariable:
     if parseDeclWithVar1(toks).len == 0:
       return err()
-  this.decls[i].value = move(toks)
-  return ok()
+  decl.value = move(toks)
+  ok()
 
 proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
   if this.readonly:
@@ -6619,6 +6623,10 @@ proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
       "cannot modify read-only declaration")
     return err()
   ok()
+
+proc updateStyleAttr(this: CSSStyleDeclaration) =
+  this.updating = true
+  this.element.attr(satStyle, this.cssText)
 
 proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration;
     name: CSSOMString): JSValue {.jsfunc.} =
@@ -6636,6 +6644,7 @@ proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration;
     let i = this.find(name)
     if i != -1:
       this.decls.delete(i)
+  this.updateStyleAttr()
   return ctx.toJS(value)
 
 proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
@@ -6647,30 +6656,18 @@ proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
   if value.len == 0:
     return ctx.removeProperty(this, name)
   let name = name.toOpenArray().toLowerAscii()
-  var toks = parseComponentValues(value)
   if (let i = this.find(name); i != -1):
-    if this.setValue(i, toks).isErr:
-      # this does not throw.
-      return JS_UNDEFINED
+    if this.decls[i].parseDeclValue(value).isErr:
+      return JS_UNDEFINED # ignore
   else:
     let x = initCSSDeclaration(name)
     if x.isErr:
       return JS_UNDEFINED # ignore
     var decl = x.get
-    case decl.t
-    of cdtProperty:
-      var ctx = initCSSParser(toks)
-      var dummy = newSeq[CSSComputedEntry]()
-      if ctx.parseComputedValues0(decl.p, dummyAttrs, dummy).isErr:
-        return JS_UNDEFINED
-    of cdtNestedRule:
-      return JS_UNDEFINED
-    of cdtVariable:
-      if parseDeclWithVar1(toks).len == 0:
-        return JS_UNDEFINED
-    decl.value = move(toks)
+    if decl.parseDeclValue(value).isErr:
+      return JS_UNDEFINED # ignore
     this.decls.add(move(decl))
-  this.element.attr(satStyle, this.cssText)
+  this.updateStyleAttr()
   return JS_UNDEFINED
 
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
@@ -6680,11 +6677,7 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
   var u: uint32
   var ds: DOMString
   case ctx.fromIdx(atom, u, ds)
-  of fiIdx:
-    var toks = parseComponentValues(value)
-    if this.setValue(int(u), toks).isErr:
-      this.element.attr(satStyle, this.cssText)
-    return JS_UNDEFINED
+  of fiIdx: return JS_UNINITIALIZED
   of fiStr:
     var name = $ds
     if name == "cssFloat":
