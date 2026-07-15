@@ -1284,14 +1284,15 @@ proc parseOption(cp: var ConfigParser; section: ConfigSection; key: string):
   var x = parseOption(key)
   if x.isErr:
     # retry ambiguous names
-    let full = $section & '.' & key
+    let full = if section != csNone: $section & '.' & key else: key
     x = parseOption(full)
     if x.isErr:
       cp.warn("unknown option " & camelToKebabCase(full))
       return ok(coAddEntry) # dummy value
   let opt = x.get
   if opt.section != section and
-      not (section == csSiteconf and opt in SiteconfOptions):
+      not (section == csSiteconf and opt in SiteconfOptions) and
+      not (section == csNone and cp.laxnames):
     let kebab = camelToKebabCase(key)
     cp.warn("unknown option " & $section & '.' & kebab & ", maybe try " &
       $opt.section & '.' & kebab & '?')
@@ -1339,9 +1340,14 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
     n = ?cp.consumeKey(camel = false, line, n)
     section = cp.parseSection(cp.buf).get(csNone)
     if section == csNone:
-      if cp.buf != "include":
+      if cp.buf == "include":
+        cp.opt = coInclude
+      elif cp.laxnames: # allow sectionless options from CLI
+        cp.buf = kebabToCamelCase(cp.buf)
+        cp.opt = ?cp.parseOption(cp.section, cp.buf)
+        section = cp.opt.section
+      else:
         return err()
-      cp.opt = coInclude
     cp.section = section
     if single or n >= line.len or line[n] != '.':
       if section in cp.sectionsSeen:
