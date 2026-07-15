@@ -552,6 +552,7 @@ proc swapFrame(term: Terminal; frameType: FrameType) =
     # could swap this too, but that would keep data alive for longer than
     # desirable
     term.frame.canvasImagesHead = move(term.frames[ot].canvasImagesHead)
+    term.frame.title = move(term.frames[ot].title)
   of ftNext:
     # Buffer.  We keep the old canvas intact in ftCurrent for the case where
     # we get a new frame before this frame becomes active (and this frame
@@ -574,7 +575,7 @@ proc swapFrame(term: Terminal; frameType: FrameType) =
       imagesTail = image2
     term.frame.kittyImagesToClear = term.frames[ot].kittyImagesToClear
     term.frame.canvasImagesHead = imagesHead
-  term.frame.title = term.frames[ot].title
+    term.frame.title = term.frames[ot].title
   term.frame.format = term.frames[ot].format
   term.frame.pos = term.frames[ot].pos
   term.frame.cursorx = term.frames[ot].cursorx

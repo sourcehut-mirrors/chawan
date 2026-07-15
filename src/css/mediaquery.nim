@@ -314,12 +314,13 @@ proc parseMediaInParens(parser: var MediaQueryParser): Opt[MediaQuery] =
   parser.skipBlanks()
   if tok.s.equalsIgnoreCase("not"):
     return parser.parseMediaCondition(non = true, nested = true)
-  var tokval = tok.s
-  let ismin = tokval.startsWithIgnoreCase("min-")
-  let ismax = tokval.startsWithIgnoreCase("max-")
-  if ismin or ismax:
-    tokval = tokval.substr(4)
-  let t = ?parseEnumNoCase[MediaFeatureType](tokval)
+  let ismin = tok.s.startsWithIgnoreCase("min-")
+  let ismax = tok.s.startsWithIgnoreCase("max-")
+  let tx = if ismin or ismax:
+    parseEnumNoCase[MediaFeatureType](tok.s.toOpenArray(4, tok.s.high))
+  else:
+    parseEnumNoCase[MediaFeatureType](tok.s)
+  let t = ?tx
   parser.parseFeature(t, ismin, ismax)
 
 proc parseMediaOr(parser: var MediaQueryParser; left: MediaQuery):

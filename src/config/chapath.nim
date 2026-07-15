@@ -11,8 +11,8 @@ import utils/twtstr
 
 type ChaPath* = distinct string
 
-proc `$`*(p: ChaPath): string =
-  return string(p)
+template `$`*(p: ChaPath): string =
+  string(p)
 
 type
   UnquoteContext = object
@@ -242,7 +242,7 @@ proc unquote(p: string; starti: var int; terminal: char):
     return err("} expected")
   of usCurlyExpand: ?ctx.flushCurlyExpand("")
   starti = ctx.i
-  return ok(ctx.s)
+  ok(move(ctx.s))
 
 proc unquote(p: string): ChaPathResult[string] =
   var dummy = 0

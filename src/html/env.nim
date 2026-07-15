@@ -54,7 +54,7 @@ proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (Windows)"
 proc platform(navigator: Navigator): string {.jsfget.} = "Win32"
 proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
 proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
-proc userAgent(ctx: JSContext; navigator: Navigator): string {.jsfget.} =
+proc userAgent(ctx: JSContext; navigator: Navigator): lent string {.jsfget.} =
   return ctx.getWindow().userAgent
 proc vendor(navigator: Navigator): string {.jsfget.} = ""
 proc vendorSub(navigator: Navigator): string {.jsfget.} = ""

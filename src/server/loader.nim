@@ -562,14 +562,14 @@ proc addCacheFile(ctx: var LoaderContext; client: ClientHandle;
   if output.parent != nil and output.parent.cacheId != -1:
     # may happen e.g. if client tries to cache a `cache:' URL
     return output.parent.cacheId
-  let tmpf = ctx.getTempFile()
+  var tmpf = ctx.getTempFile()
   var dummy: OutputHandle
   var sent: uint64
   if ctx.redirectToFile(output, tmpf, dummy, sent):
     let cacheId = output.outputId
     if output.parent != nil:
       output.parent.cacheId = cacheId
-    client.cacheMap.add(CachedItem(id: cacheId, path: tmpf, refc: 1))
+    client.cacheMap.add(CachedItem(id: cacheId, path: move(tmpf), refc: 1))
     return cacheId
   return -1
 
@@ -915,7 +915,7 @@ proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
     elif not refererSeen and it.name.equalsIgnoreCase("Referer"):
       env.add(("HTTP_REFERER", it.value))
       refererSeen = true
-  env.add(("REQUEST_HEADERS", headers))
+  env.add(("REQUEST_HEADERS", move(headers)))
   if prevURL != nil:
     env.add(("MAPPED_URI_SCHEME", prevURL.scheme))
     if auth != nil:
@@ -931,7 +931,7 @@ proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
     if request.body.t == rbtMultipart:
       env.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
     else:
-      env.add(("CONTENT_TYPE", contentType))
+      env.add(("CONTENT_TYPE", move(contentType)))
     env.add(("CONTENT_LENGTH", $contentLen))
   if config.proxy != nil:
     env.add(("ALL_PROXY", $config.proxy))
@@ -986,9 +986,9 @@ proc setupCmd(ctx: LoaderContext; request: RawRequest; cmd: var string;
         cmd = dir / basename
         if fileExists(cmd):
           env.add(("SCRIPT_NAME", path.substr(0, dir.len + basename.len)))
-          let pathInfo = path.substr(dir.len + basename.len)
+          var pathInfo = path.substr(dir.len + basename.len)
           if pathInfo != "":
-            env.add(("PATH_INFO", pathInfo))
+            env.add(("PATH_INFO", move(pathInfo)))
           return ceNone
   else:
     let basename = path.until('/')
@@ -996,9 +996,9 @@ proc setupCmd(ctx: LoaderContext; request: RawRequest; cmd: var string;
       cmd = dir / basename
       if fileExists(cmd):
         env.add(("SCRIPT_NAME", "/cgi-bin/" & basename))
-        let pathInfo = path.substr(basename.len)
+        var pathInfo = path.substr(basename.len)
         if pathInfo != "":
-          env.add(("PATH_INFO", pathInfo))
+          env.add(("PATH_INFO", move(pathInfo)))
         return ceNone
   ceCGIFileNotFound
 
@@ -1019,7 +1019,7 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
   if request.tocache:
     # Set stdout to a file, and repurpose the pipe as a dummy to detect when
     # the process ends. outputId is the cache id.
-    let tmpf = ctx.getTempFile()
+    var tmpf = ctx.getTempFile()
     ostreamOut2 = ostreamOut
     discard unlink(cstring(tmpf))
     # RDWR, otherwise mmap won't work
@@ -1027,7 +1027,7 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
     if ostreamOut == nil:
       return ceCGIFailedToOpenCacheOutput
     let cacheId = handle.output.outputId # welp
-    let item = CachedItem(id: cacheId, path: tmpf, refc: 1, offset: -1)
+    let item = CachedItem(id: cacheId, path: move(tmpf), refc: 1, offset: -1)
     handle.cacheRef = item
     client.cacheMap.add(item)
   # Pipe the request body as stdin for POST.

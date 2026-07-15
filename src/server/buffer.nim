@@ -1194,7 +1194,7 @@ proc evalJSURL(bc: BufferContext; url: URL): Opt[string] =
   ?ctx.fromJS(ret, res)
   JS_FreeValue(ctx, ret)
   # Navigate to result.
-  return ok(res)
+  ok(move(res))
 
 proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
   bc.restoreFocus()

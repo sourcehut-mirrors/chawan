@@ -21,7 +21,7 @@ proc `$`*(sl: UnsafeSlice): string =
     return ""
   var s = newString(sl.len)
   copyMem(addr s[0], addr sl.p[0], sl.len)
-  return s
+  move(s)
 
 proc toUnsafeSlice(s: openArray[uint8]): UnsafeSlice =
   if s.len == 0:
