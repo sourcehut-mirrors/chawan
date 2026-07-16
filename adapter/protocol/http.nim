@@ -106,7 +106,6 @@ type
   HTTPHandle = ref object
     state: HTTPState
     bodyState: HTTPState # if TE is chunked, hsChunkSize; else hsBody
-    lineState: LineState
     chunkSize: uint64 # Content-Length if TE is not chunked
     ssl: ptr SSL # used in HTTPS
     httpStream: PosixStream # used in HTTP
@@ -116,11 +115,9 @@ type
     transferEncodings: seq[TransferEncoding]
     headersBuf: string # buffer of all headers to be printed on stdout
 
-  LineState = enum
-    lsNone, lsCrSeen
-
   HTTPState = enum
-    hsStatus, hsHeaders, hsChunkSize, hsAfterChunk, hsBody, hsTrailers, hsDone
+    hsStatus, hsHeaders, hsChunkSize, hsChunkSizeCr, hsAfterChunk,
+    hsAfterChunkCr, hsBody, hsTrailers, hsDone
 
   ContentEncoding = enum
     ceBr = "br"
@@ -241,40 +238,37 @@ proc unbrotli(op: HTTPHandle) =
     pins.sclose()
     op.os = pouts
 
-proc flushStatus(op: HTTPHandle) =
+proc flushStatus(op: HTTPHandle; line: openArray[char]) =
   const HttpStart = "HTTP/1.0 "
-  if not op.line.startsWithIgnoreCase("HTTP/1.1 ") and
-      not op.line.startsWithIgnoreCase("HTTP/1.0 "):
+  if not line.startsWithIgnoreCase("HTTP/1.1 ") and
+      not line.startsWithIgnoreCase("HTTP/1.0 "):
     cgiDie(ceInvalidResponse)
-  var codeIdx = op.line.find(' ', HttpStart.len)
+  var codeIdx = line.find(' ', HttpStart.len)
   if codeIdx < 0:
-    codeIdx = op.line.len
+    codeIdx = line.len
   if codeIdx > 3 + HttpStart.len:
     cgiDie(ceInvalidResponse)
-  let code = parseUInt16(op.line.toOpenArray(HttpStart.len, codeIdx - 1))
+  let code = parseUInt16(line.toOpenArray(HttpStart.len, codeIdx - 1))
     .orDie(ceInvalidResponse)
   op.headersBuf = "Status: " & $code & "\r\nCha-Control: ControlDone\r\n"
-  op.lineState = lsNone
   op.state = hsHeaders
-  op.line = ""
 
 proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
-  for i, c in iq:
-    case op.lineState
-    of lsNone:
-      if c == '\r':
-        op.lineState = lsCrSeen
-      elif c == '\n':
-        op.flushStatus()
-        return i + 1
-      else:
-        op.line &= c
-    of lsCrSeen:
-      if c != '\n':
-        cgiDie(ceInvalidResponse)
-      op.flushStatus()
-      return i + 1
-  return iq.len
+  let i = iq.find('\n')
+  if i < 0:
+    op.line &= iq
+    return iq.len
+  var j = i - 1
+  assert j < iq.len
+  while j >= 0 and iq[j] in HTTPWhitespace:
+    dec j
+  if op.line == "":
+    op.flushStatus(iq.toOpenArray(0, j))
+  else:
+    op.line &= iq.toOpenArray(0, j)
+    op.flushStatus(op.line)
+    op.line = ""
+  i + 1
 
 proc addHeader(op: HTTPHandle) =
   var name = move(op.line)
@@ -288,17 +282,18 @@ proc addHeader(op: HTTPHandle) =
       inc valueIdx
     let value = name.substr(valueIdx)
     name.setLen(j + 1)
-    if name.equalsIgnoreCase("Content-Encoding"):
-      for it in value.split(','):
-        if ce := parseEnumNoCase[ContentEncoding](it):
-          op.contentEncodings.add(ce)
-    elif name.equalsIgnoreCase("Transfer-Encoding"):
-      for it in value.split(','):
-        if te := parseEnumNoCase[TransferEncoding](it):
-          op.transferEncodings.add(te)
-    elif name.equalsIgnoreCase("Content-Length"):
-      op.chunkSize = parseUInt64(value).get(uint64.high)
-    op.headersBuf &= name & ": " & value & "\r\n"
+    if '\r' notin name and '\r' notin value:
+      if name.equalsIgnoreCase("Content-Encoding"):
+        for it in value.split(','):
+          if ce := parseEnumNoCase[ContentEncoding](it):
+            op.contentEncodings.add(ce)
+      elif name.equalsIgnoreCase("Transfer-Encoding"):
+        for it in value.split(','):
+          if te := parseEnumNoCase[TransferEncoding](it):
+            op.transferEncodings.add(te)
+      elif name.equalsIgnoreCase("Content-Length"):
+        op.chunkSize = parseUInt64(value).get(uint64.high)
+      op.headersBuf &= name & ": " & value & "\r\n"
 
 proc flushHeaders(op: HTTPHandle) =
   op.headersBuf &= "\r\n"
@@ -322,58 +317,44 @@ proc flushHeaders(op: HTTPHandle) =
   op.state = op.bodyState
 
 proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
-  for i, c in iq:
-    case op.lineState
-    of lsNone:
-      if c == '\r':
-        op.lineState = lsCrSeen
-      elif c == '\n':
-        if op.line.len > 0:
-          op.addHeader()
-        else:
-          op.flushHeaders()
-          return i + 1
-      else:
-        op.line &= c
-    of lsCrSeen:
-      if c != '\n': # malformed header
-        quit(1)
-      if op.line.len > 0:
-        op.addHeader() # sets line to ""
-        op.lineState = lsNone
-      else:
-        op.flushHeaders()
-        op.lineState = lsNone
-        return i + 1
-  return iq.len
+  let i = iq.find('\n')
+  if i < 0:
+    op.line &= iq
+    return iq.len
+  op.line &= iq.toOpenArray(0, i - 1)
+  var j = i - 1
+  while j >= 0 and op.line[j] in HTTPWhitespace:
+    dec j
+  if j < 0:
+    op.flushHeaders()
+  else:
+    op.line.setLen(j + 1)
+    op.addHeader()
+  i + 1
 
 proc handleChunkSize(op: HTTPHandle; iq: openArray[char]): int =
   for i, c in iq:
-    case op.lineState
-    of lsNone:
-      if c == '\r':
-        op.lineState = lsCrSeen
-      elif c == '\n':
-        if op.chunkSize > 0:
-          op.state = hsBody
-          return i + 1
-        op.state = hsTrailers
-      else:
-        let n = hexValue(c)
-        let osize = op.chunkSize
-        op.chunkSize = osize * 0x10 + uint64(n)
-        if n == -1 or osize > op.chunkSize:
-          die("error decoding chunk size")
-    of lsCrSeen:
-      if c != '\n':
-        die("CRLF expected")
-      op.lineState = lsNone
-      if op.chunkSize > 0:
-        op.state = hsBody
-        return i + 1
-      op.state = hsTrailers
-      break
-  return iq.len
+    if c == '\r':
+      op.state = hsChunkSizeCr
+      return i + 1
+    let n = hexValue(c)
+    let osize = op.chunkSize
+    op.chunkSize = osize * 0x10 + uint64(n)
+    if n == -1 or osize > op.chunkSize:
+      die("error decoding chunk size")
+  iq.len
+
+proc handleChunkSizeCr(op: HTTPHandle; iq: openArray[char]): int =
+  if iq.len <= 0:
+    return 0
+  let c = iq[0]
+  if c != '\n':
+    die("CRLF expected")
+  if op.chunkSize > 0:
+    op.state = hsBody
+  else:
+    op.state = hsTrailers
+  return 1
 
 proc handleBody(op: HTTPHandle; iq: openArray[char]): int =
   var L = uint64(iq.len)
@@ -389,36 +370,35 @@ proc handleBody(op: HTTPHandle; iq: openArray[char]): int =
   return n
 
 proc handleAfterChunk(op: HTTPHandle; iq: openArray[char]): int =
-  for i, c in iq:
-    case op.lineState
-    of lsNone:
-      if c != '\r':
-        quit(1)
-      op.lineState = lsCrSeen
-    of lsCrSeen:
-      if c != '\n':
-        quit(1)
-      op.lineState = lsNone
-      op.state = hsChunkSize
-      return i + 1
-  return iq.len
+  if iq.len <= 0:
+    return 0
+  let c = iq[0]
+  if c != '\r':
+    die("CRLF expected")
+  op.state = hsAfterChunkCr
+  return 1
+
+proc handleAfterChunkCr(op: HTTPHandle; iq: openArray[char]): int =
+  if iq.len <= 0:
+    return 0
+  let c = iq[0]
+  if c != '\n':
+    die("CRLF expected")
+  op.state = hsChunkSize
+  return 1
 
 proc handleTrailers(op: HTTPHandle; iq: openArray[char]): int =
   for i, c in iq:
-    case op.lineState
-    of lsNone:
-      if c == '\r':
-        op.lineState = lsCrSeen
-      else:
-        op.line &= c
-    of lsCrSeen:
-      if c != '\n':
-        quit(1)
-      op.lineState = lsNone
-      if op.line == "":
+    if c == '\n':
+      var j = i - 1
+      while j >= 0 and op.line[j] in HTTPWhitespace:
+        dec j
+      if j < 0:
         op.state = hsDone
         return i + 1
       op.line = ""
+    else:
+      op.line &= c
   return iq.len
 
 proc handleBuffer(op: HTTPHandle; iq: openArray[char]): int =
@@ -426,8 +406,10 @@ proc handleBuffer(op: HTTPHandle; iq: openArray[char]): int =
   of hsStatus: return op.handleStatus(iq)
   of hsHeaders: return op.handleHeaders(iq)
   of hsChunkSize: return op.handleChunkSize(iq)
+  of hsChunkSizeCr: return op.handleChunkSizeCr(iq)
   of hsBody: return op.handleBody(iq)
   of hsAfterChunk: return op.handleAfterChunk(iq) # CRLF after a chunk
+  of hsAfterChunkCr: return op.handleAfterChunkCr(iq)
   of hsTrailers: return op.handleTrailers(iq)
   of hsDone: return -1
 
