@@ -89,9 +89,6 @@ proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
     dealloc(p)
 
 proc encode(this: JSTextEncoder; input = ""): JSArrayBufferView {.jsfunc.} =
-  # we have to validate input first :/
-  #TODO it is possible to do less copies here...
-  let input = input.toValidUTF8()
   let p = if input.len > 0:
     let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
     copyMem(buf, unsafeAddr input[0], input.len)
