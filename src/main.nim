@@ -404,7 +404,7 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
   if client.addJSModules(jsctx).isOk:
     return client
   else:
-    die("failed to initialize JS " & jsctx.getExceptionMsg())
+    die("failed to initialize JS: " & jsctx.getExceptionMsg())
 
 proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =

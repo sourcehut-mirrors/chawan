@@ -37,7 +37,7 @@ ReferenceError: 'abcd' is not defined
   rt.free()
 
 type
-  Planet = ref object of RootObj
+  Planet = ref object of JSRootObj
   Earth = ref object of Planet
   Moon = ref object of Planet
 
@@ -45,8 +45,6 @@ proc jsAssert(earth: Earth; pred: bool) {.jsfunc: "assert".} =
   assert pred
 
 test "registerType: registering type interfaces":
-  type Moon = ref object
-  jsDestructor(Moon)
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Moon)
@@ -76,8 +74,6 @@ test "Global objects":
   rt.free()
 
 test "Inheritance":
-  jsDestructor(Moon)
-  jsDestructor(Planet)
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let planetCID = ctx.registerType(Planet)

@@ -312,7 +312,7 @@ proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
 proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
     iterable: JSIterableType; asglobal: bool; parentProto: JSValueConst):
     JSValue =
-  if asglobal and not JS_IsUndefined(parentProto):
+  if asglobal and not JS_IsNull(parentProto):
     return JS_NewObjectProtoClass(ctx, parentProto, parent)
   if parent != JS_INVALID_CLASS_ID:
     return JS_NewObjectClass(ctx, parent)
@@ -479,8 +479,8 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   if ctx.defineIterableProps(iterable, proto, res) == dprException:
     JS_FreeValue(ctx, proto)
     return JS_INVALID_CLASS_ID
-  if not asglobal and not JS_IsUndefined(namespace):
-    let target = if JS_IsNull(namespace):
+  if not JS_IsUndefined(namespace):
+    let target = if asglobal or JS_IsNull(namespace):
       JSValueConst(ctxOpaque.global)
     else:
       namespace
@@ -877,9 +877,6 @@ proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
       exv[1] = id
       exv[2] = fun.flag
       if fun.magic != nil:
-        if exv[3] != fun.magic:
-          eprint "exv", treeRepr exv[3]
-          eprint "fun", treeRepr fun.magic
         assert exv[3] == fun.magic
     do:
       info.getset[name] = (newNilLit(), id, bffNone, fun.magic)

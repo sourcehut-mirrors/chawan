@@ -5,6 +5,7 @@
 <div id=testEl>test 2</div>
 <script src=asserts.js></script>
 <script>
+assertEquals(window.__proto__, Window.prototype);
 assertEquals(window.toString(), "[object Window]");
 const desc = Object.getOwnPropertyDescriptor(window, "window");
 assert(desc.enumerable, "window must be enumerable");
