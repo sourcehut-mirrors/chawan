@@ -104,7 +104,7 @@ proc fromJS(ctx: JSContext; cs: cstring; len: csize_t; narrow: bool;
   let ilen = cast[int](len)
   res = newString(ilen)
   if ilen > 0:
-    copyMem(addr res[0], cstring(cs), ilen)
+    chaArrayCopy(res, cs.toOpenArray(0, ilen - 1))
     if not narrow:
       res.replaceSurrogates()
   JS_FreeCString(ctx, cs)
