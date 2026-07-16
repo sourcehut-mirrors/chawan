@@ -131,7 +131,7 @@ type
   Location = ref object
     window: Window
 
-  CachedURLImage {.final.} = ref object of RootObj
+  CachedURLImage {.final.} = ref object of StrMapItem
     window: Window
     expiry: int64
     loading: bool
@@ -167,7 +167,7 @@ type
     loadedSheetNum*: uint32
     remoteImageNum*: uint32
     loadedImageNum*: uint32
-    imageURLCache: Table[string, CachedURLImage]
+    imageURLCache: StrMap
     svgCache*: Table[string, SVGSVGElement]
     # ID of the next image
     imageId: int
@@ -1663,7 +1663,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
 
 proc loadImageFromCache(window: Window; image: HTMLImageElement; surl: string):
     bool =
-  let cachedURL = window.imageURLCache.getOrDefault(surl)
+  let cachedURL = CachedURLImage(window.imageURLCache.getOrDefault(surl))
   if cachedURL == nil:
     return false
   if cachedURL.expiry > getTime().toUnix():
@@ -1695,17 +1695,18 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
     # mixed content :/
     #TODO maybe do this in loader?
     url.setProtocol("https")
-  let surl = $url
+  var surl = $url
   if window.loadImageFromCache(image, surl):
     return
   let cachedURL = CachedURLImage(
+    name: move(surl),
     cacheId: -1,
     window: window,
     expiry: -1,
     loading: true,
     shared: @[image]
   )
-  window.imageURLCache[surl] = cachedURL
+  window.imageURLCache.put(cachedURL)
   let headers = newHeaders(hgRequest, {"Accept": "*/*"})
   inc window.remoteImageNum
   let request = newRequest(url, headers = headers)

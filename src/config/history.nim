@@ -3,7 +3,7 @@
 {.push raises: [].}
 
 import std/posix
-import std/tables
+import utils/tabutil
 
 import io/chafile
 import io/dynstream
@@ -14,18 +14,16 @@ type
     first*: HistoryEntry
     last*: HistoryEntry
     mtime*: int64
-    map: Table[string, HistoryEntry]
-    len: int
+    map: StrMap
     maxLen: int
     transient*: bool # set if there is a failure in parsing history
 
-  HistoryEntry* = ref object
-    s*: string
+  HistoryEntry* {.final.} = ref object of StrMapItem
     prev*: HistoryEntry
     next*: HistoryEntry
 
 proc add(hist: History; entry: sink HistoryEntry; merge = false) =
-  let old = hist.map.getOrDefault(entry.s)
+  let old = HistoryEntry(hist.map.getOrDefault(entry.name))
   if merge and old != nil:
     return
   if old != nil:
@@ -38,33 +36,31 @@ proc add(hist: History; entry: sink HistoryEntry; merge = false) =
       prev.next = old.next
     if old.next != nil:
       old.next.prev = prev
-    dec hist.len
   if hist.first == nil:
     hist.first = entry
   else:
     entry.prev = hist.last
     hist.last.next = entry
-  hist.map[entry.s] = entry
+  hist.map.put(entry)
   hist.last = entry
-  inc hist.len
-  if hist.len > hist.maxLen:
+  if hist.map.load > hist.maxLen:
+    hist.map.del(hist.first)
     if hist.first.next != nil:
       hist.first.next.prev = nil
     hist.first = hist.first.next
     if hist.first == nil:
       hist.last = nil
-    dec hist.len
 
 proc newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
 
 proc add*(hist: History; s: sink string) =
-  hist.add(HistoryEntry(s: s), merge = false)
+  hist.add(HistoryEntry(name: s), merge = false)
 
 proc parse0(hist: History; file: ChaFile; merge: bool): Opt[void] =
   var line = ""
   while ?file.readLine(line):
-    hist.add(HistoryEntry(s: move(line)), merge)
+    hist.add(HistoryEntry(name: move(line)), merge)
   ok()
 
 # Consumes `ps'.
@@ -90,15 +86,14 @@ proc write0(hist: History; file: ChaFile; reverse: bool): Opt[void] =
   if reverse:
     var entry = hist.last
     while entry != nil:
-      ?file.writeLine(entry.s)
+      ?file.writeLine(entry.name)
       entry = entry.prev
   else:
     var entry = hist.first
     while entry != nil:
-      ?file.writeLine(entry.s)
+      ?file.writeLine(entry.name)
       entry = entry.next
-  ?file.flush()
-  ok()
+  file.flush()
 
 # Consumes `ps'.
 proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =

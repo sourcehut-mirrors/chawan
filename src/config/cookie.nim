@@ -11,6 +11,7 @@ import io/packetreader
 import io/packetwriter
 import types/opt
 import types/url
+import utils/tabutil
 import utils/twtstr
 
 type
@@ -27,15 +28,14 @@ type
     isnew: bool
     skip: bool
 
-  CookieJar* = ref object
-    name*: string
+  CookieJar* {.final.} = ref object of StrMapItem
     cookies: seq[Cookie]
     map: Table[string, Cookie] # {host}{path}\t{name}
     next: CookieJar
 
   CookieJarMap* = ref object
     mtime: int64
-    jars: Table[string, CookieJar]
+    jars: StrMap
     jarsHead: CookieJar
     jarsTail: CookieJar
     transient*: bool # set if there is a failure in parsing cookies
@@ -67,7 +67,7 @@ proc newCookieJarMap*(): CookieJarMap =
 
 proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
   let jar = CookieJar(name: name)
-  map.jars[jar.name] = jar
+  map.jars.put(jar)
   if map.jarsTail == nil:
     map.jarsHead = jar
   else:
@@ -76,7 +76,7 @@ proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
   return jar
 
 proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
-  return map.jars.getOrDefault(name)
+  return CookieJar(map.jars.getOrDefault(name))
 
 proc getMapKey(cookie: Cookie): string =
   return cookie.domain & cookie.path & '\t' & cookie.name
