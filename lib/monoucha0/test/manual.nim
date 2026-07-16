@@ -3,10 +3,18 @@ import std/posix
 import std/strutils
 import std/unittest
 
-import results
-
 import monoucha/javascript
-import monoucha/jserror
+import types/opt
+
+proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";
+    flags = JS_EVAL_TYPE_GLOBAL): Result[T, string] =
+  let val = ctx.eval(code, file, flags)
+  var res: T
+  if ctx.fromJSFree(val, res).isErr:
+    # Exception when converting the value.
+    return err(ctx.getExceptionMsg())
+  # All ok; return the converted object.
+  ok(res)
 
 test "Hello, world":
   let rt = newGlobalJSRuntime()

@@ -34,10 +34,6 @@ Monoucha has no hard dependencies other than QuickJS and the standard
 library (in particular, the `tables` module.)  QuickJS in turn has no
 dependencies other than libc.
 
-There is an optional `jserror` module which enables error handling that is
-generic to Nim and QuickJS using the
-[nim-results](https://github.com/arnetheduck/nim-results) library.
-
 QuickJS is already included in this repository; you do not have to install
 it separately.
 

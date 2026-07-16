@@ -1,9 +1,6 @@
 ## Converts `Option` from `std/options` into nullable JS types.
 ## Use this if you want to return either a string or take a ref object
 ## parameter that can be nil.
-##
-## If you want to return a value or an exception, see the `jserror` module
-## instead.
 
 {.push raises: [].}
 

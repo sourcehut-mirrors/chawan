@@ -90,16 +90,6 @@ if JS_IsException(res):
 Usually you'll want to wrap `eval` in a function that deals with exceptions
 in a way appropriate for your application.
 
-### More convenient error handling with nim-results
-
-There is a convenience wrapper for error handling which uses nim-results,
-which allows writing procedures that throw exceptions but are still generic
-to JS and Nim.  It also includes an `evalConvert` which is like `eval` but
-returns a `Result` of the desired value or an exception.
-
-This is *not* zero-cost, it requires more allocations than just using the
-QJS APIs.  But it does allow for prettier code.
-
 ## Registering objects
 
 In JavaScript, all objects are passed *by reference*.  Monoucha allows you
@@ -561,18 +551,13 @@ This applies to e.g. strings (which are not nilable in Nim), but also to
 refs in fromJS so that a registered ref object parameter of a `.jsfunc` is
 not nullable unless you wrap it in an `Option`.
 
-`Opt[T]` in contrast is used for representing errors - to use this, make
-sure to add:
+`Opt[T]` in contrast is used for representing errors using Chawan's result
+type defined in `types/opt`.
 
-```nim
-import monoucha/jserror
-```
-
-Typically, it is returned from fromJS as `Opt[void]`; you can use the
-nim-results functions to handle these.  It is also possible to return a
-`Result[T, JSError]` from a bound procedure, making it easy to return error
+Typically, it is returned from fromJS as `Opt[void]`.  It is also possible
+to return a `Opt[T]` from a bound procedure, making it easy to return error
 conditions from procs used both in Nim and JS.  (However, returning a
-JSValue is more efficient.)
+JSValue is usually more efficient.)
 
 Monoucha does not use Nim exceptions, and throwing an exception across bound
 function boundaries will result in undefined behavior.
