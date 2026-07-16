@@ -315,8 +315,6 @@ type
     istreamOutputId*: int
     ostreamOutputId*: int
 
-jsDestructor(BufferInterface)
-jsDestructor(BufferInit)
 jsDestructor(Highlight)
 
 # Forward declarations

@@ -48,7 +48,7 @@ type
   ConnectDataState* = enum
     cdsBeforeResult, cdsBeforeStatus
 
-  MapData* = ref object of RootObj
+  MapData* = ref object of JSRootObj
     stream*: PosixStream
 
   LoaderData = ref object of MapData
