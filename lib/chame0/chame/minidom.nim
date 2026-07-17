@@ -497,7 +497,7 @@ proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
   builder.sortAttrsImpl(element.attrs)
 
 method setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
-    SetEncodingResult {.base.} =
+    SetEncodingResult {.base, raises: [].} =
   # Provided as a method for minidom_cs to override.
   return seContinue
 
