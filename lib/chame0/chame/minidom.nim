@@ -443,8 +443,8 @@ proc moveChildrenImpl(builder: MiniDOMBuilder; fromNode, toNode: Node) =
     child.parentNode = nil
     toNode.insertBefore(child, none(Node))
 
-proc elementPoppedImpl(builder: MiniDOMBuilder; node: Node) =
-  let popped = Element(node)
+proc elementPoppedImpl(builder: MiniDOMBuilder; element: Node) =
+  let popped = Element(element)
   if popped.namespace != nsHTML or popped.tagType != ttOption:
     return
   let selected = popped.hasAttribute("selected")
@@ -496,10 +496,24 @@ proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
   element.attrs.add(attrs)
   builder.sortAttrsImpl(element.attrs)
 
-method setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
+proc setQuirksModeImpl(builder: MiniDOMBuilder; quirksMode: QuirksMode) =
+  discard
+
+proc associateWithFormImpl(builder: MiniDOMBuilder;
+    element, form, intendedParent: Node) =
+  discard
+
+method setEncoding(builder: MiniDOMBuilder; encoding: string):
     SetEncodingResult {.base, raises: [].} =
   # Provided as a method for minidom_cs to override.
-  return seContinue
+  seContinue
+
+proc setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
+    SetEncodingResult =
+  builder.setEncoding(encoding)
+
+proc setScriptAlreadyStartedImpl(builder: MiniDOMBuilder; script: Node) =
+  discard
 
 proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
   let document = Document(factory: factory)

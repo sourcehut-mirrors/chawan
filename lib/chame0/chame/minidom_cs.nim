@@ -29,7 +29,7 @@ type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
   charset: Charset
   confidence: CharsetConfidence
 
-method setEncodingImpl(builder: CharsetMiniDOMBuilder; encoding: string):
+method setEncoding(builder: CharsetMiniDOMBuilder; encoding: string):
     SetEncodingResult =
   let charset = getCharset(encoding)
   if charset == csUnknown:

@@ -1,13 +1,8 @@
 when defined(nimdocdummy):
   ## Interface definitions for htmlparser.
   ##
-  ## This exists to make implementing the DOMBuilder interface less painful. Two
-  ## categories of hooks exist:
-  ## 1. Mandatory hooks: these must be implemented by all users, or Chame will
-  ##    not compile.
-  ## 2. Optional hooks: these may be omitted if your DOM does not need
-  ##    them. (You do not have to do anything special for this, just don't
-  ##    implement them.)
+  ## This exists to make implementing the DOMBuilder interface less painful.
+  ## For Chame to compile, all hooks must be implemented by the user.
   ##
   ## Usage:
   ## 1. Put a type clause with your generic types in your DOM builder interface:
@@ -36,66 +31,6 @@ when defined(nimdocdummy):
   ##
   ## Also, make sure that parameter names match the ones defined here,
   ## otherwise you are likely to get strange compilation errors.
-  ##
-  ## ## Optional hooks
-  ##
-  ## Following procedures are optional hooks; implementations of this interface
-  ## can choose to leave them out without getting compilation errors.
-  ##
-  ##
-  ## ```nim
-  ## proc setQuirksModeImpl(builder: DOMBuilderBase; quirksMode: QuirksMode)
-  ## ```
-  ##
-  ## Set quirks mode to either `qmQuirks` or `qmLimitedQuirks`.  `qmNoQuirks`
-  ## is the default and is therefore never passed here.
-  ##
-  ##
-  ## ```nim
-  ## proc setEncodingImpl(builder: DOMBuilderBase; encoding: string):
-  ##    SetEncodingResult
-  ## ```
-  ##
-  ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
-  ## containing a non-empty character set is encountered. A SetEncodingResult
-  ## return value is expected, which is either `seStop`, stopping the
-  ## parser, or `seContinue`, allowing the parser to continue.
-  ##
-  ## Note that htmlparser does not contain any encoding-related logic, not
-  ## even UTF-8 validation.  Implementing this is left to the caller.
-  ## (For an example, see minidom_cs which implements decoding of all
-  ## character sets in the WHATWG recommendation.)
-  ##
-  ##
-  ## ```nim
-  ## proc elementPoppedImpl(builder: DOMBuilderBase; handle: HandleImpl)
-  ## ```
-  ##
-  ## Called when an element is popped from the stack of open elements
-  ## (i.e. when it has been closed.)
-  ##
-  ##
-  ## ```nim
-  ## proc setScriptAlreadyStartedImpl(builder: DOMBuilderBase;
-  ##     handle: HandleImpl)
-  ## ```
-  ##
-  ## Set the "already started" flag for the script element.
-  ##
-  ## Note: this flag is not togglable, so implementations of this callback
-  ## should just set the flag to true.
-  ##
-  ##
-  ## ```nim
-  ## proc associateWithFormImpl(builder: DOMBuilderBase; element, form,
-  ##     intendedParent: HandleImpl)
-  ## ```
-  ##
-  ## Called after createElement. Attempts to set form for form-associated
-  ## elements.
-  ##
-  ## Note: the DOM builder is responsible for checking whether the intended
-  ## parent and the form element are in the same tree.
   # Dummy definitions
   import std/tables
   import htmlparser
@@ -285,6 +220,41 @@ proc moveChildrenImpl(builder: DOMBuilderImpl; fromNode, toNode: HandleImpl)
     {.doc.}
   ## Remove all children from the node `fromHandle`, then append them to
   ## `toHandle`.
+
+proc setQuirksModeImpl(builder: DOMBuilderImpl; quirksMode: QuirksMode) {.doc.}
+  ## Set quirks mode to either `qmQuirks` or `qmLimitedQuirks`.  `qmNoQuirks`
+  ## is the default and is therefore never passed here.
+
+proc setEncodingImpl(builder: DOMBuilderImpl; encoding: string):
+    SetEncodingResult {.doc.}
+  ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
+  ## containing a non-empty character set is encountered. A SetEncodingResult
+  ## return value is expected, which is either `seStop`, stopping the
+  ## parser, or `seContinue`, allowing the parser to continue.
+  ##
+  ## Note that htmlparser does not contain any encoding-related logic, not
+  ## even UTF-8 validation.  Implementing this is left to the caller.
+  ## (For an example, see minidom_cs which implements decoding of all
+  ## character sets in the WHATWG recommendation.)
+
+proc elementPoppedImpl(builder: DOMBuilderImpl; element: HandleImpl) {.doc.}
+  ## Called when an element is popped from the stack of open elements
+  ## (i.e. when it has been closed.)
+
+proc setScriptAlreadyStartedImpl(builder: DOMBuilderImpl;
+    script: HandleImpl) {.doc.}
+  ## Set the "already started" flag for the script element.
+  ##
+  ## Note: this flag is not togglable, so implementations of this callback
+  ## should just set the flag to true.
+
+proc associateWithFormImpl(builder: DOMBuilderImpl;
+    element, form, intendedParent: HandleImpl) {.doc.}
+  ## Called after createElement. Attempts to set form for form-associated
+  ## elements.
+  ##
+  ## Note: the DOM builder is responsible for checking whether the intended
+  ## parent and the form element are in the same tree.
 
 when defined(nimdocdummy):
   # Dummy definitions

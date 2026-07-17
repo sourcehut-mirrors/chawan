@@ -141,15 +141,11 @@ proc setQuirksMode[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     mode: QuirksMode) =
   mixin setQuirksModeImpl
   parser.quirksMode = mode
-  when compiles(parser.dombuilder.setQuirksModeImpl(mode)):
-    parser.dombuilder.setQuirksModeImpl(mode)
+  parser.dombuilder.setQuirksModeImpl(mode)
 
 proc setEncoding(parser: var HTML5Parser; cs: string): SetEncodingResult =
   mixin setEncodingImpl
-  when compiles(parser.dombuilder.setEncodingImpl(cs)):
-    return parser.dombuilder.setEncodingImpl(cs)
-  else:
-    return seContinue
+  return parser.dombuilder.setEncodingImpl(cs)
 
 proc getDocument[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
   mixin getDocumentImpl
@@ -223,15 +219,12 @@ proc addAttrsIfMissing[Handle, Atom](parser: HTML5Parser[Handle, Atom];
 proc setScriptAlreadyStarted[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     script: Handle) =
   mixin setScriptAlreadyStartedImpl
-  when compiles(parser.dombuilder.setScriptAlreadyStartedImpl(script)):
-    parser.dombuilder.setScriptAlreadyStartedImpl(script)
+  parser.dombuilder.setScriptAlreadyStartedImpl(script)
 
 proc associateWithForm[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     element, form, intendedParent: Handle) =
   mixin associateWithFormImpl
-  when compiles(parser.dombuilder.associateWithFormImpl(element, form,
-      intendedParent)):
-    parser.dombuilder.associateWithFormImpl(element, form, intendedParent)
+  parser.dombuilder.associateWithFormImpl(element, form, intendedParent)
 
 # Parser
 iterator ropenElements[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
@@ -511,8 +504,7 @@ proc pushHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
 proc popElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom]): Handle =
   mixin elementPoppedImpl
   result = parser.openElements.pop().element
-  when compiles(parser.dombuilder.elementPoppedImpl(result)):
-    parser.dombuilder.elementPoppedImpl(result)
+  parser.dombuilder.elementPoppedImpl(result)
   if parser.openElements.len == 0:
     parser.tok.namespace = nsHTML
     parser.tok.htmlIntegrationPoint = false
