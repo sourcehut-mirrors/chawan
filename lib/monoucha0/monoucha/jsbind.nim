@@ -198,17 +198,24 @@ proc free*(ctx: JSContext) =
       JS_FreeValue(ctx, v)
     for ctor in opaque.ctors:
       JS_FreeValue(ctx, ctor)
-    if opaque.globalObj != nil:
+    let globalObj = opaque.globalObj
+    if globalObj != nil:
       let rt = JS_GetRuntime(ctx)
       let rtOpaque = rt.getOpaque()
       for fin in rtOpaque.finalizers(opaque.gclass):
-        fin(rt, cast[pointer](opaque.globalObj))
+        fin(rt, cast[pointer](globalObj))
+      # We don't want to accidentally invoke the global class's finalizers
+      # twice, so we temporarily unset the global runtime here.
+      let grt = globalRuntime
+      globalRuntime = nil
       when defined(gcDestructors):
-        rtOpaque.classes[int(opaque.gclass)].dtor(opaque.globalObj)
+        rtOpaque.classes[int(opaque.gclass)].dtor(globalObj)
       else:
-        GC_unref(cast[RootRef](opaque.globalObj))
-      rtOpaque.del(opaque.globalObj)
+        GC_unref(cast[RootRef](globalObj))
+      rtOpaque.del(globalObj)
+      globalRuntime = grt
     JS_FreeValue(ctx, opaque.global)
+    opaque.globalObj = nil
     GC_unref(opaque)
   JS_FreeContext(ctx)
 
@@ -834,6 +841,9 @@ proc addArgv(gen: var JSFuncGenerator) =
 
 var jsDtors {.compileTime.}: HashSet[string]
 
+proc jsHasDestructor*(t: string): bool =
+  $t in jsDtors
+
 proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
   let name = fun.name
   let id = fun.id
@@ -916,12 +926,14 @@ proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
     info.tabFuns.add(quote do:
       JS_ITERATOR_NEXT_DEF(`name`, `len`, `id`, 0))
 
-proc registerFunction(typ: string; fun: BoundFunction) =
-  var info = BoundFunctions.getOrDefault(typ)
+proc registerFunction2(info: var RegistryInfo; typ: string;
+    fun: BoundFunction) =
   if info == nil:
     info = newRegistryInfo(ident(typ))
-    BoundFunctions[typ] = info
   info.registerFunction(fun)
+
+proc registerFunction(typ: string; fun: BoundFunction) =
+  BoundFunctions.mgetOrPut(typ, nil).registerFunction2(typ, fun)
 
 proc registerFunction(gen: JSFuncGenerator) =
   registerFunction(gen.thisType, BoundFunction(
@@ -1717,14 +1729,10 @@ macro registerType*(ctx: JSContext; t: typed; parent = JS_INVALID_CLASS_ID;
       info.name = name
   if name != "":
     info.name = name
-  var checkClass = 0
   if not asglobal:
     info.dfin = quote do: jsCanDestroy
-    checkClass = int(info.tname notin jsDtors)
   else:
     info.dfin = newNilLit()
-    if info.tname in jsDtors:
-      error("Global object " & info.tname & " must not have a destructor.")
   stmts.registerPragmas(info, t)
   if info.tabReplaceableNames.len > 0:
     stmts.bindReplaceableSet(info)
@@ -1741,7 +1749,8 @@ macro registerType*(ctx: JSContext; t: typed; parent = JS_INVALID_CLASS_ID;
   let uflen = uflist0.len
   let ctorType = info.ctorType
   endstmts.add(quote do:
-    when `checkClass` != 0 and `t` isnot JSRootRef:
+    when not bool(`asglobal`) and `t` isnot JSRootRef and
+        not jsHasDestructor($`t`):
       {.warning("no destructor defined for type").}
     let flist {.global, inject.}: array[`flen`, JSCFunctionListEntry] = `flist0`
     let sflist {.global, inject.}: array[`sflen`, JSCFunctionListEntry] =
