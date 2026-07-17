@@ -43,6 +43,8 @@ progress[value] {
 	border-top-style: -cha-hash
 }
 
+dialog:not([open]) { display: none }
+
 hr { border-bottom-style: outset; margin: 0 auto }
 hr[align=left i] { margin-left: 0; margin-right: auto }
 hr[align=right i] { margin-left: auto; margin-right: 0 }
