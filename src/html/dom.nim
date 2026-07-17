@@ -3774,12 +3774,12 @@ proc querySelectorAll(ctx: JSContext; this: Document; q: DOMString): JSValue
     {.jsfunc.} =
   return ctx.querySelectorAllImpl(this, q)
 
-proc validateName(ctx: JSContext; name: openArray[char]): Opt[void] =
-  if not name.matchNameProduction():
-    JS_ThrowDOMException(ctx, "InvalidCharacterError",
-      "invalid character in name")
-    return err()
-  ok()
+proc validateAttrName(ctx: JSContext; name: openArray[char]): Opt[void] =
+  const AttrDisallowed = AsciiWhitespace + {'\0', '/', '=', '>'}
+  if name.len > 0 and AttrDisallowed notin name:
+    return ok()
+  JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid attribute name")
+  return err()
 
 proc baseURL*(document: Document): URL =
   #TODO frozen base url...
@@ -3856,22 +3856,23 @@ proc isValidCustomElementName(atom: CAtomTraced): bool =
     dash = dash or c == '-'
   dash
 
-proc isValidElementName(s: openArray[char]): bool =
-  if s.len <= 0:
-    return false
-  let c = s[0]
-  if c in AsciiAlpha:
-    return AsciiWhitespace + {'\0', '/', '>'} notin s
-  if c in AsciiDigit + {'-', '.'}:
-    return false
-  return Ascii - AsciiAlphaNumeric - {'-', '.', ':', '_'} notin s
+proc validateElementName(ctx: JSContext; s: openArray[char]): Opt[void] =
+  if s.len > 0:
+    let c = s[0]
+    if c in AsciiAlpha:
+      if AsciiWhitespace + {'\0', '/', '>'} notin s:
+        return ok()
+    elif c notin AsciiDigit + {'-', '.'}:
+      if Ascii - AsciiAlphaNumeric - {'-', '.', ':', '_'} notin s:
+        return ok()
+  JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid tag local name")
+  err()
 
 #TODO options/custom elements
 proc createElement(ctx: JSContext; document: Document; localName: DOMString):
     JSValue {.jsfunc.} =
-  if not isValidElementName(localName.toOpenArray()):
-    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
-      "invalid local name")
+  if ctx.validateElementName(localName.toOpenArray()).isErr:
+    return JS_EXCEPTION
   let localName = if not document.isxml:
     localName.toAtomLowerTrace()
   else:
@@ -3882,10 +3883,6 @@ proc createElement(ctx: JSContext; document: Document; localName: DOMString):
   else:
     satUempty
   ctx.toJS(document.newElement(localName, namespace))
-
-proc isValidAttributeName(s: string): bool =
-  const AttrDisallowed = AsciiWhitespace + {'\0', '/', '=', '>'}
-  s.len > 0 and AttrDisallowed notin s
 
 type NameValidator = enum
   nvAttribute, nvElement
@@ -3903,14 +3900,9 @@ proc validateAndExtract(ctx: JSContext; namespace, localName: var CAtomTraced;
     if prefix == satUempty or AsciiWhitespace + {'\0', '/', '>'} in prefix:
       JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid prefix")
       return err()
-  let nameOk = case t
-  of nvAttribute:
-    isValidAttributeName($localName)
-  of nvElement:
-    isValidElementName($localName)
-  if not nameOk:
-    JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid local name")
-    return err()
+  case t
+  of nvAttribute: ?ctx.validateAttrName($localName)
+  of nvElement: ?ctx.validateElementName($localName)
   let sns = namespace.toStaticAtom()
   let isXmlns = prefix == satXmlns or
     prefix == CAtomNull and localName == satXmlns
@@ -4703,7 +4695,7 @@ proc setter(ctx: JSContext; map: DOMStringMap; name, value: DOMString):
       "lower case after hyphen is not allowed in dataset")
     return err()
   let name = name.toDataStr()
-  ?ctx.validateName($name)
+  ?ctx.validateAttrName($name)
   map.target.attr(name, value)
   ok()
 
@@ -6244,7 +6236,7 @@ proc attrd(element: Element; name: StaticAtom; value: float64) =
 
 proc setAttribute(ctx: JSContext; element: Element;
     qualifiedName, value: DOMString): Opt[void] {.jsfunc.} =
-  ?ctx.validateName(qualifiedName.toOpenArray())
+  ?ctx.validateAttrName(qualifiedName.toOpenArray())
   let qualifiedName = if element.namespaceURI == satNamespaceHTML and
       not element.document.isxml:
     qualifiedName.toAtomLowerTrace()
@@ -6289,7 +6281,7 @@ proc toggleAttribute(ctx: JSContext; element: Element;
   let forceBool = JS_ToBool(ctx, force)
   if forceBool < 0:
     return err()
-  ?ctx.validateName(qualifiedName.toOpenArray())
+  ?ctx.validateAttrName(qualifiedName.toOpenArray())
   let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtomTrace())
   if not element.attrb(qualifiedName):
     if JS_IsUndefined(force) or forceBool == 1:

@@ -80,10 +80,20 @@ function testParentNode() { /* ParentNode mixin */
 	x.append();
 }
 
+function testDataset() {
+	const el = document.createElement("div");
+	el.dataset["test"] = "hi";
+	assertEquals(el.getAttribute("data-test"), "hi");
+	assertThrows(() => { el.dataset["test-test"] = "hi" }, DOMException);
+	el.dataset["test-Test"] = "hi";
+	assertEquals(el.getAttribute("data-test--test"), "hi");
+}
+
 testName();
 testClass();
 testAttribute();
 testParentNode();
+testDataset();
 
 x.textContent = "Success";
 </script>
