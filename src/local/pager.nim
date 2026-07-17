@@ -1787,7 +1787,7 @@ type GotoURLDict = object of JSDict
 
 # public
 proc gotoURLImpl(ctx: JSContext; pager: Pager; v: JSValueConst;
-    t = GotoURLDict()): Opt[BufferInit] {.jsfunc.} =
+    t = GotoURLDict(history: true)): Opt[BufferInit] {.jsfunc.} =
   var request: Request
   if ctx.fromJS(v, request).isErr:
     var url: URL
