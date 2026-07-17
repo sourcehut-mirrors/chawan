@@ -3,13 +3,14 @@ Set-Cookie: test=asdfasdf; HttpOnly; Max-Age=123123123; Path=/headers
 Set-Cookie: SID=31d4d96e407aad42
 Set-Cookie: test2=asdfasdf; Max-Age=0; HttpOnly
 Set-Cookie: test3=x; HttpOnly
-Set-Cookie: test4=y; HttpOnly; Max-Age=
+Set-Cookie: test4=y; HttpOnly; Max-Age=; Domain=
 Set-Cookie: test5=; HttpOnly; Domain=test.example
 Set-Cookie: test6=hi; HttpOnly; Max-Age=9223372036854775807
 Set-Cookie: test7=hi; HttpOnly; Expires=Mon 0 Jan 1999 20:30:00 GMT
 Set-Cookie: test8=hi; HttpOnly; Expires=Mon, 31 Feb 1999 20:30:00 GMT
 Set-Cookie: test10=invalid; HttpOnly; Domain=localhost:12345
 Set-Cookie: test11=valid; HttpOnly; Domain=localhost
+Set-Cookie: test12=	invalid; test12=invalid
 
 <link rel=stylesheet href=cookie.css.http>
 <div id=x>Fail</div>
