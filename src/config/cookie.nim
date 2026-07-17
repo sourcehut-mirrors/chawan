@@ -245,9 +245,9 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
     if first:
       if '\t' in part:
         # Drop cookie if it has a tab.
-        # Gecko seems to accept it, but Blink drops it too,
+        # Gecko seems to accept such cookies, but Blink drops them too,
         # so this should be safe from a compat perspective.
-        continue
+        return err()
       cookie.name = part.until('=')
       cookie.value = part.substr(cookie.name.len + 1)
       first = false
@@ -274,6 +274,8 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
         hasPath = true
         cookie.path = val
     of "domain":
+      if val == "":
+        continue # "Domain=" has no effect
       var hostType = htNone
       var domain = parseHost(val, url.schemeType, hostType)
       if domain.len > 0 and domain[0] == '.':
