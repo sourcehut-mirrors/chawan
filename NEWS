@@ -1,3 +1,14 @@
+0.4.4 (2026.07.24)
+
+* fix division by 0 on tables specifying rowspan=0
+* fix green component calculation in VP8 YUV image conversion
+* fix broken radio button checkedness with the `checked' attribute specified
+* fix charset override not working on piped documents
+* fix CSSStyleDeclaration#removeProperty not updating the style attribute
+* fix closed menu not being hidden when the first buffer is still being loaded
+* fix regression where URLs were not being added to the history in some cases
+* fix dropping of cookies with tab and ignore empty Domain in Set-Cookie
+
 0.4.3 (2026.06.21)
 
 * fix parsing of config files without EOL at EOF
