@@ -235,64 +235,63 @@ proc flushNumericCharacterReference(tok: var Tokenizer) =
       char(u and 0x3F or 0x80)
   tok.appendAttrOrEmit(s)
 
-proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]) =
+proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
+    TokenizerState =
   let prev = entityMap[tok.entityEntryIdx].name
+  tok.entityEntryIdx = -1
   if tok.entityMatchIdx < 0:
     # No full match found.  Restore the ampersand and the last partial
     # match.  (We don't have to reconsume because partial matches are
     # guaranteed to be alphanumeric.)
     tok.appendAttrOrEmit('&')
     tok.appendAttrOrEmit(prev.toOpenArray(0, tok.entityNameIdx - 1))
-    tok.state = tsAmbiguousAmpersand
+    return tsAmbiguousAmpersand
+  # There is a full match.
+  let matchLen = tok.entityMatchLen
+  let entry = entityMap[tok.entityMatchIdx].name
+  var n = int(prev[matchLen])
+  var consumed = false
+  if tok.entityNameIdx == tok.entityMatchLen:
+    # The last partial match is the same as the last full match.
+    # We must check the next char.
+    n = -1
+    if tok.inputBufIdx < ibuf.len:
+      n = int(ibuf[tok.inputBufIdx])
+      inc tok.inputBufIdx
+    consumed = true
+  let sc = tok.consumedAsAttribute() and entry[matchLen - 1] != ';'
+  if sc and n == -1:
+    # findCharRef only ever flushes entities after buffering a char.
+    # So this is guaranteed to be EOF in the singly/doubly quoted
+    # attribute state, meaning we have nothing to do.
+    discard
+  elif sc and cast[char](n) in {'='} + AsciiAlphaNumeric:
+    # There is a full match, but we're in an attribute and the character
+    # reference looks like a URI component.  Restore the full match,
+    # and then the last partial match.
+    tok.appendAttrOrEmit('&')
+    tok.appendAttrOrEmit(entry.toOpenArray(0, matchLen - 1))
+    tok.appendAttrOrEmit(prev.toOpenArray(matchLen, tok.entityNameIdx - 1))
+    if consumed:
+      tok.reconsume()
   else:
     # There is a full match.
-    let matchLen = tok.entityMatchLen
-    let entry = entityMap[tok.entityMatchIdx].name
-    var n = int(prev[matchLen])
-    var consumed = false
-    if tok.entityNameIdx == tok.entityMatchLen:
-      # The last partial match is the same as the last full match.
-      # We must check the next char.
-      n = -1
-      if tok.inputBufIdx < ibuf.len:
-        n = int(ibuf[tok.inputBufIdx])
-        inc tok.inputBufIdx
-      consumed = true
-    let sc = tok.consumedAsAttribute() and entry[matchLen - 1] != ';'
-    if sc and n == -1:
-      # findCharRef only ever flushes entities after buffering a char.
-      # So this is guaranteed to be EOF in the singly/doubly quoted
-      # attribute state, meaning we have nothing to do.
-      discard
-    elif sc and cast[char](n) in {'='} + AsciiAlphaNumeric:
-      # There is a full match, but we're in an attribute and the character
-      # reference looks like a URI component.  Restore the full match,
-      # and then the last partial match.
-      tok.appendAttrOrEmit('&')
-      tok.appendAttrOrEmit(entry.toOpenArray(0, matchLen - 1))
-      tok.appendAttrOrEmit(prev.toOpenArray(matchLen, tok.entityNameIdx - 1))
-      if consumed:
-        tok.reconsume()
-      tok.state = tok.rstate
-    else:
-      # There is a full match.
-      let val = entityMap[tok.entityMatchIdx]
-      var code = uint32(val.unit1)
-      var surrogate = false
-      if code in 0xD800'u16..0xDBFF'u16:
-        code = 0x10000'u32 or ((code - 0xD800) shl 10) or (val.unit2 - 0xDC00)
-        surrogate = true
-      tok.code = code
+    let val = entityMap[tok.entityMatchIdx]
+    var code = uint32(val.unit1)
+    var surrogate = false
+    if code in 0xD800'u16..0xDBFF'u16:
+      code = 0x10000'u32 or ((code - 0xD800) shl 10) or (val.unit2 - 0xDC00)
+      surrogate = true
+    tok.code = code
+    tok.flushNumericCharacterReference()
+    if not surrogate and val.unit2 != 0:
+      tok.code = val.unit2
       tok.flushNumericCharacterReference()
-      if not surrogate and val.unit2 != 0:
-        tok.code = val.unit2
-        tok.flushNumericCharacterReference()
-      tok.appendAttrOrEmit(prev.toOpenArray(matchLen, tok.entityNameIdx - 1))
-      if consumed and n != -1 and
-          (entry[matchLen - 1] == ';' or n != int(';')):
-        tok.reconsume()
-      tok.state = tok.rstate
-  tok.entityEntryIdx = -1
+    tok.appendAttrOrEmit(prev.toOpenArray(matchLen, tok.entityNameIdx - 1))
+    if consumed and n != -1 and
+        (entry[matchLen - 1] == ';' or n != int(';')):
+      tok.reconsume()
+  return tok.rstate
 
 proc flushAttr[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
   # This can also be called with tok == ttEndTag, in that case we do
@@ -441,6 +440,8 @@ template startTagMatches(tok: Tokenizer): bool =
 proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     ibuf: openArray[char]): TokenizeResult =
   var res = trDone
+  var state = tok.state
+  var ignoreLF = tok.ignoreLF
   var i = tok.inputBufIdx
   assert i >= 0 # helps the compiler
 
@@ -449,9 +450,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       dec i
       res = tok.flushChars()
       break
-  template emit(s: static string) =
+  template flush_whitespace =
     if tok.isws:
       flush_chars
+  template emit(s: static string) =
     tok.charbuf &= s
   template emit(ch: char) =
     tok.charbuf &= ch
@@ -463,9 +465,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     res = trEmit
     break
   template emit_nws(c: char) =
-    if tok.isws:
-      flush_chars
-      tok.isws = false
+    flush_whitespace
     tok.charbuf &= c
   template emit_ws(c: char) =
     if not tok.isws:
@@ -477,42 +477,44 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     tok.t = ttNull
     res = trEmit
     break
-  template emit_replacement = emit "\uFFFD"
+  template emit_replacement =
+    flush_whitespace
+    emit "\uFFFD"
   template switch_state(s: TokenizerState) =
-    tok.state = s
+    state = s
   template switch_state_return(s: TokenizerState) =
-    tok.rstate = tok.state
-    tok.state = s
+    tok.rstate = state
+    state = s
+  template reconsume_in(s: TokenizerState) =
+    dec i
+    switch_state s
+  template emit_cr() =
+    ignoreLF = true
+    emit_ws '\n'
 
   while i < ibuf.len:
     let c = ibuf[i]
     inc i
-    let ignoreLF = tok.ignoreLF
-    tok.ignoreLF = false
-    template reconsume_in(s: TokenizerState) =
-      dec i
-      switch_state s
-    template emit_cr() =
-      tok.ignoreLF = true
-      emit_ws '\n'
+    let oldIgnoreLF = ignoreLF
+    ignoreLF = false
+
     template emit_lf() =
-      if not ignoreLF:
+      if not oldIgnoreLF:
         emit_ws c
 
-    case tok.state
+    case state
     of tsData, tsRcdata, tsRawtext, tsScriptData:
       case c
       of '&':
-        if tok.state == tsScriptData:
+        if state == tsScriptData:
           emit_nws c
         else:
           switch_state_return tsCharacterReference
       of '<':
-        if tok.isws:
-          flush_chars
-        inc tok.state
+        flush_whitespace
+        inc state
       of '\0':
-        if tok.state == tsData:
+        if state == tsData:
           emit_null
         else:
           emit_replacement
@@ -744,7 +746,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsScriptDataEscapeStart, tsScriptDataEscapeStartDash:
       case c
       of '-':
-        inc tok.state
+        inc state
         emit '-'
       else:
         reconsume_in tsScriptData
@@ -754,7 +756,9 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '-':
         emit_nws '-'
         switch_state tsScriptDataEscapedDash
-      of '<': switch_state tsScriptDataEscapedLessThanSign
+      of '<':
+        flush_whitespace
+        switch_state tsScriptDataEscapedLessThanSign
       of '\0': emit_replacement
       of '\r': emit_cr
       of '\n': emit_lf
@@ -984,10 +988,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '&': switch_state_return tsCharacterReference
       of '\0': tok.tmp &= "\uFFFD"
       of '\r':
-        tok.ignoreLF = true
+        ignoreLF = true
         tok.tmp &= '\n'
       of '\n':
-        if not ignoreLF:
+        if not oldIgnoreLF:
           tok.tmp &= '\n'
       elif c == tok.quote: switch_state tsAfterAttributeValueQuoted
       else: tok.tmp &= c
@@ -1033,10 +1037,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         emit ttComment
       of '\0': tok.tagNameBuf &= "\uFFFD"
       of '\r':
-        tok.ignoreLF = true
+        ignoreLF = true
         tok.tagNameBuf &= '\n'
       of '\n':
-        if not ignoreLF:
+        if not oldIgnoreLF:
           tok.tagNameBuf &= '\n'
       else: tok.tagNameBuf &= c
 
@@ -1044,7 +1048,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case tok.eatStr(c, "--", ibuf)
       of esrSuccess:
         tok.tagNameBuf = ""
-        tok.state = tsCommentStart
+        state = tsCommentStart
       of esrNext: discard
       of esrFail:
         case tok.eatStrNoCase(c, "doctype", ibuf)
@@ -1090,10 +1094,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of '-': switch_state tsCommentEndDash
       of '\0': tok.tagNameBuf &= "\uFFFD"
       of '\r':
-        tok.ignoreLF = true
+        ignoreLF = true
         tok.tagNameBuf &= '\n'
       of '\n':
-        if not ignoreLF:
+        if not oldIgnoreLF:
           tok.tagNameBuf &= '\n'
       else: tok.tagNameBuf &= c
 
@@ -1244,10 +1248,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         switch_state tsData
         emit ttDoctype
       of '\r':
-        tok.ignoreLF = true
+        ignoreLF = true
         tok.tagNameBuf &= '\n'
       of '\n':
-        if not ignoreLF:
+        if not oldIgnoreLF:
           tok.tagNameBuf &= '\n'
       elif c == tok.quote: switch_state tsAfterDoctypePublicIdentifier
       else: tok.tagNameBuf &= c
@@ -1271,10 +1275,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tsBeforeDoctypeSystemIdentifier:
       case c
       of AsciiWhitespace:
-        if tok.state == tsAfterDoctypeSystemKeyword:
+        if state == tsAfterDoctypeSystemKeyword:
           switch_state tsBeforeDoctypeSystemIdentifier
       of '>':
-        if tok.state != tsBetweenDoctypePublicAndSystemIdentifiers:
+        if state != tsBetweenDoctypePublicAndSystemIdentifiers:
           tok.flags.incl(tfQuirks)
         switch_state tsData
         emit ttDoctype
@@ -1294,10 +1298,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         switch_state tsData
         emit ttDoctype
       of '\r':
-        tok.ignoreLF = true
+        ignoreLF = true
         tok.tagNameBuf &= '\n'
       of '\n':
-        if not ignoreLF:
+        if not oldIgnoreLF:
           tok.tagNameBuf &= '\n'
       elif c == tok.quote: switch_state tsAfterDoctypeSystemIdentifier
       else: tok.tagNameBuf &= c
@@ -1341,8 +1345,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         reconsume_in tsCdataSection
 
     of tsCharacterReference:
-      if tok.isws:
-        flush_chars
+      flush_whitespace
       case c
       of AsciiAlpha: reconsume_in tsNamedCharacterReference
       of '#': switch_state tsNumericCharacterReference
@@ -1354,7 +1357,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       let isws = tok.isws
       tok.inputBufIdx = i
       if tok.findCharRef(c, ibuf):
-        tok.flushNamedCharacterReference(ibuf)
+        state = tok.flushNamedCharacterReference(ibuf)
       i = tok.inputBufIdx
       assert i >= 0 # helps the compiler
       if isws != tok.isws:
@@ -1394,7 +1397,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         # note: was reconsume
         switch_state tsHexadecimalCharacterReference
       else:
-        if tok.state == tsHexadecimalCharacterReferenceStartLower:
+        if state == tsHexadecimalCharacterReferenceStartLower:
           tok.appendAttrOrEmit("&#x")
         else:
           tok.appendAttrOrEmit("&#X")
@@ -1436,6 +1439,8 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tok.flushNumericCharacterReference()
         switch_state tok.rstate
 
+  tok.state = state
+  tok.ignoreLF = ignoreLF
   tok.inputBufIdx = i
   res
 
@@ -1489,7 +1494,7 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
     if not tok.consumedAsAttribute():
       tok.charbuf &= '&'
   of tsNamedCharacterReference:
-    tok.flushNamedCharacterReference([])
+    discard tok.flushNamedCharacterReference([])
   of tsHexadecimalCharacterReferenceStartLower,
       tsHexadecimalCharacterReferenceStartUpper, tsNumericCharacterReference:
     if not tok.consumedAsAttribute():
