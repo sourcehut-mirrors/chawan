@@ -1131,8 +1131,6 @@ Pager.prototype.openMenu = async function(x = null, y = null) {
     this.menu = null;
     if (selected != -1)
         MenuMap[selected][1]();
-    if (buffer?.iface != null)
-        buffer.iface.queueDraw();
 }
 
 /* public */

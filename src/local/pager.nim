@@ -1175,6 +1175,8 @@ proc draw(pager: Pager): bool =
         else:
           pager.term.scrollUp(-diff, bufHeight)
   else:
+    if pager.display.redraw:
+      pager.clear(stDisplay)
     pager.term.unsetScroll()
   if (let menu = pager.menu; menu != nil and
       (menu.redraw or pager.display.redraw)):
@@ -2536,6 +2538,10 @@ proc setMenu(ctx: JSContext; pager: Pager; val: JSValueConst): Opt[void] {.
     pager.menu = nil
   else:
     ?ctx.fromJS(val, pager.menu)
+    pager.menu.redraw = true
+  if pager.bufferIface != nil:
+    pager.bufferIface.redraw = true
+  pager.display.redraw = true
   ok()
 
 # private
