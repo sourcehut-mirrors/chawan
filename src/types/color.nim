@@ -600,20 +600,23 @@ const SinMap = [
 # return value is scaled to 0..0x10000
 proc isin(n: uint16): int64 =
   var n = n
-  var sign = 1
+  var sign = 1'i64
   if n >= 180:
     n -= 180
     sign = -1
-  if n >= 90:
+  # n's range: 0..179
+  if n == 90: # won't fit in the LUT with just 16 bits
+    return sign * 0x10000
+  if n > 90:
     n = 180 - n
   sign * int64(SinMap[n])
 
 # L: 0..0x10000
 # C: 0..int32.high (scaled to 0..0x10000)
 # H: 0..360
-proc oklch*(L: int32; C: int32; H: uint16; alpha: uint8): ARGBColor =
+proc oklch*(L, C: int32; H: uint16; alpha: uint8): ARGBColor =
   var rotH = H + 90
-  if rotH > 360:
+  if rotH >= 360:
     rotH -= 360
   let cosH = isin(rotH)
   let sinH = isin(H)
