@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/math
 
 import types/opt
 import utils/dtoawrap
@@ -469,7 +468,8 @@ proc hue2rgb(n1, n2, h: uint32): uint32 =
     return n1 + ((n2 - n1) * (240 - h) + 30) div 60
   return n1
 
-proc hsla*(h: uint32; s, l, a: uint8): ARGBColor =
+proc hsla*(h: uint16; s, l, a: uint8): ARGBColor =
+  let h = uint32(h)
   let s = uint32(s)
   let l = uint32(l)
   let magic2 = if l <= 50:
@@ -482,27 +482,145 @@ proc hsla*(h: uint32; s, l, a: uint8): ARGBColor =
   let b = uint8((hue2rgb(magic1, magic2, h + 240) * 255 + 50) div 100)
   return rgba(r, g, b, a)
 
-# https://bottosson.github.io/posts/oklab/
-#TODO avoid float
-proc unlinear(x: float32): float32 =
-  if x >= 0.0031308:
-    return 1.055 * pow(x, (1.0/2.4)) - 0.055
-  return 12.92 * x
+# Oklab -> sRGB, based on
+# http://blog.pkh.me/p/38-porting-oklab-colorspace-to-integer-arithmetic.html
+# We use a range of [-0x10000, 0x10000] to avoid integer divisions; the
+# additional bit isn't really an issue since we need a way to represent
+# "non-existent" colors anyway.
+# Also see https://bottosson.github.io/posts/oklab/
+#
+# f = (x) => x < 0.0031308 ? x*12.92 : (1.055)*Math.pow(x,(1/2.4))-0.055
+# x = [];
+# for (i = 0; i < 512; i++)
+#   x.push(Math.round(f(i/511)*255));
+# x.join(', ')
+const LinearToSRGB = [
+  uint8 0, 6, 13, 18, 22, 25, 28, 31, 34, 36, 38, 40, 42, 44, 46, 48, 50, 51,
+  53, 54, 56, 57, 59, 60, 61, 62, 64, 65, 66, 67, 69, 70, 71, 72, 73, 74, 75,
+  76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 86, 87, 88, 89, 90, 91, 91, 92,
+  93, 94, 95, 95, 96, 97, 98, 98, 99, 100, 101, 101, 102, 103, 103, 104, 105,
+  106, 106, 107, 108, 108, 109, 110, 110, 111, 111, 112, 113, 113, 114, 115,
+  115, 116, 116, 117, 118, 118, 119, 119, 120, 121, 121, 122, 122, 123, 123,
+  124, 125, 125, 126, 126, 127, 127, 128, 128, 129, 129, 130, 130, 131, 132,
+  132, 133, 133, 134, 134, 135, 135, 136, 136, 137, 137, 138, 138, 139, 139,
+  140, 140, 140, 141, 141, 142, 142, 143, 143, 144, 144, 145, 145, 146, 146,
+  147, 147, 147, 148, 148, 149, 149, 150, 150, 151, 151, 151, 152, 152, 153,
+  153, 154, 154, 154, 155, 155, 156, 156, 156, 157, 157, 158, 158, 159, 159,
+  159, 160, 160, 161, 161, 161, 162, 162, 163, 163, 163, 164, 164, 165, 165,
+  165, 166, 166, 166, 167, 167, 168, 168, 168, 169, 169, 169, 170, 170, 171,
+  171, 171, 172, 172, 172, 173, 173, 174, 174, 174, 175, 175, 175, 176, 176,
+  176, 177, 177, 177, 178, 178, 179, 179, 179, 180, 180, 180, 181, 181, 181,
+  182, 182, 182, 183, 183, 183, 184, 184, 184, 185, 185, 185, 186, 186, 186,
+  187, 187, 187, 188, 188, 188, 189, 189, 189, 190, 190, 190, 191, 191, 191,
+  192, 192, 192, 193, 193, 193, 193, 194, 194, 194, 195, 195, 195, 196, 196,
+  196, 197, 197, 197, 198, 198, 198, 198, 199, 199, 199, 200, 200, 200, 201,
+  201, 201, 201, 202, 202, 202, 203, 203, 203, 204, 204, 204, 204, 205, 205,
+  205, 206, 206, 206, 206, 207, 207, 207, 208, 208, 208, 208, 209, 209, 209,
+  210, 210, 210, 210, 211, 211, 211, 212, 212, 212, 212, 213, 213, 213, 214,
+  214, 214, 214, 215, 215, 215, 215, 216, 216, 216, 217, 217, 217, 217, 218,
+  218, 218, 218, 219, 219, 219, 220, 220, 220, 220, 221, 221, 221, 221, 222,
+  222, 222, 222, 223, 223, 223, 224, 224, 224, 224, 225, 225, 225, 225, 226,
+  226, 226, 226, 227, 227, 227, 227, 228, 228, 228, 228, 229, 229, 229, 229,
+  230, 230, 230, 230, 231, 231, 231, 231, 232, 232, 232, 232, 233, 233, 233,
+  233, 234, 234, 234, 234, 235, 235, 235, 235, 236, 236, 236, 236, 237, 237,
+  237, 237, 238, 238, 238, 238, 239, 239, 239, 239, 239, 240, 240, 240, 240,
+  241, 241, 241, 241, 242, 242, 242, 242, 243, 243, 243, 243, 243, 244, 244,
+  244, 244, 245, 245, 245, 245, 246, 246, 246, 246, 246, 247, 247, 247, 247,
+  248, 248, 248, 248, 249, 249, 249, 249, 249, 250, 250, 250, 250, 251, 251,
+  251, 251, 251, 252, 252, 252, 252, 253, 253, 253, 253, 253, 254, 254, 254,
+  254, 255, 255, 255
+]
 
-proc oklab*(L, a, b: float32; alpha: uint8): ARGBColor =
-  let lc = L + 0.3963377774'f32 * a + 0.2158037573'f32 * b
-  let mc = L - 0.1055613458'f32 * a - 0.0638541728'f32 * b
-  let sc = L - 0.0894841775'f32 * a - 1.2914855480'f32 * b
-  let l = lc * lc * lc
-  let m = mc * mc * mc
-  let s = sc * sc * sc
-  let rf = +4.0767416621'f32 * l - 3.3077115913'f32 * m + 0.2309699292'f32 * s
-  let gf = -1.2684380046'f32 * l + 2.6097574011'f32 * m - 0.3413193965'f32 * s
-  let bf = -0.0041960863'f32 * l - 0.7034186147'f32 * m + 1.7076147010'f32 * s
-  let r = uint8(unlinear(rf) * 255 + 0.5'f32)
-  let g = uint8(unlinear(gf) * 255 + 0.5'f32)
-  let b = uint8(unlinear(bf) * 255 + 0.5'f32)
-  return rgba(r, g, b, alpha)
+proc unlinear(x: int64): uint8 =
+  if x <= 0:
+    return 0
+  if x >= 0x10000:
+    return 255
+  let xP = uint32(x) * 0x1FF
+  let idx = xP shr 16
+  let m = xP and 0xFFFF
+  let y0 = LinearToSRGB[idx]
+  let y1 = LinearToSRGB[idx + 1]
+  return uint8((m * uint32(y1 - y0) + 0x8000) shr 16) + y0
+
+{.push overflowChecks: off.}
+proc shiftRound16(n: int64): int64 =
+  let r = if n < 0: -0x8000'i64 else: 0x8000'i64
+  (n + r) shr 16
+
+proc shiftRound32(n: int64): int64 =
+  let r = if n < 0: -0x80000000'i64 else: 0x80000000'i64
+  (n + r) shr 32
+
+# L: 0..0x10000
+# A, B: -int32.low..int32.high (with -1..1 -> -0x10000..0x10000)
+# alpha: 0..0xFF
+proc oklab*(L, A, B: int32; alpha: uint8): ARGBColor =
+  let L = int64(L)
+  let A = int64(A)
+  let B = int64(B)
+  var lc = L + shiftRound16(0x6576 * A + 0x0373F * B)
+  var mc = L - shiftRound16(0x1B06 * A + 0x01059 * B)
+  var sc = L - shiftRound16(0x16E8 * A + 0x14A9F * B)
+  if unlikely(abs(A) > 0x10000 or abs(B) > 0x10000):
+    let H = max(abs(lc), max(abs(mc), abs(sc)))
+    if H >= 0x100000:
+      # CSS has no limit on A and B range, so we scale LMS to reflect
+      # incidental behavior others exhibit on colors that "don't exist
+      # in the real world."
+      let hmid = H div 2
+      lc = (lc * 0x100000 + (if lc < 0: -hmid else: hmid)) div H
+      mc = (mc * 0x100000 + (if mc < 0: -hmid else: hmid)) div H
+      sc = (sc * 0x100000 + (if sc < 0: -hmid else: hmid)) div H
+  let l = shiftRound32(lc * lc * lc)
+  let m = shiftRound32(mc * mc * mc)
+  let s = shiftRound32(sc * sc * sc)
+  let rf = (+0x413A5 * l - 0x34EC6 * m + 0x03B21 * s + 0x8000) shr 16
+  let gf = (-0x144B8 * l + 0x29C19 * m - 0x05761 * s + 0x8000) shr 16
+  let bf = (-0x00113 * l - 0x0B413 * m + 0x1B526 * s + 0x8000) shr 16
+  return rgba(unlinear(rf), unlinear(gf), unlinear(bf), alpha)
+
+# x=[];
+# for (i = 0; i < 90; i++)
+#   x.push(Math.round((Math.sin(i*Math.PI/180))*0x10000))
+# x.join(', ')
+const SinMap = [
+  uint16 0, 1144, 2287, 3430, 4572, 5712, 6850, 7987, 9121, 10252, 11380,
+  12505, 13626, 14742, 15855, 16962, 18064, 19161, 20252, 21336, 22415, 23486,
+  24550, 25607, 26656, 27697, 28729, 29753, 30767, 31772, 32768, 33754, 34729,
+  35693, 36647, 37590, 38521, 39441, 40348, 41243, 42126, 42995, 43852, 44695,
+  45525, 46341, 47143, 47930, 48703, 49461, 50203, 50931, 51643, 52339, 53020,
+  53684, 54332, 54963, 55578, 56175, 56756, 57319, 57865, 58393, 58903, 59396,
+  59870, 60326, 60764, 61183, 61584, 61966, 62328, 62672, 62997, 63303, 63589,
+  63856, 64104, 64332, 64540, 64729, 64898, 65048, 65177, 65287, 65376, 65446,
+  65496, 65526
+]
+
+# n assumed to be in degrees (0..359).
+# return value is scaled to 0..0x10000
+proc isin(n: uint16): int64 =
+  var n = n
+  var sign = 1
+  if n >= 180:
+    n -= 180
+    sign = -1
+  if n >= 90:
+    n = 180 - n
+  sign * int64(SinMap[n])
+
+# L: 0..0x10000
+# C: 0..int32.high (scaled to 0..0x10000)
+# H: 0..360
+proc oklch*(L: int32; C: int32; H: uint16; alpha: uint8): ARGBColor =
+  var rotH = H + 90
+  if rotH > 360:
+    rotH -= 360
+  let cosH = isin(rotH)
+  let sinH = isin(H)
+  let A = int32(int64(C) * cosH shr 16)
+  let B = int32(int64(C) * sinH shr 16)
+  oklab(L, A, B, alpha)
+{.pop.} # overflowChecks: off
 
 # Note: this assumes n notin 0..15 (which would be ANSI 4-bit)
 proc toRGB*(param0: ANSIColor): RGBColor =

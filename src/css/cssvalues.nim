@@ -1422,7 +1422,7 @@ proc parseRGBComponent(tok: CSSToken): Opt[uint8] =
     res += 0.5
     ok(uint8(clamp(res, 0, 255))) # number
 
-proc parseHue(tok: CSSToken): Opt[uint32] =
+proc parseHue(tok: CSSToken): Opt[uint16] =
   var n = 0i32
   case tok.t
   of cttNumber:
@@ -1434,7 +1434,7 @@ proc parseHue(tok: CSSToken): Opt[uint32] =
   n = n mod 360
   if n < 0:
     n = n + 360
-  return ok(uint32(n))
+  return ok(uint16(n))
 
 proc parseSatOrLight(tok: CSSToken): Opt[uint8] =
   if tok.t in {cttNumber, cttPercentage}:
@@ -1443,25 +1443,37 @@ proc parseSatOrLight(tok: CSSToken): Opt[uint8] =
     return ok(0) # none -> 0
   return err()
 
-proc parseOkLight(tok: CSSToken): Opt[float32] =
+proc roundL(a: float32): int32 =
+  int32(round(clamp(a, 0, 1) * 65536))
+
+proc roundAB(tok: CSSToken): int32 =
+  var a = tok.num
+  if tok.t == cttPercentage:
+    a *= 0.004
+  a = round(a * 65536)
+  if a >= 2147483520'f32:
+    return int32.high
+  if a <= float32(int32.low):
+    return int32.low
+  int32(a)
+
+proc parseOkLight(tok: CSSToken): Opt[int32] =
   case tok.t
-  of cttNumber: return ok(clamp(tok.num, 0'f32, 1'f32))
-  of cttPercentage: return ok(clamp(tok.num / 100, 0'f32, 1'f32))
-  of cttIdent: return ok(0'f32) # none -> 0
+  of cttNumber: return ok(roundL(tok.num))
+  of cttPercentage: return ok(roundL(tok.num / 100))
+  of cttIdent: return ok(0) # none -> 0
   else: return err()
 
-proc parseOkAB(tok: CSSToken): Opt[float32] =
+proc parseOkAB(tok: CSSToken): Opt[int32] =
   case tok.t
-  of cttNumber: return ok(tok.num)
-  of cttPercentage: return ok(tok.num / 100 * 0.4)
-  of cttIdent: return ok(0'f32) # none -> 0
+  of cttNumber, cttPercentage: return ok(roundAB(tok))
+  of cttIdent: return ok(0) # none -> 0
   else: return err()
 
-proc parseOkC(tok: CSSToken): Opt[float32] =
+proc parseOkC(tok: CSSToken): Opt[int32] =
   case tok.t
-  of cttNumber: return ok(max(tok.num, 0))
-  of cttPercentage: return ok(max(tok.num / 100 * 0.4, 0))
-  of cttIdent: return ok(0'f32) # none -> 0
+  of cttNumber, cttPercentage: return ok(max(roundAB(tok), 0))
+  of cttIdent: return ok(0) # none -> 0
   else: return err()
 
 # For rgb(), rgba(), hsl(), hsla().
@@ -1531,11 +1543,8 @@ proc parseColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
   of cftOklch:
     let L = ?parseOkLight(v1)
     let C = ?parseOkC(v2)
-    let Hi = ?parseHue(v3)
-    let H = degToRad(float32(Hi))
-    let A = C * cos(H)
-    let B = C * sin(H)
-    return ok(oklab(L, A, B, a).cssColor())
+    let H = ?parseHue(v3)
+    return ok(oklch(L, C, H, a).cssColor())
   else:
     return err()
 
