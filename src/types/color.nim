@@ -597,7 +597,7 @@ const SinMap = [
 ]
 
 # n assumed to be in degrees (0..359).
-# return value is scaled to 0..0x10000
+# return value is scaled to -0x10000..0x10000
 proc isin(n: uint16): int64 =
   var n = n
   var sign = 1'i64
@@ -613,15 +613,15 @@ proc isin(n: uint16): int64 =
 
 # L: 0..0x10000
 # C: 0..int32.high (scaled to 0..0x10000)
-# H: 0..360
+# H: 0..359
 proc oklch*(L, C: int32; H: uint16; alpha: uint8): ARGBColor =
   var rotH = H + 90
   if rotH >= 360:
     rotH -= 360
   let cosH = isin(rotH)
   let sinH = isin(H)
-  let A = int32(int64(C) * cosH shr 16)
-  let B = int32(int64(C) * sinH shr 16)
+  let A = int32(shiftRound16(int64(C) * cosH))
+  let B = int32(shiftRound16(int64(C) * sinH))
   oklab(L, A, B, alpha)
 {.pop.} # overflowChecks: off
 
