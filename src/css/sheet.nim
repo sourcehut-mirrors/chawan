@@ -44,6 +44,8 @@ type
   CSSStylesheet* = ref object
     s*: StyleState
     settings: ptr EnvironmentSettings
+    # doubly linked list of all sheets in the document
+    prev*: CSSStylesheet
     next*: CSSStylesheet
     media*: string # media attr
     toks: seq[CSSToken]

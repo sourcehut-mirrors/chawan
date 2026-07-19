@@ -2364,6 +2364,9 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   let parentElement = node.parentElement
   if parentElement != nil:
     parentElement.invalidate()
+  else:
+    # we're removing all elements; the document must still be invalidated
+    document.invalid = true
   let prev = node.internalPrev
   let next = node.internalNext
   if next != nil and next.parentNode != nil:
@@ -2382,14 +2385,9 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   node.parentNode = nil
   document.invalidateCollections()
   if element != nil:
-    if parentElement == nil:
-      element.invalidate()
-    element.box = nil
     if parentElement != nil and next.parentNode == parent:
       parentElement.flags.incl(efChildElIndicesInvalid)
     element.internalElIndex = 0
-    if element of SheetElement:
-      SheetElement(element).removeSheet()
   #TODO assigned
   if oldRootNode of ShadowRoot:
     let shadow = ShadowRoot(oldRootNode)
@@ -2408,7 +2406,7 @@ proc removeImpl*(node: Node; suppressObservers = false) =
       document.applyStyleDependencies(element, DependencyInfo.default)
       element.removingSteps()
       if element.custom == cesCustom and parentConnected:
-        discard #TODO call disconnectedCallback
+        discard #TODO queue disconnectedCallback
   #TODO registered observers
   if not suppressObservers:
     discard #TODO queue tree mutation record
@@ -2497,8 +2495,6 @@ proc replaceChildWith*(parent, child, node: Node; ctx: JSContext):
     node.nextSibling
   else:
     childNextSibling
-  #NOTE the standard says "if parent is not null", but the adoption step
-  # that made it necessary has been removed.
   child.removeImpl(suppressObservers = true)
   parent.insert(node, referenceChild, ctx, suppressObservers = true)
   #TODO tree mutation record
@@ -4168,6 +4164,7 @@ proc applyQuirksSheet*(document: Document) =
   let sheet = parseStylesheet(quirks, nil, addr document.window.settings,
     coUserAgent, CAtomNullTraced)
   document.uaSheetsHead.next = sheet
+  sheet.prev = document.uaSheetsHead
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -6128,9 +6125,15 @@ proc insertionSteps(element: Element): bool =
   false
 
 proc removingSteps(element: Element) =
+  # We'll have to restyle on insert anyway, so don't keep style/layout data
+  # alive for out-of-tree elements.
+  element.box = nil
+  element.computed = nil
   if element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     element.resetFormOwner()
+  elif element of SheetElement:
+    SheetElement(element).removeSheet()
 
 proc postConnectionSteps(element: Element) =
   case element.tagType
@@ -7178,14 +7181,18 @@ proc isDisabled(this: SheetElement): bool =
 
 proc insertSheet(this: SheetElement) =
   if this.sheetHead != nil:
+    assert this.sheetHead.prev == nil and this.sheetTail.next == nil
     let document = this.document
     let prev = this.findPrevSheet()
     let next = this.findNextSheet()
     if prev != nil:
       prev.next = this.sheetHead
+      this.sheetHead.prev = prev
     else:
       document.authorSheetsHead = this.sheetHead
     this.sheetTail.next = next
+    if next != nil:
+      next.prev = this.sheetTail
     if document.ruleMap != nil and not this.isDisabled():
       if next == nil:
         for sheet in this.sheets:
@@ -7199,14 +7206,17 @@ proc insertSheet(this: SheetElement) =
 proc removeSheet(this: SheetElement) =
   if this.sheetHead != nil:
     let document = this.document
+    let prev = this.sheetHead.prev
     let next = this.sheetTail.next
-    let prev = this.findPrevSheet()
     if prev == nil:
       document.authorSheetsHead = next
     else:
       prev.next = next
+    if next != nil:
+      next.prev = prev
     if not this.isDisabled():
       document.ruleMap = nil
+    this.sheetHead.prev = nil
     this.sheetTail.next = nil
     let html = document.documentElement
     if html != nil:

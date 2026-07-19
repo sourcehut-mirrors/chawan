@@ -546,24 +546,28 @@ proc resolveLoad(bc: BufferContext; handle: PagerHandle; n, len: uint64) =
 
 proc maybeReshape(bc: BufferContext; suppressFouc = false) =
   let document = bc.document
-  if document == nil or document.documentElement == nil:
-    return # not parsed yet, nothing to render
-  if document.invalid:
-    let (stack, fixedHead) = document.documentElement.buildTree(bc.rootBox,
+  if document == nil or not document.invalid:
+    return # not parsed yet, or no change between previous layout
+  let rootElement = document.documentElement
+  if rootElement == nil:
+    # lost all elements (e.g. document.documentElement.remove() called)
+    bc.lines.setLen(0)
+  else:
+    let (stack, fixedHead) = rootElement.buildTree(bc.rootBox,
       bc.config.markLinks, bc.nhints, bc.linkHintChars)
     bc.rootBox = BlockBox(stack.box)
     bc.rootBox.layout(bc.attrs, fixedHead, bc.luctx)
     bc.lines.render(bc.bgcolor, stack, bc.attrs, bc.images)
-    document.invalid = false
-    # We don't want a FOUC on automatic reshape, but we still want to allow
-    # the user to override this and interact with the page (useful if e.g. a
-    # sheet really doesn't want to load).
-    if not suppressFouc or bc.window.loadedSheetNum == bc.window.remoteSheetNum:
-      for handle in bc.handles:
-        if handle.hasTask(bcOnReshape):
-          handle.resolveTask(bcOnReshape)
-        else:
-          handle.onReshapeImmediately = true
+  # We don't want a FOUC on automatic reshape, but we still want to allow
+  # the user to override this and interact with the page (useful if e.g. a
+  # sheet really doesn't want to load).
+  if not suppressFouc or bc.window.loadedSheetNum == bc.window.remoteSheetNum:
+    for handle in bc.handles:
+      if handle.hasTask(bcOnReshape):
+        handle.resolveTask(bcOnReshape)
+      else:
+        handle.onReshapeImmediately = true
+  document.invalid = false
 
 proc ensureLayout(bc: RootRef; element: Element) =
   let bc = BufferContext(bc)

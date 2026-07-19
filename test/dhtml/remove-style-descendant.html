@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<style>
+#x { color: green }
+</style>
+<div id=outer>
+<style>
+#x { color: red }
+#inner { color: red }
+</style>
+<div id=inner>test</div>
+</div>
+<div id=x>should be green</div>
+<script>
+outer.remove();
+</script>
