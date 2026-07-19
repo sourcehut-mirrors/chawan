@@ -3019,7 +3019,7 @@ const ReTextStart = /\S/gu;
 
     /* private */ contextMenu() {
         const iface = this.iface;
-        if (iface == null)
+        if (iface == null || !this.init.scripting)
             return;
         return iface.contextMenu(this.cursorx, this.cursory);
     }
