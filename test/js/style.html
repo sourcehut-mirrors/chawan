@@ -19,6 +19,8 @@ y.style.removeProperty("color");
 assertEquals(y.getAttribute("style"), "display: inline;");
 y.style[0] = "block";
 assertEquals(y.getAttribute("style"), "display: inline;");
+y.removeAttribute("style");
+assertEquals(y.style, style);
 assertEquals(style, y.style);
 assert(window.matchMedia("(grid: 1)").matches);
 assert(window.matchMedia("(width = 720px)").matches);

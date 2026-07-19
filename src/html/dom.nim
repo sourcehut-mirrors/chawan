@@ -5791,7 +5791,7 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
       else:
         element.cachedStyle.decls = value.parseDeclarations()
     else:
-      element.cachedStyle = nil
+      element.cachedStyle.decls.setLen(0)
   of satUnknown: discard # early return
   elif element.scriptingEnabled and element.reflectScriptAttr(name, value):
     discard
