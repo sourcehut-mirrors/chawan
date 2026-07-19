@@ -258,15 +258,17 @@ proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
   if i < 0:
     op.line &= iq
     return iq.len
-  var j = i - 1
-  assert j < iq.len
-  while j >= 0 and iq[j] in HTTPWhitespace:
-    dec j
   if op.line == "":
+    var j = i - 1
+    while j >= 0 and iq[j] in HTTPWhitespace:
+      dec j
     op.flushStatus(iq.toOpenArray(0, j))
   else:
-    op.line &= iq.toOpenArray(0, j)
-    op.flushStatus(op.line)
+    op.line &= iq.toOpenArray(0, i - 1)
+    var j = op.line.high
+    while j >= 0 and op.line[j] in HTTPWhitespace:
+      dec j
+    op.flushStatus(op.line.toOpenArray(0, j))
     op.line = ""
   i + 1
 
@@ -322,7 +324,7 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
     op.line &= iq
     return iq.len
   op.line &= iq.toOpenArray(0, i - 1)
-  var j = i - 1
+  var j = op.line.high
   while j >= 0 and op.line[j] in HTTPWhitespace:
     dec j
   if j < 0:
