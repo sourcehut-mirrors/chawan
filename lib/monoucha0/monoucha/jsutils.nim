@@ -170,6 +170,7 @@ proc newRejectedPromise*(ctx: JSContext): JSValue =
     return res
   let code = ctx.enqueueJob(rejectJob, funs[1], ex)
   ctx.freeValues(funs)
+  JS_FreeValue(ctx, ex)
   if code < 0:
     JS_FreeValue(ctx, res)
     return JS_EXCEPTION
