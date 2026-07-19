@@ -2189,6 +2189,52 @@ const ShorthandMap* = [
     cptBorderLeftStyle, cptBorderTopColor, cptBorderRightColor,
     cptBorderBottomColor, cptBorderLeftColor, cptBorderTopWidth,
     cptBorderRightWidth, cptBorderBottomWidth, cptBorderLeftWidth],
+  cstMarginInlineStart: @[cptMarginLeft],
+  cstMarginInlineEnd: @[cptMarginRight],
+  cstMarginBlockStart: @[cptMarginTop],
+  cstMarginBlockEnd: @[cptMarginBottom],
+  cstMarginInline: @[cptMarginLeft, cptMarginRight],
+  cstMarginBlock: @[cptMarginTop, cptMarginBottom],
+  cstPaddingInlineStart: @[cptPaddingLeft],
+  cstPaddingInlineEnd: @[cptPaddingRight],
+  cstPaddingBlockStart: @[cptPaddingTop],
+  cstPaddingBlockEnd: @[cptPaddingBottom],
+  cstPaddingInline: @[cptPaddingLeft, cptPaddingRight],
+  cstPaddingBlock: @[cptPaddingTop, cptPaddingBottom],
+  cstBorderInlineStartStyle: @[cptBorderLeftStyle],
+  cstBorderInlineEndStyle: @[cptBorderRightStyle],
+  cstBorderBlockStartStyle: @[cptBorderTopStyle],
+  cstBorderBlockEndStyle: @[cptBorderBottomStyle],
+  cstBorderInlineStyle: @[cptBorderLeftStyle, cptBorderRightStyle],
+  cstBorderBlockStyle: @[cptBorderTopStyle, cptBorderBottomStyle],
+  cstBorderInlineStartColor: @[cptBorderLeftColor],
+  cstBorderInlineEndColor: @[cptBorderRightColor],
+  cstBorderBlockStartColor: @[cptBorderTopColor],
+  cstBorderBlockEndColor: @[cptBorderBottomColor],
+  cstBorderInlineColor: @[cptBorderLeftColor, cptBorderRightColor],
+  cstBorderBlockColor: @[cptBorderTopColor, cptBorderBottomColor],
+  cstBorderInlineStartWidth: @[cptBorderLeftWidth],
+  cstBorderInlineEndWidth: @[cptBorderRightWidth],
+  cstBorderBlockStartWidth: @[cptBorderTopWidth],
+  cstBorderBlockEndWidth: @[cptBorderBottomWidth],
+  cstBorderInlineWidth: @[cptBorderLeftWidth, cptBorderRightWidth],
+  cstBorderBlockWidth: @[cptBorderTopWidth, cptBorderBottomWidth],
+  cstBorderInlineStart: @[cptBorderLeftStyle, cptBorderLeftColor,
+    cptBorderLeftWidth],
+  cstBorderInlineEnd: @[cptBorderRightStyle, cptBorderRightColor,
+    cptBorderRightWidth],
+  cstBorderBlockStart: @[cptBorderTopStyle, cptBorderTopColor,
+    cptBorderTopWidth],
+  cstBorderBlockEnd: @[cptBorderBottomStyle, cptBorderBottomColor,
+    cptBorderBottomWidth],
+  cstBorderInline: @[cptBorderLeftStyle, cptBorderLeftColor,
+    cptBorderLeftWidth, cptBorderRightStyle, cptBorderRightColor,
+    cptBorderRightWidth],
+  cstBorderBlock: @[cptBorderTopStyle, cptBorderTopColor,
+    cptBorderTopWidth, cptBorderBottomStyle, cptBorderBottomColor,
+    cptBorderBottomWidth],
+  cstOverflowInline: @[cptOverflowX],
+  cstOverflowBlock: @[cptOverflowY],
 ]
 
 proc parseBorder(ctx: var CSSParser; sh: CSSShorthandType;
@@ -2411,6 +2457,37 @@ proc addGlobal(res: var seq[CSSComputedEntry]; p: CSSWidePropertyType;
     for t in ShorthandMap[p.sh]:
       res.add(makeEntry(t, global))
 
+const MarginAlias = {
+  cstMarginInlineStart, cstMarginInlineEnd, cstMarginBlockStart,
+  cstMarginBlockEnd, cstMarginInline, cstMarginBlock
+}
+
+const PaddingAlias = {
+  cstPaddingInlineStart, cstPaddingInlineEnd, cstPaddingBlockStart,
+  cstPaddingBlockEnd, cstPaddingInline, cstPaddingBlock
+}
+
+const BorderBoxAlias = {
+  cstBorderInlineStyle, cstBorderBlockStyle, cstBorderInlineStartStyle,
+  cstBorderInlineEndStyle, cstBorderBlockStartStyle, cstBorderBlockEndStyle,
+  cstBorderInlineColor, cstBorderBlockColor, cstBorderInlineStartColor,
+  cstBorderInlineEndColor, cstBorderBlockStartColor, cstBorderBlockEndColor,
+  cstBorderInlineWidth, cstBorderBlockWidth, cstBorderInlineStartWidth,
+  cstBorderInlineEndWidth, cstBorderBlockStartWidth, cstBorderBlockEndWidth
+}
+
+const BorderAlias = {
+  cstBorderInline, cstBorderBlock, cstBorderInlineStart,
+  cstBorderInlineEnd, cstBorderBlockStart, cstBorderBlockEnd
+}
+
+proc parseValueOuter(ctx: var CSSParser; p: CSSPropertyType;
+    attrs: WindowAttributes; res: var seq[CSSComputedEntry]): Opt[void] =
+  var entry = CSSComputedEntry()
+  ?ctx.parseValue(p, entry, attrs)
+  res.add(entry)
+  return ctx.skipBlanksCheckDone()
+
 proc parseComputedValues0*(ctx: var CSSParser; p: CSSWidePropertyType;
     attrs: WindowAttributes; res: var seq[CSSComputedEntry]): Opt[void] =
   ?ctx.skipBlanksCheckHas()
@@ -2420,15 +2497,13 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSWidePropertyType;
     res.addGlobal(p, global)
     return ctx.skipBlanksCheckDone()
   case p.sh
-  of cstNone:
-    var entry = CSSComputedEntry()
-    ?ctx.parseValue(p.p, entry, attrs)
-    res.add(entry)
-    return ctx.skipBlanksCheckDone()
+  of cstNone: return ctx.parseValueOuter(p.p, attrs, res)
   of cstAll: return err()
-  of cstBorder, cstBorderBottom, cstBorderLeft, cstBorderRight, cstBorderTop:
+  of cstBorder, cstBorderBottom, cstBorderLeft, cstBorderRight, cstBorderTop,
+      BorderAlias:
     return ctx.parseBorder(p.sh, attrs, res)
-  of cstMargin, cstPadding, cstBorderStyle, cstBorderColor, cstBorderWidth:
+  of cstMargin, cstPadding, cstBorderStyle, cstBorderColor, cstBorderWidth,
+      MarginAlias, PaddingAlias, BorderBoxAlias:
     return ctx.parseBoxShorthand(ShorthandMap[p.sh], attrs, res)
   of cstBackground: return ctx.parseBackground(attrs, res)
   of cstListStyle: return ctx.parseListStyle(attrs, res)
@@ -2437,6 +2512,8 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSWidePropertyType;
   of cstOverflow: return ctx.parseOverflow(attrs, tok, res)
   of cstVerticalAlign: return ctx.parseVerticalAlign(attrs, res)
   of cstBorderSpacing: return ctx.parseBorderSpacing(attrs, tok, res)
+  of cstOverflowInline, cstOverflowBlock:
+    return ctx.parseValueOuter(ShorthandMap[p.sh][0], attrs, res)
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry];
     p: CSSWidePropertyType; toks: openArray[CSSToken];

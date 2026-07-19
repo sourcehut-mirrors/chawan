@@ -157,6 +157,14 @@ Variables (the \f[CR]var()\f[R] function) are fully supported.
 .PP
 Values of \f[CR]<length>\f[R] or \f[CR]<color>\f[R] types fully support
 \f[CR]calc()\f[R] expressions.
+.PP
+Logical properties such as \f[CR]margin\-inline\-start\f[R] etc.
+are currently \f[I]not\f[R] supported (and neither is
+\f[CR]writing\-mode\f[R]).
+However, for compatibility, logical properties for \f[CR]margin\f[R],
+\f[CR]padding\f[R], \f[CR]border\f[R] and \f[CR]overflow\f[R] are
+treated as aliases to the respective physical properties with
+\f[CR]writing\-mode: horizontal\-tb\f[R].
 .SS Selectors
 All selector types from CSS 2.1 are supported, except for namespaces.
 .PP

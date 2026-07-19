@@ -91,6 +91,12 @@ Variables (the `var()` function) are fully supported.
 
 Values of `<length>` or `<color>` types fully support `calc()` expressions.
 
+Logical properties such as `margin-inline-start` etc. are currently *not*
+supported (and neither is `writing-mode`).  However, for compatibility,
+logical properties for `margin`, `padding`, `border` and `overflow` are
+treated as aliases to the respective physical properties with
+`writing-mode: horizontal-tb`.
+
 ## Selectors
 
 All selector types from CSS 2.1 are supported, except for namespaces.
