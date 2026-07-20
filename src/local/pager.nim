@@ -361,8 +361,8 @@ application/xhtml+xml; exec cat; x-htmloutput
 proc loadAutoMailcap(pager: Pager) =
   # Backwards-compatibility: the default path used to be auto.mailcap, so
   # it is possible that
-  # a) there is no ~/.config/mailcap, but there is ~/.config/auto.mailcap
-  # b) there *is* a ~/.config/mailcap, but it is already assigned as the
+  # a) there is no ~/.chawan/mailcap, but there is ~/.chawan/auto.mailcap
+  # b) there *is* a ~/.chawan/mailcap, but it is already assigned as the
   # non-auto mailcap
   # Here we make sure that both cases work as before.
   let config = pager.config

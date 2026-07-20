@@ -94,14 +94,20 @@ Example:
 images = true
 \f[I]# disable website CSS\f[R]
 styling = false
+
 \f[I]# Specify user styles.\f[R]
 user\-style = \(aq\(aq\(aq
-/* you can import external UA styles like this: */
+/* you can import external user styles like this
+ * (rooted at your config directory): */
 \(atimport \(aquser.css\(aq;
+
 /* or just insert the style inline as follows. */
+
 /* enforce the default text\-decoration for links (i.e. underline). */
 a[href] { text\-decoration: revert !important }
-\(atmedia (monochrome) { /* only in color\-mode \(dqmonochrome\(dq (or \-M) */
+
+/* following rules are restricted to color\-mode \(dqmonochrome\(dq (or \-M) */
+\(atmedia (monochrome) {
 	/* disable UA style of bold font (no need for important here) */
 	a[href]:hover { font\-weight: initial }
 	/* ...and italicize the font on hover instead.
@@ -110,8 +116,8 @@ a[href] { text\-decoration: revert !important }
 	a[href]:hover { font\-style: italic !important }
 }
 \(aq\(aq\(aq
-\f[I]# You *can* set scripting to true here, but I strongly recommend using\f[R]
-\f[I]# [[siteconf]] to enable it on a per\-site basis instead.\f[R]
+\f[I]# You *can* set scripting to true (or \(aqapp\(aq) here, but I strongly recommend\f[R]
+\f[I]# using [[siteconf]] to enable it on a per\-site basis instead.\f[R]
 .EE
 .PP
 Following is a list of buffer options:
@@ -226,7 +232,7 @@ search term includes a capital letter.
 Note: this can also be overridden inline in the search bar (vim\-style),
 with the escape sequences \f[CR]\(rsc\f[R] (ignore case) and
 \f[CR]\(rsC\f[R] (strict case).
-See search mode for details.
+See \f[I]search mode\f[R] section for details.
 .RE
 .SS Encoding
 Encoding options are to be placed in the \f[CR][encoding]\f[R] section.
@@ -247,8 +253,8 @@ correctly.
 display\-charset = \(lqauto\(rq
 \f[B]charset label string\f[R] / \f[B]\(lqauto\(rq\f[R]
 .RS
-Character set for keyboard input and displaying documents.
-Used in dump mode as well.
+Character set for keyboard input and displaying documents both in
+interactive and headless/dump mode.
 (This means that e.g.\ \f[CR]cha \-I EUC\-JP \-O UTF\-8 a > b\f[R] is
 roughly equivalent to \f[CR]iconv \-f EUC\-JP \-t UTF\-8\f[R].)
 .RE
@@ -710,6 +716,9 @@ These are to be specified as sub\-keys to table \f[CR][omnirule]\f[R].
 (The sub\-key itself is ignored; you can use anything as long it
 doesn\(cqt conflict with other keys.)
 .PP
+These rules also apply to URLs passed as CLI arguments, so e.g.
+\f[CR]cha ddg:\(aqsearch term\(aq\f[R] works too.
+.PP
 Examples:
 .IP
 .EX
@@ -718,7 +727,7 @@ Examples:
 \f[I]# Brave search.)\f[R]
 \f[B][omnirule.ddg]\f[R]
 match = \(aq\(haddg:\(aq
-substitute\-url = \(aq(x) => \(dqhttps://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1&q=\(dq + encodeURIComponent(x.split(\(dq:\(dq).slice(1).join(\(dq:\(dq))\(aq
+substitute\-url = \(aq(x) => \(dqhttps://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1&q=\(dq + encodeURIComponent(x.substring(x.indexOf(\(aq\f[B]:\f[R]\(aq) + 1))\(aq
 
 \f[I]# To use the above rule, open the URL bar with C\-k, clear it with\f[R]
 \f[I]# C\-u, and type ddg:keyword.\f[R]
@@ -755,9 +764,8 @@ match
 \f[B]regex\f[R]
 .RS
 Regular expression used to match the input string.
-Note that websites passed as arguments are matched as well.
-Note: regexes are handled according to the match mode regex handling
-rules.
+The expressions are handled according to \f[I]match mode\f[R] regex
+handling rules.
 .RE
 .TP
 substitute\-url
@@ -828,8 +836,8 @@ url
 .RS
 Regular expression used to match the URL.
 Either this or the \f[CR]host\f[R] option must be specified.
-Note: regexes are handled according to the match mode regex handling
-rules.
+The expressions are handled according to \f[I]match mode\f[R] regex
+handling rules.
 .RE
 .TP
 host
@@ -839,8 +847,8 @@ Regular expression used to match the host part of the URL (i.e.\ domain
 name/ip address).
 Either this or the \f[CR]url\f[R] option (but not both) must be
 specified.
-Note: regexes are handled according to the match mode regex handling
-rules.
+The expressions are handled according to \f[I]match mode\f[R] regex
+handling rules.
 .RE
 .TP
 rewrite\-url

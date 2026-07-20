@@ -68,20 +68,20 @@ visual-home = "about:chawan"
 : **URL**
 
 : Page opened when Chawan is called with the -V option and no other pages
-are passed as arguments.
+  are passed as arguments.
 
 startup-script = ""
 : **JavaScript code**
 
 : Script Chawan runs on start-up. Pages will not be loaded until this
-function exits.  (Note however that asynchronous functions like setTimeout
-do not block loading.)
+  function exits.  (Note however that asynchronous functions like setTimeout
+  do not block loading.)
 
 headless = false
 : **boolean** / **"dump"**
 
 : When set to true or "dump", the browser does not take input; instead, it
-prints a rendered version of all buffers in order, then exits.
+  prints a rendered version of all buffers in order, then exits.
 
   The difference between `true` and "dump" is that `true` first waits for
   all scripts and network requests to run to completion, while "dump" does
@@ -115,14 +115,20 @@ Example:
 images = true
 # disable website CSS
 styling = false
+
 # Specify user styles.
 user-style = '''
-/* you can import external UA styles like this: */
+/* you can import external user styles like this
+ * (rooted at your config directory): */
 @import 'user.css';
+
 /* or just insert the style inline as follows. */
+
 /* enforce the default text-decoration for links (i.e. underline). */
 a[href] { text-decoration: revert !important }
-@media (monochrome) { /* only in color-mode "monochrome" (or -M) */
+
+/* following rules are restricted to color-mode "monochrome" (or -M) */
+@media (monochrome) {
 	/* disable UA style of bold font (no need for important here) */
 	a[href]:hover { font-weight: initial }
 	/* ...and italicize the font on hover instead.
@@ -131,8 +137,8 @@ a[href] { text-decoration: revert !important }
 	a[href]:hover { font-style: italic !important }
 }
 '''
-# You *can* set scripting to true here, but I strongly recommend using
-# [[siteconf]] to enable it on a per-site basis instead.
+# You *can* set scripting to true (or 'app') here, but I strongly recommend
+# using [[siteconf]] to enable it on a per-site basis instead.
 ```
 
 Following is a list of buffer options:
@@ -141,7 +147,7 @@ styling = true
 : **boolean**
 
 : Enable/disable author style sheets.  Note that disabling this does not
-affect user styles.
+  affect user styles.
 
 scripting = false
 : **boolean** / **"app"**
@@ -196,8 +202,8 @@ meta-refresh = "ask"
 : **"never"** / **"always"** / **"ask"**
 
 : Whether or not `http-equiv=refresh` meta tags should be respected.
-"never" completely disables them, "always" automatically accepts all of
-them, "ask" brings up a pop-up menu.
+  "never" completely disables them, "always" automatically accepts all of
+  them, "ask" brings up a pop-up menu.
 
 history = true
 : **boolean**
@@ -240,7 +246,7 @@ ignore-case = "auto"
 
   Note: this can also be overridden inline in the search bar (vim-style),
   with the escape sequences `\c` (ignore case) and `\C` (strict case).
-  See [search mode](#search-mode) for details.
+  See [*search mode*](#search-mode) section for details.
 
 ## Encoding
 
@@ -261,9 +267,8 @@ document-charset = ["utf-8", "sjis", "euc-jp", "latin2"]
 display-charset = "auto"
 : **charset label string** / **"auto"**
 
-: Character set for keyboard input and displaying documents.
-
-  Used in dump mode as well.
+: Character set for keyboard input and displaying documents both in
+  interactive and headless/dump mode.
 
   (This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is roughly
   equivalent to `iconv -f EUC-JP -t UTF-8`.)
@@ -682,10 +687,13 @@ format-mode = "reverse"
 
 ## Omnirule
 
-The omni-bar (by default opened with C-l) can be used to perform
-searches using omni-rules.  These are to be specified as sub-keys
-to table `[omnirule]`.  (The sub-key itself is ignored; you can use
-anything as long it doesn't conflict with other keys.)
+The omni-bar (by default opened with C-l) can be used to perform searches
+using omni-rules.  These are to be specified as sub-keys to table
+`[omnirule]`.  (The sub-key itself is ignored; you can use anything as long
+it doesn't conflict with other keys.)
+
+These rules also apply to URLs passed as CLI arguments, so e.g.
+`cha ddg:'search term'` works too.
 
 Examples:
 
@@ -695,7 +703,7 @@ Examples:
 # Brave search.)
 [omnirule.ddg]
 match = '^ddg:'
-substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.substring(x.indexOf(':') + 1))'
 
 # To use the above rule, open the URL bar with C-k, clear it with
 # C-u, and type ddg:keyword.
@@ -727,11 +735,8 @@ Omnirule options:
 match
 : **regex**
 
-: Regular expression used to match the input string.  Note that websites
-  passed as arguments are matched as well.
-
-  Note: regexes are handled according to the [match mode](#match-mode)
-  regex handling rules.
+: Regular expression used to match the input string.  The expressions are
+  handled according to [*match mode*](#match-mode) regex handling rules.
 
 substitute-url
 : **JavaScript function**
@@ -801,20 +806,16 @@ url
 : **regex**
 
 : Regular expression used to match the URL.  Either this or the `host`
-  option must be specified.
-
-  Note: regexes are handled according to the [match mode](#match-mode)
-  regex handling rules.
+  option must be specified.  The expressions are handled according to
+  [*match mode*](#match-mode) regex handling rules.
 
 host
 : **regex**
 
 : Regular expression used to match the host part of the URL (i.e. domain
   name/ip address).  Either this or the `url` option (but not both) must be
-  specified.
-
-  Note: regexes are handled according to the [match mode](#match-mode) regex
-  handling rules.
+  specified.  The expressions are handled according to
+  [*match mode*](#match-mode) regex handling rules.
 
 rewrite-url
 : **JavaScript function**
