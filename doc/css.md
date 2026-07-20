@@ -42,6 +42,7 @@ A list of supported standard properties, with notes on unimplemented values:
 * font-weight (numeric properties > 500 interpreted as bold, others
   as regular)
 * height
+* inset
 * left
 * list-style-position
 * list-style-type (but no custom list styles)

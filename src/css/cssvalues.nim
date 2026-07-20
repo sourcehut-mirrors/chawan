@@ -2166,6 +2166,7 @@ const ShorthandMap* = [
   cstMargin: @[cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft],
   cstPadding: @[cptPaddingTop, cptPaddingRight, cptPaddingBottom,
     cptPaddingLeft],
+  cstInset: @[cptTop, cptRight, cptBottom, cptLeft],
   cstBorderStyle: @[cptBorderTopStyle, cptBorderRightStyle,
     cptBorderBottomStyle, cptBorderLeftStyle],
   cstBorderColor: @[cptBorderTopColor, cptBorderRightColor,
@@ -2201,6 +2202,12 @@ const ShorthandMap* = [
   cstPaddingBlockEnd: @[cptPaddingBottom],
   cstPaddingInline: @[cptPaddingLeft, cptPaddingRight],
   cstPaddingBlock: @[cptPaddingTop, cptPaddingBottom],
+  cstInsetInlineStart: @[cptLeft],
+  cstInsetInlineEnd: @[cptRight],
+  cstInsetBlockStart: @[cptTop],
+  cstInsetBlockEnd: @[cptBottom],
+  cstInsetInline: @[cptLeft, cptRight],
+  cstInsetBlock: @[cptTop, cptBottom],
   cstBorderInlineStartStyle: @[cptBorderLeftStyle],
   cstBorderInlineEndStyle: @[cptBorderRightStyle],
   cstBorderBlockStartStyle: @[cptBorderTopStyle],
@@ -2467,6 +2474,11 @@ const PaddingAlias = {
   cstPaddingBlockEnd, cstPaddingInline, cstPaddingBlock
 }
 
+const InsetAlias = {
+  cstInsetInlineStart, cstInsetInlineEnd, cstInsetBlockStart, cstInsetBlockEnd,
+  cstInsetInline, cstInsetBlock
+}
+
 const BorderBoxAlias = {
   cstBorderInlineStyle, cstBorderBlockStyle, cstBorderInlineStartStyle,
   cstBorderInlineEndStyle, cstBorderBlockStartStyle, cstBorderBlockEndStyle,
@@ -2503,7 +2515,7 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSWidePropertyType;
       BorderAlias:
     return ctx.parseBorder(p.sh, attrs, res)
   of cstMargin, cstPadding, cstBorderStyle, cstBorderColor, cstBorderWidth,
-      MarginAlias, PaddingAlias, BorderBoxAlias:
+      cstInset, MarginAlias, PaddingAlias, BorderBoxAlias, InsetAlias:
     return ctx.parseBoxShorthand(ShorthandMap[p.sh], attrs, res)
   of cstBackground: return ctx.parseBackground(attrs, res)
   of cstListStyle: return ctx.parseListStyle(attrs, res)
