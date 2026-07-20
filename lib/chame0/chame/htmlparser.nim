@@ -234,28 +234,6 @@ iterator ropenElements[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     dec i
     yield parser.openElements[i].element
 
-const AsciiUpperAlpha = {'A'..'Z'}
-
-proc toLowerAscii(c: char): char {.inline.} =
-  if c in AsciiUpperAlpha:
-    char(uint8(c) xor 0x20'u8)
-  else:
-    c
-
-proc startsWithIgnoreCase(str, prefix: string): bool =
-  if str.len < prefix.len:
-    return false
-  # prefix.len is always lower
-  var i = 0
-  while i != prefix.len:
-    if str[i].toLowerAscii() != prefix[i].toLowerAscii():
-      return false
-    inc i
-  true
-
-proc equalsIgnoreCase(s1, s2: string): bool =
-  s1.len == s2.len and s1.startsWithIgnoreCase(s2)
-
 # https://html.spec.whatwg.org/multipage/parsing.html#reset-the-insertion-mode-appropriately
 proc resetInsertionMode0(parser: var HTML5Parser): InsertionMode =
   for i in countdown(parser.openElements.high, 0):
