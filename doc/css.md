@@ -42,7 +42,6 @@ A list of supported standard properties, with notes on unimplemented values:
 * font-weight (numeric properties > 500 interpreted as bold, others
   as regular)
 * height
-* inset
 * left
 * list-style-position
 * list-style-type (but no custom list styles)
@@ -83,6 +82,7 @@ Shorthands:
 * border, border-style, border-color, border-width (but see
   [borders](#borders))
 * background (only color and url; other components are skipped)
+* inset
 * list-style (list-style-image is skipped)
 * flex
 * flex-flow

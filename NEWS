@@ -5,11 +5,14 @@ unreleased
 * optimize some inefficient descendant CSS selectors
 * optimize getElementById
 * support multi-keyword CSS display values
+* support oklab(), oklch()
+* emulate logical properties (always interpreted in horizontal-tb writing-mode)
 * support accessing elements by id on Window object
 * support Delete key, add default aliases for alternate Home/End
 * reduce leaks from interned strings
 * reduce copying of strings between Nim <-> JS
 * reduce memory usage of CSS values & variables
+* more lenient CR parsing in HTTP (for compatibility)
 * fix some bugs in the config parser
 * fix seccomp on LoongArch64
 * fix missing pager.findPrevMark function
@@ -31,6 +34,12 @@ unreleased
 * fix crash on td with rowspan=0
 * fix green component calculation in VP8 YUV image conversion
 * fix QJS cycle collector not running at all
+* fix broken radio button checkedness with the `checked' attribute specified
+* fix charset override not working on piped documents
+* fix CSSStyleDeclaration#removeProperty not updating the style attribute
+* fix closed menu not being hidden when the first buffer is still being loaded
+* fix regression where URLs were not being added to the history in some cases
+* fix dropping of cookies with tab and ignore empty Domain in Set-Cookie
 
 0.4.0 (2026.05.17)
 
