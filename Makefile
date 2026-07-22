@@ -377,6 +377,11 @@ test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim
 	$(NIM) r $(test_flags) test/nim/ttwtstr.nim
 	$(NIM) r $(test_flags) test/nim/tcatom.nim
 
+# slow, for manual use only
+.PHONY: test_oklab
+test_oklab: test/nim/toklab.nim
+	$(NIM) r -d:debug -d:danger $(test_flags) test/nim/toklab.nim
+
 .PHONY: test
 test: test_js test_layout test_dhtml test_net test_md test_pager test_charset \
 	test_nim

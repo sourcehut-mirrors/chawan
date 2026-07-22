@@ -1443,21 +1443,21 @@ proc parseSatOrLight(tok: CSSToken): Opt[uint8] =
     return ok(0) # none -> 0
   return err()
 
-proc roundL(a: float32): int32 =
-  int32(round(clamp(a, 0, 1) * 65536))
+proc roundL(a: float32): uint16 =
+  uint16(round(clamp(a, 0, 1) * 65535))
 
 proc roundAB(tok: CSSToken): int32 =
   var a = tok.num
   if tok.t == cttPercentage:
     a *= 0.004
-  a = round(a * 65536)
+  a = round(a * 65535)
   if a >= 2147483520'f32:
     return int32.high
-  if a <= float32(int32.low):
-    return int32.low
+  if a <= -2147483520'f32:
+    return int32.low + 1 # allow negation without overflow
   int32(a)
 
-proc parseOkLight(tok: CSSToken): Opt[int32] =
+proc parseOkLight(tok: CSSToken): Opt[uint16] =
   case tok.t
   of cttNumber: return ok(roundL(tok.num))
   of cttPercentage: return ok(roundL(tok.num / 100))
@@ -1539,12 +1539,12 @@ proc parseColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
     let L = ?parseOkLight(v1)
     let A = ?parseOkAB(v2)
     let B = ?parseOkAB(v3)
-    return ok(oklab(L, A, B, a).cssColor())
+    return ok(oklab(L, A, B).rgb().argb(a).cssColor())
   of cftOklch:
     let L = ?parseOkLight(v1)
     let C = ?parseOkC(v2)
     let H = ?parseHue(v3)
-    return ok(oklch(L, C, H, a).cssColor())
+    return ok(oklch(L, C, H).rgb().argb(a).cssColor())
   else:
     return err()
 
