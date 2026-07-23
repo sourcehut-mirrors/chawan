@@ -588,7 +588,9 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
     let bgcolor0 = box.computed{"background-color"}
     let bgcolor = bgcolor0.cellColor()
     let endOffset = offset + box.state.size
-    if bgcolor != defaultColor:
+    if bgcolor != defaultColor or
+        box.input.border.right notin BorderStyleNoneHidden and
+        not box.computed{"border-right-color"}.rgbTransparent:
       if box.computed{"-cha-bgcolor-is-canvas"} and
           state.bgcolor == defaultColor:
         #TODO bgimage
