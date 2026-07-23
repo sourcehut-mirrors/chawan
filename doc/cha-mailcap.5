@@ -59,12 +59,16 @@ Entries in auto\-mailcap are automatically executed, so it is
 recommended to add your Chawan\-specific entries there (or just set it
 to your personal mailcap file).
 .PP
-For browsecap, there is only an automatic variant so far.
+For browsecap, there is only an automatic variant so far, stored at
+\f[CR]external.auto\-browsecap\f[R] which defaults to
+\f[CR]\(ti/.chawan/browsecap\f[R] (or \(ga\(ti/.config/chawan/browsecap
+with XDG basedirs).
 .SS Format
 Chawan adheres to the format described in RFC 1524, with a few
 extensions.
 .PP
-\f[CR]text/html\f[R] and \f[CR]text/plain\f[R] entries are ignored.
+\f[CR]text/html\f[R] and \f[CR]text/plain\f[R] entries are ignored,
+except when the entry includes an \f[CR]x\-type\f[R] parameter.
 .PP
 In browsecap, the MIME type field is treated as
 \f[I]protocol\f[R]/\f[I]method\f[R].
@@ -98,22 +102,18 @@ In browsecap, \f[CR]%s\f[R] expands to the path segment of the URI
 instead.
 .RE
 .IP \(bu 2
-\f[CR]%t\f[R] expands to the content type.
+In mailcap, \f[CR]%t\f[R] expands to the content type.
 Named content type fields can also be specified with the syntax
 \f[CR]%{charset}\f[R].
-For example, in
+e.g.\ for \f[CR]text/html; charset=utf\-8\f[R], \f[CR]%t\f[R] expands to
+the entire string, and \f[CR]%{charset}\f[R] expands to \(lqutf\-8\(rq.
 .RS 2
-.IP
-.EX
-text/html; charset=utf\-8
-.EE
-.PP
-\f[CR]%t\f[R] would expand to the above string, while
-\f[CR]%{charset}\f[R] would expand to \(lqutf\-8\(rq.
 .PP
 In browsecap, \f[CR]%t\f[R] expands to
 \f[I]protocol\f[R]/\f[I]method\f[R], where the \f[I]method\f[R] part is
-typically upper\-cased.
+typically upper\-cased; named fields expand to URL search parameters, so
+for the URL \f[CR]https://example.org/search?q=blah\f[R],
+\f[CR]%{q}\f[R] expands to \(lqblah\(rq.
 .RE
 .IP \(bu 2
 Non\-standard templates for the resource\(cqs original URL:

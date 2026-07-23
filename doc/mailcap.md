@@ -51,13 +51,16 @@ Entries in auto-mailcap are automatically executed, so it is recommended
 to add your Chawan-specific entries there (or just set it to your
 personal mailcap file).
 
-For browsecap, there is only an automatic variant so far.
+For browsecap, there is only an automatic variant so far, stored at
+`external.auto-browsecap` which defaults to `~/.chawan/browsecap` (or
+`~/.config/chawan/browsecap with XDG basedirs).
 
 ## Format
 
 Chawan adheres to the format described in RFC 1524, with a few extensions.
 
-`text/html` and `text/plain` entries are ignored.
+`text/html` and `text/plain` entries are ignored, except when the entry
+includes an `x-type` parameter.
 
 In browsecap, the MIME type field is treated as *protocol*/*method*.
 For example, `http/get` dispatches to GET requests to an HTTP scheme,
@@ -69,10 +72,10 @@ schemes.
 The command part of entries may include template strings which are
 substituted by the browser at execution.
 
-Templates do not have to be quoted; Chawan quotes them automatically.
-(This works with $(command substitutions) as well.)  However, other
-software may misbehave on such templates, so it may be better to assign
-them to a variable first, e.g.
+Templates do not have to be quoted; Chawan quotes them automatically.  (This
+works with $(command substitutions) as well.)  However, other software may
+misbehave on such templates, so it may be better to assign them to a variable
+first, e.g.
 
 ```
 text/x-example; s=%s cat "$s"; copiousoutput
@@ -87,18 +90,15 @@ Following templates are supported:
 
   In browsecap, `%s` expands to the path segment of the URI instead.
 
-* `%t` expands to the content type.  Named content type fields can also
-  be specified with the syntax `%{charset}`.  For example, in
-
-  ```
-  text/html; charset=utf-8
-  ```
-
-  `%t` would expand to the above string, while `%{charset}` would expand
-  to "utf-8".
+* In mailcap, `%t` expands to the content type.  Named content type fields
+  can also be specified with the syntax `%{charset}`.  e.g. for
+  `text/html; charset=utf-8`, `%t` expands to the entire string, and
+  `%{charset}` expands to "utf-8".
 
   In browsecap, `%t` expands to *protocol*/*method*, where the *method*
-  part is typically upper-cased.
+  part is typically upper-cased; named fields expand to URL search
+  parameters, so for the URL `https://example.org/search?q=blah`, `%{q}`
+  expands to "blah".
 
 * Non-standard templates for the resource's original URL: `%u` (from
   Netscape) expands to the original URL of the resource, `%h` (from w3mmee)
