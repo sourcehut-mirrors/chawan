@@ -393,19 +393,14 @@ proc straight(c: ARGBColor): ARGBColor =
   let b = ((uint32(c.b) * 0xFF00 div a + 0x80) shr 8) and 0xFF
   return ARGBColor((a shl 24) or (r shl 16) or (g shl 8) or b)
 
-# Note: this is a very poor approximation, as the premultiplication
-# already discards fractions...
+# Note: this could be done more accurately, right now we discard fractions
+# too often.  (On the bright side, it's very fast.)
 proc blend*(c0, c1: ARGBColor): ARGBColor =
   let pc0 = c0.premul()
   let pc1 = c1.premul()
   let k = 255 - pc1.a
   let mc = pc0.fastmul(uint32(k))
-  let rr = pc1.r + mc.r
-  let rg = pc1.g + mc.g
-  let rb = pc1.b + mc.b
-  let ra = pc1.a + mc.a
-  let pres = rgba(rr, rg, rb, ra)
-  return straight(pres)
+  return ARGBColor(uint32(pc1) + uint32(mc)).straight()
 
 # Blending operation for cell colors.
 # Normally, this should only happen with RGB color, so if either color is
