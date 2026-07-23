@@ -32,6 +32,17 @@ type
     asign: int8
     bsign: int8
 
+  HSLColor* = object
+    h*: uint16 # 0..359
+    s*: uint8 # 0..100
+    l*: uint8 # 0..100
+
+  HSLAColor* = object
+    h*: uint16 # 0..359
+    s*: uint8 # 0..100
+    l*: uint8 # 0..100
+    a*: uint8 # 0..255
+
   # Either a 3-bit ANSI color (0..7), a 3-bit bright ANSI color (8..15),
   # a color on the RGB cube (16..231), or a grayscale color (232..255).
   ANSIColor* = distinct uint8
@@ -468,6 +479,11 @@ proc rgba*(r, g, b, a: int): ARGBColor =
 proc gray*(n: uint8): RGBColor =
   return rgb(n, n, n)
 
+proc roundU8(n: uint16): uint8 =
+  var n = n + 0x80
+  n += n shr 8
+  uint8(n shr 8)
+
 # I found this algorithm in yaft, but as far as I can tell, it
 # originates from Microsoft.
 proc hue2rgb(n1, n2, h: uint32): uint32 =
@@ -480,10 +496,16 @@ proc hue2rgb(n1, n2, h: uint32): uint32 =
     return n1 + ((n2 - n1) * (240 - h) + 30) div 60
   return n1
 
-proc hsla*(h: uint16; s, l, a: uint8): ARGBColor =
-  let h = uint32(h)
-  let s = uint32(s)
-  let l = uint32(l)
+proc hsla*(h: uint16; s, l, a: uint8): HSLAColor =
+  return HSLAColor(h: h, s: s, l: l, a: a)
+
+proc hsl*(h: uint16; s, l: uint8): HSLColor =
+  return HSLColor(h: h, s: s, l: l)
+
+proc rgb*(c: HSLColor): RGBColor =
+  let h = uint32(c.h)
+  let s = uint32(c.s)
+  let l = uint32(c.l)
   let magic2 = if l <= 50:
     (l * (100 + s) + 50) div 100
   else:
@@ -492,7 +514,44 @@ proc hsla*(h: uint16; s, l, a: uint8): ARGBColor =
   let r = uint8((hue2rgb(magic1, magic2, h + 120) * 255 + 50) div 100)
   let g = uint8((hue2rgb(magic1, magic2, h) * 255 + 50) div 100)
   let b = uint8((hue2rgb(magic1, magic2, h + 240) * 255 + 50) div 100)
-  return rgba(r, g, b, a)
+  return rgb(r, g, b)
+
+proc hsl*(c: RGBColor): HSLColor =
+  let r = int32(c.r)
+  let g = int32(c.g)
+  let b = int32(c.b)
+  let lo = min(r, min(g, b))
+  let hi = max(r, max(g, b))
+  var h = 0'u16
+  let ls = (uint32(lo) + uint32(hi)) * 50
+  let d = hi - lo
+  var s = 0'u32
+  if d > 0:
+    if ls > 0 and ls < 255 * 100:
+      let ld = min(ls, 255 * 100 - ls)
+      let ldmid = ld div 2
+      s = ((uint16(hi) * 100 - ls) * 100 + ldmid) div ld
+    if hi == r:
+      h = uint16(360 + (g - b) * 60 div d)
+    elif hi == g:
+      h = uint16(120 + (b - r) * 60 div d)
+    else:
+      h = uint16(240 + (r - g) * 60 div d)
+  if h >= 360:
+    h -= 360
+  return hsl(h, uint8(s), roundU8(uint16(ls)))
+
+proc hsl*(c: HSLAColor): HSLColor =
+  return hsl(c.h, c.s, c.l)
+
+proc hsla*(c: HSLColor; a: uint8): HSLAColor =
+  return hsla(c.h, c.s, c.l, a)
+
+proc hsla*(c: ARGBColor): HSLAColor =
+  return c.rgb().hsl().hsla(c.a)
+
+proc argb*(c: HSLAColor): ARGBColor =
+  return c.hsl().rgb().argb(c.a)
 
 # Oklab <-> sRGB, based on
 # http://blog.pkh.me/p/38-porting-oklab-colorspace-to-integer-arithmetic.html

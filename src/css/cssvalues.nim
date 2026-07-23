@@ -1438,7 +1438,7 @@ proc parseHue(tok: CSSToken): Opt[uint16] =
 
 proc parseSatOrLight(tok: CSSToken): Opt[uint8] =
   if tok.t in {cttNumber, cttPercentage}:
-    return ok(uint8(clamp(tok.toi, 0i32, 100i32)))
+    return ok(uint8(clamp(tok.num, 0, 100) + 0.5))
   if tok.t == cttIdent:
     return ok(0) # none -> 0
   return err()
@@ -1516,7 +1516,7 @@ proc parseLegacyColorFun(ctx: var CSSParser; ft: CSSFunctionType):
     let h = ?parseHue(v1)
     let s = ?parseSatOrLight(v2)
     let l = ?parseSatOrLight(v3)
-    return ok(hsla(h, s, l, a).cssColor())
+    return ok(hsla(h, s, l, a).argb().cssColor())
   else:
     return err()
 
