@@ -378,7 +378,7 @@ type
     cvitVar, cvitToks
 
   CSSVarItem* = ref object
-    name*: CAtom
+    name*: CAtomTraced
     case t*: CSSVarItemType
     of cvitToks:
       toks*: seq[CSSToken]
@@ -1984,7 +1984,7 @@ proc parseDeclWithVar0(ctx: var CSSParser; nested: bool): seq[CSSVarItem] =
       let tok = ctx.consume()
       if tok.t != cttIdent:
         return @[]
-      let name = tok.s.substr(2).toAtom()
+      var name = tok.s.substr(2).toAtomTrace()
       ctx.skipBlanks()
       var fallback: seq[CSSVarItem]
       if ctx.has() and (let tok = ctx.consume(); tok.t != cttRparen):
@@ -1999,14 +1999,14 @@ proc parseDeclWithVar0(ctx: var CSSParser; nested: bool): seq[CSSVarItem] =
             ctx.seekToken()
       items.add(CSSVarItem(
         t: cvitVar,
-        name: name,
+        name: move(name),
         fallback: move(fallback)
       ))
     elif nested and tok.t == cttRparen and parenStackTop == cttColon:
       break
     else:
       if items.len == 0 or items[^1].name != CAtomNull:
-        items.add(CSSVarItem(t: cvitToks, name: CAtomNull))
+        items.add(CSSVarItem(t: cvitToks, name: CAtomNullTraced))
       let pair = tok.t.tokenPair
       if pair != tok.t:
         if parenStackTop != cttColon:
