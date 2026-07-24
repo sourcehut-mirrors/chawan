@@ -43,6 +43,9 @@ tmpf=$(mktemp)
 printf "%s:${spaces}%s\n" "$scheme" "$cgi" > "$tmpf"
 grep -v "^$scheme:" "$urimethodmap" >> "$tmpf"
 
+# check if there is anything to update at all
+if diff "$urimethodmap" "$tmpf" >/dev/null; then exit 0; fi
+
 {
 	printf 'Updating %s to:\n\n' "$urimethodmap"
 	cat "$tmpf"
