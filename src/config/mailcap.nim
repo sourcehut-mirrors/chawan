@@ -53,7 +53,7 @@ type
     fieldsHead: NamedField
 
   MailcapList {.final.} = ref object of StrMapItem
-    s*: seq[MailcapEntry] # all entries (inc. for subtypes)
+    entries*: seq[MailcapEntry] # all entries (inc. for subtypes)
     resource*: seq[MailcapEntry] # x-resource entries only
     next: MailcapList # used for chaining lists with identical main types
 
@@ -73,7 +73,7 @@ proc put(mailcap: var Mailcap; list: MailcapList) =
   mailcap.map.put(list)
 
 proc put(mailcap: var Mailcap; t: string): MailcapList =
-  let list = MailcapList(name: t)
+  let list = MailcapList(s: t)
   mailcap.put(list)
   list
 
@@ -90,7 +90,7 @@ proc isHtmlOrText(s: string): bool =
   s == "text/html" or s == "text/plain"
 
 proc add(list: MailcapList; entry: MailcapEntry) =
-  list.s.add(entry)
+  list.entries.add(entry)
   if mfResource in entry.flags:
     list.resource.add(entry)
 
@@ -107,16 +107,16 @@ proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
       # ensure a wildcard type exists for all subtypes.  (if we were to add
       # main types after subtypes, then we'd have troubles linking them
       # together)
-      mainList = MailcapList(name: move(main))
+      mainList = MailcapList(s: move(main))
       mailcap.put(mainList)
     else: # add existing wildcard entries
       if t.isHtmlOrText():
         # these types only accept x-type
-        for entry in mainList.s:
+        for entry in mainList.entries:
           if mfType in entry.flags:
-            list.s.add(entry)
+            list.entries.add(entry)
       else:
-        list.s.add(mainList.s)
+        list.entries.add(mainList.entries)
     # link together lists of the same main type so we can efficiently add
     # further wildcard entries
     list.next = mainList.next
@@ -507,9 +507,9 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
   let list = mailcap.getList(shortContentType)
   if list != nil:
     for i in countdown(last - 1, 0):
-      if mfType in list.s[i].flags:
+      if mfType in list.entries[i].flags:
         continue # only supported in auto-mailcap
-      if checkEntry(list.s[i], contentType, url):
+      if checkEntry(list.entries[i], contentType, url):
         return i
   return -1
 
@@ -525,9 +525,9 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
     done = true
     listSeen = true
     var i = 0
-    let slen = if resourceOnly: list.resource.len else: list.s.len
+    let slen = if resourceOnly: list.resource.len else: list.entries.len
     while i < slen:
-      let entry = if resourceOnly: list.resource[i] else: list.s[i]
+      let entry = if resourceOnly: list.resource[i] else: list.entries[i]
       inc i
       if entry.id < id:
         continue
@@ -555,8 +555,8 @@ proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
   let list = mailcap.getList(shortContentType)
   if list != nil:
     let start = outIdx
-    for i in start + 1 ..< list.s.len:
-      let entry = list.s[i]
+    for i in start + 1 ..< list.entries.len:
+      let entry = list.entries[i]
       if mfType in entry.flags:
         continue # only supported in auto-mailcap
       if checkEntry(entry, contentType, url):
@@ -576,7 +576,7 @@ proc findMailcapEntryMut*(mailcap: Mailcap;
     if list == nil:
       break
     done = true
-    for entry in list.s:
+    for entry in list.entries:
       if entry.id < id:
         continue
       if not checkEntry(entry, contentType, url):
@@ -659,6 +659,6 @@ iterator mainTypes*(mailcap: Mailcap): string =
   for it in mailcap.map:
     let it = MailcapList(it)
     if it.next == nil: # only the last list in the chain
-      yield it.name.until('/')
+      yield it.s.until('/')
 
 {.pop.} # raises: []

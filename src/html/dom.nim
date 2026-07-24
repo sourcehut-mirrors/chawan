@@ -1748,7 +1748,7 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
   if window.loadImageFromCache(image, surl):
     return
   let cachedURL = CachedURLImage(
-    name: move(surl),
+    s: move(surl),
     cacheId: -1,
     window: window,
     expiry: -1,

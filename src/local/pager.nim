@@ -2247,9 +2247,9 @@ proc applyMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
     var i: int
     ?ctx.fromJS(val, i)
     let list = pager.mailcap.getList(init.shortContentType)
-    if i < 0 or i >= list.s.len:
+    if i < 0 or i >= list.entries.len:
       return JS_ThrowRangeError(ctx, "invalid mailcap entry")
-    if pager.runMailcap(init, list.s[i]).isErr:
+    if pager.runMailcap(init, list.entries[i]).isErr:
       return ctx.jsQuit(pager, 1)
   else:
     var s: string
@@ -2348,10 +2348,10 @@ proc saveEntry(pager: Pager; contentType: string; entry: MailcapEntry) =
 proc saveMailcapEntry(ctx: JSContext; pager: Pager; init: BufferInit;
     i: int): Opt[void] {.jsfunc.} =
   let list = pager.mailcap.getList(init.shortContentType)
-  if i < 0 or i >= list.s.len:
+  if i < 0 or i >= list.entries.len:
     JS_ThrowRangeError(ctx, "invalid mailcap entry")
     return err()
-  pager.saveEntry(init.shortContentType, list.s[i])
+  pager.saveEntry(init.shortContentType, list.entries[i])
   ok()
 
 # private
@@ -2382,7 +2382,7 @@ proc askMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
   var msg = "Open " & init.shortContentType &
     " as (shift=always): (t)ext, (s)ave"
   if i != -1:
-    msg &= ", (r)un \"" & list.s[i].cmd.strip() & '"'
+    msg &= ", (r)un \"" & list.entries[i].cmd.strip() & '"'
   msg &= ", (e)dit entry, (C-c)ancel"
   if prev != -1:
     msg &= ", (p)rev"

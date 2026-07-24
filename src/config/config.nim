@@ -5,7 +5,6 @@ import std/macros
 import std/math
 import std/os
 import std/sets
-import std/tables
 
 import encoding/charset
 import config/chapath

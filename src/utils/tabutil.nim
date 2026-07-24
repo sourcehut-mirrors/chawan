@@ -5,7 +5,7 @@ import std/hashes
 type
   StrMapItem* = ref object of RootObj
     hcache*: int
-    name*: string
+    s*: string
 
   StrMap* = object
     load*: int
@@ -36,17 +36,17 @@ proc tabSwap*(ourHome: var int; theirHash: Hash; i, mask: int): bool =
     ourHome = theirHome
   res
 
-proc getOrDefault*(map: StrMap; name: openArray[char]): StrMapItem =
+proc getOrDefault*(map: StrMap; s: openArray[char]): StrMapItem =
   if map.tab.len <= 0:
     return nil
-  let hcache = name.hash()
+  let hcache = s.hash()
   let mask = map.tab.len - 1
   var h = hcache and mask
   while true:
     let it = map.tab[h]
     if it == nil:
       break
-    if it.hcache == hcache and it.name == name:
+    if it.hcache == hcache and it.s == s:
       return it
     h = (h + 1) and mask
   return nil
@@ -61,7 +61,7 @@ proc put0(map: var StrMap; item: StrMapItem): bool =
     if it == nil:
       map.tab[i] = item
       break
-    if it.hcache == item.hcache and it.name == item.name:
+    if it.hcache == item.hcache and it.s == item.s:
       map.tab[i] = item
       return false
     if tabSwap(home, it.hcache, i, mask): # displace
@@ -70,7 +70,7 @@ proc put0(map: var StrMap; item: StrMapItem): bool =
   true
 
 proc put*(map: var StrMap; item: StrMapItem) =
-  item.hcache = item.name.hash()
+  item.hcache = item.s.hash()
   for it in map.tab.prepareTableAdd(map.load, init = 16):
     if it != nil:
       discard map.put0(it)

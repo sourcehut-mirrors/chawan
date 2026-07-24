@@ -23,7 +23,7 @@ type
     next*: HistoryEntry
 
 proc add(hist: History; entry: sink HistoryEntry; merge = false) =
-  let old = HistoryEntry(hist.map.getOrDefault(entry.name))
+  let old = HistoryEntry(hist.map.getOrDefault(entry.s))
   if merge and old != nil:
     return
   if old != nil:
@@ -55,12 +55,12 @@ proc newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
 
 proc add*(hist: History; s: sink string) =
-  hist.add(HistoryEntry(name: s), merge = false)
+  hist.add(HistoryEntry(s: s), merge = false)
 
 proc parse0(hist: History; file: ChaFile; merge: bool): Opt[void] =
   var line = ""
   while ?file.readLine(line):
-    hist.add(HistoryEntry(name: move(line)), merge)
+    hist.add(HistoryEntry(s: move(line)), merge)
   ok()
 
 # Consumes `ps'.
@@ -86,12 +86,12 @@ proc write0(hist: History; file: ChaFile; reverse: bool): Opt[void] =
   if reverse:
     var entry = hist.last
     while entry != nil:
-      ?file.writeLine(entry.name)
+      ?file.writeLine(entry.s)
       entry = entry.prev
   else:
     var entry = hist.first
     while entry != nil:
-      ?file.writeLine(entry.name)
+      ?file.writeLine(entry.s)
       entry = entry.next
   file.flush()
 

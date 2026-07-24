@@ -326,7 +326,7 @@ proc updateCookies(ctx: var LoaderContext; cookieJar: CookieJar;
   # Persist is ASCII digit 0 if persist, 1 if not.
   const RS = '\x1E' # ASCII record separator
   let persist = if owner.config.cookieMode == cmSave: '1' else: '0'
-  var s = cookieJar.name & RS & $url & RS & persist & RS
+  var s = cookieJar.s & RS & $url & RS & persist & RS
   for i, it in values.mypairs:
     s &= it & [false: '\r', true: '\n'][i == values.high]
   let buffer = newLoaderBuffer(s)

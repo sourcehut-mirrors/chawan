@@ -48,7 +48,7 @@ proc sread*(r: var PacketReader; cookieJar: var CookieJar) =
   r.sread(n)
   if n:
     cookieJar = CookieJar()
-    r.sread(cookieJar.name)
+    r.sread(cookieJar.s)
     r.sread(cookieJar.cookies)
     for cookie in cookieJar.cookies:
       if not cookie.skip:
@@ -59,14 +59,14 @@ proc sread*(r: var PacketReader; cookieJar: var CookieJar) =
 proc swrite*(w: var PacketWriter; cookieJar: CookieJar) =
   w.swrite(cookieJar != nil)
   if cookieJar != nil:
-    w.swrite(cookieJar.name)
+    w.swrite(cookieJar.s)
     w.swrite(cookieJar.cookies)
 
 proc newCookieJarMap*(): CookieJarMap =
   return CookieJarMap()
 
 proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
-  let jar = CookieJar(name: name)
+  let jar = CookieJar(s: name)
   map.jars.put(jar)
   if map.jarsTail == nil:
     map.jarsHead = jar
@@ -416,8 +416,8 @@ proc write0(map: CookieJarMap; file: ChaFile; ps: PosixStream;
       var buf = ""
       if cookie.httpOnly:
         buf &= "#HttpOnly_"
-      if cookie.domain != jar.name:
-        buf &= jar.name & "@"
+      if cookie.domain != jar.s:
+        buf &= jar.s & "@"
       if not cookie.hostOnly:
         buf &= '.'
       buf &= cookie.domain & '\t'
