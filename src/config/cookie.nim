@@ -2,7 +2,6 @@
 
 import std/algorithm
 import std/posix
-import std/tables
 import std/times
 
 import io/chafile
@@ -15,7 +14,7 @@ import utils/tabutil
 import utils/twtstr
 
 type
-  Cookie* = ref object
+  Cookie* {.final.} = ref object of StrMapItem
     name: string
     value: string
     expires: int64 # unix time
@@ -30,7 +29,7 @@ type
 
   CookieJar* {.final.} = ref object of StrMapItem
     cookies: seq[Cookie]
-    map: Table[string, Cookie] # {host}{path}\t{name}
+    map: StrMap # keyed on {host}{path}\t{name}
     next: CookieJar
 
   CookieJarMap* = ref object
@@ -41,8 +40,6 @@ type
     transient*: bool # set if there is a failure in parsing cookies
 
 # Forward declarations
-proc getMapKey(cookie: Cookie): string
-
 proc sread*(r: var PacketReader; cookieJar: var CookieJar) =
   var n: bool
   r.sread(n)
@@ -52,7 +49,7 @@ proc sread*(r: var PacketReader; cookieJar: var CookieJar) =
     r.sread(cookieJar.cookies)
     for cookie in cookieJar.cookies:
       if not cookie.skip:
-        cookieJar.map[cookie.getMapKey()] = cookie
+        cookieJar.map.put(cookie)
   else:
     cookieJar = nil
 
@@ -183,8 +180,8 @@ proc cookieDomainMatches(cookieDomain: string; url: URL): bool =
 
 proc add(cookieJar: CookieJar; cookie: Cookie; parseMode = false,
     persist = true) =
-  let s = cookie.getMapKey()
-  let old = cookieJar.map.getOrDefault(s)
+  cookie.s = cookie.getMapKey()
+  let old = Cookie(cookieJar.map.getOrDefault(cookie.s))
   if old != nil:
     if parseMode and old.isnew:
       return # do not override newly added cookies
@@ -194,7 +191,7 @@ proc add(cookieJar: CookieJar; cookie: Cookie; parseMode = false,
     else:
       # we cannot save this cookie, but it must be kept for this session.
       old.skip = true
-  cookieJar.map[s] = cookie
+  cookieJar.map.put(cookie)
   cookieJar.cookies.add(cookie)
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
@@ -227,7 +224,7 @@ proc serialize*(cookieJar: CookieJar; url: URL; http: bool): string =
     res &= "="
     res &= cookie.value
   for i in expired.ritems:
-    cookieJar.map.del(cookieJar.cookies[i].getMapKey())
+    cookieJar.map.del(cookieJar.cookies[i])
     cookieJar.cookies.delete(i)
   move(res)
 
