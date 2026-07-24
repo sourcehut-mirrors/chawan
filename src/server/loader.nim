@@ -430,6 +430,15 @@ proc rejectHandle(ctx: var LoaderContext; handle: InputHandle;
     ctx.unregWrite.add(handle.output)
     handle.output.dead = true
 
+# use this when the handle is known to not have been registered yet
+proc rejectHandleClose(ctx: var LoaderContext; handle: InputHandle;
+    code: ConnectionError; msg = "") =
+  ctx.rejectHandle(handle, code, msg)
+  # it is possible that the other side is busy and so we cannot send the
+  # entire rejection yet
+  if not handle.registered:
+    ctx.close(handle)
+
 iterator inputHandles(ctx: LoaderContext): InputHandle {.inline.} =
   for it in ctx.handleMap:
     if it != nil and it of InputHandle:
@@ -1126,8 +1135,7 @@ proc loadCGI2(ctx: var LoaderContext; client: ClientHandle;
     if handle.stream != nil:
       ctx.addFd(handle)
   else:
-    ctx.rejectHandle(handle, code)
-    ctx.close(handle)
+    ctx.rejectHandleClose(handle, code)
 
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     request: var RawRequest; prevURL: URL; config: LoaderClientConfig;
@@ -1135,8 +1143,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
   var env: seq[EnvVar] = @[]
   var cmd: string
   if (let code = ctx.setupCmd(request, cmd, env); code != ceNone):
-    ctx.rejectHandle(handle, code)
-    ctx.close(handle)
+    ctx.rejectHandleClose(handle, code)
     return
   let canThrottle = prevURL != nil and not ctx.isPrivileged(client) and
     prevURL.isNetPath()
@@ -1156,7 +1163,7 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; request: RawRequest) =
   let i = client.findPassedFd(request.url.pathname)
   if i == -1:
-    ctx.rejectHandle(handle, ceFileNotFound, "stream not found")
+    ctx.rejectHandleClose(handle, ceFileNotFound, "stream not found")
     return
   case ctx.sendResult(handle, 0)
   of pbrDone: discard
@@ -1469,8 +1476,6 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadStream(client, handle, request)
       if handle.stream != nil:
         ctx.addFd(handle)
-      else:
-        ctx.close(handle)
     of stCache:
       ctx.loadFromCache(client, handle, request)
       assert handle.stream == nil
