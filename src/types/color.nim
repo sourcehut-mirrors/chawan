@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/bitops
 
 import types/opt
 import utils/dtoawrap
@@ -795,6 +796,76 @@ proc oklch*(L: uint16; C: int32; H: uint16): OklabColor =
   let A = roundI16(int64(C) * cosH)
   let B = roundI16(int64(C) * sinH)
   return oklab(L, A, B)
+
+proc C*(c: OklabColor): int32 =
+  # limit of A**2 + B**2 is 0xFFFF**2*2, which exceeds 32 bits
+  let A = int64(c.A)
+  let B = int64(c.B)
+  let n = A * A + B * B
+  # https://stackoverflow.com/a/63452286
+  var shift = fastLog2(n) + 1
+  shift += shift and 1
+  var res = 0
+  while shift > 0:
+    shift -= 2
+    res = (res shl 1) or 1
+    if res * res > n shr shift:
+      dec res
+  return int32(res)
+
+# Approximation from
+# S. Rajan, Sichun Wang, R. Inkol and A. Joyal,
+# "Efficient approximations for the arctangent function,"
+# in IEEE Signal Processing Magazine, vol. 23, no. 3, pp. 108-111, May 2006
+# https://ieeexplore.ieee.org/document/1628884
+# (expressed here in terms of integer arithmetic)
+# y, x: 0..0xFFFF
+proc iatan2aux(y, x: uint32): int32 =
+  var x = x
+  var y = y
+  var d = 0'i32
+  var sign = 1'i32
+  if y > x: # ensure y <= x
+    d = 90
+    sign = -1
+    swap(x, y)
+  let xmid = x div 2
+  # (45 * 0xFFFF) << 10 fits into 32 bits
+  let n1 = ((45 * y) shl 10 + xmid) div x
+  let n2 = (y * (x - y) + xmid) div x
+  # 0x3CC74 * 0xFFFF > (1 << 32) - 1, so drop some precision here
+  let lx = (x + 3) shr 2
+  let n3 = (0x3CC74 * ((y + 3) shr 2) + (lx div 2)) div lx
+  var n4 = (n2 * (0xE0523 + n3) + xmid) div x
+  n4 += 0x8000'u32 + (n4 shr 16)
+  return d + sign * int32((n1 + (n4 shr 6) + 0x80) shr 10)
+
+proc iatan2(y, x: int32): uint16 =
+  if x == 0:
+    if y > 0:
+      return 90
+    elif y < 0:
+      return 270
+    else:
+      return 0
+  var x = x
+  var y = y
+  var d = 0'u16
+  var sign = 1'i32
+  if x < 0:
+    d = 180
+    sign *= -1
+    x *= -1
+  if y < 0:
+    sign *= -1
+    y *= -1
+  d += uint16(360 + sign * iatan2aux(uint32(y), uint32(x)))
+  if d > 360:
+    d -= 360
+  return uint16(d)
+
+proc H*(c: OklabColor): uint16 =
+  return iatan2(c.B, c.A)
 {.pop.} # overflowChecks: off
 
 # Note: this assumes n notin 0..15 (which would be ANSI 4-bit)

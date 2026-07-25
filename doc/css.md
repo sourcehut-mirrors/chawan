@@ -22,8 +22,9 @@ A list of supported standard properties, with notes on unimplemented values:
 * box-sizing
 * caption-side
 * clear
-* color (hex values and functions `rgb`, `rgba`, `hsl`, `hsla`, `oklab`,
-  `oklch`)
+* color (hex values, colors except system keywords, and functions `rgb`,
+  `rgba`, `hsl`, `hsla`, `oklab`, `oklch`; see limitations on relative
+  colors ("from" keyword) below)
 * content (string, (no-)open/close-quote, counter())
 * counter-increment
 * counter-reset
@@ -90,7 +91,10 @@ Shorthands:
 
 Variables (the `var()` function) are fully supported.
 
-Values of `<length>` or `<color>` types fully support `calc()` expressions.
+Values of `<length>` or absolute `<color>` types support `calc()`
+expressions.  However, colors relative to `currentcolor`, as well as named
+color components in `calc` expressions (e.g. `hsl(from currentcolor 9 s l)`
+or `hsl(from hsl(20, 50, 50) calc(h + 9) s l)`) are not supported.
 
 Logical properties such as `margin-inline-start` etc. are currently *not*
 supported (and neither is `writing-mode`).  However, for compatibility,

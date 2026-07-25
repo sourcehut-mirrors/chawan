@@ -32,8 +32,10 @@ caption\-side
 .IP \(bu 2
 clear
 .IP \(bu 2
-color (hex values and functions \f[CR]rgb\f[R], \f[CR]rgba\f[R],
-\f[CR]hsl\f[R], \f[CR]hsla\f[R], \f[CR]oklab\f[R], \f[CR]oklch\f[R])
+color (hex values, colors except system keywords, and functions
+\f[CR]rgb\f[R], \f[CR]rgba\f[R], \f[CR]hsl\f[R], \f[CR]hsla\f[R],
+\f[CR]oklab\f[R], \f[CR]oklch\f[R]; see limitations on relative colors
+(\(lqfrom\(rq keyword) below)
 .IP \(bu 2
 content (string, (no\-)open/close\-quote, counter())
 .IP \(bu 2
@@ -157,8 +159,12 @@ overflow
 .PP
 Variables (the \f[CR]var()\f[R] function) are fully supported.
 .PP
-Values of \f[CR]<length>\f[R] or \f[CR]<color>\f[R] types fully support
-\f[CR]calc()\f[R] expressions.
+Values of \f[CR]<length>\f[R] or absolute \f[CR]<color>\f[R] types
+support \f[CR]calc()\f[R] expressions.
+However, colors relative to \f[CR]currentcolor\f[R], as well as named
+color components in \f[CR]calc\f[R] expressions
+(e.g.\ \f[CR]hsl(from currentcolor 9 s l)\f[R] or
+\f[CR]hsl(from hsl(20, 50, 50) calc(h + 9) s l)\f[R]) are not supported.
 .PP
 Logical properties such as \f[CR]margin\-inline\-start\f[R] etc.
 are currently \f[I]not\f[R] supported (and neither is

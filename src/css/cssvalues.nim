@@ -434,6 +434,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
 proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
   Opt[CSSCalcSum]
+proc parseColor*(ctx: var CSSParser): Opt[CSSColor]
 
 var computedMap {.global.}: CSSValuesMapObj
 
@@ -1388,7 +1389,38 @@ proc parseCalc(ctx: var CSSParser; attrs: ptr WindowAttributes):
   ctx.skipFunction()
   res
 
-proc parseColorComponent(ctx: var CSSParser): Opt[CSSToken] =
+type
+  CSSColorComponentType = enum
+    ccctNone = "none"
+    ccctA = "a"
+    ccctB = "b"
+    ccctC = "c"
+    ccctG = "g"
+    ccctH = "h"
+    ccctL = "l"
+    ccctR = "r"
+    ccctS = "s"
+    ccctNumber = "-cha-number"
+    ccctDegree = "-cha-degree"
+    ccctPercentage = "-cha-percentage"
+
+  CSSColorComponent = object
+    t: CSSColorComponentType
+    n: float32
+
+proc colorComponent(t: CSSColorComponentType): CSSColorComponent =
+  CSSColorComponent(t: t)
+
+proc colorComponentNum(n: float32): CSSColorComponent =
+  CSSColorComponent(t: ccctNumber, n: n)
+
+proc colorComponentPerc(n: float32): CSSColorComponent =
+  CSSColorComponent(t: ccctPercentage, n: n)
+
+proc colorComponentDegree(n: float32): CSSColorComponent =
+  CSSColorComponent(t: ccctDegree, n: n)
+
+proc parseColorComponent(ctx: var CSSParser): Opt[CSSColorComponent] =
   ?ctx.skipBlanksCheckHas()
   case ctx.peekTokenType()
   of cttFunction:
@@ -1398,57 +1430,67 @@ proc parseColorComponent(ctx: var CSSParser): Opt[CSSToken] =
     ctx.seekToken()
     let res = ?ctx.parseCalc(nil)
     case res.t
-    of ccstNumber: return ok(cssNumberToken(res.n))
-    of ccstDegree: return ok(cssDimensionToken(res.deg, catDeg))
-    of ccstLength: return ok(cssPercentageToken(res.l.perc * 100))
-  of cttNumber, cttPercentage, cttDimension:
-    return ok(ctx.consume())
+    of ccstNumber: return ok(colorComponentNum(res.n))
+    of ccstDegree: return ok(colorComponentDegree(res.deg))
+    #TODO perc should be scaled to 0-1 everywhere I think
+    of ccstLength: return ok(colorComponentPerc(res.l.perc * 100))
+  of cttNumber:
+    let tok = ctx.consume()
+    return ok(colorComponentNum(tok.num))
+  of cttPercentage:
+    let tok = ctx.consume()
+    return ok(colorComponentPerc(tok.num))
+  of cttDimension:
+    let tok = ctx.consume()
+    let deg = ?parseAngle(tok)
+    return ok(colorComponentDegree(deg))
   of cttIdent:
-    if not ctx.peekIdentNoCase("none"):
+    let tok = ctx.consume()
+    const IdentMap = getIdentMap(ccctNone, ccctR)
+    let n = IdentMap.parseIdent(tok)
+    if n < 0:
       return err()
-    return ok(ctx.consume())
+    return ok(colorComponent(CSSColorComponentType(n)))
   else: return err()
 
-proc parseRGBComponent(tok: CSSToken): Opt[uint8] =
-  case tok.t
-  of cttDimension:
-    return err()
-  of cttIdent: # none
+proc parseRGBComponent(c: CSSColorComponent): Opt[uint8] =
+  case c.t
+  of ccctNone:
     return ok(0u8)
-  else:
-    var res = tok.num
-    if tok.t == cttPercentage:
+  of ccctNumber, ccctPercentage:
+    var res = c.n
+    if c.t == ccctPercentage:
       res *= 2.55
     res += 0.5
     ok(uint8(clamp(res, 0, 255))) # number
+  else:
+    return err()
 
-proc parseHue(tok: CSSToken): Opt[uint16] =
+proc parseHue(c: CSSColorComponent): Opt[uint16] =
   var n = 0i32
-  case tok.t
-  of cttNumber:
-    n = tok.toi
-  of cttIdent: discard # none -> 0
-  of cttDimension:
-    n = int32(?parseAngle(tok))
+  case c.t
+  of ccctNumber, ccctDegree:
+    n = int32(c.n + 0.5)
+  of ccctNone: discard
   else: return err()
   n = n mod 360
   if n < 0:
     n = n + 360
   return ok(uint16(n))
 
-proc parseSatOrLight(tok: CSSToken): Opt[uint8] =
-  if tok.t in {cttNumber, cttPercentage}:
-    return ok(uint8(clamp(tok.num, 0, 100) + 0.5))
-  if tok.t == cttIdent:
-    return ok(0) # none -> 0
+proc parseSatOrLight(c: CSSColorComponent): Opt[uint8] =
+  if c.t in {ccctNumber, ccctPercentage}:
+    return ok(uint8(clamp(c.n, 0, 100) + 0.5))
+  if c.t == ccctNone:
+    return ok(0)
   return err()
 
 proc roundL(a: float32): uint16 =
   uint16(round(clamp(a, 0, 1) * 65535))
 
-proc roundAB(tok: CSSToken): int32 =
-  var a = tok.num
-  if tok.t == cttPercentage:
+proc roundAB(c: CSSColorComponent): int32 =
+  var a = c.n
+  if c.t == ccctPercentage:
     a *= 0.004
   a = round(a * 65535)
   if a >= 2147483520'f32:
@@ -1457,26 +1499,37 @@ proc roundAB(tok: CSSToken): int32 =
     return int32.low + 1 # allow negation without overflow
   int32(a)
 
-proc parseOkLight(tok: CSSToken): Opt[uint16] =
-  case tok.t
-  of cttNumber: return ok(roundL(tok.num))
-  of cttPercentage: return ok(roundL(tok.num / 100))
-  of cttIdent: return ok(0) # none -> 0
+proc parseOkLight(c: CSSColorComponent): Opt[uint16] =
+  case c.t
+  of ccctNumber: return ok(roundL(c.n))
+  of ccctPercentage: return ok(roundL(c.n / 100))
+  of ccctNone: return ok(0)
   else: return err()
 
-proc parseOkAB(tok: CSSToken): Opt[int32] =
-  case tok.t
-  of cttNumber, cttPercentage: return ok(roundAB(tok))
-  of cttIdent: return ok(0) # none -> 0
+proc parseOkAB(c: CSSColorComponent): Opt[int32] =
+  case c.t
+  of ccctNumber, ccctPercentage: return ok(roundAB(c))
+  of ccctNone: return ok(0)
   else: return err()
 
-proc parseOkC(tok: CSSToken): Opt[int32] =
-  case tok.t
-  of cttNumber, cttPercentage: return ok(max(roundAB(tok), 0))
-  of cttIdent: return ok(0) # none -> 0
+proc parseOkC(c: CSSColorComponent): Opt[int32] =
+  case c.t
+  of ccctNumber, ccctPercentage: return ok(max(roundAB(c), 0))
+  of ccctNone: return ok(0)
   else: return err()
 
-# For rgb(), rgba(), hsl(), hsla().
+proc parseAlphaComponent(ctx: var CSSParser; legacy: bool;
+    fallback: uint8): Opt[uint8] =
+  if ctx.skipBlanksCheckHas().isOk and ctx.peekTokenType() != cttRparen:
+    if ctx.peekTokenType() != (if legacy: cttComma else: cttSlash):
+      return err()
+    ctx.seekToken()
+    let v4 = ?ctx.parseColorComponent()
+    if v4.t notin {ccctPercentage, ccctNumber}:
+      return err()
+    return ok(uint8(clamp(v4.n, 0, 1) * 255 + 0.5))
+  return ok(fallback)
+
 proc parseLegacyColorFun(ctx: var CSSParser; ft: CSSFunctionType):
     Opt[CSSColor] =
   let v1 = ?ctx.parseColorComponent()
@@ -1490,17 +1543,9 @@ proc parseLegacyColorFun(ctx: var CSSParser; ft: CSSFunctionType):
     if ctx.consume().t != cttComma:
       return err()
   let v3 = ?ctx.parseColorComponent()
-  if legacy and (v1.t == cttIdent or v2.t == cttIdent or v3.t == cttIdent):
+  if legacy and (v1.t == ccctNone or v2.t == ccctNone or v3.t == ccctNone):
     return err() # legacy doesn't accept "none"
-  var a = 255u8
-  if ctx.skipBlanksCheckHas().isOk and ctx.peekTokenType() != cttRparen:
-    if ctx.peekTokenType() != (if legacy: cttComma else: cttSlash):
-      return err()
-    ctx.seekToken()
-    let v4 = ?ctx.parseColorComponent()
-    if v4.t in {cttIdent, cttDimension}:
-      return err()
-    a = uint8(clamp(v4.num, 0, 1) * 255)
+  let a = ?ctx.parseAlphaComponent(legacy, fallback = 255)
   case ft
   of cftRgb, cftRgba:
     if legacy and (v1.t != v2.t or v2.t != v3.t):
@@ -1510,8 +1555,8 @@ proc parseLegacyColorFun(ctx: var CSSParser; ft: CSSFunctionType):
     let b = ?parseRGBComponent(v3)
     return ok(rgba(r, g, b, a).cssColor())
   of cftHsl, cftHsla:
-    if legacy and (v1.t == cttIdent or v2.t != cttPercentage or
-        v3.t != cttPercentage):
+    if legacy and (v1.t == ccctNone or v2.t != ccctPercentage or
+        v3.t != ccctPercentage):
       return err()
     let h = ?parseHue(v1)
     let s = ?parseSatOrLight(v2)
@@ -1520,20 +1565,11 @@ proc parseLegacyColorFun(ctx: var CSSParser; ft: CSSFunctionType):
   else:
     return err()
 
-proc parseColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
+proc parseNewColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
   let v1 = ?ctx.parseColorComponent()
-  ?ctx.skipBlanksCheckHas()
   let v2 = ?ctx.parseColorComponent()
   let v3 = ?ctx.parseColorComponent()
-  var a = 255u8
-  if ctx.skipBlanksCheckHas().isOk and ctx.peekTokenType() != cttRparen:
-    if ctx.peekTokenType() != cttSlash:
-      return err()
-    ctx.seekToken()
-    let v4 = ?ctx.parseColorComponent()
-    if v4.t in {cttIdent, cttDimension}:
-      return err()
-    a = uint8(clamp(v4.num, 0, 1) * 255)
+  let a = ?ctx.parseAlphaComponent(legacy = false, fallback = 255)
   case ft
   of cftOklab:
     let L = ?parseOkLight(v1)
@@ -1544,6 +1580,46 @@ proc parseColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
     let L = ?parseOkLight(v1)
     let C = ?parseOkC(v2)
     let H = ?parseHue(v3)
+    return ok(oklch(L, C, H).rgb().argb(a).cssColor())
+  else:
+    return err()
+
+proc parseRelativeColorFun(ctx: var CSSParser; orig: CSSColor;
+    ft: CSSFunctionType): Opt[CSSColor] =
+  if orig.t != cctARGB:
+    #TODO we'll have to do something with ccctCurrent eventually
+    return err()
+  let v1 = ?ctx.parseColorComponent()
+  let v2 = ?ctx.parseColorComponent()
+  let v3 = ?ctx.parseColorComponent()
+  let a = ?ctx.parseAlphaComponent(legacy = false, fallback = orig.a)
+  case ft
+  of cftRgb, cftRgba:
+    let orig = orig.argb()
+    let r = if v1.t == ccctR: orig.r else: ?parseRGBComponent(v1)
+    let g = if v2.t == ccctG: orig.g else: ?parseRGBComponent(v2)
+    let b = if v3.t == ccctB: orig.b else: ?parseRGBComponent(v3)
+    return ok(rgba(r, g, b, a).cssColor())
+  of cftHsl, cftHsla:
+    let orig = orig.argb().rgb().hsl()
+    let h = if v1.t == ccctH: orig.h else: ?parseHue(v1)
+    let s = if v2.t == ccctS: orig.s else: ?parseSatOrLight(v2)
+    let l = if v3.t == ccctL: orig.l else: ?parseSatOrLight(v3)
+    return ok(hsla(h, s, l, a).argb().cssColor())
+  of cftOklab:
+    #TODO ideally we'd have an oklab CSSColor type, then we wouldn't have
+    # to convert here just yet
+    let orig = orig.argb().rgb().oklab()
+    let L = if v1.t == ccctL: orig.L else: ?parseOkLight(v1)
+    let A = if v2.t == ccctA: orig.A else: ?parseOkAB(v2)
+    let B = if v3.t == ccctB: orig.B else: ?parseOkAB(v3)
+    return ok(oklab(L, A, B).rgb().argb(a).cssColor())
+  of cftOklch:
+    #TODO ditto
+    let orig = orig.argb().rgb().oklab()
+    let L = if v1.t == ccctL: orig.L else: ?parseOkLight(v1)
+    let C = if v2.t == ccctC: orig.C else: ?parseOkC(v2)
+    let H = if v3.t == ccctH: orig.H else: ?parseHue(v3)
     return ok(oklch(L, C, H).rgb().argb(a).cssColor())
   else:
     return err()
@@ -1596,6 +1672,22 @@ proc parseANSI(ctx: var CSSParser): Opt[CSSColor] =
   else: discard
   return err()
 
+proc parseColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
+  ?ctx.skipBlanksCheckHas()
+  let resx = if ctx.peekIdentNoCase("from"):
+    ctx.seekToken()
+    let origin = ?ctx.parseColor()
+    ctx.parseRelativeColorFun(origin, ft)
+  else:
+    case ft
+    of cftRgb, cftRgba, cftHsl, cftHsla: ctx.parseLegacyColorFun(ft)
+    of cftOklab, cftOklch: ctx.parseNewColorFun(ft)
+    of cftChaAnsi: ctx.parseANSI()
+    else: return err()
+  let res = ?resx
+  ?ctx.checkFunctionEnd()
+  ok(res)
+
 proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
   ?ctx.skipBlanksCheckHas()
   let tok = ctx.consume()
@@ -1618,14 +1710,10 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
     else:
       return err()
   of cttFunction:
-    var res = case tok.ft
-    of cftRgb, cftRgba, cftHsl, cftHsla: ctx.parseLegacyColorFun(tok.ft)
-    of cftOklab, cftOklch: ctx.parseColorFun(tok.ft)
-    of cftChaAnsi: ctx.parseANSI()
-    else: Opt[CSSColor].err()
-    if ctx.has() and ctx.peekTokenType() != cttRparen:
-      res = Opt[CSSColor].err()
-    ctx.skipFunction()
+    #TODO add some sub-parser interface because this is horrible
+    let res = ctx.parseColorFun(tok.ft)
+    if res.isErr:
+      ctx.skipFunction()
     return res
   else:
     return err()
