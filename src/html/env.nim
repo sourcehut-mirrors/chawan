@@ -3,6 +3,7 @@
 import config/conftypes
 import config/mimetypes
 import css/cssparser
+import css/cssvalues
 import css/mediaquery
 import html/catom
 import html/chadombuilder
@@ -267,6 +268,43 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(Notification)
   ?ctx.registerType(Permissions)
   ok()
+
+# CSS
+proc cssSupports(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  if argc == 0:
+    return JS_ThrowTypeError(ctx, "too few arguments")
+  var arg1: CSSOMString
+  ?ctx.fromJS(argv[0], arg1)
+  if argc < 2:
+    #TODO supports(arg1)
+    return JS_FALSE
+  var value: CSSOMString
+  ?ctx.fromJS(argv[1], value)
+  if decl := initCSSDeclaration($arg1):
+    case decl.t
+    of cdtProperty:
+      var cp = initCSSParser(value)
+      var dummy: seq[CSSComputedEntry] = @[]
+      return ctx.toJS(cp.parseComputedValues0(decl.p, dummyAttrs, dummy).isOk)
+    of cdtVariable:
+      let toks = parseComponentValues(value)
+      return ctx.toJS(parseDeclWithVar1(toks).len == 0)
+    of cdtNestedRule: discard
+  return JS_FALSE
+
+proc cssEscape(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  if argc == 0:
+    return JS_ThrowTypeError(ctx, "too few arguments")
+  var ident: CSSOMString
+  ?ctx.fromJS(argv[0], ident)
+  return ctx.toJS(ident.toOpenArray().cssIdentEscape())
+
+let jsCSSFuncs {.global.} = [
+    JS_CFUNC_DEF("supports", 1, cssSupports),
+    JS_CFUNC_DEF("escape", 1, cssEscape),
+]
 
 # Window
 proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
@@ -653,9 +691,13 @@ proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   JS_FreeValue(ctx, proto)
   if windowCID == JS_INVALID_CLASS_ID:
     return err()
-  let global = JS_GetGlobalObject(ctx)
+  let global = ctx.getOpaque().global
   ?ctx.addEventGetSet(global, WindowEvents)
-  JS_FreeValue(ctx, global)
+  let css = JS_NewObject(ctx)
+  if not ctx.setPropertyFunctionList(css, jsCSSFuncs):
+    return err()
+  if ctx.definePropertyCW(global, "CSS", css) == dprException:
+    return err()
   ?ctx.registerType(MediaQueryList, parent = eventTargetCID)
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
   ?ctx.addConsoleModule()

@@ -785,11 +785,42 @@ proc dqEscape*(s: openArray[char]): string =
     result &= c
 
 proc cssEscape*(s: openArray[char]): string =
-  result = ""
+  result = newStringOfCap(s.len)
   for c in s:
     if c == '\'':
       result &= '\\'
     result &= c
+
+proc cssIdentEscape*(s: openArray[char]): string =
+  var res = newStringOfCap(s.len)
+  for i, c in s:
+    case c
+    of '\0': res &= "\uFFFD"
+    of Controls - {'\0'}:
+      res &= '\\'
+      if uint8(c) > 0xF:
+        res &= HexCharsLower[uint8(c) shr 4]
+      res &= HexCharsLower[uint8(c) and 0xF]
+      res &= ' '
+    of AsciiDigit:
+      if i == 0 or i == 1 and res[0] == '-':
+        res &= '\\'
+        res &= HexCharsLower[uint8(c) shr 4]
+        res &= HexCharsLower[uint8(c) and 0xF]
+        res &= ' '
+      else:
+        res &= c
+    of '-':
+      if res.len == 1:
+        res &= "\\-"
+      else:
+        res &= c
+    of NonAscii, '_', AsciiAlpha:
+      res &= c
+    else:
+      res &= "\\"
+      res &= c
+  move(res)
 
 proc join*(ss: openArray[string]; sep: char): string =
   if ss.len <= 0:
