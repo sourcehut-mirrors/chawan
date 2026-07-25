@@ -825,6 +825,7 @@ proc findAttr(element: Element; qualifiedName: CAtomTraced): int
 proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
+proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
@@ -2191,6 +2192,14 @@ proc nextDescendantShadow(node, start: Node): Node =
   # done
   return nil
 
+proc nextElementDescendantShadow(element: Element; start: Node): Element =
+  var node = Node(element)
+  while true:
+    node = node.nextDescendantShadow(start)
+    if node == nil or node of Element:
+      break
+  Element(node)
+
 proc previousDescendant(node: Node): Node =
   var prev = node.previousSibling
   if prev == nil:
@@ -3151,6 +3160,7 @@ proc insert0(parent: ParentNode; node, before: Node;
     #TODO assign slottables for a tree with root
   if node.nextSibling == nil:
     node.internalNext = rootNode
+  var specialElement: Element = nil
   for desc in node.descendantsShadowIncl:
     let last = desc.lastChild
     if last != nil: # update root
@@ -3159,8 +3169,8 @@ proc insert0(parent: ParentNode; node, before: Node;
       let el = Element(desc)
       if el.id != satUempty and desc.rootNode == parentDocument:
         parentDocument.addElementId(el)
-      if el.insertionSteps():
-        postConnectionNodes.add(el)
+      if specialElement == nil and el.hasInsertionSteps():
+        specialElement = el
       if el.custom == cesCustom:
         #TODO append parentDocument to element custom registry
         #TODO enqueue connectedCallback (custom elements)
@@ -3172,6 +3182,14 @@ proc insert0(parent: ParentNode; node, before: Node;
       let customElements = shadow.customElements
       if customElements != nil and customElements.scoped:
         customElements.addScopedDocument(parentDocument)
+  # Insertion steps have a tendency to traverse the dom, which has
+  # disastrous consequences in the above loop as the root node is still
+  # inconsistent.  So we just cache the first node with insertion steps
+  # and traverse the tree again if needed.
+  while specialElement != nil:
+    if specialElement.insertionSteps():
+      postConnectionNodes.add(specialElement)
+    specialElement = specialElement.nextElementDescendantShadow(node)
 
 # WARNING ditto
 proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
@@ -6169,6 +6187,11 @@ proc resetElement*(element: Element; ctx: JSContext) =
     output.internalValue = ""
   else: discard
 
+proc hasInsertionSteps(element: Element): bool =
+  element.tagType in {ttOption, ttLink, ttImg, ttStyle, ttScript} or
+    element.tagType(satNamespaceSVG) == ttSvg or
+    element of FormAssociatedElement
+
 # Returns true if has post-connection steps.
 proc insertionSteps(element: Element): bool =
   case element.tagType
@@ -6208,7 +6231,12 @@ proc insertionSteps(element: Element): bool =
   of ttScript:
     return true
   elif element.tagType(satNamespaceSVG) == ttSvg:
-    return true
+    #TODO this doesn't work if JS adds descendants to the SVG tag
+    let svg = SVGSVGElement(element)
+    if svg.parserDocument != svg.document:
+      let window = svg.document.window
+      if window != nil:
+        window.loadSVG(svg)
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if not element.parserInserted:
@@ -6227,21 +6255,9 @@ proc removingSteps(element: Element) =
     SheetElement(element).removeSheet()
 
 proc postConnectionSteps(element: Element) =
-  case element.tagType
-  of ttScript:
-    let script = HTMLScriptElement(element)
-    if script.isConnected and script.parserDocument == nil:
-      script.prepare()
-  elif element.tagType(satNamespaceSVG) == ttSvg:
-    # we invoke loadSVG here to avoid the case where the descendants still
-    # point to an already inserted node
-    #TODO this doesn't work if JS adds descendants to the SVG tag
-    let svg = SVGSVGElement(element)
-    if svg.parserDocument != svg.document:
-      let window = svg.document.window
-      if window != nil:
-        window.loadSVG(svg)
-  else: discard
+  let script = HTMLScriptElement(element)
+  if script.isConnected and script.parserDocument == nil:
+    script.prepare()
 
 proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
     JSValue {.jsfunc.} =

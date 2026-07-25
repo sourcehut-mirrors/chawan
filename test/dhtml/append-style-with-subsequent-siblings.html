@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<div id=x>test</div>
+<script>
+const a = document.createElement("div");
+const s = document.createElement("style");
+s.textContent = "#x { color: green }";
+a.appendChild(s);
+const d = document.createElement("div");
+d.append("test")
+a.appendChild(d);
+x.appendChild(a);
+</script>
