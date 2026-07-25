@@ -1762,8 +1762,8 @@ proc parseFontWeight(ctx: var CSSParser): Opt[int32] =
     const FontWeightMap = {
       "bold": 700,
       "bolder": 700,
-      "lighter": 400,
-      "normal": 400
+      "normal": 400,
+      "lighter": 400
     }
     let i = FontWeightMap.parseIdent(tok)
     if i != -1:

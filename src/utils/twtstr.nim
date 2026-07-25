@@ -992,33 +992,40 @@ proc normalizeLF*(s: openArray[char]): string =
 
 type IdentMapItem* = tuple[s: string; n: int]
 
-proc getIdentMap*[T: enum](lo, hi: T): seq[IdentMapItem] =
-  result = @[]
-  for e in lo .. hi:
-    result.add(($e, int(e)))
-  result.sort(proc(x, y: IdentMapItem): int = cmp(x.s, y.s))
-
-proc getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
-  getIdentMap(T.low, T.high)
-
 proc cmpItem(x: IdentMapItem; y: openArray[char]): int =
   let slen = x.s.len
-  let ylen = y.len
-  let L = min(slen, ylen)
+  let n = cmp(slen, y.len)
+  if n != 0:
+    return n
   when nimvm:
-    for i in 0 ..< L:
+    for i in 0 ..< slen:
       let n = cmp(x.s[i], y[i])
       if n != 0:
         return n
   else:
-    if L > 0:
-      let n = cmpMem(unsafeAddr x.s[0], unsafeAddr y[0], L)
-      if n != 0:
-        return n
-  return cmp(slen, ylen)
+    if slen > 0:
+      return cmpMem(unsafeAddr x.s[0], unsafeAddr y[0], slen)
+  return 0
+
+proc getIdentMap*[T: enum](lo, hi: T): seq[IdentMapItem] =
+  result = @[]
+  for e in lo .. hi:
+    result.add(($e, int(e)))
+  result.sort(proc(x, y: IdentMapItem): int = cmpItem(x, y.s))
+
+proc getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
+  getIdentMap(T.low, T.high)
 
 proc cmpItemNoCase(x: IdentMapItem; y: openArray[char]): int =
-  x.s.cmpIgnoreCase2(y)
+  let slen = x.s.len
+  let n = cmp(slen, y.len)
+  if n != 0:
+    return n
+  for i in 0 ..< slen:
+    let n = cmp(x.s[i].toLowerAscii(), y[i].toLowerAscii())
+    if n != 0:
+      return n
+  return 0
 
 proc strictParseEnum0(map: openArray[IdentMapItem]; s: openArray[char]): int =
   let i = map.binarySearch(s, cmpItem)
@@ -1035,6 +1042,8 @@ proc strictParseEnum*[T: enum](s: openArray[char]): Opt[T] =
     {.pop.}
   err()
 
+# Warning: the comparator here is *not* the standard cmp, but rather a
+# length-based one.
 proc parseEnumNoCase0*(map: openArray[IdentMapItem]; s: openArray[char]): int =
   let i = map.binarySearch(s, cmpItemNoCase)
   if i != -1:
