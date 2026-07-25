@@ -6627,6 +6627,13 @@ proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
     readonly: readonly
   )
 
+proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
+  if this.readonly:
+    JS_ThrowDOMException(ctx, "NoModificationAllowedError",
+      "cannot modify read-only declaration")
+    return err()
+  ok()
+
 proc cssText(this: CSSStyleDeclaration): string {.jsfget.} =
   if this.computed:
     return ""
@@ -6635,6 +6642,12 @@ proc cssText(this: CSSStyleDeclaration): string {.jsfget.} =
     if result.len > 0:
       result &= ' '
     result &= $it
+
+proc setCSSText(ctx: JSContext; this: CSSStyleDeclaration; s: CSSOMString):
+    Opt[void] {.jsfset: "cssText".} =
+  ?ctx.checkReadOnly(this)
+  this.element.attr(satStyle, s)
+  ok()
 
 proc length(this: CSSStyleDeclaration): uint32 =
   return uint32(this.decls.len)
@@ -6720,13 +6733,6 @@ proc parseDeclValue(decl: var CSSDeclaration; value: CSSOMString): Opt[void] =
   decl.value = move(toks)
   ok()
 
-proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
-  if this.readonly:
-    JS_ThrowDOMException(ctx, "NoModificationAllowedError",
-      "cannot modify read-only declaration")
-    return err()
-  ok()
-
 proc updateStyleAttr(this: CSSStyleDeclaration) =
   this.updating = true
   this.element.attr(satStyle, this.cssText)
@@ -6794,6 +6800,9 @@ proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:
     element.cachedStyle = newCSSStyleDeclaration(element, "")
   return element.cachedStyle
+
+proc setStyle(element: Element; s: CSSOMString) {.jsfset: "style".} =
+  element.attr(satStyle, s)
 
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues =
   var computed = element.computed
