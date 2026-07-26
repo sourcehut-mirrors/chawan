@@ -138,8 +138,6 @@ type
     resolve: pointer # JSObject *
     reject: pointer # JSObject *
 
-jsDestructor(Response)
-
 # Forward declarations
 proc get*(loader: FileLoader; fd: cint): MapData
 proc resume*(loader: FileLoader; outputId: int)
