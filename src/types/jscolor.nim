@@ -45,7 +45,7 @@ proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   return toJS(ctx, res)
 
 proc toJS*(ctx: JSContext; c: CSSColor): JSValue =
-  if c.t == cctARGB:
+  if c.t in {cctArgb, cctOklab}:
     return ctx.toJS(c.argb())
   return ctx.toJS($c)
 

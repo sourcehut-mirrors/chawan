@@ -59,16 +59,32 @@ type
   CellColor* = distinct uint32
 
   CSSColorType* = enum
-    cctARGB, cctCell, cctCurrent
+    cctArgb, cctOklab, cctCell, cctCurrent
 
-  # Color that can be represented in CSS.
-  # As an extension, we also recognize ANSI colors, so ARGB does not suffice.
-  # (Actually, it would, but then we'd have to copy over the ANSI color
-  # table and then re-quantize on render. I'm fine with wasting a few
-  # bytes instead.)
+  # Color that can be represented in CSS.  The top 6 bits are reserved for
+  # the tag.  Values (most significant bit to least significant):
+  # cctArgb: 6 bits tag, 28 bits padding, 32 bits ARGBColor.
+  # cctOklab:
+  #  tag (6 bits)
+  #  alpha (8 bits)
+  #  asign shr 7, i.e. 1 if negative, 0 if positive (1 bit)
+  #  bsign shr 7, i.e. 1 if negative, 0 if positive (1 bit)
+  #  L (16 bits)
+  #  abs(A) (16 bits)
+  #  abs(B) (16 bits)
+  # cctCell: 6 bits tag, 28 bits padding, 32 bits CellColor.
+  # cctCurrent: currentColor placeholder.
+  #  (TODO sadly, the spec says this can be used in calc(), so we'll
+  #  probably have to special case it at cascade time like var().)
   CSSColor* = distinct uint64
 
+# Forward declarations
 proc rgba*(r, g, b, a: uint8): ARGBColor
+proc oklab*(c: CSSColor): OklabColor
+proc rgb*(c: OklabColor): RGBColor
+proc oklab*(c: RGBColor): OklabColor
+proc A*(c: OklabColor): int32
+proc B*(c: OklabColor): int32
 
 # bitmasked so nimvm doesn't choke on it
 proc r*(c: ARGBColor): uint8 =
@@ -127,10 +143,10 @@ proc cellColor*(c: ANSIColor): CellColor =
 const defaultColor* = cellColor(ctNone, 0)
 
 proc cssColor(t: CSSColorType; n: uint32): CSSColor =
-  CSSColor((uint64(t) shl 32) or uint64(n))
+  CSSColor((uint64(t) shl 58) or uint64(n))
 
 proc cssColor*(c: ARGBColor): CSSColor =
-  return cssColor(cctARGB, uint32(c))
+  return cssColor(cctArgb, uint32(c))
 
 proc cssColor*(c: RGBColor): CSSColor =
   return c.argb.cssColor()
@@ -145,23 +161,54 @@ proc cssCurrentColor*(): CSSColor =
   return cssColor(cctCurrent, 0)
 
 template t*(c: CSSColor): CSSColorType =
-  cast[CSSColorType](uint64(c) shr 32)
+  cast[CSSColorType](uint64(c) shr 58)
 
-template n*(c: CSSColor): uint32 =
+template n(c: CSSColor): uint32 =
   uint32(uint64(c) and 0xFFFFFFFF'u32)
 
-proc argb*(c: CSSColor): ARGBColor =
-  return ARGBColor(c.n)
+template nw(c: CSSColor): uint64 =
+  uint64(c) and 0x3FFFFFFFFFFFFFF'u64
 
 proc a*(c: CSSColor): uint8 =
-  if c.t == cctCell:
+  case c.t
+  of cctOklab:
+    return uint8(c.nw shr 50)
+  of cctArgb:
+    return uint8(c.n shr 24)
+  of cctCell:
     if CellColor(c.n).t == ctNone:
       return 0
     return 255
-  return c.argb().a
+  of cctCurrent:
+    return 0
+
+proc argb*(c: CSSColor): ARGBColor =
+  case c.t
+  of cctArgb:
+    return ARGBColor(c.n)
+  of cctOklab:
+    return c.oklab().rgb().argb(c.a)
+  of cctCell, cctCurrent: # invalid conversion, pretend it's transparent
+    return ARGBColor(0)
+
+proc oklab*(c: CSSColor): OklabColor =
+  case c.t
+  of cctArgb:
+    return c.argb().rgb().oklab()
+  of cctOklab:
+    let n = c.nw
+    #TODO we should have an OklabColor variant with alpha
+    let asign = cast[int8](0'u8 - uint8((n shr 49) and 1))
+    let bsign = cast[int8](0'u8 - uint8((n shr 48) and 1))
+    let L = uint16(n shr 32)
+    let ua = uint16(n shr 16)
+    let ub = uint16(n)
+    return OklabColor(asign: asign, bsign: bsign, L: L, ua: ua, ub: ub)
+  of cctCell, cctCurrent: # invalid conversion, pretend it's transparent
+    return OklabColor()
 
 proc rgbTransparent*(c: CSSColor): bool =
-  return c.t == cctARGB and c.argb().a == 0
+  return c.t in {cctArgb, cctOklab} and c.a == 0
 
 proc cellColor*(c: CSSColor): CellColor =
   if c.t == cctCell:
@@ -331,32 +378,44 @@ proc namedRGBColor*(s: string): Opt[RGBColor] =
   return err()
 
 # https://html.spec.whatwg.org/#serialisation-of-a-color
-proc serialize*(c: ARGBColor): string =
-  if c.a == 255:
+proc serialize*(c: ARGBColor; html: bool): string =
+  if html and c.a == 255:
     var res = "#"
     res.pushHex(c.r)
     res.pushHex(c.g)
     res.pushHex(c.b)
     return move(res)
   let a = float64(c.a) / 255
-  result = "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", "
-  result.addDouble(a)
-  result &= ')'
+  var res = "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", "
+  res.addDouble(a)
+  res &= ')'
+  move(res)
 
 proc `$`*(c: ARGBColor): string =
-  return c.serialize()
+  return c.serialize(html = false)
 
 proc `$`*(c: RGBColor): string =
-  return c.argb().serialize()
+  return c.argb().serialize(html = false)
 
 proc `$`*(c: CSSColor): string =
   case c.t
   of cctCell: return "-cha-ansi(" & $c.n & ")"
   of cctCurrent: return "currentcolor"
-  of cctARGB:
+  of cctOklab:
+    #TODO should add oklch tag with same internal representation but
+    # different serialization
+    let oc = c.oklab()
+    var s = "oklab(" & $oc.L & " " & $oc.A & " " & $oc.B
+    let a = c.a
+    if a < 255:
+      s &= " / "
+      s.addDouble(float64(a) / 255)
+    s &= ')'
+    return move(s)
+  of cctArgb:
     let c = c.argb()
     if c.a != 255:
-      return c.serialize()
+      return c.serialize(html = false)
     return "rgb(" & $c.r & ", " & $c.g & ", " & $c.b & ")"
 
 proc `$`*(color: CellColor): string =

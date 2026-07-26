@@ -5634,14 +5634,14 @@ proc parseColor(element: Element; s: DOMString): Opt[ARGBColor] =
   var ctx = initCSSParser(s)
   if color := ctx.parseColor():
     case color.t
-    of cctARGB: return ok(color.argb)
+    of cctArgb, cctOklab: return ok(color.argb())
     of cctCurrent:
       let window = element.document.window
       if window != nil and window.settings.scripting == smApp and
           element.isConnected():
         element.ensureStyle()
-        if element.computed{"color"}.t == cctARGB:
-          return ok(element.computed{"color"}.argb)
+        if element.computed{"color"}.t in {cctArgb, cctOklab}:
+          return ok(element.computed{"color"}.argb())
       return ok(rgba(0, 0, 0, 255))
     of cctCell: discard
   return err()

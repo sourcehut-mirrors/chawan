@@ -1586,7 +1586,7 @@ proc parseNewColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
 
 proc parseRelativeColorFun(ctx: var CSSParser; orig: CSSColor;
     ft: CSSFunctionType): Opt[CSSColor] =
-  if orig.t != cctARGB:
+  if orig.t notin {cctArgb, cctOklab}:
     #TODO we'll have to do something with ccctCurrent eventually
     return err()
   let v1 = ?ctx.parseColorComponent()
@@ -1607,16 +1607,13 @@ proc parseRelativeColorFun(ctx: var CSSParser; orig: CSSColor;
     let l = if v3.t == ccctL: orig.l else: ?parseSatOrLight(v3)
     return ok(hsla(h, s, l, a).argb().cssColor())
   of cftOklab:
-    #TODO ideally we'd have an oklab CSSColor type, then we wouldn't have
-    # to convert here just yet
-    let orig = orig.argb().rgb().oklab()
+    let orig = orig.oklab()
     let L = if v1.t == ccctL: orig.L else: ?parseOkLight(v1)
     let A = if v2.t == ccctA: orig.A else: ?parseOkAB(v2)
     let B = if v3.t == ccctB: orig.B else: ?parseOkAB(v3)
     return ok(oklab(L, A, B).rgb().argb(a).cssColor())
   of cftOklch:
-    #TODO ditto
-    let orig = orig.argb().rgb().oklab()
+    let orig = orig.oklab()
     let L = if v1.t == ccctL: orig.L else: ?parseOkLight(v1)
     let C = if v2.t == ccctC: orig.C else: ?parseOkC(v2)
     let H = if v3.t == ccctH: orig.H else: ?parseHue(v3)

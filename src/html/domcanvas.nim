@@ -257,7 +257,7 @@ proc transform(ctx: CanvasRenderingContext2D; v: Vector2D): Vector2D =
   return Vector2D(x: mul.me[0], y: mul.me[1])
 
 proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
-  return ctx.state.fillStyle.serialize()
+  return ctx.state.fillStyle.serialize(html = true)
 
 proc fillStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
   #TODO gradient, pattern
@@ -265,7 +265,7 @@ proc fillStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
     ctx.state.fillStyle = color
 
 proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
-  return ctx.state.strokeStyle.serialize()
+  return ctx.state.strokeStyle.serialize(html = true)
 
 proc strokeStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
   #TODO gradient, pattern
