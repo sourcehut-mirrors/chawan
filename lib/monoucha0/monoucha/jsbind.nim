@@ -1428,7 +1428,7 @@ proc registerGetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma;
     boundName = ident($bfGetter & "_" & tname & "_" & fn)
     stmts.add(quote do:
       proc `boundName`(ctx: JSContext; this: JSValueConst): JSValue {.cdecl.} =
-        var arg_0: ptr `t`.pointerBase
+        var arg_0 {.noinit.}: ptr `t`.pointerBase
         if ctx.fromJSThis(this, arg_0) == fjErr:
           return JS_EXCEPTION
         when arg0.`node` is JSValue:
@@ -1451,7 +1451,7 @@ proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
   let id = ident($bfSetter & "_" & tname & "_" & fn)
   stmts.add(quote do:
     proc `id`(ctx: JSContext; this, val: JSValueConst): JSValue {.cdecl.} =
-      var arg_0: ptr `t`.pointerBase
+      var arg_0 {.noinit.}: ptr `t`.pointerBase
       if ctx.fromJSThis(this, arg_0) == fjErr:
         return JS_EXCEPTION
       # We can't just set arg_0.`node` directly, or fromJS may damage it.
@@ -1580,7 +1580,7 @@ proc bindReplaceableSet(stmts: NimNode; info: var RegistryInfo) =
     const replaceableNames = `trns`
     proc `rsf`(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
         {.cdecl.} =
-      var dummy: ptr `t`.pointerBase
+      var dummy {.noinit.}: ptr `t`.pointerBase
       if ctx.fromJSThis(this, dummy) == fjErr:
         return JS_EXCEPTION
       let name = replaceableNames[int(magic)]
