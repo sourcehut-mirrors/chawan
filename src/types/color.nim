@@ -619,7 +619,8 @@ proc B*(c: OklabColor): int32 =
   int32(c.ub) * c.bsign
 
 proc roundU16(u: uint32): uint32 =
-  var u = uint64(u)
+  # Assumes u <= 0xFFFE8001.
+  var u = u
   u += 0x8000'u32 + u shr 16
   return uint32(u shr 16)
 
@@ -698,13 +699,14 @@ proc oklab*(c: RGBColor): OklabColor =
   let r = uint32(linear(c.r))
   let g = uint32(linear(c.g))
   let b = uint32(linear(c.b))
-  let l = roundU16(0x6987 * r + 0x894D * g + 0x0D2C * b)
+  # the shift trick would overflow a 32-bit register with l and s
+  let l = (0x6987 * r + 0x894D * g + 0x0D2C * b + 0x7FFF) div 0xFFFF
   let m = roundU16(0x363F * r + 0xAE42 * g + 0x1B7E * b)
-  let s = roundU16(0x169B * r + 0x481F * g + 0xA146 * b)
-  let lcr = int64(icbrt(l))
-  let mcr = int64(icbrt(m))
-  let scr = int64(icbrt(s))
-  let L = roundU16(uint32(0x035E0 * lcr + 0x0CB2A * mcr - 0x010B * scr))
+  let s = (0x169B * r + 0x481F * g + 0xA146 * b + 0x7FFF) div 0xFFFF
+  let lcr = icbrt(l)
+  let mcr = icbrt(m)
+  let scr = icbrt(s)
+  let L = roundU16(uint32(0x35E0 * lcr + 0xCB2A * mcr - 0x010B * scr))
   let sa = 0x1FA5C * lcr - 0x26DB6 * mcr + 0x735A * scr
   let sb = 0x006A2 * lcr + 0x0C863 * mcr - 0xCF05 * scr
   let asign = if sa < 0: -1'i8 else: 1'i8
