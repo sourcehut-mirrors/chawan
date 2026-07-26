@@ -5630,7 +5630,7 @@ proc setHover*(element: Element; hover: bool) =
     element.flags.toggle({efHover})
     element.invalidate(dtHover)
 
-proc parseColor(element: Element; s: string): Opt[ARGBColor] =
+proc parseColor(element: Element; s: DOMString): Opt[ARGBColor] =
   var ctx = initCSSParser(s)
   if color := ctx.parseColor():
     case color.t
@@ -8527,7 +8527,7 @@ isWindowImpl = proc(target: EventTarget): bool =
 isHTMLElementImpl = proc(target: EventTarget): bool =
   return target of HTMLElement
 
-parseColorImpl = proc(target: EventTarget; s: string): Opt[ARGBColor] =
+parseColorImpl = proc(target: EventTarget; s: DOMString): Opt[ARGBColor] =
   return Element(target).parseColor(s)
 
 setEventImpl = proc(ctx: JSContext; event: Event): Event =

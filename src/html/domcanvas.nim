@@ -8,6 +8,7 @@ import io/dynstream
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
@@ -63,10 +64,10 @@ jsDestructor(CanvasRenderingContext2D)
 jsDestructor(TextMetrics)
 
 # Forward declaration hack
-var parseColorImpl*: proc(target: EventTarget; s: string): Opt[ARGBColor]
+var parseColorImpl*: proc(target: EventTarget; s: DOMString): Opt[ARGBColor]
   {.nimcall, raises: [].}
 
-proc parseColor(target: EventTarget; s: string): Opt[ARGBColor] =
+proc parseColor(target: EventTarget; s: DOMString): Opt[ARGBColor] =
   return target.parseColorImpl(s)
 
 proc resetTransform(state: var DrawingState) =
@@ -153,23 +154,23 @@ proc strokePath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor) =
       w.swrite(lines)
       w.swrite(color)
 
-proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
+proc fillText(ctx: CanvasRenderingContext2D; text: DOMString; x, y: float64;
     color: ARGBColor; align: CanvasTextAlign) =
   if ctx.ps != nil:
     ctx.ps.withPacketWriterFire w:
       w.swrite(pcFillText)
-      w.swrite(text)
+      w.swrite(text.toOpenArray())
       w.swrite(x)
       w.swrite(y)
       w.swrite(color)
       w.swrite(align)
 
-proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
+proc strokeText(ctx: CanvasRenderingContext2D; text: DOMString; x, y: float64;
     color: ARGBColor; align: CanvasTextAlign) =
   if ctx.ps != nil:
     ctx.ps.withPacketWriterFire w:
       w.swrite(pcStrokeText)
-      w.swrite(text)
+      w.swrite(text.toOpenArray())
       w.swrite(x)
       w.swrite(y)
       w.swrite(color)
@@ -258,7 +259,7 @@ proc transform(ctx: CanvasRenderingContext2D; v: Vector2D): Vector2D =
 proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return ctx.state.fillStyle.serialize()
 
-proc fillStyle(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
+proc fillStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
   #TODO gradient, pattern
   if color := ctx.canvas.parseColor(s):
     ctx.state.fillStyle = color
@@ -266,7 +267,7 @@ proc fillStyle(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
 proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return ctx.state.strokeStyle.serialize()
 
-proc strokeStyle(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
+proc strokeStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
   #TODO gradient, pattern
   if color := ctx.canvas.parseColor(s):
     ctx.state.strokeStyle = color
@@ -331,7 +332,7 @@ proc clip(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
   discard #TODO implement
 
 #TODO maxwidth
-proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
+proc fillText(ctx: CanvasRenderingContext2D; text: DOMString; x, y: float64)
     {.jsfunc.} =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
@@ -340,7 +341,7 @@ proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
   ctx.fillText(text, vec.x, vec.y, ctx.state.fillStyle, ctx.state.textAlign)
 
 #TODO maxwidth
-proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
+proc strokeText(ctx: CanvasRenderingContext2D; text: DOMString; x, y: float64)
     {.jsfunc.} =
   for v in [x, y]:
     if classify(v) in {fcInf, fcNegInf, fcNan}:
@@ -348,9 +349,9 @@ proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64)
   let vec = ctx.transform(Vector2D(x: x, y: y))
   ctx.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle, ctx.state.textAlign)
 
-proc measureText(ctx: CanvasRenderingContext2D; text: string): TextMetrics
+proc measureText(ctx: CanvasRenderingContext2D; text: DOMString): TextMetrics
     {.jsfunc.} =
-  let tw = text.width()
+  let tw = text.toOpenArray().width()
   return TextMetrics(
     width: 8 * float64(tw),
     actualBoundingBoxLeft: 0,
@@ -377,8 +378,8 @@ proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
 proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return $ctx.state.textAlign
 
-proc textAlign(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
-  if x := parseEnumNoCase[CanvasTextAlign](s):
+proc textAlign(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
+  if x := parseEnumNoCase[CanvasTextAlign](s.toOpenArray()):
     ctx.state.textAlign = x
 
 proc closePath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
