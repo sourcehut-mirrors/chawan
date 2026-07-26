@@ -2311,11 +2311,14 @@ type
 
 proc layoutTableCell(lctx: LayoutContext; box: BlockBox; space: Space;
     border: CSSBorder; merge: CSSBorderMerge) =
+  let computed = box.computed
+  let padding = lctx.resolvePadding(space.w, computed)
+  let paddingSum = padding.sum()
   box.input = LayoutInput(
-    padding: lctx.resolvePadding(space.w, box.computed),
+    padding: padding,
     space: initSpace(w = space.w, h = maxContent()),
-    bounds: DefaultBounds,
-    border: border
+    border: border,
+    bounds: lctx.resolveBounds(space, paddingSum, computed, replaced = false)
   )
   box.keepLayout = true
   box.resetState()
