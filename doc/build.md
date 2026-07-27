@@ -91,7 +91,7 @@ a limited set of C compilers. If you want to override the C compiler:
    compiler driver, then add e.g.
 
    ```
-   export FLAGS=--gcc.path=/usr/local/musl/bin --gcc.exe=musl-gcc --gcc.linkerexe=musl-gcc
+   export FLAGS='--gcc.path=/usr/local/musl/bin --gcc.exe=musl-gcc --gcc.linkerexe=musl-gcc'
    ```
 
 4. Do the same for `FLAGS_FOR_BUILD`, making sure that the C compiler you
