@@ -11,9 +11,6 @@ config:
 	* also some way to set permissions for RPC calls
 mailcap:
 - save custom command? (or a mailcap command editor like w3m)
-- w3mmee extensions
-	* browsecap looks cleaner than urimethodmap, and would be
-	  useful for mailto
 buffer:
 - important: validate returned values
 - color visited links
@@ -62,6 +59,9 @@ layout:
 	* z order
 	* clipping
 - grid
+term:
+- cell-based repaint tracking (right now it's line based)
+- DECRQM SGR mouse, bracketed paste, alt screen
 misc:
 - animation (GIF)
 - add a DOM -> man page converter so that we do not depend on pandoc

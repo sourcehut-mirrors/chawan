@@ -184,8 +184,6 @@ type
     ibuf: array[256, char] # buffer for chars when we can't process them
     ibufLen: int # len of ibuf
     ibufn: int # position in ibuf
-    dynbuf: string # buffer for UTF-8 text input by the user, for areadChar
-    dynbufn: int # position in dynbuf
     frames: array[FrameType, Frame]
     frameType: FrameType
     loader: FileLoader # callback to register ostream
@@ -227,6 +225,7 @@ type
     # query.
     queryStateStack: seq[QueryState]
     buf: string # string buffer
+    keyIdx: int # index into string buffer for none/backtrack/bracket states
 
   InputEventType* = enum
     ietKey = "key"
@@ -723,23 +722,11 @@ proc ahandleRead*(term: Terminal): Opt[bool] =
     return ok(false)
   ok(true)
 
-# Note: in theory, we should run the escape parser state machine
-# *before* parsing the input.
-# In practice, it doesn't matter how you do it in UTF-8 as long as you
-# stick to 7-bit chars.
 proc areadChar(term: Terminal): Opt[char] =
-  if term.dynbufn == term.dynbuf.len:
-    term.dynbufn = 0
-    term.dynbuf.setLen(0)
-    let H = term.ibufLen - 1
-    for it in term.tdctx.decode(term.ibuf.toOpenArrayByte(term.ibufn, H),
-        finish = false):
-      term.dynbuf &= it
-    term.ibufn = term.ibufLen
-  if term.dynbuf.len == term.dynbufn:
+  if term.ibufn >= term.ibufLen:
     return err()
-  let c = term.dynbuf[term.dynbufn]
-  inc term.dynbufn
+  let c = term.ibuf[term.ibufn]
+  inc term.ibufn
   ok(c)
 
 proc backtrack(eparser: var EventParser; s: string; c: char) =
@@ -890,19 +877,9 @@ proc skipToST(eparser: var EventParser; c: char) =
   else:
     eparser.state = esSkipToST
 
-proc parseNone(term: Terminal; c: char): bool =
-  if term.eparser.state != esBacktrack and c == '\e':
-    inc term.eparser.state
-    return false
-  if term.eparser.keyLen > 0:
-    dec term.eparser.keyLen
-    return true
-  let u = uint8(c)
-  term.eparser.keyLen = if u <= 0x7F: 1i8
-  elif u shr 5 == 0b110: 2i8
-  elif u shr 4 == 0b1110: 3i8
-  else: 4i8
-  return true
+proc parseNone(term: Terminal; c: char) =
+  for it in term.tdctx.decode([uint8(c)], finish = false):
+    term.eparser.buf &= it
 
 proc parseEsc(eparser: var EventParser; c: char) =
   case c
@@ -1119,11 +1096,9 @@ proc parseOSC60Semi(term: Terminal; c: char) =
       if term.config{"osc52Primary"}.isNone:
         term.osc52Primary = true
     term.eparser.buf = ""
-  case c
-  of ',': term.eparser.buf = ""
-  of '\a': term.eparser.state = esNone
-  of '\e': term.eparser.state = esSTEsc
-  else: term.eparser.buf &= c
+    discard term.eparser.parseST(c)
+  else:
+    term.eparser.buf &= c
 
 proc parseOSC61Semi(term: Terminal; c: char) =
   if c in {',', '\a', '\e'}:
@@ -1195,19 +1170,35 @@ proc areadCharBacktrack(term: Terminal): Opt[char] =
 proc areadEvent*(term: Terminal): Opt[InputEvent] =
   var epr = eprNone
   while epr == eprNone:
-    if term.eparser.keyLen == 1:
-      dec term.eparser.keyLen
-      return ok(InputEvent(t: ietKeyEnd))
+    let state = term.eparser.state
+    if state in {esNone, esBracketed, esBacktrack}:
+      if term.eparser.keyLen == 1:
+        dec term.eparser.keyLen
+        return ok(InputEvent(t: ietKeyEnd))
+      if term.eparser.keyIdx < term.eparser.buf.len:
+        let c = term.eparser.buf[term.eparser.keyIdx]
+        inc term.eparser.keyIdx
+        if term.eparser.keyIdx == term.eparser.buf.len:
+          term.eparser.keyIdx = 0
+          term.eparser.buf = ""
+        if state != esBracketed:
+          if term.eparser.keyLen > 0:
+            dec term.eparser.keyLen
+          else:
+            let u = uint8(c)
+            term.eparser.keyLen = if u <= 0x7F: 1i8
+            elif u shr 5 == 0b110: 2i8
+            elif u shr 4 == 0b1110: 3i8
+            else: 4i8
+        return ok(InputEvent(t: ietKey, c: c))
     let c = ?term.areadCharBacktrack()
-    case term.eparser.state
-    of esBacktrack, esNone:
-      if term.parseNone(c):
-        return ok(InputEvent(t: ietKey, c: c))
-    of esBracketed:
+    case state
+    of esBacktrack: term.parseNone(c)
+    of esNone, esBracketed:
       if c == '\e':
-        term.eparser.state = esBracketedEsc
+        inc term.eparser.state
       else:
-        return ok(InputEvent(t: ietKey, c: c))
+        term.parseNone(c)
     of esBracketedEsc: term.eparser.nextState('[', c, esBracketedCSI)
     of esEsc: term.eparser.parseEsc(c)
     of esCSI: term.eparser.parseCSI(c)
@@ -1462,6 +1453,10 @@ proc writeColorSGR(term: Terminal; c: CellColor; bgmod: uint8): Opt[void] =
     let rgb = c.rgb
     res &= 38 + bgmod
     res &= ";2;"
+    # Ideally, the following two semis would be colons, as that is
+    # backwards-compatible with terminals that do not support RGB colors.
+    # Unfortunately, konsole & vte only support the backwards-incompatible
+    # variant, and both pretend to be XTerm, so we must keep sending semis.
     res &= rgb.r
     res &= ';'
     res &= rgb.g
