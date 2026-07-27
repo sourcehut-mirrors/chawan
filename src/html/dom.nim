@@ -1065,6 +1065,7 @@ const ReflectMap0 = [
   makes(satValue, ttButton, ttData),
   makel(satValue, ttLi),
   makeb(satRequired, ttInput, ttSelect, ttTextarea),
+  makeb(satReversed, ttOl),
   makes(satName, ttA, ttInput, ttSelect, ttTextarea, ttMeta,
     ttIframe, ttFrame, ttImg, ttObject, ttParam, ttObject, ttMap,
     ttForm, ttOutput, ttFieldset, ttDetails, ttSlot, ttOutput, ttFieldset),
@@ -1117,6 +1118,7 @@ const ReflectMap0 = [
   makes(satSlot),
   makes(satTitle),
   makes(satLang),
+  makeb(satHidden)
 ]
 
 static:
