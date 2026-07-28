@@ -365,15 +365,17 @@ proc main() =
       apropos = man
     else:
       apropos = "/usr/bin/apropos" # this is where it should be.
-  let path = getEnvEmpty("MAPPED_URI_PATH")
-  let scheme = getEnvEmpty("MAPPED_URI_SCHEME")
-  if scheme == "man":
+  if paramCount() != 2:
+    cgiDie(ceInternalError, "usage: man [-rkl] [path]")
+  let t = paramStr(1)
+  let path = paramStr(2)
+  if t == "-r":
     let (keyword, section) = parseSection(path)
     doMan(man, keyword, section)
-  elif scheme == "man-k":
+  elif t == "-k":
     let (keyword, section) = parseSection(path)
     discard doKeyword(apropos, keyword, section)
-  elif scheme == "man-l":
+  elif t == "-l":
     doLocal(man, path)
   else:
     let stdout = cast[ChaFile](stdout)

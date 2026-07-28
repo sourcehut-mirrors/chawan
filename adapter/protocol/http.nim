@@ -2,6 +2,7 @@
 
 {.push raises: [].}
 
+import std/os
 import std/posix
 
 import io/dynstream
@@ -444,14 +445,16 @@ proc close(op: HTTPHandle) =
   else:
     op.httpStream.sclose()
 
-proc main*() =
-  let secure = getEnvEmpty("MAPPED_URI_SCHEME") == "https"
-  let username = percentDecode(getEnvEmpty("MAPPED_URI_USERNAME"))
-  let password = percentDecode(getEnvEmpty("MAPPED_URI_PASSWORD"))
-  let host = getEnvEmpty("MAPPED_URI_HOST")
-  let port = getEnvEmpty("MAPPED_URI_PORT", if secure: "443" else: "80")
-  let path = getEnvEmpty("MAPPED_URI_PATH", "/")
-  let query = getEnvEmpty("MAPPED_URI_QUERY")
+proc main*(scheme: string) =
+  if paramCount() != 4:
+    cgiDie(ceInternalError, "usage: http [host] [port] [path] [query]")
+  let host = paramStr(1)
+  var port = paramStr(2)
+  let path = paramStr(3)
+  let query = paramStr(4)
+  let secure = scheme == "https"
+  if port == "":
+    port = if secure: "443" else: "80"
   let os = newPosixStream(STDOUT_FILENO)
   let op = HTTPHandle(os: os, chunkSize: uint64.high)
   if secure:
@@ -462,17 +465,13 @@ proc main*() =
   else:
     op.httpStream = connectSocket(host, port).orDie()
   let requestMethod = getEnvEmpty("REQUEST_METHOD")
-  var buf = requestMethod & ' ' & path
-  if query != "":
-    buf &= '?' & query
+  var buf = requestMethod & ' ' & path & query
   buf &= " HTTP/1.1\r\n"
   buf &= "Host: " & host
   if secure and port != "443" or not secure and port != "80":
     buf &= ':' & port
   buf &= "\r\n"
   buf &= "Connection: close\r\n"
-  if username != "":
-    buf &= "Authorization: Basic " & btoa(username & ':' & password) & "\r\n"
   let contentLength = getEnvEmpty("CONTENT_LENGTH")
   if n := parseUInt64(contentLength):
     buf &= "Content-Length: " & $n & "\r\n"

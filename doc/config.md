@@ -326,7 +326,8 @@ cgi-dir = ["\$CHA_DIR/cgi-bin", "\$CHA_LIBEXEC_DIR/cgi-bin"]
 urimethodmap = ["\$CHA_DIR/urimethodmap", "~/.urimethodmap", "/etc/urimethodmap"]
 : **array of paths**
 
-: Search path for urimethodmap files.  See
+: Search path for urimethodmap files.  This format is deprecated;
+  instead, `auto-browsecap` should be used.  See
   [**cha-urimethodmap**](urimethodmap.md)(5) for details.
 
 w3m-cgi-compat = false

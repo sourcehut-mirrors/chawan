@@ -1,19 +1,17 @@
 type ConnectionError* = enum
-  ceMailcap = -21 # not necessarily an error; sends entries to choose from
-  ceNetPathExpected = -20
-  ceLoaderGone = -19
-  ceCookieStreamExists = -18
-  ceCGICachedBodyUnavailable = -17
-  ceCGIOutputHandleNotFound = -16
-  ceCGIFailedToOpenCacheOutput = -15
-  ceCGICachedBodyNotFound = -14
-  ceFailedToRedirect = -13
-  ceURLNotInCache = -12
-  ceFileNotInCache = -11
-  ceFailedToExecuteCGIScript = -10
-  ceCGIMalformedHeader = -9
-  ceCGIInvalidChaControl = -8
-  ceTooManyRewrites = -7
+  ceMailcap = -19 # not necessarily an error; sends entries to choose from
+  ceNetPathExpected = -18
+  ceLoaderGone = -17
+  ceCookieStreamExists = -16
+  ceCGICachedBodyUnavailable = -15
+  ceCGIOutputHandleNotFound = -14
+  ceCGIFailedToOpenCacheOutput = -13
+  ceCGICachedBodyNotFound = -12
+  ceFailedToRedirect = -11
+  ceURLNotInCache = -10
+  ceFileNotInCache = -9
+  ceCGIMalformedHeader = -8
+  ceCGIInvalidChaControl = -7
   ceInvalidBrowsecapEntry = -6
   ceCGIFileNotFound = -5
   ceInvalidCGIPath = -4
@@ -44,10 +42,8 @@ const ErrorMessages* = [
   ceFailedToRedirect: "failed to redirect request body",
   ceURLNotInCache: "URL was not found in the cache",
   ceFileNotInCache: "file was not found in the cache",
-  ceFailedToExecuteCGIScript: "failed to execute CGI script",
   ceCGIMalformedHeader: "CGI script returned a malformed header",
   ceCGIInvalidChaControl: "CGI got invalid Cha-Control header",
-  ceTooManyRewrites: "too many URI method map rewrites",
   ceInvalidBrowsecapEntry: "invalid browsecap entry",
   ceCGIFileNotFound: "CGI file not found",
   ceInvalidCGIPath: "invalid CGI path",

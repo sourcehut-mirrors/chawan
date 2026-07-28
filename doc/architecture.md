@@ -95,26 +95,25 @@ The loader process takes requests from the main process and the buffer
 processes.  Then, depending on the scheme, it performs one of the following
 steps:
 
-* `cgi-bin:` Start a CGI script, and read out its stdout into the
-  response body. In certain cases it also streams the response into
+* `http:`, `ftp:`, ...: Start a CGI script, and read out its stdout into
+  the response body.  In certain cases it also streams the response into
   the cache.
 
-  This is also used for schemes like http/s, ftp, etc. by internally
-  rewriting them into the appropriate `cgi-bin:` URL.
+  CGI scripts started like above are defined in terms of
+  [browsecap](mailcap.md).
 
-* `stream:` Do the same thing as above, but read from a file descriptor
-  passed to the loader beforehand.  This is used when stdin is a file,
-  e.g. `echo test | cha`. It is also used for mailcap entries with an
-  x-htmloutput field.
+* `stream:` Read from a file descriptor passed to the loader beforehand.
+  This is used when stdin is a file, e.g. `echo test | cha`.  It is also
+  used for mailcap entries with an x-htmloutput field.
 
 * `cache:` Read the file from the cache.  This is used by the pager for the
   "view source" operation, and by buffers in the rare situation where their
   initial character encoding guess proves to be incorrect and they need to
   rewind the source.
 
-* `data:` Decode a data URL.  This is done directly in the loader process
-  because very long data URLs wouldn't fit into the environment (and
-  because it's more efficient this way).
+* Some other internal schemes such as `data:` or `about:` are also
+  implemented directly in the loader, mainly for reasons of convenience
+  (and performance in case of `data:`).
 
 The loader process distinguishes between clients (i.e processes) through
 their control stream (one end of a socketpair created by loader).  This

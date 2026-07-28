@@ -1171,7 +1171,7 @@ proc atob(c: char): uint8 {.inline.} =
   return uint8.high
 
 # Warning: this overrides outs.
-proc atob*(outs: var string; data: string): Err[cstring] =
+proc atob*(outs: var string; data: openArray[char]): Err[cstring] =
   outs = newStringOfCap(data.len div 4 * 3)
   var buf = array[4, uint8].default
   var i = 0

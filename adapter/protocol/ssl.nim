@@ -4,20 +4,25 @@
 
 {.push raises: [].}
 
+import std/os
 import utils/twtstr
 
 import gemini
 import http
+import lcgi
 import sftp
 
 proc main() =
-  let scheme = getEnvEmpty("MAPPED_URI_SCHEME")
+  var scheme = paramStr(0)
+  let i = scheme.rfind('/')
+  if i >= 0:
+    scheme.delete(0..i)
   if scheme == "gemini":
     gemini.main()
   elif scheme == "sftp":
     sftp.main()
   else:
-    http.main()
+    http.main(scheme)
 
 main()
 

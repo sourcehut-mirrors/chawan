@@ -198,52 +198,20 @@ rather return an error message.
 .IP \(bu 2
 \f[CR]HTTP_REFERER=\f[R] if set, the Referer header.
 .IP \(bu 2
+\f[CR]HTTP_AUTHORIZATION=\f[R] if set, the Authorization header.
+.IP \(bu 2
+\f[CR]REMOTE_USER=\f[R] if Authorization uses \(lqBasic\(rq auth, its
+user part.
+.IP \(bu 2
 \f[CR]CHA_TMP_DIR=\f[R] directory used for storing temporary files.
 .IP \(bu 2
 \f[CR]CHA_DIR=\f[R] location of the config file.
 .PP
-For requests originating from a urimethodmap rewrite, Chawan will also
-set the parsed URL\(cqs parts as environment variables.
-Use of these is highly encouraged, to avoid exploits originating from
-double\-parsing of URLs.
-.PP
-If
-\f[CR]example://username:password\(atexample.org:1234/path/name.html?example\f[R]
-is the original URL, then:
-.IP \(bu 2
-\f[CR]MAPPED_URI_SCHEME=\f[R] the scheme of the original URL, in this
-case \f[CR]example\f[R].
-.IP \(bu 2
-\f[CR]MAPPED_URI_USERNAME=\f[R] the username part, in this case
-\f[CR]username\f[R].
-If no username was specified, the variable is set to the empty string.
-.IP \(bu 2
-\f[CR]MAPPED_URI_PASSWORD=\f[R] the password part, in this case
-\f[CR]password\f[R].
-If no password was specified, the variable is set to the empty string.
-.IP \(bu 2
-\f[CR]MAPPED_URI_HOST=\f[R] the host part, in this case
-\f[CR]host.org\f[R] If no host was specified, the variable is set to the
-empty string.
-(An example of a URL with no host: \f[CR]about:blank\f[R], here
-\f[CR]blank\f[R] is the path name.)
-.IP \(bu 2
-\f[CR]MAPPED_URI_PORT=\f[R] the port, in this case \f[CR]1234\f[R].
-If no port was specified, the variable is set to the empty string.
-(In this case, the CGI script is expected to use the default port for
-the scheme, if any.)
-.IP \(bu 2
-\f[CR]MAPPED_URI_PATH=\f[R] the path name, in this case
-\f[CR]/path/name.html?example\f[R].
-If no path was specified, the variable is set to the empty string.
-The path name is percent\-encoded.
-.IP \(bu 2
-\f[CR]MAPPED_URI_QUERY=\f[R] the query string, in this case
-\f[CR]example\f[R].
-Unlike in JavaScript, no question mark is prepended to the string.
-The query string is percent\-encoded as well.
-.PP
-The fragment part is omitted intentionally.
+Requests originating from the \f[B]cha\-urimethodmap\f[R](5) feature
+also set a set of environment variables starting with
+\f[CR]MAPPED_URI_\f[R].
+However, this feature is deprecated in favor of passing parameters from
+\f[I]browsecap\f[R], as described in \f[B]cha\-mailcap\f[R](5).
 .SS Request body
 If the request body is not empty, it is streamed into the program
 through the standard input.
@@ -295,4 +263,4 @@ you put your CGI script to
 This means that either \f[CR]pipe\f[R] or \f[CR]fork\f[R] failed.
 Maybe you are running out of memory?
 .SS See also
-\f[B]cha\f[R](1) \f[B]cha\-urimethodmap\f[R](5)
+\f[B]cha\f[R](1) \f[B]cha\-mailcap\f[R](5)

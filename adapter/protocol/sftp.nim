@@ -2,6 +2,7 @@
 
 {.push raises: [].}
 
+import std/os
 import std/times
 
 import lcgi
@@ -179,9 +180,9 @@ proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
   discard os.writeLoop("Status: 401\n")
   quit(0)
 
-proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
-  let user = getEnvEmpty("MAPPED_URI_USERNAME")
-  let pass = getEnvEmpty("MAPPED_URI_PASSWORD")
+proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION;
+    host: string) =
+  let (user, pass) = cgiAuthorization()
   let configs = ["/etc/ssh/ssh_config", expandPath("~/.ssh/config")]
   var pubKey = ""
   var privKey = ""
@@ -382,9 +383,15 @@ please remove this host from """ & hostsPath & ".")
   hosts.libssh2_knownhost_free()
 
 proc main*() =
+  if paramCount() != 3:
+    cgiDie(ceInternalError, "usage: sftp [host] [port] [path]")
+  let host = paramStr(1)
+  var port = paramStr(2)
+  if port == "":
+    port = "22"
+  let opath = paramStr(3)
+  let path = if opath == "": "/" else: percentDecode(opath)
   let os = newPosixStream(STDOUT_FILENO)
-  let host = getEnvEmpty("MAPPED_URI_HOST")
-  let port = getEnvEmpty("MAPPED_URI_PORT", "22")
   let ps = connectSocket(host, port).orDie()
   if libssh2_init(0) < 0:
     cgiDie(ceInternalError)
@@ -398,7 +405,6 @@ proc main*() =
   os.authenticate(session, host)
   enterNetworkSandbox()
   let sftpSession = libssh2_sftp_init(session)
-  let path = percentDecode(getEnvEmpty("MAPPED_URI_PATH", "/"))
   let handle = sftpSession.libssh2_sftp_opendir(cstring(path))
   if handle != nil:
     if path[^1] != '/':

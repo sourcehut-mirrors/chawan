@@ -5,10 +5,12 @@ unreleased
 * optimize some inefficient descendant CSS selectors
 * optimize getElementById
 * support multi-keyword CSS display values
-* support oklab(), oklch()
+* support oklab(), oklch(), relative color syntax (e.g. hsl(from ...))
+* support "hidden" global property
 * emulate logical properties (always interpreted in horizontal-tb writing-mode)
 * support accessing elements by id on Window object
 * support Delete key, add default aliases for alternate Home/End
+* support browsecap for external URI handlers (based on w3mmee)
 * reduce leaks from interned strings
 * reduce copying of strings between Nim <-> JS
 * reduce memory usage of CSS values & variables
@@ -40,6 +42,8 @@ unreleased
 * fix closed menu not being hidden when the first buffer is still being loaded
 * fix regression where URLs were not being added to the history in some cases
 * fix dropping of cookies with tab and ignore empty Domain in Set-Cookie
+* fix min-width/max-width not being accounted for in table cells
+* fix input handling with encoding.display-charset='ISO-2022-JP'
 
 0.4.0 (2026.05.17)
 

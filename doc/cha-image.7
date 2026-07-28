@@ -131,8 +131,8 @@ All image codec implementations are specified by the URL scheme
 e.g.\ for image/png, it is \(lqimg\-codec+png:\(rq.
 (This indeed means that only \(lqimage\(rq MIME types can be used.)
 .PP
-Like all schemes, these are defined (and overridable) in the
-urimethodmap file, and are implemented as local CGI programs.
+Like all schemes, these are defined (and overridable) in the browsecap
+file, and are implemented as local CGI programs.
 These programs take an encoded image on stdin, and dump the decoded RGBA
 data to stdout \- when encoding, vice versa.
 .PP

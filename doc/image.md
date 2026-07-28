@@ -119,7 +119,7 @@ All image codec implementations are specified by the URL scheme
 it is "img-codec+png:".  (This indeed means that only "image" MIME types can
 be used.)
 
-Like all schemes, these are defined (and overridable) in the urimethodmap
+Like all schemes, these are defined (and overridable) in the browsecap
 file, and are implemented as local CGI programs.  These programs take an
 encoded image on stdin, and dump the decoded RGBA data to stdout - when
 encoding, vice versa.

@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import std/os
 import std/posix
 
 import lcgi
@@ -86,7 +87,9 @@ proc loadFile(os, ps: PosixStream; stats: Stat) =
     start = 0
 
 proc main() =
-  let opath = getEnvEmpty("MAPPED_URI_PATH", "/")
+  if paramCount() < 1:
+    cgiDie(ceInternalError, "path expected")
+  let opath = paramStr(1)
   let path = percentDecode(opath)
   let os = newPosixStream(STDOUT_FILENO)
   var stats: Stat

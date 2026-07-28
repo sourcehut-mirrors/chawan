@@ -308,4 +308,12 @@ proc connectSocket*(host, port: string): CGIResult[PosixStream] =
   var dummy = false
   return connectSocket(host, port, dummy)
 
+proc cgiAuthorization*(): tuple[user, pass: string] =
+  let auth = getEnvEmpty("HTTP_AUTHORIZATION")
+  if auth.startsWithIgnoreCase("Basic "):
+    var val: string
+    if val.atob(auth.toOpenArray("Basic ".len, auth.high)).isOk:
+      return (val.until(':'), val.after(':'))
+  return ("", "")
+
 {.pop.} # raises: []

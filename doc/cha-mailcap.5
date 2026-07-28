@@ -7,10 +7,10 @@ The \f[I]mailcap\f[R] file can be used to view other file formats using
 external commands, or to convert them to HTML/plain text before
 displaying them in Chawan.
 .PP
-In addition, the \f[I]browsecap\f[R] file fulfills a similar purpose for
-URI scheme handling.
-Browsecap can be used to override handling of any built\-in scheme, or
-to add custom handlers (e.g.\ \f[B]mutt\f[R](1) for \f[I]mailto\f[R]).
+The \f[I]browsecap\f[R] file fulfills a similar purpose for URI scheme
+handling.
+\f[I]browsecap\f[R] can override handling of any built\-in scheme, or to
+add custom handlers (e.g.\ \f[B]mutt\f[R](1) for \f[I]mailto\f[R]).
 When combined with \f[B]cha\-cgi\f[R](5), \f[I]browsecap\f[R] also
 enables extending Chawan with user\-specified schemes.
 .PP
@@ -118,10 +118,10 @@ for the URL \f[CR]https://example.org/search?q=blah\f[R],
 .IP \(bu 2
 Non\-standard templates for the resource\(cqs original URL:
 \f[CR]%u\f[R] (from Netscape) expands to the original URL of the
-resource, \f[CR]%h\f[R] (from w3mmee) expands to the hostname without
-the port, \f[CR]%H\f[R] expands to the hostname including the port, and
-\f[CR]%?\f[R] (from w3mmee) expands to the query string including the
-question mark.
+resource, \f[CR]%h\f[R] and \f[CR]%p\f[R] (from w3mmee) expands to the
+hostname and the port respectively, \f[CR]%H\f[R] expands to the
+hostname \f[I]and the port\f[R], and \f[CR]%?\f[R] (from w3mmee) expands
+to the query string including the question mark.
 .RS 2
 .PP
 (w3mmee did not actually include the question mark in \f[CR]%?\f[R], but
@@ -131,6 +131,8 @@ string.)
 .RE
 .SS Fields
 Following fields are recognized.
+(In browsecap, the \f[CR]x\-\f[R] prefix for extension fields is
+optional.)
 .IP \(bu 2
 Entries with the \f[CR]test\f[R] named field are only used if the test
 command exits with 0.
@@ -249,10 +251,20 @@ reasons.
 \f[CR]x\-cgioutput\f[R] is only accepted in
 \f[CR]external.auto\-browsecap\f[R], and applies to all network
 requests.
-The command part is interpreted as a CGI script like in urimethodmap.
+The command part is parsed as a subset of POSIX shell which accepts
+environment variables and parameters, but no shell substitution or
+variable substitution.
+e.g.
 .RS 2
 .PP
-TODO: we should allow passing parameters here.
+For example, following are valid cgioutput browsecap entries.
+.IP
+.EX
+# /cgi\-bin/ resolves to \(ti/.chawan/cgi\-dir or \(ti/.config/chawan/cgi\-dir
+# (depending on where your config is)
+example; url=%u /cgi\-bin/path; cgioutput
+example2; /cgi\-bin/path %u; cgioutput
+.EE
 .RE
 .SS Mailcap examples
 To automatically execute these entries, place them in
@@ -306,14 +318,17 @@ Place these entries in \f[CR]\(ti/.chawan/browsecap\f[R] (or
 # Use the \(gamagnet.cgi\(aq script to pass magnet links to Transmission.
 # (\(gamagnet.cgi\(aq can be found in the \(gabonus/\(aq directory.  You can also
 # modify it to pass the links to your BitTorrent client of choice.)
-magnet/*;	/cgi\-bin/magnet.cgi?%s; x\-cgioutput
+# Since we are in browsecap, the \(gax\-\(aq prefix can be omitted.
+magnet/*;	/cgi\-bin/magnet.cgi?%u; cgioutput
 
 # Open mailto: URIs using mutt.
 # (This is the same as mailto/*; the trailing \(ga/*\(aq can be freely omitted.)
 mailto;		mutt \-\- %s; needsterminal
 
 # Open YouTube URLs with mpv.  (GET method only.)
-https/get;	mpv \-\- %u; needsterminal; x\-nc\-match=https://youtube\(rs.com/watch?v=.*
+# Like above, nc\-match does not need the \(gax\-\(aq prefix because this is
+# browsecap (not mailcap).
+https/get;	mpv \-\- %u; needsterminal; nc\-match=https://youtube\(rs.com/watch?v=.*
 .EE
 .SS See also
 \f[B]cha\f[R](1)

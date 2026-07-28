@@ -1,13 +1,24 @@
 #!/bin/sh
 # Adapter for the spartan protocol. See: spartan://mozz.us
 
-MAPPED_URI_PORT=${MAPPED_URI_PORT:-300} # default port is 300
-MAPPED_URI_PATH=${MAPPED_URI_PATH:-/} # needs / for root
-if test "$REQUEST_METHOD" != POST && test "$MAPPED_URI_QUERY" = "input"
+die() {
+	echo "Cha-Control: ConnectionError $1 $2"
+	exit 1
+}
+
+if test "$#" -ne 4
+then	die InternalError "usage: spartan [host] [port] [path] [query]"
+fi
+
+host=$1
+port=${2:-300} # default port is 300
+path=${3:-/} # needs / for root
+query=$4
+if test "$REQUEST_METHOD" != POST && test "$query" = "?input"
 then	printf "Content-Type: text/html
 
 <!DOCTYPE html>
-<form method=POST action='\"$MAPPED_URI_PATH\"'>
+<form method=POST enctype=text/plain action='"$path"'>
 Input text to upload:
 <p>
 <textarea name=q></textarea>
@@ -19,9 +30,9 @@ fi
 CONTENT_LENGTH=${CONTENT_LENGTH:+$(($CONTENT_LENGTH - 2))} # skip q=
 CONTENT_LENGTH=${CONTENT_LENGTH:-0} # if missing, set to 0
 {
-	printf '%s %d\n' "$MAPPED_URI_HOST $MAPPED_URI_PATH" "$CONTENT_LENGTH"
+	printf '%s %d\n' "$host $path" "$CONTENT_LENGTH"
 	tail -c+3 # skip q=
-} | "$CHA_LIBEXEC_DIR"/nc "$MAPPED_URI_HOST" "$MAPPED_URI_PORT" | {
+} | "$CHA_LIBEXEC_DIR"/nc "$host" "$port" | {
 	IFS= read -r line
 	case $line in
 	'2 '*)	ctype=${line#2 }

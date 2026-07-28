@@ -2,11 +2,45 @@
 
 # URI method map support in Chawan
 
-Chawan can be used to map unrecognized protocols to known protocols using
-the *urimethodmap* format.
+Chawan can map unrecognized protocols to known protocols using the
+*urimethodmap* format.
 
-The main use case for this is implementing handlers to protocols unknown to
-Chawan through a protocol that the browser does understand.
+## Deprecation notice
+
+*urimethodmap* is deprecated in favor of browsecap, which is strictly
+more expressive.  See [**cha-mailcap**](mailcap.md)(5) for details.
+
+Translating existing urimethodmap entries is done using the `cgioutput`
+field for CGI entries, and the `uri` field for non-CGI entries.
+For example, following urimethodmap file:
+
+```
+scheme1: /cgi-bin/blah.cgi?%s
+scheme2: https://example.org/?%s
+scheme3: /cgi-bin/scheme3.cgi
+```
+
+would maps to the following browsecap entry:
+
+```
+# If the script takes the URI as QUERY_STRING, use `%u'.
+scheme1; /cgi-bin/blah.cgi?%u; cgioutput
+# If you're transparently mapping to another scheme, use `uri'.
+scheme2; https://example.org/?%s; uri
+# Note that browsecap does not set `MAPPED_URI_...' variables.  Instead,
+# you can either update the script to pass templates as arguments, or set
+# the environment variables yourself:
+scheme3; MAPPED_URI_HOST=%h \
+	MAPPED_URI_PORT=%p \
+	MAPPED_URI_PATH=%s \
+	/cgi-bin/scheme3.cgi; cgioutput
+```
+
+The only non-trivial part of the migration is auth data; urimethodmap has
+`$MAPPED_URI_USERNAME` and `$MAPPED_URI_PASSWORD`, but browsecap expects
+scripts to parse the data from the `$HTTP_AUTHORIZATION` environment
+variable (also available as `Authorization` in `$REQUEST_HEADERS`).
+Alternatively, if you only need a username, use `$REMOTE_USER`.
 
 ## Search path
 

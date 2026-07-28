@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import std/os
 import std/posix
 
 import ../protocol/lcgi
@@ -69,11 +70,9 @@ proc puts(s: string) =
 
 proc main() =
   enterNetworkSandbox()
-  let scheme = getEnvEmpty("MAPPED_URI_SCHEME")
-  let f = scheme.after('+')
-  if getEnvEmpty("MAPPED_URI_PATH") == "decode":
-    if f != "webp":
-      cgiDie(ceInternalError, "unknown format " & f)
+  if paramCount() != 1:
+    cgiDie(ceInternalError, "usage: jebp [command]")
+  if paramStr(1) == "decode":
     let headers = getEnvEmpty("REQUEST_HEADERS")
     var infoOnly = false
     for hdr in headers.split('\n'):

@@ -37,6 +37,7 @@
 #	"/usr/local/etc/mailcap"
 #]
 #auto-mailcap = "$CHA_DIR/mailcap"
+#auto-browsecap = "$CHA_DIR/browsecap"
 #mime-types = [
 #	"~/.mime.types",
 #	"/etc/mime.types",

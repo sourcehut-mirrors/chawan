@@ -32,7 +32,6 @@ type
     stAbout = "about"
     stBlob = "blob"
     stCache = "cache"
-    stCgiBin = "cgi-bin"
     stData = "data"
     stEd2k = "ed2k"
     stFile = "file"
@@ -113,7 +112,6 @@ const SpecialPort = [
   stAbout: -1,
   stBlob: -1,
   stCache: -1,
-  stCgiBin: -1,
   stData: -1,
   stEd2k: -1,
   stFile: 0,

@@ -86,8 +86,7 @@ Currently implemented features are:
 * supports several network [protocols](doc/protocols.md): HTTP(S), (S)FTP,
   Gopher, Gemini, Finger, Spartan
 * markdown viewer (`cha README.md`), man page viewer (`mancha`)
-* [user-defined protocols](doc/urimethodmap.md) and
-  [file formats](doc/mailcap.md)
+* [user-defined](doc/mailcap.md) protocols and file formats
 * syscall filter based sandboxing on FreeBSD, OpenBSD and Linux (through
   capsicum, pledge and seccomp-bpf)
 * bookmarks, history
@@ -121,7 +120,6 @@ Markdown files.
 * API description (for keybindings): [doc/api.md](doc/api.md)
 * mailcap: [doc/mailcap.md](doc/mailcap.md)
 * mime.types: [doc/mime.types.md](doc/mime.types.md)
-* urimethodmap: [doc/urimethodmap.md](doc/urimethodmap.md)
 * local CGI: [doc/cgi.md](doc/cgi.md)
 * protocols: [doc/protocols.md](doc/protocols.md)
 * inline images: [doc/image.md](doc/image.md)

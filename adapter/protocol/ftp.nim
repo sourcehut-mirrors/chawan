@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import std/os
 import std/posix
 
 import lcgi
@@ -138,16 +139,21 @@ proc retrieve(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =
 
 proc main() =
   let stdout = cast[ChaFile](stdout)
-  let host = getEnvEmpty("MAPPED_URI_HOST")
-  let username = getEnvEmpty("MAPPED_URI_USERNAME")
-  let password = getEnvEmpty("MAPPED_URI_PASSWORD")
-  let port = getEnvEmpty("MAPPED_URI_PORT", "21")
+  if paramCount() != 3:
+    cgiDie(ceInternalError, "usage: ftp [host] [port] [path]")
+  let host = paramStr(1)
+  var port = paramStr(2)
+  if port == "":
+    port = "21"
+  var path = percentDecode(paramStr(3))
+  if path == "":
+    path = "/"
+  let (username, password) = cgiAuthorization()
   var ipv6: bool
   let ps = connectSocket(host, port, ipv6).orDie()
   let f = ps.afdopen("a+b").orDie(ceInternalError, "failed to open file")
   if f.login(username, password).isOk:
     var obuf = ""
-    var path = percentDecode(getEnvEmpty("MAPPED_URI_PATH", "/"))
     let res = if f.sendCommand("CWD", path, obuf).get(-1) == 250:
       if path[^1] != '/':
         stdout.write("Status: 301\nLocation: " & path & "/\n")

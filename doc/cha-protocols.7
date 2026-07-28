@@ -110,7 +110,7 @@ protocol\-specific line type.
 This is implemented as a sed filter for gemtext outputs in the CGI
 script (in other words, no modification to gmi2html was done to support
 this).
-.SS Local schemes: file:, man:
+.SS Local schemes: file:, man:, cgi\-bin:
 While these are not necessarily \f[I]protocols\f[R], they are
 implemented similarly to the protocols listed above (and thus can also
 be replaced, if the user wishes; see below).
@@ -128,18 +128,23 @@ A wrapper command \f[CR]mancha\f[R] also exists; this has an interface
 similar to \f[CR]man\f[R].
 (This used to be based on w3mman2html.cgi, but it has been rewritten as
 a standalone Nim program.)
-.SS Internal schemes: cgi\-bin:, stream:, cache:, data:, about:
-Five internal protocols exist: \f[CR]cgi\-bin:\f[R], \f[CR]stream:\f[R],
-\f[CR]cache:\f[R], \f[CR]data:\f[R] and \f[CR]about:\f[R].
-These are the basic building blocks for the implementation of every
-protocol mentioned above; for this reason, these can \f[I]not\f[R] be
-replaced, and are implemented in the main browser binary.
 .PP
 \f[CR]cgi\-bin:\f[R] executes a local CGI script.
-This scheme is used for the actual implementation of the non\-internal
-protocols mentioned above.
-Local CGI scripts can also be used to implement wrappers of other
-programs inside Chawan (e.g.\ dictionaries).
+This protocol is useful in cases where you want to wrap an external
+program (or a personal script), but do not want to bother with a custom
+URI scheme for it with browsecap.
+In fact, it maps to the browsecap entry
+.IP
+.EX
+cgi\-bin; %s%?; cgioutput
+.EE
+.PP
+See \f[B]cha\-cgi\f[R](5) for details.
+.SS Internal schemes: stream:, cache:, data:, about:
+Four internal protocols exist: \f[CR]cgi\-bin:\f[R], \f[CR]stream:\f[R],
+\f[CR]cache:\f[R], \f[CR]data:\f[R] and \f[CR]about:\f[R].
+For various reasons, these can \f[I]not\f[R] be replaced, and are
+implemented in the main browser binary.
 .PP
 \f[CR]stream:\f[R] is used for streams returned by external programs.
 It differs from \f[CR]cgi\-bin:\f[R] in that it does not cooperate with
@@ -177,30 +182,33 @@ The following about pages are available: \f[CR]about:chawan\f[R],
 .SS Custom protocols
 The \f[CR]cha\f[R] binary itself does not know much about the protocols
 listed above; instead, it loads these through a combination of local
-CGI, urimethodmap, and if conversion to HTML or plain text is necessary,
-mailcap (using x\-htmloutput, x\-ansioutput and copiousoutput).
+CGI, browsecap, and if conversion to HTML or plain text is necessary,
+mailcap (using x\-htmloutput, x\-ansioutput or copiousoutput).
+See \f[B]cha\-cgi\f[R](5) and \f[B]cha\-mailcap\f[R](5) for details.
 .PP
-urimethodmap can also be used to override default handlers for the
-protocols listed above.
-This is similar to how w3m allows you to override the default directory
-listing display, but much more powerful; this way, any library or
-program that can retrieve and output text through a certain protocol can
-be combined with Chawan.
+The default handlers for the protocols listed above can also be
+overridden using browsecap.
+This way, any library or program (in any programming language) that can
+retrieve and output text through a certain protocol can be combined with
+Chawan.
 .PP
-For example, consider the urimethodmap definition of \f[CR]finger\f[R]:
+For example, consider the browsecap definition of \f[CR]finger\f[R]:
 .IP
 .EX
-finger:		cgi\-bin:finger
+finger/get;	/cgi\-bin/finger %h %p %s;	cgioutput; netpath
 .EE
 .PP
-This commands Chawan to load the \f[CR]finger\f[R] CGI script, setting
-the \f[CR]$MAPPED_URI_*\f[R] variables to the target URL\(cqs parts in
-the process.
+This commands Chawan to load the \f[CR]finger\f[R] CGI script, passing
+the hostname as the first parameter, the port as the second (note: this
+is usually the empty string), and the URI path as the third.
+\(lqcgioutput\(rq means that this is a CGI script; \(lqnetpath\(rq means
+that the protocol should have a hostname (so \f[CR]finger:/blah\f[R] is
+not accepted, only \f[CR]finger://example.org/blah\f[R]).
 .PP
-Then, finger uses these passed parts to construct an appropriate curl
-command that will retrieve the specified \f[CR]finger:\f[R] URL; it
-prints the header `Content\-Type: text/plain' to the output, then an
-empty line, then the body of the retrieved resource.
+The script uses the arguments to construct an appropriate \f[CR]nc\f[R]
+command that retrieves the specified \f[CR]finger:\f[R] URL; it prints
+the header `Content\-Type: text/plain' to the output, then an empty
+line, then the body of the retrieved resource.
 If an error is encountered, it prints a \f[CR]Cha\-Control\f[R] header
 with an error code and a specific error message instead.
 .SS Adding a new protocol
@@ -237,10 +245,10 @@ printf \(aqCha\-Control: ControlDone\(rsn\(aq
 \f[I]# As in HTTP, send an empty line before the body.\f[R]
 printf \(aq\(rsn\(aq
 
-\f[I]# Print the body.  We take the path passed to the URL, which urimethodmap\f[R]
-\f[I]# sets as MAPPED_URI_PATH.  This is URI\-encoded, so we also run the urldec\f[R]
-\f[I]# utility on it.\f[R]
-printf \(aq%s\(rsn\(aq \(dq$MAPPED_URI_PATH\(dq \f[B]|\f[R] \(dq$CHA_LIBEXEC_DIR\(dq/urldec \f[B]|\f[R] cowsay
+\f[I]# Print the body.  We take the path passed to the URL, which browsecap\f[R]
+\f[I]# sets as the first parameter (%s).  This is URI\-encoded, so we also run\f[R]
+\f[I]# the urldec utility on it.\f[R]
+printf \(aq%s\(rsn\(aq \(dq$1\(dq \f[B]|\f[R] \(dq$CHA_LIBEXEC_DIR\(dq/urldec \f[B]|\f[R] cowsay
 .EE
 .PP
 Don\(cqt forget to set the executable bit, e.g.
@@ -249,16 +257,15 @@ Don\(cqt forget to set the executable bit, e.g.
 chmod +x \(ti/.config/chawan/cgi\-bin/cowsay.cgi
 .EE
 .PP
-Finally, create a \(lq.urimethodmap\(rq file in your \f[CR]$HOME\f[R]
-directory, with the following content:
+Finally, create a \(lq.chawan/browsecap\(rq (or
+\(ti/.config/chawan/browsecap) with the following content:
 .IP
 .EX
-cowsay:		/cgi\-bin/cowsay.cgi
+cowsay;	/cgi\-bin/cowsay.cgi %s; cgioutput; resource
 .EE
 .PP
 Now try \f[CR]cha cowsay:Hello,%20world.\f[R].
 If you did everything correctly, it should wait one second, then print a
 cow saying \(lqHello, world.\(rq.
 .SS See also
-\f[B]cha\f[R](1), \f[B]cha\-cgi\f[R](5), \f[B]cha\-urimethodmap\f[R](5),
-\f[B]cha\-mailcap\f[R](5)
+\f[B]cha\f[R](1), \f[B]cha\-cgi\f[R](5), \f[B]cha\-mailcap\f[R](5)

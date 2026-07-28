@@ -18,28 +18,30 @@ import utils/twtstr
 type
   MailcapParser* = object
     line: int
+    lenient: bool # accept extensions without x-?  (for browsecap)
     error*: string
 
   MailcapFlag* = enum
     mfNeedsterminal = "needsterminal"
-    mfCopiousoutput = "copiousoutput"
-    mfHtmloutput = "x-htmloutput" # w3m extension
-    mfAnsioutput = "x-ansioutput" # Chawan extension
-    mfSaveoutput = "x-saveoutput" # Chawan extension
-    mfNeedsstyle = "x-needsstyle" # Chawan extension
-    mfNeedsimage = "x-needsimage" # Chawan extension
-    mfResource = "x-resource" # Chawan extension
-    mfType = "x-type" # w3mmee extension
-    mfNetpath = "x-netpath" # w3mmee extension
-    mfCgioutput = "x-cgioutput" # w3mmee extension
-    mfUri = "x-uri" # w3mmee extension
+    mfCopiousoutput = "copiousoutput" # last standard flag
+    mfHtmloutput = "htmloutput" # w3m extension
+    mfAnsioutput = "ansioutput" # Chawan extension
+    mfSaveoutput = "saveoutput" # Chawan extension
+    mfNeedsstyle = "needsstyle" # Chawan extension
+    mfNeedsimage = "needsimage" # Chawan extension
+    mfResource = "resource" # Chawan extension
+    mfType = "type" # w3mmee extension
+    mfNetpath = "netpath" # w3mmee extension
+    mfCgioutput = "cgioutput" # w3mmee extension
+    mfUri = "uri" # w3mmee extension
+    mfUrimethodmap = "internal-urimethodmap" # internal field, do not use
 
   NamedFieldType* = enum
     nfTest = "test"
     nfNametemplate = "nametemplate"
-    nfEdit = "edit"
-    nfMatch = "x-match" # w3mmee extension
-    nfNcMatch = "x-nc-match" # w3mmee extension
+    nfEdit = "edit" # last standard field
+    nfMatch = "match" # w3mmee extension
+    nfNcMatch = "nc-match" # w3mmee extension
 
   NamedField = ref object
     t: NamedFieldType
@@ -221,6 +223,13 @@ proc addNamedField(entry: MailcapEntry; t: NamedFieldType;
       fieldsTail.next = field
     fieldsTail = field
 
+proc allowField(state: MailcapParser; standard: bool; i: int): bool =
+  if i == 2: # x- prefix: only allowed for extensions
+    return not standard
+  # no x- prefix: allowed for all fields in browsecap, and standard fields
+  # only in mailcap
+  return standard or state.lenient
+
 proc consumeField(state: var MailcapParser; line: string;
     entry: MailcapEntry; n: int; fieldsTail: var NamedField): Opt[int] =
   var n = line.skipBlanks(n)
@@ -238,8 +247,10 @@ proc consumeField(state: var MailcapParser; line: string;
       n = ?state.consumeCommand(line, cmd, n)
       while s.len > 0 and s[^1] in AsciiWhitespace:
         s.setLen(s.len - 1)
-      if t := parseEnumNoCase[NamedFieldType](s):
-        entry.addNamedField(t, fieldsTail, cmd)
+      let i = if s.startsWith("x-"): 2 else: 0
+      if t := parseEnumNoCase[NamedFieldType](s.toOpenArray(i, s.high)):
+        if state.allowField(t <= nfEdit, i):
+          entry.addNamedField(t, fieldsTail, cmd)
       return ok(n)
     elif c in Controls:
       return state.err("invalid character in field: " & c)
@@ -247,8 +258,10 @@ proc consumeField(state: var MailcapParser; line: string;
       s &= c
   while s.len > 0 and s[^1] in AsciiWhitespace:
     s.setLen(s.len - 1)
-  if x := parseEnumNoCase[MailcapFlag](s):
-    entry.flags.incl(x)
+  let i = if s.startsWith("x-"): 2 else: 0
+  if x := parseEnumNoCase[MailcapFlag](s.toOpenArray(i, s.high)):
+    if state.allowField(x <= mfCopiousoutput, i):
+      entry.flags.incl(x)
   return ok(n)
 
 proc parseEntry*(state: var MailcapParser; line: string;
@@ -261,7 +274,7 @@ proc parseEntry*(state: var MailcapParser; line: string;
   ok()
 
 proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
-  var state = MailcapParser(line: 1)
+  var state = MailcapParser(line: 1, lenient: true)
   var id = 0'u32
   for line in buf.split('\n'):
     if line.len <= 0:
@@ -296,12 +309,13 @@ proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
     inc state.line
   return ok()
 
-proc parseMailcap*(mailcap: var Mailcap; path: string): Err[string] =
+proc parseMailcap*(mailcap: var Mailcap; path: string;
+    lenient = false): Err[string] =
   let file0 = chafile.fopen(path, "r")
   if file0.isErr:
     return ok()
   let file = file0.get
-  var state = MailcapParser(line: 1)
+  var state = MailcapParser(line: 1, lenient: lenient)
   let res = state.parseMailcap(mailcap, file)
   file.close()
   if res.isErr:
@@ -465,6 +479,134 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
 proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
   return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
+
+type
+  EnvVar* = tuple
+    name: string
+    value: string
+
+  CGIParserState = enum
+    cpsEnv, cpsArgv
+
+  CGICommandParser = object
+    cmd: string
+    name: string
+    argv: seq[string]
+    env: seq[EnvVar]
+    quoteSeen: bool
+    cps: CGIParserState
+
+proc flush(cc: var CGICommandParser; buf: var string) =
+  if not cc.quoteSeen and buf.len == 0:
+    return
+  cc.quoteSeen = false
+  case cc.cps
+  of cpsEnv:
+    if cc.name.len > 0:
+      cc.env.add((move(cc.name), move(buf)))
+    else:
+      cc.cmd = move(buf)
+      # We handle query strings *after* parsing, because we want e.g.
+      #  /cgi-bin/blah.cgi%?
+      # to set the original URI's query string as blah.cgi's QUERY_STRING.
+      let q = cc.cmd.find('?')
+      if q >= 0:
+        cc.env.add(("QUERY_STRING", cc.cmd.substr(q + 1)))
+        cc.cmd.setLen(q)
+      cc.cps = cpsArgv
+  of cpsArgv:
+    cc.argv.add(move(buf))
+
+proc parseCGICommand*(ecmd, typeBuf: string; url: URL;
+    ocmd: var string; oargv: var seq[string]; oenv: var seq[EnvVar]):
+    Err[cstring] =
+  # like unquoteCommand, but for CGI
+  var cc = CGICommandParser()
+  var buf = ""
+  var attrname = ""
+  var state = usNormal
+  var qs = qsNormal # current quote state
+  for c in ecmd:
+    case state
+    of usQuoted:
+      buf &= c
+      state = usNormal
+    of usAttrQuoted:
+      attrname &= c.toLowerAscii()
+      state = usAttr
+    of usNormal, usDollar:
+      state = usNormal
+      case c
+      of '%':
+        state = usPerc
+      of '\\':
+        state = usQuoted
+      of '\'':
+        case qs
+        of qsNormal: qs = qsSingleQuoted
+        of qsDoubleQuoted: buf &= c
+        of qsSingleQuoted: qs = qsNormal
+        cc.quoteSeen = true
+      of '"':
+        case qs
+        of qsNormal: qs = qsDoubleQuoted
+        of qsSingleQuoted: buf &= c
+        of qsDoubleQuoted: qs = qsNormal
+        cc.quoteSeen = true
+      of '$':
+        if qs != qsSingleQuoted:
+          #TODO support variables?
+          return err("variable substitution is not supported")
+        buf &= c
+      of '(', ')', '`':
+        if qs == qsNormal:
+          return err("shell substitution is not supported")
+        buf &= c
+      of ';':
+        if qs == qsNormal:
+          return err("command lists are not supported")
+        buf &= c
+      of AsciiWhitespace: #TODO what does POSIX say about whitespace?
+        cc.flush(buf)
+      of '=':
+        if cc.cps == cpsEnv and cc.name.len == 0:
+          if buf.len == 0:
+            return err("variable name is the empty string")
+          cc.name = move(buf)
+        else:
+          buf &= c
+      else:
+        buf &= c
+    of usPerc:
+      cc.quoteSeen = true # always expand to a parameter
+      case c
+      of '%': buf &= c
+      of 's': buf &= url.pathname
+      of 't': buf &= typeBuf
+      of 'u': buf &= $url # Netscape extension
+      of 'h': buf &= url.hostname # w3mmee extension
+      of 'H': buf &= url.host # Chawan extension
+      of 'p': buf &= url.port # w3mmee extension
+      of '?': buf &= url.search # w3mmee(-ish) extension
+      of '{':
+        state = usAttr
+        continue
+      else: discard
+      state = usNormal
+    of usAttr:
+      if c == '}':
+        buf &= url.getSearchParam(attrname)
+        attrname = ""
+        state = usNormal
+      elif c == '\\':
+        state = usAttrQuoted
+      else:
+        attrname &= c
+  cc.flush(buf)
+  ocmd = move(cc.cmd)
+  oenv = move(cc.env)
+  oargv = move(cc.argv)
+  ok()
 
 proc checkEntry(entry: MailcapEntry; contentType: string; url: URL): bool =
   if mfNetpath in entry.flags and not url.isNetPath():
@@ -649,6 +791,7 @@ proc parseURIMethodMap*(this: var Mailcap; file: ChaFile): Opt[void] =
       let entry = MailcapEntry(cmd: move(v), flags: {mfResource})
       if cgi:
         entry.flags.incl(mfCgioutput)
+        entry.flags.incl(mfUrimethodmap)
       else:
         entry.flags.incl(mfUri)
       let list = this.put(k)

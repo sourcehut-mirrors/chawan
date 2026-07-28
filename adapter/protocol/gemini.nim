@@ -2,6 +2,7 @@
 
 {.push raises: [].}
 
+import std/os
 import std/posix
 
 import lcgi_ssl
@@ -39,7 +40,7 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
   let s = newPosixStream(STDIN_FILENO).readAll()
   if (var i = s.find("input="); i != -1):
     i += "input=".len
-    query = s.toOpenArray(i, s.high).percentDecode()
+    query = '?' & s.toOpenArray(i, s.high).percentDecode()
   elif (var i = s.find("trust_cert="); i != -1):
     i += "trust_cert=".len
     let t = s.until('&', i)
@@ -274,17 +275,22 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
 
 proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
-  let host = getEnvEmpty("MAPPED_URI_HOST")
   var (knownHosts, knownHostsPath) = os.openKnownHosts()
-  let port = getEnvEmpty("MAPPED_URI_PORT", "1965")
-  let path = getEnvEmpty("MAPPED_URI_PATH", "/")
+  if paramCount() != 4:
+    cgiDie(ceInternalError, "usage: gemini [host] [port] [path] [query]")
+  let host = paramStr(1)
+  var port = paramStr(2)
+  if port == "":
+    port = "1965"
+  var path = paramStr(3)
+  if path == "":
+    path = "/"
+  var query = paramStr(4)
   var reqBuf = "gemini://" & host & path
-  var query = getEnvEmpty("MAPPED_URI_QUERY")
   var tmpEntry = "" # for accepting a self signed cert "once"
   if getEnvEmpty("REQUEST_METHOD") == "POST":
     os.readPost(query, host, knownHostsPath, knownHosts, tmpEntry)
-  if query != "":
-    reqBuf &= '?' & query
+  reqBuf &= query
   reqBuf &= "\r\n"
   let ssl = connectSSLSocket(host, port, useDefaultCA = false).orDie()
   var storedDigest: string

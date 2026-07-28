@@ -7,11 +7,11 @@ The *mailcap* file can be used to view other file formats using external
 commands, or to convert them to HTML/plain text before displaying them
 in Chawan.
 
-In addition, the *browsecap* file fulfills a similar purpose for URI scheme
-handling.  Browsecap can be used to override handling of any built-in
-scheme, or to add custom handlers (e.g. [**mutt**](man:mutt(1))(1) for
-*mailto*).  When combined with [**cha-cgi**](cgi.md)(5), *browsecap* also
-enables extending Chawan with user-specified schemes.
+The *browsecap* file fulfills a similar purpose for URI scheme handling.
+*browsecap* can override handling of any built-in scheme, or to add custom
+handlers (e.g. [**mutt**](man:mutt(1))(1) for *mailto*).  When combined
+with [**cha-cgi**](cgi.md)(5), *browsecap* also enables extending Chawan
+with user-specified schemes.
 
 (*browsecap* is a more capable replacement for
 [**cha-urimethodmap**](urimethodmap.md)(5); the latter is deprecated.)
@@ -101,10 +101,10 @@ Following templates are supported:
   expands to "blah".
 
 * Non-standard templates for the resource's original URL: `%u` (from
-  Netscape) expands to the original URL of the resource, `%h` (from w3mmee)
-  expands to the hostname without the port, `%H` expands to the hostname
-  including the port, and `%?` (from w3mmee) expands to the query string
-  including the question mark.
+  Netscape) expands to the original URL of the resource, `%h` and `%p`
+  (from w3mmee) expands to the hostname and the port respectively, `%H`
+  expands to the hostname *and the port*, and `%?` (from w3mmee) expands to
+  the query string including the question mark.
 
   (w3mmee did not actually include the question mark in `%?`, but this
   was changed in Chawan because the other design could not express the
@@ -112,7 +112,8 @@ Following templates are supported:
 
 ### Fields
 
-Following fields are recognized.
+Following fields are recognized.  (In browsecap, the `x-` prefix for
+extension fields is optional.)
 
 * Entries with the `test` named field are only used if the test command
   exits with 0.  For example, you can restrict entries that require X11 as
@@ -199,10 +200,18 @@ Following fields are recognized.
   `net_path`, even though it looks like one for legacy reasons.
 
 * `x-cgioutput` is only accepted in `external.auto-browsecap`, and applies
-  to all network requests.  The command part is interpreted as a CGI script
-  like in urimethodmap.
+  to all network requests.  The command part is parsed as a subset of POSIX
+  shell which accepts environment variables and parameters, but no shell
+  substitution or variable substitution.  e.g.
 
-  TODO: we should allow passing parameters here.
+  For example, following are valid cgioutput browsecap entries.
+
+  ```
+  # /cgi-bin/ resolves to ~/.chawan/cgi-dir or ~/.config/chawan/cgi-dir
+  # (depending on where your config is)
+  example; url=%u /cgi-bin/path; cgioutput
+  example2; /cgi-bin/path %u; cgioutput
+  ```
 
 ## Mailcap examples
 
@@ -257,14 +266,17 @@ if you use XDG basedirs).
 # Use the `magnet.cgi' script to pass magnet links to Transmission.
 # (`magnet.cgi' can be found in the `bonus/' directory.  You can also
 # modify it to pass the links to your BitTorrent client of choice.)
-magnet/*;	/cgi-bin/magnet.cgi?%s; x-cgioutput
+# Since we are in browsecap, the `x-' prefix can be omitted.
+magnet/*;	/cgi-bin/magnet.cgi?%u; cgioutput
 
 # Open mailto: URIs using mutt.
 # (This is the same as mailto/*; the trailing `/*' can be freely omitted.)
 mailto;		mutt -- %s; needsterminal
 
 # Open YouTube URLs with mpv.  (GET method only.)
-https/get;	mpv -- %u; needsterminal; x-nc-match=https://youtube\.com/watch?v=.*
+# Like above, nc-match does not need the `x-' prefix because this is
+# browsecap (not mailcap).
+https/get;	mpv -- %u; needsterminal; nc-match=https://youtube\.com/watch?v=.*
 ```
 
 ## See also

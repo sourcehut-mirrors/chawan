@@ -114,10 +114,6 @@ type
     username: string
     password: string
 
-  EnvVar = tuple
-    name: string
-    value: string
-
   PendingRequest = ref object
     handle: InputHandle
     body: RequestBody
@@ -192,10 +188,9 @@ type
     cmdrDone, cmdrEOF
 
 # Forward declarations
-proc loadCGI2(ctx: var LoaderContext; client: ClientHandle;
-  handle: InputHandle; body: var RequestBody; config: LoaderClientConfig;
-  cmd: var string; env: var seq[EnvVar]; argv: openArray[string];
-  tocache, canThrottle: bool)
+proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
+  body: var RequestBody; config: LoaderClientConfig; cmd: var string;
+  env: var seq[EnvVar]; argv: openArray[string]; tocache, canThrottle: bool)
 proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
   buffer: LoaderBuffer; ignoreSuspension: bool;
   unregWrite: var seq[OutputHandle])
@@ -411,8 +406,6 @@ proc close(ctx: var LoaderContext; client: ClientHandle) =
 
 proc isPrivileged(ctx: LoaderContext; client: ClientHandle): bool =
   return ctx.pagerClient == client
-
-const MaxRewrites = 4
 
 proc canRewriteForCGICompat(ctx: LoaderContext; path: string): bool =
   if path.startsWith("/cgi-bin/") or path.startsWith("/$LIB/"):
@@ -909,21 +902,21 @@ proc findAuth(client: ClientHandle; request: RawRequest; url: URL): AuthItem =
       # (otherwise we should return nil, *not* fallback to authMap)
       return AuthItem(
         origin: url.authOrigin,
-        username: url.username,
-        password: url.password
+        username: percentDecode(url.username),
+        password: percentDecode(url.password)
       )
     if client.authMap.len > 0:
       return client.authMap.findItem(url.authOrigin)
   return nil
 
 proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
-    prevURL: URL; config: LoaderClientConfig; auth: AuthItem) =
-  let url = request.url
+    config: LoaderClientConfig) =
   env.add(("REQUEST_METHOD", $request.httpMethod))
   var contentTypeSeen = false
   var contentType = ""
   var cookieSeen = false
   var refererSeen = false
+  var authorizationSeen = false
   var headers = ""
   for it in request.headers:
     headers &= it.name & ": " & it.value & "\r\n"
@@ -936,18 +929,14 @@ proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
     elif not refererSeen and it.name.equalsIgnoreCase("Referer"):
       env.add(("HTTP_REFERER", it.value))
       refererSeen = true
+    elif not authorizationSeen and it.name.equalsIgnoreCase("Authorization"):
+      env.add(("HTTP_AUTHORIZATION", it.value))
+      authorizationSeen = true
+      if it.value.startsWithIgnoreCase("Basic "):
+        var val: string
+        if val.atob(it.value.toOpenArray("Basic ".len, it.value.high)).isOk:
+          env.add(("REMOTE_USER", move(val)))
   env.add(("REQUEST_HEADERS", move(headers)))
-  if prevURL != nil:
-    env.add(("MAPPED_URI_SCHEME", prevURL.scheme))
-    if auth != nil:
-      env.add(("MAPPED_URI_USERNAME", auth.username))
-      env.add(("MAPPED_URI_PASSWORD", auth.password))
-    env.add(("MAPPED_URI_HOST", prevURL.hostname))
-    env.add(("MAPPED_URI_PORT", prevURL.port))
-    env.add(("MAPPED_URI_PATH", prevURL.pathname))
-    env.add(("MAPPED_URI_QUERY", prevURL.search.substr(1)))
-  if url.search != "":
-    env.add(("QUERY_STRING", url.search.substr(1)))
   if request.httpMethod == hmPost:
     if request.body.t == rbtMultipart:
       env.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
@@ -990,15 +979,15 @@ proc writeBody(ctx: var LoaderContext; ostream, istream2: PosixStream;
   of rbtNone:
     discard
 
-proc setupCmd(ctx: LoaderContext; request: RawRequest; cmd: var string;
+proc setupCmd(ctx: LoaderContext; path: string; cmd: var string;
     env: var seq[EnvVar]): ConnectionError =
-  var path = percentDecode(request.url.pathname)
+  var path = path #TODO I don't like this copy
   env.add(("REQUEST_URI", path))
   if path.startsWith("/cgi-bin/"):
     path.delete(0 .. "/cgi-bin/".high)
   elif path.startsWith("/$LIB/"):
     path.delete(0 .. "/$LIB/".high)
-  if path.len <= 0 or request.url.hostname != "":
+  if path.len <= 0:
     return ceInvalidCGIPath
   if path[0] == '/':
     for dir in ctx.config.cgiDir:
@@ -1108,6 +1097,7 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
     if ostreamOut2 != nil:
       w.sendFd(ostreamOut2.fd)
     w.swrite(env)
+    w.swrite(argv)
     w.swrite(cmd)
   do:
     pid = -1
@@ -1125,9 +1115,9 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
   ctx.writeBody(ostream, istream2, body, client, outputIn, cachedHandle)
   ceNone
 
-proc loadCGI2(ctx: var LoaderContext; client: ClientHandle;
-    handle: InputHandle; body: var RequestBody; config: LoaderClientConfig;
-    cmd: var string; env: var seq[EnvVar]; argv: openArray[string];
+proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
+    body: var RequestBody; config: LoaderClientConfig; cmd: var string;
+    env: var seq[EnvVar]; argv: openArray[string];
     tocache, canThrottle: bool) =
   let code = ctx.loadCGIImpl(client, handle, body, config, cmd, env, argv,
     tocache, canThrottle)
@@ -1136,22 +1126,6 @@ proc loadCGI2(ctx: var LoaderContext; client: ClientHandle;
       ctx.addFd(handle)
   else:
     ctx.rejectHandleClose(handle, code)
-
-proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
-    request: var RawRequest; prevURL: URL; config: LoaderClientConfig;
-    argv: openArray[string]) =
-  var env: seq[EnvVar] = @[]
-  var cmd: string
-  if (let code = ctx.setupCmd(request, cmd, env); code != ceNone):
-    ctx.rejectHandleClose(handle, code)
-    return
-  let canThrottle = prevURL != nil and not ctx.isPrivileged(client) and
-    prevURL.isNetPath()
-  let contentLen = request.body.contentLength()
-  let auth = if prevURL != nil: client.findAuth(request, prevURL) else: nil
-  env.setupEnv(request, contentLen, prevURL, config, auth)
-  ctx.loadCGI2(client, handle, request.body, config, cmd, env, argv,
-    request.tocache, canThrottle)
 
 proc findPassedFd(client: ClientHandle; name: string): int =
   for i in 0 ..< client.passedFdMap.len:
@@ -1463,15 +1437,59 @@ proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: var RawRequest; handle: InputHandle;
     resource: bool) =
-  var redo = true
-  var tries = 0
-  var prevurl: URL = nil
-  while redo and tries < MaxRewrites:
-    redo = false
-    const BuiltinScheme = {stCgiBin, stStream, stCache, stData, stAbout}
+  if ctx.config.w3mCGICompat and request.url.schemeType == stFile:
+    let path = request.url.pathname.percentDecode()
+    if ctx.canRewriteForCGICompat(path):
+      let url = parseURL0("cgi-bin:" & path & request.url.search)
+      if url != nil:
+        request.url = url
+  var typeBuf = request.url.scheme & '/' &
+    ($request.httpMethod).toLowerAscii()
+  var netPathSeen = false
+  var listSeen = false
+  let entry = ctx.browsecap.findResourceMut(typeBuf, request.url,
+    netPathSeen, listSeen, resource)
+  if entry != nil and mfCgioutput in entry.flags:
+    var path: string
+    var argv: seq[string]
+    var env: seq[EnvVar]
+    let auth = client.findAuth(request, request.url)
+    let res = parseCGICommand(entry.cmd, typeBuf, request.url, path, argv,
+      env)
+    if res.isOk:
+      var cmd: string
+      let code = ctx.setupCmd(path, cmd, env)
+      if code == ceNone:
+        let canThrottle = not ctx.isPrivileged(client) and
+          request.url.isNetPath()
+        let contentLen = request.body.contentLength()
+        if auth != nil:
+          request.headers.addIfNotFound("Authorization", "Basic " &
+            btoa(auth.username & ':' & auth.password))
+        if mfUrimethodmap in entry.flags: # backwards-compat
+          env.add(("MAPPED_URI_SCHEME", request.url.scheme))
+          if auth != nil:
+            var user = percentEncode(auth.username, UserInfoPercentEncodeSet)
+            var pass = percentEncode(auth.password, UserInfoPercentEncodeSet)
+            env.add(("MAPPED_URI_USERNAME", move(user)))
+            env.add(("MAPPED_URI_PASSWORD", move(pass)))
+          env.add(("MAPPED_URI_HOST", request.url.hostname))
+          env.add(("MAPPED_URI_PORT", request.url.port))
+          env.add(("MAPPED_URI_PATH", request.url.pathname))
+          env.add(("MAPPED_URI_QUERY", request.url.search.substr(1)))
+        env.setupEnv(request, contentLen, config)
+        ctx.loadCGI(client, handle, request.body, config, cmd, env, argv,
+          request.tocache, canThrottle)
+      else:
+        ctx.rejectHandleClose(handle, code)
+    else:
+      ctx.rejectHandleClose(handle, ceInvalidBrowsecapEntry, $res.error)
+  elif entry != nil and not resource:
+    ctx.rejectHandleClose(handle, ceMailcap, entry.toStr(typeBuf))
+  else:
+    # handle built-in schemes here, because findResourceMut might have
+    # rewritten the URL into one
     case request.url.schemeType
-    of stCgiBin:
-      ctx.loadCGI(client, handle, request, prevurl, config, [])
     of stStream:
       ctx.loadStream(client, handle, request)
       if handle.stream != nil:
@@ -1485,48 +1503,12 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadAbout(handle, request)
     of stXChaCookie:
       ctx.loadXChaCookie(client, handle, request)
+    elif netPathSeen:
+      ctx.rejectHandleClose(handle, ceNetPathExpected)
+    elif listSeen:
+      ctx.rejectHandleClose(handle, ceInvalidMethod)
     else:
-      if ctx.config.w3mCGICompat and request.url.schemeType == stFile:
-        let path = request.url.pathname.percentDecode()
-        if ctx.canRewriteForCGICompat(path):
-          let url = parseURL0("cgi-bin:" & path & request.url.search)
-          if url != nil:
-            request.url = url
-            inc tries
-            redo = true
-            continue
-      prevurl = request.url
-      var typeBuf = request.url.scheme & '/' &
-        ($request.httpMethod).toLowerAscii()
-      var netPathSeen = false
-      var listSeen = false
-      let entry = ctx.browsecap.findResourceMut(typeBuf, request.url,
-        netPathSeen, listSeen, resource)
-      if entry != nil and mfCgioutput in entry.flags:
-        var canpipe: bool
-        #TODO parse argv, env and load CGI directly
-        let cmd = "cgi-bin:" & unquoteCommand(entry.cmd, typeBuf,
-          request.url.pathname, request.url, canpipe, uriparams = true,
-          shellQuote = false)
-        let url = parseURL0(cmd)
-        if url != nil:
-          request.url = url
-          inc tries
-          redo = true
-        else:
-          ctx.rejectHandle(handle, ceInvalidBrowsecapEntry)
-      elif entry != nil and not resource:
-        ctx.rejectHandle(handle, ceMailcap, entry.toStr(typeBuf))
-      elif request.url.schemeType in BuiltinScheme:
-        continue # rewritten to a built-in scheme
-      elif netPathSeen:
-        ctx.rejectHandle(handle, ceNetPathExpected)
-      elif listSeen:
-        ctx.rejectHandle(handle, ceInvalidMethod)
-      else:
-        ctx.rejectHandle(handle, ceUnknownScheme)
-  if tries >= MaxRewrites:
-    ctx.rejectHandle(handle, ceTooManyRewrites)
+      ctx.rejectHandleClose(handle, ceUnknownScheme)
 
 proc setupRequestDefaults(request: var RawRequest; config: LoaderClientConfig;
     credentials: bool) =
@@ -1810,13 +1792,13 @@ proc addAuthCmd(ctx: var LoaderContext; rclient: ClientHandle;
     # This way, loading a URL with only the username set still lets us
     # load the password which is already associated with said username.
     if url.password != "" or item.username != url.username:
-      item.username = url.username
-      item.password = url.password
+      item.username = percentDecode(url.username)
+      item.password = percentDecode(url.password)
   else:
     let item = AuthItem(
       origin: url.authOrigin,
-      username: url.username,
-      password: url.password
+      username: percentDecode(url.username),
+      password: percentDecode(url.password)
     )
     ctx.authMap.add(item)
     ctx.pagerClient.authMap.add(item)
@@ -1978,7 +1960,7 @@ proc finishCycle(ctx: var LoaderContext) =
       client.pendingHead = move(pending.next)
       if client.pendingHead == nil:
         client.pendingTail = nil
-      ctx.loadCGI2(client, pending.handle, pending.body, client.config,
+      ctx.loadCGI(client, pending.handle, pending.body, client.config,
         pending.cmd, pending.env, pending.argv, pending.tocache,
         canThrottle = true)
   ctx.pendingConnections.setLen(0)

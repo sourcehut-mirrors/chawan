@@ -164,7 +164,7 @@ Certain environment variables are read and used by Chawan.
 
 [**mancha**](mancha.md)(1), [**cha\-config**](config.md)(5),
 [**cha\-mailcap**](mailcap.md)(5), [**cha\-mime.types**](mime.types.md)(5),
-[**cha\-cgi**](cgi.md)(5), [**cha\-urimethodmap**](urimethodmap.md)(5),
-[**cha\-protocols**](protocols.md)(7), [**cha\-image**](image.md)(7),
-[**cha\-css**](css.md)(7), [**cha\-troubleshooting**](troubleshooting.md)(7),
+[**cha\-cgi**](cgi.md)(5), [**cha\-protocols**](protocols.md)(7),
+[**cha\-image**](image.md)(7), [**cha\-css**](css.md)(7),
+[**cha\-troubleshooting**](troubleshooting.md)(7),
 [**cha\-terminal**](terminal.md)(7)

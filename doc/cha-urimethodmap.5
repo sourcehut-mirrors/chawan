@@ -2,11 +2,46 @@
 .\"
 .TH "CHA-URIMETHODMAP" "5"
 .SH URI method map support in Chawan
-Chawan can be used to map unrecognized protocols to known protocols
-using the \f[I]urimethodmap\f[R] format.
+Chawan can map unrecognized protocols to known protocols using the
+\f[I]urimethodmap\f[R] format.
+.SS Deprecation notice
+\f[I]urimethodmap\f[R] is deprecated in favor of browsecap, which is
+strictly more expressive.
+See \f[B]cha\-mailcap\f[R](5) for details.
 .PP
-The main use case for this is implementing handlers to protocols unknown
-to Chawan through a protocol that the browser does understand.
+Translating existing urimethodmap entries is done using the
+\f[CR]cgioutput\f[R] field for CGI entries, and the \f[CR]uri\f[R] field
+for non\-CGI entries.
+For example, following urimethodmap file:
+.IP
+.EX
+scheme1: /cgi\-bin/blah.cgi?%s
+scheme2: https://example.org/?%s
+scheme3: /cgi\-bin/scheme3.cgi
+.EE
+.PP
+would maps to the following browsecap entry:
+.IP
+.EX
+# If the script takes the URI as QUERY_STRING, use \(ga%u\(aq.
+scheme1; /cgi\-bin/blah.cgi?%u; cgioutput
+# If you\(aqre transparently mapping to another scheme, use \(gauri\(aq.
+scheme2; https://example.org/?%s; uri
+# Note that browsecap does not set \(gaMAPPED_URI_...\(aq variables.  Instead,
+# you can either update the script to pass templates as arguments, or set
+# the environment variables yourself:
+scheme3; MAPPED_URI_HOST=%h \(rs
+	MAPPED_URI_PORT=%p \(rs
+	MAPPED_URI_PATH=%s \(rs
+	/cgi\-bin/scheme3.cgi; cgioutput
+.EE
+.PP
+The only non\-trivial part of the migration is auth data; urimethodmap
+has \f[CR]$MAPPED_URI_USERNAME\f[R] and \f[CR]$MAPPED_URI_PASSWORD\f[R],
+but browsecap expects scripts to parse the data from the
+\f[CR]$HTTP_AUTHORIZATION\f[R] environment variable (also available as
+\f[CR]Authorization\f[R] in \f[CR]$REQUEST_HEADERS\f[R]).
+Alternatively, if you only need a username, use \f[CR]$REMOTE_USER\f[R].
 .SS Search path
 The search path for urimethodmap files can be overridden using the
 configuration variable \f[CR]external.urimethodmap\f[R].

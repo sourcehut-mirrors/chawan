@@ -6,16 +6,21 @@ die() {
 	exit 1
 }
 
-PORT=${MAPPED_URI_PORT:-79}
-test "$PORT" = 79 || die InvalidURL "wrong port, only port 79 is supported"
+if test "$#" -ne 3
+then	die InternalError "usage: finger [host] [port] [path]"
+fi
+
+host=$1
+port=${2:-79}
+path=$3
+test "$port" = 79 || die InvalidURL "wrong port, only port 79 is supported"
 
 # Parse the URL. Roughly based on Lynx finger URL parsing, but less
 # sophisticated.
-USER=$MAPPED_URI_USERNAME
-if test -z "$USER"
-then	case "$MAPPED_URI_PATH" in
-	/w/*)	USER="/w ${MAPPED_URI_PATH#/w/}" ;;
-	*)	USER=${MAPPED_URI_PATH#/} ;;
+if test -z "$REMOTE_USER"
+then	case "$path" in
+	/w/*)	REMOTE_USER="/w ${path#/w/}" ;;
+	*)	REMOTE_USER=${path#/} ;;
 	esac
 fi
 
@@ -26,4 +31,4 @@ printf 'Content-Type: text/plain\n'
 printf '\n'
 
 # Finger request, the output of which goes to stdout.
-printf '%s\r\n' "$USER" | "$CHA_LIBEXEC_DIR"/nc "$MAPPED_URI_HOST" "$PORT"
+printf '%s\r\n' "$REMOTE_USER" | "$CHA_LIBEXEC_DIR"/nc "$host" "$port"

@@ -68,7 +68,7 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
-ssl_link = http gemini sftp
+ssl_link = http https gemini sftp
 tohtml_link = gopher2html md2html ansi2html gmi2html dirlist2html img2html
 
 protocols_bin = file ftp gopher finger man spartan chabookmark stbi jebp sixel \
@@ -291,6 +291,7 @@ install:
 	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); \
 	done
 	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc urldec)
+	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc btoa)
 	for f in $(ssl_link); do (cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl "$$f"); done
 	for f in $(tohtml_link); do (cd $(LIBEXECDIR_CHAWAN) && ln -sf tohtml "$$f"); done
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"

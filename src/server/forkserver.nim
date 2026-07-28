@@ -13,7 +13,6 @@ import io/packetwriter
 import io/poll
 import server/buffer
 import server/bufferiface
-import server/connectionerror
 import server/loader
 import server/loaderiface
 import types/opt
@@ -186,8 +185,10 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
   r.sread(hasOstreamOut2)
   let ostreamOut2 = if hasOstreamOut2: newPosixStream(r.recvFd()) else: nil
   var env: seq[tuple[name, value: string]]
+  var argv: seq[string]
   var cmd: string
   r.sread(env)
+  r.sread(argv)
   r.sread(cmd)
   let pid = fork()
   if pid == 0: # child
@@ -205,8 +206,8 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
     discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
     # let's also reset SIGPIPE, which we ignored on init
     discard myposix.signal(SIGPIPE, myposix.SIG_DFL)
-    const ExecErrorMsg = "Cha-Control: ConnectionError " &
-      $int(ceFailedToExecuteCGIScript)
+    const ExecErrorMsg =
+      "Cha-Control: ConnectionError InternalError failed to execute CGI script"
     let stdout = cast[ChaFile](stdout)
     env.add(("SCRIPT_FILENAME", cmd))
     for it in env:
@@ -220,7 +221,11 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
         " failed to set working directory")
       exitnow(1)
     cmd[i] = '/'
-    discard execl(cstring(cmd), cast[cstring](addr cmd[i + 1]), nil)
+    var cargv = newSeq[cstring](argv.len + 2)
+    cargv[0] = cast[cstring](addr cmd[i + 1])
+    for i in 0 ..< argv.len:
+      cargv[i + 1] = cstring(argv[i])
+    discard execv(cstring(cmd), cast[cstringArray](addr cargv[0]))
     let es = $strerror(errno)
     discard stdout.writeLine(ExecErrorMsg & ' ' & es.deleteChars({'\n', '\r'}))
     exitnow(1)
@@ -248,27 +253,28 @@ proc setupForkServerEnv(config: LoaderConfig): Opt[void] =
   ok()
 
 const DefaultBrowsecap = """
-http;			http;		x-cgioutput; x-resource; x-netpath
-https;			http;		x-cgioutput; x-resource; x-netpath
-finger/get;		finger;		x-cgioutput; x-resource; x-netpath
-gemini;			gemini;		x-cgioutput; x-resource; x-netpath
-file;			file;		x-cgioutput; x-resource
-ftp/get;		ftp;		x-cgioutput; x-resource; x-netpath
-sftp/get;		sftp;		x-cgioutput; x-resource; x-netpath
-gopher/get;		gopher;		x-cgioutput; x-resource; x-netpath
-spartan;		spartan;	x-cgioutput; x-resource; x-netpath
-man/get;		man;		x-cgioutput; x-resource
-man-k/get;		man;		x-cgioutput; x-resource
-man-l/get;		man;		x-cgioutput; x-resource
-img-codec+png;		stbi;		x-cgioutput; x-resource
-img-codec+jpeg;		stbi;		x-cgioutput; x-resource
-img-codec+gif;		stbi;		x-cgioutput; x-resource
-img-codec+bmp;		stbi;		x-cgioutput; x-resource
-img-codec+x-unknown;	stbi;		x-cgioutput; x-resource
-img-codec+webp;		jebp;		x-cgioutput; x-resource
-img-codec+x-sixel;	sixel;		x-cgioutput; x-resource
-img-codec+x-cha-canvas;	canvas;		x-cgioutput; x-resource
-img-codec+svg+xml;	nanosvg;	x-cgioutput; x-resource
+http;			http %h %p %s %?;	cgioutput; resource; netpath
+https;			https %h %p %s %?;	cgioutput; resource; netpath
+finger/get;		finger %h %p %s;	cgioutput; resource; netpath
+gemini;			gemini %h %p %s %?;	cgioutput; resource; netpath
+file;			file %s;		cgioutput; resource
+ftp/get;		ftp %h %p %s;		cgioutput; resource; netpath
+sftp/get;		sftp %h %p %s;		cgioutput; resource; netpath
+gopher/get;		gopher %h %p %s %?;	cgioutput; resource; netpath
+spartan;		spartan %h %p %s %?;	cgioutput; resource; netpath
+man/get;		man -r %s;		cgioutput; resource
+man-k/get;		man -k %s;		cgioutput; resource
+man-l/get;		man -l %s;		cgioutput; resource
+cgi-bin;		%s%?;			cgioutput; resource
+img-codec+png;		stbi png %s;		cgioutput; resource
+img-codec+jpeg;		stbi jpeg %s;		cgioutput; resource
+img-codec+gif;		stbi gif %s;		cgioutput; resource
+img-codec+bmp;		stbi bmp %s;		cgioutput; resource
+img-codec+x-unknown;	stbi x-unknown %s;	cgioutput; resource
+img-codec+webp;		jebp %s;		cgioutput; resource
+img-codec+x-sixel;	sixel %s;		cgioutput; resource
+img-codec+x-cha-canvas;	canvas %s;		cgioutput; resource
+img-codec+svg+xml;	nanosvg %s;		cgioutput; resource
 """
 
 proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
@@ -295,7 +301,7 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
     var warnings: seq[string]
     var browsecap: Mailcap
     block:
-      let res = browsecap.parseMailcap(autoBrowsecapPath)
+      let res = browsecap.parseMailcap(autoBrowsecapPath, lenient = true)
       if res.isErr:
         warnings.add(res.error)
     for path in urimethodmapPaths:

@@ -134,35 +134,16 @@ Chawan sets the following environment variables:
   return an error message.
 * `HTTP_COOKIE=` if set, the Cookie header.
 * `HTTP_REFERER=` if set, the Referer header.
+* `HTTP_AUTHORIZATION=` if set, the Authorization header.
+* `REMOTE_USER=` if Authorization uses "Basic" auth, its user part.
 * `CHA_TMP_DIR=` directory used for storing temporary files.
 * `CHA_DIR=` location of the config file.
 
-For requests originating from a urimethodmap rewrite, Chawan will also set
-the parsed URL's parts as environment variables.  Use of these is highly
-encouraged, to avoid exploits originating from double-parsing of URLs.
-
-If `example://username:password@example.org:1234/path/name.html?example`
-is the original URL, then:
-
-* `MAPPED_URI_SCHEME=` the scheme of the original URL, in this case `example`.
-* `MAPPED_URI_USERNAME=` the username part, in this case `username`.  If no
-  username was specified, the variable is set to the empty string.
-* `MAPPED_URI_PASSWORD=` the password part, in this case `password`.  If no
-  password was specified, the variable is set to the empty string.
-* `MAPPED_URI_HOST=` the host part, in this case `host.org` If no host was
-  specified, the variable is set to the empty string. (An example of a URL
-  with no host: `about:blank`, here `blank` is the path name.)
-* `MAPPED_URI_PORT=` the port, in this case `1234`.  If no port was specified,
-  the variable is set to the empty string.  (In this case, the CGI script is
-  expected to use the default port for the scheme, if any.)
-* `MAPPED_URI_PATH=` the path name, in this case `/path/name.html?example`.
-  If no path was specified, the variable is set to the empty string.
-  The path name is percent-encoded.
-* `MAPPED_URI_QUERY=` the query string, in this case `example`.  Unlike in
-  JavaScript, no question mark is prepended to the string.  The query string
-  is percent-encoded as well.
-
-The fragment part is omitted intentionally.
+Requests originating from the [**cha-urimethodmap**](urimethodmap.md)(5)
+feature also set a set of environment variables starting with
+`MAPPED_URI_`.  However, this feature is deprecated in favor of passing
+parameters from *browsecap*, as described in
+[**cha-mailcap**](mailcap.md)(5).
 
 ## Request body
 
@@ -222,4 +203,4 @@ of memory?
 
 ## See also
 
-[**cha**](cha.md)(1) [**cha-urimethodmap**](urimethodmap.md)(5)
+[**cha**](cha.md)(1) [**cha-mailcap**](mailcap.md)(5)

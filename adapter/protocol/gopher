@@ -1,17 +1,29 @@
 #!/bin/sh
 
-opath=/${MAPPED_URI_PATH#"${MAPPED_URI_PATH%%[!/]*}"}
+die() {
+	echo "Cha-Control: ConnectionError $1 $2"
+	exit 1
+}
+
+if test "$#" -ne 4
+then	die InternalError "usage: gopher [host] [port] [path] [query]"
+fi
+
+host=$1
+port=${2:-70}
+opath=/${3#"${3%%[!/]*}"}
 path0=$(printf '%s\n' "$opath" | "$CHA_LIBEXEC_DIR"/urldec)
 path=${path0##/?}
+query=$4
 t=${path0%%"$path"}
 t=${t##?}
 
-if test "$t" = 7 && test -z "$MAPPED_URI_QUERY"
+if test "$t" = 7 && test -z "$4"
 then	exec cat <<EOF
 Content-Type: text/html
 
 <!DOCTYPE html>
-<h1>Search $MAPPED_URI_SCHEME://$MAPPED_URI_HOST:$MAPPED_URI_PORT$opath</h1>
+<h1>Search gopher://$host:$port$opath</h1>
 <form><input type=search name=name autofocus></form>
 EOF
 else	LF='
@@ -29,9 +41,9 @@ Location: /1$opath
 EOF
 		;;
 	esac
-	query=$(printf '%s\n' "${MAPPED_URI_QUERY##*=}" | \
+	query=$(printf '%s\n' "${query##*=}" | \
 		sed 's/\+/ /g' | "$CHA_LIBEXEC_DIR"/urldec)
 	tab='	'
 	printf '%s\r\n' "$path${query:+"$tab"}${query##*=}" | \
-		"$CHA_LIBEXEC_DIR"/nc -m "$msg$LF" "$MAPPED_URI_HOST" "${MAPPED_URI_PORT:-70}"
+		"$CHA_LIBEXEC_DIR"/nc -m "$msg$LF" "$host" "$port"
 fi

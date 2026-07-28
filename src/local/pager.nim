@@ -339,23 +339,23 @@ proc loadMailcap(pager: Pager; mailcap: var Mailcap; path: string) =
 
 # executed after prompting user
 const DefaultMailcap = """
-image/png;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; x-htmloutput; x-needsimage
-image/jpeg;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; x-htmloutput; x-needsimage
-image/bmp;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; x-htmloutput; x-needsimage
-image/gif;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; x-htmloutput; x-needsimage
-image/webp;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; x-htmloutput; x-needsimage
-image/svg+xml;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; x-htmloutput; x-needsimage
+image/png;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; htmloutput; needsimage
+image/jpeg;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; htmloutput; needsimage
+image/bmp;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; htmloutput; needsimage
+image/gif;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; htmloutput; needsimage
+image/webp;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; htmloutput; needsimage
+image/svg+xml;	exec "$CHA_LIBEXEC_DIR"/img2html '%t' '%u'; htmloutput; needsimage
 """
 
 # executed automatically
 const DefaultAutoMailcap = """
-text/gopher;	exec "$CHA_LIBEXEC_DIR"/gopher2html -u '%u'; x-htmloutput
-text/gemini;	exec "$CHA_LIBEXEC_DIR"/gmi2html; x-htmloutput
-text/markdown;	exec "$CHA_LIBEXEC_DIR"/md2html; x-htmloutput
-text/x-ansi;	exec "$CHA_LIBEXEC_DIR"/ansi2html -st '%{title}'; x-htmloutput; x-needsstyle
-text/x-dirlist;	exec "$CHA_LIBEXEC_DIR"/dirlist2html -t '%{title}'; x-htmloutput
-text/uri-list;	exec "$CHA_LIBEXEC_DIR"/uri2html '%{title}'; x-htmloutput
-application/xhtml+xml; exec cat; x-htmloutput
+text/gopher;	exec "$CHA_LIBEXEC_DIR"/gopher2html -u '%u'; htmloutput
+text/gemini;	exec "$CHA_LIBEXEC_DIR"/gmi2html; htmloutput
+text/markdown;	exec "$CHA_LIBEXEC_DIR"/md2html; htmloutput
+text/x-ansi;	exec "$CHA_LIBEXEC_DIR"/ansi2html -st '%{title}'; htmloutput; needsstyle
+text/x-dirlist;	exec "$CHA_LIBEXEC_DIR"/dirlist2html -t '%{title}'; htmloutput
+text/uri-list;	exec "$CHA_LIBEXEC_DIR"/uri2html '%{title}'; htmloutput
+application/xhtml+xml; exec cat; htmloutput
 """
 
 proc loadAutoMailcap(pager: Pager) =

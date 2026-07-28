@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import std/os
 import std/posix
 
 import io/dynstream
@@ -108,8 +109,10 @@ proc puts(s: string) =
     writeAll(unsafeAddr s[0], s.len)
 
 proc main() =
-  let f = getEnvEmpty("MAPPED_URI_SCHEME").after('+')
-  case getEnvEmpty("MAPPED_URI_PATH")
+  if paramCount() != 2:
+    cgiDie(ceInternalError, "usage: stbi [format] [command]")
+  let f = paramStr(1)
+  case paramStr(2)
   of "decode":
     if f notin ["jpeg", "gif", "bmp", "png", "x-unknown"]:
       cgiDie(ceInternalError, "unknown format " & f)
