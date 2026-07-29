@@ -83,20 +83,20 @@ proc initCGIError*(code: ConnectionError; s: cstring = nil): CGIError =
 template errCGIError*(code: ConnectionError; s: cstring = nil): untyped =
   err(initCGIError(code, s))
 
-proc openSocket(host, port: string; res: var ptr AddrInfo; nagle: bool):
-    CGIResult[SocketHandle] =
-  var err: cint
-  for family in [AF_INET, AF_INET6, AF_UNSPEC]:
-    var hints = AddrInfo(
-      ai_family: family,
-      ai_socktype: SOCK_STREAM,
-      ai_protocol: IPPROTO_TCP
-    )
-    err = getaddrinfo(cstring(host), cstring(port), addr hints, res)
-    if err == 0:
-      break
-  if err != 0:
-    return err(initCGIError(ceFailedToResolveProxy, gai_strerror(err)))
+proc openSocket(host, port: string; res: var ptr AddrInfo; family: var cint;
+    nagle: bool): CGIResult[SocketHandle] =
+  var hints = AddrInfo(
+    ai_family: family,
+    ai_socktype: SOCK_STREAM,
+    ai_protocol: IPPROTO_TCP
+  )
+  var code = getaddrinfo(cstring(host), cstring(port), addr hints, res)
+  if code != 0 and family == AF_INET:
+    family = AF_INET6
+    hints.ai_family = family
+    code = getaddrinfo(cstring(host), cstring(port), addr hints, res)
+  if code != 0:
+    return err(initCGIError(ceFailedToResolveProxy, gai_strerror(code)))
   let sock = socket(res.ai_family, res.ai_socktype, res.ai_protocol)
   if cint(sock) < 0:
     return errCGIError(ceInternalError, "could not open socket")
@@ -110,11 +110,18 @@ proc openSocket(host, port: string; res: var ptr AddrInfo; nagle: bool):
 proc connectSimpleSocket(host, port: string; outIpv6: var bool; nagle: bool):
     CGIResult[PosixStream] =
   var res: ptr AddrInfo
-  let sock = ?openSocket(host, port, res, nagle)
-  let ps = newPosixStream(sock)
-  if connect(sock, res.ai_addr, res.ai_addrlen) < 0:
-    ps.sclose()
-    return err(initCGIError(ceConnectionRefused))
+  var family = AF_INET
+  var ps: PosixStream
+  while true:
+    let sock = ?openSocket(host, port, res, family, nagle)
+    ps = newPosixStream(sock)
+    if connect(sock, res.ai_addr, res.ai_addrlen) < 0:
+      ps.sclose()
+      if family == AF_INET:
+        family = AF_INET6
+        continue # retry
+      return err(initCGIError(ceConnectionRefused))
+    break # success
   outIpv6 = res.ai_family == AF_INET6
   freeAddrInfo(res)
   ok(ps)
