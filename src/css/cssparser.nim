@@ -847,15 +847,13 @@ proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
 
 proc nextToken(iq: openArray[char]; n: var int): bool =
   var m = n
-  while m + 1 < iq.len and iq[m] == '/' and iq[m + 1] == '*':
+  while iq.startsWith("/*", m):
     m += 2
-    while m < iq.len and not (m + 1 < iq.len and iq[m] == '*' and
-        iq[m + 1] == '/'):
-      inc m
-    if m + 1 < iq.len:
-      inc m
-    if m < iq.len:
-      inc m
+    let i = iq.find("*/", m)
+    if i < 0:
+      m = iq.len
+    else:
+      m = i + 2
   n = m
   return m < iq.len
 
