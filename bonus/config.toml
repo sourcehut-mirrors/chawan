@@ -44,11 +44,6 @@
 #	"/usr/etc/mime.types",
 #	"/usr/local/etc/mime.types"
 #]
-#urimethodmap = [
-#	"$CHA_DIR/urimethodmap",
-#	"~/.urimethodmap",
-#	"/etc/urimethodmap",
-#]
 #bookmark = "$CHA_DATA_DIR/bookmark.md"
 #history-file = "$CHA_DATA_DIR/history.uri"
 #history-size = 100

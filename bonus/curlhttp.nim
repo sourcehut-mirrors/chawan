@@ -1,7 +1,4 @@
-when NimMajor >= 2:
-  import std/envvars
-else:
-  import std/os
+import std/os
 import std/posix
 import std/strutils
 import utils/sandbox
@@ -578,25 +575,22 @@ func startsWithIgnoreCase(s1, s2: openArray[char]): bool =
   return true
 
 proc main() =
+  if paramCount() != 5:
+    puts("Cha-Control: ConnectionError InternalError " &
+      "usage: curlhttp [scheme] [host] [port] [path] [query]")
   let curl = curl_easy_init()
   doAssert curl != nil
   let url = curl_url()
   const flags = cuint(CURLU_PATH_AS_IS)
-  url.set(CURLUPART_SCHEME, getEnv("MAPPED_URI_SCHEME"), flags)
-  let username = getEnv("MAPPED_URI_USERNAME")
-  if username != "":
-    url.set(CURLUPART_USER, username, flags)
-  let password = getEnv("MAPPED_URI_PASSWORD")
-  if password != "":
-    url.set(CURLUPART_PASSWORD, password, flags)
-  url.set(CURLUPART_HOST, getEnv("MAPPED_URI_HOST"), flags)
-  let port = getEnv("MAPPED_URI_PORT")
+  url.set(CURLUPART_SCHEME, paramStr(1), flags)
+  url.set(CURLUPART_HOST, paramStr(2), flags)
+  let port = paramStr(3)
   if port != "":
     url.set(CURLUPART_PORT, port, flags)
-  let path = getEnv("MAPPED_URI_PATH")
+  let path = paramStr(4)
   if path != "":
     url.set(CURLUPART_PATH, path, flags)
-  let query = getEnv("MAPPED_URI_QUERY")
+  let query = paramStr(5)
   if query != "":
     url.set(CURLUPART_QUERY, query, flags)
   if getEnv("CHA_INSECURE_SSL_NO_VERIFY") == "1":
@@ -635,13 +629,13 @@ proc main() =
   else: discard
   let headers = getEnv("REQUEST_HEADERS")
   for line in headers.split("\r\n"):
-    const needle = "Accept-Encoding: "
-    if line.startsWithIgnoreCase(needle):
-      let s = line.substr(needle.len)
-      # From the CURLOPT_ACCEPT_ENCODING manpage:
-      # > The application does not have to keep the string around after
-      # > setting this option.
-      curl.setopt(CURLOPT_ACCEPT_ENCODING, cstring(s))
+    if line.startsWithIgnoreCase("Accept-Encoding: "):
+      # It is possible that curl supports a different set of encodings than
+      # Chawan, so it seems better to just let it ask for whatever it has.
+      #TODO ideally, encodings would be handled separately from the network
+      # layer, then we could just leave it as NULL here.
+      curl.setopt(CURLOPT_ACCEPT_ENCODING, cstring(""))
+      continue
     # This is OK, because curl_slist_append strdup's line.
     op.slist = curl_slist_append(op.slist, cstring(line))
   if op.slist != nil:

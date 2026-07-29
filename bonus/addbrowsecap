@@ -1,0 +1,76 @@
+#!/bin/sh
+
+if test $# -lt 2
+then	printf 'Usage: addbrowsecap [scheme] [program] [fields...]\n' >&2
+	exit 1
+fi
+
+if test -z "$CHA_DIR"
+then	CHA_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/chawan
+	if ! test -e "$CHA_DIR"/config.toml
+	then	CHA_DIR=$HOME/.chawan
+	fi
+fi
+browsecap=$CHA_DIR/browsecap
+scheme=$1
+cgi=$2
+shift 2
+params=
+while test "$#" -gt 0
+do	params="$params;	$1"
+	shift
+done
+
+if ! test -e "$browsecap"
+then	printf '%s;	%s%s\n' "$scheme" "$cgi" "$params" > "$browsecap"
+	exit 0
+fi
+
+grep -- "^$scheme;[[:space:]]*$cgi"'$' "$browsecap" >/dev/null && exit 0
+
+space_kind=$(sed -En '/^[a-zA-Z+-/]+;[[:space:]]/s/[^[:space:]]//gp' "$browsecap" | \
+	tail -c2)
+
+space_mul=1
+if test "$space_kind" != ' '; then space_mul=8; space_kind='	'; fi
+space_num=$(sed -nE 's/^([a-zA-Z+-/]+;[[:space:]]*).*/\1/p' "$browsecap" | \
+	while IFS= read -r line
+	do	spaces=$(printf '%s\n' "$line" | sed 's/[^[:space:]]//g')
+		nscheme=$((${#line} - ${#spaces}))
+		printf '%d\n' $(((${#spaces} * $space_mul + $nscheme) / $space_mul))
+	done | \
+	sort -rn | \
+	head -1)
+
+space_num=$((($space_num * $space_mul + ($space_mul - 1) - ${#scheme} - 1) / $space_mul))
+
+spaces=
+if test "$space_num" -gt 0
+then	spaces=$(printf "%${space_num}s" | sed "s/ /$space_kind/g")
+fi
+
+tmpf=$(mktemp)
+
+printf "%s;${spaces}%s%s\n" "$scheme" "$cgi" "$params" > "$tmpf"
+grep -Ev "^$scheme;[^;]+$params$" "$browsecap" >> "$tmpf"
+
+# check if there is anything to update at all
+if diff "$browsecap" "$tmpf" >/dev/null; then exit 0; fi
+
+if ! test "$PAGER" || test "$(wc -l "$tmpf" | cut -f1 -d' ')" -lt "${LINES:-24}"
+then	PAGER=cat
+fi
+
+{
+	printf 'Updating %s to:\n\n' "$browsecap"
+	cat "$tmpf"
+} | {
+	$PAGER
+}
+printf 'OK? (Y/n) '
+read -r res
+
+case $res in
+y|'')	cp "$tmpf" "$browsecap";;
+*)	printf 'Aborting. (temp file is %s)\n' "$tmpf"
+esac

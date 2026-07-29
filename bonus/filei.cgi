@@ -2,9 +2,9 @@
 /* show all images in a directory.
  * usage:
  * - put it in your cgi-bin folder
- * - add to ~/.urimethodmap:
+ * - add to ~/.chawan/browsecap (or ~/.config/chawan/browsecap):
 
-filei:	/cgi-bin/filei.cgi
+filei;	/cgi-bin/filei.cgi; cgioutput; resource
 
  *   then visit filei:directory for a directory of images
  *

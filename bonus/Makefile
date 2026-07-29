@@ -23,22 +23,22 @@ install-filei.cgi: filei.cgi
 .PHONY: install-libfetch.c
 install-libfetch-http.c: $(CHA_CGI_DIR)/libfetch-http
 	$(CC) -Wall -O2 -g -std=c89 $< -lfetch -o $@
-	./addurimethod http libfetch-http
-	./addurimethod https libfetch-http
+	./addbrowsecap http '/cgi-bin/libfetch-http http %h %p %s %?' cgioutput resource
+	./addbrowsecap https '/cgi-bin/libfetch-http https %h %p %s %?' cgioutput resource
 
 .PHONY: install-magnet.cgi
 install-magnet.cgi: magnet.cgi
 	mkdir -p $(CHA_CGI_DIR)
 	cp magnet.cgi $(CHA_CGI_DIR)
-	./addurimethod magnet magnet.cgi
+	./addbrowsecap magnet '/cgi-bin/magnet.cgi?%u' cgioutput
 
 .PHONY: install-curlhttp
 install-curlhttp:
 	mkdir -p $(CHA_CGI_DIR)
 	nim c -f -d:release -d:lto -d:curlLibName=$(CURLLIBNAME) \
 		-o:$(CHA_CGI_DIR)/curlhttp curlhttp.nim
-	./addurimethod http curlhttp
-	./addurimethod https curlhttp
+	./addbrowsecap http '/cgi-bin/curlhttp http %h %p %s %?' cgioutput resource
+	./addbrowsecap https '/cgi-bin/curlhttp https %h %p %s %?' cgioutput resource
 
 .PHONY: install-trans.cgi
 install-trans.cgi: trans.cgi

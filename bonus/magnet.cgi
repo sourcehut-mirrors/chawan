@@ -3,9 +3,9 @@
 #
 # Usage: place magnet.cgi in your cgi-bin directory (don't forget to set
 # the executable bit, e.g. chmod +x magnet.cgi), then add the following line
-# to your urimethodmap:
+# to your browsecap:
 #
-# magnet: /cgi-bin/magnet.cgi?%s
+# magnet; /cgi-bin/magnet.cgi?%s; cgioutput
 #
 # Then, set the remote transmission session's address using the
 # CHA_TRANSMISSION_ADDRESS environment variable, and if needed, the

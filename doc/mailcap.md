@@ -8,12 +8,12 @@ commands, or to convert them to HTML/plain text before displaying them
 in Chawan.
 
 The *browsecap* file fulfills a similar purpose for URI scheme handling.
-*browsecap* can override handling of any built-in scheme, or to add custom
+browsecap can override handling of any built-in scheme, or to add custom
 handlers (e.g. [**mutt**](man:mutt(1))(1) for *mailto*).  When combined
-with [**cha-cgi**](cgi.md)(5), *browsecap* also enables extending Chawan
+with [**cha-cgi**](cgi.md)(5), browsecap also enables extending Chawan
 with user-specified schemes.
 
-(*browsecap* is a more capable replacement for
+(browsecap is a more capable replacement for
 [**cha-urimethodmap**](urimethodmap.md)(5); the latter is deprecated.)
 
 Note that Chawan's default mime.types file only recognizes a few file
@@ -53,7 +53,7 @@ personal mailcap file).
 
 For browsecap, there is only an automatic variant so far, stored at
 `external.auto-browsecap` which defaults to `~/.chawan/browsecap` (or
-`~/.config/chawan/browsecap with XDG basedirs).
+`~/.config/chawan/browsecap` with XDG basedirs).
 
 ## Format
 
@@ -83,8 +83,8 @@ text/x-example; s=%s cat "$s"; copiousoutput
 
 Following templates are supported:
 
-* `%s` expands to the path.  Specifying `%s` forces download of the
-  external resource *before* the entry is executed.  If `%s` is not
+* In mailcap, `%s` expands to the path.  Specifying `%s` forces download
+  of the external resource *before* the entry is executed.  If `%s` is not
   specified, the resource is instead piped to standard input.  (In this
   case, `needsterminal` does not apply.)
 
@@ -96,14 +96,14 @@ Following templates are supported:
   `%{charset}` expands to "utf-8".
 
   In browsecap, `%t` expands to *protocol*/*method*, where the *method*
-  part is typically upper-cased; named fields expand to URL search
-  parameters, so for the URL `https://example.org/search?q=blah`, `%{q}`
-  expands to "blah".
+  part is ASCII lower-cased.  Named fields expand to URL search parameters,
+  so for the URL `https://example.org/search?q=blah`, `%{q}` expands to
+  "blah".
 
 * Non-standard templates for the resource's original URL: `%u` (from
   Netscape) expands to the original URL of the resource, `%h` and `%p`
   (from w3mmee) expands to the hostname and the port respectively, `%H`
-  expands to the hostname *and the port*, and `%?` (from w3mmee) expands to
+  expands to the hostname *and* the port, and `%?` (from w3mmee) expands to
   the query string including the question mark.
 
   (w3mmee did not actually include the question mark in `%?`, but this
@@ -113,7 +113,7 @@ Following templates are supported:
 ### Fields
 
 Following fields are recognized.  (In browsecap, the `x-` prefix for
-extension fields is optional.)
+extension fields is optional; in mailcap, it is mandatory.)
 
 * Entries with the `test` named field are only used if the test command
   exits with 0.  For example, you can restrict entries that require X11 as
@@ -161,13 +161,9 @@ extension fields is optional.)
   used instead of the original type.  Such entries are only respected in
   `external.auto-mailcap`.
 
-  `x-type` has a higher priority than other entries, and applies even to
-  text/plain and text/html documents (which are normally excluded from
-  mailcap).  However, `x-type` entries do not apply if the content type
-  was forced (e.g. using the `-T` flag).
-
-  (Note: `x-type` is experimental.  Future changes to its semantics are
-  to be expected.)
+  `x-type` applies even to text/plain and text/html documents (which are
+  normally excluded from mailcap).  However, `x-type` entries do not apply
+  if the content type was forced (e.g. using the `-T` flag).
 
 * `x-match` (from w3mmee) restricts an entry's URI to the specified regex.
   `x-nc-match` is the same, but it is case-insensitive.  For example,

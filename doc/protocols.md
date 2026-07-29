@@ -25,7 +25,7 @@ into a single `tohtml` program that dispatches based on its `argv[0]`.
 	- [Gopher](#gopher)
 	- [Finger](#finger)
 	- [Spartan](#spartan)
-* [Local schemes: file:, man:](#local-schemes-file-man)
+* [Local schemes: file:, man:, cgi-bin:](#local-schemes-file-man-cgi-bin)
 * [Internal schemes: cgi-bin:, stream:, cache:, data:, about:](#internal-schemes-cgi-bin-stream-cache-data-about)
 * [Custom protocols](#custom-protocols)
 
@@ -153,8 +153,8 @@ program.)
 
 `cgi-bin:` executes a local CGI script.  This protocol is useful in cases
 where you want to wrap an external program (or a personal script), but do
-not want to bother with a custom URI scheme for it with browsecap.
-In fact, it maps to the browsecap entry
+not need a custom URI scheme for it.  In fact, it simply maps to the
+browsecap entry
 
 ```
 cgi-bin; %s%?; cgioutput
@@ -164,9 +164,8 @@ See [**cha-cgi**](cgi.md)(5) for details.
 
 ## Internal schemes: stream:, cache:, data:, about:
 
-Four internal protocols exist: `cgi-bin:`, `stream:`, `cache:`,
-`data:` and `about:`.  For various reasons, these can *not* be replaced,
-and are implemented in the main browser binary.
+These protocols are implemented directly in Chawan.  Technically, it *is*
+possible to replace them, but it is highly recommended that you don't.
 
 `stream:` is used for streams returned by external programs.  It differs
 from `cgi-bin:` in that it does not cooperate with the external process,
@@ -182,28 +181,24 @@ the buffer is discarded.
 rewinding or re-interpreting streams already downloaded.
 
 Caching works differently than in most other browsers; files are
-deterministically loaded from the cache upon certain actions, and from
-the network upon others, but neither is used as a fallback to the other.
+deterministically loaded from the cache upon certain actions, and from the
+network upon others, but neither is used as a fallback to the other.
 
-`data:` decodes a data URL as defined in RFC 2397.  This used to be a
-CGI module, but has been moved back into the loader process because
-these URLs can get so long that they no longer fit into the environment.
+`data:` decodes a data URL as defined in RFC 2397.  This cannot be
+implemented as CGI because data URLs can get so long that they no longer
+fit into the environment.
 
-`about:` is inside the loader to allow for an implementation of the
-download list panel.  It should be turned into a CGI module once the
-loader gets RPC capabilities.
-
+`about:` is inside the loader because some pages it offers require
+information about the browser's internal state (downloads in particular).
 The following about pages are available: `about:chawan`, `about:blank`,
 `about:license`, `about:downloads`.
 
 ## Custom protocols
 
-The `cha` binary itself does not know much about the protocols listed
-above; instead, it loads these through a combination of local CGI,
-browsecap, and if conversion to HTML or plain text is necessary,
-mailcap (using x-htmloutput, x-ansioutput or copiousoutput).
-See [**cha-cgi**](cgi.md)(5) and [**cha-mailcap**](mailcap.md)(5) for
-details.
+The `cha` binary itself does not know much about the protocols
+listed above; instead, it loads these by looking up built-in browsecap
+definitions, converting them to HTML using mailcap when necessary.  See
+[**cha-cgi**](cgi.md)(5) and [**cha-mailcap**](mailcap.md)(5) for details.
 
 The default handlers for the protocols listed above can also be overridden
 using browsecap.  This way, any library or program (in any programming
@@ -222,12 +217,12 @@ empty string), and the URI path as the third.  "cgioutput" means that this
 is a CGI script; "netpath" means that the protocol should have a hostname
 (so `finger:/blah` is not accepted, only `finger://example.org/blah`).
 
-
-The script uses the arguments to construct an appropriate `nc` command that
-retrieves the specified `finger:` URL; it prints the header 'Content-Type:
-text/plain' to the output, then an empty line, then the body of the
-retrieved resource.  If an error is encountered, it prints a `Cha-Control`
-header with an error code and a specific error message instead.
+The script uses these arguments to construct an appropriate `nc`
+command that fetches the specified `finger:` URL; it prints the header
+'Content-Type: text/plain' to the output, then an empty line, then the
+body of the retrieved resource.  If an error is encountered, it prints
+a `Cha-Control` header with an error code and a specific error message
+instead.
 
 ### Adding a new protocol
 

@@ -131,9 +131,9 @@ a standalone Nim program.)
 .PP
 \f[CR]cgi\-bin:\f[R] executes a local CGI script.
 This protocol is useful in cases where you want to wrap an external
-program (or a personal script), but do not want to bother with a custom
-URI scheme for it with browsecap.
-In fact, it maps to the browsecap entry
+program (or a personal script), but do not need a custom URI scheme for
+it.
+In fact, it simply maps to the browsecap entry
 .IP
 .EX
 cgi\-bin; %s%?; cgioutput
@@ -141,10 +141,9 @@ cgi\-bin; %s%?; cgioutput
 .PP
 See \f[B]cha\-cgi\f[R](5) for details.
 .SS Internal schemes: stream:, cache:, data:, about:
-Four internal protocols exist: \f[CR]cgi\-bin:\f[R], \f[CR]stream:\f[R],
-\f[CR]cache:\f[R], \f[CR]data:\f[R] and \f[CR]about:\f[R].
-For various reasons, these can \f[I]not\f[R] be replaced, and are
-implemented in the main browser binary.
+These protocols are implemented directly in Chawan.
+Technically, it \f[I]is\f[R] possible to replace them, but it is highly
+recommended that you don\(cqt.
 .PP
 \f[CR]stream:\f[R] is used for streams returned by external programs.
 It differs from \f[CR]cgi\-bin:\f[R] in that it does not cooperate with
@@ -167,23 +166,19 @@ deterministically loaded from the cache upon certain actions, and from
 the network upon others, but neither is used as a fallback to the other.
 .PP
 \f[CR]data:\f[R] decodes a data URL as defined in RFC 2397.
-This used to be a CGI module, but has been moved back into the loader
-process because these URLs can get so long that they no longer fit into
-the environment.
+This cannot be implemented as CGI because data URLs can get so long that
+they no longer fit into the environment.
 .PP
-\f[CR]about:\f[R] is inside the loader to allow for an implementation of
-the download list panel.
-It should be turned into a CGI module once the loader gets RPC
-capabilities.
-.PP
+\f[CR]about:\f[R] is inside the loader because some pages it offers
+require information about the browser\(cqs internal state (downloads in
+particular).
 The following about pages are available: \f[CR]about:chawan\f[R],
 \f[CR]about:blank\f[R], \f[CR]about:license\f[R],
 \f[CR]about:downloads\f[R].
 .SS Custom protocols
 The \f[CR]cha\f[R] binary itself does not know much about the protocols
-listed above; instead, it loads these through a combination of local
-CGI, browsecap, and if conversion to HTML or plain text is necessary,
-mailcap (using x\-htmloutput, x\-ansioutput or copiousoutput).
+listed above; instead, it loads these by looking up built\-in browsecap
+definitions, converting them to HTML using mailcap when necessary.
 See \f[B]cha\-cgi\f[R](5) and \f[B]cha\-mailcap\f[R](5) for details.
 .PP
 The default handlers for the protocols listed above can also be
@@ -205,10 +200,10 @@ is usually the empty string), and the URI path as the third.
 that the protocol should have a hostname (so \f[CR]finger:/blah\f[R] is
 not accepted, only \f[CR]finger://example.org/blah\f[R]).
 .PP
-The script uses the arguments to construct an appropriate \f[CR]nc\f[R]
-command that retrieves the specified \f[CR]finger:\f[R] URL; it prints
-the header `Content\-Type: text/plain' to the output, then an empty
-line, then the body of the retrieved resource.
+The script uses these arguments to construct an appropriate
+\f[CR]nc\f[R] command that fetches the specified \f[CR]finger:\f[R] URL;
+it prints the header `Content\-Type: text/plain' to the output, then an
+empty line, then the body of the retrieved resource.
 If an error is encountered, it prints a \f[CR]Cha\-Control\f[R] header
 with an error code and a specific error message instead.
 .SS Adding a new protocol

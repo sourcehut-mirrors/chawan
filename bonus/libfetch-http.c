@@ -5,6 +5,7 @@
  * - Only a few HTTP headers are supported: Accept, Referer, User-Agent.
  *   So e.g. cookies do not work.
  * - No HTTP headers are returned at all.
+ * - The authorization header is not passed through.
  * - Content-Type is deduced from the extension in a very simplistic manner.
  * - Redirects are respected, but not reported.
  * - See also: BUGS section in fetch(3).
@@ -47,8 +48,7 @@ int hasext(const char *path)
 int main(int argc, char **argv)
 {
 	struct url *u;
-	const char *method, *content_type, *p, *np;
-	const char *scheme, *username, *password, *host, *port, *path, *query;
+	const char *method, *content_type, *p, *np, *scheme, *host, *port;
 	FILE *f;
 	size_t len;
 	int n, iport = 0;
@@ -64,29 +64,22 @@ int main(int argc, char **argv)
 		DIE("out of memory");
 	if (!(method = getenv("REQUEST_METHOD")))
 		DIE("REQUEST_METHOD was not set");
-	scheme = getenv("MAPPED_URI_SCHEME");
-	host = getenv("MAPPED_URI_HOST");
-	if (!scheme || !host)
-		DIE("Scheme or host expected");
-	username = getenv("MAPPED_URI_USERNAME");
-	password = getenv("MAPPED_URI_PASSWORD");
-	port = getenv("MAPPED_URI_PORT");
-	if (port)
+	if (argc != 6)
+		DIE("incorrect argc");
+	scheme = argv[1];
+	host = argv[2];
+	port = argv[3];
+	if (*port)
 		iport = atoi(port);
 	else if (!strcmp(scheme, "http"))
 		iport = 80;
 	else if (!strcmp(scheme, "https"))
 		iport = 443;
 	docbuf[0] = '\0';
-	path = getenv("MAPPED_URI_PATH");
-	strlcat(docbuf, path && *path ? path : "/", sizeof(docbuf));
+	strlcat(docbuf, argv[4], sizeof(docbuf)); /* path */
 	has_file_ext = hasext(docbuf);
-	query = getenv("MAPPED_URI_QUERY");
-	if (query && *query) {
-		strlcat(docbuf, "?", sizeof(docbuf));
-		strlcat(docbuf, query, sizeof(docbuf));
-	}
-	u = fetchMakeURL(scheme, host, iport, docbuf, username, password);
+	strlcat(docbuf, argv[5], sizeof(docbuf)); /* query */
+	u = fetchMakeURL(scheme, host, iport, docbuf, "", "");
 	if (!u)
 		DIE("Failed to create URL");
 	content_type = getenv("CONTENT_TYPE");

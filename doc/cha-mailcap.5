@@ -9,12 +9,12 @@ displaying them in Chawan.
 .PP
 The \f[I]browsecap\f[R] file fulfills a similar purpose for URI scheme
 handling.
-\f[I]browsecap\f[R] can override handling of any built\-in scheme, or to
-add custom handlers (e.g.\ \f[B]mutt\f[R](1) for \f[I]mailto\f[R]).
-When combined with \f[B]cha\-cgi\f[R](5), \f[I]browsecap\f[R] also
-enables extending Chawan with user\-specified schemes.
+browsecap can override handling of any built\-in scheme, or to add
+custom handlers (e.g.\ \f[B]mutt\f[R](1) for \f[I]mailto\f[R]).
+When combined with \f[B]cha\-cgi\f[R](5), browsecap also enables
+extending Chawan with user\-specified schemes.
 .PP
-(\f[I]browsecap\f[R] is a more capable replacement for
+(browsecap is a more capable replacement for
 \f[B]cha\-urimethodmap\f[R](5); the latter is deprecated.)
 .PP
 Note that Chawan\(cqs default mime.types file only recognizes a few file
@@ -61,8 +61,8 @@ to your personal mailcap file).
 .PP
 For browsecap, there is only an automatic variant so far, stored at
 \f[CR]external.auto\-browsecap\f[R] which defaults to
-\f[CR]\(ti/.chawan/browsecap\f[R] (or \(ga\(ti/.config/chawan/browsecap
-with XDG basedirs).
+\f[CR]\(ti/.chawan/browsecap\f[R] (or
+\f[CR]\(ti/.config/chawan/browsecap\f[R] with XDG basedirs).
 .SS Format
 Chawan adheres to the format described in RFC 1524, with a few
 extensions.
@@ -90,7 +90,7 @@ text/x\-example; s=%s cat \(dq$s\(dq; copiousoutput
 .PP
 Following templates are supported:
 .IP \(bu 2
-\f[CR]%s\f[R] expands to the path.
+In mailcap, \f[CR]%s\f[R] expands to the path.
 Specifying \f[CR]%s\f[R] forces download of the external resource
 \f[I]before\f[R] the entry is executed.
 If \f[CR]%s\f[R] is not specified, the resource is instead piped to
@@ -111,16 +111,17 @@ the entire string, and \f[CR]%{charset}\f[R] expands to \(lqutf\-8\(rq.
 .PP
 In browsecap, \f[CR]%t\f[R] expands to
 \f[I]protocol\f[R]/\f[I]method\f[R], where the \f[I]method\f[R] part is
-typically upper\-cased; named fields expand to URL search parameters, so
-for the URL \f[CR]https://example.org/search?q=blah\f[R],
-\f[CR]%{q}\f[R] expands to \(lqblah\(rq.
+ASCII lower\-cased.
+Named fields expand to URL search parameters, so for the URL
+\f[CR]https://example.org/search?q=blah\f[R], \f[CR]%{q}\f[R] expands to
+\(lqblah\(rq.
 .RE
 .IP \(bu 2
 Non\-standard templates for the resource\(cqs original URL:
 \f[CR]%u\f[R] (from Netscape) expands to the original URL of the
 resource, \f[CR]%h\f[R] and \f[CR]%p\f[R] (from w3mmee) expands to the
 hostname and the port respectively, \f[CR]%H\f[R] expands to the
-hostname \f[I]and the port\f[R], and \f[CR]%?\f[R] (from w3mmee) expands
+hostname \f[I]and\f[R] the port, and \f[CR]%?\f[R] (from w3mmee) expands
 to the query string including the question mark.
 .RS 2
 .PP
@@ -132,7 +133,7 @@ string.)
 .SS Fields
 Following fields are recognized.
 (In browsecap, the \f[CR]x\-\f[R] prefix for extension fields is
-optional.)
+optional; in mailcap, it is mandatory.)
 .IP \(bu 2
 Entries with the \f[CR]test\f[R] named field are only used if the test
 command exits with 0.
@@ -193,14 +194,10 @@ which is used instead of the original type.
 Such entries are only respected in \f[CR]external.auto\-mailcap\f[R].
 .RS 2
 .PP
-\f[CR]x\-type\f[R] has a higher priority than other entries, and applies
-even to text/plain and text/html documents (which are normally excluded
-from mailcap).
+\f[CR]x\-type\f[R] applies even to text/plain and text/html documents
+(which are normally excluded from mailcap).
 However, \f[CR]x\-type\f[R] entries do not apply if the content type was
 forced (e.g.\ using the \f[CR]\-T\f[R] flag).
-.PP
-(Note: \f[CR]x\-type\f[R] is experimental.
-Future changes to its semantics are to be expected.)
 .RE
 .IP \(bu 2
 \f[CR]x\-match\f[R] (from w3mmee) restricts an entry\(cqs URI to the

@@ -680,7 +680,7 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
       if mfUri in entry.flags:
         var canpipe: bool
         let cmd = unquoteCommand(entry.cmd, typeBuf, url.pathname, url,
-          canpipe, uriparams = true)
+          canpipe, shellQuote = false, uriparams = true)
         url = parseURL0(cmd)
         if url == nil:
           return nil
@@ -724,7 +724,9 @@ proc findMailcapEntryMut*(mailcap: Mailcap;
       if not checkEntry(entry, contentType, url):
         continue
       if mfType in entry.flags:
-        contentType = unquoteCommand(entry.cmd, contentType, "", url)
+        var canpipe: bool
+        contentType = unquoteCommand(entry.cmd, contentType, "", url, canpipe,
+          shellQuote = false)
         shortContentType = contentType.untilLower(';')
         id = entry.id
         done = false
