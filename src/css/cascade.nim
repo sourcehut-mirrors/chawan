@@ -20,9 +20,7 @@ import utils/dtoawrap
 import utils/twtstr
 
 type
-  RuleListEntry = object
-    vals: array[CSSImportantFlag, seq[CSSComputedEntry]]
-    vars: array[CSSImportantFlag, seq[CSSVariable]]
+  RuleListEntry = seq[CSSRuleDef]
 
   LayeredRuleList = object
     unlayered: RuleListEntry
@@ -112,17 +110,12 @@ proc calcRules(tosorts: var ToSorts; element: Element;
   for rule in rules:
     tosorts.calcRule(element, depends, rule)
 
-proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
-  for f in CSSImportantFlag: # normal, important
-    entry.vals[f].add(rule.vals[f])
-    entry.vars[f].add(rule.vars[f])
-
 proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     depends: var DependencyInfo) =
   let parentElement = element.parentElement
-  let quirks = element.document.mode == qmQuirks
+  let quirks = sheet.quirks
   var tosorts = ToSorts(
-    cache: AncestorCache(last: parentElement, quirks: sheet.quirks)
+    cache: AncestorCache(last: parentElement, quirks: quirks)
   )
   tosorts.calcRules(element, depends, sheet.tagTable, element.localName)
   if element.id != satUempty:
@@ -257,17 +250,22 @@ proc applyValues(ctx: var ApplyValueContext;
   for entry in entries.ritems:
     ctx.applyValue(entry, revertType)
 
+proc applyValues(ctx: var ApplyValueContext; defs: openArray[CSSRuleDef];
+    flag: CSSImportantFlag; revertType: RevertType) =
+  for def in defs.ritems:
+    ctx.applyValues(def.vals[flag], revertType)
+
 proc applyNormalValues(ctx: var ApplyValueContext;
     list: LayeredRuleList; revertType: RevertType) =
-  ctx.applyValues(list.unlayered.vals[cifNormal], revertType)
+  ctx.applyValues(list.unlayered, cifNormal, revertType)
   for layer in list.layers.ritems:
-    ctx.applyValues(layer.vals[cifNormal], revertType)
+    ctx.applyValues(layer, cifNormal, revertType)
 
 proc applyImportantValues(ctx: var ApplyValueContext;
     list: LayeredRuleList; revertType: RevertType) =
   for layer in list.layers:
-    ctx.applyValues(layer.vals[cifImportant], revertType)
-  ctx.applyValues(list.unlayered.vals[cifImportant], revertType)
+    ctx.applyValues(layer, cifImportant, revertType)
+  ctx.applyValues(list.unlayered, cifImportant, revertType)
 
 proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   # This is a bit awkward: presentational hints are below author and
@@ -397,13 +395,15 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyColorHint(cptColor, element.attr(satColor))
   else: discard
 
-proc applyVars(ctx: var ApplyValueContext; vars: openArray[CSSVariable];
-    parentVars: CSSVariableMap) =
-  if vars.len > 0:
-    if ctx.vals.vars == nil:
-      ctx.vals.vars = newCSSVariableMap(parentVars)
-    for cvar in vars.ritems:
-      ctx.vals.vars.putIfAbsent(cvar)
+proc applyVars(ctx: var ApplyValueContext; defs: openArray[CSSRuleDef];
+    flag: CSSImportantFlag; parentVars: CSSVariableMap) =
+  var vars = move(ctx.vals.vars)
+  for def in defs.ritems:
+    for cvar in def.vars[flag].ritems:
+      if vars == nil:
+        vars = newCSSVariableMap(parentVars)
+      vars.putIfAbsent(cvar)
+  ctx.vals.vars = move(vars)
 
 proc applyDeclarations(rules: RuleList; pseudo: PseudoElement;
     parent, element: Element; window: Window; old: CSSValues): CSSValues =
@@ -416,12 +416,12 @@ proc applyDeclarations(rules: RuleList; pseudo: PseudoElement;
     parentVars = ctx.parentComputed.vars
   for origin in CSSOrigin:
     for layer in rules.a[origin].layers:
-      ctx.applyVars(layer.vars[cifImportant], parentVars)
-    ctx.applyVars(rules.a[origin].unlayered.vars[cifImportant], parentVars)
+      ctx.applyVars(layer, cifImportant, parentVars)
+    ctx.applyVars(rules.a[origin].unlayered, cifImportant, parentVars)
   for origin in countdown(CSSOrigin.high, CSSOrigin.low):
-    ctx.applyVars(rules.a[origin].unlayered.vars[cifNormal], parentVars)
+    ctx.applyVars(rules.a[origin].unlayered, cifNormal, parentVars)
     for layer in rules.a[origin].layers:
-      ctx.applyVars(layer.vars[cifNormal], parentVars)
+      ctx.applyVars(layer, cifNormal, parentVars)
   if result.vars == nil or result.vars.isSame(parentVars):
     result.vars = parentVars # inherit parent
   ctx.applyImportantValues(rules.a[coUserAgent], rtSet)
@@ -480,11 +480,13 @@ proc applyStyle(element: Element) =
   map.calcRules(element, document.getRuleMap(), depends)
   let style = element.cachedStyle
   if window.settings.styling and style != nil:
+    #TODO store this in CSSStyleDeclaration
+    let def = CSSRuleDef(origin: coAuthor)
     for decl in style.decls:
       let f = decl.f
       case decl.t
       of cdtVariable:
-        map[peNone].a[coAuthor].unlayered.vars[f].add(CSSVariable(
+        def.vars[f].add(CSSVariable(
           name: decl.v,
           items: parseDeclWithVar1(decl.value)
         ))
@@ -492,10 +494,11 @@ proc applyStyle(element: Element) =
       of cdtProperty:
         if decl.hasVar:
           if entry := parseDeclWithVar(decl.p, decl.value):
-            map[peNone].a[coAuthor].unlayered.vals[f].add(entry)
+            def.vals[f].add(entry)
         else:
-          map[peNone].a[coAuthor].unlayered.vals[f].parseComputedValues(decl.p,
-            decl.value, window.settings.attrsp[])
+          def.vals[f].parseComputedValues(decl.p, decl.value,
+            window.settings.attrsp[])
+    map[peNone].a[coAuthor].unlayered.add(def)
   document.applyStyleDependencies(element, depends)
   var computed = map.applyDeclarations(peNone, element.parentElement, element,
     window, element.computed)
