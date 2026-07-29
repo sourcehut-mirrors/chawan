@@ -7,11 +7,6 @@ import dombuilder
 import htmltokenizer
 import tags
 
-# Export these so that htmlparseriface works seamlessly.
-export dombuilder
-export options
-export tags
-
 # Heavily inspired by html5ever's TreeSink design.
 type
   HTML5ParserOpts*[Handle, Atom] = object
@@ -896,14 +891,6 @@ proc isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom];
 proc findFurthestBlockAfter(parser: HTML5Parser; stackIndex: int): int =
   for i in stackIndex ..< parser.openElements.len:
     if parser.isSpecialElement(parser.openElements[i].element):
-      return i
-  return -1
-
-proc findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
-    tagTypes: set[TagType]): int =
-  for i in countdown(parser.activeFormatting.high, 0):
-    let it = parser.activeFormatting[i][0]
-    if it.isSome and parser.getTagType(it.get) in tagTypes:
       return i
   return -1
 

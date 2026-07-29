@@ -14,6 +14,7 @@ import std/options
 import std/streams
 import std/strutils
 
+import dombuilder
 import htmlparser
 import tags
 

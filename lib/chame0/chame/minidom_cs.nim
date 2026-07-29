@@ -12,8 +12,9 @@
 
 import std/streams
 
-import minidom
+import dombuilder
 import htmlparser
+import minidom
 import tags
 
 import encoding/charset

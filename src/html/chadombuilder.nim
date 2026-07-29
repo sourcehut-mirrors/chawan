@@ -3,6 +3,7 @@
 import std/algorithm
 import std/options
 
+import chame/dombuilder
 import chame/htmlparser
 import chame/tags
 import config/conftypes
