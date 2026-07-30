@@ -204,14 +204,14 @@ proc key(ctx: JSContext; this: Storage; u: uint32): JSValue {.jsfunc.} =
 
 proc getItem(ctx: JSContext; this: Storage; s: DOMString): JSValue {.jsfunc.} =
   let i = this.find(s)
-  if i != -1:
+  if i >= 0:
     return ctx.toJS(this.map[i].value)
   return JS_NULL
 
 proc setItem(ctx: JSContext; this: Storage; key, value: DOMString): JSValue
     {.jsfunc.} =
   let i = this.find(key)
-  if i != -1:
+  if i >= 0:
     this.map[i].value = $value
   else:
     if this.map.len >= 64:
@@ -221,7 +221,7 @@ proc setItem(ctx: JSContext; this: Storage; key, value: DOMString): JSValue
 
 proc removeItem(this: Storage; key: DOMString) {.jsfunc.} =
   let i = this.find(key)
-  if i != -1:
+  if i >= 0:
     this.map.del(i)
 
 proc names(ctx: JSContext; this: Storage): JSPropertyEnumList

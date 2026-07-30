@@ -38,10 +38,10 @@ proc readKnownHosts(f, tmp: AChaFile; buf, host: string): Opt[void] =
 proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
     knownHosts: var AChaFile; tmpEntry: var string) =
   let s = newPosixStream(STDIN_FILENO).readAll()
-  if (var i = s.find("input="); i != -1):
+  if (var i = s.find("input="); i >= 0):
     i += "input=".len
     query = '?' & s.toOpenArray(i, s.high).percentDecode()
-  elif (var i = s.find("trust_cert="); i != -1):
+  elif (var i = s.find("trust_cert="); i >= 0):
     i += "trust_cert=".len
     let t = s.until('&', i)
     if t in ["always", "yes", "no", "once"]:

@@ -668,7 +668,7 @@ proc updateHover(bc: BufferContext; handle: PagerHandle;
       if not element.hover:
         element.setHover(true)
         repaint = true
-      elif (let i = oldHover.find(element); i != -1):
+      elif (let i = oldHover.find(element); i >= 0):
         # branches converged
         oldHover.setLen(i)
         break

@@ -351,7 +351,7 @@ proc parse0(map: CookieJarMap; file: ChaFile; warnings: var seq[string]):
       let cookie = Cookie(httpOnly: httpOnly, persist: true)
       var domain = state.nextField(line)
       var cookieJar: CookieJar = nil
-      if (let j = domain.find('@'); j != -1):
+      if (let j = domain.find('@'); j >= 0):
         cookie.domain = domain.substr(j + 1)
         if cookie.domain.startsWith("."):
           cookie.domain.delete(0..0)

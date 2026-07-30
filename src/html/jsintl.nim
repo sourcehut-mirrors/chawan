@@ -150,7 +150,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
   var s: string
   ?ctx.fromJS(val, s)
   let i = s.find("-per-")
-  if i != -1:
+  if i >= 0:
     let part1 = strictParseEnum[NumberUnitPart](s.substr(0, i - 1))
     let part2 = strictParseEnum[NumberUnitPart](s.substr(i + "-per-".len))
     if part1.isErr or part2.isErr:

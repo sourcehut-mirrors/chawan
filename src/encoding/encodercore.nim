@@ -201,7 +201,7 @@ proc encodeGb18030(te: var TextEncoder; iq: openArray[uint8];
       if b > 0x7E:
         inc b
       oq.try_put_bytes [0xFEu8, uint8(b)], n
-    elif (let i = GB18030Encode.findPair16(c); i != -1):
+    elif (let i = GB18030Encode.findPair16(c); i >= 0):
       let p = GB18030Encode[i].p
       let lead = p div 190 + 0x81
       let trail = p mod 190
@@ -258,7 +258,7 @@ proc encodeBig5(te: var TextEncoder; iq: openArray[uint8];
   terDone
 
 proc ucsToJis0208(c: uint16): uint16 =
-  if (let i = Jis0208Encode.findPair16(c); i != -1):
+  if (let i = Jis0208Encode.findPair16(c); i >= 0):
     return Jis0208Encode[i].p + 1
   return 0
 
@@ -355,7 +355,7 @@ proc encodeIso2022JP(te: var TextEncoder; iq: openArray[uint8];
   terDone
 
 proc ucsToSJIS(c: uint16): uint16 =
-  if (let i = ShiftJISEncode.findPair16(c); i != -1):
+  if (let i = ShiftJISEncode.findPair16(c); i >= 0):
     return ShiftJISEncode[i].p + 1
   return ucsToJis0208(c)
 
@@ -423,7 +423,7 @@ proc encodeEucKR(te: var TextEncoder; iq: openArray[uint8];
       let lead = row + 0x81
       let trail = col + 0x41
       oq.try_put_bytes [uint8(lead), uint8(trail)], n
-    elif (let i = EucKREncode.findPair16(c); i != -1):
+    elif (let i = EucKREncode.findPair16(c); i >= 0):
       let p = EucKREncode[i].p
       let lead = p div 190 + 0x81
       let trail = p mod 190 + 0x41

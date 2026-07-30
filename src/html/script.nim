@@ -157,7 +157,7 @@ proc get*(moduleMap: ModuleMap; url: URL; moduleType: ModuleType):
 proc put*(moduleMap: var ModuleMap; url: URL; moduleType: ModuleType;
     value: ScriptResult) =
   let i = moduleMap.find(url, moduleType)
-  if i != -1:
+  if i >= 0:
     let ovalue = moduleMap[i].value
     if ovalue.t == srtScript:
       ovalue.script.free()

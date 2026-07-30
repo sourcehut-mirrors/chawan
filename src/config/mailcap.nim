@@ -102,7 +102,7 @@ proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
     return list0
   let list = mailcap.put(t)
   let slash = t.find('/')
-  if slash != -1:
+  if slash >= 0:
     var main = t.substr(0, slash - 1)
     var mainList = mailcap.getList(main)
     if mainList == nil:

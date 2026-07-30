@@ -29,7 +29,7 @@ proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
     cstring(buf), csize_t(buf.len), flags.toCInt, nil)
   if bytecode == nil: # Failed to compile.
     let i = errorMsg.find('\0')
-    if i != -1:
+    if i >= 0:
       errorMsg.setLen(i)
     regex = Regex(bytecode: move(errorMsg))
     return false

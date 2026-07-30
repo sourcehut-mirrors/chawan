@@ -1488,7 +1488,7 @@ proc addWordEOL(fstate: var FlowState; word: var WordState): bool =
   if word.s == "":
     return false
   let wrapPos = word.wrapPos
-  if wrapPos != -1:
+  if wrapPos >= 0:
     var leftstr = word.s.substr(wrapPos)
     word.s.setLen(wrapPos)
     if word.hasSoftHyphen:
@@ -1519,7 +1519,7 @@ proc checkWrap(fstate: var FlowState; word: var WordState; u: uint32;
       # (instead of any dash inside CJK sentences)
       word.wrapPos = -1
       fstate.flushIntrSize(word)
-    if uw == 2 or word.wrapPos != -1:
+    if uw == 2 or word.wrapPos >= 0:
       # break on cjk and wrap opportunities
       let plusWidth = word.width + shiftw + luw * fstate.cellSize.w
       if fstate.shouldWrap(plusWidth):

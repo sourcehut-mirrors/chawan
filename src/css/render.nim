@@ -138,7 +138,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
   var lformat = initFormat()
   var lnode: Element = nil
-  if fi != -1:
+  if fi >= 0:
     # Start by saving the old formatting before padding for later use.
     # This is important because the following code will gladly overwrite
     # said formatting.
@@ -368,7 +368,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
       ifi = fi
     # Process formatting around endx
     let efi = line.findFormatN(endx, ifi) - 1
-    if efi != -1 and line.formats[efi].pos < endx and hadStr:
+    if efi >= 0 and line.formats[efi].pos < endx and hadStr:
       assert line.formats[efi].pos < endx
       line.insertFormat(endx, efi + 1, lformat, lnode)
 

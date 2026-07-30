@@ -1230,7 +1230,7 @@ proc parseIdent(map: openArray[IdentMapItem]; tok: CSSToken): int =
 proc parseIdent[T: enum](tok: CSSToken): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.parseIdent(tok)
-  if n != -1:
+  if n >= 0:
     return ok(T(n))
   return err()
 

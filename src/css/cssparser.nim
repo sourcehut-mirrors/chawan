@@ -1190,7 +1190,7 @@ proc consumeDeclaration2(ctx: var CSSParser; name: string):
         hasVar = true
         break
   decl.hasVar = hasVar
-  if lastTokIdx1 != -1 and lastTokIdx2 != -1:
+  if lastTokIdx1 >= 0 and lastTokIdx2 >= 0:
     let lastTok1 = decl.value[lastTokIdx1]
     let lastTok2 = decl.value[lastTokIdx2]
     if lastTok1.t == cttBang and

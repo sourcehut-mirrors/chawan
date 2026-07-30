@@ -4149,7 +4149,7 @@ proc jsReflectSet0(ctx: JSContext; element: HTMLElement; val: JSValueConst;
   of rtCrossOrigin:
     if JS_IsNull(val):
       let i = element.findAttr(entry.attrname.view())
-      if i != -1:
+      if i >= 0:
         ctx.delAttr(element, i)
     else:
       var x: DOMString
@@ -4162,7 +4162,7 @@ proc jsReflectSet0(ctx: JSContext; element: HTMLElement; val: JSValueConst;
       element.attr(entry.attrname, "")
     else:
       let i = element.findAttr(entry.attrname.view())
-      if i != -1:
+      if i >= 0:
         ctx.delAttr(element, i)
   of rtLong:
     var x: int32
@@ -4674,7 +4674,7 @@ proc remove(ctx: JSContext; tokenList: DOMTokenList;
     return err()
   for tok in toks:
     let i = tokenList.toks.find(tok)
-    if i != -1:
+    if i >= 0:
       tokenList.toks.delete(i)
   tokenList.update()
   freeAtoms(toks)
@@ -4687,7 +4687,7 @@ proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: CAtomTraced;
   if forceBool < 0:
     return err()
   let i = tokenList.toks.find(token.view())
-  if i != -1:
+  if i >= 0:
     if JS_IsUndefined(force) or forceBool == 0:
       tokenList.toks.delete(i)
       tokenList.update()
@@ -4745,15 +4745,15 @@ proc delete(ctx: JSContext; map: DOMStringMap; name: DOMString): bool {.
     jsfunc.} =
   let name = name.toDataStr()
   let i = map.target.findAttr(name)
-  if i != -1:
+  if i >= 0:
     ctx.delAttr(map.target, i)
-  return i != -1
+  return i >= 0
 
 proc getter(ctx: JSContext; map: DOMStringMap; name: DOMString): JSValue
     {.jsgetownprop.} =
   let name = name.toDataStr()
   let i = map.target.findAttr(name)
-  if i != -1:
+  if i >= 0:
     return ctx.toJS(map.target.attrs[i].value)
   return JS_UNINITIALIZED
 
@@ -5108,7 +5108,7 @@ proc findAttr(map: NamedNodeMap; dataIdx: int): int =
 
 proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
   let i = map.findAttr(dataIdx)
-  if i != -1:
+  if i >= 0:
     return map.attrlist[i]
   let attr = map.element.newAttr(dataIdx)
   map.attrlist.add(attr)
@@ -5117,14 +5117,14 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
 proc getNamedItem(map: NamedNodeMap; qualifiedName: CAtomTraced): Attr {.
     jsfunc.} =
   let i = map.element.findAttr(qualifiedName)
-  if i != -1:
+  if i >= 0:
     return map.getAttr(i)
   return nil
 
 proc getNamedItemNS(map: NamedNodeMap; namespace, localName: CAtomTraced): Attr
     {.jsfunc.} =
   let i = map.element.findAttrNS(namespace, localName)
-  if i != -1:
+  if i >= 0:
     return map.getAttr(i)
   return nil
 
@@ -5325,11 +5325,11 @@ proc cachedAttributes(ctx: JSContext; element: Element): NamedNodeMap =
 
 proc hasAttribute(element: Element; qualifiedName: CAtomTraced): bool
     {.jsfunc.} =
-  return element.findAttr(qualifiedName) != -1
+  return element.findAttr(qualifiedName) >= 0
 
 proc hasAttributeNS(element: Element; namespace, localName: CAtomTraced): bool
     {.jsfunc.} =
-  return element.findAttrNS(namespace, localName) != -1
+  return element.findAttrNS(namespace, localName) >= 0
 
 proc getAttributeNames(ctx: JSContext; element: Element): JSValue {.jsfunc.} =
   var s = newSeqOfCap[JSValue](element.attrs.len)
@@ -5340,20 +5340,20 @@ proc getAttributeNames(ctx: JSContext; element: Element): JSValue {.jsfunc.} =
 proc getAttribute(ctx: JSContext; element: Element;
     qualifiedName: CAtomTraced): JSValue {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
-  if i != -1:
+  if i >= 0:
     return ctx.toJS(element.attrs[i].value)
   return JS_NULL
 
 proc getAttributeNS(ctx: JSContext; element: Element;
     namespace, localName: CAtomTraced): JSValue {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
-  if i != -1:
+  if i >= 0:
     return ctx.toJS(element.attrs[i].value)
   return JS_NULL
 
 proc attr*(element: Element; s: CAtomTraced): lent string =
   let i = element.findAttr(s)
-  if i != -1:
+  if i >= 0:
     return element.attrs[i].value
   # the compiler cries if I return string literals :/
   let emptyStr {.global.} = ""
@@ -5387,7 +5387,7 @@ proc attrdgz*(element: Element; s: StaticAtom): Opt[float64] =
   ok(d)
 
 proc attrb*(element: Element; s: CAtomTraced): bool =
-  return element.findAttr(s) != -1
+  return element.findAttr(s) >= 0
 
 proc attrb*(element: Element; at: StaticAtom): bool =
   return element.attrb(at.view())
@@ -6287,7 +6287,7 @@ proc delAttr(ctx: JSContext; element: Element; i: int) =
         j = k
       elif attr.dataIdx > i:
         dec attr.dataIdx
-    if j != -1:
+    if j >= 0:
       let attr = map.attrlist[j]
       let data = attr.data
       attr.ownerElement = AttrDummyElement(
@@ -6366,7 +6366,7 @@ proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtomTraced;
   var localName = qualifiedName.dupTrace()
   ?ctx.validateAndExtract(namespace, localName, nvAttribute)
   var i = element.findAttrNS(namespace, localName)
-  if i != -1:
+  if i >= 0:
     element.attrs[i].value = $value
   else:
     i = element.attrs.upperBound(qualifiedName, cmpAttrName)
@@ -6381,13 +6381,13 @@ proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtomTraced;
 proc removeAttribute(ctx: JSContext; element: Element;
     qualifiedName: CAtomTraced) {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
-  if i != -1:
+  if i >= 0:
     ctx.delAttr(element, i)
 
 proc removeAttributeNS(ctx: JSContext; element: Element;
     namespace, localName: CAtomTraced) {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
-  if i != -1:
+  if i >= 0:
     ctx.delAttr(element, i)
 
 proc toggleAttribute(ctx: JSContext; element: Element;
@@ -6405,7 +6405,7 @@ proc toggleAttribute(ctx: JSContext; element: Element;
     return ok(false)
   if JS_IsUndefined(force) or forceBool == 0:
     let i = element.findAttr(qualifiedName)
-    if i != -1:
+    if i >= 0:
       ctx.delAttr(element, i)
     return ok(false)
   return ok(true)
@@ -6762,11 +6762,11 @@ proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration;
   if sh != cstNone:
     for t in ShorthandMap[sh]:
       let i = this.find(t)
-      if i != -1:
+      if i >= 0:
         this.decls.delete(i)
   else:
     let i = this.find(name)
-    if i != -1:
+    if i >= 0:
       this.decls.delete(i)
   this.updateStyleAttr()
   return ctx.toJS(value)
@@ -6780,7 +6780,7 @@ proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
   if value.len == 0:
     return ctx.removeProperty(this, name)
   let name = name.toOpenArray().toLowerAscii()
-  if (let i = this.find(name); i != -1):
+  if (let i = this.find(name); i >= 0):
     if this.decls[i].parseDeclValue(value).isErr:
       return JS_UNDEFINED # ignore
   else:
@@ -7910,7 +7910,7 @@ proc execute*(element: HTMLScriptElement) =
   if document != element.preparationTimeDocument or window == nil:
     return
   let i = document.renderBlockingElements.find(element)
-  if i != -1:
+  if i >= 0:
     document.renderBlockingElements.delete(i)
   #TODO this should work eventually (when module & importmap are implemented)
   #assert element.scriptResult != nil

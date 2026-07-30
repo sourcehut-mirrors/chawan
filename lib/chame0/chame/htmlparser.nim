@@ -1222,7 +1222,7 @@ proc processAfterHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
       let head = parser.head.get
       parser.pushHTMLElement(head)
       result = parser.processInHead()
-      if (let i = parser.findOpenElement(head); i != -1):
+      if (let i = parser.findOpenElement(head); i >= 0):
         parser.openElements.delete(i)
     else: anythingElse = true
   of ttEndTag:
@@ -1349,15 +1349,15 @@ proc processInBody[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     of ttA:
       let tagname = parser.toAtom(ttA)
       let i = parser.findLastActiveFormattingAfterMarker(tagname)
-      if i != -1:
+      if i >= 0:
         let anchor = parser.activeFormatting[i].element
         if parser.adoptionAgencyAlgorithm():
           parser.otherBodyEndTag(parser.tok.tagname)
         let j = parser.findLastActiveFormatting(anchor)
-        if j != -1:
+        if j >= 0:
           parser.activeFormatting.delete(j)
         let k = parser.findOpenElement(anchor)
-        if k != -1:
+        if k >= 0:
           parser.openElements.delete(k)
       parser.reconstructActiveFormatting()
       var attrs = parser.tok.attrs

@@ -215,7 +215,7 @@ proc parseCode(ctx: var ParseInlineContext; line: openArray[char];
     state: ParseState): Opt[void] =
   let i = ctx.i + 1
   let j = line.find('`', i)
-  if j != -1:
+  if j >= 0:
     ?ctx.append("<CODE>", state)
     ?ctx.append(line.toOpenArray(i, j - 1).htmlEscape(), state)
     ?ctx.append("</CODE>", state)
@@ -325,9 +325,9 @@ proc parseLink(ctx: var ParseInlineContext; line: string;
   var url = ""
   var j = url.parseLinkDestination(line, i)
   var title = ""
-  if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
+  if j >= 0 and j < line.len and line[j] in {'(', '"', '\''}:
     j = title.parseTitle(line, j)
-  if j == -1 or j >= line.len or line[j] != ')':
+  if j < 0 or j >= line.len or line[j] != ')':
     return ctx.parseLinkBail(bi, state)
   ctx.i = j
   return ctx.parseLinkWrite(url, title, state)
@@ -389,9 +389,9 @@ proc parseImage(ctx: var ParseInlineContext; line: string;
   var link = ""
   var j = link.parseLinkDestination(line, line.skipBlanks(i + 1))
   var title = ""
-  if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
+  if j >= 0 and j < line.len and line[j] in {'(', '"', '\''}:
     j = title.parseTitle(line, j)
-  if j == -1 or j >= line.len or line[j] != ')':
+  if j < 0 or j >= line.len or line[j] != ')':
     return ctx.append("!", state)
   ctx.i = j
   return ctx.parseImageWrite(link, title, alt, state)
@@ -610,7 +610,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
   if (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
     let L = n + 1
     var H = line.rfind(AllChars - {'#'})
-    if H != -1 and line[H] == ' ':
+    if H >= 0 and line[H] == ' ':
       H = max(L - 1, H - 1)
     else:
       H = line.high
@@ -626,7 +626,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.blockData = line.substr(0, 2)
     ?state.write("<PRE>")
   elif c0 == '[' and (var i = line.find(']', i);
-      i != -1 and i > 1 and i + 1 < line.len and line[i + 1] == ':'):
+      i > 1 and i + 1 < line.len and line[i + 1] == ':'):
     state.blockType = btLinkDef
     state.linkDefState = ldsLink
     state.linkDefIdx = i + 2
@@ -1052,7 +1052,7 @@ proc parseBlockquote(state: var ParseState; line: string): Opt[void] =
 
 proc parseComment(state: var ParseState; line: string): Opt[void] =
   let i = line.find("-->")
-  if i != -1:
+  if i >= 0:
     ?state.write(line.substr(0, i + 2))
     state.blockType = btNone
     ?state.parseInline(line.substr(i + 3))

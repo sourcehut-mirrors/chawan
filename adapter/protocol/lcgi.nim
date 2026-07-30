@@ -263,7 +263,7 @@ proc connectProxySocket(host, port, proxy: string; outIpv6: var bool):
   let authi = proxy.find('@', i)
   var user = ""
   var pass = ""
-  if authi != -1:
+  if authi >= 0:
     let auth = proxy.substr(i, authi - 1)
     user = auth.until(':')
     pass = auth.after(':')

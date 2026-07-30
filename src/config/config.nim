@@ -1070,7 +1070,7 @@ proc setter(ctx: JSContext; a: ActionMap; k: string; val: JSValueConst):
 
 proc delete(a: ActionMap; k: string): bool {.jsdelprop.} =
   let i = a.find(k)
-  if i != -1:
+  if i >= 0:
     a.t.delete(i)
   return i != -1
 
