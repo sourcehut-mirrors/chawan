@@ -86,21 +86,21 @@ type
     url*: URL
     headers*: seq[HTTPHeader]
     body*: RequestBody
-    httpMethod* {.jsget: "method".}: HttpMethod
+    httpMethod*: HttpMethod
     flags: set[RequestFlag]
-    credentials* {.jsget: "credentials".}: CredentialsMode
+    credentials*: CredentialsMode
 
   Request* = ref object
     # RawRequest
     url*: URL
-    headers* {.jsget.}: Headers
+    headers*: Headers
     body*: RequestBody
-    httpMethod* {.jsget: "method".}: HttpMethod
+    httpMethod*: HttpMethod
     flags: set[RequestFlag]
-    credentials* {.jsget: "credentials".}: CredentialsMode
+    credentials*: CredentialsMode
     # client-specific
-    mode* {.jsget.}: RequestMode
-    destination* {.jsget.}: RequestDestination
+    mode*: RequestMode
+    destination*: RequestDestination
     origin*: RequestOrigin
     window*: RequestWindow
     client*: EnvironmentSettings
@@ -165,17 +165,6 @@ proc tocache*(this: RawRequest): bool =
 
 proc urlCredentials*(this: RawRequest): bool =
   rqfUrlCredentials in this.flags
-
-proc jsUrl(this: Request): string {.jsfget: "url".} =
-  return $this.url
-
-proc referrer(ctx: JSContext; this: Request): JSValue {.jsfget.} =
-  if rqfReferrer notin this.flags:
-    return ctx.toJS("")
-  let res = this.headers.getFirst("Referer")
-  if res != "":
-    return ctx.toJS(res)
-  return ctx.toJS("about:client")
 
 proc hasReferrer*(this: RawRequest): bool =
   rqfReferrer in this.flags
@@ -307,99 +296,6 @@ proc safeExtract*(init: BodyInit; body: var RequestBody): string =
   #TODO check for ReadableStream once we have it
   init.extract(body)
 
-proc newRequest*(ctx: JSContext; resource: JSValueConst;
-    jsInit: JSValueConst = JS_UNDEFINED): Opt[Request] {.jsctor.} =
-  var init: RequestInit
-  ?ctx.fromJS(jsInit, init)
-  var headers = newHeaders(hgRequest)
-  var window = RequestWindow(t: rwtClient)
-  var body = RequestBody()
-  var credentials = cmSameOrigin
-  var httpMethod = hmGet
-  var referrerStr = ""
-  if not JS_IsUndefined(init.referrer):
-    ?ctx.fromJS(init.referrer, referrerStr)
-  if not JS_IsUndefined(init.credentials):
-    ?ctx.fromJS(init.credentials, credentials)
-  if not JS_IsUndefined(init.`method`):
-    #TODO the spec allows this to be any string :(
-    ?ctx.fromJS(init.method, httpMethod)
-  var hasReferrer = true
-  var referrer: URL = nil
-  var url: URL = nil
-  var mode = rmNoCors
-  if not JS_IsUndefined(init.mode):
-    ?ctx.fromJS(init.mode, mode)
-  let apiBaseURL = ctx.getAPIBaseURLImpl()
-  let origin = ctx.getOriginImpl()
-  if (var res: Request; ctx.fromJS(resource, res).isOk):
-    url = res.url
-    if JS_IsUndefined(init.`method`):
-      httpMethod = res.httpMethod
-    headers[] = res.headers[]
-    if JS_IsUndefined(jsInit):
-      hasReferrer = rqfReferrer in res.flags
-      referrer = res.getReferrer()
-      mode = res.mode
-    if JS_IsUndefined(init.mode):
-      mode = res.mode
-      if not JS_IsUndefined(jsInit) and mode == rmNavigate:
-        mode = rmSameOrigin
-    if JS_IsUndefined(init.credentials):
-      credentials = res.credentials
-    body = res.body
-    window = res.window
-  else:
-    var s: string
-    ?ctx.fromJS(resource, s)
-    url = ?ctx.parseJSURL(s, apiBaseURL)
-    if JS_IsUndefined(init.mode):
-      mode = rmCors
-  if url.username != "" or url.password != "":
-    JS_ThrowTypeError(ctx, "input URL contains a username or password")
-    return err()
-  let destination = rdNone
-  #TODO origin, window
-  if not JS_IsUndefined(init.window):
-    if not JS_IsNull(init.window):
-      JS_ThrowTypeError(ctx, "expected window to be null")
-      return err()
-    window = RequestWindow(t: rwtNoWindow)
-  #TODO flags
-  if not JS_IsUndefined(init.referrer):
-    if referrerStr == "":
-      hasReferrer = false
-    else:
-      referrer = ?ctx.parseJSURL(referrerStr, apiBaseURL)
-      if referrer.schemeType == stAbout and referrer.pathname == "client" or
-          not referrer.origin.isSameOrigin(origin):
-        referrer = nil
-  #TODO referrerPolicy
-  if mode == rmNavigate:
-    JS_ThrowTypeError(ctx, "request mode must not be `navigate'")
-    return err()
-  if init.body.t != bitNull and httpMethod in {hmGet, hmHead}:
-    JS_ThrowTypeError(ctx, "HEAD or GET requests cannot have a body")
-    return err()
-  ?ctx.fill(headers, init.headers)
-  let contentType = init.body.extract(body)
-  if contentType != "":
-    headers.addIfNotFound("Content-Type", contentType)
-  if mode == rmNoCors:
-    headers.guard = hgRequestNoCors
-  ok(newRequest(
-    url,
-    httpMethod,
-    headers,
-    body,
-    hasReferrer,
-    referrer,
-    credentials = credentials,
-    mode = mode,
-    destination = destination,
-    window = window
-  ))
-
 proc credentials*(attribute: CORSAttribute): CredentialsMode =
   case attribute
   of caNoCors, caAnonymous:
@@ -407,8 +303,118 @@ proc credentials*(attribute: CORSAttribute): CredentialsMode =
   of caUseCredentials:
     return cmInclude
 
-proc addRequestModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(Request)
-  ok()
+jsClassDef(Request):
+  jsget Request, headers
+  jsget Request, httpMethod, "method"
+  jsget Request, credentials
+  jsget Request, mode
+  jsget Request, destination
+
+  proc jsUrl(this: Request): string {.jsfget: "url".} =
+    return $this.url
+
+  proc referrer(ctx: JSContext; this: Request): JSValue {.jsfget.} =
+    if rqfReferrer notin this.flags:
+      return ctx.toJS("")
+    let res = this.headers.getFirst("Referer")
+    if res != "":
+      return ctx.toJS(res)
+    return ctx.toJS("about:client")
+
+  proc newRequest*(ctx: JSContext; resource: JSValueConst;
+      jsInit: JSValueConst = JS_UNDEFINED): Opt[Request] {.jsctor.} =
+    var init: RequestInit
+    ?ctx.fromJS(jsInit, init)
+    var headers = newHeaders(hgRequest)
+    var window = RequestWindow(t: rwtClient)
+    var body = RequestBody()
+    var credentials = cmSameOrigin
+    var httpMethod = hmGet
+    var referrerStr = ""
+    if not JS_IsUndefined(init.referrer):
+      ?ctx.fromJS(init.referrer, referrerStr)
+    if not JS_IsUndefined(init.credentials):
+      ?ctx.fromJS(init.credentials, credentials)
+    if not JS_IsUndefined(init.`method`):
+      #TODO the spec allows this to be any string :(
+      ?ctx.fromJS(init.method, httpMethod)
+    var hasReferrer = true
+    var referrer: URL = nil
+    var url: URL = nil
+    var mode = rmNoCors
+    if not JS_IsUndefined(init.mode):
+      ?ctx.fromJS(init.mode, mode)
+    let apiBaseURL = ctx.getAPIBaseURLImpl()
+    let origin = ctx.getOriginImpl()
+    if (var res: Request; ctx.fromJS(resource, res).isOk):
+      url = res.url
+      if JS_IsUndefined(init.`method`):
+        httpMethod = res.httpMethod
+      headers[] = res.headers[]
+      if JS_IsUndefined(jsInit):
+        hasReferrer = rqfReferrer in res.flags
+        referrer = res.getReferrer()
+        mode = res.mode
+      if JS_IsUndefined(init.mode):
+        mode = res.mode
+        if not JS_IsUndefined(jsInit) and mode == rmNavigate:
+          mode = rmSameOrigin
+      if JS_IsUndefined(init.credentials):
+        credentials = res.credentials
+      body = res.body
+      window = res.window
+    else:
+      var s: string
+      ?ctx.fromJS(resource, s)
+      url = ?ctx.parseJSURL(s, apiBaseURL)
+      if JS_IsUndefined(init.mode):
+        mode = rmCors
+    if url.username != "" or url.password != "":
+      JS_ThrowTypeError(ctx, "input URL contains a username or password")
+      return err()
+    let destination = rdNone
+    #TODO origin, window
+    if not JS_IsUndefined(init.window):
+      if not JS_IsNull(init.window):
+        JS_ThrowTypeError(ctx, "expected window to be null")
+        return err()
+      window = RequestWindow(t: rwtNoWindow)
+    #TODO flags
+    if not JS_IsUndefined(init.referrer):
+      if referrerStr == "":
+        hasReferrer = false
+      else:
+        referrer = ?ctx.parseJSURL(referrerStr, apiBaseURL)
+        if referrer.schemeType == stAbout and referrer.pathname == "client" or
+            not referrer.origin.isSameOrigin(origin):
+          referrer = nil
+    #TODO referrerPolicy
+    if mode == rmNavigate:
+      JS_ThrowTypeError(ctx, "request mode must not be `navigate'")
+      return err()
+    if init.body.t != bitNull and httpMethod in {hmGet, hmHead}:
+      JS_ThrowTypeError(ctx, "HEAD or GET requests cannot have a body")
+      return err()
+    ?ctx.fill(headers, init.headers)
+    let contentType = init.body.extract(body)
+    if contentType != "":
+      headers.addIfNotFound("Content-Type", contentType)
+    if mode == rmNoCors:
+      headers.guard = hgRequestNoCors
+    ok(newRequest(
+      url,
+      httpMethod,
+      headers,
+      body,
+      hasReferrer,
+      referrer,
+      credentials = credentials,
+      mode = mode,
+      destination = destination,
+      window = window
+    ))
+
+proc addRequestModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(RequestDef)
 
 {.pop.} # raises: []

@@ -45,18 +45,16 @@ type
   XMLHttpRequestFlag = enum
     xhrfSend, xhrfUploadListener, xhrfSync, xhrfUploadComplete, xhrfTimedOut
 
-  XMLHttpRequestEventTarget = ref object of EventTarget
+  XMLHttpRequestUpload {.final.} = ref object of EventTarget
 
-  XMLHttpRequestUpload {.final.} = ref object of XMLHttpRequestEventTarget
-
-  XMLHttpRequest {.final.} = ref object of XMLHttpRequestEventTarget
+  XMLHttpRequest {.final.} = ref object of EventTarget
     readyState: XMLHttpRequestState
-    upload {.jsget.}: XMLHttpRequestUpload
+    upload: XMLHttpRequestUpload
     flags: set[XMLHttpRequestFlag]
     requestMethod: HttpMethod
-    responseType {.jsget.}: XMLHttpRequestResponseType
-    withCredentials {.jsget.}: bool
-    timeout {.jsget.}: uint32
+    responseType: XMLHttpRequestResponseType
+    withCredentials: bool
+    timeout: uint32
     requestURL: URL
     headers: Headers
     response: Response
@@ -65,45 +63,47 @@ type
     contentTypeOverride: string
 
   ProgressEvent {.final.} = ref object of Event
-    lengthComputable {.jsget.}: bool
-    loaded {.jsget.}: float64
-    total {.jsget.}: float64
+    lengthComputable: bool
+    loaded: float64
+    total: float64
 
   ProgressEventInit = object of EventInit
     lengthComputable {.jsdefault.}: bool
     loaded {.jsdefault.}: float64
     total {.jsdefault.}: float64
 
-proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
-  let upload = XMLHttpRequestUpload()
-  return XMLHttpRequest(
-    upload: upload,
-    headers: newHeaders(hgRequest),
-    responseObject: JS_UNDEFINED,
-    response: makeNetworkError()
-  )
+jsClassRaw(XMLHttpRequestEventTargetDef, "XMLHttpRequestEventTarget"):
+  #TODO right now this works:
+  # XMLHttpRequestEventTarget.prototype.__lookupSetter__("onloadstart")
+  #   .call(document.createElement("hi"))
+  # but it shouldn't.  Probably XHR event targets need a separate reflector
+  # function that checks the class ID too.
+  jsextends EventTargetDef
 
-proc finalize(rt: JSRuntime; this: XMLHttpRequest) {.jsfin.} =
-  JS_FreeValueRT(rt, this.responseObject)
+# ProgressEvent
+jsClassDef(ProgressEvent):
+  jsextends EventDef
 
-proc mark(rt: JSRuntime; this: XMLHttpRequest; markFun: JS_MarkFunc)
-    {.jsmark.} =
-  JS_MarkValue(rt, this.responseObject, markFun)
+  jsget ProgressEvent, lengthComputable
+  jsget ProgressEvent, loaded
+  jsget ProgressEvent, total
 
-proc newProgressEvent(ctype: CAtomTraced; init = ProgressEventInit()):
-    ProgressEvent {.jsctor.} =
-  let event = ProgressEvent(
-    ctype: ctype.dup(),
-    lengthComputable: init.lengthComputable,
-    loaded: init.loaded,
-    total: init.total
-  )
-  Event(event).innerEventCreationSteps(EventInit(init))
-  return event
+  proc newProgressEvent(ctype: CAtomTraced; init = ProgressEventInit()):
+      ProgressEvent {.jsctor.} =
+    let event = ProgressEvent(
+      ctype: ctype.dup(),
+      lengthComputable: init.lengthComputable,
+      loaded: init.loaded,
+      total: init.total
+    )
+    Event(event).innerEventCreationSteps(EventInit(init))
+    return event
 
-proc readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
-  return uint16(this.readyState)
+# XMLHttpRequestUpload
+jsClassDef(XMLHttpRequestUpload):
+  jsextends XMLHttpRequestEventTargetDef
 
+# XMLHttpRequest
 proc parseMethod(ctx: JSContext; s: DOMString): Opt[HttpMethod] =
   let m = ?parseEnumNoCase[HttpMethod](s.toOpenArray())
   if m in {hmGet, hmDelete, hmHead, hmOptions, hmPatch, hmPost, hmPut}:
@@ -118,48 +118,6 @@ proc fireReadyStateChangeEvent(window: Window; target: EventTarget) =
   window.fireEvent(satReadystatechange, target, bubbles = false,
     cancelable = false, trusted = true)
 
-proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: DOMString;
-    misc: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
-  let httpMethod = ?ctx.parseMethod(httpMethod)
-  let global = ctx.getGlobal()
-  let parsedURL = parseURL0(url.toOpenArray(), global.document.baseURL)
-  if parsedURL == nil:
-    JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
-    return err()
-  var async = true
-  if misc.len > 0: # standard weirdness
-    ?ctx.fromJS(misc[0], async)
-    if misc.len > 1 and not JS_IsNull(misc[1]) and not JS_IsUndefined(misc[1]):
-      var username: string
-      ?ctx.fromJS(misc[1], username)
-      parsedURL.setUsername(username)
-    if misc.len > 2 and not JS_IsNull(misc[2]) and not JS_IsUndefined(misc[2]):
-      var password: string
-      ?ctx.fromJS(misc[2], password)
-      parsedURL.setPassword(password)
-  if not async and ctx.getWindow() != nil and
-      (this.timeout != 0 or this.responseType != xhrtUnknown):
-    JS_ThrowDOMException(ctx, "InvalidAccessError",
-      "today's horoscope: don't go outside")
-    return err()
-  #TODO terminate fetch controller
-  this.flags.excl(xhrfSend)
-  this.flags.excl(xhrfUploadListener)
-  if async:
-    this.flags.excl(xhrfSync)
-  else:
-    this.flags.incl(xhrfSync)
-  this.requestMethod = httpMethod
-  this.headers = newHeaders(hgRequest)
-  this.response = makeNetworkError()
-  this.received = ""
-  this.requestURL = parsedURL
-  #TODO response object, received bytes
-  if this.readyState != xhrsOpened:
-    this.readyState = xhrsOpened
-    global.fireReadyStateChangeEvent(this)
-  ok()
-
 proc checkOpened(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
   if this.readyState != xhrsOpened:
     JS_ThrowDOMException(ctx, "InvalidStateError",
@@ -172,36 +130,6 @@ proc checkSendFlag(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
     JS_ThrowDOMException(ctx, "InvalidStateError", "`send' flag is set")
     return err()
   ok()
-
-proc setRequestHeader(ctx: JSContext; this: XMLHttpRequest;
-    name, value: ByteString): Opt[void] {.jsfunc.} =
-  ?ctx.checkOpened(this)
-  ?ctx.checkSendFlag(this)
-  if not name.s.isValidHeaderName() or not value.s.isValidHeaderValue():
-    JS_ThrowDOMException(ctx, "SyntaxError", "invalid header name or value")
-    return err()
-  if isForbiddenRequestHeader(name.s, value.s):
-    return ok()
-  this.headers[name.s] = value.s
-  ok()
-
-proc setWithCredentials(ctx: JSContext; this: XMLHttpRequest;
-    withCredentials: bool): Opt[void] {.jsfset: "withCredentials".} =
-  if this.readyState notin {xhrsUnsent, xhrsOpened}:
-    JS_ThrowDOMException(ctx,  "InvalidStateError",
-      "ready state was expected to be `unsent' or `opened'")
-    return err()
-  ?ctx.checkSendFlag(this)
-  this.withCredentials = withCredentials
-  ok()
-
-proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32): JSValue
-    {.jsfset: "timeout".} =
-  if ctx.getWindow() != nil and xhrfSync in this.flags:
-    return JS_ThrowDOMException(ctx, "InvalidAccessError",
-      "timeout may not be set on synchronous XHR")
-  this.timeout = value
-  return JS_UNDEFINED
 
 proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     loaded, length: int64) =
@@ -310,149 +238,12 @@ proc sendAsync(opaque: RootRef; response: Response) =
   window.loader.resume(response)
   #TODO timeout
 
-proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
-    Opt[void] {.jsfunc.} =
-  ?ctx.checkOpened(this)
-  ?ctx.checkSendFlag(this)
-  var body = body
-  if this.requestMethod in {hmGet, hmHead}:
-    body = JS_NULL
-  let credentials = if this.withCredentials: cmInclude else: cmSameOrigin
-  #TODO unsafe request flag, client, initiator type
-  let urlCredentials = this.requestURL.includesCredentials()
-  let request = newRequest(this.requestURL, this.requestMethod, this.headers,
-    credentials = credentials, urlCredentials = urlCredentials, mode = rmCors)
-  if not JS_IsNull(body):
-    var document: Document = nil
-    let contentType = if ctx.fromJS(body, document).isOk:
-      request.body = RequestBody(
-        t: rbtString,
-        s: document.serializeFragment(writeShadow = false)
-            .toValidUTF8() # replace surrogates
-      )
-      "text/html;charset=UTF-8"
-    else: #TODO XML
-      var init: BodyInit
-      ?ctx.fromJS(body, init)
-      init.safeExtract(request.body)
-    if not request.headers.addIfNotFoundCheck("Content-Type", contentType):
-      # author already set a content type
-      if request.body.t == rbtString or document != nil:
-        request.headers["Content-Type"].setContentTypeAttr("charset", "UTF-8")
-  if JS_IsNull(body):
-    this.flags.incl(xhrfUploadComplete)
-  else:
-    this.flags.excl(xhrfUploadComplete)
-  this.flags.excl(xhrfTimedOut)
-  this.flags.incl(xhrfSend)
-  let window = ctx.getWindow()
-  if xhrfSync notin this.flags: # async
-    window.fireProgressEvent(this, satLoadstart, 0, 0)
-    let opaque = XHROpaque(this: this, window: window)
-    window.fetch(request, sendAsync, opaque)
-  else: # sync
-    #TODO cors requests?
-    if window.settings.origin.isSameOrigin(request.url.origin):
-      let response = window.loader.doRequest(request)
-      if response.stream != nil:
-        #TODO timeout
-        window.loader.resume(response)
-        this.response = response
-        this.received = response.stream.readAll()
-        window.loader.close(response)
-        #TODO report timing
-        let len = max(response.getContentLength(), 0)
-        response.opaque = XHROpaque(this: this, window: window, len: len)
-        response.onFinishXHR(true)
-        return ok()
-    let res = window.handleErrors(this, ctx)
-    this.response = makeNetworkError()
-    ?res
-  ok()
-
-#TODO abort
-
-proc responseURL(this: XMLHttpRequest): string {.jsfget.} =
-  return this.response.surl
-
-proc status(this: XMLHttpRequest): uint16 {.jsfget.} =
-  return this.response.status
-
-proc statusText(this: XMLHttpRequest): string {.jsfget.} =
-  return ""
-
-proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: ByteString):
-    JSValue {.jsfunc.} =
-  let res = ctx.get(this.response.headers, name)
-  if JS_IsException(res):
-    return JS_NULL
-  return res
-
-proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
-  var list = newSeq[string]()
-  for k, v in this.response.headers:
-    list.add(k & ": " & v)
-  list.sort(proc(a, b: string): int {.nimcall.} =
-    # ew, but if the spec says so...
-    let L = min(a.len, b.len)
-    for i in 0 ..< L:
-      let ac = a[i].toUpperAscii()
-      let bc = b[i].toUpperAscii()
-      if ac == ':' or bc == ':':
-        break
-      if uint8(ac) < uint8(bc):
-        return -1
-      if uint8(ac) > uint8(bc):
-        return 1
-    if a.len < b.len:
-      return -1
-    if a.len > b.len:
-      return 1
-    0
-  )
-  result = ""
-  for it in list:
-    result &= it.toLowerAscii() & "\r\n"
-
 proc getCharset(this: XMLHttpRequest): Charset =
   let override = this.contentTypeOverride.toLowerAscii()
   let cs = override.getContentTypeAttr("charset").getCharset()
   if cs != csUnknown:
     return cs
   return this.response.getCharset(csUtf8)
-
-proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
-  if this.responseType notin {xhrtUnknown, xhrtText}:
-    return JS_ThrowDOMException(ctx, "InvalidStateError",
-      "Response type was expected to be '' or 'text'")
-  if this.readyState notin {xhrsLoading, xhrsDone}:
-    return ctx.toJS("")
-  let charset = this.getCharset()
-  #TODO XML encoding stuff?
-  return ctx.toJS(this.received.decodeAll(charset))
-
-proc overrideMimeType(ctx: JSContext; this: XMLHttpRequest; s: string): JSValue
-    {.jsfunc.} =
-  if this.readyState in {xhrsLoading, xhrsDone}:
-    return JS_ThrowDOMException(ctx, "InvalidStateError",
-      "readyState must not be loading or done")
-  #TODO parse
-  this.contentTypeOverride = s
-  return JS_UNDEFINED
-
-proc setResponseType(ctx: JSContext; this: XMLHttpRequest;
-    value: XMLHttpRequestResponseType): JSValue {.jsfset: "responseType".} =
-  let window = ctx.getWindow()
-  if window == nil and value == xhrtDocument:
-    return JS_UNDEFINED
-  if this.readyState in {xhrsLoading, xhrsDone}:
-    return JS_ThrowDOMException(ctx, "InvalidStateError",
-      "readyState must not be loading or done")
-  if window != nil and xhrfSync in this.flags:
-    return JS_ThrowDOMException(ctx, "InvalidAccessError",
-      "responseType may not be set on synchronous XHR")
-  this.responseType = value
-  return JS_UNDEFINED
 
 proc getContentType(this: XMLHttpRequest): string =
   if this.contentTypeOverride != "":
@@ -479,49 +270,286 @@ proc abufFree(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
 proc blobFree(opaque, p: pointer) {.nimcall.} =
   deallocPtrified(opaque)
 
-proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
-  if this.responseType in {xhrtText, xhrtUnknown}:
-    return ctx.responseText(this)
-  if this.readyState != xhrsDone:
-    return JS_NULL
-  if JS_IsUndefined(this.responseObject):
-    case this.responseType
-    of xhrtArraybuffer:
-      let len = csize_t(this.received.len)
-      let (opaque, p) = this.received.ptrify()
-      this.responseObject = JS_NewArrayBuffer(ctx, p, len, abufFree, opaque,
-        false)
-    of xhrtBlob:
-      let len = this.received.len
-      let (opaque, p) = this.received.ptrify()
-      let blob = newBlob(p, len, this.getContentType(), blobFree, opaque)
-      this.responseObject = ctx.toJS(blob)
-    of xhrtDocument:
-      #TODO this is certainly not compliant
-      let res = ctx.parseFromString(newDOMParser(), this.received, "text/html")
-      this.responseObject = ctx.toJS(res)
-    of xhrtJSON:
-      this.responseObject = JS_ParseJSON(ctx, cstring(this.received),
-        csize_t(this.received.len), cstring"<input>")
-    else: discard
-  if JS_IsException(this.responseObject):
-    this.responseObject = JS_UNDEFINED
-  return JS_DupValue(ctx, this.responseObject)
+jsClassDef(XMLHttpRequest):
+  jsextends XMLHttpRequestEventTargetDef
 
-proc addXMLHttpRequestModule*(ctx: JSContext;
-    eventCID, eventTargetCID: JSClassID): Opt[void] =
-  let xhretCID = ctx.registerType(XMLHttpRequestEventTarget, eventTargetCID)
-  if xhretCID == JS_INVALID_CLASS_ID:
-    return err()
+  jsget XMLHttpRequest, upload
+  jsget XMLHttpRequest, responseType
+  jsget XMLHttpRequest, withCredentials
+  jsget XMLHttpRequest, timeout
+
+  proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
+    let upload = XMLHttpRequestUpload()
+    return XMLHttpRequest(
+      upload: upload,
+      headers: newHeaders(hgRequest),
+      responseObject: JS_UNDEFINED,
+      response: makeNetworkError()
+    )
+
+  proc finalize(rt: JSRuntime; this: XMLHttpRequest) {.jsfin.} =
+    JS_FreeValueRT(rt, this.responseObject)
+
+  proc mark(rt: JSRuntime; this: XMLHttpRequest; markFun: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkValue(rt, this.responseObject, markFun)
+
+  proc readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
+    return uint16(this.readyState)
+
+  proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: DOMString;
+      misc: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
+    let httpMethod = ?ctx.parseMethod(httpMethod)
+    let global = ctx.getGlobal()
+    let parsedURL = parseURL0(url.toOpenArray(), global.document.baseURL)
+    if parsedURL == nil:
+      JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
+      return err()
+    var async = true
+    if misc.len > 0: # standard weirdness
+      ?ctx.fromJS(misc[0], async)
+      if misc.len > 1 and not JS_IsNull(misc[1]) and
+          not JS_IsUndefined(misc[1]):
+        var username: string
+        ?ctx.fromJS(misc[1], username)
+        parsedURL.setUsername(username)
+      if misc.len > 2 and not JS_IsNull(misc[2]) and
+          not JS_IsUndefined(misc[2]):
+        var password: string
+        ?ctx.fromJS(misc[2], password)
+        parsedURL.setPassword(password)
+    if not async and ctx.getWindow() != nil and
+        (this.timeout != 0 or this.responseType != xhrtUnknown):
+      JS_ThrowDOMException(ctx, "InvalidAccessError",
+        "today's horoscope: don't go outside")
+      return err()
+    #TODO terminate fetch controller
+    this.flags.excl(xhrfSend)
+    this.flags.excl(xhrfUploadListener)
+    if async:
+      this.flags.excl(xhrfSync)
+    else:
+      this.flags.incl(xhrfSync)
+    this.requestMethod = httpMethod
+    this.headers = newHeaders(hgRequest)
+    this.response = makeNetworkError()
+    this.received = ""
+    this.requestURL = parsedURL
+    #TODO response object, received bytes
+    if this.readyState != xhrsOpened:
+      this.readyState = xhrsOpened
+      global.fireReadyStateChangeEvent(this)
+    ok()
+
+  proc setRequestHeader(ctx: JSContext; this: XMLHttpRequest;
+      name, value: ByteString): Opt[void] {.jsfunc.} =
+    ?ctx.checkOpened(this)
+    ?ctx.checkSendFlag(this)
+    if not name.s.isValidHeaderName() or not value.s.isValidHeaderValue():
+      JS_ThrowDOMException(ctx, "SyntaxError", "invalid header name or value")
+      return err()
+    if isForbiddenRequestHeader(name.s, value.s):
+      return ok()
+    this.headers[name.s] = value.s
+    ok()
+
+  proc setWithCredentials(ctx: JSContext; this: XMLHttpRequest;
+      withCredentials: bool): Opt[void] {.jsfset: "withCredentials".} =
+    if this.readyState notin {xhrsUnsent, xhrsOpened}:
+      JS_ThrowDOMException(ctx,  "InvalidStateError",
+        "ready state was expected to be `unsent' or `opened'")
+      return err()
+    ?ctx.checkSendFlag(this)
+    this.withCredentials = withCredentials
+    ok()
+
+  proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32): JSValue
+      {.jsfset: "timeout".} =
+    if ctx.getWindow() != nil and xhrfSync in this.flags:
+      return JS_ThrowDOMException(ctx, "InvalidAccessError",
+        "timeout may not be set on synchronous XHR")
+    this.timeout = value
+    return JS_UNDEFINED
+
+  proc send(ctx: JSContext; this: XMLHttpRequest;
+      body: JSValueConst = JS_NULL): Opt[void] {.jsfunc.} =
+    ?ctx.checkOpened(this)
+    ?ctx.checkSendFlag(this)
+    var body = body
+    if this.requestMethod in {hmGet, hmHead}:
+      body = JS_NULL
+    let credentials = if this.withCredentials: cmInclude else: cmSameOrigin
+    #TODO unsafe request flag, client, initiator type
+    let urlCredentials = this.requestURL.includesCredentials()
+    let request = newRequest(this.requestURL, this.requestMethod, this.headers,
+      credentials = credentials, urlCredentials = urlCredentials,
+      mode = rmCors)
+    if not JS_IsNull(body):
+      var document: Document = nil
+      let contentType = if ctx.fromJS(body, document).isOk:
+        request.body = RequestBody(
+          t: rbtString,
+          s: document.serializeFragment(writeShadow = false)
+              .toValidUTF8() # replace surrogates
+        )
+        "text/html;charset=UTF-8"
+      else: #TODO XML
+        var init: BodyInit
+        ?ctx.fromJS(body, init)
+        init.safeExtract(request.body)
+      if not request.headers.addIfNotFoundCheck("Content-Type", contentType):
+        # author already set a content type
+        if request.body.t == rbtString or document != nil:
+          request.headers["Content-Type"].
+            setContentTypeAttr("charset", "UTF-8")
+    if JS_IsNull(body):
+      this.flags.incl(xhrfUploadComplete)
+    else:
+      this.flags.excl(xhrfUploadComplete)
+    this.flags.excl(xhrfTimedOut)
+    this.flags.incl(xhrfSend)
+    let window = ctx.getWindow()
+    if xhrfSync notin this.flags: # async
+      window.fireProgressEvent(this, satLoadstart, 0, 0)
+      let opaque = XHROpaque(this: this, window: window)
+      window.fetch(request, sendAsync, opaque)
+    else: # sync
+      #TODO cors requests?
+      if window.settings.origin.isSameOrigin(request.url.origin):
+        let response = window.loader.doRequest(request)
+        if response.stream != nil:
+          #TODO timeout
+          window.loader.resume(response)
+          this.response = response
+          this.received = response.stream.readAll()
+          window.loader.close(response)
+          #TODO report timing
+          let len = max(response.getContentLength(), 0)
+          response.opaque = XHROpaque(this: this, window: window, len: len)
+          response.onFinishXHR(true)
+          return ok()
+      let res = window.handleErrors(this, ctx)
+      this.response = makeNetworkError()
+      ?res
+    ok()
+
+  #TODO abort
+
+  proc responseURL(this: XMLHttpRequest): string {.jsfget.} =
+    return this.response.surl
+
+  proc status(this: XMLHttpRequest): uint16 {.jsfget.} =
+    return this.response.status
+
+  proc statusText(this: XMLHttpRequest): string {.jsfget.} =
+    return ""
+
+  proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest;
+      name: ByteString): JSValue {.jsfunc.} =
+    let res = ctx.get(this.response.headers, name)
+    if JS_IsException(res):
+      return JS_NULL
+    return res
+
+  proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
+    var list = newSeq[string]()
+    for k, v in this.response.headers:
+      list.add(k & ": " & v)
+    list.sort(proc(a, b: string): int {.nimcall.} =
+      # ew, but if the spec says so...
+      let L = min(a.len, b.len)
+      for i in 0 ..< L:
+        let ac = a[i].toUpperAscii()
+        let bc = b[i].toUpperAscii()
+        if ac == ':' or bc == ':':
+          break
+        if uint8(ac) < uint8(bc):
+          return -1
+        if uint8(ac) > uint8(bc):
+          return 1
+      if a.len < b.len:
+        return -1
+      if a.len > b.len:
+        return 1
+      0
+    )
+    result = ""
+    for it in list:
+      result &= it.toLowerAscii() & "\r\n"
+
+  proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
+    if this.responseType notin {xhrtUnknown, xhrtText}:
+      return JS_ThrowDOMException(ctx, "InvalidStateError",
+        "Response type was expected to be '' or 'text'")
+    if this.readyState notin {xhrsLoading, xhrsDone}:
+      return ctx.toJS("")
+    let charset = this.getCharset()
+    #TODO XML encoding stuff?
+    return ctx.toJS(this.received.decodeAll(charset))
+
+  proc overrideMimeType(ctx: JSContext; this: XMLHttpRequest; s: string):
+      JSValue {.jsfunc.} =
+    if this.readyState in {xhrsLoading, xhrsDone}:
+      return JS_ThrowDOMException(ctx, "InvalidStateError",
+        "readyState must not be loading or done")
+    #TODO parse
+    this.contentTypeOverride = s
+    return JS_UNDEFINED
+
+  proc setResponseType(ctx: JSContext; this: XMLHttpRequest;
+      value: XMLHttpRequestResponseType): JSValue {.jsfset: "responseType".} =
+    let window = ctx.getWindow()
+    if window == nil and value == xhrtDocument:
+      return JS_UNDEFINED
+    if this.readyState in {xhrsLoading, xhrsDone}:
+      return JS_ThrowDOMException(ctx, "InvalidStateError",
+        "readyState must not be loading or done")
+    if window != nil and xhrfSync in this.flags:
+      return JS_ThrowDOMException(ctx, "InvalidAccessError",
+        "responseType may not be set on synchronous XHR")
+    this.responseType = value
+    return JS_UNDEFINED
+
+  proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
+    if this.responseType in {xhrtText, xhrtUnknown}:
+      return ctx.responseText(this)
+    if this.readyState != xhrsDone:
+      return JS_NULL
+    if JS_IsUndefined(this.responseObject):
+      case this.responseType
+      of xhrtArraybuffer:
+        let len = csize_t(this.received.len)
+        let (opaque, p) = this.received.ptrify()
+        this.responseObject = JS_NewArrayBuffer(ctx, p, len, abufFree, opaque,
+          false)
+      of xhrtBlob:
+        let len = this.received.len
+        let (opaque, p) = this.received.ptrify()
+        let blob = newBlob(p, len, this.getContentType(), blobFree, opaque)
+        this.responseObject = ctx.toJS(blob)
+      of xhrtDocument:
+        #TODO this is certainly not compliant
+        let res = ctx.parseFromString(newDOMParser(), this.received,
+          "text/html")
+        this.responseObject = ctx.toJS(res)
+      of xhrtJSON:
+        this.responseObject = JS_ParseJSON(ctx, cstring(this.received),
+          csize_t(this.received.len), cstring"<input>")
+      else: discard
+    if JS_IsException(this.responseObject):
+      this.responseObject = JS_UNDEFINED
+    return JS_DupValue(ctx, this.responseObject)
+
+proc addXMLHttpRequestModule*(ctx: JSContext): Opt[void] =
+  ?ctx.registerClass(XMLHttpRequestEventTargetDef)
+  let xhretCID = XMLHttpRequestEventTargetDef.id
   ?ctx.addEventGetSet(xhretCID, [satLoadstart, satProgress, satAbort, satError,
     satLoad, satTimeout, satLoadend])
-  ?ctx.registerType(XMLHttpRequestUpload, xhretCID)
-  ?ctx.registerType(ProgressEvent, eventCID)
-  let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID)
-  if xhrCID == JS_INVALID_CLASS_ID:
-    return err()
-  ?ctx.addEventGetSet(xhrCID, [satReadystatechange])
-  case ctx.defineConsts(xhrCID, XMLHttpRequestState)
+  ?ctx.registerClass(ProgressEventDef)
+  ?ctx.registerClass(XMLHttpRequestUploadDef)
+  ?ctx.registerClass(XMLHttpRequestDef)
+  ?ctx.addEventGetSet(XMLHttpRequestDef.id, [satReadystatechange])
+  case ctx.defineConsts(XMLHttpRequestDef.id, XMLHttpRequestState)
   of dprException: return err()
   else: discard
   ok()

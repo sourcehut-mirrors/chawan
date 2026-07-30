@@ -6,5 +6,9 @@
 document.implementation.createDocumentType('test\u00B7\u0301', '', '');
 document.implementation.createDocumentType('test!!test', '', '');
 assertThrows(() => document.implementation.createDocumentType('test>test', '', ''), DOMException);
+let dt = document.implementation.createDocumentType('a', 'b', 'c');
+assertEquals(dt.name, 'a');
+assertEquals(dt.publicId, 'b');
+assertEquals(dt.systemId, 'c');
 document.getElementById("x").textContent = "Success";
 </script>

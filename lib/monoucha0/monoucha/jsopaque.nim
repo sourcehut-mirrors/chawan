@@ -44,7 +44,6 @@ type
     # `unforgeable[classid]'.)
     unforgeable*: seq[JSCFunctionListEntry]
     fins*: seq[JSFinalizerFunction]
-    nimt*: pointer # pointer to the Nim type
     when defined(gcDestructors):
       dtor*: BoundRefDestructor
 
@@ -76,12 +75,14 @@ type
 
   JSRuntimeOpaque* = ref object
     classes*: seq[JSClassData] # JSClassID -> data
-    typemap*: Table[pointer, JSClassID] # getTypePtr -> JSClassID
     enumMap*: seq[EnumMapEntry]
     plist*: seq[JSPointerItem] # Nim -> JS
     load: int
 
 var globalRuntime* {.global.}: JSRuntime
+
+# getTypePtr -> JSClassID
+var globalJSTypeMap* {.global.}: Table[pointer, JSClassID]
 
 iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
     JSFinalizerFunction =

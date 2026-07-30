@@ -20,6 +20,7 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
     FromJSResult =
+  mixin fromJS
   if JS_IsNull(val):
     res = none(T)
   else:

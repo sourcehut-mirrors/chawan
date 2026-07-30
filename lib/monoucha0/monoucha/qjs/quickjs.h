@@ -543,7 +543,6 @@ typedef struct JSClassDef {
     /* XXX: suppress this indirection ? It is here only to save memory
        because only a few classes need these methods */
     JSClassExoticMethods *exotic;
-    JSClassCanDestroy *can_destroy;
 } JSClassDef;
 
 #define JS_INVALID_CLASS_ID 0
@@ -769,6 +768,7 @@ uint8_t *JS_GetRegExpBytecode(JSContext *ctx, JSValueConst obj, int *plen);
 uint32_t JS_GetStringLength(JSValueConst value);
 void JS_BuildBacktrace(JSContext *ctx, JSValueConst obj, int skip_first_level);
 int __js_printf_like(3, 4) JS_ThrowTypeErrorOrFalse(JSContext *ctx, int flags, const char *fmt, ...);
+void JS_SetClassCanDestroy(JSRuntime *rt, JSClassID class_id, JSClassCanDestroy *can_destroy);
 
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto, JSClassID class_id);
 JSValue JS_NewObjectClass(JSContext *ctx, int class_id);

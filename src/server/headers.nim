@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/typetraits
 
 import io/packetreader
 import io/packetwriter
@@ -38,7 +39,10 @@ type
 
 jsDestructor(Headers)
 
+# Forward declarations
+proc append(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
 proc isForbiddenResponseHeaderName*(name: string): bool
+proc getClassID*(t: typedesc[Headers]): JSClassID
 
 iterator pairs*(this: Headers): tuple[name, value: lent string] =
   for (name, value) in this.list:
@@ -247,66 +251,9 @@ proc get(this: Headers; name: string; n: int): string =
     s &= it.value
   move(s)
 
-proc get*(ctx: JSContext; this: Headers; name: ByteString): JSValue {.
-    jsfunc.} =
-  if not name.s.isValidHeaderName():
-    JS_ThrowTypeError(ctx, "Invalid header name")
-    return JS_EXCEPTION
-  let n = this.lowerBound(name.s)
-  if this.contains(name.s, n):
-    return ctx.toJS(this.get(name.s, n))
-  return JS_NULL
-
 proc removeRange(this: Headers) =
   if this.guard == hgRequestNoCors:
     this.removeAll("Range") # privileged no-CORS request headers
-
-proc append(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
-    {.jsfunc.} =
-  let value = value.s.strip(chars = HTTPWhitespace)
-  if not ?ctx.validate(this, name.s, value):
-    return ok()
-  let n = this.lowerBound(name.s)
-  if this.guard == hgRequestNoCors:
-    var tmp = this.get(name.s, n)
-    if tmp.len > 0:
-      tmp &= ", "
-    tmp &= value
-    if not name.s.isNoCorsSafelisted(tmp):
-      return ok()
-  this.add(name.s, value, n)
-  this.removeRange()
-  ok()
-
-proc delete(ctx: JSContext; this: Headers; name: ByteString): Opt[void] {.
-    jsfunc.} =
-  if not ?ctx.validate(this, name.s, "") or
-      this.guard == hgRequestNoCors and not name.s.isNoCorsSafelistedName() and
-      not name.s.equalsIgnoreCase("Range"):
-    return ok()
-  let n = this.lowerBound(name.s)
-  if this.contains(name.s, n):
-    this.removeAll(name.s, n)
-    this.removeRange()
-  ok()
-
-proc has(ctx: JSContext; this: Headers; name: ByteString): JSValue {.jsfunc.} =
-  if not name.s.isValidHeaderName():
-    return JS_ThrowTypeError(ctx, "invalid header name")
-  ctx.toJS(name.s in this)
-
-proc set(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
-    {.jsfunc.} =
-  let value = value.s.strip(chars = HTTPWhitespace)
-  if not ?ctx.validate(this, name.s, value):
-    return ok()
-  if this.guard == hgRequestNoCors and not name.s.isNoCorsSafelisted(value):
-    return ok()
-  let n = this.lowerBound(name.s)
-  this.removeAll(name.s, n)
-  this.add(name.s, value, n)
-  this.removeRange()
-  ok()
 
 proc fill*(ctx: JSContext; headers: Headers; init: HeadersInit): Opt[void] =
   for (k, v) in init.s:
@@ -322,15 +269,6 @@ proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
   headers.list = @list
   headers.sort()
   return headers
-
-proc newHeaders(ctx: JSContext; jsInit: JSValueConst = JS_UNDEFINED):
-    Opt[Headers] {.jsctor.} =
-  let headers = newHeaders(hgNone)
-  if not JS_IsUndefined(jsInit):
-    var init: HeadersInit
-    ?ctx.fromJS(jsInit, init)
-    ?ctx.fill(headers, init)
-  ok(headers)
 
 proc clone*(headers: Headers): Headers =
   return Headers(guard: headers.guard, list: headers.list)
@@ -430,8 +368,75 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
     return (n: n, url: url)
   return (n: -1, url: nil)
 
-proc addHeadersModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(Headers)
-  ok()
+jsClassDef(Headers):
+  proc newHeaders(ctx: JSContext; jsInit: JSValueConst = JS_UNDEFINED):
+      Opt[Headers] {.jsctor.} =
+    let headers = newHeaders(hgNone)
+    if not JS_IsUndefined(jsInit):
+      var init: HeadersInit
+      ?ctx.fromJS(jsInit, init)
+      ?ctx.fill(headers, init)
+    ok(headers)
+
+  proc append(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
+      {.jsfunc.} =
+    let value = value.s.strip(chars = HTTPWhitespace)
+    if not ?ctx.validate(this, name.s, value):
+      return ok()
+    let n = this.lowerBound(name.s)
+    if this.guard == hgRequestNoCors:
+      var tmp = this.get(name.s, n)
+      if tmp.len > 0:
+        tmp &= ", "
+      tmp &= value
+      if not name.s.isNoCorsSafelisted(tmp):
+        return ok()
+    this.add(name.s, value, n)
+    this.removeRange()
+    ok()
+
+  proc delete(ctx: JSContext; this: Headers; name: ByteString): Opt[void] {.
+      jsfunc.} =
+    if not ?ctx.validate(this, name.s, "") or
+        this.guard == hgRequestNoCors and not name.s.isNoCorsSafelistedName() and
+        not name.s.equalsIgnoreCase("Range"):
+      return ok()
+    let n = this.lowerBound(name.s)
+    if this.contains(name.s, n):
+      this.removeAll(name.s, n)
+      this.removeRange()
+    ok()
+
+  proc has(ctx: JSContext; this: Headers; name: ByteString): JSValue
+      {.jsfunc.} =
+    if not name.s.isValidHeaderName():
+      return JS_ThrowTypeError(ctx, "invalid header name")
+    ctx.toJS(name.s in this)
+
+  proc set(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
+      {.jsfunc.} =
+    let value = value.s.strip(chars = HTTPWhitespace)
+    if not ?ctx.validate(this, name.s, value):
+      return ok()
+    if this.guard == hgRequestNoCors and not name.s.isNoCorsSafelisted(value):
+      return ok()
+    let n = this.lowerBound(name.s)
+    this.removeAll(name.s, n)
+    this.add(name.s, value, n)
+    this.removeRange()
+    ok()
+
+  proc get*(ctx: JSContext; this: Headers; name: ByteString): JSValue {.
+      jsfunc.} =
+    if not name.s.isValidHeaderName():
+      JS_ThrowTypeError(ctx, "Invalid header name")
+      return JS_EXCEPTION
+    let n = this.lowerBound(name.s)
+    if this.contains(name.s, n):
+      return ctx.toJS(this.get(name.s, n))
+    return JS_NULL
+
+proc addHeadersModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(HeadersDef)
 
 {.pop.} # raises: []

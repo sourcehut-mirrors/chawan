@@ -5,6 +5,7 @@ import std/os
 import std/posix
 import std/tables
 import std/times
+import std/typetraits
 
 import config/chapath
 import config/config
@@ -102,16 +103,16 @@ type
     mailcapLoaded: bool
     hasload: bool # has a page been successfully loaded since startup?
     dumpConsoleFile: bool
-    feedNext {.jsgetset.}: bool
-    paste {.jsget.}: bool # set in fulfillAsk
+    feedNext: bool
+    paste: bool # set in fulfillAsk
     mousePaste: bool
     updateStatus: UpdateStatusState
-    alertState {.jsgetset.}: PagerAlertState # private
+    alertState: PagerAlertState # private
     # current number prefix (when vi-numeric-prefix is true)
-    precnum {.jsgetset.}: int32 # private
-    arg0 {.jsget.}: int32 # private
+    precnum: int32 # private
+    arg0: int32 # private
     bufferAtom: JSAtom
-    consoleCacheId {.jsget.}: int # private
+    consoleCacheId: int # private
     consoleFile: string
     alerts: seq[string]
     askCursor: int
@@ -120,19 +121,19 @@ type
     console: Console
     cookieJars: CookieJarMap
     surfaces: array[SurfaceType, Surface]
-    consoleInit {.jsgetset.}: BufferInit
+    consoleInit: BufferInit
     exitCode: int
     forkserver: ForkServer
     inputBuffer: string # currently uninterpreted characters
     jsctx: JSContext
-    lastAlert {.jsget.}: string # last alert seen by the user
+    lastAlert: string # last alert seen by the user
     lineHist: array[LineMode, History]
-    lineEdit* {.jsget.}: LineEdit # private
+    lineEdit*: LineEdit # private
     loader: FileLoader
-    loaderPid {.jsget.}: int
+    loaderPid: int
     luctx: LUContext
-    menu {.jsget.}: Select
-    numload {.jsgetset.}: int # number of pages currently being loaded
+    menu: Select
+    numload: int # number of pages currently being loaded
     term*: Terminal
     timeouts*: TimeoutState
     tmpfSeq: uint
@@ -142,22 +143,29 @@ type
     autoMailcap: Mailcap
     mailcap: Mailcap
     mimeTypes: MimeTypes
-    bufferInit {.jsget.}: BufferInit # visible BufferInit (may != iface.init)
-    bufferIface {.jsget.}: BufferInterface # visible BufferInterface
+    bufferInit: BufferInit # visible BufferInit (may != iface.init)
+    bufferIface: BufferInterface # visible BufferInterface
 
 # Forward declarations
 proc addConsole2(pager: Pager; interactive: bool)
 proc alert(pager: Pager; msg: string)
 proc redraw(pager: Pager)
 proc windowChange(pager: Pager): Opt[void]
-
-# private
-proc bufWidth(pager: Pager): int {.jsfget.} =
-  return pager.attrs.width
-
-# private
-proc bufHeight(pager: Pager): int {.jsfget.} =
-  return pager.attrs.height - 1
+proc bufWidth(pager: Pager): int
+proc bufHeight(pager: Pager): int
+proc jsQuit(ctx: JSContext; pager: Pager; code = 0): JSValue
+proc queueStatusUpdate(pager: Pager)
+proc getCacheFile(pager: Pager; cacheId: int; pid = -1): string
+proc getTempFile(pager: Pager; ext = ""): string
+proc connected2(pager: Pager; init: BufferInit): JSValue
+proc findMailcapPrevNext(pager: Pager; init: BufferInit; i: int):
+  tuple[prev, next: int]
+proc copyLoadInfo(pager: Pager; init: BufferInit)
+proc unregisterBufferIface(pager: Pager; iface: BufferInterface)
+proc showConsole(pager: Pager)
+proc handleStderr(pager: Pager)
+proc showAlerts(pager: Pager)
+proc getClassID*(t: typedesc[Pager]): JSClassID
 
 proc surfaceSize(pager: Pager; t: SurfaceType): tuple[w, h: int] =
   case t
@@ -177,62 +185,10 @@ template status(pager: Pager): Surface =
 template display(pager: Pager): Surface =
   pager.surfaces[stDisplay]
 
-# private
-proc statusWidth(pager: Pager): int {.jsfget.} =
-  return pager.status.grid.width
-
-# private
-proc updateTitle(pager: Pager; init: BufferInit) {.jsfunc.} =
-  pager.term.queueTitle(init.title)
-
-# private
-proc clearCachedImages(pager: Pager; iface: BufferInterface) {.jsfunc.} =
-  if pager.term.imageMode != imNone:
-    iface.clearCachedImages(pager.loader)
-
-# private
-proc setBufferInit(ctx: JSContext; pager: Pager; init: Option[BufferInit])
-    {.jsfset: "bufferInit".} =
-  pager.bufferInit = init.get(nil)
-
-# private
-proc setBufferIface(ctx: JSContext; pager: Pager; iface: BufferInterface) {.
-    jsfset: "bufferIface".} =
-  pager.bufferIface = iface
-
 proc getHist(pager: Pager; mode: LineMode): History =
   if pager.lineHist[mode] == nil:
     pager.lineHist[mode] = newHistory(100)
   return pager.lineHist[mode]
-
-# private
-proc setLineEdit0(ctx: JSContext; pager: Pager; mode: LineMode; prompt: string;
-    obj: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
-  var current = ""
-  var hide = false
-  var update = JS_UNDEFINED
-  if not JS_IsUndefined(obj):
-    if ctx.fromJSGetProp(obj, "current", current).isErr:
-      return JS_EXCEPTION
-    if ctx.fromJSGetProp(obj, "hide", hide).isErr:
-      return JS_EXCEPTION
-    update = JS_GetPropertyStr(ctx, obj, "update")
-    if JS_IsException(update):
-      return JS_EXCEPTION
-  var funs {.noinit.}: array[2, JSValue]
-  let res = ctx.newPromiseCapability(funs)
-  if JS_IsException(res):
-    JS_FreeValue(ctx, update)
-    return JS_EXCEPTION
-  JS_FreeValue(ctx, funs[1])
-  let hist = pager.getHist(mode)
-  pager.lineEdit = readLine(prompt, current, pager.attrs.width, hide, hist,
-    pager.luctx, update, funs[0])
-  return res
-
-# private
-proc unsetLineEdit(pager: Pager) {.jsfunc.} =
-  pager.lineEdit = nil
 
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JSModuleDef {.cdecl.} =
@@ -518,50 +474,6 @@ proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
       val = ctx.callFree(val, JS_UNDEFINED)
   return val
 
-# private
-proc writeInputBuffer(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
-  if pager.lineEdit != nil:
-    let res = ctx.write(pager.lineEdit, pager.inputBuffer)
-    pager.inputBuffer.setLen(0)
-    return res
-  return JS_UNDEFINED
-
-# private
-proc evalInputAction(ctx: JSContext; pager: Pager; map: ActionMap; arg0: int32):
-    JSValue {.jsfunc.} =
-  let val = map.advance(pager.inputBuffer)
-  if JS_IsUndefined(val):
-    if map.keyLast != 0:
-      return JS_UNDEFINED
-    if JS_IsUndefined(map.defaultAction):
-      pager.inputBuffer.setLen(0)
-      return JS_UNDEFINED
-    let res = pager.evalAction(JS_DupValue(ctx, map.defaultAction), arg0,
-      map.defaultAction)
-    pager.inputBuffer.setLen(0)
-    return res
-  # note: this may replace val inside the ActionMap
-  let res = pager.evalAction(JS_DupValue(ctx, val), arg0, map.mgetValue())
-  ctx.feedNext(map, pager.feedNext, pager.inputBuffer)
-  pager.feedNext = false
-  if map.keyLast == 0:
-    pager.inputBuffer.setLen(0)
-  return res
-
-# private
-proc queueStatusUpdate(pager: Pager) {.jsfunc.} =
-  if pager.updateStatus == ussNone:
-    pager.updateStatus = ussUpdate
-
-# private
-# called from JS command()
-proc evalCommand(ctx: JSContext; pager: Pager; s: DOMString): JSValue
-    {.jsfunc.} =
-  if pager.consoleInit != nil:
-    pager.consoleInit.flags.incl(bifTailOnLoad)
-  return JS_Eval(ctx, s.p, csize_t(s.len), "<command>",
-    JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_BACKTRACE_BARRIER)
-
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =
   #TODO might want to make this an opaque type
   let obj = JS_NewObject(ctx)
@@ -578,38 +490,8 @@ proc toJS(ctx: JSContext; input: MouseInput): JSValue =
     return JS_EXCEPTION
   return obj
 
-# private
-proc jsQuit(ctx: JSContext; pager: Pager; code = 0): JSValue {.
-    jsfunc: "quit".} =
-  pager.exitCode = int(code)
-  JS_ThrowInternalError(ctx, "interrupted")
-  JS_SetUncatchableException(ctx, true)
-  return JS_EXCEPTION
-
 proc jsQuit(pager: Pager; code: int): JSValue =
   return pager.jsctx.jsQuit(pager, code)
-
-# private
-proc osc52Primary(pager: Pager): bool {.jsfget.} =
-  pager.term.osc52Primary
-
-# The maximum number we are willing to accept.
-# This should be fine for 32-bit signed ints (which precnum currently is).
-const MaxPrecNum = 100000000
-
-# private
-proc updateNumericPrefix(pager: Pager): bool {.jsfunc.} =
-  if pager.config{"viNumericPrefix"} and pager.precnum >= 0:
-    let c = pager.inputBuffer[0]
-    if pager.precnum != 0 and c == '0' or c in '1'..'9':
-      if pager.precnum < MaxPrecNum: # better ignore than eval...
-        pager.precnum *= 10
-        pager.precnum += int32(decValue(c))
-      pager.inputBuffer.setLen(0)
-      return true
-    pager.arg0 = max(pager.precnum, 0)
-    pager.precnum = -1
-  false
 
 proc handleKeyEnd(pager: Pager; e: InputEvent): int =
   let ctx = pager.jsctx
@@ -657,23 +539,6 @@ proc handleUserInput(pager: Pager): JSValue =
     if pager.handleKeyEnd(InputEvent(t: ietPaste)) < 0:
       return JS_EXCEPTION
   return JS_UNDEFINED
-
-# private
-proc runStartupScript(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
-  if pager.config{"startupScript"} == "":
-    return JS_UNDEFINED
-  let ps = newPosixStream(pager.config{"startupScript"})
-  let s = if ps != nil:
-    var x = ps.readAll()
-    ps.sclose()
-    move(x)
-  else:
-    pager.config{"startupScript"}
-  let flag = if pager.config{"startupScript"}.endsWith(".mjs"):
-    JS_EVAL_TYPE_MODULE
-  else:
-    JS_EVAL_TYPE_GLOBAL
-  return ctx.eval(s, pager.config{"startupScript"}, flag)
 
 proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
     charset: Charset; history: bool): int =
@@ -820,16 +685,6 @@ proc refreshStatusMsg(pager: Pager) =
       msg &= "\tNo Line"
     discard pager.status.writeStatusMessage(msg, format)
 
-# Call refreshStatusMsg if no alert is being displayed on the screen.
-# Alerts take precedence over load info, but load info is preserved when no
-# pending alerts exist.
-# private
-proc showAlerts(pager: Pager) {.jsfunc.} =
-  if (pager.alertState == pasNormal or
-      pager.alertState == pasLoadInfo and pager.alerts.len > 0) and
-      pager.inputBuffer == "" and pager.precnum <= 0:
-    pager.queueStatusUpdate()
-
 proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
     ex: int): string =
   var ls = newStringOfCap(s.len)
@@ -886,38 +741,6 @@ proc drawBufferLine(opaque: RootRef; iface: BufferInterface;
     ?term.processOutputString(spaces, trackCursor = false)
   ?term.processFormat(Format())
   term.cursorNextLine()
-
-# private
-proc drawBuffer(pager: Pager; iface: BufferInterface): Opt[bool] {.jsfunc.} =
-  let ctx = pager.jsctx
-  let res = ctx.requestLinesSync(iface, drawBufferLine, pager)
-  if pager.term.flush().isErr:
-    return ok(false)
-  case res
-  of irEOF: return ok(false)
-  of irOk: return ok(true)
-  of irException: return err()
-
-# public
-proc redraw(pager: Pager) {.jsfunc.} =
-  pager.term.clearCanvas()
-  for surface in pager.surfaces.mitems:
-    surface.redraw = true
-  if pager.bufferIface != nil:
-    pager.bufferIface.queueDraw()
-  if pager.menu != nil:
-    pager.menu.redraw = true
-  if pager.lineEdit != nil:
-    pager.lineEdit.redraw = true
-
-# private
-proc getTempFile(pager: Pager; ext = ""): string {.jsfunc.} =
-  result = pager.config{"tmpdir"} / "chaptmp" & $pager.loader.clientPid &
-    "-" & $pager.tmpfSeq
-  if ext != "":
-    result &= "."
-    result &= ext
-  inc pager.tmpfSeq
 
 type CachedImageEnv {.final.} = ref object of RootObj
   pager: Pager
@@ -1220,72 +1043,6 @@ proc writeAskPrompt(pager: Pager; s = "") =
   let i = pager.status.writeStatusMessage(pager.askPrompt, maxwidth = maxwidth)
   pager.askCursor = pager.status.writeStatusMessage(s, start = i)
 
-# public
-proc askChar(ctx: JSContext; pager: Pager; prompt: string): JSValue {.jsfunc.} =
-  var funs {.noinit.}: array[2, JSValue]
-  let res = ctx.newPromiseCapability(funs)
-  if JS_IsException(res):
-    return JS_EXCEPTION
-  JS_FreeValue(ctx, funs[1])
-  pager.askPrompt = prompt
-  pager.writeAskPrompt()
-  pager.jsmap.askPromise = funs[0]
-  return res
-
-proc fitAskPrompt(pager: Pager; prompt0: string): string {.jsfunc.} =
-  var prompt = prompt0
-  let choice = " (y/n)"
-  let maxw = pager.status.grid.width - choice.width()
-  var w = 0
-  var i = 0
-  while i < prompt.len:
-    let pi = i
-    w += prompt.nextUTF8(i).width()
-    if w > maxw:
-      i = pi
-      break
-  prompt.setLen(i)
-  prompt &= choice
-  move(prompt)
-
-# private
-proc fulfillAsk(ctx: JSContext; pager: Pager; paste: bool): JSValue
-    {.jsfunc.} =
-  if not JS_IsUndefined(pager.jsmap.askPromise):
-    let inputBuffer = move(pager.inputBuffer)
-    let text = ctx.toJS(inputBuffer)
-    if JS_IsException(text):
-      return text
-    let fun = pager.jsmap.askPromise
-    pager.jsmap.askPromise = JS_UNDEFINED
-    pager.askPrompt = ""
-    pager.paste = paste
-    if pager.lineEdit != nil:
-      pager.lineEdit.redraw = true
-    let res = ctx.callSinkFree(fun, JS_UNDEFINED, text)
-    if JS_IsException(res):
-      return res
-    JS_FreeValue(ctx, res)
-    return JS_TRUE
-  return JS_FALSE
-
-# private
-proc startMousePaste(pager: Pager) {.jsfunc.} =
-  pager.mousePaste = true
-
-# private
-proc stopMousePaste(pager: Pager) {.jsfunc.} =
-  pager.mousePaste = false
-
-# private
-proc copyLoadInfo(pager: Pager; init: BufferInit) {.jsfunc.} =
-  if pager.bufferInit == init and init.loadInfo != "" and
-      pager.alertState != pasAlertOn and pager.lineEdit == nil and
-      JS_IsUndefined(pager.jsmap.askPromise):
-    discard pager.status.writeStatusMessage(init.loadInfo)
-    pager.alertState = pasLoadInfo
-    pager.updateStatus = ussSkip
-
 proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; url: URL;
     contentType, filterCmd: string; title = ""; redirectDepth = 0;
@@ -1303,19 +1060,6 @@ proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
   pager.loader.put(init)
   return init
 
-# private
-proc initBufferFrom(pager: Pager; init: BufferInit;
-    contentType, filterCmd: string): BufferInit {.jsfunc.} =
-  return pager.initBuffer(
-    init.config,
-    init.loaderConfig,
-    newRequest("cache:" & $init.cacheId),
-    init.url,
-    contentType,
-    filterCmd,
-    charsetStack = init.charsetStack
-  )
-
 proc addInterface(pager: Pager; init: BufferInit; stream: PosixStream;
     phandle: ProcessHandle): BufferInterface =
   stream.setBlocking(false)
@@ -1324,64 +1068,8 @@ proc addInterface(pager: Pager; init: BufferInit; stream: PosixStream;
   pager.loader.register(iface, POLLIN)
   return iface
 
-# private
-proc clone(pager: Pager; iface: BufferInterface; init: BufferInit; url: URL):
-    BufferInterface {.jsfunc.} =
-  var sv {.noinit.}: array[2, cint]
-  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
-    return nil
-  let res = iface.clone(url, sv[1])
-  if res.isErr:
-    return nil
-  let fd = sv[0]
-  let stream = newPosixStream(fd)
-  # add a reference to parent's cached source; it will be removed when the
-  # buffer is deleted
-  let loader = pager.loader
-  discard loader.shareCachedItem(init.cacheId, loader.clientPid)
-  let iface2 = pager.addInterface(init, stream, iface.phandle)
-  # I need numLines so that setCursorY works immediately
-  iface2.numLines = iface.numLines
-  iface2.requestLinesFast(force = true)
-  return iface2
-
-# public
-proc alert(pager: Pager; msg: string) {.jsfunc.} =
-  if msg != "":
-    pager.alerts.add(msg)
-    pager.updateStatus = ussUpdate
-
 proc alertExitCode(pager: Pager; cmd: string; ret: cint) =
   pager.alert("Command " & cmd & " exited with code " & $ret)
-
-# public
-proc peekCursor(pager: Pager) {.jsfunc.} =
-  if pager.bufferIface != nil:
-    pager.alert(pager.bufferIface.getPeekCursorStr())
-
-# private
-proc unregisterBufferIface(pager: Pager; iface: BufferInterface) {.jsfunc.} =
-  if iface.dead:
-    return # already unregistered
-  pager.loader.removeCachedItem(iface.init.cacheId)
-  if bifCrashed notin iface.init.flags:
-    dec iface.phandle.refc
-    if iface.phandle.refc == 0:
-      pager.loader.removeClient(iface.process)
-  let stream = iface.stream
-  let fd = stream.fd
-  pager.loader.unregister(fd)
-  pager.loader.unset(fd)
-  stream.sclose()
-  iface.dead = true
-
-# private
-proc unregisterBufferInit(pager: Pager; init: BufferInit) {.jsfunc.} =
-  if init.stream != nil:
-    # connecting to URL
-    pager.loader.unregister(init)
-    let stream = move(init.stream)
-    stream.sclose()
 
 template myExec(cmd: string) =
   discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
@@ -1472,26 +1160,6 @@ proc runProcessInto(cmd, ins: string): bool =
   if rv == -1:
     return false
   return rv == 0
-
-# private
-proc getCacheFile(pager: Pager; cacheId: int; pid = -1): string {.jsfunc.} =
-  let pid = if pid == -1: pager.loader.clientPid else: pid
-  return pager.loader.getCacheFile(cacheId, pid)
-
-# private
-proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
-  var editor = pager.config{"editor"}
-  if uqEditor := ChaPath(editor).unquote(""):
-    if uqEditor in ["vi", "nvi", "vim", "nvim"]:
-      editor = uqEditor & " +%d"
-  var canpipe = true
-  var s = unquoteCommand(editor, "", file, nil, canpipe, line)
-  if s.len > 0 and canpipe:
-    # %s not in command; add file name ourselves
-    if s[^1] != ' ':
-      s &= ' '
-    s &= quoteFile(file, qsNormal)
-  move(s)
 
 proc windowChange(pager: Pager): Opt[void] =
   # maybe we didn't change dimensions, just color mode
@@ -1683,36 +1351,12 @@ proc gotoURL0(pager: Pager; request: Request; save, history: bool;
   inc pager.numload
   return init
 
-# private
-proc omniRewrite(ctx: JSContext; pager: Pager; arg0: JSValueConst): JSValue
-    {.jsfunc.} =
-  var s: string
-  ?ctx.fromJS(arg0, s)
-  for rule in pager.config.omnirule:
-    if rule.regex.match(s):
-      pager.lineHist[lmLocation].add(s)
-      return ctx.call(rule.fun, JS_UNDEFINED, arg0)
-  return JS_DupValue(ctx, arg0)
-
 proc createPipe(pager: Pager): (PosixStream, PosixStream) =
   var pipefds {.noinit.}: array[2, cint]
   if pipe(pipefds) == -1:
     pager.alert("Failed to create pipe")
     return (nil, nil)
   return (newPosixStream(pipefds[0]), newPosixStream(pipefds[1]))
-
-# private
-proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
-  let tmpf = pager.getTempFile()
-  discard unlink(cstring(tmpf))
-  let ps = newPosixStream(tmpf, O_WRONLY or O_CREAT or O_EXCL, 0o600)
-  if ps == nil:
-    return nil
-  ps.setCloseOnExec()
-  let hist = pager.lineHist[lmLocation]
-  if hist.write(ps, sync = false, reverse = true).isErr:
-    pager.alert("failed to write history")
-  return parseURL0("file:" & tmpf)
 
 proc addConsoleFile(pager: Pager): Opt[ChaFile] =
   let url = parseURL0("stream:console")
@@ -1734,14 +1378,6 @@ proc addConsoleFile(pager: Pager): Opt[ChaFile] =
   pager.consoleFile = pager.getCacheFile(cacheId)
   ok(file)
 
-# private
-proc showConsole(pager: Pager) =
-  let ctx = pager.jsctx
-  let res = ctx.call(pager.jsmap.showConsole, pager.jsmap.pager)
-  if JS_IsException(res):
-    pager.console.writeException(ctx)
-  JS_FreeValue(ctx, res)
-
 proc addConsole0(pager: Pager; close: bool): bool =
   let oldCacheId = pager.consoleCacheId
   if f := pager.addConsoleFile():
@@ -1751,10 +1387,6 @@ proc addConsole0(pager: Pager; close: bool): bool =
     return true
   return false
 
-# private
-proc addConsole(pager: Pager): bool {.jsfunc.} =
-  pager.addConsole0(close = true)
-
 proc addConsole2(pager: Pager; interactive: bool) =
   if interactive and pager.config{"consoleBuffer"}:
     if pager.addConsole0(close = false):
@@ -1762,115 +1394,6 @@ proc addConsole2(pager: Pager; interactive: bool) =
       pager.console.flush()
       return
     pager.alert("Failed to open temp file for console")
-
-# private
-proc saveTo(pager: Pager; init: BufferInit; path: DOMString): bool
-    {.jsfunc.} =
-  if pager.loader.redirectToFile(init.istreamOutputId, $path, init.url):
-    pager.loader.resume(init.istreamOutputId)
-    init.closeMailcap()
-    return true
-  return false
-
-# Go to specific URL (for JS)
-type GotoURLDict = object of JSDict
-  contentType {.jsdefault.}: Option[string]
-  save {.jsdefault.}: bool
-  history {.jsdefault: true.}: bool
-  scripting {.jsdefault.}: Option[ScriptingMode]
-  cookie {.jsdefault.}: Option[CookieMode]
-  charset {.jsdefault.}: Charset
-  url {.jsdefault.}: Option[URL]
-  referrer {.jsdefault.}: Option[BufferInit]
-  redirectDepth {.jsdefault.}: int
-  title {.jsdefault.}: string
-
-# public
-proc gotoURLImpl(ctx: JSContext; pager: Pager; v: JSValueConst;
-    t = GotoURLDict(history: true)): Opt[BufferInit] {.jsfunc.} =
-  var request: Request
-  if ctx.fromJS(v, request).isErr:
-    var url: URL
-    if ctx.fromJS(v, url).isErr:
-      var s: string
-      ?ctx.fromJS(v, s)
-      url = ?ctx.newURL(s)
-    request = newRequest(url)
-  var loaderConfig: LoaderClientConfig
-  var bufferConfig: BufferConfig
-  var filterCmd: string
-  pager.initGotoURL(request, t.charset, t.referrer.get(nil), t.cookie,
-    loaderConfig, bufferConfig, filterCmd)
-  bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
-  let init = pager.gotoURL0(request, t.save, t.history, bufferConfig,
-    loaderConfig, t.title, t.contentType.get(""), t.redirectDepth,
-    t.url.get(nil), filterCmd)
-  ok(init)
-
-type ExternDict = object of JSDict
-  env {.jsdefault: JS_UNDEFINED.}: JSValueConst
-  suspend {.jsdefault: true.}: bool
-  wait {.jsdefault: false.}: bool
-
-proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueConst;
-    s: var seq[EnvVar]): FromJSResult =
-  if JS_IsUndefined(val):
-    s = pager.defaultEnv()
-    return fjOk
-  var record: JSKeyValuePair[string, string]
-  ?ctx.fromJS(val, record)
-  s = move(record.s)
-  fjOk
-
-#TODO we should have versions with retval as int?
-# or perhaps just an extern2 that can use JS readablestreams and returns
-# retval, then deprecate the rest.
-# public
-proc extern(ctx: JSContext; pager: Pager; cmd: string;
-    t = ExternDict(env: JS_UNDEFINED, suspend: true)): JSValue {.jsfunc.} =
-  var env = newSeq[EnvVar]()
-  if ctx.readEnvSeq(pager, t.env, env) == fjErr:
-    return JS_EXCEPTION
-  let res = pager.runCommand(cmd, t.suspend, t.wait, env)
-  if res.isErr:
-    return ctx.jsQuit(pager, 1)
-  return JS_NewBool(ctx, res.get == 0)
-
-# public
-proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue
-    {.jsfunc.} =
-  pager.setEnvVars(pager.defaultEnv())
-  var s: string
-  if runProcessCapture(cmd, s):
-    return ctx.toJS(s)
-  return JS_NULL
-
-# public
-proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
-  pager.setEnvVars(pager.defaultEnv())
-  return runProcessInto(cmd, ins)
-
-# private
-proc suspend(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
-  if pager.term.quit().isErr:
-    return ctx.jsQuit(pager, 1)
-  discard kill(-pager.forkserver.pid, cint(SIGTSTP))
-  discard kill(0, cint(SIGTSTP))
-  discard kill(-pager.forkserver.pid, cint(SIGCONT))
-  if pager.term.restart().isErr:
-    return ctx.jsQuit(pager, 1)
-  return JS_UNDEFINED
-
-# public
-proc clipboardWrite(ctx: JSContext; pager: Pager; s: string; clipboard = true):
-    JSValue {.jsfunc.} =
-  if res := pager.term.sendOSC52(s, clipboard):
-    if res:
-      return JS_TRUE
-    if not clipboard:
-      return JS_FALSE
-    return ctx.toJS(pager.externInto(pager.config{"copyCmd"}, s))
-  return ctx.jsQuit(pager, 1)
 
 # Execute cmd, with ps moved onto stdin, os onto stdout, and the browser
 # console onto stderr.
@@ -2228,10 +1751,6 @@ proc runBrowsecap(pager: Pager; init: BufferInit; entry: MailcapEntry):
   init.flags.incl(bifMailcapCancel)
   ok()
 
-# private
-proc addHist(pager: Pager; mode: LineMode; s: string) {.jsfunc.} =
-  pager.getHist(mode).add(s)
-
 proc fail(pager: Pager; init: BufferInit; errorMessage: string): JSValue =
   dec pager.numload
   let ctx = pager.jsctx
@@ -2240,167 +1759,10 @@ proc fail(pager: Pager; init: BufferInit; errorMessage: string): JSValue =
     msg = JS_UNDEFINED
   return ctx.toUndefined(ctx.connected(init, bcrFail, msg))
 
-# private
-proc applyMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
-    val: JSValueConst): JSValue {.jsfunc.} =
-  if JS_IsNumber(val):
-    var i: int
-    ?ctx.fromJS(val, i)
-    let list = pager.mailcap.getList(init.shortContentType)
-    if i < 0 or i >= list.entries.len:
-      return JS_ThrowRangeError(ctx, "invalid mailcap entry")
-    if pager.runMailcap(init, list.entries[i]).isErr:
-      return ctx.jsQuit(pager, 1)
-  else:
-    var s: string
-    ?ctx.fromJS(val, s)
-    let entry = MailcapEntry()
-    var state = MailcapParser()
-    var dummy: string
-    let res = state.parseEntry(s, entry, dummy)
-    if res.isOk:
-      if pager.runMailcap(init, entry).isErr:
-        return ctx.jsQuit(pager, 1)
-    else:
-      return JS_ThrowTypeError(ctx, "%s", cstring(state.error))
-  return JS_UNDEFINED
-
-# private
-proc connected2(pager: Pager; init: BufferInit): JSValue {.jsfunc.} =
-  let loader = pager.loader
-  let ctx = pager.jsctx
-  var arg0 = JS_UNDEFINED
-  let cres = if bifSave in init.flags:
-    dec pager.numload
-    if init.ostreamOutputId != -1:
-      # resume the ostream
-      loader.resume(init.ostreamOutputId)
-    bcrSave
-  elif bifMailcapCancel in init.flags:
-    dec pager.numload
-    bcrCancel
-  else:
-    # buffer now actually exists; create a process for it
-    var attrs = pager.attrs
-    # subtract status line height
-    attrs.height -= 1
-    attrs.heightPx -= attrs.ppl
-    var url = init.url
-    if url.username != "" or url.password != "":
-      url = newURL(url)
-      url.username = ""
-      url.password = ""
-    let (pid, stream) = pager.forkserver.forkBuffer(
-      init.config,
-      url,
-      attrs,
-      bifHTML in init.flags,
-      init.charsetStack,
-      init.shortContentType
-    )
-    let ostream = init.ostream
-    if pid == -1:
-      ostream.sclose()
-      return pager.fail(init, "error forking new process for buffer")
-    let istreamOutputId = init.istreamOutputId
-    let redirected = bifRedirected in init.flags
-    let cstream = loader.addClient(pid, init.loaderConfig)
-    if cstream == nil:
-      stream.sclose()
-      ostream.sclose()
-      return pager.fail(init, "failed to create new loader client")
-    if init.cacheId == -1 and istreamOutputId != -1:
-      init.cacheId = loader.addCacheFile(istreamOutputId)
-    if init.request.url.schemeType == stCache:
-      # loading from cache; now both the buffer and us hold a new reference
-      # to the cached item, but it's only shared with the buffer. add a
-      # pager ref too.
-      discard loader.shareCachedItem(init.cacheId, loader.clientPid)
-    var outCacheId = init.cacheId
-    if not redirected:
-      discard loader.shareCachedItem(init.cacheId, pid)
-      if istreamOutputId != -1:
-        loader.resume(istreamOutputId)
-    else:
-      outCacheId = loader.addCacheFile(init.ostreamOutputId)
-      discard loader.shareCachedItem(outCacheId, pid)
-      loader.removeCachedItem(outCacheId)
-      if istreamOutputId != -1:
-        loader.resume([istreamOutputId, init.ostreamOutputId])
-      else:
-        loader.resume(init.ostreamOutputId)
-    stream.withPacketWriterFire w: # if EOF, poll will notify us later
-      w.swrite(outCacheId)
-      w.sendFd(cstream.fd)
-      # pass down ostream
-      w.sendFd(ostream.fd)
-    let iface = pager.addInterface(init, stream, newProcessHandle(pid))
-    arg0 = ctx.toJS(iface)
-    bcrConnected
-  return ctx.toUndefined(ctx.connected(init, cres, arg0))
-
 proc saveEntry(pager: Pager; contentType: string; entry: MailcapEntry) =
   let path = pager.config{"autoMailcap"}
   if pager.autoMailcap.saveEntry(path, contentType, entry).isErr:
     pager.alert("Could not write to " & $path)
-
-# private
-proc saveMailcapEntry(ctx: JSContext; pager: Pager; init: BufferInit;
-    i: int): Opt[void] {.jsfunc.} =
-  let list = pager.mailcap.getList(init.shortContentType)
-  if i < 0 or i >= list.entries.len:
-    JS_ThrowRangeError(ctx, "invalid mailcap entry")
-    return err()
-  pager.saveEntry(init.shortContentType, list.entries[i])
-  ok()
-
-# private
-proc addMailcapEntry(pager: Pager; init: BufferInit; cmd: string;
-    flag: MailcapFlag) {.jsfunc.} =
-  pager.saveEntry(init.shortContentType, MailcapEntry(cmd: cmd, flags: {flag}))
-
-# private
-proc findMailcapPrevNext(pager: Pager; init: BufferInit; i: int):
-    tuple[prev, next: int] {.jsfunc.} =
-  if not pager.mailcapLoaded:
-    for p in pager.config{"mailcap"}:
-      pager.loadMailcap(pager.mailcap, p)
-    pager.mailcap.parseBuiltin(DefaultMailcap)
-    pager.mailcapLoaded = true
-  let prev = pager.mailcap.findPrevMailcapEntry(init.shortContentType,
-    init.contentType, init.url, i)
-  var next = i
-  discard pager.mailcap.findMailcapEntry(init.shortContentType,
-    init.contentType, init.url, next)
-  return (prev, next)
-
-# private
-proc askMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
-    i, sx, prev, next: int): JSValue {.jsfunc.} =
-  var sx = sx
-  let list = pager.mailcap.getList(init.shortContentType)
-  var msg = "Open " & init.shortContentType &
-    " as (shift=always): (t)ext, (s)ave"
-  if i != -1:
-    msg &= ", (r)un \"" & list.entries[i].cmd.strip() & '"'
-  msg &= ", (e)dit entry, (C-c)ancel"
-  if prev != -1:
-    msg &= ", (p)rev"
-  if next != -1:
-    msg &= ", (n)ext"
-  msg = msg.toValidUTF8()
-  var mw = msg.width()
-  var j = 0
-  var x = 0
-  while j < msg.len:
-    let pj = j
-    let px = x
-    x += msg.nextUTF8(j).width()
-    if mw - px <= pager.attrs.width or x > sx:
-      j = pj
-      sx = px
-      break
-  return ctx.askChar(pager, msg.substr(j))
 
 proc initMailcap(pager: Pager; init: BufferInit): JSValue =
   let ctx = pager.jsctx
@@ -2531,49 +1893,6 @@ proc handleReadMailcap(pager: Pager; item: MailcapWriteItem) =
     discard unlink(cstring(item.path))
     pager.alert("Failed to write temp file for command " & item.cmd)
 
-# private
-proc setMenu(ctx: JSContext; pager: Pager; val: JSValueConst): Opt[void] {.
-    jsfset: "menu".} =
-  if JS_IsNull(val):
-    pager.menu = nil
-  else:
-    ?ctx.fromJS(val, pager.menu)
-    pager.menu.redraw = true
-  if pager.bufferIface != nil:
-    pager.bufferIface.redraw = true
-  pager.display.redraw = true
-  ok()
-
-# private
-proc handleStderr(pager: Pager) {.jsfunc.} =
-  const BufferSize = 4096
-  const prefix = "STDERR: "
-  var buffer {.noinit.}: array[BufferSize, char]
-  let estream = pager.forkserver.estream
-  var hadlf = true
-  while true:
-    let n = estream.read(buffer)
-    if n <= 0:
-      break
-    var i = 0
-    while i < n:
-      var j = n
-      var found = false
-      for k in i ..< n:
-        if buffer[k] == '\n':
-          j = k + 1
-          found = true
-          break
-      if hadlf:
-        pager.console.write(prefix)
-      if j - i > 0:
-        pager.console.write(buffer.toOpenArray(i, j - 1))
-      i = j
-      hadlf = found
-  if not hadlf:
-    pager.console.write('\n')
-  pager.console.flush()
-
 proc ifaceDead(pager: Pager; iface: BufferInterface) =
   let isConsole = iface.init == pager.consoleInit
   if isConsole:
@@ -2701,100 +2020,9 @@ proc handleSigchld(pager: Pager): Opt[void] =
         pager.alert("Command " & cmd & " crashed")
   ok()
 
-# private
-proc inputLoop(ctx: JSContext; pager: Pager): Opt[void] {.jsfunc.} =
-  pager.loader.pollData.register(pager.term.istream.fd, POLLIN)
-  let signals = pager.setupSignals()
-  pager.loader.pollData.register(signals.fd, POLLIN)
-  while true:
-    let timeout = pager.timeouts.sortAndGetTimeout()
-    pager.loader.pollData.poll(timeout)
-    pager.loader.blockRegister()
-    for event in pager.loader.pollData.events:
-      let efd = event.fd
-      if (event.revents and POLLIN) != 0:
-        if event.fd == signals.fd:
-          var sigwinch = false
-          var sigchld = 0u
-          var buffer {.noinit.}: array[256, uint8]
-          while (let n = signals.read(buffer); n > 0):
-            for c in buffer.toOpenArray(0, n - 1):
-              if c == 1: # SIGCHLD
-                inc sigchld
-              else: # 0, SIGWINCH
-                sigwinch = true
-          for u in 0 ..< sigchld:
-            if pager.handleSigchld().isErr:
-              break
-          if sigwinch:
-            if pager.term.queryWindowSize().isErr:
-              return ok()
-            ?pager.windowChange()
-        else:
-          let res = pager.handleRead(efd)
-          if JS_IsException(res):
-            return err()
-          JS_FreeValue(ctx, res)
-      if (event.revents and POLLOUT) != 0:
-        if not pager.handleWrite(efd):
-          return ok()
-      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
-        if not ?pager.handleError(efd):
-          return ok()
-    if pager.timeouts.run(pager.console):
-      if pager.consoleInit != nil:
-        pager.consoleInit.flags.incl(bifTailOnLoad)
-    pager.loader.unblockRegister()
-    pager.loader.unregistered.setLen(0)
-    ?pager.runJSJobs()
-    if pager.bufferInit == nil and pager.lineEdit == nil:
-      # No buffer to display.
-      # Perhaps we failed to load every single URL the user passed us...
-      if pager.hasload:
-        # ...or at least one connection has succeeded, but we have nothing
-        # to display.  Normally, this means that the input stream has been
-        # redirected to a file or to an external program, so we can't just
-        # exit without potentially interrupting that stream.
-        #TODO: a better UI would be querying the number of ongoing streams in
-        # loader, and then asking for confirmation if there is at least one.
-        discard pager.term.anyKey("Hit any key to quit Chawan:", bottom = true)
-      return ok()
-    case pager.updateStatus
-    of ussNone, ussSkip: discard
-    of ussUpdate: pager.refreshStatusMsg()
-    pager.updateStatus = ussNone
-    if not pager.draw():
-      return ok()
-  ok()
-
 proc hasSelectFds(pager: Pager): bool =
   return not pager.timeouts.empty or pager.numload > 0 or
     pager.loader.hasFds()
-
-# private
-proc headlessLoop(ctx: JSContext; pager: Pager): Opt[void] {.jsfunc.} =
-  while pager.hasSelectFds():
-    let timeout = pager.timeouts.sortAndGetTimeout()
-    pager.loader.pollData.poll(timeout)
-    pager.loader.blockRegister()
-    for event in pager.loader.pollData.events:
-      let efd = event.fd
-      if (event.revents and POLLIN) != 0:
-        let res = pager.handleRead(efd)
-        if JS_IsException(res):
-          return err()
-        JS_FreeValue(ctx, res)
-      if (event.revents and POLLOUT) != 0:
-        if not pager.handleWrite(efd):
-          return ok()
-      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
-        if not ?pager.handleError(efd):
-          return ok()
-    pager.loader.unblockRegister()
-    pager.loader.unregistered.setLen(0)
-    discard pager.timeouts.run(pager.console)
-    ?pager.runJSJobs()
-  ok()
 
 # List of properties that are defined on both Buffer and as reflectors
 # on Pager.
@@ -2865,11 +2093,815 @@ proc legacyReflectGetter(ctx: JSContext; this: JSValueConst; magic: cint):
   JS_FreeValue(ctx, cval)
   return res
 
+jsClassDef(Pager):
+  jsget Pager, paste
+  jsget Pager, arg0
+  jsget Pager, consoleCacheId
+  jsget Pager, lastAlert
+  jsget Pager, lineEdit
+  jsget Pager, loaderPid
+  jsget Pager, menu
+  jsget Pager, bufferInit
+  jsget Pager, bufferIface
+
+  jsgetset Pager, feedNext
+  jsgetset Pager, alertState
+  jsgetset Pager, precnum
+  jsgetset Pager, consoleInit
+  jsgetset Pager, numload
+
+  # private
+  proc bufWidth(pager: Pager): int {.jsfget.} =
+    return pager.attrs.width
+
+  # private
+  proc bufHeight(pager: Pager): int {.jsfget.} =
+    return pager.attrs.height - 1
+
+  # private
+  proc statusWidth(pager: Pager): int {.jsfget.} =
+    return pager.status.grid.width
+
+  # private
+  proc updateTitle(pager: Pager; init: BufferInit) {.jsfunc.} =
+    pager.term.queueTitle(init.title)
+
+  # private
+  proc clearCachedImages(pager: Pager; iface: BufferInterface) {.jsfunc.} =
+    if pager.term.imageMode != imNone:
+      iface.clearCachedImages(pager.loader)
+
+  # private
+  proc setBufferInit(ctx: JSContext; pager: Pager; init: Option[BufferInit])
+      {.jsfset: "bufferInit".} =
+    pager.bufferInit = init.get(nil)
+
+  # private
+  proc setBufferIface(ctx: JSContext; pager: Pager; iface: BufferInterface) {.
+      jsfset: "bufferIface".} =
+    pager.bufferIface = iface
+
+  # private
+  proc setLineEdit0(ctx: JSContext; pager: Pager; mode: LineMode; prompt: string;
+      obj: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+    var current = ""
+    var hide = false
+    var update = JS_UNDEFINED
+    if not JS_IsUndefined(obj):
+      if ctx.fromJSGetProp(obj, "current", current).isErr:
+        return JS_EXCEPTION
+      if ctx.fromJSGetProp(obj, "hide", hide).isErr:
+        return JS_EXCEPTION
+      update = JS_GetPropertyStr(ctx, obj, "update")
+      if JS_IsException(update):
+        return JS_EXCEPTION
+    var funs {.noinit.}: array[2, JSValue]
+    let res = ctx.newPromiseCapability(funs)
+    if JS_IsException(res):
+      JS_FreeValue(ctx, update)
+      return JS_EXCEPTION
+    JS_FreeValue(ctx, funs[1])
+    let hist = pager.getHist(mode)
+    pager.lineEdit = readLine(prompt, current, pager.attrs.width, hide, hist,
+      pager.luctx, update, funs[0])
+    return res
+
+  # private
+  proc unsetLineEdit(pager: Pager) {.jsfunc.} =
+    pager.lineEdit = nil
+
+  # private
+  proc writeInputBuffer(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
+    if pager.lineEdit != nil:
+      let res = ctx.write(pager.lineEdit, pager.inputBuffer)
+      pager.inputBuffer.setLen(0)
+      return res
+    return JS_UNDEFINED
+
+  # private
+  proc evalInputAction(ctx: JSContext; pager: Pager; map: ActionMap; arg0: int32):
+      JSValue {.jsfunc.} =
+    let val = map.advance(pager.inputBuffer)
+    if JS_IsUndefined(val):
+      if map.keyLast != 0:
+        return JS_UNDEFINED
+      if JS_IsUndefined(map.defaultAction):
+        pager.inputBuffer.setLen(0)
+        return JS_UNDEFINED
+      let res = pager.evalAction(JS_DupValue(ctx, map.defaultAction), arg0,
+        map.defaultAction)
+      pager.inputBuffer.setLen(0)
+      return res
+    # note: this may replace val inside the ActionMap
+    let res = pager.evalAction(JS_DupValue(ctx, val), arg0, map.mgetValue())
+    ctx.feedNext(map, pager.feedNext, pager.inputBuffer)
+    pager.feedNext = false
+    if map.keyLast == 0:
+      pager.inputBuffer.setLen(0)
+    return res
+
+  # private
+  proc queueStatusUpdate(pager: Pager) {.jsfunc.} =
+    if pager.updateStatus == ussNone:
+      pager.updateStatus = ussUpdate
+
+  # private
+  # called from JS command()
+  proc evalCommand(ctx: JSContext; pager: Pager; s: DOMString): JSValue
+      {.jsfunc.} =
+    if pager.consoleInit != nil:
+      pager.consoleInit.flags.incl(bifTailOnLoad)
+    return JS_Eval(ctx, s.p, csize_t(s.len), "<command>",
+      JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_BACKTRACE_BARRIER)
+
+  # private
+  proc jsQuit(ctx: JSContext; pager: Pager; code = 0): JSValue {.
+      jsfunc: "quit".} =
+    pager.exitCode = int(code)
+    JS_ThrowInternalError(ctx, "interrupted")
+    JS_SetUncatchableException(ctx, true)
+    return JS_EXCEPTION
+
+  # private
+  proc osc52Primary(pager: Pager): bool {.jsfget.} =
+    pager.term.osc52Primary
+
+  # The maximum number we are willing to accept.
+  # This should be fine for 32-bit signed ints (which precnum currently is).
+  const MaxPrecNum = 100000000
+
+  # private
+  proc updateNumericPrefix(pager: Pager): bool {.jsfunc.} =
+    if pager.config{"viNumericPrefix"} and pager.precnum >= 0:
+      let c = pager.inputBuffer[0]
+      if pager.precnum != 0 and c == '0' or c in '1'..'9':
+        if pager.precnum < MaxPrecNum: # better ignore than eval...
+          pager.precnum *= 10
+          pager.precnum += int32(decValue(c))
+        pager.inputBuffer.setLen(0)
+        return true
+      pager.arg0 = max(pager.precnum, 0)
+      pager.precnum = -1
+    false
+
+  # private
+  proc runStartupScript(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
+    if pager.config{"startupScript"} == "":
+      return JS_UNDEFINED
+    let ps = newPosixStream(pager.config{"startupScript"})
+    let s = if ps != nil:
+      var x = ps.readAll()
+      ps.sclose()
+      move(x)
+    else:
+      pager.config{"startupScript"}
+    let flag = if pager.config{"startupScript"}.endsWith(".mjs"):
+      JS_EVAL_TYPE_MODULE
+    else:
+      JS_EVAL_TYPE_GLOBAL
+    return ctx.eval(s, pager.config{"startupScript"}, flag)
+
+  # Call refreshStatusMsg if no alert is being displayed on the screen.
+  # Alerts take precedence over load info, but load info is preserved when no
+  # pending alerts exist.
+  # private
+  proc showAlerts(pager: Pager) {.jsfunc.} =
+    if (pager.alertState == pasNormal or
+        pager.alertState == pasLoadInfo and pager.alerts.len > 0) and
+        pager.inputBuffer == "" and pager.precnum <= 0:
+      pager.queueStatusUpdate()
+
+  # private
+  proc drawBuffer(pager: Pager; iface: BufferInterface): Opt[bool] {.jsfunc.} =
+    let ctx = pager.jsctx
+    let res = ctx.requestLinesSync(iface, drawBufferLine, pager)
+    if pager.term.flush().isErr:
+      return ok(false)
+    case res
+    of irEOF: return ok(false)
+    of irOk: return ok(true)
+    of irException: return err()
+
+  # public
+  proc redraw(pager: Pager) {.jsfunc.} =
+    pager.term.clearCanvas()
+    for surface in pager.surfaces.mitems:
+      surface.redraw = true
+    if pager.bufferIface != nil:
+      pager.bufferIface.queueDraw()
+    if pager.menu != nil:
+      pager.menu.redraw = true
+    if pager.lineEdit != nil:
+      pager.lineEdit.redraw = true
+
+  # private
+  proc getTempFile(pager: Pager; ext = ""): string {.jsfunc.} =
+    result = pager.config{"tmpdir"} / "chaptmp" & $pager.loader.clientPid &
+      "-" & $pager.tmpfSeq
+    if ext != "":
+      result &= "."
+      result &= ext
+    inc pager.tmpfSeq
+
+  # public
+  proc askChar(ctx: JSContext; pager: Pager; prompt: string): JSValue {.jsfunc.} =
+    var funs {.noinit.}: array[2, JSValue]
+    let res = ctx.newPromiseCapability(funs)
+    if JS_IsException(res):
+      return JS_EXCEPTION
+    JS_FreeValue(ctx, funs[1])
+    pager.askPrompt = prompt
+    pager.writeAskPrompt()
+    pager.jsmap.askPromise = funs[0]
+    return res
+
+  proc fitAskPrompt(pager: Pager; prompt0: string): string {.jsfunc.} =
+    var prompt = prompt0
+    let choice = " (y/n)"
+    let maxw = pager.status.grid.width - choice.width()
+    var w = 0
+    var i = 0
+    while i < prompt.len:
+      let pi = i
+      w += prompt.nextUTF8(i).width()
+      if w > maxw:
+        i = pi
+        break
+    prompt.setLen(i)
+    prompt &= choice
+    move(prompt)
+
+  # private
+  proc fulfillAsk(ctx: JSContext; pager: Pager; paste: bool): JSValue
+      {.jsfunc.} =
+    if not JS_IsUndefined(pager.jsmap.askPromise):
+      let inputBuffer = move(pager.inputBuffer)
+      let text = ctx.toJS(inputBuffer)
+      if JS_IsException(text):
+        return text
+      let fun = pager.jsmap.askPromise
+      pager.jsmap.askPromise = JS_UNDEFINED
+      pager.askPrompt = ""
+      pager.paste = paste
+      if pager.lineEdit != nil:
+        pager.lineEdit.redraw = true
+      let res = ctx.callSinkFree(fun, JS_UNDEFINED, text)
+      if JS_IsException(res):
+        return res
+      JS_FreeValue(ctx, res)
+      return JS_TRUE
+    return JS_FALSE
+
+  # private
+  proc startMousePaste(pager: Pager) {.jsfunc.} =
+    pager.mousePaste = true
+
+  # private
+  proc stopMousePaste(pager: Pager) {.jsfunc.} =
+    pager.mousePaste = false
+
+  # private
+  proc copyLoadInfo(pager: Pager; init: BufferInit) {.jsfunc.} =
+    if pager.bufferInit == init and init.loadInfo != "" and
+        pager.alertState != pasAlertOn and pager.lineEdit == nil and
+        JS_IsUndefined(pager.jsmap.askPromise):
+      discard pager.status.writeStatusMessage(init.loadInfo)
+      pager.alertState = pasLoadInfo
+      pager.updateStatus = ussSkip
+
+  # private
+  proc initBufferFrom(pager: Pager; init: BufferInit;
+      contentType, filterCmd: string): BufferInit {.jsfunc.} =
+    return pager.initBuffer(
+      init.config,
+      init.loaderConfig,
+      newRequest("cache:" & $init.cacheId),
+      init.url,
+      contentType,
+      filterCmd,
+      charsetStack = init.charsetStack
+    )
+
+  # private
+  proc clone(pager: Pager; iface: BufferInterface; init: BufferInit; url: URL):
+      BufferInterface {.jsfunc.} =
+    var sv {.noinit.}: array[2, cint]
+    if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
+      return nil
+    let res = iface.clone(url, sv[1])
+    if res.isErr:
+      return nil
+    let fd = sv[0]
+    let stream = newPosixStream(fd)
+    # add a reference to parent's cached source; it will be removed when the
+    # buffer is deleted
+    let loader = pager.loader
+    discard loader.shareCachedItem(init.cacheId, loader.clientPid)
+    let iface2 = pager.addInterface(init, stream, iface.phandle)
+    # I need numLines so that setCursorY works immediately
+    iface2.numLines = iface.numLines
+    iface2.requestLinesFast(force = true)
+    return iface2
+
+  # public
+  proc alert(pager: Pager; msg: string) {.jsfunc.} =
+    if msg != "":
+      pager.alerts.add(msg)
+      pager.updateStatus = ussUpdate
+
+  # public
+  proc peekCursor(pager: Pager) {.jsfunc.} =
+    if pager.bufferIface != nil:
+      pager.alert(pager.bufferIface.getPeekCursorStr())
+
+  # private
+  proc unregisterBufferIface(pager: Pager; iface: BufferInterface) {.jsfunc.} =
+    if iface.dead:
+      return # already unregistered
+    pager.loader.removeCachedItem(iface.init.cacheId)
+    if bifCrashed notin iface.init.flags:
+      dec iface.phandle.refc
+      if iface.phandle.refc == 0:
+        pager.loader.removeClient(iface.process)
+    let stream = iface.stream
+    let fd = stream.fd
+    pager.loader.unregister(fd)
+    pager.loader.unset(fd)
+    stream.sclose()
+    iface.dead = true
+
+  # private
+  proc unregisterBufferInit(pager: Pager; init: BufferInit) {.jsfunc.} =
+    if init.stream != nil:
+      # connecting to URL
+      pager.loader.unregister(init)
+      let stream = move(init.stream)
+      stream.sclose()
+
+  # private
+  proc getCacheFile(pager: Pager; cacheId: int; pid = -1): string {.jsfunc.} =
+    let pid = if pid == -1: pager.loader.clientPid else: pid
+    return pager.loader.getCacheFile(cacheId, pid)
+
+  # private
+  proc getEditorCommand(pager: Pager; file: string; line = 1): string
+      {.jsfunc.} =
+    var editor = pager.config{"editor"}
+    if uqEditor := ChaPath(editor).unquote(""):
+      if uqEditor in ["vi", "nvi", "vim", "nvim"]:
+        editor = uqEditor & " +%d"
+    var canpipe = true
+    var s = unquoteCommand(editor, "", file, nil, canpipe, line)
+    if s.len > 0 and canpipe:
+      # %s not in command; add file name ourselves
+      if s[^1] != ' ':
+        s &= ' '
+      s &= quoteFile(file, qsNormal)
+    move(s)
+
+  # private
+  proc omniRewrite(ctx: JSContext; pager: Pager; arg0: JSValueConst): JSValue
+      {.jsfunc.} =
+    var s: string
+    ?ctx.fromJS(arg0, s)
+    for rule in pager.config.omnirule:
+      if rule.regex.match(s):
+        pager.lineHist[lmLocation].add(s)
+        return ctx.call(rule.fun, JS_UNDEFINED, arg0)
+    return JS_DupValue(ctx, arg0)
+
+  # private
+  proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
+    let tmpf = pager.getTempFile()
+    discard unlink(cstring(tmpf))
+    let ps = newPosixStream(tmpf, O_WRONLY or O_CREAT or O_EXCL, 0o600)
+    if ps == nil:
+      return nil
+    ps.setCloseOnExec()
+    let hist = pager.lineHist[lmLocation]
+    if hist.write(ps, sync = false, reverse = true).isErr:
+      pager.alert("failed to write history")
+    return parseURL0("file:" & tmpf)
+
+  # private
+  proc showConsole(pager: Pager) =
+    let ctx = pager.jsctx
+    let res = ctx.call(pager.jsmap.showConsole, pager.jsmap.pager)
+    if JS_IsException(res):
+      pager.console.writeException(ctx)
+    JS_FreeValue(ctx, res)
+
+  # private
+  proc addConsole(pager: Pager): bool {.jsfunc.} =
+    pager.addConsole0(close = true)
+
+  # private
+  proc saveTo(pager: Pager; init: BufferInit; path: DOMString): bool
+      {.jsfunc.} =
+    if pager.loader.redirectToFile(init.istreamOutputId, $path, init.url):
+      pager.loader.resume(init.istreamOutputId)
+      init.closeMailcap()
+      return true
+    return false
+
+  # Go to specific URL (for JS)
+  type GotoURLDict = object of JSDict
+    contentType {.jsdefault.}: Option[string]
+    save {.jsdefault.}: bool
+    history {.jsdefault: true.}: bool
+    scripting {.jsdefault.}: Option[ScriptingMode]
+    cookie {.jsdefault.}: Option[CookieMode]
+    charset {.jsdefault.}: Charset
+    url {.jsdefault.}: Option[URL]
+    referrer {.jsdefault.}: Option[BufferInit]
+    redirectDepth {.jsdefault.}: int
+    title {.jsdefault.}: string
+
+  # public
+  proc gotoURLImpl(ctx: JSContext; pager: Pager; v: JSValueConst;
+      t = GotoURLDict(history: true)): Opt[BufferInit] {.jsfunc.} =
+    var request: Request
+    if ctx.fromJS(v, request).isErr:
+      var url: URL
+      if ctx.fromJS(v, url).isErr:
+        var s: string
+        ?ctx.fromJS(v, s)
+        url = ?ctx.newURL(s)
+      request = newRequest(url)
+    var loaderConfig: LoaderClientConfig
+    var bufferConfig: BufferConfig
+    var filterCmd: string
+    pager.initGotoURL(request, t.charset, t.referrer.get(nil), t.cookie,
+      loaderConfig, bufferConfig, filterCmd)
+    bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
+    let init = pager.gotoURL0(request, t.save, t.history, bufferConfig,
+      loaderConfig, t.title, t.contentType.get(""), t.redirectDepth,
+      t.url.get(nil), filterCmd)
+    ok(init)
+
+  type ExternDict = object of JSDict
+    env {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    suspend {.jsdefault: true.}: bool
+    wait {.jsdefault: false.}: bool
+
+  proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueConst;
+      s: var seq[EnvVar]): FromJSResult =
+    if JS_IsUndefined(val):
+      s = pager.defaultEnv()
+      return fjOk
+    var record: JSKeyValuePair[string, string]
+    ?ctx.fromJS(val, record)
+    s = move(record.s)
+    fjOk
+
+  #TODO we should have versions with retval as int?
+  # or perhaps just an extern2 that can use JS readablestreams and returns
+  # retval, then deprecate the rest.
+  # public
+  proc extern(ctx: JSContext; pager: Pager; cmd: string;
+      t = ExternDict(env: JS_UNDEFINED, suspend: true)): JSValue {.jsfunc.} =
+    var env = newSeq[EnvVar]()
+    if ctx.readEnvSeq(pager, t.env, env) == fjErr:
+      return JS_EXCEPTION
+    let res = pager.runCommand(cmd, t.suspend, t.wait, env)
+    if res.isErr:
+      return ctx.jsQuit(pager, 1)
+    return JS_NewBool(ctx, res.get == 0)
+
+  # public
+  proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue
+      {.jsfunc.} =
+    pager.setEnvVars(pager.defaultEnv())
+    var s: string
+    if runProcessCapture(cmd, s):
+      return ctx.toJS(s)
+    return JS_NULL
+
+  # public
+  proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
+    pager.setEnvVars(pager.defaultEnv())
+    return runProcessInto(cmd, ins)
+
+  # private
+  proc suspend(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
+    if pager.term.quit().isErr:
+      return ctx.jsQuit(pager, 1)
+    discard kill(-pager.forkserver.pid, cint(SIGTSTP))
+    discard kill(0, cint(SIGTSTP))
+    discard kill(-pager.forkserver.pid, cint(SIGCONT))
+    if pager.term.restart().isErr:
+      return ctx.jsQuit(pager, 1)
+    return JS_UNDEFINED
+
+  # public
+  proc clipboardWrite(ctx: JSContext; pager: Pager; s: string;
+      clipboard = true): JSValue {.jsfunc.} =
+    if res := pager.term.sendOSC52(s, clipboard):
+      if res:
+        return JS_TRUE
+      if not clipboard:
+        return JS_FALSE
+      return ctx.toJS(pager.externInto(pager.config{"copyCmd"}, s))
+    return ctx.jsQuit(pager, 1)
+
+  # private
+  proc addHist(pager: Pager; mode: LineMode; s: string) {.jsfunc.} =
+    pager.getHist(mode).add(s)
+
+  # private
+  proc applyMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
+      val: JSValueConst): JSValue {.jsfunc.} =
+    if JS_IsNumber(val):
+      var i: int
+      ?ctx.fromJS(val, i)
+      let list = pager.mailcap.getList(init.shortContentType)
+      if i < 0 or i >= list.entries.len:
+        return JS_ThrowRangeError(ctx, "invalid mailcap entry")
+      if pager.runMailcap(init, list.entries[i]).isErr:
+        return ctx.jsQuit(pager, 1)
+    else:
+      var s: string
+      ?ctx.fromJS(val, s)
+      let entry = MailcapEntry()
+      var state = MailcapParser()
+      var dummy: string
+      let res = state.parseEntry(s, entry, dummy)
+      if res.isOk:
+        if pager.runMailcap(init, entry).isErr:
+          return ctx.jsQuit(pager, 1)
+      else:
+        return JS_ThrowTypeError(ctx, "%s", cstring(state.error))
+    return JS_UNDEFINED
+
+  # private
+  proc connected2(pager: Pager; init: BufferInit): JSValue {.jsfunc.} =
+    let loader = pager.loader
+    let ctx = pager.jsctx
+    var arg0 = JS_UNDEFINED
+    let cres = if bifSave in init.flags:
+      dec pager.numload
+      if init.ostreamOutputId != -1:
+        # resume the ostream
+        loader.resume(init.ostreamOutputId)
+      bcrSave
+    elif bifMailcapCancel in init.flags:
+      dec pager.numload
+      bcrCancel
+    else:
+      # buffer now actually exists; create a process for it
+      var attrs = pager.attrs
+      # subtract status line height
+      attrs.height -= 1
+      attrs.heightPx -= attrs.ppl
+      var url = init.url
+      if url.username != "" or url.password != "":
+        url = newURL(url)
+        url.username = ""
+        url.password = ""
+      let (pid, stream) = pager.forkserver.forkBuffer(
+        init.config,
+        url,
+        attrs,
+        bifHTML in init.flags,
+        init.charsetStack,
+        init.shortContentType
+      )
+      let ostream = init.ostream
+      if pid == -1:
+        ostream.sclose()
+        return pager.fail(init, "error forking new process for buffer")
+      let istreamOutputId = init.istreamOutputId
+      let redirected = bifRedirected in init.flags
+      let cstream = loader.addClient(pid, init.loaderConfig)
+      if cstream == nil:
+        stream.sclose()
+        ostream.sclose()
+        return pager.fail(init, "failed to create new loader client")
+      if init.cacheId == -1 and istreamOutputId != -1:
+        init.cacheId = loader.addCacheFile(istreamOutputId)
+      if init.request.url.schemeType == stCache:
+        # loading from cache; now both the buffer and us hold a new reference
+        # to the cached item, but it's only shared with the buffer. add a
+        # pager ref too.
+        discard loader.shareCachedItem(init.cacheId, loader.clientPid)
+      var outCacheId = init.cacheId
+      if not redirected:
+        discard loader.shareCachedItem(init.cacheId, pid)
+        if istreamOutputId != -1:
+          loader.resume(istreamOutputId)
+      else:
+        outCacheId = loader.addCacheFile(init.ostreamOutputId)
+        discard loader.shareCachedItem(outCacheId, pid)
+        loader.removeCachedItem(outCacheId)
+        if istreamOutputId != -1:
+          loader.resume([istreamOutputId, init.ostreamOutputId])
+        else:
+          loader.resume(init.ostreamOutputId)
+      stream.withPacketWriterFire w: # if EOF, poll will notify us later
+        w.swrite(outCacheId)
+        w.sendFd(cstream.fd)
+        # pass down ostream
+        w.sendFd(ostream.fd)
+      let iface = pager.addInterface(init, stream, newProcessHandle(pid))
+      arg0 = ctx.toJS(iface)
+      bcrConnected
+    return ctx.toUndefined(ctx.connected(init, cres, arg0))
+
+  # private
+  proc saveMailcapEntry(ctx: JSContext; pager: Pager; init: BufferInit;
+      i: int): Opt[void] {.jsfunc.} =
+    let list = pager.mailcap.getList(init.shortContentType)
+    if i < 0 or i >= list.entries.len:
+      JS_ThrowRangeError(ctx, "invalid mailcap entry")
+      return err()
+    pager.saveEntry(init.shortContentType, list.entries[i])
+    ok()
+
+  # private
+  proc addMailcapEntry(pager: Pager; init: BufferInit; cmd: string;
+      flag: MailcapFlag) {.jsfunc.} =
+    pager.saveEntry(init.shortContentType, MailcapEntry(cmd: cmd, flags: {flag}))
+
+  # private
+  proc findMailcapPrevNext(pager: Pager; init: BufferInit; i: int):
+      tuple[prev, next: int] {.jsfunc.} =
+    if not pager.mailcapLoaded:
+      for p in pager.config{"mailcap"}:
+        pager.loadMailcap(pager.mailcap, p)
+      pager.mailcap.parseBuiltin(DefaultMailcap)
+      pager.mailcapLoaded = true
+    let prev = pager.mailcap.findPrevMailcapEntry(init.shortContentType,
+      init.contentType, init.url, i)
+    var next = i
+    discard pager.mailcap.findMailcapEntry(init.shortContentType,
+      init.contentType, init.url, next)
+    return (prev, next)
+
+  # private
+  proc askMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
+      i, sx, prev, next: int): JSValue {.jsfunc.} =
+    var sx = sx
+    let list = pager.mailcap.getList(init.shortContentType)
+    var msg = "Open " & init.shortContentType &
+      " as (shift=always): (t)ext, (s)ave"
+    if i != -1:
+      msg &= ", (r)un \"" & list.entries[i].cmd.strip() & '"'
+    msg &= ", (e)dit entry, (C-c)ancel"
+    if prev != -1:
+      msg &= ", (p)rev"
+    if next != -1:
+      msg &= ", (n)ext"
+    msg = msg.toValidUTF8()
+    var mw = msg.width()
+    var j = 0
+    var x = 0
+    while j < msg.len:
+      let pj = j
+      let px = x
+      x += msg.nextUTF8(j).width()
+      if mw - px <= pager.attrs.width or x > sx:
+        j = pj
+        sx = px
+        break
+    return ctx.askChar(pager, msg.substr(j))
+
+  # private
+  proc setMenu(ctx: JSContext; pager: Pager; val: JSValueConst): Opt[void] {.
+      jsfset: "menu".} =
+    if JS_IsNull(val):
+      pager.menu = nil
+    else:
+      ?ctx.fromJS(val, pager.menu)
+      pager.menu.redraw = true
+    if pager.bufferIface != nil:
+      pager.bufferIface.redraw = true
+    pager.display.redraw = true
+    ok()
+
+  # private
+  proc handleStderr(pager: Pager) {.jsfunc.} =
+    const BufferSize = 4096
+    const prefix = "STDERR: "
+    var buffer {.noinit.}: array[BufferSize, char]
+    let estream = pager.forkserver.estream
+    var hadlf = true
+    while true:
+      let n = estream.read(buffer)
+      if n <= 0:
+        break
+      var i = 0
+      while i < n:
+        var j = n
+        var found = false
+        for k in i ..< n:
+          if buffer[k] == '\n':
+            j = k + 1
+            found = true
+            break
+        if hadlf:
+          pager.console.write(prefix)
+        if j - i > 0:
+          pager.console.write(buffer.toOpenArray(i, j - 1))
+        i = j
+        hadlf = found
+    if not hadlf:
+      pager.console.write('\n')
+    pager.console.flush()
+
+  # private
+  proc inputLoop(ctx: JSContext; pager: Pager): Opt[void] {.jsfunc.} =
+    pager.loader.pollData.register(pager.term.istream.fd, POLLIN)
+    let signals = pager.setupSignals()
+    pager.loader.pollData.register(signals.fd, POLLIN)
+    while true:
+      let timeout = pager.timeouts.sortAndGetTimeout()
+      pager.loader.pollData.poll(timeout)
+      pager.loader.blockRegister()
+      for event in pager.loader.pollData.events:
+        let efd = event.fd
+        if (event.revents and POLLIN) != 0:
+          if event.fd == signals.fd:
+            var sigwinch = false
+            var sigchld = 0u
+            var buffer {.noinit.}: array[256, uint8]
+            while (let n = signals.read(buffer); n > 0):
+              for c in buffer.toOpenArray(0, n - 1):
+                if c == 1: # SIGCHLD
+                  inc sigchld
+                else: # 0, SIGWINCH
+                  sigwinch = true
+            for u in 0 ..< sigchld:
+              if pager.handleSigchld().isErr:
+                break
+            if sigwinch:
+              if pager.term.queryWindowSize().isErr:
+                return ok()
+              ?pager.windowChange()
+          else:
+            let res = pager.handleRead(efd)
+            if JS_IsException(res):
+              return err()
+            JS_FreeValue(ctx, res)
+        if (event.revents and POLLOUT) != 0:
+          if not pager.handleWrite(efd):
+            return ok()
+        if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+          if not ?pager.handleError(efd):
+            return ok()
+      if pager.timeouts.run(pager.console):
+        if pager.consoleInit != nil:
+          pager.consoleInit.flags.incl(bifTailOnLoad)
+      pager.loader.unblockRegister()
+      pager.loader.unregistered.setLen(0)
+      ?pager.runJSJobs()
+      if pager.bufferInit == nil and pager.lineEdit == nil:
+        # No buffer to display.
+        # Perhaps we failed to load every single URL the user passed us...
+        if pager.hasload:
+          # ...or at least one connection has succeeded, but we have nothing
+          # to display.  Normally, this means that the input stream has been
+          # redirected to a file or to an external program, so we can't just
+          # exit without potentially interrupting that stream.
+          #TODO: a better UI would be querying the number of ongoing streams in
+          # loader, and then asking for confirmation if there is at least one.
+          discard pager.term.anyKey("Hit any key to quit Chawan:", bottom = true)
+        return ok()
+      case pager.updateStatus
+      of ussNone, ussSkip: discard
+      of ussUpdate: pager.refreshStatusMsg()
+      pager.updateStatus = ussNone
+      if not pager.draw():
+        return ok()
+    ok()
+
+  # private
+  proc headlessLoop(ctx: JSContext; pager: Pager): Opt[void] {.jsfunc.} =
+    while pager.hasSelectFds():
+      let timeout = pager.timeouts.sortAndGetTimeout()
+      pager.loader.pollData.poll(timeout)
+      pager.loader.blockRegister()
+      for event in pager.loader.pollData.events:
+        let efd = event.fd
+        if (event.revents and POLLIN) != 0:
+          let res = pager.handleRead(efd)
+          if JS_IsException(res):
+            return err()
+          JS_FreeValue(ctx, res)
+        if (event.revents and POLLOUT) != 0:
+          if not pager.handleWrite(efd):
+            return ok()
+        if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+          if not ?pager.handleError(efd):
+            return ok()
+      pager.loader.unblockRegister()
+      pager.loader.unregistered.setLen(0)
+      discard pager.timeouts.run(pager.console)
+      ?pager.runJSJobs()
+    ok()
+
 proc addPagerModule*(ctx: JSContext): Opt[void] =
-  let pagerCID = ctx.registerType(Pager)
-  if pagerCID == JS_INVALID_CLASS_ID:
-    return err()
-  let proto = JS_GetClassProto(ctx, pagerCID)
+  ?ctx.registerClass(PagerDef)
+  let proto = JS_GetClassProto(ctx, PagerDef.id)
   var f: JSCFunctionType
   f.generic_magic = legacyReflectFunction
   for i, name in LegacyReflectFuncList.mypairs:

@@ -16,7 +16,7 @@ type
 
   JSTextDecoder = ref object
     encoding: Charset
-    ignoreBOM {.jsget.}: bool
+    ignoreBOM: bool
     errorMode: DecoderErrorMode
     stream: bool
     bomSeen: bool
@@ -26,87 +26,90 @@ jsDestructor(JSTextDecoder)
 jsDestructor(JSTextEncoder)
 
 # TextDecoder
-type TextDecoderOptions = object of JSDict
-  fatal {.jsdefault.}: bool
-  ignoreBOM {.jsdefault.}: bool
+jsClassNameDef(JSTextDecoder, "TextDecoder"):
+  jsget JSTextDecoder, ignoreBOM
 
-proc newJSTextDecoder(ctx: JSContext; label = "utf-8";
-    options = TextDecoderOptions()): Opt[JSTextDecoder] {.jsctor.} =
-  let encoding = getCharset(label)
-  if encoding in {csUnknown, csReplacement}:
-    JS_ThrowRangeError(ctx, "invalid encoding label")
-    return err()
-  let errorMode = if options.fatal: demFatal else: demReplacement
-  return ok(JSTextDecoder(
-    ignoreBOM: options.ignoreBOM,
-    errorMode: errorMode,
-    tdctx: initTextDecoderContext(encoding, errorMode),
-    encoding: encoding
-  ))
+  type TextDecoderOptions = object of JSDict
+    fatal {.jsdefault.}: bool
+    ignoreBOM {.jsdefault.}: bool
 
-proc encoding(this: JSTextDecoder): string {.jsfget.} =
-  return ($this.encoding).toLowerAscii()
+  proc newJSTextDecoder(ctx: JSContext; label = "utf-8";
+      options = TextDecoderOptions()): Opt[JSTextDecoder] {.jsctor.} =
+    let encoding = getCharset(label)
+    if encoding in {csUnknown, csReplacement}:
+      JS_ThrowRangeError(ctx, "invalid encoding label")
+      return err()
+    let errorMode = if options.fatal: demFatal else: demReplacement
+    return ok(JSTextDecoder(
+      ignoreBOM: options.ignoreBOM,
+      errorMode: errorMode,
+      tdctx: initTextDecoderContext(encoding, errorMode),
+      encoding: encoding
+    ))
 
-proc fatal(this: JSTextDecoder): bool {.jsfget.} =
-  return this.errorMode == demFatal
+  proc encoding(this: JSTextDecoder): string {.jsfget.} =
+    return ($this.encoding).toLowerAscii()
 
-type TextDecodeOptions = object of JSDict
-  stream {.jsdefault.}: bool
+  proc fatal(this: JSTextDecoder): bool {.jsfget.} =
+    return this.errorMode == demFatal
 
-#TODO AllowSharedBufferSource
-proc decode(ctx: JSContext; this: JSTextDecoder;
-    jsInput: JSValueConst = JS_UNDEFINED; options = TextDecodeOptions()):
-    JSValue {.jsfunc.} =
-  var input: JSArrayBufferView
-  if not JS_IsUndefined(jsInput):
-    ?ctx.fromJS(jsInput, input)
-  if not this.stream:
-    this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
-    this.bomSeen = false
-  this.stream = options.stream
-  var oq = ""
-  let stream = this.stream
-  if not JS_IsUndefined(jsInput):
-    for chunk in this.tdctx.decode(input.toOpenArray(), not stream):
-      oq &= chunk
-  else:
-    for chunk in this.tdctx.decode([], not stream):
-      oq &= chunk
-  if this.tdctx.failed:
-    this.tdctx.failed = false
-    return JS_ThrowTypeError(ctx, "failed to decode string")
-  return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
+  type TextDecodeOptions = object of JSDict
+    stream {.jsdefault.}: bool
+
+  #TODO AllowSharedBufferSource
+  proc decode(ctx: JSContext; this: JSTextDecoder;
+      jsInput: JSValueConst = JS_UNDEFINED; options = TextDecodeOptions()):
+      JSValue {.jsfunc.} =
+    var input: JSArrayBufferView
+    if not JS_IsUndefined(jsInput):
+      ?ctx.fromJS(jsInput, input)
+    if not this.stream:
+      this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
+      this.bomSeen = false
+    this.stream = options.stream
+    var oq = ""
+    let stream = this.stream
+    if not JS_IsUndefined(jsInput):
+      for chunk in this.tdctx.decode(input.toOpenArray(), not stream):
+        oq &= chunk
+    else:
+      for chunk in this.tdctx.decode([], not stream):
+        oq &= chunk
+    if this.tdctx.failed:
+      this.tdctx.failed = false
+      return JS_ThrowTypeError(ctx, "failed to decode string")
+    return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
 
 # TextEncoder
-proc newTextEncoder(): JSTextEncoder {.jsctor.} =
-  return JSTextEncoder()
-
-proc encoding(this: JSTextEncoder): string {.jsfget.} =
-  return "utf-8"
-
 proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
   if p != nil:
     dealloc(p)
 
-proc encode(this: JSTextEncoder; input = ""): JSArrayBufferView {.jsfunc.} =
-  let p = if input.len > 0:
-    let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
-    copyMem(buf, unsafeAddr input[0], input.len)
-    buf
-  else:
-    nil
-  JSArrayBufferView(
-    t: JS_TYPED_ARRAY_UINT8,
-    abuf: JSArrayBuffer(p: p, len: input.len, dealloc: deallocWrap),
-    offset: 0,
-    len: input.len
-  )
+jsClassNameDef(JSTextEncoder, "TextEncoder"):
+  proc newTextEncoder(): JSTextEncoder {.jsctor.} =
+    return JSTextEncoder()
 
-#TODO encodeInto
+  proc encoding(this: JSTextEncoder): string {.jsfget.} =
+    return "utf-8"
 
-proc addEncodingModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(JSTextDecoder, name = "TextDecoder")
-  ?ctx.registerType(JSTextEncoder, name = "TextEncoder")
-  ok()
+  proc encode(this: JSTextEncoder; input = ""): JSArrayBufferView {.jsfunc.} =
+    let p = if input.len > 0:
+      let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
+      copyMem(buf, unsafeAddr input[0], input.len)
+      buf
+    else:
+      nil
+    JSArrayBufferView(
+      t: JS_TYPED_ARRAY_UINT8,
+      abuf: JSArrayBuffer(p: p, len: input.len, dealloc: deallocWrap),
+      offset: 0,
+      len: input.len
+    )
+
+  #TODO encodeInto
+
+proc addEncodingModule*(ctx: JSContext): FromJSResult =
+  ?ctx.registerClass(JSTextDecoderDef)
+  ctx.registerClass(JSTextEncoderDef)
 
 {.pop.}

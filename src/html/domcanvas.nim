@@ -40,22 +40,22 @@ type
 
   TextMetrics = ref object
     # x-direction
-    width {.jsget.}: float64
-    actualBoundingBoxLeft {.jsget.}: float64
-    actualBoundingBoxRight {.jsget.}: float64
+    width: float64
+    actualBoundingBoxLeft: float64
+    actualBoundingBoxRight: float64
     # y-direction
-    fontBoundingBoxAscent {.jsget.}: float64
-    fontBoundingBoxDescent {.jsget.}: float64
-    actualBoundingBoxAscent {.jsget.}: float64
-    actualBoundingBoxDescent {.jsget.}: float64
-    emHeightAscent {.jsget.}: float64
-    emHeightDescent {.jsget.}: float64
-    hangingBaseline {.jsget.}: float64
-    alphabeticBaseline {.jsget.}: float64
-    ideographicBaseline {.jsget.}: float64
+    fontBoundingBoxAscent: float64
+    fontBoundingBoxDescent: float64
+    actualBoundingBoxAscent: float64
+    actualBoundingBoxDescent: float64
+    emHeightAscent: float64
+    emHeightDescent: float64
+    hangingBaseline: float64
+    alphabeticBaseline: float64
+    ideographicBaseline: float64
 
   CanvasRenderingContext2D* = ref object
-    canvas {.jsget.}: EventTarget
+    canvas: EventTarget
     bitmap: NetworkBitmap
     state: DrawingState
     ps*: PosixStream
@@ -182,257 +182,278 @@ proc clearRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int) =
 proc clear(ctx: CanvasRenderingContext2D) =
   ctx.clearRect(0, 0, ctx.bitmap.width, ctx.bitmap.height)
 
-proc save(ctx: CanvasRenderingContext2D) {.jsfunc.} =
-  let state = DrawingState()
-  state[] = ctx.state[]
-  state.next = ctx.state
-  ctx.state = state
-
-proc restore(ctx: CanvasRenderingContext2D) {.jsfunc.} =
-  if ctx.state.next != nil:
-    ctx.state = ctx.state.next
-
-proc resetState(ctx: CanvasRenderingContext2D) {.jsfunc.} =
-  ctx.clear()
-  ctx.state.next = nil
-  ctx.state.resetState()
-
-#TODO scale
-proc rotate(ctx: CanvasRenderingContext2D; angle: float64) {.jsfunc.} =
-  if classify(angle) in {fcInf, fcNegInf, fcNan}:
-    return
-  ctx.state.transformMatrix *= newMatrix(
-    me = @[
-      cos(angle), -sin(angle), 0,
-      sin(angle), cos(angle), 0,
-      0, 0, 1
-    ],
-    w = 3,
-    h = 3
-  )
-
-proc translate(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
-  for v in [x, y]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
-      return
-  ctx.state.transformMatrix *= newMatrix(
-    me = @[
-      1f64, 0, x,
-      0, 1, y,
-      0, 0, 1
-    ],
-    w = 3,
-    h = 3
-  )
-
-proc transform(ctx: CanvasRenderingContext2D; a, b, c, d, e, f: float64)
-    {.jsfunc.} =
-  for v in [a, b, c, d, e, f]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
-      return
-  ctx.state.transformMatrix *= newMatrix(
-    me = @[
-      a, c, e,
-      b, d, f,
-      0, 0, 1
-    ],
-    w = 3,
-    h = 3
-  )
-
-#TODO getTransform, setTransform with DOMMatrix (i.e. we're missing DOMMatrix)
-proc setTransform(ctx: CanvasRenderingContext2D; a, b, c, d, e, f: float64)
-    {.jsfunc.} =
-  for v in [a, b, c, d, e, f]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
-      return
-  ctx.state.resetTransform()
-  ctx.transform(a, b, c, d, e, f)
-
-proc resetTransform(ctx: CanvasRenderingContext2D) {.jsfunc.} =
-  ctx.state.resetTransform()
-
 proc transform(ctx: CanvasRenderingContext2D; v: Vector2D): Vector2D =
   let mul = ctx.state.transformMatrix * newMatrix(@[v.x, v.y, 1], 1, 3)
   return Vector2D(x: mul.me[0], y: mul.me[1])
 
-proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
-  return ctx.state.fillStyle.serialize(html = true)
+jsClassDef(CanvasRenderingContext2D):
+  jsget CanvasRenderingContext2D, canvas
 
-proc fillStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
-  #TODO gradient, pattern
-  if color := ctx.canvas.parseColor(s):
-    ctx.state.fillStyle = color
+  proc save(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+    let state = DrawingState()
+    state[] = ctx.state[]
+    state.next = ctx.state
+    ctx.state = state
 
-proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
-  return ctx.state.strokeStyle.serialize(html = true)
+  proc restore(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+    if ctx.state.next != nil:
+      ctx.state = ctx.state.next
 
-proc strokeStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
-  #TODO gradient, pattern
-  if color := ctx.canvas.parseColor(s):
-    ctx.state.strokeStyle = color
+  proc resetState(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+    ctx.clear()
+    ctx.state.next = nil
+    ctx.state.resetState()
 
-proc clearRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
-  for v in [x, y, w, h]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
+  #TODO scale
+  proc rotate(ctx: CanvasRenderingContext2D; angle: float64) {.jsfunc.} =
+    if classify(angle) in {fcInf, fcNegInf, fcNan}:
       return
-  #TODO clipping regions (right now we just clip to default)
-  let bw = float64(ctx.bitmap.width)
-  let bh = float64(ctx.bitmap.height)
-  let x1 = int(min(max(x, 0), bw))
-  let y1 = int(min(max(y, 0), bh))
-  let x2 = int(min(max(x + w, 0), bw))
-  let y2 = int(min(max(y + h, 0), bh))
-  ctx.clearRect(x1, y1, x2, y2)
+    ctx.state.transformMatrix *= newMatrix(
+      me = @[
+        cos(angle), -sin(angle), 0,
+        sin(angle), cos(angle), 0,
+        0, 0, 1
+      ],
+      w = 3,
+      h = 3
+    )
 
-proc fillRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
-  for v in [x, y, w, h]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
+  proc translate(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
+    for v in [x, y]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    ctx.state.transformMatrix *= newMatrix(
+      me = @[
+        1f64, 0, x,
+        0, 1, y,
+        0, 0, 1
+      ],
+      w = 3,
+      h = 3
+    )
+
+  proc transform(ctx: CanvasRenderingContext2D; a, b, c, d, e, f: float64)
+      {.jsfunc.} =
+    for v in [a, b, c, d, e, f]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    ctx.state.transformMatrix *= newMatrix(
+      me = @[
+        a, c, e,
+        b, d, f,
+        0, 0, 1
+      ],
+      w = 3,
+      h = 3
+    )
+
+  #TODO getTransform, setTransform with DOMMatrix (i.e. we're missing DOMMatrix)
+  proc setTransform(ctx: CanvasRenderingContext2D; a, b, c, d, e, f: float64)
+      {.jsfunc.} =
+    for v in [a, b, c, d, e, f]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    ctx.state.resetTransform()
+    ctx.transform(a, b, c, d, e, f)
+
+  proc resetTransform(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+    ctx.state.resetTransform()
+
+  proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+    return ctx.state.fillStyle.serialize(html = true)
+
+  proc fillStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
+    #TODO gradient, pattern
+    if color := ctx.canvas.parseColor(s):
+      ctx.state.fillStyle = color
+
+  proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+    return ctx.state.strokeStyle.serialize(html = true)
+
+  proc strokeStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
+    #TODO gradient, pattern
+    if color := ctx.canvas.parseColor(s):
+      ctx.state.strokeStyle = color
+
+  proc clearRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64)
+      {.jsfunc.} =
+    for v in [x, y, w, h]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    #TODO clipping regions (right now we just clip to default)
+    let bw = float64(ctx.bitmap.width)
+    let bh = float64(ctx.bitmap.height)
+    let x1 = int(min(max(x, 0), bw))
+    let y1 = int(min(max(y, 0), bh))
+    let x2 = int(min(max(x + w, 0), bw))
+    let y2 = int(min(max(y + h, 0), bh))
+    ctx.clearRect(x1, y1, x2, y2)
+
+  proc fillRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64)
+      {.jsfunc.} =
+    for v in [x, y, w, h]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    #TODO do we have to clip here?
+    if w == 0 or h == 0:
       return
-  #TODO do we have to clip here?
-  if w == 0 or h == 0:
-    return
-  let bw = float64(ctx.bitmap.width)
-  let bh = float64(ctx.bitmap.height)
-  let x1 = int(min(max(x, 0), bw))
-  let y1 = int(min(max(y, 0), bh))
-  let x2 = int(min(max(x + w, 0), bw))
-  let y2 = int(min(max(y + h, 0), bh))
-  ctx.fillRect(x1, y1, x2, y2, ctx.state.fillStyle)
+    let bw = float64(ctx.bitmap.width)
+    let bh = float64(ctx.bitmap.height)
+    let x1 = int(min(max(x, 0), bw))
+    let y1 = int(min(max(y, 0), bh))
+    let x2 = int(min(max(x + w, 0), bw))
+    let y2 = int(min(max(y + h, 0), bh))
+    ctx.fillRect(x1, y1, x2, y2, ctx.state.fillStyle)
 
-proc strokeRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
-  for v in [x, y, w, h]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
+  proc strokeRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64)
+      {.jsfunc.} =
+    for v in [x, y, w, h]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    #TODO do we have to clip here?
+    if w == 0 or h == 0:
       return
-  #TODO do we have to clip here?
-  if w == 0 or h == 0:
-    return
-  let bw = float64(ctx.bitmap.width)
-  let bh = float64(ctx.bitmap.height)
-  let x1 = int(min(max(x, 0), bw))
-  let y1 = int(min(max(y, 0), bh))
-  let x2 = int(min(max(x + w, 0), bw))
-  let y2 = int(min(max(y + h, 0), bh))
-  ctx.strokeRect(x1, y1, x2, y2, ctx.state.strokeStyle)
+    let bw = float64(ctx.bitmap.width)
+    let bh = float64(ctx.bitmap.height)
+    let x1 = int(min(max(x, 0), bw))
+    let y1 = int(min(max(y, 0), bh))
+    let x2 = int(min(max(x + w, 0), bw))
+    let y2 = int(min(max(y + h, 0), bh))
+    ctx.strokeRect(x1, y1, x2, y2, ctx.state.strokeStyle)
 
-proc beginPath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
-  ctx.state.path.beginPath()
+  proc beginPath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+    ctx.state.path.beginPath()
 
-proc fill(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
-  #TODO path
-  ctx.state.path.tempClosePath()
-  ctx.fillPath(ctx.state.path, ctx.state.fillStyle, fillRule)
-  ctx.state.path.tempOpenPath()
+  proc fill(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
+    #TODO path
+    ctx.state.path.tempClosePath()
+    ctx.fillPath(ctx.state.path, ctx.state.fillStyle, fillRule)
+    ctx.state.path.tempOpenPath()
 
-proc stroke(ctx: CanvasRenderingContext2D) {.jsfunc.} = #TODO path
-  ctx.strokePath(ctx.state.path, ctx.state.strokeStyle)
+  proc stroke(ctx: CanvasRenderingContext2D) {.jsfunc.} = #TODO path
+    ctx.strokePath(ctx.state.path, ctx.state.strokeStyle)
 
-proc clip(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
-  #TODO path
-  discard #TODO implement
+  proc clip(ctx: CanvasRenderingContext2D; fillRule = cfrNonZero) {.jsfunc.} =
+    #TODO path
+    discard #TODO implement
 
-#TODO maxwidth
-proc fillText(ctx: CanvasRenderingContext2D; text: DOMString; x, y: float64)
-    {.jsfunc.} =
-  for v in [x, y]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
+  #TODO maxwidth
+  proc fillText(ctx: CanvasRenderingContext2D; text: DOMString; x, y: float64)
+      {.jsfunc.} =
+    for v in [x, y]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    let vec = ctx.transform(Vector2D(x: x, y: y))
+    ctx.fillText(text, vec.x, vec.y, ctx.state.fillStyle, ctx.state.textAlign)
+
+  #TODO maxwidth
+  proc strokeText(ctx: CanvasRenderingContext2D; text: DOMString;
+      x, y: float64) {.jsfunc.} =
+    for v in [x, y]:
+      if classify(v) in {fcInf, fcNegInf, fcNan}:
+        return
+    let vec = ctx.transform(Vector2D(x: x, y: y))
+    ctx.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle,
+      ctx.state.textAlign)
+
+  proc measureText(ctx: CanvasRenderingContext2D; text: DOMString): TextMetrics
+      {.jsfunc.} =
+    let tw = text.toOpenArray().width()
+    return TextMetrics(
+      width: 8 * float64(tw),
+      actualBoundingBoxLeft: 0,
+      actualBoundingBoxRight: 8 * float64(tw),
+      #TODO and the rest...
+    )
+
+  proc lineWidth(ctx: CanvasRenderingContext2D): float64 {.jsfget.} =
+    return ctx.state.lineWidth
+
+  proc lineWidth(ctx: CanvasRenderingContext2D; f: float64) {.jsfset.} =
+    if classify(f) in {fcZero, fcNegZero, fcInf, fcNegInf, fcNan}:
       return
-  let vec = ctx.transform(Vector2D(x: x, y: y))
-  ctx.fillText(text, vec.x, vec.y, ctx.state.fillStyle, ctx.state.textAlign)
+    ctx.state.lineWidth = f
 
-#TODO maxwidth
-proc strokeText(ctx: CanvasRenderingContext2D; text: DOMString; x, y: float64)
-    {.jsfunc.} =
-  for v in [x, y]:
-    if classify(v) in {fcInf, fcNegInf, fcNan}:
-      return
-  let vec = ctx.transform(Vector2D(x: x, y: y))
-  ctx.strokeText(text, vec.x, vec.y, ctx.state.strokeStyle, ctx.state.textAlign)
+  proc setLineDash(ctx: CanvasRenderingContext2D; segments: seq[float64])
+      {.jsfunc.} =
+    discard #TODO implement
 
-proc measureText(ctx: CanvasRenderingContext2D; text: DOMString): TextMetrics
-    {.jsfunc.} =
-  let tw = text.toOpenArray().width()
-  return TextMetrics(
-    width: 8 * float64(tw),
-    actualBoundingBoxLeft: 0,
-    actualBoundingBoxRight: 8 * float64(tw),
-    #TODO and the rest...
-  )
+  proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
+    discard #TODO implement
+    newSeq[float64]()
 
-proc lineWidth(ctx: CanvasRenderingContext2D): float64 {.jsfget.} =
-  return ctx.state.lineWidth
+  proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+    return $ctx.state.textAlign
 
-proc lineWidth(ctx: CanvasRenderingContext2D; f: float64) {.jsfset.} =
-  if classify(f) in {fcZero, fcNegZero, fcInf, fcNegInf, fcNan}:
-    return
-  ctx.state.lineWidth = f
+  proc textAlign(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
+    if x := parseEnumNoCase[CanvasTextAlign](s.toOpenArray()):
+      ctx.state.textAlign = x
 
-proc setLineDash(ctx: CanvasRenderingContext2D; segments: seq[float64])
-    {.jsfunc.} =
-  discard #TODO implement
+  proc closePath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
+    ctx.state.path.closePath()
 
-proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
-  discard #TODO implement
-  newSeq[float64]()
+  proc moveTo(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
+    ctx.state.path.moveTo(x, y)
 
-proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
-  return $ctx.state.textAlign
+  proc lineTo(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
+    ctx.state.path.lineTo(x, y)
 
-proc textAlign(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
-  if x := parseEnumNoCase[CanvasTextAlign](s.toOpenArray()):
-    ctx.state.textAlign = x
+  proc quadraticCurveTo(ctx: CanvasRenderingContext2D; cpx, cpy, x,
+      y: float64) {.jsfunc.} =
+    ctx.state.path.quadraticCurveTo(cpx, cpy, x, y)
 
-proc closePath(ctx: CanvasRenderingContext2D) {.jsfunc.} =
-  ctx.state.path.closePath()
+  proc radiusThrow(ctx: JSContext): JSValue =
+    return JS_ThrowDOMException(ctx, "IndexSizeError",
+      "expected positive radius, but got negative")
 
-proc moveTo(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
-  ctx.state.path.moveTo(x, y)
+  proc arcTo(jsctx: JSContext; ctx: CanvasRenderingContext2D;
+      x1, y1, x2, y2, radius: float64): JSValue {.jsfunc.} =
+    if radius < 0:
+      return jsctx.radiusThrow()
+    ctx.state.path.arcTo(x1, y1, x2, y2, radius)
+    return JS_UNDEFINED
 
-proc lineTo(ctx: CanvasRenderingContext2D; x, y: float64) {.jsfunc.} =
-  ctx.state.path.lineTo(x, y)
+  proc arc(jsctx: JSContext; ctx: CanvasRenderingContext2D;
+      x, y, radius, startAngle, endAngle: float64;
+      counterclockwise = false): JSValue {.jsfunc.} =
+    if radius < 0:
+      return jsctx.radiusThrow()
+    ctx.state.path.arc(x, y, radius, startAngle, endAngle, counterclockwise)
+    return JS_UNDEFINED
 
-proc quadraticCurveTo(ctx: CanvasRenderingContext2D; cpx, cpy, x,
-    y: float64) {.jsfunc.} =
-  ctx.state.path.quadraticCurveTo(cpx, cpy, x, y)
+  proc ellipse(jsctx: JSContext; ctx: CanvasRenderingContext2D;
+      x, y, radiusX, radiusY, rotation, startAngle, endAngle: float64;
+      counterclockwise = false): JSValue {.jsfunc.} =
+    if radiusX < 0 or radiusY < 0:
+      return jsctx.radiusThrow()
+    ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle,
+      endAngle, counterclockwise)
+    return JS_UNDEFINED
 
-proc radiusThrow(ctx: JSContext): JSValue =
-  return JS_ThrowDOMException(ctx, "IndexSizeError",
-    "expected positive radius, but got negative")
+  proc rect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
+    ctx.state.path.rect(x, y, w, h)
 
-proc arcTo(jsctx: JSContext; ctx: CanvasRenderingContext2D;
-    x1, y1, x2, y2, radius: float64): JSValue {.jsfunc.} =
-  if radius < 0:
-    return jsctx.radiusThrow()
-  ctx.state.path.arcTo(x1, y1, x2, y2, radius)
-  return JS_UNDEFINED
+  proc roundRect(ctx: CanvasRenderingContext2D; x, y, w, h, radii: float64)
+      {.jsfunc.} =
+    ctx.state.path.roundRect(x, y, w, h, radii)
 
-proc arc(jsctx: JSContext; ctx: CanvasRenderingContext2D;
-    x, y, radius, startAngle, endAngle: float64;
-    counterclockwise = false): JSValue {.jsfunc.} =
-  if radius < 0:
-    return jsctx.radiusThrow()
-  ctx.state.path.arc(x, y, radius, startAngle, endAngle, counterclockwise)
-  return JS_UNDEFINED
-
-proc ellipse(jsctx: JSContext; ctx: CanvasRenderingContext2D;
-    x, y, radiusX, radiusY, rotation, startAngle, endAngle: float64;
-    counterclockwise = false): JSValue {.jsfunc.} =
-  if radiusX < 0 or radiusY < 0:
-    return jsctx.radiusThrow()
-  ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle,
-    counterclockwise)
-  return JS_UNDEFINED
-
-proc rect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
-  ctx.state.path.rect(x, y, w, h)
-
-proc roundRect(ctx: CanvasRenderingContext2D; x, y, w, h, radii: float64)
-    {.jsfunc.} =
-  ctx.state.path.roundRect(x, y, w, h, radii)
+jsClassDef(TextMetrics):
+  jsget TextMetrics, width
+  jsget TextMetrics, actualBoundingBoxLeft
+  jsget TextMetrics, actualBoundingBoxRight
+  jsget TextMetrics, fontBoundingBoxAscent
+  jsget TextMetrics, fontBoundingBoxDescent
+  jsget TextMetrics, actualBoundingBoxAscent
+  jsget TextMetrics, actualBoundingBoxDescent
+  jsget TextMetrics, emHeightAscent
+  jsget TextMetrics, emHeightDescent
+  jsget TextMetrics, hangingBaseline
+  jsget TextMetrics, alphabeticBaseline
+  jsget TextMetrics, ideographicBaseline
 
 proc addCanvasModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(CanvasRenderingContext2D)
-  ?ctx.registerType(TextMetrics)
+  ?ctx.registerClass(CanvasRenderingContext2DDef)
+  ?ctx.registerClass(TextMetricsDef)
   ok()
 
 {.pop.} # raises: []

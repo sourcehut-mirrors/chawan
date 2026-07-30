@@ -409,8 +409,8 @@ proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
   {.pop.}
   fjOk
 
-proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
-    FromJSResult =
+proc fromJS*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
+    res: var pointer): FromJSResult =
   if not JS_IsObject(val):
     JS_ThrowTypeError(ctx, "value is not an object")
     return fjErr
@@ -422,8 +422,6 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
   else:
     classid = ctxOpaque.gclass
     p = ctxOpaque.globalObj
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let tclassid = rtOpaque.typemap.getOrDefault(nimt, JS_INVALID_CLASS_ID)
   if p == nil or not ctx.isInstanceOf(classid, tclassid):
     # dumb way to invoke JS_ThrowTypeErrorInvalidClass
     discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
@@ -431,11 +429,27 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
   res = p
   fjOk
 
+proc fromJSThis*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
+    res: var pointer): FromJSResult =
+  let val = if JS_IsUndefined(val):
+    JSValueConst(ctx.getOpaque().global)
+  else:
+    val
+  ctx.fromJS(val, tclassid, res)
+
 proc fromJS*[T: ptr object](ctx: JSContext; val: JSValueConst; res: var T):
     FromJSResult =
-  let nimt = getTypePtr(ref T.pointerBase)
+  when NimMajor < 2:
+    # I don't know why, but Nim 1.6.14 fails to generate the forward decls
+    # in C.  So we'll stick with dynamic lookup there.
+    let nimt = getTypePtr(ref T.pointerBase)
+    let classid = globalJSTypeMap.getOrDefault(nimt)
+  else:
+    mixin getClassID
+    let classId = getClassID(ref T.pointerBase)
   var x {.noinit.}: pointer
-  ?ctx.fromJS(val, nimt, x)
+  if ctx.fromJS(val, classId, x) == fjErr:
+    return fjErr
   res = cast[T](x)
   fjOk
 
@@ -445,15 +459,6 @@ proc fromJS*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
   ?ctx.fromJS(val, x)
   res = cast[T](x)
   fjOk
-
-proc fromJSThis*[T: ptr object](ctx: JSContext; val: JSValueConst; res: var T):
-    FromJSResult =
-  # translate undefined -> global
-  let val = if JS_IsUndefined(val):
-    JSValueConst(ctx.getOpaque().global)
-  else:
-    val
-  ctx.fromJS(val, res)
 
 macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
   let impl = t.getTypeInst()[1].getImpl()

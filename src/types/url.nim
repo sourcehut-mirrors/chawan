@@ -59,16 +59,16 @@ type
 
   URL* = ref object
     scheme: string
-    username* {.jsget.}: string
-    password* {.jsget.}: string
+    username*: string
+    password*: string
     opaquePath: bool
     hostType: HostType
     schemeType*: SchemeType
     port: int32 # -1 -> no port, other values: has port
-    hostname* {.jsget.}: string
-    pathname* {.jsget.}: string
-    search* {.jsget.}: string
-    hash* {.jsget.}: string
+    hostname*: string
+    pathname*: string
+    search*: string
+    hash*: string
     searchParamsInternal: URLSearchParams
 
   OriginType* = enum
@@ -89,6 +89,8 @@ proc serialize*(url: URL; excludeHash = false; excludePassword = false):
 proc serializeip(ipv4: uint32): string
 proc serializeip(ipv6: array[8, uint16]): string
 proc host*(url: URL): string
+proc `$`*(url: URL): string
+proc `$`*(params: URLSearchParams): string
 
 proc swrite*(w: var PacketWriter; url: URL) =
   if url != nil:
@@ -1106,14 +1108,6 @@ proc serialize*(url: URL; excludeHash = false; excludePassword = false):
   if not excludeHash:
     result &= url.hash
 
-proc `$`*(url: URL): string {.jsfunc: "toString".} = url.serialize()
-
-proc href(url: URL): string {.jsfget.} =
-  return $url
-
-proc toJSON(url: URL): string {.jsfget.} =
-  return $url
-
 # from a to b
 proc cloneInto(a, b: URL) =
   b[] = a[]
@@ -1122,13 +1116,6 @@ proc cloneInto(a, b: URL) =
 proc newURL*(url: URL): URL =
   result = URL()
   url.cloneInto(result)
-
-proc setHref(ctx: JSContext; url: URL; s: string) {.jsfset: "href".} =
-  let purl = parseURL0(s)
-  if purl != nil:
-    purl.cloneInto(url)
-  else:
-    JS_ThrowTypeError(ctx, "%s is not a valid URL", s)
 
 proc isIP*(url: URL): bool =
   return url.hostType in {htIpv4, htIpv6}
@@ -1179,35 +1166,6 @@ proc getSearchParam*(url: URL; name: string): string =
     return "" # empty
   return url.search.until('&', i + name.len + 1)
 
-proc newURLSearchParams(ctx: JSContext; init: JSValueConst = JS_UNDEFINED):
-    Opt[URLSearchParams] {.jsctor.} =
-  let params = URLSearchParams()
-  if not JS_IsUndefined(init):
-    if ctx.fromJS(init, params.list).isOk:
-      discard
-    elif (var t: JSKeyValuePair[string, string]; ctx.fromJS(init, t).isOk):
-      params.list = move(t.s)
-    else:
-      var res: string
-      ?ctx.fromJS(init, res)
-      var i = 0
-      if res.len > 0 and res[0] == '?':
-        inc i
-      params.list = parseFromURLEncoded(res.toOpenArray(i, res.high))
-  return ok(params)
-
-proc searchParams(url: URL): URLSearchParams {.jsfget.} =
-  if url.searchParamsInternal == nil:
-    let i = int(url.search.len > 0)
-    url.searchParamsInternal = URLSearchParams(
-      list: parseFromURLEncoded(url.search.toOpenArray(i, url.search.high)),
-      url: url
-    )
-  return url.searchParamsInternal
-
-proc `$`*(params: URLSearchParams): string {.jsfunc: "toString".} =
-  return serializeFormURLEncoded(params.list)
-
 proc update(params: URLSearchParams) =
   if params.url == nil:
     return
@@ -1217,85 +1175,102 @@ proc update(params: URLSearchParams) =
   else:
     params.url.search = "?" & serializedQuery
 
-proc append(params: URLSearchParams; name, value: sink string) {.jsfunc.} =
-  params.list.add((name, value))
-  params.update()
+jsClassDef(URLSearchParams):
+  classDef.iterable = jitPair
 
-proc delete(params: URLSearchParams; name: string) {.jsfunc.} =
-  for i in countdown(params.list.high, 0):
-    if params.list[i][0] == name:
-      params.list.delete(i)
-  params.update()
+  proc newURLSearchParams(ctx: JSContext; init: JSValueConst = JS_UNDEFINED):
+      Opt[URLSearchParams] {.jsctor.} =
+    let params = URLSearchParams()
+    if not JS_IsUndefined(init):
+      if ctx.fromJS(init, params.list).isOk:
+        discard
+      elif (var t: JSKeyValuePair[string, string]; ctx.fromJS(init, t).isOk):
+        params.list = move(t.s)
+      else:
+        var res: string
+        ?ctx.fromJS(init, res)
+        var i = 0
+        if res.len > 0 and res[0] == '?':
+          inc i
+        params.list = parseFromURLEncoded(res.toOpenArray(i, res.high))
+    return ok(params)
 
-proc get(ctx: JSContext; params: URLSearchParams; name: string): JSValue
-    {.jsfunc.} =
-  for it in params.list:
-    if it.name == name:
-      return ctx.toJS(it.value)
-  return JS_NULL
+  proc `$`*(params: URLSearchParams): string {.jsfunc: "toString".} =
+    return serializeFormURLEncoded(params.list)
 
-proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
-  result = newSeq[string]()
-  for it in params.list:
-    if it.name == name:
-      result.add(it.value)
+  proc append(params: URLSearchParams; name, value: sink string) {.jsfunc.} =
+    params.list.add((name, value))
+    params.update()
 
-proc has(ctx: JSContext; params: URLSearchParams; name: string;
-    jsValue: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
-  if JS_IsUndefined(jsValue):
+  proc delete(params: URLSearchParams; name: string) {.jsfunc.} =
+    for i in countdown(params.list.high, 0):
+      if params.list[i][0] == name:
+        params.list.delete(i)
+    params.update()
+
+  proc get(ctx: JSContext; params: URLSearchParams; name: string): JSValue
+      {.jsfunc.} =
     for it in params.list:
       if it.name == name:
-        return JS_TRUE
-  else:
-    var value: string
-    if ctx.fromJS(jsValue, value).isErr:
-      return JS_EXCEPTION
+        return ctx.toJS(it.value)
+    return JS_NULL
+
+  proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
+    result = newSeq[string]()
     for it in params.list:
-      if it.name == name and value == it.value:
-        return JS_TRUE
-  return JS_FALSE
+      if it.name == name:
+        result.add(it.value)
 
-proc set(params: URLSearchParams; name: string; value: string) {.jsfunc.} =
-  var found = false
-  for param in params.list.mitems:
-    if param.name == name:
-      param.value = value
-      found = true
-      break
-  if found:
-    params.update()
-  else:
-    params.append(name, value)
+  proc has(ctx: JSContext; params: URLSearchParams; name: string;
+      jsValue: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+    if JS_IsUndefined(jsValue):
+      for it in params.list:
+        if it.name == name:
+          return JS_TRUE
+    else:
+      var value: string
+      if ctx.fromJS(jsValue, value).isErr:
+        return JS_EXCEPTION
+      for it in params.list:
+        if it.name == name and value == it.value:
+          return JS_TRUE
+    return JS_FALSE
 
-proc next(ctx: JSContext; iter: URLSearchParamsIterator; done: var JS_BOOL):
-    JSValue {.jsiter.} =
-  let params = iter.params
-  let i = iter.i
-  if i >= params.list.len:
-    done = true
-    return JS_UNDEFINED
-  inc iter.i
-  done = false
-  case iter.t
-  of sitEntries: ctx.toJS(params.list[i])
-  of sitKeys: ctx.toJS(params.list[i].name)
-  of sitValues: ctx.toJS(params.list[i].value)
+  proc set(params: URLSearchParams; name: string; value: string) {.jsfunc.} =
+    var found = false
+    for param in params.list.mitems:
+      if param.name == name:
+        param.value = value
+        found = true
+        break
+    if found:
+      params.update()
+    else:
+      params.append(name, value)
 
-proc entries(params: URLSearchParams; t: SearchIteratorType):
-    URLSearchParamsIterator {.jsmfunc("entries", sitEntries),
-    jsmfunc("values", sitValues), jsmfunc("keys", sitKeys).} =
-  URLSearchParamsIterator(t: t, params: params)
+  proc entries(params: URLSearchParams; t: SearchIteratorType):
+      URLSearchParamsIterator {.jsmfunc("entries", sitEntries),
+      jsmfunc("values", sitValues), jsmfunc("keys", sitKeys).} =
+    URLSearchParamsIterator(t: t, params: params)
 
-proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
-    Opt[URL] {.jsctor.} =
-  var baseURL: URL = nil
-  if not JS_IsUndefined(base):
-    var s: string
-    if ctx.fromJS(base, s).isErr:
-      return err()
-    baseURL = ?ctx.parseJSURL(s)
-  ctx.parseJSURL(s, baseURL)
+jsClassNameDef(URLSearchParamsIterator, "URLSearchParams Iterator"):
+  classDef.iterable = jitIterator
 
+  proc next(ctx: JSContext; iter: URLSearchParamsIterator; done: var JS_BOOL):
+      JSValue {.jsiter.} =
+    let params = iter.params
+    let i = iter.i
+    if i >= params.list.len:
+      done = true
+      return JS_UNDEFINED
+    inc iter.i
+    done = false
+    case iter.t
+    of sitEntries: ctx.toJS(params.list[i])
+    of sitKeys: ctx.toJS(params.list[i].name)
+    of sitValues: ctx.toJS(params.list[i].value)
+
+# URL
 proc origin*(url: URL): Origin =
   case url.schemeType
   of stBlob:
@@ -1336,108 +1311,149 @@ proc `$`*(origin: Origin): string =
     return "null"
   return origin.s
 
-proc jsOrigin*(url: URL): string {.jsfget: "origin".} =
-  return $url.origin
-
-proc protocol*(ctx: JSContext; url: URL): JSValue {.jsfget.} =
-  if url.schemeType == stUnknown:
-    return ctx.toJS(url.scheme & ':')
-  const enumId = getJSEnumId(SchemeType)
-  let n = int(url.schemeType)
-  let rt = JS_GetRuntime(ctx)
-  let rtOpaque = rt.getOpaque()
-  if rtOpaque.enumMap.len <= enumId:
-    rtOpaque.enumMap.setLen(enumId + 1)
-  if rtOpaque.enumMap[enumId].atoms.len <= n:
-    rtOpaque.enumMap[enumId].atoms.setLen(n + 1)
-  var atom = rtOpaque.enumMap[enumId].atoms[n]
-  if atom == JS_ATOM_NULL:
-    let s = url.scheme & ':'
-    atom = JS_NewAtomLen(ctx, cstringConst(s), csize_t(s.len))
-    if atom == JS_ATOM_NULL:
-      return JS_EXCEPTION
-    rtOpaque.enumMap[enumId].atoms[n] = atom
-  return JS_AtomToValue(ctx, atom)
-
-proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
-  parseURL1(s & ':', url, usSchemeStart)
-
 proc scheme*(url: URL): lent string =
   return url.scheme
 
-proc setUsername*(url: URL; username: string) {.jsfset: "username".} =
-  if url.isNetPath():
-    url.username = username.percentEncode(UserInfoPercentEncodeSet)
+jsClassDef(URL):
+  jsget URL, username
+  jsget URL, password
+  jsget URL, hostname
+  jsget URL, pathname
+  jsget URL, search
+  jsget URL, hash
 
-proc setPassword*(url: URL; password: string) {.jsfset: "password".} =
-  if url.isNetPath():
-    url.password = password.percentEncode(UserInfoPercentEncodeSet)
+  proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
+      Opt[URL] {.jsctor.} =
+    var baseURL: URL = nil
+    if not JS_IsUndefined(base):
+      var s: string
+      if ctx.fromJS(base, s).isErr:
+        return err()
+      baseURL = ?ctx.parseJSURL(s)
+    ctx.parseJSURL(s, baseURL)
 
-proc host*(url: URL): string {.jsfget.} =
-  if url.hostType == htNone:
-    return ""
-  if url.port >= 0:
-    return url.hostname & ':' & $url.port
-  return url.hostname
+  proc `$`*(url: URL): string {.jsfunc: "toString".} = url.serialize()
 
-proc setHost*(url: URL; s: string) {.jsfset: "host".} =
-  if not url.opaquePath:
-    parseURL1(s, url, usHost)
+  proc href(url: URL): string {.jsfget.} =
+    return $url
 
-proc setHostname*(url: URL; s: string) {.jsfset: "hostname".} =
-  if not url.opaquePath:
-    parseURL1(s, url, usHostname)
+  proc toJSON(url: URL): string {.jsfget.} =
+    return $url
 
-proc port*(url: URL): string {.jsfget.} =
-  if url.port >= 0:
-    return $url.port
-  return ""
-
-proc setPort*(url: URL; s: string) {.jsfset: "port".} =
-  if url.isNetPath():
-    if s == "":
-      url.port = -1
+  proc setHref(ctx: JSContext; url: URL; s: string) {.jsfset: "href".} =
+    let purl = parseURL0(s)
+    if purl != nil:
+      purl.cloneInto(url)
     else:
-      parseURL1(s, url, usPort)
+      JS_ThrowTypeError(ctx, "%s is not a valid URL", s)
 
-proc setPathname*(url: URL; s: string) {.jsfset: "pathname".} =
-  if not url.opaquePath:
-    url.pathname = ""
-    parseURL1(s, url, usPathStart)
+  proc searchParams(url: URL): URLSearchParams {.jsfget.} =
+    if url.searchParamsInternal == nil:
+      let i = int(url.search.len > 0)
+      url.searchParamsInternal = URLSearchParams(
+        list: parseFromURLEncoded(url.search.toOpenArray(i, url.search.high)),
+        url: url
+      )
+    return url.searchParamsInternal
 
-proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
-  if s.len <= 0:
-    url.search = ""
+  proc jsOrigin*(url: URL): string {.jsfget: "origin".} =
+    return $url.origin
+
+  proc protocol*(ctx: JSContext; url: URL): JSValue {.jsfget.} =
+    if url.schemeType == stUnknown:
+      return ctx.toJS(url.scheme & ':')
+    const enumId = getJSEnumId(SchemeType)
+    let n = int(url.schemeType)
+    let rt = JS_GetRuntime(ctx)
+    let rtOpaque = rt.getOpaque()
+    if rtOpaque.enumMap.len <= enumId:
+      rtOpaque.enumMap.setLen(enumId + 1)
+    if rtOpaque.enumMap[enumId].atoms.len <= n:
+      rtOpaque.enumMap[enumId].atoms.setLen(n + 1)
+    var atom = rtOpaque.enumMap[enumId].atoms[n]
+    if atom == JS_ATOM_NULL:
+      let s = url.scheme & ':'
+      atom = JS_NewAtomLen(ctx, cstringConst(s), csize_t(s.len))
+      if atom == JS_ATOM_NULL:
+        return JS_EXCEPTION
+      rtOpaque.enumMap[enumId].atoms[n] = atom
+    return JS_AtomToValue(ctx, atom)
+
+  proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
+    parseURL1(s & ':', url, usSchemeStart)
+
+  proc setUsername*(url: URL; username: string) {.jsfset: "username".} =
+    if url.isNetPath():
+      url.username = username.percentEncode(UserInfoPercentEncodeSet)
+
+  proc setPassword*(url: URL; password: string) {.jsfset: "password".} =
+    if url.isNetPath():
+      url.password = password.percentEncode(UserInfoPercentEncodeSet)
+
+  proc host*(url: URL): string {.jsfget.} =
+    if url.hostType == htNone:
+      return ""
+    if url.port >= 0:
+      return url.hostname & ':' & $url.port
+    return url.hostname
+
+  proc setHost*(url: URL; s: string) {.jsfset: "host".} =
+    if not url.opaquePath:
+      parseURL1(s, url, usHost)
+
+  proc setHostname*(url: URL; s: string) {.jsfset: "hostname".} =
+    if not url.opaquePath:
+      parseURL1(s, url, usHostname)
+
+  proc port*(url: URL): string {.jsfget.} =
+    if url.port >= 0:
+      return $url.port
+    return ""
+
+  proc setPort*(url: URL; s: string) {.jsfset: "port".} =
+    if url.isNetPath():
+      if s == "":
+        url.port = -1
+      else:
+        parseURL1(s, url, usPort)
+
+  proc setPathname*(url: URL; s: string) {.jsfset: "pathname".} =
+    if not url.opaquePath:
+      url.pathname = ""
+      parseURL1(s, url, usPathStart)
+
+  proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
+    if s.len <= 0:
+      url.search = ""
+      if url.searchParamsInternal != nil:
+        url.searchParamsInternal.list.setLen(0)
+      return
+    let s = if s[0] == '?': s.substr(1) else: s
+    url.search = "?"
+    parseURL1(s, url, usQuery)
     if url.searchParamsInternal != nil:
-      url.searchParamsInternal.list.setLen(0)
-    return
-  let s = if s[0] == '?': s.substr(1) else: s
-  url.search = "?"
-  parseURL1(s, url, usQuery)
-  if url.searchParamsInternal != nil:
-    url.searchParamsInternal.list = parseFromURLEncoded(s)
+      url.searchParamsInternal.list = parseFromURLEncoded(s)
 
-proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
-  if s.len <= 0:
-    url.hash = ""
-  else:
-    let s = if s[0] == '#': s.substr(1) else: s
-    url.hash = "#"
-    parseURL1(s, url, usFragment)
+  proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
+    if s.len <= 0:
+      url.hash = ""
+    else:
+      let s = if s[0] == '#': s.substr(1) else: s
+      url.hash = "#"
+      parseURL1(s, url, usFragment)
 
-proc jsParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
-    URL {.jsstfunc: "URL#parse".} =
-  return ctx.newURL(url, base).get(nil)
+  proc parse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
+      URL {.jsstfunc.} =
+    return ctx.newURL(url, base).get(nil)
 
-proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
-    bool {.jsstfunc: "URL".} =
-  return ctx.newURL(url, base).isOk
+  proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
+      bool {.jsstfunc.} =
+    return ctx.newURL(url, base).isOk
 
 proc addURLModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(URL)
-  ?ctx.registerType(URLSearchParams, iterable = jitPair)
-  ?ctx.registerType(URLSearchParamsIterator, name = "URLSearchParams Iterator",
-    namespace = JS_UNDEFINED, iterable = jitIterator)
+  ?ctx.registerClass(URLDef)
+  ?ctx.registerClass(URLSearchParamsDef)
+  ?ctx.registerClass(URLSearchParamsIteratorDef, namespace = JS_UNDEFINED)
   ok()
 
 {.pop.} # raises: []

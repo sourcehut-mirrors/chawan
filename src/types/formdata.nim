@@ -3,8 +3,12 @@
 import io/dynstream
 import io/packetreader
 import io/packetwriter
+import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/quickjs
+import monoucha/tojs
 import types/blob
+import types/jsopt
 import types/opt
 import utils/twtstr
 
@@ -23,6 +27,10 @@ type
     boundary*: string
 
 jsDestructor(FormData)
+
+# Forward declaration hack
+var newFormDataImpl*: proc(ctx: JSContext; argv: varargs[JSValueConst]):
+  Opt[FormData] {.raises: [], nimcall.}
 
 proc swrite*(w: var PacketWriter; part: FormDataEntry) =
   w.swrite(part.isstr)
@@ -121,5 +129,90 @@ proc write*(stream: PosixStream; formData: FormData): Opt[void] =
   for entry in formData.entries:
     ?stream.writeEntry(entry, formData.boundary)
   stream.writeLoop("--" & formData.boundary & "--\r\n")
+
+proc generateBoundary(urandom: PosixStream): string =
+  var s {.noinit.}: array[33, uint8]
+  if urandom.readLoop(s).isErr:
+    return ""
+  # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
+  return "----WebKitFormBoundary" & btoa(s)
+
+proc newFormData0*(urandom: PosixStream): FormData =
+  var boundary = urandom.generateBoundary()
+  if boundary.len == 0:
+    return nil
+  return FormData(boundary: move(boundary))
+
+jsClassDef(FormData):
+  proc newFormData(ctx: JSContext; argv: varargs[JSValueConst]): Opt[FormData]
+      {.jsctor.} =
+    newFormDataImpl(ctx, argv)
+
+  proc append*(ctx: JSContext; this: FormData; name: string; val: JSValueConst;
+      rest: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
+    var blob: Blob
+    if ctx.fromJS(val, blob).isOk:
+      var filename = "blob"
+      if rest.len > 0:
+        ?ctx.fromJS(rest[0], filename)
+      elif blob of WebFile:
+        filename = WebFile(blob).name
+      this.entries.add(FormDataEntry(
+        name: name,
+        isstr: false,
+        value: blob,
+        filename: filename
+      ))
+      ok()
+    elif rest.len > 0:
+      err()
+    else:
+      var s: string
+      ?ctx.fromJS(val, s)
+      this.entries.add(FormDataEntry(name: name, isstr: true, svalue: s))
+      ok()
+
+  proc delete(this: FormData; name: string) {.jsfunc.} =
+    for i in countdown(this.entries.high, 0):
+      if this.entries[i].name == name:
+        this.entries.delete(i)
+
+  proc get(ctx: JSContext; this: FormData; name: string): JSValue {.jsfunc.} =
+    for entry in this.entries:
+      if entry.name == name:
+        if entry.isstr:
+          return ctx.toJS(entry.svalue)
+        else:
+          return ctx.toJS(entry.value)
+    return JS_NULL
+
+  proc getAll(ctx: JSContext; this: FormData; name: string): seq[JSValue]
+      {.jsfunc.} =
+    result = newSeq[JSValue]()
+    for entry in this.entries:
+      if entry.name == name:
+        if entry.isstr:
+          result.add(ctx.toJS(entry.svalue))
+        else:
+          result.add(ctx.toJS(entry.value))
+
+proc add*(list: var seq[FormDataEntry], entry: tuple[name, value: string]) =
+  list.add(FormDataEntry(
+    name: entry.name,
+    isstr: true,
+    svalue: entry.value
+  ))
+
+proc toNameValuePairs*(list: seq[FormDataEntry]):
+    seq[tuple[name, value: string]] =
+  result = @[]
+  for entry in list:
+    if entry.isstr:
+      result.add((entry.name, entry.svalue))
+    else:
+      result.add((entry.name, entry.name))
+
+proc addFormDataModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(FormDataDef)
 
 {.pop.} # raises: []

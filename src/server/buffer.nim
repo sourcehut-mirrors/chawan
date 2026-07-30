@@ -22,7 +22,6 @@ import html/chadombuilder
 import html/dom
 import html/env
 import html/event
-import html/formdata as formdata_impl
 import io/chafile
 import io/console
 import io/dynstream

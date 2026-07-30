@@ -18,88 +18,84 @@ import utils/myposix
 import utils/strwidth
 import utils/twtstr
 
-type Util = ref object
+jsClassRaw(utilClass, "Util"):
+  proc getcwd(): string {.jsstfunc.} =
+    return myposix.getcwd()
 
-jsDestructor(Util)
+  proc unquote(ctx: JSContext; s: string; base = ""): JSValue {.jsstfunc.} =
+    let res = ChaPath(s).unquote(base)
+    if res.isOk:
+      return ctx.toJS(res.get)
+    return JS_ThrowTypeError(ctx, "%s", cstring(res.error))
 
-proc getcwd(): string {.jsstfunc: "Util".} =
-  return myposix.getcwd()
+  proc openFile(path: string): cint {.jsstfunc.} =
+    let ps = newPosixStream(path, O_RDONLY, 0)
+    if ps == nil:
+      return -1
+    return ps.fd
 
-proc unquote(ctx: JSContext; s: string; base = ""): JSValue {.
-    jsstfunc: "Util".} =
-  let res = ChaPath(s).unquote(base)
-  if res.isOk:
-    return ctx.toJS(res.get)
-  return JS_ThrowTypeError(ctx, "%s", cstring(res.error))
+  proc isFile(ctx: JSContext; val: JSValueConst): Opt[bool] {.jsstfunc.} =
+    if JS_IsNumber(val):
+      var fd: cint
+      ?ctx.fromJS(val, fd)
+      var stats: Stat
+      return ok(fstat(fd, stats) == 0 and not S_ISDIR(stats.st_mode))
+    var path: string
+    ?ctx.fromJS(val, path)
+    return ok(fileExists(path))
 
-proc openFile(path: string): cint {.jsstfunc: "Util".} =
-  let ps = newPosixStream(path, O_RDONLY, 0)
-  if ps == nil:
-    return -1
-  return ps.fd
+  proc closeFile(fd: cint) {.jsstfunc.} =
+    discard close(fd)
 
-proc isFile(ctx: JSContext; val: JSValueConst): Opt[bool] {.jsstfunc: "Util".} =
-  if JS_IsNumber(val):
-    var fd: cint
-    ?ctx.fromJS(val, fd)
-    var stats: Stat
-    return ok(fstat(fd, stats) == 0 and not S_ISDIR(stats.st_mode))
-  var path: string
-  ?ctx.fromJS(val, path)
-  return ok(fileExists(path))
+  proc nimGCStats(): string {.jsstfunc.} =
+    return GC_getStatistics()
 
-proc closeFile(fd: cint) {.jsstfunc: "Util".} =
-  discard close(fd)
+  proc jsGCStats(ctx: JSContext): string {.jsstfunc.} =
+    let rt = JS_GetRuntime(ctx)
+    return rt.getMemoryUsage()
 
-proc nimGCStats(): string {.jsstfunc: "Util".} =
-  return GC_getStatistics()
+  proc nimCollect() {.jsstfunc.} =
+    try:
+      GC_fullCollect()
+    except Exception:
+      discard
 
-proc jsGCStats(ctx: JSContext): string {.jsstfunc: "Util".} =
-  let rt = JS_GetRuntime(ctx)
-  return rt.getMemoryUsage()
+  proc jsCollect(ctx: JSContext) {.jsstfunc.} =
+    let rt = JS_GetRuntime(ctx)
+    JS_RunGC(rt)
 
-proc nimCollect() {.jsstfunc: "Util".} =
-  try:
-    GC_fullCollect()
-  except Exception:
-    discard
+  proc sleep(millis: int) {.jsstfunc.} =
+    os.sleep(millis)
 
-proc jsCollect(ctx: JSContext) {.jsstfunc: "Util".} =
-  let rt = JS_GetRuntime(ctx)
-  JS_RunGC(rt)
+  proc isSameAuthOrigin(a, b: URL): bool {.jsstfunc.} =
+    return a.authOrigin.isSameOrigin(b.authOrigin);
 
-proc sleep(millis: int) {.jsstfunc: "Util".} =
-  os.sleep(millis)
+  proc encodeURIPath(s: string): string {.jsstfunc.} =
+    return percentEncode(s, PathPercentEncodeSet + {'%'})
 
-proc isSameAuthOrigin(a, b: URL): bool {.jsstfunc: "Util".} =
-  return a.authOrigin.isSameOrigin(b.authOrigin);
+  proc expandPath(s: string): string {.jsstfunc.} =
+    return twtstr.expandPath(s)
 
-proc encodeURIPath(s: string): string {.jsstfunc: "Util".} =
-  return percentEncode(s, PathPercentEncodeSet + {'%'})
+  proc mkdir(s: string; mode: cint): cint {.jsstfunc.} =
+    return posix.mkdir(cstring(s), Mode(mode))
 
-proc expandPath(s: string): string {.jsstfunc: "Util".} =
-  return twtstr.expandPath(s)
+  proc unlink(s: string) {.jsstfunc.} =
+    discard posix.unlink(cstring(s))
 
-proc mkdir(s: string; mode: cint): cint {.jsstfunc: "Util".} =
-  return posix.mkdir(cstring(s), Mode(mode))
+  proc readBlob(path: string): WebFile {.jsstfunc.} =
+    let ps = newPosixStream(path, O_RDONLY, 0)
+    if ps == nil:
+      return nil
+    let name = path.afterLast('/')
+    return newWebFile(name, ps.fd)
 
-proc unlink(s: string) {.jsstfunc: "Util".} =
-  discard posix.unlink(cstring(s))
+  proc convertSize(n: float64): string {.jsstfunc.} =
+    twtstr.convertSize(uint64(n))
 
-proc readBlob(path: string): WebFile {.jsstfunc: "Util".} =
-  let ps = newPosixStream(path, O_RDONLY, 0)
-  if ps == nil:
-    return nil
-  let name = path.afterLast('/')
-  return newWebFile(name, ps.fd)
+  proc width(s: string): int {.jsstfunc.} =
+    strwidth.width(s)
 
-proc convertSize(n: float64): string {.jsstfunc: "Util".} =
-  twtstr.convertSize(uint64(n))
-
-proc width(s: string): int {.jsstfunc: "Util".} =
-  strwidth.width(s)
-
-proc addUtilModule*(ctx: JSContext): JSClassID =
-  return ctx.registerType(Util)
+proc addUtilModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(utilClass)
 
 {.pop.}

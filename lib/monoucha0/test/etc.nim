@@ -151,19 +151,23 @@ test "fromjs-tuple":
   ctx.free()
   rt.free()
 
+template `?`(x: FromJSResult) =
+  assert x == fjOk
+
 type X = ref object
 
 jsDestructor(X)
 
-proc foo(x: X; s: sink string) {.jsfunc.} =
-  discard
+jsClassDef(X):
+  proc foo(x: X; s: sink string) {.jsfunc.} =
+    discard
 
-proc bar(x: X; s: sink(string)) {.jsfunc.} =
-  discard
+  proc bar(x: X; s: sink(string)) {.jsfunc.} =
+    discard
 
 test "sink":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ctx.registerType(X)
+  ?ctx.registerClass(XDef)
   ctx.free()
   rt.free()

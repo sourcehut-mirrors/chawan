@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/posix
+import std/typetraits
 
 import config/mimetypes
 import html/catom
@@ -22,16 +23,16 @@ type
   DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}
 
   Blob* = ref object of JSRootObj
-    size* {.jsget.}: int
-    ctype* {.jsget: "type".}: string
+    size*: int
+    ctype*: string
     buffer*: pointer
     opaque*: pointer
     deallocFun*: DeallocFun
 
   WebFile* {.final.} = ref object of Blob
-    webkitRelativePath {.jsget.}: string
-    name* {.jsget.}: string
-    lastModified* {.jsget.}: int64
+    webkitRelativePath: string
+    name*: string
+    lastModified*: int64
     fd*: cint
 
   FileList* = ref object
@@ -45,6 +46,7 @@ jsDestructor(FileList)
 
 # Forward declarations
 proc deallocBlob*(opaque, p: pointer)
+proc getClassID*(t: typedesc[Blob]): JSClassID
 
 # Iterators
 iterator items*(this: FileList): lent WebFile =
@@ -187,12 +189,6 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
         part.s = part.s.normalizeLF()
   ctx.init(blob, parts, blobType)
 
-proc newBlob(ctx: JSContext; blobParts: seq[BlobPart] = @[];
-    options = BlobPropertyBag()): Opt[Blob] {.jsctor.} =
-  let blob = Blob()
-  ?ctx.init(blob, blobParts, options.`type`, options.endings)
-  ok(blob)
-
 proc newBlob*(buffer: pointer; size: int; ctype: string;
     deallocFun: DeallocFun; opaque: pointer = nil): Blob =
   return Blob(
@@ -202,11 +198,6 @@ proc newBlob*(buffer: pointer; size: int; ctype: string;
     deallocFun: deallocFun,
     opaque: opaque
   )
-
-proc finalize(blob: Blob) {.jsfin.} =
-  if blob.deallocFun != nil:
-    blob.deallocFun(blob.opaque, blob.buffer)
-    blob.buffer = nil
 
 proc newEmptyBlob*(contentType = ""): Blob =
   return newBlob(nil, 0, contentType, nil)
@@ -230,7 +221,22 @@ template toOpenArray*(blob: Blob): openArray[char] =
   if p != nil:
     p.toOpenArray(0, blob.size - 1)
   else:
-    []
+    p.toOpenArray(0, -1)
+
+jsClassDef(Blob):
+  jsget Blob, size
+  jsget Blob, ctype, "type"
+
+  proc newBlob(ctx: JSContext; blobParts: seq[BlobPart] = @[];
+      options = BlobPropertyBag()): Opt[Blob] {.jsctor.} =
+    let blob = Blob()
+    ?ctx.init(blob, blobParts, options.`type`, options.endings)
+    ok(blob)
+
+  proc finalize(blob: Blob) {.jsfin.} =
+    if blob.deallocFun != nil:
+      blob.deallocFun(blob.opaque, blob.buffer)
+      blob.buffer = nil
 
 # File
 proc newWebFile*(name: string; fd: cint): WebFile =
@@ -240,26 +246,33 @@ proc newWebFile*(name: string; fd: cint): WebFile =
     ctype: DefaultGuess.guessContentType(name)
   )
 
-proc finalize(file: WebFile) {.jsfin.} =
-  if file.fd != -1:
-    discard close(file.fd)
-
 type FilePropertyBag = object of BlobPropertyBag
   lastModified {.jsdefault: getUnixMillis().}: int64
 
-proc newWebFile(ctx: JSContext; fileBits: seq[BlobPart]; fileName: string;
-    options = FilePropertyBag(lastModified: getUnixMillis())): Opt[WebFile]
-    {.jsctor.} =
-  let file = WebFile(
-    name: fileName,
-    fd: -1,
-    lastModified: options.lastModified
-  )
-  ?ctx.init(file, fileBits, options.`type`, options.endings)
-  ok(file)
+jsClassNameDef(WebFile, "File"):
+  jsextends BlobDef
 
-proc size*(this: WebFile): int {.jsfget.} =
-  return this.getSize()
+  jsget WebFile, webkitRelativePath
+  jsget WebFile, name
+  jsget WebFile, lastModified
+
+  proc finalize(file: WebFile) {.jsfin.} =
+    if file.fd != -1:
+      discard close(file.fd)
+
+  proc newWebFile(ctx: JSContext; fileBits: seq[BlobPart]; fileName: string;
+      options = FilePropertyBag(lastModified: getUnixMillis())): Opt[WebFile]
+      {.jsctor.} =
+    let file = WebFile(
+      name: fileName,
+      fd: -1,
+      lastModified: options.lastModified
+    )
+    ?ctx.init(file, fileBits, options.`type`, options.endings)
+    ok(file)
+
+  proc size*(this: WebFile): int {.jsfget.} =
+    return this.getSize()
 
 #TODO lastModified
 
@@ -281,28 +294,29 @@ proc add*(this: FileList; file: WebFile) =
 proc clear*(this: FileList) =
   this.files.setLen(0)
 
-proc length(this: FileList): uint32 {.jsfget.} =
-  uint32(this.files.len)
+jsClassDef(FileList):
+  classDef.iterable = jitValue
 
-proc item(this: FileList; u: uint32): WebFile {.jsfunc.} =
-  if u >= 0 and int64(u) < int64(this.files.len):
-    return this.files[int(u)]
-  return nil
+  proc length(this: FileList): uint32 {.jsfget.} =
+    uint32(this.files.len)
 
-proc getter(ctx: JSContext; this: FileList; atom: JSAtom): JSValue
-    {.jsgetownprop.} =
-  var u: uint32
-  return case ctx.fromIdx(atom, u)
-  of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
-  of fiStr: JS_UNINITIALIZED
-  of fiErr: JS_EXCEPTION
+  proc item(this: FileList; u: uint32): WebFile {.jsfunc.} =
+    if u >= 0 and int64(u) < int64(this.files.len):
+      return this.files[int(u)]
+    return nil
+
+  proc getter(ctx: JSContext; this: FileList; atom: JSAtom): JSValue
+      {.jsgetownprop.} =
+    var u: uint32
+    return case ctx.fromIdx(atom, u)
+    of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
+    of fiStr: JS_UNINITIALIZED
+    of fiErr: JS_EXCEPTION
 
 proc addBlobModule*(ctx: JSContext): Opt[void] =
-  let blobCID = ctx.registerType(Blob)
-  if blobCID == JS_INVALID_CLASS_ID:
-    return err()
-  ?ctx.registerType(WebFile, parent = blobCID, name = "File")
-  ?ctx.registerType(FileList, iterable = jitValue)
+  ?ctx.registerClass(BlobDef)
+  ?ctx.registerClass(WebFileDef)
+  ?ctx.registerClass(FileListDef)
   ok()
 
 {.pop.} # raises: []

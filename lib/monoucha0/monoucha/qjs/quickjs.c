@@ -3907,7 +3907,6 @@ static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
     cl->gc_mark = class_def->gc_mark;
     cl->call = class_def->call;
     cl->exotic = class_def->exotic;
-    cl->can_destroy = class_def->can_destroy;
     return 0;
 }
 
@@ -3937,6 +3936,12 @@ int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def)
     ret = JS_NewClass1(rt, class_id, class_def, name);
     JS_FreeAtomRT(rt, name);
     return ret;
+}
+
+void JS_SetClassCanDestroy(JSRuntime *rt, JSClassID class_id,
+                           JSClassCanDestroy *can_destroy)
+{
+    rt->class_array[class_id].can_destroy = can_destroy;
 }
 
 static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len)

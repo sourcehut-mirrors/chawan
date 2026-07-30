@@ -112,9 +112,9 @@ type
 
   Response* {.final.} = ref object of LoaderData
     flags*: set[ResponseFlag]
-    responseType* {.jsget: "type".}: ResponseType
-    status* {.jsget.}: uint16
-    headers* {.jsget.}: Headers
+    responseType*: ResponseType
+    status*: uint16
+    headers*: Headers
     url*: URL #TODO should be urllist?
     onRead*: ResponseRead
     onFinish*: ResponseFinish
@@ -139,6 +139,7 @@ type
     reject: pointer # JSObject *
 
 # Forward declarations
+proc bodyUsed*(response: Response): bool
 proc get*(loader: FileLoader; fd: cint): MapData
 proc resume*(loader: FileLoader; outputId: int)
 proc unregister*(loader: FileLoader; data: MapData)
@@ -151,22 +152,6 @@ template resolveVal(this: BlobOpaque): JSValue =
 
 template rejectVal(this: BlobOpaque): JSValue =
   JS_MKPTR(JS_TAG_OBJECT, this.reject)
-
-proc finalize(rt: JSRuntime; this: Response) {.jsfin.} =
-  if this.opaque of JSBlobOpaque:
-    let opaque = JSBlobOpaque(this.opaque)
-    if opaque.resolve != nil:
-      JS_FreeValueRT(rt, opaque.resolveVal)
-    if opaque.reject != nil:
-      JS_FreeValueRT(rt, opaque.rejectVal)
-
-proc mark(rt: JSRuntime; this: Response; fun: JS_MarkFunc) {.jsmark.} =
-  if this.opaque of JSBlobOpaque:
-    let opaque = JSBlobOpaque(this.opaque)
-    if opaque.resolve != nil:
-      JS_MarkValue(rt, opaque.resolveVal, fun)
-    if opaque.reject != nil:
-      JS_MarkValue(rt, opaque.rejectVal, fun)
 
 template isErr*(x: TextResult): bool =
   not x.isOk
@@ -191,34 +176,6 @@ proc newResponse*(request: Request; stream: PosixStream; outputId: int):
     headers: newHeaders(hgResponse),
     status: 200
   )
-
-proc newResponse*(ctx: JSContext; body: JSValueConst = JS_UNDEFINED;
-    init: JSValueConst = JS_UNDEFINED): Opt[Response] {.jsctor.} =
-  if not JS_IsUndefined(body) or not JS_IsUndefined(init):
-    #TODO
-    JS_ThrowInternalError(ctx, "Response constructor with body or init")
-    return err()
-  return ok(newResponse(nil, nil, -1))
-
-proc makeNetworkError*(): Response {.jsstfunc: "Response#error".} =
-  #TODO use "create" function
-  return Response(
-    responseType: rtError,
-    status: 0,
-    headers: newHeaders(hgImmutable),
-    flags: {rfBodyUsed}
-  )
-
-proc jsOk(response: Response): bool {.jsfget: "ok".} =
-  return response.status in 200u16 .. 299u16
-
-proc surl*(response: Response): string {.jsfget: "url".} =
-  if response.responseType == rtError or response.url == nil:
-    return ""
-  return $response.url
-
-proc bodyUsed*(response: Response): bool {.jsfget.} =
-  rfBodyUsed in response.flags
 
 proc getCharset*(this: Response; fallback: Charset): Charset =
   let header = this.headers.getFirst("Content-Type").toLowerAscii()
@@ -359,9 +316,6 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
   loader.blob(response, opaque)
   return res
 
-proc blob(ctx: JSContext; response: Response): JSValue {.jsfunc.} =
-  return ctx.blob0(response, jsBlobFinish)
-
 proc onFinishText(response: Response; success: bool) =
   let blob = response.onFinishBlob(success)
   let opaque = JSBlobOpaque(response.opaque)
@@ -371,9 +325,6 @@ proc onFinishText(response: Response; success: bool) =
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
-
-proc text(ctx: JSContext; response: Response): JSValue {.jsfunc.} =
-  return ctx.blob0(response, onFinishText)
 
 proc onFinishJSON(response: Response; success: bool) =
   let blob = response.onFinishBlob(success)
@@ -386,11 +337,66 @@ proc onFinishJSON(response: Response; success: bool) =
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
 
-proc json(ctx: JSContext; this: Response): JSValue {.jsfunc.} =
-  return ctx.blob0(this, onFinishJSON)
+jsClassDef(Response):
+  jsget Response, responseType, "type"
+  jsget Response, status
+  jsget Response, headers
 
-proc addResponseModule*(ctx: JSContext): JSClassID =
-  return ctx.registerType(Response)
+  proc finalize(rt: JSRuntime; this: Response) {.jsfin.} =
+    if this.opaque of JSBlobOpaque:
+      let opaque = JSBlobOpaque(this.opaque)
+      if opaque.resolve != nil:
+        JS_FreeValueRT(rt, opaque.resolveVal)
+      if opaque.reject != nil:
+        JS_FreeValueRT(rt, opaque.rejectVal)
+
+  proc mark(rt: JSRuntime; this: Response; fun: JS_MarkFunc) {.jsmark.} =
+    if this.opaque of JSBlobOpaque:
+      let opaque = JSBlobOpaque(this.opaque)
+      if opaque.resolve != nil:
+        JS_MarkValue(rt, opaque.resolveVal, fun)
+      if opaque.reject != nil:
+        JS_MarkValue(rt, opaque.rejectVal, fun)
+
+  proc newResponse*(ctx: JSContext; body: JSValueConst = JS_UNDEFINED;
+      init: JSValueConst = JS_UNDEFINED): Opt[Response] {.jsctor.} =
+    if not JS_IsUndefined(body) or not JS_IsUndefined(init):
+      #TODO
+      JS_ThrowInternalError(ctx, "Response constructor with body or init")
+      return err()
+    return ok(newResponse(nil, nil, -1))
+
+  proc makeNetworkError*(): Response {.jsstfunc: "error".} =
+    #TODO use "create" function
+    return Response(
+      responseType: rtError,
+      status: 0,
+      headers: newHeaders(hgImmutable),
+      flags: {rfBodyUsed}
+    )
+
+  proc jsOk(response: Response): bool {.jsfget: "ok".} =
+    return response.status in 200u16 .. 299u16
+
+  proc surl*(response: Response): string {.jsfget: "url".} =
+    if response.responseType == rtError or response.url == nil:
+      return ""
+    return $response.url
+
+  proc bodyUsed*(response: Response): bool {.jsfget.} =
+    rfBodyUsed in response.flags
+
+  proc blob(ctx: JSContext; response: Response): JSValue {.jsfunc.} =
+    return ctx.blob0(response, jsBlobFinish)
+
+  proc text(ctx: JSContext; response: Response): JSValue {.jsfunc.} =
+    return ctx.blob0(response, onFinishText)
+
+  proc json(ctx: JSContext; this: Response): JSValue {.jsfunc.} =
+    return ctx.blob0(this, onFinishJSON)
+
+proc addResponseModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(ResponseDef)
 
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:

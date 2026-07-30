@@ -49,13 +49,26 @@ type
   Earth = ref object of Planet
   Moon = ref object of Planet
 
-proc jsAssert(earth: Earth; pred: bool) {.jsfunc: "assert".} =
-  assert pred
+jsClassDef(Planet):
+  discard
+
+jsClassDef(Earth):
+  jsextends PlanetDef
+
+  proc jsAssert(earth: Earth; pred: bool) {.jsfunc: "assert".} =
+    assert pred
+
+jsClassDef(Moon):
+  jsextends PlanetDef
+
+template `?`(x: FromJSResult) =
+  assert x == fjOk
 
 test "registerType: registering type interfaces":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ctx.registerType(Moon)
+  ?ctx.registerClass(PlanetDef)
+  ?ctx.registerClass(MoonDef)
   const code = "Moon"
   let val = ctx.eval(code)
   var res: string
@@ -72,7 +85,8 @@ test "Global objects":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let earth = Earth()
-  ctx.registerType(Earth, asglobal = true)
+  ?ctx.registerClass(PlanetDef)
+  ?ctx.registerClass(EarthDef, asglobal = true)
   ctx.setGlobal(earth)
   const code = "assert(globalThis instanceof Earth)"
   let val = ctx.eval(code)
@@ -84,9 +98,9 @@ test "Global objects":
 test "Inheritance":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  let planetCID = ctx.registerType(Planet)
-  ctx.registerType(Earth, parent = planetCID, asglobal = true)
-  ctx.registerType(Moon, parent = planetCID)
+  ?ctx.registerClass(PlanetDef)
+  ?ctx.registerClass(EarthDef, asglobal = true)
+  ?ctx.registerClass(MoonDef)
   ctx.setGlobal(Earth())
   const code = "assert(globalThis instanceof Planet)"
   let val = ctx.eval(code)
@@ -100,16 +114,25 @@ test "jsget, jsset: basic property reflectors":
     Moon = ref object
 
     Earth = ref object
-      moon {.jsget.}: Moon
-      name {.jsgetset.}: string
-      population {.jsset.}: int64
+      moon: Moon
+      name: string
+      population: int64
 
   jsDestructor(Moon)
+
+  jsClassDef(Moon):
+    discard
+
+  jsClassDef(Earth):
+    jsget Earth, moon
+    jsgetset Earth, name
+    jsgetset Earth, population
+
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let earth = Earth(moon: Moon(), population: 1, name: "Earth")
-  ctx.registerType(Earth, asglobal = true)
-  ctx.registerType(Moon)
+  ?ctx.registerClass(EarthDef, asglobal = true)
+  ?ctx.registerClass(MoonDef)
   ctx.setGlobal(earth)
   const code = """
 globalThis.population = 8e9;
@@ -126,23 +149,29 @@ globalThis.population = 8e9;
 
 type
   Window = ref object
-    console {.jsget.}: Console
+    console: Console
+
   Console = ref object
 
 jsDestructor(Console)
 
-# aux stuff for tests
-proc jsAssert(window: Window; pred: bool) {.jsfunc: "assert".} =
-  assert pred
+jsClassDef(Window):
+  jsget Window, console
 
-test "jsfunc: regular functions":
+  # aux stuff for tests
+  proc jsAssert(window: Window; pred: bool) {.jsfunc: "assert".} =
+    assert pred
+
+jsClassDef(Console):
   proc log(console: Console; s: string) {.jsfunc.} =
     echo s
+
+test "jsfunc: regular functions":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let window = Window(console: Console())
-  ctx.registerType(Window, asglobal = true)
-  ctx.registerType(Console)
+  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerClass(ConsoleDef)
   ctx.setGlobal(window)
   const code = """
 console.log('Hello, world!')
@@ -156,21 +185,56 @@ console.log('Hello, world!')
 type
   JSFile = ref object
     buffer: pointer # some internal buffer handled as managed memory
-    path {.jsget.}: string
+    path: string
 
 jsDestructor(JSFile)
 
-proc newJSFile(path: string): JSFile {.jsctor.} =
-  return JSFile(
-    path: path,
-    buffer: alloc(4096)
-  )
+jsClassNameDef(JSFile, "File"):
+  jsget JSFile, path
+
+  proc newJSFile(path: string): JSFile {.jsctor.} =
+    return JSFile(
+      path: path,
+      buffer: alloc(4096)
+    )
+
+  func name(file: JSFile): string {.jsfget.} =
+    return file.path.substr(file.path.rfind('/') + 1)
+
+  proc setName(file: JSFile; s: string) {.jsfset: "name".} =
+    let i = file.path.rfind('/')
+    file.path = file.path.substr(0, i) & s
+
+  proc jsExists(path: string): bool {.jsstfunc: "exists".} =
+    return fileExists(path)
+
+  # this will always return the result of the fstat call.
+  proc owner(file: JSFile): int {.jsuffget.} =
+    let fd = open(cstring(file.path), O_RDONLY, 0)
+    if fd == -1: return -1
+    var stats = Stat.default
+    if fstat(fd, stats) == -1:
+      discard close(fd)
+      return -1
+    return int(stats.st_uid)
+
+  proc getOwner(file: JSFile): int {.jsuffget.} =
+    return file.owner
+
+  var unrefd {.global.} = 0
+  proc finalize(file: JSFile) {.jsfin.} =
+    if file.buffer != nil:
+      dealloc(file.buffer)
+      # Note: it is not necessary to nil out the pointer; it's just me being
+      # paranoid :P
+      file.buffer = nil
+      inc unrefd
 
 test "jsctor: constructors":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ctx.registerType(Window, asglobal = true)
-  ctx.registerType(JSFile, name = "File")
+  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerClass(JSFileDef)
   ctx.setGlobal(Window())
   const code = """
 assert(new File('/path/to/file') + '' == '[object File]')
@@ -181,18 +245,11 @@ assert(new File('/path/to/file') + '' == '[object File]')
   ctx.free()
   rt.free()
 
-func name(file: JSFile): string {.jsfget.} =
-  return file.path.substr(file.path.rfind('/') + 1)
-
-proc setName(file: JSFile; s: string) {.jsfset: "name".} =
-  let i = file.path.rfind('/')
-  file.path = file.path.substr(0, i) & s
-
 test "jsfget, jsfset: custom property reflectors":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ctx.registerType(Window, asglobal = true)
-  ctx.registerType(JSFile, name = "File")
+  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerClass(JSFileDef)
   ctx.setGlobal(Window())
   const code = """
 const file = new File("/path/to/file");
@@ -207,14 +264,11 @@ assert(file.path === "/path/to/new-name");
   ctx.free()
   rt.free()
 
-proc jsExists(path: string): bool {.jsstfunc: "JSFile#exists".} =
-  return fileExists(path)
-
 test "jsstfunc: static functions":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ctx.registerType(Window, asglobal = true)
-  ctx.registerType(JSFile, name = "File")
+  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerClass(JSFileDef)
   ctx.setGlobal(Window())
   const code = """
 assert(File.exists("doc/manual.md"));
@@ -225,24 +279,11 @@ assert(File.exists("doc/manual.md"));
   ctx.free()
   rt.free()
 
-# this will always return the result of the fstat call.
-proc owner(file: JSFile): int {.jsuffget.} =
-  let fd = open(cstring(file.path), O_RDONLY, 0)
-  if fd == -1: return -1
-  var stats = Stat.default
-  if fstat(fd, stats) == -1:
-    discard close(fd)
-    return -1
-  return int(stats.st_uid)
-
-proc getOwner(file: JSFile): int {.jsuffget.} =
-  return file.owner
-
 test "jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ctx.registerType(Window, asglobal = true)
-  ctx.registerType(JSFile, name = "File")
+  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerClass(JSFileDef)
   const code = """
 const file = new File("doc/manual.md");
 const oldGetOwner = file.getOwner;
@@ -256,22 +297,13 @@ Object.defineProperty(file, "owner", { value: -2 }); /* throws */
   ctx.free()
   rt.free()
 
-var unrefd {.global.} = 0
-proc finalize(file: JSFile) {.jsfin.} =
-  if file.buffer != nil:
-    dealloc(file.buffer)
-    # Note: it is not necessary to nil out the pointer; it's just me being
-    # paranoid :P
-    file.buffer = nil
-    inc unrefd
-
 test "jsfin: object finalizers":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   GC_fullCollect() # ensure refc runs
   unrefd = 0 # ignore previous unrefs
-  ctx.registerType(Window, asglobal = true)
-  ctx.registerType(JSFile, name = "File")
+  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerClass(JSFileDef)
   const code = """
 /* this doesn't leak. yay :D */
 { const file = new File("doc/manual.md"); }

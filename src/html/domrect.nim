@@ -12,10 +12,10 @@ import types/opt
 
 type
   DOMRectReadOnly* = ref object of JSRootObj
-    x* {.jsget.}: float64
-    y* {.jsget.}: float64
-    width* {.jsget.}: float64
-    height* {.jsget.}: float64
+    x*: float64
+    y*: float64
+    width*: float64
+    height*: float64
 
   DOMRect* {.final.} = ref object of DOMRectReadOnly
 
@@ -31,81 +31,71 @@ type
 jsDestructor(DOMRectList)
 
 # DOMRectReadOnly
-proc newDOMRectReadOnly(x = 0'f64; y = 0'f64; width = 0'f64; height = 0'f64):
-    DOMRectReadOnly {.jsctor.} =
-  DOMRectReadOnly(x: x, y: y, width: width, height: height)
+jsClassDef(DOMRectReadOnly):
+  jsget DOMRectReadOnly, x
+  jsget DOMRectReadOnly, y
+  jsget DOMRectReadOnly, width
+  jsget DOMRectReadOnly, height
 
-proc fromRectReadOnly(other = DOMRectInit()): DOMRectReadOnly {.
-    jsstfunc: "DOMRectReadOnly#fromRect".} =
-  newDOMRectReadOnly(other.x, other.y, other.width, other.height)
+  proc newDOMRectReadOnly(x = 0'f64; y = 0'f64; width = 0'f64; height = 0'f64):
+      DOMRectReadOnly {.jsctor.} =
+    DOMRectReadOnly(x: x, y: y, width: width, height: height)
 
-proc left(rect: DOMRectReadOnly): float64 {.jsfget.} =
-  return min(rect.x, rect.x + rect.width)
+  proc fromRectReadOnly(other = DOMRectInit()): DOMRectReadOnly {.
+      jsstfunc: "fromRect".} =
+    newDOMRectReadOnly(other.x, other.y, other.width, other.height)
 
-proc right(rect: DOMRectReadOnly): float64 {.jsfget.} =
-  return max(rect.x, rect.x + rect.width)
+  proc left(rect: DOMRectReadOnly): float64 {.jsfget.} =
+    return min(rect.x, rect.x + rect.width)
 
-proc top(rect: DOMRectReadOnly): float64 {.jsfget.} =
-  return min(rect.y, rect.y + rect.height)
+  proc right(rect: DOMRectReadOnly): float64 {.jsfget.} =
+    return max(rect.x, rect.x + rect.width)
 
-proc bottom(rect: DOMRectReadOnly): float64 {.jsfget.} =
-  return max(rect.y, rect.y + rect.height)
+  proc top(rect: DOMRectReadOnly): float64 {.jsfget.} =
+    return min(rect.y, rect.y + rect.height)
 
-#TODO toJSON
+  proc bottom(rect: DOMRectReadOnly): float64 {.jsfget.} =
+    return max(rect.y, rect.y + rect.height)
+
+  #TODO toJSON
 
 # DOMRect
-proc newDOMRect*(x = 0'f64; y = 0'f64; width = 0'f64; height = 0'f64):
-    DOMRect {.jsctor.} =
-  DOMRect(x: x, y: y, width: width, height: height)
+jsClassDef(DOMRect):
+  jsextends DOMRectReadOnlyDef
 
-proc getX(rect: DOMRect): float64 {.jsfget: "x".} =
-  rect.x
+  jsgetset DOMRect, x
+  jsgetset DOMRect, y
+  jsgetset DOMRect, width
+  jsgetset DOMRect, height
 
-proc getY(rect: DOMRect): float64 {.jsfget: "y".} =
-  rect.y
+  proc newDOMRect*(x = 0'f64; y = 0'f64; width = 0'f64; height = 0'f64):
+      DOMRect {.jsctor.} =
+    DOMRect(x: x, y: y, width: width, height: height)
 
-proc getWidth(rect: DOMRect): float64 {.jsfget: "width".} =
-  rect.width
-
-proc getHeight(rect: DOMRect): float64 {.jsfget: "height".} =
-  rect.height
-
-proc setX(rect: DOMRect; x: float64) {.jsfset: "x".} =
-  rect.x = x
-
-proc setY(rect: DOMRect; y: float64) {.jsfset: "y".} =
-  rect.y = y
-
-proc setWidth(rect: DOMRect; width: float64) {.jsfset: "width".} =
-  rect.width = width
-
-proc setHeight(rect: DOMRect; height: float64) {.jsfset: "height".} =
-  rect.height = height
-
-proc fromRect(other = DOMRectInit()): DOMRect {.jsstfunc: "DOMRect".} =
-  newDOMRect(other.x, other.y, other.width, other.height)
+  proc fromRect(other = DOMRectInit()): DOMRect {.jsstfunc.} =
+    newDOMRect(other.x, other.y, other.width, other.height)
 
 # DOMRectList
-proc length(this: DOMRectList): int {.jsfget.} =
-  this.list.len
+jsClassDef(DOMRectList):
+  proc length(this: DOMRectList): int {.jsfget.} =
+    this.list.len
 
-proc getter(ctx: JSContext; this: DOMRectList; atom: JSAtom): JSValue
-    {.jsgetownprop.} =
-  var u: uint32
-  return case ctx.fromIdx(atom, u)
-  of fiIdx:
-    if int64(u) < int64(this.list.len):
-      ctx.toJS(this.list[int(u)]).uninitIfNull()
-    else:
-      JS_UNINITIALIZED
-  of fiStr: JS_UNINITIALIZED
-  of fiErr: JS_EXCEPTION
+  proc getter(ctx: JSContext; this: DOMRectList; atom: JSAtom): JSValue
+      {.jsgetownprop.} =
+    var u: uint32
+    return case ctx.fromIdx(atom, u)
+    of fiIdx:
+      if int64(u) < int64(this.list.len):
+        ctx.toJS(this.list[int(u)]).uninitIfNull()
+      else:
+        JS_UNINITIALIZED
+    of fiStr: JS_UNINITIALIZED
+    of fiErr: JS_EXCEPTION
 
 proc addDOMRectModule*(ctx: JSContext): Opt[void] =
-  let domRectReadOnlyCID = ctx.registerType(DOMRectReadOnly)
-  ?domRectReadOnlyCID
-  ?ctx.registerType(DOMRect, parent = domRectReadOnlyCID)
-  ?ctx.registerType(DOMRectList)
+  ?ctx.registerClass(DOMRectReadOnlyDef)
+  ?ctx.registerClass(DOMRectDef)
+  ?ctx.registerClass(DOMRectListDef)
   ok()
 
 {.pop.}

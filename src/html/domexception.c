@@ -169,8 +169,7 @@ static const JSCFunctionListEntry js_domexception_proto_funcs[] = {
 };
 
 static const JSClassDef js_domexception_class_def = {
-    "DOMException", js_domexception_finalizer, js_domexception_mark, NULL, NULL,
-    NULL /* can_destroy */
+    "DOMException", js_domexception_finalizer, js_domexception_mark, NULL, NULL
 };
 
 JSValue JS_ThrowDOMException(JSContext *ctx, const char *name,

@@ -390,35 +390,36 @@ proc finish*(wrapper: HTML5ParserWrapper) =
   wrapper.parser.finish()
   wrapper.builder.finish()
 
-proc newDOMParser*(): DOMParser {.jsctor.} =
-  return DOMParser()
+jsClassDef(DOMParser):
+  proc newDOMParser*(): DOMParser {.jsctor.} =
+    return DOMParser()
 
-proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
-    JSValue {.jsfunc.} =
-  case t
-  of "text/html":
-    let window = ctx.getWindow()
-    let url = if window.document != nil:
-      window.document.url
+  proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
+      JSValue {.jsfunc.} =
+    case t
+    of "text/html":
+      let window = ctx.getWindow()
+      let url = if window.document != nil:
+        window.document.url
+      else:
+        parseURL0("about:blank")
+      let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
+      var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode, CAtom]())
+      let res = parser.parseChunk(str)
+      assert res == pcrContinue
+      parser.finish()
+      builder.finish()
+      return ctx.toJS(builder.document)
+    of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
+      return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
     else:
-      parseURL0("about:blank")
-    let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
-    var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode, CAtom]())
-    let res = parser.parseChunk(str)
-    assert res == pcrContinue
-    parser.finish()
-    builder.finish()
-    return ctx.toJS(builder.document)
-  of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
-    return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
-  else:
-    return JS_ThrowTypeError(ctx, "invalid mime type")
+      return JS_ThrowTypeError(ctx, "invalid mime type")
 
 # Forward declaration hack
 parseHTMLFragmentImpl = parseHTMLFragment
 parseDocumentWriteChunkImpl = parseDocumentWriteChunk
 
-proc addHTMLModule*(ctx: JSContext): JSClassID =
-  return ctx.registerType(DOMParser)
+proc addHTMLModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(DOMParserDef)
 
 {.pop.} # raises: []

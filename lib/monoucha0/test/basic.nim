@@ -8,14 +8,18 @@ import monoucha/quickjs
 type MyGlobal = ref object
   s: string
 
-proc testFun(x: MyGlobal): string {.jsfunc.} =
-  return "Hello, " & x.s
+jsClassDef(MyGlobal):
+  proc testFun(x: MyGlobal): string {.jsfunc.} =
+    return "Hello, " & x.s
+
+template `?`(x: FromJSResult) =
+  assert x == fjOk
 
 test "hello JS":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let global = MyGlobal(s: "world!")
-  ctx.registerType(MyGlobal, asglobal = true)
+  ?ctx.registerClass(MyGlobalDef, asglobal = true)
   ctx.setGlobal(global)
   const code = "testFun()"
   let val = ctx.eval(code, "<test>", 0)

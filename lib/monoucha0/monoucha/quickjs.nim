@@ -151,7 +151,7 @@ type
     getter*: JSValue
     setter*: JSValue
 
-  JSClassExoticMethods* {.importc, header: qjsheader.} =  object
+  JSClassExoticMethods* {.importc, header: qjsheader, completeStruct.} = object
     # Return -1 if exception (can only happen in case of Proxy object),
     # FALSE if the property does not exists, TRUE if it exists. If 1 is
     # returned, the property descriptor 'desc' is filled if != NULL.
@@ -197,7 +197,7 @@ type
     proc(ctx: JSContext; func_obj, this_val: JSValueConst; argc: cint;
       argv: JSValueConstArray; flags: cint): JSValue {.cdecl.}
 
-  JSClassDef* {.importc, header: qjsheader.} = object
+  JSClassDef* {.importc, header: qjsheader, completeStruct.} = object
     class_name*: cstring # pure ASCII only!
     finalizer*: JSClassFinalizer
     gc_mark*: JSClassGCMark
@@ -207,7 +207,6 @@ type
     # if the object constructor bit is set (see JS_SetConstructorBit()).
     call*: JSClassCallP
     exotic*: JSClassExoticMethodsConst
-    can_destroy*: JSClassCanDestroy
 
   JSClassDefConst* {.importc: "const JSClassDef *",
     header: qjsheader.} = ptr JSClassDef
@@ -643,6 +642,8 @@ proc JS_GetRegExpBytecode*(ctx: JSContext; obj: JSValueConst; plen: var cint):
   ptr uint8
 proc JS_ThrowTypeErrorOrFalse*(ctx: JSContext; flags: cint; fmt: cstring):
   cint {.varargs.}
+proc JS_SetClassCanDestroy*(rt: JSRuntime; class_id: JSClassID;
+  can_destroy: JSClassCanDestroy)
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
   class_id: JSClassID): JSValue

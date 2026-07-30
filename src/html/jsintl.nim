@@ -2,6 +2,7 @@
 
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsopaque
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -128,21 +129,20 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
         tags.add(tag)
   ctx.toJS(tags)
 
-proc getCanonicalLocales(ctx: JSContext; val: JSValueConst): JSValue {.
-    jsstfunc: "Intl".} =
-  ctx.canonicalizeLocales(val)
-
-let jsIntlFuncs {.global.} = [
-    JS_CFUNC_DEF("getCanonicalLocales", 0, js_func_Intl_getCanonicalLocales),
-    JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Intl", JS_PROP_CONFIGURABLE),
-]
+jsClassRaw(intlClass, "Intl"):
+  # fake class
+  # TODO we need a better way to define namespaces
+  proc getCanonicalLocales(ctx: JSContext; val: JSValueConst): JSValue {.
+      jsstfunc.} =
+    ctx.canonicalizeLocales(val)
 
 # Collator
-proc newCollator(): Collator {.jsctor.} =
-  return Collator()
+jsClassDef(Collator):
+  proc newCollator(): Collator {.jsctor.} =
+    return Collator()
 
-proc compare(this: Collator; a, b: string): bool {.jsfunc.} =
-  return a == b
+  proc compare(this: Collator; a, b: string): bool {.jsfunc.} =
+    return a == b
 
 # NumberFormat
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
@@ -164,22 +164,6 @@ proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
       return fjErr
     unit = NumberUnit(part1: part1.get)
   fjOk
-
-proc newNumberFormat(ctx: JSContext; name = "en-US";
-    options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsfctor.} =
-  let nf = NumberFormat()
-  if JS_IsObject(options):
-    discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",
-      nf.maximumFractionDigits)
-    if nf.maximumFractionDigits notin 0..100:
-      let s = $nf.maximumFractionDigits
-      JS_ThrowRangeError(ctx, "invalid digits value: %s", cstring(s))
-      return err()
-    discard ?ctx.fromJSGetProp(options, "style", nf.style)
-    if not ?ctx.fromJSGetProp(options, "unit", nf.unit) and nf.style == nsUnit:
-      JS_ThrowTypeError(ctx, "undefined unit in NumberFormat() with unit style")
-      return err()
-  ok(nf)
 
 const UnitTable = [
   nupAcre: cstring"ac",
@@ -249,86 +233,110 @@ proc stringifyUnit(unit: NumberUnit; s: string): string =
     result &= '/'
     result &= unit.part2.get.stringify(s, part2 = true)
 
-proc format(nf: NumberFormat; s: string): string {.jsfunc.} =
-  result = ""
-  var i = 0
-  var L = s.rfind('.')
-  if L == -1:
-    L = s.len
-  if L mod 3 != 0:
-    while i < L mod 3:
+jsClassDef(NumberFormat):
+  proc newNumberFormat(ctx: JSContext; name = "en-US";
+      options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsfctor.} =
+    let nf = NumberFormat()
+    if JS_IsObject(options):
+      discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",
+        nf.maximumFractionDigits)
+      if nf.maximumFractionDigits notin 0..100:
+        let s = $nf.maximumFractionDigits
+        JS_ThrowRangeError(ctx, "invalid digits value: %s", cstring(s))
+        return err()
+      discard ?ctx.fromJSGetProp(options, "style", nf.style)
+      if not ?ctx.fromJSGetProp(options, "unit", nf.unit) and
+          nf.style == nsUnit:
+        JS_ThrowTypeError(ctx,
+          "undefined unit in NumberFormat() with unit style")
+        return err()
+    ok(nf)
+
+  proc format(nf: NumberFormat; s: string): string {.jsfunc.} =
+    result = ""
+    var i = 0
+    var L = s.rfind('.')
+    if L == -1:
+      L = s.len
+    if L mod 3 != 0:
+      while i < L mod 3:
+        result &= s[i]
+        inc i
+      if i < L:
+        result &= ','
+    let j = i
+    while i < L:
+      if j != i and i mod 3 == j:
+        result &= ','
       result &= s[i]
       inc i
-    if i < L:
-      result &= ','
-  let j = i
-  while i < L:
-    if j != i and i mod 3 == j:
-      result &= ','
-    result &= s[i]
-    inc i
-  if i + 1 < s.len and s[i] == '.' and (s[i + 1] != '0' or s.len != i + 2):
-    if nf.maximumFractionDigits > 0:
-      result &= '.'
-      inc i
-      var k = 0
-      while i < s.len and k < nf.maximumFractionDigits:
-        result &= s[i]
-        inc k
+    if i + 1 < s.len and s[i] == '.' and (s[i + 1] != '0' or s.len != i + 2):
+      if nf.maximumFractionDigits > 0:
+        result &= '.'
         inc i
-  case nf.style
-  of nsDecimal: discard
-  of nsUnit: result &= nf.unit.stringifyUnit(s)
-  of nsPercent: result &= '%'
-  of nsCurrency: discard #TODO?
+        var k = 0
+        while i < s.len and k < nf.maximumFractionDigits:
+          result &= s[i]
+          inc k
+          inc i
+    case nf.style
+    of nsDecimal: discard
+    of nsUnit: result &= nf.unit.stringifyUnit(s)
+    of nsPercent: result &= '%'
+    of nsCurrency: discard #TODO?
 
-proc supportedLocalesOf(ctx: JSContext; locales: JSValueConst;
-    options: JSValueConst = JS_UNDEFINED): JSValue {.
-    jsstfunc: "NumberFormat".} =
-  #TODO
-  return ctx.getCanonicalLocales(locales)
+  proc supportedLocalesOf(ctx: JSContext; locales: JSValueConst;
+      options: JSValueConst = JS_UNDEFINED): JSValue {.jsstfunc.} =
+    #TODO
+    return ctx.getCanonicalLocales(locales)
 
 # DateTimeFormat
-proc newDateTimeFormat(): Opt[DateTimeFormat] {.jsfctor.} =
-  return ok(DateTimeFormat())
+jsClassDef(DateTimeFormat):
+  proc newDateTimeFormat(): Opt[DateTimeFormat] {.jsfctor.} =
+    return ok(DateTimeFormat())
 
 # PluralRules
-proc newPluralRules(): PluralRules {.jsctor.} =
-  return PluralRules()
+jsClassDef(PluralRules):
+  proc newPluralRules(): PluralRules {.jsctor.} =
+    return PluralRules()
 
-proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
-  return PRResolvedOptions(locale: "en-US")
+  proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
+    return PRResolvedOptions(locale: "en-US")
 
-proc select(this: PluralRules; num: float64): string {.jsfunc.} =
-  if num == 1:
-    return "one"
-  return "many"
+  proc select(this: PluralRules; num: float64): string {.jsfunc.} =
+    if num == 1:
+      return "one"
+    return "many"
 
 # RelativeTimeFormat
-proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
-  return RelativeTimeFormat()
+jsClassDef(RelativeTimeFormat):
+  proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
+    return RelativeTimeFormat()
 
 # ListFormat
-proc newListFormat(): ListFormat {.jsctor.} =
-  #TODO locales, options etc.
-  ListFormat()
+jsClassDef(ListFormat):
+  proc newListFormat(): ListFormat {.jsctor.} =
+    #TODO locales, options etc.
+    ListFormat()
 
-#TODO format etc.
+  #TODO format etc.
 
 proc addIntlModule*(ctx: JSContext): Opt[void] =
   let global = JS_GetGlobalObject(ctx)
   let intl = JS_NewObject(ctx)
   if JS_IsException(intl):
     return err()
-  if not ctx.setPropertyFunctionList(intl, jsIntlFuncs):
+  let strSym = ctx.getOpaque().symRefs[jsyToStringTag]
+  if ctx.definePropertyC(intl, strSym, ctx.toJS("Intl")) == dprException or
+      not ctx.setPropertyFunctionList(intl, intlClass.staticFuns):
     JS_FreeValue(ctx, intl)
     return err()
-  ?ctx.registerType(Collator, namespace = intl)
-  ?ctx.registerType(NumberFormat, namespace = intl)
-  ?ctx.registerType(DateTimeFormat, namespace = intl)
-  ?ctx.registerType(PluralRules, namespace = intl)
-  ?ctx.registerType(RelativeTimeFormat, namespace = intl)
-  ?ctx.registerType(ListFormat, namespace = intl)
+  ?ctx.registerClass(CollatorDef, namespace = intl)
+  ?ctx.registerClass(NumberFormatDef, namespace = intl)
+  ?ctx.registerClass(DateTimeFormatDef, namespace = intl)
+  ?ctx.registerClass(PluralRulesDef, namespace = intl)
+  ?ctx.registerClass(RelativeTimeFormatDef, namespace = intl)
+  ?ctx.registerClass(ListFormatDef, namespace = intl)
   case ctx.defineProperty(global, "Intl", intl)
   of dprException: return err()
   else: discard

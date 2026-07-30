@@ -8,6 +8,11 @@
 const el = document.getElementById("y");
 const shadow = el.attachShadow({mode: "open"})
 {
+	assertEquals(shadow.mode, "open");
+	assertEquals(shadow.delegatesFocus, false);
+	assertEquals(shadow.slotAssignment, "named");
+	assertEquals(shadow.clonable, false);
+	assertEquals(shadow.serializable, false);
 	assertEquals(shadow.nextSibling, null);
 	assertEquals(shadow.previousSibling, null);
 	assertEquals(el.firstChild.previousSibling, null);

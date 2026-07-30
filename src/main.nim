@@ -335,48 +335,41 @@ proc setupStartupScript(ctx: JSContext; script: string) =
   else:
     die("failed to read startup bytecode")
 
-proc readFile(ctx: JSContext; this: Window; path: string): JSValue
-    {.jsfunc.} =
-  var s: string
-  if chafile.readFile(path, s).isOk:
-    return ctx.toJS(s)
-  return JS_NULL
+jsClassRaw(ClientDef, "Client"): # fake class
+  proc readFile(ctx: JSContext; path: string): JSValue {.jsstfunc.} =
+    var s: string
+    if chafile.readFile(path, s).isOk:
+      return ctx.toJS(s)
+    return JS_NULL
 
-proc writeFile(ctx: JSContext; this: Window; path, content: string;
-    mode = cint(0o644)): JSValue {.jsfunc.} =
-  if chafile.writeFile(path, content, mode).isOk:
+  proc writeFile(ctx: JSContext; path, content: string; mode = cint(0o644)):
+      JSValue {.jsstfunc.} =
+    if chafile.writeFile(path, content, mode).isOk:
+      return JS_UNDEFINED
+    return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
+
+  proc getenv(ctx: JSContext; s: string; fallback: JSValueConst = JS_NULL):
+      JSValue {.jsstfunc.} =
+    let env = twtstr.getEnvCString(s)
+    if env == nil:
+      return JS_DupValue(ctx, fallback)
+    return JS_NewString(ctx, env)
+
+  proc setenv(ctx: JSContext; s: string; val: JSValueConst): JSValue
+      {.jsstfunc.} =
+    if JS_IsNull(val):
+      twtstr.unsetEnv(s)
+    else:
+      var vals: string
+      ?ctx.fromJS(val, vals)
+      if twtstr.setEnv(s, vals).isErr:
+        return JS_ThrowTypeError(ctx, "Failed to set environment variable")
     return JS_UNDEFINED
-  return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
-
-proc getenv(ctx: JSContext; this: Window; s: string;
-    fallback: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
-  let env = twtstr.getEnvCString(s)
-  if env == nil:
-    return JS_DupValue(ctx, fallback)
-  return JS_NewString(ctx, env)
-
-proc setenv(ctx: JSContext; this: Window; s: string; val: JSValueConst):
-    JSValue {.jsfunc.} =
-  if JS_IsNull(val):
-    twtstr.unsetEnv(s)
-  else:
-    var vals: string
-    ?ctx.fromJS(val, vals)
-    if twtstr.setEnv(s, vals).isErr:
-      return JS_ThrowTypeError(ctx, "Failed to set environment variable")
-  return JS_UNDEFINED
-
-let ClientJSFunctions {.global.} = [
-  JS_CFUNC_DEF("getenv", 0, js_func_Window_getenv),
-  JS_CFUNC_DEF("setenv", 0, js_func_Window_setenv),
-  JS_CFUNC_DEF("readFile", 0, js_func_Window_readFile),
-  JS_CFUNC_DEF("writeFile", 0, js_func_Window_writeFile)
-]
 
 proc addJSModules(client: Window; ctx: JSContext): Opt[void] =
   ?ctx.addCommonModules(client)
   let global = JS_GetGlobalObject(ctx)
-  if not ctx.setPropertyFunctionList(global, ClientJSFunctions):
+  if not ctx.setPropertyFunctionList(global, ClientDef.staticFuns):
     return err()
   JS_FreeValue(ctx, global)
   ?ctx.addUtilModule()

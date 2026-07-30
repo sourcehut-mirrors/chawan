@@ -21,25 +21,22 @@ type
   Select* = ref object
     options: seq[SelectOption]
     selected: int # new selection
-    fromy {.jsget.}: int # first index to display
-    cursory {.jsget.}: int # hover index
+    fromy: int # first index to display
+    cursory: int # hover index
     maxw: int # widest option
     maxh: int # maximum number of options on screen
     # location on screen
     #TODO make this absolute
-    x {.jsget.}: int
-    y {.jsget.}: int
+    x: int
+    y: int
     redraw*: bool
     unselected: bool
     finish: JSValue
 
 jsDestructor(Select)
 
-proc finalize(rt: JSRuntime; select: Select) {.jsfin.} =
-  JS_FreeValueRT(rt, select.finish)
-
-proc mark(rt: JSRuntime; select: Select; markFunc: JS_MarkFunc) {.jsmark.} =
-  JS_MarkValue(rt, select.finish, markFunc)
+# Forward declarations
+proc setCursorY(select: Select; y: int)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var SelectOption):
     FromJSResult =
@@ -58,39 +55,8 @@ proc toJS*(ctx: JSContext; x: SelectOption): JSValue =
 proc queueDraw(select: Select) =
   select.redraw = true
 
-proc numLines(select: Select): int {.jsfget.} =
-  return select.options.len
-
-proc markPos0(select: Select) {.jsfunc.} =
-  discard
-
-proc markPos(select: Select) {.jsfunc.} =
-  discard
-
 proc setFromY(select: Select; y: int) =
   select.fromy = max(min(y, select.options.len - select.maxh), 0)
-
-proc width(select: Select): int {.jsfget.} =
-  return select.maxw + 2
-
-proc height(select: Select): int {.jsfget.} =
-  return select.maxh + 2
-
-proc setCursorY(select: Select; y: int) {.jsfunc.} =
-  let y = clamp(y, 0, select.options.high)
-  if select.options[max(y, 0)].nop:
-    if not select.unselected:
-      select.unselected = true
-      select.queueDraw()
-    return
-  if select.fromy > y:
-    select.setFromY(y)
-  if select.fromy + select.maxh <= y:
-    select.setFromY(y - select.maxh + 1)
-  select.cursory = y
-  if select.unselected:
-    select.unselected = false
-  select.queueDraw()
 
 proc getCursorX*(select: Select): int =
   if select.cursory == -1:
@@ -100,76 +66,6 @@ proc getCursorX*(select: Select): int =
 proc getCursorY*(select: Select): int =
   return max(select.y + 1 + select.cursory - select.fromy, 0)
 
-proc cursorDown(select: Select; n = 1) {.jsfunc.} =
-  var y = select.cursory + 1
-  var n = n
-  while y < select.options.len:
-    if not select.options[y].nop:
-      dec n
-    if n <= 0:
-      break
-    inc y
-  select.setCursorY(y)
-
-proc cursorUp(select: Select; n = 1) {.jsfunc.} =
-  var y = select.cursory - 1
-  var n = n
-  while y >= 0:
-    if not select.options[y].nop:
-      dec n
-    if n <= 0:
-      break
-    dec y
-  select.setCursorY(y)
-
-proc scrollDown(select: Select; n = 1) {.jsfunc.} =
-  let tfy = select.fromy + n
-  select.setFromY(tfy)
-  if select.fromy > select.cursory:
-    select.cursorDown(select.fromy - select.cursory)
-  elif tfy > select.fromy:
-    select.cursorDown(tfy - select.fromy)
-  select.queueDraw()
-
-proc scrollUp(select: Select; n = 1) {.jsfunc.} =
-  let tfy = select.fromy - n
-  select.setFromY(tfy)
-  if select.fromy + select.maxh <= select.cursory:
-    select.cursorUp(select.cursory - select.fromy - select.maxh + 1)
-  elif tfy < select.fromy:
-    select.cursorUp(select.fromy - tfy)
-  select.queueDraw()
-
-proc cursorPrevLink(select: Select; n = 1) {.jsfunc.} =
-  select.cursorUp(n)
-
-proc cursorNextLink(select: Select; n = 1) {.jsfunc.} =
-  select.cursorDown(n)
-
-proc cursorLinkNavUp(select: Select; n = 1) {.jsfunc.} =
-  select.cursorUp(n)
-
-proc cursorLinkNavDown(select: Select; n = 1) {.jsfunc.} =
-  select.cursorDown(n)
-
-proc cursorNthLink(select: Select; n = 1) {.jsfunc.} =
-  select.setCursorY(n - 1)
-
-proc cursorRevNthLink(select: Select; n = 1) {.jsfunc.} =
-  select.setCursorY(select.options.len - n)
-
-proc halfPageDown(select: Select; n = 1) {.jsfunc.} =
-  select.cursorDown(select.maxh div 2)
-
-proc halfPageUp(select: Select; n = 1) {.jsfunc.} =
-  select.cursorUp(select.maxh div 2)
-
-proc pageDown(select: Select; n = 1) {.jsfunc.} =
-  select.cursorDown(select.maxh)
-
-proc pageUp(select: Select; n = 1) {.jsfunc.} =
-  select.cursorUp(select.maxh)
-
 proc finish(ctx: JSContext; select: Select): JSValue =
   let selected = ctx.toJS(select.selected)
   if JS_IsException(selected):
@@ -177,49 +73,6 @@ proc finish(ctx: JSContext; select: Select): JSValue =
   let finish = move(select.finish)
   select.finish = JS_UNDEFINED
   ctx.callSinkFree(finish, JS_UNDEFINED, selected)
-
-proc cancel(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
-  select.selected = -1
-  return ctx.finish(select)
-
-proc submit(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
-  select.selected = select.cursory
-  return ctx.finish(select)
-
-proc click(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
-  if select.unselected or
-      select.cursory >= 0 and select.cursory < select.options.len and
-      select.options[select.cursory].nop:
-    return JS_UNDEFINED
-  else:
-    return ctx.submit(select)
-
-proc cursorLeft(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
-  ctx.cancel(select)
-
-proc cursorRight(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
-  ctx.click(select)
-
-proc cursorFirstLine(select: Select) {.jsfunc.} =
-  if select.cursory != 0:
-    select.cursory = 0
-    select.fromy = 0
-    select.queueDraw()
-
-proc cursorLastLine(select: Select) {.jsfunc.} =
-  if select.cursory < select.options.len:
-    select.fromy = max(select.options.len - select.maxh, 0)
-    select.cursory = select.fromy + select.maxh - 1
-    select.queueDraw()
-
-proc cursorTop(select: Select) {.jsfunc.} =
-  select.setCursorY(select.fromy)
-
-proc cursorMiddle(select: Select) {.jsfunc.} =
-  select.setCursorY(select.fromy + (select.height - 1) div 2)
-
-proc cursorBottom(select: Select) {.jsfunc.} =
-  select.setCursorY(select.fromy + select.height - 1)
 
 proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1
@@ -256,31 +109,6 @@ proc cursorPrevMatch(select: Select; regex: REBytecode; wrap: bool) =
     if j != -1:
       select.setCursorY(j)
       select.queueDraw()
-
-proc cursorPrevMatch(ctx: JSContext; select: Select; re: JSValueConst;
-    wrap: bool; n: int): Opt[void] {.jsfunc.} =
-  var plen: cint
-  let p = JS_GetRegExpBytecode(ctx, re, plen)
-  if p == nil:
-    return err()
-  for i in 0 ..< n:
-    select.cursorPrevMatch(cast[REBytecode](p), wrap)
-  ok()
-
-proc cursorNextMatch(ctx: JSContext; select: Select; re: JSValueConst;
-    wrap: bool; n: int): Opt[void] {.jsfunc.} =
-  var plen: cint
-  let p = JS_GetRegExpBytecode(ctx, re, plen)
-  if p == nil:
-    return err()
-  for i in 0 ..< n:
-    select.cursorNextMatch(cast[REBytecode](p), wrap)
-  ok()
-
-proc unselect(select: Select) {.jsfunc.} =
-  if not select.unselected:
-    select.unselected = true
-    select.queueDraw()
 
 proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     upmore, downmore: bool) =
@@ -391,39 +219,220 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       display[dls + x].format = format
       inc x
 
-proc windowChange*(select: Select; width, height: int) {.jsfunc.} =
-  if select.y + select.options.len >= height - 2:
-    select.y = max(height - 2 - select.options.len, 0)
-  select.maxh = min(height - 2, select.options.len)
-  if select.x + select.maxw + 2 > width:
-    #TODO I don't know why but - 2 does not work.
-    select.x = max(width - select.maxw - 3, 0)
-  select.setCursorY(select.cursory)
-  select.queueDraw()
+jsClassDef(Select):
+  jsget Select, fromy
+  jsget Select, cursory
+  jsget Select, x
+  jsget Select, y
 
-proc newSelect(ctx: JSContext; options: seq[SelectOption]; selected: int;
-    x, y, width, height: int; finish: JSValueConst): Opt[Select] {.jsctor.} =
-  let select = Select(
-    selected: selected,
-    x: x,
-    y: y,
-    options: options,
-    finish: JS_DupValue(ctx, finish)
-  )
-  var maxw = 0
-  for opt in select.options.mitems:
-    opt.s.mnormalize()
-    opt.s = ' ' & opt.s & ' '
-    maxw = max(maxw, opt.s.width())
-  select.maxw = maxw
-  for opt in select.options.mitems:
-    if opt.nop:
-      opt.s = ' ' & ($bdcHorizontalBarTop).repeat(maxw - 2) & ' '
-  select.windowChange(width, height)
-  select.setCursorY(selected)
-  ok(select)
+  proc finalize(rt: JSRuntime; select: Select) {.jsfin.} =
+    JS_FreeValueRT(rt, select.finish)
 
-proc addSelectModule*(ctx: JSContext): JSClassID =
-  return ctx.registerType(Select)
+  proc mark(rt: JSRuntime; select: Select; markFunc: JS_MarkFunc) {.jsmark.} =
+    JS_MarkValue(rt, select.finish, markFunc)
+
+  proc numLines(select: Select): int {.jsfget.} =
+    return select.options.len
+
+  proc markPos0(select: Select) {.jsfunc.} =
+    discard
+
+  proc markPos(select: Select) {.jsfunc.} =
+    discard
+
+  proc width(select: Select): int {.jsfget.} =
+    return select.maxw + 2
+
+  proc height(select: Select): int {.jsfget.} =
+    return select.maxh + 2
+
+  proc setCursorY(select: Select; y: int) {.jsfunc.} =
+    let y = clamp(y, 0, select.options.high)
+    if select.options[max(y, 0)].nop:
+      if not select.unselected:
+        select.unselected = true
+        select.queueDraw()
+      return
+    if select.fromy > y:
+      select.setFromY(y)
+    if select.fromy + select.maxh <= y:
+      select.setFromY(y - select.maxh + 1)
+    select.cursory = y
+    if select.unselected:
+      select.unselected = false
+    select.queueDraw()
+
+  proc cursorDown(select: Select; n = 1) {.jsfunc.} =
+    var y = select.cursory + 1
+    var n = n
+    while y < select.options.len:
+      if not select.options[y].nop:
+        dec n
+      if n <= 0:
+        break
+      inc y
+    select.setCursorY(y)
+
+  proc cursorUp(select: Select; n = 1) {.jsfunc.} =
+    var y = select.cursory - 1
+    var n = n
+    while y >= 0:
+      if not select.options[y].nop:
+        dec n
+      if n <= 0:
+        break
+      dec y
+    select.setCursorY(y)
+
+  proc scrollDown(select: Select; n = 1) {.jsfunc.} =
+    let tfy = select.fromy + n
+    select.setFromY(tfy)
+    if select.fromy > select.cursory:
+      select.cursorDown(select.fromy - select.cursory)
+    elif tfy > select.fromy:
+      select.cursorDown(tfy - select.fromy)
+    select.queueDraw()
+
+  proc scrollUp(select: Select; n = 1) {.jsfunc.} =
+    let tfy = select.fromy - n
+    select.setFromY(tfy)
+    if select.fromy + select.maxh <= select.cursory:
+      select.cursorUp(select.cursory - select.fromy - select.maxh + 1)
+    elif tfy < select.fromy:
+      select.cursorUp(select.fromy - tfy)
+    select.queueDraw()
+
+  proc cursorPrevLink(select: Select; n = 1) {.jsfunc.} =
+    select.cursorUp(n)
+
+  proc cursorNextLink(select: Select; n = 1) {.jsfunc.} =
+    select.cursorDown(n)
+
+  proc cursorLinkNavUp(select: Select; n = 1) {.jsfunc.} =
+    select.cursorUp(n)
+
+  proc cursorLinkNavDown(select: Select; n = 1) {.jsfunc.} =
+    select.cursorDown(n)
+
+  proc cursorNthLink(select: Select; n = 1) {.jsfunc.} =
+    select.setCursorY(n - 1)
+
+  proc cursorRevNthLink(select: Select; n = 1) {.jsfunc.} =
+    select.setCursorY(select.options.len - n)
+
+  proc halfPageDown(select: Select; n = 1) {.jsfunc.} =
+    select.cursorDown(select.maxh div 2)
+
+  proc halfPageUp(select: Select; n = 1) {.jsfunc.} =
+    select.cursorUp(select.maxh div 2)
+
+  proc pageDown(select: Select; n = 1) {.jsfunc.} =
+    select.cursorDown(select.maxh)
+
+  proc pageUp(select: Select; n = 1) {.jsfunc.} =
+    select.cursorUp(select.maxh)
+
+  proc cancel(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+    select.selected = -1
+    return ctx.finish(select)
+
+  proc submit(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+    select.selected = select.cursory
+    return ctx.finish(select)
+
+  proc click(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+    if select.unselected or
+        select.cursory >= 0 and select.cursory < select.options.len and
+        select.options[select.cursory].nop:
+      return JS_UNDEFINED
+    else:
+      return ctx.submit(select)
+
+  proc cursorLeft(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+    ctx.cancel(select)
+
+  proc cursorRight(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+    ctx.click(select)
+
+  proc cursorFirstLine(select: Select) {.jsfunc.} =
+    if select.cursory != 0:
+      select.cursory = 0
+      select.fromy = 0
+      select.queueDraw()
+
+  proc cursorLastLine(select: Select) {.jsfunc.} =
+    if select.cursory < select.options.len:
+      select.fromy = max(select.options.len - select.maxh, 0)
+      select.cursory = select.fromy + select.maxh - 1
+      select.queueDraw()
+
+  proc cursorTop(select: Select) {.jsfunc.} =
+    select.setCursorY(select.fromy)
+
+  proc cursorMiddle(select: Select) {.jsfunc.} =
+    select.setCursorY(select.fromy + (select.height - 1) div 2)
+
+  proc cursorBottom(select: Select) {.jsfunc.} =
+    select.setCursorY(select.fromy + select.height - 1)
+
+  proc cursorPrevMatch(ctx: JSContext; select: Select; re: JSValueConst;
+      wrap: bool; n: int): Opt[void] {.jsfunc.} =
+    var plen: cint
+    let p = JS_GetRegExpBytecode(ctx, re, plen)
+    if p == nil:
+      return err()
+    for i in 0 ..< n:
+      select.cursorPrevMatch(cast[REBytecode](p), wrap)
+    ok()
+
+  proc cursorNextMatch(ctx: JSContext; select: Select; re: JSValueConst;
+      wrap: bool; n: int): Opt[void] {.jsfunc.} =
+    var plen: cint
+    let p = JS_GetRegExpBytecode(ctx, re, plen)
+    if p == nil:
+      return err()
+    for i in 0 ..< n:
+      select.cursorNextMatch(cast[REBytecode](p), wrap)
+    ok()
+
+  proc unselect(select: Select) {.jsfunc.} =
+    if not select.unselected:
+      select.unselected = true
+      select.queueDraw()
+
+  proc windowChange*(select: Select; width, height: int) {.jsfunc.} =
+    if select.y + select.options.len >= height - 2:
+      select.y = max(height - 2 - select.options.len, 0)
+    select.maxh = min(height - 2, select.options.len)
+    if select.x + select.maxw + 2 > width:
+      #TODO I don't know why but - 2 does not work.
+      select.x = max(width - select.maxw - 3, 0)
+    select.setCursorY(select.cursory)
+    select.queueDraw()
+
+  proc newSelect(ctx: JSContext; options: seq[SelectOption]; selected: int;
+      x, y, width, height: int; finish: JSValueConst): Opt[Select] {.jsctor.} =
+    let select = Select(
+      selected: selected,
+      x: x,
+      y: y,
+      options: options,
+      finish: JS_DupValue(ctx, finish)
+    )
+    var maxw = 0
+    for opt in select.options.mitems:
+      opt.s.mnormalize()
+      opt.s = ' ' & opt.s & ' '
+      maxw = max(maxw, opt.s.width())
+    select.maxw = maxw
+    for opt in select.options.mitems:
+      if opt.nop:
+        opt.s = ' ' & ($bdcHorizontalBarTop).repeat(maxw - 2) & ' '
+    select.windowChange(width, height)
+    select.setCursorY(selected)
+    ok(select)
+
+proc addSelectModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(SelectDef)
 
 {.pop.} # raises: []

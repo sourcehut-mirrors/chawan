@@ -12,7 +12,6 @@ import html/domcanvas
 import html/domexception
 import html/domrect
 import html/event
-import html/formdata
 import html/jsencoding
 import html/jsintl
 import html/performance
@@ -34,6 +33,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import types/blob
+import types/formdata
 import types/jsopt
 import types/opt
 import types/url
@@ -48,59 +48,69 @@ type JSFetchOpaque {.final.} = ref object of RootObj
 # Forward declarations
 proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
 
-# NavigatorID
-proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
-proc appName(navigator: Navigator): string {.jsfget.} = "Netscape"
-proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (Windows)"
-proc platform(navigator: Navigator): string {.jsfget.} = "Win32"
-proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
-proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
-proc userAgent(ctx: JSContext; navigator: Navigator): lent string {.jsfget.} =
-  return ctx.getWindow().userAgent
-proc vendor(navigator: Navigator): string {.jsfget.} = ""
-proc vendorSub(navigator: Navigator): string {.jsfget.} = ""
-proc taintEnabled(navigator: Navigator): bool {.jsfunc.} = false
-proc oscpu(navigator: Navigator): string {.jsfget.} = "Windows NT 10.0"
+jsClassDef(Navigator):
+  jsget Navigator, plugins
+  jsget Navigator, mimeTypes
+  jsget Navigator, permissions
 
-# NavigatorLanguage
-proc language(navigator: Navigator): string {.jsfget.} = "en-US"
-proc languages(navigator: Navigator): seq[string] {.jsfget.} =
-  @["en-US"] #TODO frozen array?
+  # NavigatorID
+  proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
+  proc appName(navigator: Navigator): string {.jsfget.} = "Netscape"
+  proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (Windows)"
+  proc platform(navigator: Navigator): string {.jsfget.} = "Win32"
+  proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
+  proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
+  proc userAgent(ctx: JSContext; navigator: Navigator): lent string
+      {.jsfget.} =
+    return ctx.getWindow().userAgent
+  proc vendor(navigator: Navigator): string {.jsfget.} = ""
+  proc vendorSub(navigator: Navigator): string {.jsfget.} = ""
+  proc taintEnabled(navigator: Navigator): bool {.jsfunc.} = false
+  proc oscpu(navigator: Navigator): string {.jsfget.} = "Windows NT 10.0"
 
-# NavigatorOnline
-proc onLine(navigator: Navigator): bool {.jsfget.} =
-  true # at the very least, the terminal is on-line :)
+  # NavigatorLanguage
+  proc language(navigator: Navigator): string {.jsfget.} = "en-US"
+  proc languages(navigator: Navigator): seq[string] {.jsfget.} =
+    @["en-US"] #TODO frozen array?
 
-#TODO NavigatorContentUtils
+  # NavigatorOnline
+  proc onLine(navigator: Navigator): bool {.jsfget.} =
+    true # at the very least, the terminal is on-line :)
 
-# NavigatorCookies
-# "this website needs cookies to be enabled to function correctly"
-# It's probably better to lie here.
-proc cookieEnabled(navigator: Navigator): bool {.jsfget.} = true
+  #TODO NavigatorContentUtils
 
-# NavigatorPlugins
-proc pdfViewerEnabled(navigator: Navigator): bool {.jsfget.} = false
-proc javaEnabled(navigator: Navigator): bool {.jsfunc.} = false
-proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
-proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
-proc item(pluginArray: PluginArray): JSValue {.jsfunc.} = JS_NULL
-proc length(pluginArray: PluginArray): uint32 {.jsfget.} = 0
-proc item(mimeTypeArray: MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
-proc length(mimeTypeArray: MimeTypeArray): uint32 {.jsfget.} = 0
-proc getter(pluginArray: PluginArray; atom: JSAtom): JSValue
-    {.jsgetownprop.} =
-  return JS_UNINITIALIZED
-proc getter(mimeTypeArray: MimeTypeArray; atom: JSAtom): JSValue
-    {.jsgetownprop.} =
-  return JS_UNINITIALIZED
+  # NavigatorCookies
+  proc cookieEnabled(navigator: Navigator): bool {.jsfget.} =
+    #TODO check window for cookie?  it's exposed anyway so we wouldn't
+    # lose much
+    true
+
+  # NavigatorPlugins
+  proc pdfViewerEnabled(navigator: Navigator): bool {.jsfget.} = false
+  proc javaEnabled(navigator: Navigator): bool {.jsfunc.} = false
+
+# PluginArray
+jsClassDef(PluginArray):
+  proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
+  proc item(pluginArray: PluginArray): JSValue {.jsfunc.} = JS_NULL
+  proc length(pluginArray: PluginArray): uint32 {.jsfget.} = 0
+  proc getter(pluginArray: PluginArray; atom: JSAtom): JSValue
+      {.jsgetownprop.} =
+    return JS_UNINITIALIZED
+
+# MimeTypeArray
+jsClassDef(MimeTypeArray):
+  proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
+  proc item(mimeTypeArray: MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
+  proc length(mimeTypeArray: MimeTypeArray): uint32 {.jsfget.} = 0
+  proc getter(mimeTypeArray: MimeTypeArray; atom: JSAtom): JSValue
+      {.jsgetownprop.} =
+    return JS_UNINITIALIZED
 
 # Notification
 # The existence of this feature in mainstream browsers is an insult to all
 # users' intelligence.  Nevertheless, we have to shim the API because some
 # geniuses use it for "browser verification."
-proc newNotification(): Notification {.jsctor.} =
-  Notification()
-
 proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   let denied = JS_NewString(ctx, "denied")
@@ -114,159 +124,169 @@ proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
       return res
   return ctx.callSink(argv[1], JS_UNDEFINED, denied)
 
-proc requestPermission(ctx: JSContext; callback: JSValueConst = JS_UNDEFINED):
-    JSValue {.jsstfunc: "Notification".} =
-  if not JS_IsUndefined(callback) and not JS_IsFunction(ctx, callback):
-    return JS_ThrowTypeError(ctx, "not a function")
-  var funs {.noinit.}: array[2, JSValue]
-  let res = ctx.newPromiseCapability(funs)
-  if JS_IsException(res):
+jsClassDef(Notification):
+  proc newNotification(): Notification {.jsctor.} =
+    Notification()
+
+  proc requestPermission(ctx: JSContext; callback: JSValueConst = JS_UNDEFINED):
+      JSValue {.jsstfunc.} =
+    if not JS_IsUndefined(callback) and not JS_IsFunction(ctx, callback):
+      return JS_ThrowTypeError(ctx, "not a function")
+    var funs {.noinit.}: array[2, JSValue]
+    let res = ctx.newPromiseCapability(funs)
+    if JS_IsException(res):
+      return res
+    let code = ctx.enqueueJob(resolveToDenied, funs[0], callback)
+    ctx.freeValues(funs)
+    if code < 0:
+      JS_FreeValue(ctx, res)
+      return JS_EXCEPTION
     return res
-  let code = ctx.enqueueJob(resolveToDenied, funs[0], callback)
-  ctx.freeValues(funs)
-  if code < 0:
-    JS_FreeValue(ctx, res)
-    return JS_EXCEPTION
-  return res
 
 # Permissions
 # See above.
-proc query(ctx: JSContext; this: Permissions; desc: JSValueConst): JSValue
-    {.jsfunc.} =
-  let name = JS_GetPropertyStr(ctx, desc, "name")
-  if JS_IsException(name):
-    return name
-  JS_FreeValue(ctx, name)
-  # reject immediately
-  JS_ThrowTypeError(ctx, "permissions are not supported")
-  return ctx.newRejectedPromise()
+jsClassDef(Permissions):
+  proc query(ctx: JSContext; this: Permissions; desc: JSValueConst): JSValue
+      {.jsfunc.} =
+    let name = JS_GetPropertyStr(ctx, desc, "name")
+    if JS_IsException(name):
+      return name
+    JS_FreeValue(ctx, name)
+    # reject immediately
+    JS_ThrowTypeError(ctx, "permissions are not supported")
+    return ctx.newRejectedPromise()
 
 # Screen
+jsClassDef(Screen):
+  # These are fingerprinting vectors; only app mode gets the real values.
+  proc availWidth(ctx: JSContext; screen: Screen): int {.jsfget.} =
+    let window = ctx.getWindow()
+    return window.settings.scriptAttrsp.widthPx
 
-# These are fingerprinting vectors; only app mode gets the real values.
-proc availWidth(ctx: JSContext; screen: Screen): int {.jsfget.} =
-  let window = ctx.getWindow()
-  return window.settings.scriptAttrsp.widthPx
+  proc availHeight(ctx: JSContext; screen: Screen): int {.jsfget.} =
+    let window = ctx.getWindow()
+    return window.settings.scriptAttrsp.heightPx
 
-proc availHeight(ctx: JSContext; screen: Screen): int {.jsfget.} =
-  let window = ctx.getWindow()
-  return window.settings.scriptAttrsp.heightPx
+  proc width(ctx: JSContext; screen: Screen): int {.jsfget.} =
+    return ctx.availWidth(screen)
 
-proc width(ctx: JSContext; screen: Screen): int {.jsfget.} =
-  return ctx.availWidth(screen)
+  proc height(ctx: JSContext; screen: Screen): int {.jsfget.} =
+    return ctx.availHeight(screen)
 
-proc height(ctx: JSContext; screen: Screen): int {.jsfget.} =
-  return ctx.availHeight(screen)
+  proc colorDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
+    let window = ctx.getWindow()
+    case window.settings.scriptAttrsp.colorMode
+    of cmMonochrome: return 1
+    of cmANSI: return 4
+    of cmEightBit: return 8
+    of cmTrueColor: return 24
 
-proc colorDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
-  let window = ctx.getWindow()
-  case window.settings.scriptAttrsp.colorMode
-  of cmMonochrome: return 1
-  of cmANSI: return 4
-  of cmEightBit: return 8
-  of cmTrueColor: return 24
-
-proc pixelDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
-  ctx.colorDepth(screen)
+  proc pixelDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
+    ctx.colorDepth(screen)
 
 # History
-proc length(history: History): uint32 {.jsfget.} = 1
-proc state(history: History): JSValue {.jsfget.} = JS_NULL
-proc go(history: History) {.jsfunc.} = discard
-proc back(history: History) {.jsfunc.} = discard
-proc forward(history: History) {.jsfunc.} = discard
+jsClassDef(History):
+  proc length(history: History): uint32 {.jsfget.} = 1
+  proc state(history: History): JSValue {.jsfget.} = JS_NULL
+  proc go(history: History) {.jsfunc.} = discard
+  proc back(history: History) {.jsfunc.} = discard
+  proc forward(history: History) {.jsfunc.} = discard
 
-proc pushState(ctx: JSContext; history: History; data: JSValueConst;
-    unused: DOMString; url: JSValueConst = JS_NULL): JSValue {.jsfunc,
-    jsfunc: "replaceState".} =
-  var s: string
-  if not JS_IsNull(url):
-    ?ctx.fromJS(url, s)
-  let window = ctx.getWindow()
-  if window != nil:
-    return ctx.setLocation(window, s)
-  return JS_UNDEFINED
+  proc pushState(ctx: JSContext; history: History; data: JSValueConst;
+      unused: DOMString; url: JSValueConst = JS_NULL): JSValue {.jsfunc,
+      jsfunc: "replaceState".} =
+    var s: string
+    if not JS_IsNull(url):
+      ?ctx.fromJS(url, s)
+    let window = ctx.getWindow()
+    if window != nil:
+      return ctx.setLocation(window, s)
+    return JS_UNDEFINED
 
 # Storage
-proc find(this: Storage; key: DOMString): int =
-  for i in 0 ..< this.map.len:
-    if this.map[i].key == key.toOpenArray():
-      return i
-  return -1
+jsClassDef(Storage):
+  proc find(this: Storage; key: DOMString): int =
+    for i in 0 ..< this.map.len:
+      if this.map[i].key == key.toOpenArray():
+        return i
+    return -1
 
-proc length(this: Storage): uint32 {.jsfget.} =
-  return uint32(this.map.len)
+  proc length(this: Storage): uint32 {.jsfget.} =
+    return uint32(this.map.len)
 
-proc key(ctx: JSContext; this: Storage; u: uint32): JSValue {.jsfunc.} =
-  if u < uint32(this.map.len):
-    return ctx.toJS(this.map[int(u)].key)
-  return JS_NULL
+  proc key(ctx: JSContext; this: Storage; u: uint32): JSValue {.jsfunc.} =
+    if u < uint32(this.map.len):
+      return ctx.toJS(this.map[int(u)].key)
+    return JS_NULL
 
-proc getItem(ctx: JSContext; this: Storage; s: DOMString): JSValue {.jsfunc.} =
-  let i = this.find(s)
-  if i >= 0:
-    return ctx.toJS(this.map[i].value)
-  return JS_NULL
+  proc getItem(ctx: JSContext; this: Storage; s: DOMString): JSValue
+      {.jsfunc.} =
+    let i = this.find(s)
+    if i >= 0:
+      return ctx.toJS(this.map[i].value)
+    return JS_NULL
 
-proc setItem(ctx: JSContext; this: Storage; key, value: DOMString): JSValue
-    {.jsfunc.} =
-  let i = this.find(key)
-  if i >= 0:
-    this.map[i].value = $value
-  else:
-    if this.map.len >= 64:
-      return JS_ThrowDOMException(ctx, "QuotaExceededError", "quota exceeded")
-    this.map.add(($key, $value))
-  return JS_UNDEFINED
+  proc setItem(ctx: JSContext; this: Storage; key, value: DOMString): JSValue
+      {.jsfunc.} =
+    let i = this.find(key)
+    if i >= 0:
+      this.map[i].value = $value
+    else:
+      if this.map.len >= 64:
+        return JS_ThrowDOMException(ctx, "QuotaExceededError",
+          "quota exceeded")
+      this.map.add(($key, $value))
+    return JS_UNDEFINED
 
-proc removeItem(this: Storage; key: DOMString) {.jsfunc.} =
-  let i = this.find(key)
-  if i >= 0:
-    this.map.del(i)
+  proc removeItem(this: Storage; key: DOMString) {.jsfunc.} =
+    let i = this.find(key)
+    if i >= 0:
+      this.map.del(i)
 
-proc names(ctx: JSContext; this: Storage): JSPropertyEnumList
-    {.jspropnames.} =
-  var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
-  for it in this.map:
-    list.add(it.key)
-  return list
+  proc names(ctx: JSContext; this: Storage): JSPropertyEnumList
+      {.jspropnames.} =
+    var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
+    for it in this.map:
+      list.add(it.key)
+    return list
 
-proc getter(ctx: JSContext; this: Storage; s: DOMString): JSValue
-    {.jsgetownprop.} =
-  return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
+  proc getter(ctx: JSContext; this: Storage; s: DOMString): JSValue
+      {.jsgetownprop.} =
+    return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
 
-proc setter(ctx: JSContext; this: Storage; k, v: DOMString): JSValue
-    {.jssetprop.} =
-  return ctx.setItem(this, k, v)
+  proc setter(ctx: JSContext; this: Storage; k, v: DOMString): JSValue
+      {.jssetprop.} =
+    return ctx.setItem(this, k, v)
 
-proc delete(this: Storage; k: DOMString): bool {.jsdelprop.} =
-  this.removeItem(k)
-  return true
+  proc delete(this: Storage; k: DOMString): bool {.jsdelprop.} =
+    this.removeItem(k)
+    return true
 
 # Crypto
-proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
-    JSValue {.jsfunc.} =
-  var view: JSArrayBufferView
-  if ctx.fromJS(array, view).isErr:
-    return JS_EXCEPTION
-  if view.t == JS_TYPED_ARRAY_UINT8C or view.t > JS_TYPED_ARRAY_BIG_UINT64:
-    return JS_ThrowDOMException(ctx, "TypeMismatchError",
-      "Wrong typed array type")
-  if view.abuf.len > 65536:
-    return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
-  doAssert crypto.urandom.readLoop(view.toOpenArray()).isOk
-  return JS_DupValue(ctx, array)
+jsClassDef(Crypto):
+  proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
+      JSValue {.jsfunc.} =
+    var view: JSArrayBufferView
+    if ctx.fromJS(array, view).isErr:
+      return JS_EXCEPTION
+    if view.t == JS_TYPED_ARRAY_UINT8C or view.t > JS_TYPED_ARRAY_BIG_UINT64:
+      return JS_ThrowDOMException(ctx, "TypeMismatchError",
+        "Wrong typed array type")
+    if view.abuf.len > 65536:
+      return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
+    doAssert crypto.urandom.readLoop(view.toOpenArray()).isOk
+    return JS_DupValue(ctx, array)
 
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerType(Navigator)
-  ?ctx.registerType(PluginArray)
-  ?ctx.registerType(MimeTypeArray)
-  ?ctx.registerType(Screen)
-  ?ctx.registerType(History)
-  ?ctx.registerType(Storage)
-  ?ctx.registerType(Crypto)
-  ?ctx.registerType(Notification)
-  ?ctx.registerType(Permissions)
+  ?ctx.registerClass(NavigatorDef)
+  ?ctx.registerClass(PluginArrayDef)
+  ?ctx.registerClass(MimeTypeArrayDef)
+  ?ctx.registerClass(ScreenDef)
+  ?ctx.registerClass(HistoryDef)
+  ?ctx.registerClass(StorageDef)
+  ?ctx.registerClass(CryptoDef)
+  ?ctx.registerClass(NotificationDef)
+  ?ctx.registerClass(PermissionsDef)
   ok()
 
 # CSS
@@ -306,27 +326,19 @@ let jsCSSFuncs {.global.} = [
     JS_CFUNC_DEF("escape", 1, cssEscape),
 ]
 
+# MediaQueryList
+type MediaQueryList {.final.} = ref object of EventTarget
+  media: string
+  matches: bool
+  #TODO onchange
+
+jsClassDef(MediaQueryList):
+  jsextends EventTargetDef
+
+  jsget MediaQueryList, media
+  jsget MediaQueryList, matches
+
 # Window
-proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
-  window.timeouts.clearAll()
-  rt.freeValues(window.weakMap)
-  window.settings.moduleMap.clear(rt)
-  for data in window.loader.data:
-    if data of ConnectData:
-      let data = ConnectData(data)
-      if data.opaque of JSFetchOpaque:
-        let opaque = JSFetchOpaque(data.opaque)
-        JS_FreeValueRT(rt, opaque.resolve)
-        JS_FreeValueRT(rt, opaque.reject)
-        JS_FreeContext(opaque.ctx)
-        opaque.resolve = JS_UNDEFINED
-        opaque.reject = JS_UNDEFINED
-        opaque.ctx = nil
-
-proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
-  for it in window.weakMap:
-    JS_MarkValue(rt, it, markFunc)
-
 #TODO CORS: get prototype proxy
 
 proc windowSetPrototype(ctx: JSContext; obj, proto: JSValueConst): cint
@@ -381,166 +393,6 @@ proc jsFinish(opaque: RootRef; response: Response) =
   JS_FreeValue(ctx, resolve)
   JS_FreeContext(ctx)
 
-proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
-    init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
-  let input0 = newRequest(ctx, input, init)
-  if input0.isErr:
-    return JS_EXCEPTION
-  let input = input0.get
-  if input.url.schemeType != stData and
-      not window.isSameOrigin(input.url.origin):
-    # reject immediately
-    discard ctx.throwNetworkError()
-    return ctx.newRejectedPromise()
-  var funs {.noinit.}: array[2, JSValue]
-  let res = ctx.newPromiseCapability(funs)
-  if JS_IsException(res):
-    return res
-  let opaque = JSFetchOpaque(
-    ctx: JS_DupContext(ctx),
-    resolve: funs[0],
-    reject: funs[1]
-  )
-  window.loader.fetch(input, jsFinish, opaque)
-  return res
-
-proc scrollTo(window: Window) {.jsfunc.} =
-  discard #TODO maybe in app mode?
-
-proc setTimeout(window: Window; handler: JSValueConst; timeout = 0i32;
-    args: varargs[JSValueConst]): int32 {.jsfunc.} =
-  return window.timeouts.setTimeout(ttTimeout, handler, timeout, args)
-
-proc setInterval(window: Window; handler: JSValueConst; interval = 0i32;
-    args: varargs[JSValueConst]): int32 {.jsfunc.} =
-  return window.timeouts.setTimeout(ttInterval, handler, interval, args)
-
-proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
-  window.timeouts.clearTimeout(id)
-
-proc clearInterval(window: Window; id: int32) {.jsfunc.} =
-  window.clearTimeout(id)
-
-proc screenX(window: Window): int {.jsrfget.} = 0
-proc screenY(window: Window): int {.jsrfget.} = 0
-proc screenLeft(window: Window): int {.jsrfget.} = 0
-proc screenTop(window: Window): int {.jsrfget.} = 0
-
-proc outerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
-  return ctx.availWidth(window.screen)
-
-proc outerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
-  return ctx.availHeight(window.screen)
-
-proc innerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
-  return ctx.availWidth(window.screen)
-
-proc innerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
-  return ctx.availHeight(window.screen)
-
-proc devicePixelRatio(window: Window): float64 {.jsrfget.} = 1
-
-proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
-    {.jsfset: "location".} =
-  if window.document == nil:
-    return JS_ThrowTypeError(ctx, "document is null")
-  return ctx.setLocation(window.document, s)
-
-proc getWindow(window: Window): Window {.jsuffget: "window", jsrfget: "frames",
-    jsrfget: "self".} =
-  return window
-
-proc getTop(window: Window): Window {.jsuffget: "top".} =
-  return window #TODO frames?
-
-proc getParent(window: Window): Window {.jsrfget: "parent".} =
-  return window #TODO frames?
-
-proc origin(window: Window): string {.jsrfget.} =
-  return window.location.origin
-
-# See twtstr for the actual implementations.
-proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
-  var s: string
-  if (let r = s.atob(data); r.isErr):
-    return JS_ThrowDOMException(ctx, "InvalidCharacterError", r.error)
-  return ctx.toJS(NarrowString(s))
-
-proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
-    {.jsfunc.} =
-  let data = JS_ToString(ctx, data)
-  if JS_IsException(data):
-    return JS_EXCEPTION
-  let len = JS_GetStringLength(data)
-  if len == 0:
-    JS_FreeValue(ctx, data)
-    return ctx.toJS("")
-  let buf = JS_GetNarrowStringBuffer(data)
-  if buf == nil:
-    JS_FreeValue(ctx, data)
-    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
-      "invalid character in string")
-  let res = btoa(buf.toOpenArray(0, int(len) - 1))
-  JS_FreeValue(ctx, data)
-  return ctx.toJS(res)
-
-proc alert(window: Window; s: DOMString) {.jsfunc.} =
-  window.console.error($s)
-
-proc getEvent(ctx: JSContext; window: Window): JSValue {.jsrfget: "event".} =
-  if window.event == nil:
-    return JS_UNDEFINED
-  return ctx.toJS(window.event)
-
-proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray): JSValue {.cdecl.} =
-  let arg0 = ctx.toJS(getUnixMillis())
-  return ctx.callSink(argv[0], this, arg0)
-
-proc requestAnimationFrame(ctx: JSContext; window: Window;
-    callback: JSValueConst): JSValue {.jsfunc.} =
-  if not JS_IsFunction(ctx, callback):
-    return JS_ThrowTypeError(ctx, "not a function")
-  let handler = JS_NewCFunction(ctx, animationFrameHandler,
-    "animation frame handler", 1)
-  if JS_IsException(handler):
-    return JS_EXCEPTION
-  let res = ctx.toJS(window.setTimeout(handler, 0, callback))
-  JS_FreeValue(ctx, handler)
-  res
-
-proc getComputedStyle(ctx: JSContext; window: Window; element: Element;
-    pseudoElt: JSValueConst = JS_UNDEFINED): Opt[CSSStyleDeclaration]
-    {.jsfunc.} =
-  return ctx.getComputedStyle0(window, element, pseudoElt)
-
-type MediaQueryList {.final.} = ref object of EventTarget
-  media {.jsget.}: string
-  matches {.jsget.}: bool
-  #TODO onchange
-
-proc matchMedia(window: Window; s: CSSOMString): MediaQueryList {.jsfunc.} =
-  var ctx = initCSSParser(s)
-  let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)
-  return MediaQueryList(
-    matches: mqlist.appliesScript(addr window.settings),
-    media: $mqlist
-  )
-
-proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Opt[void]
-    {.jsfunc.} =
-  #TODO structuredClone...
-  let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)
-  var s: string
-  ?ctx.fromJSFree(value, s)
-  let data = JS_ParseJSON(ctx, cstring(s), csize_t(s.len),
-    cstring"<postMessage>")
-  let event = ctx.newMessageEvent(satMessage.toAtom(),
-    MessageEventInit(data: data))
-  JS_FreeValue(ctx, data)
-  window.fireEvent(event, window)
-  ok()
-
 proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   let global = JS_GetGlobalObject(ctx)
@@ -548,13 +400,203 @@ proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
   JS_FreeValue(ctx, global)
   res
 
-proc queueMicrotask(ctx: JSContext; window: Window; fun: JSValueConst):
-    JSValue {.jsfunc.} =
-  if not JS_IsFunction(ctx, fun):
-    return JS_ThrowTypeError(ctx, "not a function")
-  if ctx.enqueueJob(microtaskJob, fun) < 0:
-    return JS_EXCEPTION
-  return JS_UNDEFINED
+proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let arg0 = ctx.toJS(getUnixMillis())
+  return ctx.callSink(argv[0], this, arg0)
+
+jsClassDef(Window):
+  jsextends EventTargetDef
+
+  jsget Window, location
+  jsget Window, navigator
+  jsget Window, screen
+  jsget Window, history
+  jsget Window, localStorage
+  jsget Window, sessionStorage
+  jsget Window, crypto
+  jsget Window, referrer
+  jsget Window, performance
+  jsget Window, customElements
+  jsufget Window, document
+
+  proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
+    window.timeouts.clearAll()
+    rt.freeValues(window.weakMap)
+    window.settings.moduleMap.clear(rt)
+    for data in window.loader.data:
+      if data of ConnectData:
+        let data = ConnectData(data)
+        if data.opaque of JSFetchOpaque:
+          let opaque = JSFetchOpaque(data.opaque)
+          JS_FreeValueRT(rt, opaque.resolve)
+          JS_FreeValueRT(rt, opaque.reject)
+          JS_FreeContext(opaque.ctx)
+          opaque.resolve = JS_UNDEFINED
+          opaque.reject = JS_UNDEFINED
+          opaque.ctx = nil
+
+  proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
+    for it in window.weakMap:
+      JS_MarkValue(rt, it, markFunc)
+
+  proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
+      init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+    let input0 = newRequest(ctx, input, init)
+    if input0.isErr:
+      return JS_EXCEPTION
+    let input = input0.get
+    if input.url.schemeType != stData and
+        not window.isSameOrigin(input.url.origin):
+      # reject immediately
+      discard ctx.throwNetworkError()
+      return ctx.newRejectedPromise()
+    var funs {.noinit.}: array[2, JSValue]
+    let res = ctx.newPromiseCapability(funs)
+    if JS_IsException(res):
+      return res
+    let opaque = JSFetchOpaque(
+      ctx: JS_DupContext(ctx),
+      resolve: funs[0],
+      reject: funs[1]
+    )
+    window.loader.fetch(input, jsFinish, opaque)
+    return res
+
+  proc scrollTo(window: Window) {.jsfunc.} =
+    discard #TODO maybe in app mode?
+
+  proc setTimeout(window: Window; handler: JSValueConst; timeout = 0i32;
+      args: varargs[JSValueConst]): int32 {.jsfunc.} =
+    return window.timeouts.setTimeout(ttTimeout, handler, timeout, args)
+
+  proc setInterval(window: Window; handler: JSValueConst; interval = 0i32;
+      args: varargs[JSValueConst]): int32 {.jsfunc.} =
+    return window.timeouts.setTimeout(ttInterval, handler, interval, args)
+
+  proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
+    window.timeouts.clearTimeout(id)
+
+  proc clearInterval(window: Window; id: int32) {.jsfunc.} =
+    window.clearTimeout(id)
+
+  proc screenX(window: Window): int {.jsrfget.} = 0
+  proc screenY(window: Window): int {.jsrfget.} = 0
+  proc screenLeft(window: Window): int {.jsrfget.} = 0
+  proc screenTop(window: Window): int {.jsrfget.} = 0
+
+  proc outerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
+    return ctx.availWidth(window.screen)
+
+  proc outerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
+    return ctx.availHeight(window.screen)
+
+  proc innerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
+    return ctx.availWidth(window.screen)
+
+  proc innerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
+    return ctx.availHeight(window.screen)
+
+  proc devicePixelRatio(window: Window): float64 {.jsrfget.} = 1
+
+  proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
+      {.jsfset: "location".} =
+    if window.document == nil:
+      return JS_ThrowTypeError(ctx, "document is null")
+    return ctx.setLocation(window.document, s)
+
+  proc getWindow(window: Window): Window {.jsuffget: "window",
+      jsrfget: "frames", jsrfget: "self".} =
+    return window
+
+  proc getTop(window: Window): Window {.jsuffget: "top".} =
+    return window #TODO frames?
+
+  proc getParent(window: Window): Window {.jsrfget: "parent".} =
+    return window #TODO frames?
+
+  proc origin(window: Window): string {.jsrfget.} =
+    return window.location.origin
+
+  # See twtstr for the actual implementations.
+  proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
+    var s: string
+    if (let r = s.atob(data); r.isErr):
+      return JS_ThrowDOMException(ctx, "InvalidCharacterError", r.error)
+    return ctx.toJS(NarrowString(s))
+
+  proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
+      {.jsfunc.} =
+    let data = JS_ToString(ctx, data)
+    if JS_IsException(data):
+      return JS_EXCEPTION
+    let len = JS_GetStringLength(data)
+    if len == 0:
+      JS_FreeValue(ctx, data)
+      return ctx.toJS("")
+    let buf = JS_GetNarrowStringBuffer(data)
+    if buf == nil:
+      JS_FreeValue(ctx, data)
+      return JS_ThrowDOMException(ctx, "InvalidCharacterError",
+        "invalid character in string")
+    let res = btoa(buf.toOpenArray(0, int(len) - 1))
+    JS_FreeValue(ctx, data)
+    return ctx.toJS(res)
+
+  proc alert(window: Window; s: DOMString) {.jsfunc.} =
+    window.console.error($s)
+
+  proc getEvent(ctx: JSContext; window: Window): JSValue {.jsrfget: "event".} =
+    if window.event == nil:
+      return JS_UNDEFINED
+    return ctx.toJS(window.event)
+
+  proc postMessage(ctx: JSContext; window: Window; value: JSValueConst):
+      Opt[void] {.jsfunc.} =
+    #TODO structuredClone...
+    let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)
+    var s: string
+    ?ctx.fromJSFree(value, s)
+    let data = JS_ParseJSON(ctx, cstring(s), csize_t(s.len),
+      cstring"<postMessage>")
+    let event = ctx.newMessageEvent(satMessage.toAtom(),
+      MessageEventInit(data: data))
+    JS_FreeValue(ctx, data)
+    window.fireEvent(event, window)
+    ok()
+
+  proc requestAnimationFrame(ctx: JSContext; window: Window;
+      callback: JSValueConst): JSValue {.jsfunc.} =
+    if not JS_IsFunction(ctx, callback):
+      return JS_ThrowTypeError(ctx, "not a function")
+    let handler = JS_NewCFunction(ctx, animationFrameHandler,
+      "animation frame handler", 1)
+    if JS_IsException(handler):
+      return JS_EXCEPTION
+    let res = ctx.toJS(window.setTimeout(handler, 0, callback))
+    JS_FreeValue(ctx, handler)
+    res
+
+  proc getComputedStyle(ctx: JSContext; window: Window; element: Element;
+      pseudoElt: JSValueConst = JS_UNDEFINED): Opt[CSSStyleDeclaration]
+      {.jsfunc.} =
+    return ctx.getComputedStyle0(window, element, pseudoElt)
+
+  proc queueMicrotask(ctx: JSContext; window: Window; fun: JSValueConst):
+      JSValue {.jsfunc.} =
+    if not JS_IsFunction(ctx, fun):
+      return JS_ThrowTypeError(ctx, "not a function")
+    if ctx.enqueueJob(microtaskJob, fun) < 0:
+      return JS_EXCEPTION
+    return JS_UNDEFINED
+
+  proc matchMedia(window: Window; s: CSSOMString): MediaQueryList {.jsfunc.} =
+    var ctx = initCSSParser(s)
+    let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)
+    return MediaQueryList(
+      matches: mqlist.appliesScript(addr window.settings),
+      media: $mqlist
+    )
 
 proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
@@ -645,7 +687,7 @@ proc windowPropsDefineOwnProperty(ctx: JSContext; obj: JSValueConst;
 proc JS_SetGlobalExotic(ctx: JSContext; exotic: JSClassExoticMethodsConst)
   {.importc.}
 
-proc addWindowProperties(ctx: JSContext; parent: JSClassID): JSValue =
+proc addWindowProperties(ctx: JSContext): JSValue =
   var exotic {.global.} = JSClassExoticMethods(
     get_own_property: windowPropsGetOwnProperty,
     delete_property: windowPropsDeleteProperty,
@@ -655,7 +697,6 @@ proc addWindowProperties(ctx: JSContext; parent: JSClassID): JSValue =
   )
   var cd {.global.} = JSClassDef(
     class_name: "WindowProperties",
-    can_destroy: nil,
     gc_mark: nil,
     exotic: JSClassExoticMethodsConst(addr exotic)
   )
@@ -668,7 +709,7 @@ proc addWindowProperties(ctx: JSContext; parent: JSClassID): JSValue =
   let name = JS_NewString(ctx, "WindowProperties")
   if JS_IsException(name):
     return name
-  let parentProto = JS_GetClassProto(ctx, parent)
+  let parentProto = JS_GetClassProto(ctx, EventTargetDef.id)
   let proto = JS_NewObjectProtoClass(ctx, parentProto, res)
   JS_FreeValue(ctx, parentProto)
   if JS_IsException(proto):
@@ -684,13 +725,10 @@ proc addWindowProperties(ctx: JSContext; parent: JSClassID): JSValue =
 
 proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   ctx.setGlobal(window)
-  let (eventCID, eventTargetCID) = ?ctx.addEventModule()
-  let proto = ctx.addWindowProperties(eventTargetCID)
-  let windowCID = ctx.registerType(Window, parent = eventTargetCID,
-    asglobal = true, namespace = proto)
+  ?ctx.addEventModule()
+  let proto = ctx.addWindowProperties()
+  ?ctx.registerClass(WindowDef, namespace = proto, asglobal = true)
   JS_FreeValue(ctx, proto)
-  if windowCID == JS_INVALID_CLASS_ID:
-    return err()
   let global = ctx.getOpaque().global
   ?ctx.addEventGetSet(global, WindowEvents)
   let css = JS_NewObject(ctx)
@@ -698,25 +736,25 @@ proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
     return err()
   if ctx.definePropertyCW(global, "CSS", css) == dprException:
     return err()
-  ?ctx.registerType(MediaQueryList, parent = eventTargetCID)
+  ?ctx.registerClass(MediaQueryListDef)
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
   ?ctx.addConsoleModule()
   ?ctx.addNavigatorModule()
   ?ctx.addDOMExceptionModule()
   ?ctx.addDOMRectModule()
-  ?ctx.addDOMModule(eventTargetCID)
+  ?ctx.addDOMModule()
   ?ctx.addCanvasModule()
   ?ctx.addURLModule()
   ?ctx.addHTMLModule()
   ?ctx.addIntlModule()
   ?ctx.addBlobModule()
   ?ctx.addFormDataModule()
-  ?ctx.addXMLHttpRequestModule(eventCID, eventTargetCID)
+  ?ctx.addXMLHttpRequestModule()
   ?ctx.addHeadersModule()
   ?ctx.addRequestModule()
   ?ctx.addResponseModule()
   ?ctx.addEncodingModule()
-  ctx.addPerformanceModule(eventTargetCID)
+  ctx.addPerformanceModule()
 
 proc evalJSFree(opaque: RootRef; src, file: string) =
   let window = Window(opaque)
