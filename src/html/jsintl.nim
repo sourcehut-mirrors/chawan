@@ -84,11 +84,14 @@ type
 
   RelativeTimeFormat = ref object
 
+  ListFormat = ref object
+
 jsDestructor(Collator)
 jsDestructor(NumberFormat)
 jsDestructor(DateTimeFormat)
 jsDestructor(PluralRules)
 jsDestructor(RelativeTimeFormat)
+jsDestructor(ListFormat)
 
 # Intl
 proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
@@ -305,6 +308,13 @@ proc select(this: PluralRules; num: float64): string {.jsfunc.} =
 proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
   return RelativeTimeFormat()
 
+# ListFormat
+proc newListFormat(): ListFormat {.jsctor.} =
+  #TODO locales, options etc.
+  ListFormat()
+
+#TODO format etc.
+
 proc addIntlModule*(ctx: JSContext): Opt[void] =
   let global = JS_GetGlobalObject(ctx)
   let intl = JS_NewObject(ctx)
@@ -318,6 +328,7 @@ proc addIntlModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerType(DateTimeFormat, namespace = intl)
   ?ctx.registerType(PluralRules, namespace = intl)
   ?ctx.registerType(RelativeTimeFormat, namespace = intl)
+  ?ctx.registerType(ListFormat, namespace = intl)
   case ctx.defineProperty(global, "Intl", intl)
   of dprException: return err()
   else: discard
