@@ -198,7 +198,7 @@ extension fields is optional; in mailcap, it is mandatory.)
 * `x-cgioutput` is only accepted in `external.auto-browsecap`, and applies
   to all network requests.  The command part is parsed as a subset of POSIX
   shell which accepts environment variables and parameters, but no shell
-  substitution or variable substitution.  e.g.
+  substitution or variable substitution.
 
   For example, following are valid cgioutput browsecap entries.
 

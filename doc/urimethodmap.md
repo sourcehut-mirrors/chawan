@@ -20,7 +20,7 @@ scheme2: https://example.org/?%s
 scheme3: /cgi-bin/scheme3.cgi
 ```
 
-would maps to the following browsecap entry:
+would map to the following browsecap entry:
 
 ```
 # If the script takes the URI as QUERY_STRING, use `%u'.
