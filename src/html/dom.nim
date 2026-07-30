@@ -206,6 +206,8 @@ type
 
   Permissions* = ref object
 
+  XMLSerializer = ref object
+
   CECallbackType = enum
     cctConnected = "connectedCallback"
     cctDisconnected = "disconnectedCallback"
@@ -714,6 +716,7 @@ jsDestructor(Storage)
 jsDestructor(Crypto)
 jsDestructor(Notification)
 jsDestructor(Permissions)
+jsDestructor(XMLSerializer)
 
 jsDestructor(Location)
 jsDestructor(DOMImplementation)
@@ -6541,6 +6544,16 @@ proc matches(ctx: JSContext; this: Element; q: DOMString): JSValue {.jsfunc.} =
     return JS_EXCEPTION
   return ctx.toJS(this.matchesImpl(selectors))
 
+# XMLSerializer
+proc newXMLSerializer(): XMLSerializer {.jsctor.} =
+  XMLSerializer()
+
+proc serializeToString(this: XMLSerializer; root: Node): string {.jsfunc.} =
+  #TODO ...yeah
+  var res = ""
+  res.serializeFragmentInner(root, ttUnknown, writeShadow = true)
+  move(res)
+
 # ShadowRoot
 proc host(this: ShadowRoot): Element {.jsfget.} =
   DocumentFragment(this).host
@@ -8462,6 +8475,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID): Opt[void] =
   ?ctx.registerType(NamedNodeMap)
   ?ctx.registerType(CSSStyleDeclaration)
   ?ctx.registerType(CustomElementRegistry)
+  ?ctx.registerType(XMLSerializer)
   ?ctx.registerType(ShadowRoot, parent = documentFragmentCID)
   ?ctx.registerElements(nodeCID)
   let global = JS_GetGlobalObject(ctx)
