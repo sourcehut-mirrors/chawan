@@ -145,7 +145,8 @@ proc borderTop(input: LayoutInput; lctx: LayoutContext): LUnit =
   return 0'lu
 
 proc borderBottom(input: LayoutInput; lctx: LayoutContext): LUnit =
-  if input.border[dtVertical].send notin BorderStyleNoneHidden:
+  if input.border[dtVertical].send notin BorderStyleNoneHidden +
+      BorderStyleInput:
     return lctx.cellSize[dtVertical]
   return 0'lu
 

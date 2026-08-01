@@ -125,7 +125,8 @@ textarea {
 	color: -cha-ansi(red);
 	white-space: pre;
 	border-style: none -cha-bracket -cha-bracket !important;
-	border-color: -cha-ansi(default) -cha-ansi(default) -cha-ansi(red)
+	border-color: -cha-ansi(default) -cha-ansi(default) -cha-ansi(red);
+	overflow: clip !important
 }
 
 li, summary { display: list-item }

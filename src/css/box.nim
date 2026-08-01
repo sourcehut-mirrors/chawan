@@ -306,7 +306,7 @@ proc borderBottomRight*(input: LayoutInput; cellSize: Size): Offset =
   var o = Offset0
   if input.border.right notin BorderStyleNoneHidden:
     o.x += cellSize.w
-  if input.border.bottom notin BorderStyleNoneHidden:
+  if input.border.bottom notin BorderStyleNoneHidden + BorderStyleInput:
     o.y += cellSize.h
   o
 
