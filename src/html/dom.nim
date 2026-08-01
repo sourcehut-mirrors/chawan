@@ -2476,9 +2476,8 @@ proc replaceChildWithThrow(ctx: JSContext; parent, child, node: Node):
     return ctx.insertThrow(res.error)
   return JS_UNDEFINED
 
-proc clone(node: Node; ctx: JSContext; document = none(Document);
-    deep = false): Node =
-  let document = document.get(node.document)
+proc clone(node: Node; document: Document; deep: bool;
+    fallbackRegistry: CustomElementRegistry): Node =
   let copy = if node of Element:
     #TODO is value
     let element = Element(node)
@@ -2545,11 +2544,35 @@ proc clone(node: Node; ctx: JSContext; document = none(Document);
   else:
     assert false
     Node(nil)
+  copy
+
+proc cloneNodeImpl(ctx: JSContext; node: Node; document: Document; deep: bool;
+    parent: Node; fallbackRegistry: CustomElementRegistry): Opt[Node] =
+  let copy = node.clone(document, deep, fallbackRegistry)
+  if parent != nil:
+    parent.append(copy, ctx)
   if deep and node of ParentNode:
     let node = ParentNode(node)
     for child in node.childList:
-      copy.append(child.clone(ctx, deep = true), ctx)
-  copy
+      discard ?ctx.cloneNodeImpl(child, document, deep, copy, fallbackRegistry)
+  if node of Element:
+    let element = Element(node)
+    let shadow = element.shadowRoot
+    if shadow != nil:
+      let customElements = shadow.globalCustomElements
+      let copyShadow = ?ctx.attachShadow(Element(copy), ShadowRootInit(
+        mode: shadow.mode,
+        serializable: shadow.serializable,
+        delegatesFocus: shadow.delegatesFocus,
+        slotAssignment: shadow.slotAssignment,
+        customElementRegistry: customElements
+      ))
+      copyShadow.declarative = shadow.declarative
+      copyShadow.unsetCustomElements = shadow.unsetCustomElements
+      for child in shadow.childList:
+        discard ?ctx.cloneNodeImpl(child, document, deep = true,
+          copyShadow, fallbackRegistry = nil)
+  ok(copy)
 
 proc previousElementSiblingImpl(this: Node): Element =
   for it in this.precedingSiblings:
@@ -2788,32 +2811,14 @@ jsClassDef(Node):
       return ctx.insertThrow(res.error)
     return ctx.toJS(child)
 
-  proc cloneNode(ctx: JSContext; node: Node; deep = false): JSValue
+  proc cloneNode(ctx: JSContext; node: Node; deep = false): Opt[Node]
       {.jsfunc.} =
     if node of ShadowRoot:
-      return JS_ThrowDOMException(ctx, "NotSupportedError",
+      JS_ThrowDOMException(ctx, "NotSupportedError",
         "cannot clone shadow roots")
-    let copy = node.clone(ctx, deep = deep)
-    if node of Element:
-      let element = Element(node)
-      let shadow = element.shadowRoot
-      if shadow != nil:
-        let customElements = shadow.globalCustomElements
-        let x = ctx.attachShadow(Element(copy), ShadowRootInit(
-          mode: shadow.mode,
-          serializable: shadow.serializable,
-          delegatesFocus: shadow.delegatesFocus,
-          slotAssignment: shadow.slotAssignment,
-          customElementRegistry: customElements
-        ))
-        if x.isErr:
-          return JS_EXCEPTION
-        let copyShadow = x.get
-        copyShadow.declarative = shadow.declarative
-        copyShadow.unsetCustomElements = shadow.unsetCustomElements
-        for child in shadow.childList:
-          copyShadow.append(child.clone(ctx, deep = deep), ctx)
-    return ctx.toJS(copy)
+      return err()
+    ctx.cloneNodeImpl(node, node.document, deep, parent = nil,
+      fallbackRegistry = nil)
 
   proc isSameNode(node, other: Node): bool {.jsfunc.} =
     return node == other
@@ -4008,6 +4013,14 @@ proc findMetaRefresh*(document: Document): Element =
       return child
   return nil
 
+proc checkRegistryScope(ctx: JSContext; document: Document;
+    registry: CustomElementRegistry): Opt[void] =
+  if not registry.scoped and registry != document.customElements:
+    JS_ThrowDOMException(ctx, "NotSupportedError",
+      "wrong custom element registry scope")
+    return err()
+  ok()
+
 jsClassDef(Document):
   jsextends NodeDef
 
@@ -4051,6 +4064,24 @@ jsClassDef(Document):
         "shadow root nodes cannot be adopted")
     document.adopt(node, ctx)
     return ctx.toJS(node)
+
+  proc importNode(ctx: JSContext; document: Document; node: Node;
+      options: JSValueConst = JS_UNDEFINED): Opt[Node] {.jsfunc.} =
+    if node of Document or node of ShadowRoot:
+      JS_ThrowDOMException(ctx, "NotSupportedError",
+        "node cannot be adopted")
+      return err()
+    var deep = false
+    var registry = document.customElements
+    if JS_IsBool(options):
+      ?ctx.fromJS(options, deep)
+    else:
+      var selfOnly: bool
+      discard ?ctx.fromJSGetProp(options, "selfOnly", selfOnly)
+      deep = not selfOnly
+      discard ?ctx.fromJSGetProp(options, "customElementRegistry", registry)
+      ?ctx.checkRegistryScope(document, registry)
+    ctx.cloneNodeImpl(node, document, deep, parent = nil, registry)
 
   proc compatMode(document: Document): string {.jsfget.} =
     if document.mode == qmQuirks:
