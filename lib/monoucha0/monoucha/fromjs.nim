@@ -443,7 +443,7 @@ proc fromJS*[T: ptr object](ctx: JSContext; val: JSValueConst; res: var T):
     # I don't know why, but Nim 1.6.14 fails to generate the forward decls
     # in C.  So we'll stick with dynamic lookup there.
     let nimt = getTypePtr(ref T.pointerBase)
-    let classid = globalJSTypeMap.getOrDefault(nimt)
+    let classId = globalJSTypeMap.getOrDefault(nimt)
   else:
     mixin getClassID
     let classId = getClassID(ref T.pointerBase)
