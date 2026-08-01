@@ -186,7 +186,7 @@ jsClassPublicDef(Event):
   jsget Event, timeStamp
   jsget Event, target
   jsget Event, currentTarget
-  jsget Event, ctype
+  jsget Event, ctype, "type"
   jsget Event, eventPhase
 
   proc newEvent(ctype: CAtomTraced; eventInitDict = EventInit()): Event {.

@@ -10,6 +10,7 @@ function bodyOnload(event) {
 	assertEquals(event.target, document);
 	assertEquals(event.currentTarget, window);
 	assertEquals(event, window.event);
+	assertEquals(event.type, "load")
 	assert(event.isTrusted);
 	assert(!event.bubbles);
 	assert(!event.cancelable);
