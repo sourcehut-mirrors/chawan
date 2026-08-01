@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<title>Canvas test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const doc = document.implementation.createHTMLDocument()
+const canvas = doc.createElement("canvas");
+assertEquals(canvas.width, 300);
+assertEquals(canvas.height, 150);
+document.getElementById("x").textContent = "Success";
+</script>

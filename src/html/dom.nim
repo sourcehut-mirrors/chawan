@@ -5958,9 +5958,9 @@ proc newHTMLElement(tagType: TagType; document: Document): HTMLElement =
     HTMLLabelElement()
   of ttCanvas:
     let imageId = if document.window != nil:
-      -1
-    else:
       document.window.getImageId()
+    else:
+      -1
     let bitmap = if document.scriptingEnabled:
       NetworkBitmap(
         contentType: "image/x-cha-canvas",
