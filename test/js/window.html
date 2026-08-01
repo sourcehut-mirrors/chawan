@@ -64,5 +64,8 @@ assertEquals(old, window.document);
 	assertEquals(e[0].textContent, "test 2")
 	e[0].remove();
 }
-document.getElementById("x").textContent = "Success";
+queueMicrotask(function() {
+	assertEquals(this, globalThis);
+	document.getElementById("x").textContent = "Success";
+});
 </script>

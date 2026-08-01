@@ -22,6 +22,7 @@ import local/select
 import local/term
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsopaque
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -368,10 +369,9 @@ jsNamespaceDef(Client): # fake namespace
 
 proc addJSModules(client: Window; ctx: JSContext): Opt[void] =
   ?ctx.addCommonModules(client)
-  let global = JS_GetGlobalObject(ctx)
+  let global = ctx.getOpaque().global
   if not ctx.setPropertyFunctionList(global, ClientDef.staticFuns):
     return err()
-  JS_FreeValue(ctx, global)
   ?ctx.addUtilModule()
   ?ctx.addLineEditModule()
   ?ctx.addConfigModule()
@@ -416,10 +416,9 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
   if cres.isErr:
     die(cres.error)
   let config = cres.get
-  let global = JS_GetGlobalObject(jsctx)
+  let global = jsctx.getOpaque().global
   if jsctx.definePropertyConvert(global, "config", config) == dprException:
     die(jsctx.getExceptionMsg())
-  JS_FreeValue(jsctx, global)
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
   if ctx.pages.len == 0 and ps.isatty():

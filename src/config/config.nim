@@ -6,18 +6,19 @@ import std/math
 import std/os
 import std/sets
 
-import encoding/charset
 import config/chapath
 import config/conftypes
 import config/cookie
 import css/cssparser
 import css/cssvalues
+import encoding/charset
 import html/script
 import io/chafile
 import io/dynstream
 import monoucha/dtoa
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsopaque
 import monoucha/jspropenumlist
 import monoucha/jsutils
 import monoucha/quickjs
@@ -2497,9 +2498,7 @@ jsClassDef(Config):
 
   # called at pager init
   proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
-    let global = JS_GetGlobalObject(ctx)
-    let obj = JS_GetPropertyStr(ctx, global, "cmd")
-    JS_FreeValue(ctx, global)
+    let obj = JS_GetPropertyStr(ctx, ctx.getOpaque().global, "cmd")
     if JS_IsException(obj):
       JS_FreeValue(ctx, obj)
       return err()

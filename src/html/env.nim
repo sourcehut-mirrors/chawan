@@ -384,10 +384,7 @@ proc jsFinish(opaque: RootRef; response: Response) =
 
 proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
-  let global = JS_GetGlobalObject(ctx)
-  let res = ctx.call(argv[0], global)
-  JS_FreeValue(ctx, global)
-  res
+  ctx.call(argv[0], JS_UNDEFINED)
 
 proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
@@ -762,14 +759,12 @@ proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
   window.importMapsAllowed = true
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
   window.addCustomElementRegistry(rt)
-  let jsWindow = JS_GetGlobalObject(ctx)
-  let weakMap = JS_GetPropertyStr(ctx, jsWindow, "WeakMap")
+  let weakMap = JS_GetPropertyStr(ctx, ctx.getOpaque().global, "WeakMap")
   for it in window.weakMap.mitems:
     it = JS_CallConstructor(ctx, weakMap, 0, nil)
     if JS_IsException(it):
       return err()
   JS_FreeValue(ctx, weakMap)
-  JS_FreeValue(ctx, jsWindow)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   window.performance = newPerformance(window.settings.scripting)
   if window.settings.scripting == smApp:
