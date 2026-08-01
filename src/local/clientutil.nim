@@ -18,7 +18,7 @@ import utils/myposix
 import utils/strwidth
 import utils/twtstr
 
-jsClassRaw(utilClass, "Util"):
+jsNamespaceDef(Util):
   proc getcwd(): string {.jsstfunc.} =
     return myposix.getcwd()
 
@@ -96,6 +96,6 @@ jsClassRaw(utilClass, "Util"):
     strwidth.width(s)
 
 proc addUtilModule*(ctx: JSContext): FromJSResult =
-  ctx.registerClass(utilClass)
+  ctx.registerNamespaceFree(UtilDef)
 
 {.pop.}

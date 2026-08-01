@@ -335,7 +335,7 @@ proc setupStartupScript(ctx: JSContext; script: string) =
   else:
     die("failed to read startup bytecode")
 
-jsClassRaw(ClientDef, "Client"): # fake class
+jsNamespaceDef(Client): # fake namespace
   proc readFile(ctx: JSContext; path: string): JSValue {.jsstfunc.} =
     var s: string
     if chafile.readFile(path, s).isOk:

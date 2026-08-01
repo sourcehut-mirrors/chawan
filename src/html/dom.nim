@@ -8632,7 +8632,7 @@ proc addAttributeReflection(ctx: JSContext; class: JSClassID;
   ok()
 
 proc addConstructorAlias(ctx: JSContext; fun: JSCFunction; class: JSClassID;
-    name: string): Opt[void] =
+    name: cstring): Opt[void] =
   let val = JS_NewCFunction2(ctx, fun, name, 0, JS_CFUNC_constructor, 0)
   if JS_IsException(val):
     return err()

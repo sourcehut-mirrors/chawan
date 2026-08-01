@@ -1461,9 +1461,6 @@ macro jsClassImpl(def, jsname: untyped; body: untyped) =
       template classDef(): ChaClassDef {.used, redefine.} =
         `def`
     )
-  stmts.add(quote do:
-    discard JS_NewClassID(`def`.id)
-  )
   stmts.add(body)
   stmts.jsClassRecurse(body, info)
   if info.tabReplaceableNames.len > 0:
@@ -1529,25 +1526,29 @@ macro jsClassImpl(def, jsname: untyped; body: untyped) =
 template jsClassRaw*(def: untyped; jsname: string; body: untyped) =
   # why Nim insists on zero-initing global variables is an eternal mystery.
   var def {.global, noinit, inject.}: ChaClassDef
+  discard JS_NewClassID(def.id)
   jsClassImpl(def, jsname, body)
 
 template jsClassNameDef*(nimt: typedesc; jsname: string; body: untyped) =
-  var `nimt Def` {.global, noinit, inject.}: ChaClassDef
-  jsClassImpl(`nimt Def`, jsname):
+  jsClassRaw(`nimt Def`, jsname):
     jsconv nimt
     body
 
 template jsClassDef*(nimt, body: untyped) =
-  var `nimt Def` {.global, noinit, inject.}: ChaClassDef
-  jsClassImpl(`nimt Def`, $nimt):
+  jsClassRaw(`nimt Def`, $nimt):
     jsconv nimt
     body
 
 template jsClassPublicDef*(nimt: typedesc; body: untyped) =
   var `nimt Def`* {.global, noinit, inject.}: ChaClassDef
+  discard JS_NewClassID(`nimt Def`.id)
   jsClassImpl(`nimt Def`, $nimt):
     jsconv nimt
     body
+
+template jsNamespaceDef*(name, body: untyped) =
+  var `name Def` {.global, noinit, inject.}: ChaClassDef
+  jsClassImpl(`name Def`, astToStr(name), body)
 
 proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL;
     asglobal = false): FromJSResult =
@@ -1614,6 +1615,34 @@ proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL;
   ctxOpaque.ctors[int(id)] = jctor
   when defined(gcDestructors):
     rtOpaque.classes[int(id)].dtor = def.dtor
+  fjOk
+
+proc registerNamespace*(ctx: JSContext; def: ChaClassDef): JSValue =
+  assert def.unforgeableFuns.len == 0 and def.funs.len == 0
+  let obj = JS_NewObject(ctx)
+  if JS_IsException(obj):
+    return obj
+  let ctxOpaque = ctx.getOpaque()
+  let strSym = ctxOpaque.symRefs[jsyToStringTag]
+  let name = ctx.toJS(def.class_name)
+  if JS_IsException(name):
+    JS_FreeValue(ctx, obj)
+    return name
+  if ctx.definePropertyC(obj, strSym, name) == dprException or
+      not ctx.setPropertyFunctionList(obj, def.staticFuns):
+    JS_FreeValue(ctx, obj)
+    return JS_EXCEPTION
+  if ctx.definePropertyCW(ctxOpaque.global, def.class_name,
+      JS_DupValue(ctx, obj)) == dprException:
+    JS_FreeValue(ctx, obj)
+    return JS_EXCEPTION
+  return obj
+
+proc registerNamespaceFree*(ctx: JSContext; def: ChaClassDef): FromJSResult =
+  let obj = ctx.registerNamespace(def)
+  if JS_IsException(obj):
+    return fjErr
+  JS_FreeValue(ctx, obj)
   fjOk
 
 {.pop.} # raises

@@ -129,9 +129,7 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
         tags.add(tag)
   ctx.toJS(tags)
 
-jsClassRaw(intlClass, "Intl"):
-  # fake class
-  # TODO we need a better way to define namespaces
+jsNamespaceDef(Intl):
   proc getCanonicalLocales(ctx: JSContext; val: JSValueConst): JSValue {.
       jsstfunc.} =
     ctx.canonicalizeLocales(val)
@@ -322,14 +320,8 @@ jsClassDef(ListFormat):
   #TODO format etc.
 
 proc addIntlModule*(ctx: JSContext): Opt[void] =
-  let global = JS_GetGlobalObject(ctx)
-  let intl = JS_NewObject(ctx)
+  let intl = ctx.registerNamespace(IntlDef)
   if JS_IsException(intl):
-    return err()
-  let strSym = ctx.getOpaque().symRefs[jsyToStringTag]
-  if ctx.definePropertyC(intl, strSym, ctx.toJS("Intl")) == dprException or
-      not ctx.setPropertyFunctionList(intl, intlClass.staticFuns):
-    JS_FreeValue(ctx, intl)
     return err()
   ?ctx.registerClass(CollatorDef, namespace = intl)
   ?ctx.registerClass(NumberFormatDef, namespace = intl)
@@ -337,10 +329,7 @@ proc addIntlModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(PluralRulesDef, namespace = intl)
   ?ctx.registerClass(RelativeTimeFormatDef, namespace = intl)
   ?ctx.registerClass(ListFormatDef, namespace = intl)
-  case ctx.defineProperty(global, "Intl", intl)
-  of dprException: return err()
-  else: discard
-  JS_FreeValue(ctx, global)
+  JS_FreeValue(ctx, intl)
   ok()
 
 {.pop.}

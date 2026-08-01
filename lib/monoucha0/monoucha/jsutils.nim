@@ -223,7 +223,7 @@ proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: JSAtom;
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
 
-proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: string;
+proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: cstring;
     prop: JSValue): DefinePropertyResult =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
@@ -233,7 +233,7 @@ proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSAtom;
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
-proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: string;
+proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: cstring;
     prop: JSValue): DefinePropertyResult =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)

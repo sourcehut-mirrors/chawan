@@ -3,6 +3,10 @@
 <div id=x>Fail</div>
 <script src=asserts.js></script>
 <script>
+const desc = Object.getOwnPropertyDescriptor(window, "Intl");
+assert(desc.configurable);
+assert(desc.writable);
+assert(!desc.enumerable);
 assertEquals(new Intl.PluralRules().resolvedOptions().locale, "en-US");
 assertThrows(() => Intl.PluralRules(), TypeError);
 assertEquals(Intl.NumberFormat().format("1"), "1");

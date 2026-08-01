@@ -7,10 +7,12 @@ assertThrows(() => CSS.supports(), TypeError);
 assert(CSS.supports("display", "none"));
 assert(CSS.supports("margin", "1px"));
 assert(!CSS.supports("non-existent-property", "blah"));
+assertEquals(CSS.supports.length, 1);
 assertEquals(CSS.escape("\u0000"), "\uFFFD");
 assertEquals(CSS.escape("\u0001"), "\\1 ");
 assertEquals(CSS.escape("1"), "\\31 ");
 assertEquals(CSS.escape("-1"), "-\\31 ");
 assertEquals(CSS.escape("a1"), "a1");
+assertEquals(CSS.escape.length, 1);
 document.getElementById("x").textContent = "Success";
 </script>

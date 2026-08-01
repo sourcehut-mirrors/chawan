@@ -290,41 +290,30 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
   ok()
 
 # CSS
-proc cssSupports(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray): JSValue {.cdecl.} =
-  if argc == 0:
-    return JS_ThrowTypeError(ctx, "too few arguments")
-  var arg1: CSSOMString
-  ?ctx.fromJS(argv[0], arg1)
-  if argc < 2:
-    #TODO supports(arg1)
-    return JS_FALSE
-  var value: CSSOMString
-  ?ctx.fromJS(argv[1], value)
-  if decl := initCSSDeclaration($arg1):
-    case decl.t
-    of cdtProperty:
-      var cp = initCSSParser(value)
-      var dummy: seq[CSSComputedEntry] = @[]
-      return ctx.toJS(cp.parseComputedValues0(decl.p, dummyAttrs, dummy).isOk)
-    of cdtVariable:
-      let toks = parseComponentValues(value)
-      return ctx.toJS(parseDeclWithVar1(toks).len == 0)
-    of cdtNestedRule: discard
-  return JS_FALSE
+jsNamespaceDef(CSS):
+  proc supports(ctx: JSContext; arg1: CSSOMString;
+      argv: varargs[JSValueConst]): JSValue {.jsstfunc.} =
+    if argv.len > 0:
+      var value: CSSOMString
+      ?ctx.fromJS(argv[0], value)
+      if decl := initCSSDeclaration($arg1):
+        case decl.t
+        of cdtProperty:
+          var cp = initCSSParser(value)
+          var dummy: seq[CSSComputedEntry] = @[]
+          let res = cp.parseComputedValues0(decl.p, dummyAttrs, dummy)
+          return ctx.toJS(res.isOk)
+        of cdtVariable:
+          let toks = parseComponentValues(value)
+          return ctx.toJS(parseDeclWithVar1(toks).len == 0)
+        of cdtNestedRule: discard
+      return JS_FALSE
+    else:
+      #TODO supports(arg1)
+      return JS_FALSE
 
-proc cssEscape(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray): JSValue {.cdecl.} =
-  if argc == 0:
-    return JS_ThrowTypeError(ctx, "too few arguments")
-  var ident: CSSOMString
-  ?ctx.fromJS(argv[0], ident)
-  return ctx.toJS(ident.toOpenArray().cssIdentEscape())
-
-let jsCSSFuncs {.global.} = [
-    JS_CFUNC_DEF("supports", 1, cssSupports),
-    JS_CFUNC_DEF("escape", 1, cssEscape),
-]
+  proc cssEscape(ident: CSSOMString): string {.jsstfunc: "escape".} =
+    return ident.toOpenArray().cssIdentEscape()
 
 # MediaQueryList
 type MediaQueryList {.final.} = ref object of EventTarget
@@ -731,11 +720,7 @@ proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   JS_FreeValue(ctx, proto)
   let global = ctx.getOpaque().global
   ?ctx.addEventGetSet(global, WindowEvents)
-  let css = JS_NewObject(ctx)
-  if not ctx.setPropertyFunctionList(css, jsCSSFuncs):
-    return err()
-  if ctx.definePropertyCW(global, "CSS", css) == dprException:
-    return err()
+  ?ctx.registerNamespaceFree(CSSDef)
   ?ctx.registerClass(MediaQueryListDef)
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
   ?ctx.addConsoleModule()
