@@ -338,7 +338,7 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
   of ttCol:
     ctx.applyDimensionHint(cptWidth, element.attr(satWidth))
-  of ttImg, ttCanvas, ttSvg:
+  of ttImg, ttCanvas:
     ctx.applyDimensionHint(cptWidth, element.attr(satWidth))
     ctx.applyDimensionHint(cptHeight, element.attr(satHeight))
   of ttHtml:
@@ -393,6 +393,9 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
         dim.npx = max(dim.npx, float32(ctx.window.settings.attrsp.ppc))
       ctx.applyPresHint(makeEntry(cptWidth, dim))
     ctx.applyColorHint(cptColor, element.attr(satColor))
+  elif element.tagType(satNamespaceSVG) == ttSvg:
+    ctx.applyDimensionHint(cptWidth, element.attr(satWidth))
+    ctx.applyDimensionHint(cptHeight, element.attr(satHeight))
   else: discard
 
 proc applyVars(ctx: var ApplyValueContext; defs: openArray[CSSRuleDef];
