@@ -171,9 +171,6 @@ proc outerSize(box: BlockBox; input: LayoutInput; lctx: LayoutContext): Size =
     h = box.outerSize(dtVertical, input, lctx)
   )
 
-proc max(span: Span): LUnit =
-  return max(span.start, span.send)
-
 # In CSS, "min" beats "max".
 proc minClamp(x: LUnit; span: Span): LUnit =
   return max(min(x, span.send), span.start)
@@ -410,7 +407,7 @@ proc fillImageSize(bounds: BoundsPart; osize: Size): Size =
     osize.w * osize.h
   return size(w = rat div osize.h, h = rat div osize.w)
 
-proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
+proc resolveImageSizes(lctx: LayoutContext; bounds: Bounds; space: Space;
     paddingSum: Size; bmp: NetworkBitmap; computed: CSSValues;
     intrinsic = false): Size =
   let width = computed{"width"}
@@ -443,12 +440,13 @@ proc resolveImageSizes(lctx: LayoutContext; input: LayoutInput; space: Space;
     if osize.w > 0'lu:
       size.h = size.w * osize.h div osize.w
   if intrinsic: # intrinsic min size
-    return input.bounds.mi.fillImageSize(size)
-  return input.bounds.a.fillImageSize(size)
+    return bounds.mi.fillImageSize(size)
+  return bounds.a.fillImageSize(size)
 
 proc applyImageSizes(lctx: LayoutContext; space: Space; paddingSum: Size;
     bmp: NetworkBitmap; computed: CSSValues; input: var LayoutInput) =
-  let size = lctx.resolveImageSizes(input, space, paddingSum, bmp, computed)
+  let size = lctx.resolveImageSizes(input.bounds, space, paddingSum, bmp,
+    computed)
   input.space = stretch(size)
   # Here we run into the problem that we are supposed to resolve intr in
   # layoutImage, but by that time we lose information of the parent size.
@@ -462,8 +460,8 @@ proc applyImageSizes(lctx: LayoutContext; space: Space; paddingSum: Size;
   # the size to.  I guess it would be cleaner if we had a different
   # LayoutInput variant for images (then we could just put intr right
   # there), but alas, we don't.
-  let intr = lctx.resolveImageSizes(input, space, paddingSum, bmp, computed,
-    intrinsic = true) + paddingSum
+  let intr = lctx.resolveImageSizes(input.bounds, space, paddingSum, bmp,
+    computed, intrinsic = true) + paddingSum
   for dim in DimensionType:
     let u = intr[dim]
     input.bounds.mi[dim] = Span(start: u, send: u)
@@ -532,8 +530,25 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
       flexItem = true)
   )
   input.border = lctx.resolveBorder(computed, input.margin)
-  if dim != dtHorizontal:
-    input.space.h = maxContent()
+  let odim = dim.opposite()
+  let olength = computed.getLength(SizeMap[odim])
+  var hasCross = false
+  if olength.canpx(space[odim]):
+    hasCross = true
+    let u = olength.spx(space[odim], computed, paddingSum[odim])
+      .minClamp(input.bounds.a[odim])
+    input.space[odim] = stretch(u)
+    if olength.isPx:
+      input.bounds.mi[odim].start = max(u, input.bounds.mi[odim].start)
+      input.bounds.mi[odim].send = min(u, input.bounds.mi[odim].send)
+  elif input.space[odim].t == scStretch:
+    hasCross = true
+    let u = input.space[odim].u - input.margin[odim].sum() -
+      paddingSum[odim] - input.borderSum(odim, lctx)
+    input.space[odim] = stretch(minClamp(u, input.bounds.a[odim]))
+    if computed.getLength(MarginStartMap[odim]).auto or
+        computed.getLength(MarginEndMap[odim]).auto:
+      input.space[odim].t = scFitContent
   let length = computed.getLength(SizeMap[dim])
   if length.canpx(space[dim]):
     let u = length.spx(space[dim], computed, paddingSum[dim])
@@ -543,33 +558,27 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
       input.bounds.mi[dim].start = max(u, input.bounds.mi[dim].start)
     if computed{"flex-grow"} == 0:
       input.bounds.mi[dim].send = min(u, input.bounds.mi[dim].send)
-  elif space[dim].t == scStretch and input.bounds.a[dim].send < LUnit.high:
-    input.space[dim] = stretch(input.bounds.a[dim].max())
   else:
-    # Ensure that space is indefinite in the first pass if no width has
-    # been specified.
-    input.space[dim] = maxContent()
-  let odim = dim.opposite()
-  let olength = computed.getLength(SizeMap[odim])
-  if olength.canpx(space[odim]):
-    let u = olength.spx(space[odim], computed, paddingSum[odim])
-      .minClamp(input.bounds.a[odim])
-    input.space[odim] = stretch(u)
-    if olength.isPx:
-      input.bounds.mi[odim].start = max(u, input.bounds.mi[odim].start)
-      input.bounds.mi[odim].send = min(u, input.bounds.mi[odim].send)
-  elif input.space[odim].isDefinite():
-    let u = input.space[odim].u - input.margin[odim].sum() -
-      paddingSum[odim] - input.borderSum(odim, lctx)
-    input.space[odim] = SizeConstraint(
-      t: input.space[odim].t,
-      u: minClamp(u, input.bounds.a[odim])
-    )
-    if computed.getLength(MarginStartMap[odim]).auto or
-        computed.getLength(MarginEndMap[odim]).auto:
-      input.space[odim].t = scFitContent
-  elif input.bounds.a[odim].send < LUnit.high:
-    input.space[odim] = stretch(input.bounds.a[odim].max())
+    let bmp = box.getImageBitmap()
+    if bmp != nil:
+      if hasCross:
+        let size = size(w = bmp.width.toLUnit(), h = bmp.height.toLUnit())
+        if size[odim] != 0'lu:
+          input.space[dim] =
+            stretch(input.space[odim].u * size[dim] div size[odim])
+        else:
+          input.space[dim] = maxContent()
+      else:
+        var space2: Space
+        space2[dim] = maxContent()
+        space2[odim] = fitContent(space[odim])
+        let size = lctx.resolveImageSizes(input.bounds, space2, paddingSum,
+          bmp, computed)
+        input.space[dim] = stretch(size[dim])
+    else:
+      # Space is indefinite in the first pass if width has not been
+      # specified.
+      input.space[dim] = maxContent()
   return input
 
 proc resolveBlockSpace(lctx: LayoutContext; input: var LayoutInput;
@@ -2917,6 +2926,7 @@ type
     intr: Size # intrinsic minimum size
     relativeChildren: seq[BlockBox]
     space: Space
+    bounds: Bounds
     firstBaseline: LUnit
     baseline: LUnit
     canWrap: bool
@@ -3020,30 +3030,42 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     # Do not grow shrink-to-fit input.
     if wt == fwtShrink or fctx.space[dim].t == scStretch:
       mctx.redistributeMainSize(diff, wt, dim, lctx)
-  elif input.bounds.a[dim].start > 0'lu:
+  else:
     # Override with min-width/min-height, but *only* if we are smaller
-    # than the desired size. (Otherwise, we would incorrectly limit
+    # than the desired size.  (Otherwise, we would incorrectly limit
     # max-content size when only a min-width is requested.)
-    if input.bounds.a[dim].start > mctx.totalSize[dim]:
-      let diff = input.bounds.a[dim].start - mctx.totalSize[dim]
-      mctx.redistributeMainSize(diff, fwtGrow, dim, lctx)
+    let diff = input.bounds.a[dim].start - mctx.totalSize[dim]
+    mctx.redistributeMainSize(diff, fwtGrow, dim, lctx)
   let maxMarginSum = mctx.maxMargin[odim].sum()
-  let h = mctx.maxSize[odim] + maxMarginSum
+  let h = (mctx.maxSize[odim] + maxMarginSum).minClamp(input.bounds.a[odim])
   var intr = size(w = 0'lu, h = 0'lu)
   var offset = fctx.offset
   for it in mctx.pending.mitems:
     let oborder = it.child.input.borderSum(odim, lctx)
-    if it.child.state.size[odim] + oborder < h and
-        not it.input.space[odim].isDefinite:
-      # if the max height is greater than our height, then take max height
-      # instead. (if the box's available height is definite, then this will
-      # change nothing, so we skip it as an optimization.)
-      it.input.space[odim] = stretch(h - it.input.margin[odim].sum() -
-        it.input.padding[odim].sum() - oborder)
-      if odim == dtVertical:
-        # Exclude the bottom margin; space only applies to the actual
-        # height.
-        it.input.space[odim].u -= it.child.state.marginTodo.sum()
+    if it.input.space[odim].t != scStretch:
+      # If the box's available height was indefinite, it is possible that
+      # we can compute it now.
+      let paddingSum = it.input.padding.sum()
+      let computed = it.child.computed
+      let olength = computed.getLength(SizeMap[odim])
+      var space = fctx.space
+      space[odim] = stretch(h)
+      it.input.bounds = lctx.resolveBounds(space, paddingSum, computed,
+        replaced = false, flexItem = true)
+      let u = if olength.canpx(stretch(h)):
+        # We couldn't compute the initial size because it was fit-content
+        # and this is a percentage cross size.
+        olength.spx(stretch(h), computed, paddingSum[odim])
+      else:
+        # If the max height is greater than our height, then take max height
+        # instead.
+        var tmp = h - it.input.margin[odim].sum() - paddingSum[odim] - oborder
+        if odim == dtVertical:
+          # Exclude the bottom margin; space only applies to the actual
+          # height.
+          tmp -= it.child.state.marginTodo.sum()
+        tmp
+      it.input.space[odim] = stretch(u.minClamp(it.input.bounds.a[odim]))
       lctx.layoutFlexItem(it.child, it.input)
     offset[dim] += it.input.margin[dim].start
     it.child.state.offset[dim] += offset[dim]
@@ -3084,35 +3106,22 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     child: BlockBox; input: LayoutInput) =
   let lctx = fctx.lctx
   let dim = fctx.dim
-  var childSizes = lctx.resolveFlexItemSizes(fctx.space, dim, child)
+  var parentSpace = fctx.space
+  if dim == dtVertical or fctx.canWrap:
+    parentSpace.h = maxContent()
+  var childSizes = lctx.resolveFlexItemSizes(parentSpace, dim, child)
   let flexBasis = child.computed{"flex-basis"}
-  let childMinBounds = childSizes.bounds.a[dim]
-  let skipBounds = childSizes.space[dim].t == scMaxContent
-  if skipBounds:
-    childSizes.bounds.a[dim] = DefaultSpan
-  lctx.layoutFlexItem(child, childSizes)
-  if not flexBasis.auto and fctx.space[dim].isDefinite:
-    # we can't skip this pass; it is needed to calculate the minimum
-    # height.
-    let minu = child.state.intr[dim]
-    childSizes.space[dim] = stretch(flexBasis.spx(fctx.space[dim],
+  if not flexBasis.auto and parentSpace[dim].isDefinite:
+    childSizes.space[dim] = stretch(flexBasis.spx(parentSpace[dim],
       child.computed, childSizes.padding[dim].sum()))
-    if minu > childSizes.space[dim].u:
-      # First pass gave us a box that is thinner than the minimum
-      # acceptable width for whatever reason; this may have happened
-      # because the initial flex basis was e.g. 0. Try to resize it to
-      # something more usable.
-      childSizes.space[dim] = stretch(minu)
-    lctx.layoutFlexItem(child, childSizes)
-  if skipBounds:
-    childSizes.bounds.a[dim] = childMinBounds
+  lctx.layoutFlexItem(child, childSizes)
   if child.computed{"position"} in PositionAbsoluteFixed:
     # Absolutely positioned flex children do not participate in flex layout.
     child.input.bfcOffset = Offset0
   else:
-    if fctx.canWrap and (fctx.space[dim].t == scMinContent or
-        fctx.space[dim].isDefinite and
-        mctx.totalSize[dim] + child.state.size[dim] > fctx.space[dim].u):
+    if fctx.canWrap and (parentSpace[dim].t == scMinContent or
+        parentSpace[dim].isDefinite and
+        mctx.totalSize[dim] + child.state.size[dim] > parentSpace[dim].u):
       fctx.flushMain(mctx, input)
     let outerSize = child.outerSize(dim, childSizes, lctx)
     mctx.updateMaxSizes(child, childSizes, lctx)
@@ -3142,17 +3151,8 @@ proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
     space: input.space,
     canWrap: box.computed{"flex-wrap"} != FlexWrapNowrap,
     reverse: box.computed{"flex-direction"} in FlexReverse,
-    dim: dim
+    dim: dim,
   )
-  if fctx.space[odim].t == scFitContent:
-    var u = 0'lu
-    for child in box.children:
-      let child = BlockBox(child)
-      var childSizes = lctx.resolveFlexItemSizes(fctx.space, dim, child)
-      lctx.layoutFlexItem(child, childSizes)
-      u = max(u, child.outerSize(odim, childSizes, lctx))
-    u = min(fctx.space[odim].u, u)
-    fctx.space[odim] = stretch(u)
   if fctx.space[dim].t == scFitContent and input.bounds.a[dim].start > 0'lu:
     fctx.space[dim] = stretch(input.bounds.a[dim].start)
   if fctx.space[dim].isDefinite:
