@@ -1153,8 +1153,8 @@ proc findSearchParam(url: URL; name: string): int =
     if url.search.startsWith(name, i) and
         (i + name.len >= url.search.len or url.search[i + name.len] == '&'):
       return i
-    i = url.search.find('&', i)
-    if i == -1:
+    i = url.search.find('&', i) + 1
+    if i <= 0:
       break
   return -1
 
