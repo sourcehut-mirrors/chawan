@@ -290,7 +290,7 @@ Following properties (functions/getters) are defined by `Pager`:
   If the editor signals an error (crash or non-zero exit code), `null` is
   returned.  Otherwise, the user's input is returned as a string.
 
-`openMenu(x = pager.cursorx - pager.fromx, y = pager.cursory - pager.fromy)`
+`openMenu(x = pager.acursorx, y = pager.acursory)`
 : Opens the context menu at the specified x/y positions.
 
 `closeMenu()`
@@ -540,6 +540,10 @@ Following properties (functions/getters) are defined by `Buffer`:
 
 `fromx`, `fromy`
 : The x/y position of the first line displayed on the screen.
+
+`acursorx`, `acursory`
+: The absolute x/y position of the cursor on the screen.  Same as
+  `buffer.cursorx - buffer.fromx` and `buffer.cursory - buffer.fromy`.
 
 `numLines`
 : The number of lines currently loaded in the buffer.

@@ -319,7 +319,7 @@ If the editor signals an error (crash or non\-zero exit code),
 Otherwise, the user\(cqs input is returned as a string.
 .RE
 .TP
-\f[CR]openMenu(x = pager.cursorx \- pager.fromx, y = pager.cursory \- pager.fromy)\f[R]
+\f[CR]openMenu(x = pager.acursorx, y = pager.acursory)\f[R]
 Opens the context menu at the specified x/y positions.
 .TP
 \f[CR]closeMenu()\f[R]
@@ -599,6 +599,11 @@ Note that while the status line display is 1\-indexed, these values are
 .TP
 \f[CR]fromx\f[R], \f[CR]fromy\f[R]
 The x/y position of the first line displayed on the screen.
+.TP
+\f[CR]acursorx\f[R], \f[CR]acursory\f[R]
+The absolute x/y position of the cursor on the screen.
+Same as \f[CR]buffer.cursorx \- buffer.fromx\f[R] and
+\f[CR]buffer.cursory \- buffer.fromy\f[R].
 .TP
 \f[CR]numLines\f[R]
 The number of lines currently loaded in the buffer.

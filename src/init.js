@@ -1713,11 +1713,11 @@ const ReTextStart = /\S/gu;
             init.connected = this.#connected.bind(this);
     }
 
-    /* private */ get acursorx() {
+    /* public */ get acursorx() {
         return this.iface?.acursorx ?? 0;
     }
 
-    /* private */ get acursory() {
+    /* public */ get acursory() {
         return this.iface?.acursory ?? 0;
     }
 
