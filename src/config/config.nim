@@ -1397,7 +1397,14 @@ proc parseCharset(cp: var ConfigParser; x: var Charset): Opt[void] =
   let charset = getCharset(cp.buf)
   if charset == csUnknown and cp.buf != "auto":
     # auto represented as unknown
-    return cp.err("unknown charset '" & cp.buf & "'")
+    var buf = "unknown charset '" & cp.buf & "', expected one of [\"auto\", "
+    for e in csUnknown.succ..Charset.high:
+      buf &= '"'
+      buf &= $e
+      buf &= "\", "
+    buf.setLen(buf.high)
+    buf[^1] = ']'
+    return cp.err(move(buf))
   x = charset
   ok()
 
@@ -1415,7 +1422,7 @@ proc parseEnum[T: enum](cp: var ConfigParser; x: var T): Opt[void] =
       buf &= "\", "
     buf.setLen(buf.high)
     buf[^1] = ']'
-    return cp.err(buf)
+    return cp.err(move(buf))
   x = e.get
   ok()
 
@@ -1544,7 +1551,7 @@ proc parsePath(cp: var ConfigParser; x: var string): Opt[void] =
   ?cp.typeCheck(ttString)
   var y = ChaPath(cp.buf).unquote(cp.config.dir)
   if y.isErr:
-    return cp.err(y.error)
+    return cp.err(move(y.error))
   x = move(y.get)
   ok()
 
@@ -1588,7 +1595,7 @@ proc parsePathSeq(cp: var ConfigParser; x: var seq[string]): Opt[void] =
     for it in cp.arr:
       var y = ChaPath(it).unquote(cp.config.dir)
       if y.isErr:
-        return cp.err(y.error)
+        return cp.err(move(y.error))
       x.add(move(y.get))
   ok()
 
