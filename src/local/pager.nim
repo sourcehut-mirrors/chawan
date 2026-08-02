@@ -166,6 +166,7 @@ proc showConsole(pager: Pager)
 proc handleStderr(pager: Pager)
 proc showAlerts(pager: Pager)
 proc getClassID*(t: typedesc[Pager]): JSClassID
+proc unregisterBufferInit(pager: Pager; init: BufferInit)
 
 proc surfaceSize(pager: Pager; t: SurfaceType): tuple[w, h: int] =
   case t
@@ -1694,9 +1695,10 @@ proc runBrowsecap(pager: Pager; init: BufferInit; entry: MailcapEntry):
     Opt[void] =
   let url = init.url
   let stream = init.ostream
+  let typeBuf = url.scheme & '/' & ($init.request.httpMethod).toLowerAscii()
   var dummy: bool
-  let cmd = unquoteCommand(entry.cmd, init.contentType, url.pathname, url,
-    dummy)
+  let cmd = unquoteCommand(entry.cmd, typeBuf, url.pathname, url,
+    dummy, uriparams = true)
   let ishtml = mfHtmloutput in entry.flags
   let needsterminal = mfNeedsterminal in entry.flags
   block needsConnect:
@@ -1816,20 +1818,38 @@ proc handleRead(pager: Pager; init: BufferInit): JSValue =
         r.sread(msg)
     if res != 0: # done
       if res == int(ceMailcap):
-        var state = MailcapParser()
+        pager.unregisterBufferInit(init)
+        var state = MailcapParser(lenient: true)
         let entry = MailcapEntry()
         var t: string
         let res = state.parseEntry(msg, entry, t)
         if res.isOk:
-          init.ostream = newPosixStream("/dev/null")
-          if init.ostream != nil:
-            if pager.runBrowsecap(init, entry).isErr:
-              return pager.jsctx.jsQuit(pager, 1)
-            let response = newResponse(init.request, nil, -1)
-            init.applyResponse(response, pager.mimeTypes.t)
-            return pager.connected2(init)
+          if mfUri in entry.flags:
+            let url = init.url
+            var dummy: bool
+            let cmd = unquoteCommand(entry.cmd, init.contentType, url.pathname,
+              url, dummy, shellQuote = false, uriparams = true)
+            let url2 = parseURL0(cmd)
+            if url2 != nil:
+              let ctx = pager.jsctx
+              let redirect = newRequest(url2, init.request.httpMethod,
+                body = init.request.body)
+              let arg0 = ctx.toJS(redirect)
+              if JS_IsException(arg0):
+                return arg0
+              return ctx.connected(init, bcrRedirect, arg0, force = true)
+            else:
+              state.error = "received invalid URL from x-uri"
           else:
-            state.error = "out of file descriptors"
+            init.ostream = newPosixStream("/dev/null")
+            if init.ostream != nil:
+              if pager.runBrowsecap(init, entry).isErr:
+                return pager.jsctx.jsQuit(pager, 1)
+              let response = newResponse(init.request, nil, -1)
+              init.applyResponse(response, pager.mimeTypes.t)
+              return pager.connected2(init)
+            else:
+              state.error = "out of file descriptors"
         msg = "internal error: " & state.error
       if msg == "":
         msg = getLoaderErrorMessage(res)

@@ -18,7 +18,7 @@ import utils/twtstr
 type
   MailcapParser* = object
     line: int
-    lenient: bool # accept extensions without x-?  (for browsecap)
+    lenient*: bool # accept extensions without x-?  (for browsecap)
     error*: string
 
   MailcapFlag* = enum
@@ -61,6 +61,7 @@ type
 
   Mailcap* = object
     map: StrMap
+    len: uint32 # number of entries
 
 iterator fields(entry: MailcapEntry): NamedField =
   var field = entry.fieldsHead
@@ -275,12 +276,11 @@ proc parseEntry*(state: var MailcapParser; line: string;
 
 proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
   var state = MailcapParser(line: 1, lenient: true)
-  var id = 0'u32
   for line in buf.split('\n'):
     if line.len <= 0:
       continue
-    let entry = MailcapEntry(id: id)
-    inc id
+    let entry = MailcapEntry(id: mailcap.len)
+    inc mailcap.len
     var t: string
     let res = state.parseEntry(line, entry, t)
     doAssert res.isOk, state.error
@@ -288,7 +288,6 @@ proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
 
 proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
     file: ChaFile): Opt[void] =
-  var id = 0'u32
   var line: string
   while file.readLine(line).get(false):
     if line.len <= 0 or line[0] == '#':
@@ -302,8 +301,8 @@ proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
       if not ?file.readLineAppend(line):
         break
     var t: string
-    let entry = MailcapEntry(id: id)
-    inc id
+    let entry = MailcapEntry(id: mailcap.len)
+    inc mailcap.len
     ?state.parseEntry(line, entry, t)
     mailcap.add(entry, t)
     inc state.line
@@ -677,7 +676,7 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
         if mfNetpath in entry.flags and not url.isNetPath():
           netPathSeen = true
         continue
-      if mfUri in entry.flags:
+      if resourceOnly and mfUri in entry.flags:
         var canpipe: bool
         let cmd = unquoteCommand(entry.cmd, typeBuf, url.pathname, url,
           canpipe, shellQuote = false, uriparams = true)
@@ -689,6 +688,7 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
         done = false
         listSeen = false
         break
+      outUrl = url
       return entry
   nil
 

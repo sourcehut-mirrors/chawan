@@ -1721,7 +1721,7 @@ const ReTextStart = /\S/gu;
         return this.iface?.acursory ?? 0;
     }
 
-    /* private */ async #connected(res, arg0) {
+    async #connected(res, arg0, force) {
         const pager = globalThis.pager;
         switch (res) {
         case "connected": {
@@ -1740,7 +1740,7 @@ const ReTextStart = /\S/gu;
                         return;
                     }
                     if (!(Util.HttpLike.includes(bufferProto) &&
-                          Util.HttpLike.includes(requestProto))) {
+                          Util.HttpLike.includes(requestProto)) && !force) {
                         const x =
                             await pager.ask("Warning: switch protocols? " +
                                             url);

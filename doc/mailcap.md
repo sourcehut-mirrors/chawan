@@ -178,12 +178,15 @@ extension fields is optional; in mailcap, it is mandatory.)
   does not execute a shell command.  `x-uri` entries are only accepted in
   `external.auto-browsecap`.
 
-  Unlike in w3mmee, `x-uri` does not actually redirect to the other URL;
-  instead, it transparently rewrites it in the background.
+  After substitution, the user is redirected to the new URI.
 
 * `x-resource` must be used in combination with `x-uri` or `x-cgioutput`.
   Such entries also apply to requests initiated by a buffer,
   e.g. downloading CSS, IMG tags, etc.
+
+  When used in combination with `x-uri`, the latter's semantics are changed
+  to *not* redirect the user.  So although another resource is fetched, the
+  base URI remains the same.
 
 * `x-netpath` (from w3mmee) restricts an entry to URIs which follow the
   `net_path` production of [RFC 2396](https://www.ietf.org/rfc/rfc2396.txt).

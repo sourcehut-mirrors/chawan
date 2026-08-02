@@ -522,7 +522,7 @@ jsClassDef(BufferInit):
     init.title = title
 
   proc connected*(ctx: JSContext; init: BufferInit; res: BufferConnectionResult;
-      arg1: JSValue): JSValue =
+      arg1: JSValue; force = false): JSValue =
     if init.connectedPtr == nil:
       JS_FreeValue(ctx, arg1)
       return JS_UNDEFINED
@@ -536,7 +536,7 @@ jsClassDef(BufferInit):
     if JS_IsException(arg0):
       ctx.freeValues(fun, this, arg1)
       return JS_EXCEPTION
-    return ctx.callSinkThisFree(fun, this, arg0, arg1)
+    return ctx.callSinkThisFree(fun, this, arg0, arg1, ctx.toJS(force))
 
   proc setConnected(ctx: JSContext; init: BufferInit; connected: JSValueConst):
         JSValue {.jsfset: "connected".} =
