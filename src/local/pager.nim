@@ -106,6 +106,7 @@ type
     feedNext: bool
     paste: bool # set in fulfillAsk
     mousePaste: bool
+    consoleLFSeen: bool
     updateStatus: UpdateStatusState
     alertState: PagerAlertState # private
     # current number prefix (when vi-numeric-prefix is true)
@@ -2800,32 +2801,21 @@ jsClassDef(Pager):
 
   # private
   proc handleStderr(pager: Pager) {.jsfunc.} =
-    const BufferSize = 4096
-    const prefix = "STDERR: "
-    var buffer {.noinit.}: array[BufferSize, char]
+    var buffer {.noinit.}: array[512, char]
     let estream = pager.forkserver.estream
-    var hadlf = true
-    while true:
-      let n = estream.read(buffer)
-      if n <= 0:
-        break
+    while (let n = estream.read(buffer); n > 0):
       var i = 0
       while i < n:
-        var j = n
-        var found = false
-        for k in i ..< n:
-          if buffer[k] == '\n':
-            j = k + 1
-            found = true
-            break
-        if hadlf:
-          pager.console.write(prefix)
-        if j - i > 0:
-          pager.console.write(buffer.toOpenArray(i, j - 1))
-        i = j
-        hadlf = found
-    if not hadlf:
-      pager.console.write('\n')
+        if pager.consoleLFSeen:
+          pager.console.write("STDERR: ")
+        let j = buffer.find('\n', i)
+        if j < 0:
+          pager.consoleLFSeen = false
+          pager.console.write(buffer.toOpenArray(i, buffer.high))
+          break
+        pager.console.write(buffer.toOpenArray(i, j))
+        pager.consoleLFSeen = true
+        i = j + 1
     pager.console.flush()
 
   # private
