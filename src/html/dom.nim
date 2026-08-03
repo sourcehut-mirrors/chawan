@@ -794,7 +794,7 @@ proc invalidateCollectionsRemove(document: Document; node: Node)
 proc parseURL0*(document: Document; s: string): URL
 proc parseURL*(document: Document; s: string): Opt[URL]
 proc reflectEvent(document: Document; target: EventTarget;
-  name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
+  name, ctype: StaticAtom; value: string)
 proc removeElementId(document: Document; element: Element)
 
 proc adjustForRemoval(iter: NodeIterator; node: Node)
@@ -1346,6 +1346,8 @@ proc getGlobal*(ctx: JSContext): Window =
 
 proc getWindow*(ctx: JSContext): Window =
   return cast[Window](ctx.getOpaque().globalObj)
+
+const WindowEvents* = [satError, satLoad, satFocus, satBlur]
 
 proc setWeak(ctx: JSContext; wwm: WindowWeakMap; key, val: JSValue): Opt[void] =
   let global = ctx.getGlobal()
@@ -3863,7 +3865,15 @@ proc jsReflectGet0(ctx: JSContext; element: HTMLElement; magic: cint):
     # as uint32 and convert here.
     let f = float32(entry.u)
     return ctx.toJS(element.attrdgz(entry.attrname).get(f))
-  of rtFunction: return JS_NULL
+  of rtFunction:
+    let name = StaticAtom(entry.u)
+    var this = EventTarget(element)
+    if element.tagType in {ttBody, ttFrameset} and name in WindowEvents:
+      let window = element.document.window
+      if window == nil:
+        return JS_UNDEFINED
+      this = window
+    return ctx.eventReflectGetImpl(this, name)
 
 proc jsReflectSet0(ctx: JSContext; element: HTMLElement; val: JSValueConst;
     magic: cint): JSValue {.cdecl.} =
@@ -3913,8 +3923,14 @@ proc jsReflectSet0(ctx: JSContext; element: HTMLElement; val: JSValueConst;
       return JS_ThrowTypeError(ctx, "double expected")
     element.attrd(entry.attrname, x)
   of rtFunction:
-    let ctype = cast[StaticAtom](entry.u)
-    return ctx.eventReflectSet0(element, val, magic, jsReflectSet, ctype)
+    let name = StaticAtom(entry.u)
+    var this = EventTarget(element)
+    if element.tagType in {ttBody, ttFrameset} and name in WindowEvents:
+      let window = element.document.window
+      if window == nil:
+        return JS_UNDEFINED
+      this = window
+    return ctx.eventReflectSetImpl(this, val, StaticAtom(entry.u))
   of rtForm: discard
   return JS_UNDEFINED
 
@@ -3932,24 +3948,15 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
     return JS_EXCEPTION
   ctx.jsReflectSet0(cast[HTMLElement](element), val, magic)
 
-proc findMagic(ctype: StaticAtom): cint =
-  for i in ReflectAllStartIndex ..< int16(ReflectMap.len):
-    if ReflectMap[i].t == rtFunction and ReflectMap[i].u == uint32(ctype):
-      return cint(i)
-  -1
-
 proc reflectEvent(document: Document; target: EventTarget;
-    name, ctype: StaticAtom; value: string; target2 = none(EventTarget)) =
+    name, ctype: StaticAtom; value: string) =
   let ctx = document.window.jsctx
   let fun = ctx.newFunction(["event"], value)
   assert ctx != nil
   if JS_IsException(fun):
     document.window.logException(document.baseURL)
   else:
-    let magic = findMagic(ctype)
-    assert magic != -1
-    let res = ctx.eventReflectSet0(target, fun, magic, jsReflectSet, ctype,
-      target2)
+    let res = ctx.eventReflectSetImpl(target, fun, ctype)
     if JS_IsException(res):
       document.window.logException(document.baseURL)
     JS_FreeValue(ctx, res)
@@ -5696,8 +5703,6 @@ proc getBlockRect(element: Element): DOMRect =
       return res[0]
   return DOMRect()
 
-const WindowEvents* = [satError, satLoad, satFocus, satBlur]
-
 proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
     bool =
   let document = element.document
@@ -5716,11 +5721,9 @@ proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
   for (n, t) in ScriptEventMap:
     if n == name:
       var target = EventTarget(element)
-      var target2 = none(EventTarget)
-      if element.tagType == ttBody and t in WindowEvents:
+      if element.tagType in {ttBody, ttFrameset} and t in WindowEvents:
         target = document.window
-        target2 = option(EventTarget(element))
-      document.reflectEvent(target, n, t, value, target2)
+      document.reflectEvent(target, n, t, value)
       return true
   false
 

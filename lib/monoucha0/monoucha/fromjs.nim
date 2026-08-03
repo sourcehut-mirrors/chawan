@@ -66,7 +66,7 @@ template `?`(res: FromJSResult) =
   if res == fjErr:
     return fjErr
 
-proc isInstanceOf(ctx: JSContext; classid, tclassid: JSClassID): bool =
+proc isInstanceOf*(ctx: JSContext; classid, tclassid: JSClassID): bool =
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   var classid = classid
   var found = false

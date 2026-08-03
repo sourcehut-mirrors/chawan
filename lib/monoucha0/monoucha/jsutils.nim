@@ -383,10 +383,6 @@ proc uninitIfNull*(val: JSValue): JSValue =
     return JS_UNINITIALIZED
   return val
 
-proc identityFunction*(ctx: JSContext; val: JSValueConst): JSValue =
-  ## Returns a function that always returns `val`.
-  return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueConstArray())
-
 proc getExceptionMsg*(ctx: JSContext): string =
   ## Converts the current exception to a string.
   result = ""

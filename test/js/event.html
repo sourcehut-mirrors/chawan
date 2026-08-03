@@ -6,11 +6,16 @@
 <script src=asserts.js></script>
 <script>
 let ok7 = false;
+let firstLoad = true;
 function bodyOnload(event) {
 	assertEquals(event.target, document);
 	assertEquals(event.currentTarget, window);
 	assertEquals(event, window.event);
 	assertEquals(event.type, "load")
+	assertEquals(window.onload, document.body.onload);
+	function dummy() {}
+	document.body.onload = dummy;
+	assertEquals(window.onload, dummy);
 	assert(event.isTrusted);
 	assert(!event.bubbles);
 	assert(!event.cancelable);

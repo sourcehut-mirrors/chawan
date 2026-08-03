@@ -73,12 +73,11 @@ type
     total {.jsdefault.}: float64
 
 jsClassRaw(XMLHttpRequestEventTargetDef, "XMLHttpRequestEventTarget"):
-  #TODO right now this works:
-  # XMLHttpRequestEventTarget.prototype.__lookupSetter__("onloadstart")
-  #   .call(document.createElement("hi"))
-  # but it shouldn't.  Probably XHR event targets need a separate reflector
-  # function that checks the class ID too.
   jsextends EventTargetDef
+
+  proc addXHREventTargetEvents(ctx: JSContext): Opt[void] =
+    ctx.addEventGetSet(classDef.id, satLoadstart, satProgress, satAbort,
+      satError, satLoad, satTimeout, satLoadend)
 
 # ProgressEvent
 jsClassDef(ProgressEvent):
@@ -277,6 +276,9 @@ jsClassDef(XMLHttpRequest):
   jsget XMLHttpRequest, responseType
   jsget XMLHttpRequest, withCredentials
   jsget XMLHttpRequest, timeout
+
+  proc addXHREvents(ctx: JSContext): Opt[void] =
+    ctx.addEventGetSet(classDef.id, satReadystatechange)
 
   proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
     let upload = XMLHttpRequestUpload()
@@ -542,13 +544,11 @@ jsClassDef(XMLHttpRequest):
 
 proc addXMLHttpRequestModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(XMLHttpRequestEventTargetDef)
-  let xhretCID = XMLHttpRequestEventTargetDef.id
-  ?ctx.addEventGetSet(xhretCID, [satLoadstart, satProgress, satAbort, satError,
-    satLoad, satTimeout, satLoadend])
+  ?ctx.addXHREventTargetEvents()
   ?ctx.registerClass(ProgressEventDef)
   ?ctx.registerClass(XMLHttpRequestUploadDef)
   ?ctx.registerClass(XMLHttpRequestDef)
-  ?ctx.addEventGetSet(XMLHttpRequestDef.id, [satReadystatechange])
+  ?ctx.addXHREvents()
   case ctx.defineConsts(XMLHttpRequestDef.id, XMLHttpRequestState)
   of dprException: return err()
   else: discard

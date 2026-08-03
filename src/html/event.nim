@@ -10,6 +10,7 @@ import io/timeout
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsnull
+import monoucha/jsopaque
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -460,6 +461,13 @@ proc findEventListener(ctx: JSContext; eventTarget: EventTarget;
       return it
   nil
 
+proc findInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
+    ctype: StaticAtom): EventListener =
+  for it in eventTarget.eventListeners:
+    if it.internal and it.ctype == ctype:
+      return it
+  nil
+
 proc hasEventListener*(eventTarget: EventTarget; ctype: CAtomTraced): bool =
   for it in eventTarget.eventListeners:
     if it.ctype == ctype:
@@ -595,75 +603,25 @@ proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     once = false, internal = true, passive = none(bool), callback, signal = nil)
 
 # Event reflection
-const EventReflectMap = [
-  cint(0): satLoadstart,
-  satProgress,
-  satAbort,
-  satError,
-  satLoad,
-  satTimeout,
-  satLoadend,
-  satReadystatechange,
-  satFocus,
-  satBlur
-]
+proc eventReflectGetImpl*(ctx: JSContext; this: EventTarget; name: StaticAtom):
+    JSValue {.cdecl.} =
+  if this == nil:
+    return JS_EXCEPTION
+  let el = ctx.findInternalEventListener(this, name)
+  if el == nil:
+    return JS_NULL
+  return JS_DupValue(ctx, el.callback)
 
-proc eventReflectGet*(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
-    {.cdecl.} =
-  return JS_NULL
-
-proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
-    val: JSValueConst; magic: cint; fun2: JSSetterMagicFunction;
-    atom: StaticAtom; target2 = none(EventTarget)): JSValue =
+proc eventReflectSetImpl*(ctx: JSContext; this: EventTarget; val: JSValueConst;
+    atom: StaticAtom): JSValue =
+  if this == nil:
+    return JS_EXCEPTION
   if JS_IsFunction(ctx, val) or JS_IsNull(val):
-    let jsTarget = ctx.toJS(target)
-    if JS_IsException(jsTarget):
-      return JS_EXCEPTION
-    let jsTarget2 = ctx.toJS(target2)
-    if JS_IsException(jsTarget2):
-      JS_FreeValue(ctx, jsTarget)
-      return JS_EXCEPTION
-    let name = "on" & $atom
-    let getter = ctx.identityFunction(val)
-    if JS_IsException(getter):
-      ctx.freeValues(jsTarget, jsTarget2)
-      return JS_EXCEPTION
-    let f = JSCFunctionType(setter_magic: fun2)
-    let setter = JS_NewCFunction2(ctx, f.generic, cstring(name), 1,
-      JS_CFUNC_setter_magic, magic)
-    if JS_IsException(getter):
-      ctx.freeValues(jsTarget, jsTarget2, getter)
-      return JS_EXCEPTION
-    let ja = JS_NewAtom(ctx, cstring(name))
-    if ja == JS_ATOM_NULL:
-      ctx.freeValues(jsTarget, jsTarget2, getter, setter)
-      return JS_EXCEPTION
-    var ret = JS_DefineProperty(ctx, jsTarget, ja, JS_UNDEFINED, getter,
-        setter, JS_PROP_HAS_GET or JS_PROP_HAS_SET or
-        JS_PROP_HAS_CONFIGURABLE or JS_PROP_CONFIGURABLE)
-    if ret != -1 and target2.isSome:
-      # target2 is set to document.body in case of properties like
-      # onload, which set functions both on document.body and window,
-      # but only set an event listener on window.
-      ret = JS_DefineProperty(ctx, jsTarget2, ja, JS_UNDEFINED, getter,
-        setter, JS_PROP_HAS_GET or JS_PROP_HAS_SET or
-        JS_PROP_HAS_CONFIGURABLE or JS_PROP_CONFIGURABLE)
-    JS_FreeAtom(ctx, ja)
-    ctx.freeValues(getter, setter, jsTarget, jsTarget2)
-    if ret == -1:
-      return JS_EXCEPTION
     if JS_IsNull(val):
-      ctx.removeInternalEventListener(target, atom)
-    elif ctx.addInternalEventListener(target, atom, val).isErr:
+      ctx.removeInternalEventListener(this, atom)
+    elif ctx.addInternalEventListener(this, atom, val).isErr:
       return JS_EXCEPTION
   return JS_UNDEFINED
-
-proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
-    JSValue {.cdecl.} =
-  var target: EventTarget
-  ?ctx.fromJS(this, target)
-  return ctx.eventReflectSet0(target, val, magic, eventReflectSet,
-    EventReflectMap[magic])
 
 type
   DispatchItem = object
@@ -804,6 +762,51 @@ jsClassPublicDef(EventTarget):
       return JS_FALSE
     return JS_TRUE
 
+proc addEventGetSetImpl*(ctx: JSContext; obj: JSValueConst; id: JSClassID;
+    atoms: openArray[StaticAtom]; get: JSGetterMagicFunction;
+    set: JSSetterMagicFunction): Opt[void] =
+  assert ctx.isInstanceOf(id, EventTargetDef.id)
+  for atom in atoms:
+    let name = "on" & $atom
+    ?ctx.addReflectFunction(obj, cstring(name), get, set, cint(atom))
+  ok()
+
+proc fromJSEventTarget*(ctx: JSContext; this: JSValueConst;
+    tclassid: JSClassID): EventTarget =
+  let ctxOpaque = ctx.getOpaque()
+  var classid: JSClassID
+  var p: pointer
+  if JS_VALUE_GET_PTR(ctxOpaque.global) != JS_VALUE_GET_PTR(this):
+    p = JS_GetAnyOpaque(this, classid)
+  else:
+    classid = ctxOpaque.gclass
+    p = ctxOpaque.globalObj
+  if not ctx.isInstanceOf(classid, tclassid):
+    discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
+    return nil
+  return cast[EventTarget](p)
+
+template addEventGetSetObj*(ctx2: JSContext; obj: JSValueConst; id: JSClassID;
+    atoms: varargs[StaticAtom]): Opt[void] =
+  proc eventReflectGet(ctx: JSContext; this: JSValueConst; magic: cint):
+      JSValue {.cdecl.} =
+    let target = ctx.fromJSEventTarget(this, id)
+    ctx.eventReflectGetImpl(target, cast[StaticAtom](magic))
+
+  proc eventReflectSet(ctx: JSContext; this, val: JSValueConst;
+      magic: cint): JSValue {.cdecl.} =
+    let target = ctx.fromJSEventTarget(this, id)
+    ctx.eventReflectSetImpl(target, val, cast[StaticAtom](magic))
+
+  ctx2.addEventGetSetImpl(obj, id, atoms, eventReflectGet, eventReflectSet)
+
+template addEventGetSet*(ctx: JSContext; id: JSClassID;
+    atoms: varargs[StaticAtom]): Opt[void] =
+  let proto = JS_GetClassProto(ctx, id)
+  let res = ctx.addEventGetSetObj(proto, id, atoms)
+  JS_FreeValue(ctx, proto)
+  res
+
 # AbortSignal
 proc toSignalReason(ctx: JSContext; reason: JSValueConst): JSValue =
   if not JS_IsUndefined(reason):
@@ -813,6 +816,9 @@ proc toSignalReason(ctx: JSContext; reason: JSValueConst): JSValue =
 
 jsClassDef(AbortSignal):
   jsextends EventTargetDef
+
+  proc addAbortSignalEvents(ctx: JSContext): Opt[void] =
+    ctx.addEventGetSet(classDef.id, satAbort)
 
   jsget AbortSignal, reason
   jsget AbortSignal, aborted
@@ -863,25 +869,6 @@ jsClassDef(AbortController):
       discard ctx.dispatch(signal, event)
     return JS_UNDEFINED
 
-# atoms must be sorted in the order of EventReflectMap
-proc addEventGetSet*(ctx: JSContext; obj: JSValueConst;
-    atoms: openArray[StaticAtom]): Opt[void] =
-  var i = cint(0)
-  for atom in atoms:
-    while EventReflectMap[i] != atom:
-      inc i
-    let name = "on" & $atom
-    ?ctx.addReflectFunction(obj, cstring(name), eventReflectGet,
-      eventReflectSet, i)
-  ok()
-
-proc addEventGetSet*(ctx: JSContext; classid: JSClassID;
-    atoms: openArray[StaticAtom]): Opt[void] =
-  let proto = JS_GetClassProto(ctx, classid)
-  let res = ctx.addEventGetSet(proto, atoms)
-  JS_FreeValue(ctx, proto)
-  res
-
 proc addEventModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(EventDef)
   ?ctx.registerClass(CustomEventDef)
@@ -894,7 +881,7 @@ proc addEventModule*(ctx: JSContext): Opt[void] =
     return err()
   ?ctx.registerClass(EventTargetDef)
   ?ctx.registerClass(AbortSignalDef)
-  ?ctx.addEventGetSet(AbortSignalDef.id, [satAbort])
+  ?ctx.addAbortSignalEvents()
   ?ctx.registerClass(AbortControllerDef)
   ok()
 

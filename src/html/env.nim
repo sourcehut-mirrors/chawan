@@ -406,6 +406,10 @@ jsClassDef(Window):
   jsget Window, customElements
   jsufget Window, document
 
+  proc addWindowEvents(ctx: JSContext): Opt[void] =
+    let global = ctx.getOpaque().global
+    ctx.addEventGetSetObj(global, classDef.id, WindowEvents)
+
   proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
     window.timeouts.clearAll()
     rt.freeValues(window.weakMap)
@@ -715,8 +719,7 @@ proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   let proto = ctx.addWindowProperties()
   ?ctx.registerClass(WindowDef, namespace = proto, asglobal = true)
   JS_FreeValue(ctx, proto)
-  let global = ctx.getOpaque().global
-  ?ctx.addEventGetSet(global, WindowEvents)
+  ?ctx.addWindowEvents()
   ?ctx.registerNamespaceFree(CSSDef)
   ?ctx.registerClass(MediaQueryListDef)
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
