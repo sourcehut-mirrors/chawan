@@ -656,7 +656,7 @@ proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
       ctx.removeInternalEventListener(target, atom)
     elif ctx.addInternalEventListener(target, atom, val).isErr:
       return JS_EXCEPTION
-  return JS_DupValue(ctx, val)
+  return JS_UNDEFINED
 
 proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
     JSValue {.cdecl.} =

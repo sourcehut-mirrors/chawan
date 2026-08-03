@@ -546,7 +546,7 @@ jsClassDef(BufferInit):
       return JS_ThrowTypeError(ctx, "connected is already set")
     let val = JS_DupValue(ctx, connected)
     init.connectedPtr = JS_VALUE_GET_PTR(val)
-    return JS_DupValue(ctx, connected)
+    return JS_UNDEFINED
 
   proc closeMailcap*(init: BufferInit) {.jsfunc.} =
     if init.ostream != nil:

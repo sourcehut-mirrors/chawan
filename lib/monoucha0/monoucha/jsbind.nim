@@ -1216,7 +1216,7 @@ template jsset*(typ, field, funcName: untyped) =
       if ctx.fromJS(val, nodeVal) == fjErr:
         return JS_EXCEPTION
     cast[typ](arg_0).field = move(nodeVal)
-    return JS_DupValue(ctx, val)
+    return JS_UNDEFINED
 
 template jsgetset*(typ, field, get, set: untyped) =
   jsget typ, field, get

@@ -3916,7 +3916,7 @@ proc jsReflectSet0(ctx: JSContext; element: HTMLElement; val: JSValueConst;
     let ctype = cast[StaticAtom](entry.u)
     return ctx.eventReflectSet0(element, val, magic, jsReflectSet, ctype)
   of rtForm: discard
-  return JS_DupValue(ctx, val)
+  return JS_UNDEFINED
 
 proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
