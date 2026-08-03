@@ -2241,25 +2241,9 @@ proc outputImages(term: Terminal): Opt[void] =
 
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
-  let maxwpx = term.attrs.widthPx
   let maxh = term.attrs.height - 1
-  let maxhpx = maxh * term.attrs.ppl
-  var imagesHead: CanvasImage = nil
-  var imagesTail: CanvasImage = nil
-  var image = term.frame.canvasImagesHead
-  while image != nil:
-    let next = image.next
-    if not image.scrolled and term.repositionImage(image, maxwpx, maxhpx):
-      image.damaged = true
-      image.next = nil
-      if imagesTail == nil:
-        imagesHead = image
-      else:
-        imagesTail.next = image
-      imagesTail = image
-    image = next
   term.clearImages(maxh)
-  term.frame.canvasImagesHead = imagesHead
+  term.frame.canvasImagesHead = nil
 
 proc queueTitle*(term: Terminal; title: string) =
   if term.frame.title != title:
