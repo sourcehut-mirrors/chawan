@@ -2808,10 +2808,10 @@ jsClassDef(Pager):
       while i < n:
         if pager.consoleLFSeen:
           pager.console.write("STDERR: ")
-        let j = buffer.find('\n', i)
+        let j = buffer.toOpenArray(0, n - 1).find('\n', i)
         if j < 0:
           pager.consoleLFSeen = false
-          pager.console.write(buffer.toOpenArray(i, buffer.high))
+          pager.console.write(buffer.toOpenArray(i, n - 1))
           break
         pager.console.write(buffer.toOpenArray(i, j))
         pager.consoleLFSeen = true
