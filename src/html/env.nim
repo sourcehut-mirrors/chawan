@@ -56,21 +56,21 @@ jsClassRaw(NavigatorDef, "Navigator"):
   # NavigatorID
   proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
   proc appName(navigator: Navigator): string {.jsfget.} = "Netscape"
-  proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (Windows)"
-  proc platform(navigator: Navigator): string {.jsfget.} = "Win32"
+  proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (X11)"
+  proc platform(navigator: Navigator): string {.jsfget, jsfget: "oscpu".} =
+    "Linux x86_64"
   proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
   proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
   proc userAgent(navigator: Navigator): lent string {.jsfget.} =
     return Window(navigator).userAgent
-  proc vendor(navigator: Navigator): string {.jsfget.} = ""
-  proc vendorSub(navigator: Navigator): string {.jsfget.} = ""
+  proc vendor(navigator: Navigator): string {.jsfget, jsfget: "vendorSub".} =
+    ""
   proc taintEnabled(navigator: Navigator): bool {.jsfunc.} = false
-  proc oscpu(navigator: Navigator): string {.jsfget.} = "Windows NT 10.0"
 
   # NavigatorLanguage
   proc language(navigator: Navigator): string {.jsfget.} = "en-US"
   proc languages(navigator: Navigator): seq[string] {.jsfget.} =
-    @["en-US"] #TODO frozen array?
+    @["en-US", "en"] #TODO frozen array?
 
   # NavigatorOnline
   proc onLine(navigator: Navigator): bool {.jsfget.} =
@@ -85,8 +85,9 @@ jsClassRaw(NavigatorDef, "Navigator"):
     true
 
   # NavigatorPlugins
-  proc pdfViewerEnabled(navigator: Navigator): bool {.jsfget.} = false
-  proc javaEnabled(navigator: Navigator): bool {.jsfunc.} = false
+  proc pdfViewerEnabled(navigator: Navigator): bool {.jsfget,
+      jsfget: "javaEnabled".} =
+    false
 
 # PluginArray
 jsClassRaw(PluginArrayDef, "PluginArray"):
