@@ -8670,7 +8670,6 @@ proc addConstructorAlias(ctx: JSContext; fun: JSCFunction; class: JSClassID;
   let val = JS_NewCFunction2(ctx, fun, name, 0, JS_CFUNC_constructor, 0)
   if JS_IsException(val):
     return err()
-  discard JS_SetConstructorBit(ctx, val, true)
   let proto = JS_GetClassProto(ctx, class)
   if ctx.defineProperty(val, "prototype", proto) == dprException:
     JS_FreeValue(ctx, val)
