@@ -1842,7 +1842,7 @@ const ReTextStart = /\S/gu;
             pager.queueStatusUpdate();
             for (;;) {
                 let text = buf;
-                if (this.init.askDownloadDir) {
+                if (arg0.askDownloadDir) {
                     const options = {current: buf, hide: false};
                     text = await pager.setLineEdit("download",
                                                    "(Download)Save file to: ",

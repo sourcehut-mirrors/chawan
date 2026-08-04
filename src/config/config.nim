@@ -2278,7 +2278,8 @@ C-Right line.nextWord
 # boolean options that initialize to true
 const ConfigInitTrue = [
   coConsoleBuffer, coWrap, coShowDownloadPanel, coViNumericPrefix,
-  coHighlightMarks, coShowCursorPosition, coShowHoverLink, coStyling, coHistory
+  coHighlightMarks, coShowCursorPosition, coShowHoverLink, coStyling,
+  coHistory, coAskDownloadDir
 ]
 
 const ConfigInitInt32 = {

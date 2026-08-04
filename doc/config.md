@@ -927,7 +927,8 @@ user-style = buffer.user-style
 ask-download-dir = external.ask-download-dir
 : **string**
 
-: Specify whether the user should be prompted for downloads from this URL.
+: Specify whether the user should be prompted for a path when saving
+  resources from this URL.
 
 ## Keybindings
 

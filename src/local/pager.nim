@@ -2666,6 +2666,7 @@ jsClassDef(Pager):
       if init.ostreamOutputId != -1:
         # resume the ostream
         loader.resume(init.ostreamOutputId)
+      arg0 = ctx.toJS(init)
       bcrSave
     elif bifMailcapCancel in init.flags:
       dec pager.numload
