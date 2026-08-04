@@ -2,7 +2,7 @@
 
 import io/chafile
 import monoucha/fromjs
-import monoucha/jsopaque
+import monoucha/jsbind
 import monoucha/jsutils
 import monoucha/quickjs
 import types/jsopt
@@ -51,51 +51,41 @@ proc consoleWriteCb(opaque: pointer; buf: cstringConst; len: csize_t) {.
     let H = int(len) - 1
     cast[Console](opaque).write(buf.toOpenArray(0, H))
 
-proc jsConsoleLog(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray): JSValue {.cdecl.} =
-  let console = ctx.getConsoleImpl()
-  let H = argc - 1
-  for i, val in argv.toOpenArray(0, H):
-    if JS_IsString(val):
-      var res: string
-      ?ctx.fromJS(val, res)
-      console.write(res)
-    else:
-      JS_PrintValue(ctx, consoleWriteCb, cast[pointer](console), val, nil)
-    if i != H:
-      console.write(' ')
-  console.write('\n')
-  console.flush()
-  return JS_UNDEFINED
+jsNamespaceDef(console):
+  proc log(ctx: JSContext; argv: varargs[JSValueConst]): Opt[void] {.jsstfunc,
+      jsstfunc: "debug", jsstfunc: "error", jsstfunc: "info", jsstfunc: "warn",
+      jsstfunc: "assert".} =
+    let console = ctx.getConsoleImpl()
+    for i, val in argv:
+      if JS_IsString(val):
+        var res: string
+        ?ctx.fromJS(val, res)
+        console.write(res)
+      else:
+        JS_PrintValue(ctx, consoleWriteCb, cast[pointer](console), val, nil)
+      if i != argv.high:
+        console.write(' ')
+    console.write('\n')
+    console.flush()
+    ok()
 
-proc jsConsoleClear(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray): JSValue {.cdecl.} =
-  return JS_UNDEFINED
-
-let jsConsoleFuncs {.global.} = [
-    JS_CFUNC_DEF("log", 0, jsConsoleLog),
-    # For now, these are the same as log().
-    JS_CFUNC_DEF("debug", 0, jsConsoleLog),
-    JS_CFUNC_DEF("error", 0, jsConsoleLog),
-    JS_CFUNC_DEF("info", 0, jsConsoleLog),
-    JS_CFUNC_DEF("warn", 0, jsConsoleLog),
-    JS_CFUNC_DEF("assert", 0, jsConsoleLog),
-    JS_CFUNC_DEF("clear", 0, jsConsoleClear),
-    JS_PROP_STRING_DEF("[Symbol.toStringTag]", "console", JS_PROP_CONFIGURABLE),
-]
+  proc clear() {.jsstfunc.} =
+    discard
 
 proc addConsoleModule*(ctx: JSContext): Opt[void] =
-  # console doesn't really look like other WebIDL interfaces; it's just an
-  # object with a couple functions assigned.
-  let console = JS_NewObject(ctx)
-  if JS_IsException(console):
+  let obj = ctx.registerNamespace(consoleDef)
+  if JS_IsException(obj):
     return err()
-  if not ctx.setPropertyFunctionList(console, jsConsoleFuncs):
-    JS_FreeValue(ctx, console)
+  let proto = JS_NewObject(ctx)
+  if JS_IsException(proto):
+    JS_FreeValue(ctx, obj)
     return err()
-  case ctx.definePropertyCW(ctx.getOpaque().global, "console", console)
-  of dprException: return err()
-  else: return ok()
+  let res = JS_SetPrototype(ctx, obj, proto)
+  JS_FreeValue(ctx, obj)
+  JS_FreeValue(ctx, proto)
+  if res < 0:
+    return err()
+  ok()
 
 proc flush*(console: Console) =
   discard console.err.flush()
