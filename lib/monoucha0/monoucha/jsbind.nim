@@ -241,15 +241,15 @@ proc free*(ctx: JSContext) =
       for fin in rtOpaque.finalizers(opaque.gclass):
         fin(rt, cast[pointer](globalObj))
       # We don't want to accidentally invoke the global class's finalizers
-      # twice, so we temporarily unset the global runtime here.
-      let grt = globalRuntime
-      globalRuntime = nil
+      # twice, so disarm them here.
+      #TODO this won't work once we have multiple contexts
+      if int(opaque.gclass) < rtOpaque.classes.len:
+        rtOpaque.classes[int(opaque.gclass)].fins.setLen(0)
       when defined(gcDestructors):
         rtOpaque.classes[int(opaque.gclass)].dtor(globalObj)
       else:
         GC_unref(cast[RootRef](globalObj))
       rtOpaque.del(globalObj)
-      globalRuntime = grt
     JS_FreeValue(ctx, opaque.global)
     opaque.globalObj = nil
     GC_unref(opaque)
