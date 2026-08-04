@@ -1209,7 +1209,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     headless: pager.config{"headless"},
     charsetOverride: charsetOverride,
     metaRefresh: pager.config{"metaRefresh"},
-    markLinks: pager.config{"markLinks"}
+    markLinks: pager.config{"markLinks"},
+    askDownloadDir: pager.config{"askDownloadDir"}
   )
   loaderConfig = LoaderClientConfig(
     originURL: url,
@@ -1273,6 +1274,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         of coMetaRefresh: result.metaRefresh = bit.metaRefresh
         of coHistory: result.history = bit.bool
         of coMarkLinks: result.markLinks = bit.bool
+        of coAskDownloadDir: result.askDownloadDir = bit.bool
         else: assert false
       of cocStr:
         case e.opt

@@ -52,6 +52,7 @@
 #editor = "${VISUAL:-${EDITOR:-vi}}"
 #cgi-dir = ["$CHA_DIR/cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 #download-dir = "${TMPDIR:-/tmp}/"
+#ask-download-dir = true
 #show-download-panel = true
 #copy-cmd = 'xsel -bi'
 #paste-cmd = 'xsel -bo'

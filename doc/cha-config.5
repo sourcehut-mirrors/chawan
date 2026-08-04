@@ -344,7 +344,14 @@ to achive the same results (with the same caveat).
 download\-dir = \(lq${TMPDIR:\-/tmp}/\(rq
 \f[B]path\f[R]
 .RS
-Path to pre\-fill for \(lqSave to:\(rq prompts.
+Path to pre\-fill for \(lqSave to:\(rq (i.e.\ download) prompts.
+.RE
+.TP
+ask\-download\-dir = true
+\f[B]boolean\f[R]
+.RS
+Whether Chawan should prompt for a download directory.
+Can be overridden by siteconf.
 .RE
 .TP
 show\-download\-panel = true
@@ -968,6 +975,12 @@ user\-style = buffer.user\-style
 .RS
 Specify a user style sheet specific to the site.
 Refer to \f[CR]buffer.user\-style\f[R] for details.
+.RE
+.TP
+ask\-download\-dir = external.ask\-download\-dir
+\f[B]string\f[R]
+.RS
+Specify whether the user should be prompted for downloads from this URL.
 .RE
 .SS Keybindings
 Keybindings are to be placed in these sections:

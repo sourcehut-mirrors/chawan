@@ -351,7 +351,13 @@ w3m-cgi-compat = false
 download-dir = "\${TMPDIR:-/tmp}/"
 : **path**
 
-: Path to pre-fill for "Save to:" prompts.
+: Path to pre-fill for "Save to:" (i.e. download) prompts.
+
+ask-download-dir = true
+: **boolean**
+
+: Whether Chawan should prompt for a download directory.  Can be overridden
+  by siteconf.
 
 show-download-panel = true
 : **boolean**
@@ -917,6 +923,11 @@ user-style = buffer.user-style
 : Specify a user style sheet specific to the site.
 
   Refer to `buffer.user-style` for details.
+
+ask-download-dir = external.ask-download-dir
+: **string**
+
+: Specify whether the user should be prompted for downloads from this URL.
 
 ## Keybindings
 

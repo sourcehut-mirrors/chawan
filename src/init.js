@@ -1841,12 +1841,13 @@ const ReTextStart = /\S/gu;
             pager.deleteBuffer(this, this.find("any"));
             pager.queueStatusUpdate();
             for (;;) {
-                const text = await pager.setLineEdit("download",
-                                                     "(Download)Save file to: ",
-                {
-                    current: buf,
-                    hide: false
-                });
+                let text = buf;
+                if (this.init.askDownloadDir) {
+                    const options = {current: buf, hide: false};
+                    text = await pager.setLineEdit("download",
+                                                   "(Download)Save file to: ",
+                                                   options);
+                }
                 if (text == null)
                     return this.init.closeMailcap();
                 path = Util.unquote(text, Util.getcwd());

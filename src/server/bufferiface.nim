@@ -196,7 +196,9 @@ type
     setxrefresh: bool
     setxsave: bool
 
+  #TODO a bunch of these don't actually have to be sent to the process
   BufferConfig* = object
+    askDownloadDir*: bool
     refererFrom*: bool
     styling*: bool
     scripting*: ScriptingMode
@@ -512,6 +514,9 @@ jsClassDef(BufferInit):
 
   proc setImages(init: BufferInit; images: bool) {.jsfset: "images".} =
     init.config.images = images
+
+  proc askDownloadDir(init: BufferInit): bool {.jsfget.} =
+    init.config.askDownloadDir
 
   proc title*(init: BufferInit): string {.jsfget.} =
     if init.title != "":

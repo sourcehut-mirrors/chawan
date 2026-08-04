@@ -165,6 +165,7 @@ type
     # 1 byte
     coAllowHttpFromFile = "allowHttpFromFile"
     coAltScreen = "altScreen"
+    coAskDownloadDir = "askDownloadDir"
     coAutofocus = "autofocus"
     coBracketedPaste = "bracketedPaste"
     coColorMode = "colorMode"
@@ -318,6 +319,7 @@ type
 const OptionMap = [
   coAllowHttpFromFile: (t: cotBool, section: csNetwork),
   coAltScreen: (cotBoolAuto, csDisplay),
+  coAskDownloadDir: (cotBool, csExternal),
   coAutofocus: (cotBool, csBuffer),
   coBracketedPaste: (cotBoolAuto, csInput),
   coColorMode: (cotColorModeAuto, csDisplay),
@@ -424,7 +426,7 @@ const SiteconfOptions = {
   coCookie, coScripting, coRefererFrom, coImages, coStyling,
   coInsecureSslNoVerify, coAutofocus, coMetaRefresh, coHistory, coMarkLinks,
   coShareCookieJar, coUserStyle, coFilterCmd, coDocumentCharset, coProxy,
-  coDefaultHeaders
+  coDefaultHeaders, coAskDownloadDir
 }
 
 type
