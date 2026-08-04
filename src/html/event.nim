@@ -782,7 +782,7 @@ proc fromJSEventTarget*(ctx: JSContext; this: JSValueConst;
     classid = ctxOpaque.gclass
     p = ctxOpaque.globalObj
   if not ctx.isInstanceOf(classid, tclassid):
-    discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
+    JS_ThrowTypeErrorInvalidClass(ctx, tclassid)
     return nil
   return cast[EventTarget](p)
 

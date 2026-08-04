@@ -24,6 +24,14 @@ type
     jstForEach = "forEach"
     jstKeys = "keys"
     jstValues = "values"
+    jstName = "name"
+    jstScreen = "screen"
+    jstHistory = "history"
+    jstCrypto = "crypto"
+    jstNavigator = "navigator"
+    jstPlugins = "plugins"
+    jstMimeTypes = "mimeTypes"
+    jstPermissions = "permissions"
 
   JSValueRef* = enum
     jsvArrayPrototypeForEach = "Array.prototype.forEach"

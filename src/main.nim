@@ -386,7 +386,7 @@ proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
   let client = Window(
     jsctx: jsctx,
     loader: loader,
-    crypto: Crypto(urandom: urandom),
+    urandom: urandom,
     console: console,
     settings: EnvironmentSettings(
       scripting: smApp,

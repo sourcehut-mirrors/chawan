@@ -148,12 +148,8 @@ type
   Window* {.final.} = ref object of EventTarget
     bc*: RootRef # backref to BufferContext
     console*: Console
-    navigator*: Navigator
-    screen*: Screen
-    history*: History
     localStorage*: Storage
     sessionStorage*: Storage
-    crypto*: Crypto
     event*: Event
     settings*: EnvironmentSettings
     loader*: FileLoader
@@ -180,34 +176,13 @@ type
     performance*: Performance
     weakMap*: array[WindowWeakMap, JSValue]
     customElements*: CustomElementRegistry
+    urandom*: PosixStream
 
   # Navigator stuff
-  # (most of these are just shims; really there should be a framework for
-  # this so we generate less code)
-  Navigator* = ref object
-    plugins*: PluginArray
-    mimeTypes*: MimeTypeArray
-    permissions*: Permissions
-
-  PluginArray* = ref object
-
-  MimeTypeArray* = ref object
-
-  Screen* = ref object
-
-  History* = ref object
-
   Storage* = ref object
     map*: seq[tuple[key, value: string]]
 
-  Crypto* = ref object
-    urandom*: PosixStream
-
   Notification* = ref object
-
-  Permissions* = ref object
-
-  XMLSerializer = ref object
 
   CECallbackType = enum
     cctConnected = "connectedCallback"
@@ -707,16 +682,8 @@ type
 
   HTMLUnknownElement {.final.} = ref object of HTMLElement
 
-jsDestructor(Navigator)
-jsDestructor(PluginArray)
-jsDestructor(MimeTypeArray)
-jsDestructor(Screen)
-jsDestructor(History)
 jsDestructor(Storage)
-jsDestructor(Crypto)
 jsDestructor(Notification)
-jsDestructor(Permissions)
-jsDestructor(XMLSerializer)
 
 jsDestructor(Location)
 jsDestructor(DOMImplementation)
@@ -6777,15 +6744,19 @@ jsClassDef(Element):
     element.attr(satStyle, s)
 
 # XMLSerializer
-jsClassDef(XMLSerializer):
-  proc newXMLSerializer(): XMLSerializer {.jsctor.} =
-    XMLSerializer()
+jsClassRaw(XMLSerializerDef, "XMLSerializer"):
+  proc newXMLSerializer(ctx: JSContext; ctor: JSValueConst): JSValue
+      {.jsctor2.} =
+    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
 
-  proc serializeToString(this: XMLSerializer; root: Node): string {.jsfunc.} =
+  proc serializeToString(ctx: JSContext; this: JSValueConst; root: Node):
+      JSValue {.jsfunc.} =
+    if JS_GetClassID(this) != classDef.id:
+      return JS_ThrowTypeErrorInvalidClass(ctx, classDef.id)
     #TODO ...yeah
     var res = ""
     res.serializeFragmentInner(root, ttUnknown, writeShadow = true)
-    move(res)
+    ctx.toJS(res)
 
 # ShadowRoot
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry =
@@ -8889,7 +8860,7 @@ setEventImpl = proc(ctx: JSContext; event: Event): Event =
 
 newFormDataImpl = proc(ctx: JSContext; argv: varargs[JSValueConst]):
     Opt[FormData] =
-  let urandom = ctx.getGlobal().crypto.urandom
+  let urandom = ctx.getGlobal().urandom
   let this = newFormData0(urandom)
   if this != nil and argv.len > 0:
     var form: HTMLFormElement

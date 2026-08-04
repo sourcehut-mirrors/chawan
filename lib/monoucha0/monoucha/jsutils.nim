@@ -437,4 +437,10 @@ proc toObject*(ctx: JSContext; val: JSValueConst): JSValue =
   let fun = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
   JS_Call(ctx, fun, val, 0, nil)
 
+proc JS_ThrowTypeErrorInvalidClass*(ctx: JSContext; classid: JSClassID):
+    JSValue {.discardable.} =
+  ## Roundabout way to invoke JS_ThrowTypeErrorInvalidClass.
+  discard JS_GetOpaque2(ctx, JS_UNDEFINED, classid)
+  return JS_EXCEPTION
+
 {.pop.} # raises

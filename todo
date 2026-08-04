@@ -27,7 +27,6 @@ network:
 - nntp
 - websockets
 javascript:
-- "this" value as JSValue
 - ReadableStream
 - separate console for each buffer
 - CORS

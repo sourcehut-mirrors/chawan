@@ -64,6 +64,11 @@ assertEquals(old, window.document);
 	assertEquals(e[0].textContent, "test 2")
 	e[0].remove();
 }
+{
+	/* navigator */
+	assertThrows(() => navigator.__lookupGetter__("plugins").call(window), TypeError);
+	assertEquals(localStorage.__proto__.__lookupGetter__("length").call(sessionStorage), 0);
+}
 queueMicrotask(function() {
 	assertEquals(this, globalThis);
 	document.getElementById("x").textContent = "Success";

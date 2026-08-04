@@ -47,11 +47,11 @@ type JSFetchOpaque {.final.} = ref object of RootObj
 
 # Forward declarations
 proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
+proc outerWidth(window: Window): int
+proc outerHeight(window: Window): int
 
-jsClassDef(Navigator):
-  jsget Navigator, plugins
-  jsget Navigator, mimeTypes
-  jsget Navigator, permissions
+jsClassRaw(NavigatorDef, "Navigator"):
+  type Navigator = distinct Window
 
   # NavigatorID
   proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
@@ -60,9 +60,8 @@ jsClassDef(Navigator):
   proc platform(navigator: Navigator): string {.jsfget.} = "Win32"
   proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
   proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
-  proc userAgent(ctx: JSContext; navigator: Navigator): lent string
-      {.jsfget.} =
-    return ctx.getWindow().userAgent
+  proc userAgent(navigator: Navigator): lent string {.jsfget.} =
+    return Window(navigator).userAgent
   proc vendor(navigator: Navigator): string {.jsfget.} = ""
   proc vendorSub(navigator: Navigator): string {.jsfget.} = ""
   proc taintEnabled(navigator: Navigator): bool {.jsfunc.} = false
@@ -90,7 +89,9 @@ jsClassDef(Navigator):
   proc javaEnabled(navigator: Navigator): bool {.jsfunc.} = false
 
 # PluginArray
-jsClassDef(PluginArray):
+jsClassRaw(PluginArrayDef, "PluginArray"):
+  type PluginArray = distinct Window
+
   proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
   proc item(pluginArray: PluginArray): JSValue {.jsfunc.} = JS_NULL
   proc length(pluginArray: PluginArray): uint32 {.jsfget.} = 0
@@ -99,7 +100,9 @@ jsClassDef(PluginArray):
     return JS_UNINITIALIZED
 
 # MimeTypeArray
-jsClassDef(MimeTypeArray):
+jsClassRaw(MimeTypeArrayDef, "MimeTypeArray"):
+  type MimeTypeArray = distinct Window
+
   proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
   proc item(mimeTypeArray: MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
   proc length(mimeTypeArray: MimeTypeArray): uint32 {.jsfget.} = 0
@@ -124,9 +127,10 @@ proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
       return res
   return ctx.callSink(argv[1], JS_UNDEFINED, denied)
 
-jsClassDef(Notification):
-  proc newNotification(): Notification {.jsctor.} =
-    Notification()
+jsClassRaw(NotificationDef, "Notification"):
+  proc newNotification(ctx: JSContext; ctor: JSValueConst): JSValue
+      {.jsctor2.} =
+    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
 
   proc requestPermission(ctx: JSContext; callback: JSValueConst = JS_UNDEFINED):
       JSValue {.jsstfunc.} =
@@ -145,7 +149,9 @@ jsClassDef(Notification):
 
 # Permissions
 # See above.
-jsClassDef(Permissions):
+jsClassRaw(PermissionsDef, "Permissions"):
+  type Permissions = distinct Window
+
   proc query(ctx: JSContext; this: Permissions; desc: JSValueConst): JSValue
       {.jsfunc.} =
     let name = JS_GetPropertyStr(ctx, desc, "name")
@@ -157,35 +163,36 @@ jsClassDef(Permissions):
     return ctx.newRejectedPromise()
 
 # Screen
-jsClassDef(Screen):
+jsClassRaw(ScreenDef, "Screen"):
+  type Screen = distinct Window
+
   # These are fingerprinting vectors; only app mode gets the real values.
-  proc availWidth(ctx: JSContext; screen: Screen): int {.jsfget.} =
-    let window = ctx.getWindow()
-    return window.settings.scriptAttrsp.widthPx
+  proc availWidth(screen: Screen): int {.jsfget.} =
+    return Window(screen).outerWidth
 
-  proc availHeight(ctx: JSContext; screen: Screen): int {.jsfget.} =
-    let window = ctx.getWindow()
-    return window.settings.scriptAttrsp.heightPx
+  proc availHeight(screen: Screen): int {.jsfget.} =
+    return Window(screen).outerHeight
 
-  proc width(ctx: JSContext; screen: Screen): int {.jsfget.} =
-    return ctx.availWidth(screen)
+  proc width(screen: Screen): int {.jsfget.} =
+    return screen.availWidth
 
-  proc height(ctx: JSContext; screen: Screen): int {.jsfget.} =
-    return ctx.availHeight(screen)
+  proc height(screen: Screen): int {.jsfget.} =
+    return screen.availHeight
 
-  proc colorDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
-    let window = ctx.getWindow()
-    case window.settings.scriptAttrsp.colorMode
+  proc colorDepth(screen: Screen): int32 {.jsfget.} =
+    case Window(screen).settings.scriptAttrsp.colorMode
     of cmMonochrome: return 1
     of cmANSI: return 4
     of cmEightBit: return 8
     of cmTrueColor: return 24
 
-  proc pixelDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
-    ctx.colorDepth(screen)
+  proc pixelDepth(screen: Screen): int32 {.jsfget.} =
+    screen.colorDepth
 
 # History
-jsClassDef(History):
+jsClassRaw(HistoryDef, "History"):
+  type History = distinct Window
+
   proc length(history: History): uint32 {.jsfget.} = 1
   proc state(history: History): JSValue {.jsfget.} = JS_NULL
   proc go(history: History) {.jsfunc.} = discard
@@ -198,7 +205,7 @@ jsClassDef(History):
     var s: string
     if not JS_IsNull(url):
       ?ctx.fromJS(url, s)
-    let window = ctx.getWindow()
+    let window = Window(history)
     if window != nil:
       return ctx.setLocation(window, s)
     return JS_UNDEFINED
@@ -263,9 +270,12 @@ jsClassDef(Storage):
     return true
 
 # Crypto
-jsClassDef(Crypto):
+jsClassRaw(CryptoDef, "Crypto"):
+  type Crypto = distinct Window
+
   proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
       JSValue {.jsfunc.} =
+    let window = Window(crypto)
     var view: JSArrayBufferView
     if ctx.fromJS(array, view).isErr:
       return JS_EXCEPTION
@@ -274,19 +284,76 @@ jsClassDef(Crypto):
         "Wrong typed array type")
     if view.abuf.len > 65536:
       return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
-    doAssert crypto.urandom.readLoop(view.toOpenArray()).isOk
+    doAssert window.urandom.readLoop(view.toOpenArray()).isOk
     return JS_DupValue(ctx, array)
 
+proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray):
+    JSValue {.cdecl.} =
+  # data[0] is object, data[1] is parent's class id
+  var parent0: int32
+  discard JS_ToInt32(ctx, parent0, func_data[1])
+  let parent = JSClassID(uint32(parent0))
+  if JS_GetClassID(this) != parent:
+    return JS_ThrowTypeErrorInvalidClass(ctx, parent)
+  if JS_IsUndefined(func_data[0]):
+    let obj = JS_NewObjectClass(ctx, JSClassID(magic))
+    if JS_IsException(obj):
+      return obj
+    JS_SetOpaque(obj, ctx.getOpaque().globalObj)
+    func_data[0] = obj
+  return JS_DupValue(ctx, func_data[0])
+
+proc windowAutoInitSetter(ctx: JSContext; this, val: JSValueConst;
+    magic: cint): JSValue {.cdecl.} =
+  if JS_SetPropertyStr(ctx, this, cstring($StaticAtom(magic)),
+      JS_DupValue(ctx, val)) < 0:
+    return JS_EXCEPTION
+  return JS_UNDEFINED
+
+proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
+    def: ChaClassDef; name: JSStrRef; replaceable: bool): Opt[void] =
+  # Register a lazily initialized singleton-like class.
+  ?ctx.registerClass(def)
+  JS_SetClassCanDestroy(JS_GetRuntime(ctx), def.id, nil)
+  let prop = ctx.getOpaque().strRefs[name]
+  let parentClass = JS_NewInt32(ctx, int32(JS_GetClassID(namespace)))
+  var data = [JSValueConst(JS_UNDEFINED), parentClass]
+  let getterVal = JS_NewCFunctionData(ctx, windowAutoInitGetter, 0,
+    cast[cint](def.id), 2, data.toJSValueConstArray())
+  if JS_IsException(getterVal):
+    return err()
+  if ctx.definePropertyC(getterVal, prop,
+      JS_AtomToValue(ctx, prop)) == dprException:
+    JS_FreeValue(ctx, getterVal)
+    return err()
+  var setterVal = JS_UNDEFINED
+  if replaceable:
+    var f: JSCFunctionType
+    f.setter_magic = windowAutoInitSetter
+    setterVal = JS_NewCFunction2(ctx, f.generic, cstring($name), 1,
+      JS_CFUNC_setter_magic, cint(name))
+    if JS_IsException(setterVal):
+      JS_FreeValue(ctx, getterVal)
+      return err()
+  if JS_DefinePropertyGetSet(ctx, namespace, prop, getterVal, setterVal,
+      JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE) < 0:
+    return err()
+  ok()
+
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerClass(NavigatorDef)
-  ?ctx.registerClass(PluginArrayDef)
-  ?ctx.registerClass(MimeTypeArrayDef)
-  ?ctx.registerClass(ScreenDef)
-  ?ctx.registerClass(HistoryDef)
+  let global = ctx.getOpaque().global
+  ?ctx.registerAutoInitGetSet(global, NavigatorDef, jstNavigator, true)
+  ?ctx.registerAutoInitGetSet(global, ScreenDef, jstScreen, true)
+  ?ctx.registerAutoInitGetSet(global, HistoryDef, jstHistory, true)
+  ?ctx.registerAutoInitGetSet(global, CryptoDef, jstCrypto, true)
   ?ctx.registerClass(StorageDef)
-  ?ctx.registerClass(CryptoDef)
   ?ctx.registerClass(NotificationDef)
-  ?ctx.registerClass(PermissionsDef)
+  let navigator = JS_GetClassProto(ctx, NavigatorDef.id)
+  ?ctx.registerAutoInitGetSet(navigator, PluginArrayDef, jstPlugins, false)
+  ?ctx.registerAutoInitGetSet(navigator, MimeTypeArrayDef, jstMimeTypes, false)
+  ?ctx.registerAutoInitGetSet(navigator, PermissionsDef, jstPermissions, false)
+  JS_FreeValue(ctx, navigator)
   ok()
 
 # CSS
@@ -395,12 +462,8 @@ jsClassDef(Window):
   jsextends EventTargetDef
 
   jsget Window, location
-  jsget Window, navigator
-  jsget Window, screen
-  jsget Window, history
   jsget Window, localStorage
   jsget Window, sessionStorage
-  jsget Window, crypto
   jsget Window, referrer
   jsget Window, performance
   jsget Window, customElements
@@ -475,17 +538,17 @@ jsClassDef(Window):
   proc screenLeft(window: Window): int {.jsrfget.} = 0
   proc screenTop(window: Window): int {.jsrfget.} = 0
 
-  proc outerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
-    return ctx.availWidth(window.screen)
+  proc outerWidth(window: Window): int {.jsrfget.} =
+    return window.settings.scriptAttrsp.widthPx
 
-  proc outerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
-    return ctx.availHeight(window.screen)
+  proc outerHeight(window: Window): int {.jsrfget.} =
+    return window.settings.scriptAttrsp.heightPx
 
-  proc innerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
-    return ctx.availWidth(window.screen)
+  proc innerWidth(window: Window): int {.jsrfget.} =
+    return window.outerWidth
 
-  proc innerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
-    return ctx.availHeight(window.screen)
+  proc innerHeight(window: Window): int {.jsrfget.} =
+    return window.innerWidth
 
   proc devicePixelRatio(window: Window): float64 {.jsrfget.} = 1
 
@@ -782,11 +845,6 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     userAgent, referrer, contentType: string): Window =
   let window = Window(
     console: newConsole(cast[ChaFile](stderr)),
-    navigator: Navigator(
-      plugins: PluginArray(),
-      mimeTypes: MimeTypeArray(),
-      permissions: Permissions()
-    ),
     loader: loader,
     settings: EnvironmentSettings(
       attrsp: attrsp,
@@ -798,12 +856,10 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       headless: headless,
       contentType: contentType.toAtom()
     ),
-    crypto: Crypto(urandom: urandom),
     imageTypes: imageTypes,
     userAgent: userAgent,
     referrer: referrer,
-    screen: Screen(),
-    history: History(),
+    urandom: urandom,
     localStorage: Storage(),
     sessionStorage: Storage(),
   )

@@ -1027,7 +1027,7 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       RequestBody(t: rbtString, s: serializeFormURLEncoded(kvlist))
     of fetMultipart:
       #TODO with charset
-      let formData = newFormData0(bc.window.crypto.urandom)
+      let formData = newFormData0(bc.window.urandom)
       if formData == nil:
         return nil
       formData.entries = move(entryList)
@@ -1825,7 +1825,7 @@ proc runBuffer(bc: BufferContext) =
 
 proc cleanup(bc: BufferContext) =
   #TODO loader map handles?
-  bc.window.crypto.urandom.sclose()
+  bc.window.urandom.sclose()
   if bc.config.scripting != smFalse:
     let rt = JS_GetRuntime(bc.window.jsctx)
     bc.window.jsctx.free()

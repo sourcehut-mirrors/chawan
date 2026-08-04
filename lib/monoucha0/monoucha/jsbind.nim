@@ -682,15 +682,18 @@ template getJSIterParams(): untyped =
   ]
 
 proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
-  let s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
   let id = ident(thisName)
-  gen.jsFunCallList.add(quote do:
-    var `s` {.noinit.}: pointer
-    if dl != fjErr and ctx.fromJSThis(`id`, classDef.id, `s`) == fjErr:
-      dl = fjErr
-  )
-  gen.jsFunCall.add(quote do: cast[`t`](`s`))
+  if t.eqIdent("JSValueConst"):
+    gen.jsFunCall.add(id)
+  else:
+    let s = ident("arg_" & $gen.i)
+    gen.jsFunCallList.add(quote do:
+      var `s` {.noinit.}: pointer
+      if dl != fjErr and ctx.fromJSThis(`id`, classDef.id, `s`) == fjErr:
+        dl = fjErr
+    )
+    gen.jsFunCall.add(quote do: cast[`t`](`s`))
   inc gen.i
 
 proc addMagicParam(gen: var JSFuncGenerator; id, magic: NimNode) =
@@ -824,20 +827,33 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; isva: bool) =
     )
   gen.jsCallAndRet = stmts
 
-proc generateConstructor(gen: var JSFuncGenerator): NimNode =
+proc generateConstructor(gen: var JSFuncGenerator; this = false): NimNode =
+  if this:
+    gen.addThisParam()
   gen.addArgv()
   let jfcl = gen.jsFunCallList
   let jfc = gen.jsFunCall
   let ma = cint(gen.length)
-  gen.jsCallAndRet = quote do:
-    var dl {.inject.} = fjOk
-    when `ma` > 0:
-      dl = ctx.jsCheckNumArgs(argc, `ma`)
-    `jfcl`
-    if dl != fjErr:
-      ctx.toJSNew(`jfc`, this)
-    else:
-      JS_EXCEPTION
+  if not this:
+    gen.jsCallAndRet = quote do:
+      var dl {.inject.} = fjOk
+      when `ma` > 0:
+        dl = ctx.jsCheckNumArgs(argc, `ma`)
+      `jfcl`
+      if dl != fjErr:
+        ctx.toJSNew(`jfc`, this)
+      else:
+        JS_EXCEPTION
+  else:
+    gen.jsCallAndRet = quote do:
+      var dl {.inject.} = fjOk
+      when `ma` > 0:
+        dl = ctx.jsCheckNumArgs(argc, `ma`)
+      `jfcl`
+      if dl != fjErr:
+        `jfc`
+      else:
+        JS_EXCEPTION
   gen.newJSProc(getJSParams())
 
 proc generateHasProperty(gen: var JSFuncGenerator): NimNode =
@@ -1279,8 +1295,10 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
           error("unexpected pragma")
         var t: BoundFunctionType
         var flag = bffNone
+        var ctorThis = false
         case pragmaName
         of "jsctor": t = bfConstructor
+        of "jsctor2": (t = bfConstructor; ctorThis = true)
         of "jsfctor": t = bfConstructorFunction
         of "jsfunc": t = bfFunction
         of "jsmfunc": (t = bfFunction; flag = bffMagic)
@@ -1306,7 +1324,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
           gen = initGenerator(child, t, jsname, flag, magic)
           case t
           of bfConstructor, bfConstructorFunction:
-            stmts.add(gen.generateConstructor())
+            stmts.add(gen.generateConstructor(ctorThis))
           of bfFunction: stmts.add(gen.generateFunction())
           of bfGetter: stmts.add(gen.generateGet())
           of bfSetter: stmts.add(gen.generateSet())
