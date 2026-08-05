@@ -103,10 +103,13 @@ markdown, or they become unreadable on the web interface.
 
 If you want to send plain text e-mails not formatted as markdown,
 use the [mailing list](mailto:~bptato/chawan-devel@lists.sr.ht) instead.
-This is also where you can send patches.
 
 If you're having troubles accessing SourceHut, you can also use the
 [Codeberg mirror](https://codeberg.org/bptato/chawan).
+
+Patches can be sent to the mailing list, as Codeberg pull requests, or
+in private.  (Please do not submit code generated with artificial neural
+networks.)
 
 ## Documentation index
 

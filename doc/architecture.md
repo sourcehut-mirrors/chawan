@@ -137,11 +137,10 @@ Scenario: the user attempts to navigate to <https://example.org>.
 2. pager sends a request for "https://example.org" to the loader. Then,
    it registers the file descriptor in its selector, and does something
    else until poll() reports activity on the file descriptor.
-3. loader rewrites "https://example.org" into "cgi-bin:http". It then
-   runs the http CGI script with the appropriate environment variables
-   set to parts of this URL and request headers.
-4. The http CGI script opens a connection to example.org. When
-   connected, it starts writing headers it receives to stdout.
+3. loader looks up the browsecap handler for "http", and then runs the
+   associated "http" program, passing the URL parts as arguments.
+4. The http CGI script opens a connection to example.org.  When connected,
+   it starts writing headers it receives to stdout.
 5. loader parses these headers, and sends them to pager.
 6. pager reads in the headers, and decides what to do based on the
    Content-Type:
