@@ -288,6 +288,126 @@ jsClassRaw(CryptoDef, "Crypto"):
     doAssert window.urandom.readLoop(view.toOpenArray()).isOk
     return JS_DupValue(ctx, array)
 
+# Location
+type Location = distinct Window
+
+template window(location: Location): Window =
+  Window(location)
+
+proc document(location: Location): Document =
+  return location.window.document
+
+proc url(location: Location): URL =
+  let document = location.document
+  if document != nil:
+    return document.url
+  return parseURL0("about:blank")
+
+#TODO CORS (SecurityError)
+jsClassRaw(LocationDef, "Location"):
+  proc `$`(location: Location): string {.jsuffunc: "toString",
+      jsuffget: "href".} =
+    return location.url.serialize()
+
+  proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
+      jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =
+    let window = ctx.getWindow()
+    if window.document != nil:
+      let url = parseURL0(s)
+      if url == nil:
+        return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
+      location.window.navigate(url)
+    return JS_UNDEFINED
+
+  proc reload(location: Location) {.jsuffunc.} =
+    let window = location.window
+    if window.document != nil:
+      window.navigate(location.url)
+
+  proc origin*(location: Location): string {.jsuffget.} =
+    return location.url.jsOrigin
+
+  proc protocol(ctx: JSContext; location: Location): JSValue {.jsuffget.} =
+    return ctx.protocol(location.url)
+
+  proc setProtocol(ctx: JSContext; location: Location; s: string): JSValue
+      {.jsfset: "protocol".} =
+    let document = location.document
+    if document == nil:
+      return JS_UNDEFINED
+    let copyURL = newURL(location.url)
+    copyURL.setProtocol(s)
+    if copyURL.schemeType notin {stHttp, stHttps}:
+      return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
+    document.window.navigate(copyURL)
+    return JS_UNDEFINED
+
+  proc host(location: Location): string {.jsuffget.} =
+    return location.url.host
+
+  proc setHost(location: Location; s: string) {.jsfset: "host".} =
+    let document = location.document
+    if document == nil:
+      return
+    let copyURL = newURL(location.url)
+    copyURL.setHost(s)
+    document.window.navigate(copyURL)
+
+  proc hostname(location: Location): string {.jsuffget.} =
+    return location.url.hostname
+
+  proc setHostname(location: Location; s: string) {.jsfset: "hostname".} =
+    let document = location.document
+    if document == nil:
+      return
+    let copyURL = newURL(location.url)
+    copyURL.setHostname(s)
+    document.window.navigate(copyURL)
+
+  proc port(location: Location): string {.jsuffget.} =
+    return location.url.port
+
+  proc setPort(location: Location; s: string) {.jsfset: "port".} =
+    let document = location.document
+    if document == nil:
+      return
+    let copyURL = newURL(location.url)
+    copyURL.setPort(s)
+    document.window.navigate(copyURL)
+
+  proc pathname(location: Location): string {.jsuffget.} =
+    return location.url.pathname
+
+  proc setPathname(location: Location; s: string) {.jsfset: "pathname".} =
+    let document = location.document
+    if document == nil:
+      return
+    let copyURL = newURL(location.url)
+    copyURL.setPathname(s)
+    document.window.navigate(copyURL)
+
+  proc search(location: Location): string {.jsuffget.} =
+    return location.url.search
+
+  proc setSearch(location: Location; s: string) {.jsfset: "search".} =
+    let document = location.document
+    if document == nil:
+      return
+    let copyURL = newURL(location.url)
+    copyURL.setSearch(s)
+    document.window.navigate(copyURL)
+
+  proc hash(location: Location): string {.jsuffget.} =
+    return location.url.hash
+
+  proc setHash(location: Location; s: string) {.jsfset: "hash".} =
+    let document = location.document
+    if document == nil:
+      return
+    let copyURL = newURL(location.url)
+    copyURL.setHash(s)
+    document.window.navigate(copyURL)
+
 proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray):
     JSValue {.cdecl.} =
@@ -298,62 +418,91 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
   if JS_GetClassID(this) != parent:
     return JS_ThrowTypeErrorInvalidClass(ctx, parent)
   if JS_IsUndefined(func_data[0]):
-    let obj = JS_NewObjectClass(ctx, JSClassID(magic))
+    let classid = JSClassID(uint32(magic))
+    let obj = JS_NewObjectClass(ctx, classid)
     if JS_IsException(obj):
       return obj
+    let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+    if int(classid) < rtOpaque.classes.len:
+      if not ctx.setPropertyFunctionList(obj,
+          rtOpaque.classes[int(classid)].unforgeable):
+        JS_FreeValue(ctx, obj)
+        return JS_EXCEPTION
+    if classid == LocationDef.id:
+      let valueOf0 = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
+      if ctx.defineProperty(obj, "valueOf",
+          JS_DupValue(ctx, valueOf0)) == dprException:
+        JS_FreeValue(ctx, obj)
+        return JS_EXCEPTION
+      if ctx.defineProperty(obj, "toPrimitive", JS_UNDEFINED) == dprException:
+        JS_FreeValue(ctx, obj)
+        return JS_EXCEPTION
+      #TODO [[DefaultProperties]], exotic
+    #TODO (frames) this weak ref won't work with multiple contexts
     JS_SetOpaque(obj, ctx.getOpaque().globalObj)
     func_data[0] = obj
   return JS_DupValue(ctx, func_data[0])
 
 proc windowAutoInitSetter(ctx: JSContext; this, val: JSValueConst;
     magic: cint): JSValue {.cdecl.} =
-  if JS_SetPropertyStr(ctx, this, cstring($StaticAtom(magic)),
-      JS_DupValue(ctx, val)) < 0:
+  let atom = ctx.getOpaque().strRefs[JSStrRef(magic)]
+  if JS_DefinePropertyValue(ctx, this, atom, JS_DupValue(ctx, val),
+      JS_PROP_C_W_E) < 0:
     return JS_EXCEPTION
   return JS_UNDEFINED
 
+type AutoInitGetSetType = enum
+  gstProto, gstReplaceable, gstUnforgeable
+
 proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
-    def: ChaClassDef; name: JSStrRef; replaceable: bool): Opt[void] =
+    def: ChaClassDef; name: JSStrRef; t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
-  ?ctx.registerClass(def)
-  JS_SetClassCanDestroy(JS_GetRuntime(ctx), def.id, nil)
+  ?ctx.registerClass(def, hook = false)
   let prop = ctx.getOpaque().strRefs[name]
   let parentClass = JS_NewInt32(ctx, int32(JS_GetClassID(namespace)))
   var data = [JSValueConst(JS_UNDEFINED), parentClass]
-  let getterVal = JS_NewCFunctionData(ctx, windowAutoInitGetter, 0,
+  let getter = JS_NewCFunctionData(ctx, windowAutoInitGetter, 0,
     cast[cint](def.id), 2, data.toJSValueConstArray())
-  if JS_IsException(getterVal):
+  if JS_IsException(getter):
     return err()
-  if ctx.definePropertyC(getterVal, prop,
+  if ctx.definePropertyC(getter, prop,
       JS_AtomToValue(ctx, prop)) == dprException:
-    JS_FreeValue(ctx, getterVal)
+    JS_FreeValue(ctx, getter)
     return err()
-  var setterVal = JS_UNDEFINED
-  if replaceable:
+  var setter = JS_UNDEFINED
+  var flags = cint(JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
+  case t
+  of gstProto: discard
+  of gstUnforgeable:
+    flags = JS_PROP_ENUMERABLE
+  of gstReplaceable:
     var f: JSCFunctionType
     f.setter_magic = windowAutoInitSetter
-    setterVal = JS_NewCFunction2(ctx, f.generic, cstring($name), 1,
+    setter = JS_NewCFunction2(ctx, f.generic, cstring($name), 1,
       JS_CFUNC_setter_magic, cint(name))
-    if JS_IsException(setterVal):
-      JS_FreeValue(ctx, getterVal)
+    if JS_IsException(setter):
+      JS_FreeValue(ctx, getter)
       return err()
-  if JS_DefinePropertyGetSet(ctx, namespace, prop, getterVal, setterVal,
-      JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE) < 0:
+  if JS_DefinePropertyGetSet(ctx, namespace, prop, getter, setter, flags) < 0:
     return err()
   ok()
 
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =
   let global = ctx.getOpaque().global
-  ?ctx.registerAutoInitGetSet(global, NavigatorDef, jstNavigator, true)
-  ?ctx.registerAutoInitGetSet(global, ScreenDef, jstScreen, true)
-  ?ctx.registerAutoInitGetSet(global, HistoryDef, jstHistory, true)
-  ?ctx.registerAutoInitGetSet(global, CryptoDef, jstCrypto, true)
+  ?ctx.registerAutoInitGetSet(global, NavigatorDef, jstNavigator,
+    gstReplaceable)
+  ?ctx.registerAutoInitGetSet(global, ScreenDef, jstScreen, gstReplaceable)
+  ?ctx.registerAutoInitGetSet(global, HistoryDef, jstHistory, gstReplaceable)
+  ?ctx.registerAutoInitGetSet(global, CryptoDef, jstCrypto, gstReplaceable)
+  ?ctx.registerAutoInitGetSet(global, LocationDef, jstLocation, gstUnforgeable)
   ?ctx.registerClass(StorageDef)
   ?ctx.registerClass(NotificationDef)
   let navigator = JS_GetClassProto(ctx, NavigatorDef.id)
-  ?ctx.registerAutoInitGetSet(navigator, PluginArrayDef, jstPlugins, false)
-  ?ctx.registerAutoInitGetSet(navigator, MimeTypeArrayDef, jstMimeTypes, false)
-  ?ctx.registerAutoInitGetSet(navigator, PermissionsDef, jstPermissions, false)
+  ?ctx.registerAutoInitGetSet(navigator, PluginArrayDef, jstPlugins, gstProto)
+  ?ctx.registerAutoInitGetSet(navigator, MimeTypeArrayDef, jstMimeTypes,
+    gstProto)
+  ?ctx.registerAutoInitGetSet(navigator, PermissionsDef, jstPermissions,
+    gstProto)
   JS_FreeValue(ctx, navigator)
   ok()
 
@@ -462,7 +611,6 @@ proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
 jsClassDef(Window):
   jsextends EventTargetDef
 
-  jsget Window, location
   jsget Window, localStorage
   jsget Window, sessionStorage
   jsget Window, referrer
@@ -570,7 +718,7 @@ jsClassDef(Window):
     return window #TODO frames?
 
   proc origin(window: Window): string {.jsrfget.} =
-    return window.location.origin
+    return Location(window).origin
 
   # See twtstr for the actual implementations.
   proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
@@ -864,7 +1012,6 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     localStorage: Storage(),
     sessionStorage: Storage(),
   )
-  window.location = window.newLocation()
   for it in window.weakMap.mitems:
     it = JS_UNDEFINED
   if scripting != smFalse:

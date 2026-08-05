@@ -422,7 +422,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
   else:
     classid = ctxOpaque.gclass
     p = ctxOpaque.globalObj
-  if p == nil or not ctx.isInstanceOf(classid, tclassid):
+  if not ctx.isInstanceOf(classid, tclassid):
     # dumb way to invoke JS_ThrowTypeErrorInvalidClass
     discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
     return fjErr

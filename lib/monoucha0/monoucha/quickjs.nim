@@ -303,6 +303,8 @@ proc `==`*(a, b: JSValue): bool {.error.} =
 proc `==`*(a, b: JSAtom): bool {.borrow.}
 proc `==`*(a, b: JSClassID): bool {.borrow.}
 
+proc `$`*(id: JSClassID): string {.borrow.}
+
 converter toJSValueConst*(val: JSValue): JSValueConst {.importc,
     header: "quickjs-aux.h".} =
   JSValueConst(val)

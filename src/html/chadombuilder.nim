@@ -12,6 +12,7 @@ import html/catom
 import html/dom
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 import types/refstring
@@ -41,10 +42,6 @@ type
   AtomImpl = CAtom
 
 include chame/htmlparseriface
-
-type DOMParser = ref object # JS interface
-
-jsDestructor(DOMParser)
 
 proc setActiveParser(document: Document; wrapper: HTML5ParserWrapper) =
   document.parser = wrapper
@@ -390,36 +387,47 @@ proc finish*(wrapper: HTML5ParserWrapper) =
   wrapper.parser.finish()
   wrapper.builder.finish()
 
-jsClassDef(DOMParser):
-  proc newDOMParser*(): DOMParser {.jsctor.} =
-    return DOMParser()
+proc parseHTMLDocument*(str: openArray[char]; url: URL): Document =
+  let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
+  var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode, CAtom]())
+  let res = parser.parseChunk(str)
+  assert res == pcrContinue
+  parser.finish()
+  builder.finish()
+  return builder.document
 
-  proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
-      JSValue {.jsfunc.} =
+jsClassRaw(DOMParserDef, "DOMParser"):
+  type DOMParser = distinct pointer
+
+  proc newDOMParser*(ctx: JSContext; ctor: JSValueConst): JSValue {.jsctor2.} =
+    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
+
+  type DOMParserSupportedType = enum
+    dtHtml = "text/html"
+    dtXml = "text/xml"
+    dtXml2 = "application/xml"
+    dtXml3 = "application/xhtml+xml"
+    dtSvg = "image/svg+xml"
+
+  proc parseFromString*(ctx: JSContext; parser: DOMParser; str: DOMString;
+      t: DOMParserSupportedType): JSValue {.jsfunc.} =
     case t
-    of "text/html":
+    of dtHtml:
       let window = ctx.getWindow()
       let url = if window.document != nil:
         window.document.url
       else:
         parseURL0("about:blank")
-      let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
-      var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode, CAtom]())
-      let res = parser.parseChunk(str)
-      assert res == pcrContinue
-      parser.finish()
-      builder.finish()
-      return ctx.toJS(builder.document)
-    of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
-      return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
+      let document = parseHTMLDocument(str.toOpenArray(), url)
+      return ctx.toJS(document)
     else:
-      return JS_ThrowTypeError(ctx, "invalid mime type")
+      return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
 
 # Forward declaration hack
 parseHTMLFragmentImpl = parseHTMLFragment
 parseDocumentWriteChunkImpl = parseDocumentWriteChunk
 
 proc addHTMLModule*(ctx: JSContext): FromJSResult =
-  ctx.registerClass(DOMParserDef)
+  ctx.registerClass(DOMParserDef, hook = false)
 
 {.pop.} # raises: []

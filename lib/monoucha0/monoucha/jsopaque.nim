@@ -32,6 +32,7 @@ type
     jstPlugins = "plugins"
     jstMimeTypes = "mimeTypes"
     jstPermissions = "permissions"
+    jstLocation = "location"
 
   JSValueRef* = enum
     jsvArrayPrototypeForEach = "Array.prototype.forEach"

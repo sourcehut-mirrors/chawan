@@ -12,8 +12,6 @@ import types/opt
 import utils/twtstr
 
 type
-  JSTextEncoder = ref object
-
   JSTextDecoder = ref object
     encoding: Charset
     ignoreBOM: bool
@@ -23,7 +21,6 @@ type
     tdctx: TextDecoderContext
 
 jsDestructor(JSTextDecoder)
-jsDestructor(JSTextEncoder)
 
 # TextDecoder
 jsClassNameDef(JSTextDecoder, "TextDecoder"):
@@ -58,11 +55,14 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
 
   #TODO AllowSharedBufferSource
   proc decode(ctx: JSContext; this: JSTextDecoder;
-      jsInput: JSValueConst = JS_UNDEFINED; options = TextDecodeOptions()):
-      JSValue {.jsfunc.} =
+      jsInput: JSValueConst = JS_UNDEFINED;
+      jsOptions: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
     var input: JSArrayBufferView
     if not JS_IsUndefined(jsInput):
       ?ctx.fromJS(jsInput, input)
+    var options: TextDecodeOptions
+    if not JS_IsUndefined(jsOptions):
+      ?ctx.fromJS(jsOptions, options)
     if not this.stream:
       this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
       this.bomSeen = false
@@ -85,12 +85,15 @@ proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
   if p != nil:
     dealloc(p)
 
-jsClassNameDef(JSTextEncoder, "TextEncoder"):
-  proc newTextEncoder(): JSTextEncoder {.jsctor.} =
-    return JSTextEncoder()
+jsClassRaw(TextEncoderDef, "TextEncoder"):
+  type JSTextEncoder = distinct pointer
 
-  proc encoding(this: JSTextEncoder): string {.jsfget.} =
-    return "utf-8"
+  proc newTextEncoder(ctx: JSContext; ctor: JSValueConst): JSValue
+      {.jsctor2.} =
+    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
+
+  proc encoding(ctx: JSContext; this: JSTextEncoder): JSValue {.jsfget.} =
+    return ctx.toJS("utf-8")
 
   proc encode(this: JSTextEncoder; input = ""): JSArrayBufferView {.jsfunc.} =
     let p = if input.len > 0:
@@ -110,6 +113,6 @@ jsClassNameDef(JSTextEncoder, "TextEncoder"):
 
 proc addEncodingModule*(ctx: JSContext): FromJSResult =
   ?ctx.registerClass(JSTextDecoderDef)
-  ctx.registerClass(JSTextEncoderDef)
+  ctx.registerClass(TextEncoderDef, hook = false)
 
 {.pop.}

@@ -104,7 +104,7 @@ type
     bfMark = "js_mark"
 
   BoundFunctionFlag = enum
-    bffNone, bffUnforgeable, bffStatic, bffReplaceable, bffMagic
+    bffNone, bffUnforgeable, bffStatic, bffReplaceable, bffMagic, bffThis
 
   JSIterableType* = enum
     jitNone # not iterable
@@ -356,9 +356,12 @@ proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
     iterable: JSIterableType; asglobal: bool; parentProto: JSValueConst):
     JSValue =
   if asglobal and not JS_IsNull(parentProto):
-    return JS_NewObjectProtoClass(ctx, parentProto, parent)
+    return JS_NewObjectProto(ctx, parentProto)
   if parent != JS_INVALID_CLASS_ID:
-    return JS_NewObjectClass(ctx, parent)
+    let proto = JS_GetClassProto(ctx, parent)
+    let res = JS_NewObjectProto(ctx, proto)
+    JS_FreeValue(ctx, proto)
+    return res
   if iterable == jitIterator:
     let parentProto = ctx.getOpaque().valRefs[jsvIteratorPrototype]
     return JS_NewObjectProto(ctx, parentProto)
@@ -549,8 +552,8 @@ proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
     elif not minArgsSeen:
       gen.minArgs = cint(gen.funcParams.len)
   var length = gen.minArgs
-  if gen.t notin {bfConstructor, bfConstructorFunction} and
-      gen.flag != bffStatic:
+  if (gen.t notin {bfConstructor, bfConstructorFunction} or
+      gen.flag == bffThis) and gen.flag != bffStatic:
     dec length
   if gen.flag == bffMagic:
     dec length
@@ -827,14 +830,14 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; isva: bool) =
     )
   gen.jsCallAndRet = stmts
 
-proc generateConstructor(gen: var JSFuncGenerator; this = false): NimNode =
-  if this:
+proc generateConstructor(gen: var JSFuncGenerator): NimNode =
+  if gen.flag == bffThis:
     gen.addThisParam()
   gen.addArgv()
   let jfcl = gen.jsFunCallList
   let jfc = gen.jsFunCall
   let ma = cint(gen.length)
-  if not this:
+  if gen.flag != bffThis:
     gen.jsCallAndRet = quote do:
       var dl {.inject.} = fjOk
       when `ma` > 0:
@@ -1295,10 +1298,9 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
           error("unexpected pragma")
         var t: BoundFunctionType
         var flag = bffNone
-        var ctorThis = false
         case pragmaName
         of "jsctor": t = bfConstructor
-        of "jsctor2": (t = bfConstructor; ctorThis = true)
+        of "jsctor2": (t = bfConstructor; flag = bffThis)
         of "jsfctor": t = bfConstructorFunction
         of "jsfunc": t = bfFunction
         of "jsmfunc": (t = bfFunction; flag = bffMagic)
@@ -1324,7 +1326,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
           gen = initGenerator(child, t, jsname, flag, magic)
           case t
           of bfConstructor, bfConstructorFunction:
-            stmts.add(gen.generateConstructor(ctorThis))
+            stmts.add(gen.generateConstructor())
           of bfFunction: stmts.add(gen.generateFunction())
           of bfGetter: stmts.add(gen.generateGet())
           of bfSetter: stmts.add(gen.generateSet())
@@ -1569,7 +1571,7 @@ template jsNamespaceDef*(name, body: untyped) =
   jsClassImpl(`name Def`, astToStr(name), body)
 
 proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL;
-    asglobal = false): FromJSResult =
+    asglobal = false; hook = true): FromJSResult =
   let rt = JS_GetRuntime(ctx)
   let id = def.id
   let ctxOpaque = ctx.getOpaque()
@@ -1580,7 +1582,7 @@ proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL;
   cdef.exotic = def.exotic
   if JS_NewClass(rt, id, addr cdef) != 0:
     return fjErr
-  if not asglobal:
+  if hook and not asglobal:
     JS_SetClassCanDestroy(rt, id, jsCanDestroy)
   if rtOpaque.classes.len <= int(id):
     rtOpaque.classes.setLen(int(id) + 1)

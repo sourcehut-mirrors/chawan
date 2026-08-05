@@ -68,6 +68,15 @@ assertEquals(old, window.document);
 	/* navigator */
 	assertThrows(() => navigator.__lookupGetter__("plugins").call(window), TypeError);
 	assertEquals(localStorage.__proto__.__lookupGetter__("length").call(sessionStorage), 0);
+	/* screen */
+	(function() {
+		"use strict"
+		assertEquals(screen.colorDepth, 24);
+		window.screen = "test"
+		assertEquals(window.screen, "test");
+	})();
+	/* location */
+	assertThrows(() => Object.defineProperty(window, "location", {value: "test"}), TypeError)
 }
 queueMicrotask(function() {
 	assertEquals(this, globalThis);

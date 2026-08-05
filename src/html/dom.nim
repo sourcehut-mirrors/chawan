@@ -129,9 +129,6 @@ type
     head: CSSStylesheet
     tail: CSSStylesheet
 
-  Location = ref object
-    window: Window
-
   CachedURLImage {.final.} = ref object of StrMapItem
     window: Window
     expiry: int64
@@ -153,7 +150,6 @@ type
     event*: Event
     settings*: EnvironmentSettings
     loader*: FileLoader
-    location*: Location
     jsctx*: JSContext
     document*: Document
     timeouts*: TimeoutState
@@ -685,7 +681,6 @@ type
 jsDestructor(Storage)
 jsDestructor(Notification)
 
-jsDestructor(Location)
 jsDestructor(DOMImplementation)
 jsDestructor(DOMTokenList)
 jsDestructor(DOMStringMap)
@@ -4165,19 +4160,20 @@ jsClassDef(Document):
     else:
       return JS_ThrowDOMException(ctx, "NotSupportedError", "event not supported")
 
-  proc location(document: Document): Location {.jsfget.} =
+  proc location(ctx: JSContext; document: Document): JSValue {.jsfget.} =
     if document.window == nil:
-      return nil
-    return document.window.location
+      return JS_NULL
+    return JS_GetPropertyStr(ctx, ctx.getOpaque().global, "location")
 
   proc setLocation*(ctx: JSContext; document: Document; s: string): JSValue
       {.jsfset: "location".} =
-    if document.location == nil:
-      return JS_ThrowTypeError(ctx, "document.location is not an object")
-    let url = document.parseURL0(s)
-    if url == nil:
-      return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
-    document.window.navigate(url)
+    let obj = ctx.location(document)
+    if JS_IsException(obj):
+      return obj
+    let res = JS_SetPropertyStr(ctx, obj, "href", ctx.toJS(s))
+    JS_FreeValue(ctx, obj)
+    if res < 0:
+      return JS_EXCEPTION
     return JS_UNDEFINED
 
   proc findFirst*(document: Document; tagType: TagType): HTMLElement {.
@@ -5118,133 +5114,6 @@ jsClassDef(HTMLOptionsCollection):
 
   proc selectedIndex(this: HTMLOptionsCollection): int {.jsfget.} =
     return HTMLSelectElement(this.root).selectedIndex
-
-# Location
-proc newLocation*(window: Window): Location =
-  let location = Location(window: window)
-  let ctx = window.jsctx
-  if ctx != nil:
-    let val = ctx.toJS(location)
-    let valueOf0 = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
-    let valueOf = JS_DupValue(ctx, valueOf0)
-    doAssert ctx.defineProperty(val, "valueOf", valueOf) != dprException
-    doAssert ctx.defineProperty(val, "toPrimitive",
-      JS_UNDEFINED) != dprException
-    #TODO [[DefaultProperties]]
-    JS_FreeValue(ctx, val)
-  return location
-
-proc document(location: Location): Document =
-  return location.window.document
-
-proc url(location: Location): URL =
-  let document = location.document
-  if document != nil:
-    return document.url
-  return parseURL0("about:blank")
-
-#TODO CORS (SecurityError)
-jsClassDef(Location):
-  proc `$`(location: Location): string {.jsuffunc: "toString".} =
-    return location.url.serialize()
-
-  proc href(location: Location): string {.jsuffget.} =
-    return $location
-
-  proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
-      jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =
-    if location.document == nil:
-      return JS_UNDEFINED
-    return ctx.setLocation(location.document, s)
-
-  proc reload(location: Location) {.jsuffunc.} =
-    if location.document == nil:
-      return
-    location.document.window.navigate(location.url)
-
-  proc origin*(location: Location): string {.jsuffget.} =
-    return location.url.jsOrigin
-
-  proc protocol(ctx: JSContext; location: Location): JSValue {.jsuffget.} =
-    return ctx.protocol(location.url)
-
-  proc setProtocol(ctx: JSContext; location: Location; s: string): JSValue
-      {.jsfset: "protocol".} =
-    let document = location.document
-    if document == nil:
-      return JS_UNDEFINED
-    let copyURL = newURL(location.url)
-    copyURL.setProtocol(s)
-    if copyURL.schemeType notin {stHttp, stHttps}:
-      return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
-    document.window.navigate(copyURL)
-    return JS_UNDEFINED
-
-  proc host(location: Location): string {.jsuffget.} =
-    return location.url.host
-
-  proc setHost(location: Location; s: string) {.jsfset: "host".} =
-    let document = location.document
-    if document == nil:
-      return
-    let copyURL = newURL(location.url)
-    copyURL.setHost(s)
-    document.window.navigate(copyURL)
-
-  proc hostname(location: Location): string {.jsuffget.} =
-    return location.url.hostname
-
-  proc setHostname(location: Location; s: string) {.jsfset: "hostname".} =
-    let document = location.document
-    if document == nil:
-      return
-    let copyURL = newURL(location.url)
-    copyURL.setHostname(s)
-    document.window.navigate(copyURL)
-
-  proc port(location: Location): string {.jsuffget.} =
-    return location.url.port
-
-  proc setPort(location: Location; s: string) {.jsfset: "port".} =
-    let document = location.document
-    if document == nil:
-      return
-    let copyURL = newURL(location.url)
-    copyURL.setPort(s)
-    document.window.navigate(copyURL)
-
-  proc pathname(location: Location): string {.jsuffget.} =
-    return location.url.pathname
-
-  proc setPathname(location: Location; s: string) {.jsfset: "pathname".} =
-    let document = location.document
-    if document == nil:
-      return
-    let copyURL = newURL(location.url)
-    copyURL.setPathname(s)
-    document.window.navigate(copyURL)
-
-  proc search(location: Location): string {.jsuffget.} =
-    return location.url.search
-
-  proc setSearch(location: Location; s: string) {.jsfset: "search".} =
-    let document = location.document
-    if document == nil:
-      return
-    let copyURL = newURL(location.url)
-    copyURL.setSearch(s)
-    document.window.navigate(copyURL)
-
-  proc hash(location: Location): string {.jsuffget.} =
-    return location.url.hash
-
-  proc setHash(location: Location; s: string) {.jsfset: "hash".} =
-    let document = location.document
-    if document == nil:
-      return
-    let copyURL = newURL(location.url)
-    copyURL.setHash(s)
-    document.window.navigate(copyURL)
 
 # Attr
 proc newAttr(element: Element; dataIdx: int): Attr =
@@ -6745,14 +6614,14 @@ jsClassDef(Element):
 
 # XMLSerializer
 jsClassRaw(XMLSerializerDef, "XMLSerializer"):
+  type XMLSerializer = distinct pointer
+
   proc newXMLSerializer(ctx: JSContext; ctor: JSValueConst): JSValue
       {.jsctor2.} =
     return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
 
-  proc serializeToString(ctx: JSContext; this: JSValueConst; root: Node):
+  proc serializeToString(ctx: JSContext; this: XMLSerializer; root: Node):
       JSValue {.jsfunc.} =
-    if JS_GetClassID(this) != classDef.id:
-      return JS_ThrowTypeErrorInvalidClass(ctx, classDef.id)
     #TODO ...yeah
     var res = ""
     res.serializeFragmentInner(root, ttUnknown, writeShadow = true)
@@ -8763,7 +8632,6 @@ proc addDOMModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(RadioNodeListDef)
   ?ctx.registerClass(NodeIteratorDef)
   ?ctx.registerClass(TreeWalkerDef)
-  ?ctx.registerClass(LocationDef)
   ?ctx.registerClass(DocumentDef)
   ?ctx.registerClass(XMLDocumentDef)
   ?ctx.registerClass(DOMImplementationDef)
@@ -8780,7 +8648,7 @@ proc addDOMModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(NamedNodeMapDef)
   ?ctx.registerClass(CSSStyleDeclarationDef)
   ?ctx.registerClass(CustomElementRegistryDef)
-  ?ctx.registerClass(XMLSerializerDef)
+  ?ctx.registerClass(XMLSerializerDef, hook = false)
   ?ctx.registerClass(ShadowRootDef)
   ?ctx.registerElements()
   let global = ctx.getOpaque().global
