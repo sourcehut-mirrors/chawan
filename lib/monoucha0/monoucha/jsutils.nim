@@ -373,11 +373,6 @@ proc setPropertyFunctionList*(ctx: JSContext; val: JSValueConst;
   let fp = cast[JSCFunctionListP](unsafeAddr funcs[0])
   return JS_SetPropertyFunctionList(ctx, val, fp, cint(funcs.len)) != -1
 
-proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray): JSValue
-    {.cdecl.} =
-  return JS_DupValue(ctx, func_data[0])
-
 proc uninitIfNull*(val: JSValue): JSValue =
   if JS_IsNull(val):
     return JS_UNINITIALIZED

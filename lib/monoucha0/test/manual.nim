@@ -46,7 +46,12 @@ ReferenceError: 'abcd' is not defined
 
 type
   Planet = ref object of JSRootObj
+
   Earth = ref object of Planet
+    moon: Moon
+    name: string
+    population: int64
+
   Moon = ref object of Planet
 
 jsClassDef(Planet):
@@ -54,6 +59,10 @@ jsClassDef(Planet):
 
 jsClassDef(Earth):
   jsextends PlanetDef
+
+  jsget Earth, moon
+  jsgetset Earth, name
+  jsgetset Earth, population
 
   proc jsAssert(earth: Earth; pred: bool) {.jsfunc: "assert".} =
     assert pred
@@ -110,27 +119,10 @@ test "Inheritance":
   rt.free()
 
 test "jsget, jsset: basic property reflectors":
-  type
-    Moon = ref object
-
-    Earth = ref object
-      moon: Moon
-      name: string
-      population: int64
-
-  jsDestructor(Moon)
-
-  jsClassDef(Moon):
-    discard
-
-  jsClassDef(Earth):
-    jsget Earth, moon
-    jsgetset Earth, name
-    jsgetset Earth, population
-
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   let earth = Earth(moon: Moon(), population: 1, name: "Earth")
+  ?ctx.registerClass(PlanetDef)
   ?ctx.registerClass(EarthDef, asglobal = true)
   ?ctx.registerClass(MoonDef)
   ctx.setGlobal(earth)
