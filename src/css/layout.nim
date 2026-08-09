@@ -2135,6 +2135,8 @@ proc layoutFlow(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
     fstate.layoutFlow0()
     # Restore old intrinsic input, as the new ones are a function of the
     # current input and therefore wrong.
+    #TODO the theory seems correct behind this one, but in practice I
+    # can't seem to find a case where it makes a difference.
     fstate.intr = oldIntr
   elif fstate.space.w.t == scMeasure:
     fstate.maxChildWidth += fstate.totalFloatWidth
@@ -2935,10 +2937,10 @@ type
     baselineSet: bool
 
   FlexMainContext = object
-    totalSize: Size
-    maxSize: Size
+    totalMainSize: LUnit
+    maxCrossSize: LUnit
     shrinkSize: LUnit
-    maxMargin: RelativeRect
+    maxCrossMargin: Span
     totalWeight: array[FlexWeightType, float32]
     pending: seq[FlexPendingItem]
 
@@ -2948,14 +2950,13 @@ proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; input: LayoutInput) =
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
-    input: LayoutInput; lctx: LayoutContext) =
-  for dim in DimensionType:
-    mctx.maxSize[dim] = max(mctx.maxSize[dim], child.state.size[dim] +
-      input.borderSum(dim, lctx))
-    mctx.maxMargin[dim].start = max(mctx.maxMargin[dim].start,
-      input.margin[dim].start)
-    mctx.maxMargin[dim].send = max(mctx.maxMargin[dim].send,
-      input.margin[dim].send)
+    input: LayoutInput; odim: DimensionType; lctx: LayoutContext) =
+  mctx.maxCrossSize = max(mctx.maxCrossSize, child.state.size[odim] +
+    input.borderSum(odim, lctx))
+  mctx.maxCrossMargin.start = max(mctx.maxCrossMargin.start,
+    input.margin[odim].start)
+  mctx.maxCrossMargin.send = max(mctx.maxCrossMargin.send,
+    input.margin[odim].send)
 
 proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     wt: FlexWeightType; dim: DimensionType; lctx: LayoutContext) =
@@ -2965,8 +2966,8 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
   var relayout: seq[int] = @[]
   while (wt == fwtGrow and diff > 0'lu or wt == fwtShrink and diff < 0'lu) and
       totalWeight > 0:
-    # redo maxSize calculation; we only need height here
-    mctx.maxSize[odim] = 0'lu
+    # redo maxCrossSize calculation; we only need height here
+    mctx.maxCrossSize = 0'lu
     var udiv = totalWeight
     if wt == fwtShrink:
       udiv *= mctx.shrinkSize.toFloat32() / totalWeight
@@ -2981,7 +2982,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     relayout.setLen(0)
     for i, it in mctx.pending.mpairs:
       if it.weights[wt] == 0:
-        mctx.updateMaxSizes(it.child, it.input, lctx)
+        mctx.updateMaxSizes(it.child, it.input, odim, lctx)
         continue
       var uw = unit * it.weights[wt]
       if wt == fwtShrink:
@@ -3011,13 +3012,13 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       totalWeight += it.weights[wt]
       if it.weights[wt] == 0: # frozen, relayout immediately
         lctx.layoutFlexItem(it.child, it.input)
-        mctx.updateMaxSizes(it.child, it.input, lctx)
+        mctx.updateMaxSizes(it.child, it.input, odim, lctx)
       else: # delay relayout
         relayout.add(i)
     for i in relayout:
       let child = mctx.pending[i].child
       lctx.layoutFlexItem(child, mctx.pending[i].input)
-      mctx.updateMaxSizes(child, mctx.pending[i].input, lctx)
+      mctx.updateMaxSizes(child, mctx.pending[i].input, odim, lctx)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     input: LayoutInput) =
@@ -3025,7 +3026,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   let odim = dim.opposite
   let lctx = fctx.lctx
   if fctx.space[dim].isDefinite:
-    let diff = fctx.space[dim].u - mctx.totalSize[dim]
+    let diff = fctx.space[dim].u - mctx.totalMainSize
     let wt = if diff > 0'lu: fwtGrow else: fwtShrink
     # Do not grow shrink-to-fit input.
     if wt == fwtShrink or fctx.space[dim].t == scStretch:
@@ -3034,10 +3035,10 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     # Override with min-width/min-height, but *only* if we are smaller
     # than the desired size.  (Otherwise, we would incorrectly limit
     # max-content size when only a min-width is requested.)
-    let diff = input.bounds.a[dim].start - mctx.totalSize[dim]
+    let diff = input.bounds.a[dim].start - mctx.totalMainSize
     mctx.redistributeMainSize(diff, fwtGrow, dim, lctx)
-  let maxMarginSum = mctx.maxMargin[odim].sum()
-  let h = (mctx.maxSize[odim] + maxMarginSum).minClamp(input.bounds.a[odim])
+  let maxMarginSum = mctx.maxCrossMargin.sum()
+  let h = (mctx.maxCrossSize + maxMarginSum).minClamp(input.bounds.a[odim])
   var intr = size(w = 0'lu, h = 0'lu)
   var offset = fctx.offset
   for it in mctx.pending.mitems:
@@ -3106,6 +3107,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     child: BlockBox; input: LayoutInput) =
   let lctx = fctx.lctx
   let dim = fctx.dim
+  let odim = dim.opposite()
   var parentSpace = fctx.space
   if dim == dtVertical or fctx.canWrap:
     parentSpace.h = maxContent()
@@ -3121,15 +3123,15 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
   else:
     if fctx.canWrap and (parentSpace[dim].t == scMinContent or
         parentSpace[dim].isDefinite and
-        mctx.totalSize[dim] + child.state.size[dim] > parentSpace[dim].u):
+        mctx.totalMainSize + child.state.size[dim] > parentSpace[dim].u):
       fctx.flushMain(mctx, input)
     let outerSize = child.outerSize(dim, childSizes, lctx)
-    mctx.updateMaxSizes(child, childSizes, lctx)
+    mctx.updateMaxSizes(child, childSizes, odim, lctx)
     let grow = child.computed{"flex-grow"}
     let shrink = child.computed{"flex-shrink"}
     mctx.totalWeight[fwtGrow] += grow
     mctx.totalWeight[fwtShrink] += shrink
-    mctx.totalSize[dim] += outerSize
+    mctx.totalMainSize += outerSize
     if shrink != 0:
       mctx.shrinkSize += outerSize
     mctx.pending.add(FlexPendingItem(
@@ -3138,25 +3140,53 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
       input: childSizes
     ))
 
+proc initFlexContext(lctx: LayoutContext; computed: CSSValues;
+    input: LayoutInput; space: Space): FlexContext =
+  let flexDir = computed{"flex-direction"}
+  let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
+  FlexContext(
+    lctx: lctx,
+    offset: input.padding.topLeft,
+    space: space,
+    canWrap: computed{"flex-wrap"} != FlexWrapNowrap,
+    reverse: computed{"flex-direction"} in FlexReverse,
+    dim: dim,
+  )
+
 proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
     input: LayoutInput) =
   if not lctx.layoutFlowRootPre(box, offset, input):
     return
-  let flexDir = box.computed{"flex-direction"}
-  let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
+  var space = input.space
+  var fctx = initFlexContext(lctx, box.computed, input, space)
+  let dim = fctx.dim
   let odim = dim.opposite()
-  var fctx = FlexContext(
-    lctx: lctx,
-    offset: input.padding.topLeft,
-    space: input.space,
-    canWrap: box.computed{"flex-wrap"} != FlexWrapNowrap,
-    reverse: box.computed{"flex-direction"} in FlexReverse,
-    dim: dim,
-  )
-  if fctx.space[dim].t == scFitContent and input.bounds.a[dim].start > 0'lu:
-    fctx.space[dim] = stretch(input.bounds.a[dim].start)
-  if fctx.space[dim].isDefinite:
-    fctx.space[dim].u = fctx.space[dim].u.minClamp(input.bounds.a[dim])
+  let indefinite = fctx.space[dim].t == scFitContent
+  # track the actual intrinsic width that doesn't depend on the first
+  # layout's result
+  #TODO see the similar mechanism in flow, I'm not sure if this is really
+  # needed
+  var realIntr: Size
+  if indefinite:
+    # measure size
+    fctx.space[dim] = measure()
+    var mctx = FlexMainContext()
+    for child in box.children:
+      let child = BlockBox(child)
+      fctx.layoutFlexIter(mctx, child, input)
+      let intru = child.state.intr[dim] + input.margin[dim].sum()
+      if fctx.canWrap:
+        realIntr[dim] = max(realIntr[dim], intru)
+      else:
+        realIntr[dim] += intru
+      realIntr[odim] = max(child.state.intr[odim], realIntr[odim])
+    realIntr[odim] += mctx.maxCrossMargin.sum()
+    var size: Size
+    size[dim] = mctx.totalMainSize
+    size[odim] = mctx.maxCrossSize
+    box.applySize(input, size, space)
+    space[dim] = stretch(box.state.size[dim])
+    fctx = initFlexContext(lctx, box.computed, input, space)
   var mctx = FlexMainContext()
   for child in box.children:
     let child = BlockBox(child)
@@ -3169,6 +3199,8 @@ proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
   size -= input.padding.topLeft
   box.applySize(input, size, input.space)
   box.state.size += paddingSum
+  if indefinite:
+    fctx.intr = realIntr
   box.applyIntr(input, fctx.intr + paddingSum)
   box.state.baselineSet = fctx.baselineSet
   box.state.firstBaseline = fctx.firstBaseline
