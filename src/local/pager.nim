@@ -108,12 +108,12 @@ type
     mousePaste: bool
     consoleLFSeen: bool
     updateStatus: UpdateStatusState
-    alertState: PagerAlertState # private
+    alertState: PagerAlertState
     # current number prefix (when vi-numeric-prefix is true)
-    precnum: int32 # private
-    arg0: int32 # private
+    precnum: int32
+    arg0: int32
     bufferAtom: JSAtom
-    consoleCacheId: int # private
+    consoleCacheId: int
     consoleFile: string
     alerts: seq[string]
     askCursor: int
@@ -129,7 +129,7 @@ type
     jsctx: JSContext
     lastAlert: string # last alert seen by the user
     lineHist: array[LineMode, History]
-    lineEdit*: LineEdit # private
+    lineEdit*: LineEdit
     loader: FileLoader
     loaderPid: int
     luctx: LUContext
@@ -2118,18 +2118,18 @@ proc legacyReflectGetter(ctx: JSContext; this: JSValueConst; magic: cint):
 
 jsClassDef(Pager):
   jsget Pager, paste
-  jsget Pager, arg0
-  jsget Pager, consoleCacheId
+  jsget Pager, arg0 # private
+  jsget Pager, consoleCacheId # private
   jsget Pager, lastAlert
-  jsget Pager, lineEdit
+  jsget Pager, lineEdit # private
   jsget Pager, loaderPid
   jsget Pager, menu
   jsget Pager, bufferInit
   jsget Pager, bufferIface
 
   jsgetset Pager, feedNext
-  jsgetset Pager, alertState
-  jsgetset Pager, precnum
+  jsgetset Pager, alertState # private
+  jsgetset Pager, precnum # private
   jsgetset Pager, consoleInit
   jsgetset Pager, numload
 

@@ -272,7 +272,7 @@ type
     refreshStatus*: bool
     dead*: bool
     gotLines: bool
-    loadState*: LoadState # private
+    loadState*: LoadState
     #TODO copy marks on clone
     tmpJumpMark: PagePos
     jumpMark: PagePos
@@ -1107,7 +1107,7 @@ jsClassDef(BufferInterface):
   jsget BufferInterface, dead
   jsget BufferInterface, gotLines
   jsget BufferInterface, numLines
-  jsgetset BufferInterface, loadState
+  jsgetset BufferInterface, loadState # private
 
   proc finalize(rt: JSRuntime; iface: BufferInterface) {.jsfin.} =
     iface.partialReader.r.closeFds()

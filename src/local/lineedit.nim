@@ -37,8 +37,8 @@ type
     selectType: LineSelectType
     redraw*: bool
     skipLast: bool
-    escNext: bool # private
-    hide: bool # private
+    escNext: bool
+    hide: bool
     update: JSValue
     resolve: JSValue
 
@@ -236,9 +236,9 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
   return edit
 
 jsClassDef(LineEdit):
-  jsget LineEdit, hide
+  jsget LineEdit, hide # private
   jsget LineEdit, text
-  jsgetset LineEdit, escNext
+  jsgetset LineEdit, escNext # private
 
   proc finalize(rt: JSRuntime; this: LineEdit) {.jsfin.} =
     JS_FreeValueRT(rt, this.update)
