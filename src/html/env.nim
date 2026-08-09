@@ -1003,7 +1003,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       images: images,
       autofocus: autofocus,
       headless: headless,
-      contentType: contentType.toAtom()
+      contentType: contentType.toAtomTrace()
     ),
     imageTypes: imageTypes,
     userAgent: userAgent,

@@ -61,7 +61,7 @@ type
     images*: bool
     styling*: bool
     autofocus*: bool
-    contentType*: CAtom
+    contentType*: CAtomTraced
 
   Script* = ref object
     #TODO setings
