@@ -1002,11 +1002,10 @@ quit
 suspend
 : **C-z**
 
-: Temporarily suspend the browser
-
-  Note: this also suspends e.g. buffer processes or CGI scripts.  So if
-  you are downloading something, that will be delayed until you restart the
-  process.
+: Temporarily suspend the browser.  This also suspends child processes
+  including buffers or CGI scripts, so if you are downloading something,
+  that will be suspended too until you restart the process (e.g., with the
+  shell command `fg`).
 
 load
 : **C-l**
@@ -1048,7 +1047,7 @@ lineInfo
 : Display information about the current line on the status line.
 
 toggleSource
-: **&bsol;**
+: **&bsol;** (backslash)
 
 : If viewing an HTML buffer, open a new buffer with its source.  Otherwise,
   open the current buffer's contents as HTML.
@@ -1080,10 +1079,9 @@ discardBuffer
   depending on what the previously viewed buffer was.
 
 discardBufferPrev, discardBufferNext
-: **d ,**, **d .**
+: **d ,** (d and then a comma), **d .** (d and then a period)
 
-: Discard the current buffer, and move back to the previous/next buffer,
-  or open the link under the cursor.
+: Discard the current buffer, and move back to the previous/next buffer.
 
 discardTree
 : **M-d**
@@ -1091,7 +1089,7 @@ discardTree
 : Discard all child buffers of the current buffer.
 
 nextBuffer, prevBuffer
-: **.**, **,**
+: **.** (period), **,** (comma)
 
 : Switch to the next or previous buffer respectively.
 
@@ -1106,7 +1104,7 @@ searchForward, searchBackward
 : Search for a string in the current buffer, forwards or backwards.
 
 isearchForward, searchBackward
-: **/**, **?**
+: **/** (slash), **?** (question mark)
 
 : Incremental-search for a string, highlighting the first result, forwards
   or backwards.
@@ -1123,9 +1121,9 @@ peek
 peekCursor
 : **u**
 
-: Display a message of the URL or title under the cursor on the status
-  line.  Multiple calls allow cycling through the two. (i.e. by default,
-  press u once -> title, press again -> URL)
+: Display a message of the URL or the value of the "title" attribute under
+  the cursor on the status line.  Multiple calls allow cycling through the
+  two. (press u once -> title, press again -> URL)
 
 showFullAlert
 : **s u**
@@ -1200,12 +1198,12 @@ cursorLineBegin
 : Move the cursor to the first cell of the line.
 
 cursorLineTextStart
-: **^**
+: **^** (caret)
 
 : Move the cursor to the first non-blank character of the line.
 
 cursorLineEnd
-: **&dollar;**/**End**
+: **&dollar;** (dollar)/**End**
 
 : Move the cursor to the last cell of the line.
 
@@ -1237,7 +1235,7 @@ cursorPrevLink, cursorNextLink
   element (e.g. link, input field, etc).
 
 cursorPrevParagraph, cursorNextParagraph
-: **{**, **}**
+: **{** (left brace), **}** (right brace)
 
 : Move the cursor to the end/beginning of the nth previous/next paragraph.
 
@@ -1312,7 +1310,7 @@ cursorTop, cursorMiddle, cursorBottom
 (Equivalent to `H`, `M`, `L` in vi.)
 
 raisePage, raisePageBegin, centerLine, centerLineBegin, lowerPage, lowerPageBegin
-: **z t**, **z RET**, **z z**, **z .**, **z b**, **z -**
+: **z t**, **z RET**, **z z**, **z .**, **z b**, **z -** (z and then minus)
 
 : If `n` is specified, move cursor to line `n`. Then,
 
@@ -1327,20 +1325,20 @@ raisePage, raisePageBegin, centerLine, centerLineBegin, lowerPage, lowerPageBegi
     non-blank character, as the original keybindings in vi do.
 
 nextPageBegin
-: **z +**
+: **z +** (z and then plus)
 
 : If `n` is specified, move to the screen before the nth line and raise the
   page.  Otherwise, go to the next screen's first line and raise the page.
 
 previousPageBegin
-: **z ^**
+: **z ^** (z and then caret)
 
 : If `n` is specified, move to the screen before the nth line and lower
   the page.  Otherwise, go to the previous screen's last line and lower
   the page.
 
 cursorLeftEdge, cursorMiddleColumn, cursorRightEdge
-: **g 0**, **g c**, **g $**
+: **g 0**, **g c**, **g $** (g and then dollar)
 
 : Move to the first/middle/last column on the screen.
 
@@ -1355,7 +1353,7 @@ gotoLineOrStart, gotoLineOrEnd
   line of the buffer.
 
 gotoColumnOrBegin, gotoColumnOrEnd
-: **&vert;**
+: **&vert;** (pipe)
 
 : If `n` is specified, jump to column `n` of the current line.  Otherwise,
   jump to the first/last column.
@@ -1366,7 +1364,7 @@ mark
 : Wait for a character `x` and then set a mark with the ID `x`.
 
 gotoMark, gotoMarkY
-: **&grave;**, **'**
+: **&grave;** (grave accent), **'** (apostrophe)
 
 : Wait for a character `x` and then jump to the mark with the ID `x` (if it
   exists on the page).
@@ -1375,7 +1373,7 @@ gotoMark, gotoMarkY
   position.
 
 markURL
-: **:**
+: **:** (colon)
 
 : Convert URL-like strings to anchors on the current page.
 
@@ -1410,12 +1408,12 @@ toggleCookie
 : Reload the current buffer with cookies enabled/disabled.
 
 cursorSearchWordForward
-: **C-a**, **\***
+: **C-a**, **\*** (asterisk)
 
 : Search for the word currently under the cursor.
 
 cursorSearchWordBackward
-: **#**
+: **#** (hash)
 
 : Search for the word currently under the cursor, backwards.
 

@@ -1058,10 +1058,10 @@ Exit the browser.
 suspend
 \f[B]C\-z\f[R]
 .RS
-Temporarily suspend the browser
-Note: this also suspends e.g.\ buffer processes or CGI scripts.
-So if you are downloading something, that will be delayed until you
-restart the process.
+Temporarily suspend the browser.
+This also suspends child processes including buffers or CGI scripts, so
+if you are downloading something, that will be suspended too until you
+restart the process (e.g., with the shell command \f[CR]fg\f[R]).
 .RE
 .TP
 load
@@ -1109,7 +1109,7 @@ Display information about the current line on the status line.
 .RE
 .TP
 toggleSource
-\f[B]\(rs\f[R]
+\f[B]\(rs\f[R] (backslash)
 .RS
 If viewing an HTML buffer, open a new buffer with its source.
 Otherwise, open the current buffer\(cqs contents as HTML.
@@ -1147,10 +1147,9 @@ depending on what the previously viewed buffer was.
 .RE
 .TP
 discardBufferPrev, discardBufferNext
-\f[B]d ,\f[R], \f[B]d .\f[R]
+\f[B]d ,\f[R] (d and then a comma), \f[B]d .\f[R] (d and then a period)
 .RS
-Discard the current buffer, and move back to the previous/next buffer,
-or open the link under the cursor.
+Discard the current buffer, and move back to the previous/next buffer.
 .RE
 .TP
 discardTree
@@ -1160,7 +1159,7 @@ Discard all child buffers of the current buffer.
 .RE
 .TP
 nextBuffer, prevBuffer
-\f[B].\f[R], \f[B],\f[R]
+\f[B].\f[R] (period), \f[B],\f[R] (comma)
 .RS
 Switch to the next or previous buffer respectively.
 .RE
@@ -1177,7 +1176,7 @@ searchForward, searchBackward
 Search for a string in the current buffer, forwards or backwards.
 .TP
 isearchForward, searchBackward
-\f[B]/\f[R], \f[B]?\f[R]
+\f[B]/\f[R] (slash), \f[B]?\f[R] (question mark)
 .RS
 Incremental\-search for a string, highlighting the first result,
 forwards or backwards.
@@ -1195,10 +1194,10 @@ Display a message of the current buffer\(cqs URL on the status line.
 peekCursor
 \f[B]u\f[R]
 .RS
-Display a message of the URL or title under the cursor on the status
-line.
+Display a message of the URL or the value of the \(lqtitle\(rq attribute
+under the cursor on the status line.
 Multiple calls allow cycling through the two.
-(i.e.\ by default, press u once \-> title, press again \-> URL)
+(press u once \-> title, press again \-> URL)
 .RE
 .TP
 showFullAlert
@@ -1284,13 +1283,13 @@ Move the cursor to the first cell of the line.
 .RE
 .TP
 cursorLineTextStart
-\f[B]\(ha\f[R]
+\f[B]\(ha\f[R] (caret)
 .RS
 Move the cursor to the first non\-blank character of the line.
 .RE
 .TP
 cursorLineEnd
-\f[B]$\f[R]/\f[B]End\f[R]
+\f[B]$\f[R] (dollar)/\f[B]End\f[R]
 .RS
 Move the cursor to the last cell of the line.
 .RE
@@ -1326,7 +1325,7 @@ element (e.g.\ link, input field, etc).
 .RE
 .TP
 cursorPrevParagraph, cursorNextParagraph
-\f[B]{\f[R], \f[B]}\f[R]
+\f[B]{\f[R] (left brace), \f[B]}\f[R] (right brace)
 .RS
 Move the cursor to the end/beginning of the nth previous/next paragraph.
 .RE
@@ -1414,7 +1413,7 @@ Move to the first line/line in the middle of/last line on the screen.
 .TP
 raisePage, raisePageBegin, centerLine, centerLineBegin, lowerPage, lowerPageBegin
 \f[B]z t\f[R], \f[B]z RET\f[R], \f[B]z z\f[R], \f[B]z .\f[R], \f[B]z
-b\f[R], \f[B]z \-\f[R]
+b\f[R], \f[B]z \-\f[R] (z and then minus)
 .RS
 If \f[CR]n\f[R] is specified, move cursor to line \f[CR]n\f[R].
 Then,
@@ -1435,7 +1434,7 @@ non\-blank character, as the original keybindings in vi do.
 .RE
 .TP
 nextPageBegin
-\f[B]z +\f[R]
+\f[B]z +\f[R] (z and then plus)
 .RS
 If \f[CR]n\f[R] is specified, move to the screen before the nth line and
 raise the page.
@@ -1443,7 +1442,7 @@ Otherwise, go to the next screen\(cqs first line and raise the page.
 .RE
 .TP
 previousPageBegin
-\f[B]z \(ha\f[R]
+\f[B]z \(ha\f[R] (z and then caret)
 .RS
 If \f[CR]n\f[R] is specified, move to the screen before the nth line and
 lower the page.
@@ -1451,7 +1450,7 @@ Otherwise, go to the previous screen\(cqs last line and lower the page.
 .RE
 .TP
 cursorLeftEdge, cursorMiddleColumn, cursorRightEdge
-\f[B]g 0\f[R], \f[B]g c\f[R], \f[B]g $\f[R]
+\f[B]g 0\f[R], \f[B]g c\f[R], \f[B]g $\f[R] (g and then dollar)
 .RS
 Move to the first/middle/last column on the screen.
 .RE
@@ -1468,7 +1467,7 @@ Otherwise, jump to the first/last line of the buffer.
 .RE
 .TP
 gotoColumnOrBegin, gotoColumnOrEnd
-\f[B]|\f[R]
+\f[B]|\f[R] (pipe)
 .RS
 If \f[CR]n\f[R] is specified, jump to column \f[CR]n\f[R] of the current
 line.
@@ -1483,7 +1482,7 @@ Wait for a character \f[CR]x\f[R] and then set a mark with the ID
 .RE
 .TP
 gotoMark, gotoMarkY
-\f[B]\(ga\f[R], \f[B]\(cq\f[R]
+\f[B]\(ga\f[R] (grave accent), \f[B]\(cq\f[R] (apostrophe)
 .RS
 Wait for a character \f[CR]x\f[R] and then jump to the mark with the ID
 \f[CR]x\f[R] (if it exists on the page).
@@ -1492,7 +1491,7 @@ the Y position.
 .RE
 .TP
 markURL
-\f[B]:\f[R]
+\f[B]:\f[R] (colon)
 .RS
 Convert URL\-like strings to anchors on the current page.
 .RE
@@ -1534,13 +1533,13 @@ Reload the current buffer with cookies enabled/disabled.
 .RE
 .TP
 cursorSearchWordForward
-\f[B]C\-a\f[R], \f[B]*\f[R]
+\f[B]C\-a\f[R], \f[B]*\f[R] (asterisk)
 .RS
 Search for the word currently under the cursor.
 .RE
 .TP
 cursorSearchWordBackward
-\f[B]#\f[R]
+\f[B]#\f[R] (hash)
 .RS
 Search for the word currently under the cursor, backwards.
 .RE
