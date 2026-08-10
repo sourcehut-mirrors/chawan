@@ -1674,7 +1674,7 @@ Pager.prototype.deleteBuffer = function(buffer, setTarget = null) {
 const ReWordStart = /(?<!\w)\w/gu;
 /* kana, han, hangul, other alpha & non-alpha (symbol) */
 const ReViWordStart = new RegExp(
-    String.raw`((?<!\p{sc=Hira})\p{sc=Hira})|((?<!\p{sc=Kana})\p{sc=Kana})|((?<!\p{sc=Han})\p{sc=Han})|((?<!\p{sc=Hang})\p{sc=Hang})|((?<!\w)\w)|((?<![^\p{L}\p{Z}\p{N}])[^\p{L}\p{Z}\p{N}])`,
+    String.raw`((?<!\p{sc=Hira})\p{sc=Hira})|((?<!\p{sc=Kana})\p{sc=Kana})|((?<!\p{sc=Han})\p{sc=Han})|((?<!\p{sc=Hang})\p{sc=Hang})|((?<!\w)\w)|((?<![^\p{L}\p{Z}\p{N}_])[^\p{L}\p{Z}\p{N}_])`,
     "gu"
 );
 const ReBigWordStart = /(?<!\S)\S/gu;
@@ -1682,7 +1682,7 @@ const ReBigWordStart = /(?<!\S)\S/gu;
 const ReWordEnd = /\w(?!\w)/gu;
 /* kana, han, hangul, other alpha & non-alpha (symbol) */
 const ReViWordEnd = new RegExp(
-    String.raw`(\p{sc=Hira}(?!\p{sc=Hira}))|(\p{sc=Kana}(?!\p{sc=Kana}))|(\p{sc=Han}(?!\p{sc=Han}))|(\p{sc=Hang}(?!\p{sc=Hang}))|(\w(?!\w))|([^\p{L}\p{Z}\p{N}](?![^\p{L}\p{Z}\p{N}]))`,
+    String.raw`(\p{sc=Hira}(?!\p{sc=Hira}))|(\p{sc=Kana}(?!\p{sc=Kana}))|(\p{sc=Han}(?!\p{sc=Han}))|(\p{sc=Hang}(?!\p{sc=Hang}))|(\w(?!\w))|([^\p{L}\p{Z}\p{N}_](?![^\p{L}\p{Z}\p{N}_]))`,
     "gu"
 );
 const ReBigWordEnd = /\S(?!\S)/gu;
