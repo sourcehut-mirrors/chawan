@@ -1110,12 +1110,6 @@ static:
   # to class names.
   doAssert ReflectMap0.len < 512
 
-const LabelableElements = {
-  # input only if type not hidden
-  ttButton, ttInput, ttMeter, ttOutput, ttProgress, ttSelect,
-  ttTextarea
-}
-
 const VoidElements = {
   ttArea, ttBase, ttBr, ttCol, ttEmbed, ttHr, ttImg, ttInput,
   ttLink, ttMeta, ttSource, ttTrack, ttWbr
@@ -4252,8 +4246,8 @@ jsClassDef(Document):
       localName.toAtomLowerTrace()
     else:
       localName.toAtomTrace()
-    let namespace = if not document.isxml:
-      #TODO or content type is application/xhtml+xml
+    let namespace = if not document.isxml or
+        document.contentType == satApplicationXmlHtml:
       satNamespaceHTML
     else:
       satUempty
@@ -6198,6 +6192,15 @@ proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues =
     computed = computed.next
   nil
 
+proc isLabelable(element: Element): bool =
+  #TODO custom elements
+  const LabelableElements = {
+    ttButton, ttMeter, ttOutput, ttProgress, ttSelect, ttTextarea
+  }
+  return element.tagType in LabelableElements or
+    element of HTMLInputElement and
+      HTMLInputElement(element).inputType != itHidden
+
 jsClassDef(Element):
   jsextends NodeDef
 
@@ -6542,11 +6545,8 @@ jsClassDef(Element):
       init.customElementRegistry
     else:
       document.customElements
-    if customElements != nil and not customElements.scoped and
-        customElements != document.customElements:
-      JS_ThrowDOMException(ctx, "NotSupportedError",
-        "custom element registry is not scoped")
-      return err()
+    if customElements != nil:
+      ?ctx.checkRegistryScope(document, customElements)
     if this.namespaceURI != satNamespaceHTML:
       JS_ThrowDOMException(ctx, "NotSupportedError",
         "only HTML elements can have shadow trees")
@@ -6895,7 +6895,6 @@ jsClassDef(CSSStyleDeclaration):
 
 # HTMLElement
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
-  #TODO take StaticAtom for tagType
   let element = document.newElement(tagType.toStaticAtom().view(),
     satNamespaceHTML)
   return HTMLElement(element)
@@ -7456,24 +7455,23 @@ jsClassDef(HTMLInputElement):
 jsClassDef(HTMLLabelElement):
   jsextends HTMLElementDef
 
-  proc control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
+  proc control*(label: HTMLLabelElement): HTMLElement {.jsfget.} =
     let f = label.attr(satFor)
     if f != "":
       let id = f.toAtomTrace()
-      let elem = label.document.getElementById(id)
-      if elem of FormAssociatedElement and elem.tagType in LabelableElements:
-        return FormAssociatedElement(elem)
+      let element = label.document.getElementById(id)
+      if element.isLabelable():
+        return HTMLElement(element)
       return nil
-    for elem in label.elementDescendants(LabelableElements):
-      if elem of FormAssociatedElement: #TODO remove this
-        return FormAssociatedElement(elem)
-      return nil
+    for element in label.elementDescendants:
+      if element.isLabelable():
+        return HTMLElement(element)
     return nil
 
   proc form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
     let control = label.control
-    if control != nil:
-      return control.form
+    if control != nil and control of FormAssociatedElement:
+      return FormAssociatedElement(control).form
     return nil
 
 # SheetElement

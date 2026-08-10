@@ -8,16 +8,18 @@
 </form>
 <script src=asserts.js></script>
 <script>
-let x = document.createElement("button");
-x.type = "test";
-assertEquals(x.type, "submit");
-assertEquals(x.getAttribute("type"), "test");
-x.type = "button";
-assertEquals(x.type, "button");
-x.value = "test";
-assertEquals(x.getAttribute("value"), "test");
-assertEquals(document.getElementsByName("input").length, 2);
-(function() { // form
+(function() { /* button */
+	const x = document.createElement("button");
+	x.type = "test";
+	assertEquals(x.type, "submit");
+	assertEquals(x.getAttribute("type"), "test");
+	x.type = "button";
+	assertEquals(x.type, "button");
+	x.value = "test";
+	assertEquals(x.getAttribute("value"), "test");
+	assertEquals(document.getElementsByName("input").length, 2);
+})();
+(function() { /* form */
 	const test = document.getElementById("test");
 	assertEquals(document.forms[0], test);
 	assertEquals(document.forms["test"], test);
@@ -42,27 +44,46 @@ assertEquals(document.getElementsByName("input").length, 2);
 	elements[0].remove();
 	elements[0].remove();
 })();
-let test = document.forms[0];
-let select = document.createElement("select");
-test.append(select);
-let option = document.createElement("option");
-assert(!option.selected);
-option.setAttribute("selected", "");
-assert(option.selected)
-option.removeAttribute("selected");
-assert(!option.selected)
-select.append(option);
-select.remove("test");
-assertEquals(option.parentNode, null);
-assertEquals(select.parentNode, test);
-select.remove();
-const formData = new FormData();
-formData.append("test", "a");
-assertThrows(() => formData.append("test", "b", {
-	toString: function() { throw new Error("test"); }
-}), TypeError);
-assertThrows(() => new FormData(null), TypeError);
-assertEquals(formData.get("test"), "a");
-assertEquals(FileList.prototype[Symbol.iterator], Array.prototype[Symbol.iterator]);
+(function() { /* select */
+	let test = document.forms[0];
+	let select = document.createElement("select");
+	test.append(select);
+	let option = document.createElement("option");
+	assert(!option.selected);
+	option.setAttribute("selected", "");
+	assert(option.selected)
+	option.removeAttribute("selected");
+	assert(!option.selected)
+	select.append(option);
+	select.remove("test");
+	assertEquals(option.parentNode, null);
+	assertEquals(select.parentNode, test);
+	select.remove();
+})();
+(function() { /* FormData */
+	const formData = new FormData();
+	formData.append("test", "a");
+	assertThrows(() => formData.append("test", "b", {
+		toString: function() { throw new Error("test"); }
+	}), TypeError);
+	assertThrows(() => new FormData(null), TypeError);
+	assertEquals(formData.get("test"), "a");
+	assertEquals(FileList.prototype[Symbol.iterator],
+		Array.prototype[Symbol.iterator]);
+})();
+(function() { /* label */
+	const doc = document.implementation.createHTMLDocument();
+	doc.documentElement.innerHTML = `
+<meter id=x>meter</meter>
+<label id=y for=x>label</label>
+<label id=z><input type=hidden>test</input></label>
+`;
+	const label = doc.getElementById("y");
+	const meter = label.control;
+	assertEquals(meter, doc.getElementById("x"));
+	assertInstanceof(meter, HTMLMeterElement);
+	const label2 = doc.getElementById("z");
+	assertEquals(label2.control, null);
+})();
 document.getElementById("x").textContent = "Success";
 </script>
