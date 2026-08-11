@@ -43,7 +43,6 @@ import types/blob
 import types/cell
 import types/color
 import types/formdata
-import types/jsopt
 import types/opt
 import types/refstring
 import types/url
@@ -510,8 +509,7 @@ proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: string;
 proc checkRefresh(bc: BufferContext; handle: PagerHandle): CheckRefreshResult
     {.proxy.} =
   if bc.navigateUrl != nil:
-    let url = bc.navigateUrl
-    bc.navigateUrl = nil
+    let url = move(bc.navigateUrl)
     return (n: 0, url: url)
   if bc.document == nil:
     return (n: -1, url: nil)
@@ -979,7 +977,7 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
     enctype: FormEncodingType): Request =
   assert httpMethod in {hmGet, hmPost}
   case parsedAction.schemeType
-  of stFtp:
+  of stFtp, stJavascript:
     return newRequest(parsedAction) # get action URL
   of stData:
     if httpMethod == hmGet:
@@ -1042,6 +1040,30 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
     let headers = newHeaders(hgRequest, {"Content-Type": move(contentType)})
     return newRequest(parsedAction, httpMethod, headers, body)
 
+proc baseURL(bc: BufferContext): URL =
+  return bc.document.baseURL
+
+proc evalJSURL(bc: BufferContext; url: URL; contentType: string): URL =
+  if bc.config.scripting == smFalse:
+    return nil
+  let surl = $url
+  let source = surl.toOpenArray("javascript:".len, surl.high).percentDecode()
+  let ctx = bc.window.jsctx
+  let val = ctx.eval(source, $bc.baseURL, JS_EVAL_TYPE_GLOBAL)
+  if JS_IsException(val):
+    bc.window.console.writeException(ctx)
+    return nil # error
+  if JS_IsUndefined(val):
+    # maybe JS wants to go somewhere?
+    return move(bc.navigateUrl)
+  var res: string
+  let code = ctx.fromJSFree(val, res)
+  bc.maybeReshape()
+  if code == fjErr:
+    return nil
+  # Navigate to result.
+  return parseURL0("data:" & contentType & ',' & res)
+
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
 proc submitForm(bc: BufferContext; form: HTMLFormElement;
     submitter: HTMLElement; jsSubmitCall = false): Request =
@@ -1088,6 +1110,17 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
   #let noopener = true #TODO
   return bc.makeFormRequest(parsedAction, httpMethod, entryList, enctype)
 
+# like submitForm, but also executes JS; use it on click only
+proc submitFormClick(bc: BufferContext; form: HTMLFormElement;
+    submitter: HTMLElement; jsSubmitCall = false): Request =
+  let request = bc.submitForm(form, submitter, jsSubmitCall)
+  if request.url.schemeType == stJavascript:
+    let url = bc.evalJSURL(request.url, "text/plain")
+    if url == nil:
+      return nil
+    return newRequest(url, hmGet)
+  return request
+
 proc setFocus(bc: BufferContext; e: Element) =
   bc.document.setFocus(e)
   bc.maybeReshape()
@@ -1099,7 +1132,7 @@ proc restoreFocus(bc: BufferContext) =
 proc implicitSubmit(bc: BufferContext; input: HTMLInputElement): Request =
   let form = input.form
   if form != nil and form.canSubmitImplicitly():
-    return bc.submitForm(form, form)
+    return bc.submitFormClick(form, form)
   return nil
 
 proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
@@ -1180,39 +1213,13 @@ proc click(bc: BufferContext; select: HTMLSelectElement): ClickResult =
     inc i
   return initClickResult(move(options), selected)
 
-proc baseURL(bc: BufferContext): URL =
-  return bc.document.baseURL
-
-proc evalJSURL(bc: BufferContext; url: URL): Opt[string] =
-  let surl = $url
-  let source = surl.toOpenArray("javascript:".len, surl.high).percentDecode()
-  let ctx = bc.window.jsctx
-  let ret = ctx.eval(source, $bc.baseURL, JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(ret):
-    bc.window.console.writeException(ctx)
-    return err() # error
-  if JS_IsUndefined(ret):
-    return err() # no need to navigate
-  var res: string
-  ?ctx.fromJS(ret, res)
-  JS_FreeValue(ctx, ret)
-  # Navigate to result.
-  ok(move(res))
-
 proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
   bc.restoreFocus()
   if url := anchor.reinitURL():
     if url.schemeType == stJavascript:
-      if bc.config.scripting == smFalse:
+      url = bc.evalJSURL(url, "text/html")
+      if url == nil:
         return initClickResult()
-      let s = bc.evalJSURL(url)
-      bc.maybeReshape()
-      if s.isErr:
-        return initClickResult()
-      let urls = parseURL0("data:text/html," & s.get)
-      if urls == nil:
-        return initClickResult()
-      url = urls
     return initClickResult(newRequest(url, hmGet))
   return initClickResult()
 
@@ -1233,7 +1240,7 @@ proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
     case button.ctype
     of btSubmit:
-      let open = bc.submitForm(button.form, button)
+      let open = bc.submitFormClick(button.form, button)
       bc.setFocus(button)
       return initClickResult(open)
     of btReset:
@@ -1331,7 +1338,7 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
     return initClickResult()
   of itSubmit, itButton:
     if input.form != nil:
-      return initClickResult(bc.submitForm(input.form, input))
+      return initClickResult(bc.submitFormClick(input.form, input))
     return initClickResult()
   else:
     # default is text.
@@ -1422,8 +1429,7 @@ proc click(bc: BufferContext; handle: PagerHandle;
       bc.maybeReshape()
       if bc.clickResult.t != crtNone:
         return bc.clickResult
-  let url = bc.navigateUrl
-  bc.navigateUrl = nil
+  let url = move(bc.navigateUrl)
   if not canceled and clickable != nil:
     return bc.click(clickable)
   if url != nil:
@@ -1699,7 +1705,8 @@ proc submitForm(bc: BufferContext; handle: PagerHandle; cursorx, cursory: int):
     element = element.parentElement
   if form == nil:
     return ClickResult()
-  let open = bc.submitForm(form, form) #TODO maybe use element as submitter?
+  #TODO maybe use element as submitter?
+  let open = bc.submitFormClick(form, form)
   return initClickResult(open)
 
 proc hideHints(bc: BufferContext; handle: PagerHandle) {.proxy.} =
