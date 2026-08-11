@@ -267,7 +267,7 @@ straightforward, and usually works OK, though many features are still
 missing.
 
 Some special attention is needed when dealing with the Node structure,
-which cramps a bunch of different pointers in a few internal slots to save
+which crams a bunch of different pointers in a few internal slots to save
 memory.  See the source code comments for details.
 
 As for document.write: don't ask.  It works as far as I can tell, but I

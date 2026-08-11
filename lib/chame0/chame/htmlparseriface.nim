@@ -144,10 +144,7 @@ proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
   ## access to the parser internals, so for this step, the parser will call
   ## associateWithFormImpl if all conditions (except "the intended parent is
   ## in the same tree as the element pointed to by the form element pointer")
-  ## are fulfilled.  TODO: regrettably this no longer works because of
-  ## custom element attribute callbacks.  I suppose we should either add a
-  ## "getFormToAssociate" callback that the other side can call, or pass
-  ## form directly.
+  ## are fulfilled.
 
 proc getLocalNameImpl(builder: DOMBuilderImpl; handle: HandleImpl): AtomImpl
     {.doc.}
@@ -292,14 +289,15 @@ when defined(nimdocdummy):
     discard
 
   proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
-      attrs: Table[AtomImpl, string]) =
+      attrs: seq[ParsedAttr[AtomImpl]]) =
     discard
 
-  proc createCommentImpl(builder: DOMBuilderImpl; text: string): HandleImpl =
+  proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
+      text: string; before: Option[HandleImpl]) =
     discard
 
-  proc createDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
-      systemId: string): HandleImpl =
+  proc appendDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
+      systemId: string) =
     discard
 
   proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
