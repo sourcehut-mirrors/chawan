@@ -292,6 +292,7 @@ proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
   var line: string
   while file.readLine(line).get(false):
     if line.len <= 0 or line[0] == '#':
+      inc state.line
       continue
     while true:
       if line.len > 0 and line[^1] == '\r':
