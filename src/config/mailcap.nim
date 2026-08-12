@@ -34,6 +34,7 @@ type
     mfNetpath = "netpath" # w3mmee extension
     mfCgioutput = "cgioutput" # w3mmee extension
     mfUri = "uri" # w3mmee extension
+    mfInternal = "internal" # w3mmee extension
     mfUrimethodmap = "internal-urimethodmap" # internal field, do not use
 
   NamedFieldType* = enum
@@ -607,8 +608,10 @@ proc parseCGICommand*(ecmd, typeBuf: string; url: URL;
   oargv = move(cc.argv)
   ok()
 
-proc checkEntry(entry: MailcapEntry; contentType: string; url: URL): bool =
-  if mfNetpath in entry.flags and not url.isNetPath():
+proc checkEntry(entry: MailcapEntry; contentType: string; url: URL;
+    internal: bool): bool =
+  if mfNetpath in entry.flags and not url.isNetPath() or
+      mfInternal in entry.flags and not internal:
     return false
   for field in entry.fields:
     case field.t
@@ -650,12 +653,13 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
     for i in countdown(last - 1, 0):
       if mfType in list.entries[i].flags:
         continue # only supported in auto-mailcap
-      if checkEntry(list.entries[i], contentType, url):
+      if checkEntry(list.entries[i], contentType, url, internal = false):
         return i
   return -1
 
 proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
-    netPathSeen, listSeen: var bool; resourceOnly: bool): MailcapEntry =
+    netPathSeen, internalSeen, listSeen: var bool;
+    resourceOnly, internal: bool): MailcapEntry =
   var url = outUrl
   var id = 0'u32
   var done = false
@@ -672,8 +676,10 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
       inc i
       if entry.id < id:
         continue
-      if not checkEntry(entry, url.scheme, url):
-        if mfNetpath in entry.flags and not url.isNetPath():
+      if not checkEntry(entry, url.scheme, url, internal):
+        if mfInternal in entry.flags and not internal:
+          internalSeen = true
+        elif mfNetpath in entry.flags and not url.isNetPath():
           netPathSeen = true
         continue
       if resourceOnly and mfUri in entry.flags:
@@ -701,7 +707,7 @@ proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
       let entry = list.entries[i]
       if mfType in entry.flags:
         continue # only supported in auto-mailcap
-      if checkEntry(entry, contentType, url):
+      if checkEntry(entry, contentType, url, internal = false):
         outIdx = i
         return entry
   outIdx = -1
@@ -721,7 +727,7 @@ proc findMailcapEntryMut*(mailcap: Mailcap;
     for entry in list.entries:
       if entry.id < id:
         continue
-      if not checkEntry(entry, contentType, url):
+      if not checkEntry(entry, contentType, url, internal = false):
         continue
       if mfType in entry.flags:
         var canpipe: bool

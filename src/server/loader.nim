@@ -1446,9 +1446,10 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
   var typeBuf = request.url.scheme & '/' &
     ($request.httpMethod).toLowerAscii()
   var netPathSeen = false
+  var internalSeen = false
   var listSeen = false
   let entry = ctx.browsecap.findResourceMut(typeBuf, request.url,
-    netPathSeen, listSeen, resource)
+    netPathSeen, internalSeen, listSeen, resource, request.internal)
   if entry != nil and mfCgioutput in entry.flags:
     var path: string
     var argv: seq[string]
@@ -1502,9 +1503,14 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     of stAbout:
       ctx.loadAbout(handle, request)
     of stXChaCookie:
-      ctx.loadXChaCookie(client, handle, request)
+      if request.internal:
+        ctx.loadXChaCookie(client, handle, request)
+      else:
+        ctx.rejectHandleClose(handle, ceInternalScheme)
     elif netPathSeen:
       ctx.rejectHandleClose(handle, ceNetPathExpected)
+    elif internalSeen:
+      ctx.rejectHandleClose(handle, ceInternalScheme)
     elif listSeen:
       ctx.rejectHandleClose(handle, ceInvalidMethod)
     else:

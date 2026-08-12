@@ -92,7 +92,8 @@ proc create2DContext*(loader: FileLoader; target: EventTarget;
     "img-codec+x-cha-canvas:decode",
     httpMethod = hmPost,
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
-    body = RequestBody(t: rbtOutput, outputId: ctlres.outputId)
+    body = RequestBody(t: rbtOutput, outputId: ctlres.outputId),
+    internal = true
   )
   let response = loader.doRequest(request)
   loader.close(ctlres)

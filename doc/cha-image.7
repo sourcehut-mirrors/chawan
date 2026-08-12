@@ -138,6 +138,16 @@ data to stdout \- when encoding, vice versa.
 .PP
 This means that it is possible for users to define image decoders for
 their preferred formats, or even override the built\-in ones.
+For example:
+.IP
+.EX
+# put in \(ti/.chawan/browsecap (or \(ti/.config/chawan/browsecap)
+# \(dqresource\(dq is used to allow access from buffers, while \(dqinternal\(dq
+# restricts this access to pseudo\-requests created by the browser.
+# %s is the path, which expands to either \(dqencode\(dq or \(dqdecode\(dq.
+img\-codec+jxl;	/cgi\-bin/jxl %s; cgioutput; resource; internal
+.EE
+.PP
 (If you actually end up doing this for some reason, please send me a
 mail so I can add it to the bonus directory.)
 .PP

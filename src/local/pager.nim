@@ -817,7 +817,8 @@ proc loadCachedImage2(env: CachedImageEnv; response: Response) =
     httpMethod = hmPost,
     headers = headers,
     body = RequestBody(t: rbtCache, cacheId: cacheId),
-    tocache = true
+    tocache = true,
+    internal = true
   )
   loader.fetch(request, loadCachedImage3, env)
   loader.close(response)
@@ -881,7 +882,8 @@ proc loadCachedImage(pager: Pager; iface: BufferInterface; bmp: NetworkBitmap;
     "img-codec+" & bmp.contentType.after('/') & ":decode",
     httpMethod = hmPost,
     body = RequestBody(t: rbtCache, cacheId: bmp.cacheId),
-    tocache = true
+    tocache = true,
+    internal = true
   )
   let opaque = CachedImageEnv(
     pager: pager,

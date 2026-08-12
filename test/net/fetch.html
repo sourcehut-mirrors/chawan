@@ -26,6 +26,8 @@ const x = document.getElementById("x");
 }
 {
 	await assertThrowsAsync(() => fetch("file:///tmp/should-throw"), TypeError);
+	await assertThrowsAsync(() => fetch("x-cha-cookie:get-all"), TypeError);
+	await assertThrowsAsync(() => fetch("img-codec+png:decode"), TypeError);
 }
 x.textContent = "Success";
 </script>

@@ -266,15 +266,15 @@ man/get;		man -r %s;		cgioutput; resource
 man-k/get;		man -k %s;		cgioutput; resource
 man-l/get;		man -l %s;		cgioutput; resource
 cgi-bin;		%s%?;			cgioutput; resource
-img-codec+png;		stbi png %s;		cgioutput; resource
-img-codec+jpeg;		stbi jpeg %s;		cgioutput; resource
-img-codec+gif;		stbi gif %s;		cgioutput; resource
-img-codec+bmp;		stbi bmp %s;		cgioutput; resource
-img-codec+x-unknown;	stbi x-unknown %s;	cgioutput; resource
-img-codec+webp;		jebp %s;		cgioutput; resource
-img-codec+x-sixel;	sixel %s;		cgioutput; resource
-img-codec+x-cha-canvas;	canvas %s;		cgioutput; resource
-img-codec+svg+xml;	nanosvg %s;		cgioutput; resource
+img-codec+png;		stbi png %s;		cgioutput; resource; internal
+img-codec+jpeg;		stbi jpeg %s;		cgioutput; resource; internal
+img-codec+gif;		stbi gif %s;		cgioutput; resource; internal
+img-codec+bmp;		stbi bmp %s;		cgioutput; resource; internal
+img-codec+x-unknown;	stbi x-unknown %s;	cgioutput; resource; internal
+img-codec+webp;		jebp %s;		cgioutput; resource; internal
+img-codec+x-sixel;	sixel %s;		cgioutput; resource; internal
+img-codec+x-cha-canvas;	canvas %s;		cgioutput; resource; internal
+img-codec+svg+xml;	nanosvg %s;		cgioutput; resource; internal
 """
 
 proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =

@@ -1672,6 +1672,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
     httpMethod = hmPost,
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
     body = RequestBody(t: rbtOutput, outputId: response.outputId),
+    internal = true
   )
   cachedURL.t = subtype
   window.corsFetch(request, loadImageFinish, opaque)
@@ -1809,7 +1810,8 @@ proc loadSVG*(window: Window; svg: SVGSVGElement) =
     "img-codec+svg+xml:decode",
     httpMethod = hmPost,
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
-    body = RequestBody(t: rbtOutput, outputId: svgres.outputId)
+    body = RequestBody(t: rbtOutput, outputId: svgres.outputId),
+    internal = true
   )
   let env = LoadSVGEnv(
     window: window,
@@ -4088,7 +4090,8 @@ jsClassDef(Document):
     let window = window0.get
     if window == nil:
       return ctx.toJS("")
-    let response = window.loader.doRequest(newRequest("x-cha-cookie:get-all"))
+    let request = newRequest("x-cha-cookie:get-all", internal = true)
+    let response = window.loader.doRequest(request)
     if response.stream == nil:
       return JS_ThrowInternalError(ctx, "internal error in cookie getter")
     window.loader.resume(response)
@@ -4101,9 +4104,9 @@ jsClassDef(Document):
     if window == nil:
       return ok()
     let headers = newHeaders(hgRequest, {"Set-Cookie": cookie})
-    let req = newRequest("x-cha-cookie:set", hmPost, headers,
-      credentials = cmOmit)
-    let response = window.loader.doRequest(req)
+    let request = newRequest("x-cha-cookie:set", hmPost, headers,
+      credentials = cmOmit, internal = true)
+    let response = window.loader.doRequest(request)
     window.loader.close(response)
     ok()
 
@@ -7149,7 +7152,8 @@ jsClassDef(HTMLCanvasElement):
     let request = newRequest(
       "img-codec+x-cha-canvas:decode",
       httpMethod = hmPost,
-      body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId)
+      body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId),
+      internal = true
     )
     let env = ToBlobEnv(
       ctx: JS_DupContext(ctx),

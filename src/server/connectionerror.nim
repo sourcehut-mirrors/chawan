@@ -1,5 +1,6 @@
 type ConnectionError* = enum
-  ceMailcap = -19 # not necessarily an error; sends entries to choose from
+  ceMailcap = -20 # not necessarily an error; sends entries to choose from
+  ceInternalScheme = -19
   ceNetPathExpected = -18
   ceLoaderGone = -17
   ceCookieStreamExists = -16
@@ -32,6 +33,7 @@ type ConnectionError* = enum
   ceProxyInvalidResponse = (11, "ProxyInvalidResponse")
 
 const ErrorMessages* = [
+  ceInternalScheme: "protocol only allowed for internal use",
   ceNetPathExpected: "expected `//' after colon",
   ceLoaderGone: "loader process crashed",
   ceCookieStreamExists: "cookie stream already exists",

@@ -125,9 +125,18 @@ encoded image on stdin, and dump the decoded RGBA data to stdout - when
 encoding, vice versa.
 
 This means that it is possible for users to define image decoders for their
-preferred formats, or even override the built-in ones. (If you actually end
-up doing this for some reason, please send me a mail so I can add it to the
-bonus directory.)
+preferred formats, or even override the built-in ones.  For example:
+
+```
+# put in ~/.chawan/browsecap (or ~/.config/chawan/browsecap)
+# "resource" is used to allow access from buffers, while "internal"
+# restricts this access to pseudo-requests created by the browser.
+# %s is the path, which expands to either "encode" or "decode".
+img-codec+jxl;	/cgi-bin/jxl %s; cgioutput; resource; internal
+```
+
+(If you actually end up doing this for some reason, please send me a mail
+so I can add it to the bonus directory.)
 
 A codec can have one of, or both, "decode" and "encode" instructions; these
 are set in the path name.  So "img-codec+png:decode" is called for decoding

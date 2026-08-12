@@ -81,6 +81,7 @@ type
     rqfToCache # save the result to the cache
     rqfUrlCredentials # whether to use user/pass in URL
     rqfReferrer # use Referer header (if not set, use client base URL)
+    rqfInternal # may use internal browsecap entries (e.g. image codecs)
 
   RawRequest* = object
     url*: URL
@@ -169,6 +170,9 @@ proc urlCredentials*(this: RawRequest): bool =
 proc hasReferrer*(this: RawRequest): bool =
   rqfReferrer in this.flags
 
+proc internal*(this: RawRequest): bool =
+  rqfInternal in this.flags
+
 proc hasReferrer*(this: Request): bool =
   rqfReferrer in this.flags
 
@@ -185,8 +189,8 @@ proc unsetReferrer*(this: Request) =
 
 proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); hasReferrer = true; referrer: URL = nil;
-    tocache = false; credentials = cmSameOrigin; urlCredentials = false;
-    destination = rdNone; mode = rmNoCors;
+    tocache = false; credentials = cmSameOrigin; internal = false;
+    urlCredentials = false; destination = rdNone; mode = rmNoCors;
     window = RequestWindow(t: rwtNoWindow)): Request =
   assert url != nil
   if referrer != nil:
@@ -198,6 +202,8 @@ proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     flags.incl(rqfUrlCredentials)
   if hasReferrer:
     flags.incl(rqfReferrer)
+  if internal:
+    flags.incl(rqfInternal)
   return Request(
     url: url,
     httpMethod: httpMethod,
@@ -212,13 +218,13 @@ proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
 proc newRequest*(raw: RawRequest): Request =
   return newRequest(raw.url, raw.httpMethod, newHeaders(hgRequest, raw.headers),
     raw.body, tocache = raw.tocache, credentials = raw.credentials,
-    urlCredentials = raw.urlCredentials)
+    internal = raw.internal, urlCredentials = raw.urlCredentials)
 
 proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); hasReferrer = true; referrer: URL = nil;
-    tocache = false; credentials = cmSameOrigin): Request =
+    tocache = false; credentials = cmSameOrigin; internal = false): Request =
   return newRequest(parseURL0(s), httpMethod, headers, body, hasReferrer,
-    referrer, tocache, credentials)
+    referrer, tocache, credentials, internal)
 
 proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     cors: CORSAttribute; fallbackFlag = false): Request =

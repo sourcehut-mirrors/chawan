@@ -186,7 +186,9 @@ extension fields is optional; in mailcap, it is mandatory.)
 
   When used in combination with `x-uri`, the latter's semantics are changed
   to *not* redirect the user.  So although another resource is fetched, the
-  base URI remains the same.
+  base URI remains the same.  Further, entries preceding an entry with
+  `x-uri; x-resource` are not considered after the redirection (unlike with
+  `x-uri`, which restarts the request itself).
 
 * `x-netpath` (from w3mmee) restricts an entry to URIs which follow the
   `net_path` production of [RFC 2396](https://www.ietf.org/rfc/rfc2396.txt).
@@ -197,6 +199,11 @@ extension fields is optional; in mailcap, it is mandatory.)
 
   The `file` scheme is special-cased such that it is never matched as
   `net_path`, even though it looks like one for legacy reasons.
+
+* `x-internal` (from w3mmee) marks an entry as "internal".  This means that
+  it is impossible to navigate to this entry, or reach it from buffers
+  through XMLHttpRequest, fetch, etc.  In Chawan, it is used to implement
+  image support; refer to [**cha-image**](image.md)(7) for details.
 
 * `x-cgioutput` is only accepted in `external.auto-browsecap`, and applies
   to all network requests.  The command part is parsed as a subset of POSIX
