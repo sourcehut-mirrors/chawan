@@ -619,6 +619,8 @@ proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
 jsClassDef(Window):
   jsextends EventTargetDef
 
+  event.windowClassID = classDef.id
+
   jsget Window, localStorage
   jsget Window, sessionStorage
   jsget Window, referrer

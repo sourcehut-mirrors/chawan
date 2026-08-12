@@ -4,6 +4,7 @@ import std/algorithm
 import std/hashes
 import std/math
 import std/options
+import std/sets
 import std/setutils
 import std/tables
 import std/times
@@ -177,8 +178,6 @@ type
   # Navigator stuff
   Storage* = ref object
     map*: seq[tuple[key, value: string]]
-
-  Notification* = ref object
 
   CECallbackType = enum
     cctConnected = "connectedCallback"
@@ -679,8 +678,6 @@ type
   HTMLUnknownElement {.final.} = ref object of HTMLElement
 
 jsDestructor(Storage)
-jsDestructor(Notification)
-
 jsDestructor(DOMImplementation)
 jsDestructor(DOMTokenList)
 jsDestructor(DOMStringMap)
@@ -711,6 +708,7 @@ proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc newHTMLCollection(root: Node; match: CollectionMatchFun; childonly: bool):
   HTMLCollection
 proc newEmptyNodeList(): NodeList
+proc newNodeList(nodes: openArray[Node]): NodeList
 proc newNodeList(root: Node; match: CollectionMatchFun;
   islive, childonly: bool): NodeList
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList
@@ -732,6 +730,7 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
   writeShadow: bool)
 
 proc countChildren(node: ParentNode; t: NodeType): int
+proc getChildList*(node: ParentNode): seq[Node]
 proc hasChild(node: ParentNode; t: NodeType): bool
 proc hasChildExcept(node: ParentNode; t: NodeType; ex: Node): bool
 proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
@@ -742,6 +741,8 @@ proc firstChild(parent: ParentNode): Node
 proc firstChildShadow(parent: ParentNode): Node
 proc nextSibling(node: Node): Node
 proc setFirstChild(node: ParentNode; child: Node)
+
+proc setData(ctx: JSContext; this: CharacterData; data: DOMStringNull)
 
 proc addElementId(document: Document; element: Element)
 proc adopt(document: Document; node: Node; ctx: JSContext)
@@ -767,27 +768,27 @@ proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool
 
 proc newAttr(element: Element; dataIdx: int): Attr
 proc data(attr: Attr): lent AttrData
-proc setValue(attr: Attr; ds: DOMString)
+proc setValue(ctx: JSContext; attr: Attr; ds: DOMString)
 
 proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
   Opt[ShadowRoot]
-proc attr*(element: Element; name: CAtomTraced; value: sink string)
-proc attr(element: Element; name: StaticAtom; value: sink string)
-proc attr(element: Element; name: CAtomTraced; value: DOMString)
-proc attr(element: Element; name: StaticAtom; value: DOMString)
+proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+  value: DOMString)
+proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
+  value: DOMString)
+proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+  value: sink string)
+proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
+  value: sink string)
 proc attr*(element: Element; s: StaticAtom): lent string
 proc attrb*(element: Element; at: StaticAtom): bool
 proc attrb*(element: Element; s: CAtomTraced): bool
-proc attrd(element: Element; name: StaticAtom; value: float64)
 proc attrd*(element: Element; s: StaticAtom): Opt[float64]
 proc attrdgz*(element: Element; s: StaticAtom): Opt[float64]
-proc attrl(element: Element; name: StaticAtom; value: int32)
 proc attrl*(element: Element; s: StaticAtom): Opt[int32]
-proc attrul(element: Element; name: StaticAtom; value: uint32)
 proc attrul*(element: Element; s: StaticAtom): Opt[uint32]
-proc attrulgz(element: Element; name: StaticAtom; value: uint32)
 proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
-proc delAttr(ctx: JSContext; element: Element; i: int)
+proc delAttr(element: Element; ctx: JSContext; i: int)
 proc dupAttrs(element: Element): seq[AttrData]
 proc elIndex*(this: Element): uint32
 proc ensureStyle*(element: Element)
@@ -807,7 +808,6 @@ proc outerHTML(element: Element): string
 proc postConnectionSteps(element: Element)
 proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
-proc remove*(this: Element)
 proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
@@ -860,8 +860,8 @@ proc getClassID*(t: typedesc[HTMLOptionElement]): JSClassID
 var matchesImpl*: proc(element: Element; cxsels: SelectorList): bool {.nimcall,
   raises: [].}
 # set in html/chadombuilder
-var parseHTMLFragmentImpl*: proc(element: Element; s: openArray[char]):
-  seq[Node] {.nimcall, raises: [].}
+var parseHTMLFragmentImpl*: proc(ctx: JSContext; element: Element;
+  s: openArray[char]): seq[Node] {.nimcall, raises: [].}
 var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
 var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
 var getClientRectsImpl*: proc(element: Element; firstOnly, blockOnly: bool):
@@ -2253,6 +2253,102 @@ proc contains(a, b: Node): bool =
       return true
   return false
 
+type ObserverItem = object
+  observer: MutationObserver
+  oldValue: bool
+
+proc find(observers: openArray[ObserverItem]; observer: MutationObserver):
+    int =
+  for i in 0 ..< observers.len:
+    if observers[i].observer == observer:
+      return i
+  -1
+
+#TODO put this in runtime opaque
+var pendingObservers {.global.}: seq[MutationObserver]
+var mutationJobQueued {.global.}: bool
+
+proc mutationJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
+    JSValue {.cdecl.} =
+  mutationJobQueued = false
+  let observers = move(pendingObservers)
+  #TODO signal slots
+  for observer in observers:
+    let records = move(observer.records)
+    #TODO remove transient registered observers for observer.nodes
+    if records.len > 0:
+      let records = ctx.toJS(records)
+      if JS_IsException(records):
+        return records
+      let this = ctx.toJS(observer) # cannot fail
+      #TODO invoke (with all the ceremony that entails)
+      let res = ctx.callSinkThis(observer.callback.value, this, records)
+      if JS_IsException(res):
+        return res
+      JS_FreeValue(ctx, res)
+  return JS_UNDEFINED
+
+proc queueMutationJob(ctx: JSContext) =
+  if not mutationJobQueued:
+    if ctx.enqueueJob(mutationJob) >= 0:
+      mutationJobQueued = true
+
+proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
+    name, namespace: CAtomTraced; oldValue: RefString; hasOldValue2: bool;
+    oldValue2: string; added, removed: openArray[Node];
+    previousSibling, nextSibling: Node) =
+  # the oldValue mess is a workaround to the fact that we can pass the old
+  # data from CharacterData but not from AttrData.  but maybe AttrData
+  # should be refcounted too...
+  var observers: seq[ObserverItem] = @[]
+  var seen: HashSet[pointer]
+  #TODO can we do this without actually traversing ancestors somehow?
+  # (maybe link the last observer with parent's first observer?)
+  for it in target.branch:
+    for el in target.mutationObservers:
+      var oldValue = false
+      if oifSubtree notin el.flags and it != target:
+        continue
+      case t
+      of mrtAttributes:
+        if oifAttributes notin el.flags or
+            oifAttributeFilter in el.flags and (namespace != CAtomNull or
+            name notin el.attributeFilter):
+          continue
+        oldValue = oifAttributeOldValue in el.flags
+      of mrtCharacterData:
+        if oifCharacterData notin el.flags:
+          continue
+        oldValue = oifCharacterDataOldValue in el.flags
+      of mrtChildList:
+        if oifChildList notin el.flags:
+          continue
+      if not seen.containsOrIncl(cast[pointer](el.observer)):
+        observers.add(ObserverItem(observer: el.observer, oldValue: oldValue))
+      elif oldValue:
+        let i = observers.find(el.observer)
+        assert i >= 0
+        observers[i].oldValue = true
+  for it in observers:
+    let oldValue = if it.oldValue:
+      if hasOldValue2:
+        newRefString(oldValue2)
+      else:
+        oldValue
+    else:
+      nil
+    let addedNodes = newNodeList(added)
+    let removedNodes = newNodeList(removed)
+    it.observer.queueRecord(target, t, name, namespace, oldValue,
+      addedNodes, removedNodes, previousSibling, nextSibling)
+    pendingObservers.add(it.observer)
+  ctx.queueMutationJob()
+
+proc queueTreeMutationRecord(node: Node; ctx: JSContext;
+    added, removed: openArray[Node]; previousSibling, nextSibling: Node) =
+  node.queueMutationRecord(ctx, mrtChildList, CAtomNullTraced, CAtomNullTraced,
+    nil, true, "", added, removed, previousSibling, nextSibling)
+
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
 proc preInsertionValidity(parent, node, before: Node):
@@ -2293,7 +2389,7 @@ proc preInsertionValidity(parent, node, before: Node):
   ok(parent)
 
 # Pass an index to avoid searching for the node in parent's child list.
-proc removeImpl*(node: Node; suppressObservers = false) =
+proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
   let parent = node.parentNode
   if parent == nil:
     return
@@ -2311,13 +2407,15 @@ proc removeImpl*(node: Node; suppressObservers = false) =
   else:
     # we're removing all elements; the document must still be invalidated
     document.invalid = true
-  let prev = node.internalPrev
+  var prev = node.internalPrev # we turn this into previousSibling
   let next = node.internalNext
+  let oldNextSibling = node.nextSibling
   if next != nil and next.parentNode != nil:
     next.internalPrev = prev
   else:
     parent.firstChild.internalPrev = prev
   if parent.firstChild == node:
+    prev = nil
     if next != nil and next.parentNode != nil:
       parent.setFirstChild(next)
     else:
@@ -2351,9 +2449,9 @@ proc removeImpl*(node: Node; suppressObservers = false) =
       element.removingSteps()
       if element.custom == cesCustom and parentConnected:
         discard #TODO queue disconnectedCallback
-  #TODO registered observers
-  if not suppressObservers:
-    discard #TODO queue tree mutation record
+  #TODO transient registered observers
+  if not suppressObservers and ctx != nil:
+    parent.queueTreeMutationRecord(ctx, [], [node], prev, oldNextSibling)
   #TODO children changed steps
 
 # e may be nil
@@ -2423,9 +2521,24 @@ proc replaceChildWith*(parent, child, node: Node; ctx: JSContext):
     node.nextSibling
   else:
     childNextSibling
-  child.removeImpl(suppressObservers = true)
+  parent.document.adopt(node, ctx)
+  var removedIdx = -1
+  if child.parentNode != nil:
+    removedIdx = 0
+  var nodes: seq[Node] = @[]
+  let isFragment = node of DocumentFragment
+  if isFragment:
+    nodes = DocumentFragment(node).getChildList()
+  child.removeImpl(ctx, suppressObservers = true)
   parent.insert(node, referenceChild, ctx, suppressObservers = true)
-  #TODO tree mutation record
+  if ctx != nil:
+    if isFragment:
+      parent.queueTreeMutationRecord(ctx, nodes, [child], childPreviousSibling,
+        referenceChild)
+    else:
+      parent.queueTreeMutationRecord(ctx, [node],
+        [child].toOpenArray(0, removedIdx), childPreviousSibling,
+        referenceChild)
   ok()
 
 proc replaceChildWithThrow(ctx: JSContext; parent, child, node: Node):
@@ -2655,6 +2768,8 @@ proc assignSlot(node: Node) =
 jsClassDef(Node):
   jsextends EventTargetDef
 
+  event.nodeClassID = classDef.id
+
   jsget Node, parentNode
 
   proc baseURI(node: Node): string {.jsfget.} =
@@ -2749,7 +2864,7 @@ jsClassDef(Node):
   proc removeChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
     if Node(node.parentNode) != parent:
       return ctx.insertThrow(nil)
-    node.removeImpl()
+    node.removeImpl(ctx)
     return ctx.toJS(node)
 
   proc insertBefore(ctx: JSContext; parent, node: Node; before: Option[Node]):
@@ -2835,10 +2950,9 @@ jsClassDef(Node):
   proc setNodeValue(ctx: JSContext; node: Node; data: DOMStringNull): Opt[void]
       {.jsfset: "nodeValue".} =
     if node of CharacterData:
-      let node = CharacterData(node)
-      node.data = newRefString(data)
+      ctx.setData(CharacterData(node), data)
     elif node of Attr:
-      Attr(node).setValue(data)
+      ctx.setValue(Attr(node), data)
     return ok()
 
   proc setTextContent(ctx: JSContext; node: Node; data: DOMStringNull):
@@ -3011,7 +3125,7 @@ proc getChildList*(node: ParentNode): seq[Node] =
 proc replaceAll(parent: ParentNode; node: Node; ctx: JSContext) =
   let removedNodes = parent.getChildList()
   for child in removedNodes:
-    child.removeImpl(true)
+    child.removeImpl(ctx, true)
   if node != nil:
     if node of DocumentFragment:
       let nodes = DocumentFragment(node).getChildList()
@@ -3019,7 +3133,11 @@ proc replaceAll(parent: ParentNode; node: Node; ctx: JSContext) =
         parent.insert(it, nil, ctx, suppressObservers = true)
     else:
       parent.insert(node, nil, ctx, suppressObservers = true)
-  #TODO tree mutation record
+  if ctx != nil:
+    if node != nil:
+      parent.queueTreeMutationRecord(ctx, [node], removedNodes, nil, nil)
+    elif removedNodes.len > 0:
+      parent.queueTreeMutationRecord(ctx, [], removedNodes, nil, nil)
 
 proc replaceAll(parent: ParentNode; ds: DOMString; ctx: JSContext) =
   let node = if ds.len > 0: parent.document.newText(ds) else: nil
@@ -3102,8 +3220,8 @@ proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
     this.atoms.add(class.toAtom())
   this
 
-proc insert0(parent: ParentNode; node, before: Node;
-    postConnectionNodes: var seq[Element]; ctx: JSContext) =
+proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
+    postConnectionNodes: var seq[Element]) =
   let parentDocument = parent.document
   parentDocument.adopt(node, ctx)
   let rootNode = parent.rootNode
@@ -3179,32 +3297,38 @@ proc insert0(parent: ParentNode; node, before: Node;
     specialElement = specialElement.nextElementDescendantShadow(node)
 
 # WARNING ditto
-proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
-    suppressObservers = false) =
-  let nodes = if node of DocumentFragment:
-    DocumentFragment(node).getChildList()
-  else:
-    @[node]
-  let count = nodes.len
-  if count == 0:
-    return
-  if node of DocumentFragment:
-    for child in nodes:
-      child.removeImpl(suppressObservers = true)
-    #TODO tree mutation record
+proc insert0(parent: ParentNode; ctx: JSContext; nodes: openArray[Node];
+    before: Node; suppressObservers: bool) =
   if before != nil:
     #TODO live ranges
     discard
   if parent of Element:
     Element(parent).invalidate()
+  let beforeBefore = if before != nil:
+    before.previousSibling
+  else:
+    parent.lastChild
   var postConnectionNodes: seq[Element] = @[]
   for node in nodes:
-    parent.insert0(node, before, postConnectionNodes, ctx)
+    parent.insert1(ctx, node, before, postConnectionNodes)
   #TODO children changed steps for parent
-  if not suppressObservers:
-    discard #TODO queue tree mutation record
+  if not suppressObservers and ctx != nil:
+    parent.queueTreeMutationRecord(ctx, nodes, [], beforeBefore, before)
   for el in postConnectionNodes:
     el.postConnectionSteps()
+
+proc insert*(parent: ParentNode; node, before: Node; ctx: JSContext;
+    suppressObservers = false) =
+  if node of DocumentFragment:
+    let nodes = DocumentFragment(node).getChildList()
+    if nodes.len > 0:
+      for child in nodes:
+        child.removeImpl(ctx, suppressObservers = true)
+      if ctx != nil:
+        node.queueTreeMutationRecord(ctx, nodes, [], nil, nil)
+      parent.insert0(ctx, nodes, before, suppressObservers)
+  else:
+    parent.insert0(ctx, [node], before, suppressObservers)
 
 proc parseSelectors(ctx: JSContext; ds: DOMString): SelectorList =
   result = parseSelectors(ds)
@@ -3293,11 +3417,12 @@ proc newCollection[T: Collection](root: Node; match: CollectionMatchFun;
   this
 
 proc newEmptyNodeList(): NodeList =
-  return NodeList(
-    childonly: false,
-    match: nil,
-    document: nil
-  )
+  return NodeList(childonly: false, match: nil, document: nil)
+
+proc newNodeList(nodes: openArray[Node]): NodeList =
+  let list = newEmptyNodeList()
+  list.snapshot = @nodes
+  list
 
 proc newHTMLCollection(root: Node; match: CollectionMatchFun;
     childonly: bool): HTMLCollection =
@@ -3311,7 +3436,13 @@ proc newNodeList(root: Node; match: CollectionMatchFun;
 jsClassDef(CharacterData):
   jsextends NodeDef
 
-  jsgetset CharacterData, data
+  jsget CharacterData, data
+
+  proc setData(ctx: JSContext; this: CharacterData; data: DOMStringNull) {.
+      jsfset: "data".} =
+    this.queueMutationRecord(ctx, mrtCharacterData, CAtomNullTraced,
+      CAtomNullTraced, this.data, true, "", [], [], nil, nil)
+    this.data = newRefString(data)
 
   proc length(this: CharacterData): int {.jsfget.} =
     return ($this.data).utf16Len
@@ -3334,8 +3465,8 @@ jsClassDef(CharacterData):
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     ctx.replaceWithImpl(this, nodes)
 
-  proc remove*(this: CharacterData) {.jsfunc.} =
-    this.removeImpl()
+  proc remove(ctx: JSContext; this: CharacterData) {.jsfunc.} =
+    this.removeImpl(ctx)
 
 # Text
 proc newText*(document: Document; data: string): Text =
@@ -3466,7 +3597,7 @@ proc globalCustomElements(document: Document): CustomElementRegistry =
 
 proc adopt(document: Document; node: Node; ctx: JSContext) =
   let oldDocument = node.document
-  node.removeImpl()
+  node.removeImpl(ctx)
   if oldDocument != document:
     # node is detached from the tree, so its internalNext is guaranteed to
     # be oldDocument; we want to override that.
@@ -3837,48 +3968,51 @@ proc jsReflectSet0(ctx: JSContext; element: HTMLElement; val: JSValueConst;
   let entry = ReflectMap[uint16(magic) and 0x1FF]
   case entry.t
   of rtStr, rtUrl, rtReferrerPolicy, rtMethod, rtStrNull:
-    if entry.t == rtStrNull and JS_IsNull(val):
-      element.attr(entry.attrname, "")
+    if entry.t == rtStrNull:
+      var x: DOMStringNull
+      ?ctx.fromJS(val, x)
+      element.setAttr(ctx, entry.attrname, x)
     else:
       var x: DOMString
       ?ctx.fromJS(val, x)
-      element.attr(entry.attrname, x)
+      element.setAttr(ctx, entry.attrname, x)
   of rtCrossOrigin:
     if JS_IsNull(val):
       let i = element.findAttr(entry.attrname.view())
       if i >= 0:
-        ctx.delAttr(element, i)
+        element.delAttr(ctx, i)
     else:
       var x: DOMString
       ?ctx.fromJS(val, x)
-      element.attr(entry.attrname, x)
+      element.setAttr(ctx, entry.attrname, x)
   of rtBool:
     var x: bool
     ?ctx.fromJS(val, x)
     if x:
-      element.attr(entry.attrname, "")
+      element.setAttr(ctx, entry.attrname, "")
     else:
       let i = element.findAttr(entry.attrname.view())
       if i >= 0:
-        ctx.delAttr(element, i)
+        element.delAttr(ctx, i)
   of rtLong:
     var x: int32
     ?ctx.fromJS(val, x)
-    element.attrl(entry.attrname, x)
+    element.setAttr(ctx, entry.attrname, $x)
   of rtUlong:
     var x: uint32
     ?ctx.fromJS(val, x)
-    element.attrul(entry.attrname, x)
+    element.setAttr(ctx, entry.attrname, $x)
   of rtUlongGz:
     var x: uint32
     ?ctx.fromJS(val, x)
-    element.attrulgz(entry.attrname, x)
+    if x > 0:
+      element.setAttr(ctx, entry.attrname, $x)
   of rtDoubleGz:
     var x: float64
     ?ctx.fromJS(val, x)
     if classify(x) in {fcInf, fcNegInf, fcNan}:
       return JS_ThrowTypeError(ctx, "double expected")
-    element.attrd(entry.attrname, x)
+    element.setAttr(ctx, entry.attrname, dtoa(x))
   of rtFunction:
     let name = StaticAtom(entry.u)
     var this = EventTarget(element)
@@ -4304,8 +4438,9 @@ jsClassDef(Document):
         "throw-on-dynamic-markup-insertion counter > 0")
     if document.activeParserWasAborted:
       return JS_UNDEFINED
-    assert document.parser != nil
-    #TODO if insertion point is undefined... (open document)
+    if document.parser == nil:
+      #TODO document.open
+      return JS_UNDEFINED
     let buffer = document.writeBuffersTop
     if buffer == nil:
       return JS_UNDEFINED #TODO (probably covered by open above)
@@ -4491,8 +4626,8 @@ jsClassDef(DocumentType):
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     ctx.replaceWithImpl(this, nodes)
 
-  proc remove(this: DocumentType) {.jsfunc.} =
-    this.removeImpl()
+  proc remove(ctx: JSContext; this: DocumentType) {.jsfunc.} =
+    this.removeImpl(ctx)
 
 # NodeIterator
 proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
@@ -4696,10 +4831,10 @@ iterator items*(tokenList: DOMTokenList): CAtom {.inline.} =
 proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool =
   return tokenList.toks.containsIgnoreCase(a)
 
-proc update(tokenList: DOMTokenList) =
+proc update(tokenList: DOMTokenList; ctx: JSContext) =
   if tokenList.element.attrb(tokenList.localName.view()) or
       tokenList.toks.len > 0:
-    tokenList.element.attr(tokenList.localName.view(), $tokenList)
+    tokenList.element.setAttr(ctx, tokenList.localName, $tokenList)
 
 proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
   for tok in toks:
@@ -4757,7 +4892,7 @@ jsClassDef(DOMTokenList):
       freeAtoms(toks)
       return err()
     tokenList.toks.add(toks)
-    tokenList.update()
+    tokenList.update(ctx)
     ok()
 
   proc remove(ctx: JSContext; tokenList: DOMTokenList;
@@ -4771,7 +4906,7 @@ jsClassDef(DOMTokenList):
       let i = tokenList.toks.find(tok)
       if i >= 0:
         tokenList.toks.delete(i)
-    tokenList.update()
+    tokenList.update(ctx)
     freeAtoms(toks)
     ok()
 
@@ -4785,12 +4920,12 @@ jsClassDef(DOMTokenList):
     if i >= 0:
       if JS_IsUndefined(force) or forceBool == 0:
         tokenList.toks.delete(i)
-        tokenList.update()
+        tokenList.update(ctx)
         return ok(false)
       return ok(true)
     if JS_IsUndefined(force) or forceBool == 1:
       tokenList.toks.add(token.dup())
-      tokenList.update()
+      tokenList.update(ctx)
       return ok(true)
     ok(false)
 
@@ -4802,7 +4937,7 @@ jsClassDef(DOMTokenList):
       return ok(false)
     freeAtom(tokenList.toks[i])
     tokenList.toks[i] = newToken.dup()
-    tokenList.update()
+    tokenList.update(ctx)
     return ok(true)
 
   proc supports(ctx: JSContext; tokenList: DOMTokenList; token: DOMString):
@@ -4835,7 +4970,7 @@ jsClassDef(DOMStringMap):
     let name = name.toDataStr()
     let i = map.target.findAttr(name)
     if i >= 0:
-      ctx.delAttr(map.target, i)
+      map.target.delAttr(ctx, i)
     return i >= 0
 
   proc getter(ctx: JSContext; map: DOMStringMap; name: DOMString): JSValue
@@ -4858,7 +4993,7 @@ jsClassDef(DOMStringMap):
       return err()
     let name = name.toDataStr()
     ?ctx.validateAttrName($name)
-    map.target.attr(name, value)
+    map.target.setAttr(ctx, name, value)
     ok()
 
   proc names(ctx: JSContext; map: DOMStringMap): JSPropertyEnumList
@@ -5064,15 +5199,17 @@ jsClassDef(HTMLOptionsCollection):
       return ctx.insertBeforeUndefined(parent, element, option(Node(beforeEl)))
     return JS_UNDEFINED
 
-  proc remove(this: HTMLOptionsCollection; i: int32) {.jsfunc.} =
+  proc remove(ctx: JSContext; this: HTMLOptionsCollection; i: int32)
+      {.jsfunc.} =
     let element = this.item(uint32(i))
     if element != nil:
-      element.remove()
+      element.removeImpl(ctx)
 
   proc length(this: HTMLOptionsCollection): uint32 {.jsfget.} =
     this.getLength()
 
-  proc setLength(this: HTMLOptionsCollection; n: uint32) {.jsfset: "length".} =
+  proc setLength(ctx: JSContext; this: HTMLOptionsCollection; n: uint32)
+      {.jsfset: "length".} =
     let len = this.getLength()
     if n > len:
       if n <= 100_000: # LOL
@@ -5083,7 +5220,7 @@ jsClassDef(HTMLOptionsCollection):
     else:
       for i in 0 ..< len - n:
         let it = this.item(uint32(i))
-        it.remove()
+        it.removeImpl(ctx)
 
   proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
       value: Option[HTMLOptionElement]): JSValue {.jssetprop.} =
@@ -5096,7 +5233,7 @@ jsClassDef(HTMLOptionsCollection):
     let value = value.get(nil)
     if value == nil:
       if element != nil:
-        element.remove()
+        element.removeImpl(ctx)
       return JS_UNDEFINED
     let parent = this.root
     if element != nil:
@@ -5162,8 +5299,9 @@ jsClassDef(Attr):
   proc name(attr: Attr): CAtom {.jsfget.} =
     return attr.data.name
 
-  proc setValue(attr: Attr; ds: DOMString) {.jsfset: "value".} =
-    attr.ownerElement.attr(attr.data.name.view(), ds)
+  proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
+      jsfset: "value".} =
+    attr.ownerElement.setAttr(ctx, attr.data.name.view(), ds)
 
 # NamedNodeMap
 proc findAttr(map: NamedNodeMap; dataIdx: int): int =
@@ -5474,7 +5612,7 @@ proc getFormMethod*(element: Element): FormMethod =
 proc parseFragment*(ctx: JSContext; element: Element; s: openArray[char]):
     DocumentFragment =
   #TODO xml
-  let newChildren = parseHTMLFragmentImpl(element, s)
+  let newChildren = parseHTMLFragmentImpl(ctx, element, s)
   let fragment = element.document.newDocumentFragment()
   for child in newChildren:
     fragment.append(child, ctx)
@@ -6072,8 +6210,10 @@ proc postConnectionSteps(element: Element) =
   if script.isConnected and script.parserDocument == nil:
     script.prepare()
 
-proc delAttr(ctx: JSContext; element: Element; i: int) =
+proc delAttr(element: Element; ctx: JSContext; i: int) =
   let name = element.attrs[i].name.dupTrace()
+  element.queueMutationRecord(ctx, mrtAttributes, name, CAtomNullTraced, nil,
+    true, element.attrs[i].value, [], [], nil, nil)
   let map = ctx.cachedAttributes(element)
   if map != nil:
     # delete from attrlist + adjust indices invalidated
@@ -6095,28 +6235,17 @@ proc delAttr(ctx: JSContext; element: Element; i: int) =
   element.deleteAttr(i) # ordering matters
   element.reflectAttrDel(name)
 
-proc attr(element: Element; name: CAtomTraced; value: DOMString) =
+proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+    value: sink string) =
   var i = element.attrs.upperBound(name, cmpAttrName)
   if i > 0 and element.attrs[i - 1].name == name:
     dec i
-    element.attrs[i].value = $value
-  else:
-    element.attrs.insert(AttrData(
-      namespace: CAtomNull,
-      name: name.dup(),
-      value: $value
-    ), i)
-  element.reflectAttr(element.attrs[i])
-
-proc attr(element: Element; name: StaticAtom; value: DOMString) =
-  element.attr(name.view(), value)
-
-proc attr*(element: Element; name: CAtomTraced; value: sink string) =
-  var i = element.attrs.upperBound(name, cmpAttrName)
-  if i > 0 and element.attrs[i - 1].name == name:
-    dec i
+    element.queueMutationRecord(ctx, mrtAttributes, name, CAtomNullTraced, nil,
+      true, element.attrs[i].value, [], [], nil, nil)
     element.attrs[i].value = value
   else:
+    element.queueMutationRecord(ctx, mrtAttributes, name, CAtomNullTraced, nil,
+      false, "", [], [], nil, nil)
     element.attrs.insert(AttrData(
       namespace: CAtomNull,
       name: name.dup(),
@@ -6124,26 +6253,43 @@ proc attr*(element: Element; name: CAtomTraced; value: sink string) =
     ), i)
   element.reflectAttr(element.attrs[i])
 
-proc attr(element: Element; name: StaticAtom; value: sink string) =
-  element.attr(name.view(), value)
+proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
+    value: sink string) =
+  element.setAttr(ctx, name.view(), value)
+
+proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+    value: DOMString) =
+  var i = element.attrs.upperBound(name, cmpAttrName)
+  if i > 0 and element.attrs[i - 1].name == name:
+    dec i
+    element.queueMutationRecord(ctx, mrtAttributes, name, CAtomNullTraced, nil,
+      true, element.attrs[i].value, [], [], nil, nil)
+    element.attrs[i].value = $value
+  else:
+    element.queueMutationRecord(ctx, mrtAttributes, name, CAtomNullTraced, nil,
+      false, "", [], [], nil, nil)
+    element.attrs.insert(AttrData(
+      namespace: CAtomNull,
+      name: name.dup(),
+      value: $value
+    ), i)
+  element.reflectAttr(element.attrs[i])
+
+proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
+    value: DOMString) =
+  element.setAttr(ctx, name.view(), value)
 
 proc sinkAttrs*(element: Element; attrs: sink seq[AttrData]) =
   element.attrs = move(attrs)
   for attr in element.attrs:
     element.reflectAttr(attr)
 
-proc attrl(element: Element; name: StaticAtom; value: int32) =
-  element.attr(name, $value)
-
-proc attrul(element: Element; name: StaticAtom; value: uint32) =
-  element.attr(name, $value)
-
-proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
-  if value > 0:
-    element.attrul(name, value)
-
-proc attrd(element: Element; name: StaticAtom; value: float64) =
-  element.attr(name, dtoa(value))
+proc addAttrsIfMissing*(element: Element; attrs: seq[AttrData]) =
+  for attr in attrs:
+    var i = element.attrs.upperBound(attr.name.view(), cmpAttrName)
+    if i <= 0 or element.attrs[i - 1].name != attr.name:
+      element.attrs.insert(attr, i)
+      element.reflectAttr(element.attrs[i])
 
 proc hint*(element: Element): bool =
   efHint in element.flags
@@ -6315,8 +6461,8 @@ jsClassDef(Element):
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     ctx.replaceWithImpl(this, nodes)
 
-  proc remove*(this: Element) {.jsfunc.} =
-    this.removeImpl()
+  proc remove(ctx: JSContext; this: Element) {.jsfunc.} =
+    this.removeImpl(ctx)
 
   proc scrollTo(element: Element) {.jsfunc.} =
     discard #TODO maybe in app mode?
@@ -6464,7 +6610,7 @@ jsClassDef(Element):
       qualifiedName.toAtomLowerTrace()
     else:
       qualifiedName.toAtomTrace()
-    element.attr(qualifiedName, value)
+    element.setAttr(ctx, qualifiedName, value)
     ok()
 
   proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtomTraced;
@@ -6474,8 +6620,12 @@ jsClassDef(Element):
     ?ctx.validateAndExtract(namespace, localName, nvAttribute)
     var i = element.findAttrNS(namespace, localName)
     if i >= 0:
+      element.queueMutationRecord(ctx, mrtAttributes, qualifiedName, namespace,
+        nil, true, element.attrs[i].value, [], [], nil, nil)
       element.attrs[i].value = $value
     else:
+      element.queueMutationRecord(ctx, mrtAttributes, qualifiedName, namespace,
+        nil, false, "", [], [], nil, nil)
       i = element.attrs.upperBound(qualifiedName, cmpAttrName)
       element.attrs.insert(AttrData(
         namespace: namespace.dup(),
@@ -6489,13 +6639,13 @@ jsClassDef(Element):
       qualifiedName: CAtomTraced) {.jsfunc.} =
     let i = element.findAttr(qualifiedName)
     if i >= 0:
-      ctx.delAttr(element, i)
+      element.delAttr(ctx, i)
 
   proc removeAttributeNS(ctx: JSContext; element: Element;
       namespace, localName: CAtomTraced) {.jsfunc.} =
     let i = element.findAttrNS(namespace, localName)
     if i >= 0:
-      ctx.delAttr(element, i)
+      element.delAttr(ctx, i)
 
   proc toggleAttribute(ctx: JSContext; element: Element;
       qualifiedName: DOMString; force: JSValueConst = JS_UNDEFINED): Opt[bool]
@@ -6507,18 +6657,19 @@ jsClassDef(Element):
     let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtomTrace())
     if not element.attrb(qualifiedName):
       if JS_IsUndefined(force) or forceBool == 1:
-        element.attr(qualifiedName, "")
+        element.setAttr(ctx, qualifiedName, "")
         return ok(true)
       return ok(false)
     if JS_IsUndefined(force) or forceBool == 0:
       let i = element.findAttr(qualifiedName)
       if i >= 0:
-        ctx.delAttr(element, i)
+        element.delAttr(ctx, i)
       return ok(false)
     return ok(true)
 
-  proc setId(element: Element; id: DOMString) {.jsfset: "id".} =
-    element.attr(satId, id)
+  proc setId(ctx: JSContext; element: Element; id: DOMString) {.
+      jsfset: "id".} =
+    element.setAttr(ctx, satId, id)
 
   proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
     let window = ctx.getWindow()
@@ -6575,7 +6726,7 @@ jsClassDef(Element):
         return err()
       let removedNodes = old.getChildList()
       for child in removedNodes:
-        child.removeImpl()
+        child.removeImpl(ctx)
       old.declarative = false
       return ok(old)
     let shadow = ShadowRoot(
@@ -6613,8 +6764,9 @@ jsClassDef(Element):
       element.cachedStyle = newCSSStyleDeclaration(element, "")
     return element.cachedStyle
 
-  proc setStyle(element: Element; s: CSSOMString) {.jsfset: "style".} =
-    element.attr(satStyle, s)
+  proc setStyle(ctx: JSContext; element: Element; s: CSSOMString) {.
+      jsfset: "style".} =
+    element.setAttr(ctx, satStyle, s)
 
 # XMLSerializer
 jsClassRaw(XMLSerializerDef, "XMLSerializer"):
@@ -6768,9 +6920,9 @@ proc parseDeclValue(decl: var CSSDeclaration; value: CSSOMString): Opt[void] =
   decl.value = move(toks)
   ok()
 
-proc updateStyleAttr(this: CSSStyleDeclaration) =
+proc updateStyleAttr(this: CSSStyleDeclaration; ctx: JSContext) =
   this.updating = true
-  this.element.attr(satStyle, this.cssText)
+  this.element.setAttr(ctx, satStyle, this.cssText)
 
 jsClassDef(CSSStyleDeclaration):
   proc cssText(this: CSSStyleDeclaration): string {.jsfget.} =
@@ -6784,7 +6936,7 @@ jsClassDef(CSSStyleDeclaration):
   proc setCSSText(ctx: JSContext; this: CSSStyleDeclaration; s: CSSOMString):
       Opt[void] {.jsfset: "cssText".} =
     ?ctx.checkReadOnly(this)
-    this.element.attr(satStyle, s)
+    this.element.setAttr(ctx, satStyle, s)
     ok()
 
   proc length(this: CSSStyleDeclaration): uint32 =
@@ -6854,7 +7006,7 @@ jsClassDef(CSSStyleDeclaration):
       let i = this.find(name)
       if i >= 0:
         this.decls.delete(i)
-    this.updateStyleAttr()
+    this.updateStyleAttr(ctx)
     return ctx.toJS(value)
 
   proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
@@ -6877,7 +7029,7 @@ jsClassDef(CSSStyleDeclaration):
       if decl.parseDeclValue(value).isErr:
         return JS_UNDEFINED # ignore
       this.decls.add(move(decl))
-    this.updateStyleAttr()
+    this.updateStyleAttr(ctx)
     return JS_UNDEFINED
 
   proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
@@ -6916,6 +7068,8 @@ proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy] =
 
 jsClassDef(HTMLElement):
   jsextends ElementDef
+
+  event.htmlElementClassID = classDef.id
 
   proc dataset(ctx: JSContext; element: HTMLElement): JSValue {.jsfget.} =
     return ctx.getWeakCollection(element, wwmDataset)
@@ -6964,7 +7118,7 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
   if sa == satHref:
     var s: DOMString
     if ctx.fromJS(val, s).isOk:
-      element.attr(satHref, s)
+      element.setAttr(ctx, satHref, s)
       return JS_DupValue(ctx, val)
     return JS_EXCEPTION
   if url := element.reinitURL():
@@ -6974,7 +7128,7 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
       return JS_EXCEPTION
     var ds: DOMString
     if ctx.fromJSFree(href, ds).isOk:
-      element.attr(satHref, ds)
+      element.setAttr(ctx, satHref, ds)
   return JS_DupValue(ctx, val)
 
 # <a>
@@ -6988,9 +7142,9 @@ jsClassDef(HTMLAnchorElement):
       return $href
     return ""
 
-  proc setRelList(anchor: HTMLAnchorElement; ds: DOMString) {.
+  proc setRelList(ctx: JSContext; anchor: HTMLAnchorElement; ds: DOMString) {.
       jsfset: "relList".} =
-    anchor.attr(satRel, ds)
+    anchor.setAttr(ctx, satRel, ds)
 
 # <area>
 jsClassDef(HTMLAreaElement):
@@ -7003,8 +7157,9 @@ jsClassDef(HTMLAreaElement):
       return $href
     return ""
 
-  proc setRelList(area: HTMLAreaElement; ds: DOMString) {.jsfset: "relList".} =
-    area.attr(satRel, ds)
+  proc setRelList(ctx: JSContext; area: HTMLAreaElement; ds: DOMString) {.
+      jsfset: "relList".} =
+    area.setAttr(ctx, satRel, ds)
 
 # <audio>
 proc newAudio(ctx: JSContext; this_target: JSValueConst; argc: cint;
@@ -7014,7 +7169,7 @@ proc newAudio(ctx: JSContext; this_target: JSValueConst; argc: cint;
   if argc >= 1 and not JS_IsUndefined(argv[0]):
     var ds: DOMString
     ?ctx.fromJS(argv[0], ds)
-    this.attr(satSrc, ds)
+    this.setAttr(ctx, satSrc, ds)
   ctx.toJS(this)
 
 # <base>
@@ -7033,8 +7188,9 @@ jsClassDef(HTMLButtonElement):
 
   jsget HTMLButtonElement, ctype, "type"
 
-  proc setType(this: HTMLButtonElement; s: DOMString) {.jsfset: "type".} =
-    this.attr(satType, s)
+  proc setType(ctx: JSContext; this: HTMLButtonElement; s: DOMString) {.
+      jsfset: "type".} =
+    this.setAttr(ctx, satType, s)
 
 # <canvas>
 type ToBlobEnv {.final.} = ref object of BlobOpaque
@@ -7314,8 +7470,9 @@ jsClassDef(HTMLFormElement):
 
   jsget HTMLFormElement, relList
 
-  proc setRelList(form: HTMLFormElement; s: DOMString) {.jsfset: "relList".} =
-    form.attr(satRel, s)
+  proc setRelList(ctx: JSContext; form: HTMLFormElement; s: DOMString) {.
+      jsfset: "relList".} =
+    form.setAttr(ctx, satRel, s)
 
   proc elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
     if form.cachedElements == nil:
@@ -7351,11 +7508,11 @@ proc newImage(ctx: JSContext; _: JSValueConst; argc: cint;
   if argc >= 1 and not JS_IsUndefined(argv[0]):
     var x: uint32
     ?ctx.fromJS(argv[0], x)
-    this.attrul(satWidth, x)
+    this.setAttr(ctx, satWidth, $x)
   if argc >= 2 and not JS_IsUndefined(argv[1]):
     var x: uint32
     ?ctx.fromJS(argv[1], x)
-    this.attrul(satHeight, x)
+    this.setAttr(ctx, satHeight, $x)
   ctx.toJS(this)
 
 proc getImageRect(this: HTMLImageElement): tuple[w, h: float64] =
@@ -7378,14 +7535,16 @@ jsClassDef(HTMLImageElement):
   proc width(this: HTMLImageElement): uint32 {.jsfget.} =
     return uint32(this.getImageRect().w)
 
-  proc setWidth(this: HTMLImageElement; u: uint32) {.jsfset: "width".} =
-    this.attrul(satWidth, u)
+  proc setWidth(ctx: JSContext; this: HTMLImageElement; u: uint32) {.
+      jsfset: "width".} =
+    this.setAttr(ctx, satWidth, $u)
 
   proc height(this: HTMLImageElement): uint32 {.jsfget.} =
     return uint32(this.getImageRect().h)
 
-  proc setHeight(this: HTMLImageElement; u: uint32) {.jsfset: "height".} =
-    this.attrul(satHeight, u)
+  proc setHeight(ctx: JSContext; this: HTMLImageElement; u: uint32) {.
+      jsfset: "height".} =
+    this.setAttr(ctx, satHeight, $u)
 
 # <input>
 proc setValue*(this: HTMLInputElement; value: sink string) =
@@ -7430,8 +7589,9 @@ jsClassDef(HTMLInputElement):
   proc setValue(this: HTMLInputElement; ds: DOMString) {.jsfset: "value".} =
     this.setValue($ds)
 
-  proc setType(this: HTMLInputElement; s: DOMString) {.jsfset: "type".} =
-    this.attr(satType, s)
+  proc setType(ctx: JSContext; this: HTMLInputElement; s: DOMString) {.
+      jsfset: "type".} =
+    this.setAttr(ctx, satType, s)
 
   proc checked*(input: HTMLInputElement): bool {.jsfget.} =
     return input.internalChecked
@@ -7568,8 +7728,9 @@ jsClassDef(HTMLLinkElement):
 
   jsget HTMLLinkElement, relList
 
-  proc setRelList(link: HTMLLinkElement; s: DOMString) {.jsfset: "relList".} =
-    link.attr(satRel, s)
+  proc setRelList(ctx: JSContext; link: HTMLLinkElement; s: DOMString) {.
+      jsfset: "relList".} =
+    link.setAttr(ctx, satRel, s)
 
 # <option>
 proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
@@ -7584,12 +7745,12 @@ proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
   if argc >= 2 and not JS_IsUndefined(argv[1]):
     var value: DOMString
     ?ctx.fromJS(argv[1], value)
-    this.attr(satValue, value)
+    this.setAttr(ctx, satValue, value)
   if argc >= 3:
     var defaultSelected: bool
     ?ctx.fromJS(argv[2], defaultSelected)
     if defaultSelected:
-      this.attr(satSelected, "")
+      this.setAttr(ctx, satSelected, "")
   if argc >= 4:
     ?ctx.fromJS(argv[3], this.selected)
   ctx.toJS(this)
@@ -7619,8 +7780,9 @@ jsClassDef(HTMLOptionElement):
       return option.attr(satValue)
     return option.text
 
-  proc setValue(option: HTMLOptionElement; ds: DOMString) {.jsfset: "value".} =
-    option.attr(satValue, ds)
+  proc setValue(ctx: JSContext; option: HTMLOptionElement; ds: DOMString) {.
+      jsfset: "value".} =
+    option.setAttr(ctx, satValue, ds)
 
   proc setSelected*(option: HTMLOptionElement; selected: bool)
       {.jsfset: "selected".} =
@@ -7726,7 +7888,7 @@ jsClassDef(HTMLSelectElement):
   proc setLength(ctx: JSContext; this: HTMLSelectElement; n: uint32) {.
       jsfset: "length".} =
     let options = this.options()
-    options.setLength(n)
+    ctx.setLength(options, n)
 
   proc getter(ctx: JSContext; this: HTMLSelectElement; u: JSAtom): JSValue
       {.jsgetownprop.} =
@@ -7804,9 +7966,9 @@ jsClassDef(HTMLSelectElement):
       var i: int32
       ?ctx.fromJS(idx[0], i)
       let options = this.options()
-      options.remove(i)
+      ctx.remove(options, i)
     else:
-      this.remove()
+      this.removeImpl(ctx)
     ok()
 
 # <style>
@@ -8233,10 +8395,10 @@ proc deleteRow(ctx: JSContext; rows: HTMLCollection; index: int32): Opt[void] =
     return err()
   if index == -1:
     let it = rows.item(uint32(nrows - 1))
-    it.remove()
+    it.removeImpl(ctx)
   elif nrows > 0:
     let it = rows.item(uint32(index))
-    it.remove()
+    it.removeImpl(ctx)
   ok()
 
 jsClassDef(HTMLTableElement):
@@ -8259,7 +8421,7 @@ jsClassDef(HTMLTableElement):
       return JS_ThrowTypeError(ctx, "%s tag expected", cstring($tagType))
     let old = this.findFirstChildOf(tagType)
     if old != nil:
-      old.remove()
+      ctx.remove(old)
     if sect == nil:
       return JS_UNDEFINED
     return ctx.insertBeforeUndefined(this, sect, option(this.firstChild))
@@ -8295,12 +8457,12 @@ jsClassDef(HTMLTableElement):
       this.insert(element, before, nil)
     return element
 
-  proc deleteTableChild(this: HTMLTableElement; tag: TagType) {.
-      jsmfunc("deleteCaption", ttCaption), jsmfunc("deleteTHead", ttThead),
-      jsmfunc("deleteTFoot", ttTfoot).} =
+  proc deleteTableChild(ctx: JSContext; this: HTMLTableElement; tag: TagType)
+      {.jsmfunc("deleteCaption", ttCaption), jsmfunc("deleteTHead", ttThead),
+        jsmfunc("deleteTFoot", ttTfoot).} =
     let element = this.findFirstChildOf(cast[TagType](tag))
     if element != nil:
-      element.remove()
+      ctx.remove(element)
 
   proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
       Opt[HTMLElement] {.jsfunc.} =
@@ -8711,12 +8873,6 @@ getAPIBaseURLImpl = proc(ctx: JSContext): URL =
 
 getOriginImpl = proc(ctx: JSContext): Origin =
   ctx.getGlobal().settings.origin
-
-isWindowImpl = proc(target: EventTarget): bool =
-  return target of Window
-
-isHTMLElementImpl = proc(target: EventTarget): bool =
-  return target of HTMLElement
 
 parseColorImpl = proc(target: EventTarget; s: DOMString): Opt[ARGBColor] =
   return Element(target).parseColor(s)

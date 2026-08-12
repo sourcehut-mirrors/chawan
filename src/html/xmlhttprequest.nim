@@ -531,7 +531,8 @@ jsClassDef(XMLHttpRequest):
         this.responseObject = ctx.toJS(blob)
       of xhrtDocument:
         #TODO this is certainly not compliant
-        let res = parseHTMLDocument(this.received, parseURL0("about:blank"))
+        let res = ctx.parseHTMLDocument(this.received,
+          parseURL0("about:blank"))
         this.responseObject = ctx.toJS(res)
       of xhrtJSON:
         this.responseObject = JS_ParseJSON(ctx, cstring(this.received),

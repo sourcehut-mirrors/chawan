@@ -32,6 +32,7 @@ type
     stoppedFromScript: bool
 
   ChaDOMBuilder {.final.} = ref object of DOMBuilder[ParentNode, CAtom]
+    ctx: JSContext
     charset*: Charset
     confidence*: CharsetConfidence
     document*: Document
@@ -77,6 +78,7 @@ proc finish(builder: ChaDOMBuilder) =
     window.fireEvent(satDOMContentLoaded, document, bubbles = true,
       cancelable = false, trusted = true)
   #TODO ServiceWorkerContainer etc.
+  document.setActiveParser(nil)
 
 proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   let builder = wrapper.builder
@@ -154,25 +156,29 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     svg.parserDocument = document
   return element
 
+proc insertBefore(builder: ChaDOMBuilder; parent: ParentNode; child: Node;
+    before: Option[ParentNode]) =
+  parent.insert(child, before.get(nil), builder.ctx, suppressObservers = true)
+
 proc insertCommentImpl(builder: ChaDOMBuilder; parent: ParentNode;
     text: string; before: Option[ParentNode]) =
   let comment = builder.document.createComment(text)
-  parent.insert(comment, before.get(nil), nil)
+  builder.insertBefore(parent, comment, before)
 
 proc appendDocumentTypeImpl(builder: ChaDOMBuilder;
     name, publicId, systemId: string) =
   let doctype = builder.document.newDocumentType(name, publicId, systemId)
-  builder.document.insert(doctype, nil, nil)
+  builder.insertBefore(builder.document, doctype, none(ParentNode))
 
 proc insertBeforeImpl(builder: ChaDOMBuilder; parent, child: ParentNode;
     before: Option[ParentNode]) =
-  parent.insert(child, before.get(nil), nil)
+  builder.insertBefore(parent, child, before)
 
 proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: string;
     before: Option[ParentNode]) =
-  let before = before.get(nil)
-  let prevSibling = if before != nil:
-    before.previousSibling
+  let before2 = before.get(nil)
+  let prevSibling = if before2 != nil:
+    before2.previousSibling
   else:
     parent.lastChild
   if prevSibling != nil and prevSibling of Text:
@@ -181,18 +187,17 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: string;
       Element(parent).invalidate()
   else:
     let text = builder.document.newText(text)
-    parent.insert(text, before, nil)
+    builder.insertBefore(parent, text, before)
 
 proc removeImpl(builder: ChaDOMBuilder; child: ParentNode) =
-  if child.parentNode != nil:
-    child.removeImpl(suppressObservers = true)
+  child.removeImpl(builder.ctx, suppressObservers = true)
 
 proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
   let toMove = fromNode.getChildList()
   for node in toMove:
-    node.removeImpl(suppressObservers = true)
+    node.removeImpl(builder.ctx, suppressObservers = true)
   for child in toMove:
-    toNode.insert(child, nil, nil)
+    builder.insertBefore(toNode, child, none(ParentNode))
 
 proc sortAttrsImpl(builder: ChaDOMBuilder; attrs: var seq[ParsedAttr[CAtom]]) =
   if attrs.len > 1:
@@ -213,9 +218,7 @@ proc sortAttrsImpl(builder: ChaDOMBuilder; attrs: var seq[ParsedAttr[CAtom]]) =
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
     attrs: seq[ParsedAttr[CAtom]]) =
   let element = Element(handle)
-  for attr in attrs:
-    if not element.attrb(attr.name.view()):
-      element.attr(attr.name.view(), attr.value)
+  element.addAttrsIfMissing(attrs)
 
 proc setScriptAlreadyStartedImpl(builder: ChaDOMBuilder; script: ParentNode) =
   HTMLScriptElement(script).alreadyStarted = true
@@ -251,7 +254,7 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
     HTMLStyleElement(element).updateSheet()
 
 proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
-    charset = DefaultCharset): ChaDOMBuilder =
+    ctx: JSContext; charset = DefaultCharset): ChaDOMBuilder =
   let document = newDocument(url)
   document.charset = charset
   document.contentType = satTextHtml
@@ -261,17 +264,19 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
   return ChaDOMBuilder(
     document: document,
     confidence: confidence,
-    charset: charset
+    charset: charset,
+    ctx: ctx #TODO dup context?
   )
 
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
-proc parseHTMLFragment*(element: Element; s: openArray[char]): seq[Node] =
+proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
+    seq[Node] =
   let url = parseURL0("about:blank")
-  let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
+  let builder = newChaDOMBuilder(url, nil, ccIrrelevant, ctx)
   let document = builder.document
   document.mode = element.document.mode
   let root = document.newHTMLElement(ttHtml)
-  document.insert(root, nil, nil)
+  document.insert(root, nil, ctx)
   let form = element.findAncestorIncl(ttForm)
   var opts = HTML5ParserOpts[ParentNode, CAtom](
     isIframeSrcdoc: false, #TODO?
@@ -302,7 +307,8 @@ proc newHTML5ParserWrapper*(window: Window; url: URL;
   let opts = HTML5ParserOpts[ParentNode, CAtom](
     scripting: window.settings.scripting != smFalse
   )
-  let builder = newChaDOMBuilder(url, window, confidence, charset)
+  let builder = newChaDOMBuilder(url, window, confidence, window.jsctx,
+    charset)
   let wrapper = HTML5ParserWrapper(
     builder: builder,
     opts: opts,
@@ -387,8 +393,9 @@ proc finish*(wrapper: HTML5ParserWrapper) =
   wrapper.parser.finish()
   wrapper.builder.finish()
 
-proc parseHTMLDocument*(str: openArray[char]; url: URL): Document =
-  let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
+proc parseHTMLDocument*(ctx: JSContext; str: openArray[char]; url: URL):
+    Document =
+  let builder = newChaDOMBuilder(url, nil, ccIrrelevant, ctx)
   var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode, CAtom]())
   let res = parser.parseChunk(str)
   assert res == pcrContinue
@@ -418,7 +425,7 @@ jsClassRaw(DOMParserDef, "DOMParser"):
         window.document.url
       else:
         parseURL0("about:blank")
-      let document = parseHTMLDocument(str.toOpenArray(), url)
+      let document = ctx.parseHTMLDocument(str.toOpenArray(), url)
       return ctx.toJS(document)
     else:
       return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")

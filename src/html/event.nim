@@ -17,6 +17,7 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/jsopt
 import types/opt
+import types/refstring
 import utils/twtstr
 
 type
@@ -79,23 +80,60 @@ type
     isComposing: bool
     inputType: string
 
-  EventTarget* = ref object of JSRootObj
+  EventTargetObj = object of JSRootObj
     eventListener: EventListener
 
+  EventTarget* = ref EventTargetObj
+
+  MutationRecordType* = enum
+    mrtAttributes = "attributes"
+    mrtCharacterData = "characterData"
+    mrtChildList = "childList"
+
+  MutationRecord = ref object
+    t: MutationRecordType
+    attributeName: CAtomTraced
+    attributeNamespace: CAtomTraced
+    oldValue: RefString
+    target: EventTarget
+    addedNodes: JSRootRef
+    removedNodes: JSRootRef
+    previousSibling: EventTarget
+    nextSibling: EventTarget
+
+  MutationObserver* = ref object
+    callback*: JSObjectTraced
+    nodes: seq[ptr EventTargetObj]
+    records*: seq[MutationRecord]
+
+  EventListenerType = enum
+    eltEventListener, eltMutationObserver
+
+  ObservedItemFlag* = enum
+    oifChildList, oifAttributes, oifAttributeFilter, oifAttributeOldValue,
+    oifCharacterData, oifCharacterDataOldValue, oifSubtree
+
   EventListener {.acyclic.} = ref object
-    # callback may be
-    # * undefined (if the listener has been removed)
-    # * null (accepted from addEventListener)
-    # * an object (whose handleEvent property will be invoked)
-    # * a function
-    callback: JSValue
-    ctype: CAtom
-    capture: bool
-    once: bool
-    internal: bool
-    passive: bool
+    case t: EventListenerType
+    of eltEventListener:
+      # callback may be
+      # * undefined (if the listener has been removed)
+      # * null (accepted from addEventListener)
+      # * an object (whose handleEvent property will be invoked)
+      # * a function
+      callback: JSValue
+      ctype: CAtom
+      capture: bool
+      once: bool
+      internal: bool
+      passive: bool
+      signal: AbortSignal
+    of eltMutationObserver:
+      observer*: MutationObserver
+      flags*: set[ObservedItemFlag]
+      attributeFilter*: seq[CAtom]
+    # order is: eltEventListener nodes -> eltMutationObserver nodes
     next: EventListener
-    signal: AbortSignal
 
   AbortSignal {.final.} = ref object of EventTarget
     reason: JSValue
@@ -107,6 +145,7 @@ type
     signal: AbortSignal
 
 jsDestructor(AbortController)
+jsDestructor(MutationObserver)
 
 # Forward declarations
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
@@ -120,16 +159,31 @@ var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
   raises: [].}
 var getParentImpl*: proc(ctx: JSContext; target: EventTarget; isLoad: bool):
   EventTarget {.nimcall, raises: [].}
-var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
-var isHTMLElementImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
 var setEventImpl*: proc(ctx: JSContext; event: Event): Event {.
   nimcall, raises: [].}
 
-iterator eventListeners(this: EventTarget): EventListener =
+var windowClassID* {.global.}: JSClassID
+var nodeClassID* {.global.}: JSClassID
+var htmlElementClassID* {.global.}: JSClassID
+
+iterator eventListenersRaw(this: EventTarget): EventListener =
+  # includes mutation observers too!
   var it = this.eventListener
   while it != nil:
     yield it
     it = it.next
+
+iterator eventListeners(this: EventTarget): EventListener =
+  for el in this.eventListenersRaw:
+    if el.t == eltEventListener:
+      yield el
+    else:
+      break
+
+iterator mutationObservers*(this: EventTarget): EventListener =
+  for el in this.eventListenersRaw:
+    if el.t == eltMutationObserver:
+      yield el
 
 type
   EventInit* = object of JSDict
@@ -309,12 +363,9 @@ jsClassDef(MessageEvent):
 type EventTargetHTMLElement* = distinct EventTarget
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetHTMLElement):
     FromJSResult =
-  var res0: EventTarget
-  ?ctx.fromJS(val, res0)
-  if not res0.isHTMLElementImpl():
-    JS_ThrowTypeError(ctx, "HTMLElement expected")
-    return fjErr
-  res = EventTargetHTMLElement(res0)
+  var res0: pointer
+  ?ctx.fromJS(val, htmlElementClassID, res0)
+  res = cast[EventTargetHTMLElement](res0)
   fjOk
 
 type SubmitEventInit* = object of EventInit
@@ -340,7 +391,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindow):
     FromJSResult =
   var res0: EventTarget
   ?ctx.fromJS(val, res0)
-  if not res0.isWindowImpl():
+  if JS_GetClassID(val) != windowClassID:
     JS_ThrowTypeError(ctx, "Window expected")
     return fjErr
   res = EventTargetWindow(res0)
@@ -452,6 +503,148 @@ jsClassDef(InputEvent):
     event.innerEventCreationSteps(EventInit(eventInit))
     return event
 
+# MutationRecord
+jsClassDef(MutationRecord):
+  jsget MutationRecord, t, "type"
+  jsget MutationRecord, target
+  jsget MutationRecord, addedNodes
+  jsget MutationRecord, removedNodes
+  jsget MutationRecord, previousSibling
+  jsget MutationRecord, nextSibling
+  jsget MutationRecord, attributeName
+  jsget MutationRecord, attributeNamespace
+  jsget MutationRecord, oldValue
+
+# MutationObserver
+type OptionalBool = enum
+  obNone, obFalse, obTrue
+
+proc fromJS(ctx: JSContext; val: JSValueConst; ob: var OptionalBool):
+    FromJSResult =
+  var status = fjOk
+  if JS_IsUndefined(val):
+    ob = obNone
+  else:
+    var b: bool
+    status = ctx.fromJS(val, b)
+    ob = if b: obTrue else: obFalse
+  status
+
+type MutationObserverInit {.pure.} = object of JSDict
+  childList {.jsdefault.}: bool
+  attributes {.jsdefault.}: OptionalBool
+  characterData {.jsdefault.}: OptionalBool
+  subtree {.jsdefault.}: bool
+  attributeOldValue {.jsdefault.}: OptionalBool
+  characterDataOldValue {.jsdefault.}: OptionalBool
+  attributeFilter {.jsdefault: JS_UNDEFINED.}: JSValueConst
+
+proc queueRecord*(observer: MutationObserver; target: EventTarget;
+    t: MutationRecordType; name, namespace: CAtomTraced; oldValue: RefString;
+    addedNodes, removedNodes: JSRootRef;
+    previousSibling, nextSibling: EventTarget) =
+  observer.records.add(MutationRecord(
+    t: t,
+    target: target,
+    attributeName: name.dupTrace(),
+    attributeNamespace: namespace.dupTrace(),
+    oldValue: oldValue,
+    addedNodes: addedNodes,
+    removedNodes: removedNodes,
+    previousSibling: previousSibling,
+    nextSibling: nextSibling
+  ))
+
+jsClassDef(MutationObserver):
+  proc newMutationObserver(ctx: JSContext; callback: JSValueConst):
+      MutationObserver {.jsctor.} =
+    MutationObserver(callback: ctx.dupTraceObj(callback))
+
+  proc mark(rt: JSRuntime; this: MutationObserver; markFun: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkValue(rt, this.callback, markFun)
+
+  proc observe(ctx: JSContext; this: MutationObserver; jsTarget: JSValueConst;
+      jsInit: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+    var targetp: pointer
+    ?ctx.fromJS(jsTarget, nodeClassID, targetp)
+    let target = cast[ptr EventTargetObj](targetp)
+    var init = MutationObserverInit(
+      attributeFilter: JS_UNDEFINED
+    )
+    if not JS_IsUndefined(jsInit):
+      ?ctx.fromJS(jsInit, init)
+    var flags: set[ObservedItemFlag]
+    var attributeFilter: seq[CAtom]
+    if not JS_IsUndefined(init.attributeFilter):
+      flags.incl(oifAttributeFilter)
+    if oifAttributeFilter in flags:
+      ?ctx.fromJS(init.attributeFilter, attributeFilter)
+    if (oifAttributeFilter in flags or init.attributeOldValue == obTrue) and
+        init.attributes == obFalse or
+        init.characterDataOldValue == obTrue and init.characterData == obFalse:
+      freeAtoms(attributeFilter)
+      return JS_ThrowTypeError(ctx, "incompatible MutationObserver flags")
+    if oifAttributeFilter in flags or init.attributeOldValue != obNone or
+        init.attributes == obTrue:
+      flags.incl(oifAttributes)
+    if init.attributes == obFalse:
+      flags.excl(oifAttributes)
+    if init.attributeOldValue == obTrue:
+      flags.incl(oifAttributeOldValue)
+    if init.characterDataOldValue != obNone or init.characterData == obTrue:
+      flags.incl(oifCharacterData)
+    if init.characterData == obFalse:
+      flags.excl(oifCharacterData)
+    if init.characterDataOldValue == obTrue:
+      flags.incl(oifCharacterDataOldValue)
+    if init.childList:
+      flags.incl(oifChildList)
+    block add:
+      for el in cast[EventTarget](target).mutationObservers:
+        if el.observer == this:
+          #TODO remove transient registered observers
+          el.flags = flags
+          freeAtoms(el.attributeFilter)
+          el.attributeFilter = move(attributeFilter)
+          break add
+      let el = EventListener(
+        t: eltMutationObserver,
+        observer: this,
+        flags: flags,
+        attributeFilter: move(attributeFilter)
+      )
+      var it = target.eventListener
+      if it == nil:
+        target.eventListener = el
+      else:
+        # insert after event listeners
+        while it.next != nil and it.next.t == eltEventListener:
+          it = it.next
+        el.next = it.next
+        it.next = el
+      this.nodes.add(target)
+    return JS_UNDEFINED
+
+  proc disconnect(this: MutationObserver) {.jsfunc.} =
+    for node in this.nodes:
+      var it = node.eventListener
+      var prev: EventListener = nil
+      while it != nil:
+        if it.t == eltMutationObserver and it.observer == this:
+          if prev == nil:
+            node.eventListener = it.next
+          else:
+            prev.next = it.next
+        prev = it
+        it = it.next
+    # the spec forgot about nodes, but surely we want to empty it?
+    this.nodes = @[]
+    this.records = @[]
+
+  proc takeRecords(this: MutationObserver): seq[MutationRecord] {.jsfunc.} =
+    move(this.records)
+
 # EventTarget
 proc defaultPassiveValue(ctype: CAtomTraced; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
@@ -523,6 +716,7 @@ proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtomTraced;
   if ctx.findEventListener(target, ctype, callback, capture) == nil:
     # dedup
     let listener = EventListener(
+      t: eltEventListener,
       ctype: ctype.dup(),
       capture: capture,
       once: once,
@@ -710,14 +904,21 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
   return dctx.canceled
 
 jsClassPublicDef(EventTarget):
-  proc finalize(rt: JSRuntime; target: EventTarget) {.jsfin.} =
+  proc finalize(rt: JSRuntime; this: EventTarget) {.jsfin.} =
     # Can't take rt as param here, because elements may be unbound in JS.
-    for el in target.eventListeners:
-      JS_FreeValueRT(rt, el.callback)
+    for el in this.eventListenersRaw:
+      case el.t
+      of eltEventListener:
+        JS_FreeValueRT(rt, el.callback)
+      of eltMutationObserver:
+        let i = el.observer.nodes.find(cast[ptr EventTargetObj](this))
+        assert i >= 0
+        el.observer.nodes.del(i)
+        freeAtoms(el.attributeFilter)
 
-  proc mark(rt: JSRuntime; target: EventTarget; markFunc: JS_MarkFunc)
+  proc mark(rt: JSRuntime; this: EventTarget; markFunc: JS_MarkFunc)
       {.jsmark.} =
-    for el in target.eventListeners:
+    for el in this.eventListeners:
       JS_MarkValue(rt, el.callback, markFunc)
 
   proc newEventTarget(): EventTarget {.jsctor.} =
@@ -883,6 +1084,8 @@ proc addEventModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(InputEventDef)
   if ctx.defineConsts(EventDef.id, EventPhase) == dprException:
     return err()
+  ?ctx.registerClass(MutationRecordDef)
+  ?ctx.registerClass(MutationObserverDef)
   ?ctx.registerClass(EventTargetDef)
   ?ctx.registerClass(AbortSignalDef)
   ?ctx.addAbortSignalEvents()

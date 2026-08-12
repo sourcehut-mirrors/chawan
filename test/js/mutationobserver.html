@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<title>MutationObserver</title>
+<div id=x>Fail</div>
+<div id=node></div>
+<script src=asserts.js></script>
+<script>
+let a, b, c, d;
+const o1 = new MutationObserver((list, o) => {
+	for (const it of list) {
+		a = it.addedNodes;
+		b = it.removedNodes;
+	}
+});
+const o2 = new MutationObserver((list, o) => {
+	for (const it of list) {
+		c = it.addedNodes;
+		d = it.removedNodes;
+	}
+});
+o1.observe(node, {childList: true});
+o2.observe(node, {childList: true});
+node.insertBefore(new Text("hi"), null)
+queueMicrotask(() => {
+	assertEquals(a.length, 1);
+	assertEquals(b.length, 0);
+	assertEquals(c.length, 1);
+	assertEquals(d.length, 0);
+	assertNotEquals(a, c);
+	assertNotEquals(b, d);
+	node.remove();
+	x.textContent = "Success";
+});
+</script>
