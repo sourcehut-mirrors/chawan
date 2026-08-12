@@ -83,7 +83,11 @@ type
     eventListener: EventListener
 
   EventListener {.acyclic.} = ref object
-    # if callback is undefined, the listener has been removed
+    # callback may be
+    # * undefined (if the listener has been removed)
+    # * null (accepted from addEventListener)
+    # * an object (whose handleEvent property will be invoked)
+    # * a function
     callback: JSValue
     ctype: CAtom
     capture: bool

@@ -18,6 +18,7 @@ import io/packetwriter
 import io/poll
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -135,8 +136,8 @@ type
 
   JSBlobOpaque {.final.} = ref object of BlobOpaque
     ctx: JSContext
-    resolve: pointer # JSObject *
-    reject: pointer # JSObject *
+    resolve: JSObjectTraced
+    reject: JSObjectTraced
 
 # Forward declarations
 proc bodyUsed*(response: Response): bool
@@ -146,12 +147,6 @@ proc unregister*(loader: FileLoader; data: MapData)
 
 # Forward declaration hack
 var getLoaderImpl*: proc(ctx: JSContext): FileLoader {.nimcall, raises: [].}
-
-template resolveVal(this: BlobOpaque): JSValue =
-  JS_MKPTR(JS_TAG_OBJECT, this.resolve)
-
-template rejectVal(this: BlobOpaque): JSValue =
-  JS_MKPTR(JS_TAG_OBJECT, this.reject)
 
 template isErr*(x: TextResult): bool =
   not x.isOk
@@ -276,10 +271,8 @@ proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
 
 proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
   let ctx = opaque.ctx
-  let resolve = opaque.resolveVal
-  let reject = opaque.rejectVal
-  opaque.resolve = nil
-  opaque.reject = nil
+  let resolve = moveJSValue(opaque.resolve)
+  let reject = moveJSValue(opaque.reject)
   opaque.ctx = nil
   if not JS_IsException(val):
     let res = ctx.callSink(resolve, JS_UNDEFINED, val)
@@ -308,8 +301,8 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
     return res
   let opaque = JSBlobOpaque(
     ctx: JS_DupContext(ctx),
-    resolve: JS_VALUE_GET_PTR(funs[0]),
-    reject: JS_VALUE_GET_PTR(funs[1])
+    resolve: funs[0].traceObj(),
+    reject: funs[1].traceObj()
   )
   response.onFinish = finish
   let loader = ctx.getLoaderImpl()
@@ -342,21 +335,13 @@ jsClassDef(Response):
   jsget Response, status
   jsget Response, headers
 
-  proc finalize(rt: JSRuntime; this: Response) {.jsfin.} =
-    if this.opaque of JSBlobOpaque:
-      let opaque = JSBlobOpaque(this.opaque)
-      if opaque.resolve != nil:
-        JS_FreeValueRT(rt, opaque.resolveVal)
-      if opaque.reject != nil:
-        JS_FreeValueRT(rt, opaque.rejectVal)
-
   proc mark(rt: JSRuntime; this: Response; fun: JS_MarkFunc) {.jsmark.} =
     if this.opaque of JSBlobOpaque:
       let opaque = JSBlobOpaque(this.opaque)
       if opaque.resolve != nil:
-        JS_MarkValue(rt, opaque.resolveVal, fun)
+        JS_MarkValue(rt, opaque.resolve, fun)
       if opaque.reject != nil:
-        JS_MarkValue(rt, opaque.rejectVal, fun)
+        JS_MarkValue(rt, opaque.reject, fun)
 
   proc newResponse*(ctx: JSContext; body: JSValueConst = JS_UNDEFINED;
       init: JSValueConst = JS_UNDEFINED): Opt[Response] {.jsctor.} =

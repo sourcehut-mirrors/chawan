@@ -260,8 +260,11 @@ proc toJS*[T: enum](ctx: JSContext; e: T): JSValue =
   const enumId = getJSEnumId(T)
   ctx.toJSEnum(enumId, int(e), $e)
 
-proc toJS(ctx: JSContext; j: JSValue): JSValue =
+proc toJS*(ctx: JSContext; j: JSValue): JSValue =
   return j
+
+proc toJS*(ctx: JSContext; p: JSObjectTraced): JSValue =
+  JS_DupValue(ctx, p.value)
 
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue =
   let len = csize_t(abuf.len)

@@ -200,7 +200,7 @@ type
   CustomElementDef = ref object
     name: CAtom
     localName: CAtom
-    ctor: JSValue
+    ctor: JSObjectTraced
     observedAttrs: seq[CAtom]
     callbacks: CECallbackMap
     flags: set[CustomElementFlag]
@@ -281,7 +281,7 @@ type
   NodeIteratorLike = ref object of CollectionLikeObj
     active: bool
     whatToShow: uint32
-    filter: JSValue
+    filter: JSObjectTraced
     currentNode: Node
 
   NodeIterator {.final.} = ref object of NodeIteratorLike
@@ -1916,7 +1916,7 @@ proc find(this: CustomElementRegistry; name: CAtomTraced): CustomElementDef =
 proc find(this: CustomElementRegistry; ctx: JSContext; ctor: JSValueConst):
     CustomElementDef =
   for it in this.defs:
-    if ctx.strictEquals(it.ctor, ctor):
+    if ctx.strictEquals(it.ctor.value, ctor):
       return it
   return nil
 
@@ -1996,7 +1996,6 @@ jsClassDef(CustomElementRegistry):
     for def in this.defs:
       freeAtom(def.name)
       freeAtom(def.localName)
-      JS_FreeValueRT(rt, def.ctor)
       freeAtoms(def.observedAttrs)
       rt.freeValues(def.callbacks)
 
@@ -2027,7 +2026,7 @@ jsClassDef(CustomElementRegistry):
     if res.isErr:
       ctx.freeValues(def.callbacks)
       return JS_EXCEPTION
-    def.ctor = JS_DupValue(ctx, ctor)
+    def.ctor = ctx.dupTraceObj(ctor)
     if this.defsTail == nil:
       this.defsHead = def
     else:
@@ -2042,7 +2041,7 @@ jsClassDef(CustomElementRegistry):
       JSValue {.jsfunc.} =
     let def = this.find(name)
     if def != nil:
-      return JS_DupValue(ctx, def.ctor)
+      return JS_DupValue(ctx, def.ctor.value)
     return JS_UNDEFINED
 
   proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSValueConst):
@@ -4392,9 +4391,10 @@ jsClassDef(Document):
       currentNode: root,
       iterNode: root,
       whatToShow: whatToShow,
-      filter: JS_DupValue(ctx, filter),
       before: true
     )
+    if not JS_IsNull(filter):
+      this.filter = ctx.dupTraceObj(filter)
     root.attachLiveCollection(this)
     ctx.toJS(this)
 
@@ -4403,12 +4403,14 @@ jsClassDef(Document):
       JSValue {.jsfunc.} =
     if not JS_IsObject(filter) and not JS_IsNull(filter):
       return JS_ThrowTypeError(ctx, "filter is not an object")
-    ctx.toJS(TreeWalker(
+    let this = TreeWalker(
       root: root,
       currentNode: root,
-      whatToShow: whatToShow,
-      filter: JS_DupValue(ctx, filter)
-    ))
+      whatToShow: whatToShow
+    )
+    if not JS_IsNull(filter):
+      this.filter = ctx.dupTraceObj(filter)
+    ctx.toJS(this)
 
 # XMLDocument
 jsClassDef(XMLDocument):
@@ -4497,9 +4499,9 @@ proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
   let n = 1u32 shl (uint32(node.nodeType) - 1)
   if (this.whatToShow and n) == 0:
     return ok(uint32(nfrSkip))
-  if JS_IsNull(this.filter):
+  if this.filter == nil:
     return ok(uint32(nfrAccept))
-  let filter = this.filter
+  let filter = this.filter.value
   let node = ctx.toJS(node)
   if JS_IsException(node):
     return err()
@@ -4547,7 +4549,6 @@ jsClassDef(NodeIterator):
 
   proc finalize(rt: JSRuntime; this: NodeIterator) {.jsfin.} =
     this.finalize0()
-    JS_FreeValueRT(rt, this.filter)
 
   proc mark(rt: JSRuntime; this: NodeIterator; markFun: JS_MarkFunc)
       {.jsmark.} =
@@ -4587,8 +4588,8 @@ jsClassDef(TreeWalker):
   jsget TreeWalker, filter
   jsgetset TreeWalker, currentNode
 
-  proc finalize(rt: JSRuntime; this: TreeWalker) {.jsfin.} =
-    JS_FreeValueRT(rt, this.filter)
+  proc mark(rt: JSRuntime; this: TreeWalker; markFun: JS_MarkFunc) {.jsmark.} =
+    JS_MarkValue(rt, this.filter, markFun)
 
   proc parentNode(ctx: JSContext; this: TreeWalker): Opt[Node] {.jsfunc.} =
     var node = this.currentNode
