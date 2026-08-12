@@ -1,7 +1,7 @@
 import std/posix
 import std/unittest
 
-import monoucha/javascript
+import monoucha/quickjs
 import monoucha/tojs
 
 type

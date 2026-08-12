@@ -3,7 +3,10 @@ import std/posix
 import std/strutils
 import std/unittest
 
-import monoucha/javascript
+import monoucha/fromjs
+import monoucha/jsbind
+import monoucha/jsutils
+import monoucha/quickjs
 import types/opt
 
 proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";

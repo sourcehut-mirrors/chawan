@@ -1,8 +1,12 @@
 # Monoucha manual
 
-**Warning**: currently, Monoucha only works correctly with refc.
-Using Monoucha with ORC may result in memory leaks.  See the
-[readme](../README.md) for details.
+Warning: this document is outdated.  In particular, the way you register JS
+types has been completely overhauled, and registerType no longer exists.
+
+I intend to rework this manual in the future with a focus on how to deal
+with JS in Chawan.  Until then, if you're interested you'll have to figure
+things out from the code (although this may be of use nonetheless, as the
+rest hasn't really changed).
 
 ## Table of Contents
 
@@ -44,16 +48,17 @@ where doing something manually would be tedious and/or error-prone.
 ### Hello, world
 
 ```nim
-import monoucha/javascript
+import monoucha/fromjs
+import monoucha/jsutils
+import monoucha/quickjs
 
 let rt = newGlobalJSRuntime()
 let ctx = rt.newJSContext()
 const code = "'Hello from JS!'"
 let val = ctx.eval(code)
 var res: string
-assert ctx.fromJS(val, res).isOk # no error
+assert ctx.fromJSFree(val, res).isOk # no error
 echo res # Hello from JS!
-JS_FreeValue(ctx, val)
 ctx.free()
 rt.free()
 ```
