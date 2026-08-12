@@ -935,7 +935,7 @@ proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
       if it.value.startsWithIgnoreCase("Basic "):
         var val: string
         if val.atob(it.value.toOpenArray("Basic ".len, it.value.high)).isOk:
-          env.add(("REMOTE_USER", move(val)))
+          env.add(("REMOTE_USER", val.until(':')))
   env.add(("REQUEST_HEADERS", move(headers)))
   if request.httpMethod == hmPost:
     if request.body.t == rbtMultipart:
