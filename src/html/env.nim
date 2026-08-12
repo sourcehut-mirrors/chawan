@@ -455,11 +455,12 @@ type AutoInitGetSetType = enum
   gstProto, gstReplaceable, gstUnforgeable
 
 proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
-    def: ChaClassDef; name: JSStrRef; t: AutoInitGetSetType): Opt[void] =
+    parentClass: JSClassID; def: ChaClassDef; name: JSStrRef;
+    t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
   ?ctx.registerClass(def, hook = false)
   let prop = ctx.getOpaque().strRefs[name]
-  let parentClass = JS_NewInt32(ctx, int32(JS_GetClassID(namespace)))
+  let parentClass = JS_NewInt32(ctx, int32(parentClass))
   var data = [JSValueConst(JS_UNDEFINED), parentClass]
   let getter = JS_NewCFunctionData(ctx, windowAutoInitGetter, 0,
     cast[cint](def.id), 2, data.toJSValueConstArray())
@@ -489,20 +490,27 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
 
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =
   let global = ctx.getOpaque().global
-  ?ctx.registerAutoInitGetSet(global, NavigatorDef, jstNavigator,
+  let globalId = JS_GetClassID(global)
+  ?ctx.registerAutoInitGetSet(global, globalId, NavigatorDef, jstNavigator,
     gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, ScreenDef, jstScreen, gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, HistoryDef, jstHistory, gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, CryptoDef, jstCrypto, gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, LocationDef, jstLocation, gstUnforgeable)
+  ?ctx.registerAutoInitGetSet(global, globalId, ScreenDef, jstScreen,
+    gstReplaceable)
+  ?ctx.registerAutoInitGetSet(global, globalId, HistoryDef, jstHistory,
+    gstReplaceable)
+  ?ctx.registerAutoInitGetSet(global, globalId, CryptoDef, jstCrypto,
+    gstReplaceable)
+  ?ctx.registerAutoInitGetSet(global, globalId, LocationDef, jstLocation,
+    gstUnforgeable)
   ?ctx.registerClass(StorageDef)
   ?ctx.registerClass(NotificationDef)
   let navigator = JS_GetClassProto(ctx, NavigatorDef.id)
-  ?ctx.registerAutoInitGetSet(navigator, PluginArrayDef, jstPlugins, gstProto)
-  ?ctx.registerAutoInitGetSet(navigator, MimeTypeArrayDef, jstMimeTypes,
-    gstProto)
-  ?ctx.registerAutoInitGetSet(navigator, PermissionsDef, jstPermissions,
-    gstProto)
+  let navigatorId = NavigatorDef.id
+  ?ctx.registerAutoInitGetSet(navigator, navigatorId, PluginArrayDef,
+    jstPlugins, gstProto)
+  ?ctx.registerAutoInitGetSet(navigator, navigatorId, MimeTypeArrayDef,
+    jstMimeTypes, gstProto)
+  ?ctx.registerAutoInitGetSet(navigator, navigatorId, PermissionsDef,
+    jstPermissions, gstProto)
   JS_FreeValue(ctx, navigator)
   ok()
 

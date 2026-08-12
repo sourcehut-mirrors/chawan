@@ -77,6 +77,8 @@ assertEquals(old, window.document);
 	})();
 	/* location */
 	assertThrows(() => Object.defineProperty(window, "location", {value: "test"}), TypeError)
+	/* permissions */
+	assertInstanceof(navigator.permissions, Permissions);
 }
 queueMicrotask(function() {
 	assertEquals(this, globalThis);
