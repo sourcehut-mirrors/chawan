@@ -2,6 +2,7 @@
 
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsopaque
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs

@@ -16,7 +16,6 @@ import io/poll
 import local/select
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/libregexp
 import monoucha/quickjs
@@ -312,7 +311,7 @@ type
     charsetStack*: seq[Charset]
     refreshUrl: URL
     refreshMillis: int
-    connectedPtr: JSObjectTraced
+    connectedPtr: pointer # JSObject *
     # this really doesn't belong in here, but I don't want to expose
     # PosixStream to JS so instead I'll just smuggle it through init
     ostream*: PosixStream
@@ -429,9 +428,13 @@ jsClassDef(BufferInit):
   jsgetset BufferInit, height
   jsgetset BufferInit, loadInfo
 
+  proc finalize(rt: JSRuntime; init: BufferInit) {.jsfin.} =
+    if init.connectedPtr != nil:
+      JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, init.connectedPtr))
+
   proc mark(rt: JSRuntime; init: BufferInit; markFunc: JS_MarkFunc) {.jsmark.} =
     if init.connectedPtr != nil:
-      JS_MarkValue(rt, init.connectedPtr, markFunc)
+      JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, init.connectedPtr), markFunc)
 
   proc newBufferInit*(url: URL; init: BufferInit): BufferInit {.jsctor.} =
     BufferInit(
@@ -528,7 +531,8 @@ jsClassDef(BufferInit):
     if init.connectedPtr == nil:
       JS_FreeValue(ctx, arg1)
       return JS_UNDEFINED
-    let fun = moveJSValue(init.connectedPtr)
+    let fun = JS_MKPTR(JS_TAG_OBJECT, init.connectedPtr)
+    init.connectedPtr = nil
     let this = ctx.toJS(init)
     if JS_IsException(this):
       ctx.freeValues(fun, arg1)
@@ -545,7 +549,8 @@ jsClassDef(BufferInit):
       return JS_ThrowTypeError(ctx, "not a function")
     if init.connectedPtr != nil:
       return JS_ThrowTypeError(ctx, "connected is already set")
-    init.connectedPtr = ctx.dupTraceObj(connected)
+    let val = JS_DupValue(ctx, connected)
+    init.connectedPtr = JS_VALUE_GET_PTR(val)
     return JS_UNDEFINED
 
   proc closeMailcap*(init: BufferInit) {.jsfunc.} =

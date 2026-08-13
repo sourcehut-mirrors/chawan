@@ -102,7 +102,7 @@ type
     nextSibling: EventTarget
 
   MutationObserver* = ref object
-    callback*: JSObjectTraced
+    callback*: JSValue
     nodes: seq[ptr EventTargetObj]
     records*: seq[MutationRecord]
 
@@ -558,7 +558,10 @@ proc queueRecord*(observer: MutationObserver; target: EventTarget;
 jsClassDef(MutationObserver):
   proc newMutationObserver(ctx: JSContext; callback: JSValueConst):
       MutationObserver {.jsctor.} =
-    MutationObserver(callback: ctx.dupTraceObj(callback))
+    MutationObserver(callback: JS_DupValue(ctx, callback))
+
+  proc finalize(rt: JSRuntime; this: MutationObserver) {.jsfin.} =
+    JS_FreeValueRT(rt, this.callback)
 
   proc mark(rt: JSRuntime; this: MutationObserver; markFun: JS_MarkFunc)
       {.jsmark.} =

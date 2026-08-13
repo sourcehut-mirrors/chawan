@@ -127,37 +127,4 @@ proc toDOMStringNull*(ds: sink DOMString): DOMStringNull =
 proc `$`*(bs: ByteString): lent string =
   bs.s
 
-type JSObjectTraced* = distinct pointer
-
-proc `=destroy`(p: var JSObjectTraced) =
-  if cast[pointer](p) != nil:
-    JS_FreeValueRT(globalRuntime, JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)))
-
-proc `=wasMoved`(p: var JSObjectTraced) =
-  cast[ptr pointer](addr p)[] = nil
-
-proc `=copy`(dest: var JSObjectTraced; src: JSObjectTraced) {.error.} =
-  discard
-
-proc `==`*(a: JSObjectTraced; b: typeof(nil)): bool =
-  cast[pointer](a) == nil
-
-proc traceObj*(val: JSValue): JSObjectTraced =
-  JSObjectTraced(JS_VALUE_GET_PTR(val))
-
-proc dupTraceObj*(ctx: JSContext; val: JSValueConst): JSObjectTraced =
-  let val2 = JS_DupValue(ctx, val)
-  val2.traceObj()
-
-proc value*(p: JSObjectTraced): JSValueConst =
-  JSValueConst(JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)))
-
-proc moveJSValue*(p: var JSObjectTraced): JSValue =
-  let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p))
-  cast[ptr pointer](addr p)[] = nil
-  val
-
-proc JS_MarkValue*(rt: JSRuntime; p: JSObjectTraced; markFunc: JS_MarkFunc) =
-  JS_MarkValue(rt, p.value, markFunc)
-
 {.pop.} # raises
