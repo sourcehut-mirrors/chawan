@@ -293,6 +293,9 @@ jsClassDef(DateTimeFormat):
   proc newDateTimeFormat(): Opt[DateTimeFormat] {.jsfctor.} =
     return ok(DateTimeFormat())
 
+  proc format(this: DateTimeFormat; s: string): string {.jsfunc.} =
+    s #TODO
+
 # PluralRules
 jsClassDef(PluralRules):
   proc newPluralRules(): PluralRules {.jsctor.} =
@@ -311,13 +314,17 @@ jsClassDef(RelativeTimeFormat):
   proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
     return RelativeTimeFormat()
 
+  proc format(this: RelativeTimeFormat; s: string): string {.jsfunc.} =
+    s #TODO
+
 # ListFormat
 jsClassDef(ListFormat):
   proc newListFormat(): ListFormat {.jsctor.} =
     #TODO locales, options etc.
     ListFormat()
 
-  #TODO format etc.
+  proc format(this: ListFormat; s: string): string {.jsfunc.} =
+    s #TODO
 
 proc addIntlModule*(ctx: JSContext): Opt[void] =
   let intl = ctx.registerNamespace(IntlDef)
