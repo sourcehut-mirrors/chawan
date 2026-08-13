@@ -32,7 +32,7 @@ javascript:
 - CORS
 - PutForwards
 layout:
-- flexbox: align-self, align-items, justify-content
+- flexbox: align-self, align-items
 - details element
 - merge csstree into layout: first factor out tree traversal, then move
   build to before each layout
