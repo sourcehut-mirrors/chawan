@@ -203,12 +203,16 @@ jsClassRaw(HistoryDef, "History"):
   proc pushState(ctx: JSContext; history: History; data: JSValueConst;
       unused: DOMString; url: JSValueConst = JS_NULL): JSValue {.jsfunc,
       jsfunc: "replaceState".} =
+    #TODO figure out some way to emulate the navigation API that isn't as
+    # horribly user-hostile as others implement it
     var s: string
     if not JS_IsNull(url):
       ?ctx.fromJS(url, s)
     let window = Window(history)
-    if window != nil:
-      return ctx.setLocation(window, s)
+    if window != nil and window.document != nil:
+      let url2 = window.document.parseURL0(s)
+      if url2 != nil and $url2 != $window.document.url:
+        return ctx.setLocation(window, s)
     return JS_UNDEFINED
 
 # Storage
