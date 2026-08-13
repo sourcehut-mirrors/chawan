@@ -311,9 +311,10 @@ jsClassRaw(LocationDef, "Location"):
 
   proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
       jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =
-    let window = ctx.getWindow()
-    if window.document != nil:
-      let url = parseURL0(s)
+    let window = location.window
+    let document = window.document
+    if document != nil:
+      let url = window.document.parseURL0(s)
       if url == nil:
         return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
       location.window.navigate(url)
