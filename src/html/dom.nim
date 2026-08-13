@@ -1410,8 +1410,7 @@ proc getWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
     if JS_IsException(collection):
       JS_FreeValue(ctx, jsThis)
       return JS_EXCEPTION
-    if ctx.setWeak(wwm, jsThis, JS_DupValue(ctx, collection)).isErr:
-      return JS_EXCEPTION
+    ?ctx.setWeak(wwm, jsThis, JS_DupValue(ctx, collection))
     return collection
   JS_FreeValue(ctx, jsThis)
   return res
@@ -2992,24 +2991,17 @@ proc toNode(ctx: JSContext; argv: openArray[JSValueConst];
 
 proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     JSValue =
-  let node = ctx.toNode(nodes, parent.document)
-  if node.isErr:
-    return JS_EXCEPTION
-  return ctx.insertBeforeUndefined(parent, node.get, option(parent.firstChild))
+  let node = ?ctx.toNode(nodes, parent.document)
+  return ctx.insertBeforeUndefined(parent, node, option(parent.firstChild))
 
 proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     JSValue =
-  let node = ctx.toNode(nodes, parent.document)
-  if node.isErr:
-    return JS_EXCEPTION
-  return ctx.insertBeforeUndefined(parent, node.get, none(Node))
+  let node = ?ctx.toNode(nodes, parent.document)
+  return ctx.insertBeforeUndefined(parent, node, none(Node))
 
 proc replaceChildrenImpl(ctx: JSContext; parent: Node;
     nodes: openArray[JSValueConst]): JSValue =
-  let node0 = ctx.toNode(nodes, parent.document)
-  if node0.isErr:
-    return JS_EXCEPTION
-  let node = node0.get
+  let node = ?ctx.toNode(nodes, parent.document)
   let x = parent.preInsertionValidity(node, nil)
   if x.isErr:
     return ctx.insertThrow(x.error)
@@ -3059,8 +3051,7 @@ proc afterImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
 proc replaceWithImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
     JSValue =
   var nodes: seq[Node]
-  if ctx.toNodes(argv, nodes).isErr:
-    return JS_EXCEPTION
+  ?ctx.toNodes(argv, nodes)
   let parent = this.parentNode
   if parent != nil:
     let before = this.nextSiblingExcept(nodes)
@@ -4218,10 +4209,7 @@ jsClassDef(Document):
     return ctx.toJS($document.url)
 
   proc cookie(ctx: JSContext; document: Document): JSValue {.jsfget.} =
-    let window0 = ctx.getCookieWindow(document)
-    if window0.isErr:
-      return JS_EXCEPTION
-    let window = window0.get
+    let window = ?ctx.getCookieWindow(document)
     if window == nil:
       return ctx.toJS("")
     let request = newRequest("x-cha-cookie:get-all", internal = true)
@@ -4376,8 +4364,7 @@ jsClassDef(Document):
   #TODO options/custom elements
   proc createElement(ctx: JSContext; document: Document; localName: DOMString):
       JSValue {.jsfunc.} =
-    if ctx.validateElementName(localName.toOpenArray()).isErr:
-      return JS_EXCEPTION
+    ?ctx.validateElementName(localName.toOpenArray())
     let localName = if not document.isxml:
       localName.toAtomLowerTrace()
     else:
@@ -4423,8 +4410,7 @@ jsClassDef(Document):
     var text = ""
     for arg in args:
       var s: DOMString
-      if ctx.fromJS(arg, s).isErr:
-        return JS_EXCEPTION
+      ?ctx.fromJS(arg, s)
       text &= s.toOpenArray()
     # Note: this diverges from behavior in other browsers, but I'm not
     # convinced that modifying the parser to adjust for this edge case is
@@ -6992,8 +6978,7 @@ jsClassDef(CSSStyleDeclaration):
 
   proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration;
       name: CSSOMString): JSValue {.jsfunc.} =
-    if ctx.checkReadOnly(this).isErr:
-      return JS_EXCEPTION
+    ?ctx.checkReadOnly(this)
     let name = name.toOpenArray().toLowerAscii()
     let value = this.getPropertyValue(name.toDOMStringView())
     let sh = shorthandType(name)
@@ -7011,8 +6996,7 @@ jsClassDef(CSSStyleDeclaration):
 
   proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
       name, value: CSSOMString): JSValue {.jsfunc.} =
-    if ctx.checkReadOnly(this).isErr:
-      return JS_EXCEPTION
+    ?ctx.checkReadOnly(this)
     if not name.toOpenArray().isSupportedProperty():
       return JS_UNDEFINED
     if value.len == 0:
@@ -7034,8 +7018,7 @@ jsClassDef(CSSStyleDeclaration):
 
   proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
       value: CSSOMString): JSValue {.jssetprop.} =
-    if ctx.checkReadOnly(this).isErr:
-      return JS_EXCEPTION
+    ?ctx.checkReadOnly(this)
     var u: uint32
     var ds: DOMString
     case ctx.fromIdx(atom, u, ds)

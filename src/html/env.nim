@@ -278,8 +278,7 @@ jsClassRaw(CryptoDef, "Crypto"):
       JSValue {.jsfunc.} =
     let window = Window(crypto)
     var view: JSArrayBufferView
-    if ctx.fromJS(array, view).isErr:
-      return JS_EXCEPTION
+    ?ctx.fromJS(array, view)
     if view.t == JS_TYPED_ARRAY_UINT8C or view.t > JS_TYPED_ARRAY_BIG_UINT64:
       return JS_ThrowDOMException(ctx, "TypeMismatchError",
         "Wrong typed array type")
@@ -655,10 +654,7 @@ jsClassDef(Window):
 
   proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
       init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
-    let input0 = newRequest(ctx, input, init)
-    if input0.isErr:
-      return JS_EXCEPTION
-    let input = input0.get
+    let input = ?newRequest(ctx, input, init)
     if input.url.schemeType != stData and
         not window.isSameOrigin(input.url.origin):
       # reject immediately

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/math
 import std/times
 
@@ -62,12 +64,11 @@ jsClassDef(Performance):
     return JS_NewArray(ctx)
 
   proc mark(ctx: JSContext; this: Performance; name: DOMString;
-      init: JSValueConst = JS_UNDEFINED): Opt[PerformanceMark] {.jsfunc.} =
+      init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
     var startTime: float64
     if ?ctx.fromJSGetProp(init, "startTime", startTime):
       if startTime < 0:
-        JS_ThrowTypeError(ctx, "startTime must not be negative")
-        return err()
+        return JS_ThrowTypeError(ctx, "startTime must not be negative")
     else:
       startTime = this.now()
     var detail: JSValue
@@ -80,7 +81,7 @@ jsClassDef(Performance):
       startTime: startTime,
       detail: detail
     )
-    ok(mark)
+    ctx.toJS(mark)
 
 # PerformanceEntry
 jsClassDef(PerformanceEntry):
@@ -114,3 +115,5 @@ proc addPerformanceModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(PerformanceEntryDef)
   ?ctx.registerClass(PerformanceMarkDef)
   ok()
+
+{.pop.}

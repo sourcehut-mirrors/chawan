@@ -8,21 +8,15 @@ import types/opt
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue
 proc toJSNew*[T](ctx: JSContext; opt: Opt[T]; ctor: JSValueConst): JSValue
 
+template err*(t: type JSValue): JSValue =
+  JS_EXCEPTION
+
+template err*(t: type FromJSResult): FromJSResult =
+  fjErr
+
 template `?`*(res: FromJSResult) =
   if res == fjErr:
-    when result is FromJSResult:
-      return fjErr
-    elif result is JSValue or result is JSValueConst:
-      return JS_EXCEPTION
-    else:
-      return err()
-
-template `?`*(res: JSClassID) =
-  if res == JS_INVALID_CLASS_ID:
-    when result is JSClassID:
-      return JS_INVALID_CLASS_ID
-    else:
-      return err()
+    return err()
 
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue =
   if opt.isOk:
