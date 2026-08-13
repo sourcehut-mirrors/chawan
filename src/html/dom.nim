@@ -7053,6 +7053,16 @@ jsClassDef(HTMLElement):
 
   event.htmlElementClassID = classDef.id
 
+  proc dir(ctx: JSContext; element: HTMLElement): JSValue {.jsfget.} =
+    let value = element.attr(satDir)
+    if value in ["ltr", "rtl", "auto"]:
+      return ctx.toJS(value)
+    return ctx.toJS("")
+
+  proc setDir(ctx: JSContext; element: HTMLElement; value: DOMString) {.
+      jsfset: "dir".} =
+    element.setAttr(ctx, satDir, value)
+
   proc dataset(ctx: JSContext; element: HTMLElement): JSValue {.jsfget.} =
     return ctx.getWeakCollection(element, wwmDataset)
 
