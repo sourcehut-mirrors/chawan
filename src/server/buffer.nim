@@ -1399,7 +1399,7 @@ proc initMouseEventInit(bc: BufferContext; button: int16; buttons: uint16;
     cancelable: true,
     button: button,
     buttons: buttons,
-    view: EventTargetWindow(bc.window),
+    view: EventTargetWindowNull(bc.window),
     clientX: x,
     clientY: y,
     screenX: x,

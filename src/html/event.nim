@@ -386,19 +386,20 @@ jsClassDef(SubmitEvent):
     return event
 
 # UIEvent
-type EventTargetWindow* = distinct EventTarget
-proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindow):
+type EventTargetWindowNull* = distinct EventTarget
+
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindowNull):
     FromJSResult =
-  var res0: EventTarget
-  ?ctx.fromJS(val, res0)
-  if JS_GetClassID(val) != windowClassID:
-    JS_ThrowTypeError(ctx, "Window expected")
-    return fjErr
-  res = EventTargetWindow(res0)
+  if JS_IsNull(val):
+    res = EventTargetWindowNull(nil)
+  else:
+    var res0: pointer
+    ?ctx.fromJS(val, windowClassID, res0)
+    res = EventTargetWindowNull(cast[EventTarget](res0))
   fjOk
 
 type UIEventInit = object of EventInit
-  view* {.jsdefault.}: EventTargetWindow
+  view* {.jsdefault.}: EventTargetWindowNull
   detail* {.jsdefault.}: int32
 
 jsClassDef(UIEvent):
@@ -418,11 +419,12 @@ jsClassDef(UIEvent):
     return event
 
   proc initUIEvent(this: UIEvent; ctype: CAtomTraced; bubbles = false;
-      cancelable = false; view = none(EventTarget); detail = 0i32) {.jsfunc.} =
+      cancelable = false; view = EventTargetWindowNull(nil); detail = 0i32)
+      {.jsfunc.} =
     this.ctype = ctype.dup()
     this.flags.toggleIf(efBubbles, bubbles)
     this.flags.toggleIf(efCancelable, cancelable)
-    this.view = view.get(nil)
+    this.view = EventTarget(view)
     this.detail = detail
 
 type EventModifierInit = object of UIEventInit
