@@ -76,11 +76,21 @@ window.addEventListener("click", e => {
 	ok9 = true;
 });
 let ok10 = false;
+let ok11 = false;
+
+const handler = {};
+handler.handleEvent = function() {
+	assertEquals(this, handler);
+	ok11 = true;
+}
+window.addEventListener("click", handler);
+
 window.addEventListener("load", e => {
 	assert(ok7);
 	assert(ok8);
 	assert(ok9);
 	assert(ok10);
+	assert(ok11);
 	assertEquals(e.target, document);
 	assertEquals(e.currentTarget, window);
 	let x = document.getElementById("x");
