@@ -1,10 +1,8 @@
 {.push raises: [].}
 
-import std/strutils
-
 import io/chafile
 import types/opt
-import utils/proptable
+import utils/strwidth
 import utils/twtstr
 
 proc die(s: string) {.noreturn.} =
@@ -14,13 +12,16 @@ proc die(s: string) {.noreturn.} =
 var DoubleWidthRanges: seq[(uint32, uint32)] = @[]
 var DoubleWidthAmbiguousRanges: seq[(uint32, uint32)] = @[]
 
-proc add(res: var seq[(uint32, uint32)]; firstcol: string) =
-  let (rstart, rend) = if ".." in firstcol:
-    let fcs = firstcol.split("..")
-    (uint32(parseHexInt64(fcs[0]).get), uint32(parseHexInt64(fcs[1]).get))
+proc add(res: var seq[(uint32, uint32)]; s: string) =
+  let i = s.find("..")
+  var rstart: uint32
+  var rend: uint32
+  if i >= 0:
+    rstart = uint32(parseHexInt64(s.toOpenArray(0, i - 1)).get)
+    rend = uint32(parseHexInt64(s.toOpenArray(i + 2, s.high)).get)
   else:
-    let u = uint32(parseHexInt64(firstcol).get)
-    (u, u)
+    rstart = uint32(parseHexInt64(s).get)
+    rend = rstart
   if res.len > 0 and res[^1][1] + 1 == rstart:
     res[^1][1] = rend
   else:
