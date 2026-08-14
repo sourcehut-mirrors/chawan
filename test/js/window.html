@@ -77,6 +77,11 @@ assertEquals(old, window.document);
 	})();
 	/* location */
 	assertThrows(() => Object.defineProperty(window, "location", {value: "test"}), TypeError)
+	const locationDesc = Object.getOwnPropertyDescriptor(window, "location");
+	assertInstanceof(locationDesc.get, Function);
+	assertInstanceof(locationDesc.set, Function);
+	assertEquals(locationDesc.enumerable, true);
+	assertEquals(locationDesc.configurable, false);
 	/* permissions */
 	assertInstanceof(navigator.permissions, Permissions);
 }

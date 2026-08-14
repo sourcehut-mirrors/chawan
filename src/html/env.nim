@@ -315,13 +315,7 @@ jsClassRaw(LocationDef, "Location"):
   proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
       jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =
     let window = location.window
-    let document = window.document
-    if document != nil:
-      let url = window.document.parseURL0(s)
-      if url == nil:
-        return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
-      location.window.navigate(url)
-    return JS_UNDEFINED
+    return ctx.setLocation(window, s)
 
   proc reload(location: Location) {.jsuffunc.} =
     let window = location.window
@@ -458,6 +452,17 @@ proc windowAutoInitSetter(ctx: JSContext; this, val: JSValueConst;
 type AutoInitGetSetType = enum
   gstProto, gstReplaceable, gstUnforgeable
 
+proc windowSetLocation(ctx: JSContext; this, val: JSValueConst): JSValue
+    {.cdecl.} =
+  var window0: pointer
+  var s: string
+  ?ctx.fromJSThis(this, event.windowClassID, window0)
+  ?ctx.fromJS(val, s)
+  let window = cast[Window](window0)
+  if window.document == nil:
+    return JS_ThrowTypeError(ctx, "document is null")
+  return ctx.setLocation(window, s)
+
 proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
     parentClass: JSClassID; def: ChaClassDef; name: JSStrRef;
     t: AutoInitGetSetType): Opt[void] =
@@ -476,18 +481,21 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
     return err()
   var setter = JS_UNDEFINED
   var flags = cint(JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
+  var f: JSCFunctionType
   case t
   of gstProto: discard
   of gstUnforgeable:
     flags = JS_PROP_ENUMERABLE
+    f.setter = windowSetLocation
+    setter = JS_NewCFunction2(ctx, f.generic, cstring($name), 1,
+      JS_CFUNC_setter, 0)
   of gstReplaceable:
-    var f: JSCFunctionType
     f.setter_magic = windowAutoInitSetter
     setter = JS_NewCFunction2(ctx, f.generic, cstring($name), 1,
       JS_CFUNC_setter_magic, cint(name))
-    if JS_IsException(setter):
-      JS_FreeValue(ctx, getter)
-      return err()
+  if JS_IsException(setter):
+    JS_FreeValue(ctx, getter)
+    return err()
   if JS_DefinePropertyGetSet(ctx, namespace, prop, getter, setter, flags) < 0:
     return err()
   ok()
@@ -558,6 +566,13 @@ jsClassDef(MediaQueryList):
 
 # Window
 #TODO CORS: get prototype proxy
+
+proc setLocation(ctx: JSContext; window: Window; s: string): JSValue =
+  let url = window.document.parseURL0(s)
+  if url == nil:
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
+  window.navigate(url)
+  return JS_UNDEFINED
 
 proc windowSetPrototype(ctx: JSContext; obj, proto: JSValueConst): cint
     {.cdecl.} =
@@ -710,12 +725,6 @@ jsClassDef(Window):
     return window.innerWidth
 
   proc devicePixelRatio(window: Window): float64 {.jsrfget.} = 1
-
-  proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
-      {.jsfset: "location".} =
-    if window.document == nil:
-      return JS_ThrowTypeError(ctx, "document is null")
-    return ctx.setLocation(window.document, s)
 
   proc getWindow(window: Window): Window {.jsuffget: "window",
       jsrfget: "frames", jsrfget: "self".} =

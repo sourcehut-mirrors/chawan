@@ -4284,7 +4284,7 @@ jsClassDef(Document):
     else:
       return JS_ThrowDOMException(ctx, "NotSupportedError", "event not supported")
 
-  proc location(ctx: JSContext; document: Document): JSValue {.jsfget.} =
+  proc location(ctx: JSContext; document: Document): JSValue {.jsuffget.} =
     if document.window == nil:
       return JS_NULL
     return JS_GetPropertyStr(ctx, ctx.getOpaque().global, "location")
@@ -4487,9 +4487,6 @@ jsClassDef(Document):
   proc names(ctx: JSContext; document: Document): JSPropertyEnumList
       {.jspropnames.} =
     var list = newJSPropertyEnumList(ctx, 0)
-    #TODO I'm not quite sure why location isn't added, so I'll add it
-    # manually for now.
-    list.add("location")
     #TODO exposed embed, exposed object
     for child in document.elementDescendants({ttForm, ttIframe, ttImg}):
       if child.name != satUempty:

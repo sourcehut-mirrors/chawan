@@ -1270,7 +1270,8 @@ proc setGet(exv: var GetSet; get: NimNode; item: GetSet) =
 
 proc setSet(exv: var GetSet; set: NimNode; item: GetSet) =
   exv.set = set
-  exv.flag = item.flag
+  if item.flag != bffNone:
+    exv.flag = item.flag
   if item.magic != nil:
     assert exv.magic == item.magic
 

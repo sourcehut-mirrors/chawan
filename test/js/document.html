@@ -15,7 +15,7 @@ document.testtest = "hi";
 assertEquals(document.ELEMENT_NODE, 1);
 assertEquals(Document.ELEMENT_NODE, 1);
 assertEquals(document.getElementsByName("").length, 0);
-assertEquals(Object.getOwnPropertyNames(document).toString(), "testtest,location,img2,img3,asdf");
+assertEquals(Object.getOwnPropertyNames(document).toString(), "location,testtest,img2,img3,asdf");
 /*
  * Note: the spec says Document == HTMLDocument, but in other browsers
  * this is not true.
@@ -38,5 +38,12 @@ assertEquals(document.scrollingElement, document.documentElement);
 abc.insertBefore(document.createElement("head"), null);
 document.head.remove();
 assertEquals(document.head, null);
+{
+	const locationDesc = Object.getOwnPropertyDescriptor(document, "location");
+	assertInstanceof(locationDesc.get, Function);
+	assertInstanceof(locationDesc.set, Function);
+	assertEquals(locationDesc.enumerable, true);
+	assertEquals(locationDesc.configurable, false);
+}
 document.getElementById("abc").textContent = "Success";
 </script>
