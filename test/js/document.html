@@ -34,5 +34,9 @@ assertThrows(() => document.implementation.createDocument(null), TypeError);
 document.getElementById("img4").remove();
 document.asdf.remove();
 document.img2.remove();
+assertEquals(document.scrollingElement, document.documentElement);
+abc.insertBefore(document.createElement("head"), null);
+document.head.remove();
+assertEquals(document.head, null);
 document.getElementById("abc").textContent = "Success";
 </script>

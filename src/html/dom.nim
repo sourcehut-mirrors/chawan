@@ -4111,6 +4111,11 @@ proc checkRegistryScope(ctx: JSContext; document: Document;
     return err()
   ok()
 
+proc findFirst*(document: Document; tagType: TagType): HTMLElement =
+  for element in document.elementDescendants(tagType):
+    return HTMLElement(element)
+  nil
+
 jsClassDef(Document):
   jsextends NodeDef
 
@@ -4295,10 +4300,20 @@ jsClassDef(Document):
       return JS_EXCEPTION
     return JS_UNDEFINED
 
-  proc findFirst*(document: Document; tagType: TagType): HTMLElement {.
-      jsmfget("head", ttHead), jsmfget("body", ttBody).} =
-    for element in document.elementDescendants(tagType):
-      return HTMLElement(element)
+  proc head(document: Document): HTMLHeadElement {.jsfget.} =
+    let html = document.documentElement
+    if html != nil:
+      for element in html.elementList:
+        if element of HTMLHeadElement:
+          return HTMLHeadElement(element)
+    nil
+
+  proc body(document: Document): HTMLElement {.jsfget.} =
+    let html = document.documentElement
+    if html != nil:
+      for element in html.elementList:
+        if element.tagType in {ttBody, ttFrameset}:
+          return HTMLElement(element)
     nil
 
   proc title*(document: Document): string {.jsfget.} =
@@ -4447,6 +4462,27 @@ jsClassDef(Document):
 
   proc documentElement*(document: Document): Element {.jsfget.} =
     return document.firstElementChild()
+
+  proc scrollingElement(document: Document): Element {.jsfget.} =
+    let window = document.window
+    if document.mode == qmQuirks and window != nil and
+        window.settings.scripting == smApp:
+      let body = document.body
+      if body != nil:
+        body.ensureStyle()
+        window.ensureLayout(body)
+        if body.box == nil:
+          return body
+        const NoScroll = {OverflowVisible, OverflowClip}
+        const NoScroll2 = NoScroll + {OverflowHidden}
+        let parent = body.parentElement
+        parent.ensureStyle()
+        if (parent.computed{"overflow-x"} in NoScroll2 or
+            body.computed{"overflow-x"} in NoScroll) and
+            (parent.computed{"overflow-y"} in NoScroll2 or
+            body.computed{"overflow-y"} in NoScroll):
+          return body
+    document.documentElement
 
   proc names(ctx: JSContext; document: Document): JSPropertyEnumList
       {.jspropnames.} =
