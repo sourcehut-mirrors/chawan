@@ -77,22 +77,22 @@ type
   GetValueProc = proc(ctx: JSContext; iface: BufferInterface;
     r: var PacketReader): JSValue {.nimcall, raises: [].}
 
-  BufferIfaceItem* = object
-    id*: int
+  BufferIfaceItem = object
+    id: int
     fun: pointer
     get: GetValueProc
 
-  HighlightType* = enum
+  HighlightType = enum
     hltSearch, hltSelect
 
-  Highlight* = ref object
-    t*: HighlightType
-    selectionType*: SelectionType
-    mouse*: bool
-    x1*: int
-    y1*: int
-    x2*: int
-    y2*: int
+  Highlight = ref object
+    t: HighlightType
+    selectionType: SelectionType
+    mouse: bool
+    x1: int
+    y1: int
+    x2: int
+    y2: int
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
@@ -260,7 +260,7 @@ type
     pos: CursorState
     highlights: seq[Highlight]
     images*: seq[PosBitmap]
-    hoverText*: array[HoverType, string]
+    hoverText: array[HoverType, string]
     phandle*: ProcessHandle
     imageCache: ImageCache
     attrsp: ptr WindowAttributes
