@@ -14,8 +14,9 @@ document.toString.remove();
 document.testtest = "hi";
 assertEquals(document.ELEMENT_NODE, 1);
 assertEquals(Document.ELEMENT_NODE, 1);
-assertEquals(document.getElementsByName("").length, 0);
-assertEquals(Object.getOwnPropertyNames(document).toString(), "location,testtest,img2,img3,asdf");
+/* Note: Gecko returns 0 here, but the spec disagrees. */
+assertEquals(document.getElementsByName("").length, 1);
+assertEquals(Object.getOwnPropertyNames(document).sort().toString(), "asdf,img2,img3,location,testtest");
 /*
  * Note: the spec says Document == HTMLDocument, but in other browsers
  * this is not true.

@@ -2,7 +2,7 @@
 <title>HTMLCollection test</title>
 <div class="abc">Fail</div>
 <style>style 0</style>
-<style>style 1</style>
+<style name="">style 1</style>
 <style>style 2</style>
 <div id=test2>
 <div id=test21>test</div>
@@ -16,6 +16,8 @@
 	abc[0].className = "defg";
 	assertEquals(abc.length, 0);
 	const styles = document.getElementsByTagName("style");
+	assertEquals(styles[""], undefined);
+	assertEquals(styles.namedItem(""), null);
 	assertEquals(styles.length, 3);
 	for (let i = 0; i < styles.length; ++i)
 		assertEquals(styles[i].textContent, "style " + i);

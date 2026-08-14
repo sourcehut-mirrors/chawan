@@ -1258,7 +1258,7 @@ iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
 
 iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
   let name = input.name
-  if name != satUempty:
+  if name != CAtomNull and name != satUempty:
     if input.form != nil:
       for input in input.form.inputs:
         if input.name == name and input.inputType == itRadio:
@@ -4346,8 +4346,6 @@ jsClassDef(Document):
 
   proc getElementsByName(document: Document; name: CAtomTraced): NodeList
       {.jsfunc.} =
-    if name == satUempty:
-      return newEmptyNodeList()
     let this = newNodeList(
       document,
       proc(this: Collection; node: Node): bool =
@@ -4489,7 +4487,7 @@ jsClassDef(Document):
     var list = newJSPropertyEnumList(ctx, 0)
     #TODO exposed embed, exposed object
     for child in document.elementDescendants({ttForm, ttIframe, ttImg}):
-      if child.name != satUempty:
+      if child.name != CAtomNull and child.name != satUempty:
         if child.tagType == ttImg and child.id != satUempty:
           list.add($child.id)
         list.add($child.name)
@@ -4503,7 +4501,7 @@ jsClassDef(Document):
       #TODO exposed embed, exposed object
       for child in document.elementDescendants({ttForm, ttIframe, ttImg}):
         if child.tagType == ttImg and child.id == id and
-            child.name != satUempty:
+            child.name != CAtomNull and child.name != satUempty:
           return ctx.toJS(child)
         if child.name == id:
           return ctx.toJS(child)
@@ -5072,11 +5070,13 @@ jsClassDef(HTMLCollection):
     nil
 
   proc namedItem(this: HTMLCollection; atom: CAtomTraced): Element {.jsfunc.} =
-    this.refreshCollection()
-    for it in this.snapshot:
-      let it = Element(it)
-      if it.id == atom or it.namespaceURI == satNamespaceHTML and it.name == atom:
-        return it
+    if atom != satUempty:
+      this.refreshCollection()
+      for it in this.snapshot:
+        let it = Element(it)
+        if it.id == atom or
+            it.namespaceURI == satNamespaceHTML and it.name == atom:
+          return it
     nil
 
   proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
@@ -5101,7 +5101,8 @@ jsClassDef(HTMLCollection):
       if element.id != satUempty and element.id notin ids:
         ids.add(element.id)
       if element.namespaceURI == satNamespaceHTML and
-          element.name != satUempty and element.name notin ids:
+          element.name != CAtomNull and element.name != satUempty and
+          element.name notin ids:
         ids.add(element.name)
     for id in ids:
       list.add($id)
@@ -5824,7 +5825,7 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
     if has:
       element.name = value.toAtom()
     else:
-      element.name = satUempty.toAtom()
+      element.name = CAtomNull
   of satClass: element.classList.reflectTokens(value)
   #TODO internalNonce
   of satStyle:
@@ -6073,7 +6074,6 @@ proc newElement(document: Document;
   else:
     Element()
   element.id = satUempty.toAtom()
-  element.name = satUempty.toAtom()
   element.localName = localName.dup()
   element.namespaceURI = namespaceURI.dup()
   element.tagName = tagName.dup()
