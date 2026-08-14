@@ -637,7 +637,7 @@ jsClassDef(Window):
     ctx.addEventGetSetObj(global, classDef.id, WindowEvents)
 
   proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
-    window.timeouts.clearAll()
+    rt.finalize(window.timeouts)
     rt.freeValues(window.weakMap)
     window.settings.moduleMap.clear(rt)
     for data in window.loader.data:
@@ -655,6 +655,7 @@ jsClassDef(Window):
   proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
     for it in window.weakMap:
       JS_MarkValue(rt, it, markFunc)
+    rt.mark(window.timeouts, markFunc)
 
   proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
       init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
@@ -679,13 +680,11 @@ jsClassDef(Window):
   proc scrollTo(window: Window) {.jsfunc.} =
     discard #TODO maybe in app mode?
 
-  proc setTimeout(window: Window; handler: JSValueConst; timeout = 0i32;
-      args: varargs[JSValueConst]): int32 {.jsfunc.} =
-    return window.timeouts.setTimeout(ttTimeout, handler, timeout, args)
-
-  proc setInterval(window: Window; handler: JSValueConst; interval = 0i32;
-      args: varargs[JSValueConst]): int32 {.jsfunc.} =
-    return window.timeouts.setTimeout(ttInterval, handler, interval, args)
+  proc setTimeout(ctx: JSContext; window: Window; t: TimeoutType;
+      handler: JSValueConst; timeout = 0i32; args: varargs[JSValueConst]):
+      int32 {.jsmfunc("setTimeout", ttTimeout),
+        jsmfunc("setInterval", ttInterval).} =
+    window.timeouts.setTimeout(ctx, t, handler, timeout, args)
 
   proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
     window.timeouts.clearTimeout(id)
@@ -785,10 +784,10 @@ jsClassDef(Window):
     let handler = JS_NewCFunction(ctx, animationFrameHandler,
       "animation frame handler", 1)
     if JS_IsException(handler):
-      return JS_EXCEPTION
-    let res = ctx.toJS(window.setTimeout(handler, 0, callback))
+      return handler
+    let res = window.timeouts.setTimeout(ctx, ttTimeout, handler, 0, callback)
     JS_FreeValue(ctx, handler)
-    res
+    ctx.toJS(res)
 
   proc getComputedStyle(ctx: JSContext; window: Window; element: Element;
       pseudoElt: JSValueConst = JS_UNDEFINED): Opt[CSSStyleDeclaration]
@@ -964,15 +963,6 @@ proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addEncodingModule()
   ctx.addPerformanceModule()
 
-proc evalJSFree(opaque: RootRef; src, file: string) =
-  let window = Window(opaque)
-  let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(ret):
-    window.console.log("Exception in document", $window.document.url,
-      window.jsctx.getExceptionMsg())
-  else:
-    JS_FreeValue(window.jsctx, ret)
-
 proc getConsole(ctx: JSContext): Console =
   ctx.getGlobal().console
 
@@ -983,7 +973,6 @@ proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
   let rt = JS_GetRuntime(ctx)
   window.jsctx = ctx
   window.importMapsAllowed = true
-  window.timeouts = newTimeoutState(ctx, evalJSFree, window)
   window.addCustomElementRegistry(rt)
   let weakMap = JS_GetPropertyStr(ctx, ctx.getOpaque().global, "WeakMap")
   for it in window.weakMap.mitems:

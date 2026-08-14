@@ -716,12 +716,13 @@ proc add(list: var ConfigList; x: ConfigRule) =
     list.tail.next = x
   list.tail = x
 
-proc freeValues*(ctx: JSContext; list: ConfigList) =
+proc freeValues(rt: JSRuntime; list: ConfigList) =
   for it in list:
-    JS_FreeValue(ctx, it.fun)
+    JS_FreeValueRT(rt, it.fun)
 
 proc clear(ctx: JSContext; list: var ConfigList) =
-  ctx.freeValues(list)
+  let rt = JS_GetRuntime(ctx)
+  rt.freeValues(list)
   list.head = nil
   list.tail = nil
 
@@ -2482,6 +2483,15 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
 jsClassDef(Config):
   jsget Config, dir
   jsget Config, dataDir
+
+  proc mark(rt: JSRuntime; config: Config; markFunc: JS_MarkFunc) {.jsmark.} =
+    for list in config.lists:
+      for it in list:
+        JS_MarkValue(rt, it.fun, markFunc)
+
+  proc finalize(rt: JSRuntime; config: Config) {.jsfin.} =
+    for list in config.lists:
+      rt.freeValues(list)
 
   proc page*(config: Config): lent ActionMap {.jsfget.} =
     config.actionMap[csPage]

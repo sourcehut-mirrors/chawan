@@ -31,6 +31,7 @@ import local/term
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsnull
+import monoucha/jsopaque
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/libregexp
@@ -93,8 +94,6 @@ type
     ostream: PosixStream
 
   JSMap = object
-    # workaround for the annoying warnings (too lazy to fix them)
-    pager: JSValue
     handleInput: JSValue
     showConsole: JSValue
     askPromise: JSValue # function to resolve on ask finish
@@ -112,7 +111,6 @@ type
     # current number prefix (when vi-numeric-prefix is true)
     precnum: int32
     arg0: int32
-    bufferAtom: JSAtom
     consoleCacheId: int
     consoleFile: string
     alerts: seq[string]
@@ -136,7 +134,7 @@ type
     menu: Select
     numload: int # number of pages currently being loaded
     term*: Terminal
-    timeouts*: TimeoutState
+    timeouts: ptr TimeoutState
     tmpfSeq: uint
     attrs: WindowAttributes
     pidMap: Table[int, string] # pid -> command
@@ -212,19 +210,6 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
   result = cint(term.sigintCaught)
   term.sigintCaught = false
-
-proc evalJSFree(opaque: RootRef; src, filename: string) =
-  let pager = Pager(opaque)
-  let ctx = pager.jsctx
-  let headless = pager.config{"headless"} != hmFalse
-  if not headless:
-    pager.term.catchSigint()
-  let ret = ctx.eval(src, filename, JS_EVAL_TYPE_GLOBAL)
-  if not headless:
-    pager.term.respectSigint()
-  if JS_IsException(ret):
-    pager.console.writeException(ctx)
-  JS_FreeValue(ctx, ret)
 
 type CookieStreamOpaque {.final.} = ref object of RootObj
   pager: Pager
@@ -336,7 +321,7 @@ proc loadAutoMailcap(pager: Pager) =
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int;
-    console: Console): Pager =
+    console: Console; timeouts: ptr TimeoutState): Pager =
   let pager = Pager(
     config: config,
     forkserver: forkserver,
@@ -350,11 +335,9 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     cookieJars: newCookieJarMap(),
     consoleCacheId: -1,
     console: console,
-    bufferAtom: JS_NewAtom(ctx, cstring"buffer")
+    timeouts: timeouts
   )
-  pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   pager.jsmap = JSMap(
-    pager: ctx.toJS(pager),
     handleInput: ctx.eval("Pager.prototype.handleInput", "<init>",
       JS_EVAL_TYPE_GLOBAL),
     showConsole: ctx.eval("Pager.prototype.showConsole", "<init>",
@@ -427,18 +410,12 @@ proc cleanup(pager: Pager) =
       pager.alert("failed to save cookies")
   for msg in pager.alerts:
     discard cast[ChaFile](stderr).write("cha: " & msg & '\n')
-  let ctx = pager.jsctx
   # Decrement refcount of action maps.  This is needed so that refc
   # actually cleans them up.
   # (For some reason, doing the same with config doesn't work.)
   for it in pager.config.actionMap.mitems:
     it = nil
-  ctx.freeValues(pager.config.omnirule)
-  ctx.freeValues(pager.config.siteconf)
-  JS_FreeAtom(ctx, pager.bufferAtom)
-  for val in pager.jsmap.fields:
-    JS_FreeValue(ctx, val)
-  pager.timeouts.clearAll()
+  pager.timeouts = nil
   if pager.console != nil and pager.dumpConsoleFile:
     if file := chafile.fopen(pager.consoleFile, "r+"):
       let stderr = cast[ChaFile](stderr)
@@ -503,7 +480,7 @@ proc handleKeyEnd(pager: Pager; e: InputEvent): int =
     return 0
   let arg1 = if e.t == ietMouse: ctx.toJS(e.m) else: JS_UNDEFINED
   pager.term.catchSigint()
-  let res = ctx.callSink(pager.jsmap.handleInput, pager.jsmap.pager, arg0,
+  let res = ctx.callSinkThis(pager.jsmap.handleInput, ctx.toJS(pager), arg0,
     arg1)
   pager.term.respectSigint()
   if JS_IsException(res):
@@ -574,7 +551,7 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   let pages = ctx.newArrayFrom(pages)
   let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
   doAssert not JS_IsException(jsInit)
-  let res = ctx.callSinkFree(jsInit, pager.jsmap.pager, pages,
+  let res = ctx.callSinkThisFree(jsInit, ctx.toJS(pager), pages,
     ctx.toJS(contentType), ctx.toJS(charset), ctx.toJS(history), ctx.toJS(pipe))
   if JS_IsException(res) and pager.exitCode == -1:
     pager.console.writeException(ctx)
@@ -1187,7 +1164,7 @@ proc windowChange(pager: Pager): Opt[void] =
   let arg0 = ctx.toJS(ietWindowChange)
   if JS_IsException(arg0):
     return err()
-  let res = ctx.callSink(pager.jsmap.handleInput, pager.jsmap.pager, arg0)
+  let res = ctx.callSinkThis(pager.jsmap.handleInput, ctx.toJS(pager), arg0)
   if JS_IsException(res):
     return err()
   JS_FreeValue(ctx, res)
@@ -2046,7 +2023,7 @@ proc handleSigchld(pager: Pager): Opt[void] =
   ok()
 
 proc hasSelectFds(pager: Pager): bool =
-  return not pager.timeouts.empty or pager.numload > 0 or
+  return not pager.timeouts[].empty or pager.numload > 0 or
     pager.loader.hasFds()
 
 # List of properties that are defined on both Buffer and as reflectors
@@ -2089,7 +2066,7 @@ proc legacyReflectFunction(ctx: JSContext; this: JSValueConst; argc: cint;
   let cval = if pager.menu != nil:
     ctx.toJS(pager.menu)
   else:
-    JS_GetProperty(ctx, this, pager.bufferAtom)
+    JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
   if JS_IsException(cval):
     return cval
   let val = JS_GetPropertyStr(ctx, cval, LegacyReflectFuncList[magic])
@@ -2111,7 +2088,7 @@ proc legacyReflectGetter(ctx: JSContext; this: JSValueConst; magic: cint):
   let cval = if pager.menu != nil:
     ctx.toJS(pager.menu)
   else:
-    JS_GetProperty(ctx, this, pager.bufferAtom)
+    JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
   if JS_IsException(cval):
     return cval
   let res = JS_GetPropertyStr(ctx, cval, LegacyReflectGetList[magic])
@@ -2134,6 +2111,16 @@ jsClassDef(Pager):
   jsgetset Pager, precnum # private
   jsgetset Pager, consoleInit
   jsgetset Pager, numload
+
+  proc mark(rt: JSRuntime; pager: Pager; markFunc: JS_MarkFunc) {.jsmark.} =
+    JS_MarkValue(rt, pager.jsmap.handleInput, markFunc)
+    JS_MarkValue(rt, pager.jsmap.showConsole, markFunc)
+    JS_MarkValue(rt, pager.jsmap.askPromise, markFunc)
+
+  proc finalize(rt: JSRuntime; pager: Pager) {.jsfin.} =
+    JS_FreeValueRT(rt, pager.jsmap.handleInput)
+    JS_FreeValueRT(rt, pager.jsmap.showConsole)
+    JS_FreeValueRT(rt, pager.jsmap.askPromise)
 
   # private
   proc bufWidth(pager: Pager): int {.jsfget.} =
@@ -2511,7 +2498,7 @@ jsClassDef(Pager):
   # private
   proc showConsole(pager: Pager) =
     let ctx = pager.jsctx
-    let res = ctx.call(pager.jsmap.showConsole, pager.jsmap.pager)
+    let res = ctx.callSinkThis(pager.jsmap.showConsole, ctx.toJS(pager))
     if JS_IsException(res):
       pager.console.writeException(ctx)
     JS_FreeValue(ctx, res)
@@ -2829,7 +2816,7 @@ jsClassDef(Pager):
     let signals = pager.setupSignals()
     pager.loader.pollData.register(signals.fd, POLLIN)
     while true:
-      let timeout = pager.timeouts.sortAndGetTimeout()
+      let timeout = pager.timeouts[].sortAndGetTimeout()
       pager.loader.pollData.poll(timeout)
       pager.loader.blockRegister()
       for event in pager.loader.pollData.events:
@@ -2863,9 +2850,11 @@ jsClassDef(Pager):
         if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
           if not ?pager.handleError(efd):
             return ok()
-      if pager.timeouts.run(pager.console):
+      pager.term.catchSigint()
+      if pager.timeouts[].run(ctx, pager.console):
         if pager.consoleInit != nil:
           pager.consoleInit.flags.incl(bifTailOnLoad)
+      pager.term.respectSigint()
       pager.loader.unblockRegister()
       pager.loader.unregistered.setLen(0)
       ?pager.runJSJobs()
@@ -2892,7 +2881,7 @@ jsClassDef(Pager):
   # private
   proc headlessLoop(ctx: JSContext; pager: Pager): Opt[void] {.jsfunc.} =
     while pager.hasSelectFds():
-      let timeout = pager.timeouts.sortAndGetTimeout()
+      let timeout = pager.timeouts[].sortAndGetTimeout()
       pager.loader.pollData.poll(timeout)
       pager.loader.blockRegister()
       for event in pager.loader.pollData.events:
@@ -2910,7 +2899,7 @@ jsClassDef(Pager):
             return ok()
       pager.loader.unblockRegister()
       pager.loader.unregistered.setLen(0)
-      discard pager.timeouts.run(pager.console)
+      discard pager.timeouts[].run(ctx, pager.console)
       ?pager.runJSJobs()
     ok()
 

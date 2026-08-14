@@ -1825,7 +1825,8 @@ proc runBuffer(bc: BufferContext) =
     bc.loader.unregistered.setLen(0)
     bc.loader.unblockRegister()
     if bc.config.scripting != smFalse:
-      if bc.window.timeouts.run(bc.window.console) or bc.checkJobs:
+      if bc.window.timeouts.run(bc.window.jsctx, bc.window.console) or
+          bc.checkJobs:
         bc.window.runJSJobs()
         bc.maybeReshape(suppressFouc = true)
         bc.checkJobs = false

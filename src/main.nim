@@ -446,8 +446,7 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
       discard kill(getpid(), SIGINT)
   jsctx.setupStartupScript("init.jsb")
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
-    client.console)
-  client.timeouts = pager.timeouts
+    client.console, addr client.timeouts)
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs
   let code = pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
