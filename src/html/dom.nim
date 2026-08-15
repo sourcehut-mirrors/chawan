@@ -336,8 +336,6 @@ type
   Attr {.final.} = ref object of Node
     dataIdx: int
     ownerElement: Element
-    prefix: CAtom
-    localName: CAtom
 
   DOMImplementation = ref object
     document: Document
@@ -5271,22 +5269,11 @@ jsClassDef(HTMLOptionsCollection):
 
 # Attr
 proc newAttr(element: Element; dataIdx: int): Attr =
-  let attr = Attr(
+  Attr(
     internalNext: element.document,
     dataIdx: dataIdx,
     ownerElement: element,
   )
-  let namespace = attr.data.namespace.dup()
-  let qualifiedName = attr.data.name.dupTrace()
-  if namespace == CAtomNull: # no namespace -> qualifiedName == localName
-    attr.prefix = CAtomNull
-    attr.localName = qualifiedName.dup()
-  else: # namespace -> qualifiedName == prefix & ':' & localName
-    let prefixs = ($qualifiedName).until(':')
-    let prefixLen = prefixs.len
-    attr.prefix = prefixs.toAtom()
-    attr.localName = qualifiedName.view().substr(prefixLen + 1)
-  return attr
 
 proc data(attr: Attr): lent AttrData =
   return attr.ownerElement.attrs[attr.dataIdx]
@@ -5294,30 +5281,39 @@ proc data(attr: Attr): lent AttrData =
 jsClassDef(Attr):
   jsextends NodeDef
 
-  jsget Attr, prefix
-  jsget Attr, localName
+  proc name(attr: Attr): CAtom {.jsfget.} =
+    return attr.data.name
 
-  proc finalize(attr: Attr) {.jsfin.} =
-    freeAtom(attr.prefix)
-    freeAtom(attr.localName)
+  proc namespaceURI(attr: Attr): CAtom {.jsfget.} =
+    return attr.data.namespace
+
+  proc prefix(ctx: JSContext; attr: Attr): JSValue {.jsfget.} =
+    if attr.namespaceURI != CAtomNull:
+      let name = attr.name
+      let i = name.find(':')
+      if i >= 0:
+        return ctx.toJS(($name).toOpenArray(0, i - 1))
+    return JS_NULL
+
+  proc localName(ctx: JSContext; attr: Attr): JSValue {.jsfget.} =
+    let name = attr.name
+    if attr.namespaceURI != CAtomNull:
+      let i = name.find(':')
+      if i >= 0:
+        return ctx.toJS(($name).toOpenArray(i + 1, name.len - 1))
+    return ctx.toJS(name)
+
+  proc value(attr: Attr): string {.jsfget.} =
+    return attr.data.value
+
+  proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
+      jsfset: "value".} =
+    attr.ownerElement.setAttr(ctx, attr.data.name.view(), ds)
 
   proc jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
     if attr.ownerElement of AttrDummyElement:
       return nil
     return attr.ownerElement
-
-  proc namespaceURI(attr: Attr): CAtom {.jsfget.} =
-    return attr.data.namespace
-
-  proc value(attr: Attr): string {.jsfget.} =
-    return attr.data.value
-
-  proc name(attr: Attr): CAtom {.jsfget.} =
-    return attr.data.name
-
-  proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
-      jsfset: "value".} =
-    attr.ownerElement.setAttr(ctx, attr.data.name.view(), ds)
 
 # NamedNodeMap
 proc findAttr(map: NamedNodeMap; dataIdx: int): int =
