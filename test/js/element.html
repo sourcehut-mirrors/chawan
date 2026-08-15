@@ -62,6 +62,18 @@ function testAttribute() {
 	const newDoc = document.implementation.createHTMLDocument();
 	newDoc.body.append(y)
 	assertEquals(y.attributes[0].ownerDocument, newDoc);
+	{
+		let el2 = document.createElement("test");
+		el2.innerHTML = "<div id=test></div>";
+		const test = el2.children[0]
+		assertEquals(test.id, "test");
+		let attr = test.attributes["id"]
+		assertEquals(attr.ownerDocument, document);
+		newDoc.adoptNode(el2);
+		const getOwnerDocument =
+			Node.prototype.__lookupGetter__("ownerDocument");
+		assertEquals(getOwnerDocument.call(attr), newDoc);
+	}
 }
 
 function testParentNode() { /* ParentNode mixin */

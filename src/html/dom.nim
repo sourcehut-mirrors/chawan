@@ -3615,8 +3615,8 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
           if root.customElements == nil and not root.unsetCustomElements or
               root.customElements != nil and not root.customElements.scoped:
             root.customElements = document.globalCustomElements
-        if node of Element:
-          let element = Element(node)
+        elif desc of Element:
+          let element = Element(desc)
           if ctx != nil and element.attrs.len > 0:
             let scriptAttrs = ctx.getWeakCollection(element, wwmAttributes)
             var attributes: NamedNodeMap
@@ -5305,9 +5305,6 @@ jsClassDef(Attr):
     if attr.ownerElement of AttrDummyElement:
       return nil
     return attr.ownerElement
-
-  proc ownerDocument(attr: Attr): Document {.jsfget.} =
-    return attr.ownerElement.ownerDocument
 
   proc namespaceURI(attr: Attr): CAtom {.jsfget.} =
     return attr.data.namespace
