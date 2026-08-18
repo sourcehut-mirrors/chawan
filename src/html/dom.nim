@@ -2911,7 +2911,7 @@ jsClassDef(Node):
       let node = ParentNode(node)
       if node of Element:
         let node = Element(node)
-        if not (other of ParentNode):
+        if not (other of Element):
           return false
         let other = Element(other)
         if node.namespaceURI != other.namespaceURI or
@@ -2920,6 +2920,10 @@ jsClassDef(Node):
         for i, attr in node.attrs.mypairs:
           if attr != other.attrs[i]:
             return false
+      elif node of Document and not (other of Document):
+        return false
+      elif node of DocumentFragment and not (other of DocumentFragment):
+        return false
       var it = other.firstChild
       for child in node.childList:
         if it == nil or not child.isEqualNode(it):

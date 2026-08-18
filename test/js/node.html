@@ -13,5 +13,19 @@ assertEquals(new Document().createCDATASection("test").cloneNode().data, "test")
 assertInstanceof(new Document().createCDATASection("test"), Text);
 assert(!new Document().createCDATASection("a").isEqualNode(new Text("a")));
 assert(new Text("a").isEqualNode(new Text("a")));
+{	/* isEqualNode */
+	const el = document.createElement("div");
+	assertEquals(el.isEqualNode(document), false);
+	/* the spec implies this should produce false, but others all
+	   return true */
+	const xdoc = document.implementation.createDocument("", null);
+	const doc = new Document();
+	assertEquals(xdoc.isEqualNode(doc), true);
+	let shadow = el.attachShadow({mode: "open"});
+	/* ok, this makes sense */
+	assertEquals(xdoc.isEqualNode(shadow), false);
+	/* ...but this doesn't.  I guess everybody forgot about ShadowRoot? */
+	assertEquals(shadow.isEqualNode(new DocumentFragment()), true);
+}
 document.getElementById("x").textContent = "Success";
 </script>
