@@ -703,6 +703,20 @@ proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
       i = j + 1
   map
 
+proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; funcData: JSValueConstArray): JSValue
+    {.cdecl.} =
+  if not JS_IsFunction(ctx, funcData[0]):
+    let res = JS_EvalFunction(ctx, JS_DupValue(ctx, funcData[0]))
+    if JS_IsException(res):
+      return res
+    if not JS_IsFunction(ctx, res):
+      JS_FreeValue(ctx, res)
+      return JS_UNDEFINED
+    JS_FreeValue(ctx, JSValue(funcData[0]))
+    funcData[0] = JSValueConst(res)
+  return JS_Call(ctx, funcData[0], this, argc, argv)
+
 iterator items*(list: ConfigList): ConfigRule =
   var it = list.head
   while it != nil:
@@ -2589,9 +2603,13 @@ jsClassDef(ActionMap):
   proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue
       {.jsgetownprop.} =
     let i = a.find(s)
-    if i == -1:
+    if i < 0:
       return JS_UNINITIALIZED
-    return JS_DupValue(ctx, a.t[i].val)
+    let val = a.t[i].val
+    if JS_IsFunction(ctx, val):
+      return JS_DupValue(ctx, val)
+    # bytecode function
+    return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1, val.toJSValueArray)
 
   proc delete(a: ActionMap; k: string): bool {.jsdelprop.} =
     let i = a.find(k)
