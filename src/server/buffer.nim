@@ -1114,7 +1114,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
 proc submitFormClick(bc: BufferContext; form: HTMLFormElement;
     submitter: HTMLElement; jsSubmitCall = false): Request =
   let request = bc.submitForm(form, submitter, jsSubmitCall)
-  if request.url.schemeType == stJavascript:
+  if request != nil and request.url.schemeType == stJavascript:
     let url = bc.evalJSURL(request.url, "text/plain")
     if url == nil:
       return nil
