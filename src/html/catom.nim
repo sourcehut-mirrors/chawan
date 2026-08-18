@@ -620,7 +620,7 @@ proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtom):
     {.push overflowChecks: off.}
     let H = cast[int](len) - 1
     {.pop.}
-    res = cs.toOpenArray(0, H).toAtom()
+    res = cstring(cs).toOpenArray(0, H).toAtom()
     JS_FreeCString(ctx, cs)
   fjOk
 
@@ -656,7 +656,7 @@ proc fromJSView*(ctx: JSContext; atom: JSAtom; res: var CAtom): FromJSResult =
     {.push overflowChecks: off.}
     let H = cast[int](len) - 1
     {.pop.}
-    res = cs.toOpenArray(0, H).toAtomView()
+    res = cstring(cs).toOpenArray(0, H).toAtomView()
     JS_FreeCString(ctx, cs)
   fjOk
 

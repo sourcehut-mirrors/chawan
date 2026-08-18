@@ -7,6 +7,7 @@ import std/posix
 
 import io/chafile
 import io/dynstream
+import monoucha/jsref
 import monoucha/libregexp
 import types/opt
 import types/url

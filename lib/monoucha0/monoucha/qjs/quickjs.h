@@ -528,7 +528,6 @@ typedef void JSClassGCMark(JSRuntime *rt, JSValueConst val,
 typedef JSValue JSClassCall(JSContext *ctx, JSValueConst func_obj,
                             JSValueConst this_val, int argc, JSValueConst *argv,
                             int flags);
-typedef void JSClassCanDestroy(JSRuntime *rt, JSValueConst val, int *ref_count);
 
 typedef struct JSClassDef {
     const char *class_name;
@@ -761,6 +760,15 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
 }
 void JS_FreeCString(JSContext *ctx, const char *ptr);
 
+void *JS_NewForeignObject(JSRuntime *rt, JSClassID class_id, size_t size);
+void *JS_DupForeignObject(JSRuntime *rt, void *p);
+void JS_MarkForeignObject(JSRuntime *rt, void *p, JS_MarkFunc mark_func);
+void JS_FreeForeignObject(JSRuntime *rt, void *p);
+void JS_FreeForeignObjectMemory(JSRuntime *rt, void *p);
+void *JS_GetForeignOpaque(JSRuntime *rt, void *p);
+void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val);
+int JS_GetForeignObjectRefs(void *p); /* debug */
+JSClassID JS_GetForeignClassID(void *p);
 void JS_FreeCStringRT(JSRuntime *rt, const char *ptr);
 JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
 uint8_t *JS_GetNarrowStringBuffer(JSValueConst value);
@@ -768,7 +776,6 @@ uint8_t *JS_GetRegExpBytecode(JSContext *ctx, JSValueConst obj, int *plen);
 uint32_t JS_GetStringLength(JSValueConst value);
 void JS_BuildBacktrace(JSContext *ctx, JSValueConst obj, int skip_first_level);
 int __js_printf_like(3, 4) JS_ThrowTypeErrorOrFalse(JSContext *ctx, int flags, const char *fmt, ...);
-void JS_SetClassCanDestroy(JSRuntime *rt, JSClassID class_id, JSClassCanDestroy *can_destroy);
 
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto, JSClassID class_id);
 JSValue JS_NewObjectClass(JSContext *ctx, int class_id);

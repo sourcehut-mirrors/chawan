@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/posix
-import std/typetraits
 
 import config/mimetypes
 import html/catom
@@ -11,6 +10,7 @@ import io/timeout
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsopaque
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -22,31 +22,37 @@ import utils/twtstr
 type
   DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}
 
-  Blob* = ref object of JSRootObj
+  BlobObj {.pure.} = object of JSRootObj
     size*: int
     ctype*: string
     buffer*: pointer
     opaque*: pointer
     deallocFun*: DeallocFun
 
-  WebFile* {.final.} = ref object of Blob
+  Blob* = JSRef[BlobObj]
+
+  WebFileObj {.pure, final.} = object of BlobObj
     webkitRelativePath: string
     name*: string
     lastModified*: int64
     fd*: cint
 
-  FileList* = ref object
+  WebFile* = JSRef[WebFileObj]
+
+  FileListObj* = object
     files: seq[WebFile]
+
+  FileList* = JSRef[FileListObj]
 
   EndingType = enum
     etTransparent = "transparent"
     etNative = "native"
 
-jsDestructor(FileList)
-
 # Forward declarations
 proc deallocBlob*(opaque, p: pointer)
-proc getClassID*(t: typedesc[Blob]): JSClassID
+proc getClassID(t: typedesc[Blob]): JSClassID
+proc getClassID*(t: typedesc[WebFile]): JSClassID
+proc getClassID(t: typedesc[FileList]): JSClassID
 
 # Iterators
 iterator items*(this: FileList): lent WebFile =
@@ -54,6 +60,9 @@ iterator items*(this: FileList): lent WebFile =
     yield it
 
 # Blob
+template asBlob*[T: BlobObj](x: JSRef[T]): Blob =
+  cast[Blob](x)
+
 proc swrite*(w: var PacketWriter; blob: Blob) =
   w.swrite(blob of WebFile)
   if blob of WebFile:
@@ -71,7 +80,8 @@ proc swrite*(w: var PacketWriter; blob: Blob) =
 proc sread*(r: var PacketReader; blob: var Blob) =
   var isWebFile: bool
   r.sread(isWebFile)
-  blob = if isWebFile: WebFile() else: Blob()
+  blob = if isWebFile: (jsNew WebFileObj()).asBlob else: jsNew BlobObj()
+  assert blob != nil
   if isWebFile:
     let file = WebFile(blob)
     var hasFd: bool
@@ -191,7 +201,7 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
 
 proc newBlob*(buffer: pointer; size: int; ctype: string;
     deallocFun: DeallocFun; opaque: pointer = nil): Blob =
-  return Blob(
+  jsNew BlobObj(
     buffer: buffer,
     size: size,
     ctype: ctype,
@@ -217,9 +227,9 @@ proc getSize*(this: Blob): int =
   return this.size
 
 template toOpenArray*(blob: Blob): openArray[char] =
-  let p = cast[ptr UncheckedArray[char]](blob.buffer)
+  let p = cast[ptr UncheckedArray[char]](blob[].buffer)
   if p != nil:
-    p.toOpenArray(0, blob.size - 1)
+    p.toOpenArray(0, blob[].size - 1)
   else:
     p.toOpenArray(0, -1)
 
@@ -229,18 +239,19 @@ jsClassDef(Blob):
 
   proc newBlob(ctx: JSContext; blobParts: seq[BlobPart] = @[];
       options = BlobPropertyBag()): Opt[Blob] {.jsctor.} =
-    let blob = Blob()
-    ?ctx.init(blob, blobParts, options.`type`, options.endings)
+    let blob = jsNew BlobObj()
+    if blob != nil:
+      ?ctx.init(blob, blobParts, options.`type`, options.endings)
     ok(blob)
 
-  proc finalize(blob: Blob) {.jsfin.} =
+  proc finalize(rt: JSRuntime; blob: Blob) {.jsfin.} =
     if blob.deallocFun != nil:
-      blob.deallocFun(blob.opaque, blob.buffer)
+      blob[].deallocFun(blob.opaque, blob.buffer)
       blob.buffer = nil
 
 # File
 proc newWebFile*(name: string; fd: cint): WebFile =
-  return WebFile(
+  jsNew WebFileObj(
     name: name,
     fd: fd,
     ctype: DefaultGuess.guessContentType(name)
@@ -249,36 +260,37 @@ proc newWebFile*(name: string; fd: cint): WebFile =
 type FilePropertyBag = object of BlobPropertyBag
   lastModified {.jsdefault: getUnixMillis().}: int64
 
-jsClassNameDef(WebFile, "File"):
+jsClassPublicNameDef(WebFile, "File"):
   jsextends BlobDef
 
   jsget WebFile, webkitRelativePath
   jsget WebFile, name
   jsget WebFile, lastModified
 
-  proc finalize(file: WebFile) {.jsfin.} =
+  proc finalize(rt: JSRuntime; file: WebFile) {.jsfin.} =
     if file.fd != -1:
       discard close(file.fd)
 
   proc newWebFile(ctx: JSContext; fileBits: seq[BlobPart]; fileName: string;
       options = FilePropertyBag(lastModified: getUnixMillis())): Opt[WebFile]
       {.jsctor.} =
-    let file = WebFile(
+    let file = jsNew WebFileObj(
       name: fileName,
       fd: -1,
       lastModified: options.lastModified
     )
-    ?ctx.init(file, fileBits, options.`type`, options.endings)
+    if file != nil:
+      ?ctx.init(cast[Blob](file), fileBits, options.`type`, options.endings)
     ok(file)
 
   proc size*(this: WebFile): int {.jsfget.} =
-    return this.getSize()
+    return cast[Blob](this).getSize()
 
 #TODO lastModified
 
 # FileList
 proc newFileList*(): FileList =
-  return FileList()
+  return jsNew FileListObj()
 
 proc getName*(this: FileList): string =
   var res = ""
@@ -297,13 +309,17 @@ proc clear*(this: FileList) =
 jsClassDef(FileList):
   classDef.iterable = jitValue
 
+  proc mark(rt: JSRuntime; this: FileList; markFunc: JS_MarkFunc) {.jsmark.} =
+    for file in this.files:
+      rt.markObj(file, markFunc)
+
   proc length(this: FileList): uint32 {.jsfget.} =
     uint32(this.files.len)
 
   proc item(this: FileList; u: uint32): WebFile {.jsfunc.} =
     if u >= 0 and int64(u) < int64(this.files.len):
       return this.files[int(u)]
-    return nil
+    return WebFile(nil)
 
   proc getter(ctx: JSContext; this: FileList; atom: JSAtom): JSValue
       {.jsgetownprop.} =

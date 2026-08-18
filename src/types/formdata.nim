@@ -5,6 +5,7 @@ import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/quickjs
 import monoucha/tojs
 import types/blob
@@ -22,11 +23,14 @@ type
     of false:
       value*: Blob
 
-  FormData* = ref object
+  FormDataObj* = object
     entries*: seq[FormDataEntry]
     boundary*: string
 
-jsDestructor(FormData)
+  FormData* = JSRef[FormDataObj]
+
+# Forward declarations
+proc getClassID*(t: typedesc[FormData]): JSClassID
 
 # Forward declaration hack
 var newFormDataImpl*: proc(ctx: JSContext; argv: varargs[JSValueConst]):
@@ -54,6 +58,23 @@ proc sread*(r: var PacketReader; part: var FormDataEntry) =
     r.sread(part.svalue)
   else:
     r.sread(part.value)
+
+proc swrite*(w: var PacketWriter; formData: FormData) =
+  w.swrite(formData != nil)
+  if formData == nil:
+    w.swrite(formData.entries)
+    w.swrite(formData.boundary)
+
+proc sread*(r: var PacketReader; formData: var FormData) =
+  var has: bool
+  r.sread(has)
+  if has:
+    var obj: FormDataObj
+    r.sread(obj.entries)
+    r.sread(obj.boundary)
+    formData = jsNew obj
+  else:
+    formData = FormData(nil)
 
 iterator items*(this: FormData): lent FormDataEntry {.inline.} =
   for entry in this.entries:
@@ -112,8 +133,8 @@ proc writeEntry(stream: PosixStream; entry: FormDataEntry; boundary: string):
       blob.ctype
     buf &= "Content-Type: " & ctype & "\r\n\r\n"
     ?stream.writeLoop(buf)
-    if blob of WebFile and WebFile(blob).fd != -1:
-      let ps = newPosixStream(WebFile(blob).fd)
+    if (let file = blob as WebFile; file != nil and file.fd != -1):
+      let ps = newPosixStream(file.fd)
       if ps != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:
@@ -140,10 +161,10 @@ proc generateBoundary(urandom: PosixStream): string =
 proc newFormData0*(urandom: PosixStream): FormData =
   var boundary = urandom.generateBoundary()
   if boundary.len == 0:
-    return nil
-  return FormData(boundary: move(boundary))
+    return FormData(nil)
+  return jsNew FormDataObj(boundary: move(boundary))
 
-jsClassDef(FormData):
+jsClassPublicDef(FormData):
   proc newFormData(ctx: JSContext; argv: varargs[JSValueConst]): Opt[FormData]
       {.jsctor.} =
     newFormDataImpl(ctx, argv)

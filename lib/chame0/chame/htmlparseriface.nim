@@ -94,7 +94,7 @@ proc getDocumentImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
   ## This must not return nil, not even in the fragment parsing case.
 
 proc getParentNodeImpl(builder: DOMBuilderImpl; handle: HandleImpl):
-    Option[HandleImpl] {.doc.}
+    HandleImpl {.doc.}
   ## Retrieve a handle to the parent node.
   ## May return none(Handle) if no parent node exists.
 
@@ -179,7 +179,7 @@ proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
   ## exists in a document.
 
 proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
-    text: string; before: Option[HandleImpl]) {.doc.}
+    text: string; before: HandleImpl) {.doc.}
   ## Create a new comment node, and insert it into `parent` before the node
   ## `before`.
   ## `text` is a string representing the new comment node's character data.
@@ -189,7 +189,7 @@ proc appendDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
   ## Append a new document type node to the Document node.
 
 proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
-    before: Option[HandleImpl]) {.doc.}
+    before: HandleImpl) {.doc.}
   ## Insert node `child` before the node called `before`.
   ##
   ## If `before` is `none(Handle)`, `child` is expected to be appended to
@@ -202,7 +202,7 @@ proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
   ## Note: parent may be either an Element or a Document node.
 
 proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl; text: string;
-    before: Option[HandleImpl]) {.doc.}
+    before: HandleImpl) {.doc.}
   ## Insert a text node at the specified location with contents `text`. If
   ## the specified location has a previous sibling that is a text node, no new
   ## text node should be created, but instead `text` should be appended to the
@@ -268,7 +268,7 @@ when defined(nimdocdummy):
     discard
 
   proc getParentNodeImpl(builder: DOMBuilderImpl; handle: HandleImpl):
-      Option[HandleImpl] =
+      HandleImpl =
     discard
 
   proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl = discard
@@ -293,7 +293,7 @@ when defined(nimdocdummy):
     discard
 
   proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
-      text: string; before: Option[HandleImpl]) =
+      text: string; before: HandleImpl) =
     discard
 
   proc appendDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
@@ -301,11 +301,11 @@ when defined(nimdocdummy):
     discard
 
   proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
-      before: Option[HandleImpl]) =
+      before: HandleImpl) =
     discard
 
   proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl; text: string;
-      before: Option[HandleImpl]) =
+      before: HandleImpl) =
     discard
 
   proc removeImpl(builder: DOMBuilderImpl; child: HandleImpl) =

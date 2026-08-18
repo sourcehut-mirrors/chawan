@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import monoucha/jsref
 import types/url
 
 type ReferrerPolicy* = enum

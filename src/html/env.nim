@@ -25,6 +25,7 @@ import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsopaque
 import monoucha/jspropenumlist
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -38,6 +39,7 @@ import types/jsopt
 import types/opt
 import types/url
 import types/winattrs
+import utils/tabutil
 import utils/twtstr
 
 type JSFetchOpaque {.final.} = ref object of RootObj
@@ -51,6 +53,7 @@ proc outerWidth(window: Window): int
 proc outerHeight(window: Window): int
 
 jsClassRaw(NavigatorDef, "Navigator"):
+  #TODO I don't think the window hack is sound once we add frames
   type Navigator = distinct Window
 
   # NavigatorID
@@ -91,6 +94,7 @@ jsClassRaw(NavigatorDef, "Navigator"):
 
 # PluginArray
 jsClassRaw(PluginArrayDef, "PluginArray"):
+  #TODO ditto
   type PluginArray = distinct Window
 
   proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
@@ -102,6 +106,7 @@ jsClassRaw(PluginArrayDef, "PluginArray"):
 
 # MimeTypeArray
 jsClassRaw(MimeTypeArrayDef, "MimeTypeArray"):
+  #TODO ditto
   type MimeTypeArray = distinct Window
 
   proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
@@ -151,6 +156,7 @@ jsClassRaw(NotificationDef, "Notification"):
 # Permissions
 # See above.
 jsClassRaw(PermissionsDef, "Permissions"):
+  #TODO ditto
   type Permissions = distinct Window
 
   proc query(ctx: JSContext; this: Permissions; desc: JSValueConst): JSValue
@@ -165,6 +171,7 @@ jsClassRaw(PermissionsDef, "Permissions"):
 
 # Screen
 jsClassRaw(ScreenDef, "Screen"):
+  #TODO ditto
   type Screen = distinct Window
 
   # These are fingerprinting vectors; only app mode gets the real values.
@@ -192,6 +199,7 @@ jsClassRaw(ScreenDef, "Screen"):
 
 # History
 jsClassRaw(HistoryDef, "History"):
+  #TODO ditto
   type History = distinct Window
 
   proc length(history: History): uint32 {.jsfget.} = 1
@@ -276,6 +284,7 @@ jsClassDef(Storage):
 
 # Crypto
 jsClassRaw(CryptoDef, "Crypto"):
+  #TODO ditto
   type Crypto = distinct Window
 
   proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
@@ -292,6 +301,7 @@ jsClassRaw(CryptoDef, "Crypto"):
     return JS_DupValue(ctx, array)
 
 # Location
+#TODO ditto
 type Location = distinct Window
 
 template window(location: Location): Window =
@@ -467,7 +477,7 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
     parentClass: JSClassID; def: ChaClassDef; name: JSStrRef;
     t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
-  ?ctx.registerClass(def, hook = false)
+  ?ctx.registerClass(def)
   let prop = ctx.getOpaque().strRefs[name]
   let parentClass = JS_NewInt32(ctx, int32(parentClass))
   var data = [JSValueConst(JS_UNDEFINED), parentClass]
@@ -487,11 +497,11 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
   of gstUnforgeable:
     flags = JS_PROP_ENUMERABLE
     f.setter = windowSetLocation
-    setter = JS_NewCFunction2(ctx, f.generic, cstring($name), 1,
+    setter = JS_NewCFunction2(ctx, f.generic, ($name).toCStringConst, 1,
       JS_CFUNC_setter, 0)
   of gstReplaceable:
     f.setter_magic = windowAutoInitSetter
-    setter = JS_NewCFunction2(ctx, f.generic, cstring($name), 1,
+    setter = JS_NewCFunction2(ctx, f.generic, ($name).toCStringConst, 1,
       JS_CFUNC_setter_magic, cint(name))
   if JS_IsException(setter):
     JS_FreeValue(ctx, getter)
@@ -501,7 +511,12 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
   ok()
 
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =
-  let global = ctx.getOpaque().global
+  ?ctx.registerClass(StorageDef)
+  ?ctx.registerClass(NotificationDef)
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque == nil:
+    return ok()
+  let global = ctxOpaque.global
   let globalId = JS_GetClassID(global)
   ?ctx.registerAutoInitGetSet(global, globalId, NavigatorDef, jstNavigator,
     gstReplaceable)
@@ -513,8 +528,6 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
     gstReplaceable)
   ?ctx.registerAutoInitGetSet(global, globalId, LocationDef, jstLocation,
     gstUnforgeable)
-  ?ctx.registerClass(StorageDef)
-  ?ctx.registerClass(NotificationDef)
   let navigator = JS_GetClassProto(ctx, NavigatorDef.id)
   let navigatorId = NavigatorDef.id
   ?ctx.registerAutoInitGetSet(navigator, navigatorId, PluginArrayDef,
@@ -553,10 +566,13 @@ jsNamespaceDef(CSS):
     return ident.toOpenArray().cssIdentEscape()
 
 # MediaQueryList
-type MediaQueryList {.final.} = ref object of EventTarget
-  media: string
-  matches: bool
-  #TODO onchange
+type
+  MediaQueryListObj {.pure, final.} = object of EventTargetObj
+    media: string
+    matches: bool
+    #TODO onchange
+
+  MediaQueryList = JSRef[MediaQueryListObj]
 
 jsClassDef(MediaQueryList):
   jsextends EventTargetDef
@@ -648,12 +664,15 @@ jsClassDef(Window):
   jsufget Window, document
 
   proc addWindowEvents(ctx: JSContext): Opt[void] =
-    let global = ctx.getOpaque().global
-    ctx.addEventGetSetObj(global, classDef.id, WindowEvents)
+    let ctxOpaque = ctx.getOpaque()
+    if ctxOpaque == nil:
+      return ok()
+    ctx.addEventGetSetObj(ctxOpaque.global, classDef.id, WindowEvents)
 
   proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
     rt.finalize(window.timeouts)
     rt.freeValues(window.weakMap)
+    window.urandom.sclose()
     window.settings.moduleMap.clear(rt)
     for data in window.loader.data:
       if data of ConnectData:
@@ -663,13 +682,34 @@ jsClassDef(Window):
           JS_FreeValueRT(rt, opaque.resolve)
           JS_FreeValueRT(rt, opaque.reject)
           JS_FreeContext(opaque.ctx)
-          opaque.resolve = JS_UNDEFINED
-          opaque.reject = JS_UNDEFINED
-          opaque.ctx = nil
+      window.loader.unset(data)
 
   proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
-    for it in window.weakMap:
+    for it in window.weakMap.myitems:
       JS_MarkValue(rt, it, markFunc)
+    for it in window.imageURLCache:
+      let cachedURL = CachedURLImage(it)
+      rt.markObj(cachedURL.window, markFunc)
+      for img in cachedURL.shared:
+        rt.markObj(img, markFunc)
+    for it in window.svgCache:
+      let cachedSvg = CachedSVG(it)
+      rt.markObj(cachedSvg.window, markFunc)
+      for svg in cachedSvg.shared:
+        rt.markObj(svg, markFunc)
+    if window.loader != nil:
+      for data in window.loader.data:
+        if data of ConnectData:
+          let data = ConnectData(data)
+          if data.opaque of JSFetchOpaque:
+            let opaque = JSFetchOpaque(data.opaque)
+            JS_MarkValue(rt, opaque.resolve, markFunc)
+            JS_MarkValue(rt, opaque.reject, markFunc)
+        elif data of OngoingData:
+          let data = OngoingData(data)
+          rt.markObj(data.response, markFunc)
+    for it in window.pendingCanvasCtls:
+      rt.markObj(it, markFunc)
     rt.mark(window.timeouts, markFunc)
 
   proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
@@ -778,12 +818,13 @@ jsClassDef(Window):
     let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)
     var s: string
     ?ctx.fromJSFree(value, s)
-    let data = JS_ParseJSON(ctx, cstring(s), csize_t(s.len),
-      cstring"<postMessage>")
+    let data = JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
+      "<postMessage>".toCStringConst)
     let event = ctx.newMessageEvent(satMessage.toAtom(),
       MessageEventInit(data: data))
     JS_FreeValue(ctx, data)
-    window.fireEvent(event, window)
+    if event != nil:
+      window.fireEvent(event.asEvent, window.asEventTarget)
     ok()
 
   proc requestAnimationFrame(ctx: JSContext; window: Window;
@@ -791,7 +832,7 @@ jsClassDef(Window):
     if not JS_IsFunction(ctx, callback):
       return JS_ThrowTypeError(ctx, "not a function")
     let handler = JS_NewCFunction(ctx, animationFrameHandler,
-      "animation frame handler", 1)
+      "animation frame handler".toCStringConst, 1)
     if JS_IsException(handler):
       return handler
     let res = window.timeouts.setTimeout(ctx, ttTimeout, handler, 0, callback)
@@ -814,7 +855,7 @@ jsClassDef(Window):
   proc matchMedia(window: Window; s: CSSOMString): MediaQueryList {.jsfunc.} =
     var ctx = initCSSParser(s)
     let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)
-    return MediaQueryList(
+    jsNew MediaQueryListObj(
       matches: mqlist.appliesScript(addr window.settings),
       media: $mqlist
     )
@@ -824,14 +865,14 @@ proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
   let sname = $name
   let url = parseURL0(sname)
   if url != nil:
-    return js_strdup(ctx, cstring(name))
+    return js_strdup(ctx, name)
   if name[0] == '.' and name[1] == '.' and name[2] == '/' or
       name[0] == '.' and name[1] == '/' or
       name[0] == '/':
     let url = parseURL0(sname, parseURL0($baseName))
     if url != nil:
       let surl = $url
-      return js_strdup(ctx, cstring(surl))
+      return js_strdup(ctx, surl.toCStringConst)
   JS_ThrowTypeError(ctx, "relative module names must start with ./, ../ or /")
   return nil
 
@@ -927,6 +968,9 @@ proc addWindowProperties(ctx: JSContext): JSValue =
   discard JS_NewClassID(res)
   if JS_NewClass(rt, res, cdef) != 0:
     return JS_EXCEPTION
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque == nil:
+    return JS_UNDEFINED
   let name = JS_NewString(ctx, "WindowProperties")
   if JS_IsException(name):
     return name
@@ -944,12 +988,16 @@ proc addWindowProperties(ctx: JSContext): JSValue =
     return JS_EXCEPTION
   return proto
 
-proc addCommonModules*(ctx: JSContext; window: Window): Opt[void] =
+proc addWindowModule(ctx: JSContext): FromJSResult =
+  ?ctx.addEventTarget()
+  let proto = ctx.addWindowProperties()
+  let res = ctx.registerGlobalClass(WindowDef, proto)
+  JS_FreeValue(ctx, proto)
+  res
+
+proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ctx.setGlobal(window)
   ?ctx.addEventModule()
-  let proto = ctx.addWindowProperties()
-  ?ctx.registerClass(WindowDef, namespace = proto, asglobal = true)
-  JS_FreeValue(ctx, proto)
   ?ctx.addWindowEvents()
   ?ctx.registerNamespaceFree(CSSDef)
   ?ctx.registerClass(MediaQueryListDef)
@@ -980,29 +1028,50 @@ proc getLoader(ctx: JSContext): FileLoader =
 
 proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
   let rt = JS_GetRuntime(ctx)
-  window.jsctx = ctx
-  window.importMapsAllowed = true
-  window.addCustomElementRegistry(rt)
-  let weakMap = JS_GetPropertyStr(ctx, ctx.getOpaque().global, "WeakMap")
-  for it in window.weakMap.mitems:
-    it = JS_CallConstructor(ctx, weakMap, 0, nil)
-    if JS_IsException(it):
-      return err()
-  JS_FreeValue(ctx, weakMap)
-  JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
-  window.performance = newPerformance(window.settings.scripting)
-  if window.settings.scripting == smApp:
-    window.settings.scriptAttrsp = window.settings.attrsp
-  else:
-    window.settings.scriptAttrsp = unsafeAddr dummyAttrs
-  ctx.addCommonModules(window)
+  let ctxOpaque = ctx.getOpaque()
+  ?ctx.addCommonModules(window)
+  if ctxOpaque != nil:
+    let weakMap = JS_GetPropertyStr(ctx, ctx.getOpaque().global, "WeakMap")
+    for it in window.weakMap.mitems:
+      it = JS_CallConstructor(ctx, weakMap, 0, nil)
+      if JS_IsException(it):
+        return err()
+    JS_FreeValue(ctx, weakMap)
+    JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
+    window.performance = newPerformance(window.settings.scripting)
+    if window.settings.scripting == smApp:
+      window.settings.scriptAttrsp = window.settings.attrsp
+    else:
+      window.settings.scriptAttrsp = unsafeAddr dummyAttrs
+  if ctxOpaque != nil:
+    #TODO do this in addCommonModules?
+    var globalExotic {.global.} = JSClassExoticMethods(
+      define_own_property: windowDefineOwnProperty,
+      #TODO get_own_property, get, set, delete, own property keys
+      set_prototype: windowSetPrototype,
+      is_extensible: windowIsExtensible,
+      prevent_extensions: windowPreventExtensions,
+    )
+    JS_SetGlobalExotic(ctx, addr globalExotic)
+  ok()
 
-proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
-    headless: HeadlessMode; attrsp: ptr WindowAttributes; loader: FileLoader;
-    url: URL; urandom: PosixStream; imageTypes: MimeTypesImages;
+proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
+    images, styling, autofocus: bool; headless: HeadlessMode;
+    attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;
+    urandom: PosixStream; imageTypes: MimeTypesImages;
     userAgent, referrer, contentType: string): Window =
-  let window = Window(
-    console: newConsole(cast[ChaFile](stderr)),
+  let console = newConsole(cast[ChaFile](stderr))
+  let ctx = if scripting != smFalse:
+    rt.newJSContext()
+  else:
+    rt.newDummyContext()
+  if ctx.addWindowModule().isErr:
+    console.error("failed to initialize window")
+    console.writeException(ctx)
+    quit(1)
+  #TODO OOM
+  let window = jsNew WindowObj(
+    console: console,
     loader: loader,
     settings: EnvironmentSettings(
       attrsp: attrsp,
@@ -1018,27 +1087,41 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     userAgent: userAgent,
     referrer: referrer,
     urandom: urandom,
-    localStorage: Storage(),
-    sessionStorage: Storage(),
+    localStorage: jsNew StorageObj(),
+    sessionStorage: jsNew StorageObj(),
+    customElements: newCustomElementRegistry(),
+    importMapsAllowed: true,
+    jsctx: ctx
   )
-  for it in window.weakMap.mitems:
-    it = JS_UNDEFINED
-  if scripting != smFalse:
-    let rt = newGlobalJSRuntime()
-    let ctx = rt.newJSContext()
-    if window.addScripting(ctx).isErr:
-      window.console.error("failed to initialize JS")
-      window.console.writeException(ctx)
-      quit(1)
-    var globalExotic {.global.} = JSClassExoticMethods(
-      define_own_property: windowDefineOwnProperty,
-      #TODO get_own_property, get, set, delete, own property keys
-      set_prototype: windowSetPrototype,
-      is_extensible: windowIsExtensible,
-      prevent_extensions: windowPreventExtensions,
-    )
-    JS_SetGlobalExotic(ctx, addr globalExotic)
+  if window != nil:
+    for it in window.weakMap.mitems:
+      it = JS_UNDEFINED
+  if window == nil or window.addScripting(ctx).isErr:
+    console.error("failed to initialize JS")
+    console.writeException(ctx)
+    quit(1)
   return window
+
+proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream;
+    console: Console): Window =
+  # global object in the pager
+  if ctx.addWindowModule().isErr:
+    return Window(nil)
+  let window = jsNew WindowObj(
+    jsctx: ctx,
+    loader: loader,
+    urandom: urandom,
+    console: console,
+    settings: EnvironmentSettings(scripting: smApp),
+    dangerAlwaysSameOrigin: true,
+    document: newDocument(parseURL0("about:blank"))
+  )
+  if window != nil:
+    for it in window.weakMap.mitems:
+      it = JS_UNDEFINED
+  if ctx.addCommonModules(window).isErr:
+    return Window(nil)
+  window
 
 # Forward declaration hack
 getConsoleImpl = getConsole

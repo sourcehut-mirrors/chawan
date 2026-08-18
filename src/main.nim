@@ -23,6 +23,7 @@ import local/term
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsopaque
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -31,7 +32,6 @@ import server/forkserver
 import server/loaderiface
 import types/jsopt
 import types/opt
-import types/url
 import utils/myposix
 import utils/sandbox
 import utils/strwidth
@@ -279,8 +279,8 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
 
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
-proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int):
-    ForkServer {.myProveInit.} =
+proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int;
+    rt: JSRuntime): ForkServer {.myProveInit.} =
   var sockVec {.noinit.}: array[2, cint] # stdin in forkserver
   var pipeFdErr {.noinit.}: array[2, cint] # stderr in forkserver
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sockVec) != 0:
@@ -302,7 +302,7 @@ proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int):
     discard close(loaderSockVec[0])
     let controlStream = newPosixStream(sockVec[1])
     let loaderStream = newPosixStream(loaderSockVec[1])
-    runForkServer(controlStream, loaderStream, pagerPid)
+    runForkServer(controlStream, loaderStream, pagerPid, rt)
     exitnow(1)
   else:
     discard close(sockVec[1])
@@ -368,7 +368,6 @@ jsNamespaceDef(Client): # fake namespace
     return JS_UNDEFINED
 
 proc addJSModules(client: Window; ctx: JSContext): Opt[void] =
-  ?ctx.addCommonModules(client)
   let global = ctx.getOpaque().global
   if not ctx.setPropertyFunctionList(global, ClientDef.staticFuns):
     return err()
@@ -383,25 +382,14 @@ proc addJSModules(client: Window; ctx: JSContext): Opt[void] =
 proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
     urandom: PosixStream): Window {.myProveInit.} =
   let console = newConsole(cast[ChaFile](stderr))
-  let client = Window(
-    jsctx: jsctx,
-    loader: loader,
-    urandom: urandom,
-    console: console,
-    settings: EnvironmentSettings(
-      scripting: smApp,
-    ),
-    dangerAlwaysSameOrigin: true,
-    document: newDocument(parseURL0("about:blank"))
-  )
-  if client.addJSModules(jsctx).isOk:
+  let client = newClient(jsctx, loader, urandom, console)
+  if client != nil and client.addJSModules(jsctx).isOk:
     return client
   else:
     die("failed to initialize JS: " & jsctx.getExceptionMsg())
 
-proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
+proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =
-  let jsctx = rt.newJSContext()
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
   var ctx = ParamParseContext(jsctx: jsctx, params: commandLineParams(), i: 0)
@@ -447,13 +435,15 @@ proc main2(rt: JSRuntime; loaderSockVec: array[2, cint]; pagerPid: int;
   jsctx.setupStartupScript("init.jsb")
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
     client.console, addr client.timeouts)
+  if pager == nil:
+    die("failed to create pager")
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs
   let code = pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
-  jsctx.free()
   return code
 
 proc main() =
+  let rt = newGlobalJSRuntime()
   initCAtomFactory()
   let binDir = myposix.getAppFilename().untilLast('/')
   if twtstr.setEnv("CHA_BIN_DIR", binDir).isErr or
@@ -463,10 +453,11 @@ proc main() =
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
     die("failed to set up initial socket pair")
   let pagerPid = getCurrentProcessId()
-  let forkserver = forkForkServer(loaderSockVec, pagerPid)
-  let jsrt = newGlobalJSRuntime()
-  let code = main2(jsrt, loaderSockVec, pagerPid, forkserver)
-  jsrt.free()
+  let forkserver = forkForkServer(loaderSockVec, pagerPid, rt)
+  let jsctx = rt.newJSContext()
+  let code = main2(jsctx, loaderSockVec, pagerPid, forkserver)
+  jsctx.free()
+  rt.free()
   quit(code)
 
 main()

@@ -185,6 +185,11 @@ so don't use it unless you know what you're doing.
 
 `out` parameters crash the 1.6.14 compiler.  Use `var` instead.
 
+### `.cursor`
+
+`.cursor` is broken for custom types on Nim versions up to 2.0.0.
+For storing weak references, use `ptr` instead.
+
 ### Copying operations
 
 `substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which is a
@@ -329,8 +334,7 @@ You may find these links useful.
 Of particular interest in the documentation are:
 
 * The [architecture](architecture.md) document.
-* The Monoucha [manual](../lib/monoucha0/doc/manual.md), for JS-related
-  documentation.
+* The [JS guide](jsguide.md), for working with JS-related code.
 
 ### WHATWG
 

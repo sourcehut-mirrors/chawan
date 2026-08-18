@@ -13,6 +13,7 @@ import html/script
 import io/dynstream
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -45,9 +46,11 @@ type
   XMLHttpRequestFlag = enum
     xhrfSend, xhrfUploadListener, xhrfSync, xhrfUploadComplete, xhrfTimedOut
 
-  XMLHttpRequestUpload {.final.} = ref object of EventTarget
+  XMLHttpRequestUploadObj {.pure, final.} = object of EventTargetObj
 
-  XMLHttpRequest {.final.} = ref object of EventTarget
+  XMLHttpRequestUpload = JSRef[XMLHttpRequestUploadObj]
+
+  XMLHttpRequestObj {.pure, final.} = object of EventTargetObj
     readyState: XMLHttpRequestState
     upload: XMLHttpRequestUpload
     flags: set[XMLHttpRequestFlag]
@@ -62,10 +65,14 @@ type
     received: string
     contentTypeOverride: string
 
-  ProgressEvent {.final.} = ref object of Event
+  XMLHttpRequest = JSRef[XMLHttpRequestObj]
+
+  ProgressEventObj {.pure, final.} = object of EventObj
     lengthComputable: bool
     loaded: float64
     total: float64
+
+  ProgressEvent = JSRef[ProgressEventObj]
 
   ProgressEventInit = object of EventInit
     lengthComputable {.jsdefault.}: bool
@@ -89,14 +96,15 @@ jsClassDef(ProgressEvent):
 
   proc newProgressEvent(ctype: CAtomTraced; init = ProgressEventInit()):
       ProgressEvent {.jsctor.} =
-    let event = ProgressEvent(
+    let event = jsNew ProgressEventObj(
       ctype: ctype.dup(),
       lengthComputable: init.lengthComputable,
       loaded: init.loaded,
       total: init.total
     )
-    Event(event).innerEventCreationSteps(EventInit(init))
-    return event
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(init))
+    event
 
 # XMLHttpRequestUpload
 jsClassDef(XMLHttpRequestUpload):
@@ -113,8 +121,8 @@ proc parseMethod(ctx: JSContext; s: DOMString): Opt[HttpMethod] =
     JS_ThrowDOMException(ctx, "SyntaxError", "invalid method")
   err()
 
-proc fireReadyStateChangeEvent(window: Window; target: EventTarget) =
-  window.fireEvent(satReadystatechange, target, bubbles = false,
+proc fireReadyStateChangeEvent(window: Window; target: XMLHttpRequest) =
+  window.fireEvent(satReadystatechange, target.asEventTarget, bubbles = false,
     cancelable = false, trusted = true)
 
 proc checkOpened(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
@@ -137,8 +145,9 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     total: float64(length),
     lengthComputable: length != 0
   ))
-  event.setTrusted()
-  window.fireEvent(event, target)
+  if event != nil:
+    event.asEvent.setTrusted()
+    window.fireEvent(event.asEvent, target)
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
   this.readyState = xhrsDone
@@ -149,10 +158,10 @@ proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
     if xhrfUploadComplete notin this.flags:
       this.flags.incl(xhrfUploadComplete)
       if xhrfUploadListener in this.flags:
-        window.fireProgressEvent(this.upload, name, 0, 0)
-        window.fireProgressEvent(this.upload, satLoadend, 0, 0)
-    window.fireProgressEvent(this, name, 0, 0)
-    window.fireProgressEvent(this, satLoadend, 0, 0)
+        window.fireProgressEvent(this.upload.asEventTarget, name, 0, 0)
+        window.fireProgressEvent(this.upload.asEventTarget, satLoadend, 0, 0)
+    window.fireProgressEvent(this.asEventTarget, name, 0, 0)
+    window.fireProgressEvent(this.asEventTarget, satLoadend, 0, 0)
 
 proc handleErrors(window: Window; this: XMLHttpRequest; ctx: JSContext):
     Opt[void] =
@@ -196,8 +205,8 @@ proc onReadXHR(response: Response) =
   if this.readyState == xhrsHeadersReceived:
     this.readyState = xhrsLoading
     window.fireReadyStateChangeEvent(this)
-  window.fireProgressEvent(this, satProgress, int64(this.received.len),
-    opaque.len)
+  window.fireProgressEvent(this.asEventTarget, satProgress,
+    int64(this.received.len), opaque.len)
 
 proc onFinishXHR(response: Response; success: bool) =
   let opaque = XHROpaque(response.opaque)
@@ -207,12 +216,15 @@ proc onFinishXHR(response: Response; success: bool) =
     discard window.handleErrors(this, nil)
     if response.responseType != rtError:
       let recvLen = int64(this.received.len)
-      window.fireProgressEvent(this, satProgress, recvLen, opaque.len)
+      window.fireProgressEvent(this.asEventTarget, satProgress, recvLen,
+        opaque.len)
       this.readyState = xhrsDone
       this.flags.excl(xhrfSend)
       window.fireReadyStateChangeEvent(this)
-      window.fireProgressEvent(this, satLoad, recvLen, opaque.len)
-      window.fireProgressEvent(this, satLoadend, recvLen, opaque.len)
+      window.fireProgressEvent(this.asEventTarget, satLoad, recvLen,
+        opaque.len)
+      window.fireProgressEvent(this.asEventTarget, satLoadend, recvLen,
+        opaque.len)
   else:
     this.response = makeNetworkError()
     discard window.handleErrors(this, nil)
@@ -281,22 +293,19 @@ jsClassDef(XMLHttpRequest):
     ctx.addEventGetSet(classDef.id, satReadystatechange)
 
   proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
-    let upload = XMLHttpRequestUpload()
-    return XMLHttpRequest(
+    let upload = jsNew XMLHttpRequestUploadObj()
+    let headers = newHeaders(hgRequest)
+    let response = makeNetworkError()
+    if upload == nil or headers == nil or response ==  nil:
+      return XMLHttpRequest(nil)
+    jsNew XMLHttpRequestObj(
       upload: upload,
-      headers: newHeaders(hgRequest),
+      headers: headers,
       responseObject: JS_UNDEFINED,
-      response: makeNetworkError()
+      response: response
     )
 
-  proc finalize(rt: JSRuntime; this: XMLHttpRequest) {.jsfin.} =
-    JS_FreeValueRT(rt, this.responseObject)
-
-  proc mark(rt: JSRuntime; this: XMLHttpRequest; markFun: JS_MarkFunc)
-      {.jsmark.} =
-    JS_MarkValue(rt, this.responseObject, markFun)
-
-  proc readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
+  proc getReadyState(this: XMLHttpRequest): uint16 {.jsfget: "readyState".} =
     return uint16(this.readyState)
 
   proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: DOMString;
@@ -386,12 +395,15 @@ jsClassDef(XMLHttpRequest):
     let request = newRequest(this.requestURL, this.requestMethod, this.headers,
       credentials = credentials, urlCredentials = urlCredentials,
       mode = rmCors)
+    if request == nil:
+      JS_ThrowOutOfMemory(ctx)
+      return err()
     if not JS_IsNull(body):
-      var document: Document = nil
+      var document: Document
       let contentType = if ctx.fromJS(body, document).isOk:
         request.body = RequestBody(
           t: rbtString,
-          s: document.serializeFragment(writeShadow = false)
+          s: document.asNode.serializeFragment(writeShadow = false)
               .toValidUTF8() # replace surrogates
         )
         "text/html;charset=UTF-8"
@@ -412,7 +424,7 @@ jsClassDef(XMLHttpRequest):
     this.flags.incl(xhrfSend)
     let window = ctx.getWindow()
     if xhrfSync notin this.flags: # async
-      window.fireProgressEvent(this, satLoadstart, 0, 0)
+      window.fireProgressEvent(this.asEventTarget, satLoadstart, 0, 0)
       let opaque = XHROpaque(this: this, window: window)
       window.fetch(request, sendAsync, opaque)
     else: # sync
@@ -535,8 +547,8 @@ jsClassDef(XMLHttpRequest):
           parseURL0("about:blank"))
         this.responseObject = ctx.toJS(res)
       of xhrtJSON:
-        this.responseObject = JS_ParseJSON(ctx, cstring(this.received),
-          csize_t(this.received.len), cstring"<input>")
+        this.responseObject = JS_ParseJSON(ctx, this.received.toCStringConst,
+          csize_t(this.received.len), "<input>".toCStringConst)
       else: discard
     if JS_IsException(this.responseObject):
       this.responseObject = JS_UNDEFINED

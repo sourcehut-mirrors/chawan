@@ -2,6 +2,7 @@
 
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -18,7 +19,7 @@ type
     nop*: bool
     s*: string
 
-  Select* = ref object
+  SelectObj = object
     options: seq[SelectOption]
     selected: int # new selection
     fromy: int # first index to display
@@ -33,7 +34,7 @@ type
     unselected: bool
     finish: JSValue
 
-jsDestructor(Select)
+  Select* = JSRef[SelectObj]
 
 # Forward declarations
 proc setCursorY(select: Select; y: int)
@@ -219,17 +220,11 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       display[dls + x].format = format
       inc x
 
-jsClassDef(Select):
+jsClassPublicDef(Select):
   jsget Select, fromy
   jsget Select, cursory
   jsget Select, x
   jsget Select, y
-
-  proc finalize(rt: JSRuntime; select: Select) {.jsfin.} =
-    JS_FreeValueRT(rt, select.finish)
-
-  proc mark(rt: JSRuntime; select: Select; markFunc: JS_MarkFunc) {.jsmark.} =
-    JS_MarkValue(rt, select.finish, markFunc)
 
   proc numLines(select: Select): int {.jsfget.} =
     return select.options.len
@@ -412,24 +407,25 @@ jsClassDef(Select):
 
   proc newSelect(ctx: JSContext; options: seq[SelectOption]; selected: int;
       x, y, width, height: int; finish: JSValueConst): Opt[Select] {.jsctor.} =
-    let select = Select(
+    let select = jsNew SelectObj(
       selected: selected,
       x: x,
       y: y,
       options: options,
       finish: JS_DupValue(ctx, finish)
     )
-    var maxw = 0
-    for opt in select.options.mitems:
-      opt.s.mnormalize()
-      opt.s = ' ' & opt.s & ' '
-      maxw = max(maxw, opt.s.width())
-    select.maxw = maxw
-    for opt in select.options.mitems:
-      if opt.nop:
-        opt.s = ' ' & ($bdcHorizontalBarTop).repeat(maxw - 2) & ' '
-    select.windowChange(width, height)
-    select.setCursorY(selected)
+    if select != nil:
+      var maxw = 0
+      for opt in select.options.mitems:
+        opt.s.mnormalize()
+        opt.s = ' ' & opt.s & ' '
+        maxw = max(maxw, opt.s.width())
+      select.maxw = maxw
+      for opt in select.options.mitems:
+        if opt.nop:
+          opt.s = ' ' & ($bdcHorizontalBarTop).repeat(maxw - 2) & ' '
+      select.windowChange(width, height)
+      select.setCursorY(selected)
     ok(select)
 
 proc addSelectModule*(ctx: JSContext): FromJSResult =

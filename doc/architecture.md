@@ -236,7 +236,7 @@ separated out variant is no longer up to date.
 To avoid having to type out all the type conversion & error handling
 code manually, we have JS pragmas to automagically turn Nim procedures
 into JavaScript functions.  (For details on the specific pragmas, see the
-[manual](../lib/monoucha0/doc/manual.md).)
+[manual](jsguide.md).)
 
 Still, sometimes we have to deal with JSValues manually; in this case,
 the fromJS and toJS functions are used.  fromJS in particular returns a

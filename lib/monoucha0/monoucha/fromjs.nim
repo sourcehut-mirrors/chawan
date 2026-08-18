@@ -6,6 +6,7 @@ import std/tables
 import std/typetraits
 
 import jsopaque
+import jsref
 import jstypes
 import quickjs
 import tojs
@@ -39,9 +40,7 @@ proc fromJS*[K, T](ctx: JSContext; val: JSValueConst;
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): FromJSResult
 proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
   FromJSResult
-proc fromJS*[T: ptr object](ctx: JSContext; val: JSValueConst; res: var T):
-  FromJSResult
-proc fromJS*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSRef[T]):
   FromJSResult
 proc fromJS*[T: JSDict](ctx: JSContext; val: JSValueConst; res: var T):
   FromJSResult
@@ -93,7 +92,7 @@ proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): FromJSResult =
   result = ctx.fromJS(val, res)
   JS_FreeValue(ctx, val)
 
-proc fromJS(ctx: JSContext; cs: cstring; len: csize_t; narrow: bool;
+proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t; narrow: bool;
     res: var string): FromJSResult =
   if cs == nil:
     return fjErr
@@ -104,7 +103,7 @@ proc fromJS(ctx: JSContext; cs: cstring; len: csize_t; narrow: bool;
   let ilen = cast[int](len)
   res = newString(ilen)
   if ilen > 0:
-    chaArrayCopy(res, cs.toOpenArray(0, ilen - 1))
+    chaArrayCopy(res, cstring(cs).toOpenArray(0, ilen - 1))
     if not narrow:
       res.replaceSurrogates()
   JS_FreeCString(ctx, cs)
@@ -126,7 +125,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
     JS_FreeCString(ctx, cs)
     JS_ThrowRangeError(ctx, "string length out of bounds")
     return fjErr
-  res = initDOMString(cs, cast[int](len))
+  res = initDOMString(cstring(cs), cast[int](len))
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
@@ -137,8 +136,8 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
   res = ds.toDOMStringNull()
   fjOk
 
-proc fromJS(ctx: JSContext; cs: cstring; len: csize_t; res: var ByteString):
-    FromJSResult =
+proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t;
+    res: var ByteString): FromJSResult =
   if cs == nil:
     return fjErr
   if len > csize_t(int.high):
@@ -147,7 +146,7 @@ proc fromJS(ctx: JSContext; cs: cstring; len: csize_t; res: var ByteString):
     return fjErr
   let ilen = cast[int](len)
   res.s = newString(ilen)
-  for u in cs.toOpenArray(0, ilen - 1).points:
+  for u in cs.toCString.toOpenArray(0, ilen - 1).points:
     if u > 0xFF:
       JS_ThrowTypeError(ctx, "ByteString character out of bounds")
       return fjErr
@@ -437,27 +436,25 @@ proc fromJSThis*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
     val
   ctx.fromJS(val, tclassid, res)
 
-proc fromJS*[T: ptr object](ctx: JSContext; val: JSValueConst; res: var T):
+proc fromJS*[T: object](ctx: JSContext; val: JSValueConst; res: var ptr T):
     FromJSResult =
   when NimMajor < 2:
     # I don't know why, but Nim 1.6.14 fails to generate the forward decls
-    # in C.  So we'll stick with dynamic lookup there.
-    let nimt = getTypePtr(ref T.pointerBase)
-    let classId = globalJSTypeMap.getOrDefault(nimt)
+    # in C.  So we add a little indirection instead.
+    let classId = globalJSTypeMap[getJSTypeId(T)]
   else:
     mixin getClassID
-    let classId = getClassID(ref T.pointerBase)
+    let classId = getClassID(JSRef[T])
   var x {.noinit.}: pointer
-  if ctx.fromJS(val, classId, x) == fjErr:
-    return fjErr
-  res = cast[T](x)
+  ?ctx.fromJS(val, classId, x)
+  res = cast[ptr T](x)
   fjOk
 
-proc fromJS*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSRef[T]):
     FromJSResult =
-  var x {.noinit.}: ptr T.pointerBase
-  ?ctx.fromJS(val, x)
-  res = cast[T](x)
+  var p: ptr T
+  ?ctx.fromJS(val, p)
+  res = cast[JSRef[T]](p)
   fjOk
 
 macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
@@ -614,7 +611,7 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): FromJSResult =
     JS_FreeCString(ctx, cs)
     JS_ThrowRangeError(ctx, "string length out of bounds")
     return fjErr
-  res = initDOMString(cs, cast[int](len))
+  res = initDOMString(cstring(cs), cast[int](len))
   fjOk
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var ByteString): FromJSResult =

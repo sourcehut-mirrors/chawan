@@ -77,6 +77,7 @@ import std/typetraits
 
 import fromjs
 import jsopaque
+import jsref
 import jsutils
 import quickjs
 import tojs
@@ -119,6 +120,7 @@ type
     parent*: JSClassID
     iterable*: JSIterableType
     ctorType*: JSCFunctionEnum
+    raw*: bool #TODO remove this
     # pointer to functions:
     # - 0 ..< funsEnd: regular functions
     # - funsEnd ..< staticFunsEnd: static functions
@@ -127,11 +129,9 @@ type
     staticFunsEnd*: int16
     unforgeableFunsEnd*: int16
     funsBase*: JSCFunctionListP
-    when defined(gcDestructors):
-      dtor*: BoundRefDestructor
     ctor*: JSCFunction
-    finalizer*: JSFinalizerFunction
-    gc_mark*: JSClassGCMark
+    finalizer*: ChaFinalizerFunction
+    mark*: ChaMarkFunction
     exotic*: ptr JSClassExoticMethods
 
 template funs*(def: ChaClassDef): openArray[JSCFunctionListEntry] =
@@ -180,11 +180,55 @@ proc bindRealloc(s: JSMallocStateP; p: pointer; size: csize_t): pointer
   let diff = csize_t(getOccupiedMem()) - s.malloc_size
   let res = realloc(p, size)
   s.malloc_size = csize_t(getOccupiedMem()) - diff
-  if p == nil:
+  if p == nil and size > 0:
     inc s.malloc_count
-  elif size == 0:
+  elif p != nil and size == 0:
     dec s.malloc_count
   res
+
+proc getForeignPtr*(val: JSValueConst): pointer =
+  # ugly hack, but it does the job
+  # (we always get a JSValue for mark, so we discriminate unbound foreign
+  # objects from bound ones by passing the former with a module tag)
+  if JS_VALUE_GET_TAG(val) == JS_TAG_MODULE:
+    return JS_VALUE_GET_PTR(val)
+  return JS_GetOpaque(val, JS_GetClassID(val))
+
+proc jsFinalize(rt: JSRuntime; this: JSValueConst) {.cdecl.} =
+  # We don't want to duplicate each finalizer, so we store them in a global
+  # registry and invoke them in the end.
+  #TODO ideally, the finalizers would just tail-call into each other
+  # without this indirection.
+  var p: pointer
+  var classid: JSClassID
+  if JS_VALUE_GET_TAG(this) == JS_TAG_OBJECT:
+    p = JS_GetAnyOpaque(this, classid)
+  else:
+    p = JS_VALUE_GET_PTR(this)
+    classid = JS_GetForeignClassID(p)
+  for fin in rt.getOpaque().finalizers(classid):
+    fin(rt, p)
+  if JS_VALUE_GET_TAG(this) == JS_TAG_OBJECT:
+    # called from JSValue finalizer, so the opaque was not free'd
+    JS_FreeForeignObjectMemory(rt, p)
+
+proc jsMark(rt: JSRuntime; this: JSValueConst; markFunc: JS_MarkFunc)
+    {.cdecl.} =
+  #TODO see above
+  var p: pointer
+  var classid: JSClassID
+  if JS_VALUE_GET_TAG(this) == JS_TAG_OBJECT:
+    p = JS_GetAnyOpaque(this, classid)
+  else:
+    p = JS_VALUE_GET_PTR(this)
+    classid = JS_GetForeignClassID(p)
+  when defined(debug):
+    let marking = rt.getOpaque().marking
+    rt.getOpaque().marking = true
+  for mark in rt.getOpaque().marks(classid):
+    mark(rt, p, markFunc)
+  when defined(debug):
+    rt.getOpaque().marking = marking
 
 proc newJSRuntime*(): JSRuntime =
   ## Instantiate a Monoucha `JSRuntime`.
@@ -197,11 +241,8 @@ proc newJSRuntime*(): JSRuntime =
   return JS_NewRuntime2(addr mf, nil)
 
 proc setGlobalRuntime*(rt: JSRuntime) =
-  let opaque = JSRuntimeOpaque()
-  GC_ref(opaque)
-  JS_SetRuntimeOpaque(rt, cast[pointer](opaque))
-  # Must be added after opaque is set, or there is a chance of
-  # nimFinalizeForJS dereferencing it (at the new call).
+  let opaque = create(JSRuntimeOpaqueObj)
+  JS_SetRuntimeOpaque(rt, opaque)
   globalRuntime = rt
 
 proc newGlobalJSRuntime*(): JSRuntime =
@@ -216,9 +257,13 @@ proc newJSContext*(rt: JSRuntime): JSContext =
   ## `newJSContext`, as it does extra initialization over `JS_NewContext`.
   let ctx = JS_NewContext(rt)
   let opaque = newJSContextOpaque(ctx)
-  GC_ref(opaque)
-  JS_SetContextOpaque(ctx, cast[pointer](opaque))
+  JS_SetContextOpaque(ctx, opaque)
   return ctx
+
+proc newDummyContext*(rt: JSRuntime): JSContext =
+  ## Like newJSContext, but does not actually set the context opaque.
+  ## Used in no-JS buffers.
+  return JS_NewContextRaw(rt)
 
 proc free*(ctx: JSContext) =
   ## Free the JSContext and associated resources.
@@ -230,29 +275,16 @@ proc free*(ctx: JSContext) =
       JS_FreeAtom(ctx, a)
     for a in opaque.strRefs:
       JS_FreeAtom(ctx, a)
-    for v in opaque.valRefs:
-      JS_FreeValue(ctx, v)
-    for ctor in opaque.ctors:
-      JS_FreeValue(ctx, ctor)
-    let globalObj = opaque.globalObj
+    ctx.freeValues(opaque.valRefs)
+    ctx.freeValues(opaque.ctors)
+    let globalObj = move(opaque.globalObj)
     if globalObj != nil:
       let rt = JS_GetRuntime(ctx)
-      let rtOpaque = rt.getOpaque()
-      for fin in rtOpaque.finalizers(opaque.gclass):
-        fin(rt, cast[pointer](globalObj))
-      # We don't want to accidentally invoke the global class's finalizers
-      # twice, so disarm them here.
-      #TODO this won't work once we have multiple contexts
-      if int(opaque.gclass) < rtOpaque.classes.len:
-        rtOpaque.classes[int(opaque.gclass)].fins.setLen(0)
-      when defined(gcDestructors):
-        rtOpaque.classes[int(opaque.gclass)].dtor(globalObj)
-      else:
-        GC_unref(cast[RootRef](globalObj))
-      rtOpaque.del(globalObj)
+      JS_FreeForeignObject(rt, globalObj)
     JS_FreeValue(ctx, opaque.global)
-    opaque.globalObj = nil
-    GC_unref(opaque)
+    JS_SetContextOpaque(ctx, nil)
+    `=destroy`(opaque[])
+    dealloc(opaque)
   JS_FreeContext(ctx)
 
 proc free*(rt: JSRuntime) =
@@ -263,102 +295,66 @@ proc free*(rt: JSRuntime) =
       JS_FreeAtomRT(rt, atom)
     for it in map.enums:
       JS_FreeAtomRT(rt, it.atom)
-  GC_unref(rtOpaque)
-  # For refc: ensure there are no ghost Nim objects holding onto JS
-  # values.
-  try:
-    GC_fullCollect()
-  except Exception:
-    quit(1)
-  JS_RunGC(rt)
-  # Now comes a very elaborate dance to ensure that ordering
-  # dependencies are satisfied:
-  # * plist must be cleared before finalizers run.
-  # * Individual finalizers rely on their opaques being set.
-  # * Bound JSValues must not drop to a refcount of 0 before their
-  #   opaque is cleared, lest they try to mark related JSValues and/or
-  #   claw back their refcount in can_destroy.
-  # * Allocations must not occur during deinitialization.
-  #
-  # For this we need three passes over the object map.
-  var np = 0
-  var plist = move(rtOpaque.plist)
-  for i in 0 ..< plist.len:
-    let it = plist[i]
-    if it.nimp != nil:
-      discard JS_DupValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.jsp))
-      if np < i:
-        plist[np] = move(plist[i])
-      inc np
-  plist.setLen(np)
-  for it in plist:
-    let val = JS_MKPTR(JS_TAG_OBJECT, it.jsp)
-    let classid = JS_GetClassID(val)
-    let opaque = JS_GetOpaque(val, classid)
-    for fin in rtOpaque.finalizers(classid):
-      fin(rt, it.nimp)
-    if opaque != nil: # JS held a ref to the Nim object.
-      JS_SetOpaque(val, nil)
-      assert opaque == it.nimp
-      when defined(gcDestructors):
-        rtOpaque.classes[int(classid)].dtor(opaque)
-      else:
-        GC_unref(cast[RootRef](opaque))
-    else: # Nim held a ref to the JS object.
-      JS_FreeValueRT(rt, val)
-  # Opaques are unset, and finalizers have run.  Now we can actually
-  # release the JS objects.
-  for it in plist:
-    JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.jsp))
-  # GC will run again now (in QJS code).
   JS_FreeRuntime(rt)
+  # free opaque after runtime to preserve class data for mark & finalization
+  `=destroy`(rtOpaque[])
+  dealloc(rtOpaque)
   globalRuntime = nil
 
-proc setGlobal*[T](ctx: JSContext; obj: T) =
+proc setGlobal*[T](ctx: JSContext; obj: JSRef[T]) =
   ## Set the global variable to the reference `obj`.
-  ## Note: you must call `ctx.registerType(T, asglobal = true)` for this to
-  ## work, `T` being the type of `obj`.
-  # Add JSValue reference.
-  let rt = JS_GetRuntime(ctx)
-  let rtOpaque = rt.getOpaque()
   let ctxOpaque = ctx.getOpaque()
-  let opaque = cast[pointer](obj)
-  rtOpaque.add(opaque, JS_VALUE_GET_PTR(ctxOpaque.global))
-  GC_ref(obj)
-  ctxOpaque.globalObj = opaque
+  if ctxOpaque != nil:
+    let obj = cast[pointer](obj)
+    let rt = JS_GetRuntime(ctx)
+    let dummy = JS_NewObjectClass(ctx, ctxOpaque.gclass)
+    JS_SetForeignOpaque(rt, obj, dummy)
+    JS_SetOpaque(dummy, obj)
+    ctxOpaque.globalObj = JS_DupForeignObject(rt, obj)
+    let sym = ctx.call(ctxOpaque.valRefs[jsvSymbol], JS_UNDEFINED)
+    assert not JS_IsException(sym)
+    let atom = JS_ValueToAtom(ctx, sym)
+    assert ctx.defineProperty(ctxOpaque.global, atom, dummy) == dprSuccess
+    JS_FreeValue(ctx, sym)
+    JS_FreeAtom(ctx, atom)
 
 # Add all LegacyUnforgeable functions defined on the prototype chain to
 # the opaque.
 # Since every prototype has a list of all its ancestor's LegacyUnforgeable
 # functions, it is sufficient to simply merge the new list of new classes
 # with their parent's list to achieve this.
-# We handle finalizers similarly.
+# We handle finalizers & mark functions similarly.
 # Returns true on success, false on exception.
-proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
-    classid, parent: JSClassID; funs: JSFunctionList;
-    finalizer: JSFinalizerFunction): bool =
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  var merged = @funs
-  if int(parent) < rtOpaque.classes.len:
-    merged.add(rtOpaque.classes[int(parent)].unforgeable)
+proc addClass(rtOpaque: JSRuntimeOpaque; def: ChaClassDef): bool =
+  var merged = @(def.unforgeableFuns)
+  if int(def.parent) < rtOpaque.classes.len:
+    merged.add(rtOpaque.classes[int(def.parent)].unforgeable)
   if merged.len > 0:
-    rtOpaque.classes[int(classid)].unforgeable = move(merged)
-  var fins: seq[JSFinalizerFunction] = @[]
-  if finalizer != nil:
-    fins.add(finalizer)
-  if int(parent) < rtOpaque.classes.len:
-    fins.add(rtOpaque.classes[int(parent)].fins)
+    rtOpaque.classes[int(def.id)].unforgeable = move(merged)
+  var fins: seq[ChaFinalizerFunction] = @[]
+  if def.finalizer != nil:
+    fins.add(def.finalizer)
+  if int(def.parent) < rtOpaque.classes.len:
+    fins.add(rtOpaque.classes[int(def.parent)].fins)
   if fins.len > 0:
-    rtOpaque.classes[int(classid)].fins = move(fins)
+    rtOpaque.classes[int(def.id)].fins = move(fins)
+  var marks: seq[ChaMarkFunction] = @[]
+  if def.mark != nil:
+    marks.add(def.mark)
+  if int(def.parent) < rtOpaque.classes.len:
+    marks.add(rtOpaque.classes[int(def.parent)].marks)
+  if marks.len > 0:
+    rtOpaque.classes[int(def.id)].marks = move(marks)
+  rtOpaque.classes[int(def.id)].name = def.class_name
   true
 
 proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
-    iterable: JSIterableType; asglobal: bool; parentProto: JSValueConst):
-    JSValue =
-  if asglobal and not JS_IsNull(parentProto):
+    iterable: JSIterableType; parentProto: JSValueConst): JSValue =
+  if not JS_IsNull(parentProto):
     return JS_NewObjectProto(ctx, parentProto)
   if parent != JS_INVALID_CLASS_ID:
     let proto = JS_GetClassProto(ctx, parent)
+    assert JS_IsObject(proto)
     let res = JS_NewObjectProto(ctx, proto)
     JS_FreeValue(ctx, proto)
     return res
@@ -371,12 +367,14 @@ proc jsIllegalCtor(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
 
-proc newCtorFunFromParentClass*(ctx: JSContext; ctor: JSCFunction;
+proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
     className: cstring; parent: JSClassID; ctorType: JSCFunctionEnum): JSValue =
   let ctor = if ctor == nil: jsIllegalCtor else: ctor
-  let fun = JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
+  let fun = JS_NewCFunction2(ctx, ctor, cstringConst(className), 0, ctorType,
+    0)
   if parent != JS_INVALID_CLASS_ID:
     let proto = ctx.getOpaque().ctors[int(parent)]
+    assert JS_IsObject(proto)
     if JS_SetPrototype(ctx, fun, proto) < 0:
       return JS_EXCEPTION
   return fun
@@ -516,6 +514,7 @@ type
     propHasFun: NimNode # exotic has function ident
     propNamesFun: NimNode # exotic property names function ident
     markFun: NimNode # class mark ident
+    convId: NimNode # automatically generated class mark ident
     finFun: NimNode # class mark ident
     tabReplaceableNames: NimNode # replaceable names array
 
@@ -688,6 +687,7 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   let t = gen.funcParams[gen.i].t
   let id = ident(thisName)
   if t.eqIdent("JSValueConst"):
+    #TODO add a class check here?
     gen.jsFunCall.add(id)
   else:
     let s = ident("arg_" & $gen.i)
@@ -707,14 +707,17 @@ proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
   gen.jsFunCallList.add(quote do:
-    when `t` is ref:
-      var `s` {.noinit.}: ptr `t`.pointerBase
-    elif `t` is SomeNumber or `t` is enum or `t` is bool:
-      var `s` {.noinit.}: `t`
+    when `t` is JSRef:
+      var `s` {.noinit.}: pointer
+      if dl != fjErr and ctx.fromJS(`id`, getClassID(`t`), `s`) == fjErr:
+        dl = fjErr
     else:
-      var `s`: `t`
-    if dl != fjErr and ctx.fromJS(`id`, `s`) == fjErr:
-      dl = fjErr
+      when `t` is SomeNumber or `t` is enum or `t` is bool:
+        var `s` {.noinit.}: `t`
+      else:
+        var `s`: `t`
+      if dl != fjErr and ctx.fromJS(`id`, `s`) == fjErr:
+        dl = fjErr
   )
   gen.jsFunCall.add(quote do: cast[`t`](`s`))
   inc gen.i
@@ -1034,32 +1037,6 @@ proc generateFunction(gen: var JSFuncGenerator): NimNode =
     gen.newJSProc(getJSParams())
   jsProc
 
-proc generateFinalizer(gen: var JSFuncGenerator): NimNode =
-  let finName = gen.newName
-  let finFun = ident(gen.funcName)
-  let t = gen.thisTypeNode
-  var finStmt: NimNode = nil # warning: won't compile on 2.0.4 with let
-  if gen.minArgs == 1:
-    finStmt = quote do: `finFun`(cast[`t`](opaque))
-  elif gen.minArgs == 2:
-    finStmt = quote do: `finFun`(rt, cast[`t`](opaque))
-  else:
-    error("Expected one or two parameters")
-  quote do:
-    proc `finName`(rt {.inject.}: JSRuntime; opaque {.inject.}: pointer) =
-      `finStmt`
-
-proc generateMark(gen: var JSFuncGenerator): NimNode =
-  let markName = gen.newName
-  let markFun = ident(gen.funcName)
-  let t = gen.thisTypeNode
-  quote do:
-    proc `markName`(rt {.inject.}: JSRuntime; val: JSValueConst;
-        markFunc {.inject.}: JS_MarkFunc) {.cdecl.} =
-      let opaque = JS_GetOpaque(val, JS_GetClassID(val))
-      if opaque != nil:
-        `markFun`(rt, cast[`t`](opaque), markFunc)
-
 proc generateIter(gen: var JSFuncGenerator): NimNode =
   gen.addThisParam()
   gen.jsFunCall.add(ident("pdone"))
@@ -1073,45 +1050,6 @@ proc generateIter(gen: var JSFuncGenerator): NimNode =
     else:
       JS_EXCEPTION
   gen.newJSProc(getJSIterParams())
-
-proc nimFinalizeForJS*(obj, typeptr: pointer) =
-  let rt = globalRuntime
-  if rt != nil:
-    let rtOpaque = rt.getOpaque()
-    let pp = rtOpaque.getOrDefault(obj)
-    if pp != nil:
-      let val = JS_MKPTR(JS_TAG_OBJECT, pp)
-      for fin in rtOpaque.finalizers(JS_GetClassID(val)):
-        fin(rt, obj)
-      JS_SetOpaque(val, nil)
-      rtOpaque.del(obj)
-      JS_FreeValueRT(rt, val)
-    else:
-      # No JSValue exists for the object, but it likely still expects us to
-      # free it.
-      let classid = globalJSTypeMap.getOrDefault(typeptr)
-      for fin in rtOpaque.finalizers(classid):
-        fin(rt, obj)
-
-type
-  JSRootObj* = object of RootObj
-
-  JSRootRef* = ref JSRootObj
-
-when (NimMajor, NimMinor, NimPatch) < (2, 0, 8):
-  proc cha_jsDestroy*(p: pointer) {.exportc.} =
-    let p = cast[ptr JSRootObj](p)
-    nimFinalizeForJS(p, getTypePtr(p[]))
-
-  proc `=destroy`*(obj: var JSRootObj) {.importc: "cha_jsDestroy",
-      header: "quickjs-aux.h".}
-else:
-  proc `=destroy`*(obj: var JSRootObj) =
-    nimFinalizeForJS(addr obj, getTypePtr(obj))
-
-template jsDestructor*[U](T: typedesc[ref U]) =
-  proc `=destroy`(obj: var U) =
-    nimFinalizeForJS(addr obj, getTypePtr(obj))
 
 proc bindReplaceableSet(stmts: NimNode; info: RegistryInfo) =
   let rsf = ident("js_replaceable_set")
@@ -1171,52 +1109,15 @@ proc bindGetSet(info: RegistryInfo) =
     else:
       error("Static getters and setters are not supported.")
 
-proc jsCanDestroy*(rt: JSRuntime; val: JSValueConst; refCount: ptr cint) {.
-    cdecl.} =
-  {.push overflowChecks, boundChecks: off.}
-  let classId = JS_GetClassID(val)
-  let opaque = JS_GetOpaque(val, classId)
-  if opaque != nil:
-    # Before this function is called, the ownership model is JSObject ->
-    # Nim object.  Here we change it to Nim object -> JSObject, so that
-    # the Nim object's reference count can now reach zero.
-    #
-    # To do this, we first increase the JS refcount by two, then decrement
-    # the Nim refcount.  This has a possibility of invoking
-    # nimFinalizeForJS, which decrements the refcount to 1.
-    # Finally, we decrement the refcount here again.
-    #
-    # As a result, QJS sees either
-    # a) refcount is 1, nimFinalizeForJS wasn't invoked and the object must
-    #    be resurrected.
-    # b) refcount is 0 as before, i.e. nimFinalizeForJS was invoked.  The
-    #    object must be free'd.
-    #
-    # An observant reader will note that we could simplify this by just
-    # incrementing by 1 and not decrementing.  The problem with that is
-    # that nimFinalizeForJS can also be invoked by Nim free'ing opaque,
-    # and then we want to free the JSValue on 0-refcount.  But here we
-    # are already inside a free (or cycle collection) and so calling it
-    # again would bring catastrophic consequences.
-    refCount[] += 2
-    # We can lie about the type in refc, as it type erases the reference.
-    # In ARC, we must do an indirect call.
-    when defined(gcDestructors):
-      rt.getOpaque().classes[int(classId)].dtor(opaque)
-    else:
-      GC_unref(cast[RootRef](opaque))
-    refCount[] -= 1
-  {.pop.}
-
 template jsget*(typ, field, funcName: untyped) =
   proc funcName(ctx: JSContext; this: JSValueConst): JSValue {.cdecl.} =
     var arg_0 {.noinit.}: pointer
     if ctx.fromJSThis(this, classDef.id, arg_0) == fjErr:
       return JS_EXCEPTION
-    when cast[typ](arg0).field is JSValue:
-      return JS_DupValue(ctx, cast[typ](arg0).field)
+    when cast[ptr typ.T](arg0).field is JSValue:
+      return JS_DupValue(ctx, cast[ptr typ.T](arg0).field)
     else:
-      return ctx.toJS(cast[typ](arg_0).field)
+      return ctx.toJS(cast[ptr typ.T](arg_0).field)
 
 template jsufget*(typ, field, funcName: untyped) =
   jsget(typ, field, funcName) # only differs in the macro
@@ -1227,37 +1128,65 @@ template jsset*(typ, field, funcName: untyped) =
     if ctx.fromJSThis(this, classDef.id, arg_0) == fjErr:
       return JS_EXCEPTION
     # We can't just set arg_0.field directly, or fromJS may damage it.
-    var nodeVal: typeof(cast[typ](arg_0).field)
+    var nodeVal: typeof(cast[ptr typ.T](arg_0).field)
     when nodeVal is JSValue:
       static:
         error(".jsset is not supported on JSValue; use jsfset")
     else:
       if ctx.fromJS(val, nodeVal) == fjErr:
         return JS_EXCEPTION
-    cast[typ](arg_0).field = move(nodeVal)
+    cast[ptr typ.T](arg_0).field = move(nodeVal)
     return JS_UNDEFINED
 
 template jsgetset*(typ, field, get, set: untyped) =
   jsget typ, field, get
   jsset typ, field, set
 
-when defined(gcDestructors):
-  proc rootRefDtor(x: pointer) =
-    GC_unref(cast[RootRef](x))
+proc runFinalizers*(rt: JSRuntime; p: pointer) =
+  let class = JS_GetForeignClassID(p)
+  let rtOpaque = rt.getOpaque()
+  for fin in rtOpaque.finalizers(class):
+    fin(rt, p)
 
-template jsconv*(typ: untyped) =
-  globalJSTypeMap[getTypePtr(typ)] = classDef.id
+template myDestroy*(p: untyped) =
+  when not supportsCopyMem(typeof(p)):
+    {.cast(raises: []).}:
+      `=destroy`(p)
 
-  proc getClassID*(t {.inject.}: typedesc[typ]): JSClassID =
-    classDef.id
-
-  when defined(gcDestructors):
-    when typ is RootRef:
-      classDef.dtor = rootRefDtor
+proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
+  for it in recList.children:
+    case it.kind
+    of nnkRecList:
+      jsClassTypeRecurse(markList, finList, it)
+    of nnkRecCase:
+      error("case objects are not supported")
     else:
-      proc `typ dtor`(x: pointer) {.nimcall.} =
-        GC_unref(cast[typ](x))
-      classDef.dtor = `typ dtor`
+      for i in 0 ..< it.len - 2:
+        var varNode = it[i]
+        if varNode.kind == nnkPragmaExpr:
+          varNode = varNode[0]
+        if varNode.kind == nnkPostfix:
+          varNode = varNode[1]
+        let typ = it[^2]
+        if typ.getTypeInst().sameType(JSValue.getType()):
+          markList.add(quote do:
+            JS_MarkValue(rt, this.`varNode`, markFunc)
+          )
+          finList.add(quote do:
+            JS_FreeValueRT(rt, this.`varNode`)
+          )
+        else:
+          var impl = typ
+          if typ.kind == nnkSym:
+            impl = typ.getImpl()
+          if impl.kind == nnkTypeDef and impl[2].kind == nnkBracketExpr and
+              impl[2][0].sameType(JSRef.getType()):
+            markList.add(quote do:
+              JS_MarkForeignObject(rt, cast[pointer](this.`varNode`), markFunc)
+            )
+          finList.add(quote do:
+            myDestroy(this.`varNode`)
+          )
 
 template jsextends*(class: ChaClassDef) =
   classDef.parent = class.id
@@ -1322,6 +1251,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
         of "jsdelprop": t = bfPropertyDel
         of "jsgetprop": t = bfPropertyGet
         of "jshasprop": t = bfPropertyHas
+        of "used": continue
         else: error("unknown pragma " & pragmaName)
         if gen.newName == nil or t != gen.t or flag != gen.flag:
           gen = initGenerator(child, t, jsname, flag, magic)
@@ -1332,8 +1262,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
           of bfGetter: stmts.add(gen.generateGet())
           of bfSetter: stmts.add(gen.generateSet())
           of bfIteratorNext: stmts.add(gen.generateIter())
-          of bfFinalizer: stmts.add(gen.generateFinalizer())
-          of bfMark: stmts.add(gen.generateMark())
+          of bfFinalizer, bfMark: discard
           of bfPropertyGetOwn: stmts.add(gen.generateGetOwnProperty())
           of bfPropertyNames: stmts.add(gen.generateGetOwnPropertyNames())
           of bfPropertySet: stmts.add(gen.generateSetProperty())
@@ -1387,9 +1316,13 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
             JS_ITERATOR_NEXT_DEF(`name`, `len`, `id`, 0)
           )
         of bfFinalizer:
-          info.finFun = id
+          if info.finFun != nil:
+            error("Class " & info.name & " has 2+ jsfin functions.")
+          info.finFun = child.name
         of bfMark:
-          info.markFun = id
+          if info.markFun != nil:
+            error("Class " & info.name & " has 2+ jsmark functions.")
+          info.markFun = child.name
         of bfPropertyGetOwn:
           if info.propGetOwnFun != nil:
             error("Class " & info.name & " has 2+ jsgetownprop functions.")
@@ -1463,7 +1396,8 @@ proc nilToLit(node: NimNode): NimNode =
     return newNilLit()
   return node
 
-macro jsClassImpl(def, jsname: untyped; body: untyped) =
+macro jsClassImpl(def: untyped; jsname: static string; typ: typed;
+    body: untyped) =
   var info = RegistryInfo(
     tabFuns: newNimNode(nnkBracket),
     tabUnforgeable: newNimNode(nnkBracket),
@@ -1522,16 +1456,71 @@ macro jsClassImpl(def, jsname: untyped; body: untyped) =
       `def`.exotic = unsafeAddr exotic
     )
   let ctorFun = nilToLit(info.ctorFun)
-  let markFun = nilToLit(info.markFun)
-  let finFun = nilToLit(info.finFun)
+  var markFun = info.markFun
+  var finFun = info.finFun
+  if typ != nil:
+    when NimMajor < 2:
+      stmts.add(quote do:
+        globalJSTypeMap[getJSTypeId(`typ`.T)] = classDef.id
+      )
+    let markList = newStmtList()
+    if markFun != nil:
+      markList.add(quote do:
+        `markFun`(rt, cast[`typ`](this), markFunc)
+      )
+    let finList = newStmtList()
+    if finFun != nil:
+      finList.add(quote do:
+        `finFun`(rt, cast[`typ`](this))
+      )
+    let impl = typ.getImpl()[2][1].getImpl()
+    jsClassTypeRecurse(markList, finList, impl[2])
+    if markList.len > 0:
+      let id = ident($bfMark & "_" & jsname)
+      stmts.add(quote do:
+        proc `id`(rt {.inject.}: JSRuntime; this: pointer;
+            markFunc {.inject.}: JS_MarkFunc) =
+          let this {.inject.} = cast[ptr `typ`.T](this)
+          `markList`
+      )
+      markFun = id
+    if finList.len > 0:
+      let id = ident($bfFinalizer & "_" & jsname)
+      stmts.add(quote do:
+        proc `id`(rt {.inject.}: JSRuntime; this: pointer) =
+          let this {.inject.} = cast[ptr `typ`.T](this)
+          `finList`
+      )
+      finFun = id
+  else:
+    if markFun != nil:
+      let id = ident($bfFinalizer & "_" & jsname)
+      stmts.add(quote do:
+        proc `id`(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc) =
+          `finFun`(rt, cast[JSRef[`typ`]](this), markFunc)
+      )
+      markFun = id
+    if finFun != nil:
+      let id = ident($bfFinalizer & "_" & jsname)
+      stmts.add(quote do:
+        proc `id`(rt: JSRuntime; this: pointer) =
+          `finFun`(rt, cast[JSRef[`typ`]](this))
+      )
+      finFun = id
   let ctorType = info.ctorType
   stmts.add(quote do:
     `def`.class_name = cstring(`jsname`)
     `def`.ctor = `ctorFun`
-    `def`.finalizer = `finFun`
-    `def`.gc_mark = `markFun`
     `def`.ctorType = JSCFunctionEnum(`ctorType`)
   )
+  if finFun != nil:
+    stmts.add(quote do:
+      `def`.finalizer = `finFun`
+    )
+  if markFun != nil:
+    stmts.add(quote do:
+      `def`.mark = `markFun`
+    )
   when NimMajor < 2:
     stmts.add(quote do:
       template classDef(): ChaClassDef {.used, error.} =
@@ -1547,76 +1536,90 @@ macro jsClassImpl(def, jsname: untyped; body: untyped) =
 template jsClassRaw*(def: untyped; jsname: string; body: untyped) =
   # why Nim insists on zero-initing global variables is an eternal mystery.
   var def {.global, noinit, inject.}: ChaClassDef
+  def.raw = true
   discard JS_NewClassID(def.id)
-  jsClassImpl(def, jsname, body)
+  jsClassImpl(def, jsname, nil, body)
 
 template jsClassNameDef*(nimt: typedesc; jsname: string; body: untyped) =
-  jsClassRaw(`nimt Def`, jsname):
-    jsconv nimt
+  var `nimt Def` {.global, noinit, inject.}: ChaClassDef
+  discard JS_NewClassID(`nimt Def`.id)
+  jsClassImpl(`nimt Def`, jsname, nimt):
+    proc getClassID(t {.inject.}: typedesc[nimt]): JSClassID {.used.} =
+      classDef.id
     body
 
-template jsClassDef*(nimt, body: untyped) =
-  jsClassRaw(`nimt Def`, $nimt):
-    jsconv nimt
+template jsClassPublicNameDef*(nimt: typedesc; jsname: string; body: untyped) =
+  var `nimt Def`* {.global, noinit, inject.}: ChaClassDef
+  discard JS_NewClassID(`nimt Def`.id)
+  jsClassImpl(`nimt Def`, jsname, nimt):
+    proc getClassID*(t {.inject.}: typedesc[nimt]): JSClassID {.used.} =
+      classDef.id
+    body
+
+template jsClassDef*(nimt: typedesc; body: untyped) =
+  var `nimt Def` {.global, noinit, inject.}: ChaClassDef
+  discard JS_NewClassID(`nimt Def`.id)
+  jsClassImpl(`nimt Def`, astToStr(nimt), nimt):
+    proc getClassID(t {.inject.}: typedesc[nimt]): JSClassID {.used.} =
+      classDef.id
     body
 
 template jsClassPublicDef*(nimt: typedesc; body: untyped) =
   var `nimt Def`* {.global, noinit, inject.}: ChaClassDef
   discard JS_NewClassID(`nimt Def`.id)
-  jsClassImpl(`nimt Def`, $nimt):
-    jsconv nimt
+  jsClassImpl(`nimt Def`, astToStr(nimt), nimt):
+    proc getClassID*(t {.inject.}: typedesc[nimt]): JSClassID =
+      classDef.id
     body
 
 template jsNamespaceDef*(name, body: untyped) =
   var `name Def` {.global, noinit, inject.}: ChaClassDef
-  jsClassImpl(`name Def`, astToStr(name), body)
+  jsClassImpl(`name Def`, astToStr(name), nil, body)
 
-proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL;
-    asglobal = false; hook = true): FromJSResult =
+proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
   let rt = JS_GetRuntime(ctx)
   let id = def.id
-  let ctxOpaque = ctx.getOpaque()
   let rtOpaque = rt.getOpaque()
   var cdef: JSClassDef
   cdef.class_name = def.class_name
-  cdef.gc_mark = def.gc_mark
   cdef.exotic = def.exotic
+  let raw = def.raw and
+    (def.parent == JS_INVALID_CLASS_ID or rtOpaque.classes[int(id)].raw)
+  if not raw:
+    cdef.gc_mark = jsMark
+    cdef.finalizer = jsFinalize
   if JS_NewClass(rt, id, addr cdef) != 0:
     return fjErr
-  if hook and not asglobal:
-    JS_SetClassCanDestroy(rt, id, jsCanDestroy)
   if rtOpaque.classes.len <= int(id):
     rtOpaque.classes.setLen(int(id) + 1)
-  let parentId = def.parent
-  rtOpaque.classes[int(id)].parent = parentId
-  let proto = ctx.newProtoFromParentClass(parentId, def.iterable,
-    asglobal, namespace)
-  JS_SetClassProto(ctx, id, proto)
-  if not ctx.addClassUnforgeableAndFinalizer(proto, id, parentId,
-      def.unforgeableFuns, def.finalizer):
+  rtOpaque.classes[int(id)].raw = raw
+  rtOpaque.classes[int(id)].parent = def.parent
+  if not rtOpaque.addClass(def):
     return fjErr
+  fjOk
+
+proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL):
+    FromJSResult =
+  let rt = JS_GetRuntime(ctx)
+  if ctx.registerClassCommon(def) == fjErr:
+    return fjErr
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque == nil: # no scripting
+    return fjOk
+  let proto = ctx.newProtoFromParentClass(def.parent, def.iterable, JS_NULL)
+  let id = def.id
+  JS_SetClassProto(ctx, id, JS_DupValue(ctx, proto))
   let name = JS_NewString(ctx, def.class_name)
   let strSym = ctxOpaque.symRefs[jsyToStringTag]
-  if asglobal:
-    let global = ctxOpaque.global
-    assert ctxOpaque.gclass == JS_INVALID_CLASS_ID
-    ctxOpaque.gclass = def.id
-    let name2 = JS_DupValue(ctx, name)
-    # Global already exists, so set unforgeable functions here
-    if ctx.definePropertyC(global, strSym, name2) == dprException or
-        ctx.definePropertyC(proto, strSym, name) == dprException or
-        JS_SetPrototype(ctx, global, proto) != 1 or
-        not ctx.setPropertyFunctionList(global, def.funs) or
-        not ctx.setUnforgeable(global, def.id):
-      return fjErr
-  else:
-    if ctx.definePropertyC(proto, strSym, name) == dprException or
-        not ctx.setPropertyFunctionList(proto, def.funs):
-      return fjErr
+  if ctx.definePropertyC(proto, strSym, name) == dprException or
+      not ctx.setPropertyFunctionList(proto, def.funs):
+    JS_FreeValue(ctx, proto)
+    return fjErr
   let jctor = ctx.newCtorFunFromParentClass(def.ctor, def.class_name,
-    parentId, def.ctorType)
+    def.parent, def.ctorType)
   if not ctx.setPropertyFunctionList(jctor, def.staticFuns):
     JS_FreeValue(ctx, jctor)
+    JS_FreeValue(ctx, proto)
     return fjErr
   JS_SetConstructor(ctx, jctor, proto)
   if ctxOpaque.ctors.len <= int(id):
@@ -1624,26 +1627,27 @@ proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL;
   if ctx.defineIterableProps(def.iterable, proto, id) == dprException:
     JS_FreeValue(ctx, proto)
     return fjErr
+  JS_FreeValue(ctx, proto)
   if not JS_IsUndefined(namespace):
-    let target = if asglobal or JS_IsNull(namespace):
+    let target = if JS_IsNull(namespace):
       JSValueConst(ctxOpaque.global)
     else:
       namespace
-    let jctor2 = JS_DupValue(ctx, jctor)
-    if JS_DefinePropertyValueStr(ctx, target, def.class_name, jctor2,
-        JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
+    if ctx.definePropertyCW(target, def.class_name,
+        JS_DupValue(ctx, jctor)) == dprException:
+      JS_FreeValue(ctx, jctor)
       return fjErr
   ctxOpaque.ctors[int(id)] = jctor
-  when defined(gcDestructors):
-    rtOpaque.classes[int(id)].dtor = def.dtor
   fjOk
 
 proc registerNamespace*(ctx: JSContext; def: ChaClassDef): JSValue =
   assert def.unforgeableFuns.len == 0 and def.funs.len == 0
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque == nil:
+    return JS_UNDEFINED
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
     return obj
-  let ctxOpaque = ctx.getOpaque()
   let strSym = ctxOpaque.symRefs[jsyToStringTag]
   let name = ctx.toJS(def.class_name)
   if JS_IsException(name):
@@ -1664,6 +1668,76 @@ proc registerNamespaceFree*(ctx: JSContext; def: ChaClassDef): FromJSResult =
   if JS_IsException(obj):
     return fjErr
   JS_FreeValue(ctx, obj)
+  fjOk
+
+proc registerFakeClass*(ctx: JSContext; def: ChaClassDef): FromJSResult =
+  ## Register a class that will not be exposed to JS.
+  ## The prototype is set to the parent class's prototype; however, runtime
+  ## type checks in Nim respect the actual class hierarchy.
+  if ctx.registerClassCommon(def) == fjErr:
+    return fjErr
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque != nil:
+    let iid = int(def.id)
+    if ctxOpaque.ctors.len <= iid:
+      ctxOpaque.ctors.setLen(iid + 1)
+    if def.parent == JS_INVALID_CLASS_ID:
+      let obj = JS_NewObject(ctx)
+      let proto = JS_GetPrototype(ctx, obj)
+      JS_FreeValue(ctx, obj)
+      JS_SetClassProto(ctx, def.id, proto)
+      let funProto = JS_GetPrototype(ctx, ctxOpaque.valRefs[jsvFunction])
+      ctxOpaque.ctors[iid] = funProto
+    else:
+      let proto = JS_GetClassProto(ctx, def.parent)
+      JS_SetClassProto(ctx, def.id, proto)
+      ctxOpaque.ctors[iid] = JS_DupValue(ctx, ctxOpaque.ctors[int(def.parent)])
+  fjOk
+
+proc registerGlobalClass*(ctx: JSContext; def: ChaClassDef;
+    parentProto: JSValueConst = JS_NULL): FromJSResult =
+  let rt = JS_GetRuntime(ctx)
+  if ctx.registerClassCommon(def) == fjErr:
+    return fjErr
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque == nil: # no scripting
+    return fjOk
+  let proto = ctx.newProtoFromParentClass(def.parent, def.iterable,
+    parentProto)
+  let id = def.id
+  JS_SetClassProto(ctx, id, JS_DupValue(ctx, proto))
+  let name = JS_NewString(ctx, def.class_name)
+  let strSym = ctxOpaque.symRefs[jsyToStringTag]
+  let global = ctxOpaque.global
+  assert ctxOpaque.gclass == JS_INVALID_CLASS_ID
+  ctxOpaque.gclass = def.id
+  let name2 = JS_DupValue(ctx, name)
+  # Global already exists, so set unforgeable functions here
+  if ctx.definePropertyC(global, strSym, name2) == dprException or
+      ctx.definePropertyC(proto, strSym, name) == dprException or
+      JS_SetPrototype(ctx, global, proto) != 1 or
+      not ctx.setPropertyFunctionList(global, def.funs) or
+      not ctx.setUnforgeable(global, def.id):
+    JS_FreeValue(ctx, proto)
+    return fjErr
+  let jctor = ctx.newCtorFunFromParentClass(def.ctor, def.class_name,
+    def.parent, def.ctorType)
+  if not ctx.setPropertyFunctionList(jctor, def.staticFuns):
+    JS_FreeValue(ctx, jctor)
+    JS_FreeValue(ctx, proto)
+    return fjErr
+  JS_SetConstructor(ctx, jctor, proto)
+  if ctxOpaque.ctors.len <= int(id):
+    ctxOpaque.ctors.setLen(int(id) + 1)
+  if ctx.defineIterableProps(def.iterable, proto, id) == dprException:
+    JS_FreeValue(ctx, proto)
+    return fjErr
+  JS_FreeValue(ctx, proto)
+  if ctx.definePropertyCW(global, def.class_name,
+      JS_DupValue(ctx, jctor)) == dprException:
+    JS_FreeValue(ctx, jctor)
+    return fjErr
+  ctxOpaque.ctors[int(id)] = jctor
   fjOk
 
 {.pop.} # raises

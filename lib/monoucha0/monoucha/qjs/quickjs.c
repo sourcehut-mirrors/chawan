@@ -338,8 +338,6 @@ struct JSRuntime {
     /* list of JSGCObjectHeader.link. Used during JS_FreeValueRT() */
     struct list_head gc_zero_ref_count_list;
     struct list_head tmp_obj_list; /* used during GC */
-    /* used during GC (for keeping track of objects with a can_destroy hook) */
-    struct list_head tmp_hook_obj_list;
     JSGCPhaseEnum gc_phase : 8;
     size_t malloc_gc_threshold;
     struct list_head weakref_list; /* list of JSWeakRefHeader.link */
@@ -400,8 +398,6 @@ struct JSClass {
     JSClassCall *call;
     /* pointers for exotic behavior, can be NULL if none are present */
     const JSClassExoticMethods *exotic;
-    /* called before object would be destroyed */
-    JSClassCanDestroy *can_destroy;
 };
 
 #define JS_MODE_STRICT (1 << 0)
@@ -431,6 +427,7 @@ typedef enum {
     JS_GC_OBJ_TYPE_ASYNC_FUNCTION,
     JS_GC_OBJ_TYPE_JS_CONTEXT,
     JS_GC_OBJ_TYPE_MODULE,
+    JS_GC_OBJ_TYPE_FOREIGN,
 } JSGCObjectTypeEnum;
 
 /* header for GC objects. GC objects are C data structures with a
@@ -1100,6 +1097,15 @@ typedef struct JSMapState {
                                         resize is needed */
     JSWeakRefHeader weakref_header; /* only used if is_weak = TRUE */
 } JSMapState;
+
+typedef struct JSForeignObject {
+    JSGCObjectHeader header;
+    uint32_t class_id;
+    int free_mark;
+    /* pointer to the active header: either this object or a JSObject */
+    JSGCObjectHeader *opaque;
+    uint8_t data[];
+} JSForeignObject;
 
 enum {
     __JS_ATOM_NULL = JS_ATOM_NULL,
@@ -2584,9 +2590,9 @@ void JS_FreeRuntime(JSRuntime *rt)
         if (s->malloc_count > 1) {
             if (rt->rt_info)
                 printf("%s:1: ", rt->rt_info);
-            printf("Memory leak: %"PRIu64" bytes lost in %"PRIu64" block%s\n",
+            printf("Memory leak: %"PRIu64" bytes lost in %d block%s\n",
                    (uint64_t)(s->malloc_size - sizeof(JSRuntime)),
-                   (uint64_t)(s->malloc_count - 1), &"s"[s->malloc_count == 2]);
+                   (s->malloc_count - 1), &"s"[s->malloc_count == 2]);
         }
     }
 #endif
@@ -3936,12 +3942,6 @@ int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def)
     ret = JS_NewClass1(rt, class_id, class_def, name);
     JS_FreeAtomRT(rt, name);
     return ret;
-}
-
-void JS_SetClassCanDestroy(JSRuntime *rt, JSClassID class_id,
-                           JSClassCanDestroy *can_destroy)
-{
-    rt->class_array[class_id].can_destroy = can_destroy;
 }
 
 static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len)
@@ -6448,6 +6448,136 @@ static void free_object(JSRuntime *rt, JSObject *p)
     }
 }
 
+static void no_inline free_foreign_object(JSRuntime *rt, JSForeignObject *p)
+{
+    JSClassFinalizer *finalizer;
+    JSGCObjectHeader *header = &p->header;
+
+    if (p->free_mark) {
+        /* freeing a cycle; temporarily restore refc */
+        js_rc(p)->ref_count++;
+        return;
+    }
+    p->free_mark = 1; /* used to tell the object is invalid when
+                         freeing cycles */
+
+    if (p->opaque == header) {
+        finalizer = rt->class_array[p->class_id].finalizer;
+        if (finalizer)
+            (*finalizer)(rt, JS_MKPTR(JS_TAG_MODULE, p->data));
+
+        remove_gc_object(header);
+        if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES &&
+            js_rc(p)->ref_count != 0)
+            list_add_tail(&header->link, &rt->gc_zero_ref_count_list);
+        else
+            js_free_rt(rt, p);
+    } else {
+        __JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, p->opaque));
+    }
+
+    /* fail safe */
+    p->class_id = 0;
+}
+
+static JSForeignObject *js_data_to_foreign(void *p)
+{
+    uint8_t *pb = p;
+    return (JSForeignObject *)(pb - offsetof(JSForeignObject, data));
+}
+
+void *JS_NewForeignObject(JSRuntime *rt, JSClassID class_id, size_t size)
+{
+    JSForeignObject *obj;
+
+    js_trigger_gc(rt, sizeof(JSForeignObject) + size);
+    obj = js_mallocz_rt(rt, sizeof(JSForeignObject) + size);
+    if (!obj)
+        return NULL;
+    js_rc(obj)->ref_count = 1;
+    obj->class_id = class_id;
+    obj->opaque = &obj->header;
+    add_gc_object(rt, &obj->header, JS_GC_OBJ_TYPE_FOREIGN);
+    return obj->data;
+}
+
+void *JS_DupForeignObject(JSRuntime *rt, void *p)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+
+    js_rc(obj->opaque)->ref_count++;
+    return p;
+}
+
+int JS_GetForeignObjectRefs(void *p) {
+    return js_rc(js_data_to_foreign(p)->opaque)->ref_count;
+}
+
+void JS_MarkForeignObject(JSRuntime *rt, void *p, JS_MarkFunc mark_func)
+{
+    JSForeignObject *obj;
+
+    if (p) {
+        obj = js_data_to_foreign(p);
+        mark_func(rt, obj->opaque);
+    }
+}
+
+void JS_FreeForeignObject(JSRuntime *rt, void *p)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+    if (--js_rc(obj->opaque)->ref_count <= 0)
+        free_foreign_object(rt, obj);
+}
+
+void JS_FreeForeignObjectMemory(JSRuntime *rt, void *p)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+    JSGCObjectHeader *gh = (JSGCObjectHeader *)obj->opaque;
+
+    if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES && js_rc(gh)->ref_count != 0) {
+        /* the object is it is still accessible from other finalizers;
+           remove association with the JSObject and disarm finalizer */
+        obj->opaque = obj;
+        obj->class_id = 0;
+        obj->free_mark = 1;
+        js_rc(obj)->ref_count = 0;
+        list_add_tail(&obj->header.link, &rt->gc_zero_ref_count_list);
+    } else {
+        js_free_rt(rt, obj);
+    }
+}
+
+JSClassID JS_GetForeignClassID(void *p)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+    return obj->class_id;
+}
+
+void *JS_GetForeignOpaque(JSRuntime *rt, void *p)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+    if (obj->opaque == (void*)obj)
+        return NULL;
+    return obj->opaque;
+}
+
+/* val must be an object. */
+void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+    JSObject *jsobj;
+
+    assert((void *)obj->opaque == obj);
+    jsobj = JS_VALUE_GET_OBJ(val);
+    obj->opaque = &jsobj->header;
+
+    /* move refcount to the JSObject */
+    js_rc(jsobj)->ref_count += js_rc(obj)->ref_count;
+    js_rc(obj)->ref_count = 1;
+    remove_gc_object(&obj->header);
+}
+
 static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
 {
     switch(js_rc(gp)->gc_obj_type) {
@@ -6463,32 +6593,12 @@ static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
     case JS_GC_OBJ_TYPE_MODULE:
         js_free_module_def(rt, (JSModuleDef *)gp);
         break;
+    case JS_GC_OBJ_TYPE_FOREIGN:
+        free_foreign_object(rt, (JSForeignObject *)gp);
+        break;
     default:
         abort();
     }
-}
-
-/* Check if object has a can_destroy hook. */
-static int gc_has_can_destroy_hook(JSRuntime *rt, JSGCObjectHeader *p)
-{
-    JSObject *obj;
-
-    if (js_rc(p)->gc_obj_type != JS_GC_OBJ_TYPE_JS_OBJECT)
-        return 0;
-    obj = (JSObject *)p;
-    return rt->class_array[obj->class_id].can_destroy != NULL;
-}
-
-/* User-defined override for object destruction. */
-static int gc_try_resurrect(JSRuntime *rt, JSGCObjectHeader *p)
-{
-    JSClassCanDestroy *can_destroy;
-    JSObject *obj;
-
-    obj = (JSObject *)p;
-    can_destroy = rt->class_array[obj->class_id].can_destroy;
-    (*can_destroy)(rt, JS_MKPTR(JS_TAG_OBJECT, obj), &js_rc(p)->ref_count);
-    return js_rc(p)->ref_count;
 }
 
 static void free_zero_refcount(JSRuntime *rt)
@@ -6554,10 +6664,6 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
         {
             JSGCObjectHeader *p = JS_VALUE_GET_PTR(v);
             if (rt->gc_phase != JS_GC_PHASE_REMOVE_CYCLES) {
-                if (gc_has_can_destroy_hook(rt, p) && gc_try_resurrect(rt, p)) {
-                    JS_SetOpaque(JS_MKPTR(JS_TAG_OBJECT, p), NULL);
-                    break;
-                }
                 list_del(&p->link);
                 list_add(&p->link, &rt->gc_zero_ref_count_list);
                 js_rc(p)->mark = 1; /* indicate that the object is about to be freed */
@@ -6763,6 +6869,16 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             js_mark_module_def(rt, m, mark_func);
         }
         break;
+    case JS_GC_OBJ_TYPE_FOREIGN:
+        {
+            JSForeignObject *p = (JSForeignObject *)gp;
+            JSClassGCMark *gc_mark;
+
+            gc_mark = rt->class_array[p->class_id].gc_mark;
+            if (gc_mark)
+                gc_mark(rt, JS_MKPTR(JS_TAG_MODULE, p->data), mark_func);
+        }
+        break;
     default:
         abort();
     }
@@ -6770,14 +6886,15 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
 
 static void gc_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
+    if (js_rc(p)->ref_count <= 0) {
+        JS_DumpGCObject(rt, p);
+        fflush(stdout);
+    }
     assert(js_rc(p)->ref_count > 0);
     js_rc(p)->ref_count--;
     if (js_rc(p)->ref_count == 0 && js_rc(p)->mark == 1) {
         list_del(&p->link);
-        if (gc_has_can_destroy_hook(rt, p))
-            list_add_tail(&p->link, &rt->tmp_hook_obj_list);
-        else
-            list_add_tail(&p->link, &rt->tmp_obj_list);
+        list_add_tail(&p->link, &rt->tmp_obj_list);
     }
 }
 
@@ -6787,7 +6904,6 @@ static void gc_decref(JSRuntime *rt)
     JSGCObjectHeader *p;
 
     init_list_head(&rt->tmp_obj_list);
-    init_list_head(&rt->tmp_hook_obj_list);
 
     /* decrement the refcount of all the children of all the GC
        objects and move the GC objects with zero refcount to
@@ -6799,10 +6915,7 @@ static void gc_decref(JSRuntime *rt)
         js_rc(p)->mark = 1;
         if (js_rc(p)->ref_count == 0) {
             list_del(&p->link);
-            if (gc_has_can_destroy_hook(rt, p))
-                list_add_tail(&p->link, &rt->tmp_hook_obj_list);
-            else
-                list_add_tail(&p->link, &rt->tmp_obj_list);
+            list_add_tail(&p->link, &rt->tmp_obj_list);
         }
     }
 }
@@ -6826,8 +6939,8 @@ static void gc_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
 
 static void gc_scan(JSRuntime *rt)
 {
-    struct list_head *el, *el1, *gc_tail;
-    JSGCObjectHeader *p, *p2;
+    struct list_head *el;
+    JSGCObjectHeader *p;
 
     /* keep the objects with a refcount > 0 and their children. */
     list_for_each(el, &rt->gc_obj_list) {
@@ -6835,42 +6948,6 @@ static void gc_scan(JSRuntime *rt)
         assert(js_rc(p)->ref_count > 0);
         js_rc(p)->mark = 0; /* reset the mark for the next GC call */
         mark_children(rt, p, gc_scan_incref_child);
-    }
-
-    /* restore objects whose can_destroy hook returns 0 and their children. */
-    for (;;) {
-        /* save previous tail position of gc_obj_list */
-        gc_tail = rt->gc_obj_list.prev;
-        p2 = NULL;
-        list_for_each_safe(el, el1, &rt->tmp_hook_obj_list) {
-            p = list_entry(el, JSGCObjectHeader, link);
-            list_del(&p->link);
-            /* gc_has_can_destroy_hook is the condition for objects to be
-               placed in tmp_hook_obj_list, so it is true here. */
-            if (!gc_try_resurrect(rt, p)) {
-                /* object can be destroyed; move to tmp_obj_list. */
-                list_add_tail(&p->link, &rt->tmp_obj_list);
-            } else {
-                /* hook says we cannot destroy yet; move back to gc_obj_list. */
-                list_add_tail(&p->link, &rt->gc_obj_list);
-                p2 = p;
-                break;
-            }
-        }
-        /* if redo, restore object and all its descendants.
-           Note: we must do this outside the previous loop, because el/el1
-           might get moved into gc_obj_list here. */
-        for (el = gc_tail->next; el != &rt->gc_obj_list; el = el->next) {
-            p = list_entry(el, JSGCObjectHeader, link);
-            assert(js_rc(p)->ref_count > 0);
-            js_rc(p)->mark = 0; /* reset the mark for the next GC call */
-            mark_children(rt, p, gc_scan_incref_child);
-        }
-        if (!p2)
-            break;
-        /* unset the opaque to signal to the other side that we are
-           no longer referencing them. */
-        JS_SetOpaque(JS_MKPTR(JS_TAG_OBJECT, p2), NULL);
     }
 
     /* restore the refcount of the objects to be deleted. */
@@ -6903,6 +6980,7 @@ static void gc_free_cycles(JSRuntime *rt)
         case JS_GC_OBJ_TYPE_FUNCTION_BYTECODE:
         case JS_GC_OBJ_TYPE_ASYNC_FUNCTION:
         case JS_GC_OBJ_TYPE_MODULE:
+        case JS_GC_OBJ_TYPE_FOREIGN:
 #ifdef DUMP_GC_FREE
             if (!header_done) {
                 printf("Freeing cycles:\n");
@@ -6926,7 +7004,8 @@ static void gc_free_cycles(JSRuntime *rt)
         assert(js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT ||
                js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_FUNCTION_BYTECODE ||
                js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_ASYNC_FUNCTION ||
-               js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_MODULE);
+               js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_MODULE ||
+               js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_FOREIGN);
         if (js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT &&
             ((JSObject *)p)->weakref_count != 0) {
             /* keep the object because there are weak references to it */
@@ -14686,6 +14765,16 @@ static __maybe_unused void JS_DumpGCObject(JSRuntime *rt, JSGCObjectHeader *p)
         case JS_GC_OBJ_TYPE_MODULE:
             printf("[module]");
             break;
+        case JS_GC_OBJ_TYPE_FOREIGN:
+            {
+                char buf[ATOM_GET_STR_BUF_SIZE];
+                JSClassID class_id = ((JSForeignObject *)p)->class_id;
+                JSAtom class_name = rt->class_array[class_id].class_name;
+
+                printf("[foreign %s]",
+                    JS_AtomGetStrRT(rt, buf, sizeof(buf), class_name));
+                break;
+            }
         default:
             printf("[unknown %d]", js_rc(p)->gc_obj_type);
             break;

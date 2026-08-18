@@ -35,6 +35,7 @@ import std/tables
 import std/typetraits
 
 import jsopaque
+import jsref
 import jstypes
 import jsutils
 import quickjs
@@ -54,7 +55,7 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue
 proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue
 proc toJS*[T: enum](ctx: JSContext; e: T): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
-proc toJS*(ctx: JSContext; obj: ref object): JSValue
+proc toJS*[T](ctx: JSContext; obj: JSRef[T]): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferView): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
@@ -62,7 +63,8 @@ proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 
 # Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
-proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue
+# Note: nil is translated to an OOM exception.
+proc toJSNew*[T](ctx: JSContext; obj: JSRef[T]; ctor: JSValueConst): JSValue
 
 proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
     JSValue =
@@ -80,12 +82,13 @@ proc toJS*(ctx: JSContext; s: cstring): JSValue =
   return JS_NewString(ctx, s)
 
 proc toJS*(ctx: JSContext; s: string): JSValue =
-  return JS_NewStringLen(ctx, cstring(s), csize_t(s.len))
+  return JS_NewStringLen(ctx, s.toCStringConst, csize_t(s.len))
 
 proc toJS*(ctx: JSContext; s: openArray[char]): JSValue =
   if s.len < 0:
     return JS_NewString(ctx, "")
-  return JS_NewStringLen(ctx, cast[cstring](unsafeAddr s[0]), csize_t(s.len))
+  return JS_NewStringLen(ctx, cast[cstringConst](unsafeAddr s[0]),
+    csize_t(s.len))
 
 proc toJS*(ctx: JSContext; n: int16): JSValue =
   return JS_NewInt32(ctx, int32(n))
@@ -163,79 +166,41 @@ proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue =
   {.pop.}
   return ctx.newArrayFrom(vals)
 
-proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValueConst): JSValue =
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let obj = rtOpaque.getOrDefault(p)
-  if obj != nil:
+proc toJSRef(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
+  let rt = JS_GetRuntime(ctx)
+  let jsptr = JS_GetForeignOpaque(rt, p)
+  if jsptr != nil:
     # a JSValue already points to this object.
-    let val = JS_MKPTR(JS_TAG_OBJECT, obj)
-    if val.getOpaque() != nil:
-      # JS owns the Nim value, because it still holds an active
-      # reference to it.
-      return JS_DupValue(ctx, val)
-    # Nim owned the JS value, but now JS wants to own Nim.
-    # This means we must release the JS reference, and add a reference
-    # to Nim.
-    GC_ref(cast[RootRef](p))
-    JS_SetOpaque(val, p)
-    return val
-  let class = globalJSTypeMap.getOrDefault(tp, JS_INVALID_CLASS_ID)
-  assert class != JS_INVALID_CLASS_ID
-  let jsObj = JS_NewObjectFromCtor(ctx, ctor, class)
+    if ctx.getOpaque().globalObj == p:
+      return JS_GetGlobalObject(ctx)
+    return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, jsptr))
+  let classid = JS_GetForeignClassID(p)
+  let jsObj = JS_NewObjectFromCtor(ctx, ctor, classid)
   if JS_IsException(jsObj):
     return jsObj
+  # Set the opaque first, before GC has a chance to run.
+  JS_SetForeignOpaque(rt, p, jsObj)
+  JS_SetOpaque(jsObj, p)
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
-  if not ctx.setUnforgeable(jsObj, class):
+  if not ctx.setUnforgeable(jsObj, classid):
     JS_FreeValue(ctx, jsObj)
     return JS_EXCEPTION
-  rtOpaque.add(p, JS_VALUE_GET_PTR(jsObj))
-  JS_SetOpaque(jsObj, p)
-  GC_ref(cast[RootRef](p))
   return jsObj
 
-when defined(gcDestructors):
-  proc getTypeInfo2[T](x: T): pointer {.magic: "GetTypeInfoV2".}
-else:
-  template getTypeInfo2[T](x: T): pointer = getTypeInfo(x)
-
-# Get a unique pointer for each type.
-template getTypePtr*[T: ref object and not RootRef](x: T): pointer =
-  # This returns static type info, so it only works for non-inheritable
-  # objects.
-  getTypeInfo2(x[])
-
-template getTypePtr*[T: object and not RootObj](x: var T): pointer =
-  getTypeInfo2(x)
-
-template getTypePtr*(x: RootRef): pointer =
-  # Dereference the object's first member, m_type.
-  cast[ptr pointer](x)[]
-
-template getTypePtr*[T: RootObj](x: var T): pointer =
-  # See above.
-  cast[ptr pointer](addr x)[]
-
-template getTypePtr*[T: ref object](t: typedesc[T]): pointer =
-  var x: typeof(T()[])
-  getTypeInfo2(x)
-
-proc toJSRefObj*(ctx: JSContext; obj: ref object): JSValue =
-  let p = cast[pointer](obj)
-  let tp = getTypePtr(obj)
-  return ctx.toJSP0(p, tp, JS_UNDEFINED)
-
-proc toJS*(ctx: JSContext; obj: ref object): JSValue =
+proc toJS*[T](ctx: JSContext; obj: JSRef[T]): JSValue =
   if obj == nil:
     return JS_NULL
-  return ctx.toJSRefObj(obj)
+  return ctx.toJSRef(cast[pointer](obj), JS_UNDEFINED)
 
-proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue =
+proc toJSNew*[T](ctx: JSContext; obj: JSRef[T]; ctor: JSValueConst): JSValue =
   if obj == nil:
-    return JS_NULL
-  let p = cast[pointer](obj)
-  let tp = getTypePtr(obj)
-  return ctx.toJSP0(p, tp, ctor)
+    return JS_ThrowOutOfMemory(ctx)
+  return ctx.toJSRef(cast[pointer](obj), ctor)
+
+template toJSNew*[T](ctx: JSContext; obj: JSRef[T]): JSValue =
+  # useful when you want to JSify a new object (i.e., nil converts to OOM)
+  ctx.toJSNew(obj, JS_UNDEFINED)
 
 proc toJSEnum(ctx: JSContext; enumId: int; n: int; s: string): JSValue =
   let rt = JS_GetRuntime(ctx)

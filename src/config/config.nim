@@ -20,6 +20,7 @@ import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsopaque
 import monoucha/jspropenumlist
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -46,12 +47,14 @@ type
     n: uint32
     val: JSValue
 
-  ActionMap* = ref object
+  ActionMapObj = object
     defaultAction*: JSValue
     t*: seq[Action]
     keyIdx: int
     keyLast*: int
     num: uint32
+
+  ActionMap* = JSRef[ActionMapObj]
 
   FormRequestType* = enum
     frtHttp = "http"
@@ -430,7 +433,7 @@ const SiteconfOptions = {
 }
 
 type
-  Config* = ref ConfigObj
+  Config* = JSRef[ConfigObj]
 
   ConfigObj = object
     bits*: array[FirstBitOpt..LastBitOpt, ConfigOptionBit]
@@ -502,9 +505,6 @@ type
     # cleared on every new siteconf/omnirule
     ruleOptionsSeen: set[ConfigOption]
 
-jsDestructor(ActionMap)
-jsDestructor(Config)
-
 when defined(gcDestructors):
   proc `=destroy`*(a: var ConfigOptionBit) =
     discard
@@ -528,6 +528,8 @@ when defined(gcDestructors):
 proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void]
 proc parseConfigValue(cp: var ConfigParser): Opt[void]
 proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string
+proc getClassID(t: typedesc[Config]): JSClassID
+proc getClassID*(t: typedesc[ActionMap]): JSClassID
 
 static:
   doAssert sizeof(ConfigOptionBit) == 1
@@ -553,28 +555,28 @@ macro `{}`*(config: Config; s: static string): untyped =
   case ot
   of cotBool..cotScriptingMode:
     return quote do:
-      `config`.bits[ConfigOption(`t`)].`vs`
+      `config`[].bits[ConfigOption(`t`)].`vs`
   of cotInt32..cotFormatModeAuto:
     return quote do:
-      `config`.hwords[ConfigOption(`t`)].`vs`
+      `config`[].hwords[ConfigOption(`t`)].`vs`
   of cotCSSColor..cotRGBColorAuto:
     return quote do:
-      `config`.words[ConfigOption(`t`)].`vs`
+      `config`[].words[ConfigOption(`t`)].`vs`
   of cotString..cotCodepointSet:
     return quote do:
-      `config`.strs[ConfigOption(`t`)]
+      `config`[].strs[ConfigOption(`t`)]
   of cotCharsetSeq:
     return quote do:
-      `config`.documentCharset
+      `config`[].documentCharset
   of cotPathSeq:
     return quote do:
-      `config`.strSeqs[ConfigOption(`t`)]
+      `config`[].strSeqs[ConfigOption(`t`)]
   of cotHeaders:
     return quote do:
-      `config`.defaultHeaders
+      `config`[].defaultHeaders
   of cotURL:
     return quote do:
-      `config`.proxy
+      `config`[].proxy
   of cotRegex, cotFunction: # only used in omnirule/siteconf
     error("no such config value")
 
@@ -684,7 +686,9 @@ proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
   return ctx.compileScript(s, "<command>")
 
 proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
-  let map = ActionMap(defaultAction: JS_UNDEFINED)
+  let map = jsNew ActionMapObj(defaultAction: JS_UNDEFINED)
+  if map == nil:
+    return map
   if defaultAction != "":
     map.defaultAction = ctx.evalCmdDecl(defaultAction)
   var dummy: seq[string]
@@ -1629,7 +1633,7 @@ proc parseHeaders(cp: var ConfigParser; x: var ConfigHeadersInit): Opt[void] =
 proc parseURL(cp: var ConfigParser; x: var URL): Opt[void] =
   ?cp.typeCheck(ttString)
   if cp.buf == "":
-    x = nil
+    x = URL(nil)
   else:
     x = parseURL0(cp.buf)
     if x == nil:
@@ -2446,12 +2450,16 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
   ok()
 
 proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
-  let config = Config(
+  let page = newActionMap(ctx, PageCommands, "")
+  let line = newActionMap(ctx, LineCommands, "writeInputBuffer")
+  if page == nil or line == nil:
+    return Config(nil)
+  let config = jsNew ConfigObj(
     dir: dir,
     dataDir: dataDir,
     actionMap: [
-      csPage: newActionMap(ctx, PageCommands, ""),
-      csLine: newActionMap(ctx, LineCommands, "writeInputBuffer"),
+      csPage: page,
+      csLine: line,
     ],
     documentCharset: @[
       csUtf8, csShiftJIS, csEucJP, csIso8859_2
@@ -2491,7 +2499,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
     )]
   ))
   if ctx.addConfigSections(config).isErr:
-    return nil
+    return Config(nil)
   config
 
 jsClassDef(Config):
@@ -2499,12 +2507,17 @@ jsClassDef(Config):
   jsget Config, dataDir
 
   proc mark(rt: JSRuntime; config: Config; markFunc: JS_MarkFunc) {.jsmark.} =
-    for list in config.lists:
+    for list in config.lists.myitems:
       for it in list:
         JS_MarkValue(rt, it.fun, markFunc)
+        for entry in it.entries:
+          if entry.t == cocURL:
+            rt.markObj(entry.url, markFunc)
+    for map in config.actionMap.myitems:
+      rt.markObj(map, markFunc)
 
   proc finalize(rt: JSRuntime; config: Config) {.jsfin.} =
-    for list in config.lists:
+    for list in config.lists.myitems:
       rt.freeValues(list)
 
   proc page*(config: Config): lent ActionMap {.jsfget.} =
@@ -2568,16 +2581,14 @@ jsClassDef(Config):
     ctx.sort(config.line)
     ok()
 
-jsClassDef(ActionMap):
+jsClassPublicDef(ActionMap):
   jsget ActionMap, keyLast
 
   proc finalize(rt: JSRuntime; map: ActionMap) {.jsfin.} =
-    JS_FreeValueRT(rt, map.defaultAction)
     for it in map.t:
       JS_FreeValueRT(rt, it.val)
 
   proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
-    JS_MarkValue(rt, map.defaultAction, markFunc)
     for it in map.t:
       JS_MarkValue(rt, it.val, markFunc)
 

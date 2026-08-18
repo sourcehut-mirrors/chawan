@@ -8,6 +8,7 @@ import io/chafile
 import io/dynstream
 import io/packetreader
 import io/packetwriter
+import monoucha/jsref
 import types/opt
 import types/url
 import utils/tabutil

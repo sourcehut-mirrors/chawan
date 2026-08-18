@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/options
-import std/typetraits
 
 import html/catom
 import html/domexception
@@ -11,6 +10,7 @@ import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsnull
 import monoucha/jsopaque
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -39,7 +39,7 @@ type
     efCancelable
     efTrusted
 
-  Event* = ref object of JSRootObj
+  EventObj* {.pure.} = object of JSRootObj
     timeStamp: float64
     target*: EventTarget
     currentTarget*: EventTarget
@@ -47,21 +47,31 @@ type
     eventPhase: uint16
     flags: set[EventFlag]
 
-  CustomEvent* {.final.} = ref object of Event
+  Event* = JSRef[EventObj]
+
+  CustomEventObj {.pure, final.} = object of EventObj
     detail: JSValue
 
-  MessageEvent* {.final.} = ref object of Event
+  CustomEvent = JSRef[CustomEventObj]
+
+  MessageEventObj {.pure, final.} = object of EventObj
     data: JSValue
     origin: string
 
-  SubmitEvent* {.final.} = ref object of Event
+  MessageEvent = JSRef[MessageEventObj]
+
+  SubmitEventObj {.pure, final.} = object of EventObj
     submitter: EventTarget
 
-  UIEvent* = ref object of Event
+  SubmitEvent = JSRef[SubmitEventObj]
+
+  UIEventObj {.pure.} = object of EventObj
     detail: int32
     view: EventTarget
 
-  MouseEvent* {.final.} = ref object of UIEvent
+  UIEvent = JSRef[UIEventObj]
+
+  MouseEventObj {.pure, final.} = object of UIEventObj
     screenX: int32
     screenY: int32
     clientX: int32
@@ -75,22 +85,26 @@ type
     relatedTarget: EventTarget
     #TODO and the others
 
-  InputEvent* {.final.} = ref object of UIEvent
+  MouseEvent = JSRef[MouseEventObj]
+
+  InputEventObj {.final.} = object of UIEventObj
     data: Option[string]
     isComposing: bool
     inputType: string
 
-  EventTargetObj = object of JSRootObj
+  InputEvent = JSRef[InputEventObj]
+
+  EventTargetObj* = object of JSRootObj
     eventListener: EventListener
 
-  EventTarget* = ref EventTargetObj
+  EventTarget* = JSRef[EventTargetObj]
 
   MutationRecordType* = enum
     mrtAttributes = "attributes"
     mrtCharacterData = "characterData"
     mrtChildList = "childList"
 
-  MutationRecord = ref object
+  MutationRecordObj = object
     t: MutationRecordType
     attributeName: CAtomTraced
     attributeNamespace: CAtomTraced
@@ -101,10 +115,14 @@ type
     previousSibling: EventTarget
     nextSibling: EventTarget
 
-  MutationObserver* = ref object
+  MutationRecord = JSRef[MutationRecordObj]
+
+  MutationObserverObj = object
     callback*: JSValue
     nodes: seq[ptr EventTargetObj]
     records*: seq[MutationRecord]
+
+  MutationObserver* = JSRef[MutationObserverObj]
 
   EventListenerType = enum
     eltEventListener, eltMutationObserver
@@ -135,24 +153,27 @@ type
     # order is: eltEventListener nodes -> eltMutationObserver nodes
     next: EventListener
 
-  AbortSignal {.final.} = ref object of EventTarget
+  AbortSignal = JSRef[AbortSignalObj]
+
+  AbortSignalObj {.pure, final.} = object of EventTargetObj
     reason: JSValue
     aborted: bool
     abortSteps: seq[JSValue]
     #TODO source/dependent signals
 
-  AbortController = ref object
+  AbortControllerObj = object
     signal: AbortSignal
 
-jsDestructor(AbortController)
-jsDestructor(MutationObserver)
+  AbortController = JSRef[AbortControllerObj]
 
 # Forward declarations
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
   ctype: CAtomTraced; callback: JSValueConst;
   options: JSValueConst = JS_UNDEFINED): Opt[void]
 proc getClassID*(t: typedesc[EventTarget]): JSClassID
-proc getClassID*(t: typedesc[AbortSignal]): JSClassID
+proc getClassID(t: typedesc[AbortSignal]): JSClassID
+proc getClassID*(t: typedesc[Event]): JSClassID
+proc getClassID(t: typedesc[MessageEvent]): JSClassID
 
 # Forward declaration hack
 var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
@@ -200,6 +221,9 @@ type
     lastEventId {.jsdefault.}: string
 
 # Event
+template asEvent*[T: EventObj](x: JSRef[T]): Event =
+  cast[Event](x)
+
 proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
   event.flags = {efInitialized}
   #TODO this should measure time starting from when the script was started.
@@ -213,29 +237,23 @@ proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
 
 proc newEvent*(ctype: StaticAtom; target: EventTarget;
     bubbles, cancelable: bool): Event =
-  let event = Event(
+  let event = jsNew EventObj(
     ctype: ctype.toAtom(),
     target: target,
     currentTarget: target,
   )
-  if bubbles:
-    event.flags.incl(efBubbles)
-  if cancelable:
-    event.flags.incl(efCancelable)
+  if event != nil:
+    if bubbles:
+      event.flags.incl(efBubbles)
+    if cancelable:
+      event.flags.incl(efCancelable)
   event
 
 proc newTrustedEvent*(ctype: StaticAtom; target: EventTarget;
     bubbles, cancelable: bool): Event =
-  let event = Event(
-    ctype: ctype.toAtom(),
-    target: target,
-    currentTarget: target,
-    flags: {efTrusted}
-  )
-  if bubbles:
-    event.flags.incl(efBubbles)
-  if cancelable:
-    event.flags.incl(efCancelable)
+  let event = newEvent(ctype, target, bubbles, cancelable)
+  if event != nil:
+    event.flags.incl(efTrusted)
   event
 
 proc setTrusted*(event: Event) =
@@ -250,8 +268,9 @@ jsClassPublicDef(Event):
 
   proc newEvent(ctype: CAtomTraced; eventInitDict = EventInit()): Event {.
       jsctor.} =
-    let event = Event(ctype: ctype.dup())
-    event.innerEventCreationSteps(eventInitDict)
+    let event = jsNew EventObj(ctype: ctype.dup())
+    if event != nil:
+      event.innerEventCreationSteps(eventInitDict)
     return event
 
   proc eventFlag(event: Event; flag: EventFlag): bool {.
@@ -264,7 +283,7 @@ jsClassPublicDef(Event):
   proc initialize(this: Event; ctype: CAtomTraced; bubbles, cancelable: bool) =
     this.flags.incl(efInitialized)
     this.flags.excl(efTrusted)
-    this.target = nil
+    this.target = EventTarget(nil)
     this.ctype = ctype.dup()
     this.flags.toggleIf(efBubbles, bubbles)
     this.flags.toggleIf(efCancelable, cancelable)
@@ -314,18 +333,13 @@ jsClassDef(CustomEvent):
   proc newCustomEvent*(ctx: JSContext; ctype: CAtomTraced;
       eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent
       {.jsctor.} =
-    let event = CustomEvent(
+    let event = jsNew CustomEventObj(
       ctype: ctype.dup(),
       detail: JS_DupValue(ctx, eventInitDict.detail)
     )
-    event.innerEventCreationSteps(EventInit(eventInitDict))
-    return event
-
-  proc finalize(rt: JSRuntime; this: CustomEvent) {.jsfin.} =
-    JS_FreeValueRT(rt, this.detail)
-
-  proc mark(rt: JSRuntime; this: CustomEvent; markFun: JS_MarkFunc) {.jsmark.} =
-    JS_MarkValue(rt, this.detail, markFun)
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(eventInitDict))
+    event
 
   proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtomTraced;
       bubbles, cancelable: bool; detail: JSValueConst) {.jsfunc.} =
@@ -333,17 +347,18 @@ jsClassDef(CustomEvent):
       if efInitialized notin this.flags:
         JS_FreeValue(ctx, this.detail)
       this.detail = JS_DupValue(ctx, detail)
-      this.initialize(ctype, bubbles, cancelable)
+      this.asEvent.initialize(ctype, bubbles, cancelable)
 
 # MessageEvent
 proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
-  let event = MessageEvent(
+  let event = jsNew MessageEventObj(
     ctype: ctype,
     data: JS_DupValue(ctx, eventInit.data),
     origin: eventInit.origin
   )
-  event.innerEventCreationSteps(EventInit(eventInit))
+  if event != nil:
+    event.asEvent.innerEventCreationSteps(EventInit(eventInit))
   return event
 
 jsClassDef(MessageEvent):
@@ -351,13 +366,6 @@ jsClassDef(MessageEvent):
 
   jsget MessageEvent, data
   jsget MessageEvent, origin
-
-  proc finalize(rt: JSRuntime; this: MessageEvent) {.jsfin.} =
-    JS_FreeValueRT(rt, this.data)
-
-  proc mark(rt: JSRuntime; this: MessageEvent; markFun: JS_MarkFunc)
-      {.jsmark.} =
-    JS_MarkValue(rt, this.data, markFun)
 
 # SubmitEvent
 type EventTargetHTMLElement* = distinct EventTarget
@@ -378,12 +386,13 @@ jsClassDef(SubmitEvent):
 
   proc newSubmitEvent*(ctype: CAtomTraced; eventInit = SubmitEventInit()):
       SubmitEvent {.jsctor.} =
-    let event = SubmitEvent(
+    let event = jsNew SubmitEventObj(
       ctype: ctype.dup(),
       submitter: EventTarget(eventInit.submitter)
     )
-    event.innerEventCreationSteps(EventInit(eventInit))
-    return event
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(eventInit))
+    event
 
 # UIEvent
 type EventTargetWindowNull* = distinct EventTarget
@@ -410,12 +419,13 @@ jsClassDef(UIEvent):
 
   proc newUIEvent*(ctype: CAtomTraced; eventInit = UIEventInit()): UIEvent
       {.jsctor.} =
-    let event = UIEvent(
+    let event = jsNew UIEventObj(
       ctype: ctype.dup(),
       view: EventTarget(eventInit.view),
       detail: eventInit.detail
     )
-    event.innerEventCreationSteps(EventInit(eventInit))
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(eventInit))
     return event
 
   proc initUIEvent(this: UIEvent; ctype: CAtomTraced; bubbles = false;
@@ -461,7 +471,7 @@ jsClassDef(MouseEvent):
 
   proc newMouseEvent*(ctype: CAtomTraced; eventInit = MouseEventInit()):
       MouseEvent {.jsctor.} =
-    let event = MouseEvent(
+    let event = jsNew MouseEventObj(
       ctype: ctype.dup(),
       view: EventTarget(eventInit.view),
       screenX: eventInit.screenX,
@@ -474,10 +484,11 @@ jsClassDef(MouseEvent):
       metaKey: eventInit.metaKey,
       button: cast[int16](eventInit.button),
       buttons: uint16(eventInit.buttons),
-      relatedTarget: eventInit.relatedTarget.get(nil)
+      relatedTarget: eventInit.relatedTarget.get(EventTarget(nil))
     )
-    event.innerEventCreationSteps(EventInit(eventInit))
-    return event
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(eventInit))
+    event
 
 # InputEvent
 type InputEventInit* = object of UIEventInit
@@ -494,7 +505,7 @@ jsClassDef(InputEvent):
 
   proc newInputEvent*(ctype: CAtomTraced; eventInit = InputEventInit()):
       InputEvent {.jsctor.} =
-    let event = InputEvent(
+    let event = jsNew InputEventObj(
       ctype: ctype.dup(),
       view: EventTarget(eventInit.view),
       data: eventInit.data,
@@ -502,8 +513,9 @@ jsClassDef(InputEvent):
       inputType: eventInit.inputType,
       detail: eventInit.detail
     )
-    event.innerEventCreationSteps(EventInit(eventInit))
-    return event
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(eventInit))
+    event
 
 # MutationRecord
 jsClassDef(MutationRecord):
@@ -545,7 +557,7 @@ proc queueRecord*(observer: MutationObserver; target: EventTarget;
     t: MutationRecordType; name, namespace: CAtomTraced; oldValue: RefString;
     addedNodes, removedNodes: JSRootRef;
     previousSibling, nextSibling: EventTarget) =
-  observer.records.add(MutationRecord(
+  let record = jsNew MutationRecordObj(
     t: t,
     target: target,
     attributeName: name.dupTrace(),
@@ -555,19 +567,19 @@ proc queueRecord*(observer: MutationObserver; target: EventTarget;
     removedNodes: removedNodes,
     previousSibling: previousSibling,
     nextSibling: nextSibling
-  ))
+  )
+  if record != nil:
+    observer.records.add(record)
 
 jsClassDef(MutationObserver):
   proc newMutationObserver(ctx: JSContext; callback: JSValueConst):
       MutationObserver {.jsctor.} =
-    MutationObserver(callback: JS_DupValue(ctx, callback))
+    jsNew MutationObserverObj(callback: JS_DupValue(ctx, callback))
 
-  proc finalize(rt: JSRuntime; this: MutationObserver) {.jsfin.} =
-    JS_FreeValueRT(rt, this.callback)
-
-  proc mark(rt: JSRuntime; this: MutationObserver; markFun: JS_MarkFunc)
+  proc mark(rt: JSRuntime; this: MutationObserver; markFunc: JS_MarkFunc)
       {.jsmark.} =
-    JS_MarkValue(rt, this.callback, markFun)
+    for record in this.records:
+      rt.markObj(record, markFunc)
 
   proc observe(ctx: JSContext; this: MutationObserver; jsTarget: JSValueConst;
       jsInit: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
@@ -651,6 +663,9 @@ jsClassDef(MutationObserver):
     move(this.records)
 
 # EventTarget
+template asEventTarget*[T: EventTargetObj](x: JSRef[T]): EventTarget =
+  cast[EventTarget](x)
+
 proc defaultPassiveValue(ctype: CAtomTraced; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
   return ctype.toStaticAtom() in check and eventTarget.isDefaultPassiveImpl()
@@ -771,7 +786,7 @@ proc flattenMore(ctx: JSContext; options: JSValueConst;
   let capture = ?ctx.flatten(options)
   var once = false
   var passive = none(bool)
-  var signal: AbortSignal = nil
+  var signal: AbortSignal
   if JS_IsObject(options):
     discard ?ctx.fromJSGetProp(options, "once", once)
     var res: bool
@@ -805,7 +820,8 @@ proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom; callback: JSValueConst): Opt[void] =
   ctx.removeInternalEventListener(eventTarget, ctype)
   ctx.addEventListener(eventTarget, ctype.view(), capture = false,
-    once = false, internal = true, passive = none(bool), callback, signal = nil)
+    once = false, internal = true, passive = none(bool), callback,
+    signal = AbortSignal(nil))
 
 # Event reflection
 proc eventReflectGetImpl*(ctx: JSContext; this: EventTarget; name: StaticAtom):
@@ -925,11 +941,16 @@ jsClassPublicDef(EventTarget):
 
   proc mark(rt: JSRuntime; this: EventTarget; markFunc: JS_MarkFunc)
       {.jsmark.} =
-    for el in this.eventListeners:
-      JS_MarkValue(rt, el.callback, markFunc)
+    for el in this.eventListenersRaw:
+      case el.t
+      of eltEventListener:
+        JS_MarkValue(rt, el.callback, markFunc)
+        rt.markObj(el.signal, markFunc)
+      of eltMutationObserver:
+        rt.markObj(el.observer, markFunc)
 
   proc newEventTarget(): EventTarget {.jsctor.} =
-    return EventTarget()
+    jsNew EventTargetObj()
 
   proc addEventListener(ctx: JSContext; eventTarget: EventTarget;
       ctype: CAtomTraced; callback: JSValueConst;
@@ -983,7 +1004,7 @@ proc addEventGetSetImpl*(ctx: JSContext; obj: JSValueConst; id: JSClassID;
     ?ctx.addReflectFunction(obj, cstring(name), get, set, cint(atom))
   ok()
 
-proc fromJSEventTarget*(ctx: JSContext; this: JSValueConst;
+proc fromJSEventTarget(ctx: JSContext; this: JSValueConst;
     tclassid: JSClassID): EventTarget =
   let ctxOpaque = ctx.getOpaque()
   var classid: JSClassID
@@ -995,7 +1016,7 @@ proc fromJSEventTarget*(ctx: JSContext; this: JSValueConst;
     p = ctxOpaque.globalObj
   if not ctx.isInstanceOf(classid, tclassid):
     JS_ThrowTypeErrorInvalidClass(ctx, tclassid)
-    return nil
+    return EventTarget(nil)
   return cast[EventTarget](p)
 
 template addEventGetSetObj*(ctx2: JSContext; obj: JSValueConst; id: JSClassID;
@@ -1014,6 +1035,8 @@ template addEventGetSetObj*(ctx2: JSContext; obj: JSValueConst; id: JSClassID;
 
 template addEventGetSet*(ctx: JSContext; id: JSClassID;
     atoms: varargs[StaticAtom]): Opt[void] =
+  if ctx.getOpaque() == nil:
+    return ok()
   let proto = JS_GetClassProto(ctx, id)
   let res = ctx.addEventGetSetObj(proto, id, atoms)
   JS_FreeValue(ctx, proto)
@@ -1036,18 +1059,16 @@ jsClassDef(AbortSignal):
   jsget AbortSignal, aborted
 
   proc finalize(rt: JSRuntime; this: AbortSignal) {.jsfin.} =
-    JS_FreeValueRT(rt, this.reason)
     rt.freeValues(this.abortSteps)
 
   proc mark(rt: JSRuntime; this: AbortSignal; markFun: JS_MarkFunc) {.
       jsmark.} =
-    JS_MarkValue(rt, this.reason, markFun)
     for it in this.abortSteps:
       JS_MarkValue(rt, it, markFun)
 
   proc abort(ctx: JSContext; reason: JSValueConst = JS_UNDEFINED): AbortSignal
       {.jsstfunc.} =
-    AbortSignal(reason: ctx.toSignalReason(reason))
+    jsNew AbortSignalObj(reason: ctx.toSignalReason(reason))
 
   proc throwIfAborted(ctx: JSContext; signal: AbortSignal): JSValue
       {.jsfunc.} =
@@ -1062,8 +1083,10 @@ jsClassDef(AbortController):
   jsget AbortController, signal
 
   proc newAbortController(ctx: JSContext): AbortController {.jsctor.} =
-    let signal = AbortSignal(reason: JS_UNDEFINED)
-    AbortController(signal: signal)
+    let signal = jsNew AbortSignalObj(reason: JS_UNDEFINED)
+    if signal == nil:
+      return AbortController(nil)
+    jsNew AbortControllerObj(signal: signal)
 
   proc abort(ctx: JSContext; this: AbortController; reason: JSValueConst):
       JSValue {.jsfunc.} =
@@ -1076,10 +1099,14 @@ jsClassDef(AbortController):
         if JS_IsException(res):
           return res
         JS_FreeValue(ctx, res)
-      let event = newTrustedEvent(satAbort, signal, bubbles = false,
-        cancelable = false)
-      discard ctx.dispatch(signal, event)
+      let event = newTrustedEvent(satAbort, signal.asEventTarget,
+        bubbles = false, cancelable = false)
+      discard ctx.dispatch(signal.asEventTarget, event)
     return JS_UNDEFINED
+
+proc addEventTarget*(ctx: JSContext): FromJSResult =
+  # must do this first, so that we can init Window ASAP
+  ctx.registerClass(EventTargetDef)
 
 proc addEventModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(EventDef)
@@ -1093,7 +1120,6 @@ proc addEventModule*(ctx: JSContext): Opt[void] =
     return err()
   ?ctx.registerClass(MutationRecordDef)
   ?ctx.registerClass(MutationObserverDef)
-  ?ctx.registerClass(EventTargetDef)
   ?ctx.registerClass(AbortSignalDef)
   ?ctx.addAbortSignalEvents()
   ?ctx.registerClass(AbortControllerDef)

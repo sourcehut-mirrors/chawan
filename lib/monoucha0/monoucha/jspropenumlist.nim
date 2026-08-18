@@ -42,6 +42,7 @@ proc add*(this: var JSPropertyEnumList; val: string) =
   inc this.len
   if this.size < this.len:
     this.grow()
-  this.buffer[i].atom = JS_NewAtomLen(this.ctx, cstring(val), csize_t(val.len))
+  this.buffer[i].atom = JS_NewAtomLen(this.ctx, val.toCStringConst,
+    csize_t(val.len))
 
 {.pop.} # raises

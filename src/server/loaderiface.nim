@@ -18,6 +18,7 @@ import io/packetwriter
 import io/poll
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -48,7 +49,7 @@ type
   ConnectDataState* = enum
     cdsBeforeResult, cdsBeforeStatus
 
-  MapData* = ref object of JSRootObj
+  MapData* {.inheritable.} = ref object
     stream*: PosixStream
 
   LoaderData = ref object of MapData
@@ -110,16 +111,22 @@ type
 
   ResponseRead* = proc(response: Response) {.nimcall, raises: [].}
 
-  Response* {.final.} = ref object of LoaderData
+  Response* = JSRef[ResponseObj]
+
+  ResponseObj* = object
     flags*: set[ResponseFlag]
     responseType*: ResponseType
     status*: uint16
     headers*: Headers
+    stream*: PosixStream
     url*: URL #TODO should be urllist?
     onRead*: ResponseRead
     onFinish*: ResponseFinish
     outputId*: int
     opaque*: RootRef
+
+  OngoingData* = ref object of LoaderData
+    response*: Response
 
   TextResult* = object
     isOk*: bool
@@ -143,6 +150,7 @@ proc bodyUsed*(response: Response): bool
 proc get*(loader: FileLoader; fd: cint): MapData
 proc resume*(loader: FileLoader; outputId: int)
 proc unregister*(loader: FileLoader; data: MapData)
+proc getClassID(t: typedesc[Response]): JSClassID
 
 # Forward declaration hack
 var getLoaderImpl*: proc(ctx: JSContext): FileLoader {.nimcall, raises: [].}
@@ -169,11 +177,14 @@ proc toJS*(ctx: JSContext; x: TextResult): JSValue =
 
 proc newResponse*(request: Request; stream: PosixStream; outputId: int):
     Response =
-  return Response(
-    url: if request != nil: request.url else: nil,
+  let headers = newHeaders(hgResponse)
+  if headers == nil:
+    return Response(nil)
+  jsNew ResponseObj(
+    url: if request != nil: request.url else: URL(nil),
     stream: stream,
     outputId: outputId,
-    headers: newHeaders(hgResponse),
+    headers: headers,
     status: 200
   )
 
@@ -256,16 +267,16 @@ proc onFinishBlob*(response: Response; success: bool): Blob =
   if opaque.p != nil:
     dealloc(opaque.p)
     opaque.p = nil
-  return nil
+  return Blob(nil)
 
 proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
   response.opaque = opaque
   if response.bodyUsed:
-    response.onFinish(response, false)
+    response[].onFinish(response, false)
     return
   if response.stream == nil:
     response.flags.incl(rfBodyUsed)
-    response.onFinish(response, true)
+    response[].onFinish(response, true)
     return
   opaque.contentType = response.getContentType()
   opaque.p = alloc(BufferSize)
@@ -332,7 +343,8 @@ proc onFinishJSON(response: Response; success: bool) =
   let ctx = opaque.ctx
   let val = if blob != nil:
     let s = blob.toOpenArray().toValidUTF8()
-    JS_ParseJSON(ctx, cstring(s), csize_t(s.len), cstring"<input>")
+    JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
+      "<input>".toCStringConst)
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
@@ -364,14 +376,17 @@ jsClassDef(Response):
       #TODO
       JS_ThrowInternalError(ctx, "Response constructor with body or init")
       return err()
-    return ok(newResponse(nil, nil, -1))
+    return ok(newResponse(Request(nil), nil, -1))
 
   proc makeNetworkError*(): Response {.jsstfunc: "error".} =
     #TODO use "create" function
-    return Response(
+    let headers = newHeaders(hgImmutable)
+    if headers == nil:
+      return Response(nil)
+    jsNew ResponseObj(
       responseType: rtError,
       status: 0,
-      headers: newHeaders(hgImmutable),
+      headers: headers,
       flags: {rfBodyUsed}
     )
 
@@ -408,7 +423,7 @@ proc getRedirect*(response: Response; request: Request): Request =
           status == 302 and request.httpMethod == hmPost:
         return newRequest(url, hmGet)
       return newRequest(url, request.httpMethod, body = request.body)
-  return nil
+  return Request(nil)
 
 # Sometimes, we can return a value even after the loader crashed.
 # This improves reliability of the pager.
@@ -471,8 +486,8 @@ iterator data*(loader: FileLoader): MapData {.inline.} =
 
 iterator ongoing*(loader: FileLoader): Response {.inline.} =
   for it in loader.data:
-    if it of Response:
-      yield Response(it)
+    if it of OngoingData:
+      yield OngoingData(it).response
 
 proc put*(loader: FileLoader; data: MapData) =
   let fd = int(data.stream.fd)
@@ -489,7 +504,8 @@ proc get*(loader: FileLoader; fd: cint): MapData =
   return nil
 
 proc unset*(loader: FileLoader; fd: cint) =
-  if loader.map[fd] != nil and loader.map[fd] of LoaderData:
+  let data = loader.map[fd]
+  if data != nil and data of LoaderData:
     dec loader.mapFds
   loader.map[fd] = nil
 
@@ -637,7 +653,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
         stream.sclose()
         # delete before resolving the promise
         loader.unset(connectData)
-        finish(opaque, nil)
+        finish(opaque, Response(nil))
     of cdsBeforeStatus:
       let response = newResponse(request, stream, connectData.outputId)
       # packet 2
@@ -647,31 +663,32 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       response.stream = stream
       # delete before resolving the promise
       loader.unset(connectData)
-      loader.put(response)
-      stream.setBlocking(false)
       let redirect = response.getRedirect(request)
       if redirect != nil:
-        loader.unregister(response)
+        loader.unregister(stream.fd)
         stream.sclose()
         let redirectNum = connectData.redirectNum + 1
         if redirectNum < 5: #TODO use config.network.max_redirect?
           loader.fetch0(redirect, finish, opaque, redirectNum)
         else:
-          finish(opaque, nil)
+          finish(opaque, Response(nil))
       else:
+        let ongoing = OngoingData(stream: stream, response: response)
+        stream.setBlocking(false)
+        loader.put(ongoing)
         finish(opaque, response)
   do: # loader died
     loader.unregister(connectData.stream.fd)
     stream.sclose()
     # delete before resolving the promise
     loader.unset(connectData)
-    finish(opaque, nil)
+    finish(opaque, Response(nil))
 
 proc onRead*(loader: FileLoader; response: Response) =
-  response.onRead(response)
+  response[].onRead(response)
   if response.stream.isend:
     if response.onFinish != nil:
-      response.onFinish(response, true)
+      response[].onFinish(response, true)
     response.onFinish = nil
     loader.close(response)
 
@@ -680,11 +697,11 @@ proc onRead*(loader: FileLoader; fd: int) =
   if data of ConnectData:
     loader.onConnected(ConnectData(data))
   else:
-    loader.onRead(Response(data))
+    loader.onRead(OngoingData(data).response)
 
 proc onError*(loader: FileLoader; response: Response) =
   if response.onFinish != nil:
-    response.onFinish(response, true)
+    response[].onFinish(response, true)
   response.onFinish = nil
   loader.close(response)
 
@@ -694,7 +711,7 @@ proc onError*(loader: FileLoader; fd: int): bool =
     # probably shouldn't happen. TODO
     return false
   else:
-    loader.onError(Response(data))
+    loader.onError(OngoingData(data).response)
     return true
 
 # Note: this blocks until headers are received.
@@ -813,12 +830,12 @@ proc doPipeRequest*(loader: FileLoader; id: string):
     tuple[ps: PosixStream; response: Response] =
   let ps = loader.addPipe(id)
   if ps == nil:
-    return (nil, nil)
+    return (nil, Response(nil))
   let request = newRequest("stream:" & id)
   let response = loader.doRequest(request)
   if response.stream == nil:
     ps.sclose()
-    return (nil, nil)
+    return (nil, Response(nil))
   return (ps, response)
 
 proc newFileLoader*(clientPid: int; controlStream: PosixStream):

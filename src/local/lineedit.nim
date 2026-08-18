@@ -1,13 +1,14 @@
 {.push raises: [].}
 
-import types/color
 import config/history
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/cell
+import types/color
 import types/winattrs
 import utils/luwrap
 import utils/strwidth
@@ -19,7 +20,7 @@ type
     lstWord = "word"
     lstLine = "line"
 
-  LineEdit* = ref object
+  LineEditObj = object
     text: string # public
     prompt: string
     promptw: int
@@ -42,10 +43,11 @@ type
     update: JSValue
     resolve: JSValue
 
-jsDestructor(LineEdit)
+  LineEdit* = JSRef[LineEditObj]
 
 # Forward declarations
 proc clearSelection(edit: LineEdit)
+proc getClassID(t: typedesc[LineEdit]): JSClassID
 
 proc isDigitAscii(u: uint32): bool =
   return u < 128 and char(u) in AsciiDigit
@@ -214,7 +216,7 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
 proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     hist: History; luctx: LUContext; update, resolve: JSValue): LineEdit =
   let promptw = prompt.width()
-  let edit = LineEdit(
+  let edit = jsNew LineEditObj(
     prompt: prompt,
     promptw: promptw,
     text: current,
@@ -232,22 +234,14 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     update: update,
     resolve: resolve
   )
-  edit.cursorx = edit.width(current)
+  if edit != nil:
+    edit.cursorx = edit.width(current)
   return edit
 
 jsClassDef(LineEdit):
   jsget LineEdit, hide # private
   jsget LineEdit, text
   jsgetset LineEdit, escNext # private
-
-  proc finalize(rt: JSRuntime; this: LineEdit) {.jsfin.} =
-    JS_FreeValueRT(rt, this.update)
-    JS_FreeValueRT(rt, this.resolve)
-
-  proc mark(rt: JSRuntime; this: LineEdit; markFun: JS_MarkFunc)
-      {.jsmark.} =
-    JS_MarkValue(rt, this.update, markFun)
-    JS_MarkValue(rt, this.resolve, markFun)
 
   proc getCursorX*(edit: LineEdit): int {.jsfunc.} =
     return edit.promptw + edit.cursorx + edit.padding - edit.shiftx

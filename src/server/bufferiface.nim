@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/posix
-import std/typetraits
 
 import config/config
 import config/conftypes
@@ -16,6 +15,7 @@ import io/poll
 import local/select
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/libregexp
 import monoucha/quickjs
@@ -85,7 +85,7 @@ type
   HighlightType = enum
     hltSearch, hltSelect
 
-  Highlight = ref object
+  HighlightObj = object
     t: HighlightType
     selectionType: SelectionType
     mouse: bool
@@ -93,6 +93,8 @@ type
     y1: int
     x2: int
     y2: int
+
+  Highlight = JSRef[HighlightObj]
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
@@ -248,7 +250,10 @@ type
     id: string
     pos: PagePos
 
-  BufferInterface* {.final.} = ref object of MapData
+  BufferInterface* = JSRef[BufferInterfaceObj]
+
+  BufferInterfaceObj = object
+    stream*: PosixStream
     map: seq[BufferIfaceItem]
     packetid: int
     loader: FileLoader
@@ -279,7 +284,10 @@ type
     marks: seq[Mark]
     init*: BufferInit
 
-  BufferInit* {.final.} = ref object of MapData
+  BufferInit* = JSRef[BufferInitObj]
+
+  BufferInitObj* = object
+    stream*: PosixStream # response stream
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
     filterCmd*: string # filter command (called on load)
@@ -318,7 +326,11 @@ type
     istreamOutputId*: int
     ostreamOutputId*: int
 
-jsDestructor(Highlight)
+  BufferInterfaceData* = ref object of MapData
+    iface*: BufferInterface
+
+  BufferInitData* = ref object of MapData
+    init*: BufferInit
 
 # Forward declarations
 proc queueDraw*(iface: BufferInterface)
@@ -333,7 +345,8 @@ proc maxfromy(iface: BufferInterface): int
 proc setFromY(iface: BufferInterface; y: int)
 proc setCursorY(iface: BufferInterface; y: int; refresh = true)
 proc getClassID*(t: typedesc[BufferInterface]): JSClassID
-proc getClassID*(t: typedesc[Highlight]): JSClassID
+proc getClassID*(t: typedesc[BufferInit]): JSClassID
+proc getClassID(t: typedesc[Highlight]): JSClassID
 
 # BufferInit
 proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
@@ -352,7 +365,7 @@ proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
   var flags = flags
   if contentType != "":
     flags.incl(bifForceType)
-  BufferInit(
+  jsNew BufferInitObj(
     config: config,
     loaderConfig: loaderConfig,
     title: title,
@@ -418,7 +431,7 @@ proc applyResponse*(init: BufferInit; response: Response;
   init.refreshUrl = refresh.url
   init.refreshMillis = refresh.n
 
-jsClassDef(BufferInit):
+jsClassPublicDef(BufferInit):
   jsget BufferInit, contentType
   jsget BufferInit, shortContentType
   jsget BufferInit, url
@@ -435,9 +448,12 @@ jsClassDef(BufferInit):
   proc mark(rt: JSRuntime; init: BufferInit; markFunc: JS_MarkFunc) {.jsmark.} =
     if init.connectedPtr != nil:
       JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, init.connectedPtr), markFunc)
+    rt.markObj(init.loaderConfig.originURL, markFunc)
+    rt.markObj(init.loaderConfig.defaultHeaders, markFunc)
+    rt.markObj(init.loaderConfig.proxy, markFunc)
 
   proc newBufferInit*(url: URL; init: BufferInit): BufferInit {.jsctor.} =
-    BufferInit(
+    jsNew BufferInitObj(
       config: init.config,
       loaderConfig: init.loaderConfig,
       title: init.title,
@@ -519,8 +535,8 @@ jsClassDef(BufferInit):
     init.config.askDownloadDir
 
   proc title*(init: BufferInit): string {.jsfget.} =
-    if init.title != "":
-      return init.title
+    if init[].title != "":
+      return init[].title
     return init.url.serialize(excludepassword = true)
 
   proc setTitle(init: BufferInit; title: string) {.jsfset: "title".} =
@@ -565,7 +581,7 @@ proc newBufferInterface*(stream: PosixStream; loader: FileLoader;
     phandle: ProcessHandle; attrsp: ptr WindowAttributes; init: BufferInit):
     BufferInterface =
   inc phandle.refc
-  return BufferInterface(
+  jsNew BufferInterfaceObj(
     phandle: phandle,
     packetid: 1, # ids below 1 are invalid
     stream: stream,
@@ -1028,13 +1044,13 @@ proc requestLinesFast*(iface: BufferInterface; force = false) =
   iface.addPromise(getLinesFromStream)
 
 # dump mode
-type HandleReadLine = proc(opaque: RootRef; iface: BufferInterface;
+type HandleReadLine = proc(opaque: JSRootRef; iface: BufferInterface;
   s: openArray[char]; formats: openArray[SimpleFormatCell]): Opt[void] {.
   nimcall, raises: [].}
 
 # Synchronously read all lines in the buffer.
 proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
-    handle: HandleReadLine; opaque: RootRef): IfaceResult =
+    handle: HandleReadLine; opaque: JSRootRef): IfaceResult =
   if iface.dead:
     return irEOF
   iface.stream.setBlocking(true)
@@ -1103,7 +1119,7 @@ proc updateHoverFromStream(ctx: JSContext; iface: BufferInterface;
     iface.refreshStatus = true
   return JS_UNDEFINED
 
-jsClassDef(BufferInterface):
+jsClassPublicDef(BufferInterface):
   jsget BufferInterface, dead
   jsget BufferInterface, gotLines
   jsget BufferInterface, numLines
@@ -1120,6 +1136,8 @@ jsClassDef(BufferInterface):
     for it in iface.map:
       if it.fun != nil:
         JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, it.fun), markFunc)
+    for highlight in iface.highlights:
+      rt.markObj(highlight, markFunc)
 
   proc process*(iface: BufferInterface): int {.jsfget.} =
     return iface.phandle.process
@@ -1641,20 +1659,24 @@ jsClassDef(BufferInterface):
         iface.highlights.del(i)
     iface.queueDraw()
 
-  proc addSearchHighlight(iface: BufferInterface; x1, y1, x2, y2: int)
-      {.jsfunc.} =
-    iface.highlights.add(Highlight(
+  proc addSearchHighlight(ctx: JSContext; iface: BufferInterface;
+      x1, y1, x2, y2: int): JSValue {.jsfunc.} =
+    let highlight = jsNew HighlightObj(
       t: hltSearch,
       x1: x1,
       y1: y1,
       x2: x2,
       y2: y2
-    ))
+    )
+    if highlight == nil:
+      return JS_ThrowOutOfMemory(ctx)
+    iface.highlights.add(highlight)
     iface.queueDraw()
+    return JS_UNDEFINED
 
-  proc startSelection(iface: BufferInterface; t: SelectionType; mouse: bool;
-      x1, y1, x2, y2: int): Highlight {.jsfunc.} =
-    let highlight = Highlight(
+  proc startSelection(ctx: JSContext; iface: BufferInterface; t: SelectionType;
+      mouse: bool; x1, y1, x2, y2: int): JSValue {.jsfunc.} =
+    let highlight = jsNew HighlightObj(
       t: hltSelect,
       selectionType: t,
       x1: x1,
@@ -1663,9 +1685,11 @@ jsClassDef(BufferInterface):
       y2: y2,
       mouse: mouse
     )
+    if highlight == nil:
+      return JS_ThrowOutOfMemory(ctx)
     iface.highlights.add(highlight)
     iface.queueDraw()
-    return highlight
+    return ctx.toJS(highlight)
 
   proc removeHighlight(iface: BufferInterface; highlight: Highlight)
       {.jsfunc.} =

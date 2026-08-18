@@ -5,6 +5,7 @@ import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -91,7 +92,7 @@ type
     flags: set[RequestFlag]
     credentials*: CredentialsMode
 
-  Request* = ref object
+  RequestObj* = object
     # RawRequest
     url*: URL
     headers*: Headers
@@ -106,7 +107,10 @@ type
     window*: RequestWindow
     client*: EnvironmentSettings
 
-jsDestructor(Request)
+  Request* = JSRef[RequestObj]
+
+# Forward declarations
+proc getClassID(t: typedesc[Request]): JSClassID
 
 # Forward declaration hack
 var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall, raises: [].}
@@ -188,7 +192,7 @@ proc unsetReferrer*(this: Request) =
   this.headers.removeAll("Referer")
 
 proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
-    body = RequestBody(); hasReferrer = true; referrer: URL = nil;
+    body = RequestBody(); hasReferrer = true; referrer = URL(nil);
     tocache = false; credentials = cmSameOrigin; internal = false;
     urlCredentials = false; destination = rdNone; mode = rmNoCors;
     window = RequestWindow(t: rwtNoWindow)): Request =
@@ -204,7 +208,7 @@ proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     flags.incl(rqfReferrer)
   if internal:
     flags.incl(rqfInternal)
-  return Request(
+  return jsNew RequestObj(
     url: url,
     httpMethod: httpMethod,
     headers: headers,
@@ -221,7 +225,7 @@ proc newRequest*(raw: RawRequest): Request =
     internal = raw.internal, urlCredentials = raw.urlCredentials)
 
 proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
-    body = RequestBody(); hasReferrer = true; referrer: URL = nil;
+    body = RequestBody(); hasReferrer = true; referrer = URL(nil);
     tocache = false; credentials = cmSameOrigin; internal = false): Request =
   return newRequest(parseURL0(s), httpMethod, headers, body, hasReferrer,
     referrer, tocache, credentials, internal)
@@ -345,8 +349,8 @@ jsClassDef(Request):
       #TODO the spec allows this to be any string :(
       ?ctx.fromJS(init.method, httpMethod)
     var hasReferrer = true
-    var referrer: URL = nil
-    var url: URL = nil
+    var referrer: URL
+    var url: URL
     var mode = rmNoCors
     if not JS_IsUndefined(init.mode):
       ?ctx.fromJS(init.mode, mode)
@@ -393,7 +397,7 @@ jsClassDef(Request):
         referrer = ?ctx.parseJSURL(referrerStr, apiBaseURL)
         if referrer.schemeType == stAbout and referrer.pathname == "client" or
             not referrer.origin.isSameOrigin(origin):
-          referrer = nil
+          referrer = URL(nil)
     #TODO referrerPolicy
     if mode == rmNavigate:
       JS_ThrowTypeError(ctx, "request mode must not be `navigate'")

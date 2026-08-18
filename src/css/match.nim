@@ -4,6 +4,7 @@ import chame/tags
 import css/cssparser
 import html/catom
 import html/dom
+import monoucha/jsref
 import types/opt
 import utils/twtstr
 
@@ -118,25 +119,25 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     hasDeps = true
     depends.add(element, dtHover)
     return element.hover
-  of pcRoot: return element == element.document.documentElement
+  of pcRoot: return element == element.asNode.document.documentElement
   of pcChecked:
-    if element of HTMLInputElement:
+    if (let element = element as HTMLInputElement; element != nil):
       hasDeps = true
-      depends.add(element, dtChecked)
-      return HTMLInputElement(element).checked
-    elif element of HTMLOptionElement:
+      depends.add(element.asElement, dtChecked)
+      return element.checked
+    elif (let element = element as HTMLOptionElement; element != nil):
       hasDeps = true
-      depends.add(element, dtChecked)
-      return HTMLOptionElement(element).selected
+      depends.add(element.asElement, dtChecked)
+      return element.selected
     return false
   of pcFocus:
     hasDeps = true
     depends.add(element, dtFocus)
-    return element.document.focus == element
+    return element.asNode.document.focus == element
   of pcTarget:
     hasDeps = true
     depends.add(element, dtTarget)
-    return element.document.target == element
+    return element.asNode.document.target == element
   of pcLink:
     return element.tagType in {ttA, ttArea} and element.attrb(satHref)
   of pcVisited:
@@ -225,7 +226,7 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stType:
     return element.localName == sel.atom
   of stClass:
-    if element.document.mode == qmQuirks:
+    if element.asNode.document.mode == qmQuirks:
       for it in element.classList:
         if sel.atom.equalsIgnoreCase(it):
           return true
@@ -235,7 +236,7 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
           return true
     return false
   of stId:
-    if element.document.mode == qmQuirks:
+    if element.asNode.document.mode == qmQuirks:
       return sel.atom.equalsIgnoreCase(element.id)
     return sel.atom == element.id
   of stAttr:
@@ -287,14 +288,14 @@ proc matches(element: Element; cxsel: ComplexSelector;
     of ctNone:
       match = e.matches(csel, mdepends, hasDeps)
     of ctDescendant:
-      e = e.parentElement
+      e = e.asNode.parentElement
       while e != nil:
         if e.matches(csel, mdepends, hasDeps):
           match = true
           break
-        e = e.parentElement
+        e = e.asNode.parentElement
     of ctChild:
-      e = e.parentElement
+      e = e.asNode.parentElement
       match = e != nil and e.matches(csel, mdepends, hasDeps)
     of ctNextSibling:
       e = e.previousElementSibling

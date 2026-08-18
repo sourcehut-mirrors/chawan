@@ -6,6 +6,7 @@ import std/tables
 
 import quickjs
 import utils/tabutil
+import utils/twtstr
 
 type
   JSSymbolRef* = enum
@@ -44,20 +45,22 @@ type
     jsvSet = "Set"
     jsvFunction = "Function"
     jsvIteratorPrototype = "Iterator.prototype"
+    jsvSymbol = "Symbol" # must be last
 
   BoundRefDestructor* = proc(x: pointer) {.nimcall, raises: [].}
 
   JSClassData* = object
     parent*: JSClassID
+    raw*: bool #TODO remove
     # Parent unforgeables are merged on class creation.
     # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
     # `unforgeable[classid]'.)
     unforgeable*: seq[JSCFunctionListEntry]
-    fins*: seq[JSFinalizerFunction]
-    when defined(gcDestructors):
-      dtor*: BoundRefDestructor
+    fins*: seq[ChaFinalizerFunction]
+    marks*: seq[ChaMarkFunction]
+    name*: cstring
 
-  JSContextOpaque* = ref object
+  JSContextOpaqueObj* = object
     gclass*: JSClassID # class ID of the global object
     ctors*: seq[JSValue] # class ID -> constructor
     global*: JSValue
@@ -66,8 +69,13 @@ type
     valRefs*: array[JSValueRef, JSValue]
     globalObj*: pointer
 
-  JSFinalizerFunction* = proc(rt: JSRuntime; opaque: pointer) {.nimcall,
+  JSContextOpaque* = ptr JSContextOpaqueObj
+
+  ChaFinalizerFunction* = proc(rt: JSRuntime; this: pointer) {.nimcall,
     raises: [].}
+
+  ChaMarkFunction* = proc(rt: JSRuntime; this: pointer;
+    markFun: JS_MarkFunc) {.nimcall, raises: [].}
 
   EnumMapItem* = object
     atom*: JSAtom
@@ -83,98 +91,38 @@ type
     nimp*: pointer
     jsp*: pointer
 
-  JSRuntimeOpaque* = ref object
+  JSRuntimeOpaqueObj* = object
     classes*: seq[JSClassData] # JSClassID -> data
     enumMap*: seq[EnumMapEntry]
     plist*: seq[JSPointerItem] # Nim -> JS
     load: int
+    when defined(debug):
+      marking*: bool
+
+  JSRuntimeOpaque* = ptr JSRuntimeOpaqueObj
 
 var globalRuntime* {.global.}: JSRuntime
 
-# getTypePtr -> JSClassID
-var globalJSTypeMap* {.global.}: Table[pointer, JSClassID]
-
 iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
-    JSFinalizerFunction =
+    ChaFinalizerFunction =
   let classid = int(classid)
   if classid < rtOpaque.classes.len:
-    for fin in rtOpaque.classes[classid].fins:
+    for fin in rtOpaque.classes[classid].fins.ritems:
       yield fin
 
-# Return the JSObject pointer associated with nimp, or nil.
-# If nimt is not nil, then an associated weakly referenced Nim object is
-# returned instead.
-proc getOrDefault*(rtOpaque: JSRuntimeOpaque; nimp: pointer): pointer =
-  if rtOpaque.plist.len <= 0:
-    return nil
-  let mask = rtOpaque.plist.len - 1
-  var i = nimp.hash() and mask
-  while true:
-    let it = rtOpaque.plist[i]
-    if it.nimp == nimp:
-      return it.jsp
-    if it.nimp == nil:
-      break
-    i = (i + 1) and mask
-  nil
-
-proc put0(rtOpaque: JSRuntimeOpaque; item: JSPointerItem) =
-  let mask = rtOpaque.plist.len - 1
-  var home = item.hcache and mask
-  var i = home
-  var current = item
-  while true:
-    let it = rtOpaque.plist[i]
-    if it.nimp == nil:
-      rtOpaque.plist[i] = current
-      break
-    if tabSwap(home, it.hcache, i, mask): # displace
-      swap(rtOpaque.plist[i], current)
-    i = (i + 1) and mask
-
-proc add*(rtOpaque: JSRuntimeOpaque; nimp, jsp: pointer) =
-  for it in rtOpaque.plist.prepareTableAdd(rtOpaque.load, init = 32):
-    if it.nimp != nil:
-      rtOpaque.put0(it)
-  rtOpaque.put0(JSPointerItem(
-    hcache: nimp.hash(),
-    nimp: nimp,
-    jsp: jsp
-  ))
-  inc rtOpaque.load
-
-proc del*(rtOpaque: JSRuntimeOpaque; nimp: pointer) =
-  if rtOpaque.plist.len == 0:
-    return
-  let mask = rtOpaque.plist.len - 1
-  var i = nimp.hash() and mask
-  while true:
-    let it = rtOpaque.plist[i]
-    if it.nimp == nil:
-      return # not found
-    if it.nimp == nimp:
-      dec rtOpaque.load
-      rtOpaque.plist[i] = JSPointerItem()
-      break
-    i = (i + 1) and mask
-  var j = i
-  while true:
-    j = (j + 1) and mask
-    let it = rtOpaque.plist[j]
-    if it.nimp == nil:
-      break
-    let k = it.hcache and mask
-    if j == k: # already at home
-      break
-    # backwards shift
-    rtOpaque.plist[i] = move(rtOpaque.plist[j])
-    i = j
+iterator marks*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
+    ChaMarkFunction =
+  let classid = int(classid)
+  if classid < rtOpaque.classes.len:
+    for mark in rtOpaque.classes[classid].marks.ritems:
+      yield mark
 
 proc getParent*(rtOpaque: JSRuntimeOpaque; class: JSClassID): JSClassID =
   rtOpaque.classes[int(class)].parent
 
 proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
-  let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))
+  let opaque = create(JSContextOpaqueObj)
+  opaque.global = JS_GetGlobalObject(ctx)
   let sym = JS_GetPropertyStr(ctx, opaque.global, "Symbol")
   for s in JSSymbolRef:
     let name = $s
@@ -182,15 +130,17 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
     assert JS_IsSymbol(val)
     opaque.symRefs[s] = JS_ValueToAtom(ctx, val)
     JS_FreeValue(ctx, val)
-  JS_FreeValue(ctx, sym)
   for s in JSStrRef:
     let ss = $s
-    opaque.strRefs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
-  for s in JSValueRef:
+    opaque.strRefs[s] = JS_NewAtomLen(ctx, ss.toCStringConst,
+      csize_t(ss.len))
+  for s in JSValueRef.low..jsvSymbol.pred:
     let ss = $s
-    let ret = JS_Eval(ctx, cstring(ss), csize_t(ss.len), "<init>", 0)
+    let ret = JS_Eval(ctx, ss.toCStringConst, csize_t(ss.len),
+      cstringConst("<init>"), 0)
     assert not JS_IsException(ret)
     opaque.valRefs[s] = ret
+  opaque.valRefs[jsvSymbol] = sym
   return opaque
 
 proc getOpaque*(ctx: JSContext): JSContextOpaque =
@@ -242,5 +192,8 @@ proc putEnums*(ctx: JSContext; enumId: int; atoms: openArray[string]): bool =
   if rtOpaque.enumMap[enumId].enums.len == atoms.len:
     return true
   ctx.putEnums0(rtOpaque.enumMap[enumId], atoms)
+
+proc getName*(rt: JSRuntime; classid: JSClassID): string =
+  $rt.getOpaque().classes[int(classid)].name
 
 {.pop.} # raises

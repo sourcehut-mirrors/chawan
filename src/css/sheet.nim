@@ -6,6 +6,7 @@ import css/cssvalues
 import css/mediaquery
 import html/catom
 import html/script
+import monoucha/jsref
 import types/opt
 import types/url
 import utils/tabutil
@@ -396,7 +397,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
     let query = ctx.parseMediaQueryList(sheet.settings.attrsp)
     if query.applies(sheet.settings):
       var ctx = initCSSParser(atrule.oblock)
-      sheet.addRules(ctx, topLevel = false, base = nil, layer)
+      sheet.addRules(ctx, topLevel = false, base = URL(nil), layer)
   of cartLayer:
     var ctx = initCSSParser(atrule.prelude)
     if atrule.hasBlock:
@@ -411,7 +412,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
       else:
         sheet.nextAnonLayer()
       var ctx = initCSSParser(atrule.oblock)
-      sheet.addRules(ctx, topLevel = false, base = nil, name)
+      sheet.addRules(ctx, topLevel = false, base = URL(nil), name)
     else:
       var names: seq[CAtom] = @[]
       while ctx.skipBlanksCheckHas().isOk:

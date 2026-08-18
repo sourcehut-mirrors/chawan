@@ -49,7 +49,7 @@ proc consoleWriteCb(opaque: pointer; buf: cstringConst; len: csize_t) {.
     cdecl.} =
   if len > 0 and len <= csize_t(int.high):
     let H = int(len) - 1
-    cast[Console](opaque).write(buf.toOpenArray(0, H))
+    cast[Console](opaque).write(cstring(buf).toOpenArray(0, H))
 
 jsNamespaceDef(console):
   proc log(ctx: JSContext; argv: varargs[JSValueConst]): Opt[void] {.jsstfunc,
@@ -74,6 +74,8 @@ jsNamespaceDef(console):
 
 proc addConsoleModule*(ctx: JSContext): Opt[void] =
   let obj = ctx.registerNamespace(consoleDef)
+  if JS_IsUndefined(obj):
+    return ok()
   if JS_IsException(obj):
     return err()
   let proto = JS_NewObject(ctx)

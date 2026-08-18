@@ -4,6 +4,7 @@ import encoding/charset
 import encoding/decoder
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -12,7 +13,7 @@ import types/opt
 import utils/twtstr
 
 type
-  JSTextDecoder = ref object
+  JSTextDecoderObj = object
     encoding: Charset
     ignoreBOM: bool
     errorMode: DecoderErrorMode
@@ -20,7 +21,7 @@ type
     bomSeen: bool
     tdctx: TextDecoderContext
 
-jsDestructor(JSTextDecoder)
+  JSTextDecoder = JSRef[JSTextDecoderObj]
 
 # TextDecoder
 jsClassNameDef(JSTextDecoder, "TextDecoder"):
@@ -30,22 +31,21 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
     fatal {.jsdefault.}: bool
     ignoreBOM {.jsdefault.}: bool
 
-  proc newJSTextDecoder(ctx: JSContext; label = "utf-8";
-      options = TextDecoderOptions()): Opt[JSTextDecoder] {.jsctor.} =
+  proc newJSTextDecoder(ctx: JSContext; ctor: JSValueConst; label = "utf-8";
+      options = TextDecoderOptions()): JSValue {.jsctor2.} =
     let encoding = getCharset(label)
     if encoding in {csUnknown, csReplacement}:
-      JS_ThrowRangeError(ctx, "invalid encoding label")
-      return err()
+      return JS_ThrowRangeError(ctx, "invalid encoding label")
     let errorMode = if options.fatal: demFatal else: demReplacement
-    return ok(JSTextDecoder(
+    return ctx.toJSNew(jsNew JSTextDecoderObj(
       ignoreBOM: options.ignoreBOM,
       errorMode: errorMode,
       tdctx: initTextDecoderContext(encoding, errorMode),
       encoding: encoding
-    ))
+    ), ctor)
 
   proc encoding(this: JSTextDecoder): string {.jsfget.} =
-    return ($this.encoding).toLowerAscii()
+    return ($this[].encoding).toLowerAscii()
 
   proc fatal(this: JSTextDecoder): bool {.jsfget.} =
     return this.errorMode == demFatal
@@ -64,7 +64,7 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
     if not JS_IsUndefined(jsOptions):
       ?ctx.fromJS(jsOptions, options)
     if not this.stream:
-      this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
+      this.tdctx = initTextDecoderContext(this[].encoding, this.errorMode)
       this.bomSeen = false
     this.stream = options.stream
     var oq = ""
@@ -78,7 +78,7 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
     if this.tdctx.failed:
       this.tdctx.failed = false
       return JS_ThrowTypeError(ctx, "failed to decode string")
-    return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
+    return JS_NewStringLen(ctx, oq.toCStringConst, csize_t(oq.len))
 
 # TextEncoder
 proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
@@ -113,6 +113,6 @@ jsClassRaw(TextEncoderDef, "TextEncoder"):
 
 proc addEncodingModule*(ctx: JSContext): FromJSResult =
   ?ctx.registerClass(JSTextDecoderDef)
-  ctx.registerClass(TextEncoderDef, hook = false)
+  ctx.registerClass(TextEncoderDef)
 
 {.pop.}

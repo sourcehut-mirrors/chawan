@@ -2,7 +2,7 @@
 
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsopaque
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -12,7 +12,9 @@ import types/opt
 import utils/twtstr
 
 type
-  Collator = ref object
+  CollatorObj = object
+
+  Collator = JSRef[CollatorObj]
 
   NumberStyle = enum
     nsDecimal = "decimal"
@@ -71,28 +73,31 @@ type
     part1: NumberUnitPart
     part2: Opt[NumberUnitPart]
 
-  NumberFormat = ref object
+  NumberFormatObj = object
     maximumFractionDigits: int32
     style: NumberStyle
     unit: NumberUnit
 
-  PluralRules = ref object
+  NumberFormat = JSRef[NumberFormatObj]
+
+  PluralRulesObj = object
+
+  PluralRules = JSRef[PluralRulesObj]
 
   PRResolvedOptions = object of JSDict
     locale: string
 
-  DateTimeFormat = ref object
+  DateTimeFormatObj = object
 
-  RelativeTimeFormat = ref object
+  DateTimeFormat = JSRef[DateTimeFormatObj]
 
-  ListFormat = ref object
+  RelativeTimeFormatObj = object
 
-jsDestructor(Collator)
-jsDestructor(NumberFormat)
-jsDestructor(DateTimeFormat)
-jsDestructor(PluralRules)
-jsDestructor(RelativeTimeFormat)
-jsDestructor(ListFormat)
+  RelativeTimeFormat = JSRef[RelativeTimeFormatObj]
+
+  ListFormatObj = object
+
+  ListFormat = JSRef[ListFormatObj]
 
 # Intl
 proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
@@ -137,7 +142,7 @@ jsNamespaceDef(Intl):
 # Collator
 jsClassDef(Collator):
   proc newCollator(): Collator {.jsctor.} =
-    return Collator()
+    jsNew CollatorObj()
 
   proc compare(this: Collator; a, b: string): bool {.jsfunc.} =
     return a == b
@@ -234,8 +239,8 @@ proc stringifyUnit(unit: NumberUnit; s: string): string =
 jsClassDef(NumberFormat):
   proc newNumberFormat(ctx: JSContext; name = "en-US";
       options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsfctor.} =
-    let nf = NumberFormat()
-    if JS_IsObject(options):
+    let nf = jsNew NumberFormatObj()
+    if nf != nil and JS_IsObject(options):
       discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",
         nf.maximumFractionDigits)
       if nf.maximumFractionDigits notin 0..100:
@@ -290,8 +295,8 @@ jsClassDef(NumberFormat):
 
 # DateTimeFormat
 jsClassDef(DateTimeFormat):
-  proc newDateTimeFormat(): Opt[DateTimeFormat] {.jsfctor.} =
-    return ok(DateTimeFormat())
+  proc newDateTimeFormat(): DateTimeFormat {.jsfctor.} =
+    jsNew DateTimeFormatObj()
 
   proc format(this: DateTimeFormat; s: string): string {.jsfunc.} =
     s #TODO
@@ -299,7 +304,7 @@ jsClassDef(DateTimeFormat):
 # PluralRules
 jsClassDef(PluralRules):
   proc newPluralRules(): PluralRules {.jsctor.} =
-    return PluralRules()
+    jsNew PluralRulesObj()
 
   proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
     return PRResolvedOptions(locale: "en-US")
@@ -312,7 +317,7 @@ jsClassDef(PluralRules):
 # RelativeTimeFormat
 jsClassDef(RelativeTimeFormat):
   proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
-    return RelativeTimeFormat()
+    jsNew RelativeTimeFormatObj()
 
   proc format(this: RelativeTimeFormat; s: string): string {.jsfunc.} =
     s #TODO
@@ -321,7 +326,7 @@ jsClassDef(RelativeTimeFormat):
 jsClassDef(ListFormat):
   proc newListFormat(): ListFormat {.jsctor.} =
     #TODO locales, options etc.
-    ListFormat()
+    jsNew ListFormatObj()
 
   proc format(this: ListFormat; s: string): string {.jsfunc.} =
     s #TODO

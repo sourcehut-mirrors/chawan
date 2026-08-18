@@ -36,6 +36,7 @@ import css/cssparser
 import css/cssvalues
 import html/catom
 import html/dom
+import monoucha/jsref
 import types/bitmap
 import types/color
 import types/refstring
@@ -103,7 +104,7 @@ when defined(debug):
     of stElement:
       if node.pseudo != peNone:
         return $node.element.tagType & "::" & $node.pseudo
-      return $node.element
+      return $node.element.asNode
     of stBr:
       return "#br"
     of stCounter:
@@ -413,7 +414,7 @@ proc addImageOrAlt(frame: var TreeFrame; image: HTMLImageElement) =
   if bmp == nil or bmp.cacheId == -1:
     # Add a placeholder text if we have no bmp.
     # (If we have bmp, render will take care of it automatically.)
-    let alt = image.attr(satAlt)
+    let alt = image.asElement.attr(satAlt)
     if alt != "":
       frame.addText(alt)
     else:
@@ -427,7 +428,7 @@ proc addBr(frame: var TreeFrame) =
   ))
 
 proc addElementChildren(frame: var TreeFrame) =
-  for it in frame.parent.shadowChildList:
+  for it in frame.parent.asParentNode.shadowChildList:
     if it of Element:
       let element = Element(it)
       frame.addElement(element)
@@ -445,7 +446,7 @@ proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
     computed{"display"} = DisplayBlock
     computed{"width"} = cssLength(n)
     computed = computed.atomize()
-    var aframe = frame.ctx.initTreeFrame(input, computed)
+    var aframe = frame.ctx.initTreeFrame(input.asElement, computed)
     if cdata != nil:
       aframe.addText(cdata)
     frame.addAnon(computed, move(aframe.children))
@@ -454,7 +455,7 @@ proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
       frame.addText(cdata)
 
 proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
-  if option.select != nil and option.select.attrb(satMultiple):
+  if option.select != nil and option.select.asElement.attrb(satMultiple):
     frame.addText("[")
     let cdata = newRefString(if option.selected: "*" else: " ")
     var computed = option.computed.inheritProperties()
@@ -462,7 +463,7 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
     computed{"white-space"} = WhiteSpacePre
     computed = computed.atomize()
     block anon:
-      var aframe = frame.ctx.initTreeFrame(option, computed)
+      var aframe = frame.ctx.initTreeFrame(option.asElement, computed)
       aframe.addText(cdata)
       frame.addAnon(computed, move(aframe.children))
     frame.addText("]")
@@ -559,14 +560,14 @@ proc newBoxOrTakeCached(cached: CSSBox; display: CSSDisplay; node: StyledNode):
     return InlineBox(
       t: t,
       computed: node.computed,
-      element: node.element,
+      elementPtr: cast[ptr ElementObj](node.element),
       pseudo: node.pseudo
     )
   else:
     return BlockBox(
       t: t,
       computed: node.computed,
-      element: node.element,
+      elementPtr: cast[ptr ElementObj](node.element),
       pseudo: node.pseudo
     )
 
@@ -775,7 +776,7 @@ proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
     return InlineTextBox(
       t: cbtText,
       computed: styledNode.computed,
-      element: styledNode.element,
+      elementPtr: cast[ptr ElementObj](styledNode.element),
       text: styledNode.text,
       len: styledNode.text.len
     )
@@ -785,7 +786,7 @@ proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
     return InlineNewLineBox(
       t: cbtText,
       computed: styledNode.computed,
-      element: styledNode.element
+      elementPtr: cast[ptr ElementObj](styledNode.element)
     )
   of stCounter:
     let counter = ctx.counter(styledNode.counterName)
@@ -800,7 +801,7 @@ proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
     return InlineTextBox(
       t: cbtText,
       computed: styledNode.computed,
-      element: styledNode.element,
+      elementPtr: cast[ptr ElementObj](styledNode.element),
       text: styledNode.counterStyle.listMarker(counter, addSuffix,
         ctx.linkHintChars[])
     )

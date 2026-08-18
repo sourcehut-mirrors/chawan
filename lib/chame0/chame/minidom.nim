@@ -10,7 +10,6 @@
 
 import std/algorithm
 import std/hashes
-import std/options
 import std/streams
 import std/strutils
 
@@ -253,8 +252,8 @@ proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: MAtom): TagType =
 proc getDocumentImpl(builder: MiniDOMBuilder): Node =
   return builder.document
 
-proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): Option[Node] =
-  return option(handle.parentNode)
+proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): Node =
+  return handle.parentNode
 
 proc createElement(document: Document; localName: MAtom; namespace: Namespace):
     Element =
@@ -382,8 +381,7 @@ proc preInsertionValidity*(parent, node, before: Node): bool =
         return false
   return true # no exception reached
 
-proc insertBefore(parent, child: Node; before: Option[Node]) =
-  let before = before.get(nil)
+proc insertBefore(parent, child, before: Node) =
   if parent.preInsertionValidity(child, before):
     assert child.parentNode == nil
     if before == nil:
@@ -393,12 +391,11 @@ proc insertBefore(parent, child: Node; before: Option[Node]) =
       parent.childList.insert(child, i)
     child.parentNode = parent
 
-proc insertBeforeImpl(builder: MiniDOMBuilder; parent, child: Node;
-    before: Option[Node]) =
+proc insertBeforeImpl(builder: MiniDOMBuilder; parent, child, before: Node) =
   parent.insertBefore(child, before)
 
 proc insertCommentImpl(builder: MiniDOMBuilder; parent: Node; text: string;
-    before: Option[Node]) =
+    before: Node) =
   let comment = Comment(data: text.toValidUTF8())
   parent.insertBefore(comment, before)
 
@@ -409,12 +406,11 @@ proc appendDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
     publicId: publicId.toValidUTF8(),
     systemId: systemId.toValidUTF8()
   )
-  builder.document.insertBefore(doctype, none(Node))
+  builder.document.insertBefore(doctype, nil)
 
 proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: string;
-    before: Option[Node]) =
+    before: Node) =
   let text = text.toValidUTF8()
-  let before = before.get(nil)
   let prevSibling = if before != nil:
     let i = parent.childList.find(before)
     if i == 0:
@@ -429,7 +425,7 @@ proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: string;
     Text(prevSibling).data &= text
   else:
     let text = Text(data: text)
-    parent.insertBefore(text, option(before))
+    parent.insertBefore(text, before)
 
 proc removeImpl(builder: MiniDOMBuilder; child: Node) =
   if child.parentNode != nil:
@@ -442,7 +438,7 @@ proc moveChildrenImpl(builder: MiniDOMBuilder; fromNode, toNode: Node) =
   fromNode.childList.setLen(0)
   for child in tomove:
     child.parentNode = nil
-    toNode.insertBefore(child, none(Node))
+    toNode.insertBefore(child, nil)
 
 proc elementPoppedImpl(builder: MiniDOMBuilder; element: Node) =
   let popped = Element(element)
@@ -581,8 +577,8 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   )
   document.childList = @[Node(root)]
   var opts = opts
-  opts.ctx = option(Node(element))
-  opts.openElementsInit = option(Node(root))
+  opts.ctx = element
+  opts.openElementsInit = root
   if element.namespace == nsMathML and
       element.localName.toTagType() == ttAnnotationXml:
     let i = element.findAttribute("encoding")

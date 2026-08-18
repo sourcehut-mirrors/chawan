@@ -36,6 +36,9 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
+import monoucha/jsbind
+import monoucha/jsref
+import monoucha/quickjs
 import server/connectionerror
 import server/headers
 import server/loaderiface
@@ -388,6 +391,7 @@ proc oclose(ctx: var LoaderContext; output: OutputHandle) =
   ctx.unset(output)
   output.stream.sclose()
   output.stream = nil
+  output.parent = nil # break cycle
 
 proc close(ctx: var LoaderContext; handle: InputHandle) =
   ctx.iclose(handle)
@@ -1934,7 +1938,7 @@ proc finishCycle(ctx: var LoaderContext) =
       if output.registered:
         ctx.unregister(output)
       ctx.oclose(output)
-      let handle = output.parent
+      let handle = move(output.parent)
       if handle != nil: # may be nil if from loadStream S_ISREG
         let i = handle.outputs.find(output)
         handle.outputs.del(i)
@@ -2000,8 +2004,17 @@ proc loaderLoop(ctx: var LoaderContext) =
     ctx.finishCycle()
   ctx.exitLoader()
 
-proc runFileLoader*(config: LoaderConfig; stream, forkStream: PosixStream;
-    pagerPid: int; pagerConfig: LoaderClientConfig; browsecap: Mailcap) =
+proc runFileLoader*(rt: JSRuntime; config: LoaderConfig;
+    stream, forkStream: PosixStream; pagerPid: int;
+    pagerConfig: LoaderClientConfig; browsecap: Mailcap) =
+  # init JS class for URL
+  # (we don't need anything else in loader)
+  let jsctx = rt.newDummyContext()
+  if jsctx == nil:
+    return
+  if jsctx.addURLModule().isErr:
+    return
+  JS_FreeContext(jsctx)
   var ctx {.global.}: LoaderContext
   ctx = LoaderContext(
     config: config,

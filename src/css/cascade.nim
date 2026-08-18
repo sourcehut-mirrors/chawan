@@ -13,6 +13,7 @@ import css/sheet
 import html/catom
 import html/dom
 import html/script
+import monoucha/jsref
 import types/color
 import types/jscolor
 import types/opt
@@ -78,7 +79,7 @@ proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
         for it in ancestor.classList:
           found = found or it == class
           ancestors.classes.incl(it)
-      ancestor = ancestor.parentElement
+      ancestor = ancestor.asNode.parentElement
       if ancestor == nil or found:
         break
     ancestors.last = ancestor
@@ -112,7 +113,7 @@ proc calcRules(tosorts: var ToSorts; element: Element;
 
 proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     depends: var DependencyInfo) =
-  let parentElement = element.parentElement
+  let parentElement = element.asNode.parentElement
   let quirks = sheet.quirks
   var tosorts = ToSorts(
     cache: AncestorCache(last: parentElement, quirks: quirks)
@@ -351,14 +352,14 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyColorHint(cptColor, element.attr(satText))
   of ttTextarea:
     let textarea = HTMLTextAreaElement(element)
-    let cols = textarea.attrul(satCols).get(20)
-    let rows = textarea.attrul(satRows).get(1)
+    let cols = textarea.asElement.attrul(satCols).get(20)
+    let rows = textarea.asElement.attrul(satRows).get(1)
     ctx.applyLengthHint(cptWidth, cuCh, cols)
     ctx.applyLengthHint(cptHeight, cuEm, rows)
   of ttFont:
     ctx.applyColorHint(cptColor, element.attr(satColor))
   of ttInput:
-    let input = HTMLInputElement(element)
+    let input = (element as HTMLInputElement)
     if input.inputType in InputTypeWithSize:
       let n = float32(element.attrulgz(satSize).get(20))
       let length = resolveLength(cuCh, n, ctx.window.settings.attrsp[])
@@ -476,7 +477,7 @@ proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
   map[pseudo].applyDeclarations(pseudo, parent, element, window, old)
 
 proc applyStyle(element: Element) =
-  let document = element.document
+  let document = element.asNode.document
   let window = document.window
   var depends = DependencyInfo.default
   var map = RuleListMap.default
@@ -503,14 +504,15 @@ proc applyStyle(element: Element) =
             window.settings.attrsp[])
     map[peNone].a[coAuthor].unlayered.add(def)
   document.applyStyleDependencies(element, depends)
-  var computed = map.applyDeclarations(peNone, element.parentElement, element,
-    window, element.computed)
+  var computed = map.applyDeclarations(peNone, element.asNode.parentElement,
+    element, window, element.computed)
   element.computed = computed
   for pseudo in peBefore .. PseudoElement.high:
     if map[pseudo].hasValues or window.settings.scripting == smApp:
       let next = computed.next
       let old = if next != nil and next.pseudo == pseudo: next else: nil
-      let pcomputed = map.applyDeclarations(pseudo, element, nil, window, old)
+      let pcomputed = map.applyDeclarations(pseudo, element, Element(nil),
+        window, old)
       if pseudo == peMarker:
         pcomputed{"display"} = DisplayMarker
       computed.next = pcomputed

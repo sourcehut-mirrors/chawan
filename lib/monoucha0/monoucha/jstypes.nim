@@ -89,7 +89,7 @@ const DOMStringConstFlag = 1 shl (sizeof(int) * 8 - 1)
 
 proc `=destroy`*(s: var DOMString) =
   if (s.ilen and DOMStringConstFlag) == 0:
-    JS_FreeCStringRT(globalRuntime, s.p)
+    JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
 
 proc `=copy`*(a: var DOMString; b: DOMString) {.error.} =
   discard
@@ -122,7 +122,9 @@ proc toDOMStringView*(s: string): DOMString =
   DOMString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
 
 proc toDOMStringNull*(ds: sink DOMString): DOMStringNull =
-  DOMStringNull(p: move(ds.p), ilen: ds.ilen)
+  let p = ds.p
+  ds.p = nil
+  DOMStringNull(p: p, ilen: ds.ilen)
 
 proc `$`*(bs: ByteString): lent string =
   bs.s

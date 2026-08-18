@@ -1,12 +1,12 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/typetraits
 
 import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -30,19 +30,46 @@ type
 
   HeaderListConst = openArray[HTTPHeader]
 
-  Headers* = ref object
+  HeadersObj* = object
     list: HeaderList
     guard*: HeaderGuard
+
+  Headers* = JSRef[HeadersObj]
 
   HeadersInit* = object
     s: seq[tuple[name, value: ByteString]]
 
-jsDestructor(Headers)
-
 # Forward declarations
 proc append(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
 proc isForbiddenResponseHeaderName*(name: string): bool
-proc getClassID*(t: typedesc[Headers]): JSClassID
+proc getClassID(t: typedesc[Headers]): JSClassID
+proc sort(headers: Headers)
+
+# in the loader we just send a seq of openArray[HTTPHeader]
+proc sreadList*(r: var PacketReader; headers: Headers) =
+  assert headers != nil
+  r.sread(headers.list)
+  headers.sort()
+
+proc swriteList*(w: var PacketWriter; headers: Headers) =
+  w.swrite(headers.list)
+
+proc sread*(r: var PacketReader; headers: var Headers) =
+  var has: bool
+  r.sread(has)
+  if has:
+    var obj: HeadersObj
+    r.sread(obj.list)
+    headers = jsNew obj
+    if headers != nil:
+      headers.sort()
+  else:
+    headers = Headers(nil)
+
+proc swrite*(w: var PacketWriter; headers: Headers) =
+  w.swrite(headers != nil)
+  if headers != nil:
+    w.swriteList(headers)
 
 iterator pairs*(this: Headers): tuple[name, value: lent string] =
   for (name, value) in this.list:
@@ -59,15 +86,6 @@ proc sort*(list: var HeaderList) =
 
 proc sort(headers: Headers) =
   headers.list.sort()
-
-# in the loader we just send a seq of openArray[HTTPHeader]
-proc sreadList*(r: var PacketReader; headers: Headers) =
-  assert headers != nil
-  r.sread(headers.list)
-  headers.sort()
-
-proc swriteList*(w: var PacketWriter; headers: Headers) =
-  w.swrite(headers.list)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     FromJSResult =
@@ -261,17 +279,18 @@ proc fill*(ctx: JSContext; headers: Headers; init: HeadersInit): Opt[void] =
   ok()
 
 proc newHeaders*(guard: HeaderGuard): Headers =
-  return Headers(guard: guard)
+  jsNew HeadersObj(guard: guard)
 
 proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
     Headers =
   let headers = newHeaders(guard)
-  headers.list = @list
-  headers.sort()
+  if headers != nil:
+    headers.list = @list
+    headers.sort()
   return headers
 
 proc clone*(headers: Headers): Headers =
-  return Headers(guard: headers.guard, list: headers.list)
+  jsNew HeadersObj(guard: headers.guard, list: headers.list)
 
 proc add*(headers: Headers; name, value: string) =
   headers.add(name, value, headers.lowerBound(name))
@@ -339,7 +358,7 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   let x = parseUInt32(s0, allowSign = false)
   if s0 != "":
     if x.isErr and (i >= s.len or s[i] != '.'):
-      return (n: -1, url: nil)
+      return (n: -1, url: URL(nil))
   var n = int(x.get(0) * 1000)
   i = s.skipBlanks(i + s0.len)
   if i < s.len and s[i] == '.':
@@ -349,11 +368,11 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
       n += int(parseUInt32(s1, allowSign = false).get(0))
       i = s.skipBlanks(i + s1.len)
   elif s0 == "": # empty string or blanks
-    return (n: -1, url: nil)
+    return (n: -1, url: URL(nil))
   if i >= s.len: # just reload this page
-    return (n: n, url: nil)
+    return (n: n, url: URL(nil))
   if s[i] notin {',', ';'}:
-    return (n: -1, url: nil)
+    return (n: -1, url: URL(nil))
   i = s.skipBlanks(i + 1)
   if s.toOpenArray(i, s.high).startsWithIgnoreCase("url="):
     i = s.skipBlanks(i + "url=".len)
@@ -366,13 +385,13 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
     s2.setLen(s2.high)
   if url := parseURL(s2, baseURL):
     return (n: n, url: url)
-  return (n: -1, url: nil)
+  return (n: -1, url: URL(nil))
 
 jsClassDef(Headers):
   proc newHeaders(ctx: JSContext; jsInit: JSValueConst = JS_UNDEFINED):
       Opt[Headers] {.jsctor.} =
     let headers = newHeaders(hgNone)
-    if not JS_IsUndefined(jsInit):
+    if headers != nil and not JS_IsUndefined(jsInit):
       var init: HeadersInit
       ?ctx.fromJS(jsInit, init)
       ?ctx.fill(headers, init)

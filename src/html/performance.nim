@@ -8,6 +8,7 @@ import html/event
 import io/timeout
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -15,20 +16,30 @@ import types/jsopt
 import types/opt
 
 type
-  Performance* {.final.} = ref object of EventTarget
+  PerformanceObj {.final.} = object of EventTargetObj
     timeOrigin: float64
     scripting: ScriptingMode
     id: uint64
 
-  PerformanceEntry = ref object of JSRootObj
+  Performance* = JSRef[PerformanceObj]
+
+  PerformanceEntryObj {.pure.} = object of JSRootObj
     id: uint64
     name: string
     startTime: float64
     duration: float64
     navigationId: uint64
 
-  PerformanceMark {.final.} = ref object of PerformanceEntry
+  PerformanceEntry = JSRef[PerformanceEntryObj]
+
+  PerformanceMarkObj {.pure, final.} = object of PerformanceEntryObj
     detail: JSValue
+
+  PerformanceMark = JSRef[PerformanceMarkObj]
+
+# Forward declarations
+proc getClassID(t: typedesc[Performance]): JSClassID
+proc getClassID(t: typedesc[PerformanceMark]): JSClassID
 
 # Performance
 proc getTime(scripting: ScriptingMode): float64 =
@@ -38,7 +49,7 @@ proc getTime(scripting: ScriptingMode): float64 =
   return float64(getUnixMillis())
 
 proc newPerformance*(scripting: ScriptingMode): Performance =
-  return Performance(timeOrigin: getTime(scripting), scripting: scripting)
+  jsNew PerformanceObj(timeOrigin: getTime(scripting), scripting: scripting)
 
 proc getEntryId(this: Performance): uint64 =
   result = this.id
@@ -75,12 +86,14 @@ jsClassDef(Performance):
     if not ?ctx.fromJSGetProp(init, "detail", detail):
       detail = JS_NULL
     #TODO serialize/deserialize detail
-    let mark = PerformanceMark(
+    let mark = jsNew PerformanceMarkObj(
       id: this.getEntryId(),
       name: $name,
       startTime: startTime,
       detail: detail
     )
+    if mark == nil:
+      return JS_ThrowOutOfMemory(ctx)
     ctx.toJS(mark)
 
 # PerformanceEntry
@@ -103,12 +116,6 @@ jsClassDef(PerformanceMark):
   jsget PerformanceMark, detail
 
   #TODO constructor
-  proc finalize(rt: JSRuntime; this: PerformanceMark) {.jsfin.} =
-    JS_FreeValueRT(rt, this.detail)
-
-  proc mark(rt: JSRuntime; this: PerformanceMark; markFun: JS_MarkFunc)
-      {.jsmark.} =
-    JS_MarkValue(rt, this.detail, markFun)
 
 proc addPerformanceModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(PerformanceDef)

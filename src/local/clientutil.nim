@@ -7,6 +7,7 @@ import config/chapath
 import io/dynstream
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -85,7 +86,7 @@ jsNamespaceDef(Util):
   proc readBlob(path: string): WebFile {.jsstfunc.} =
     let ps = newPosixStream(path, O_RDONLY, 0)
     if ps == nil:
-      return nil
+      return WebFile(nil)
     let name = path.afterLast('/')
     return newWebFile(name, ps.fd)
 

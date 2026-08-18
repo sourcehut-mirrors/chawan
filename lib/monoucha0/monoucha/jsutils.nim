@@ -246,12 +246,12 @@ proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
 proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
     getter: JSGetterMagicFunction; setter: JSSetterMagicFunction; magic: cint):
     DefinePropertyResult =
-  let prop = JS_NewAtom(ctx, name)
+  let prop = JS_NewAtom(ctx, cstringConst(name))
   if prop == JS_ATOM_NULL:
     return dprException
   var f: JSCFunctionType
   f.getter_magic = getter
-  let getterVal = JS_NewCFunction2(ctx, f.generic, name, 0,
+  let getterVal = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 0,
     JS_CFUNC_getter_magic, magic)
   if JS_IsException(getterVal):
     JS_FreeAtom(ctx, prop)
@@ -259,8 +259,8 @@ proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
   var setterVal = JS_UNDEFINED
   if setter != nil:
     f.setter_magic = setter
-    setterVal = JS_NewCFunction2(ctx, f.generic, name, 1, JS_CFUNC_setter_magic,
-      magic)
+    setterVal = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 1,
+      JS_CFUNC_setter_magic, magic)
     if JS_IsException(setterVal):
       JS_FreeAtom(ctx, prop)
       JS_FreeValue(ctx, getterVal)
@@ -331,7 +331,8 @@ proc getMemoryUsage*(rt: JSRuntime): string =
 proc eval*(ctx: JSContext; s: string; file = "<input>";
     evalFlags = JS_EVAL_TYPE_GLOBAL): JSValue =
   ## Wrapper around JS_Eval.
-  return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file), evalFlags)
+  return JS_Eval(ctx, s.toCStringConst, csize_t(s.len), file.toCStringConst,
+    evalFlags)
 
 proc compileScript*(ctx: JSContext; s: string; file = "<input>"): JSValue =
   ## Compiles `s` into bytecode.
@@ -352,6 +353,9 @@ proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =
 proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
     DefinePropertyResult =
   ## Define a list of constants expressed as a Nim enum on a class.
+  let ctxOpaque = ctx.getOpaque()
+  if ctxOpaque == nil:
+    return dprSuccess
   let proto = JS_GetClassProto(ctx, classid)
   let ctor = ctx.getOpaque().ctors[int(classid)]
   var res = dprSuccess

@@ -3,6 +3,7 @@
 import html/catom
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -11,24 +12,28 @@ import types/jsopt
 import types/opt
 
 type
-  DOMRectReadOnly* = ref object of JSRootObj
+  DOMRectReadOnlyObj* {.pure.} = object of JSRootObj
     x*: float64
     y*: float64
     width*: float64
     height*: float64
 
-  DOMRect* {.final.} = ref object of DOMRectReadOnly
+  DOMRectReadOnly* = JSRef[DOMRectReadOnlyObj]
 
-  DOMRectList* = ref object
+  DOMRectObj* {.pure, final.} = object of DOMRectReadOnlyObj
+
+  DOMRect* = JSRef[DOMRectObj]
+
+  DOMRectListObj* = object
     list*: seq[DOMRect]
+
+  DOMRectList* = JSRef[DOMRectListObj]
 
   DOMRectInit = object of JSDict
     x {.jsdefault.}: float64
     y {.jsdefault.}: float64
     width {.jsdefault.}: float64
     height {.jsdefault.}: float64
-
-jsDestructor(DOMRectList)
 
 # DOMRectReadOnly
 jsClassDef(DOMRectReadOnly):
@@ -39,7 +44,7 @@ jsClassDef(DOMRectReadOnly):
 
   proc newDOMRectReadOnly(x = 0'f64; y = 0'f64; width = 0'f64; height = 0'f64):
       DOMRectReadOnly {.jsctor.} =
-    DOMRectReadOnly(x: x, y: y, width: width, height: height)
+    jsNew DOMRectReadOnlyObj(x: x, y: y, width: width, height: height)
 
   proc fromRectReadOnly(other = DOMRectInit()): DOMRectReadOnly {.
       jsstfunc: "fromRect".} =
@@ -60,7 +65,7 @@ jsClassDef(DOMRectReadOnly):
   #TODO toJSON
 
 # DOMRect
-jsClassDef(DOMRect):
+jsClassPublicDef(DOMRect):
   jsextends DOMRectReadOnlyDef
 
   jsgetset DOMRect, x
@@ -70,13 +75,18 @@ jsClassDef(DOMRect):
 
   proc newDOMRect*(x = 0'f64; y = 0'f64; width = 0'f64; height = 0'f64):
       DOMRect {.jsctor.} =
-    DOMRect(x: x, y: y, width: width, height: height)
+    jsNew DOMRectObj(x: x, y: y, width: width, height: height)
 
   proc fromRect(other = DOMRectInit()): DOMRect {.jsstfunc.} =
     newDOMRect(other.x, other.y, other.width, other.height)
 
 # DOMRectList
-jsClassDef(DOMRectList):
+jsClassPublicDef(DOMRectList):
+  proc mark(rt: JSRuntime; this: DOMRectList; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    for rect in this.list:
+      rt.markObj(rect, markFunc)
+
   proc length(this: DOMRectList): int {.jsfget.} =
     this.list.len
 

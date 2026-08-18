@@ -9,6 +9,7 @@ import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsopaque
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/libunicode
 import monoucha/quickjs
@@ -48,16 +49,22 @@ type
   SearchIteratorType = enum
     sitEntries, sitValues, sitKeys
 
-  URLSearchParams* = ref object
+  URLSearchParams* = JSRef[URLSearchParamsObj]
+
+  URLSearchParamsObj = object
     list: seq[tuple[name, value: string]]
     url: URL
 
-  URLSearchParamsIterator = ref object
+  URLSearchParamsIterator = JSRef[URLSearchParamsIteratorObj]
+
+  URLSearchParamsIteratorObj* = object
     t: SearchIteratorType
     params: URLSearchParams
     i: int
 
-  URL* = ref object
+  URL* = JSRef[URLObj]
+
+  URLObj = object
     scheme: string
     username*: string
     password*: string
@@ -78,12 +85,8 @@ type
     t*: OriginType
     s: string
 
-jsDestructor(URL)
-jsDestructor(URLSearchParams)
-jsDestructor(URLSearchParamsIterator)
-
 # Forward declarations
-proc parseURL0*(input: openArray[char]; base: URL = nil): URL
+proc parseURL0*(input: openArray[char]; base = URL(nil)): URL
 proc serialize*(url: URL; excludeHash = false; excludePassword = false):
   string
 proc serializeip(ipv4: uint32): string
@@ -91,6 +94,8 @@ proc serializeip(ipv6: array[8, uint16]): string
 proc host*(url: URL): string
 proc `$`*(url: URL): string
 proc `$`*(params: URLSearchParams): string
+proc getClassID*(t: typedesc[URL]): JSClassID
+proc getClassID(t: typedesc[URLSearchParamsIterator]): JSClassID
 
 proc swrite*(w: var PacketWriter; url: URL) =
   if url != nil:
@@ -102,7 +107,7 @@ proc sread*(r: var PacketReader; url: var URL) =
   var s: string
   r.sread(s)
   if s == "":
-    url = nil
+    url = URL(nil)
   else:
     url = parseURL0(s)
 
@@ -1009,8 +1014,8 @@ proc parseURLImpl(input: openArray[char]; base, url: URL;
   return state
 
 #TODO encoding
-proc parseURL0*(input: openArray[char]; base: URL = nil): URL =
-  let url = URL(port: -1)
+proc parseURL0*(input: openArray[char]; base = URL(nil)): URL =
+  let url = jsNew URLObj(port: -1)
   const NoStrip = AllChars - C0Controls - {' '}
   let starti0 = input.find(NoStrip)
   let starti = if starti0 == -1: 0 else: starti0
@@ -1018,13 +1023,13 @@ proc parseURL0*(input: openArray[char]; base: URL = nil): URL =
   let endi = if endi0 == -1: input.high else: endi0
   if input.toOpenArray(starti, endi).parseURLImpl(base, url, usSchemeStart,
       override = false) == usFail:
-    return nil
+    return URL(nil)
   return url
 
 proc parseURL1(input: string; url: URL; state: URLState) =
-  discard input.parseURLImpl(base = nil, url, state, override = true)
+  discard input.parseURLImpl(base = URL(nil), url, state, override = true)
 
-proc parseURL*(input: string; base: URL = nil): Opt[URL] =
+proc parseURL*(input: string; base = URL(nil)): Opt[URL] =
   let url = parseURL0(input, base)
   if url == nil:
     return err()
@@ -1033,7 +1038,7 @@ proc parseURL*(input: string; base: URL = nil): Opt[URL] =
     discard
   ok(url)
 
-proc parseJSURL*(ctx: JSContext; s: string; base: URL = nil): Opt[URL] =
+proc parseJSURL*(ctx: JSContext; s: string; base = URL(nil)): Opt[URL] =
   let url = parseURL0(s, base)
   if url == nil:
     JS_ThrowTypeError(ctx, "%s is not a valid URL", cstring(s))
@@ -1110,12 +1115,23 @@ proc serialize*(url: URL; excludeHash = false; excludePassword = false):
 
 # from a to b
 proc cloneInto(a, b: URL) =
-  b[] = a[]
-  b.searchParamsInternal = nil
+  b.scheme = a.scheme
+  b.username = a.username
+  b.password = a.password
+  b.opaquePath = a.opaquePath
+  b.hostType = a.hostType
+  b.schemeType = a.schemeType
+  b.port = a.port
+  b.hostname = a.hostname
+  b.pathname = a.pathname
+  b.search = a.search
+  b.hash = a.hash
+  b.searchParamsInternal = URLSearchParams(nil)
 
 proc newURL*(url: URL): URL =
-  result = URL()
-  url.cloneInto(result)
+  result = jsNew URLObj()
+  if result != nil:
+    url.cloneInto(result)
 
 proc isIP*(url: URL): bool =
   return url.hostType in {htIpv4, htIpv6}
@@ -1175,13 +1191,13 @@ proc update(params: URLSearchParams) =
   else:
     params.url.search = "?" & serializedQuery
 
-jsClassDef(URLSearchParams):
+jsClassPublicDef(URLSearchParams):
   classDef.iterable = jitPair
 
   proc newURLSearchParams(ctx: JSContext; init: JSValueConst = JS_UNDEFINED):
       Opt[URLSearchParams] {.jsctor.} =
-    let params = URLSearchParams()
-    if not JS_IsUndefined(init):
+    let params = jsNew URLSearchParamsObj()
+    if params != nil and not JS_IsUndefined(init):
       if ctx.fromJS(init, params.list).isOk:
         discard
       elif (var t: JSKeyValuePair[string, string]; ctx.fromJS(init, t).isOk):
@@ -1251,7 +1267,7 @@ jsClassDef(URLSearchParams):
   proc entries(params: URLSearchParams; t: SearchIteratorType):
       URLSearchParamsIterator {.jsmfunc("entries", sitEntries),
       jsmfunc("values", sitValues), jsmfunc("keys", sitKeys).} =
-    URLSearchParamsIterator(t: t, params: params)
+    jsNew URLSearchParamsIteratorObj(t: t, params: params)
 
 jsClassNameDef(URLSearchParamsIterator, "URLSearchParams Iterator"):
   classDef.iterable = jitIterator
@@ -1312,9 +1328,9 @@ proc `$`*(origin: Origin): string =
   return origin.s
 
 proc scheme*(url: URL): lent string =
-  return url.scheme
+  return url[].scheme
 
-jsClassDef(URL):
+jsClassPublicDef(URL):
   jsget URL, username
   jsget URL, password
   jsget URL, hostname
@@ -1324,7 +1340,7 @@ jsClassDef(URL):
 
   proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
       Opt[URL] {.jsctor.} =
-    var baseURL: URL = nil
+    var baseURL: URL
     if not JS_IsUndefined(base):
       var s: string
       if ctx.fromJS(base, s).isErr:
@@ -1350,7 +1366,7 @@ jsClassDef(URL):
   proc searchParams(url: URL): URLSearchParams {.jsfget.} =
     if url.searchParamsInternal == nil:
       let i = int(url.search.len > 0)
-      url.searchParamsInternal = URLSearchParams(
+      url.searchParamsInternal = jsNew URLSearchParamsObj(
         list: parseFromURLEncoded(url.search.toOpenArray(i, url.search.high)),
         url: url
       )
@@ -1406,8 +1422,8 @@ jsClassDef(URL):
       parseURL1(s, url, usHostname)
 
   proc port*(url: URL): string {.jsfget.} =
-    if url.port >= 0:
-      return $url.port
+    if url[].port >= 0:
+      return $url[].port
     return ""
 
   proc setPort*(url: URL; s: string) {.jsfset: "port".} =
@@ -1444,7 +1460,7 @@ jsClassDef(URL):
 
   proc parse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
       URL {.jsstfunc.} =
-    return ctx.newURL(url, base).get(nil)
+    return ctx.newURL(url, base).get(URL(nil))
 
   proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
       bool {.jsstfunc.} =

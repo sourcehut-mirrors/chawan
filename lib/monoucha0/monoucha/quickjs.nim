@@ -65,7 +65,8 @@ when sizeof(int) < sizeof(int64):
     JSValue((cast[uint64](int64(t)) shl 32) or cast[uint](p))
 else:
   type
-    JSValueUnion* {.importc, header: qjsheader, union.} = object
+    JSValueUnion* {.importc, completeStruct, header: qjsheader,
+        union.} = object
       uint64*: uint64
       float64*: float64
       `ptr`*: pointer
@@ -74,7 +75,7 @@ else:
       else:
         short_big_int*: int32
 
-    JSValue* {.importc, header: qjsheader.} = object
+    JSValue* {.importc, completeStruct, header: qjsheader.} = object
       u*: JSValueUnion
       tag*: int64
 
@@ -128,9 +129,6 @@ type
   JSAtom* {.importc: "JSAtom", header: qjsheader.} = distinct uint32
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
     cdecl, raises: [].}
-  JSClassCanDestroy* =
-    proc(rt: JSRuntime; val: JSValueConst; refCount: ptr cint) {.
-      cdecl, raises: [].}
   JSClassGCMark* = proc(rt: JSRuntime; val: JSValueConst;
     mark_func: JS_MarkFunc) {.cdecl, raises: [].}
   JS_MarkFunc* = proc(rt: JSRuntime; gp: ptr JSGCObjectHeader) {.
@@ -470,7 +468,6 @@ proc JS_NewRuntime2*(mf: ptr JSMallocFunctions; opaque: pointer): JSRuntime
 proc JS_FreeRuntime*(rt: JSRuntime)
 proc JS_GetRuntimeOpaque*(rt: JSRuntime): pointer
 proc JS_SetRuntimeOpaque*(rt: JSRuntime; p: pointer)
-proc JS_UnsetCanDestroyHooks*(rt: JSRuntime)
 proc JS_MarkValue*(rt: JSRuntime; val: JSValueConst; mark_func: JS_MarkFunc)
 proc JS_RunGC*(rt: JSRuntime)
 proc JS_IsLiveObject*(rt: JSRuntime; obj: JSValueConst): JS_BOOL
@@ -636,6 +633,17 @@ proc JS_ToCString*(ctx: JSContext; val1: JSValueConst): cstringConst
 proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
 
 # Monoucha extensions - unstable API!
+proc JS_NewForeignObject*(rt: JSRuntime; classId: JSClassID; size: csize_t):
+  pointer
+proc JS_DupForeignObject*(rt: JSRuntime; p: pointer): pointer
+proc JS_MarkForeignObject*(rt: JSRuntime; p: pointer; mark_func: JS_MarkFunc)
+proc JS_FreeForeignObject*(rt: JSRuntime; p: pointer)
+proc JS_FreeForeignObjectMemory*(rt: JSRuntime; p: pointer)
+proc JS_FreeForeignObjectGC*(rt: JSRuntime; p: pointer)
+proc JS_GetForeignClassID*(p: pointer): JSClassID
+proc JS_GetForeignOpaque*(rt: JSRuntime; p: pointer): pointer
+proc JS_SetForeignOpaque*(rt: JSRuntime; p: pointer; val: JSValueConst)
+proc JS_GetForeignObjectRefs*(p: pointer): cint {.importc.}
 proc JS_FreeCStringRT*(rt: JSRuntime; p: cstringConst)
 proc JS_NewNarrowStringLen*(ctx: JSContext; s: cstring; len: csize_t): JSValue
 proc JS_GetNarrowStringBuffer*(str: JSValueConst): ptr UncheckedArray[uint8]
@@ -644,8 +652,6 @@ proc JS_GetRegExpBytecode*(ctx: JSContext; obj: JSValueConst; plen: var cint):
   ptr uint8
 proc JS_ThrowTypeErrorOrFalse*(ctx: JSContext; flags: cint; fmt: cstring):
   cint {.varargs.}
-proc JS_SetClassCanDestroy*(rt: JSRuntime; class_id: JSClassID;
-  can_destroy: JSClassCanDestroy)
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
   class_id: JSClassID): JSValue
@@ -718,7 +724,7 @@ proc JS_CallConstructor2*(ctx: JSContext; func_obj, new_target: JSValueConst;
 proc JS_DetectModule*(input: cstringConst; input_len: csize_t): JS_BOOL
 # 'input' must be zero terminated i.e. input[input_len] = '\0'.
 proc JS_Eval*(ctx: JSContext; input: cstringConst; input_len: csize_t;
-  filename: cstring; eval_flags: cint): JSValue
+  filename: cstringConst; eval_flags: cint): JSValue
 # same as JS_Eval() but with an explicit 'this_obj' parameter
 proc JS_EvalThis*(ctx: JSContext; this_obj: JSValueConst; input: cstringConst;
   input_len: csize_t; filename: cstringConst; eval_flags: cint): JSValue
@@ -872,11 +878,11 @@ proc JS_GetScriptOrModuleName*(ctx: JSContext; n_stack_levels: cint): JSAtom
 proc JS_LoadModule*(ctx: JSContext; basename, filename: cstringConst): JSValue
 
 # C function definition
-proc JS_NewCFunction2*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
+proc JS_NewCFunction2*(ctx: JSContext; cfunc: JSCFunction; name: cstringConst;
   length: cint; proto: JSCFunctionEnum; magic: cint): JSValue
 proc JS_NewCFunctionData*(ctx: JSContext; cfunc: JSCFunctionData;
   length, magic, data_len: cint; data: JSValueConstArray): JSValue
-proc JS_NewCFunction*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
+proc JS_NewCFunction*(ctx: JSContext; cfunc: JSCFunction; name: cstringConst;
   length: cint): JSValue
 proc JS_SetConstructor*(ctx: JSContext; func_obj, proto: JSValueConst)
 
@@ -924,4 +930,5 @@ proc JS_PrintValue*(ctx: JSContext; write_func: JSPrintValueWrite;
   write_opaque: pointer; val: JSValueConst; options: ptr JSPrintValueOptions)
 
 {.pop.} # header, importc
+
 {.pop.} # raises

@@ -11,6 +11,8 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
+import monoucha/jsref
+import monoucha/quickjs
 import server/buffer
 import server/bufferiface
 import server/loader
@@ -104,9 +106,10 @@ else:
   template myProveInit(x: untyped): untyped =
     x
 
-proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
-    loaderStream: PosixStream; pagerPid: int; pagerConfig: LoaderClientConfig;
-    browsecap: Mailcap): (int, PosixStream) {.myProveInit.} =
+proc forkLoader(ctx: var ForkServerContext; rt: JSRuntime;
+    config: LoaderConfig; loaderStream: PosixStream; pagerPid: int;
+    pagerConfig: LoaderClientConfig; browsecap: Mailcap): (int, PosixStream)
+    {.myProveInit.} =
   # loaderStream is a connection between main process <-> loader, but we
   # also need a connection between fork server <-> loader.
   # The naming here is very confusing, sorry about that.
@@ -122,7 +125,7 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     discard close(sv[0])
     let forkStream = newPosixStream(sv[1])
     setProcessTitle("cha loader")
-    runFileLoader(config, loaderStream, forkStream, pagerPid, pagerConfig,
+    runFileLoader(rt, config, loaderStream, forkStream, pagerPid, pagerConfig,
       browsecap)
     exitnow(1)
   else:
@@ -130,7 +133,8 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     loaderStream.sclose()
     return (int(pid), newPosixStream(sv[0]))
 
-proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
+proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
+    rt: JSRuntime): int =
   var config: BufferConfig
   var url: URL
   var attrs: WindowAttributes
@@ -164,11 +168,15 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
     do: # EOF in pager; give up
       quit(1)
     let loader = newFileLoader(pid, loaderStream)
+    let stdout = cast[ChaFile](stdout)
+    discard stdout.flush()
+    discard dup2(STDERR_FILENO, STDOUT_FILENO) # QJS logs errors to stdout
+    setbuf(stdout, nil)
     # SIGPIPE remains ignored, because we don't want the buffer to signal
     # just because the pager unregistered it (this can also happen when a
     # buffer is cloned)
     enterBufferSandbox()
-    launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
+    launchBuffer(rt, config, url, attrs, ishtml, charsetStack, loader, pstream,
       istream, urandom, cacheId, contentType, move(ctx.linkHintChars),
       move(ctx.schemes))
     doAssert false
@@ -277,7 +285,8 @@ img-codec+x-cha-canvas;	canvas %s;		cgioutput; resource; internal
 img-codec+svg+xml;	nanosvg %s;		cgioutput; resource; internal
 """
 
-proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
+proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
+    rt: JSRuntime) =
   setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(stream: controlStream)
   discard myposix.signal(SIGCHLD, myposix.SIG_IGN)
@@ -313,8 +322,8 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
       ctx.schemes.add(t)
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader
-    var (pid, loaderStream) = ctx.forkLoader(config, loaderStream, pagerPid,
-      clientConfig, browsecap)
+    var (pid, loaderStream) = ctx.forkLoader(rt, config, loaderStream,
+      pagerPid, clientConfig, browsecap)
     ctx.stream.withPacketWriter w:
       w.swrite(pid)
       w.swrite(warnings)
@@ -335,7 +344,7 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int) =
         if (event.revents and POLLIN) != 0:
           if event.fd == ctx.stream.fd:
             ctx.stream.withPacketReader r:
-              let pid = ctx.forkBuffer(r)
+              let pid = ctx.forkBuffer(r, rt)
               ctx.stream.withPacketWriter w:
                 w.swrite(pid)
               do:

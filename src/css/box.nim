@@ -5,6 +5,7 @@ import css/cssvalues
 import css/lunit
 import html/dom
 import html/domrect
+import monoucha/jsref
 import types/bitmap
 import types/refstring
 
@@ -157,7 +158,7 @@ type
     cbtElement, cbtAnonymous, cbtText
 
   CSSBox* = ref object of RootObj
-    parent*: CSSBox
+    parent* {.cursor.}: CSSBox #TODO can we move this to the DOM?
     firstChild*: CSSBox
     next*: CSSBox
     absolute*: CSSAbsolute
@@ -167,7 +168,7 @@ type
     positioned*: bool # set if we participate in positioned layout
     render*: BoxRenderState # render output
     computed*: CSSValues
-    element*: Element
+    elementPtr*: ptr ElementObj
 
   CSSAbsolute* {.acyclic.} = ref object
     box*: BlockBox
@@ -337,6 +338,9 @@ proc newDOMRect(offset: Offset; size: Size): DOMRect =
     size.h.toFloat64()
   )
 
+template element*(box: CSSBox): Element =
+  cast[Element](box.elementPtr)
+
 proc getClientRects(res: var seq[DOMRect]; box: CSSBox;
     firstOnly, blockOnly: bool) =
   if box of BlockBox:
@@ -353,7 +357,27 @@ proc getClientRects(res: var seq[DOMRect]; box: CSSBox;
       if it.element == box.element and it of InlineBox:
         res.getClientRects(it, firstOnly, false)
 
-getClientRectsImpl = proc(element: Element; firstOnly, blockOnly: bool):
+proc unlinkElementBoxRecurse(box: CSSBox; element: Element) =
+  if box.element == element:
+    box.elementPtr = nil
+    for child in box.children:
+      unlinkElementBoxRecurse(box, element)
+
+proc unlinkElementBox(element: Element) =
+  if element.box != nil:
+    let box = CSSBox(element.box)
+    box.elementPtr = nil
+    # Ensure that any anonymous parent & child boxes lose the element
+    # reference as well.
+    var parent = box
+    while parent != nil:
+      if parent.element != element:
+        break
+      parent.elementPtr = nil
+    for child in box.children:
+      unlinkElementBoxRecurse(child, element)
+
+proc getClientRects(element: Element; firstOnly, blockOnly: bool):
     seq[DOMRect] =
   result = @[]
   if element.box != nil:
@@ -369,6 +393,10 @@ proc getImageBitmap*(box: BlockBox): NetworkBitmap =
   if box.computed{"display"} in {DisplayImageInline, DisplayImageBlock}:
     return box.getBitmap()
   return nil
+
+# Forward declaration hacks
+dom.unlinkElementBoxImpl = unlinkElementBox
+dom.getClientRectsImpl = getClientRects
 
 when defined(debug):
   import chame/tags

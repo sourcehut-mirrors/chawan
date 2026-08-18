@@ -374,9 +374,10 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
 	CGS_TESTDIR=$(OBJDIR)/chagashi_test $(NIM) r $(test_flags) test/charset/data.nim
 
 .PHONY: test_nim
-test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim
+test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim test/nim/tjsref.nim
 	$(NIM) r $(test_flags) test/nim/ttwtstr.nim
 	$(NIM) r $(test_flags) test/nim/tcatom.nim
+	$(NIM) r $(test_flags) test/nim/tjsref.nim
 
 # slow, for manual use only
 .PHONY: test_oklab

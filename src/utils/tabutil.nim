@@ -11,7 +11,7 @@ type
     load*: int
     tab: seq[StrMapItem]
 
-iterator items*(map: StrMap): StrMapItem =
+iterator items*(map: StrMap): lent StrMapItem =
   for it in map.tab:
     if it != nil:
       yield it
@@ -104,5 +104,9 @@ proc del*(map: var StrMap; item: StrMapItem) =
     # backwards shift
     map.tab[i] = move(map.tab[j])
     i = j
+
+proc clear*(map: var StrMap) =
+  map.load = 0
+  map.tab = @[]
 
 {.pop.} # raises: []

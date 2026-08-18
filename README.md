@@ -134,6 +134,7 @@ If you're interested in modifying the code:
 
 * architecture: [doc/architecture.md](doc/architecture.md)
 * style guide, debugging tips, etc.: [doc/hacking.md](doc/hacking.md)
+* guide for interfacing with JS: [doc/jsguide.md](doc/jsguide.md)
 
 ## Relatives
 

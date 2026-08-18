@@ -980,7 +980,7 @@ proc replaceControls*(s: openArray[char]): string =
     else:
       result.addUTF8(u)
 
-proc replaceSurrogates*(s: var string) =
+proc replaceSurrogates*(s: var openArray[char]) =
   var i = 0
   let slen = s.len
   while i < slen:
@@ -1261,14 +1261,26 @@ proc btoa*(data: openArray[uint8]): string =
 proc btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
 
+template uncheckedInc(i: untyped) =
+  {.push overflowChecks: off.}
+  inc i
+  {.pop.}
+
+iterator myitems*[IX, T](a: array[IX, T]): lent T {.inline.} =
+  when a.len > 0:
+    var i = IX.low
+    while true:
+      yield a[i]
+      if i >= IX.high:
+        break
+      uncheckedInc i
+
 iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
   var i = 0
   let L = a.len
   while i < L:
     yield (i, a[i])
-    {.push overflowChecks: off.}
-    inc i
-    {.pop.}
+    uncheckedInc i
 
 iterator ritems*[T](a: openArray[T]): lent T {.inline.} =
   var i = a.len

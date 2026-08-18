@@ -31,6 +31,7 @@ proc ferror(file: ChaFile): cint
 proc popen*(cmd, t: cstring): ChaFile
 proc pclose*(file: ChaFile): cint
 proc fseek(file: ChaFile; offset: clong; whence: cint): cint
+proc setbuf*(stream: ChaFile; buf: cstring)
 {.pop.} # importc, header: "<stdio.h>"
 
 proc rename*(oldname, newname: string): Opt[void] =

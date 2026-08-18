@@ -12,6 +12,7 @@ import encoding/encoder
 import encoding/encodercore
 import io/dynstream
 import io/poll
+import monoucha/jsref
 import server/loaderiface
 import types/bitmap
 import types/blob
@@ -160,7 +161,7 @@ type
     termType: TerminalType
     cs*: Charset
     te: TextEncoder
-    config: Config
+    config*: Config
     istream*: PosixStream
     ostream*: PosixStream
     tdctx: TextDecoderContext

@@ -7,10 +7,13 @@ type
 proc `[]`*(s: cstringConst; i: int): char = cstring(s)[i]
 proc `$`*(s: cstringConst): string {.borrow.}
 
-converter toCstring*(s: cstringConst): cstring {.inline.} =
-  return cstring(s)
+template toCStringConst*(s: string): cstringConst =
+  cstringConst(cstring(s))
 
-converter toCstringConst*(s: cstring): cstringConst {.inline.} =
-  return cstringConst(s)
+proc toCString*(p: cstringConst): cstring =
+  cstring(p)
+
+template `==`*(s: cstringConst; n: typeof(nil)): bool =
+  cstring(s) == n
 
 {.pop.} # raises

@@ -8,6 +8,7 @@ import io/dynstream
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -38,7 +39,7 @@ type
     path: Path
     next: DrawingState
 
-  TextMetrics = ref object
+  TextMetricsObj = object
     # x-direction
     width: float64
     actualBoundingBoxLeft: float64
@@ -54,14 +55,19 @@ type
     alphabeticBaseline: float64
     ideographicBaseline: float64
 
-  CanvasRenderingContext2D* = ref object
+  TextMetrics = JSRef[TextMetricsObj]
+
+  CanvasRenderingContext2DObj* = object
     canvas: EventTarget
     bitmap: NetworkBitmap
     state: DrawingState
     ps*: PosixStream
 
-jsDestructor(CanvasRenderingContext2D)
-jsDestructor(TextMetrics)
+  CanvasRenderingContext2D* = JSRef[CanvasRenderingContext2DObj]
+
+# Forward declarations
+proc getClassID(t: typedesc[CanvasRenderingContext2D]): JSClassID
+proc getClassID(t: typedesc[TextMetrics]): JSClassID
 
 # Forward declaration hack
 var parseColorImpl*: proc(target: EventTarget; s: DOMString): Opt[ARGBColor]
@@ -85,7 +91,7 @@ proc create2DContext*(loader: FileLoader; target: EventTarget;
   let imageId = bitmap.imageId
   let (ps, ctlres) = loader.doPipeRequest("canvas-ctl-" & $imageId)
   if ps == nil:
-    return nil
+    return CanvasRenderingContext2D(nil)
   let cacheId = loader.addCacheFile(ctlres.outputId)
   bitmap.cacheId = cacheId
   let request = newRequest(
@@ -100,19 +106,22 @@ proc create2DContext*(loader: FileLoader; target: EventTarget;
   if response.stream == nil:
     # no canvas module; give up
     ps.sclose()
-    return nil
+    return CanvasRenderingContext2D(nil)
   loader.close(response)
   ps.withPacketWriterFire w:
     w.swrite(pcSetDimensions)
     w.swrite(bitmap.width)
     w.swrite(bitmap.height)
-  let ctx2d = CanvasRenderingContext2D(
+  let ctx2d = jsNew CanvasRenderingContext2DObj(
     bitmap: bitmap,
     canvas: target,
     ps: ps,
     state: DrawingState()
   )
-  ctx2d.state.resetState()
+  if ctx2d != nil:
+    ctx2d.state.resetState()
+  else:
+    ps.sclose()
   return ctx2d
 
 proc fillRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int;
@@ -360,7 +369,7 @@ jsClassDef(CanvasRenderingContext2D):
   proc measureText(ctx: CanvasRenderingContext2D; text: DOMString): TextMetrics
       {.jsfunc.} =
     let tw = text.toOpenArray().width()
-    return TextMetrics(
+    return jsNew TextMetricsObj(
       width: 8 * float64(tw),
       actualBoundingBoxLeft: 0,
       actualBoundingBoxRight: 8 * float64(tw),
