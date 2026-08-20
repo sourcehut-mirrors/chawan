@@ -16,6 +16,7 @@ import local/select
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsref
+import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/libregexp
 import monoucha/quickjs
@@ -77,9 +78,9 @@ type
   GetValueProc = proc(ctx: JSContext; iface: BufferInterface;
     r: var PacketReader): JSValue {.nimcall, raises: [].}
 
-  BufferIfaceItem = object
+  BufferIfaceItem = ref object
     id: int
-    fun: pointer
+    fun: JSObjectTraced
     get: GetValueProc
 
   HighlightType = enum
@@ -319,7 +320,7 @@ type
     charsetStack*: seq[Charset]
     refreshUrl: URL
     refreshMillis: int
-    connectedPtr: pointer # JSObject *
+    connected: JSObjectTraced
     # this really doesn't belong in here, but I don't want to expose
     # PosixStream to JS so instead I'll just smuggle it through init
     ostream*: PosixStream
@@ -441,13 +442,7 @@ jsClassPublicDef(BufferInit):
   jsgetset BufferInit, height
   jsgetset BufferInit, loadInfo
 
-  proc finalize(rt: JSRuntime; init: BufferInit) {.jsfin.} =
-    if init.connectedPtr != nil:
-      JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, init.connectedPtr))
-
   proc mark(rt: JSRuntime; init: BufferInit; markFunc: JS_MarkFunc) {.jsmark.} =
-    if init.connectedPtr != nil:
-      JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, init.connectedPtr), markFunc)
     rt.markObj(init.loaderConfig.originURL, markFunc)
     rt.markObj(init.loaderConfig.defaultHeaders, markFunc)
     rt.markObj(init.loaderConfig.proxy, markFunc)
@@ -544,11 +539,10 @@ jsClassPublicDef(BufferInit):
 
   proc connected*(ctx: JSContext; init: BufferInit; res: BufferConnectionResult;
       arg1: JSValue; force = false): JSValue =
-    if init.connectedPtr == nil:
+    if init.connected == nil:
       JS_FreeValue(ctx, arg1)
       return JS_UNDEFINED
-    let fun = JS_MKPTR(JS_TAG_OBJECT, init.connectedPtr)
-    init.connectedPtr = nil
+    let fun = moveJSValue(init.connected)
     let this = ctx.toJS(init)
     if JS_IsException(this):
       ctx.freeValues(fun, arg1)
@@ -563,10 +557,9 @@ jsClassPublicDef(BufferInit):
         JSValue {.jsfset: "connected".} =
     if not JS_IsFunction(ctx, connected):
       return JS_ThrowTypeError(ctx, "not a function")
-    if init.connectedPtr != nil:
+    if init.connected != nil:
       return JS_ThrowTypeError(ctx, "connected is already set")
-    let val = JS_DupValue(ctx, connected)
-    init.connectedPtr = JS_VALUE_GET_PTR(val)
+    init.connected = ctx.dupTraceObj(connected)
     return JS_UNDEFINED
 
   proc closeMailcap*(init: BufferInit) {.jsfunc.} =
@@ -831,21 +824,18 @@ proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
     iface.partialReader.r.sread(packetid)
     let i = iface.findPromise(packetid)
     var res = irOk
-    if i != -1:
+    if i >= 0:
       let it = iface.map[i]
       let val = if it.get == nil:
         JS_UNDEFINED
       else:
         it.get(ctx, iface, iface.partialReader.r)
       if not JS_IsException(val) and it.fun != nil:
-        let fun = JS_MKPTR(JS_TAG_OBJECT, it.fun)
-        let ret = ctx.callSinkFree(fun, JS_UNDEFINED, val)
+        let ret = ctx.callSink(it.fun.value, JS_UNDEFINED, val)
         if JS_IsException(ret):
           res = irException
         JS_FreeValue(ctx, ret)
       else:
-        if it.fun != nil:
-          JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, it.fun))
         res = irException
       iface.map.del(i)
   of prcEOF:
@@ -882,7 +872,7 @@ proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
   JS_FreeValue(ctx, funs[1])
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
-    fun: JS_VALUE_GET_PTR(funs[0]),
+    fun: traceObj(funs[0]),
     get: get
   ))
   inc iface.packetid
@@ -891,7 +881,7 @@ proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
 proc addPromise(iface: BufferInterface; get: GetValueProc) =
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
-    fun: nil,
+    fun: JSObjectTraced(nil),
     get: get
   ))
   inc iface.packetid
@@ -1127,15 +1117,12 @@ jsClassPublicDef(BufferInterface):
 
   proc finalize(rt: JSRuntime; iface: BufferInterface) {.jsfin.} =
     iface.partialReader.r.closeFds()
-    for it in iface.map:
-      if it.fun != nil:
-        JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.fun))
 
   proc mark(rt: JSRuntime; iface: BufferInterface; markFunc: JS_MarkFunc)
       {.jsmark.} =
     for it in iface.map:
       if it.fun != nil:
-        JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, it.fun), markFunc)
+        JS_MarkValue(rt, it.fun.value, markFunc)
     for highlight in iface.highlights:
       rt.markObj(highlight, markFunc)
 

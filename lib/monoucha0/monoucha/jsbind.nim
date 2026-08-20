@@ -78,6 +78,7 @@ import std/typetraits
 import fromjs
 import jsopaque
 import jsref
+import jstypes
 import jsutils
 import quickjs
 import tojs
@@ -222,6 +223,25 @@ proc jsMark(rt: JSRuntime; this: JSValueConst; markFunc: JS_MarkFunc)
   else:
     p = JS_VALUE_GET_PTR(this)
     classid = JS_GetForeignClassID(p)
+  when defined(debug):
+    let marking = rt.getOpaque().marking
+    rt.getOpaque().marking = true
+  for mark in rt.getOpaque().marks(classid):
+    mark(rt, p, markFunc)
+  when defined(debug):
+    rt.getOpaque().marking = marking
+
+proc jsFinalizeRaw(rt: JSRuntime; this: JSValueConst) {.cdecl.} =
+  # finalizer for raw types (e.g., to free a backing JS object)
+  var classid: JSClassID
+  let p = JS_GetAnyOpaque(this, classid)
+  for fin in rt.getOpaque().finalizers(classid):
+    fin(rt, p)
+
+proc jsMarkRaw(rt: JSRuntime; this: JSValueConst; markFunc: JS_MarkFunc)
+    {.cdecl.} =
+  var classid: JSClassID
+  let p = JS_GetAnyOpaque(this, classid)
   when defined(debug):
     let marking = rt.getOpaque().marking
     rt.getOpaque().marking = true
@@ -1176,12 +1196,20 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
         if varNode.kind == nnkPostfix:
           varNode = varNode[1]
         let typ = it[^2]
-        if typ.getTypeInst().sameType(JSValue.getType()):
+        let inst = typ.getTypeInst()
+        if inst.sameType(JSValue.getType()):
           markList.add(quote do:
             JS_MarkValue(rt, this.`varNode`, markFunc)
           )
           finList.add(quote do:
             JS_FreeValueRT(rt, this.`varNode`)
+          )
+        elif inst.sameType(JSObjectTraced.getType()):
+          markList.add(quote do:
+            JS_MarkValue(rt, this.`varNode`, markFunc)
+          )
+          finList.add(quote do:
+            myDestroy(this.`varNode`)
           )
         else:
           var impl = typ
@@ -1502,17 +1530,17 @@ macro jsClassImpl(def: untyped; jsname: static string; typ: typed;
       finFun = id
   else:
     if markFun != nil:
-      let id = ident($bfFinalizer & "_" & jsname)
+      let id = ident($bfMark & "_" & jsname)
       stmts.add(quote do:
         proc `id`(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc) =
-          `finFun`(rt, cast[JSRef[`typ`]](this), markFunc)
+          `markFun`(rt, this, markFunc)
       )
       markFun = id
     if finFun != nil:
       let id = ident($bfFinalizer & "_" & jsname)
       stmts.add(quote do:
         proc `id`(rt: JSRuntime; this: pointer) =
-          `finFun`(rt, cast[JSRef[`typ`]](this))
+          `finFun`(rt, this)
       )
       finFun = id
   let ctorType = info.ctorType
@@ -1593,7 +1621,10 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
   cdef.exotic = def.exotic
   let raw = def.raw and
     (def.parent == JS_INVALID_CLASS_ID or rtOpaque.classes[int(id)].raw)
-  if not raw:
+  if raw:
+    cdef.gc_mark = jsMarkRaw
+    cdef.finalizer = jsFinalizeRaw
+  else:
     cdef.gc_mark = jsMark
     cdef.finalizer = jsFinalize
   if JS_NewClass(rt, id, addr cdef) != 0:

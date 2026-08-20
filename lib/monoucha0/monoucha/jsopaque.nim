@@ -35,6 +35,7 @@ type
     jstPermissions = "permissions"
     jstLocation = "location"
     jstBuffer = "buffer"
+    jstAcceptNode = "acceptNode"
 
   JSValueRef* = enum
     jsvArrayPrototypeForEach = "Array.prototype.forEach"

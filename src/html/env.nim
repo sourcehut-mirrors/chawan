@@ -44,8 +44,8 @@ import utils/twtstr
 
 type JSFetchOpaque {.final.} = ref object of RootObj
   ctx: JSContext
-  resolve: JSValue
-  reject: JSValue
+  resolve: JSObjectTraced
+  reject: JSObjectTraced
 
 # Forward declarations
 proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
@@ -54,6 +54,13 @@ proc outerHeight(window: Window): int
 
 jsClassRaw(NavigatorDef, "Navigator"):
   type Navigator = distinct Window
+
+  proc finalizeNavigator(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markNavigator(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
 
   # NavigatorID
   proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
@@ -95,6 +102,13 @@ jsClassRaw(NavigatorDef, "Navigator"):
 jsClassRaw(PluginArrayDef, "PluginArray"):
   type PluginArray = distinct Window
 
+  proc finalizePluginArray(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markPluginArray(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
+
   proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
   proc item(pluginArray: PluginArray): JSValue {.jsfunc.} = JS_NULL
   proc length(pluginArray: PluginArray): uint32 {.jsfget.} = 0
@@ -105,6 +119,13 @@ jsClassRaw(PluginArrayDef, "PluginArray"):
 # MimeTypeArray
 jsClassRaw(MimeTypeArrayDef, "MimeTypeArray"):
   type MimeTypeArray = distinct Window
+
+  proc finalizeMimeTypeArray(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markMimeTypeArray(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
 
   proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
   proc item(mimeTypeArray: MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
@@ -153,6 +174,13 @@ jsClassRaw(NotificationDef, "Notification"):
 # Permissions
 # See above.
 jsClassRaw(PermissionsDef, "Permissions"):
+  proc finalizePermissions(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markPermissions(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
+
   proc query(ctx: JSContext; this: JSValueConst; desc: JSValueConst): JSValue
       {.jsfunc.} =
     let name = JS_GetPropertyStr(ctx, desc, "name")
@@ -166,6 +194,13 @@ jsClassRaw(PermissionsDef, "Permissions"):
 # Screen
 jsClassRaw(ScreenDef, "Screen"):
   type Screen = distinct Window
+
+  proc finalizeScreen(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markScreen(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
 
   # These are fingerprinting vectors; only app mode gets the real values.
   proc availWidth(screen: Screen): int {.jsfget.} =
@@ -193,6 +228,13 @@ jsClassRaw(ScreenDef, "Screen"):
 # History
 jsClassRaw(HistoryDef, "History"):
   type History = distinct Window
+
+  proc finalizeHistory(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markHistory(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
 
   proc length(history: History): uint32 {.jsfget.} = 1
   proc state(history: History): JSValue {.jsfget.} = JS_NULL
@@ -278,6 +320,13 @@ jsClassDef(Storage):
 jsClassRaw(CryptoDef, "Crypto"):
   type Crypto = distinct Window
 
+  proc finalizeCrypto(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markCrypto(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
+
   proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
       JSValue {.jsfunc.} =
     let window = Window(crypto)
@@ -308,6 +357,13 @@ proc url(location: Location): URL =
 
 #TODO CORS (SecurityError)
 jsClassRaw(LocationDef, "Location"):
+  proc finalizeLocation(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markLocation(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
+
   proc `$`(location: Location): string {.jsuffunc: "toString",
       jsuffget: "href".} =
     return location.url.serialize()
@@ -420,14 +476,16 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
     let obj = JS_NewObjectClass(ctx, classid)
     if JS_IsException(obj):
       return obj
-    let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+    let rt = JS_GetRuntime(ctx)
+    let rtOpaque = rt.getOpaque()
     if int(classid) < rtOpaque.classes.len:
       if not ctx.setPropertyFunctionList(obj,
           rtOpaque.classes[int(classid)].unforgeable):
         JS_FreeValue(ctx, obj)
         return JS_EXCEPTION
+    let ctxOpaque = ctx.getOpaque()
     if classid == LocationDef.id:
-      let valueOf0 = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
+      let valueOf0 = ctxOpaque.valRefs[jsvObjectPrototypeValueOf]
       if ctx.defineProperty(obj, "valueOf",
           JS_DupValue(ctx, valueOf0)) == dprException:
         JS_FreeValue(ctx, obj)
@@ -436,8 +494,7 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
         JS_FreeValue(ctx, obj)
         return JS_EXCEPTION
       #TODO [[DefaultProperties]], exotic
-    #TODO (frames) this weak ref won't work with multiple contexts
-    JS_SetOpaque(obj, ctx.getOpaque().globalObj)
+    JS_SetOpaque(obj, JS_DupForeignObject(rt, ctxOpaque.globalObj))
     func_data[0] = obj
   return JS_DupValue(ctx, func_data[0])
 
@@ -614,12 +671,9 @@ proc throwNetworkError(ctx: JSContext): JSValue =
 
 proc jsFinish(opaque: RootRef; response: Response) =
   let opaque = JSFetchOpaque(opaque)
-  let ctx = opaque.ctx
-  let resolve = opaque.resolve
-  let reject = opaque.reject
-  opaque.resolve = JS_UNDEFINED
-  opaque.reject = JS_UNDEFINED
-  opaque.ctx = nil
+  let ctx = move(opaque.ctx)
+  let resolve = moveJSValue(opaque.resolve)
+  let reject = moveJSValue(opaque.reject)
   if response != nil:
     let val = ctx.toJS(response)
     if not JS_IsException(val):
@@ -669,8 +723,6 @@ jsClassDef(Window):
         let data = ConnectData(data)
         if data.opaque of JSFetchOpaque:
           let opaque = JSFetchOpaque(data.opaque)
-          JS_FreeValueRT(rt, opaque.resolve)
-          JS_FreeValueRT(rt, opaque.reject)
           JS_FreeContext(opaque.ctx)
       window.loader.unset(data)
 
@@ -716,8 +768,8 @@ jsClassDef(Window):
       return res
     let opaque = JSFetchOpaque(
       ctx: JS_DupContext(ctx),
-      resolve: funs[0],
-      reject: funs[1]
+      resolve: traceObj(funs[0]),
+      reject: traceObj(funs[1])
     )
     window.loader.fetch(input, jsFinish, opaque)
     return res
@@ -806,6 +858,8 @@ jsClassDef(Window):
       Opt[void] {.jsfunc.} =
     #TODO structuredClone...
     let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)
+    if JS_IsException(value):
+      return err()
     var s: string
     ?ctx.fromJSFree(value, s)
     let data = JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),

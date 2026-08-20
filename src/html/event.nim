@@ -118,7 +118,7 @@ type
   MutationRecord = JSRef[MutationRecordObj]
 
   MutationObserverObj = object
-    callback*: JSValue
+    callback*: JSObjectTraced
     nodes: seq[ptr EventTargetObj]
     records*: seq[MutationRecord]
 
@@ -574,7 +574,7 @@ proc queueRecord*(observer: MutationObserver; target: EventTarget;
 jsClassDef(MutationObserver):
   proc newMutationObserver(ctx: JSContext; callback: JSValueConst):
       MutationObserver {.jsctor.} =
-    jsNew MutationObserverObj(callback: JS_DupValue(ctx, callback))
+    jsNew MutationObserverObj(callback: ctx.dupTraceObj(callback))
 
   proc mark(rt: JSRuntime; this: MutationObserver; markFunc: JS_MarkFunc)
       {.jsmark.} =

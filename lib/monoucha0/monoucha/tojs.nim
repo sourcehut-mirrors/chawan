@@ -233,6 +233,12 @@ proc toJS*[T: enum](ctx: JSContext; e: T): JSValue =
 proc toJS*(ctx: JSContext; j: JSValue): JSValue =
   return j
 
+proc toJS*(ctx: JSContext; p: JSObjectTraced): JSValue =
+  # this is inconsistent, but I don't have a better idea right now
+  if p == nil:
+    return JS_NULL
+  return JS_DupValue(ctx, p.value)
+
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue =
   let len = csize_t(abuf.len)
   return JS_NewArrayBuffer(ctx, abuf.p, len, abuf.dealloc, nil, false)

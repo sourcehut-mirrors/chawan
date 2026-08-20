@@ -210,7 +210,7 @@ type
   CustomElementDef = ref object
     name: CAtom
     localName: CAtom
-    ctor: JSValue
+    ctor: JSObjectTraced
     observedAttrs: seq[CAtom]
     callbacks: CECallbackMap
     flags: set[CustomElementFlag]
@@ -298,7 +298,7 @@ type
   NodeIteratorLikeObj {.pure.} = object of CollectionLikeObj
     active: bool
     whatToShow: uint32
-    filter: JSValue
+    filter: JSObjectTraced
     currentNode: Node
 
   NodeIteratorObj {.pure, final.} = object of NodeIteratorLikeObj
@@ -381,11 +381,7 @@ type
     dataIdx: int
     ownerElement: Element
 
-  #TODO use a fake class that (strongly) refs document instead
-  DOMImplementation = JSRef[DOMImplementationObj]
-
-  DOMImplementationObj = object
-    document: Document
+  DOMImplementation = distinct Document # strong ref
 
   DocumentWriteBuffer* = ref object
     data*: string
@@ -404,7 +400,7 @@ type
     window*: Window
     url*: URL # not nil
     currentScript: HTMLScriptElement
-    implementation: DOMImplementation
+    implementation: JSObjectTraced
     elementIdMap: seq[ptr ElementObj]
     elementIdMapLoad: int
     origin: Origin
@@ -769,6 +765,7 @@ proc newText*(document: Document; data: string): Text
 proc newText(document: Document; data: DOMString): Text
 proc newText(ctx: JSContext; data = initDOMStringLit("")): Text
 proc newDocument*(url: URL): Document
+proc newDOMImplementation(ctx: JSContext; document: Document): JSValue
 proc newDocumentType*(document: Document; name, publicId, systemId: string):
   DocumentType
 proc newDocumentFragment(document: Document): DocumentFragment
@@ -935,7 +932,6 @@ proc getClassID(t: typedesc[CDATASection]): JSClassID
 proc getClassID(t: typedesc[CSSStyleDeclaration]): JSClassID
 proc getClassID(t: typedesc[CharacterData]): JSClassID
 proc getClassID(t: typedesc[Comment]): JSClassID
-proc getClassID(t: typedesc[DOMImplementation]): JSClassID
 proc getClassID(t: typedesc[DOMStringMap]): JSClassID
 proc getClassID(t: typedesc[DOMTokenList]): JSClassID
 proc getClassID(t: typedesc[DocumentFragment]): JSClassID
@@ -2044,7 +2040,7 @@ proc find(this: CustomElementRegistry; name: CAtomTraced): CustomElementDef =
 proc find(this: CustomElementRegistry; ctx: JSContext; ctor: JSValueConst):
     CustomElementDef =
   for it in this.defs:
-    if ctx.strictEquals(it.ctor, ctor):
+    if ctx.strictEquals(it.ctor.value, ctor):
       return it
   return nil
 
@@ -2114,7 +2110,7 @@ jsClassDef(CustomElementRegistry):
   proc mark(rt: JSRuntime; this: CustomElementRegistry; markFunc: JS_MarkFunc)
       {.jsmark.} =
     for def in this.defs:
-      JS_MarkValue(rt, def.ctor, markFunc)
+      JS_MarkValue(rt, def.ctor.value, markFunc)
       for val in def.callbacks.myitems:
         JS_MarkValue(rt, val, markFunc)
     for document in this.scopedDocuments:
@@ -2124,7 +2120,6 @@ jsClassDef(CustomElementRegistry):
     for def in this.defs:
       freeAtom(def.name)
       freeAtom(def.localName)
-      JS_FreeValueRT(rt, def.ctor)
       freeAtoms(def.observedAttrs)
       rt.freeValues(def.callbacks)
 
@@ -2155,7 +2150,7 @@ jsClassDef(CustomElementRegistry):
     if res.isErr:
       ctx.freeValues(def.callbacks)
       return JS_EXCEPTION
-    def.ctor = JS_DupValue(ctx, ctor)
+    def.ctor = ctx.dupTraceObj(ctor)
     if this.defsTail == nil:
       this.defsHead = def
     else:
@@ -2170,7 +2165,7 @@ jsClassDef(CustomElementRegistry):
       JSValue {.jsfunc.} =
     let def = this.find(name)
     if def != nil:
-      return JS_DupValue(ctx, def.ctor)
+      return JS_DupValue(ctx, def.ctor.value)
     return JS_UNDEFINED
 
   proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSValueConst):
@@ -2411,7 +2406,8 @@ proc mutationJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
         return records
       let this = ctx.toJS(observer) # cannot fail
       #TODO invoke (with all the ceremony that entails)
-      let res = ctx.callSinkThis(observer.callback, this, records)
+      let callback = JS_DupValue(ctx, observer.callback.value)
+      let res = ctx.callSinkThisFree(callback, this, records)
       if JS_IsException(res):
         return res
       JS_FreeValue(ctx, res)
@@ -3721,27 +3717,19 @@ template asDocument[T: DocumentObj](x: JSRef[T]): Document =
   cast[Document](x)
 
 proc newXMLDocument(): XMLDocument =
-  let document = jsNew XMLDocumentObj(
+  jsNew XMLDocumentObj(
     url: parseURL0("about:blank"),
     contentType: satApplicationXml,
     charset: csUtf8
   )
-  if document != nil:
-    document.implementation = jsNew DOMImplementationObj(
-      document: document.asDocument
-    )
-  document
 
 proc newDocument*(url: URL): Document =
-  let document = jsNew DocumentObj(
+  jsNew DocumentObj(
     url: url,
     contentType: satApplicationXml,
     origin: url.origin,
     charset: csUtf8
   )
-  if document != nil:
-    document.implementation = jsNew DOMImplementationObj(document: document)
-  document
 
 proc newDocumentType*(document: Document; name, publicId, systemId: string):
     DocumentType =
@@ -4297,7 +4285,6 @@ jsClassPublicDef(Document):
   jsget Document, contentType
   jsget Document, window, "defaultView"
   jsget Document, currentScript
-  jsget Document, implementation
 
   proc finalize(rt: JSRuntime; document: Document) {.jsfin.} =
     var it = document.liveCollectionsHead
@@ -4312,15 +4299,21 @@ jsClassPublicDef(Document):
 
   proc newDocument(ctx: JSContext): Document {.jsctor.} =
     let global = ctx.getWindow()
-    let document = jsNew DocumentObj(
+    jsNew DocumentObj(
       url: parseURL0("about:blank"),
       contentType: satApplicationXml,
       origin: global.document.origin,
       charset: csUtf8
     )
-    if document != nil:
-      document.implementation = jsNew DOMImplementationObj(document: document)
-    return document
+
+  proc getImplementation(ctx: JSContext; document: Document): JSValue
+      {.jsfget: "implementation".} =
+    if document.implementation == nil:
+      let impl = newDOMImplementation(ctx, document)
+      if JS_IsException(impl):
+        return impl
+      document.implementation = traceObj(impl)
+    return JS_DupValue(ctx, document.implementation.value)
 
   proc firstElementChild(this: Document): Element {.jsfget.} =
     return this.asParentNode.firstElementChild
@@ -4736,10 +4729,11 @@ jsClassPublicDef(Document):
       currentNode: root,
       iterNode: root,
       whatToShow: whatToShow,
-      filter: JS_DupValue(ctx, filter),
       before: true
     )
     if this != nil:
+      if not JS_IsNull(filter):
+        this.filter = ctx.dupTraceObj(filter)
       root.attachLiveCollection(addr this[])
     ctx.toJSNew(this)
 
@@ -4748,19 +4742,38 @@ jsClassPublicDef(Document):
       JSValue {.jsfunc.} =
     if not JS_IsObject(filter) and not JS_IsNull(filter):
       return JS_ThrowTypeError(ctx, "filter is not an object")
-    ctx.toJSNew(jsNew TreeWalkerObj(
+    let this = jsNew TreeWalkerObj(
       root: root,
       currentNode: root,
-      whatToShow: whatToShow,
-      filter: JS_DupValue(ctx, filter)
-    ))
+      whatToShow: whatToShow
+    )
+    if this != nil and not JS_IsNull(filter):
+      this.filter = ctx.dupTraceObj(filter)
+    ctx.toJSNew(this)
 
 # XMLDocument
 jsClassDef(XMLDocument):
   jsextends DocumentDef
 
 # DOMImplementation
-jsClassDef(DOMImplementation):
+jsClassRaw(DOMImplementationDef, "DOMImplementation"):
+  # A JSObject holding a strong reference to the Document it originates
+  # from.
+  proc newDOMImplementation(ctx: JSContext; document: Document): JSValue =
+    let this = JS_NewObjectFromCtor(ctx, JS_UNDEFINED, classDef.id)
+    if JS_IsException(this):
+      return this
+    let rt = JS_GetRuntime(ctx)
+    JS_SetOpaque(this, JS_DupForeignObject(rt, cast[pointer](document)))
+    return this
+
+  proc finalizeDOMImpl(rt: JSRuntime; this: pointer) {.jsfin.} =
+    JS_FreeForeignObject(rt, this)
+
+  proc markDOMImpl(rt: JSRuntime; this: pointer; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    JS_MarkForeignObject(rt, this, markFunc)
+
   proc createDocument(ctx: JSContext; implementation: DOMImplementation;
       namespace: CAtomTraced; qualifiedName: DOMStringNull;
       doctype = none(DocumentType)): JSValue {.jsfunc.} =
@@ -4776,7 +4789,7 @@ jsClassDef(DOMImplementation):
       document.asNode.append(doctype.get.asNode, ctx)
     if element != nil:
       document.asNode.append(element.asNode, ctx)
-    document.origin = implementation.document.origin
+    document.origin = Document(implementation).origin
     case namespace.toStaticAtom()
     of satNamespaceHTML: document.contentType = satApplicationXmlHtml
     of satNamespaceSVG: document.contentType = satImageSvgXml
@@ -4806,7 +4819,7 @@ jsClassDef(DOMImplementation):
       titleElement.asNode.append(text.asNode, ctx)
       head.asNode.append(titleElement.asNode, ctx)
     html.asNode.append(body.asNode, ctx)
-    doc.origin = implementation.document.origin
+    doc.origin = Document(implementation).origin
     ctx.toJS(doc)
 
   proc createDocumentType(ctx: JSContext; implementation: DOMImplementation;
@@ -4814,7 +4827,7 @@ jsClassDef(DOMImplementation):
     if AsciiWhitespace + {'\0', '>'} in qualifiedName.toOpenArray():
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in qualified name")
-    let document = implementation.document
+    let document = cast[Document](implementation)
     ctx.toJS(document.newDocumentType($qualifiedName, $publicId, $systemId))
 
   proc hasFeature(implementation: DOMImplementation): bool {.jsfunc.} =
@@ -4854,21 +4867,20 @@ proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
   let n = 1u32 shl (uint32(node.nodeType) - 1)
   if (this.whatToShow and n) == 0:
     return ok(uint32(nfrSkip))
-  if JS_IsNull(this.filter):
+  if this.filter == nil:
     return ok(uint32(nfrAccept))
-  let filter = this.filter
   let node = ctx.toJS(node)
   if JS_IsException(node):
     return err()
   this.active = true
   #TODO call user object's operation (prepare etc.)
+  let filter = JS_DupValue(ctx, this.filter.value)
   let val = if JS_IsFunction(ctx, filter):
     ctx.callSink(filter, JS_UNDEFINED, node)
   else:
-    let atom = JS_NewAtom(ctx, cstringConst"acceptNode")
-    let val = ctx.invokeSink(filter, atom, node)
-    JS_FreeAtom(ctx, atom)
-    val
+    let atom = ctx.getOpaque().strRefs[jstAcceptNode]
+    ctx.invokeSink(filter, atom, node)
+  JS_FreeValue(ctx, filter)
   if JS_IsException(val):
     this.active = false
     return err()
