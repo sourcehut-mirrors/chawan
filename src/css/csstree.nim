@@ -300,7 +300,7 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   textComputed{"white-space"} = WhiteSpacePre
   textComputed{"content"} = markerComputed{"content"}
   textComputed = textComputed.atomize()
-  let markerText = if markerComputed{"content"}.len == 0:
+  let markerText = if markerComputed{"content"} == nil:
     StyledNode(
       t: stCounter,
       element: node.element,
@@ -373,7 +373,7 @@ proc addPseudo(frame: var TreeFrame; pseudo: PseudoElement) =
       break
     computed = computed.next
   if computed != nil and computed{"display"} notin DisplayNoneLike and
-      computed{"content"}.len > 0:
+      computed{"content"} != nil:
     frame.add(StyledNode(
       t: stElement,
       pseudo: pseudo,

@@ -378,14 +378,18 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
         let n = n - 1
         let val = CSSValue(
           v: cvtCounterSet,
-          counterSet: @[CSSCounterSet(name: satListItem.toAtom(), num: n)]
+          counterSet: newCSSCounterSetList(
+            [CSSCounterSet(name: satListItem.toAtom(), num: n)]
+          )
         )
         ctx.applyPresHint(makeEntry(cptCounterReset, val))
   of ttLi:
     if n := element.attrl(satValue):
       let val = CSSValue(
         v: cvtCounterSet,
-        counterSet: @[CSSCounterSet(name: satListItem.toAtom(), num: n)]
+        counterSet: newCSSCounterSetList([
+          CSSCounterSet(name: satListItem.toAtom(), num: n)
+        ])
       )
       ctx.applyPresHint(makeEntry(cptCounterSet, val))
   of ttHr:

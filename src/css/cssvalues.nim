@@ -274,7 +274,7 @@ type
     npx*: float32
     perc*: float32
 
-  CSSContent* = object
+  CSSContent* = ref object
     case t*: CSSContentType
     of ContentString:
       s*: RefString
@@ -283,6 +283,7 @@ type
       counterStyle*: CSSListStyleType
     else:
       discard
+    next: CSSContent
 
   # nil -> auto
   CSSQuotes* = ref object
@@ -291,6 +292,9 @@ type
   CSSCounterSet* = object
     name*: CAtom
     num*: int32
+
+  CSSCounterSetList* = ref object
+    s: seq[CSSCounterSet]
 
   CSSZIndex* = distinct int64
 
@@ -335,11 +339,11 @@ type
   CSSValue* = ref object
     case v*: CSSValueType
     of cvtContent:
-      content*: seq[CSSContent]
+      content*: CSSContent
     of cvtQuotes:
       quotes*: CSSQuotes
     of cvtCounterSet:
-      counterSet*: seq[CSSCounterSet]
+      counterSet*: CSSCounterSetList
     of cvtImage:
       image*: NetworkBitmap
     else: discard
@@ -471,6 +475,20 @@ when defined(gcDestructors):
 
 proc `=destroy`*(computed: var CSSValuesRootObj) =
   computedMap.del(addr computed)
+
+iterator items*(content: CSSContent): CSSContent =
+  var content = content
+  while content != nil:
+    yield content
+    content = content.next
+
+iterator items*(list: CSSCounterSetList): CSSCounterSet =
+  if list != nil:
+    for it in list.s:
+      yield it
+
+proc newCSSCounterSetList*(s: openArray[CSSCounterSet]): CSSCounterSetList =
+  CSSCounterSetList(s: @s)
 
 static:
   doAssert sizeof(CSSValueBit) == 1
@@ -855,7 +873,7 @@ proc `$`(quotes: CSSQuotes): string =
   for (s, e) in quotes.qs:
     result &= "'" & ($s).cssEscape() & "' '" & ($e).cssEscape() & "'"
 
-proc `$`(counterreset: seq[CSSCounterSet]): string =
+proc `$`(counterreset: CSSCounterSetList): string =
   result = ""
   for it in counterreset:
     result &= $it.name
@@ -1797,24 +1815,39 @@ proc parseQuotes(ctx: var CSSParser): Opt[CSSQuotes] =
   else:
     return err()
 
-proc parseContent(ctx: var CSSParser): Opt[seq[CSSContent]] =
-  var res: seq[CSSContent] = @[]
+type CSSContentInit = object
+  head: CSSContent
+  tail: CSSContent
+
+proc add(init: var CSSContentInit; content: CSSContent) =
+  if init.tail != nil:
+    init.tail.next = content
+  else:
+    init.head = content
+  init.tail = content
+
+proc parseContent(ctx: var CSSParser): Opt[CSSContent] =
+  var init = CSSContentInit()
   ctx.skipBlanks()
   while ctx.has():
     case (let tok = ctx.consume(); tok.t)
     of cttIdent:
       if tok.s == "/":
         break
-      elif tok.s.equalsIgnoreCase("open-quote"):
-        res.add(CSSContent(t: ContentOpenQuote))
+      let content = if tok.s.equalsIgnoreCase("open-quote"):
+        CSSContent(t: ContentOpenQuote)
       elif tok.s.equalsIgnoreCase("no-open-quote"):
-        res.add(CSSContent(t: ContentNoOpenQuote))
+        CSSContent(t: ContentNoOpenQuote)
       elif tok.s.equalsIgnoreCase("close-quote"):
-        res.add(CSSContent(t: ContentCloseQuote))
+        CSSContent(t: ContentCloseQuote)
       elif tok.s.equalsIgnoreCase("no-close-quote"):
-        res.add(CSSContent(t: ContentNoCloseQuote))
+        CSSContent(t: ContentNoCloseQuote)
+      else:
+        nil
+      if content != nil:
+        init.add(content)
     of cttString:
-      res.add(CSSContent(t: ContentString, s: newRefString(tok.s)))
+      init.add(CSSContent(t: ContentString, s: newRefString(tok.s)))
     of cttWhitespace:
       discard
     of cttFunction:
@@ -1839,7 +1872,7 @@ proc parseContent(ctx: var CSSParser): Opt[seq[CSSContent]] =
             if ctx.consume().t != cttRparen:
               ctx.skipFunction()
               return err()
-        res.add(CSSContent(
+        init.add(CSSContent(
           t: ContentCounter,
           counter: name,
           counterStyle: style
@@ -1849,7 +1882,7 @@ proc parseContent(ctx: var CSSParser): Opt[seq[CSSContent]] =
         return err()
     else:
       return err()
-  ok(res)
+  ok(init.head)
 
 proc parseFontWeight(ctx: var CSSParser): Opt[int32] =
   let tok = ctx.consume()
@@ -1883,8 +1916,8 @@ proc parseTextDecoration(ctx: var CSSParser): Opt[set[CSSTextDecoration]] =
       s.incl(td)
   return ok(s)
 
-proc parseCounterSet(ctx: var CSSParser; n: int32): Opt[seq[CSSCounterSet]] =
-  var res: seq[CSSCounterSet] = @[]
+proc parseCounterSet(ctx: var CSSParser; n: int32): Opt[CSSCounterSetList] =
+  let res = CSSCounterSetList()
   while ctx.has():
     if ctx.peekTokenType() != cttIdent:
       return err()
@@ -1893,12 +1926,12 @@ proc parseCounterSet(ctx: var CSSParser; n: int32): Opt[seq[CSSCounterSet]] =
     ctx.skipBlanks()
     if ctx.has() and ctx.peekTokenType() == cttNumber:
       r.num = ctx.consume().toi
-      res.add(r)
+      res.s.add(r)
     else:
       r.num = n
-      res.add(r)
+      res.s.add(r)
     ctx.skipBlanks()
-  return ok(move(res))
+  return ok(res)
 
 proc parseMaxSize(ctx: var CSSParser; attrs: WindowAttributes):
     Opt[CSSLength] =
