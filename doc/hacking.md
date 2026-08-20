@@ -197,9 +197,9 @@ non-copying slice.  (Obviously, you should use `substr` if you *need* to
 copy.)
 
 Note that `=` usually copies.  If you're copying a large object a lot, you
-may want to set its type to `ref`.  For `seq`/`string` you can also try
-using `move`, but be sure to check the generated code because often times
-it doesn't work in `refc`.
+may want to set its type to `ref`.  Also, the `move` statement is useful
+when copying values out of an object; note that this zeroes out the
+original value, so it's safe to use.
 
 Beware of `pairs` on sequences of objects; it copies.  Use `mypairs` if you
 don't need mutation, `mpairs` if you do:
@@ -214,6 +214,8 @@ proc foo(objs: openArray[SomeObj]) =
   for i, obj in objs.mpairs: # OK, doesn't copy. obj's type is "var SomeObj".
     obj.i = i
 ```
+
+Similarly, the regular `items` on arrays copies; use `myitems` instead.
 
 ### `func`, `.noSideEffect`
 
