@@ -515,6 +515,12 @@ proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
       return true
   return false
 
+proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtomTraced): bool =
+  for it in aa:
+    if a.equalsIgnoreCase(it):
+      return true
+  return false
+
 proc toAtomLowerTrace*(s: openArray[char]): CAtomTraced =
   s.toAtom().toLowerAscii().trace()
 

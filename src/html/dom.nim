@@ -537,7 +537,7 @@ type
     name: CAtom # 24
     internalElIndex: uint32 # 28
     # 4 bytes free
-    classList*: DOMTokenList # 40
+    internalClassList: DOMTokenList # 40
     attrs*: seq[AttrData] # 48, sorted by int(qualifiedName)
     cachedStyle*: CSSStyleDeclaration # 56
     computed*: CSSValues # 64
@@ -874,6 +874,8 @@ proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int
 proc getBoundingClientRect(element: Element): DOMRect
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
+proc hasClass*(element: Element; class: CAtomTraced): bool
+proc hasClassIgnoreCase*(element: Element; class: CAtomTraced): bool
 proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
@@ -1433,6 +1435,11 @@ iterator sheets(this: SheetElement): CSSStylesheet {.inline.} =
     if sheet == tail:
       break
     sheet = sheet.next
+
+iterator classList*(element: Element): CAtom {.inline.} =
+  if element.internalClassList != nil:
+    for tok in element.internalClassList.toks:
+      yield tok
 
 # Window/Global
 # For now, these are the same; on an API level however, getGlobal is
@@ -2678,8 +2685,10 @@ proc clone(node: Node; document: Document; deep: bool;
       element.namespaceURI.view(), element.tagName.view())
     x.id = element.id.dup()
     x.name = element.name.dup()
-    for it in element.classList.toks:
-      x.classList.toks.add(it.dup())
+    if element.internalClassList != nil:
+      x.internalClassList = newDOMTokenList(element, satClass)
+      for it in element.classList:
+        x.internalClassList.toks.add(it.dup())
     x.attrs = element.dupAttrs()
     # Cloning steps
     if (let x = x as HTMLScriptElement; x != nil):
@@ -3315,11 +3324,11 @@ proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
         return false
       if element.asNode.document.mode == qmQuirks:
         for class in this.atoms:
-          if not element.classList.toks.containsIgnoreCase(class):
+          if not element.hasClassIgnoreCase(class.view()):
             return false
       else:
         for class in this.atoms:
-          if class notin element.classList.toks:
+          if not element.hasClass(class.view()):
             return false
       true,
     childonly = false
@@ -5036,10 +5045,6 @@ jsClassDef(TreeWalker):
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList =
   jsNew DOMTokenListObj(element: element, localName: name)
 
-iterator items*(tokenList: DOMTokenList): CAtom {.inline.} =
-  for tok in tokenList.toks:
-    yield tok
-
 proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool =
   return tokenList.toks.containsIgnoreCase(a)
 
@@ -5059,13 +5064,17 @@ proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
       return err()
   ok()
 
-proc reflectTokens(this: DOMTokenList; value: string) =
-  this.toks.setLen(0)
+proc reflectTokens(element: Element; list: var DOMTokenList; name: StaticAtom;
+    value: string) =
+  if list != nil:
+    list.toks.setLen(0)
   for x in value.split(AsciiWhitespace):
     if x != "":
       let a = x.toAtomTrace()
-      if a notin this:
-        this.toks.add(a.dup())
+      if list == nil:
+        list = element.newDOMTokenList(name)
+      if a notin list:
+        list.toks.add(a.dup())
 
 jsClassDef(DOMTokenList):
   classDef.iterable = jitValue
@@ -5951,7 +5960,7 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
   of ttLink:
     let link = element as HTMLLinkElement
     if name == satRel:
-      link.relList.reflectTokens(value) # do not return
+      link.asElement.reflectTokens(link.relList, satRel, value) # do not return
     let document = link.asNode.document
     let connected = link.asNode.isConnected()
     if name == satDisabled:
@@ -5974,11 +5983,11 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
   of ttA:
     let anchor = element as HTMLAnchorElement
     if name == satRel:
-      anchor.relList.reflectTokens(value)
+      anchor.asElement.reflectTokens(anchor.relList, satRel, value)
   of ttArea:
     let area = element as HTMLAreaElement
     if name == satRel:
-      area.relList.reflectTokens(value)
+      area.asElement.reflectTokens(area.relList, satRel, value)
   of ttCanvas:
     if element.scriptingEnabled and name in {satWidth, satHeight}:
       let w = element.attrul(satWidth).get(300)
@@ -6037,7 +6046,8 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
       element.name = value.toAtom()
     else:
       element.name = CAtomNull
-  of satClass: element.classList.reflectTokens(value)
+  of satClass:
+    element.reflectTokens(element.internalClassList, satClass, value)
   #TODO internalNonce
   of satStyle:
     if has:
@@ -6183,6 +6193,14 @@ proc hasInsertionSteps(element: Element): bool =
   element.tagType in {ttOption, ttLink, ttImg, ttStyle, ttScript} or
     element.tagType(satNamespaceSVG) == ttSvg or
     element of FormAssociatedElement
+
+proc hasClass*(element: Element; class: CAtomTraced): bool =
+  element.internalClassList != nil and
+    element.internalClassList.toks.containsIgnoreCase(class)
+
+proc hasClassIgnoreCase*(element: Element; class: CAtomTraced): bool =
+  element.internalClassList != nil and
+    element.internalClassList.toks.contains(class)
 
 # Returns true if has post-connection steps.
 proc insertionSteps(element: Element): bool =
@@ -6402,7 +6420,6 @@ jsClassPublicDef(Element):
   jsget Element, namespaceURI
   jsget Element, localName
   jsget Element, id
-  jsget Element, classList
 
   proc finalize(rt: JSRuntime; element: Element) {.jsfin.} =
     freeAtom(element.namespaceURI)
@@ -6413,6 +6430,11 @@ jsClassPublicDef(Element):
     for it in element.attrs:
       freeAttr(it)
     unlinkElementBoxImpl(element)
+
+  proc getClassList(this: Element): DOMTokenList {.jsfget: "classList".} =
+    if this.internalClassList == nil:
+      this.internalClassList = newDOMTokenList(this, satClass)
+    this.internalClassList
 
   proc firstElementChild*(this: Element): Element {.jsfget.} =
     return this.asParentNode.firstElementChild
@@ -8903,7 +8925,6 @@ proc newElement(document: Document;
   element.namespaceURI = namespaceURI.dup()
   element.tagName = tagName.dup()
   element.internalNext = document.asNode
-  element.classList = element.newDOMTokenList(satClass)
   element.custom = if localName.isValidCustomElementName():
     cesUndefined
   else:
