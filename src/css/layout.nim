@@ -1819,7 +1819,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     input.marginResolved = fstate.marginResolved
     fstate.flushMargins(offset.y)
     lctx.layout(child, offset, input)
-    if fstate.exclusionsTail != nil:
+    if fstate.exclusionsTail != nil and fstate.space.w.isDefinite():
       # From the standard (abridged):
       #
       # > The border box of an element that establishes a new BFC must
@@ -1829,31 +1829,53 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
       # > space. CSS2 does not define when a UA may put said element
       # > next to the float.
       #
-      # ...thanks for nothing. So here's what we do:
-      #
-      # * run a normal pass
-      # * place the longest word (i.e. intr.w) somewhere
-      # * run another pass with the placement we got
-      #
-      #TODO other browsers just try again until they find enough available
-      # space; we should do that too once we have proper layout caching.
+      # ...thanks for nothing.  Anyway, others seem to have converged on a
+      # behavior that simply tries to layout the element in each and every
+      # possible place, so we just imitate that (and disregard the obvious
+      # inefficiency this results in).
       #
       # Note that this does not apply to absolutely positioned elements,
       # as those ignore floats.
       let pbfcOffset = fstate.bfcOffset
-      let bfcOffset = offset(
+      var bfcOffset = offset(
         x = pbfcOffset.x + child.state.offset.x,
-        y = max(pbfcOffset.y + child.state.offset.y, fstate.clearOffset)
+        y = pbfcOffset.y + child.state.offset.y
       )
-      let minSize = size(w = child.state.intr.w, h = lctx.cellSize.h)
-      var outw: LUnit
-      let offset = fstate.findNextBlockOffset(bfcOffset, minSize, outw)
-      let roffset = offset - pbfcOffset
-      # skip relayout if we can
-      if outw != fstate.space.w.u or roffset != child.state.offset:
+      var minSize = child.state.intr
+      minSize.h = max(minSize.h, fstate.cellSize.h)
+      var prevw = fstate.space.w.u
+      while true:
+        var outw: LUnit
+        bfcOffset = fstate.findNextBlockOffset(bfcOffset, minSize, outw)
+        let roffset = offset - pbfcOffset
+        if outw == prevw and roffset == child.state.offset:
+          # we're stuck; stop trying
+          # (also skips relayout if possible)
+          break
         space = initSpace(w = stretch(outw), h = fstate.space.h)
         input = lctx.resolveBlockSizes(space, child)
-        lctx.layout(child, roffset, input)
+        lctx.layout(child, bfcOffset - pbfcOffset, input)
+        # does it fit?
+        var left = bfcOffset.x
+        var right = bfcOffset.x + max(fstate.space.w.u, child.state.size.w)
+        var miny = LUnit.high
+        let y = bfcOffset.y
+        let cy2 = y + child.state.size.h
+        for ex in fstate.exclusions:
+          let ey2 = ex.offset.y + ex.size.h
+          if cy2 >= ex.offset.y and y < ey2:
+            let ex2 = ex.offset.x + ex.size.w
+            if ex.t == FloatLeft and left < ex2:
+              left = ex2
+            if ex.t == FloatRight and right > ex.offset.x:
+              right = ex.offset.x
+            miny = min(ey2, miny)
+        let w = right - left
+        if w >= child.state.size.w or miny == LUnit.high:
+          # yes, we are done
+          break
+        # no, try again
+        bfcOffset.y = miny
   else:
     offset += input.borderTopLeft(lctx)
     input.bfcOffset = fstate.bfcOffset + offset
