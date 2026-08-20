@@ -6538,7 +6538,7 @@ void JS_FreeForeignObjectMemory(JSRuntime *rt, void *p)
     if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES && js_rc(gh)->ref_count != 0) {
         /* the object is it is still accessible from other finalizers;
            remove association with the JSObject and disarm finalizer */
-        obj->opaque = obj;
+        obj->opaque = &obj->header;
         obj->class_id = 0;
         obj->free_mark = 1;
         js_rc(obj)->ref_count = 0;
