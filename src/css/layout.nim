@@ -899,7 +899,7 @@ proc addMargin(a: var Span; b: LUnit) =
     a.send = max(b, a.send)
 
 proc clearFloats(offsety: var LUnit; fstate: var FlowState; bfcOffsety: LUnit;
-    clear: CSSClear; cleared: var bool) =
+    clear: CSSClear; byFloat: bool; cleared: var bool) =
   let oy = bfcOffsety + offsety
   var y = oy
   let target = case clear
@@ -916,14 +916,17 @@ proc clearFloats(offsety: var LUnit; fstate: var FlowState; bfcOffsety: LUnit;
   if clearedTo != fstate.exclusionsHead:
     cleared = y > max(fstate.clearOffset, oy)
   fstate.clearOffset = y
-  if target == FloatNone:
+  # If we are clearing a float, then preceding floats still apply to block
+  # elements, just not to the floats themselves.  So dropping them would
+  # be wrong.
+  if target == FloatNone and not byFloat:
     fstate.exclusionsHead = clearedTo
   offsety = y - bfcOffsety
 
 proc clearFloats(offsety: var LUnit; fstate: var FlowState; bfcOffsety: LUnit;
-    clear: CSSClear) =
+    byFloat: bool; clear: CSSClear) =
   var dummy: bool
-  offsety.clearFloats(fstate, bfcOffsety, clear, dummy)
+  offsety.clearFloats(fstate, bfcOffsety, clear, byFloat, dummy)
 
 proc findNextFloatOffset(fstate: FlowState; offset: Offset; size: Size;
     space: Space; float: CSSFloat; outw: var LUnit): Offset =
@@ -975,7 +978,7 @@ proc positionFloat(fstate: var FlowState; child: BlockBox; space: Space;
   offset.y += fstate.marginTodo.sum()
   let clear = child.computed{"clear"}
   if clear != ClearNone:
-    offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear)
+    offset.y.clearFloats(fstate, fstate.bfcOffset.y, byFloat = true, clear)
   var childBfcOffset = bfcOffset + offset - marginOffset
   childBfcOffset.y = max(fstate.clearOffset, childBfcOffset.y)
   let ft = child.computed{"float"}
@@ -1360,7 +1363,8 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     # add line to fstate
     let y = fstate.offset.y
     if clear != ClearNone:
-      fstate.lbstate.size.h.clearFloats(fstate, fstate.bfcOffset.y + y, clear)
+      fstate.lbstate.size.h.clearFloats(fstate, fstate.bfcOffset.y + y,
+        byFloat = false, clear)
     # * set first baseline if this is the first line box
     # * always set last baseline (so the baseline of the last line box remains)
     fstate.box.state.baseline = y + fstate.lbstate.baseline
@@ -1800,7 +1804,8 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
         fstate.flushMargins(offset.y)
         break
       f = f.next
-    offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear, cleared)
+    offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear, byFloat = false,
+      cleared)
   fstate.marginTodo.addMargin(input.margin.top)
   if cleared:
     # subtract the current state of our collapsed margin so that the top

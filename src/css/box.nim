@@ -75,7 +75,7 @@ type
     yshift*: LUnit
     # Maximum float height relative to the BFC.
     maxFloatHeight*: LUnit
-    # Clear offset relative to the BFC.
+    # Clear offset for floats (and floats *only*), relative to the BFC.
     clearOffset*: LUnit
     # Indicates which borders have been merged with an adjacent one.
     merge*: CSSBorderMerge
