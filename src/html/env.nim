@@ -642,9 +642,9 @@ proc windowSetPrototype(ctx: JSContext; obj, proto: JSValueConst): cint
   let ours = JS_GetPrototype(ctx, obj)
   if JS_IsException(ours):
     return -1
-  if JS_SameValue(ctx, obj, ours):
-    return 1
-  return 0
+  let res = JS_SameValue(ctx, obj, ours)
+  JS_FreeValue(ctx, ours)
+  cint(res)
 
 proc windowIsExtensible(ctx: JSContext; obj: JSValueConst): cint {.cdecl.} =
   return 1
