@@ -6840,13 +6840,11 @@ jsClassDef(AttrDummyElement): # fake class
 
 # XMLSerializer
 jsClassRaw(XMLSerializerDef, "XMLSerializer"):
-  type XMLSerializer = distinct pointer
-
   proc newXMLSerializer(ctx: JSContext; ctor: JSValueConst): JSValue
       {.jsctor2.} =
     return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
 
-  proc serializeToString(ctx: JSContext; this: XMLSerializer; root: Node):
+  proc serializeToString(ctx: JSContext; this: JSValueConst; root: Node):
       JSValue {.jsfunc.} =
     #TODO ...yeah
     var res = ""

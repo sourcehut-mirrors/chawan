@@ -687,7 +687,10 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   let t = gen.funcParams[gen.i].t
   let id = ident(thisName)
   if t.eqIdent("JSValueConst"):
-    #TODO add a class check here?
+    gen.jsFunCallList.add(quote do:
+      if dl != fjErr and ctx.checkInstanceOf(`id`, classDef.id) == fjErr:
+        dl = fjErr
+    )
     gen.jsFunCall.add(id)
   else:
     let s = ident("arg_" & $gen.i)
@@ -697,6 +700,11 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
         dl = fjErr
     )
     gen.jsFunCall.add(quote do: cast[`t`](`s`))
+  inc gen.i
+
+proc addCtorParam(gen: var JSFuncGenerator; thisName = "this") =
+  let t = gen.funcParams[gen.i].t
+  gen.jsFunCall.add(ident(thisName))
   inc gen.i
 
 proc addMagicParam(gen: var JSFuncGenerator; id, magic: NimNode) =
@@ -835,7 +843,7 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; isva: bool) =
 
 proc generateConstructor(gen: var JSFuncGenerator): NimNode =
   if gen.flag == bffThis:
-    gen.addThisParam()
+    gen.addCtorParam()
   gen.addArgv()
   let jfcl = gen.jsFunCallList
   let jfc = gen.jsFunCall

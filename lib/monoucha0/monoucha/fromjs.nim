@@ -80,6 +80,19 @@ proc isInstanceOf*(ctx: JSContext; classid, tclassid: JSClassID): bool =
       break
   found
 
+proc checkInstanceOf*(ctx: JSContext; this: JSValueConst; tclassid: JSClassID):
+    FromJSResult =
+  let ctxOpaque = ctx.getOpaque()
+  let classid = if JS_VALUE_GET_PTR(ctxOpaque.global) != JS_VALUE_GET_PTR(this):
+    JS_GetClassID(this)
+  else:
+    ctxOpaque.gclass
+  if not ctx.isInstanceOf(classid, tclassid):
+    # JS_ThrowTypeErroInvalidClass
+    discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
+    return fjErr
+  fjOk
+
 proc isSequence*(ctx: JSContext; o: JSValueConst): bool =
   if not JS_IsObject(o):
     return false

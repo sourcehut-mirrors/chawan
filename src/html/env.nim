@@ -53,7 +53,6 @@ proc outerWidth(window: Window): int
 proc outerHeight(window: Window): int
 
 jsClassRaw(NavigatorDef, "Navigator"):
-  #TODO I don't think the window hack is sound once we add frames
   type Navigator = distinct Window
 
   # NavigatorID
@@ -94,7 +93,6 @@ jsClassRaw(NavigatorDef, "Navigator"):
 
 # PluginArray
 jsClassRaw(PluginArrayDef, "PluginArray"):
-  #TODO ditto
   type PluginArray = distinct Window
 
   proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
@@ -106,7 +104,6 @@ jsClassRaw(PluginArrayDef, "PluginArray"):
 
 # MimeTypeArray
 jsClassRaw(MimeTypeArrayDef, "MimeTypeArray"):
-  #TODO ditto
   type MimeTypeArray = distinct Window
 
   proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
@@ -156,10 +153,7 @@ jsClassRaw(NotificationDef, "Notification"):
 # Permissions
 # See above.
 jsClassRaw(PermissionsDef, "Permissions"):
-  #TODO ditto
-  type Permissions = distinct Window
-
-  proc query(ctx: JSContext; this: Permissions; desc: JSValueConst): JSValue
+  proc query(ctx: JSContext; this: JSValueConst; desc: JSValueConst): JSValue
       {.jsfunc.} =
     let name = JS_GetPropertyStr(ctx, desc, "name")
     if JS_IsException(name):
@@ -171,7 +165,6 @@ jsClassRaw(PermissionsDef, "Permissions"):
 
 # Screen
 jsClassRaw(ScreenDef, "Screen"):
-  #TODO ditto
   type Screen = distinct Window
 
   # These are fingerprinting vectors; only app mode gets the real values.
@@ -199,7 +192,6 @@ jsClassRaw(ScreenDef, "Screen"):
 
 # History
 jsClassRaw(HistoryDef, "History"):
-  #TODO ditto
   type History = distinct Window
 
   proc length(history: History): uint32 {.jsfget.} = 1
@@ -284,7 +276,6 @@ jsClassDef(Storage):
 
 # Crypto
 jsClassRaw(CryptoDef, "Crypto"):
-  #TODO ditto
   type Crypto = distinct Window
 
   proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
@@ -301,7 +292,6 @@ jsClassRaw(CryptoDef, "Crypto"):
     return JS_DupValue(ctx, array)
 
 # Location
-#TODO ditto
 type Location = distinct Window
 
 template window(location: Location): Window =
