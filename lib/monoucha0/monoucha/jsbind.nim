@@ -87,8 +87,6 @@ when sizeof(int) < sizeof(int64):
   export quickjs.`==`
 
 type
-  JSFunctionList = openArray[JSCFunctionListEntry]
-
   BoundFunctionType = enum
     bfFunction = "js_func"
     bfConstructor = "js_ctor"
@@ -723,7 +721,6 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   inc gen.i
 
 proc addCtorParam(gen: var JSFuncGenerator; thisName = "this") =
-  let t = gen.funcParams[gen.i].t
   gen.jsFunCall.add(ident(thisName))
   inc gen.i
 
@@ -1639,7 +1636,6 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
 
 proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL):
     FromJSResult =
-  let rt = JS_GetRuntime(ctx)
   if ctx.registerClassCommon(def) == fjErr:
     return fjErr
   let ctxOpaque = ctx.getOpaque()
@@ -1735,7 +1731,6 @@ proc registerFakeClass*(ctx: JSContext; def: ChaClassDef): FromJSResult =
 
 proc registerGlobalClass*(ctx: JSContext; def: ChaClassDef;
     parentProto: JSValueConst = JS_NULL): FromJSResult =
-  let rt = JS_GetRuntime(ctx)
   if ctx.registerClassCommon(def) == fjErr:
     return fjErr
   let ctxOpaque = ctx.getOpaque()

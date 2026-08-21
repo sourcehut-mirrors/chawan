@@ -2589,9 +2589,9 @@ void JS_FreeRuntime(JSRuntime *rt)
         if (s->malloc_count > 1) {
             if (rt->rt_info)
                 printf("%s:1: ", rt->rt_info);
-            printf("Memory leak: %"PRIu64" bytes lost in %d block%s\n",
+            printf("Memory leak: %"PRIu64" bytes lost in %"PRIu64" block%s\n",
                    (uint64_t)(s->malloc_size - sizeof(JSRuntime)),
-                   (s->malloc_count - 1), &"s"[s->malloc_count == 2]);
+                   (uint64_t)(s->malloc_count - 1), &"s"[s->malloc_count == 2]);
         }
     }
 #endif
@@ -3915,7 +3915,7 @@ static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
     return 0;
 }
 
-int JS_SetGlobalExotic(JSContext *ctx, const JSClassExoticMethods *exotic)
+void JS_SetGlobalExotic(JSContext *ctx, const JSClassExoticMethods *exotic)
 {
     JSRuntime *rt = ctx->rt;
     JSObject *p;
@@ -6906,10 +6906,6 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
 
 static void gc_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
-    if (js_rc(p)->ref_count <= 0) {
-        JS_DumpGCObject(rt, p);
-        fflush(stdout);
-    }
     assert(js_rc(p)->ref_count > 0);
     js_rc(p)->ref_count--;
     if (js_rc(p)->ref_count == 0 && js_rc(p)->mark == 1) {

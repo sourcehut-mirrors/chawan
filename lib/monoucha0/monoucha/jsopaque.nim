@@ -1,11 +1,8 @@
 {.push raises: [].}
 
-import std/hashes
 import std/algorithm
-import std/tables
 
 import quickjs
-import utils/tabutil
 import utils/twtstr
 
 type
@@ -86,16 +83,9 @@ type
     atoms*: seq[JSAtom] # enum number -> atom
     enums*: seq[EnumMapItem] # atom number -> enum
 
-  # Stores hash code and Nim/JS pointers.
-  JSPointerItem = object
-    hcache: Hash
-    nimp*: pointer
-    jsp*: pointer
-
   JSRuntimeOpaqueObj* = object
     classes*: seq[JSClassData] # JSClassID -> data
     enumMap*: seq[EnumMapEntry]
-    plist*: seq[JSPointerItem] # Nim -> JS
     load: int
     when defined(debug):
       marking*: bool

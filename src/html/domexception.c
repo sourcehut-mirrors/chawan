@@ -115,7 +115,6 @@ static JSValue js_domexception_constructor(JSContext *ctx, JSValueConst new_targ
 static JSValue js_domexception_get_name(JSContext *ctx, JSValueConst this_val)
 {
     JSDOMExceptionData *s;
-    JSValue *valp;
 
     s = JS_GetOpaque2(ctx, this_val, js_class_dom_exception);
     if (!s)
