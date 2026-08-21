@@ -454,24 +454,9 @@ var computedMap {.global.}: CSSValuesMapObj
 when defined(debug):
   proc serializeEmpty*(computed: CSSValues): string
 
-when defined(gcDestructors):
-  proc `=destroy`*(a: var CSSValueBit) =
-    discard
-
-  proc `=destroy`*(a: var CSSValueHWord) =
-    discard
-
-  proc `=destroy`*(a: var CSSValueWord) =
-    discard
-
-  proc `=copy`*(a: var CSSValueBit; b: CSSValueBit) =
-    copyMem(addr a, unsafeAddr b, sizeof(a))
-
-  proc `=copy`*(a: var CSSValueHWord; b: CSSValueHWord) =
-    copyMem(addr a, unsafeAddr b, sizeof(a))
-
-  proc `=copy`*(a: var CSSValueWord; b: CSSValueWord) =
-    copyMem(addr a, unsafeAddr b, sizeof(a))
+unionHooks(CSSValueBit)
+unionHooks(CSSValueHWord)
+unionHooks(CSSValueWord)
 
 proc `=destroy`*(computed: var CSSValuesRootObj) =
   computedMap.del(addr computed)

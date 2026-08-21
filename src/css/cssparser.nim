@@ -459,12 +459,7 @@ static:
   #   painful though.
   assert sizeof(PseudoElement) == 1
 
-when defined(gcDestructors):
-  proc `=destroy`*(a: var CSSTokenUnion) =
-    discard
-
-  proc `=copy`*(a: var CSSTokenUnion; b: CSSTokenUnion) =
-    copyMem(addr a, unsafeAddr b, sizeof(a))
+unionHooks(CSSTokenUnion)
 
 # Forward declarations
 proc consumeDeclarations(ctx: var CSSParser; nested: bool;

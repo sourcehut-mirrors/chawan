@@ -505,24 +505,9 @@ type
     # cleared on every new siteconf/omnirule
     ruleOptionsSeen: set[ConfigOption]
 
-when defined(gcDestructors):
-  proc `=destroy`*(a: var ConfigOptionBit) =
-    discard
-
-  proc `=destroy`*(a: var ConfigOptionHWord) =
-    discard
-
-  proc `=destroy`*(a: var ConfigOptionWord) =
-    discard
-
-  proc `=copy`*(a: var ConfigOptionBit; b: ConfigOptionBit) =
-    copyMem(addr a, unsafeAddr b, sizeof(a))
-
-  proc `=copy`*(a: var ConfigOptionHWord; b: ConfigOptionHWord) =
-    copyMem(addr a, unsafeAddr b, sizeof(a))
-
-  proc `=copy`*(a: var ConfigOptionWord; b: ConfigOptionWord) =
-    copyMem(addr a, unsafeAddr b, sizeof(a))
+unionHooks(ConfigOptionBit)
+unionHooks(ConfigOptionHWord)
+unionHooks(ConfigOptionWord)
 
 # Forward declarations
 proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void]

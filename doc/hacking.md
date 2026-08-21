@@ -190,6 +190,26 @@ so don't use it unless you know what you're doing.
 `.cursor` is broken for custom types on Nim versions up to 2.0.0.
 For storing weak references, use `ptr` instead.
 
+### `.union`
+
+This is C's untagged union, as such it is inherently unsafe (for example,
+its fields may not refer to GC'ed memory).  In most cases you'll want to
+use a `case` object instead.
+
+On the other hand, `.union` is required for some optimizations.  In such
+cases, always add `unionHook` before any other procedures:
+
+```nim
+type MyUnion {.union.} = object
+  # blah...
+
+unionHook(MyUnion)
+```
+
+This is a workaround for a [compiler
+bug](https://github.com/nim-lang/Nim/issues/25236) affecting Nim versions
+up to 2.2.8.
+
 ### Copying operations
 
 `substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which is a
