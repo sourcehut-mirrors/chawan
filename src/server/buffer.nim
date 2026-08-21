@@ -211,14 +211,7 @@ proc getClickable(element: Element): Element =
 proc canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae.form == nil:
     return false
-  if fae.form.canSubmitImplicitly():
-    return true
-  if fae of HTMLButtonElement and HTMLButtonElement(fae).ctype == btSubmit:
-    return true
-  if fae of HTMLInputElement and
-      HTMLInputElement(fae).inputType in {itSubmit, itButton}:
-    return true
-  return false
+  fae.asElement.isSubmitButton() or fae.form.canSubmitImplicitly()
 
 proc getImageHover(bc: BufferContext; element: Element): string =
   if (let image = element as HTMLImageElement; image != nil):

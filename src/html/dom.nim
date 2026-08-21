@@ -5775,8 +5775,8 @@ proc scriptingEnabled(element: Element): bool =
   return element.asNode.document.scriptingEnabled
 
 proc isSubmitButton*(element: Element): bool =
-  if element.tagType == ttButton:
-    return element.attr(satType).equalsIgnoreCase("submit")
+  if (let element = element as HTMLButtonElement; element != nil):
+    return element.ctype == btButton
   elif (let element = element as HTMLInputElement; element != nil):
     return element.inputType in {itSubmit, itImage}
   return false
