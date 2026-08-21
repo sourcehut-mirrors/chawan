@@ -6,6 +6,8 @@ div{
   && & { color: green }
   && & & { color: red }
 }
+broken { a b: test; }
+#test { color: green }
 </style>
 <div><div>test</div></div>
 <!-- I don't think this matches the spec, but it does match Blink/Gecko -->
@@ -14,3 +16,4 @@ div{
 <div style="};color: green; test { hi } color: red">green</div>
 <!-- this isn't even consistent between Blink/Gecko.  thanks W3C (not) -->
 <div style="}color: green; test { hi } color: red">green</div>
+<div id=test>green</div>

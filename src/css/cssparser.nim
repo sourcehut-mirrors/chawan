@@ -1123,9 +1123,11 @@ proc addPrelude(ctx: var CSSParser; parentSels: openArray[CSSToken];
     Opt[void] =
   while ctx.has():
     let tt = ctx.peekTokenType()
-    if tt == cttLbrace or semi and tt == cttSemicolon:
+    if tt == cttLbrace:
       ctx.seekToken()
       return ok()
+    if semi and tt == cttSemicolon:
+      return err()
     if tt == cttRbrace and nested:
       return err()
     ctx.addPreludeComponentValue(parentSels, andSeen, toks)
@@ -1248,11 +1250,7 @@ proc consumeDeclarations(ctx: var CSSParser; nested: bool;
         ctx.seekToken()
       if ctx.has() and ctx.peekTokenType() == cttColon:
         if decl := ctx.consumeDeclaration2(tok.s):
-          # looks ridiculous, but it's the only way to convince refc not
-          # to copy the seq...  TODO remove when moving to ARC
-          var value = move(decl.value)
           result.add(move(decl))
-          result[^1].value = move(value)
       elif nested:
         var prelude: seq[CSSToken] = @[move(tok)]
         if blank:
