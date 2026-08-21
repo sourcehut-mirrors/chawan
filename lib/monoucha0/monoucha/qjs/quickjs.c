@@ -1102,8 +1102,6 @@ typedef struct JSForeignObject {
     JSGCObjectHeader header;
     uint32_t class_id;
     int free_mark;
-    /* pointer to the active header: either this object or a JSObject */
-    JSGCObjectHeader *opaque;
     uint8_t data[];
 } JSForeignObject;
 
@@ -6461,7 +6459,7 @@ static void no_inline free_foreign_object(JSRuntime *rt, JSForeignObject *p)
     p->free_mark = 1; /* used to tell the object is invalid when
                          freeing cycles */
 
-    if (p->opaque == header) {
+    if (p->header.link.prev != NULL) {
         finalizer = rt->class_array[p->class_id].finalizer;
         if (finalizer)
             (*finalizer)(rt, JS_MKPTR(JS_TAG_MODULE, p->data));
@@ -6473,7 +6471,7 @@ static void no_inline free_foreign_object(JSRuntime *rt, JSForeignObject *p)
         else
             js_free_rt(rt, p);
     } else {
-        __JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, p->opaque));
+        __JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, p->header.link.next));
     }
 
     /* fail safe */
@@ -6496,21 +6494,29 @@ void *JS_NewForeignObject(JSRuntime *rt, JSClassID class_id, size_t size)
         return NULL;
     js_rc(obj)->ref_count = 1;
     obj->class_id = class_id;
-    obj->opaque = &obj->header;
     add_gc_object(rt, &obj->header, JS_GC_OBJ_TYPE_FOREIGN);
     return obj->data;
+}
+
+static inline JSGCObjectHeader *js_foreign_opaque(JSForeignObject *obj)
+{
+    if (obj->header.link.prev)
+        return &obj->header;
+    return (JSGCObjectHeader *)obj->header.link.next;
 }
 
 void *JS_DupForeignObject(JSRuntime *rt, void *p)
 {
     JSForeignObject *obj = js_data_to_foreign(p);
 
-    js_rc(obj->opaque)->ref_count++;
+    js_rc(js_foreign_opaque(obj))->ref_count++;
     return p;
 }
 
 int JS_GetForeignObjectRefs(void *p) {
-    return js_rc(js_data_to_foreign(p)->opaque)->ref_count;
+    JSForeignObject *obj = js_data_to_foreign(p);
+
+    return js_rc(js_foreign_opaque(obj))->ref_count;
 }
 
 void JS_MarkForeignObject(JSRuntime *rt, void *p, JS_MarkFunc mark_func)
@@ -6519,26 +6525,25 @@ void JS_MarkForeignObject(JSRuntime *rt, void *p, JS_MarkFunc mark_func)
 
     if (p) {
         obj = js_data_to_foreign(p);
-        mark_func(rt, obj->opaque);
+        mark_func(rt, js_foreign_opaque(obj));
     }
 }
 
 void JS_FreeForeignObject(JSRuntime *rt, void *p)
 {
     JSForeignObject *obj = js_data_to_foreign(p);
-    if (--js_rc(obj->opaque)->ref_count <= 0)
+    if (--js_rc(js_foreign_opaque(obj))->ref_count <= 0)
         free_foreign_object(rt, obj);
 }
 
 void JS_FreeForeignObjectMemory(JSRuntime *rt, void *p)
 {
     JSForeignObject *obj = js_data_to_foreign(p);
-    JSGCObjectHeader *gh = (JSGCObjectHeader *)obj->opaque;
+    JSGCObjectHeader *gh = js_foreign_opaque(obj);
 
     if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES && js_rc(gh)->ref_count != 0) {
         /* the object is it is still accessible from other finalizers;
            remove association with the JSObject and disarm finalizer */
-        obj->opaque = &obj->header;
         obj->class_id = 0;
         obj->free_mark = 1;
         js_rc(obj)->ref_count = 0;
@@ -6557,9 +6562,9 @@ JSClassID JS_GetForeignClassID(void *p)
 void *JS_GetForeignOpaque(JSRuntime *rt, void *p)
 {
     JSForeignObject *obj = js_data_to_foreign(p);
-    if (obj->opaque == (void*)obj)
-        return NULL;
-    return obj->opaque;
+    if (obj->header.link.prev == NULL)
+        return obj->header.link.next;
+    return NULL;
 }
 
 /* val must be an object. */
@@ -6568,14 +6573,14 @@ void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val)
     JSForeignObject *obj = js_data_to_foreign(p);
     JSObject *jsobj;
 
-    assert((void *)obj->opaque == obj);
+    assert((void *)obj->header.link.prev != NULL);
     jsobj = JS_VALUE_GET_OBJ(val);
-    obj->opaque = &jsobj->header;
 
     /* move refcount to the JSObject */
     js_rc(jsobj)->ref_count += js_rc(obj)->ref_count;
     js_rc(obj)->ref_count = 1;
     remove_gc_object(&obj->header);
+    obj->header.link.next = (struct list_head *)&jsobj->header;
 }
 
 static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
