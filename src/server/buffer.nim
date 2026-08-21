@@ -588,7 +588,7 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
       else:
         let text = bc.document.newText($data)
         if text != nil:
-          plaintext.asParentNode.insert(text.asNode, Node(nil), bc.window.jsctx)
+          plaintext.asParentNode.append(bc.window.jsctx, text.asNode)
       plaintext.asElement.invalidate()
   true
 
@@ -1653,8 +1653,8 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           inc j
         let replacement = bc.window.jsctx.parseFragment(html.asElement, data)
         if replacement != nil:
-          discard element.asNode.replaceChildWith(text.asNode,
-            replacement.asNode, nil)
+          discard element.asNode.replaceChildWith(bc.window.jsctx, text.asNode,
+            replacement.asNode)
   bc.maybeReshape()
 
 proc toggleImages(bc: BufferContext; handle: PagerHandle): bool {.

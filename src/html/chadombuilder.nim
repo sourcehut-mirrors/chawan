@@ -158,7 +158,7 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
 
 proc insertBefore(builder: ChaDOMBuilder; parent: ParentNode; child: Node;
     before: ParentNode) =
-  parent.insert(child, before.asNode, builder.ctx, suppressObservers = true)
+  parent.insert(builder.ctx, child, before.asNode, suppressObservers = true)
 
 proc insertCommentImpl(builder: ChaDOMBuilder; parent: ParentNode;
     text: string; before: ParentNode) =
@@ -282,7 +282,7 @@ proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
   let root = document.newHTMLElement(ttHtml)
   if root == nil:
     return @[]
-  document.asParentNode.insert(root.asNode, Node(nil), ctx)
+  document.asParentNode.append(ctx, root.asNode)
   let form = element.findAncestorIncl(ttForm)
   var opts = HTML5ParserOpts[ParentNode, CAtom](
     isIframeSrcdoc: false, #TODO?
