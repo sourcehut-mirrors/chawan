@@ -2324,6 +2324,7 @@ type
     width: LUnit
     height: LUnit
     borderWidth: LUnit
+    hasBottomBorder: bool
     blockBorder: Span
     box: BlockBox
     ncols: int
@@ -2415,8 +2416,8 @@ proc growRowspan(tctx: var TableContext; growi, n: var int; ntill, growlen: int;
     inc growi
 
 proc resolveBorder(tctx: var TableContext; computed: CSSValues;
-    firstRow, lastCell, lastRow: bool; inlineBorder, blockBorder: var Span):
-    CSSBorder =
+    firstRow, lastCell, lastRow: bool; inlineBorder, blockBorder: var Span;
+    hasBottomBorder: var bool): CSSBorder =
   let lctx = tctx.lctx
   var dummyMargin = RelativeRect.default # table cells have no margin
   var border = lctx.resolveBorder(computed, dummyMargin)
@@ -2430,6 +2431,7 @@ proc resolveBorder(tctx: var TableContext; computed: CSSValues;
   if border.bottom notin BorderStyleNoneHidden:
     let d = if lastRow: 1'lu else: 2'lu
     blockBorder.send = max(blockBorder.send, lctx.cellSize.h div d)
+    hasBottomBorder = true
   if not lastCell:
     border[dtHorizontal].send = BorderStyleNone
   if not lastRow:
@@ -2500,6 +2502,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
   var cellHead: CellWrapper = nil
   var cellTail: CellWrapper = nil
   var blockBorder = Span(start: tctx.blockSpacing, send: tctx.blockSpacing)
+  var hasBottomBorder = false
   var n = 0
   var growi = 0
   var width = 0'lu
@@ -2511,7 +2514,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
   for box in row.children:
     let box = BlockBox(box)
     assert box.computed{"display"} == DisplayTableCell
-    let firstRow = rowi == 0
+    let firstRow = rowi == 0 or not tctx.rows[rowi - 1].hasBottomBorder
     let colspan = box.computed{"-cha-colspan"}
     # grow until n, but not more
     tctx.growRowspan(growi, n, n, growlen, width, cellHead, cellTail)
@@ -2525,7 +2528,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     )
     var inlineBorder = Span(start: tctx.inlineSpacing, send: tctx.inlineSpacing)
     var border = tctx.resolveBorder(box.computed, firstRow, box.next == nil,
-      row.next == nil, inlineBorder, blockBorder)
+      row.next == nil, inlineBorder, blockBorder, hasBottomBorder)
     borderWidth += inlineBorder.sum()
     let merge = [dtHorizontal: not firstCell, dtVertical: not firstRow]
     lctx.layoutTableCell(box, space, border, merge)
@@ -2560,7 +2563,8 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     width: width,
     borderWidth: borderWidth,
     blockBorder: blockBorder,
-    ncols: n
+    ncols: n,
+    hasBottomBorder: hasBottomBorder
   ))
 
 proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
