@@ -2796,8 +2796,7 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
     res &= '>'
     res.serializeFragment(element.asNode, writeShadow)
     res &= "</" & $tag & '>'
-  elif child of Text:
-    let text = Text(child)
+  elif (let text = child as Text; text != nil):
     const LiteralTags = {
       ttStyle, ttScript, ttXmp, ttIframe, ttNoembed, ttNoframes,
       ttPlaintext, ttNoscript
@@ -2808,11 +2807,10 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
       res &= text.data.s.htmlEscape(mode = emText)
   elif (let comment = child as Comment; comment != nil):
     res &= "<!--" & comment.data.s & "-->"
-  elif child of ProcessingInstruction:
-    let inst = ProcessingInstruction(child)
+  elif (let inst = child as ProcessingInstruction; inst != nil):
     res &= "<?" & inst.target & " " & inst.data.s & '>'
-  elif child of DocumentType:
-    res &= "<!DOCTYPE " & DocumentType(child).name & '>'
+  elif (let child = child as DocumentType; child != nil):
+    res &= "<!DOCTYPE " & child.name & '>'
 
 proc serializeFragment(res: var string; node: Node; writeShadow: bool) =
   var node = node
@@ -2996,19 +2994,18 @@ jsClassDef(Node):
     return ctx.getWeakCollection(node, wwmChildNodes)
 
   proc isEqualNode(node, other: Node): bool {.jsfunc.} =
-    if node of DocumentType:
-      if not (other of DocumentType):
+    if (let node = node as DocumentType; node != nil):
+      let other = other as DocumentType
+      if other == nil:
         return false
-      let node = DocumentType(node)
-      let other = DocumentType(other)
       if node.name != other.name or node.publicId != other.publicId or
           node.systemId != other.systemId:
         return false
     elif (let node = node as ParentNode; node != nil):
       if (let node = node as Element; node != nil):
-        if not (other of Element):
+        let other = other as Element
+        if other == nil:
           return false
-        let other = Element(other)
         if node.namespaceURI != other.namespaceURI or
             node.tagName != other.tagName or node.attrs.len != other.attrs.len:
           return false
@@ -3249,8 +3246,8 @@ proc childElementCountImpl(node: ParentNode): uint32 =
 proc childTextContent*(node: ParentNode): string =
   result = ""
   for child in node.childList:
-    if child of Text:
-      result &= Text(child).data.s
+    if (let child = child as Text; child != nil):
+      result &= child.data.s
 
 proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtomTraced):
     HTMLCollection =
@@ -4590,10 +4587,7 @@ jsClassPublicDef(Document):
     return this.asParentNode.childElementCountImpl
 
   proc doctype(document: Document): DocumentType {.jsfget.} =
-    let first = document.asParentNode.firstChild
-    if first of DocumentType:
-      return DocumentType(first)
-    DocumentType(nil)
+    document.asParentNode.firstChild as DocumentType
 
   proc documentElement*(document: Document): Element {.jsfget.} =
     return document.firstElementChild()
