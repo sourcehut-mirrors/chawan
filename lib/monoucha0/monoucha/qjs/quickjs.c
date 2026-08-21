@@ -1100,8 +1100,9 @@ typedef struct JSMapState {
 
 typedef struct JSForeignObject {
     JSGCObjectHeader header;
-    uint32_t class_id;
-    int free_mark;
+    uint16_t class_id;
+    uint16_t free_mark;
+    uint32_t magic;
     uint8_t data[];
 } JSForeignObject;
 
@@ -6581,6 +6582,20 @@ void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val)
     js_rc(obj)->ref_count = 1;
     remove_gc_object(&obj->header);
     obj->header.link.next = (struct list_head *)&jsobj->header;
+}
+
+void JS_SetForeignMagic(void *p, uint32_t magic)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+
+    obj->magic = magic;
+}
+
+uint32_t JS_GetForeignMagic(void *p)
+{
+    JSForeignObject *obj = js_data_to_foreign(p);
+
+    return obj->magic;
 }
 
 static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)

@@ -643,6 +643,8 @@ proc JS_FreeForeignObjectGC*(rt: JSRuntime; p: pointer)
 proc JS_GetForeignClassID*(p: pointer): JSClassID
 proc JS_GetForeignOpaque*(rt: JSRuntime; p: pointer): pointer
 proc JS_SetForeignOpaque*(rt: JSRuntime; p: pointer; val: JSValueConst)
+proc JS_GetForeignMagic*(p: pointer): uint32
+proc JS_SetForeignMagic*(p: pointer; val: uint32)
 proc JS_GetForeignObjectRefs*(p: pointer): cint {.importc.}
 proc JS_FreeCStringRT*(rt: JSRuntime; p: cstringConst)
 proc JS_NewNarrowStringLen*(ctx: JSContext; s: cstring; len: csize_t): JSValue

@@ -57,6 +57,12 @@ template asRootRef*[T: JSRootObj](r: JSRef[T]): JSRootRef =
 template markObj*[T](rt: JSRuntime; r: JSRef[T]; markFunc: JS_MarkFunc) =
   JS_MarkForeignObject(rt, cast[pointer](r), markFunc)
 
+template setMagic*[T](r: JSRef[T]; magic: uint32) =
+  JS_SetForeignMagic(cast[pointer](r), magic)
+
+template getMagic*[T](r: JSRef[T]): uint32 =
+  JS_GetForeignMagic(cast[pointer](r))
+
 proc jsNew0*(p: ptr pointer; class: JSClassID; size: csize_t) =
   p[] = JS_NewForeignObject(globalRuntime, class, size)
 

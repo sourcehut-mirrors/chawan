@@ -767,6 +767,8 @@ void JS_FreeForeignObject(JSRuntime *rt, void *p);
 void JS_FreeForeignObjectMemory(JSRuntime *rt, void *p);
 void *JS_GetForeignOpaque(JSRuntime *rt, void *p);
 void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val);
+uint32_t JS_GetForeignMagic(void *p);
+void JS_SetForeignMagic(void *p, uint32_t magic);
 int JS_GetForeignObjectRefs(void *p); /* debug */
 JSClassID JS_GetForeignClassID(void *p);
 void JS_FreeCStringRT(JSRuntime *rt, const char *ptr);

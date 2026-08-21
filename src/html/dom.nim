@@ -341,7 +341,6 @@ type
   DOMTokenListObj = object
     toks: seq[CAtom]
     element: Element
-    localName: StaticAtom
 
   DOMTokenList = JSRef[DOMTokenListObj]
 
@@ -530,14 +529,12 @@ type
     custom: CustomElementState # 12
     localName*: CAtom # 16
     id*: CAtom # 20
-    name: CAtom # 24
-    internalElIndex: uint32 # 28
-    # 4 bytes free
-    internalClassList: DOMTokenList # 40
-    attrs*: seq[AttrData] # 48, sorted by int(qualifiedName)
-    cachedStyle*: CSSStyleDeclaration # 56
-    computed*: CSSValues # 64
-    box*: RootRef # 72, CSSBox
+    internalElIndex: uint32 # 24
+    internalClassList: DOMTokenList # 32
+    attrs*: seq[AttrData] # 40, sorted by int(qualifiedName)
+    cachedStyle*: CSSStyleDeclaration # 48
+    computed*: CSSValues # 56
+    box*: RootRef # 64, CSSBox
 
   AttrDummyElementObj {.pure, final.} = object of ElementObj
 
@@ -875,7 +872,7 @@ proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
-proc tagName(ctx: JSContext; element: Element): JSValue
+proc name*(element: Element): CAtom
 proc nextDisplayedElement(element: Element): Element
 proc nextElementSibling*(element: Element): Element
 proc outerHTML(element: Element): string
@@ -885,6 +882,7 @@ proc previousElementSibling*(element: Element): Element
 proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
+proc tagName(ctx: JSContext; element: Element): JSValue
 proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
 
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
@@ -1392,17 +1390,17 @@ iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
       yield control
 
 iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
-  let name = input.name
+  let name = input.asElement.name
   if name != CAtomNull and name != satUempty:
     if input.form != nil:
       for input in input.form.inputs:
-        if input.name == name and input.inputType == itRadio:
+        if input.asElement.name == name and input.inputType == itRadio:
           yield input
     else:
       let document = input.asNode.document
       for input in document.asParentNode.elementDescendants(ttInput):
         let input = input as HTMLInputElement
-        if input.form == nil and input.name == name and
+        if input.form == nil and input.asElement.name == name and
             input.inputType == itRadio:
           yield input
 
@@ -2665,7 +2663,7 @@ proc clone(node: Node; document: Document; deep: bool;
     let x = document.newElement(element.localName.view(),
       element.namespaceURI.view(), element.tagName.view())
     x.id = element.id.dup()
-    x.name = element.name.dup()
+    x.setMagic(uint32(element.name.dup()))
     if element.internalClassList != nil:
       x.internalClassList = newDOMTokenList(element, satClass)
       for it in element.classList:
@@ -5018,7 +5016,13 @@ jsClassDef(TreeWalker):
 
 # DOMTokenList
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList =
-  jsNew DOMTokenListObj(element: element, localName: name)
+  let list = jsNew DOMTokenListObj(element: element)
+  if list != nil:
+    list.setMagic(uint32(name))
+  list
+
+proc localName(tokenList: DOMTokenList): StaticAtom =
+  StaticAtom(tokenList.getMagic())
 
 proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool =
   return tokenList.toks.containsIgnoreCase(a)
@@ -5726,6 +5730,9 @@ proc attrb*(element: Element; s: CAtomTraced): bool =
 proc attrb*(element: Element; at: StaticAtom): bool =
   return element.attrb(at.view())
 
+proc name*(element: Element): CAtom =
+  CAtom(element.getMagic())
+
 proc isDisplayed(element: Element): bool =
   element.ensureStyle()
   return element.computed{"display"} != DisplayNone
@@ -6026,10 +6033,11 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
       root.addElementId(element)
   of satName:
     freeAtom(element.name)
-    if has:
-      element.name = value.toAtom()
+    let name = if has:
+      value.toAtom()
     else:
-      element.name = CAtomNull
+      CAtomNull
+    element.setMagic(uint32(name))
   of satClass:
     element.reflectTokens(element.internalClassList, satClass, value)
   #TODO internalNonce
