@@ -8512,6 +8512,13 @@ jsClassPublicDef(HTMLScriptElement):
         JS_MarkValue(rt, script.record, markFunc)
       rt.markObj(script.baseURL, markFunc)
 
+  proc text(this: HTMLScriptElement): string {.jsfget.} =
+    this.asParentNode.childTextContent
+
+  proc setText(ctx: JSContext; this: HTMLScriptElement; ds: DOMString)
+      {.jsfset.} =
+    this.asParentNode.replaceAll(ctx, ds)
+
 # <table>
 proc deleteRow(ctx: JSContext; rows: HTMLCollection; index: int32): Opt[void] =
   let nrows = rows.length
@@ -8694,7 +8701,7 @@ jsClassDef(HTMLTextAreaElement):
     this.setValue($ds)
 
   proc defaultValue(this: HTMLTextAreaElement): string {.jsfget.} =
-    this.asNode.textContent
+    this.asParentNode.childTextContent
 
   proc setDefaultValue(ctx: JSContext; this: HTMLTextAreaElement; ds: DOMString)
       {.jsfset: "defaultValue".} =
@@ -8705,7 +8712,7 @@ jsClassDef(HTMLTitleElement):
   jsextends HTMLElementDef
 
   proc text(this: HTMLTitleElement): string {.jsfget.} =
-    return this.asNode.textContent
+    this.asParentNode.childTextContent
 
   proc setText(ctx: JSContext; this: HTMLTitleElement; ds: DOMString) {.
       jsfset: "text".} =

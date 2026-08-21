@@ -6,5 +6,9 @@
 <script src=asserts.js></script>
 <script>
 assertEquals(document.title, "Title test");
+let child = document.createElement("div");
+child.textContent = "blah";
+t.appendChild(child, null);
+assertEquals(t.text, t.childNodes[0].data);
 document.getElementById("x").textContent = "Success";
 </script>
