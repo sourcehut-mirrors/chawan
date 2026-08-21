@@ -802,10 +802,7 @@ proc serializeFragment(res: var string; node: Node; writeShadow: bool)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
   writeShadow: bool)
 
-proc countChildren(node: ParentNode; t: NodeType): int
 proc getChildList*(node: ParentNode): seq[Node]
-proc hasChild(node: ParentNode; t: NodeType): bool
-proc hasChildExcept(node: ParentNode; t: NodeType; ex: Node): bool
 proc insert*(parent: ParentNode; ctx: JSContext; node, before: Node;
   suppressObservers = false)
 proc replaceAll(parent: ParentNode; ctx: JSContext; node: Node)
@@ -813,6 +810,7 @@ proc replaceAll(parent: ParentNode; ctx: JSContext; ds: DOMString)
 proc firstChild(parent: ParentNode): Node
 proc firstChildShadow(parent: ParentNode): Node
 proc nextSibling(node: Node): Node
+proc previousElementSiblingImpl(this: Node): Element
 proc setFirstChild(node: ParentNode; child: Node)
 
 proc setData(ctx: JSContext; this: CharacterData; data: DOMStringNull)
@@ -2324,8 +2322,8 @@ proc nodeTypeEnum(node: Node): NodeType =
     return ntProcessingInstruction
 
 proc isValidChild(node: Node): bool =
-  return node of DocumentFragment or node of DocumentType or node of Element or
-    node of CharacterData
+  return node of Element or node of CharacterData or
+    node of DocumentFragment or node of DocumentType
 
 proc checkParentValidity(parent: Node): Result[ParentNode, cstring] =
   if parent of ParentNode:
@@ -2342,22 +2340,6 @@ proc isInclusiveAncestorHost(a, b: Node): bool =
   for it in b.branchHost:
     if it == a:
       return true
-  return false
-
-proc hasNextSibling(node: Node; t: NodeType): bool =
-  var node = node.nextSibling
-  while node != nil:
-    if node.nodeTypeEnum == t:
-      return true
-    node = node.nextSibling
-  return false
-
-proc hasPreviousSibling(node: Node; t: NodeType): bool =
-  var node = node.previousSibling
-  while node != nil:
-    if node.nodeTypeEnum == t:
-      return true
-    node = node.previousSibling
   return false
 
 proc textContent*(node: Node): string =
@@ -2483,10 +2465,34 @@ proc queueTreeMutationRecord(parent: ParentNode; ctx: JSContext;
     CAtomNullTraced, nil, true, "", added, removed, previousSibling,
     nextSibling)
 
-# WARNING the ordering of the arguments in the standard is whack so this
-# doesn't match that
-proc preInsertionValidity(parent, node, before: Node):
-    Result[ParentNode, cstring] =
+type PreInsertExclude = enum
+  pieNone, pieBefore, pieChildren
+
+proc canInsertIntoDocument(parent: ParentNode; node, before: Node;
+    t: NodeType; excl: PreInsertExclude): bool =
+  var beforeSeen = false
+  for child in parent.childList:
+    if (before == nil or t == ntElement) and child of Element or
+        t == ntDocumentType and child of DocumentType:
+      if excl == pieNone or excl == pieBefore and child != before:
+        return false # document would have two element/doctype children
+    if beforeSeen and t == ntElement and child of DocumentType:
+      return false # a doctype is following before
+    if child == before:
+      beforeSeen = true
+  if before != nil:
+    if t == ntDocumentType:
+      return before.previousElementSiblingImpl == nil
+    # if excl is before or children, then before must have been excluded,
+    # so its type does not matter
+    if excl == pieNone and before of DocumentType:
+      return false
+  return true
+
+# Note: the ordering of the arguments in the standard is whack so this
+# doesn't match that.  Also, in the spec, "before" is called "child".
+proc checkPreInsertValidity(parent, node, before: Node;
+    excl: PreInsertExclude): Result[ParentNode, cstring] =
   let parent = ?parent.checkParentValidity()
   if node.isInclusiveAncestorHost(parent.asNode):
     return err("parent must be an ancestor")
@@ -2496,23 +2502,24 @@ proc preInsertionValidity(parent, node, before: Node):
     return err("node is not a valid child")
   if parent of Document:
     if (let node = node as DocumentFragment; node != nil):
-      let elems = node.asParentNode.countChildren(ntElement)
-      if elems > 1 or node.asParentNode.hasChild(ntText):
-        return err("document fragment has invalid children")
-      elif elems == 1 and (parent.hasChild(ntElement) or
-          before != nil and (before of DocumentType or
-          before.hasNextSibling(ntDocumentType))):
-        return err("document fragment has invalid children")
-    elif node of Element:
-      if parent.hasChild(ntElement):
-        return err("document already has an element child")
-      elif before != nil and (before of DocumentType or
-            before.hasNextSibling(ntDocumentType)):
-        return err("cannot insert element before document type")
-    elif node of DocumentType:
-      if parent.hasChild(ntDocumentType) or
-          before != nil and before.hasPreviousSibling(ntElement) or
-          before == nil and parent.hasChild(ntElement):
+      var elemSeen = false
+      for child in node.asParentNode.childList:
+        if child of Element:
+          if elemSeen:
+            return err("cannot insert two elements into document")
+          if not parent.canInsertIntoDocument(node.asNode, before, ntElement,
+              excl):
+            return err("cannot insert fragment into document here")
+          elemSeen = true
+        if child of Text:
+          return err("cannot insert text into document")
+    elif (let node = node as Element; node != nil):
+      if not parent.canInsertIntoDocument(node.asNode, before, ntElement,
+          excl):
+        return err("cannot insert element into document here")
+    elif (let node = node as DocumentType; node != nil):
+      if not parent.canInsertIntoDocument(node.asNode, before, ntDocumentType,
+          excl):
         return err("cannot insert document type before an element node")
     elif node of Text:
       return err("cannot insert text into document")
@@ -2596,7 +2603,7 @@ proc insertThrow(ctx: JSContext; e: cstring): JSValue =
 # before may be nil
 proc insertBefore(parent: Node; ctx: JSContext; node, before: Node):
     Err[cstring] =
-  let parent = ?parent.preInsertionValidity(node, before)
+  let parent = ?parent.checkPreInsertValidity(node, before, pieNone)
   let referenceChild = if before == node:
     node.nextSibling
   else:
@@ -2618,37 +2625,9 @@ proc append*(parent: ParentNode; ctx: JSContext; node: Node) =
 # Note: the argument ordering here is the opposite of replaceChild.
 proc replaceChildWith*(parent: Node; ctx: JSContext; child, node: Node):
     Err[cstring] =
-  let parent = ?parent.checkParentValidity()
-  if node.isInclusiveAncestorHost(parent.asNode):
-    return err("parent must be an ancestor")
-  if child.parentNode != parent:
-    return err(nil)
-  if not node.isValidChild():
-    return err("node is not a valid child")
+  let parent = ?parent.checkPreInsertValidity(node, child, pieBefore)
   let childNextSibling = child.nextSibling
   let childPreviousSibling = child.previousSibling
-  #TODO unify these (like in the spec)
-  if parent of Document:
-    if (let node = node as DocumentFragment; node != nil):
-      let elems = node.asParentNode.countChildren(ntElement)
-      if elems > 1 or node.asParentNode.hasChild(ntText):
-        return err("document fragment has invalid children")
-      elif elems == 1 and (parent.hasChildExcept(ntElement, child) or
-          childNextSibling != nil and childNextSibling of DocumentType):
-        return err("document fragment has invalid children")
-    elif node of Element:
-      if parent.hasChildExcept(ntElement, child):
-        return err("document already has an element child")
-      elif childNextSibling != nil and childNextSibling of DocumentType:
-        return err("cannot insert element before document type")
-    elif node of DocumentType:
-      if parent.hasChildExcept(ntDocumentType, child) or
-          childPreviousSibling != nil and childPreviousSibling of DocumentType:
-        return err("cannot insert document type before an element node")
-    elif node of Text:
-      return err("replacement cannot be placed in parent")
-  elif node of DocumentType:
-    return err("replacement cannot be placed in parent")
   let referenceChild = if childNextSibling == node:
     node.nextSibling
   else:
@@ -3128,7 +3107,7 @@ proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
 proc replaceChildrenImpl(ctx: JSContext; parent: Node;
     nodes: openArray[JSValueConst]): JSValue =
   let node = ?ctx.toNode(nodes, parent.document)
-  let x = parent.preInsertionValidity(node, Node(nil))
+  let x = parent.checkPreInsertValidity(node, Node(nil), pieChildren)
   if x.isErr:
     return ctx.insertThrow(x.error)
   let parent = x.get
@@ -3268,26 +3247,6 @@ proc childElementCountImpl(node: ParentNode): uint32 =
   if last == nil:
     return 0
   return last.elIndex + 1
-
-proc countChildren(node: ParentNode; t: NodeType): int =
-  result = 0
-  for child in node.childList:
-    if child.nodeTypeEnum == t:
-      inc result
-
-proc hasChild(node: ParentNode; t: NodeType): bool =
-  for child in node.childList:
-    if child.nodeTypeEnum == t:
-      return true
-  return false
-
-proc hasChildExcept(node: ParentNode; t: NodeType; ex: Node): bool =
-  for child in node.childList:
-    if child == ex:
-      continue
-    if child.nodeTypeEnum == t:
-      return true
-  return false
 
 proc childTextContent*(node: ParentNode): string =
   result = ""
