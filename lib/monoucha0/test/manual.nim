@@ -5,6 +5,7 @@ import std/unittest
 
 import monoucha/fromjs
 import monoucha/jsbind
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import types/opt
@@ -48,14 +49,20 @@ ReferenceError: 'abcd' is not defined
   rt.free()
 
 type
-  Planet = ref object of JSRootObj
+  Planet = JSRef[PlanetObj]
 
-  Earth = ref object of Planet
+  PlanetObj = object of JSRootObj
+
+  Earth = JSRef[EarthObj]
+
+  EarthObj = object of PlanetObj
     moon: Moon
     name: string
     population: int64
 
-  Moon = ref object of Planet
+  Moon = JSRef[MoonObj]
+
+  MoonObj = object of PlanetObj
 
 jsClassDef(Planet):
   discard
@@ -81,29 +88,31 @@ test "registerType: registering type interfaces":
   let ctx = rt.newJSContext()
   ?ctx.registerClass(PlanetDef)
   ?ctx.registerClass(MoonDef)
-  const code = "Moon"
-  let val = ctx.eval(code)
-  var res: string
-  check ctx.fromJS(val, res).isOk
-  check res == """
+  block:
+    const code = "Moon"
+    let val = ctx.eval(code)
+    var res: string
+    check ctx.fromJS(val, res).isOk
+    check res == """
 function Moon() {
     [native code]
 }"""
-  JS_FreeValue(ctx, val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 test "Global objects":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  let earth = Earth()
-  ?ctx.registerClass(PlanetDef)
-  ?ctx.registerClass(EarthDef, asglobal = true)
-  ctx.setGlobal(earth)
-  const code = "assert(globalThis instanceof Earth)"
-  let val = ctx.eval(code)
-  check not JS_IsException(val)
-  JS_FreeValue(ctx, val)
+  block:
+    ?ctx.registerClass(PlanetDef)
+    ?ctx.registerGlobalClass(EarthDef)
+    let earth = jsNew EarthObj()
+    ctx.setGlobal(earth)
+    const code = "assert(globalThis instanceof Earth)"
+    let val = ctx.eval(code)
+    check not JS_IsException(val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -111,44 +120,49 @@ test "Inheritance":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerClass(PlanetDef)
-  ?ctx.registerClass(EarthDef, asglobal = true)
+  ?ctx.registerGlobalClass(EarthDef)
   ?ctx.registerClass(MoonDef)
-  ctx.setGlobal(Earth())
-  const code = "assert(globalThis instanceof Planet)"
-  let val = ctx.eval(code)
-  check not JS_IsException(val)
-  JS_FreeValue(ctx, val)
+  block:
+    ctx.setGlobal(jsNew EarthObj())
+    const code = "assert(globalThis instanceof Planet)"
+    let val = ctx.eval(code)
+    check not JS_IsException(val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 test "jsget, jsset: basic property reflectors":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  let earth = Earth(moon: Moon(), population: 1, name: "Earth")
-  ?ctx.registerClass(PlanetDef)
-  ?ctx.registerClass(EarthDef, asglobal = true)
-  ?ctx.registerClass(MoonDef)
-  ctx.setGlobal(earth)
-  const code = """
+  block:
+    ?ctx.registerClass(PlanetDef)
+    ?ctx.registerGlobalClass(EarthDef)
+    ?ctx.registerClass(MoonDef)
+    let moon = jsNew MoonObj()
+    let earth = jsNew EarthObj(moon: moon, population: 1, name: "Earth")
+    ctx.setGlobal(earth)
+    const code = """
 globalThis.population = 8e9;
 "name: " + globalThis.name + ", moon: " + globalThis.moon;
-"""
-  let val = ctx.eval(code)
-  var res: string
-  check ctx.fromJS(val, res).isOk
-  check res == "name: Earth, moon: [object Moon]"
-  check earth.population == int64(8e9)
-  JS_FreeValue(ctx, val)
+  """
+    let val = ctx.eval(code)
+    var res: string
+    check ctx.fromJS(val, res).isOk
+    check res == "name: Earth, moon: [object Moon]"
+    check earth.population == int64(8e9)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 type
-  Window = ref object
+  Window = JSRef[WindowObj]
+
+  WindowObj = object
     console: Console
 
-  Console = ref object
+  Console = JSRef[ConsoleObj]
 
-jsDestructor(Console)
+  ConsoleObj = object
 
 jsClassDef(Window):
   jsget Window, console
@@ -164,31 +178,32 @@ jsClassDef(Console):
 test "jsfunc: regular functions":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  let window = Window(console: Console())
-  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(ConsoleDef)
-  ctx.setGlobal(window)
-  const code = """
+  block:
+    let window = jsNew WindowObj(console: jsNew ConsoleObj())
+    ctx.setGlobal(window)
+    const code = """
 console.log('Hello, world!')
 """
-  let val = ctx.eval(code)
-  check not JS_IsException(val)
-  JS_FreeValue(ctx, val)
+    let val = ctx.eval(code)
+    check not JS_IsException(val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 type
-  JSFile = ref object
+  JSFile = JSRef[JSFileObj]
+
+  JSFileObj = object
     buffer: pointer # some internal buffer handled as managed memory
     path: string
-
-jsDestructor(JSFile)
 
 jsClassNameDef(JSFile, "File"):
   jsget JSFile, path
 
   proc newJSFile(path: string): JSFile {.jsctor.} =
-    return JSFile(
+    jsNew JSFileObj(
       path: path,
       buffer: alloc(4096)
     )
@@ -217,101 +232,100 @@ jsClassNameDef(JSFile, "File"):
     return file.owner
 
   var unrefd {.global.} = 0
-  proc finalize(file: JSFile) {.jsfin.} =
+  proc finalize(rt: JSRuntime; file: JSFile) {.jsfin.} =
     if file.buffer != nil:
       dealloc(file.buffer)
-      # Note: it is not necessary to nil out the pointer; it's just me being
-      # paranoid :P
-      file.buffer = nil
       inc unrefd
 
 test "jsctor: constructors":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
-  ctx.setGlobal(Window())
-  const code = """
+  block:
+    ctx.setGlobal(jsNew WindowObj())
+    const code = """
 assert(new File('/path/to/file') + '' == '[object File]')
-"""
-  let val = ctx.eval(code)
-  check not JS_IsException(val)
-  JS_FreeValue(ctx, val)
+  """
+    let val = ctx.eval(code)
+    check not JS_IsException(val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 test "jsfget, jsfset: custom property reflectors":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
-  ctx.setGlobal(Window())
-  const code = """
+  block:
+    ctx.setGlobal(jsNew WindowObj())
+    const code = """
 const file = new File("/path/to/file");
 assert(file.path === "/path/to/file");
 assert(file.name === "file"); /* file */
 file.name = "new-name";
 assert(file.path === "/path/to/new-name");
-  """
-  let val = ctx.eval(code)
-  check not JS_IsException(val)
-  JS_FreeValue(ctx, val)
+    """
+    let val = ctx.eval(code)
+    check not JS_IsException(val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 test "jsstfunc: static functions":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
-  ctx.setGlobal(Window())
-  const code = """
+  block:
+    ctx.setGlobal(jsNew WindowObj())
+    const code = """
 assert(File.exists("doc/manual.md"));
-  """
-  let val = ctx.eval(code)
-  check not JS_IsException(val)
-  JS_FreeValue(ctx, val)
+    """
+    let val = ctx.eval(code)
+    check not JS_IsException(val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 test "jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
-  const code = """
+  block:
+    const code = """
 const file = new File("doc/manual.md");
 const oldGetOwner = file.getOwner;
 file.getOwner = () => -2; /* doesn't work */
 assert(oldGetOwner == file.getOwner);
 Object.defineProperty(file, "owner", { value: -2 }); /* throws */
-  """
-  let val = ctx.eval(code)
-  check JS_IsException(val)
-  JS_FreeValue(ctx, val)
+    """
+    let val = ctx.eval(code)
+    check JS_IsException(val)
+    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 test "jsfin: object finalizers":
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  GC_fullCollect() # ensure refc runs
   unrefd = 0 # ignore previous unrefs
-  ?ctx.registerClass(WindowDef, asglobal = true)
+  ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
-  const code = """
+  block:
+    const code = """
 /* this doesn't leak. yay :D */
 { const file = new File("doc/manual.md"); }
 /* note that I put the above call in a separate scope, so QJS can unref
  * it immediately. in contrast, following file will not be deallocated until
  * the runtime is gone. */
 const file = new File("doc/manual.md");
-  """
-  JS_FreeValue(ctx, ctx.eval(code))
-  GC_fullCollect() # ensure refc runs
-  check unrefd == 1 # first file is already deallocated
+    """
+    JS_FreeValue(ctx, ctx.eval(code))
+    check unrefd == 1 # first file is already deallocated
   ctx.free()
-  GC_fullCollect() # ensure refc runs
   check unrefd == 1 # the second file is still available
   rt.free()
   check unrefd == 2 # runtime is freed, so the second file gets deallocated too

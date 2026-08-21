@@ -1,12 +1,7 @@
 # Monoucha manual
 
-Warning: this document is outdated.  In particular, the way you register JS
-types has been completely overhauled, and registerType no longer exists.
-
-I intend to rework this manual in the future with a focus on how to deal
-with JS in Chawan.  Until then, if you're interested you'll have to figure
-things out from the code (although this may be of use nonetheless, as the
-rest hasn't really changed).
+This document is outdated.  Please refer to
+[jsguide.md](../../../doc/jsguide.md) for current information.
 
 ## Table of Contents
 

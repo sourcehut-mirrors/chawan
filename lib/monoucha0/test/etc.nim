@@ -5,6 +5,7 @@ import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsnull
 import monoucha/jspropenumlist
+import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -109,7 +110,6 @@ const val = {
 val"""
   let val = ctx.eval(code, "<input>")
   ctx.subroutine(val)
-  GC_fullCollect()
   JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -154,9 +154,10 @@ test "fromjs-tuple":
 template `?`(x: FromJSResult) =
   assert x == fjOk
 
-type X = ref object
+type
+  X = JSRef[XObj]
 
-jsDestructor(X)
+  XObj = object
 
 jsClassDef(X):
   proc foo(x: X; s: sink string) {.jsfunc.} =
