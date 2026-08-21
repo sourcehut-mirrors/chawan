@@ -881,7 +881,7 @@ proc tagName(ctx: JSContext; element: Element): JSValue
 proc nextDisplayedElement(element: Element): Element
 proc nextElementSibling*(element: Element): Element
 proc outerHTML(element: Element): string
-proc postConnectionSteps(element: Element)
+proc postConnectionSteps(element: Element; ctx: JSContext)
 proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
 proc removingSteps(element: Element)
@@ -913,7 +913,7 @@ proc isDisabled(link: HTMLLinkElement): bool
 proc value*(option: HTMLOptionElement): string
 proc defaultValue(this: HTMLOutputElement): string
 proc execute*(element: HTMLScriptElement)
-proc prepare*(element: HTMLScriptElement)
+proc prepare*(element: HTMLScriptElement; ctx: JSContext)
 proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   destination: RequestDestination; onComplete: OnCompleteProc)
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
@@ -1721,8 +1721,11 @@ proc getImageId(window: Window): int =
   result = window.imageId
   inc window.imageId
 
+proc fireEvent*(ctx: JSContext; event: Event; target: EventTarget) =
+  discard ctx.dispatch(target, event)
+
 proc fireEvent*(window: Window; event: Event; target: EventTarget) =
-  discard window.jsctx.dispatch(target, event)
+  window.jsctx.fireEvent(event, target)
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget;
     bubbles, cancelable, trusted: bool) =
@@ -3430,7 +3433,7 @@ proc insert0(parent: ParentNode; ctx: JSContext; nodes: openArray[Node];
   if not suppressObservers:
     parent.queueTreeMutationRecord(ctx, nodes, [], beforeBefore, before)
   for el in postConnectionNodes:
-    el.postConnectionSteps()
+    el.postConnectionSteps(ctx)
 
 proc insert*(parent: ParentNode; ctx: JSContext; node, before: Node;
     suppressObservers = false) =
@@ -6283,10 +6286,10 @@ proc removingSteps(element: Element) =
   if (let element = element as SheetElement; element != nil):
     element.removeSheet()
 
-proc postConnectionSteps(element: Element) =
+proc postConnectionSteps(element: Element; ctx: JSContext) =
   let script = element as HTMLScriptElement
   if script.asNode.isConnected and script.parserDocument == nil:
-    script.prepare()
+    script.prepare(ctx)
 
 proc delAttr(element: Element; ctx: JSContext; i: int) =
   let name = element.attrs[i].name.dupTrace()
@@ -8217,7 +8220,7 @@ proc fetchInlineModuleGraph(element: HTMLScriptElement; sourceText: string;
     url: URL; options: ScriptOptions; onComplete: OnCompleteProc) =
   let window = element.asNode.document.window
   let ctx = window.jsctx
-  let res = ctx.newJSModuleScript(sourceText, url, options)
+  let res = ctx.newJSModuleScript(sourceText, url, options, window.settings)
   if JS_IsException(res.script.record):
     window.logException(res.script.baseURL)
     element.onComplete(ScriptResult(t: srtNull))
@@ -8235,7 +8238,6 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     return
   ctx.setImportMeta(record, true)
   script.record = JS_UNINITIALIZED
-  script.rt = nil
   let res = JS_EvalFunction(ctx, record) # consumes record
   if JS_IsException(res):
     window.logException(script.baseURL)
@@ -8270,7 +8272,7 @@ proc onFinishFetchModule(response: Response; success: bool) =
     return
   if contentType.isJavaScriptType():
     let source = blob.toOpenArray().toValidUTF8()
-    let res = ctx.newJSModuleScript(source, url, env.options)
+    let res = ctx.newJSModuleScript(source, url, env.options, settings)
     #TODO can't we just return null from newJSModuleScript?
     if JS_IsException(res.script.record):
       window.logException(res.script.baseURL)
@@ -8345,7 +8347,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.asNode.document
-  let window = document.window
+  let window = document.window #TODO this is wrong
   if document != element.preparationTimeDocument or window == nil:
     return
   let i = document.renderBlockingElements.find(element)
@@ -8369,15 +8371,15 @@ proc execute*(element: HTMLScriptElement) =
       element
     else:
       HTMLScriptElement(nil)
-    if window.jsctx != nil:
-      let script = element.scriptResult.script
+    let script = element.scriptResult.script
+    if JS_IsException(script.record):
+      window.logException(script.baseURL)
+    else:
       let ctx = window.jsctx
-      if JS_IsException(script.record):
-        window.logException(script.baseURL)
-      else:
+      if window.settings.scripting != smFalse:
+        element.prepare(ctx)
         let record = script.record
         script.record = JS_UNINITIALIZED
-        script.rt = nil
         let ret = JS_EvalFunction(ctx, record) # consumes record
         if JS_IsException(ret):
           window.logException(script.baseURL)
@@ -8391,7 +8393,7 @@ proc execute*(element: HTMLScriptElement) =
       cancelable = false, trusted = true)
 
 # https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
-proc prepare*(element: HTMLScriptElement) =
+proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
   if element.alreadyStarted:
     return
   let parserDocument = element.parserDocument
@@ -8449,7 +8451,7 @@ proc prepare*(element: HTMLScriptElement) =
     parserMetadata: parserMetadata,
     referrerPolicy: element.asHTMLElement.referrerPolicy
   )
-  #TODO settings object
+  let settings = window.settings #TODO pass it as param instead
   var response: Response
   if element.asElement.attrb(satSrc):
     let src = element.asElement.attr(satSrc)
@@ -8472,8 +8474,7 @@ proc prepare*(element: HTMLScriptElement) =
     let baseURL = document.baseURL
     case element.ctype
     of stClassic:
-      let ctx = element.asNode.document.window.jsctx
-      let script = ctx.newClassicScript(sourceText, baseURL, options)
+      let script = ctx.newClassicScript(sourceText, baseURL, options, settings)
       element.markAsReady(script)
     of stModule:
       element.delayingTheLoadEvent = true
@@ -8518,8 +8519,8 @@ proc prepare*(element: HTMLScriptElement) =
         window.loader.resume(response)
         let source = response.stream.readAll().decodeAll(encoding)
         response.stream.sclose()
-        let script = window.jsctx.newClassicScript(source, response.url,
-          options, false)
+        let script = ctx.newClassicScript(source, response.url, options,
+          settings, mutedErrors = false)
         element.markAsReady(script)
   else:
     #TODO if stClassic, parserDocument != nil, parserDocument has a style sheet
@@ -8533,14 +8534,14 @@ jsClassPublicDef(HTMLScriptElement):
   proc finalize(rt: JSRuntime; element: HTMLScriptElement) {.jsfin.} =
     if element.scriptResult != nil and element.scriptResult.t == srtScript:
       let script = element.scriptResult.script
-      if script.rt != nil and not JS_IsUninitialized(script.record):
+      if not JS_IsUninitialized(script.record):
         script.free()
 
   proc mark(rt: JSRuntime; element: HTMLScriptElement; markFunc: JS_MarkFunc)
       {.jsmark.} =
     if element.scriptResult != nil and element.scriptResult.t == srtScript:
       let script = element.scriptResult.script
-      if script.rt != nil and not JS_IsUninitialized(script.record):
+      if not JS_IsUninitialized(script.record):
         JS_MarkValue(rt, script.record, markFunc)
       rt.markObj(script.baseURL, markFunc)
 

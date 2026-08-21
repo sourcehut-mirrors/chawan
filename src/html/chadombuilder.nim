@@ -342,7 +342,7 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
     if script != nil: # SVG script?
       builder.poppedScript = HTMLScriptElement(nil)
       document.addWriteBuffer()
-      script.prepare()
+      script.prepare(builder.ctx)
       while document.parserBlockingScript != nil:
         let script = document.parserBlockingScript
         document.parserBlockingScript = HTMLScriptElement(nil)
@@ -378,7 +378,7 @@ proc parseDocumentWriteChunk(wrapper: RootRef) =
       let script = builder.poppedScript
       if script != nil: # SVG script?
         builder.poppedScript = HTMLScriptElement(nil)
-        script.prepare()
+        script.prepare(builder.ctx)
         while document.parserBlockingScript != nil:
           let script = document.parserBlockingScript
           document.parserBlockingScript = HTMLScriptElement(nil)

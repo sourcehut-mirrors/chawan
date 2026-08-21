@@ -2,6 +2,7 @@
 
 import config/conftypes
 import html/catom
+import monoucha/jsopaque
 import monoucha/jsutils
 import monoucha/quickjs
 import types/opt
@@ -50,6 +51,7 @@ type
 
 type
   EnvironmentSettings* = ref object
+    ctx*: JSContext
     attrsp*: ptr WindowAttributes
     # In app mode, attrsp == scriptAttrsp.
     # In lite mode, scriptAttrsp == addr dummyAttrs.
@@ -64,12 +66,11 @@ type
     contentType*: CAtomTraced
 
   Script* = ref object
-    #TODO setings
+    settings: EnvironmentSettings
     baseURL*: URL
     options*: ScriptOptions
     mutedErrors*: bool
     #TODO parse error/error to rethrow
-    rt*: JSRuntime
     record*: JSValue
 
   ScriptOptions* = object
@@ -109,11 +110,8 @@ var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.
 
 proc free*(script: Script) =
   let record = script.record
-  let rt = script.rt
-  assert rt != nil
   script.record = JS_UNINITIALIZED
-  script.rt = nil
-  JS_FreeValueRT(rt, record)
+  JS_FreeValueRT(globalRuntime, record)
 
 proc clear*(moduleMap: var ModuleMap; rt: JSRuntime) =
   for it in moduleMap.mitems:
@@ -134,8 +132,7 @@ proc clone(script: Script): Script =
     options: script.options,
     mutedErrors: script.mutedErrors,
     #TODO parse error/error to rethrow
-    rt: script.rt,
-    record: JS_DupValueRT(script.rt, script.record)
+    record: JS_DupValueRT(globalRuntime, script.record)
   )
 
 proc clone*(value: ScriptResult): ScriptResult =
@@ -174,12 +171,13 @@ proc moduleTypeToRequestDest*(moduleType: ModuleType;
   return default
 
 proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
-    options: ScriptOptions; mutedErrors = false): ScriptResult =
+    options: ScriptOptions; settings: EnvironmentSettings;
+    mutedErrors = false): ScriptResult =
   let record = ctx.compileScript(source, $baseURL)
   return ScriptResult(
     t: srtScript,
     script: Script(
-      rt: JS_GetRuntime(ctx),
+      settings: settings,
       record: record,
       baseURL: baseURL,
       options: options,
@@ -188,12 +186,12 @@ proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
   )
 
 proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
-    options: ScriptOptions): ScriptResult =
+    options: ScriptOptions; settings: EnvironmentSettings): ScriptResult =
   let record = ctx.compileModule(source, $baseURL)
   return ScriptResult(
     t: srtScript,
     script: Script(
-      rt: JS_GetRuntime(ctx),
+      settings: settings,
       record: record,
       baseURL: baseURL,
       options: options
