@@ -4,11 +4,14 @@ unreleased
 * rework NodeIterator, add TreeWalker
 * optimize some inefficient descendant CSS selectors
 * optimize getElementById
+* switch to ARC for memory management
 * support multi-keyword CSS display values
 * support oklab(), oklch(), relative color syntax (e.g. hsl(from ...))
 * support "hidden" global attribute
 * emulate logical properties (always interpreted in horizontal-tb writing-mode)
 * support `justify-content' property
+* support `:empty` pseudo-class
+* improve BFC placement logic with floats
 * support accessing elements by id on Window object
 * support MutationObserver
 * support Delete key, add default aliases for alternate Home/End
@@ -51,6 +54,9 @@ unreleased
 * fix svg width/height attributes not being respected
 * fix some flex sizing bugs
 * fix ISO-2022-JP terminal input handling
+* fix underscore not being treated as vi word char
+* fix bytecode functions being returned from `config.page` etc. sometimes
+* fix table borders overprinting content in some cases
 
 0.4.0 (2026.05.17)
 
