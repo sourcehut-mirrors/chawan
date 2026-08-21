@@ -111,6 +111,7 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     return parentNode != nil and parentNode.lastElementChild == element
   of pcFirstNode: return element.isFirstVisualNode()
   of pcLastNode: return element.isLastVisualNode()
+  of pcEmpty: return element.isVisuallyEmpty()
   of pcOnlyChild:
     let parentNode = element.parentNode
     return parentNode != nil and parentNode.firstElementChild == element and

@@ -383,6 +383,7 @@ type
     pcDisabled = "disabled"
     pcHost = "host"
     pcDefined = "defined"
+    pcEmpty = "empty"
     pcFirstNode = "-cha-first-node"
     pcLastNode = "-cha-last-node"
     pcBorderNonzero = "-cha-border-nonzero"

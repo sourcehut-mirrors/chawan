@@ -5647,8 +5647,9 @@ proc isFirstVisualNode*(element: Element): bool =
     for child in parent.childList:
       if child == element:
         return true
-      if child of Text and not Text(child).data.s.onlyWhitespace():
-        break
+      if (let text = child as Text; text != nil):
+        if not text.data.s.onlyWhitespace():
+          break
   return false
 
 proc isLastVisualNode*(element: Element): bool =
@@ -5659,9 +5660,19 @@ proc isLastVisualNode*(element: Element): bool =
         return true
       if child of Element:
         break
-      if child of Text and not Text(child).data.s.onlyWhitespace():
-        break
+      if (let text = child as Text; text != nil):
+        if not text.data.s.onlyWhitespace():
+          break
   return false
+
+proc isVisuallyEmpty*(element: Element): bool =
+  for child in element.asParentNode.childList:
+    if child of Element:
+      return false
+    if (let text = child as Text; text != nil):
+      if not text.data.s.onlyWhitespace():
+        return false
+  true
 
 proc tagTypeNoNS(element: Element): TagType =
   return element.localName.toTagType()
