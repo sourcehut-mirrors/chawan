@@ -65,9 +65,9 @@ proc bomSniff(inputStream: Stream): Charset =
   inputStream.setPosition(0)
   return csUnknown
 
-proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node, MAtom];
-    charsets: seq[Charset]; seekable = true;
-    factory = newMAtomFactory()): Document =
+proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node];
+    charsets: seq[Charset]; seekable = true; factory = newMAtomFactory()):
+    Document =
   ## Read, parse and return an HTML document from `inputStream`.
   ##
   ## `charsets` is a list of input character sets to try. If empty, it will be

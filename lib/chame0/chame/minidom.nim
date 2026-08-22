@@ -539,7 +539,7 @@ proc parseFromStream(parser: var HTML5Parser[Node, MAtom];
       res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
   parser.finish()
 
-proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node, MAtom]();
+proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node]();
     factory = newMAtomFactory()): Document =
   ## Read, parse and return an HTML document from `inputStream`, using
   ## parser options `opts` and MAtom factory `factory`.
@@ -554,8 +554,7 @@ proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node, MAtom]();
   return builder.document
 
 proc parseHTMLFragment*(inputStream: Stream; element: Element;
-    opts: HTML5ParserOpts[Node, MAtom]; factory = newMAtomFactory()):
-    seq[Node] =
+    opts: HTML5ParserOpts[Node]; factory = newMAtomFactory()): seq[Node] =
   ## Read, parse and return the children of an HTML fragment from `inputStream`,
   ## using context element `element` and parser options `opts`.
   ##
@@ -602,8 +601,5 @@ proc parseHTMLFragment*(s: string; element: Element): seq[Node] =
   ## For details on the HTML fragment parsing algorithm, see
   ## https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
   let inputStream = newStringStream(s)
-  let opts = HTML5ParserOpts[Node, MAtom](
-    isIframeSrcdoc: false,
-    scripting: false
-  )
+  let opts = HTML5ParserOpts[Node](isIframeSrcdoc: false, scripting: false)
   return parseHTMLFragment(inputStream, element, opts)

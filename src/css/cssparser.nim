@@ -157,7 +157,7 @@ type
     of cdtProperty:
       p*: CSSWidePropertyType
     of cdtVariable:
-      v*: CAtom
+      v*: CAtomTraced
     of cdtNestedRule:
       r*: CSSQualifiedRule
     value*: seq[CSSToken]
@@ -979,7 +979,7 @@ proc initCSSDeclaration*(name: string): Opt[CSSDeclaration] =
   if name.startsWith("--"):
     return ok(CSSDeclaration(
       t: cdtVariable,
-      v: name.toOpenArray(2, name.high).toAtom()
+      v: name.toOpenArray(2, name.high).toAtomTrace()
     ))
   let p = ?anyPropertyType(name)
   ok(CSSDeclaration(t: cdtProperty, p: p))

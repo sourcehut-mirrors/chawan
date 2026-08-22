@@ -29,13 +29,9 @@ type
     url*: URL
     layer*: CAtomTraced
 
-  # required because refc cannot trace seq contents
-  LayerList = object
-    s: seq[CAtom]
-
   StyleState = object
     importList*: seq[CSSImport]
-    layers: LayerList
+    layers: seq[CAtomTraced]
     defsHead: CSSRuleDef
     defsTail: CSSRuleDef
     len: uint32
@@ -59,7 +55,7 @@ type
     shtGeneral, shtRoot, shtHint, shtFirstChild, shtLastChild
 
   RuleTableItem = object
-    name: CAtom
+    name: CAtomTraced
     value: CSSRuleDef
 
   RuleTable* = object
@@ -75,13 +71,13 @@ type
     sheetId: uint32
     anonLayers: uint16
     quirks*: bool
-    layers: LayerList
+    layers: seq[CAtomTraced]
 
   SelectorHashes = object
-    tags: seq[CAtom]
-    id: CAtom
-    class: CAtom
-    attr: CAtom
+    tags: seq[CAtomTraced]
+    id: CAtomTraced
+    class: CAtomTraced
+    attr: CAtomTraced
     t: SelectorHashType
 
 # Forward declarations
@@ -93,40 +89,36 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
 proc newCSSRuleMap*(quirks: bool): CSSRuleMap =
   CSSRuleMap(quirks: quirks)
 
-iterator getAll*(map: RuleTable; name: CAtom): CSSRuleDef =
+iterator getAll*(map: RuleTable; name: CAtomTraced): lent CSSRuleDef =
   if map.tab.len > 0:
     let mask = map.tab.len - 1
     var i = name.hash() and mask
     while true:
-      let it = map.tab[i]
+      let it = unsafeAddr map.tab[i] # avoid copy, it's slow
       if it.value == nil:
         break
       if it.name == name:
         yield it.value
       i = (i + 1) and mask
 
-proc `=destroy`(list: var LayerList) =
-  freeAtoms(list.s)
-  list.s.reset()
-
-proc put0(map: var RuleTable; name: CAtom; def: CSSRuleDef): bool =
+proc put0(map: var RuleTable; name: sink CAtomTraced; def: CSSRuleDef): bool =
   let mask = map.tab.len - 1
   var home = name.hash() and mask
   var i = home
   var rtitem = RuleTableItem(name: name, value: def)
   while true:
-    let it = map.tab[i]
+    let it = addr map.tab[i]
     if it.value == nil:
       map.tab[i] = rtitem
       return true
-    if it == rtitem:
+    if it[] == rtitem:
       break # already added (for tags)
     if tabSwap(home, it.name.hash(), i, mask): # displace
       swap(map.tab[i], rtitem)
     i = (i + 1) and mask
   false
 
-proc add(map: var RuleTable; name: CAtom; def: CSSRuleDef) =
+proc add(map: var RuleTable; name: sink CAtomTraced; def: CSSRuleDef) =
   for it in map.tab.prepareTableAdd(map.load, init = 16):
     if it.value != nil:
       discard map.put0(it.name, it.value)
@@ -147,17 +139,16 @@ proc getSelectorIds(hashes: var SelectorHashes; cxsel: ComplexSelector) =
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
   case sel.t
   of stType:
-    let atom = sel.atom.view()
-    hashes.tags.add(atom)
+    hashes.tags.add(sel.atom)
     return true
   of stClass:
-    hashes.class = sel.atom.view()
+    hashes.class = sel.atom
     return true
   of stId:
-    hashes.id = sel.atom.view()
+    hashes.id = sel.atom
     return true
   of stAttr:
-    hashes.attr = sel.atom.view()
+    hashes.attr = sel.atom
     return true
   of stIs, stWhere:
     # Hash whatever the selectors have in common:
@@ -195,11 +186,11 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
         cancelT = true
       inc i
     if cancelId:
-      hashes.id = CAtomNull
+      hashes.id = CAtomNullTraced
     if cancelClass:
-      hashes.class = CAtomNull
+      hashes.class = CAtomNullTraced
     if cancelAttr:
-      hashes.attr = CAtomNull
+      hashes.attr = CAtomNullTraced
     if cancelT:
       hashes.t = shtGeneral
     return hashes.tags.len > 0 or hashes.id != CAtomNull or
@@ -211,9 +202,9 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       hashes.t = shtRoot
       return true
     of pcLink, pcVisited:
-      hashes.tags.add(ttA.toAtom())
-      hashes.tags.add(ttArea.toAtom())
-      hashes.attr = satHref.toAtom()
+      hashes.tags.add(ttA.toAtomTrace())
+      hashes.tags.add(ttArea.toAtomTrace())
+      hashes.attr = satHref.view()
       return true
     of pcFirstChild:
       if hashes.t == shtGeneral:
@@ -255,7 +246,7 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
   inc map.sheetId
   # We don't have to dedupe, it won't make linear search much faster and
   # layer switches happen rarely enough anyway.
-  map.layers.s.add(sheet.s.layers.s)
+  map.layers.add(sheet.s.layers)
   var def = sheet.s.defsHead
   var prevLayer = CAtomNull
   var layerId = 0u16
@@ -269,7 +260,7 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
           layerId = 20000 + map.anonLayers # ought to be enough for anybody
           inc map.anonLayers
         else:
-          layerId = uint16(map.layers.s.find(layer)) + 1
+          layerId = uint16(map.layers.find(layer)) + 1
         prevLayer = layer
       def.layerId = layerId
     map.add(def)
@@ -297,7 +288,7 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule;
       sels: move(rule.sels),
       idx: sheet.s.len,
       origin: sheet.origin,
-      layer: layer.dupTrace()
+      layer: layer
     )
     for decl in rule.decls:
       let f = decl.f
@@ -313,7 +304,7 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule;
           sels: ruleDef.sels,
           idx: sheet.s.len,
           origin: sheet.origin,
-          layer: layer.dupTrace()
+          layer: layer
         )
         sheet.addRule(decl.r, layer)
       of cdtProperty:
@@ -383,7 +374,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
       let tok = ctx.consume()
       let urls = ?ctx.parseURL(tok)
       let url = ?parseURL(urls, base)
-      var layer = layer.dupTrace()
+      var layer = layer
       ?ctx.parseImportLayer(sheet, layer)
       #TODO media queries
       # Warning: this is a tracking vector minefield.  If you implement
@@ -403,31 +394,28 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
     if atrule.hasBlock:
       let name = if ctx.skipBlanksCheckHas().isOk:
         var anon: bool
-        var name = layer.dupTrace()
+        var name = layer
         ?ctx.consumeLayerName(name, anon)
         ?ctx.skipBlanksCheckDone()
         if anon:
-          sheet.s.layers.s.add(name.dup()) # note: we intentionally don't dedupe
+          sheet.s.layers.add(name) # note: we intentionally don't dedupe
         move(name)
       else:
         sheet.nextAnonLayer()
       var ctx = initCSSParser(atrule.oblock)
       sheet.addRules(ctx, topLevel = false, base = URL(nil), name)
     else:
-      var names: seq[CAtom] = @[]
+      var names: seq[CAtomTraced] = @[]
       while ctx.skipBlanksCheckHas().isOk:
         var anon: bool
-        var name = layer.dupTrace()
-        if ctx.consumeLayerName(name, anon).isErr:
-          freeAtoms(names)
-          return err()
+        var name = layer
+        ?ctx.consumeLayerName(name, anon)
         if ctx.skipBlanksCheckHas().isErr:
           break
         if ctx.consume().t != cttComma:
-          freeAtoms(names)
           return err()
-        names.add(name.dup())
-      sheet.s.layers.s.add(names)
+        names.add(name)
+      sheet.s.layers.add(names)
   ok()
 
 proc parseStylesheet*(iq: string; base: URL; settings: ptr EnvironmentSettings;
@@ -436,7 +424,7 @@ proc parseStylesheet*(iq: string; base: URL; settings: ptr EnvironmentSettings;
   let sheet = CSSStylesheet(
     settings: settings,
     origin: origin,
-    baseLayer: layer.dupTrace(),
+    baseLayer: layer,
     applies: true
   )
   sheet.addRules(ctx, topLevel = true, base, layer)

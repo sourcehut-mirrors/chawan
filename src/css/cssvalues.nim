@@ -419,7 +419,7 @@ type
       global*: CSSGlobalType
 
   CSSVariable* = ref object
-    name*: CAtom
+    name*: CAtomTraced
     items*: seq[CSSVarItem]
 
   CSSCalcSumType = enum

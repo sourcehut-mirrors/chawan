@@ -43,7 +43,7 @@ type
     timeStamp: float64
     target*: EventTarget
     currentTarget*: EventTarget
-    ctype*: CAtom
+    ctype*: CAtomTraced
     eventPhase: uint16
     flags: set[EventFlag]
 
@@ -140,7 +140,7 @@ type
       # * an object (whose handleEvent property will be invoked)
       # * a function
       callback: JSValue
-      ctype: CAtom
+      ctype: CAtomTraced
       capture: bool
       once: bool
       internal: bool
@@ -149,7 +149,7 @@ type
     of eltMutationObserver:
       observer*: MutationObserver
       flags*: set[ObservedItemFlag]
-      attributeFilter*: seq[CAtom]
+      attributeFilter*: seq[CAtomTraced]
     # order is: eltEventListener nodes -> eltMutationObserver nodes
     next: EventListener
 
@@ -238,7 +238,7 @@ proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
 proc newEvent*(ctype: StaticAtom; target: EventTarget;
     bubbles, cancelable: bool): Event =
   let event = jsNew EventObj(
-    ctype: ctype.toAtom(),
+    ctype: ctype.view(),
     target: target,
     currentTarget: target,
   )
@@ -268,7 +268,7 @@ jsClassPublicDef(Event):
 
   proc newEvent(ctype: CAtomTraced; eventInitDict = EventInit()): Event {.
       jsctor.} =
-    let event = jsNew EventObj(ctype: ctype.dup())
+    let event = jsNew EventObj(ctype: ctype)
     if event != nil:
       event.innerEventCreationSteps(eventInitDict)
     return event
@@ -284,7 +284,7 @@ jsClassPublicDef(Event):
     this.flags.incl(efInitialized)
     this.flags.excl(efTrusted)
     this.target = EventTarget(nil)
-    this.ctype = ctype.dup()
+    this.ctype = ctype
     this.flags.toggleIf(efBubbles, bubbles)
     this.flags.toggleIf(efCancelable, cancelable)
 
@@ -334,7 +334,7 @@ jsClassDef(CustomEvent):
       eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent
       {.jsctor.} =
     let event = jsNew CustomEventObj(
-      ctype: ctype.dup(),
+      ctype: ctype,
       detail: JS_DupValue(ctx, eventInitDict.detail)
     )
     if event != nil:
@@ -350,7 +350,7 @@ jsClassDef(CustomEvent):
       this.asEvent.initialize(ctype, bubbles, cancelable)
 
 # MessageEvent
-proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
+proc newMessageEvent*(ctx: JSContext; ctype: CAtomTraced;
     eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
   let event = jsNew MessageEventObj(
     ctype: ctype,
@@ -387,7 +387,7 @@ jsClassDef(SubmitEvent):
   proc newSubmitEvent*(ctype: CAtomTraced; eventInit = SubmitEventInit()):
       SubmitEvent {.jsctor.} =
     let event = jsNew SubmitEventObj(
-      ctype: ctype.dup(),
+      ctype: ctype,
       submitter: EventTarget(eventInit.submitter)
     )
     if event != nil:
@@ -420,7 +420,7 @@ jsClassDef(UIEvent):
   proc newUIEvent*(ctype: CAtomTraced; eventInit = UIEventInit()): UIEvent
       {.jsctor.} =
     let event = jsNew UIEventObj(
-      ctype: ctype.dup(),
+      ctype: ctype,
       view: EventTarget(eventInit.view),
       detail: eventInit.detail
     )
@@ -431,7 +431,7 @@ jsClassDef(UIEvent):
   proc initUIEvent(this: UIEvent; ctype: CAtomTraced; bubbles = false;
       cancelable = false; view = EventTargetWindowNull(nil); detail = 0i32)
       {.jsfunc.} =
-    this.ctype = ctype.dup()
+    this.ctype = ctype
     this.flags.toggleIf(efBubbles, bubbles)
     this.flags.toggleIf(efCancelable, cancelable)
     this.view = EventTarget(view)
@@ -472,7 +472,7 @@ jsClassDef(MouseEvent):
   proc newMouseEvent*(ctype: CAtomTraced; eventInit = MouseEventInit()):
       MouseEvent {.jsctor.} =
     let event = jsNew MouseEventObj(
-      ctype: ctype.dup(),
+      ctype: ctype,
       view: EventTarget(eventInit.view),
       screenX: eventInit.screenX,
       screenY: eventInit.screenY,
@@ -506,7 +506,7 @@ jsClassDef(InputEvent):
   proc newInputEvent*(ctype: CAtomTraced; eventInit = InputEventInit()):
       InputEvent {.jsctor.} =
     let event = jsNew InputEventObj(
-      ctype: ctype.dup(),
+      ctype: ctype,
       view: EventTarget(eventInit.view),
       data: eventInit.data,
       isComposing: eventInit.isComposing,
@@ -560,8 +560,8 @@ proc queueRecord*(observer: MutationObserver; target: EventTarget;
   let record = jsNew MutationRecordObj(
     t: t,
     target: target,
-    attributeName: name.dupTrace(),
-    attributeNamespace: namespace.dupTrace(),
+    attributeName: name,
+    attributeNamespace: namespace,
     oldValue: oldValue,
     addedNodes: addedNodes,
     removedNodes: removedNodes,
@@ -592,7 +592,7 @@ jsClassDef(MutationObserver):
     if not JS_IsUndefined(jsInit):
       ?ctx.fromJS(jsInit, init)
     var flags: set[ObservedItemFlag]
-    var attributeFilter: seq[CAtom]
+    var attributeFilter: seq[CAtomTraced]
     if not JS_IsUndefined(init.attributeFilter):
       flags.incl(oifAttributeFilter)
     if oifAttributeFilter in flags:
@@ -600,7 +600,6 @@ jsClassDef(MutationObserver):
     if (oifAttributeFilter in flags or init.attributeOldValue == obTrue) and
         init.attributes == obFalse or
         init.characterDataOldValue == obTrue and init.characterData == obFalse:
-      freeAtoms(attributeFilter)
       return JS_ThrowTypeError(ctx, "incompatible MutationObserver flags")
     if oifAttributeFilter in flags or init.attributeOldValue != obNone or
         init.attributes == obTrue:
@@ -622,7 +621,6 @@ jsClassDef(MutationObserver):
         if el.observer == this:
           #TODO remove transient registered observers
           el.flags = flags
-          freeAtoms(el.attributeFilter)
           el.attributeFilter = move(attributeFilter)
           break add
       let el = EventListener(
@@ -739,7 +737,7 @@ proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtomTraced;
     # dedup
     let listener = EventListener(
       t: eltEventListener,
-      ctype: ctype.dup(),
+      ctype: ctype,
       capture: capture,
       once: once,
       internal: internal,
@@ -937,7 +935,6 @@ jsClassPublicDef(EventTarget):
         let i = el.observer.nodes.find(cast[ptr EventTargetObj](this))
         assert i >= 0
         el.observer.nodes.del(i)
-        freeAtoms(el.attributeFilter)
 
   proc mark(rt: JSRuntime; this: EventTarget; markFunc: JS_MarkFunc)
       {.jsmark.} =

@@ -864,7 +864,7 @@ jsClassDef(Window):
     ?ctx.fromJSFree(value, s)
     let data = JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
       "<postMessage>".toCStringConst)
-    let event = ctx.newMessageEvent(satMessage.toAtom(),
+    let event = ctx.newMessageEvent(satMessage.view(),
       MessageEventInit(data: data))
     JS_FreeValue(ctx, data)
     if event != nil:

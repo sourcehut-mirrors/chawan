@@ -8,7 +8,7 @@ import tags
 
 # Heavily inspired by html5ever's TreeSink design.
 type
-  HTML5ParserOpts*[Handle, Atom] = object
+  HTML5ParserOpts*[Handle] = object
     isIframeSrcdoc*: bool ## Is the document an iframe srcdoc?
     scripting*: bool ## Is scripting enabled for this document?
       ## Note: in the spec, this has four values, but Chame distills these
@@ -2153,7 +2153,7 @@ proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   return parser.processInForeign()
 
 proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
-    opts: HTML5ParserOpts[Handle, Atom]): HTML5Parser[Handle, Atom] =
+    opts: HTML5ParserOpts[Handle]): HTML5Parser[Handle, Atom] =
   ## Create and initialize a new HTML5Parser object from dombuilder `dombuilder`
   ## and parser options `opts`.
   ##

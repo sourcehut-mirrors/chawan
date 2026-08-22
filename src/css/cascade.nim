@@ -74,11 +74,12 @@ proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
       if quirks:
         for it in ancestor.classList:
           found = found or it.equalsIgnoreCase(class)
-          ancestors.classes.incl(it.toLowerAscii())
+          #TODO plug leak
+          ancestors.classes.incl(it.view().toLowerAscii())
       else:
         for it in ancestor.classList:
           found = found or it == class
-          ancestors.classes.incl(it)
+          ancestors.classes.incl(it.view())
       ancestor = ancestor.asNode.parentElement
       if ancestor == nil or found:
         break
@@ -102,7 +103,7 @@ proc calcRule(tosorts: var ToSorts; element: Element;
       seen.incl(sel.pseudo)
 
 proc calcRules(tosorts: var ToSorts; element: Element;
-    depends: var DependencyInfo; rules: RuleTable; name: CAtom) =
+    depends: var DependencyInfo; rules: RuleTable; name: CAtomTraced) =
   for rule in rules.getAll(name):
     tosorts.calcRule(element, depends, rule)
 
@@ -119,12 +120,18 @@ proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
     cache: AncestorCache(last: parentElement, quirks: quirks)
   )
   tosorts.calcRules(element, depends, sheet.tagTable, element.localName)
-  if element.id != satUempty:
-    let id = if quirks: element.id.toLowerAscii() else: element.id
-    tosorts.calcRules(element, depends, sheet.idTable, id)
-  for class in element.classList:
-    let class = if quirks: class.toLowerAscii() else: class
-    tosorts.calcRules(element, depends, sheet.classTable, class)
+  if quirks:
+    if element.id != satUempty:
+      let id = element.id.toLowerAscii()
+      tosorts.calcRules(element, depends, sheet.idTable, id)
+    for class in element.classList:
+      let class = class.toLowerAscii()
+      tosorts.calcRules(element, depends, sheet.classTable, class)
+  else:
+    if element.id != satUempty:
+      tosorts.calcRules(element, depends, sheet.idTable, element.id)
+    for class in element.classList:
+      tosorts.calcRules(element, depends, sheet.classTable, class)
   for attr in element.attrs:
     tosorts.calcRules(element, depends, sheet.attrTable, attr.name)
   if parentElement == nil:

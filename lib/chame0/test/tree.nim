@@ -4,9 +4,7 @@ import std/streams
 
 proc runTest(test: TCTest, factory: MAtomFactory, scripting, print: bool) =
   let ss = newStringStream(test.data)
-  let opts = HTML5ParserOpts[Node, MAtom](
-    scripting: scripting
-  )
+  let opts = HTML5ParserOpts[Node](scripting: scripting)
   let pdoc = if test.fragment.isNone:
     parseHTML(ss, opts, factory)
   else:

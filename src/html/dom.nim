@@ -208,10 +208,10 @@ type
     cefFormAssociated, cefInternals, cefShadow
 
   CustomElementDef = ref object
-    name: CAtom
-    localName: CAtom
+    name: CAtomTraced
+    localName: CAtomTraced
     ctor: JSObjectTraced
-    observedAttrs: seq[CAtom]
+    observedAttrs: seq[CAtomTraced]
     callbacks: CECallbackMap
     flags: set[CustomElementFlag]
     next: CustomElementDef
@@ -291,7 +291,7 @@ type
     invalid: bool
     match: CollectionMatchFun
     snapshot: seq[Node]
-    atoms: seq[CAtom]
+    atoms: seq[CAtomTraced]
 
   NodeIteratorLike = JSRef[NodeIteratorLikeObj]
 
@@ -339,7 +339,7 @@ type
   HTMLAllCollection = JSRef[HTMLAllCollectionObj]
 
   DOMTokenListObj = object
-    toks: seq[CAtom]
+    toks: seq[CAtomTraced]
     element: Element
 
   DOMTokenList = JSRef[DOMTokenListObj]
@@ -497,7 +497,7 @@ type
   DocumentType = JSRef[DocumentTypeObj]
 
   # Note: the `name` field in AttrData is treated as the qualified name.
-  AttrData* = ParsedAttr[CAtom]
+  AttrData* = ParsedAttr[CAtomTraced]
 
   CustomElementState = enum
     cesUndefined = "undefined"
@@ -521,14 +521,14 @@ type
   Element* = JSRef[ElementObj]
 
   ElementObj* {.pure.} = object of ParentNodeObj
-    namespaceURI*: CAtom # 4
-    tagName: CAtom # 8, like DOM tagName but not upper-cased
+    namespaceURI*: CAtomTraced # 4
+    tagName: CAtomTraced # 8, like DOM tagName but not upper-cased
     relayout*: set[PseudoElement] # 9
     flags: set[ElementFlag] # 10
     selfDepends: set[DependencyType] # 11
     custom: CustomElementState # 12
-    localName*: CAtom # 16
-    id*: CAtom # 20
+    localName*: CAtomTraced # 16
+    id*: CAtomTraced # 20
     internalElIndex: uint32 # 24
     internalClassList: DOMTokenList # 32
     attrs*: seq[AttrData] # 40, sorted by int(qualifiedName)
@@ -858,7 +858,6 @@ proc attrl*(element: Element; s: StaticAtom): Opt[int32]
 proc attrul*(element: Element; s: StaticAtom): Opt[uint32]
 proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(element: Element; ctx: JSContext; i: int)
-proc dupAttrs(element: Element): seq[AttrData]
 proc elIndex*(this: Element): uint32
 proc ensureStyle*(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtomTraced): int
@@ -1428,7 +1427,7 @@ iterator sheets(this: SheetElement): CSSStylesheet {.inline.} =
       break
     sheet = sheet.next
 
-iterator classList*(element: Element): CAtom {.inline.} =
+iterator classList*(element: Element): lent CAtomTraced {.inline.} =
   if element.internalClassList != nil:
     for tok in element.internalClassList.toks:
       yield tok
@@ -1667,7 +1666,7 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
     this: this,
     url: url,
     charset: charset,
-    layer: layer.dupTrace(),
+    layer: layer,
     parseEnv: parseEnv,
     i: i,
     finish: finish
@@ -2046,7 +2045,7 @@ proc find(this: CustomElementRegistry; ctx: JSContext; ctor: JSValueConst):
   return nil
 
 proc tryGetStrSeq(ctx: JSContext; ctor: JSValueConst; name: cstring;
-    res: var seq[CAtom]): Opt[void] =
+    res: var seq[CAtomTraced]): Opt[void] =
   let val = JS_GetPropertyStr(ctx, ctor, name)
   if JS_IsException(val):
     return err()
@@ -2075,13 +2074,12 @@ proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced;
     ?ctx.tryGetCallback(proto, t, def.callbacks)
   if not JS_IsNull(def.callbacks[cctAttributeChanged]):
     ?ctx.tryGetStrSeq(ctor, "observedAttributes", def.observedAttrs)
-  var disabled: seq[CAtom]
+  var disabled: seq[CAtomTraced]
   ?ctx.tryGetStrSeq(ctor, "disabledFeatures", disabled)
   if satInternals in disabled:
     def.flags.excl(cefInternals)
   if satShadow in disabled:
     def.flags.excl(cefShadow)
-  freeAtoms(disabled)
   var formAssociated: bool
   discard ?ctx.fromJSGetProp(ctor, "formAssociated", formAssociated)
   if formAssociated:
@@ -2092,8 +2090,8 @@ proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced;
 
 proc newCustomElementDef(name, localName: CAtomTraced): CustomElementDef =
   let def = CustomElementDef(
-    name: name.dup(),
-    localName: localName.dup(),
+    name: name,
+    localName: localName,
     flags: {cefInternals, cefShadow}
   )
   for it in def.callbacks.mitems:
@@ -2119,9 +2117,6 @@ jsClassDef(CustomElementRegistry):
 
   proc finalize(rt: JSRuntime; this: CustomElementRegistry) {.jsfin.} =
     for def in this.defs:
-      freeAtom(def.name)
-      freeAtom(def.localName)
-      freeAtoms(def.observedAttrs)
       rt.freeValues(def.callbacks)
 
   proc define(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced;
@@ -2170,11 +2165,11 @@ jsClassDef(CustomElementRegistry):
     return JS_UNDEFINED
 
   proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSValueConst):
-      CAtom {.jsfunc.} =
+      CAtomTraced {.jsfunc.} =
     let def = this.find(ctx, ctor)
     if def != nil:
       return def.name
-    return CAtomNull
+    return CAtomNullTraced
 
   #TODO whenDefined, initialize
 
@@ -2660,15 +2655,14 @@ proc clone(node: Node; document: Document; deep: bool;
     fallbackRegistry: CustomElementRegistry): Node =
   let copy = if (let element = node as Element; element != nil):
     #TODO is value
-    let x = document.newElement(element.localName.view(),
-      element.namespaceURI.view(), element.tagName.view())
-    x.id = element.id.dup()
+    let x = document.newElement(element.localName, element.namespaceURI,
+      element.tagName)
+    x.id = element.id
     x.setMagic(uint32(element.name.dup()))
     if element.internalClassList != nil:
       x.internalClassList = newDOMTokenList(element, satClass)
-      for it in element.classList:
-        x.internalClassList.toks.add(it.dup())
-    x.attrs = element.dupAttrs()
+      x.internalClassList.toks = element.internalClassList.toks
+    x.attrs = element.attrs
     # Cloning steps
     if (let x = x as HTMLScriptElement; x != nil):
       let element = element as HTMLScriptElement
@@ -2682,12 +2676,7 @@ proc clone(node: Node; document: Document; deep: bool;
       #TODO dirty checkedness flag
     x.asNode
   elif (let attr = node as Attr; attr != nil):
-    let data = AttrData(
-      name: attr.data.name.dup(),
-      namespace: attr.data.namespace.dup(),
-      value: attr.data.value
-    )
-    newAttr(attr.ownerElement.asNode.document, data).asNode
+    newAttr(attr.ownerElement.asNode.document, attr.data).asNode
   elif (let node = node as Text; node != nil):
     if node of CDATASection:
       document.newCDATASection(newRefString(node.data.s)).asNode
@@ -3266,7 +3255,7 @@ proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtomTraced):
     childonly = false
   )
   if this != nil:
-    this.atoms = @[tagName.dup()]
+    this.atoms = @[tagName]
   this
 
 proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
@@ -3279,18 +3268,18 @@ proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
         return false
       if element.asNode.document.mode == qmQuirks:
         for class in this.atoms:
-          if not element.hasClassIgnoreCase(class.view()):
+          if not element.hasClassIgnoreCase(class):
             return false
       else:
         for class in this.atoms:
-          if not element.hasClass(class.view()):
+          if not element.hasClass(class):
             return false
       true,
     childonly = false
   )
   if this != nil:
     for class in classNames.toOpenArray().split(AsciiWhitespace):
-      this.atoms.add(class.toAtom())
+      this.atoms.add(class.toAtomTrace())
   this
 
 proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
@@ -3496,7 +3485,7 @@ proc newHTMLCollectionOf(root: Node; tags: openArray[TagType];
   let this = newHTMLCollection(root, isHTMLElementOf, childonly)
   if this != nil:
     for tag in tags:
-      this.atoms.add(tag.toAtom())
+      this.atoms.add(tag.toAtomTrace())
   this
 
 proc newNodeList(root: Node; match: CollectionMatchFun;
@@ -3527,9 +3516,6 @@ jsClassDef(CollectionLike): # fake class
 
 jsClassDef(Collection): # fake class
   jsextends CollectionLikeDef
-
-  proc finalize(rt: JSRuntime; this: Collection) {.jsfin.} =
-    freeAtoms(this.atoms)
 
   proc mark(rt: JSRuntime; this: Collection; markFunc: JS_MarkFunc)
       {.jsmark.} =
@@ -3877,7 +3863,7 @@ proc getElementsById*(document: Document; id: CAtomTraced): JSRootRef =
             childonly = false
           )
           if collection != nil:
-            collection.atoms = @[id.dup()]
+            collection.atoms = @[id]
           return collection.asRootRef
         return cast[Element](it).asRootRef
       i = (i + 1) and mask
@@ -4487,7 +4473,7 @@ jsClassPublicDef(Document):
       childonly = false
     )
     if this != nil:
-      this.atoms = @[name.dup()]
+      this.atoms = @[name]
     this
 
   proc getElementsByTagName(document: Document; tagName: CAtomTraced):
@@ -4525,10 +4511,9 @@ jsClassPublicDef(Document):
     ctx.toJS(document.newElement(localName, namespace))
 
   proc createElementNS(ctx: JSContext; document: Document;
-      namespace: CAtomTraced; qualifiedName: CAtomTraced): Opt[Element] {.
-      jsfunc.} =
-    var namespace = namespace.dupTrace()
-    var localName = qualifiedName.dupTrace()
+      namespace, qualifiedName: CAtomTraced): Opt[Element] {.jsfunc.} =
+    var namespace = namespace
+    var localName = qualifiedName
     ?ctx.validateAndExtract(namespace, localName, nvElement)
     #TODO custom elements (is)
     ok(document.newElement(localName, namespace, qualifiedName))
@@ -5026,7 +5011,7 @@ proc update(tokenList: DOMTokenList; ctx: JSContext) =
       tokenList.toks.len > 0:
     tokenList.element.setAttr(ctx, tokenList.localName, $tokenList)
 
-proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
+proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtomTraced]): Opt[void] =
   for tok in toks:
     if tok == satUempty:
       JS_ThrowDOMException(ctx, "SyntaxError", "got an empty string")
@@ -5047,13 +5032,10 @@ proc reflectTokens(element: Element; list: var DOMTokenList; name: StaticAtom;
       if list == nil:
         list = element.newDOMTokenList(name)
       if a notin list:
-        list.toks.add(a.dup())
+        list.toks.add(a)
 
 jsClassDef(DOMTokenList):
   classDef.iterable = jitValue
-
-  proc finalize(rt: JSRuntime; tokenList: DOMTokenList) {.jsfin.} =
-    freeAtoms(tokenList.toks)
 
   proc length(tokenList: DOMTokenList): int {.jsfget.} =
     return tokenList.toks.len
@@ -5080,33 +5062,28 @@ jsClassDef(DOMTokenList):
 
   proc add(ctx: JSContext; tokenList: DOMTokenList;
       argv: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
-    var toks: seq[CAtom]
+    var toks: seq[CAtomTraced]
     ?ctx.fromJS(argv, toks)
-    if ctx.validateDOMTokens(toks).isErr:
-      freeAtoms(toks)
-      return err()
+    ?ctx.validateDOMTokens(toks)
     tokenList.toks.add(toks)
     tokenList.update(ctx)
     ok()
 
   proc remove(ctx: JSContext; tokenList: DOMTokenList;
       argv: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
-    var toks: seq[CAtom]
+    var toks: seq[CAtomTraced]
     ?ctx.fromJS(argv, toks)
-    if ctx.validateDOMTokens(toks).isErr:
-      freeAtoms(toks)
-      return err()
+    ?ctx.validateDOMTokens(toks)
     for tok in toks:
       let i = tokenList.toks.find(tok)
       if i >= 0:
         tokenList.toks.delete(i)
     tokenList.update(ctx)
-    freeAtoms(toks)
     ok()
 
   proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: CAtomTraced;
       force: JSValueConst = JS_UNDEFINED): Opt[bool] {.jsfunc.} =
-    ?ctx.validateDOMTokens(token.view())
+    ?ctx.validateDOMTokens(token)
     let forceBool = JS_ToBool(ctx, force)
     if forceBool < 0:
       return err()
@@ -5118,19 +5095,18 @@ jsClassDef(DOMTokenList):
         return ok(false)
       return ok(true)
     if JS_IsUndefined(force) or forceBool == 1:
-      tokenList.toks.add(token.dup())
+      tokenList.toks.add(token)
       tokenList.update(ctx)
       return ok(true)
     ok(false)
 
   proc replace(ctx: JSContext; tokenList: DOMTokenList;
       token, newToken: CAtomTraced): Opt[bool] {.jsfunc.} =
-    ?ctx.validateDOMTokens(token.view(), newToken.view())
+    ?ctx.validateDOMTokens(token, newToken)
     let i = tokenList.toks.find(token.view())
     if i == -1:
       return ok(false)
-    freeAtom(tokenList.toks[i])
-    tokenList.toks[i] = newToken.dup()
+    tokenList.toks[i] = newToken
     tokenList.update(ctx)
     return ok(true)
 
@@ -5269,7 +5245,7 @@ jsClassDef(HTMLCollection):
       {.jspropnames.} =
     let L = this.length
     var list = newJSPropertyEnumList(ctx, L)
-    var ids: seq[CAtom] = @[]
+    var ids: seq[CAtomTraced] = @[]
     for u in 0 ..< L:
       list.add(u)
       let element = this.item(u)
@@ -5280,7 +5256,7 @@ jsClassDef(HTMLCollection):
       if element.namespaceURI == satNamespaceHTML and
           element.name != CAtomNull and element.name != satUempty and
           element.name notin ids:
-        ids.add(element.name)
+        ids.add(element.name.dupTrace())
     for id in ids:
       list.add($id)
     return list
@@ -5304,7 +5280,7 @@ jsClassDef(HTMLFormControlsCollection):
       match: isRadioNode,
       root: this.root,
       invalid: true,
-      atoms: @[name.dup()],
+      atoms: @[name],
       parent: this
     )
     if nodes == nil:
@@ -5476,10 +5452,10 @@ proc data(attr: Attr): lent AttrData =
 jsClassDef(Attr):
   jsextends NodeDef
 
-  proc name(attr: Attr): CAtom {.jsfget.} =
+  proc name(attr: Attr): lent CAtomTraced {.jsfget.} =
     return attr.data.name
 
-  proc namespaceURI(attr: Attr): CAtom {.jsfget.} =
+  proc namespaceURI(attr: Attr): lent CAtomTraced {.jsfget.} =
     return attr.data.namespace
 
   proc prefix(ctx: JSContext; attr: Attr): JSValue {.jsfget.} =
@@ -5503,7 +5479,7 @@ jsClassDef(Attr):
 
   proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
       jsfset: "value".} =
-    attr.ownerElement.setAttr(ctx, attr.data.name.view(), ds)
+    attr.ownerElement.setAttr(ctx, attr.data.name, ds)
 
   proc jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
     if attr.ownerElement of AttrDummyElement:
@@ -5581,23 +5557,6 @@ jsClassDef(NamedNodeMap):
     return list
 
 # Element
-proc freeAttr(data: AttrData) =
-  freeAtom(data.name)
-  freeAtom(data.namespace)
-
-proc dupAttrs(element: Element): seq[AttrData] =
-  result = newSeqOfCap[AttrData](element.attrs.len)
-  for attr in element.attrs:
-    result.add(AttrData(
-      name: attr.name.dup(),
-      namespace: attr.namespace.dup(),
-      value: attr.value
-    ))
-
-proc deleteAttr(element: Element; i: int) =
-  freeAttr(element.attrs[i])
-  element.attrs.delete(i)
-
 proc hash(element: ptr ElementObj): Hash =
   return hash(cast[pointer](element))
 
@@ -5647,10 +5606,10 @@ proc normalizeAttrQName(element: Element; qualifiedName: CAtomTraced):
   if element.namespaceURI == satNamespaceHTML and
       not element.asNode.document.isxml:
     return qualifiedName.toLowerAscii()
-  return qualifiedName.dupTrace()
+  return qualifiedName
 
 proc cmpAttrName(a: AttrData; b: CAtomTraced): int =
-  return cmp(uint32(a.name), uint32(b))
+  return cmp(a.name, b)
 
 proc findAttr(element: Element; qualifiedName: CAtomTraced): int =
   let qualifiedName = element.normalizeAttrQName(qualifiedName)
@@ -6015,14 +5974,12 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
   case name
   of satId:
     let root = element.asNode.rootNode as Document
-    if element.id != satUempty:
-      freeAtom(element.id)
-      if root != nil:
-        root.removeElementId(element)
+    if element.id != satUempty and root != nil:
+      root.removeElementId(element)
     if has:
-      element.id = value.toAtom()
+      element.id = value.toAtomTrace()
     else:
-      element.id = satUempty.toAtom()
+      element.id = satUempty.view()
     if element.id != satUempty and root != nil:
       root.addElementId(element)
   of satName:
@@ -6061,7 +6018,7 @@ proc reflectAttrDel(element: Element; name: CAtomTraced) =
   element.reflectAttr(name, false, "")
 
 proc reflectAttr(element: Element; attr: AttrData) =
-  element.reflectAttr(attr.name.view(), true, attr.value)
+  element.reflectAttr(attr.name, true, attr.value)
 
 proc elIndex*(this: Element): uint32 =
   if this.parentNode == nil:
@@ -6107,7 +6064,7 @@ proc isDisabled*(this: Element): bool =
 
 proc newElement*(document: Document; localName: CAtomTraced;
     namespace = satNamespaceHTML): Element =
-  return document.newElement(localName, namespace.view(), localName.dupTrace())
+  return document.newElement(localName, namespace.view(), localName)
 
 proc isRenderBlocking(element: Element): bool =
   if element.attr(satBlocking).containsToken("render"):
@@ -6253,7 +6210,7 @@ proc postConnectionSteps(element: Element; ctx: JSContext) =
     script.prepare(ctx)
 
 proc delAttr(element: Element; ctx: JSContext; i: int) =
-  let name = element.attrs[i].name.dupTrace()
+  let name = element.attrs[i].name
   element.asNode.queueMutationRecord(ctx, mrtAttributes, name, CAtomNullTraced,
     nil, true, element.attrs[i].value, [], [], Node(nil), Node(nil))
   let map = ctx.cachedAttributes(element)
@@ -6270,15 +6227,11 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
       #TODO OOM
       attr.ownerElement = (jsNew AttrDummyElementObj(
         internalNext: attr.ownerElement.asNode.document.asNode,
-        attrs: @[AttrData(
-          name: attr.data.name.dup(),
-          namespace: attr.data.namespace.dup(),
-          value: attr.data.value
-        )]
+        attrs: @[attr.data]
       )).asElement
       attr.dataIdx = 0
       map.attrlist.del(j) # ordering does not matter
-  element.deleteAttr(i) # ordering matters
+  element.attrs.delete(i) # ordering matters
   element.reflectAttrDel(name)
 
 proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
@@ -6293,11 +6246,7 @@ proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
   else:
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
       CAtomNullTraced, nil, false, "", [], [], Node(nil), Node(nil))
-    element.attrs.insert(AttrData(
-      namespace: CAtomNull,
-      name: name.dup(),
-      value: value
-    ), i)
+    element.attrs.insert(AttrData(name: name, value: value), i)
   element.reflectAttr(element.attrs[i])
 
 proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
@@ -6316,11 +6265,7 @@ proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
   else:
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
       CAtomNullTraced, nil, false, "", [], [], Node(nil), Node(nil))
-    element.attrs.insert(AttrData(
-      namespace: CAtomNull,
-      name: name.dup(),
-      value: $value
-    ), i)
+    element.attrs.insert(AttrData(name: name, value: $value), i)
   element.reflectAttr(element.attrs[i])
 
 proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
@@ -6334,7 +6279,7 @@ proc sinkAttrs*(element: Element; attrs: sink seq[AttrData]) =
 
 proc addAttrsIfMissing*(element: Element; attrs: seq[AttrData]) =
   for attr in attrs:
-    var i = element.attrs.upperBound(attr.name.view(), cmpAttrName)
+    var i = element.attrs.upperBound(attr.name, cmpAttrName)
     if i <= 0 or element.attrs[i - 1].name != attr.name:
       element.attrs.insert(attr, i)
       element.reflectAttr(element.attrs[i])
@@ -6408,13 +6353,7 @@ jsClassPublicDef(Element):
   jsget Element, id
 
   proc finalize(rt: JSRuntime; element: Element) {.jsfin.} =
-    freeAtom(element.namespaceURI)
-    freeAtom(element.localName)
-    freeAtom(element.tagName)
-    freeAtom(element.id)
     freeAtom(element.name)
-    for it in element.attrs:
-      freeAttr(it)
     unlinkElementBoxImpl(element)
 
   proc getClassList(this: Element): DOMTokenList {.jsfget: "classList".} =
@@ -6685,10 +6624,11 @@ jsClassPublicDef(Element):
     element.setAttr(ctx, qualifiedName, value)
     ok()
 
-  proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtomTraced;
-      qualifiedName: CAtomTraced; value: DOMString): Opt[void] {.jsfunc.} =
-    var namespace = namespace.dupTrace()
-    var localName = qualifiedName.dupTrace()
+  proc setAttributeNS(ctx: JSContext; element: Element;
+      namespace, qualifiedName: CAtomTraced; value: DOMString): Opt[void]
+      {.jsfunc.} =
+    var namespace = namespace
+    var localName = qualifiedName
     ?ctx.validateAndExtract(namespace, localName, nvAttribute)
     var i = element.findAttrNS(namespace, localName)
     if i >= 0:
@@ -6701,8 +6641,8 @@ jsClassPublicDef(Element):
         namespace, nil, false, "", [], [], Node(nil), Node(nil))
       i = element.attrs.upperBound(qualifiedName, cmpAttrName)
       element.attrs.insert(AttrData(
-        namespace: namespace.dup(),
-        name: qualifiedName.dup(),
+        namespace: namespace,
+        name: qualifiedName,
         value: $value
       ), i)
     element.reflectAttr(element.attrs[i])
@@ -6782,7 +6722,7 @@ jsClassPublicDef(Element):
       ttH1, ttH2, ttH3, ttH4, ttH5, ttH6, ttHeader, ttMain,
       ttNav, ttP, ttSection, ttSpan
     }
-    let validCustom = this.localName.view().isValidCustomElementName()
+    let validCustom = this.localName.isValidCustomElementName()
     if not validCustom and this.tagType notin AllowedTags:
       JS_ThrowDOMException(ctx, "NotSupportedError", "invalid tag name")
       return err()
@@ -8911,10 +8851,10 @@ proc newElement(document: Document;
       (jsNew SVGElementObj()).asElement
   else:
     jsNew ElementObj()
-  element.id = satUempty.toAtom()
-  element.localName = localName.dup()
-  element.namespaceURI = namespaceURI.dup()
-  element.tagName = tagName.dup()
+  element.id = satUempty.view()
+  element.localName = localName
+  element.namespaceURI = namespaceURI
+  element.tagName = tagName
   element.internalNext = document.asNode
   element.custom = if localName.isValidCustomElementName():
     cesUndefined
