@@ -216,6 +216,13 @@ const MarginEndMap = [
   dtVertical: cptMarginBottom
 ]
 
+proc outerIntrWidth(box: BlockBox): LUnit =
+  #TODO borders...
+  var w = box.state.intr.w
+  w += box.computed{"margin-left"}.px(stretch(0'lu))
+  w += box.computed{"margin-right"}.px(stretch(0'lu))
+  return w
+
 proc spx(l: CSSLength; p: SizeConstraint; computed: CSSValues; padding: LUnit):
     LUnit =
   let u = l.px(p)
@@ -778,7 +785,7 @@ proc resolveBlockSizes(lctx: LayoutContext; space: Space; box: BlockBox):
 # using the temporary yshift variable instead of updating bfcOffset itself.)
 type
   LineInitState = enum
-    lisUninited, lisNoExclusions, lisExclusions
+    lisUninited, lisInited
 
   LineBoxState = object
     atomsHead: InlineAtom
@@ -928,48 +935,51 @@ proc clearFloats(offsety: var LUnit; fstate: var FlowState; bfcOffsety: LUnit;
   var dummy: bool
   offsety.clearFloats(fstate, bfcOffsety, clear, byFloat, dummy)
 
-proc findNextFloatOffset(fstate: FlowState; offset: Offset; size: Size;
-    space: Space; float: CSSFloat; outw: var LUnit): Offset =
-  # Algorithm originally from QEmacs.
-  var y = offset.y
-  let leftStart = offset.x
-  let rightStart = offset.x + max(size.w, space.w.u)
-  while true:
-    var left = leftStart
-    var right = rightStart
-    var miny = high(LUnit)
-    let cy2 = y + size.h
-    for ex in fstate.exclusions:
-      let ey2 = ex.offset.y + ex.size.h
-      if cy2 >= ex.offset.y and y < ey2:
-        let ex2 = ex.offset.x + ex.size.w
-        if ex.t == FloatLeft and left < ex2:
-          left = ex2
-        if ex.t == FloatRight and right > ex.offset.x:
-          right = ex.offset.x
-        miny = min(ey2, miny)
-    let w = right - left
-    if w >= size.w or miny == high(LUnit):
-      # Enough space, or no other exclusions found at this y offset.
-      outw = min(w, space.w.u) # do not overflow the container.
-      if float == FloatLeft:
-        return offset(x = left, y = y)
-      else: # FloatRight
-        return offset(x = right - size.w, y = y)
-    # Move y to the bottom exclusion edge at the lowest y (where the exclusion
-    # still intersects with the previous y).
-    y = miny
-  assert false
-  Offset0
+proc excludeFloats(fstate: FlowState; offset: Offset; nexty: var LUnit): Span =
+  # Returns available space on line, starting from BFC offset.  Assumes
+  # there is infinite space to the right, so you must clamp the return
+  # value.
+  # nexty starts out as the end y offset; on return, it is set to the next
+  # y position to try if this span is inadequate, or to LUnit.high if no
+  # floats were found.
+  let y = offset.y
+  var left = offset.x
+  var right = LUnit.high
+  var miny = LUnit.high
+  let cy2 = nexty
+  for ex in fstate.exclusions:
+    let ey2 = ex.offset.y + ex.size.h
+    if ex.offset.y <= cy2 and y < ey2:
+      if ex.t == FloatLeft:
+        left = max(ex.offset.x + ex.size.w, left)
+      else:
+        right = min(ex.offset.x, right)
+      miny = min(miny, ey2)
+  nexty = miny
+  return Span(start: left, send: right)
 
 proc findNextFloatOffset(fstate: FlowState; offset: Offset; size: Size;
     space: Space; float: CSSFloat): Offset =
-  var dummy: LUnit
-  return fstate.findNextFloatOffset(offset, size, space, float, dummy)
-
-proc findNextBlockOffset(fstate: FlowState; offset: Offset; size: Size;
-    outw: var LUnit): Offset =
-  return fstate.findNextFloatOffset(offset, size, fstate.space, FloatLeft, outw)
+  # Algorithm originally from QEmacs.
+  var offset = offset
+  let rightStart = offset.x + max(size.w, space.w.u)
+  while true:
+    var nexty = offset.y + size.h
+    let span = fstate.excludeFloats(offset, nexty)
+    let start = span.start
+    let send = min(span.send, rightStart)
+    let w = send - start
+    if w >= size.w or nexty == LUnit.high:
+      # Enough space, or no other exclusions found at this y offset.
+      if float == FloatLeft:
+        return offset(x = start, y = offset.y)
+      else: # FloatRight
+        return offset(x = send - size.w, y = offset.y)
+    # Move y to the bottom exclusion edge at the lowest y (where the exclusion
+    # still intersects with the previous y).
+    offset.y = nexty
+  assert false
+  Offset0
 
 proc positionFloat(fstate: var FlowState; child: BlockBox; space: Space;
     outerSize: Size; marginOffset, bfcOffset, offset: Offset) =
@@ -1029,7 +1039,7 @@ type InitLineFlag = enum
   ilfFloat # set the line to inited, but do not flush floats.
   ilfAbsolute # set size, but allow further calls to override the state.
 
-proc initLine(fstate: var FlowState; flag = ilfRegular) =
+proc initLine(fstate: var FlowState; flag: InitLineFlag; nexty: var LUnit) =
   if flag == ilfRegular:
     let poffsety = fstate.offset.y
     fstate.flushMargins(fstate.offset.y)
@@ -1040,27 +1050,21 @@ proc initLine(fstate: var FlowState; flag = ilfRegular) =
   # we want to start from padding-left, but normally exclude padding
   # from space. so we must offset available width with padding-left too
   let paddingLeft = fstate.box.input.padding.left
-  fstate.lbstate.availableWidth = fstate.space.w.u + paddingLeft
-  fstate.lbstate.size.w = paddingLeft
-  fstate.lbstate.init = lisNoExclusions
+  fstate.lbstate.init = lisInited
   #TODO what if maxContent/minContent?
-  if fstate.exclusionsTail != nil:
-    let bfcOffset = fstate.bfcOffset
-    let y = fstate.offset.y + bfcOffset.y
-    var left = bfcOffset.x + fstate.lbstate.size.w
-    var right = bfcOffset.x + fstate.lbstate.availableWidth
-    for ex in fstate.exclusions:
-      if ex.offset.y <= y and y < ex.offset.y + ex.size.h:
-        fstate.lbstate.init = lisExclusions
-        if ex.t == FloatLeft:
-          left = ex.offset.x + ex.size.w
-        else:
-          right = ex.offset.x
-    fstate.lbstate.size.w = max(left - bfcOffset.x, fstate.lbstate.size.w)
-    fstate.lbstate.availableWidth = min(right - bfcOffset.x,
-      fstate.lbstate.availableWidth)
+  let pbfcOffset = fstate.bfcOffset
+  let start = pbfcOffset + offset(x = paddingLeft, y = fstate.offset.y)
+  nexty = start.y
+  let span = fstate.excludeFloats(start, nexty)
+  fstate.lbstate.availableWidth = min(span.send - pbfcOffset.x,
+    fstate.space.w.u + paddingLeft)
+  fstate.lbstate.size.w = span.start - pbfcOffset.x
   if flag == ilfAbsolute:
     fstate.lbstate.init = lisUninited
+
+proc initLine(fstate: var FlowState; flag = ilfRegular) =
+  var dummy: LUnit
+  fstate.initLine(flag, dummy)
 
 # Whitespace between words
 proc computeShift(lbstate: LineBoxState; ibox: InlineBox): int =
@@ -1419,12 +1423,6 @@ proc shouldWrap(fstate: FlowState; w: LUnit): bool =
     return true # always wrap with min-content
   return fstate.lbstate.shouldWrap0(w)
 
-proc shouldWrap2(fstate: FlowState; w: LUnit): bool =
-  assert fstate.lbstate.init != lisUninited
-  if fstate.lbstate.init == lisNoExclusions:
-    return false
-  return fstate.lbstate.shouldWrap0(w)
-
 # Wrap assuming the next atom is "width" wide and associated with "ibox".
 # Returns true if wrapped (i.e. on newline).
 proc prepareSpace(fstate: var FlowState; ibox: InlineBox; width: LUnit): bool =
@@ -1453,15 +1451,22 @@ proc prepareSpace(fstate: var FlowState; ibox: InlineBox; width: LUnit): bool =
   # Line wrapping
   if not ibox.computed.nowrap and fstate.shouldWrap(widthSum):
     fstate.finishLine(ibox, wrap = true)
-    fstate.initLine()
+    var nexty: LUnit
+    fstate.initLine(ilfRegular, nexty)
     wrapped = true
     # Recompute on newline
     shift = fstate.lbstate.computeShift(ibox)
     # For floats: flush lines until we can place the atom.
-    #TODO this is inefficient
-    while fstate.shouldWrap2(width + shift.toLUnit() * fstate.cellSize.w):
-      fstate.finishLine(ibox, wrap = false, force = true)
-      fstate.initLine()
+    while nexty != LUnit.high and
+        fstate.lbstate.shouldWrap0(width + shift.toLUnit() *
+          fstate.cellSize.w):
+      # (grid: 1) quirk: avoid overlapping lines by rounding up
+      let diff = (nexty - fstate.offset.y - fstate.bfcOffset.y)
+      let diffCeil = diff.ceilTo(fstate.cellSize.h.toInt())
+      fstate.intr.h += diffCeil
+      fstate.offset.y += diffCeil
+      fstate.lbstate.init = lisUninited
+      fstate.initLine(ilfRegular, nexty)
       # Recompute on newline
       shift = fstate.lbstate.computeShift(ibox)
   if shift > 0:
@@ -1766,7 +1771,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
     else:
       fstate.lbstate.pendingFloatsHead = f
     fstate.lbstate.pendingFloatsTail = f
-  fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
+  fstate.intr.w = max(fstate.intr.w, child.outerIntrWidth())
 
 proc resolveAutoMarginStart(lctx: LayoutContext; input: LayoutInput;
     parentSpace: LUnit; child: BlockBox; dim: DimensionType): LUnit =
@@ -1818,64 +1823,67 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     # This box establishes a new BFC.
     input.marginResolved = fstate.marginResolved
     fstate.flushMargins(offset.y)
-    lctx.layout(child, offset, input)
-    if fstate.exclusionsTail != nil and fstate.space.w.isDefinite():
-      # From the standard (abridged):
-      #
-      # > The border box of an element that establishes a new BFC must
-      # > not overlap the margin box of any floats in the same BFC. If
-      # > necessary, implementations should clear the said element, but
-      # > may place it adjacent to such floats if there is sufficient
-      # > space. CSS2 does not define when a UA may put said element
-      # > next to the float.
-      #
-      # ...thanks for nothing.  Anyway, others seem to have converged on a
-      # behavior that simply tries to layout the element in each and every
-      # possible place, so we just imitate that (and disregard the obvious
-      # inefficiency this results in).
-      #
-      # Note that this does not apply to absolutely positioned elements,
-      # as those ignore floats.
-      let pbfcOffset = fstate.bfcOffset
-      var bfcOffset = offset(
-        x = pbfcOffset.x + child.state.offset.x,
-        y = pbfcOffset.y + child.state.offset.y
-      )
-      var minSize = child.state.intr
-      minSize.h = max(minSize.h, fstate.cellSize.h)
-      var prevw = fstate.space.w.u
-      while true:
-        var outw: LUnit
-        bfcOffset = fstate.findNextBlockOffset(bfcOffset, minSize, outw)
-        let roffset = offset - pbfcOffset
-        if outw == prevw and roffset == child.state.offset:
-          # we're stuck; stop trying
-          # (also skips relayout if possible)
-          break
-        space = initSpace(w = stretch(outw), h = fstate.space.h)
-        input = lctx.resolveBlockSizes(space, child)
-        lctx.layout(child, bfcOffset - pbfcOffset, input)
-        # does it fit?
-        var left = bfcOffset.x
-        var right = bfcOffset.x + max(fstate.space.w.u, child.state.size.w)
-        var miny = LUnit.high
-        let y = bfcOffset.y
-        let cy2 = y + child.state.size.h
-        for ex in fstate.exclusions:
-          let ey2 = ex.offset.y + ex.size.h
-          if cy2 >= ex.offset.y and y < ey2:
-            let ex2 = ex.offset.x + ex.size.w
-            if ex.t == FloatLeft and left < ex2:
-              left = ex2
-            if ex.t == FloatRight and right > ex.offset.x:
-              right = ex.offset.x
-            miny = min(ey2, miny)
-        let w = right - left
-        if w >= child.state.size.w or miny == LUnit.high:
-          # yes, we are done
-          break
-        # no, try again
-        bfcOffset.y = miny
+    # From the standard (abridged):
+    #
+    # > The border box of an element that establishes a new BFC must
+    # > not overlap the margin box of any floats in the same BFC.
+    # > If necessary, implementations should clear the said element, but
+    # > may place it adjacent to such floats if there is sufficient space.
+    # > CSS2 does not define when a UA may put said element next to the
+    # > float.
+    #
+    # ...thanks for nothing.  So what we do is mostly derived from what
+    # others appear to be doing:
+    #
+    # 1. set y to the intended offset
+    # 2. find the exclusion zone this y implies with height=0
+    # 3. layout in the exclusion zone
+    # 4. if the result *vertically* intersects with a float, try to squash
+    #    the box and relayout until it fits.  if the resulting width is
+    #    a) less than the intrinsic minimum width, in case child is a table
+    #    b) less than zero, in case child isn't a table
+    #    then move y downwards by the height of the shortest intersecting
+    #    float and go to step 2.  otherwise we're done
+    #
+    # A surprising consequence of this is that blocks are allowed to shrink
+    # to under min-content width, which I'm not exactly happy about but
+    # we'll see if it actually causes problems.
+    #
+    # Note that none of this applies to absolutely positioned elements,
+    # as those ignore floats.
+    let pbfcOffset = fstate.bfcOffset
+    var nexty = pbfcOffset.y + offset.y
+    var span = fstate.excludeFloats(pbfcOffset + offset, nexty)
+    let ospace = space
+    while true:
+      let start = span.start - pbfcOffset.x
+      let send = min(span.send - pbfcOffset.x, fstate.space.w.u)
+      if space.w.isDefinite():
+        # subtract the difference between start & offset to count newly
+        # available space without tripping up resolveBlockSizes
+        let diff = start - offset.x
+        space.w.u = min(send - diff, ospace.w.u)
+      input = lctx.resolveBlockSizes(space, child)
+      lctx.layout(child, offset(start, offset.y), input)
+      if not space.w.isDefinite(): # I guess it doesn't matter yet
+        break
+      # does it fit?
+      nexty = pbfcOffset.y + offset.y + child.state.size.h
+      let span2 = fstate.excludeFloats(pbfcOffset + offset, nexty)
+      # the spec says you can make it narrower if it's a block, but not if
+      # it's a table.
+      let intrFits = child.computed{"display"} != DisplayTable or
+        span2.send - span2.start >= child.state.intr.w
+      if span2.start <= span.start and span2.send >= span.send and
+          intrFits:
+        break # yes, we are done
+      # no, try again
+      if intrFits:
+        span = span2 # try to shrink as much as possible
+      else:
+        # no space, box will always collide; advance downwards
+        offset.y = nexty - pbfcOffset.y
+        span = fstate.excludeFloats(pbfcOffset + offset, nexty)
   else:
     offset += input.borderTopLeft(lctx)
     input.bfcOffset = fstate.bfcOffset + offset
@@ -1936,7 +1944,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   fstate.offset.y += outerSize.h
   fstate.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
   fstate.lbstate.whitespaceNum = 0
-  fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
+  fstate.intr.w = max(fstate.intr.w, child.outerIntrWidth())
 
 proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
   if child.computed{"position"} in PositionAbsoluteFixed:
@@ -2014,7 +2022,7 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBox; box: BlockBox) =
     )
     discard fstate.prepareSpace(ibox, atom.size.w)
     fstate.putAtom(atom)
-    fstate.intr.w = max(fstate.intr.w, box.state.intr.w)
+    fstate.intr.w = max(fstate.intr.w, box.outerIntrWidth())
     fstate.lbstate.intrh = max(fstate.lbstate.intrh, atom.size.h)
     fstate.lbstate.charwidth = 0
     fstate.lbstate.whitespaceNum = 0
