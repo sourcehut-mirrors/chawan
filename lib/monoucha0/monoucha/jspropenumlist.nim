@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+#TODO handle OOM
+
 import quickjs
 
 type
@@ -30,19 +32,39 @@ proc grow(this: var JSPropertyEnumList) =
     csize_t(sizeof(JSPropertyEnum)) * csize_t(this.size))
   this.buffer = cast[JSPropertyEnumArray](p)
 
-proc add*(this: var JSPropertyEnumList; val: uint32) =
+proc add(this: var JSPropertyEnumList; atom: JSAtom) =
   let i = this.len
   inc this.len
   if this.size < this.len:
     this.grow()
-  this.buffer[i].atom = JS_NewAtomUInt32(this.ctx, val)
+  this.buffer[i].atom = atom
+
+proc contains(this: JSPropertyEnumList; atom: JSAtom): bool =
+  for i in 0 ..< this.len:
+    if this.buffer[i].atom == atom:
+      return true
+  false
+
+proc incl(this: var JSPropertyEnumList; atom: JSAtom) =
+  if atom notin this:
+    this.add(atom)
+  else:
+    JS_FreeAtom(this.ctx, atom)
+
+proc add*(this: var JSPropertyEnumList; val: uint32) =
+  let atom = JS_NewAtomUint32(this.ctx, val)
+  this.add(atom)
 
 proc add*(this: var JSPropertyEnumList; val: string) =
-  let i = this.len
-  inc this.len
-  if this.size < this.len:
-    this.grow()
-  this.buffer[i].atom = JS_NewAtomLen(this.ctx, val.toCStringConst,
-    csize_t(val.len))
+  let atom = JS_NewAtomLen(this.ctx, val.toCStringConst, csize_t(val.len))
+  this.add(atom)
+
+proc incl*(this: var JSPropertyEnumList; val: uint32) =
+  let atom = JS_NewAtomUint32(this.ctx, val)
+  this.incl(atom)
+
+proc incl*(this: var JSPropertyEnumList; val: string) =
+  let atom = JS_NewAtomLen(this.ctx, val.toCStringConst, csize_t(val.len))
+  this.incl(atom)
 
 {.pop.} # raises

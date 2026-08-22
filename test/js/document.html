@@ -6,6 +6,7 @@
 <img id=toString name=a>
 <img id=img4 name=>
 <form id=myform name=asdf></form>
+<form id=myform name=asdf></div>
 <script src=asserts.js></script>
 <script>
 assertEquals(document.toString, document.getElementById("toString"));
@@ -34,6 +35,7 @@ assertEquals(document.implementation.createDocument.length, 2);
 assertThrows(() => document.implementation.createDocument(null), TypeError);
 document.getElementById("img4").remove();
 document.asdf.remove();
+myform.remove();
 document.img2.remove();
 assertEquals(document.scrollingElement, document.documentElement);
 abc.insertBefore(document.createElement("head"), null);

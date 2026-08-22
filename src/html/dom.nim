@@ -4606,8 +4606,8 @@ jsClassPublicDef(Document):
     for child in document.asParentNode.elementDescendants(Tags):
       if child.name != CAtomNull and child.name != satUempty:
         if child.tagType == ttImg and child.id != satUempty:
-          list.add($child.id)
-        list.add($child.name)
+          list.incl($child.id)
+        list.incl($child.name)
     return list
 
   proc getter(ctx: JSContext; document: Document; atom: JSAtom): JSValue
@@ -5172,7 +5172,7 @@ jsClassDef(DOMStringMap):
     for attr in map.target.attrs:
       let k = $attr.name
       if k.startsWith("data-") and AsciiUpperAlpha notin k:
-        list.add(k["data-".len .. ^1].kebabToCamelCase())
+        list.incl(k["data-".len .. ^1].kebabToCamelCase())
     return list
 
 # NodeList
@@ -5245,20 +5245,17 @@ jsClassDef(HTMLCollection):
       {.jspropnames.} =
     let L = this.length
     var list = newJSPropertyEnumList(ctx, L)
-    var ids: seq[CAtomTraced] = @[]
     for u in 0 ..< L:
       list.add(u)
+    for u in 0 ..< L:
       let element = this.item(u)
       if element == nil:
         continue
-      if element.id != satUempty and element.id notin ids:
-        ids.add(element.id)
+      if element.id != satUempty:
+        list.incl($element.id)
       if element.namespaceURI == satNamespaceHTML and
-          element.name != CAtomNull and element.name != satUempty and
-          element.name notin ids:
-        ids.add(element.name.dupTrace())
-    for id in ids:
-      list.add($id)
+          element.name != CAtomNull and element.name != satUempty:
+        list.incl($element.name)
     return list
 
 # HTMLFormControlsCollection
@@ -5553,7 +5550,7 @@ jsClassDef(NamedNodeMap):
       let name = attr.name
       if element.namespaceURI == satNamespaceHTML and AsciiUpperAlpha in name:
         continue
-      list.add($name)
+      list.incl($name)
     return list
 
 # Element
