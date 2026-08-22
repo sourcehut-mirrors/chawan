@@ -51,7 +51,9 @@ proc getOrDefault*(map: StrMap; s: openArray[char]): StrMapItem =
     h = (h + 1) and mask
   return nil
 
-proc put0(map: var StrMap; item: StrMapItem): bool =
+proc put0(map: var StrMap; item: StrMapItem; override: bool): bool =
+  # returns true if a new item was inserted
+  # if override, existing items are replaced by the new one
   let mask = map.tab.len - 1
   var item = item
   var i = item.hcache and mask
@@ -62,20 +64,32 @@ proc put0(map: var StrMap; item: StrMapItem): bool =
       map.tab[i] = item
       break
     if it.hcache == item.hcache and it.s == item.s:
-      map.tab[i] = item
+      if override:
+        map.tab[i] = item
       return false
     if tabSwap(home, it.hcache, i, mask): # displace
       swap(map.tab[i], item)
     i = (i + 1) and mask
   true
 
-proc put*(map: var StrMap; item: StrMapItem) =
+proc putInit(map: var StrMap; item: StrMapItem) =
   item.hcache = item.s.hash()
   for it in map.tab.prepareTableAdd(map.load, init = 16):
     if it != nil:
-      discard map.put0(it)
-  if map.put0(item):
+      discard map.put0(it, override = false)
+
+proc put*(map: var StrMap; item: StrMapItem) =
+  map.putInit(item)
+  if map.put0(item, override = true):
     inc map.load
+
+proc hasKeyOrPut*(map: var StrMap; item: StrMapItem): bool =
+  # returns true if a key already existed, otherwise item is added
+  map.putInit(item)
+  if map.put0(item, override = false):
+    inc map.load
+    return false
+  true
 
 proc del*(map: var StrMap; item: StrMapItem) =
   if map.tab.len == 0:

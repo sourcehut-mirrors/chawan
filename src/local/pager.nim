@@ -1829,7 +1829,7 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
               if pager.runBrowsecap(init, entry).isErr:
                 return pager.jsctx.jsQuit(pager, 1)
               let response = newResponse(init.request, nil, -1)
-              init.applyResponse(response, pager.mimeTypes.t)
+              init.applyResponse(response, pager.mimeTypes)
               return pager.connected2(init)
             else:
               state.error = "out of file descriptors"
@@ -1844,7 +1844,7 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
     stream.withPacketReaderFire r:
       r.sread(response.status)
       r.sreadList(response.headers)
-    init.applyResponse(response, pager.mimeTypes.t)
+    init.applyResponse(response, pager.mimeTypes)
     let redirect = response.getRedirect(init.request)
     let ctx = pager.jsctx
     var arg0 = JS_UNDEFINED

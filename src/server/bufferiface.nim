@@ -390,7 +390,7 @@ proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
 # Apply data received in response.
 # Note: pager must call this before checkMailcap.
 proc applyResponse*(init: BufferInit; response: Response;
-    mimeTypes: MimeTypesTable) =
+    mimeTypes: MimeTypes) =
   # accept cookies
   let cookieJar = init.loaderConfig.cookieJar
   if cookieJar != nil:

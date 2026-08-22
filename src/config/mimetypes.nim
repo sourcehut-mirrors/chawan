@@ -1,35 +1,38 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/tables
 
 import io/chafile
 import types/opt
+import utils/tabutil
 import utils/twtstr
 
-const DefaultGuess* = {
-  "ans": "text/x-ansi",
-  "asc": "text/x-ansi",
-  "css": "text/css",
-  "gmi": "text/gemini",
-  "htm": "text/html",
-  "html": "text/html",
-  "md": "text/markdown",
-  "txt": "text/plain",
-  "uri": "text/uri-list",
-  "xht": "application/xhtml+xml",
-  "xhtm": "application/xhtml+xml",
-  "xhtml": "application/xhtml+xml",
-  "bmp": "image/bmp",
-  "gif": "image/gif",
-  "jfif": "image/jpeg",
-  "jpe": "image/jpeg",
-  "jpeg": "image/jpeg",
-  "jpg": "image/jpeg",
-  "png": "image/png",
-  "svg": "image/svg+xml",
-  "webp": "image/webp",
-}.toTable()
+type
+  MimeTypeTuple = tuple[ext, name: string]
+
+const DefaultGuess* = [
+  (ext: "ans", name: "text/x-ansi"),
+  (ext: "asc", name: "text/x-ansi"),
+  (ext: "bmp", name: "image/bmp"),
+  (ext: "css", name: "text/css"),
+  (ext: "gif", name: "image/gif"),
+  (ext: "gmi", name: "text/gemini"),
+  (ext: "htm", name: "text/html"),
+  (ext: "html", name: "text/html"),
+  (ext: "jfif", name: "image/jpeg"),
+  (ext: "jpe", name: "image/jpeg"),
+  (ext: "jpeg", name: "image/jpeg"),
+  (ext: "jpg", name: "image/jpeg"),
+  (ext: "md", name: "text/markdown"),
+  (ext: "png", name: "image/png"),
+  (ext: "svg", name: "image/svg+xml"),
+  (ext: "txt", name: "text/plain"),
+  (ext: "uri", name: "text/uri-list"),
+  (ext: "webp", name: "image/webp"),
+  (ext: "xht", name: "application/xhtml+xml"),
+  (ext: "xhtm", name: "application/xhtml+xml"),
+  (ext: "xhtml", name: "application/xhtml+xml"),
+]
 
 # Part after image/, *not* the file extension.
 # (sorted by order of perceived frequency)
@@ -39,14 +42,15 @@ const DefaultImages = [
 
 # extension -> type
 type
-  MimeTypesTable* = Table[string, string] # ext -> type
+  MimeType = ref object of StrMapItem
+    name: string # content type
 
   MimeTypesImageItem* = tuple[ext, subtype: string]
 
   MimeTypesImages* = seq[MimeTypesImageItem]
 
   MimeTypes* = object
-    t*: MimeTypesTable
+    tab: StrMap # ext -> type
     image*: MimeTypesImages # ext -> image/(\w*)
 
 proc cmpMimeTypesImageItem*(x: MimeTypesImageItem; ext: string): int =
@@ -63,23 +67,40 @@ proc parseMimeTypes*(mimeTypes: var MimeTypes; file: ChaFile): Opt[void] =
       i = line.skipBlanks(i)
       let ext = line.untilLower(AsciiWhitespace, i)
       i += ext.len
-      if ext.len > 0 and not mimeTypes.t.hasKeyOrPut(ext, t) and
-          t.startsWith("image/"):
-        let t = t.substr("image/".len)
-        # As a fingerprinting countermeasure: prevent additional
-        # extensions for predefined inline image type detection.
-        if t notin DefaultImages:
-          mimeTypes.image.add((ext, t))
+      if ext.len > 0:
+        let item = MimeType(s: ext, name: t)
+        if not mimeTypes.tab.hasKeyOrPut(item) and
+            item.name.startsWith("image/"):
+          let t = item.name.substr("image/".len)
+          # As a fingerprinting countermeasure: prevent additional
+          # extensions for predefined inline image type detection.
+          if t notin DefaultImages:
+            mimeTypes.image.add((item.s, t))
   mimeTypes.image.sort(proc(a, b: MimeTypesImageItem): int {.nimcall.} =
     cmp(a.ext, b.ext)
   )
   ok()
 
-proc guessContentType*(mimeTypes: MimeTypesTable; path: string;
+proc cmpMimeType(item: MimeTypeTuple; s: string): int =
+  item.ext.cmp(s)
+
+# for DefaultGuess
+proc guessContentType*(mimeTypes: openArray[MimeTypeTuple]; path: string;
     fallback = "application/octet-stream"): string =
   let ext = path.getFileExt()
   if ext.len > 0:
-    return mimeTypes.getOrDefault(ext, fallback)
+    let i = mimeTypes.binarySearch(ext, cmpMimeType)
+    if i >= 0:
+      return mimeTypes[i].name
+  return fallback
+
+proc guessContentType*(mimeTypes: MimeTypes; path: string;
+    fallback = "application/octet-stream"): string =
+  let ext = path.getFileExt()
+  if ext.len > 0:
+    let item = mimeTypes.tab.getOrDefault(ext)
+    if item != nil:
+      return MimeType(item).name
   return fallback
 
 const JavaScriptTypes = [

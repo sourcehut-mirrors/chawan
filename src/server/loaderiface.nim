@@ -195,7 +195,7 @@ proc getLongContentType*(this: Response; fallback: string): string =
   let header = this.headers.getFirst("Content-Type")
   if header != "":
     return header.toValidUTF8().strip()
-  # also use DefaultGuess for container, so that local mime.types cannot
+  # also use DefaultGuess for buffer, so that local mime.types cannot
   # override buffer mime.types
   return DefaultGuess.guessContentType(this.url.pathname, fallback)
 
