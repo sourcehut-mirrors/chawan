@@ -16,8 +16,8 @@ That being said, you should always consult the relevant
 [standards](hacking.md#resources) when implementing interfaces.
 
 The WebIDL *interface* concept is mostly identical to Chawan's *class*,
-which in turn is built upon QuickJS's "hidden class" feature.  Usually,
-our documentation uses *class* when talking about the implementation, and
+which in turn is built upon QuickJS's `JSClass` feature.  Usually, our
+documentation uses *class* when talking about the implementation, and
 *interface* when talking about the user-facing concept, but it's not 100%
 consistent.
 
