@@ -27,12 +27,12 @@ type CharsetConfidence* = enum
 
 type
   HTML5ParserWrapper* {.final.} = ref object of RootObj
-    parser: HTML5Parser[ParentNode, CAtomTraced]
+    parser: HTML5Parser[ParentNode, CAtom]
     builder*: ChaDOMBuilder
     opts: HTML5ParserOpts[ParentNode]
     stoppedFromScript: bool
 
-  ChaDOMBuilder {.final.} = ref object of DOMBuilder[ParentNode, CAtomTraced]
+  ChaDOMBuilder {.final.} = ref object of DOMBuilder[ParentNode, CAtom]
     ctx: JSContext
     charset*: Charset
     confidence*: CharsetConfidence
@@ -41,7 +41,7 @@ type
 
   DOMBuilderImpl = ChaDOMBuilder
   HandleImpl = ParentNode
-  AtomImpl = CAtomTraced
+  AtomImpl = CAtom
 
 include chame/htmlparseriface
 
@@ -51,17 +51,17 @@ proc setActiveParser(document: Document; wrapper: HTML5ParserWrapper) =
 proc getDocumentImpl(builder: ChaDOMBuilder): ParentNode =
   return builder.document.asParentNode
 
-proc atomToTagTypeImpl(builder: ChaDOMBuilder; atom: CAtomTraced): TagType =
+proc atomToTagTypeImpl(builder: ChaDOMBuilder; atom: CAtom): TagType =
   return atom.toTagType()
 
-proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtomTraced =
-  return tagType.toStaticAtom().toAtomTrace()
+proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtom =
+  return tagType.view()
 
-proc namespaceToAtomImpl(builder: ChaDOMBuilder; ns: Namespace): CAtomTraced =
-  return ns.toStaticAtom().toAtomTrace()
+proc namespaceToAtomImpl(builder: ChaDOMBuilder; ns: Namespace): CAtom =
+  return ns.toStaticAtom().view()
 
-proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtomTraced =
-  return s.toAtomTrace()
+proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
+  return s.toAtom()
 
 proc finish(builder: ChaDOMBuilder) =
   let document = builder.document
@@ -129,7 +129,7 @@ proc getParentNodeImpl(builder: ChaDOMBuilder; handle: ParentNode):
   return handle.parentNode
 
 proc getLocalNameImpl(builder: ChaDOMBuilder; handle: ParentNode):
-    CAtomTraced =
+    CAtom =
   return (handle as Element).localName
 
 proc getNamespaceImpl(builder: ChaDOMBuilder; handle: ParentNode): Namespace =
@@ -138,9 +138,9 @@ proc getNamespaceImpl(builder: ChaDOMBuilder; handle: ParentNode): Namespace =
 proc createHTMLElementImpl(builder: ChaDOMBuilder): ParentNode =
   return builder.document.newHTMLElement(ttHtml).asParentNode
 
-proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtomTraced;
+proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: ParentNode;
-    attrs: sink seq[ParsedAttr[CAtomTraced]]): ParentNode =
+    attrs: sink seq[ParsedAttr[CAtom]]): ParentNode =
   let document = builder.document
   let element = document.newElement(localName, namespace.toStaticAtom())
   element.sinkAttrs(move(attrs))
@@ -204,9 +204,9 @@ proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
     builder.insertBefore(toNode, child, ParentNode(nil))
 
 proc sortAttrsImpl(builder: ChaDOMBuilder;
-    attrs: var seq[ParsedAttr[CAtomTraced]]) =
+    attrs: var seq[ParsedAttr[CAtom]]) =
   if attrs.len > 1:
-    attrs.sort(proc(a, b: ParsedAttr[CAtomTraced]): int {.nimcall.} =
+    attrs.sort(proc(a, b: ParsedAttr[CAtom]): int {.nimcall.} =
       cmp(uint32(a.name), uint32(b.name))
     )
     var j = 1
@@ -221,7 +221,7 @@ proc sortAttrsImpl(builder: ChaDOMBuilder;
     attrs.setLen(j)
 
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
-    attrs: seq[ParsedAttr[CAtomTraced]]) =
+    attrs: seq[ParsedAttr[CAtom]]) =
   let element = handle as Element
   element.addAttrsIfMissing(attrs)
 

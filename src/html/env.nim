@@ -962,7 +962,7 @@ proc windowPropsGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
   discard ctx.fromJS(global, window)
   let document = window.document
   if document != nil:
-    var id: CAtom
+    var id: CAtomRaw
     if ctx.fromJSView(prop, id).isErr:
       return -1
     if id == CAtomNull:
@@ -1125,7 +1125,7 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
       images: images,
       autofocus: autofocus,
       headless: headless,
-      contentType: contentType.toAtomTrace()
+      contentType: contentType.toAtom()
     ),
     imageTypes: imageTypes,
     userAgent: userAgent,

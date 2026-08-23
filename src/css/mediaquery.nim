@@ -58,7 +58,7 @@ type
     of mftWidth, mftHeight:
       lengthrange: LengthRange
     of mftContentType:
-      a: CAtomTraced
+      a: CAtom
 
   MediaQuery* = ref object
     case t: MediaConditionType
@@ -281,7 +281,7 @@ proc parseFeature0(parser: var MediaQueryParser; t: MediaFeatureType;
     MediaFeature(t: t, ms: ms)
   of mftContentType:
     let tok = ?parser.consumeString()
-    MediaFeature(t: t, a: tok.s.toAtomTrace())
+    MediaFeature(t: t, a: tok.s.toAtom())
   return ok(feature)
 
 proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;

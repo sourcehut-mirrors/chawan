@@ -40,7 +40,7 @@ type
   AncestorCache = object
     last: Element
     quirks: bool
-    classes: HashSet[CAtom]
+    classes: HashSet[CAtomRaw]
 
   ToSorts = object
     map: array[PseudoElement, seq[RulePair]]
@@ -57,13 +57,13 @@ type
     window: Window
     old: CSSValues
     revertMap: RevertMap
-    varsSeen: array[20, CAtom]
+    varsSeen: array[20, CAtomRaw]
 
 # Forward declarations
 proc applyValues(ctx: var ApplyValueContext;
   entries: openArray[CSSComputedEntry]; revertType: RevertType)
 
-proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
+proc hasClass(ancestors: var AncestorCache; class: CAtomRaw): bool =
   if class in ancestors.classes:
     return true
   var found = false
@@ -73,9 +73,9 @@ proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
     while true:
       if quirks:
         for it in ancestor.classList:
-          found = found or it.equalsIgnoreCase(class)
+          found = found or it.equalsIgnoreCase(class.view())
           #TODO plug leak
-          ancestors.classes.incl(it.view().toLowerAscii())
+          ancestors.classes.incl(it.toLowerAscii().view().dup())
       else:
         for it in ancestor.classList:
           found = found or it == class
@@ -94,16 +94,15 @@ proc calcRule(tosorts: var ToSorts; element: Element;
       continue
     # skip an arbitrary class from the selector ancestors as an
     # optimization
-    let ancestorClass = sel.ancestorClass
-    if ancestorClass != CAtomNull and
-        not tosorts.cache.hasClass(ancestorClass):
+    if sel.ancestorClass != CAtomNull and
+        not tosorts.cache.hasClass(sel.ancestorClass):
       continue
     if element.matches(sel, depends):
       tosorts.map[sel.pseudo].add((sel.specificity, rule))
       seen.incl(sel.pseudo)
 
 proc calcRules(tosorts: var ToSorts; element: Element;
-    depends: var DependencyInfo; rules: RuleTable; name: CAtomTraced) =
+    depends: var DependencyInfo; rules: RuleTable; name: CAtom) =
   for rule in rules.getAll(name):
     tosorts.calcRule(element, depends, rule)
 
@@ -386,7 +385,7 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
         let val = CSSValue(
           v: cvtCounterSet,
           counterSet: newCSSCounterSetList(
-            [CSSCounterSet(name: satListItem.toAtom(), num: n)]
+            [CSSCounterSet(name: satListItem.view(), num: n)]
           )
         )
         ctx.applyPresHint(makeEntry(cptCounterReset, val))
@@ -395,7 +394,7 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       let val = CSSValue(
         v: cvtCounterSet,
         counterSet: newCSSCounterSetList([
-          CSSCounterSet(name: satListItem.toAtom(), num: n)
+          CSSCounterSet(name: satListItem.view(), num: n)
         ])
       )
       ctx.applyPresHint(makeEntry(cptCounterSet, val))

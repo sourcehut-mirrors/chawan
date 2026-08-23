@@ -391,7 +391,7 @@ type
     cvitVar, cvitToks
 
   CSSVarItem* = ref object
-    name*: CAtomTraced
+    name*: CAtom
     case t*: CSSVarItemType
     of cvitToks:
       toks*: seq[CSSToken]
@@ -419,7 +419,7 @@ type
       global*: CSSGlobalType
 
   CSSVariable* = ref object
-    name*: CAtomTraced
+    name*: CAtom
     items*: seq[CSSVarItem]
 
   CSSCalcSumType = enum
@@ -762,7 +762,7 @@ proc put0(map: CSSVariableMap; cvar: CSSVariable): bool =
     i = (i + 1) and mask
   false
 
-proc getOrDefault*(map: CSSVariableMap; name: CAtom): CSSVariable =
+proc getOrDefault*(map: CSSVariableMap; name: CAtomRaw): CSSVariable =
   if map.tab.len > 0:
     let mask = map.tab.len - 1
     var i = name.hash() and mask
@@ -1906,8 +1906,8 @@ proc parseCounterSet(ctx: var CSSParser; n: int32): Opt[CSSCounterSetList] =
   while ctx.has():
     if ctx.peekTokenType() != cttIdent:
       return err()
-    let name = ctx.consume().s.toAtom()
-    var r = CSSCounterSet(name: name)
+    let tok = ctx.consume()
+    var r = CSSCounterSet(name: tok.s.toAtom())
     ctx.skipBlanks()
     if ctx.has() and ctx.peekTokenType() == cttNumber:
       r.num = ctx.consume().toi
@@ -2098,7 +2098,7 @@ proc parseDeclWithVar0(ctx: var CSSParser; nested: bool): seq[CSSVarItem] =
       let tok = ctx.consume()
       if tok.t != cttIdent:
         return @[]
-      var name = tok.s.substr(2).toAtomTrace()
+      var name = tok.s.substr(2).toAtom()
       ctx.skipBlanks()
       var fallback: seq[CSSVarItem]
       if ctx.has() and (let tok = ctx.consume(); tok.t != cttRparen):
@@ -2120,7 +2120,7 @@ proc parseDeclWithVar0(ctx: var CSSParser; nested: bool): seq[CSSVarItem] =
       break
     else:
       if items.len == 0 or items[^1].name != CAtomNull:
-        items.add(CSSVarItem(t: cvitToks, name: CAtomNullTraced))
+        items.add(CSSVarItem(t: cvitToks, name: CAtomNull))
       let pair = tok.t.tokenPair
       if pair != tok.t:
         if parenStackTop != cttColon:

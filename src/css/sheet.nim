@@ -22,16 +22,16 @@ type
     idx*: uint64
     origin*: CSSOrigin
     layerId*: uint16
-    layer*: CAtomTraced
+    layer*: CAtom
     next: CSSRuleDef
 
   CSSImport* = ref object
     url*: URL
-    layer*: CAtomTraced
+    layer*: CAtom
 
   StyleState = object
     importList*: seq[CSSImport]
-    layers: seq[CAtomTraced]
+    layers: seq[CAtom]
     defsHead: CSSRuleDef
     defsTail: CSSRuleDef
     len: uint32
@@ -46,7 +46,7 @@ type
     next*: CSSStylesheet
     media*: string # media attr
     toks: seq[CSSToken]
-    baseLayer: CAtomTraced
+    baseLayer: CAtom
     origin: CSSOrigin
     disabled*: bool # whether or not we have disabled attr etc.
     applies*: bool # whether or not media attr/import applies
@@ -55,7 +55,7 @@ type
     shtGeneral, shtRoot, shtHint, shtFirstChild, shtLastChild
 
   RuleTableItem = object
-    name: CAtomTraced
+    name: CAtom
     value: CSSRuleDef
 
   RuleTable* = object
@@ -71,25 +71,25 @@ type
     sheetId: uint32
     anonLayers: uint16
     quirks*: bool
-    layers: seq[CAtomTraced]
+    layers: seq[CAtom]
 
   SelectorHashes = object
-    tags: seq[CAtomTraced]
-    id: CAtomTraced
-    class: CAtomTraced
-    attr: CAtomTraced
+    tags: seq[CAtom]
+    id: CAtom
+    class: CAtom
+    attr: CAtom
     t: SelectorHashType
 
 # Forward declarations
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool
-proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtomTraced)
+proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; layer: CAtom)
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
-  layer: CAtomTraced): Opt[void]
+  layer: CAtom): Opt[void]
 
 proc newCSSRuleMap*(quirks: bool): CSSRuleMap =
   CSSRuleMap(quirks: quirks)
 
-iterator getAll*(map: RuleTable; name: CAtomTraced): lent CSSRuleDef =
+iterator getAll*(map: RuleTable; name: CAtom): lent CSSRuleDef =
   if map.tab.len > 0:
     let mask = map.tab.len - 1
     var i = name.hash() and mask
@@ -101,7 +101,7 @@ iterator getAll*(map: RuleTable; name: CAtomTraced): lent CSSRuleDef =
         yield it.value
       i = (i + 1) and mask
 
-proc put0(map: var RuleTable; name: sink CAtomTraced; def: CSSRuleDef): bool =
+proc put0(map: var RuleTable; name: sink CAtom; def: CSSRuleDef): bool =
   let mask = map.tab.len - 1
   var home = name.hash() and mask
   var i = home
@@ -118,7 +118,7 @@ proc put0(map: var RuleTable; name: sink CAtomTraced; def: CSSRuleDef): bool =
     i = (i + 1) and mask
   false
 
-proc add(map: var RuleTable; name: sink CAtomTraced; def: CSSRuleDef) =
+proc add(map: var RuleTable; name: sink CAtom; def: CSSRuleDef) =
   for it in map.tab.prepareTableAdd(map.load, init = 16):
     if it.value != nil:
       discard map.put0(it.name, it.value)
@@ -186,11 +186,11 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
         cancelT = true
       inc i
     if cancelId:
-      hashes.id = CAtomNullTraced
+      hashes.id = CAtomNull
     if cancelClass:
-      hashes.class = CAtomNullTraced
+      hashes.class = CAtomNull
     if cancelAttr:
-      hashes.attr = CAtomNullTraced
+      hashes.attr = CAtomNull
     if cancelT:
       hashes.t = shtGeneral
     return hashes.tags.len > 0 or hashes.id != CAtomNull or
@@ -202,8 +202,8 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       hashes.t = shtRoot
       return true
     of pcLink, pcVisited:
-      hashes.tags.add(ttA.toAtomTrace())
-      hashes.tags.add(ttArea.toAtomTrace())
+      hashes.tags.add(ttA.view())
+      hashes.tags.add(ttArea.view())
       hashes.attr = satHref.view()
       return true
     of pcFirstChild:
@@ -248,7 +248,7 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
   # layer switches happen rarely enough anyway.
   map.layers.add(sheet.s.layers)
   var def = sheet.s.defsHead
-  var prevLayer = CAtomNull
+  var prevLayer = CAtomNullRaw
   var layerId = 0u16
   let sheetIdShifted = (uint64(sheetId) shl 32)
   while def != nil:
@@ -275,14 +275,14 @@ proc add(s: var StyleState; ruleDef: CSSRuleDef) =
   inc s.len
 
 proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
-    base: URL; layer: CAtomTraced) =
+    base: URL; layer: CAtom) =
   for rule in ctx.parseListOfRules(topLevel):
     case rule.t
     of crtAt: discard sheet.addAtRule(rule.at, base, layer)
     of crtQualified: sheet.addRule(rule.qualified, layer)
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule;
-    layer: CAtomTraced) =
+    layer: CAtom) =
   if rule.sels.len > 0:
     var ruleDef = CSSRuleDef(
       sels: move(rule.sels),
@@ -316,13 +316,13 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule;
             sheet.settings.attrsp[])
     sheet.s.add(ruleDef)
 
-proc nextAnonLayer(sheet: CSSStylesheet): CAtomTraced =
+proc nextAnonLayer(sheet: CSSStylesheet): CAtom =
   let res = sheet.s.anonLayerCount
   inc sheet.s.anonLayerCount
-  ('!' & $res).toAtomTrace()
+  ('!' & $res).toAtom()
 
 # stores new layer in parent
-proc consumeLayerName(ctx: var CSSParser; parent: var CAtomTraced;
+proc consumeLayerName(ctx: var CSSParser; parent: var CAtom;
     anon: var bool): Opt[void] =
   var name = ""
   if parent != CAtomNull:
@@ -341,11 +341,11 @@ proc consumeLayerName(ctx: var CSSParser; parent: var CAtomTraced;
   if name.len <= 0 or name[^1] == '.':
     return err()
   anon = name[0] == '!'
-  parent = name.toAtomTrace()
+  parent = name.toAtom()
   ok()
 
 proc parseImportLayer(ctx: var CSSParser; sheet: CSSStylesheet;
-    oldLayer: var CAtomTraced): Opt[void] =
+    oldLayer: var CAtom): Opt[void] =
   if ctx.skipBlanksCheckHas().isErr:
     return ok()
   if ctx.peekFunction(cftLayer):
@@ -364,7 +364,7 @@ proc parseImportLayer(ctx: var CSSParser; sheet: CSSStylesheet;
   ok()
 
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
-    layer: CAtomTraced): Opt[void] =
+    layer: CAtom): Opt[void] =
   case atrule.name
   of cartUnknown: discard
   of cartImport:
@@ -405,7 +405,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
       var ctx = initCSSParser(atrule.oblock)
       sheet.addRules(ctx, topLevel = false, base = URL(nil), name)
     else:
-      var names: seq[CAtomTraced] = @[]
+      var names: seq[CAtom] = @[]
       while ctx.skipBlanksCheckHas().isOk:
         var anon: bool
         var name = layer
@@ -419,7 +419,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
   ok()
 
 proc parseStylesheet*(iq: string; base: URL; settings: ptr EnvironmentSettings;
-    origin: CSSOrigin; layer: CAtomTraced): CSSStylesheet =
+    origin: CSSOrigin; layer: CAtom): CSSStylesheet =
   var ctx = initCSSParser(iq)
   let sheet = CSSStylesheet(
     settings: settings,

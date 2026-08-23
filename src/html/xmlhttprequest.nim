@@ -94,7 +94,7 @@ jsClassDef(ProgressEvent):
   jsget ProgressEvent, loaded
   jsget ProgressEvent, total
 
-  proc newProgressEvent(ctype: CAtomTraced; init = ProgressEventInit()):
+  proc newProgressEvent(ctype: CAtom; init = ProgressEventInit()):
       ProgressEvent {.jsctor.} =
     let event = jsNew ProgressEventObj(
       ctype: ctype,

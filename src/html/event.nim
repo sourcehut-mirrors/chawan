@@ -43,7 +43,7 @@ type
     timeStamp: float64
     target*: EventTarget
     currentTarget*: EventTarget
-    ctype*: CAtomTraced
+    ctype*: CAtom
     eventPhase: uint16
     flags: set[EventFlag]
 
@@ -106,8 +106,8 @@ type
 
   MutationRecordObj = object
     t: MutationRecordType
-    attributeName: CAtomTraced
-    attributeNamespace: CAtomTraced
+    attributeName: CAtom
+    attributeNamespace: CAtom
     oldValue: RefString
     target: EventTarget
     addedNodes: JSRootRef
@@ -140,7 +140,7 @@ type
       # * an object (whose handleEvent property will be invoked)
       # * a function
       callback: JSValue
-      ctype: CAtomTraced
+      ctype: CAtom
       capture: bool
       once: bool
       internal: bool
@@ -149,7 +149,7 @@ type
     of eltMutationObserver:
       observer*: MutationObserver
       flags*: set[ObservedItemFlag]
-      attributeFilter*: seq[CAtomTraced]
+      attributeFilter*: seq[CAtom]
     # order is: eltEventListener nodes -> eltMutationObserver nodes
     next: EventListener
 
@@ -168,7 +168,7 @@ type
 
 # Forward declarations
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
-  ctype: CAtomTraced; callback: JSValueConst;
+  ctype: CAtom; callback: JSValueConst;
   options: JSValueConst = JS_UNDEFINED): Opt[void]
 proc getClassID*(t: typedesc[EventTarget]): JSClassID
 proc getClassID(t: typedesc[AbortSignal]): JSClassID
@@ -266,7 +266,7 @@ jsClassPublicDef(Event):
   jsget Event, ctype, "type"
   jsget Event, eventPhase
 
-  proc newEvent(ctype: CAtomTraced; eventInitDict = EventInit()): Event {.
+  proc newEvent(ctype: CAtom; eventInitDict = EventInit()): Event {.
       jsctor.} =
     let event = jsNew EventObj(ctype: ctype)
     if event != nil:
@@ -280,7 +280,7 @@ jsClassPublicDef(Event):
       jsmfget("composed", efComposed).} =
     flag in event.flags
 
-  proc initialize(this: Event; ctype: CAtomTraced; bubbles, cancelable: bool) =
+  proc initialize(this: Event; ctype: CAtom; bubbles, cancelable: bool) =
     this.flags.incl(efInitialized)
     this.flags.excl(efTrusted)
     this.target = EventTarget(nil)
@@ -288,7 +288,7 @@ jsClassPublicDef(Event):
     this.flags.toggleIf(efBubbles, bubbles)
     this.flags.toggleIf(efCancelable, cancelable)
 
-  proc initEvent(this: Event; ctype: CAtomTraced; bubbles, cancelable: bool)
+  proc initEvent(this: Event; ctype: CAtom; bubbles, cancelable: bool)
       {.jsfunc.} =
     if efDispatch notin this.flags:
       this.initialize(ctype, bubbles, cancelable)
@@ -330,7 +330,7 @@ jsClassDef(CustomEvent):
 
   jsget CustomEvent, detail
 
-  proc newCustomEvent*(ctx: JSContext; ctype: CAtomTraced;
+  proc newCustomEvent*(ctx: JSContext; ctype: CAtom;
       eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent
       {.jsctor.} =
     let event = jsNew CustomEventObj(
@@ -341,7 +341,7 @@ jsClassDef(CustomEvent):
       event.asEvent.innerEventCreationSteps(EventInit(eventInitDict))
     event
 
-  proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtomTraced;
+  proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtom;
       bubbles, cancelable: bool; detail: JSValueConst) {.jsfunc.} =
     if efDispatch notin this.flags:
       if efInitialized notin this.flags:
@@ -350,7 +350,7 @@ jsClassDef(CustomEvent):
       this.asEvent.initialize(ctype, bubbles, cancelable)
 
 # MessageEvent
-proc newMessageEvent*(ctx: JSContext; ctype: CAtomTraced;
+proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
   let event = jsNew MessageEventObj(
     ctype: ctype,
@@ -384,7 +384,7 @@ jsClassDef(SubmitEvent):
 
   jsget SubmitEvent, submitter
 
-  proc newSubmitEvent*(ctype: CAtomTraced; eventInit = SubmitEventInit()):
+  proc newSubmitEvent*(ctype: CAtom; eventInit = SubmitEventInit()):
       SubmitEvent {.jsctor.} =
     let event = jsNew SubmitEventObj(
       ctype: ctype,
@@ -417,7 +417,7 @@ jsClassDef(UIEvent):
   jsget UIEvent, detail
   jsget UIEvent, view
 
-  proc newUIEvent*(ctype: CAtomTraced; eventInit = UIEventInit()): UIEvent
+  proc newUIEvent*(ctype: CAtom; eventInit = UIEventInit()): UIEvent
       {.jsctor.} =
     let event = jsNew UIEventObj(
       ctype: ctype,
@@ -428,7 +428,7 @@ jsClassDef(UIEvent):
       event.asEvent.innerEventCreationSteps(EventInit(eventInit))
     return event
 
-  proc initUIEvent(this: UIEvent; ctype: CAtomTraced; bubbles = false;
+  proc initUIEvent(this: UIEvent; ctype: CAtom; bubbles = false;
       cancelable = false; view = EventTargetWindowNull(nil); detail = 0i32)
       {.jsfunc.} =
     this.ctype = ctype
@@ -469,7 +469,7 @@ jsClassDef(MouseEvent):
   jsget MouseEvent, metaKey
   jsget MouseEvent, relatedTarget
 
-  proc newMouseEvent*(ctype: CAtomTraced; eventInit = MouseEventInit()):
+  proc newMouseEvent*(ctype: CAtom; eventInit = MouseEventInit()):
       MouseEvent {.jsctor.} =
     let event = jsNew MouseEventObj(
       ctype: ctype,
@@ -503,7 +503,7 @@ jsClassDef(InputEvent):
   jsget InputEvent, isComposing
   jsget InputEvent, inputType
 
-  proc newInputEvent*(ctype: CAtomTraced; eventInit = InputEventInit()):
+  proc newInputEvent*(ctype: CAtom; eventInit = InputEventInit()):
       InputEvent {.jsctor.} =
     let event = jsNew InputEventObj(
       ctype: ctype,
@@ -554,7 +554,7 @@ type MutationObserverInit {.pure.} = object of JSDict
   attributeFilter {.jsdefault: JS_UNDEFINED.}: JSValueConst
 
 proc queueRecord*(observer: MutationObserver; target: EventTarget;
-    t: MutationRecordType; name, namespace: CAtomTraced; oldValue: RefString;
+    t: MutationRecordType; name, namespace: CAtom; oldValue: RefString;
     addedNodes, removedNodes: JSRootRef;
     previousSibling, nextSibling: EventTarget) =
   let record = jsNew MutationRecordObj(
@@ -592,7 +592,7 @@ jsClassDef(MutationObserver):
     if not JS_IsUndefined(jsInit):
       ?ctx.fromJS(jsInit, init)
     var flags: set[ObservedItemFlag]
-    var attributeFilter: seq[CAtomTraced]
+    var attributeFilter: seq[CAtom]
     if not JS_IsUndefined(init.attributeFilter):
       flags.incl(oifAttributeFilter)
     if oifAttributeFilter in flags:
@@ -664,12 +664,12 @@ jsClassDef(MutationObserver):
 template asEventTarget*[T: EventTargetObj](x: JSRef[T]): EventTarget =
   cast[EventTarget](x)
 
-proc defaultPassiveValue(ctype: CAtomTraced; eventTarget: EventTarget): bool =
+proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
   return ctype.toStaticAtom() in check and eventTarget.isDefaultPassiveImpl()
 
 proc findEventListener(ctx: JSContext; eventTarget: EventTarget;
-    ctype: CAtomTraced; callback: JSValueConst; capture: bool): EventListener =
+    ctype: CAtom; callback: JSValueConst; capture: bool): EventListener =
   for it in eventTarget.eventListeners:
     if not it.internal and it.ctype == ctype and
         ctx.strictEquals(it.callback, callback) and it.capture == capture:
@@ -683,7 +683,7 @@ proc findInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
       return it
   nil
 
-proc hasEventListener*(eventTarget: EventTarget; ctype: CAtomTraced): bool =
+proc hasEventListener*(eventTarget: EventTarget; ctype: CAtom): bool =
   for it in eventTarget.eventListeners:
     if it.ctype == ctype:
       return true
@@ -721,13 +721,13 @@ proc removeEventListenerData(ctx: JSContext; _: JSValueConst;
     funcData: JSValueConstArray): JSValue {.cdecl.} =
   var this: EventTarget
   ?ctx.fromJS(funcData[0], this)
-  var ctype: CAtomTraced
+  var ctype: CAtom
   ?ctx.fromJS(funcData[1], ctype)
   if ctx.removeEventListener(this, ctype, funcData[2], funcData[3]).isErr:
     return JS_EXCEPTION
   return JS_UNDEFINED
 
-proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtomTraced;
+proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtom;
     capture, once, internal: bool; passive: Option[bool];
     callback: JSValueConst; signal: AbortSignal): Opt[void] =
   if signal != nil and signal.aborted or JS_IsUndefined(callback):
@@ -858,7 +858,7 @@ type
 proc collectItems(dctx: var DispatchContext; target: EventTarget) =
   let ctype = dctx.event.ctype
   let bubbles = efBubbles in dctx.event.flags
-  let isLoad = dctx.event.ctype == satLoad.toAtom()
+  let isLoad = dctx.event.ctype == satLoad
   var it = target
   while it != nil:
     var capture: seq[EventListener] = @[]
@@ -950,7 +950,7 @@ jsClassPublicDef(EventTarget):
     jsNew EventTargetObj()
 
   proc addEventListener(ctx: JSContext; eventTarget: EventTarget;
-      ctype: CAtomTraced; callback: JSValueConst;
+      ctype: CAtom; callback: JSValueConst;
       options: JSValueConst = JS_UNDEFINED): Opt[void] {.jsfunc.} =
     if not JS_IsObject(callback) and not JS_IsNull(callback):
       JS_ThrowTypeError(ctx, "callback is not an object")
@@ -961,7 +961,7 @@ jsClassPublicDef(EventTarget):
       internal = false, res.passive, callback, res.signal)
 
   proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
-      ctype: CAtomTraced; callback: JSValueConst;
+      ctype: CAtom; callback: JSValueConst;
       options: JSValueConst = JS_UNDEFINED): Opt[void] {.jsfunc.} =
     let capture = ?ctx.flatten(options)
     var prev: EventListener = nil

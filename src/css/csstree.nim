@@ -61,13 +61,13 @@ type
     of stBr: # <br> element
       discard
     of stCounter: # counters
-      counterName: CAtom
+      counterName: CAtomRaw
       counterStyle: CSSListStyleType
       counterSuffix: bool
 
   CSSCounter = object
     element: Element
-    name: CAtom
+    name: CAtomRaw
     n: int32
 
   TreeContext = ref object
@@ -110,7 +110,8 @@ when defined(debug):
     of stCounter:
       return "#counter"
 
-proc incCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
+proc incCounter(ctx: TreeContext; name: CAtom; n: int32;
+    element: Element) =
   var found = false
   for counter in ctx.counters.mritems:
     if counter.name == name:
@@ -119,9 +120,10 @@ proc incCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
       found = true
       break
   if not found: # instantiate a new counter
-    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
+    ctx.counters.add(CSSCounter(name: name.view(), n: n, element: element))
 
-proc setCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
+proc setCounter(ctx: TreeContext; name: CAtom; n: int32;
+    element: Element) =
   var found = false
   for counter in ctx.counters.mritems:
     if counter.name == name:
@@ -129,7 +131,7 @@ proc setCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
       found = true
       break
   if not found: # instantiate a new counter
-    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
+    ctx.counters.add(CSSCounter(name: name.view(), n: n, element: element))
 
 proc resetCounter(ctx: TreeContext; name: CAtom; n: int32;
     element: Element) =
@@ -144,9 +146,9 @@ proc resetCounter(ctx: TreeContext; name: CAtom; n: int32;
       found = true
       break
   if not found:
-    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
+    ctx.counters.add(CSSCounter(name: name.view(), n: n, element: element))
 
-proc counter(ctx: TreeContext; name: CAtom): int32 =
+proc counter(ctx: TreeContext; name: CAtomRaw): int32 =
   for counter in ctx.counters.mritems:
     if counter.name == name:
       return counter.n
@@ -305,7 +307,7 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
       t: stCounter,
       element: node.element,
       computed: textComputed,
-      counterName: satListItem.toAtom(),
+      counterName: satListItem.view().view(),
       counterStyle: node.computed{"list-style-type"},
       counterSuffix: true
     )
@@ -390,11 +392,12 @@ proc addText(frame: var TreeFrame; text: RefString) =
       computed: frame.getAnonInlineComputed()
     ))
 
-proc addCounter(frame: var TreeFrame; name: CAtom; style: CSSListStyleType) =
+proc addCounter(frame: var TreeFrame; name: CAtom;
+    style: CSSListStyleType) =
   frame.add(StyledNode(
     t: stCounter,
     element: frame.parent,
-    counterName: name,
+    counterName: name.view(),
     counterStyle: style,
     computed: frame.getAnonInlineComputed()
   ))
@@ -671,7 +674,7 @@ proc applyCounters(ctx: TreeContext; styledNode: StyledNode;
     liSeen = liSeen or counter.name == satListItem
     ctx.incCounter(counter.name, counter.num, styledNode.element)
   if not liSeen and styledNode.computed{"display"} in DisplayListItemLike:
-    ctx.incCounter(satListItem.toAtom(), 1, styledNode.element)
+    ctx.incCounter(satListItem.view(), 1, styledNode.element)
   for counter in styledNode.computed{"counter-set"}:
     ctx.setCounter(counter.name, counter.num, styledNode.element)
 
@@ -822,13 +825,13 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
     stackItem: stack,
     linkHintChars: linkHintChars,
   )
-  ctx.resetCounter(satDashChaLinkCounter.toAtom(), 0, element)
+  ctx.resetCounter(satDashChaLinkCounter.view(), 0, element)
   let hintHigh = max(linkHintChars[].high, 0)
   let hintOffset = if hintHigh > 0:
     min(int(int32.high), ((nhints + hintHigh - 1) div hintHigh) - 1)
   else:
     hintHigh
-  ctx.resetCounter(satDashChaHintCounter.toAtom(), int32(hintOffset), element)
+  ctx.resetCounter(satDashChaHintCounter.view(), int32(hintOffset), element)
   let root = BlockBox(ctx.build(cached, styledNode, forceZ = false,
     root = true))
   stack.box = root

@@ -157,7 +157,7 @@ type
     of cdtProperty:
       p*: CSSWidePropertyType
     of cdtVariable:
-      v*: CAtomTraced
+      v*: CAtom
     of cdtNestedRule:
       r*: CSSQualifiedRule
     value*: seq[CSSToken]
@@ -417,7 +417,7 @@ type
 
   Selector* = ref object # Simple selector
     #TODO namespaces?
-    atom*: CAtomTraced
+    atom*: CAtom
     rel*: SelectorRelation
     pc*: PseudoClass
     case t*: SelectorType
@@ -441,7 +441,7 @@ type
     specificity*: uint
     pseudo*: PseudoElement
     # simple optimization: an ancestor must have this as the first class
-    ancestorClass*: CAtom
+    ancestorClass*: CAtomRaw
     csels: seq[CompoundSelector]
 
   SelectorList* = seq[ComplexSelector]
@@ -469,7 +469,7 @@ proc parseSelectorList(state: var SelectorParser; forgiving: bool): SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 proc parseCompoundSelector(state: var SelectorParser;
   pseudoElement: var PseudoElement; specificityOut: var uint;
-  classOut: var CAtom): Selector
+  classOut: var CAtomRaw): Selector
 proc seek*(ctx: var CSSParser)
 proc `$`*(tok: CSSToken): string
 proc `$`*(c: CSSRule): string
@@ -979,7 +979,7 @@ proc initCSSDeclaration*(name: string): Opt[CSSDeclaration] =
   if name.startsWith("--"):
     return ok(CSSDeclaration(
       t: cdtVariable,
-      v: name.toOpenArray(2, name.high).toAtomTrace()
+      v: name.toOpenArray(2, name.high).toAtom()
     ))
   let p = ?anyPropertyType(name)
   ok(CSSDeclaration(t: cdtProperty, p: p))
@@ -1615,7 +1615,7 @@ proc parseHost(state: var SelectorParser): Selector =
   state.nested = true
   var pseudo = peNone
   var specificity: uint
-  var classOut: CAtom
+  var classOut: CAtomRaw
   let head = state.parseCompoundSelector(pseudo, specificity, classOut)
   state.skipFunction()
   state.nested = onested
@@ -1739,7 +1739,7 @@ proc parseAttributeSelector(state: var SelectorParser): Selector =
   if attrToken.t != cttIdent:
     state.skipUntil(cttRbracket)
     fail
-  let attr = attrToken.s.toAtomLowerTrace()
+  let attr = attrToken.s.toAtomLower()
   state.skipBlanks()
   if not state.has(): fail
   let delim = state.consume()
@@ -1798,12 +1798,12 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = state.consume()
   if tok.t != cttIdent: fail
-  Selector(t: stClass, atom: tok.s.toAtomTrace())
+  Selector(t: stClass, atom: tok.s.toAtom())
 
 # returns head
 proc parseCompoundSelector(state: var SelectorParser;
     pseudoElement: var PseudoElement; specificityOut: var uint;
-    classOut: var CAtom): Selector =
+    classOut: var CAtomRaw): Selector =
   var head: Selector = nil
   var tail: Selector = nil
   var specificity = 0u
@@ -1813,7 +1813,7 @@ proc parseCompoundSelector(state: var SelectorParser;
     case tok.t
     of cttIdent:
       state.seekToken()
-      sel = Selector(t: stType, atom: tok.s.toAtomLowerTrace())
+      sel = Selector(t: stType, atom: tok.s.toAtomLower())
     of cttColon:
       state.seekToken()
       sel = state.parsePseudoSelector(pseudoElement)
@@ -1821,7 +1821,7 @@ proc parseCompoundSelector(state: var SelectorParser;
       state.seekToken()
       if ctfId notin tok.flags:
         fail
-      sel = Selector(t: stId, atom: tok.s.toAtomTrace())
+      sel = Selector(t: stId, atom: tok.s.toAtom())
     of cttDot:
       state.seekToken()
       sel = state.parseClassSelector()
@@ -1852,11 +1852,11 @@ proc parseCompoundSelector(state: var SelectorParser;
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
   var pseudo = peNone
   result = ComplexSelector()
-  var prevClass = CAtomNull
+  var prevClass = CAtomNullRaw
   while true:
     state.skipBlanks()
     var specificity: uint
-    var class = CAtomNull
+    var class = CAtomNullRaw
     let head = state.parseCompoundSelector(pseudo, specificity, class)
     if state.failed:
       break

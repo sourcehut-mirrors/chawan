@@ -208,10 +208,10 @@ type
     cefFormAssociated, cefInternals, cefShadow
 
   CustomElementDef = ref object
-    name: CAtomTraced
-    localName: CAtomTraced
+    name: CAtom
+    localName: CAtom
     ctor: JSObjectTraced
-    observedAttrs: seq[CAtomTraced]
+    observedAttrs: seq[CAtom]
     callbacks: CECallbackMap
     flags: set[CustomElementFlag]
     next: CustomElementDef
@@ -259,7 +259,7 @@ type
     url: URL
     finish: LoadSheetFinish
     charset: Charset
-    layer: CAtomTraced
+    layer: CAtom
     i: int
     parseEnv: ParseSheetEnv
 
@@ -291,7 +291,7 @@ type
     invalid: bool
     match: CollectionMatchFun
     snapshot: seq[Node]
-    atoms: seq[CAtomTraced]
+    atoms: seq[CAtom]
 
   NodeIteratorLike = JSRef[NodeIteratorLikeObj]
 
@@ -339,7 +339,7 @@ type
   HTMLAllCollection = JSRef[HTMLAllCollectionObj]
 
   DOMTokenListObj = object
-    toks: seq[CAtomTraced]
+    toks: seq[CAtom]
     element: Element
 
   DOMTokenList = JSRef[DOMTokenListObj]
@@ -497,7 +497,7 @@ type
   DocumentType = JSRef[DocumentTypeObj]
 
   # Note: the `name` field in AttrData is treated as the qualified name.
-  AttrData* = ParsedAttr[CAtomTraced]
+  AttrData* = ParsedAttr[CAtom]
 
   CustomElementState = enum
     cesUndefined = "undefined"
@@ -521,14 +521,14 @@ type
   Element* = JSRef[ElementObj]
 
   ElementObj* {.pure.} = object of ParentNodeObj
-    namespaceURI*: CAtomTraced # 4
-    tagName: CAtomTraced # 8, like DOM tagName but not upper-cased
+    namespaceURI*: CAtom # 4
+    tagName: CAtom # 8, like DOM tagName but not upper-cased
     relayout*: set[PseudoElement] # 9
     flags: set[ElementFlag] # 10
     selfDepends: set[DependencyType] # 11
     custom: CustomElementState # 12
-    localName*: CAtomTraced # 16
-    id*: CAtomTraced # 20
+    localName*: CAtom # 16
+    id*: CAtom # 20
     internalElIndex: uint32 # 24
     internalClassList: DOMTokenList # 32
     attrs*: seq[AttrData] # 40, sorted by int(qualifiedName)
@@ -754,7 +754,7 @@ type
 
 # Forward declarations
 proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
-  layer: CAtomTraced; finish: LoadSheetFinish; i: int; parseEnv: ParseSheetEnv)
+  layer: CAtom; finish: LoadSheetFinish; i: int; parseEnv: ParseSheetEnv)
 
 proc newCDATASection(document: Document; data: RefString): CDATASection
 proc newComment(document: Document; data: RefString): Comment
@@ -768,10 +768,10 @@ proc newDocumentType*(document: Document; name, publicId, systemId: string):
 proc newDocumentFragment(document: Document): DocumentFragment
 proc newProcessingInstruction(document: Document; target: string;
   data: RefString): ProcessingInstruction
-proc newElement*(document: Document; localName: CAtomTraced;
+proc newElement*(document: Document; localName: CAtom;
   namespace = satNamespaceHTML): Element
 proc newElement(document: Document;
-  localName, namespaceURI, tagName: CAtomTraced): Element
+  localName, namespaceURI, tagName: CAtom): Element
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc newHTMLCollection(root: Node; match: CollectionMatchFun; childonly: bool):
   HTMLCollection
@@ -819,7 +819,7 @@ proc applyStyleDependencies*(document: Document; element: Element;
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
 proc focus*(document: Document): Element
-proc getElementById*(document: Document; id: CAtomTraced): Element
+proc getElementById*(document: Document; id: CAtom): Element
 proc invalidateCollections(document: Document)
 proc invalidateCollectionsRemove(document: Document; node: Node)
 proc parseURL0*(document: Document; s: string): URL
@@ -831,7 +831,7 @@ proc removeElementId(document: Document; element: Element)
 proc adjustForRemoval(iter: NodeIterator; node: Node)
 
 proc `$`(tokenList: DOMTokenList): string
-proc contains(tokenList: DOMTokenList; s: CAtomTraced): bool
+proc contains(tokenList: DOMTokenList; s: CAtom): bool
 proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool
 
 proc newAttr(element: Element; dataIdx: int): Attr
@@ -841,17 +841,17 @@ proc setValue(ctx: JSContext; attr: Attr; ds: DOMString)
 
 proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
   Opt[ShadowRoot]
-proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+proc setAttr(element: Element; ctx: JSContext; name: CAtom;
   value: DOMString)
 proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
   value: DOMString)
-proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+proc setAttr(element: Element; ctx: JSContext; name: CAtom;
   value: sink string)
 proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
   value: sink string)
 proc attr*(element: Element; s: StaticAtom): lent string
 proc attrb*(element: Element; at: StaticAtom): bool
-proc attrb*(element: Element; s: CAtomTraced): bool
+proc attrb*(element: Element; s: CAtom): bool
 proc attrd*(element: Element; s: StaticAtom): Opt[float64]
 proc attrdgz*(element: Element; s: StaticAtom): Opt[float64]
 proc attrl*(element: Element; s: StaticAtom): Opt[int32]
@@ -860,18 +860,18 @@ proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(element: Element; ctx: JSContext; i: int)
 proc elIndex*(this: Element): uint32
 proc ensureStyle*(element: Element)
-proc findAttr(element: Element; qualifiedName: CAtomTraced): int
-proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int
+proc findAttr(element: Element; qualifiedName: CAtom): int
+proc findAttrNS(element: Element; namespace, localName: CAtom): int
 proc getBoundingClientRect(element: Element): DOMRect
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
-proc hasClass*(element: Element; class: CAtomTraced): bool
-proc hasClassIgnoreCase*(element: Element; class: CAtomTraced): bool
+proc hasClass*(element: Element; class: CAtom): bool
+proc hasClassIgnoreCase*(element: Element; class: CAtom): bool
 proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
-proc name*(element: Element): CAtom
+proc name*(element: Element): CAtomRaw
 proc nextDisplayedElement(element: Element): Element
 proc nextElementSibling*(element: Element): Element
 proc outerHTML(element: Element): string
@@ -1427,7 +1427,7 @@ iterator sheets(this: SheetElement): CSSStylesheet {.inline.} =
       break
     sheet = sheet.next
 
-iterator classList*(element: Element): lent CAtomTraced {.inline.} =
+iterator classList*(element: Element): lent CAtom {.inline.} =
   if element.internalClassList != nil:
     for tok in element.internalClassList.toks:
       yield tok
@@ -1592,7 +1592,7 @@ proc importSheetFinish(window: Window; this: SheetElement;
   window.sheetLoaded()
 
 proc parseStylesheet(window: Window; this: SheetElement; s: string;
-    baseURL: URL; charset: Charset; layer: CAtomTraced;
+    baseURL: URL; charset: Charset; layer: CAtom;
     finish: LoadSheetFinish; parseEnv: ParseSheetEnv; i: int) =
   let sheet = s.parseStylesheet(baseURL, addr window.settings, coAuthor, layer)
   if sheet.s.importList.len == 0:
@@ -1659,7 +1659,7 @@ proc loadSheet0(opaque: RootRef; response: Response) =
   env.finish(window, env.this, LoadSheetResult(), env.parseEnv, env.i)
 
 proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
-    layer: CAtomTraced; finish: LoadSheetFinish; i: int;
+    layer: CAtom; finish: LoadSheetFinish; i: int;
     parseEnv: ParseSheetEnv) =
   let env = LoadSheetEnv(
     window: window,
@@ -1676,7 +1676,7 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
 proc loadSheet(window: Window; this: SheetElement; url: URL;
     finish: LoadSheetFinish) =
   let charset = this.asElement.getCharset()
-  window.loadSheet(this, url, charset, CAtomNullTraced, finish, 0, nil)
+  window.loadSheet(this, url, charset, CAtomNull, finish, 0, nil)
 
 proc loadLinkFinish(window: Window; this: SheetElement;
     res: LoadSheetResult; env: ParseSheetEnv; i: int) =
@@ -2031,7 +2031,7 @@ iterator defs(this: CustomElementRegistry): CustomElementDef =
 type CustomElementDefinitionOptions = object of JSDict
   extends {.jsdefault.}: Option[string]
 
-proc find(this: CustomElementRegistry; name: CAtomTraced): CustomElementDef =
+proc find(this: CustomElementRegistry; name: CAtom): CustomElementDef =
   for it in this.defs:
     if it.name == name:
       return it
@@ -2045,7 +2045,7 @@ proc find(this: CustomElementRegistry; ctx: JSContext; ctor: JSValueConst):
   return nil
 
 proc tryGetStrSeq(ctx: JSContext; ctor: JSValueConst; name: cstring;
-    res: var seq[CAtomTraced]): Opt[void] =
+    res: var seq[CAtom]): Opt[void] =
   let val = JS_GetPropertyStr(ctx, ctor, name)
   if JS_IsException(val):
     return err()
@@ -2065,7 +2065,7 @@ proc tryGetCallback(ctx: JSContext; proto: JSValueConst; t: CECallbackType;
       return err()
   ok()
 
-proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced;
+proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
     ctor, proto: JSValueConst; def: CustomElementDef): Opt[void] =
   if not JS_IsObject(proto):
     JS_ThrowTypeError(ctx, "prototype is not an object")
@@ -2074,7 +2074,7 @@ proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced;
     ?ctx.tryGetCallback(proto, t, def.callbacks)
   if not JS_IsNull(def.callbacks[cctAttributeChanged]):
     ?ctx.tryGetStrSeq(ctor, "observedAttributes", def.observedAttrs)
-  var disabled: seq[CAtomTraced]
+  var disabled: seq[CAtom]
   ?ctx.tryGetStrSeq(ctor, "disabledFeatures", disabled)
   if satInternals in disabled:
     def.flags.excl(cefInternals)
@@ -2088,7 +2088,7 @@ proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced;
       ?ctx.tryGetCallback(proto, t, def.callbacks)
   ok()
 
-proc newCustomElementDef(name, localName: CAtomTraced): CustomElementDef =
+proc newCustomElementDef(name, localName: CAtom): CustomElementDef =
   let def = CustomElementDef(
     name: name,
     localName: localName,
@@ -2119,7 +2119,7 @@ jsClassDef(CustomElementRegistry):
     for def in this.defs:
       rt.freeValues(def.callbacks)
 
-  proc define(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced;
+  proc define(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
       ctor: JSValueConst; options = CustomElementDefinitionOptions()): JSValue
       {.jsfunc.} =
     if not JS_IsConstructor(ctx, ctor):
@@ -2157,7 +2157,7 @@ jsClassDef(CustomElementRegistry):
     #TODO when-defined
     return JS_UNDEFINED
 
-  proc get(ctx: JSContext; this: CustomElementRegistry; name: CAtomTraced):
+  proc get(ctx: JSContext; this: CustomElementRegistry; name: CAtom):
       JSValue {.jsfunc.} =
     let def = this.find(name)
     if def != nil:
@@ -2165,11 +2165,11 @@ jsClassDef(CustomElementRegistry):
     return JS_UNDEFINED
 
   proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSValueConst):
-      CAtomTraced {.jsfunc.} =
+      CAtom {.jsfunc.} =
     let def = this.find(ctx, ctor)
     if def != nil:
       return def.name
-    return CAtomNullTraced
+    return CAtomNull
 
   #TODO whenDefined, initialize
 
@@ -2399,7 +2399,7 @@ proc queueMutationJob(ctx: JSContext) =
       mutationJobQueued = true
 
 proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
-    name, namespace: CAtomTraced; oldValue: RefString; hasOldValue2: bool;
+    name, namespace: CAtom; oldValue: RefString; hasOldValue2: bool;
     oldValue2: string; added, removed: openArray[Node];
     previousSibling, nextSibling: Node) =
   if ctx.getOpaque() == nil:
@@ -2454,8 +2454,8 @@ proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
 
 proc queueTreeMutationRecord(parent: ParentNode; ctx: JSContext;
     added, removed: openArray[Node]; previousSibling, nextSibling: Node) =
-  parent.asNode.queueMutationRecord(ctx, mrtChildList, CAtomNullTraced,
-    CAtomNullTraced, nil, true, "", added, removed, previousSibling,
+  parent.asNode.queueMutationRecord(ctx, mrtChildList, CAtomNull,
+    CAtomNull, nil, true, "", added, removed, previousSibling,
     nextSibling)
 
 type PreInsertExclude = enum
@@ -2770,7 +2770,7 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
         res &= "xml:"
         local = true
       of satNamespaceXMLNS:
-        if not attr.name.matchesLocalName(satXmlns.toAtomTrace()):
+        if not attr.name.matchesLocalName(satXmlns.view()):
           res &= "xmlns:"
         local = true
       of satNamespaceXLink:
@@ -3238,7 +3238,7 @@ proc childTextContent*(node: ParentNode): string =
     if (let child = child as Text; child != nil):
       result &= child.data.s
 
-proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtomTraced):
+proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtom):
     HTMLCollection =
   if tagName == satUstar:
     return newHTMLCollection(root.asNode, isElement, childonly = false)
@@ -3279,7 +3279,7 @@ proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
   )
   if this != nil:
     for class in classNames.toOpenArray().split(AsciiWhitespace):
-      this.atoms.add(class.toAtomTrace())
+      this.atoms.add(class.toAtom())
   this
 
 proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
@@ -3485,7 +3485,7 @@ proc newHTMLCollectionOf(root: Node; tags: openArray[TagType];
   let this = newHTMLCollection(root, isHTMLElementOf, childonly)
   if this != nil:
     for tag in tags:
-      this.atoms.add(tag.toAtomTrace())
+      this.atoms.add(tag.view())
   this
 
 proc newNodeList(root: Node; match: CollectionMatchFun;
@@ -3530,8 +3530,8 @@ jsClassDef(CharacterData):
 
   proc setData(ctx: JSContext; this: CharacterData; data: DOMStringNull) {.
       jsfset: "data".} =
-    this.asNode.queueMutationRecord(ctx, mrtCharacterData, CAtomNullTraced,
-      CAtomNullTraced, this.data, true, "", [], [], Node(nil), Node(nil))
+    this.asNode.queueMutationRecord(ctx, mrtCharacterData, CAtomNull,
+      CAtomNull, this.data, true, "", [], [], Node(nil), Node(nil))
     this.data = newRefString(data)
 
   proc length(this: CharacterData): int {.jsfget.} =
@@ -3827,7 +3827,7 @@ proc scriptingEnabled*(document: Document): bool =
     return false
   return document.window.settings.scripting != smFalse
 
-proc getElementById*(document: Document; id: CAtomTraced): Element =
+proc getElementById*(document: Document; id: CAtom): Element =
   if id != satUempty and document.elementIdMap.len > 0:
     let mask = document.elementIdMap.len - 1
     var i = id.view().hash() and mask
@@ -3840,7 +3840,7 @@ proc getElementById*(document: Document; id: CAtomTraced): Element =
       i = (i + 1) and mask
   Element(nil)
 
-proc getElementsById*(document: Document; id: CAtomTraced): JSRootRef =
+proc getElementsById*(document: Document; id: CAtom): JSRootRef =
   # for WindowProperties
   if id != satUempty and document.elementIdMap.len > 0:
     let mask = document.elementIdMap.len - 1
@@ -3911,7 +3911,7 @@ proc invalidateCollectionsRemove(document: Document; node: Node) =
       cast[Collection](collection).invalid = true
     collection = collection.next
 
-proc isValidCustomElementName(atom: CAtomTraced): bool =
+proc isValidCustomElementName(atom: CAtom): bool =
   const Disallowed = [
     satAnnotationXml, satColorDashProfile, satFontDashFace,
     satFontDashFaceDashSrc, satFontDashFaceDashUri, satFontDashFaceDashFormat,
@@ -3952,15 +3952,15 @@ type NameValidator = enum
   nvAttribute, nvElement
 
 # localName must be set to the qualified name before the call
-proc validateAndExtract(ctx: JSContext; namespace, localName: var CAtomTraced;
+proc validateAndExtract(ctx: JSContext; namespace, localName: var CAtom;
     t: NameValidator): Opt[void] =
   if namespace == satUempty:
-    namespace = CAtomNullTraced
-  var prefix = CAtomNullTraced
+    namespace = CAtomNull
+  var prefix = CAtomNull
   let i = localName.find(':')
   if i >= 0:
-    prefix = localName.substrTrace(0, i - 1)
-    localName = localName.substrTrace(i + 1)
+    prefix = localName.substr(0, i - 1)
+    localName = localName.substr(i + 1)
     if prefix == satUempty or AsciiWhitespace + {'\0', '/', '>'} in prefix:
       JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid prefix")
       return err()
@@ -4153,7 +4153,7 @@ proc reflectEvent(document: Document; target: EventTarget;
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
   let sheet = parseStylesheet(ua, URL(nil), addr document.window.settings,
-    coUserAgent, CAtomNullTraced)
+    coUserAgent, CAtomNull)
   document.uaSheetsHead = sheet
   if document.documentElement != nil:
     document.documentElement.invalidate()
@@ -4163,7 +4163,7 @@ proc applyQuirksSheet*(document: Document) =
     return
   const quirks = staticRead"res/quirk.css"
   let sheet = parseStylesheet(quirks, URL(nil), addr document.window.settings,
-    coUserAgent, CAtomNullTraced)
+    coUserAgent, CAtomNull)
   document.uaSheetsHead.next = sheet
   sheet.prev = document.uaSheetsHead
   if document.documentElement != nil:
@@ -4171,7 +4171,7 @@ proc applyQuirksSheet*(document: Document) =
 
 proc applyUserSheet*(document: Document; user: string) =
   document.userSheet = parseStylesheet(user, URL(nil),
-    addr document.window.settings, coUser, CAtomNullTraced)
+    addr document.window.settings, coUser, CAtomNull)
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -4194,7 +4194,7 @@ proc getRuleMap*(document: Document): CSSRuleMap =
 proc findAnchor*(document: Document; id: string): Element =
   if id.len == 0:
     return Element(nil)
-  let id = id.toAtomTrace()
+  let id = id.toAtom()
   for child in document.asParentNode.elementDescendants:
     if child.id == id:
       return child
@@ -4385,7 +4385,7 @@ jsClassPublicDef(Document):
     let pi = newProcessingInstruction(document, $target, newRefString(data))
     ctx.toJSNew(pi)
 
-  proc createEvent(ctx: JSContext; document: Document; atom: CAtomTraced):
+  proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
       JSValue {.jsfunc.} =
     case atom.toStaticAtomLower()
     of satCustomevent:
@@ -4453,7 +4453,7 @@ jsClassPublicDef(Document):
   proc getElementById(ctx: JSContext; document: Document; val: JSValueConst):
       JSValue {.jsfunc.} =
     let atom = JS_ValueToAtom(ctx, val)
-    var id: CAtom
+    var id: CAtomRaw
     let status = ctx.fromJSView(atom, id)
     JS_FreeAtom(ctx, atom)
     if status == fjErr:
@@ -4462,7 +4462,7 @@ jsClassPublicDef(Document):
       return JS_NULL
     ctx.toJS(document.getElementById(id.view()))
 
-  proc getElementsByName(document: Document; name: CAtomTraced): NodeList
+  proc getElementsByName(document: Document; name: CAtom): NodeList
       {.jsfunc.} =
     let this = newNodeList(
       document.asNode,
@@ -4476,7 +4476,7 @@ jsClassPublicDef(Document):
       this.atoms = @[name]
     this
 
-  proc getElementsByTagName(document: Document; tagName: CAtomTraced):
+  proc getElementsByTagName(document: Document; tagName: CAtom):
       HTMLCollection {.jsfunc.} =
     document.asParentNode.getElementsByTagNameImpl(tagName)
 
@@ -4500,9 +4500,9 @@ jsClassPublicDef(Document):
       JSValue {.jsfunc.} =
     ?ctx.validateElementName(localName.toOpenArray())
     let localName = if not document.isxml:
-      localName.toAtomLowerTrace()
+      localName.toAtomLower()
     else:
-      localName.toAtomTrace()
+      localName.toAtom()
     let namespace = if not document.isxml or
         document.contentType == satApplicationXmlHtml:
       satNamespaceHTML
@@ -4511,7 +4511,7 @@ jsClassPublicDef(Document):
     ctx.toJS(document.newElement(localName, namespace))
 
   proc createElementNS(ctx: JSContext; document: Document;
-      namespace, qualifiedName: CAtomTraced): Opt[Element] {.jsfunc.} =
+      namespace, qualifiedName: CAtom): Opt[Element] {.jsfunc.} =
     var namespace = namespace
     var localName = qualifiedName
     ?ctx.validateAndExtract(namespace, localName, nvElement)
@@ -4612,7 +4612,7 @@ jsClassPublicDef(Document):
 
   proc getter(ctx: JSContext; document: Document; atom: JSAtom): JSValue
       {.jsgetownprop.} =
-    var id: CAtom
+    var id: CAtomRaw
     ?ctx.fromJSView(atom, id)
     if id != CAtomNull and id != satUempty:
       #TODO exposed embed, exposed object
@@ -4715,12 +4715,12 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
     JS_MarkForeignObject(rt, this, markFunc)
 
   proc createDocument(ctx: JSContext; implementation: DOMImplementation;
-      namespace: CAtomTraced; qualifiedName: DOMStringNull;
+      namespace: CAtom; qualifiedName: DOMStringNull;
       doctype = none(DocumentType)): JSValue {.jsfunc.} =
     let document = newXMLDocument()
     if document == nil:
       return JS_ThrowOutOfMemory(ctx)
-    let qualifiedName = qualifiedName.toAtomTrace()
+    let qualifiedName = qualifiedName.toAtom()
     let element = if qualifiedName != satUempty:
       ?ctx.createElementNS(document.asDocument, namespace, qualifiedName)
     else:
@@ -5011,7 +5011,7 @@ proc update(tokenList: DOMTokenList; ctx: JSContext) =
       tokenList.toks.len > 0:
     tokenList.element.setAttr(ctx, tokenList.localName, $tokenList)
 
-proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtomTraced]): Opt[void] =
+proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
   for tok in toks:
     if tok == satUempty:
       JS_ThrowDOMException(ctx, "SyntaxError", "got an empty string")
@@ -5028,7 +5028,7 @@ proc reflectTokens(element: Element; list: var DOMTokenList; name: StaticAtom;
     list.toks.setLen(0)
   for x in value.split(AsciiWhitespace):
     if x != "":
-      let a = x.toAtomTrace()
+      let a = x.toAtom()
       if list == nil:
         list = element.newDOMTokenList(name)
       if a notin list:
@@ -5048,7 +5048,7 @@ jsClassDef(DOMTokenList):
         return ctx.toJS(tokenList.toks[i])
     return JS_NULL
 
-  proc contains(tokenList: DOMTokenList; s: CAtomTraced): bool {.jsfunc.} =
+  proc contains(tokenList: DOMTokenList; s: CAtom): bool {.jsfunc.} =
     return s in tokenList.toks
 
   proc `$`(tokenList: DOMTokenList): string {.jsfunc: "toString",
@@ -5062,7 +5062,7 @@ jsClassDef(DOMTokenList):
 
   proc add(ctx: JSContext; tokenList: DOMTokenList;
       argv: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
-    var toks: seq[CAtomTraced]
+    var toks: seq[CAtom]
     ?ctx.fromJS(argv, toks)
     ?ctx.validateDOMTokens(toks)
     tokenList.toks.add(toks)
@@ -5071,7 +5071,7 @@ jsClassDef(DOMTokenList):
 
   proc remove(ctx: JSContext; tokenList: DOMTokenList;
       argv: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
-    var toks: seq[CAtomTraced]
+    var toks: seq[CAtom]
     ?ctx.fromJS(argv, toks)
     ?ctx.validateDOMTokens(toks)
     for tok in toks:
@@ -5081,7 +5081,7 @@ jsClassDef(DOMTokenList):
     tokenList.update(ctx)
     ok()
 
-  proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: CAtomTraced;
+  proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: CAtom;
       force: JSValueConst = JS_UNDEFINED): Opt[bool] {.jsfunc.} =
     ?ctx.validateDOMTokens(token)
     let forceBool = JS_ToBool(ctx, force)
@@ -5101,7 +5101,7 @@ jsClassDef(DOMTokenList):
     ok(false)
 
   proc replace(ctx: JSContext; tokenList: DOMTokenList;
-      token, newToken: CAtomTraced): Opt[bool] {.jsfunc.} =
+      token, newToken: CAtom): Opt[bool] {.jsfunc.} =
     ?ctx.validateDOMTokens(token, newToken)
     let i = tokenList.toks.find(token.view())
     if i == -1:
@@ -5130,9 +5130,9 @@ jsClassDef(DOMTokenList):
     of fiErr: JS_EXCEPTION
 
 # DOMStringMap
-proc toDataStr(name: DOMString): CAtomTraced =
+proc toDataStr(name: DOMString): CAtom =
   let s = "data-" & name.toOpenArray().camelToKebabCase()
-  s.toAtomTrace()
+  s.toAtom()
 
 jsClassDef(DOMStringMap):
   proc delete(ctx: JSContext; map: DOMStringMap; name: DOMString): bool {.
@@ -5222,7 +5222,7 @@ jsClassDef(HTMLCollection):
       return this.snapshot[int(u)] as Element
     Element(nil)
 
-  proc namedItem(this: HTMLCollection; atom: CAtomTraced): Element {.jsfunc.} =
+  proc namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
     if atom != satUempty:
       this.asCollection.refreshCollection()
       for it in this.snapshot:
@@ -5235,7 +5235,7 @@ jsClassDef(HTMLCollection):
   proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
       {.jsgetownprop.} =
     var u: uint32
-    var s: CAtomTraced
+    var s: CAtom
     case ctx.fromIdx(atom, u, s)
     of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
     of fiStr: ctx.toJS(this.namedItem(s)).uninitIfNull()
@@ -5272,7 +5272,7 @@ jsClassDef(HTMLFormControlsCollection):
   jsextends HTMLCollectionDef
 
   proc namedItem(ctx: JSContext; this: HTMLFormControlsCollection;
-      name: CAtomTraced): JSValue {.jsfunc.} =
+      name: CAtom): JSValue {.jsfunc.} =
     let nodes = jsNew RadioNodeListObj(
       match: isRadioNode,
       root: this.root,
@@ -5297,7 +5297,7 @@ jsClassDef(HTMLFormControlsCollection):
   proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
       JSValue {.jsgetownprop.} =
     var u: uint32
-    var s: CAtomTraced
+    var s: CAtom
     case ctx.fromIdx(atom, u, s)
     of fiIdx: ctx.toJS(this.asHTMLCollection.item(u)).uninitIfNull()
     of fiStr: ctx.namedItem(this, s).uninitIfNull()
@@ -5449,10 +5449,10 @@ proc data(attr: Attr): lent AttrData =
 jsClassDef(Attr):
   jsextends NodeDef
 
-  proc name(attr: Attr): lent CAtomTraced {.jsfget.} =
+  proc name(attr: Attr): lent CAtom {.jsfget.} =
     return attr.data.name
 
-  proc namespaceURI(attr: Attr): lent CAtomTraced {.jsfget.} =
+  proc namespaceURI(attr: Attr): lent CAtom {.jsfget.} =
     return attr.data.namespace
 
   proc prefix(ctx: JSContext; attr: Attr): JSValue {.jsfget.} =
@@ -5505,14 +5505,14 @@ jsClassDef(NamedNodeMap):
     for attr in map.attrlist:
       rt.markObj(attr, markFunc)
 
-  proc getNamedItem(map: NamedNodeMap; qualifiedName: CAtomTraced): Attr {.
+  proc getNamedItem(map: NamedNodeMap; qualifiedName: CAtom): Attr {.
       jsfunc.} =
     let i = map.element.findAttr(qualifiedName)
     if i >= 0:
       return map.getAttr(i)
     return Attr(nil)
 
-  proc getNamedItemNS(map: NamedNodeMap; namespace, localName: CAtomTraced):
+  proc getNamedItemNS(map: NamedNodeMap; namespace, localName: CAtom):
       Attr {.jsfunc.} =
     let i = map.element.findAttrNS(namespace, localName)
     if i >= 0:
@@ -5530,7 +5530,7 @@ jsClassDef(NamedNodeMap):
   proc getter(ctx: JSContext; this: NamedNodeMap; atom: JSAtom): JSValue
       {.jsgetownprop.} =
     var u: uint32
-    var s: CAtomTraced
+    var s: CAtom
     case ctx.fromIdx(atom, u, s)
     of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
     of fiStr: ctx.toJS(this.getNamedItem(s)).uninitIfNull()
@@ -5598,24 +5598,24 @@ proc tagType*(element: Element; namespace = satNamespaceHTML): TagType =
     return ttUnknown
   return element.tagTypeNoNS
 
-proc normalizeAttrQName(element: Element; qualifiedName: CAtomTraced):
-    CAtomTraced =
+proc normalizeAttrQName(element: Element; qualifiedName: CAtom):
+    CAtom =
   if element.namespaceURI == satNamespaceHTML and
       not element.asNode.document.isxml:
     return qualifiedName.toLowerAscii()
   return qualifiedName
 
-proc cmpAttrName(a: AttrData; b: CAtomTraced): int =
+proc cmpAttrName(a: AttrData; b: CAtom): int =
   return cmp(a.name, b)
 
-proc findAttr(element: Element; qualifiedName: CAtomTraced): int =
+proc findAttr(element: Element; qualifiedName: CAtom): int =
   let qualifiedName = element.normalizeAttrQName(qualifiedName)
   let n = element.attrs.lowerBound(qualifiedName, cmpAttrName)
   if n < element.attrs.len and element.attrs[n].name == qualifiedName:
     return n
   return -1
 
-proc findAttrNS(element: Element; namespace, localName: CAtomTraced): int =
+proc findAttrNS(element: Element; namespace, localName: CAtom): int =
   if namespace == CAtomNull:
     for i, attr in element.attrs.mypairs:
       if attr.namespace == CAtomNull and attr.name == localName:
@@ -5639,7 +5639,7 @@ proc cachedAttributes(ctx: JSContext; element: Element): NamedNodeMap =
     return NamedNodeMap(nil)
   return map
 
-proc attr*(element: Element; s: CAtomTraced): lent string =
+proc attr*(element: Element; s: CAtom): lent string =
   let i = element.findAttr(s)
   if i >= 0:
     return element.attrs[i].value
@@ -5674,14 +5674,14 @@ proc attrdgz*(element: Element; s: StaticAtom): Opt[float64] =
     return err()
   ok(d)
 
-proc attrb*(element: Element; s: CAtomTraced): bool =
+proc attrb*(element: Element; s: CAtom): bool =
   return element.findAttr(s) >= 0
 
 proc attrb*(element: Element; at: StaticAtom): bool =
   return element.attrb(at.view())
 
-proc name*(element: Element): CAtom =
-  CAtom(element.getMagic())
+proc name*(element: Element): CAtomRaw =
+  CAtomRaw(element.getMagic())
 
 proc isDisplayed(element: Element): bool =
   element.ensureStyle()
@@ -5965,7 +5965,7 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
 # Called whenever an attribute changes on the element.
 # If `has' is false, then value is "".  Otherwise, value is the new
 # attribute value.
-proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
+proc reflectAttr0(element: Element; name: CAtom; has: bool;
     value: string) =
   let name = name.toStaticAtom()
   case name
@@ -5974,18 +5974,18 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
     if element.id != satUempty and root != nil:
       root.removeElementId(element)
     if has:
-      element.id = value.toAtomTrace()
+      element.id = value.toAtom()
     else:
       element.id = satUempty.view()
     if element.id != satUempty and root != nil:
       root.addElementId(element)
   of satName:
     freeAtom(element.name)
-    let name = if has:
-      value.toAtom()
+    if has:
+      let atom = value.toAtom()
+      element.setMagic(uint32(atom.view().dup()))
     else:
-      CAtomNull
-    element.setMagic(uint32(name))
+      element.setMagic(0)
   of satClass:
     element.reflectTokens(element.internalClassList, satClass, value)
   #TODO internalNonce
@@ -6005,13 +6005,13 @@ proc reflectAttr0(element: Element; name: CAtomTraced; has: bool;
   else:
     element.reflectLocalAttr(name, has, value)
 
-proc reflectAttr(element: Element; name: CAtomTraced; has: bool;
+proc reflectAttr(element: Element; name: CAtom; has: bool;
     value: string) =
   element.reflectAttr0(name, has, value)
   element.asNode.document.invalidateCollections()
   element.invalidate()
 
-proc reflectAttrDel(element: Element; name: CAtomTraced) =
+proc reflectAttrDel(element: Element; name: CAtom) =
   element.reflectAttr(name, false, "")
 
 proc reflectAttr(element: Element; attr: AttrData) =
@@ -6059,7 +6059,7 @@ proc isDisabled*(this: Element): bool =
   else: #TODO form-associated custom element
     return false
 
-proc newElement*(document: Document; localName: CAtomTraced;
+proc newElement*(document: Document; localName: CAtom;
     namespace = satNamespaceHTML): Element =
   return document.newElement(localName, namespace.view(), localName)
 
@@ -6134,11 +6134,11 @@ proc hasInsertionSteps(element: Element): bool =
     element.tagType(satNamespaceSVG) == ttSvg or
     element of FormAssociatedElement
 
-proc hasClass*(element: Element; class: CAtomTraced): bool =
+proc hasClass*(element: Element; class: CAtom): bool =
   element.internalClassList != nil and
     element.internalClassList.toks.containsIgnoreCase(class)
 
-proc hasClassIgnoreCase*(element: Element; class: CAtomTraced): bool =
+proc hasClassIgnoreCase*(element: Element; class: CAtom): bool =
   element.internalClassList != nil and
     element.internalClassList.toks.contains(class)
 
@@ -6208,7 +6208,7 @@ proc postConnectionSteps(element: Element; ctx: JSContext) =
 
 proc delAttr(element: Element; ctx: JSContext; i: int) =
   let name = element.attrs[i].name
-  element.asNode.queueMutationRecord(ctx, mrtAttributes, name, CAtomNullTraced,
+  element.asNode.queueMutationRecord(ctx, mrtAttributes, name, CAtomNull,
     nil, true, element.attrs[i].value, [], [], Node(nil), Node(nil))
   let map = ctx.cachedAttributes(element)
   if map != nil:
@@ -6231,18 +6231,18 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
   element.attrs.delete(i) # ordering matters
   element.reflectAttrDel(name)
 
-proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+proc setAttr(element: Element; ctx: JSContext; name: CAtom;
     value: sink string) =
   var i = element.attrs.upperBound(name, cmpAttrName)
   if i > 0 and element.attrs[i - 1].name == name:
     dec i
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNullTraced, nil, true, element.attrs[i].value, [], [], Node(nil),
+      CAtomNull, nil, true, element.attrs[i].value, [], [], Node(nil),
       Node(nil))
     element.attrs[i].value = value
   else:
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNullTraced, nil, false, "", [], [], Node(nil), Node(nil))
+      CAtomNull, nil, false, "", [], [], Node(nil), Node(nil))
     element.attrs.insert(AttrData(name: name, value: value), i)
   element.reflectAttr(element.attrs[i])
 
@@ -6250,18 +6250,18 @@ proc setAttr(element: Element; ctx: JSContext; name: StaticAtom;
     value: sink string) =
   element.setAttr(ctx, name.view(), value)
 
-proc setAttr(element: Element; ctx: JSContext; name: CAtomTraced;
+proc setAttr(element: Element; ctx: JSContext; name: CAtom;
     value: DOMString) =
   var i = element.attrs.upperBound(name, cmpAttrName)
   if i > 0 and element.attrs[i - 1].name == name:
     dec i
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNullTraced, nil, true, element.attrs[i].value, [], [], Node(nil),
+      CAtomNull, nil, true, element.attrs[i].value, [], [], Node(nil),
       Node(nil))
     element.attrs[i].value = $value
   else:
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNullTraced, nil, false, "", [], [], Node(nil), Node(nil))
+      CAtomNull, nil, false, "", [], [], Node(nil), Node(nil))
     element.attrs.insert(AttrData(name: name, value: $value), i)
   element.reflectAttr(element.attrs[i])
 
@@ -6394,11 +6394,11 @@ jsClassPublicDef(Element):
   proc attributes(ctx: JSContext; element: Element): JSValue {.jsfget.} =
     return ctx.getWeakCollection(element.asNode, wwmAttributes)
 
-  proc hasAttribute(element: Element; qualifiedName: CAtomTraced): bool
+  proc hasAttribute(element: Element; qualifiedName: CAtom): bool
       {.jsfunc.} =
     return element.findAttr(qualifiedName) >= 0
 
-  proc hasAttributeNS(element: Element; namespace, localName: CAtomTraced):
+  proc hasAttributeNS(element: Element; namespace, localName: CAtom):
       bool {.jsfunc.} =
     return element.findAttrNS(namespace, localName) >= 0
 
@@ -6410,20 +6410,20 @@ jsClassPublicDef(Element):
     return ctx.newArrayFrom(s)
 
   proc getAttribute(ctx: JSContext; element: Element;
-      qualifiedName: CAtomTraced): JSValue {.jsfunc.} =
+      qualifiedName: CAtom): JSValue {.jsfunc.} =
     let i = element.findAttr(qualifiedName)
     if i >= 0:
       return ctx.toJS(element.attrs[i].value)
     return JS_NULL
 
   proc getAttributeNS(ctx: JSContext; element: Element;
-      namespace, localName: CAtomTraced): JSValue {.jsfunc.} =
+      namespace, localName: CAtom): JSValue {.jsfunc.} =
     let i = element.findAttrNS(namespace, localName)
     if i >= 0:
       return ctx.toJS(element.attrs[i].value)
     return JS_NULL
 
-  proc getElementsByTagName(element: Element; tagName: CAtomTraced):
+  proc getElementsByTagName(element: Element; tagName: CAtom):
       HTMLCollection {.jsfunc.} =
     element.asParentNode.getElementsByTagNameImpl(tagName)
 
@@ -6615,14 +6615,14 @@ jsClassPublicDef(Element):
     ?ctx.validateAttrName(qualifiedName.toOpenArray())
     let qualifiedName = if element.namespaceURI == satNamespaceHTML and
         not element.asNode.document.isxml:
-      qualifiedName.toAtomLowerTrace()
+      qualifiedName.toAtomLower()
     else:
-      qualifiedName.toAtomTrace()
+      qualifiedName.toAtom()
     element.setAttr(ctx, qualifiedName, value)
     ok()
 
   proc setAttributeNS(ctx: JSContext; element: Element;
-      namespace, qualifiedName: CAtomTraced; value: DOMString): Opt[void]
+      namespace, qualifiedName: CAtom; value: DOMString): Opt[void]
       {.jsfunc.} =
     var namespace = namespace
     var localName = qualifiedName
@@ -6646,13 +6646,13 @@ jsClassPublicDef(Element):
     ok()
 
   proc removeAttribute(ctx: JSContext; element: Element;
-      qualifiedName: CAtomTraced) {.jsfunc.} =
+      qualifiedName: CAtom) {.jsfunc.} =
     let i = element.findAttr(qualifiedName)
     if i >= 0:
       element.delAttr(ctx, i)
 
   proc removeAttributeNS(ctx: JSContext; element: Element;
-      namespace, localName: CAtomTraced) {.jsfunc.} =
+      namespace, localName: CAtom) {.jsfunc.} =
     let i = element.findAttrNS(namespace, localName)
     if i >= 0:
       element.delAttr(ctx, i)
@@ -6664,7 +6664,7 @@ jsClassPublicDef(Element):
     if forceBool < 0:
       return err()
     ?ctx.validateAttrName(qualifiedName.toOpenArray())
-    let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtomTrace())
+    let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtom())
     if not element.attrb(qualifiedName):
       if JS_IsUndefined(force) or forceBool == 1:
         element.setAttr(ctx, qualifiedName, "")
@@ -6911,7 +6911,7 @@ proc find(this: CSSStyleDeclaration; p: CSSPropertyType): int =
 
 proc find(this: CSSStyleDeclaration; s: openArray[char]): int =
   if s.startsWith("--"):
-    let v = s.toOpenArray(2, s.high).toAtomTrace()
+    let v = s.toOpenArray(2, s.high).toAtom()
     for i, decl in this.decls.mypairs:
       if decl.t == cdtVariable and decl.v == v:
         return i
@@ -7157,7 +7157,7 @@ proc resetFormOwner(element: FormAssociatedElement) =
     element.form = HTMLFormElement(nil)
   if element.asHTMLElement.tagType in ListedElements and
       element.asNode.isConnected:
-    let id = element.asElement.attr(satForm).toAtomTrace()
+    let id = element.asElement.attr(satForm).toAtom()
     let form = element.asNode.document.getElementById(id) as HTMLFormElement
     if form != nil:
       element.setForm(form)
@@ -7669,7 +7669,7 @@ jsClassDef(HTMLLabelElement):
   proc control*(label: HTMLLabelElement): HTMLElement {.jsfget.} =
     let f = label.asElement.attr(satFor)
     if f != "":
-      let id = f.toAtomTrace()
+      let id = f.toAtom()
       let element = label.asNode.document.getElementById(id)
       if element.isLabelable():
         return element as HTMLElement
@@ -7953,7 +7953,7 @@ jsClassPublicDef(HTMLSelectElement):
     let options = this.options()
     options.asHTMLCollection.item(u)
 
-  proc namedItem(ctx: JSContext; this: HTMLSelectElement; atom: CAtomTraced):
+  proc namedItem(ctx: JSContext; this: HTMLSelectElement; atom: CAtom):
       Element {.jsfunc.} =
     let options = this.options()
     options.asHTMLCollection.namedItem(atom)
@@ -8040,7 +8040,7 @@ proc updateSheet*(this: HTMLStyleElement) =
   let window = document.window
   if window != nil:
     window.parseStylesheet(this.asSheetElement, this.asNode.textContent,
-      document.baseURL, DefaultCharset, CAtomNullTraced, updateSheetFinish,
+      document.baseURL, DefaultCharset, CAtomNull, updateSheetFinish,
       nil, 0)
 
 jsClassPublicDef(HTMLStyleElement):
@@ -8835,8 +8835,8 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
   move(p)
 
 #TODO custom elements
-proc newElement(document: Document;
-    localName, namespaceURI, tagName: CAtomTraced): Element =
+proc newElement(document: Document; localName, namespaceURI, tagName: CAtom):
+    Element =
   let tagType = localName.toTagType()
   let sns = namespaceURI.toStaticAtom()
   let element = if namespaceURI == satNamespaceHTML:

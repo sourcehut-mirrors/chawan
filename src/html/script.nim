@@ -63,7 +63,7 @@ type
     images*: bool
     styling*: bool
     autofocus*: bool
-    contentType*: CAtomTraced
+    contentType*: CAtom
 
   Script* = ref object
     settings: EnvironmentSettings
