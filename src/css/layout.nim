@@ -1872,10 +1872,12 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
       let span2 = fstate.excludeFloats(pbfcOffset + offset, nexty)
       # the spec says you can make it narrower if it's a block, but not if
       # it's a table.
-      let intrFits = child.computed{"display"} != DisplayTable or
-        span2.send - span2.start >= child.state.intr.w
-      if span2.start <= span.start and span2.send >= span.send and
-          intrFits:
+      let minWidth = if child.computed{"display"} == DisplayTable:
+        child.state.intr.w
+      else:
+        0'lu
+      let intrFits = span2.send - span2.start >= minWidth
+      if span2.start <= span.start and span2.send >= span.send and intrFits:
         break # yes, we are done
       # no, try again
       if intrFits:
