@@ -758,7 +758,7 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
 
 proc newCDATASection(document: Document; data: RefString): CDATASection
 proc newComment(document: Document; data: RefString): Comment
-proc newText*(document: Document; data: string): Text
+proc newText*(document: Document; data: sink string): Text
 proc newText(document: Document; data: DOMString): Text
 proc newText(ctx: JSContext; data = initDOMStringLit("")): Text
 proc newDocument*(url: URL): Document
@@ -3559,8 +3559,8 @@ jsClassDef(CharacterData):
     this.asNode.removeImpl(ctx)
 
 # Text
-proc newText*(document: Document; data: string): Text =
-  jsNew TextObj(internalNext: document.asNode, data: newRefString(data))
+proc newText*(document: Document; data: sink string): Text =
+  jsNew TextObj(internalNext: document.asNode, data: newRefString(move(data)))
 
 proc newText(document: Document; data: DOMString): Text =
   jsNew TextObj(internalNext: document.asNode, data: newRefString(data))

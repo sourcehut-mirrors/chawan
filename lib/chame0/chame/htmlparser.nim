@@ -192,9 +192,9 @@ proc insertBefore[Handle, Atom](parser: HTML5Parser[Handle, Atom];
   parser.dombuilder.insertBeforeImpl(parent, child, before)
 
 proc insertText[Handle, Atom](parser: HTML5Parser[Handle, Atom]; parent: Handle;
-    text: string; before: Handle) =
+    text: sink string; before: Handle) =
   mixin insertTextImpl
-  parser.dombuilder.insertTextImpl(parent, text, before)
+  parser.dombuilder.insertTextImpl(parent, move(text), before)
 
 proc remove[Handle, Atom](parser: HTML5Parser[Handle, Atom]; child: Handle) =
   mixin removeImpl
@@ -548,10 +548,16 @@ proc insertHTMLElementPop[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
   discard parser.insertHTMLElement()
   discard parser.popElement()
 
-proc insertCharacter(parser: var HTML5Parser; data: string) =
+proc insertCharacter(parser: var HTML5Parser; data: sink string) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside != parser.getDocument():
-    parser.insertText(location.inside, data, location.before)
+    parser.insertText(location.inside, move(data), location.before)
+
+proc insertCharbuf(parser: var HTML5Parser) =
+  let location = parser.appropriatePlaceForInsert()
+  if location.inside != parser.getDocument():
+    parser.insertText(location.inside, move(parser.tok.charbufOut),
+      location.before)
 
 proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     position: InsertionLocation[Handle]) =
@@ -1105,7 +1111,7 @@ proc processInHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   var anythingElse = false
   case parser.tok.t
-  of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+  of ttWhitespace: parser.insertCharbuf()
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1207,7 +1213,7 @@ proc processAfterHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   var anythingElse = false
   case parser.tok.t
-  of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+  of ttWhitespace: parser.insertCharbuf()
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1246,11 +1252,11 @@ proc processInBody[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   case parser.tok.t
   of ttWhitespace:
     parser.reconstructActiveFormatting()
-    parser.insertCharacter(parser.tok.charbufOut)
+    parser.insertCharbuf()
   of ttNull, ttDoctype: discard
   of ttCharacter:
     parser.reconstructActiveFormatting()
-    parser.insertCharacter(parser.tok.charbufOut)
+    parser.insertCharbuf()
     parser.framesetOk = false
   of ttComment: parser.insertComment()
   of ttStartTag:
@@ -1556,7 +1562,7 @@ proc processText[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   case parser.tok.t
   of ttCharacter, ttWhitespace:
-    parser.insertCharacter(parser.tok.charbufOut)
+    parser.insertCharbuf()
   of ttEndTag:
     discard parser.popElement()
     parser.insertionMode = parser.oldInsertionMode
@@ -1658,11 +1664,11 @@ proc processInTableText[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
       # wants...
       parser.fosterParenting = true
       parser.reconstructActiveFormatting()
-      parser.insertCharacter(parser.pendingTableChars)
+      parser.insertCharacter(move(parser.pendingTableChars))
       parser.framesetOk = false
       parser.fosterParenting = false
     else:
-      parser.insertCharacter(parser.pendingTableChars)
+      parser.insertCharacter(move(parser.pendingTableChars))
     parser.insertionMode = parser.oldInsertionMode
     return parser.processInHTML()
   pcrContinue
@@ -1703,7 +1709,7 @@ proc processInColumnGroup[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   var anythingElse = false
   case parser.tok.t
-  of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+  of ttWhitespace: parser.insertCharbuf()
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1903,7 +1909,7 @@ proc processAfterBody[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
 proc processInFrameset[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   case parser.tok.t
-  of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+  of ttWhitespace: parser.insertCharbuf()
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1926,7 +1932,7 @@ proc processInFrameset[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
 proc processAfterFrameset[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   case parser.tok.t
-  of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+  of ttWhitespace: parser.insertCharbuf()
   of ttComment: parser.insertComment()
   of ttStartTag:
     case parser.toTagType(parser.tok.tagname)
@@ -2036,11 +2042,11 @@ proc processEOF[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
       # wants...
       parser.fosterParenting = true
       parser.reconstructActiveFormatting()
-      parser.insertCharacter(parser.pendingTableChars)
+      parser.insertCharacter(move(parser.pendingTableChars))
       parser.framesetOk = false
       parser.fosterParenting = false
     else:
-      parser.insertCharacter(parser.pendingTableChars)
+      parser.insertCharacter(move(parser.pendingTableChars))
     parser.insertionMode = parser.oldInsertionMode
     parser.processEOF()
   else: discard
@@ -2088,9 +2094,9 @@ proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   case parser.tok.t
   of ttNull: parser.insertCharacter("\uFFFD")
-  of ttWhitespace: parser.insertCharacter(parser.tok.charbufOut)
+  of ttWhitespace: parser.insertCharbuf()
   of ttCharacter:
-    parser.insertCharacter(parser.tok.charbufOut)
+    parser.insertCharbuf()
     parser.framesetOk = false
   of ttComment: parser.insertComment()
   of ttDoctype: discard

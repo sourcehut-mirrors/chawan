@@ -189,6 +189,7 @@ proc cmp*(a, b: MAtom): int {.inline.} =
 
 # We use this to validate input strings, since htmltokenizer/htmlparser does no
 # input validation.
+#TODO this is broken, just mandate input to be valid UTF-8 instead
 proc toValidUTF8(s: string): string =
   result = ""
   var i = 0
@@ -408,7 +409,7 @@ proc appendDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
   )
   builder.document.insertBefore(doctype, nil)
 
-proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: string;
+proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: sink string;
     before: Node) =
   let text = text.toValidUTF8()
   let prevSibling = if before != nil:

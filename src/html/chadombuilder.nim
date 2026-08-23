@@ -176,20 +176,23 @@ proc insertBeforeImpl(builder: ChaDOMBuilder; parent, child: ParentNode;
     before: ParentNode) =
   builder.insertBefore(parent, child.asNode, before)
 
-proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: string;
-    before: ParentNode) =
+proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode;
+    text: sink string; before: ParentNode) =
   let prevSibling = if before != nil:
     before.asNode.previousSibling
   else:
     parent.asNode.lastChild
   let prevText = prevSibling as Text
   if prevText != nil:
-    prevText.data &= text
+    if prevText.data.s.len == 0:
+      prevText.data.s = move(text)
+    else:
+      prevText.data &= text
     let parent = parent as Element
     if parent != nil:
       parent.invalidate()
   else:
-    let text = builder.document.newText(text)
+    let text = builder.document.newText(move(text))
     if text != nil:
       builder.insertBefore(parent, text.asNode, before)
 

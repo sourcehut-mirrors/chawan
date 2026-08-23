@@ -201,8 +201,8 @@ proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
   ##
   ## Note: parent may be either an Element or a Document node.
 
-proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl; text: string;
-    before: HandleImpl) {.doc.}
+proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl;
+    text: sink string; before: HandleImpl) {.doc.}
   ## Insert a text node at the specified location with contents `text`. If
   ## the specified location has a previous sibling that is a text node, no new
   ## text node should be created, but instead `text` should be appended to the
@@ -304,8 +304,8 @@ when defined(nimdocdummy):
       before: HandleImpl) =
     discard
 
-  proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl; text: string;
-      before: HandleImpl) =
+  proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl;
+      text: sink string; before: HandleImpl) =
     discard
 
   proc removeImpl(builder: DOMBuilderImpl; child: HandleImpl) =
