@@ -531,10 +531,10 @@ type
     id*: CAtom # 20
     internalElIndex: uint32 # 24
     internalClassList: DOMTokenList # 32
-    attrs*: seq[AttrData] # 40, sorted by int(qualifiedName)
-    cachedStyle*: CSSStyleDeclaration # 48
-    computed*: CSSValues # 56
-    box*: RootRef # 64, CSSBox
+    attrs*: seq[AttrData] # 48, sorted by int(qualifiedName)
+    cachedStyle*: CSSStyleDeclaration # 56
+    computed*: CSSValues # 64
+    box*: RootRef # 72, CSSBox
 
   AttrDummyElementObj {.pure, final.} = object of ElementObj
 
