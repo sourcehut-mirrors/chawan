@@ -5732,7 +5732,7 @@ proc scriptingEnabled(element: Element): bool =
 
 proc isSubmitButton*(element: Element): bool =
   if (let element = element as HTMLButtonElement; element != nil):
-    return element.ctype == btButton
+    return element.ctype == btSubmit
   elif (let element = element as HTMLInputElement; element != nil):
     return element.inputType in {itSubmit, itImage}
   return false
