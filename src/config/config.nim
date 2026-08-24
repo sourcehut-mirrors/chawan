@@ -4,7 +4,6 @@ import std/algorithm
 import std/macros
 import std/math
 import std/os
-import std/sets
 
 import config/chapath
 import config/conftypes
@@ -34,6 +33,7 @@ import types/url
 import utils/dtoawrap
 import utils/lrewrap
 import utils/myposix
+import utils/tabutil
 import utils/twtstr
 
 type
@@ -307,17 +307,19 @@ type
     of cocClear:
       discard
 
-  ConfigRule* = ref object
+  ConfigRule* = ref object of StrMapItem
     name: string
     matchType*: SiteconfMatch # only used for siteconf
     regex*: Regex # url for siteconf, match for omnirule
     fun*: JSValue # substituteUrl for siteconf, rewriteUrl for omnirule
     entries*: seq[ConfigEntry] # only used for siteconf
+    prev: ConfigRule
     next: ConfigRule
 
   ConfigList = object
     head: ConfigRule
     tail: ConfigRule
+    map: StrMap
 
 const OptionMap = [
   coAllowHttpFromFile: (t: cotBool, section: csNetwork),
@@ -449,7 +451,6 @@ type
     dataDir*: string
     #TODO getset
     lists*: array[csSiteconf..csOmnirule, ConfigList]
-    ruleSeen: HashSet[string]
     cmdInit: seq[tuple[k: string; fun: pointer]] # initial k/v map
     actionMap*: array[csPage..csLine, ActionMap]
 
@@ -487,7 +488,7 @@ type
     entries: seq[ConfigEntry]
     beforeTable: seq[BeforeKey]
     # these sections have user-defined keys, so we prevent dupes like this
-    keysSeen: array[csCmd..csOmnirule, HashSet[string]]
+    keysSeen: array[csCmd..csOmnirule, StrMap]
     tableArrayCount: array[csSiteconf..csOmnirule, uint32]
     error: string
     line: int
@@ -712,40 +713,32 @@ iterator items*(list: ConfigList): ConfigRule =
     yield it
     it = it.next
 
-proc add(list: var ConfigList; x: ConfigRule) =
+proc put(list: var ConfigList; ctx: JSContext; rule: ConfigRule) =
+  # Removes old rules (if any).
+  let oldRule = ConfigRule(list.map.getOrDefault(rule.name))
+  if oldRule != nil:
+    let prev = move(oldRule.prev)
+    let next = move(oldRule.next)
+    if prev != nil:
+      prev.next = next
+    if next != nil:
+      next.prev = prev
+    JS_FreeValue(ctx, oldRule.fun)
+  list.map.put(rule)
   if list.tail == nil:
-    list.head = x
+    list.head = rule
   else:
-    list.tail.next = x
-  list.tail = x
+    list.tail.next = rule
+    rule.prev = list.tail
+  list.tail = rule
 
-proc freeValues(rt: JSRuntime; list: ConfigList) =
-  for it in list:
-    JS_FreeValueRT(rt, it.fun)
-
-proc clear(ctx: JSContext; list: var ConfigList) =
-  let rt = JS_GetRuntime(ctx)
-  rt.freeValues(list)
-  list.head = nil
-  list.tail = nil
-
-proc remove(ctx: JSContext; list: var ConfigList; name: string) =
-  var it = list.head
-  var prev: ConfigRule = nil
+proc clear(list: var ConfigList; rt: JSRuntime) =
+  var it = move(list.head)
   while it != nil:
-    if it.name == name:
-      let next = move(it.next)
-      if prev == nil:
-        list.head = next
-      else:
-        prev.next = next
-      if next == nil:
-        list.tail = nil
-      it.next = nil
-      JS_FreeValue(ctx, it.fun)
-      break
-    prev = it
-    it = it.next
+    JS_FreeValueRT(rt, it.fun)
+    it.prev = nil
+    it = move(it.next)
+  list.tail = nil
 
 proc toJS*(ctx: JSContext; b: BoolAuto): JSValue =
   case b
@@ -1296,7 +1289,8 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
   of csSiteconf, csOmnirule:
     if coAddEntry notin cp.ruleOptionsSeen:
       n = ?cp.consumeKey(camel = false, line, n)
-      if cp.keysSeen[section].containsOrIncl(cp.buf):
+      let item = StrMapItem(s: cp.buf)
+      if cp.keysSeen[section].hasKeyOrPut(item):
         return cp.err("duplicate key " & $section & '.' & cp.buf)
       cp.addRuleEntry()
       if single or n >= line.len or line[n] != '.':
@@ -1316,7 +1310,8 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
         return cp.err("invalid command name: " & cp.buf)
       cp.key &= '.'
       cp.key &= cp.buf
-    if cp.keysSeen[section].containsOrIncl(cp.key):
+    let item = StrMapItem(s: cp.key)
+    if cp.keysSeen[section].hasKeyOrPut(item):
       return cp.err("duplicate command")
     return ok(n)
   of csPage, csLine:
@@ -1327,7 +1322,8 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
     cp.key = parseKeyComb(cp.buf, warnings)
     for warning in warnings:
       cp.warn(warning)
-    if cp.keysSeen[section].containsOrIncl(cp.key):
+    let item = StrMapItem(s: cp.key)
+    if cp.keysSeen[section].hasKeyOrPut(item):
       return cp.err("duplicate keybinding")
     return ok(n)
   else: discard
@@ -1563,14 +1559,27 @@ proc parsePath(cp: var ConfigParser; x: var string): Opt[void] =
 
 proc parseCodepointSet(cp: var ConfigParser; x: var string): Opt[void] =
   ?cp.typeCheck(ttString)
-  var seen = initHashSet[uint32]()
-  var nseen = 0
+  var seen = newSeqOfCap[uint32](32)
+  var bad = -1'i64
+  var sorted = true
   for u in cp.buf.points:
-    if seen.containsOrIncl(u):
-      return cp.err("duplicate codepoint '" & u.toUTF8() & "'")
-    inc nseen
-    if nseen > int(cint.high):
+    if seen.len > 0:
+      let prev = seen[^1]
+      sorted = sorted and prev < u
+      if prev == u:
+        bad = int64(u)
+        break
+    seen.add(u)
+    if seen.len > int(cint.high):
       return cp.err("too many values")
+  if not sorted:
+    seen.sort()
+    for i in 1 ..< seen.len:
+      if seen[i] == seen[i - 1]:
+        bad = int64(seen[i])
+        break
+  if bad >= 0:
+    return cp.err("duplicate codepoint '" & uint32(bad).toUTF8() & "'")
   x = move(cp.buf)
   ok()
 
@@ -1915,9 +1924,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
   if section in {csSiteconf, csOmnirule}:
     if entry.t == cocStr and opt == coAddEntry:
       let rule = ConfigRule(fun: JS_UNDEFINED, name: move(entry.str))
-      if config.ruleSeen.containsOrIncl(rule.name): # replace
-        ctx.remove(config.lists[section], rule.name)
-      config.lists[section].add(rule)
+      config.lists[section].put(ctx, rule)
     else:
       let rule = config.lists[section].tail
       case entry.t
@@ -1927,7 +1934,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
         rule.regex.bytecode = move(entry.regex.bytecode)
       of cocFunction:
         rule.fun = JS_MKPTR(JS_TAG_OBJECT, entry.fun)
-      of cocClear: ctx.clear(config.lists[section])
+      of cocClear: config.lists[section].clear(JS_GetRuntime(ctx))
       else:
         assert opt in SiteconfOptions
         rule.entries.add(entry)
@@ -2472,7 +2479,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
   for it in ConfigInitPathSeq:
     for path in it[1]:
       config.strSeqs[it[0]].add(ChaPath(path).unquote(dir).get)
-  config.siteconf.add(ConfigRule(
+  config.siteconf.put(ctx, ConfigRule(
     name: "downloads",
     regex: compileMatchRegex("about:downloads").get,
     fun: JS_UNDEFINED,
@@ -2502,8 +2509,8 @@ jsClassDef(Config):
       rt.markObj(map, markFunc)
 
   proc finalize(rt: JSRuntime; config: Config) {.jsfin.} =
-    for list in config.lists.myitems:
-      rt.freeValues(list)
+    for list in config.lists.mitems:
+      list.clear(rt)
 
   proc page*(config: Config): lent ActionMap {.jsfget.} =
     config.actionMap[csPage]
@@ -2519,9 +2526,7 @@ jsClassDef(Config):
       return JS_EXCEPTION
     if not JS_IsFunction(ctx, fun):
       return JS_ThrowTypeError(ctx, "function expected")
-    if config.ruleSeen.containsOrIncl(name): # replace
-      ctx.remove(config.omnirule, name)
-    config.omnirule.add(ConfigRule(
+    config.omnirule.put(ctx, ConfigRule(
       name: name,
       regex: bytecodeToRegex(cast[REBytecode](p), len),
       fun: JS_DupValue(ctx, fun)
