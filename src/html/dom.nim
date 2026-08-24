@@ -745,10 +745,6 @@ type
 
   HTMLEmbedElement = JSRef[HTMLEmbedElementObj]
 
-  HTMLTrackElementObj {.pure, final.} = object of HTMLElementObj
-
-  HTMLTrackElement = JSRef[HTMLTrackElementObj]
-
   HTMLMapElementObj {.pure, final.} = object of HTMLElementObj
 
   HTMLMapElement = JSRef[HTMLMapElementObj]
@@ -8664,7 +8660,6 @@ htmlClassDef(HTMLSourceElement)
 htmlClassDef(HTMLSlotElement)
 htmlClassDef(HTMLPictureElement)
 htmlClassDef(HTMLEmbedElement)
-htmlClassDef(HTMLTrackElement)
 htmlClassDef(HTMLMapElement)
 
 template htmlClassRaw(name: untyped) =
@@ -8702,6 +8697,7 @@ htmlClassRaw(HTMLTimeElement)
 htmlClassRaw(HTMLQuoteElement)
 htmlClassRaw(HTMLDialogElement)
 htmlClassRaw(HTMLDataElement)
+htmlClassRaw(HTMLTrackElement)
 
 jsClassDef(SVGElement):
   jsextends ElementDef
@@ -8784,7 +8780,6 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
   of ttOutput: return (jsNew HTMLOutputElementObj()).asHTMLElement
   of ttPicture: return (jsNew HTMLPictureElementObj()).asHTMLElement
   of ttEmbed: return (jsNew HTMLEmbedElementObj()).asHTMLElement
-  of ttTrack: return (jsNew HTMLTrackElementObj()).asHTMLElement
   of ttMap: return (jsNew HTMLMapElementObj()).asHTMLElement
   of ttHead: return (jsNew HTMLHeadElementObj()).asHTMLElement
   else: discard
@@ -8816,6 +8811,7 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
   of ttFont: HTMLFontElementDef.id
   of ttBody: HTMLBodyElementDef.id
   of ttHr: HTMLHRElementDef.id
+  of ttTrack: HTMLTrackElementDef.id
   of ttPre: HTMLPreElementDef.id
   of ttCol, ttColgroup: HTMLTableColElementDef.id
   of ttTd, ttTh: HTMLTableCellElementDef.id
