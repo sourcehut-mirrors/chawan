@@ -521,6 +521,7 @@ type
   Element* = JSRef[ElementObj]
 
   ElementObj* {.pure.} = object of ParentNodeObj
+    # magic is internalElIndex
     namespaceURI*: CAtom # 4
     tagName: CAtom # 8, like DOM tagName but not upper-cased
     relayout*: set[PseudoElement] # 9
@@ -529,7 +530,7 @@ type
     custom: CustomElementState # 12
     localName*: CAtom # 16
     id*: CAtom # 20
-    internalElIndex: uint32 # 24
+    name*: CAtom # 24
     internalClassList: DOMTokenList # 32
     attrs*: seq[AttrData] # 48, sorted by int(qualifiedName)
     cachedStyle*: CSSStyleDeclaration # 56
@@ -871,7 +872,6 @@ proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
-proc name*(element: Element): CAtomRaw
 proc nextDisplayedElement(element: Element): Element
 proc nextElementSibling*(element: Element): Element
 proc outerHTML(element: Element): string
@@ -2569,7 +2569,7 @@ proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
   if element != nil:
     if parentElement != nil and next.parentNode == parent:
       parentElement.flags.incl(efChildElIndicesInvalid)
-    element.internalElIndex = 0
+    element.setMagic(0)
   #TODO assigned
   if oldRootNode of ShadowRoot:
     let shadow = ShadowRoot(oldRootNode)
@@ -2665,7 +2665,7 @@ proc clone(node: Node; document: Document; deep: bool;
     let x = document.newElement(element.localName, element.namespaceURI,
       element.tagName)
     x.id = element.id
-    x.setMagic(uint32(element.name.dup()))
+    x.name = element.name
     if element.internalClassList != nil:
       x.internalClassList = newDOMTokenList(element, satClass)
       x.internalClassList.toks = element.internalClassList.toks
@@ -3323,9 +3323,9 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
     if node.nextSibling != nil and parentElement != nil:
       parentElement.flags.incl(efChildElIndicesInvalid)
     elif (let prev = element.previousElementSibling; prev != nil):
-      element.internalElIndex = prev.internalElIndex + 1
+      element.setMagic(prev.getMagic() + 1)
     else:
-      element.internalElIndex = 0
+      element.setMagic(0)
   parentDocument.invalidateCollections()
   if parentElement != nil:
     let shadow = parentElement.shadowRoot
@@ -5689,9 +5689,6 @@ proc attrb*(element: Element; s: CAtom): bool =
 proc attrb*(element: Element; at: StaticAtom): bool =
   return element.attrb(at.view())
 
-proc name*(element: Element): CAtomRaw =
-  CAtomRaw(element.getMagic())
-
 proc isDisplayed(element: Element): bool =
   element.ensureStyle()
   return element.computed{"display"} != DisplayNone
@@ -5989,12 +5986,10 @@ proc reflectAttr0(element: Element; name: CAtom; has: bool;
     if element.id != satUempty and root != nil:
       root.addElementId(element)
   of satName:
-    freeAtom(element.name)
     if has:
-      let atom = value.toAtom()
-      element.setMagic(uint32(atom.view().dup()))
+      element.name = value.toAtom()
     else:
-      element.setMagic(0)
+      element.name = CAtomNull
   of satClass:
     element.reflectTokens(element.internalClassList, satClass, value)
   #TODO internalNonce
@@ -6037,10 +6032,10 @@ proc elIndex*(this: Element): uint32 =
   if efChildElIndicesInvalid in parent.flags:
     var n = 0'u32
     for element in parent.asParentNode.elementList:
-      element.internalElIndex = n
+      element.setMagic(n)
       inc n
     parent.flags.excl(efChildElIndicesInvalid)
-  return this.internalElIndex
+  return this.getMagic()
 
 proc isPreviousSiblingOf*(this, other: Element): bool =
   return this.parentNode == other.parentNode and this.elIndex <= other.elIndex
@@ -6359,7 +6354,6 @@ jsClassPublicDef(Element):
   jsget Element, id
 
   proc finalize(rt: JSRuntime; element: Element) {.jsfin.} =
-    freeAtom(element.name)
     unlinkElementBoxImpl(element)
 
   proc getClassList(this: Element): DOMTokenList {.jsfget: "classList".} =

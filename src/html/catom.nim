@@ -288,7 +288,7 @@ proc freeAtomImpl(u: uint32) =
     factory.tab[i] = move(factory.tab[j])
     i = j
 
-proc freeAtom*(atom: CAtomRaw) =
+proc freeAtom(atom: CAtomRaw) =
   let u = uint32(atom)
   if u > uint32(StaticAtom.high):
     let factory = getFactory()
