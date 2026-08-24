@@ -11,7 +11,6 @@
 
 import std/hashes
 import std/macros
-import std/sets
 
 import chame/tags
 import monoucha/fromjs
@@ -48,19 +47,16 @@ macro makeStaticAtom =
       satBorder = "border"
       satCellspacing = "cellspacing"
       satChange = "change"
-      satCharset = "charset"
       satChecked = "checked"
       satClass = "class"
       satClassName = "className"
       satClear = "clear"
       satClick = "click"
       satCodetype = "codetype"
-      satColor = "color"
       satColorDashProfile = "color-profile"
       satCols = "cols"
       satColspan = "colspan"
       satCompact = "compact"
-      satContent = "content"
       satContextmenu = "contextmenu"
       satCrossorigin = "crossorigin"
       satCustomevent = "customevent"
@@ -86,7 +82,6 @@ macro makeStaticAtom =
       satFontDashFaceDashSrc = "font-face-src"
       satFontDashFaceDashUri = "font-face-uri"
       satFor = "for"
-      satForm = "form"
       satFormaction = "formaction"
       satFormenctype = "formenctype"
       satFormmethod = "formmethod"
@@ -156,7 +151,6 @@ macro makeStaticAtom =
       satPassword = "password"
       satPathname = "pathname"
       satPort = "port"
-      satProgress = "progress"
       satProtocol = "protocol"
       satReadonly = "readonly"
       satReadystatechange = "readystatechange"
@@ -170,17 +164,13 @@ macro makeStaticAtom =
       satRules = "rules"
       satScope = "scope"
       satScrolling = "scrolling"
-      satSearch = "search"
       satSelected = "selected"
       satShadow = "shadow"
       satShape = "shape"
-      satSize = "size"
       satSizes = "sizes"
-      satSlot = "slot"
       satSrc = "src"
       satSrcset = "srcset"
       satStart = "start"
-      satStyle = "style"
       satStylesheet = "stylesheet"
       satSubmit = "submit"
       satSvgevents = "svgevents"
@@ -188,11 +178,9 @@ macro makeStaticAtom =
       satText = "text"
       satTextHtml = "text/html"
       satTimeout = "timeout"
-      satTitle = "title"
       satToString = "toString"
       satTouchmove = "touchmove"
       satTouchstart = "touchstart"
-      satType = "type"
       satUempty = ""
       satUievent = "uievent"
       satUievents = "uievents"
@@ -211,20 +199,16 @@ macro makeStaticAtom =
     type StaticAtom* {.inject.} = enum
       satUnknown = ""
   let decl0 = decl[0][2]
-  var seen = HashSet[string].default
   for t in TagType:
     if t == ttUnknown:
       continue
     let tn = $t
     let name = "sat" & tn[0].toUpperAscii() & tn.substr(1).kebabToCamelCase()
-    seen.incl(tn)
     decl0.add(newNimNode(nnkEnumFieldDef).add(ident(name), newStrLitNode(tn)))
   for i, f in StaticAtom0.getType():
     if i == 0:
       continue
     let tn = $StaticAtom0(i - 1)
-    if tn in seen:
-      continue
     decl0.add(newNimNode(nnkEnumFieldDef).add(ident(f.strVal),
       newStrLitNode(tn)))
   decl
@@ -402,7 +386,8 @@ proc initCAtomFactory*() =
   factory.atomMap.add(AtomDesc())
   # StaticAtom includes TagType too.
   for sa in StaticAtom(1) .. StaticAtom.high:
-    discard factory.toAtomRaw($sa)
+    let atom = factory.toAtomRaw($sa)
+    assert uint32(atom) == uint32(sa)
 
 proc toAtomRaw(s: openArray[char]): CAtomRaw =
   return getFactory().toAtomRaw(s)
