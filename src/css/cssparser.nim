@@ -441,7 +441,7 @@ type
     specificity*: uint
     pseudo*: PseudoElement
     # simple optimization: an ancestor must have this as the first class
-    ancestorClass*: CAtomRaw
+    ancestorClass*: CAtom
     csels: seq[CompoundSelector]
 
   SelectorList* = seq[ComplexSelector]
@@ -469,7 +469,7 @@ proc parseSelectorList(state: var SelectorParser; forgiving: bool): SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 proc parseCompoundSelector(state: var SelectorParser;
   pseudoElement: var PseudoElement; specificityOut: var uint;
-  classOut: var CAtomRaw): Selector
+  classOut: var CAtom): Selector
 proc seek*(ctx: var CSSParser)
 proc `$`*(tok: CSSToken): string
 proc `$`*(c: CSSRule): string
@@ -1615,7 +1615,7 @@ proc parseHost(state: var SelectorParser): Selector =
   state.nested = true
   var pseudo = peNone
   var specificity: uint
-  var classOut: CAtomRaw
+  var classOut: CAtom
   let head = state.parseCompoundSelector(pseudo, specificity, classOut)
   state.skipFunction()
   state.nested = onested
@@ -1803,7 +1803,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
 # returns head
 proc parseCompoundSelector(state: var SelectorParser;
     pseudoElement: var PseudoElement; specificityOut: var uint;
-    classOut: var CAtomRaw): Selector =
+    classOut: var CAtom): Selector =
   var head: Selector = nil
   var tail: Selector = nil
   var specificity = 0u
@@ -1826,7 +1826,7 @@ proc parseCompoundSelector(state: var SelectorParser;
       state.seekToken()
       sel = state.parseClassSelector()
       if sel != nil:
-        classOut = sel.atom.view()
+        classOut = sel.atom
     of cttStar:
       state.seekToken()
       sel = Selector(t: stUniversal)
@@ -1852,11 +1852,11 @@ proc parseCompoundSelector(state: var SelectorParser;
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
   var pseudo = peNone
   result = ComplexSelector()
-  var prevClass = CAtomNullRaw
+  var prevClass = CAtomNull
   while true:
     state.skipBlanks()
     var specificity: uint
-    var class = CAtomNullRaw
+    var class = CAtomNull
     let head = state.parseCompoundSelector(pseudo, specificity, class)
     if state.failed:
       break
@@ -1893,10 +1893,10 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     #    cache child when we only have that
     if ct == ctDescendant:
       if class != CAtomNull:
-        prevClass = class
+        prevClass = move(class)
     elif ct == ctChild:
       if prevClass == CAtomNull:
-        prevClass = class
+        prevClass = move(class)
     result[^1].ct = ct
   if result.len == 0 or result[^1].ct != ctNone:
     fail

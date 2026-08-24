@@ -95,7 +95,7 @@ proc calcRule(tosorts: var ToSorts; element: Element;
     # skip an arbitrary class from the selector ancestors as an
     # optimization
     if sel.ancestorClass != CAtomNull and
-        not tosorts.cache.hasClass(sel.ancestorClass):
+        not tosorts.cache.hasClass(sel.ancestorClass.view()):
       continue
     if element.matches(sel, depends):
       tosorts.map[sel.pseudo].add((sel.specificity, rule))

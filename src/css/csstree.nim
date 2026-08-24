@@ -61,13 +61,13 @@ type
     of stBr: # <br> element
       discard
     of stCounter: # counters
-      counterName: CAtomRaw
+      counterName: CAtom
       counterStyle: CSSListStyleType
       counterSuffix: bool
 
   CSSCounter = object
     element: Element
-    name: CAtomRaw
+    name: CAtom
     n: int32
 
   TreeContext = ref object
@@ -110,8 +110,7 @@ when defined(debug):
     of stCounter:
       return "#counter"
 
-proc incCounter(ctx: TreeContext; name: CAtom; n: int32;
-    element: Element) =
+proc incCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
   var found = false
   for counter in ctx.counters.mritems:
     if counter.name == name:
@@ -120,10 +119,9 @@ proc incCounter(ctx: TreeContext; name: CAtom; n: int32;
       found = true
       break
   if not found: # instantiate a new counter
-    ctx.counters.add(CSSCounter(name: name.view(), n: n, element: element))
+    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
 
-proc setCounter(ctx: TreeContext; name: CAtom; n: int32;
-    element: Element) =
+proc setCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
   var found = false
   for counter in ctx.counters.mritems:
     if counter.name == name:
@@ -131,10 +129,9 @@ proc setCounter(ctx: TreeContext; name: CAtom; n: int32;
       found = true
       break
   if not found: # instantiate a new counter
-    ctx.counters.add(CSSCounter(name: name.view(), n: n, element: element))
+    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
 
-proc resetCounter(ctx: TreeContext; name: CAtom; n: int32;
-    element: Element) =
+proc resetCounter(ctx: TreeContext; name: CAtom; n: int32; element: Element) =
   var found = false
   for counter in ctx.counters.mritems:
     if counter.name == name and counter.element.isPreviousSiblingOf(element):
@@ -146,9 +143,9 @@ proc resetCounter(ctx: TreeContext; name: CAtom; n: int32;
       found = true
       break
   if not found:
-    ctx.counters.add(CSSCounter(name: name.view(), n: n, element: element))
+    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
 
-proc counter(ctx: TreeContext; name: CAtomRaw): int32 =
+proc counter(ctx: TreeContext; name: CAtom): int32 =
   for counter in ctx.counters.mritems:
     if counter.name == name:
       return counter.n
@@ -307,7 +304,7 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
       t: stCounter,
       element: node.element,
       computed: textComputed,
-      counterName: satListItem.view().view(),
+      counterName: satListItem.view(),
       counterStyle: node.computed{"list-style-type"},
       counterSuffix: true
     )
@@ -392,12 +389,11 @@ proc addText(frame: var TreeFrame; text: RefString) =
       computed: frame.getAnonInlineComputed()
     ))
 
-proc addCounter(frame: var TreeFrame; name: CAtom;
-    style: CSSListStyleType) =
+proc addCounter(frame: var TreeFrame; name: CAtom; style: CSSListStyleType) =
   frame.add(StyledNode(
     t: stCounter,
     element: frame.parent,
-    counterName: name.view(),
+    counterName: name,
     counterStyle: style,
     computed: frame.getAnonInlineComputed()
   ))
