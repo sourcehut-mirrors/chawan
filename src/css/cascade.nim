@@ -1,8 +1,8 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/hashes
 import std/math
-import std/sets
 
 import chame/tags
 import config/conftypes
@@ -40,7 +40,7 @@ type
   AncestorCache = object
     last: Element
     quirks: bool
-    classes: HashSet[CAtomRaw]
+    classes: array[64'u8, uint8] # bloom filter
 
   ToSorts = object
     map: array[PseudoElement, seq[RulePair]]
@@ -63,27 +63,58 @@ type
 proc applyValues(ctx: var ApplyValueContext;
   entries: openArray[CSSComputedEntry]; revertType: RevertType)
 
-proc hasClass(ancestors: var AncestorCache; class: CAtomRaw): bool =
-  if class in ancestors.classes:
+template size(ancestors: AncestorCache): uint =
+  uint(ancestors.classes.len) * 8
+
+proc contains(ancestors: AncestorCache; class: CAtom; blah = false): bool =
+  let h1 = uint(hash(class)) mod ancestors.size
+  let idx1 = uint8(h1 div 8)
+  let bit1 = uint8(1 shl (h1 mod 8))
+  if (ancestors.classes[idx1] and bit1) == 0:
+    return false
+  let h2 = uint(hash(uint32(class))) mod ancestors.size
+  let idx2 = uint8(h2 div 8)
+  let bit2 = uint8(1 shl (h2 mod 8))
+  if (ancestors.classes[idx2] and bit2) == 0:
+    return false
+  let h3 = uint(hash(uint32(class) + 1)) mod ancestors.size
+  let idx3 = uint8(h3 div 8)
+  let bit3 = uint8(1 shl (h3 mod 8))
+  return (ancestors.classes[idx3] and bit3) != 0
+
+proc incl(ancestors: var AncestorCache; class: CAtom) =
+  let h1 = uint(hash(class)) mod ancestors.size
+  let idx1 = uint8(h1 div 8)
+  let bit1 = uint8(1 shl (h1 mod 8))
+  ancestors.classes[idx1] = ancestors.classes[idx1] or bit1
+  let h2 = uint(hash(uint32(class))) mod ancestors.size
+  let idx2 = uint8(h2 div 8)
+  let bit2 = uint8(1 shl (h2 mod 8))
+  ancestors.classes[idx2] = ancestors.classes[idx2] or bit2
+  let h3 = uint(hash(uint32(class) + 1)) mod ancestors.size
+  let idx3 = uint8(h3 div 8)
+  let bit3 = uint8(1 shl (h3 mod 8))
+  ancestors.classes[idx3] = ancestors.classes[idx3] or bit3
+
+proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =
+  if class in ancestors:
     return true
   var found = false
   if ancestors.last != nil:
-    var ancestor = ancestors.last
+    var ancestor = move(ancestors.last)
     let quirks = ancestors.quirks
     while true:
-      if quirks:
-        for it in ancestor.classList:
-          found = found or it.equalsIgnoreCase(class.view())
-          #TODO plug leak
-          ancestors.classes.incl(it.toLowerAscii().view().dup())
-      else:
-        for it in ancestor.classList:
-          found = found or it == class
-          ancestors.classes.incl(it.view())
+      for it in ancestor.classList:
+        if quirks and AsciiUpperAlpha in it:
+          # de-optimize; quirks mode compares classes case-insensitively
+          ancestors.last = move(ancestor)
+          return true
+        found = found or it == class
+        ancestors.incl(it)
       ancestor = ancestor.asNode.parentElement
       if ancestor == nil or found:
         break
-    ancestors.last = ancestor
+    ancestors.last = move(ancestor)
   found
 
 proc calcRule(tosorts: var ToSorts; element: Element;
@@ -95,7 +126,7 @@ proc calcRule(tosorts: var ToSorts; element: Element;
     # skip an arbitrary class from the selector ancestors as an
     # optimization
     if sel.ancestorClass != CAtomNull and
-        not tosorts.cache.hasClass(sel.ancestorClass.view()):
+        not tosorts.cache.hasClass(sel.ancestorClass):
       continue
     if element.matches(sel, depends):
       tosorts.map[sel.pseudo].add((sel.specificity, rule))
