@@ -71,7 +71,6 @@
 {.push raises: [].}
 
 import std/macros
-import std/sets
 import std/tables
 import std/typetraits
 
@@ -82,9 +81,6 @@ import jstypes
 import jsutils
 import quickjs
 import tojs
-
-when sizeof(int) < sizeof(int64):
-  export quickjs.`==`
 
 type
   BoundFunctionType = enum
