@@ -184,7 +184,7 @@ proc handleErrors(window: Window; this: XMLHttpRequest; ctx: JSContext):
       return err()
   ok()
 
-type XHROpaque {.final.} = ref object of RootObj
+type XHROpaque* {.final.} = ref object of RootObj
   this: XMLHttpRequest
   window: Window
   len: int64
@@ -210,8 +210,8 @@ proc onReadXHR(response: Response) =
 
 proc onFinishXHR(response: Response; success: bool) =
   let opaque = XHROpaque(response.opaque)
-  let this = opaque.this
-  let window = opaque.window
+  let this = move(opaque.this)
+  let window = move(opaque.window)
   if success:
     discard window.handleErrors(this, nil)
     if response.responseType != rtError:
@@ -228,6 +228,10 @@ proc onFinishXHR(response: Response; success: bool) =
   else:
     this.response = makeNetworkError()
     discard window.handleErrors(this, nil)
+
+proc mark*(rt: JSRuntime; opaque: XHROpaque; markFunc: JS_MarkFunc) =
+  rt.markObj(opaque.this, markFunc)
+  rt.markObj(opaque.window, markFunc)
 
 proc sendAsync(opaque: RootRef; response: Response) =
   let env = XHROpaque(opaque)

@@ -747,6 +747,8 @@ jsClassDef(Window):
             let opaque = JSFetchOpaque(data.opaque)
             JS_MarkValue(rt, opaque.resolve, markFunc)
             JS_MarkValue(rt, opaque.reject, markFunc)
+          elif data.opaque of XHROpaque:
+            rt.mark(XHROpaque(data.opaque), markFunc)
         elif data of OngoingData:
           let data = OngoingData(data)
           rt.markObj(data.response, markFunc)
