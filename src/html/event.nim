@@ -222,7 +222,7 @@ type
 
 # Event
 template asEvent*[T: EventObj](x: JSRef[T]): Event =
-  cast[Event](x)
+  Event(x)
 
 proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
   event.flags = {efInitialized}
@@ -662,7 +662,7 @@ jsClassDef(MutationObserver):
 
 # EventTarget
 template asEventTarget*[T: EventTargetObj](x: JSRef[T]): EventTarget =
-  cast[EventTarget](x)
+  EventTarget(x)
 
 proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]

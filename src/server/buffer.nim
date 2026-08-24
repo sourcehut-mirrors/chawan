@@ -236,7 +236,7 @@ proc getClickHover(bc: BufferContext; element: Element): string =
         if url := clickable.asNode.document.parseURL(src):
           return $url
     of ttFrame, ttIframe:
-      let src = clickable.asElement.attr(satSrc)
+      let src = clickable.attr(satSrc)
       if src != "":
         if url := clickable.asNode.document.parseURL(src):
           return $url

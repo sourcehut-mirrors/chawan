@@ -1227,19 +1227,19 @@ const VoidElements = {
 
 # Converters
 template asNode*[T: NodeObj](x: JSRef[T]): Node =
-  cast[Node](x)
+  Node(x)
 
 template asParentNode*[T: ParentNodeObj](x: JSRef[T]): ParentNode =
-  cast[ParentNode](x)
+  ParentNode(x)
 
 template asElement*[T: ElementObj](x: JSRef[T]): Element =
-  cast[Element](x)
+  Element(x)
 
 template asSheetElement[T: SheetElementObj](x: JSRef[T]): SheetElement =
-  cast[SheetElement](x)
+  SheetElement(x)
 
 template asHTMLElement*[T: HTMLElementObj](x: JSRef[T]): HTMLElement =
-  cast[HTMLElement](x)
+  HTMLElement(x)
 
 # Iterators
 iterator childList*(node: ParentNode): Node {.inline.} =
@@ -2314,8 +2314,8 @@ proc isValidChild(node: Node): bool =
     node of DocumentFragment or node of DocumentType
 
 proc checkParentValidity(parent: Node): Result[ParentNode, cstring] =
-  if parent of ParentNode:
-    return ok(cast[ParentNode](parent))
+  if (let parent = parent as ParentNode; parent != nil):
+    return ok(parent)
   return err("parent must be a document, a document fragment, or an element")
 
 proc rootNodeShadow(node: Node): Node =
@@ -3123,7 +3123,7 @@ proc beforeImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
   let parent = this.parentNode
   if parent != nil:
     let prev = this.previousSiblingExcept(nodes)
-    let node = ctx.toNode(nodes, this.asNode.document)
+    let node = ctx.toNode(nodes, this.document)
     let before = if prev != nil: prev.nextSibling else: parent.firstChild
     parent.insert(ctx, node, before)
   ok()
@@ -3135,7 +3135,7 @@ proc afterImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
   let parent = this.parentNode
   if parent != nil:
     let before = this.nextSiblingExcept(nodes)
-    let node = ctx.toNode(nodes, this.asNode.document)
+    let node = ctx.toNode(nodes, this.document)
     parent.insert(ctx, node, before)
   ok()
 
@@ -3146,7 +3146,7 @@ proc replaceWithImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
   let parent = this.parentNode
   if parent != nil:
     let before = this.nextSiblingExcept(nodes)
-    let node = ctx.toNode(nodes, this.asNode.document)
+    let node = ctx.toNode(nodes, this.document)
     if this.parentNode == parent:
       return ctx.replaceChildWithThrow(parent.asNode, this, node)
     parent.insert(ctx, node, before)
@@ -3424,7 +3424,7 @@ jsClassDef(ParentNode): # fake class
 
 # Collection
 template asCollection[T: CollectionObj](x: JSRef[T]): Collection =
-  cast[Collection](x)
+  Collection(x)
 
 proc populateCollection(this: Collection) =
   let root = this.root as ParentNode
@@ -3508,7 +3508,6 @@ proc newNodeList(root: Node; match: CollectionMatchFun;
 jsClassDef(CollectionLike): # fake class
   proc finalize(rt: JSRuntime; collection: CollectionLike) {.jsfin.} =
     if collection.document != nil:
-      let collection = cast[ptr CollectionLikeObj](collection)
       if collection.prev != nil:
         collection.prev.next = collection.next
       else:
@@ -3610,7 +3609,7 @@ jsClassDef(Comment):
 # DocumentFragment
 template asDocumentFragment[T: DocumentFragmentObj](x: JSRef[T]):
     DocumentFragment =
-  cast[DocumentFragment](x)
+  DocumentFragment(x)
 
 proc getDocument(ctx: JSContext): Document =
   return ctx.getWindow().document
@@ -3660,7 +3659,7 @@ jsClassDef(DocumentFragment):
 
 # Document
 template asDocument[T: DocumentObj](x: JSRef[T]): Document =
-  cast[Document](x)
+  Document(x)
 
 proc newXMLDocument(): XMLDocument =
   jsNew XMLDocumentObj(
@@ -4592,7 +4591,7 @@ jsClassPublicDef(Document):
         const NoScroll = {OverflowVisible, OverflowClip}
         const NoScroll2 = NoScroll + {OverflowHidden}
         let parent = body.asNode.parentElement
-        parent.asElement.ensureStyle()
+        parent.ensureStyle()
         if (parent.computed{"overflow-x"} in NoScroll2 or
             body.computed{"overflow-x"} in NoScroll) and
             (parent.computed{"overflow-y"} in NoScroll2 or
@@ -4769,7 +4768,7 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
     if AsciiWhitespace + {'\0', '>'} in qualifiedName.toOpenArray():
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in qualified name")
-    let document = cast[Document](implementation)
+    let document = Document(implementation)
     ctx.toJS(document.newDocumentType($qualifiedName, $publicId, $systemId))
 
   proc hasFeature(implementation: DOMImplementation): bool {.jsfunc.} =
@@ -4835,7 +4834,7 @@ proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
 
 template asNodeIteratorLike*[T: NodeIteratorLikeObj](x: JSRef[T]):
     NodeIteratorLike =
-  cast[NodeIteratorLike](x)
+  NodeIteratorLike(x)
 
 template filter(ctx: JSContext; this: NodeIterator; node: Node): Opt[uint32] =
   ctx.filter(this.asNodeIteratorLike, node)
@@ -5209,7 +5208,7 @@ jsClassDef(NodeList):
 
 # HTMLCollection
 template asHTMLCollection[T: HTMLCollectionObj](x: JSRef[T]): HTMLCollection =
-  cast[HTMLCollection](x)
+  HTMLCollection(x)
 
 jsClassDef(HTMLCollection):
   jsextends CollectionDef
@@ -5262,7 +5261,7 @@ jsClassDef(HTMLCollection):
 
 # HTMLFormControlsCollection
 proc isRadioNode(this: Collection; node: Node): bool =
-  let this = cast[RadioNodeList](this)
+  let this = this as RadioNodeList
   if not this.parent[].match(this.parent.asCollection, node):
     return false
   let element = node as Element
@@ -6849,7 +6848,7 @@ proc invalidate*(element: Element; dep: DependencyType) =
   if dep in element.selfDepends:
     element.invalidate()
   let document = element.asNode.document
-  let elementp = cast[ptr ElementObj](element)
+  let elementp = (ptr ElementObj)(element)
   document.styleDependencies[dep].dependedBy.withValue(elementp, p):
     for it in p[]:
       cast[Element](it).invalidate()
@@ -6860,7 +6859,7 @@ proc findAndDelete(map: var seq[ptr ElementObj]; element: ptr ElementObj) =
 proc applyStyleDependencies*(document: Document; element: Element;
     depends: DependencyInfo) =
   element.selfDepends = {}
-  let elementp = cast[ptr ElementObj](element)
+  let elementp = (ptr ElementObj)(element)
   for t, map in document.styleDependencies.mpairs:
     map.dependsOn.withValue(elementp, p):
       for it in p[]:
@@ -7080,9 +7079,9 @@ proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
   if src != "":
     return (src, "")
   for el in this.asParentNode.elementDescendants(ttSource):
-    let src = el.asElement.attr(satSrc)
+    let src = el.attr(satSrc)
     if src != "":
-      return (src, el.asElement.attr(satType))
+      return (src, el.attr(satType))
   return ("", "")
 
 proc tagType*(element: HTMLElement): TagType =
@@ -7505,7 +7504,7 @@ proc isFormControl(this: Collection; node: Node): bool =
   let element = node as FormAssociatedElement
   if element != nil:
     if element.asHTMLElement.tagType in ListedElements:
-      let this = cast[HTMLFormControlsCollection](this)
+      let this = this as HTMLFormControlsCollection
       return element.form == this.form
   return false
 
@@ -7689,7 +7688,7 @@ proc findPrevSheet(this: SheetElement): CSSStylesheet =
       let element = SheetElement(node)
       if element.sheetTail != nil:
         return element.sheetTail
-    node = node.asNode.previousDescendant()
+    node = node.previousDescendant()
   nil
 
 proc findNextSheet(this: SheetElement): CSSStylesheet =
@@ -8474,7 +8473,7 @@ jsClassDef(HTMLTableElement):
     var sect: HTMLElement
     if not JS_IsNull(sectVal):
       ?ctx.fromJS(sectVal, sect)
-    if sect != nil and sect.asHTMLElement.tagType != tagType:
+    if sect != nil and sect.tagType != tagType:
       if tagType != ttCaption and sect of HTMLTableSectionElement:
         return ctx.insertThrow("wrong element type")
       return JS_ThrowTypeError(ctx, "%s tag expected", cstring($tagType))

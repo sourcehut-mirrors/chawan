@@ -61,7 +61,7 @@ iterator items*(this: FileList): lent WebFile =
 
 # Blob
 template asBlob*[T: BlobObj](x: JSRef[T]): Blob =
-  cast[Blob](x)
+  Blob(x)
 
 proc swrite*(w: var PacketWriter; blob: Blob) =
   w.swrite(blob of WebFile)
