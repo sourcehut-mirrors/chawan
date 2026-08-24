@@ -4,7 +4,6 @@ import std/algorithm
 import std/hashes
 import std/math
 import std/options
-import std/sets
 import std/setutils
 import std/tables
 import std/times
@@ -2411,7 +2410,6 @@ proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
   # data from CharacterData but not from AttrData.  but maybe AttrData
   # should be refcounted too...
   var observers: seq[ObserverItem] = @[]
-  var seen: HashSet[pointer]
   #TODO can we do this without actually traversing ancestors somehow?
   # (maybe link the last observer with parent's first observer?)
   for it in target.branch:
@@ -2433,11 +2431,10 @@ proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
       of mrtChildList:
         if oifChildList notin el.flags:
           continue
-      if not seen.containsOrIncl(cast[pointer](el.observer)):
+      let i = observers.find(el.observer)
+      if i < 0:
         observers.add(ObserverItem(observer: el.observer, oldValue: oldValue))
       elif oldValue:
-        let i = observers.find(el.observer)
-        assert i >= 0
         observers[i].oldValue = true
   for it in observers:
     let oldValue = if it.oldValue:
