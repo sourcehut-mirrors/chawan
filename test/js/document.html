@@ -48,5 +48,8 @@ assertEquals(document.head, null);
 	assertEquals(locationDesc.enumerable, true);
 	assertEquals(locationDesc.configurable, false);
 }
+{
+	assertEquals(document.getRootNode(), document);
+}
 document.getElementById("abc").textContent = "Success";
 </script>

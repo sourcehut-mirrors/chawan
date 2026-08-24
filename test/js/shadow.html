@@ -16,6 +16,8 @@ const shadow = el.attachShadow({mode: "open"})
 	assertEquals(shadow.nextSibling, null);
 	assertEquals(shadow.previousSibling, null);
 	assertEquals(el.firstChild.previousSibling, null);
+	assertEquals(shadow.getRootNode(), shadow);
+	assertEquals(shadow.getRootNode({composed: true}), document);
 	assertInstanceof(el.firstChild, Text);
 }
 {

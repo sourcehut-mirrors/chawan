@@ -2329,6 +2329,13 @@ proc rootNodeShadow(node: Node): Node =
     node = shadow.host.asNode.rootNode
   node
 
+proc rootNode(node: Node): Node =
+  # If connected, return root; otherwise, return the owner document.
+  let parent = node.parentNode
+  if parent == nil:
+    return node
+  parent.asNode.lastChild.internalNext
+
 proc isInclusiveAncestorHost(a, b: Node): bool =
   for it in b.branchHost:
     if it == a:
@@ -2850,6 +2857,9 @@ proc findAncestor*(node: Node; tagType: TagType): Element =
 proc assignSlot(node: Node) =
   discard
 
+type GetRootNodeOptions {.pure.} = object of JSDict
+  composed {.jsdefault.}: bool
+
 jsClassDef(Node):
   jsextends EventTargetDef
 
@@ -2860,12 +2870,11 @@ jsClassDef(Node):
   proc baseURI(node: Node): string {.jsfget.} =
     return $node.document.baseURL
 
-  proc rootNode(node: Node): Node {.jsfunc.} =
-    # If connected, return root; otherwise, return the owner document.
-    let parent = node.parentNode
-    if parent == nil:
-      return node
-    parent.asNode.lastChild.internalNext
+  proc getRootNode(node: Node; options = GetRootNodeOptions()): Node
+      {.jsfunc.} =
+    if options.composed:
+      return node.rootNodeShadow
+    node.rootNode
 
   proc parentElement*(node: Node): Element {.jsfget.} =
     node.parentNode as Element
