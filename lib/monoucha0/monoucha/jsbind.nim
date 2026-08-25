@@ -1175,16 +1175,16 @@ template jsgetset*(typ, field, get, set: untyped) =
   jsget typ, field, get
   jsset typ, field, set
 
-proc runFinalizers*(rt: JSRuntime; p: pointer) =
-  let class = JS_GetForeignClassID(p)
-  let rtOpaque = rt.getOpaque()
-  for fin in rtOpaque.finalizers(class):
-    fin(rt, p)
-
 template myDestroy*(p: untyped) =
   when not supportsCopyMem(typeof(p)):
     {.cast(raises: []).}:
       `=destroy`(p)
+
+template myDestroyZero*(p: untyped) =
+  when not supportsCopyMem(typeof(p)):
+    {.cast(raises: []).}:
+      `=destroy`(p)
+      wasMoved(p)
 
 proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
   for it in recList.children:
@@ -1225,9 +1225,16 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
             markList.add(quote do:
               JS_MarkForeignObject(rt, cast[pointer](this.`varNode`), markFunc)
             )
-          finList.add(quote do:
-            myDestroy(this.`varNode`)
-          )
+            finList.add(quote do:
+              myDestroy(this.`varNode`)
+            )
+          else:
+            # The GC delays free'ing JSRef/JSValue until all finalizers
+            # finish, but it cannot do so for non-GC'ed objects.
+            # So for these we must also call wasMoved to prevent UAF.
+            finList.add(quote do:
+              myDestroyZero(this.`varNode`)
+            )
 
 template jsextends*(class: ChaClassDef) =
   classDef.parent = class.id

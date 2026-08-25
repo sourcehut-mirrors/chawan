@@ -3470,8 +3470,8 @@ jsClassDef(CollectionLike): # fake class
   proc finalize(rt: JSRuntime; collection: CollectionLike) {.jsfin.} =
     if collection.document != nil:
       # Note that document may point to a zombie object; in that case
-      # we clear the liveCollections seq in advance, and this won't do
-      # anything.
+      # the liveCollections seq is automatically cleared, and this won't
+      # do anything.
       cast[Document](collection.document).removeLiveCollection(collection)
 
 jsClassDef(Collection): # fake class
@@ -4234,12 +4234,6 @@ jsClassPublicDef(Document):
   jsget Document, contentType
   jsget Document, window, "defaultView"
   jsget Document, currentScript
-
-  proc finalize(rt: JSRuntime; document: Document) {.jsfin.} =
-    # ensure that collections trying to remove themselves from a zombie
-    # document don't UAF
-    document.liveCollections = @[]
-    document.liveCollectionsLoad = 0
 
   proc mark(rt: JSRuntime; document: Document; markFunc: JS_MarkFunc)
       {.jsmark.} =

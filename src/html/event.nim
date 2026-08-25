@@ -933,8 +933,8 @@ jsClassPublicDef(EventTarget):
         JS_FreeValueRT(rt, el.callback)
       of eltMutationObserver:
         let i = el.observer.nodes.find(cast[ptr EventTargetObj](this))
-        assert i >= 0
-        el.observer.nodes.del(i)
+        if i >= 0: # might have already been destroyed
+          el.observer.nodes.del(i)
 
   proc mark(rt: JSRuntime; this: EventTarget; markFunc: JS_MarkFunc)
       {.jsmark.} =
