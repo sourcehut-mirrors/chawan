@@ -374,6 +374,7 @@ proc unlinkElementBox(element: Element) =
       if parent.element != element:
         break
       parent.elementPtr = nil
+      parent = parent.parent
     for child in box.children:
       unlinkElementBoxRecurse(child, element)
 
