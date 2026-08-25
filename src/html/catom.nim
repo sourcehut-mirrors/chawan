@@ -39,15 +39,19 @@ macro makeStaticAtom =
       satApplicationXml = "application/xml"
       satApplicationXmlHtml = "application/xml+html"
       satAsync = "async"
+      satAttributes = "attributes"
       satAutofocus = "autofocus"
       satAxis = "axis"
       satBgcolor = "bgcolor"
       satBlocking = "blocking"
       satBlur = "blur"
       satBorder = "border"
+      satCells = "cells"
       satCellspacing = "cellspacing"
       satChange = "change"
       satChecked = "checked"
+      satChildNodes = "childNodes"
+      satChildren = "children"
       satClass = "class"
       satClassName = "className"
       satClear = "clear"
@@ -63,6 +67,7 @@ macro makeStaticAtom =
       satDOMContentLoaded = "DOMContentLoaded"
       satDashChaHintCounter = "-cha-hint-counter"
       satDashChaLinkCounter = "-cha-link-counter"
+      satDataset = "dataset"
       satDatetime = "datetime"
       satDblclick = "dblclick"
       satDeclare = "declare"
@@ -104,6 +109,7 @@ macro makeStaticAtom =
       satHtmlevents = "htmlevents"
       satId = "id"
       satImageSvgXml = "image/svg+xml"
+      satImages = "images"
       satIntegrity = "integrity"
       satInternals = "internals"
       satIsmap = "ismap"
@@ -165,6 +171,7 @@ macro makeStaticAtom =
       satScope = "scope"
       satScrolling = "scrolling"
       satSelected = "selected"
+      satSelectedOptions = "selectedOptions"
       satShadow = "shadow"
       satShape = "shape"
       satSizes = "sizes"
@@ -174,6 +181,7 @@ macro makeStaticAtom =
       satStylesheet = "stylesheet"
       satSubmit = "submit"
       satSvgevents = "svgevents"
+      satTBodies = "tBodies"
       satTarget = "target"
       satText = "text"
       satTextHtml = "text/html"
@@ -186,7 +194,6 @@ macro makeStaticAtom =
       satUievents = "uievents"
       satUsemap = "usemap"
       satUsername = "username"
-      satUstar = "*"
       satValign = "valign"
       satValue = "value"
       satValuetype = "valuetype"
@@ -663,5 +670,123 @@ when defined(test):
         break
       i = (i + 1) and mask
     i
+
+# Backing buffer for DOMTokenList.
+# `nil` is a valid state for this object and simply means "empty".
+type
+  DOMTokenArrayBuffer = object
+    len: uint32
+    toks: UncheckedArray[CAtom]
+
+  DOMTokenArrayView* = distinct ptr DOMTokenArrayBuffer
+
+  DOMTokenArray* = distinct DOMTokenArrayView
+
+proc `==`(a, b: DOMTokenArrayView): bool {.borrow.}
+proc `==`(a: DOMTokenArrayView; b: typeof(nil)): bool {.borrow.}
+
+proc dup(this: DOMTokenArray): ptr DOMTokenArrayBuffer
+proc `==`(a, b: DOMTokenArray): bool {.borrow.}
+proc `==`(a: DOMTokenArray; b: typeof(nil)): bool {.borrow.}
+
+proc `=destroy`(this: var DOMTokenArray) =
+  if this != nil:
+    dealloc(cast[pointer](this))
+
+proc `=dup`(this: DOMTokenArray): DOMTokenArray {.noinit.} =
+  cast[ptr ptr DOMTokenArrayBuffer](addr result)[] = dup(this)
+
+proc `=copy`(x: var DOMTokenArray; y: DOMTokenArray) =
+  if x != y:
+    `=destroy`(x)
+    cast[ptr ptr DOMTokenArrayBuffer](addr x)[] = dup(y)
+
+proc `=sink`(x: var DOMTokenArray; y: DOMTokenArray) =
+  `=destroy`(x)
+  cast[ptr ptr DOMTokenArrayBuffer](addr x)[] =
+    cast[ptr DOMTokenArrayBuffer](y)
+
+proc len*(this: DOMTokenArrayView): uint32 =
+  if this == nil:
+    return 0
+  (ptr DOMTokenArrayBuffer)(this).len
+
+proc len*(this: DOMTokenArray): uint32 {.borrow.}
+
+proc `[]`*(this: DOMTokenArrayView; u: uint32): lent CAtom =
+  assert this != nil and u < this.len
+  (ptr DOMTokenArrayBuffer)(this).toks[u]
+
+proc `[]`*(this: DOMTokenArray; u: uint32): lent CAtom {.borrow.}
+
+proc `[]=`*(this: DOMTokenArray; u: uint32; atom: sink CAtom) =
+  assert this != nil and u < this.len
+  (ptr DOMTokenArrayBuffer)(this).toks[u] = move(atom)
+
+iterator items*(a: DOMTokenArrayView): lent CAtom {.inline.} =
+  if a != nil:
+    var u = 0'u32
+    while u < a.len:
+      yield a[u]
+      inc u
+
+iterator pairs*(a: DOMTokenArrayView): tuple[key: uint32; value: lent CAtom]
+    {.inline.} =
+  if a != nil:
+    var u = 0'u32
+    while u < a.len:
+      yield (u, a[u])
+      inc u
+
+iterator items*(a: DOMTokenArray): lent CAtom {.inline.} =
+  for it in DOMTokenArrayView(a):
+    yield it
+
+iterator pairs*(a: DOMTokenArray): tuple[key: uint32; value: lent CAtom]
+    {.inline.} =
+  for u, tok in DOMTokenArrayView(a).pairs:
+    yield (u, tok)
+
+proc createDOMTokenArray(len: uint32): ptr DOMTokenArrayBuffer =
+  assert len < uint32(int32.high)
+  let size = sizeof(DOMTokenArrayBuffer) + cast[int](len) * sizeof(CAtom)
+  let this = cast[ptr DOMTokenArrayBuffer](alloc0(size))
+  this.len = len
+  this
+
+proc dup(this: DOMTokenArray): ptr DOMTokenArrayBuffer =
+  if this == nil:
+    return nil
+  let other = createDOMTokenArray(this.len)
+  for u, tok in this:
+    other.toks[u] = tok
+  other
+
+proc newDOMTokenArray*(toks: openArray[CAtom]): DOMTokenArray =
+  assert int64(toks.len) < int64(uint32.high)
+  if toks.len == 0:
+    return DOMTokenArray(nil)
+  let this = cast[DOMTokenArray](createDOMTokenArray(uint32(toks.len)))
+  for i, tok in toks.mypairs:
+    this[uint32(i)] = tok
+  this
+
+proc contains*(this: DOMTokenArrayView; a: CAtom): bool =
+  for it in this:
+    if it == a:
+      return true
+  false
+
+proc contains*(this: DOMTokenArray; a: CAtom): bool =
+  DOMTokenArrayView(this).contains(a)
+
+proc containsIgnoreCase*(this: DOMTokenArray; a: CAtom): bool =
+  for it in this:
+    if it.equalsIgnoreCase(a):
+      return true
+  false
+
+proc containsIgnoreCase*(this: DOMTokenArray; a: StaticAtom): bool =
+  this.containsIgnoreCase(a.view())
 
 {.pop.} # raises: []

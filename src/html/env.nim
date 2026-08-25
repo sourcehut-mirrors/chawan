@@ -715,7 +715,6 @@ jsClassDef(Window):
 
   proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
     rt.finalize(window.timeouts)
-    rt.freeValues(window.weakMap)
     window.urandom.sclose()
     window.settings.moduleMap.clear(rt)
     for data in window.loader.data:
@@ -727,8 +726,6 @@ jsClassDef(Window):
       window.loader.unset(data)
 
   proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
-    for it in window.weakMap.myitems:
-      JS_MarkValue(rt, it, markFunc)
     for it in window.imageURLCache:
       let cachedURL = CachedURLImage(it)
       rt.markObj(cachedURL.window, markFunc)
@@ -1077,12 +1074,6 @@ proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
   let ctxOpaque = ctx.getOpaque()
   ?ctx.addCommonModules(window)
   if ctxOpaque != nil:
-    let weakMap = JS_GetPropertyStr(ctx, ctx.getOpaque().global, "WeakMap")
-    for it in window.weakMap.mitems:
-      it = JS_CallConstructor(ctx, weakMap, 0, nil)
-      if JS_IsException(it):
-        return err()
-    JS_FreeValue(ctx, weakMap)
     JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
     window.performance = newPerformance(window.settings.scripting)
     if window.settings.scripting == smApp:
@@ -1139,9 +1130,6 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     importMapsAllowed: true,
     jsctx: ctx
   )
-  if window != nil:
-    for it in window.weakMap.mitems:
-      it = JS_UNDEFINED
   if window == nil or window.addScripting(ctx).isErr:
     console.error("failed to initialize JS")
     console.writeException(ctx)
@@ -1162,9 +1150,6 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream;
     dangerAlwaysSameOrigin: true,
     document: newDocument(parseURL0("about:blank"))
   )
-  if window != nil:
-    for it in window.weakMap.mitems:
-      it = JS_UNDEFINED
   if ctx.addCommonModules(window).isErr:
     return Window(nil)
   window

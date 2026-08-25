@@ -27,5 +27,16 @@ assert(new Text("a").isEqualNode(new Text("a")));
 	/* ...but this doesn't.  I guess everybody forgot about ShadowRoot? */
 	assertEquals(shadow.isEqualNode(new DocumentFragment()), true);
 }
+{	/* childNodes */
+	assertEquals(document.childNodes, document.childNodes);
+	const element = document.createElement("div");
+	assertEquals(element.childNodes, element.childNodes);
+	const text = new Text();
+	assertEquals(text.childNodes, text.childNodes);
+	const frag = new DocumentFragment()
+	assertEquals(frag.childNodes, frag.childNodes);
+	const comment = new Comment();
+	assertEquals(comment.childNodes, comment.childNodes);
+}
 document.getElementById("x").textContent = "Success";
 </script>

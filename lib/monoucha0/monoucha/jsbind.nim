@@ -31,6 +31,9 @@
 ## {.jsget.}, {.jsfget.} must be specified on object fields; these
 ##   generate regular getter & setter functions.
 ##
+## {.jsnfget.} is like {.jsfget.}, but if the result is `nil`, it throws
+##   an OOM exception.
+##
 ## {.jsufget, jsuffget, jsuffunc.} For fields with the
 ##   [LegacyUnforgeable] WebIDL property.
 ##
@@ -100,7 +103,8 @@ type
     bfMark = "js_mark"
 
   BoundFunctionFlag = enum
-    bffNone, bffUnforgeable, bffStatic, bffReplaceable, bffMagic, bffThis
+    bffNone, bffUnforgeable, bffStatic, bffReplaceable, bffMagic, bffThis,
+    bffNew
 
   JSIterableType* = enum
     jitNone # not iterable
@@ -838,12 +842,20 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; isva: bool) =
       var dl {.inject.} = fjOk
       `jfcl`
   if gen.returnType != nil:
-    stmts.add(quote do:
-      if dl != fjErr:
-        ctx.toJS(`jfc`)
-      else:
-        JS_EXCEPTION
-    )
+    if gen.flag == bffNew:
+      stmts.add(quote do:
+        if dl != fjErr:
+          ctx.toJSNew(`jfc`)
+        else:
+          JS_EXCEPTION
+      )
+    else:
+      stmts.add(quote do:
+        if dl != fjErr:
+          ctx.toJS(`jfc`)
+        else:
+          JS_EXCEPTION
+      )
   else:
     stmts.add(quote do:
       if dl != fjErr:
@@ -1101,7 +1113,7 @@ proc bindGetSet(info: RegistryInfo) =
     let flag = it.flag
     let magic = it.magic
     case flag
-    of bffNone:
+    of bffNone, bffNew:
       info.tabFuns.add(quote do:
         JS_CGETSET_DEF(`k`, `get`, `set`,
           JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
@@ -1266,6 +1278,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
         of "jsstfunc": (t = bfFunction; flag = bffStatic)
         of "jsuffunc": (t = bfFunction; flag = bffUnforgeable)
         of "jsfget": t = bfGetter
+        of "jsnfget": (t = bfGetter; flag = bffNew)
         of "jsuffget": (t = bfGetter; flag = bffUnforgeable)
         of "jsrfget": (t = bfGetter; flag = bffReplaceable)
         of "jsmfget": (t = bfGetter; flag = bffMagic)

@@ -145,10 +145,6 @@ type
     cacheId: int
     imageId: int
 
-  WindowWeakMap* = enum
-    wwmChildren, wwmChildNodes, wwmSelectedOptions, wwmTBodies, wwmCells,
-    wwmDataset, wwmAttributes
-
   Window* = JSRef[WindowObj]
 
   WindowObj* {.pure, final.} = object of EventTargetObj
@@ -179,7 +175,6 @@ type
     userAgent*: string
     referrer*: string
     performance*: Performance
-    weakMap*: array[WindowWeakMap, JSValue]
     customElements*: CustomElementRegistry
     urandom*: PosixStream
 
@@ -224,11 +219,11 @@ type
 
   CustomElementRegistry = JSRef[CustomElementRegistryObj]
 
-  NamedNodeMapObj = object
+  NamedNodeMap = JSRef[NamedNodeMapObj]
+
+  NamedNodeMapObj {.pure, final.} = object of ElementAccessorObj
     element: Element
     attrlist: seq[Attr]
-
-  NamedNodeMap = JSRef[NamedNodeMapObj]
 
   NodeFilterResult = enum
     nfrAccept = (1, "FILTER_ACCEPT")
@@ -273,15 +268,18 @@ type
   LoadSheetFinish = proc(window: Window; this: SheetElement;
     res: LoadSheetResult; env: ParseSheetEnv; i: int) {.  nimcall, raises: [].}
 
+  ElementAccessor = JSRef[ElementAccessorObj]
+
+  ElementAccessorObj {.pure.} = object of JSRootObj
+    nextAccessor: ElementAccessor
+
   CollectionLike = JSRef[CollectionLikeObj]
 
   CollectionLikeObj {.pure.} = object of JSRootObj
+    hcache: Hash
     root: Node
-    # if not nil, this is a live collection.  (uses a ptr instead of a ref
-    # because ORC likes to set refs to nil before the destructor is called)
+    # If not nil, this is a live collection.
     document: ptr DocumentObj
-    prev: ptr CollectionLikeObj
-    next: ptr CollectionLikeObj
 
   Collection = JSRef[CollectionObj]
 
@@ -337,13 +335,13 @@ type
 
   HTMLAllCollection = JSRef[HTMLAllCollectionObj]
 
-  DOMTokenListObj = object
-    toks: seq[CAtom]
+  DOMTokenListObj {.pure, final.} = object of ElementAccessorObj
+    toks: DOMTokenArrayView
     element: Element
 
   DOMTokenList = JSRef[DOMTokenListObj]
 
-  DOMStringMapObj = object
+  DOMStringMapObj {.pure, final.} = object of ElementAccessorObj
     target: HTMLElement
 
   DOMStringMap = JSRef[DOMStringMapObj]
@@ -421,11 +419,10 @@ type
     authorSheetsHead: CSSStylesheet
     sheetTitle: string
     ruleMap: CSSRuleMap
-    cachedForms: HTMLCollection
     cachedLinks: HTMLCollection
-    cachedImages: HTMLCollection
     parser*: RootRef
-    liveCollectionsHead: ptr CollectionLikeObj
+    liveCollections: seq[ptr CollectionLikeObj]
+    liveCollectionsLoad: int
     cachedAll: HTMLAllCollection
     customElements: CustomElementRegistry #TODO ?
 
@@ -530,11 +527,12 @@ type
     localName*: CAtom # 16
     id*: CAtom # 20
     name*: CAtom # 24
-    internalClassList: DOMTokenList # 32
+    classList*: DOMTokenArray # 32
     attrs*: seq[AttrData] # 48, sorted by int(qualifiedName)
     cachedStyle*: CSSStyleDeclaration # 56
     computed*: CSSValues # 64
     box*: RootRef # 72, CSSBox
+    accessorsHead: ElementAccessor # 80, JS-specific helper objects
 
   AttrDummyElementObj {.pure, final.} = object of ElementObj
 
@@ -576,7 +574,7 @@ type
   HTMLAnchorElement* = JSRef[HTMLAnchorElementObj]
 
   HTMLAnchorElementObj* {.pure, final.} = object of HTMLElementObj
-    relList: DOMTokenList
+    relList: DOMTokenArray
 
   HTMLSelectElement* = JSRef[HTMLSelectElementObj]
 
@@ -603,7 +601,7 @@ type
   HTMLLinkElement* = JSRef[HTMLLinkElementObj]
 
   HTMLLinkElementObj {.pure, final.} = object of SheetElementObj
-    relList: DOMTokenList
+    relList: DOMTokenArray
     fetchStarted: bool
     enabled: Option[bool]
 
@@ -615,7 +613,7 @@ type
     controlsHead: FormAssociatedElement
     controlsTail: FormAssociatedElement
     cachedElements: HTMLFormControlsCollection
-    relList: DOMTokenList
+    relList: DOMTokenArray
 
   HTMLTemplateElement* = JSRef[HTMLTemplateElementObj]
 
@@ -647,7 +645,7 @@ type
   HTMLAreaElement = JSRef[HTMLAreaElementObj]
 
   HTMLAreaElementObj {.pure, final.} = object of HTMLElementObj
-    relList: DOMTokenList
+    relList: DOMTokenArray
 
   HTMLButtonElement* = JSRef[HTMLButtonElementObj]
 
@@ -697,12 +695,10 @@ type
   HTMLTableElement = JSRef[HTMLTableElementObj]
 
   HTMLTableElementObj {.pure, final.} = object of HTMLElementObj
-    cachedRows: HTMLCollection
 
   HTMLTableSectionElement = JSRef[HTMLTableSectionElementObj]
 
   HTMLTableSectionElementObj {.pure, final.} = object of HTMLElementObj
-    cachedRows: HTMLCollection
 
   HTMLTableRowElement = JSRef[HTMLTableRowElementObj]
 
@@ -771,13 +767,11 @@ proc newElement(document: Document;
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc newHTMLCollection(root: Node; match: CollectionMatchFun; childonly: bool):
   HTMLCollection
-proc newHTMLCollectionOf(root: Node; tags: openArray[TagType];
-  childonly: bool): HTMLCollection
+proc newHTMLCollectionChildren(root: Node): HTMLCollection
 proc newEmptyNodeList(): NodeList
 proc newNodeList(nodes: openArray[Node]): NodeList
 proc newNodeList(root: Node; match: CollectionMatchFun;
   islive, childonly: bool): NodeList
-proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
   readonly = false): CSSStyleDeclaration
 
@@ -809,6 +803,8 @@ proc setFirstChild(node: ParentNode; child: Node)
 proc setData(ctx: JSContext; this: CharacterData; data: DOMStringNull)
 
 proc addElementId(document: Document; element: Element)
+proc addLiveCollection(document: Document; collection: CollectionLike)
+proc removeLiveCollection(document: Document; collection: CollectionLike)
 proc adopt(document: Document; node: Node; ctx: JSContext)
 proc applyStyleDependencies*(document: Document; element: Element;
   depends: DependencyInfo)
@@ -826,11 +822,8 @@ proc removeElementId(document: Document; element: Element)
 
 proc adjustForRemoval(iter: NodeIterator; node: Node)
 
-proc `$`(tokenList: DOMTokenList): string
-proc contains(tokenList: DOMTokenList; s: CAtom): bool
-proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool
+proc `$`(this: DOMTokenList): string
 
-proc newAttr(element: Element; dataIdx: int): Attr
 proc newAttr(document: Document; data: AttrData): Attr
 proc data(attr: Attr): lent AttrData
 proc setValue(ctx: JSContext; attr: Attr; ds: DOMString)
@@ -858,6 +851,7 @@ proc elIndex*(this: Element): uint32
 proc ensureStyle*(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtom): int
 proc findAttrNS(element: Element; namespace, localName: CAtom): int
+proc getCachedAttributes(element: Element): NamedNodeMap
 proc getBoundingClientRect(element: Element): DOMRect
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
@@ -873,6 +867,8 @@ proc outerHTML(element: Element): string
 proc postConnectionSteps(element: Element; ctx: JSContext)
 proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
+proc reflectTokens(element: Element; arr: var DOMTokenArray; name: StaticAtom;
+  value: string)
 proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
@@ -1241,6 +1237,10 @@ template asSheetElement[T: SheetElementObj](x: JSRef[T]): SheetElement =
 template asHTMLElement*[T: HTMLElementObj](x: JSRef[T]): HTMLElement =
   HTMLElement(x)
 
+template asElementAccessor[T: ElementAccessorObj](x: JSRef[T]):
+    ElementAccessor =
+  ElementAccessor(x)
+
 # Iterators
 iterator childList*(node: ParentNode): Node {.inline.} =
   var it = node.firstChild
@@ -1422,10 +1422,17 @@ iterator sheets(this: SheetElement): CSSStylesheet {.inline.} =
       break
     sheet = sheet.next
 
-iterator classList*(element: Element): lent CAtom {.inline.} =
-  if element.internalClassList != nil:
-    for tok in element.internalClassList.toks:
-      yield tok
+iterator liveCollections(document: Document; node: Node): CollectionLike =
+  if document.liveCollections.len > 0:
+    let mask = document.liveCollections.len - 1
+    var i = hash(cast[pointer](node)) and mask
+    while true:
+      let it = document.liveCollections[i]
+      if it == nil:
+        break
+      if it.root == node:
+        yield cast[CollectionLike](it)
+      i = (i + 1) and mask
 
 # Window/Global
 # For now, these are the same; on an API level however, getGlobal is
@@ -1438,21 +1445,6 @@ proc getWindow*(ctx: JSContext): Window =
   cast[Window](ctx.getOpaque().globalObj)
 
 const WindowEvents* = [satError, satLoad, satFocus, satBlur]
-
-proc setWeak(ctx: JSContext; wwm: WindowWeakMap; key, val: JSValue): Opt[void] =
-  let global = ctx.getGlobal()
-  let res = ctx.invokeSink(global.weakMap[wwm], ctx.getOpaque().strRefs[jstSet],
-    key, val)
-  if JS_IsException(res):
-    return err()
-  JS_FreeValue(ctx, res)
-  ok()
-
-proc getWeak(ctx: JSContext; wwm: WindowWeakMap; key: JSValueConst): JSValue =
-  let global = ctx.getGlobal()
-  if global == nil:
-    return JS_UNDEFINED
-  return ctx.invoke(global.weakMap[wwm], ctx.getOpaque().strRefs[jstGet], key)
 
 proc isHTMLElementOf(this: Collection; node: Node): bool =
   let element = node as HTMLElement
@@ -1480,62 +1472,6 @@ proc logException(window: Window; url: URL) =
   #TODO excludepassword seems pointless?
   window.console.error("Exception in document",
     url.serialize(excludepassword = true), window.jsctx.getExceptionMsg())
-
-proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
-    JSValue =
-  case wwm
-  of wwmChildren:
-    return ctx.toJSNew(newHTMLCollection(
-      this,
-      match = isElement,
-      childonly = true
-    ))
-  of wwmChildNodes:
-    return ctx.toJSNew(newNodeList(
-      this,
-      match = nil,
-      islive = true,
-      childonly = true
-    ))
-  of wwmSelectedOptions:
-    return ctx.toJSNew(newHTMLCollection(
-      this,
-      match = proc(this: Collection; node: Node): bool =
-        this.isOptionOfRoot(node) and (node as HTMLOptionElement).selected,
-      childonly = false
-    ))
-  of wwmTBodies:
-    let collection = newHTMLCollectionOf(this, [ttTbody], childonly = true)
-    return ctx.toJSNew(collection)
-  of wwmCells:
-    let collection = newHTMLCollectionOf(this, [ttTd, ttTh], childonly = true)
-    return ctx.toJSNew(collection)
-  of wwmDataset:
-    let obj = jsNew DOMStringMapObj(target: this as HTMLElement)
-    return ctx.toJSNew(obj)
-  of wwmAttributes:
-    let element = this as Element
-    let map = jsNew NamedNodeMapObj(element: element)
-    if map != nil:
-      for i, attr in element.attrs.mypairs:
-        map.attrlist.add(element.newAttr(i))
-    return ctx.toJSNew(map)
-
-proc getWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
-    JSValue =
-  let jsThis = ctx.toJS(this)
-  if JS_IsException(jsThis):
-    return JS_EXCEPTION
-  let res = ctx.getWeak(wwm, jsThis)
-  if JS_IsUndefined(res):
-    let collection = ctx.newWeakCollection(this, wwm)
-    if JS_IsException(collection):
-      JS_FreeValue(ctx, jsThis)
-      return JS_EXCEPTION
-    ?ctx.setWeak(wwm, jsThis, JS_DupValue(ctx, collection))
-    return collection
-  JS_FreeValue(ctx, jsThis)
-  return res
 
 proc isSameOrigin*(window: Window; origin: Origin): bool =
   if window.dangerAlwaysSameOrigin: # for client
@@ -2659,9 +2595,7 @@ proc clone(node: Node; document: Document; deep: bool;
       element.tagName)
     x.id = element.id
     x.name = element.name
-    if element.internalClassList != nil:
-      x.internalClassList = newDOMTokenList(element, satClass)
-      x.internalClassList.toks = element.internalClassList.toks
+    x.classList = element.classList
     x.attrs = element.attrs
     # Cloning steps
     if (let x = x as HTMLScriptElement; x != nil):
@@ -2676,7 +2610,7 @@ proc clone(node: Node; document: Document; deep: bool;
       #TODO dirty checkedness flag
     x.asNode
   elif (let attr = node as Attr; attr != nil):
-    newAttr(attr.ownerElement.asNode.document, attr.data).asNode
+    newAttr(attr.asNode.document, attr.data).asNode
   elif (let node = node as Text; node != nil):
     if node of CDATASection:
       document.newCDATASection(newRefString(node.data.s)).asNode
@@ -2850,6 +2784,14 @@ proc findAncestor*(node: Node; tagType: TagType): Element =
 proc assignSlot(node: Node) =
   discard
 
+proc getLiveCollection(node: Node; name: StaticAtom): CollectionLike =
+  # Returns the live collection with magic `name' rooted at `node'.
+  let document = node.document
+  for collection in document.liveCollections(node):
+    if collection.root == node and collection.getMagic() == uint32(name):
+      return collection
+  CollectionLike(nil)
+
 type GetRootNodeOptions {.pure.} = object of JSDict
   composed {.jsdefault.}: bool
 
@@ -2906,8 +2848,8 @@ jsClassDef(Node):
       return JS_NewString(ctx, "#document")
     if node of DocumentFragment:
       return JS_NewString(ctx, "#document-fragment")
-    if node of ProcessingInstruction:
-      return ctx.toJS(ProcessingInstruction(node).target)
+    if (let node = node as ProcessingInstruction; node != nil):
+      return ctx.toJS(node.target)
     return JS_NewString(ctx, "#text")
 
   proc nodeValue(ctx: JSContext; node: Node): JSValue {.jsfget.} =
@@ -2981,8 +2923,13 @@ jsClassDef(Node):
   proc isSameNode(node, other: Node): bool {.jsfunc.} =
     return node == other
 
-  proc childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
-    return ctx.getWeakCollection(node, wwmChildNodes)
+  proc childNodes(node: Node): NodeList {.jsfget.} =
+    var list = node.getLiveCollection(satChildNodes) as NodeList
+    if list == nil:
+      list = newNodeList(node, match = nil, islive = true, childonly = true)
+      if list != nil:
+        list.setMagic(uint32(satChildNodes))
+    move(list)
 
   proc isEqualNode(node, other: Node): bool {.jsfunc.} =
     if (let node = node as DocumentType; node != nil):
@@ -3225,8 +3172,13 @@ proc replaceAll(parent: ParentNode; ctx: JSContext; ds: DOMString) =
   let text = if ds.len > 0: parent.asNode.document.newText(ds) else: Text(nil)
   parent.replaceAll(ctx, text.asNode)
 
-proc childrenImpl(ctx: JSContext; node: ParentNode): JSValue =
-  return ctx.getWeakCollection(node.asNode, wwmChildren)
+proc childrenImpl(node: ParentNode): HTMLCollection =
+  var collection = node.asNode.getLiveCollection(satChildren) as HTMLCollection
+  if collection == nil:
+    collection = newHTMLCollectionChildren(node.asNode)
+    if collection != nil:
+      collection.setMagic(uint32(satChildren))
+  collection
 
 proc childElementCountImpl(node: ParentNode): uint32 =
   let last = node.lastElementChild
@@ -3242,7 +3194,7 @@ proc childTextContent*(node: ParentNode): string =
 
 proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtom):
     HTMLCollection =
-  if tagName == satUstar:
+  if $tagName == "*":
     return newHTMLCollection(root.asNode, isElement, childonly = false)
   let this = newHTMLCollection(
     root.asNode,
@@ -3419,12 +3371,30 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
       this.snapshot.add(element.asNode)
   return ctx.toJS(this)
 
+proc getChildrenOf(node: ParentNode; name: StaticAtom; childonly: bool;
+    tags: varargs[TagType]): HTMLCollection =
+  var collection = node.asNode.getLiveCollection(name) as HTMLCollection
+  if collection == nil:
+    collection = newHTMLCollection(node.asNode, isHTMLElementOf, childonly)
+    if collection != nil:
+      for tag in tags:
+        collection.atoms.add(tag.view())
+      collection.setMagic(uint32(name))
+  collection
+
 jsClassDef(ParentNode): # fake class
   jsextends NodeDef
+
+# ElementAccessor
+jsClassDef(ElementAccessor): # fake class
+  discard
 
 # Collection
 template asCollection[T: CollectionObj](x: JSRef[T]): Collection =
   Collection(x)
+
+template asCollectionLike[T: CollectionLikeObj](x: JSRef[T]): CollectionLike =
+  CollectionLike(x)
 
 proc populateCollection(this: Collection) =
   let root = this.root as ParentNode
@@ -3453,13 +3423,9 @@ proc findNode(this: Collection; node: Node): int =
   this.refreshCollection()
   this.snapshot.find(node)
 
-proc attachLiveCollection(root: Node; collection: ptr CollectionLikeObj) =
-  let document = root.document
-  if document.liveCollectionsHead != nil:
-    document.liveCollectionsHead.prev = collection
-    collection.next = document.liveCollectionsHead
-  document.liveCollectionsHead = collection
-  collection.document = addr document[]
+proc attach(collection: CollectionLike) =
+  let document = collection.root.document
+  document.addLiveCollection(collection)
 
 proc newEmptyNodeList(): NodeList =
   jsNew NodeListObj(childonly: false, match: nil, document: nil)
@@ -3479,16 +3445,11 @@ proc newHTMLCollection(root: Node; match: CollectionMatchFun;
     invalid: true
   )
   if this != nil:
-    root.attachLiveCollection(addr this[])
+    this.asCollectionLike.attach()
   this
 
-proc newHTMLCollectionOf(root: Node; tags: openArray[TagType];
-  childonly: bool): HTMLCollection =
-  let this = newHTMLCollection(root, isHTMLElementOf, childonly)
-  if this != nil:
-    for tag in tags:
-      this.atoms.add(tag.view())
-  this
+proc newHTMLCollectionChildren(root: Node): HTMLCollection =
+  newHTMLCollection(root, isElement, childonly = true)
 
 proc newNodeList(root: Node; match: CollectionMatchFun;
     islive, childonly: bool): NodeList =
@@ -3500,7 +3461,7 @@ proc newNodeList(root: Node; match: CollectionMatchFun;
   )
   if this != nil:
     if islive:
-      root.attachLiveCollection(addr this[])
+      this.asCollectionLike.attach()
     else:
       this.asCollection.populateCollection()
   this
@@ -3508,12 +3469,10 @@ proc newNodeList(root: Node; match: CollectionMatchFun;
 jsClassDef(CollectionLike): # fake class
   proc finalize(rt: JSRuntime; collection: CollectionLike) {.jsfin.} =
     if collection.document != nil:
-      if collection.prev != nil:
-        collection.prev.next = collection.next
-      else:
-        collection.document.liveCollectionsHead = collection.next
-      if collection.next != nil:
-        collection.next.prev = collection.prev
+      # Note that document may point to a zombie object; in that case
+      # we clear the liveCollections seq in advance, and this won't do
+      # anything.
+      cast[Document](collection.document).removeLiveCollection(collection)
 
 jsClassDef(Collection): # fake class
   jsextends CollectionLikeDef
@@ -3653,9 +3612,8 @@ jsClassDef(DocumentFragment):
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     return ctx.replaceChildrenImpl(this.asNode, nodes)
 
-  proc children(ctx: JSContext; parentNode: DocumentFragment): JSValue
-      {.jsfget.} =
-    return childrenImpl(ctx, parentNode.asParentNode)
+  proc children(this: DocumentFragment): HTMLCollection {.jsnfget.} =
+    this.asParentNode.childrenImpl
 
 # Document
 template asDocument[T: DocumentObj](x: JSRef[T]): Document =
@@ -3693,6 +3651,66 @@ proc globalCustomElements(document: Document): CustomElementRegistry =
     return document.customElements
   CustomElementRegistry(nil)
 
+proc addLiveCollection0(document: Document;
+    collection: ptr CollectionLikeObj) =
+  let mask = document.liveCollections.len - 1
+  var home = collection.hcache and mask
+  var i = home
+  var collection = collection
+  while true:
+    let it = document.liveCollections[i]
+    if it == nil:
+      document.liveCollections[i] = collection
+      break
+    if tabSwap(home, it.hcache, i, mask):
+      swap(document.liveCollections[i], collection)
+    i = (i + 1) and mask
+
+proc addLiveCollection(document: Document; collection: CollectionLike) =
+  let oldLoad = document.liveCollectionsLoad
+  for it in document.liveCollections.prepareTableAdd(oldLoad, init = 32):
+    if it != nil:
+      document.addLiveCollection0(it)
+  inc document.liveCollectionsLoad
+  collection.hcache = hash(cast[pointer](collection.root))
+  collection.document = addr document[]
+  document.addLiveCollection0(addr collection[])
+
+proc removeLiveCollection(document: Document; collection: CollectionLike) =
+  if document.liveCollections.len == 0:
+    return
+  let mask = document.liveCollections.len - 1
+  var i = collection.hcache and mask
+  while true:
+    let it = document.liveCollections[i]
+    if it == nil:
+      return # not found
+    if it == addr collection[]:
+      dec document.liveCollectionsLoad
+      document.liveCollections[i] = nil
+      break
+    i = (i + 1) and mask
+  var j = i
+  while true:
+    j = (j + 1) and mask
+    let it = document.liveCollections[j]
+    if it == nil:
+      break
+    let k = it.hcache and mask
+    if j == k: # already at home
+      break
+    # backwards shift
+    document.liveCollections[i] = move(document.liveCollections[j])
+    i = j
+
+proc getLiveCollections(document: Document; node: Node): seq[CollectionLike] =
+  # Returns all live collections rooted at `node'.
+  var res: seq[CollectionLike] = @[]
+  for collection in document.liveCollections(node):
+    if collection.root == node:
+      res.add(collection)
+  move(res)
+
 proc adopt(document: Document; node: Node; ctx: JSContext) =
   let oldDocument = node.document
   node.removeImpl(ctx)
@@ -3703,32 +3721,22 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
     if (let node = node as ParentNode; node != nil):
       # The node document is already set, so we must update collections
       # before doing anything that might be observable.
-      var collection = oldDocument.liveCollectionsHead
-      while collection != nil:
-        let next = collection.next
-        if collection.root == node:
-          collection.document = addr document[]
-          collection.prev = nil
-          collection.next = document.liveCollectionsHead
-          if document.liveCollectionsHead != nil:
-            document.liveCollectionsHead.prev = collection
-          document.liveCollectionsHead = collection
-        collection = next
+      # (In principle we could do this without the seq but it seems like
+      # a pain.)
+      let collections = oldDocument.getLiveCollections(node.asNode)
+      for collection in collections:
+        oldDocument.removeLiveCollection(collection)
+        document.addLiveCollection(collection)
       for desc in node.asNode.descendantsShadowIncl:
         if (let root = desc as ShadowRoot; root != nil):
           if root.customElements == nil and not root.unsetCustomElements or
               root.customElements != nil and not root.customElements.scoped:
             root.customElements = document.globalCustomElements
         elif (let element = desc as Element; element != nil):
-          if ctx.getOpaque() != nil and element.attrs.len > 0:
-            let scriptAttrs = ctx.getWeakCollection(element.asNode,
-              wwmAttributes)
-            var attributes: NamedNodeMap
-            discard ctx.fromJS(scriptAttrs, attributes)
-            JS_FreeValue(ctx, scriptAttrs)
-            if attributes != nil:
-              for it in attributes.attrlist:
-                it.internalNext = document.asNode
+          let map = element.getCachedAttributes()
+          if map != nil:
+            for it in map.attrlist:
+              it.internalNext = document.asNode
           #TODO custom element registry, img relevant mutations, adoptedCallback
           if (let templ = element as HTMLTemplateElement; templ != nil):
             document.adopt(templ.content.asNode, ctx)
@@ -3895,22 +3903,18 @@ proc parseURL*(document: Document; s: string): Opt[URL] =
   ok(url)
 
 proc invalidateCollections(document: Document) =
-  var collection = document.liveCollectionsHead
-  while collection != nil:
-    if cast[CollectionLike](collection) of Collection:
+  for collection in document.liveCollections:
+    if collection != nil and cast[CollectionLike](collection) of Collection:
       cast[Collection](collection).invalid = true
       cast[Collection](collection).snapshot = @[]
-    collection = collection.next
 
 proc invalidateCollectionsRemove(document: Document; node: Node) =
   # node will be removed
-  var collection = document.liveCollectionsHead
-  while collection != nil:
+  for collection in document.liveCollections:
     if cast[CollectionLike](collection) of NodeIterator:
       cast[NodeIterator](collection).adjustForRemoval(node)
     elif cast[CollectionLike](collection) of Collection:
       cast[Collection](collection).invalid = true
-    collection = collection.next
 
 proc isValidCustomElementName(atom: CAtom): bool =
   const Disallowed = [
@@ -4232,10 +4236,10 @@ jsClassPublicDef(Document):
   jsget Document, currentScript
 
   proc finalize(rt: JSRuntime; document: Document) {.jsfin.} =
-    var it = document.liveCollectionsHead
-    while it != nil:
-      it.document = nil
-      it = it.next
+    # ensure that collections trying to remove themselves from a zombie
+    # document don't UAF
+    document.liveCollections = @[]
+    document.liveCollectionsLoad = 0
 
   proc mark(rt: JSRuntime; document: Document; markFunc: JS_MarkFunc)
       {.jsmark.} =
@@ -4300,16 +4304,10 @@ jsClassPublicDef(Document):
       return "BackCompat"
     return "CSS1Compat"
 
-  proc forms(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
-    if document.cachedForms == nil:
-      document.cachedForms = newHTMLCollectionOf(
-        document.asNode,
-        [ttForm],
-        childonly = false
-      )
-    document.cachedForms
+  proc forms(document: Document): HTMLCollection {.jsnfget.} =
+    document.asParentNode.getChildrenOf(satForm, childonly = false, ttForm)
 
-  proc links(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
+  proc links(document: Document): HTMLCollection {.jsnfget.} =
     if document.cachedLinks == nil:
       document.cachedLinks = newHTMLCollection(
         document.asNode,
@@ -4318,14 +4316,8 @@ jsClassPublicDef(Document):
       )
     document.cachedLinks
 
-  proc images(ctx: JSContext; document: Document): HTMLCollection {.jsfget.} =
-    if document.cachedImages == nil:
-      document.cachedImages = newHTMLCollectionOf(
-        document.asNode,
-        [ttImg],
-        childonly = false
-      )
-    document.cachedImages
+  proc images(document: Document): HTMLCollection {.jsnfget.} =
+    document.asParentNode.getChildrenOf(satImages, childonly = false, ttImg)
 
   proc getURL(ctx: JSContext; document: Document): JSValue {.
       jsfget: "URL", jsfget: "documentURI".} =
@@ -4485,8 +4477,8 @@ jsClassPublicDef(Document):
       HTMLCollection {.jsfunc.} =
     document.asParentNode.getElementsByClassNameImpl(classNames)
 
-  proc children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
-    return childrenImpl(ctx, parentNode.asParentNode)
+  proc children(this: Document): HTMLCollection {.jsnfget.} =
+    this.asParentNode.childrenImpl
 
   proc querySelector(ctx: JSContext; this: Document; q: DOMString): JSValue
       {.jsfunc.} =
@@ -4635,7 +4627,7 @@ jsClassPublicDef(Document):
       )
       if res == nil:
         return JS_ThrowOutOfMemory(ctx)
-      document.asNode.attachLiveCollection(addr res[])
+      res.asCollectionLike.attach()
       document.cachedAll = res
       let val = ctx.toJS(res)
       if JS_IsException(val):
@@ -4675,7 +4667,7 @@ jsClassPublicDef(Document):
     if this != nil:
       if not JS_IsNull(filter):
         this.filter = ctx.dupTraceObj(filter)
-      root.attachLiveCollection(addr this[])
+      this.asCollectionLike.attach()
     ctx.toJSNew(this)
 
   proc createTreeWalker(ctx: JSContext; document: Document; root: Node;
@@ -4995,22 +4987,11 @@ jsClassDef(TreeWalker):
     ok(Node(nil))
 
 # DOMTokenList
-proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList =
-  let list = jsNew DOMTokenListObj(element: element)
-  if list != nil:
-    list.setMagic(uint32(name))
-  list
+proc localName(this: DOMTokenList): StaticAtom =
+  StaticAtom(this.getMagic())
 
-proc localName(tokenList: DOMTokenList): StaticAtom =
-  StaticAtom(tokenList.getMagic())
-
-proc containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool =
-  return tokenList.toks.containsIgnoreCase(a)
-
-proc update(tokenList: DOMTokenList; ctx: JSContext) =
-  if tokenList.element.attrb(tokenList.localName.view()) or
-      tokenList.toks.len > 0:
-    tokenList.element.setAttr(ctx, tokenList.localName, $tokenList)
+proc update(this: DOMTokenList; ctx: JSContext; value: sink string) =
+  this.element.setAttr(ctx, this.localName, move(value))
 
 proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
   for tok in toks:
@@ -5023,97 +5004,106 @@ proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
       return err()
   ok()
 
-proc reflectTokens(element: Element; list: var DOMTokenList; name: StaticAtom;
-    value: string) =
-  if list != nil:
-    list.toks.setLen(0)
-  for x in value.split(AsciiWhitespace):
-    if x != "":
-      let a = x.toAtom()
-      if list == nil:
-        list = element.newDOMTokenList(name)
-      if a notin list:
-        list.toks.add(a)
+proc remove(this: DOMTokenList; ctx: JSContext; toks: varargs[CAtom]) =
+  var buf = ""
+  for tok in this.toks:
+    if tok in toks:
+      continue
+    if buf.len > 0:
+      buf &= ' '
+    buf &= $tok
+  this.update(ctx, move(buf))
+
+proc add(this: DOMTokenList; ctx: JSContext; toks: varargs[CAtom]) =
+  var buf = ""
+  for tok in this.toks:
+    if buf.len > 0:
+      buf &= ' '
+    buf &= $tok
+  for tok in toks:
+    if tok notin this.toks:
+      if buf.len > 0:
+        buf &= ' '
+      buf &= $tok
+  this.update(ctx, move(buf))
 
 jsClassDef(DOMTokenList):
+  jsextends ElementAccessorDef
+
   classDef.iterable = jitValue
 
-  proc length(tokenList: DOMTokenList): int {.jsfget.} =
-    return tokenList.toks.len
+  proc length(this: DOMTokenList): uint32 {.jsfget.} =
+    return this.toks.len
 
-  proc item(ctx: JSContext; tokenList: DOMTokenList; u: uint32): JSValue
+  proc item(ctx: JSContext; this: DOMTokenList; u: uint32): JSValue
       {.jsfunc.} =
-    if int64(u) < int64(int.high):
-      let i = int(u)
-      if i < tokenList.toks.len:
-        return ctx.toJS(tokenList.toks[i])
+    if u < this.toks.len:
+      return ctx.toJS(this.toks[u])
     return JS_NULL
 
-  proc contains(tokenList: DOMTokenList; s: CAtom): bool {.jsfunc.} =
-    return s in tokenList.toks
+  proc contains(this: DOMTokenList; s: CAtom): bool {.jsfunc.} =
+    return s in this.toks
 
-  proc `$`(tokenList: DOMTokenList): string {.jsfunc: "toString",
+  proc `$`(this: DOMTokenList): string {.jsfunc: "toString",
       jsfget: "value".} =
     var s = ""
-    for i, tok in tokenList.toks:
+    for i, tok in this.toks:
       if i != 0:
         s &= ' '
       s &= $tok
     move(s)
 
-  proc add(ctx: JSContext; tokenList: DOMTokenList;
-      argv: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
+  proc add(ctx: JSContext; this: DOMTokenList; argv: varargs[JSValueConst]):
+      Opt[void] {.jsfunc.} =
     var toks: seq[CAtom]
     ?ctx.fromJS(argv, toks)
     ?ctx.validateDOMTokens(toks)
-    tokenList.toks.add(toks)
-    tokenList.update(ctx)
+    this.add(ctx, toks)
     ok()
 
-  proc remove(ctx: JSContext; tokenList: DOMTokenList;
-      argv: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
+  proc remove(ctx: JSContext; this: DOMTokenList; argv: varargs[JSValueConst]):
+      Opt[void] {.jsfunc.} =
     var toks: seq[CAtom]
     ?ctx.fromJS(argv, toks)
     ?ctx.validateDOMTokens(toks)
-    for tok in toks:
-      let i = tokenList.toks.find(tok)
-      if i >= 0:
-        tokenList.toks.delete(i)
-    tokenList.update(ctx)
+    this.remove(ctx, toks)
     ok()
 
-  proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: CAtom;
+  proc toggle(ctx: JSContext; this: DOMTokenList; token: CAtom;
       force: JSValueConst = JS_UNDEFINED): Opt[bool] {.jsfunc.} =
     ?ctx.validateDOMTokens(token)
     let forceBool = JS_ToBool(ctx, force)
     if forceBool < 0:
       return err()
-    let i = tokenList.toks.find(token.view())
-    if i >= 0:
+    if this.contains(token):
       if JS_IsUndefined(force) or forceBool == 0:
-        tokenList.toks.delete(i)
-        tokenList.update(ctx)
+        this.remove(ctx, token)
         return ok(false)
       return ok(true)
     if JS_IsUndefined(force) or forceBool == 1:
-      tokenList.toks.add(token)
-      tokenList.update(ctx)
+      this.add(ctx, token)
       return ok(true)
     ok(false)
 
-  proc replace(ctx: JSContext; tokenList: DOMTokenList;
-      token, newToken: CAtom): Opt[bool] {.jsfunc.} =
+  proc replace(ctx: JSContext; this: DOMTokenList; token, newToken: CAtom):
+      Opt[bool] {.jsfunc.} =
     ?ctx.validateDOMTokens(token, newToken)
-    let i = tokenList.toks.find(token.view())
-    if i == -1:
+    if not this.contains(token):
       return ok(false)
-    tokenList.toks[i] = newToken
-    tokenList.update(ctx)
+    var buf = ""
+    for tok in this.toks:
+      if buf.len > 0:
+        buf &= ' '
+      if tok == token:
+        buf &= $newToken
+      else:
+        buf &= $tok
+    this.update(ctx, move(buf))
     return ok(true)
 
-  proc supports(ctx: JSContext; tokenList: DOMTokenList; token: DOMString):
-      JSValue {.jsfunc.} =
-    case tokenList.localName
+  proc supports(ctx: JSContext; this: DOMTokenList; token: DOMString): JSValue
+      {.jsfunc.} =
+    case this.localName
     of satRel:
       const SupportedTokens = [satAlternate, satStylesheet]
       let lower = token.toOpenArray().toLowerAscii()
@@ -5136,6 +5126,8 @@ proc toDataStr(name: DOMString): CAtom =
   s.toAtom()
 
 jsClassDef(DOMStringMap):
+  jsextends ElementAccessorDef
+
   proc delete(ctx: JSContext; map: DOMStringMap; name: DOMString): bool {.
       jsfunc.} =
     let name = name.toDataStr()
@@ -5283,7 +5275,7 @@ jsClassDef(HTMLFormControlsCollection):
     )
     if nodes == nil:
       return JS_ThrowOutOfMemory(ctx)
-    this.root.attachLiveCollection(addr nodes[])
+    nodes.asCollectionLike.attach()
     let len = nodes.asCollection.getLength()
     if len == 0:
       return JS_NULL
@@ -5501,6 +5493,8 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
   return attr
 
 jsClassDef(NamedNodeMap):
+  jsextends ElementAccessorDef
+
   proc mark(rt: JSRuntime; map: NamedNodeMap; markFunc: JS_MarkFunc)
       {.jsmark.} =
     for attr in map.attrlist:
@@ -5629,16 +5623,22 @@ proc findAttrNS(element: Element; namespace, localName: CAtom): int =
       return i
   return -1
 
-proc cachedAttributes(ctx: JSContext; element: Element): NamedNodeMap =
-  let this = ctx.toJS(element)
-  if JS_IsException(this):
-    return NamedNodeMap(nil)
-  let res = ctx.getWeak(wwmAttributes, this)
-  JS_FreeValue(ctx, this)
-  var map: NamedNodeMap
-  if ctx.fromJSFree(res, map).isErr:
-    return NamedNodeMap(nil)
-  return map
+proc getAccessor(element: Element; magic: StaticAtom): ElementAccessor =
+  var it = element.accessorsHead
+  while it != nil:
+    if it.getMagic() == uint32(magic):
+      return it
+    it = it.nextAccessor
+  ElementAccessor(nil)
+
+proc addAccessor(element: Element; accessor: ElementAccessor;
+    name: StaticAtom) =
+  accessor.setMagic(uint32(name))
+  accessor.nextAccessor = move(element.accessorsHead)
+  element.accessorsHead = accessor
+
+proc getCachedAttributes(element: Element): NamedNodeMap =
+  element.getAccessor(satAttributes) as NamedNodeMap
 
 proc attr*(element: Element; s: CAtom): lent string =
   let i = element.findAttr(s)
@@ -5983,7 +5983,7 @@ proc reflectAttr0(element: Element; name: CAtom; has: bool;
     else:
       element.name = CAtomNull
   of satClass:
-    element.reflectTokens(element.internalClassList, satClass, value)
+    element.reflectTokens(element.classList, satClass, value)
   #TODO internalNonce
   of satStyle:
     if has:
@@ -6131,12 +6131,10 @@ proc hasInsertionSteps(element: Element): bool =
     element of FormAssociatedElement
 
 proc hasClass*(element: Element; class: CAtom): bool =
-  element.internalClassList != nil and
-    element.internalClassList.toks.containsIgnoreCase(class)
+  element.classList.containsIgnoreCase(class)
 
 proc hasClassIgnoreCase*(element: Element; class: CAtom): bool =
-  element.internalClassList != nil and
-    element.internalClassList.toks.contains(class)
+  element.classList.contains(class)
 
 # Returns true if has post-connection steps.
 proc insertionSteps(element: Element): bool =
@@ -6206,7 +6204,7 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
   let name = element.attrs[i].name
   element.asNode.queueMutationRecord(ctx, mrtAttributes, name, CAtomNull,
     nil, true, element.attrs[i].value, [], [], Node(nil), Node(nil))
-  let map = ctx.cachedAttributes(element)
+  let map = element.getCachedAttributes()
   if map != nil:
     # delete from attrlist + adjust indices invalidated
     var j = -1
@@ -6219,7 +6217,7 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
       let attr = map.attrlist[j]
       #TODO OOM
       attr.ownerElement = (jsNew AttrDummyElementObj(
-        internalNext: attr.ownerElement.asNode.document.asNode,
+        internalNext: attr.asNode.document.asNode,
         attrs: @[attr.data]
       )).asElement
       attr.dataIdx = 0
@@ -6338,6 +6336,37 @@ proc isLabelable(element: Element): bool =
   let element = element as HTMLInputElement
   return element != nil and element.inputType != itHidden
 
+proc getDOMTokenList(element: Element; arr: DOMTokenArray; name: StaticAtom):
+    DOMTokenList =
+  var list = element.getAccessor(name) as DOMTokenList
+  if list == nil:
+    list = jsNew DOMTokenListObj(
+      element: element,
+      toks: DOMTokenArrayView(arr)
+    )
+    if list == nil:
+      return list
+    element.addAccessor(list.asElementAccessor, name)
+  list
+
+proc reflectTokens(element: Element; arr: var DOMTokenArray; name: StaticAtom;
+    value: string) =
+  if value == "":
+    arr = DOMTokenArray(nil)
+  else:
+    var toks = newSeqOfCap[CAtom](16)
+    for x in value.split(AsciiWhitespace):
+      if x != "":
+        let a = x.toAtom()
+        if a notin toks:
+          toks.add(a)
+    arr = newDOMTokenArray(toks)
+    let list = element.getAccessor(name) as DOMTokenList
+    if list != nil:
+      # arr is guaranteed to outlive the DOMTokenList because the latter
+      # references element
+      list.toks = DOMTokenArrayView(arr)
+
 jsClassPublicDef(Element):
   jsextends ParentNodeDef
 
@@ -6349,9 +6378,7 @@ jsClassPublicDef(Element):
     unlinkElementBoxImpl(element)
 
   proc getClassList(this: Element): DOMTokenList {.jsfget: "classList".} =
-    if this.internalClassList == nil:
-      this.internalClassList = newDOMTokenList(this, satClass)
-    this.internalClassList
+    this.getDOMTokenList(this.classList, satClass)
 
   proc firstElementChild*(this: Element): Element {.jsfget.} =
     return this.asParentNode.firstElementChild
@@ -6387,7 +6414,13 @@ jsClassPublicDef(Element):
     return element.attrs.len > 0
 
   proc attributes(ctx: JSContext; element: Element): JSValue {.jsfget.} =
-    return ctx.getWeakCollection(element.asNode, wwmAttributes)
+    var map = element.getCachedAttributes()
+    if map == nil:
+      map = jsNew NamedNodeMapObj(element: element)
+      if map == nil:
+        return JS_ThrowOutOfMemory(ctx)
+      element.addAccessor(map.asElementAccessor, satAttributes)
+    ctx.toJS(map)
 
   proc hasAttribute(element: Element; qualifiedName: CAtom): bool
       {.jsfunc.} =
@@ -6426,8 +6459,8 @@ jsClassPublicDef(Element):
       HTMLCollection {.jsfunc.} =
     element.asParentNode.getElementsByClassNameImpl(classNames)
 
-  proc children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
-    return childrenImpl(ctx, parentNode.asParentNode)
+  proc children(element: Element): HTMLCollection {.jsnfget.} =
+    element.asParentNode.childrenImpl
 
   proc previousElementSibling*(element: Element): Element {.jsfget.} =
     return element.asNode.previousElementSiblingImpl
@@ -6765,7 +6798,7 @@ jsClassPublicDef(Element):
       return JS_EXCEPTION
     return ctx.toJS(this.matchesImpl(selectors))
 
-  proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
+  proc style(element: Element): CSSStyleDeclaration {.jsnfget.} =
     if element.cachedStyle == nil:
       element.cachedStyle = newCSSStyleDeclaration(element, "")
     return element.cachedStyle
@@ -7102,8 +7135,13 @@ jsClassPublicDef(HTMLElement):
       jsfset: "dir".} =
     element.asElement.setAttr(ctx, satDir, value)
 
-  proc dataset(ctx: JSContext; element: HTMLElement): JSValue {.jsfget.} =
-    return ctx.getWeakCollection(element.asNode, wwmDataset)
+  proc dataset(element: HTMLElement): DOMStringMap {.jsnfget.} =
+    var dataset = element.asElement.getAccessor(satDataset) as DOMStringMap
+    if dataset == nil:
+      dataset = jsNew DOMStringMapObj(target: element)
+      if dataset != nil:
+        element.asElement.addAccessor(dataset.asElementAccessor, satDataset)
+    move(dataset)
 
   proc click(ctx: JSContext; element: HTMLElement) {.jsfunc.} =
     let event = newEvent(satClick, element.asEventTarget, bubbles = true,
@@ -7219,31 +7257,34 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
 jsClassPublicDef(HTMLAnchorElement):
   jsextends HTMLElementDef
 
-  jsget HTMLAnchorElement, relList
-
-  proc toString(anchor: HTMLAnchorElement): string {.jsfunc.} =
-    if href := anchor.asElement.reinitURL():
+  proc toString(this: HTMLAnchorElement): string {.jsfunc.} =
+    if href := this.asElement.reinitURL():
       return $href
     return ""
 
-  proc setRelList(ctx: JSContext; anchor: HTMLAnchorElement; ds: DOMString) {.
+  proc getRelList(this: HTMLAnchorElement): DOMTokenList {.
+      jsfget: "relList".} =
+    this.asElement.getDOMTokenList(this.relList, satRel)
+
+  proc setRelList(ctx: JSContext; this: HTMLAnchorElement; ds: DOMString) {.
       jsfset: "relList".} =
-    anchor.asElement.setAttr(ctx, satRel, ds)
+    this.asElement.setAttr(ctx, satRel, ds)
 
 # <area>
 jsClassDef(HTMLAreaElement):
   jsextends HTMLElementDef
 
-  jsget HTMLAreaElement, relList
-
-  proc toString(area: HTMLAreaElement): string {.jsfunc.} =
-    if href := area.asElement.reinitURL():
+  proc toString(this: HTMLAreaElement): string {.jsfunc.} =
+    if href := this.asElement.reinitURL():
       return $href
     return ""
 
-  proc setRelList(ctx: JSContext; area: HTMLAreaElement; ds: DOMString) {.
+  proc getRelList(this: HTMLAreaElement): DOMTokenList {.jsfget: "relList".} =
+    this.asElement.getDOMTokenList(this.relList, satRel)
+
+  proc setRelList(ctx: JSContext; this: HTMLAreaElement; ds: DOMString) {.
       jsfset: "relList".} =
-    area.asElement.setAttr(ctx, satRel, ds)
+    this.asElement.setAttr(ctx, satRel, ds)
 
 # <audio>
 proc newAudio(ctx: JSContext; this_target: JSValueConst; argc: cint;
@@ -7511,11 +7552,12 @@ proc isFormControl(this: Collection; node: Node): bool =
 jsClassPublicDef(HTMLFormElement):
   jsextends HTMLElementDef
 
-  jsget HTMLFormElement, relList
+  proc getRelList(this: HTMLFormElement): DOMTokenList {.jsfget: "relList".} =
+    this.asElement.getDOMTokenList(this.relList, satRel)
 
-  proc setRelList(ctx: JSContext; form: HTMLFormElement; s: DOMString) {.
+  proc setRelList(ctx: JSContext; this: HTMLFormElement; s: DOMString) {.
       jsfset: "relList".} =
-    form.asElement.setAttr(ctx, satRel, s)
+    this.asElement.setAttr(ctx, satRel, s)
 
   proc elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
     if form.cachedElements == nil:
@@ -7527,7 +7569,7 @@ jsClassPublicDef(HTMLFormElement):
         form: form
       )
       if collection != nil:
-        root.attachLiveCollection(addr collection[])
+        collection.asCollectionLike.attach()
         form.cachedElements = collection
     form.cachedElements
 
@@ -7770,11 +7812,12 @@ proc isDisabled(link: HTMLLinkElement): bool =
 jsClassDef(HTMLLinkElement):
   jsextends SheetElementDef
 
-  jsget HTMLLinkElement, relList
+  proc getRelList(this: HTMLLinkElement): DOMTokenList {.jsfget: "relList".} =
+    this.asElement.getDOMTokenList(this.relList, satRel)
 
-  proc setRelList(ctx: JSContext; link: HTMLLinkElement; s: DOMString) {.
+  proc setRelList(ctx: JSContext; this: HTMLLinkElement; s: DOMString) {.
       jsfset: "relList".} =
-    link.asElement.setAttr(ctx, satRel, s)
+    this.asElement.setAttr(ctx, satRel, s)
 
 # <option>
 proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
@@ -7927,7 +7970,7 @@ jsClassPublicDef(HTMLSelectElement):
         invalid: true
       )
       if collection != nil:
-        this.asNode.attachLiveCollection(addr collection[])
+        collection.asCollectionLike.attach()
         this.cachedOptions = collection
     this.cachedOptions
 
@@ -7953,9 +7996,19 @@ jsClassPublicDef(HTMLSelectElement):
     let options = this.options()
     options.asHTMLCollection.namedItem(atom)
 
-  proc selectedOptions(ctx: JSContext; this: HTMLSelectElement): JSValue
-      {.jsfget.} =
-    return ctx.getWeakCollection(this.asNode, wwmSelectedOptions)
+  proc selectedOptions(this: HTMLSelectElement): HTMLCollection {.jsnfget.} =
+    var collection = this.asNode.getLiveCollection(satSelectedOptions) as
+      HTMLCollection
+    if collection == nil:
+      collection = newHTMLCollection(
+        this.asNode,
+        match = proc(this: Collection; node: Node): bool =
+          this.isOptionOfRoot(node) and (node as HTMLOptionElement).selected,
+        childonly = false
+      )
+      if collection != nil:
+        collection.setMagic(uint32(satSelectedOptions))
+    move(collection)
 
   proc selectedIndex*(this: HTMLSelectElement): int {.jsfget.} =
     var i = 0
@@ -8485,12 +8538,13 @@ jsClassDef(HTMLTableElement):
     return ctx.insertBeforeUndefined(this.asNode, sect.asNode,
       option(this.asParentNode.firstChild))
 
-  proc tBodies(ctx: JSContext; this: HTMLTableElement): JSValue {.jsfget.} =
-    return ctx.getWeakCollection(this.asNode, wwmTBodies)
+  proc tBodies(this: HTMLTableElement): HTMLCollection {.jsnfget.} =
+    this.asParentNode.getChildrenOf(satTBodies, childonly = true, ttTbody)
 
-  proc rows(this: HTMLTableElement): HTMLCollection {.jsfget.} =
-    if this.cachedRows == nil:
-      this.cachedRows = newHTMLCollection(
+  proc rows(this: HTMLTableElement): HTMLCollection {.jsnfget.} =
+    var collection = this.asNode.getLiveCollection(satRows) as HTMLCollection
+    if collection == nil:
+      collection = newHTMLCollection(
         this.asNode,
         match = proc(this: Collection; node: Node): bool {.nimcall.} =
           if node.parentNode.asNode == this.root or
@@ -8499,7 +8553,9 @@ jsClassDef(HTMLTableElement):
           false,
         childonly = false
       )
-    this.cachedRows
+      if collection != nil:
+        collection.setMagic(uint32(satChildren))
+    collection
 
   proc createTableChild(ctx: JSContext; this: HTMLTableElement;
       tagType: TagType): Element {.jsmfunc("createCaption", ttCaption),
@@ -8554,11 +8610,8 @@ jsClassDef(HTMLTableElement):
 jsClassDef(HTMLTableSectionElement):
   jsextends HTMLElementDef
 
-  proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsfget.} =
-    if this.cachedRows == nil:
-      this.cachedRows = newHTMLCollectionOf(this.asNode, [ttTr],
-        childonly = true)
-    this.cachedRows
+  proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsnfget.} =
+    this.asParentNode.getChildrenOf(satRows, childonly = true, ttTr)
 
   proc insertRow(ctx: JSContext; this: HTMLTableSectionElement;
       index: int32 = -1): Opt[HTMLElement] {.jsfunc.} =
@@ -8584,8 +8637,8 @@ jsClassDef(HTMLTableSectionElement):
 jsClassDef(HTMLTableRowElement):
   jsextends HTMLElementDef
 
-  proc cells(ctx: JSContext; this: HTMLTableRowElement): JSValue {.jsfget.} =
-    return ctx.getWeakCollection(this.asNode, wwmCells)
+  proc cells(this: HTMLTableRowElement): HTMLCollection {.jsnfget.} =
+    this.asParentNode.getChildrenOf(satCells, childonly = true, ttTd, ttTh)
 
   proc rowIndex(this: HTMLTableRowElement): int {.jsfget.} =
     let table = this.asNode.findAncestor(ttTable) as HTMLTableElement
@@ -8705,21 +8758,6 @@ jsClassPublicDef(SVGSVGElement):
 proc newHTMLElementInternal(tagType: TagType; document: Document):
     HTMLElement =
   case tagType
-  of ttA:
-    let anchor = jsNew HTMLAnchorElementObj()
-    if anchor != nil:
-      anchor.relList = anchor.asElement.newDOMTokenList(satRel)
-    return anchor.asHTMLElement
-  of ttLink:
-    let link = jsNew HTMLLinkElementObj()
-    if link != nil:
-      link.relList = link.asElement.newDOMTokenList(satRel)
-    return link.asHTMLElement
-  of ttForm:
-    let form = jsNew HTMLFormElementObj()
-    if form != nil:
-      form.relList = form.asElement.newDOMTokenList(satRel)
-    return form.asHTMLElement
   of ttTemplate:
     let content = newDocumentFragment(document)
     if content == nil:
@@ -8744,11 +8782,10 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
     else:
       nil
     return (jsNew HTMLCanvasElementObj(bitmap: bitmap)).asHTMLElement
-  of ttArea:
-    let area = jsNew HTMLAreaElementObj()
-    if area != nil:
-      area.relList = area.asElement.newDOMTokenList(satRel)
-    return area.asHTMLElement
+  of ttA: return (jsNew HTMLAnchorElementObj()).asHTMLElement
+  of ttLink: return (jsNew HTMLLinkElementObj()).asHTMLElement
+  of ttForm: return (jsNew HTMLFormElementObj()).asHTMLElement
+  of ttArea: return (jsNew HTMLAreaElementObj()).asHTMLElement
   of ttInput: return (jsNew HTMLInputElementObj()).asHTMLElement
   of ttSelect: return (jsNew HTMLSelectElementObj()).asHTMLElement
   of ttOption: return (jsNew HTMLOptionElementObj()).asHTMLElement
@@ -9007,6 +9044,7 @@ proc addDOMModule*(ctx: JSContext): Opt[void] =
   if ctx.defineConsts(NodeDef.id, NodeType) == dprException:
     return err()
   ?ctx.registerFakeClass(ParentNodeDef)
+  ?ctx.registerFakeClass(ElementAccessorDef)
   ?ctx.registerFakeClass(CollectionLikeDef)
   ?ctx.registerFakeClass(CollectionDef)
   ?ctx.registerClass(NodeListDef)
