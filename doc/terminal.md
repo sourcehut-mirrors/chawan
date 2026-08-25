@@ -58,7 +58,7 @@ shamelessly stolen from notcurses' Linux console detection.)
 
 Some terminals bleed the APC sequence used to recognize kitty image support,
 and this may result in strange artifacts when no alt screen is used.  On
-terminals that set TERM correctly, the APC sequence is not sent.
+affected terminals that set TERM correctly, the APC sequence is not sent.
 
 ## Clipboard
 
@@ -111,8 +111,8 @@ Patches for other terminals (hardware or software alike) are welcome.
 ## Ancient character encodings
 
 For ASCII-only terminals, don't forget to `export LC_ALL=C`.  For terminals
-supporting other legacy encodings, you may also have some luck with
-`language.charset`, such as `export LC_ALL=ja_JP.ISO-2022-JP`.
+supporting other legacy encodings, you may also have some luck with setting
+it to `language.charset`, such as `export LC_ALL=ja_JP.ISO-2022-JP`.
 
 Note that Chawan uses its own encoding library instead of the notoriously
 broken C locale facility, and the two sets of supported charsets may not

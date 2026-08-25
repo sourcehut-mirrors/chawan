@@ -26,7 +26,7 @@ would map to the following browsecap entry:
 # If the script takes the URI as QUERY_STRING, use \(ga%u\(aq.
 scheme1; /cgi\-bin/blah.cgi?%u; cgioutput
 # If you\(aqre transparently mapping to another scheme, use \(gauri\(aq with \(garesource\(aq.
-scheme2; https://example.org/?%s; uri; resource
+scheme2; https://example.org/?%u; uri; resource
 # browsecap does not set \(gaMAPPED_URI_...\(aq variables.  Instead, you can
 # either update the script to pass templates as arguments, or set the
 # environment variables yourself:

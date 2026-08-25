@@ -252,7 +252,7 @@ parameter on the text.
 .RS 2
 .PP
 This can be used in user style sheets to compress distracting ruby text:
-\f[CR]rt{text\-transform: \-cha\-half\-width}\f[R].
+\f[CR]rt { text\-transform: \-cha\-half\-width }\f[R].
 Characters without half\-width counterparts are left intact, except
 hiragana is treated as katakana.
 .RE
@@ -276,7 +276,7 @@ In hints mode (by default, the \f[CR]f\f[R] key) the markers are
 implemented by generating \f[CR]::\-cha\-link\-hint\f[R] on all
 applicable elements.
 So you can change the marker background in your \f[CR]user\-style\f[R]
-(\f[CR][buffer]\f[R] section in \f[CR]config.toml\f[R]):
+(\f[CR][buffer]\f[R] section in \f[B]cha\-config\f[R](5)):
 .RS 2
 .IP
 .EX

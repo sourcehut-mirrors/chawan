@@ -50,23 +50,20 @@ See <https://arewesixelyet.com> to find a terminal that supports it.
 Known quirks and implementation details:
 
 * XTerm needs extensive configuration for ideal sixel support.  In
-  particular, you will want to set the decGraphicsID, numColorRegisters, and
-  maxGraphicSize attributes.  See [**xterm**](man:xterm(1))(1) for details.
+  particular, you will want to set the decGraphicsID, numColorRegisters,
+  and maxGraphicSize attributes.  See [**xterm**](man:xterm(1))(1) for
+  details.
 
 * We assume private color registers are supported.  On terminals where they
   aren't (e.g. SyncTERM or hardware terminals), colors will get messed up with
   multiple images on screen.
 
-* Zellij advertises Sixel support, but the feature is completely broken in
-  the current version, so Chawan specifically disables images in Zellij
-  by default.  In particular:
-
-	- Zellij itself does no Sixel detection, emitting Sixel data even on
-	  terminals that do not support it.  (A fairly puzzling bug, given
-	  the developers seem to be aware of the DA1 feature.)
-
-	- On terminals that support Sixel, it fails to position images
-	  correctly, with the misplaced images completely messing up layout.
+* Zellij advertises Sixel support, but the feature has been completely
+  broken in every version I've tested in (up to 0.45.0), with each version
+  introducing a new set of exciting image display bugs in place of the
+  old ones.  Therefore, it is specifically *disabled* in Chawan's automatic
+  image detection to avoid confusion.  Adventurous users can override this
+  using `display.image-mode=sixel`.
 
 * We send XTSMGRAPHICS for retrieving the number of color registers; on
   failure, we fall back to 256. You can override color register count using
@@ -131,7 +128,7 @@ preferred formats, or even override the built-in ones.  For example:
 # put in ~/.chawan/browsecap (or ~/.config/chawan/browsecap)
 # "resource" is used to allow access from buffers, while "internal"
 # restricts this access to pseudo-requests created by the browser.
-# %s is the path, which expands to either "encode" or "decode".
+# %s expands to either "encode" or "decode".
 img-codec+jxl;	/cgi-bin/jxl %s; cgioutput; resource; internal
 ```
 

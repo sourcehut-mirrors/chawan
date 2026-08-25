@@ -169,7 +169,7 @@ Importing to layers is supported.
   opposite effect as `full-width`.
 
   This can be used in user style sheets to compress distracting ruby
-  text: `rt{text-transform: -cha-half-width}`.  Characters without
+  text: `rt { text-transform: -cha-half-width }`.  Characters without
   half-width counterparts are left intact, except hiragana is treated as
   katakana.
 
@@ -187,7 +187,7 @@ Importing to layers is supported.
 * In hints mode (by default, the `f` key) the markers are implemented by
   generating `::-cha-link-hint` on all applicable elements.  So you can
   change the marker background in your `user-style` (`[buffer]` section in
-  `config.toml`):
+  [**cha-config**](config.md)(5)):
 
   ```css
   ::-cha-link-hint { background: gainsboro }

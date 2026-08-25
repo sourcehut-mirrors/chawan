@@ -74,7 +74,8 @@ an ioctl.
 Some terminals bleed the APC sequence used to recognize kitty image
 support, and this may result in strange artifacts when no alt screen is
 used.
-On terminals that set TERM correctly, the APC sequence is not sent.
+On affected terminals that set TERM correctly, the APC sequence is not
+sent.
 .SS Clipboard
 Some terminals support sequences to override the clipboard.
 Chawan differentiates between three tiers:
@@ -143,7 +144,7 @@ Patches for other terminals (hardware or software alike) are welcome.
 For ASCII\-only terminals, don\(cqt forget to
 \f[CR]export LC_ALL=C\f[R].
 For terminals supporting other legacy encodings, you may also have some
-luck with \f[CR]language.charset\f[R], such as
+luck with setting it to \f[CR]language.charset\f[R], such as
 \f[CR]export LC_ALL=ja_JP.ISO\-2022\-JP\f[R].
 .PP
 Note that Chawan uses its own encoding library instead of the
