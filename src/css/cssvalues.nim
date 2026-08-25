@@ -1446,7 +1446,6 @@ proc parseColorComponent(ctx: var CSSParser): Opt[CSSColorComponent] =
     case res.t
     of ccstNumber: return ok(colorComponentNum(res.n))
     of ccstDegree: return ok(colorComponentDegree(res.deg))
-    #TODO perc should be scaled to 0-1 everywhere I think
     of ccstLength: return ok(colorComponentPerc(res.l.perc * 100))
   of cttNumber:
     let tok = ctx.consume()
@@ -1539,9 +1538,13 @@ proc parseAlphaComponent(ctx: var CSSParser; legacy: bool;
       return err()
     ctx.seekToken()
     let v4 = ?ctx.parseColorComponent()
-    if v4.t notin {ccctPercentage, ccctNumber}:
+    case v4.t
+    of ccctPercentage:
+      return ok(uint8(clamp(v4.n, 0, 100) * 2.55 + 0.5))
+    of ccctNumber:
+      return ok(uint8(clamp(v4.n, 0, 1) * 255 + 0.5))
+    else:
       return err()
-    return ok(uint8(clamp(v4.n, 0, 1) * 255 + 0.5))
   return ok(fallback)
 
 proc parseLegacyColorFun(ctx: var CSSParser; ft: CSSFunctionType):
