@@ -219,6 +219,11 @@ type
 
   CustomElementRegistry = JSRef[CustomElementRegistryObj]
 
+  ElementAccessor = JSRef[ElementAccessorObj]
+
+  ElementAccessorObj {.pure.} = object of JSRootObj
+    nextAccessor: ElementAccessor
+
   NamedNodeMap = JSRef[NamedNodeMapObj]
 
   NamedNodeMapObj {.pure, final.} = object of ElementAccessorObj
@@ -267,11 +272,6 @@ type
 
   LoadSheetFinish = proc(window: Window; this: SheetElement;
     res: LoadSheetResult; env: ParseSheetEnv; i: int) {.  nimcall, raises: [].}
-
-  ElementAccessor = JSRef[ElementAccessorObj]
-
-  ElementAccessorObj {.pure.} = object of JSRootObj
-    nextAccessor: ElementAccessor
 
   CollectionLike = JSRef[CollectionLikeObj]
 
@@ -335,11 +335,11 @@ type
 
   HTMLAllCollection = JSRef[HTMLAllCollectionObj]
 
+  DOMTokenList = JSRef[DOMTokenListObj]
+
   DOMTokenListObj {.pure, final.} = object of ElementAccessorObj
     toks: DOMTokenArrayView
     element: Element
-
-  DOMTokenList = JSRef[DOMTokenListObj]
 
   DOMStringMapObj {.pure, final.} = object of ElementAccessorObj
     target: HTMLElement

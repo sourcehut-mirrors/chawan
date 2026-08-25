@@ -717,7 +717,8 @@ proc `[]`*(this: DOMTokenArrayView; u: uint32): lent CAtom =
   assert this != nil and u < this.len
   (ptr DOMTokenArrayBuffer)(this).toks[u]
 
-proc `[]`*(this: DOMTokenArray; u: uint32): lent CAtom {.borrow.}
+proc `[]`*(this: DOMTokenArray; u: uint32): lent CAtom =
+  DOMTokenArrayView(this)[u]
 
 proc `[]=`*(this: DOMTokenArray; u: uint32; atom: sink CAtom) =
   assert this != nil and u < this.len
