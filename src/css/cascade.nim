@@ -66,7 +66,7 @@ proc applyValues(ctx: var ApplyValueContext;
 template size(ancestors: AncestorCache): uint =
   uint(ancestors.classes.len) * 8
 
-proc contains(ancestors: AncestorCache; class: CAtom; blah = false): bool =
+proc contains(ancestors: AncestorCache; class: CAtom): bool =
   let h1 = uint(hash(class)) mod ancestors.size
   let idx1 = uint8(h1 div 8)
   let bit1 = uint8(1 shl (h1 mod 8))
