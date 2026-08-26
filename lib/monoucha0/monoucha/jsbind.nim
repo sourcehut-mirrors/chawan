@@ -113,13 +113,15 @@ type
     jitPair # pair
     jitIterator # iterator object
 
+  ChaClassFlag* = enum
+    ccfConstructorFunction, ccfRaw
+
   ChaClassDef* = object
     class_name*: cstring
     id*: JSClassID
     parent*: JSClassID
     iterable*: JSIterableType
-    ctorType*: JSCFunctionEnum
-    raw*: bool #TODO remove this
+    flags*: set[ChaClassFlag]
     # pointer to functions:
     # - 0 ..< funsEnd: regular functions
     # - funsEnd ..< staticFunsEnd: static functions
@@ -385,13 +387,16 @@ proc jsIllegalCtor(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
 
-proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
-    className: cstring; parent: JSClassID; ctorType: JSCFunctionEnum): JSValue =
-  let ctor = if ctor == nil: jsIllegalCtor else: ctor
-  let fun = JS_NewCFunction2(ctx, ctor, cstringConst(className), 0, ctorType,
-    0)
-  if parent != JS_INVALID_CLASS_ID:
-    let proto = ctx.getOpaque().ctors[int(parent)]
+proc newClassConstructor(ctx: JSContext; def: ChaClassDef): JSValue =
+  let ctor = if def.ctor == nil: jsIllegalCtor else: def.ctor
+  let ctorType = if ccfConstructorFunction in def.flags:
+    JS_CFUNC_constructor_or_func
+  else:
+    JS_CFUNC_constructor
+  let fun = JS_NewCFunction2(ctx, ctor, cstringConst(def.className), 0,
+    ctorType, 0)
+  if def.parent != JS_INVALID_CLASS_ID:
+    let proto = ctx.getOpaque().ctors[int(def.parent)]
     assert JS_IsObject(proto)
     if JS_SetPrototype(ctx, fun, proto) < 0:
       return JS_EXCEPTION
@@ -1556,12 +1561,14 @@ macro jsClassImpl(def: untyped; jsname: static string; typ: typed;
           `finFun`(rt, this)
       )
       finFun = id
-  let ctorType = info.ctorType
   stmts.add(quote do:
     `def`.class_name = cstring(`jsname`)
     `def`.ctor = `ctorFun`
-    `def`.ctorType = JSCFunctionEnum(`ctorType`)
   )
+  if info.ctorType == JS_CFUNC_constructor_or_func:
+    stmts.add(quote do:
+      `def`.flags.incl(ccfConstructorFunction)
+    )
   if finFun != nil:
     stmts.add(quote do:
       `def`.finalizer = `finFun`
@@ -1585,7 +1592,7 @@ macro jsClassImpl(def: untyped; jsname: static string; typ: typed;
 template jsClassRaw*(def: untyped; jsname: string; body: untyped) =
   # why Nim insists on zero-initing global variables is an eternal mystery.
   var def {.global, noinit, inject.}: ChaClassDef
-  def.raw = true
+  def.flags.incl(ccfRaw)
   discard JS_NewClassID(def.id)
   jsClassImpl(def, jsname, nil, body)
 
@@ -1632,7 +1639,7 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
   var cdef: JSClassDef
   cdef.class_name = def.class_name
   cdef.exotic = def.exotic
-  let raw = def.raw and
+  let raw = ccfRaw in def.flags and
     (def.parent == JS_INVALID_CLASS_ID or rtOpaque.classes[int(id)].raw)
   if raw:
     cdef.gc_mark = jsMarkRaw
@@ -1666,8 +1673,7 @@ proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL):
       not ctx.setPropertyFunctionList(proto, def.funs):
     JS_FreeValue(ctx, proto)
     return fjErr
-  let jctor = ctx.newCtorFunFromParentClass(def.ctor, def.class_name,
-    def.parent, def.ctorType)
+  let jctor = ctx.newClassConstructor(def)
   if not ctx.setPropertyFunctionList(jctor, def.staticFuns):
     JS_FreeValue(ctx, jctor)
     JS_FreeValue(ctx, proto)
@@ -1770,8 +1776,7 @@ proc registerGlobalClass*(ctx: JSContext; def: ChaClassDef;
       not ctx.setUnforgeable(global, def.id):
     JS_FreeValue(ctx, proto)
     return fjErr
-  let jctor = ctx.newCtorFunFromParentClass(def.ctor, def.class_name,
-    def.parent, def.ctorType)
+  let jctor = ctx.newClassConstructor(def)
   if not ctx.setPropertyFunctionList(jctor, def.staticFuns):
     JS_FreeValue(ctx, jctor)
     JS_FreeValue(ctx, proto)
