@@ -654,28 +654,25 @@ proc isSame(a, b: CSSValues): bool =
 
 proc putAgain(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj) =
   let mask = map.tab.len - 1
-  var home = computed.hcache and mask
-  var i = home
+  let hcache = computed.hcache
+  var home = hcache and mask
   var current = computed
-  while true:
-    let it = map.tab[i]
+  for i, it in map.tab.mtabPairs(hcache):
     if it == nil:
-      map.tab[i] = current
+      it = current
       break
     if tabSwap(home, it.hcache, i, mask): # displace
-      swap(map.tab[i], current)
-    i = (i + 1) and mask
+      swap(it, current)
 
 proc put0(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj):
     ptr CSSValuesRootObj =
   let mask = map.tab.len - 1
-  var home = computed.hcache and mask
-  var i = home
+  let hcache = computed.hcache
+  var home = hcache and mask
   var current = computed
-  while true:
-    let it = map.tab[i]
+  for i, it in map.tab.mtabPairs(hcache):
     if it == nil:
-      map.tab[i] = current
+      it = current
       break
     # if current was swapped out, then it cannot be in the table (otherwise
     # the other instance would come earlier)
@@ -683,8 +680,7 @@ proc put0(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj):
         cast[CSSValues](current).isSame(cast[CSSValues](it)):
       return it # already added (for tags)
     if tabSwap(home, it.hcache, i, mask): # displace
-      swap(map.tab[i], current)
-    i = (i + 1) and mask
+      swap(it, current)
   computed
 
 # If an equivalent computed is in map, return that.
@@ -718,61 +714,40 @@ proc atomize(map: var CSSValuesMapObj; computed: CSSValues): CSSValues =
 proc atomize*(computed: CSSValues): CSSValues =
   computedMap.atomize(computed)
 
+proc tabHashFast(item: ptr CSSValuesRootObj): Hash =
+  item.hcache
+
+proc tabIsEmpty(item: ptr CSSValuesRootObj): bool =
+  item == nil
+
+proc tabKeyEq(a, b: ptr CSSValuesRootObj): bool =
+  a == b
+
 proc del(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj) =
-  if map.tab.len == 0:
-    return
-  let mask = map.tab.len - 1
-  var i = computed.hcache and mask
-  while true:
-    let it = map.tab[i]
-    if it == nil:
-      # not atomized
-      return
-    if it == computed:
-      dec map.load
-      map.tab[i] = nil
-      break
-    i = (i + 1) and mask
-  var j = i
-  while true:
-    j = (j + 1) and mask
-    let it = map.tab[j]
-    if it == nil:
-      break
-    let k = it.hcache and mask
-    if j == k: # already at home
-      break
-    # backwards shift
-    map.tab[i] = move(map.tab[j])
-    i = j
+  tabDelImpl(map.tab, map.load, computed, computed.hcache)
 
 proc newCSSVariableMap*(parent: CSSVariableMap): CSSVariableMap =
   return CSSVariableMap(parent: parent)
 
 proc put0(map: CSSVariableMap; cvar: CSSVariable): bool =
-  let mask = map.tab.len - 1
-  var i = cvar.name.hash() and mask
-  while true:
-    let it = map.tab[i]
+  let hcache = cvar.name.hash()
+  for i, it in map.tab.mtabPairs(hcache):
     if it == nil:
-      map.tab[i] = cvar
+      it = cvar
       return true
     if it.name == cvar.name:
       break # already exists
-    i = (i + 1) and mask
   false
 
+proc tabIsEmpty(cvar: CSSVariable): bool =
+  cvar == nil
+
+proc tabKeyEq(cvar: CSSVariable; name: CAtomRaw): bool =
+  cvar.name == name
+
 proc getOrDefault*(map: CSSVariableMap; name: CAtomRaw): CSSVariable =
-  if map.tab.len > 0:
-    let mask = map.tab.len - 1
-    var i = name.hash() and mask
-    while true:
-      let it = map.tab[i]
-      if it == nil:
-        break
-      if it.name == name:
-        return it
-      i = (i + 1) and mask
+  for it in map.tab.tabGetAll(name):
+    return it
   nil
 
 proc putIfAbsent*(map: CSSVariableMap; cvar: CSSVariable) =

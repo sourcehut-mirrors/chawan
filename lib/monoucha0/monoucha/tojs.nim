@@ -31,7 +31,6 @@
 {.push raises: [].}
 
 import std/macrocache
-import std/tables
 import std/typetraits
 
 import jsopaque

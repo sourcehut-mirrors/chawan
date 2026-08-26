@@ -3,7 +3,6 @@
 import std/options
 import std/os
 import std/posix
-import std/tables
 import std/times
 
 import config/chapath
@@ -56,6 +55,7 @@ import utils/lrewrap
 import utils/luwrap
 import utils/myposix
 import utils/strwidth
+import utils/tabutil
 import utils/twtstr
 
 type
@@ -92,6 +92,9 @@ type
     cmd: string
     path: string
     ostream: PosixStream
+
+  CommandItem = ref object of IntMapItem
+    cmd: string
 
   PagerObj {.pure, final.} = object of JSRootObj
     mailcapLoaded: bool
@@ -132,7 +135,7 @@ type
     timeouts: ptr TimeoutState
     tmpfSeq: uint
     attrs: WindowAttributes
-    pidMap: Table[int, string] # pid -> command
+    pidMap: IntMap # pid -> command
     handleInput: JSValue
     showConsole: JSValue
     askPromise: JSValue # function to resolve on ask finish
@@ -1104,7 +1107,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
         if errno != EINTR:
           ?pager.term.restart()
     else:
-      pager.pidMap[int(pid)] = cmd
+      pager.pidMap.put(CommandItem(n: int(pid), cmd: cmd))
     if not suspend:
       return ok(0)
     if wait:
@@ -1451,7 +1454,7 @@ proc execCmdUnlink(pager: Pager; cmd, path: string): int {.noinit.} =
   else:
     if pid == -1:
       pager.alert("Failed to fork process")
-    pager.pidMap[int(pid)] = cmd
+    pager.pidMap.put(CommandItem(n: int(pid), cmd: cmd))
     return pid
 
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
@@ -2010,17 +2013,17 @@ proc handleSigchld(pager: Pager): Opt[void] =
   while (pid = int(waitpid(Pid(-1), wstatus, WNOHANG)); pid == -1):
     if errno != EINTR:
       return err() # ECHILD, stop looking
-  var cmd: string
-  if pager.pidMap.pop(pid, cmd):
+  let item = CommandItem(pager.pidMap.pop(pid))
+  if item != nil:
     if WIFEXITED(wstatus):
       let n = WEXITSTATUS(wstatus)
       if n != 0:
-        pager.alert("Command " & cmd & " exited with code " & $n)
+        pager.alert("Command " & item.cmd & " exited with code " & $n)
     elif WIFSIGNALED(wstatus):
       let sig = WTERMSIG(wstatus)
       # following were likely sent by the user, so don't bother alerting
       if sig != SIGINT and sig != SIGTERM and sig != SIGKILL:
-        pager.alert("Command " & cmd & " crashed")
+        pager.alert("Command " & item.cmd & " crashed")
   ok()
 
 proc hasSelectFds(pager: Pager): bool =

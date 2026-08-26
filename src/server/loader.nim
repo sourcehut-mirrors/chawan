@@ -25,7 +25,6 @@
 import std/algorithm
 import std/os
 import std/posix
-import std/tables
 import std/times
 
 import config/conftypes
@@ -47,6 +46,7 @@ import types/blob
 import types/formdata
 import types/opt
 import types/url
+import utils/tabutil
 import utils/twtstr
 
 # Try to make it a SmallChunk.
@@ -142,6 +142,9 @@ type
     pendingHead: PendingRequest
     pendingTail: PendingRequest
 
+  ClientMapItem {.final.} = ref object of IntMapItem
+    handle: ClientHandle
+
   DownloadItem = ref object
     escapedPath: string
     displayUrl: string
@@ -159,7 +162,7 @@ type
     pollData: PollData
     tmpfSeq: uint
     # List of existing clients (buffer or pager) that may make requests.
-    clientMap: Table[int, ClientHandle] # pid -> data
+    clientMap: IntMap # pid -> data
     # ID of next output. TODO: find a better allocation scheme
     outputNum: int
     # List of *all* credentials the loader knows of.
@@ -491,13 +494,13 @@ proc unregister(ctx: var LoaderContext; output: OutputHandle) =
 
 proc register(ctx: var LoaderContext; client: ClientHandle) =
   assert not client.registered
-  ctx.clientMap[client.pid] = client
+  ctx.clientMap.put(ClientMapItem(n: client.pid, handle: client))
   ctx.pollData.register(client.stream.fd, cshort(POLLIN))
   client.registered = true
 
 proc unregister(ctx: var LoaderContext; client: ClientHandle) =
   assert client.registered
-  ctx.clientMap.del(client.pid)
+  discard ctx.clientMap.pop(client.pid)
   ctx.pollData.unregister(int(client.stream.fd))
   client.registered = false
 
@@ -1572,13 +1575,16 @@ proc loadConfigCmd(ctx: var LoaderContext; client: ClientHandle;
   r.sread(config)
   ctx.load(request, client, config, resource = false)
 
+proc getClientByPid(ctx: LoaderContext; pid: int): ClientHandle =
+  ClientMapItem(ctx.clientMap.getOrDefault(pid)).handle
+
 proc getCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var cacheId: int
   var sourcePid: int
   r.sread(cacheId)
   r.sread(sourcePid)
-  let client = ctx.clientMap.getOrDefault(sourcePid, nil)
+  let client = ctx.getClientByPid(sourcePid)
   let n = if client != nil: client.cacheMap.find(cacheId) else: -1
   rclient.withPacketWriterReturnEOF w:
     if n != -1:
@@ -1593,7 +1599,7 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
   var config: LoaderClientConfig
   r.sread(pid)
   r.sread(config)
-  assert pid notin ctx.clientMap
+  assert ctx.clientMap.getOrDefault(pid) == nil
   var sv {.noinit.}: array[2, cint]
   var res = cmdrDone
   rclient.withPacketWriter w:
@@ -1619,7 +1625,7 @@ proc removeClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var pid: int
   r.sread(pid)
-  let client = ctx.clientMap.getOrDefault(pid)
+  let client = ctx.getClientByPid(pid)
   if client != nil:
     ctx.unregClient.add(client)
   cmdrDone
@@ -1685,8 +1691,8 @@ proc shareCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
   r.sread(sourcePid)
   r.sread(targetPid)
   r.sread(id)
-  let sourceClient = ctx.clientMap.getOrDefault(sourcePid)
-  let targetClient = ctx.clientMap.getOrDefault(targetPid)
+  let sourceClient = ctx.getClientByPid(sourcePid)
+  let targetClient = ctx.getClientByPid(targetPid)
   let n = if sourceClient != nil and targetClient != nil:
     sourceClient.cacheMap.find(id)
   else:
@@ -1771,7 +1777,7 @@ proc teeCmd(ctx: var LoaderContext; rclient: ClientHandle; r: var PacketReader):
   r.sread(sourceId)
   r.sread(targetPid)
   let outputIn = ctx.findOutput(sourceId, rclient)
-  let target = ctx.clientMap.getOrDefault(targetPid)
+  let target = ctx.getClientByPid(targetPid)
   var pipev {.noinit.}: array[2, cint]
   var res = cmdrDone
   if target != nil and outputIn != nil and pipe(pipev) == 0:
@@ -2029,8 +2035,8 @@ proc runFileLoader*(rt: JSRuntime; config: LoaderConfig;
     if dir.len > 0 and dir[^1] != '/':
       dir &= '/'
   ctx.pagerClient = ClientHandle(
-    stream: stream,
     pid: pagerPid,
+    stream: stream,
     config: pagerConfig
   )
   ctx.register(ctx.pagerClient)

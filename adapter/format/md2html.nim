@@ -1,9 +1,8 @@
 {.push raises: [].}
 
-import std/tables
-
 import io/chafile
 import types/opt
+import utils/tabutil
 import utils/twtstr
 
 type
@@ -36,6 +35,10 @@ type
   LinkDefState = enum
     ldsLink, ldsTitle
 
+  LinkReference = ref object of StrMapItem
+    link: string
+    title: string
+
   ParseState = object
     ofile: ChaFile
     blockData: string
@@ -47,7 +50,7 @@ type
     linkDefIdx: int
     linkDefName: string
     linkDefLink: string
-    refMap: TableRef[string, tuple[link, title: string]]
+    refMap: ref StrMap
     slurpBuf: string
     slurpIdx: int
     reprocess: bool
@@ -303,21 +306,21 @@ proc parseLink(ctx: var ParseInlineContext; line: string;
         return ctx.parseLinkBail(i - 1, state)
       let s = line.substr(i + 1, j - 1).toLowerAscii()
       if s != "":
-        let (link, title) = state.refMap.getOrDefault(s)
-        if link == "":
+        let item = LinkReference(state.refMap[].getOrDefault(s))
+        if item == nil:
           return ctx.parseLinkBail(i - 1, state)
         ctx.i = j
-        return ctx.parseLinkWrite(link, title, state)
+        return ctx.parseLinkWrite(item.link, item.title, state)
       else: # [link][]
         i += 2
     let s = ctx.bracketChars.toLowerAscii()
-    let (link, title) = state.refMap.getOrDefault(s)
-    if link == "":
+    let item = LinkReference(state.refMap[].getOrDefault(s))
+    if item == nil:
       if c == '[':
         i -= 2
       return ctx.parseLinkBail(i - 1, state)
     ctx.i = i - 1
-    return ctx.parseLinkWrite(link, title, state)
+    return ctx.parseLinkWrite(item.link, item.title, state)
   let bi = i - 1
   i = line.skipBlanks(i + 1)
   if i >= line.len:
@@ -379,11 +382,11 @@ proc parseImage(ctx: var ParseInlineContext; line: string;
     if j == -1:
       return ctx.append("!", state)
     let s = line.substr(i + 1, j - 1).toLowerAscii()
-    let (link, title) = state.refMap.getOrDefault(s)
-    if link == "":
+    let item = LinkReference(state.refMap[].getOrDefault(s))
+    if item == nil:
       return ctx.append("!", state)
     ctx.i = j
-    return ctx.parseImageWrite(link, title, alt, state)
+    return ctx.parseImageWrite(item.link, item.title, alt, state)
   if c != '(':
     return ctx.append("!", state)
   var link = ""
@@ -1067,8 +1070,11 @@ proc parseLinkDef(state: var ParseState; line: string): Opt[void] =
   if i >= line.len:
     if pi == 0:
       if state.linkDefLink != "":
-        discard state.refMap.mgetOrPut(state.linkDefName,
-          (move(state.linkDefLink), ""))
+        let item = LinkReference(
+          s: state.linkDefName,
+          link: move(state.linkDefLink)
+        )
+        discard state.refMap[].hasKeyOrPut(item)
         state.blockData = ""
         state.blockType = btNone
       else:
@@ -1094,16 +1100,24 @@ proc parseLinkDef(state: var ParseState; line: string): Opt[void] =
     i = title.parseTitle(line, i)
   if i == -1 or i < line.len:
     if pi == 0: # not the first line. put & reprocess
-      discard state.refMap.mgetOrPut(state.linkDefName,
-        (move(state.linkDefLink), move(title)))
+      let item = LinkReference(
+        s: state.linkDefName,
+        link: move(state.linkDefLink),
+        title: move(title)
+      )
+      discard state.refMap[].hasKeyOrPut(item)
       state.blockType = btNone
       state.blockData = ""
     else:
       state.blockType = btPar
     state.reprocess = true
     return ok()
-  discard state.refMap.mgetOrPut(state.linkDefName,
-    (move(state.linkDefLink), move(title)))
+  let item = LinkReference(
+    s: state.linkDefName,
+    link: move(state.linkDefLink),
+    title: move(title)
+  )
+  discard state.refMap[].hasKeyOrPut(item)
   state.blockData = ""
   state.blockType = btNone
   ok()
@@ -1153,7 +1167,7 @@ proc main*() =
   var state = ParseState(
     slurpIdx: -1,
     ofile: cast[ChaFile](stdout),
-    refMap: newTable[string, tuple[link, title: string]]()
+    refMap: new(ref StrMap)
   )
   discard state.parse()
 

@@ -8,7 +8,6 @@
 
 import std/algorithm
 import std/posix
-import std/tables
 
 import io/dynstream
 import types/color
@@ -37,7 +36,6 @@ proc swrite*(w: var PacketWriter; tup: tuple)
 proc swrite*[I, T](w: var PacketWriter; a: array[I, T])
 proc swrite*(w: var PacketWriter; s: openArray[char])
 proc swrite*[T](w: var PacketWriter; s: openArray[T])
-proc swrite*[U, V](w: var PacketWriter; t: Table[U, V])
 proc swrite*(w: var PacketWriter; obj: object)
 proc swrite*(w: var PacketWriter; obj: ref object)
 proc swrite*(w: var PacketWriter; c: ARGBColor)
@@ -199,9 +197,6 @@ proc swrite*[T](w: var PacketWriter; s: openArray[T]) =
   w.swrite(s.len)
   for x in s:
     w.swrite(x)
-
-proc swrite*[U, V](w: var PacketWriter; t: Table[U, V]) {.error.} =
-  discard
 
 proc swrite*(w: var PacketWriter; obj: object) =
   for f in obj.fields:

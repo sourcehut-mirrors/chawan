@@ -259,25 +259,20 @@ proc freeAtomImpl(u: uint32) =
   factory.atomMap[u].s = ""
   factory.atomMap[u].freeNext = factory.freeHead
   factory.freeHead = u
-  let mask = (factory.tab.len - 1)
-  var i = factory.atomMap[u].hcache and mask
-  while true:
-    if factory.tab[i] == u:
-      factory.tab[i] = 0
-      break
-    i = (i + 1) and mask
-  var j = i
-  while true:
-    j = (j + 1) and mask
-    let it = factory.tab[j]
-    if it == 0:
-      break
-    let k = factory.atomMap[it].hcache and mask
-    if j == k: # already at home
-      break
-    # backwards shift
-    factory.tab[i] = move(factory.tab[j])
-    i = j
+  let mask = factory.tab.len - 1
+  var j = -1
+  let keyh = factory.atomMap[u].hcache
+  for i, it in factory.tab.mtabPairs(keyh):
+    if it == u:
+      it = 0
+      j = i
+    elif j >= 0:
+      let k = factory.atomMap[it].hcache and mask
+      if i == k: # already at home
+        break
+      # backwards shift
+      factory.tab[j] = move(it)
+      j = i
 
 proc freeAtom(atom: CAtomRaw) =
   let u = uint32(atom)
@@ -330,28 +325,22 @@ template view*(atom: CAtom): CAtomRaw =
 
 proc put0(factory: CAtomFactory; atom: uint32) =
   let mask = factory.tab.len - 1
-  var home = CAtomRaw(atom).hash() and mask
-  var i = home
+  let hcache = CAtomRaw(atom).hash()
+  var home = hcache and mask
   var atom = atom
-  while true:
-    let it = factory.tab[i]
+  for i, it in factory.tab.mtabPairs(hcache):
     if it == 0:
-      factory.tab[i] = atom
+      it = atom
       break
     if tabSwap(home, CAtomRaw(it).hash(), i, mask): # displace
-      swap(factory.tab[i], atom)
-    i = (i + 1) and mask
+      swap(it, atom)
 
 proc get(factory: CAtomFactory; s: openArray[char]; h: Hash): CAtomRaw =
-  let mask = (factory.tab.len - 1)
-  var i = h and mask
-  while true:
-    let atom = factory.tab[i]
+  for i, atom in factory.tab.tabPairs(h):
     if atom == 0:
       break
     if factory.atomMap[int(atom)].s == s:
       return CAtomRaw(atom)
-    i = (i + 1) and mask
   return CAtomNullRaw
 
 proc toAtomImpl(factory: CAtomFactory; s: openArray[char];
@@ -663,13 +652,10 @@ when defined(test):
     getFactory().atomMap[uint32(atom)].hcache = h
 
   proc testGetIdx*(atom: CAtom): int =
-    let mask = getFactory().tab.high
-    var i = atom.hash() and mask
-    while true:
-      if factory.tab[i] == uint32(atom):
-        break
-      i = (i + 1) and mask
-    i
+    for i, it in factory.tab.tabPairs(atom.hash()):
+      if it == uint32(atom):
+        return i
+    -1
 
 # Backing buffer for DOMTokenList.
 # `nil` is a valid state for this object and simply means "empty".

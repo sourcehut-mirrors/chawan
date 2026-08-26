@@ -74,7 +74,6 @@
 {.push raises: [].}
 
 import std/macros
-import std/tables
 import std/typetraits
 
 import fromjs
@@ -84,6 +83,7 @@ import jstypes
 import jsutils
 import quickjs
 import tojs
+import utils/tabutil
 
 type
   BoundFunctionType = enum
@@ -515,7 +515,8 @@ type
     jsFunCall: NimNode
     jsCallAndRet: NimNode
 
-  GetSet = object
+  GetSet = ref object of StrMapItem
+    name: string
     get: NimNode
     set: NimNode
     flag: BoundFunctionFlag
@@ -529,7 +530,7 @@ type
     ctorFun: NimNode # constructor ident
     ctorType: JSCFunctionEnum # constructor function type
     hasExotic: bool # set if we have to generate exotics
-    getset: Table[string, GetSet] # name -> value
+    getset: StrMap # name -> value
     propGetOwnFun: NimNode # exotic get own property function ident
     propGetFun: NimNode # exotic get function ident
     propSetFun: NimNode # exotic set function ident
@@ -1112,9 +1113,11 @@ proc bindReplaceableSet(stmts: NimNode; info: RegistryInfo) =
 
 proc bindGetSet(info: RegistryInfo) =
   var replaceableId = 0u16
-  for k, it in info.getset:
+  for it in info.getset:
+    let it = GetSet(it)
     let get = if it.get != nil: it.get else: newNilLit()
     let set = if it.set != nil: it.set else: newNilLit()
+    let k = it.s
     let flag = it.flag
     let magic = it.magic
     case flag
@@ -1244,18 +1247,29 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
 template jsextends*(class: ChaClassDef) =
   classDef.parent = class.id
 
-proc setGet(exv: var GetSet; get: NimNode; item: GetSet) =
-  exv.get = get
-  exv.flag = item.flag
-  if item.magic != nil:
-    assert exv.magic == item.magic
+proc setGet(map: var StrMap; name: string; get: NimNode;
+    flag: BoundFunctionFlag; magic: NimNode) =
+  let other = GetSet(map.getOrDefault(name))
+  if other != nil:
+    other.get = get
+    if flag != bffNone and other.flag != flag:
+      assert other.flag == bffNone
+      other.flag = flag
+    assert other.magic == magic
+  else:
+    map.put(GetSet(s: name, get: get, flag: flag, magic: magic))
 
-proc setSet(exv: var GetSet; set: NimNode; item: GetSet) =
-  exv.set = set
-  if item.flag != bffNone:
-    exv.flag = item.flag
-  if item.magic != nil:
-    assert exv.magic == item.magic
+proc setSet(map: var StrMap; name: string; set: NimNode;
+    flag: BoundFunctionFlag; magic: NimNode) =
+  let other = GetSet(map.getOrDefault(name))
+  if other != nil:
+    other.set = set
+    if flag != bffNone and other.flag != flag:
+      assert other.flag == bffNone
+      other.flag = flag
+    assert other.magic == magic
+  else:
+    map.put(GetSet(s: name, set: set, flag: flag, magic: magic))
 
 proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
   for child in body:
@@ -1356,14 +1370,12 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
             )
           else: assert false
         of bfGetter:
-          let item = GetSet(flag: gen.flag, magic: magic)
-          info.getset.mgetOrPut(name, item).setGet(id, item)
+          info.getset.setGet(name, id, flag, magic)
           if flag == bffReplaceable:
             info.tabReplaceableNames.add(newCall("cstring",
               newStrLitNode(name)))
         of bfSetter:
-          let item = GetSet(flag: gen.flag, magic: magic)
-          info.getset.mgetOrPut(name, item).setSet(id, item)
+          info.getset.setSet(name, id, flag, magic)
         of bfIteratorNext:
           let len = gen.length
           info.tabFuns.add(quote do:
@@ -1415,8 +1427,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
         let id = ident($bfGetter & '_' & $child[1] & '_' & child[3].strVal)
         for i in countdown(child.len - 1, 3):
           expectKind child[i], nnkStrLit
-          let item = GetSet(flag: bffNone)
-          info.getset.mgetOrPut(child[i].strVal, item).setGet(id, item)
+          info.getset.setGet(child[i].strVal, id, bffNone, nil)
           child.del(i)
         child.add(id)
       elif child[0].strVal == "jsgetset":
@@ -1424,10 +1435,14 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
           child.add(newStrLitNode(child[2].strVal))
         let get = ident($bfGetter & '_' & $child[1] & '_' & child[3].strVal)
         let set = ident($bfSetter & '_' & $child[1] & '_' & child[3].strVal)
-        let item = GetSet(flag: bffNone, get: get, set: set)
         for i in countdown(child.len - 1, 3):
           expectKind child[i], nnkStrLit
-          info.getset[child[i].strVal] = item
+          info.getset.put(GetSet(
+            s: child[i].strVal,
+            flag: bffNone,
+            get: get,
+            set: set
+          ))
           child.del(i)
         child.add(get)
         child.add(set)
@@ -1437,8 +1452,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
         let id = ident($bfGetter & '_' & $child[1] & '_' & child[3].strVal)
         for i in countdown(child.len - 1, 3):
           expectKind child[i], nnkStrLit
-          let item = GetSet(flag: bffUnforgeable)
-          info.getset.mgetOrPut(child[i].strVal, item).setGet(id, item)
+          info.getset.setGet(child[i].strVal, id, bffUnforgeable, nil)
           child.del(i)
         child.add(id)
     of nnkStmtList:

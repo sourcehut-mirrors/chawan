@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/posix
-import std/tables
 
 import io/dynstream
 import types/color
@@ -27,7 +26,6 @@ proc sread*(r: var PacketReader; b: var bool)
 proc sread*(r: var PacketReader; tup: var tuple)
 proc sread*[I, T](r: var PacketReader; a: var array[I, T])
 proc sread*[T](r: var PacketReader; s: var seq[T])
-proc sread*[U, V](r: var PacketReader; t: var Table[U, V])
 proc sread*(r: var PacketReader; obj: var object)
 proc sread*(r: var PacketReader; obj: var ref object)
 proc sread*(r: var PacketReader; c: var ARGBColor)
@@ -193,9 +191,6 @@ proc sread*[T](r: var PacketReader; s: var seq[T]) =
   s = newSeq[T](len)
   for x in s.mitems:
     r.sread(x)
-
-proc sread*[U; V](r: var PacketReader; t: var Table[U, V]) {.error.} =
-  discard
 
 proc sread*(r: var PacketReader; obj: var object) =
   obj = default(typeof(obj))

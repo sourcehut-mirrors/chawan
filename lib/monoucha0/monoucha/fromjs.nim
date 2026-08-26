@@ -2,7 +2,6 @@
 
 import std/algorithm
 import std/macros
-import std/tables
 import std/typetraits
 
 import jsopaque

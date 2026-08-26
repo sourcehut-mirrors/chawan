@@ -5,7 +5,6 @@ import std/hashes
 import std/math
 import std/options
 import std/setutils
-import std/tables
 import std/times
 
 import chame/tags
@@ -119,9 +118,18 @@ type
   DependencyType* = enum
     dtHover, dtChecked, dtFocus, dtTarget
 
+  DependencyItem = object
+    key: ptr ElementObj
+    value: ptr ElementObj
+    hcache: Hash
+
   DependencyMap = object
-    dependsOn: Table[ptr ElementObj, seq[ptr ElementObj]]
-    dependedBy: Table[ptr ElementObj, seq[ptr ElementObj]]
+    tab: seq[DependencyItem]
+    load: int
+
+  DependencyMapPair = object
+    dependsOn: DependencyMap
+    dependedBy: DependencyMap
 
   DependencyInfo* = array[DependencyType, seq[Element]]
 
@@ -404,7 +412,7 @@ type
     ignoreDestructiveWrites: int
     throwOnDynamicMarkupInsertion*: int
     writeBuffersTop*: DocumentWriteBuffer
-    styleDependencies: array[DependencyType, DependencyMap]
+    styleDependencies: array[DependencyType, DependencyMapPair]
     scriptsToExecSoon: HTMLScriptElement
     scriptsToExecInOrder: HTMLScriptElement
     scriptsToExecInOrderTail: HTMLScriptElement
@@ -811,7 +819,6 @@ proc applyStyleDependencies*(document: Document; element: Element;
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
 proc focus*(document: Document): Element
-proc getElementById*(document: Document; id: CAtom): Element
 proc invalidateCollections(document: Document)
 proc invalidateCollectionsRemove(document: Document; node: Node)
 proc parseURL0*(document: Document; s: string): URL
@@ -1422,17 +1429,24 @@ iterator sheets(this: SheetElement): CSSStylesheet {.inline.} =
       break
     sheet = sheet.next
 
+proc tabIsEmpty(collection: ptr CollectionLikeObj): bool =
+  collection == nil
+
+proc tabKeyEq(collection: ptr CollectionLikeObj; node: Node): bool =
+  collection.root == node
+
+proc tabKeyEq(a, b: ptr CollectionLikeObj): bool =
+  a == b
+
+proc tabHashFast(collection: ptr CollectionLikeObj): Hash =
+  collection.hcache
+
+proc hash(node: Node): Hash =
+  hash(cast[pointer](node))
+
 iterator liveCollections(document: Document; node: Node): CollectionLike =
-  if document.liveCollections.len > 0:
-    let mask = document.liveCollections.len - 1
-    var i = hash(cast[pointer](node)) and mask
-    while true:
-      let it = document.liveCollections[i]
-      if it == nil:
-        break
-      if it.root == node:
-        yield cast[CollectionLike](it)
-      i = (i + 1) and mask
+  for it in document.liveCollections.tabGetAll(node):
+    yield CollectionLike(it)
 
 # Window/Global
 # For now, these are the same; on an API level however, getGlobal is
@@ -2788,7 +2802,7 @@ proc getLiveCollection(node: Node; name: StaticAtom): CollectionLike =
   # Returns the live collection with magic `name' rooted at `node'.
   let document = node.document
   for collection in document.liveCollections(node):
-    if collection.root == node and collection.getMagic() == uint32(name):
+    if collection.getMagic() == uint32(name):
       return collection
   CollectionLike(nil)
 
@@ -3655,16 +3669,14 @@ proc addLiveCollection0(document: Document;
     collection: ptr CollectionLikeObj) =
   let mask = document.liveCollections.len - 1
   var home = collection.hcache and mask
-  var i = home
   var collection = collection
-  while true:
-    let it = document.liveCollections[i]
+  let hcache = collection.hcache
+  for i, it in document.liveCollections.mtabPairs(hcache):
     if it == nil:
-      document.liveCollections[i] = collection
+      it = collection
       break
     if tabSwap(home, it.hcache, i, mask):
-      swap(document.liveCollections[i], collection)
-    i = (i + 1) and mask
+      swap(it, collection)
 
 proc addLiveCollection(document: Document; collection: CollectionLike) =
   let oldLoad = document.liveCollectionsLoad
@@ -3677,31 +3689,8 @@ proc addLiveCollection(document: Document; collection: CollectionLike) =
   document.addLiveCollection0(addr collection[])
 
 proc removeLiveCollection(document: Document; collection: CollectionLike) =
-  if document.liveCollections.len == 0:
-    return
-  let mask = document.liveCollections.len - 1
-  var i = collection.hcache and mask
-  while true:
-    let it = document.liveCollections[i]
-    if it == nil:
-      return # not found
-    if it == addr collection[]:
-      dec document.liveCollectionsLoad
-      document.liveCollections[i] = nil
-      break
-    i = (i + 1) and mask
-  var j = i
-  while true:
-    j = (j + 1) and mask
-    let it = document.liveCollections[j]
-    if it == nil:
-      break
-    let k = it.hcache and mask
-    if j == k: # already at home
-      break
-    # backwards shift
-    document.liveCollections[i] = move(document.liveCollections[j])
-    i = j
+  tabDelImpl(document.liveCollections, document.liveCollectionsLoad,
+    addr collection[], collection.hcache)
 
 proc getLiveCollections(document: Document; node: Node): seq[CollectionLike] =
   # Returns all live collections rooted at `node'.
@@ -3743,13 +3732,12 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
 
 proc addElementId0(document: Document; element: ptr ElementObj) =
   let mask = document.elementIdMap.len - 1
-  var home = element.id.hash() and mask
-  var i = home
   var element = element
-  while true:
-    let it = document.elementIdMap[i]
+  let hcache = element.id.hash()
+  var home = hcache and mask
+  for i, it in document.elementIdMap.mtabPairs(hcache):
     if it == nil:
-      document.elementIdMap[i] = element
+      it = element
       break
     # if either
     # * "it"'s id is closer to its home than element's id
@@ -3757,11 +3745,9 @@ proc addElementId0(document: Document; element: ptr ElementObj) =
     # then swap out "it" for element.
     let ihash = it.id.hash()
     if tabSwap(home, ihash, i, mask) or
-        it.id == element.id and
-        cast[Element](element).precedes(cast[Element](it)):
-      swap(document.elementIdMap[i], element)
+        it.id == element.id and Element(element).precedes(Element(it)):
+      swap(it, element)
       home = ihash and mask
-    i = (i + 1) and mask
 
 proc addElementId(document: Document; element: Element) =
   let oldLoad = document.elementIdMapLoad
@@ -3771,32 +3757,21 @@ proc addElementId(document: Document; element: Element) =
   inc document.elementIdMapLoad
   document.addElementId0(addr element[])
 
+proc tabHashFast(element: ptr ElementObj): Hash =
+  element.id.hash()
+
+proc tabIsEmpty(element: ptr ElementObj): bool =
+  element == nil
+
+proc tabKeyEq(element: ptr ElementObj; id: CAtom): bool =
+  element.id == id
+
+proc tabKeyEq(a, b: ptr ElementObj): bool =
+  a == b
+
 proc removeElementId(document: Document; element: Element) =
-  if document.elementIdMap.len == 0:
-    return
-  let mask = document.elementIdMap.len - 1
-  var i = element.id.hash() and mask
-  while true:
-    let it = document.elementIdMap[i]
-    if it == nil:
-      return # not found
-    if it == addr element[]:
-      dec document.elementIdMapLoad
-      document.elementIdMap[i] = nil
-      break
-    i = (i + 1) and mask
-  var j = i
-  while true:
-    j = (j + 1) and mask
-    let it = document.elementIdMap[j]
-    if it == nil:
-      break
-    let k = it.id.hash() and mask
-    if j == k: # already at home
-      break
-    # backwards shift
-    document.elementIdMap[i] = move(document.elementIdMap[j])
-    i = j
+  tabDelImpl(document.elementIdMap, document.elementIdMapLoad, addr element[],
+    element.id.hash())
 
 proc getCookieWindow(ctx: JSContext; document: Document): Opt[Window] =
   let window = document.window
@@ -3836,26 +3811,18 @@ proc scriptingEnabled*(document: Document): bool =
     return false
   return document.window.settings.scripting != smFalse
 
-proc getElementById*(document: Document; id: CAtom): Element =
-  if id != satUempty and document.elementIdMap.len > 0:
-    let mask = document.elementIdMap.len - 1
-    var i = id.view().hash() and mask
-    while true:
-      let it = document.elementIdMap[i]
-      if it == nil:
-        break
-      if it.id == id:
-        return cast[Element](it)
-      i = (i + 1) and mask
+proc getElementById(document: Document; id: CAtom): Element =
+  if id != satUempty:
+    for it in document.elementIdMap.tabGetAll(id):
+      return Element(it)
   Element(nil)
 
 proc getElementsById*(document: Document; id: CAtom): JSRootRef =
   # for WindowProperties
   if id != satUempty and document.elementIdMap.len > 0:
     let mask = document.elementIdMap.len - 1
-    var i = id.view().hash() and mask
-    while true:
-      let it = document.elementIdMap[i]
+    let hcache = id.hash()
+    for i, it in document.elementIdMap.tabPairs(hcache):
       if it == nil:
         break
       if it.id == id:
@@ -3875,7 +3842,6 @@ proc getElementsById*(document: Document; id: CAtom): JSRootRef =
             collection.atoms = @[id]
           return collection.asRootRef
         return cast[Element](it).asRootRef
-      i = (i + 1) and mask
   JSRootRef(nil)
 
 proc baseURL*(document: Document): URL =
@@ -5543,8 +5509,8 @@ jsClassDef(NamedNodeMap):
     return list
 
 # Element
-proc hash(element: ptr ElementObj): Hash =
-  return hash(cast[pointer](element))
+proc hash(element: Element): Hash =
+  hash(cast[pointer](element))
 
 proc isFirstVisualNode*(element: Element): bool =
   let parent = element.parentNode
@@ -6871,33 +6837,77 @@ jsClassDef(ShadowRoot):
 # changed, for p we check whether input's :checked pseudo-class has
 # changed.
 
+proc tabIsEmpty(item: DependencyItem): bool =
+  item.key == nil
+
+proc tabKeyEq(item: DependencyItem; element: Element): bool =
+  item.key == (ptr ElementObj)(element)
+
+proc tabHashFast(item: DependencyItem): Hash =
+  item.hcache
+
+proc tabKeyEq(a, b: DependencyItem): bool =
+  a == b
+
+iterator getAll(map: DependencyMap; element: Element): lent Element =
+  for it in map.tab.tabGetAll(element):
+    yield Element(it.value)
+
+iterator popAll(map: var DependencyMap; element: Element): Element =
+  for it in map.tab.tabPopAll(element, hash(element)):
+    yield cast[Element](it.value)
+
+proc del(map: var DependencyMap; key, value: Element) =
+  let item = DependencyItem(
+    key: (ptr ElementObj)(key),
+    value: (ptr ElementObj)(value),
+    hcache: hash(cast[pointer](key))
+  )
+  tabDelImpl(map.tab, map.load, item, item.hcache)
+
+proc add0(map: var DependencyMap; item: DependencyItem) =
+  let mask = map.tab.len - 1
+  var item = item
+  let hcache = item.hcache
+  var home = hcache and mask
+  for i, it in map.tab.mtabPairs(hcache):
+    if it.key == nil:
+      it = item
+      break
+    if tabSwap(home, it.hcache, i, mask): # displace
+      swap(it, item)
+
+proc add(map: var DependencyMap; key, value: Element) =
+  let item = DependencyItem(
+    key: (ptr ElementObj)(key),
+    value: (ptr ElementObj)(value),
+    hcache: hash(cast[pointer](key))
+  )
+  for it in map.tab.prepareTableAdd(map.load, init = 4):
+    if it.key != nil:
+      map.add0(it)
+  map.add0(item)
+  inc map.load
+
 proc invalidate*(element: Element; dep: DependencyType) =
   if dep in element.selfDepends:
     element.invalidate()
   let document = element.asNode.document
-  let elementp = (ptr ElementObj)(element)
-  document.styleDependencies[dep].dependedBy.withValue(elementp, p):
-    for it in p[]:
-      cast[Element](it).invalidate()
-
-proc findAndDelete(map: var seq[ptr ElementObj]; element: ptr ElementObj) =
-  map.del(map.find(element))
+  for it in document.styleDependencies[dep].dependedBy.getAll(element):
+    it.invalidate()
 
 proc applyStyleDependencies*(document: Document; element: Element;
     depends: DependencyInfo) =
   element.selfDepends = {}
-  let elementp = (ptr ElementObj)(element)
   for t, map in document.styleDependencies.mpairs:
-    map.dependsOn.withValue(elementp, p):
-      for it in p[]:
-        map.dependedBy.mgetOrPut(it, @[]).findAndDelete(elementp)
-      map.dependsOn.del(elementp)
+    for it in map.dependsOn.popAll(element):
+      map.dependedBy.del(element, it)
     for el in depends[t]:
       if el == element:
         element.selfDepends.incl(t)
         continue
-      map.dependedBy.mgetOrPut(addr el[], @[]).add(elementp)
-      map.dependsOn.mgetOrPut(elementp, @[]).add(addr el[])
+      map.dependedBy.add(el, element)
+      map.dependsOn.add(element, el)
 
 proc add*(depends: var DependencyInfo; element: Element; t: DependencyType) =
   depends[t].add(element)

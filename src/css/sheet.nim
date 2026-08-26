@@ -89,33 +89,29 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
 proc newCSSRuleMap*(quirks: bool): CSSRuleMap =
   CSSRuleMap(quirks: quirks)
 
+proc tabIsEmpty(item: RuleTableItem): bool =
+  item.value == nil
+
+proc tabKeyEq(item: RuleTableItem; name: CAtom): bool =
+  item.name == name
+
 iterator getAll*(map: RuleTable; name: CAtom): lent CSSRuleDef =
-  if map.tab.len > 0:
-    let mask = map.tab.len - 1
-    var i = name.hash() and mask
-    while true:
-      let it = unsafeAddr map.tab[i] # avoid copy, it's slow
-      if it.value == nil:
-        break
-      if it.name == name:
-        yield it.value
-      i = (i + 1) and mask
+  for it in map.tab.tabGetAll(name):
+    yield it.value
 
 proc put0(map: var RuleTable; name: sink CAtom; def: CSSRuleDef): bool =
   let mask = map.tab.len - 1
-  var home = name.hash() and mask
-  var i = home
+  let hcache = name.hash()
+  var home = hcache and mask
   var rtitem = RuleTableItem(name: name, value: def)
-  while true:
-    let it = addr map.tab[i]
+  for i, it in map.tab.mtabPairs(hcache):
     if it.value == nil:
-      map.tab[i] = rtitem
+      it = move(rtitem)
       return true
-    if it[] == rtitem:
+    if it == rtitem:
       break # already added (for tags)
     if tabSwap(home, it.name.hash(), i, mask): # displace
-      swap(map.tab[i], rtitem)
-    i = (i + 1) and mask
+      swap(it, rtitem)
   false
 
 proc add(map: var RuleTable; name: sink CAtom; def: CSSRuleDef) =

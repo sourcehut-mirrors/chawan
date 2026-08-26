@@ -32,7 +32,6 @@ when defined(nimdocdummy):
   ## Also, make sure that parameter names match the ones defined here,
   ## otherwise you are likely to get strange compilation errors.
   # Dummy definitions
-  import std/tables
   import htmlparser
   type
     HandleImpl = int
