@@ -68,6 +68,7 @@ assertEquals(old, window.document);
 	/* navigator */
 	assertThrows(() => navigator.__lookupGetter__("plugins").call(window), TypeError);
 	assertEquals(localStorage.__proto__.__lookupGetter__("length").call(sessionStorage), 0);
+	assertEquals(navigator.javaEnabled(), false);
 	/* screen */
 	(function() {
 		"use strict"

@@ -95,7 +95,7 @@ jsClassRaw(NavigatorDef, "Navigator"):
 
   # NavigatorPlugins
   proc pdfViewerEnabled(navigator: Navigator): bool {.jsfget,
-      jsfget: "javaEnabled".} =
+      jsfunc: "javaEnabled".} =
     false
 
 # PluginArray
@@ -478,12 +478,13 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
       return obj
     let rt = JS_GetRuntime(ctx)
     let rtOpaque = rt.getOpaque()
+    let ctxOpaque = ctx.getOpaque()
+    JS_SetOpaque(obj, JS_DupForeignObject(rt, ctxOpaque.globalObj))
     if int(classid) < rtOpaque.classes.len:
       if not ctx.setPropertyFunctionList(obj,
           rtOpaque.classes[int(classid)].unforgeable):
         JS_FreeValue(ctx, obj)
         return JS_EXCEPTION
-    let ctxOpaque = ctx.getOpaque()
     if classid == LocationDef.id:
       let valueOf0 = ctxOpaque.valRefs[jsvObjectPrototypeValueOf]
       if ctx.defineProperty(obj, "valueOf",
@@ -494,7 +495,6 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
         JS_FreeValue(ctx, obj)
         return JS_EXCEPTION
       #TODO [[DefaultProperties]], exotic
-    JS_SetOpaque(obj, JS_DupForeignObject(rt, ctxOpaque.globalObj))
     func_data[0] = obj
   return JS_DupValue(ctx, func_data[0])
 
