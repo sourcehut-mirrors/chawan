@@ -100,11 +100,20 @@ iterator items*(map: StrMap): lent StrMapItem =
     if it != nil:
       yield it
 
+template myHash(s: openArray[char]): Hash =
+  when nimvm:
+    when (NimMajor, NimMinor) < (2, 2):
+      s.substr().hash()
+    else:
+      s.hash()
+  else:
+    s.hash()
+
 proc getOrDefault*(map: StrMap; s: openArray[char]): StrMapItem =
   ## Get the first item keyed by `s`, or nil.
   if map.tab.len <= 0:
     return nil
-  let hcache = s.hash()
+  let hcache = myHash(s)
   for i, it in map.tab.tabPairs(hcache):
     if it == nil:
       break
