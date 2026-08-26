@@ -726,6 +726,7 @@ jsClassDef(Window):
       window.loader.unset(data)
 
   proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
+    rt.mark(window.settings.moduleMap, markFunc)
     for it in window.imageURLCache:
       let cachedURL = CachedURLImage(it)
       rt.markObj(cachedURL.window, markFunc)
@@ -738,17 +739,26 @@ jsClassDef(Window):
         rt.markObj(svg, markFunc)
     if window.loader != nil:
       for data in window.loader.data:
-        if data of ConnectData:
-          let data = ConnectData(data)
-          if data.opaque of JSFetchOpaque:
-            let opaque = JSFetchOpaque(data.opaque)
-            JS_MarkValue(rt, opaque.resolve, markFunc)
-            JS_MarkValue(rt, opaque.reject, markFunc)
-          elif data.opaque of XHROpaque:
-            rt.mark(XHROpaque(data.opaque), markFunc)
+        let opaque = if data of ConnectData:
+          ConnectData(data).opaque
         elif data of OngoingData:
           let data = OngoingData(data)
           rt.markObj(data.response, markFunc)
+          data.response.opaque
+        else:
+          nil
+        if opaque of LoadSheetEnv:
+          rt.mark(LoadSheetEnv(opaque), markFunc)
+        elif opaque of JSFetchOpaque:
+          let opaque = JSFetchOpaque(opaque)
+          JS_MarkValue(rt, opaque.resolve, markFunc)
+          JS_MarkValue(rt, opaque.reject, markFunc)
+        elif opaque of XHROpaque:
+          rt.mark(XHROpaque(opaque), markFunc)
+        elif opaque of FetchModuleEnv:
+          rt.mark(FetchModuleEnv(opaque), markFunc)
+        elif opaque of ToBlobEnv:
+          rt.mark(ToBlobEnv(opaque), markFunc)
     for it in window.pendingCanvasCtls:
       rt.markObj(it, markFunc)
     rt.mark(window.timeouts, markFunc)

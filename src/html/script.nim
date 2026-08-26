@@ -3,6 +3,7 @@
 import config/conftypes
 import html/catom
 import monoucha/jsopaque
+import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
 import types/opt
@@ -143,6 +144,15 @@ proc clone*(value: ScriptResult): ScriptResult =
     return value
   of srtImportMapParse:
     return ScriptResult(t: srtImportMapParse)
+
+proc mark*(rt: JSRuntime; value: ScriptResult; markFunc: JS_MarkFunc) =
+  if value.t == srtScript:
+    JS_MarkValue(rt, value.script.record, markFunc)
+    rt.markObj(value.script.baseURL, markFunc)
+
+proc mark*(rt: JSRuntime; moduleMap: ModuleMap; markFunc: JS_MarkFunc) =
+  for it in moduleMap:
+    rt.mark(it.value, markFunc)
 
 proc get*(moduleMap: ModuleMap; url: URL; moduleType: ModuleType):
     ScriptResult =

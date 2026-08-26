@@ -260,16 +260,6 @@ type
   CollectionMatchFun = proc(this: Collection; node: Node): bool {.
     nimcall, raises: [].}
 
-  LoadSheetEnv {.final.} = ref object of BlobOpaque
-    window: Window
-    this: SheetElement
-    url: URL
-    finish: LoadSheetFinish
-    charset: Charset
-    layer: CAtom
-    i: int
-    parseEnv: ParseSheetEnv
-
   ParseSheetEnv = ref object
     sheet: CSSStylesheet
     sheets: seq[LoadSheetResult]
@@ -1577,6 +1567,22 @@ proc cssDecode(iq: openArray[char]; fallback: Charset): string =
       if charset in {csUtf16le, csUtf16be}:
         charset = csUtf8
   iq.toOpenArray(offset, iq.high).decodeAll(charset)
+
+type
+  LoadSheetEnv* {.final.} = ref object of BlobOpaque
+    window: Window
+    this: SheetElement
+    url: URL
+    finish: LoadSheetFinish
+    charset: Charset
+    layer: CAtom
+    i: int
+    parseEnv: ParseSheetEnv
+
+proc mark*(rt: JSRuntime; env: LoadSheetEnv; markFunc: JS_MarkFunc) =
+  rt.markObj(env.window, markFunc)
+  rt.markObj(env.this, markFunc)
+  rt.markObj(env.url, markFunc)
 
 proc onFinishCSSText(response: Response; success: bool) =
   let blob = response.onFinishBlob(success)
@@ -7322,12 +7328,17 @@ jsClassPublicDef(HTMLButtonElement):
     this.asElement.setAttr(ctx, satType, s)
 
 # <canvas>
-type ToBlobEnv {.final.} = ref object of BlobOpaque
+type ToBlobEnv* {.final.} = ref object of BlobOpaque
   ctx: JSContext
   callback: JSValue
   isPNG: bool
   this: HTMLCanvasElement
   url: URL
+
+proc mark*(rt: JSRuntime; env: ToBlobEnv; markFunc: JS_MarkFunc) =
+  JS_MarkValue(rt, env.callback, markFunc)
+  rt.markObj(env.this, markFunc)
+  rt.markObj(env.url, markFunc)
 
 proc onFinishToBlob(response: Response; success: bool) =
   let env = ToBlobEnv(response.opaque)
@@ -8194,7 +8205,7 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   JS_FreeValue(ctx, res)
 
 type
-  FetchModuleEnv {.final.} = ref object of BlobOpaque
+  FetchModuleEnv* {.final.} = ref object of BlobOpaque
     window: Window
     element: HTMLScriptElement
     settings: EnvironmentSettings
@@ -8203,6 +8214,11 @@ type
     referrerPolicy: Opt[ReferrerPolicy]
     onComplete: OnCompleteProc
     options: ScriptOptions
+
+proc mark*(rt: JSRuntime; env: FetchModuleEnv; markFunc: JS_MarkFunc) =
+  rt.markObj(env.url, markFunc)
+  rt.markObj(env.window, markFunc)
+  rt.markObj(env.element, markFunc)
 
 proc onFinishFetchModule(response: Response; success: bool) =
   let env = FetchModuleEnv(response.opaque)
@@ -8219,8 +8235,7 @@ proc onFinishFetchModule(response: Response; success: bool) =
     let res = ScriptResult(t: srtNull)
     settings.moduleMap.put(url, moduleType, res)
     element.onComplete(res)
-    return
-  if contentType.isJavaScriptType():
+  elif contentType.isJavaScriptType():
     let source = blob.toOpenArray().toValidUTF8()
     let res = ctx.newJSModuleScript(source, url, env.options, settings)
     #TODO can't we just return null from newJSModuleScript?
@@ -8239,20 +8254,14 @@ proc onFinishFetchModule(response: Response; success: bool) =
 
 proc fetchSingleModuleResponse(opaque: RootRef; response: Response) =
   let env = FetchModuleEnv(opaque)
-  let settings = env.settings
-  let url = env.url
-  let moduleType = env.moduleType
-  let element = env.element
-  let onComplete = env.onComplete
-  let window = env.window
   if response == nil:
     let res = ScriptResult(t: srtNull)
-    settings.moduleMap.put(url, moduleType, res)
-    element.onComplete(res)
-    return
-  env.referrerPolicy = response.getReferrerPolicy()
-  response.onFinish = onFinishFetchModule
-  window.loader.blob(response, env)
+    env.settings.moduleMap.put(env.url, env.moduleType, res)
+    env.onComplete(env.element, res)
+  else:
+    env.referrerPolicy = response.getReferrerPolicy()
+    response.onFinish = onFinishFetchModule
+    env.window.loader.blob(response, env)
 
 #TODO settings object
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
@@ -8489,11 +8498,8 @@ jsClassPublicDef(HTMLScriptElement):
 
   proc mark(rt: JSRuntime; element: HTMLScriptElement; markFunc: JS_MarkFunc)
       {.jsmark.} =
-    if element.scriptResult != nil and element.scriptResult.t == srtScript:
-      let script = element.scriptResult.script
-      if not JS_IsUninitialized(script.record):
-        JS_MarkValue(rt, script.record, markFunc)
-      rt.markObj(script.baseURL, markFunc)
+    if element.scriptResult != nil:
+      rt.mark(element.scriptResult, markFunc)
 
   proc text(this: HTMLScriptElement): string {.jsfget.} =
     this.asParentNode.childTextContent
