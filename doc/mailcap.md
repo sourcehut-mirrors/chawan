@@ -282,7 +282,7 @@ mailto;		mutt -- %s; needsterminal
 # Open YouTube URLs with mpv.  (GET method only.)
 # Like above, nc-match does not need the `x-' prefix because this is
 # browsecap (not mailcap).
-https/get;	mpv -- %u; needsterminal; nc-match=https://youtube\.com/watch?v=.*
+https/get;	mpv -- %u; needsterminal; nc-match=^https://(www\.)?youtube\.com/watch\?v=.*$
 ```
 
 ## See also
