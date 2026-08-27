@@ -1203,13 +1203,6 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     cookieMode: pager.config{"cookie"},
     insecureSslNoVerify: false
   )
-  let allowHttpFromFile = when NimMajor < 2:
-    pager.config.bits[coAllowHttpFromFile].bool
-  else:
-    pager.config{"allowHttpFromFile"}
-  if allowHttpFromFile and url.schemeType in {stFile, stStream}:
-    loaderConfig.allowSchemes.add("http")
-    loaderConfig.allowSchemes.add("https")
   let host = url.host
   let surl = $url
   cookieJarId = host
@@ -1281,8 +1274,6 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
             headers[it.name] = it.value
           loaderConfig.defaultHeaders = headers
       else: assert false
-  if result.scripting != smFalse:
-    loaderConfig.allowSchemes.add("x-cha-cookie")
   if result.images:
     result.imageTypes = pager.mimeTypes.image
   result.userAgent = loaderConfig.defaultHeaders.getFirst("User-Agent")
@@ -1297,8 +1288,8 @@ proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
 
 proc initGotoURL(pager: Pager; request: Request; charset: Charset;
     referrer: BufferInit; cookie: Option[CookieMode];
-    loaderConfig: var LoaderClientConfig; bufferConfig: var BufferConfig;
-    filterCmd: var string) =
+    scripting: Option[ScriptingMode]; loaderConfig: var LoaderClientConfig;
+    bufferConfig: var BufferConfig; filterCmd: var string) =
   var cookieJarId: string
   for i in 0 ..< pager.config{"maxRedirect"}:
     var ourl: URL
@@ -1307,6 +1298,16 @@ proc initGotoURL(pager: Pager; request: Request; charset: Charset;
     if ourl == nil:
       break
     request.url = ourl
+  bufferConfig.scripting = scripting.get(bufferConfig.scripting)
+  let allowHttpFromFile = when NimMajor < 2:
+    pager.config.bits[coAllowHttpFromFile].bool
+  else:
+    pager.config{"allowHttpFromFile"}
+  if allowHttpFromFile and request.url.schemeType in {stFile, stStream}:
+    loaderConfig.allowSchemes.add("http")
+    loaderConfig.allowSchemes.add("https")
+  if bufferConfig.scripting != smFalse:
+    loaderConfig.allowSchemes.add("x-cha-cookie")
   if referrer != nil and referrer.config.refererFrom:
     var referrerHeader = referrer.url.getReferrer(request.url,
       referrer.loaderConfig.referrerPolicy)
@@ -2549,8 +2550,7 @@ jsClassDef(Pager):
     var bufferConfig: BufferConfig
     var filterCmd: string
     pager.initGotoURL(request, t.charset, t.referrer.get(BufferInit(nil)),
-      t.cookie, loaderConfig, bufferConfig, filterCmd)
-    bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
+      t.cookie, t.scripting, loaderConfig, bufferConfig, filterCmd)
     let init = pager.gotoURL0(request, t.save, t.history, bufferConfig,
       loaderConfig, t.title, t.contentType.get(""), t.redirectDepth,
       t.url.get(URL(nil)), filterCmd)
