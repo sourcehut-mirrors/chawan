@@ -98,7 +98,7 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
     if line[^1] == '\r':
       dec j
     let name = line.substr(i, j - 1)
-    if name == "." or name == "..":
+    if name == "." or name == ".." or name == "":
       continue
     case line[0]
     of 'l': # link
