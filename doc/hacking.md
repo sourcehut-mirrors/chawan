@@ -128,7 +128,7 @@ non-obvious reasons.
 ### Exceptions
 
 Avoid at all costs.  If a standard library procedure throws, do not use it.
-Also avoid `try...finally` (even without `catch`).
+Also avoid `try...finally` (even without `except`).
 
 For own procs, use Result/Opt instead.  For large objects this may result in
 excessive copying; to avoid inefficient code, either make them `ref` or use
@@ -208,7 +208,7 @@ unionHook(MyUnion)
 
 This is a workaround for a [compiler
 bug](https://github.com/nim-lang/Nim/issues/25236) affecting Nim versions
-up to 2.2.8.
+up to & including 2.2.8.
 
 ### Copying operations
 
@@ -235,7 +235,7 @@ proc foo(objs: openArray[SomeObj]) =
     obj.i = i
 ```
 
-Similarly, the regular `items` on arrays copies; use `myitems` instead.
+Similarly, the regular `items` on `array`s copies; use `myitems` instead.
 
 ### `func`, `.noSideEffect`
 

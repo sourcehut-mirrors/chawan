@@ -98,12 +98,15 @@ name and then `Def`).  Some variants are:
 * `jsNamespaceDef`: creates a WebIDL namespace.  This is just an object
   with a bunch of static functions (`.jsstfunc`).
 
-* `jsClassRaw:` creates a "raw" class that isn't bound to a specific Nim
+* `jsClassRaw`: creates a "raw" class that isn't bound to a specific Nim
   type.  It can be used without setting an opaque Nim pointer at all, or by
   setting any other arbitrary pointer.
 
-  Do note that this is very hard to use correctly, because JavaScript can
-  usually hold any type longer than its parent.
+  Note that this is very hard to use correctly, because JavaScript can
+  usually hold any type longer than its parent.  For example, if you're
+  holding an unrelated `JSRef` in an instantiated class, you'll probably
+  want to store the pointer from `JS_DupForeignObject`, and then
+  `JS_FreeForeignObject` inside `.jsfin` (don't forget `.jsmark` either).
 
   Also note that a raw class derived from a non-raw class behaves like a
   non-raw class.  This behavior is subject to change.
@@ -543,7 +546,7 @@ It is possible to add custom `fromJS` and `toJS` overloads for any type.
 
 If you hope to figure out anything you'll want to use `make TARGET=debug`.
 Besides showing a Nim stack trace, this will also dump leaked GC objects
-when a buffer is closed or the browser ends.  (Do note that buffer leak
+when a buffer is closed or the browser ends.  (Note that buffer leak
 information is swallowed if you simply press `q`.  Also, it doesn't work in
 `make test`.  (TODO: it should.))
 
