@@ -156,7 +156,7 @@ template jsNew*[T](x: T): JSRef[T] =
 when NimMajor < 2:
   var globalJSTypeMap* {.global, noinit.}: array[1024, JSClassID]
 
-  const JSTypeCounter = CacheCounter("EnumCounter")
+  const JSTypeCounter = CacheCounter("JSTypeCounter")
 
   proc getJSTypeID*[T: object](t: typedesc[T]): int =
     const typeId = JSTypeCounter.value
