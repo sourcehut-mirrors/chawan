@@ -1576,7 +1576,10 @@ proc loadConfigCmd(ctx: var LoaderContext; client: ClientHandle;
   ctx.load(request, client, config, resource = false)
 
 proc getClientByPid(ctx: LoaderContext; pid: int): ClientHandle =
-  ClientMapItem(ctx.clientMap.getOrDefault(pid)).handle
+  let item = ClientMapItem(ctx.clientMap.getOrDefault(pid))
+  if item != nil:
+    return item.handle
+  return nil
 
 proc getCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
