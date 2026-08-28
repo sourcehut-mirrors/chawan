@@ -6,14 +6,14 @@ import std/algorithm
 
 import io/packetreader
 import io/packetwriter
-import monoucha/fromjs
-import monoucha/jsbind
-import monoucha/jsopaque
-import monoucha/jsref
-import monoucha/jstypes
-import monoucha/libunicode
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/jsbind
+import js/jsopaque
+import js/jsref
+import js/jstypes
+import js/libunicode
+import js/quickjs
+import js/tojs
 import types/jsopt
 import types/opt
 import utils/luwrap

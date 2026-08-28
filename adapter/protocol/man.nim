@@ -5,8 +5,8 @@ import std/posix
 
 import lcgi
 
+import js/libregexp
 import utils/lrewrap
-import monoucha/libregexp
 
 proc parseSection(query: string): tuple[page, section: string] =
   var section = ""

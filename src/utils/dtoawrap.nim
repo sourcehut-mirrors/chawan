@@ -1,4 +1,4 @@
-import monoucha/dtoa
+import js/dtoa
 
 # n: start pointer -> end pointer
 # dtoa assumes NUL-termination, so s must be a cstring.

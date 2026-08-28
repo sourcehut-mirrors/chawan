@@ -1,8 +1,8 @@
 {.push raises: [].}
 
-import monoucha/fromjs
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/quickjs
+import js/tojs
 import types/opt
 
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue

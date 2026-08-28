@@ -1,4 +1,4 @@
-import monoucha/jsref
+import js/jsref
 import types/url
 
 when defined(freebsd):

@@ -2,9 +2,9 @@
 
 import css/cssparser
 import css/cssvalues
-import monoucha/fromjs
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/quickjs
+import js/tojs
 import types/color
 import types/jsopt
 import types/opt

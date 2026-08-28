@@ -11,10 +11,10 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
-import monoucha/fromjs
-import monoucha/jsbind
-import monoucha/jsref
-import monoucha/quickjs
+import js/fromjs
+import js/jsbind
+import js/jsref
+import js/quickjs
 import server/buffer
 import server/bufferiface
 import server/headers

@@ -1,6 +1,6 @@
 import std/unittest
 
-import monoucha/libregexp
+import js/libregexp
 
 proc match(re, str: string): bool =
   var plen: cint
@@ -13,9 +13,15 @@ proc match(re, str: string): bool =
     cast[ptr uint8](cstring(str)), 0, cint(str.len), 3, nil)
   res == 1
 
-test "regex only":
+proc testRegexOnly() =
   check match(".*", "whatever")
   check match(".*", "")
 
-test r"\b":
+proc testWordBoundaries() =
   check not "\bth\b".match("Weather")
+
+proc main() =
+  testRegexOnly()
+  testWordBoundaries()
+
+main()

@@ -8,11 +8,11 @@ export cutils.JS_BOOL
 
 {.used.}
 
-{.compile("qjs/libunicode.c", "-fwrapv").}
+{.compile("../../lib/quickjs/libunicode.c", "-fwrapv").}
 
 const luheader = """
-#include "qjs/cutils.h"
-#include "qjs/libunicode.h"
+#include "../../lib/quickjs/cutils.h"
+#include "../../lib/quickjs/libunicode.h"
 """
 
 type

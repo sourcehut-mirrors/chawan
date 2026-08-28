@@ -14,7 +14,7 @@ when not compileOption("threads"):
 else:
   const CFLAGS = "-fwrapv"
 
-{.compile("qjs/libregexp.c", CFLAGS).}
+{.compile("../../lib/quickjs/libregexp.c", CFLAGS).}
 
 # Hack: quickjs provides a lre_check_stack_overflow, but that basically
 # depends on the entire QuickJS runtime. So to avoid pulling that in as
@@ -88,7 +88,7 @@ proc toLREFlags*(flags: cint): LREFlags =
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "qjs/libregexp.h", importc.}
+{.push header: "../../lib/quickjs/libregexp.h", importc.}
 proc lre_compile*(plen: var cint; error_msg: cstring; error_msg_size: cint;
   buf: cstring; buf_len: csize_t; re_flags: cint; opaque: pointer): ptr uint8
 

@@ -31,6 +31,7 @@ Explanation for the separate directories found in `src/`:
 * html: DOM building, the DOM itself, forms, misc. JS APIs, etc.  (The HTML
   parser itself resides in lib/chame0.)
 * io: code for IPC, interaction with the file system, etc.
+* js: JavaScript binding generator and related code.
 * local: code for the main process (i.e. the pager).
 * server: code for processes other than the main process: buffer,
   forkserver, loader.
@@ -226,10 +227,8 @@ recursively.  (Debugging this is not very fun.)
 QuickJS is used by both the pager as a scripting language, and by
 buffers for running on-page scripts when JavaScript is enabled.
 
-The core JS related functionality has been separated out into the
-[Monoucha](https://git.sr.ht/~bptato/monoucha) library, so it can be
-used outside of Chawan too.  However, like with the other libraries, the
-separated out variant is no longer up to date.
+In the past, a standalone variant of Chawan's JS binding generator had
+existed as well, but that is abandoned now.
 
 ### General
 

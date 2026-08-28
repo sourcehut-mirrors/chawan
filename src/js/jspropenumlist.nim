@@ -52,7 +52,7 @@ proc incl(this: var JSPropertyEnumList; atom: JSAtom) =
     JS_FreeAtom(this.ctx, atom)
 
 proc add*(this: var JSPropertyEnumList; val: uint32) =
-  let atom = JS_NewAtomUint32(this.ctx, val)
+  let atom = JS_NewAtomUInt32(this.ctx, val)
   this.add(atom)
 
 proc add*(this: var JSPropertyEnumList; val: string) =
@@ -60,7 +60,7 @@ proc add*(this: var JSPropertyEnumList; val: string) =
   this.add(atom)
 
 proc incl*(this: var JSPropertyEnumList; val: uint32) =
-  let atom = JS_NewAtomUint32(this.ctx, val)
+  let atom = JS_NewAtomUInt32(this.ctx, val)
   this.incl(atom)
 
 proc incl*(this: var JSPropertyEnumList; val: string) =

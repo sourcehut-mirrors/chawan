@@ -14,18 +14,18 @@ export libregexp.JS_BOOL
 
 {.passl: "-lm".}
 
-const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"Monoucha 0.11.0\"' -DCHA_BUILD"
+const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCHA_BUILD"
 when not compileOption("threads"):
   const CFLAGS = CFLAGS0 & " -DCHA_NO_THREADS"
 else:
   const CFLAGS = CFLAGS0
   {.passl: "-lpthread".}
 
-{.compile("qjs/quickjs.c", CFLAGS).}
+{.compile("../../lib/quickjs/quickjs.c", CFLAGS).}
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
-const qjsheader = "qjs/quickjs.h"
+const qjsheader = "../../lib/quickjs/quickjs.h"
 
 const
   # all tags with a reference count are negative
@@ -632,7 +632,7 @@ proc JS_ToCStringLen*(ctx: JSContext; plen: var csize_t; val1: JSValueConst):
 proc JS_ToCString*(ctx: JSContext; val1: JSValueConst): cstringConst
 proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
 
-# Monoucha extensions - unstable API!
+# cha extensions - unstable API!
 proc JS_NewForeignObject*(rt: JSRuntime; classId: JSClassID; size: csize_t):
   pointer
 proc JS_DupForeignObject*(rt: JSRuntime; p: pointer): pointer
@@ -654,6 +654,8 @@ proc JS_GetRegExpBytecode*(ctx: JSContext; obj: JSValueConst; plen: var cint):
   ptr uint8
 proc JS_ThrowTypeErrorOrFalse*(ctx: JSContext; flags: cint; fmt: cstring):
   cint {.varargs.}
+proc JS_NewObjectFromCtor*(ctx: JSContext; ctor: JSValueConst;
+  class_id: JSClassID): JSValue
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
   class_id: JSClassID): JSValue
@@ -714,9 +716,6 @@ proc JS_FreePropertyEnum*(ctx: JSContext;
 
 proc JS_Call*(ctx: JSContext; func_obj, this_obj: JSValueConst; argc: cint;
   argv: JSValueConstArray): JSValue
-# Monoucha extension - unstable API!
-proc JS_NewObjectFromCtor*(ctx: JSContext; ctor: JSValueConst;
-  class_id: JSClassID): JSValue
 proc JS_Invoke*(ctx: JSContext; this_obj: JSValueConst; atom: JSAtom;
   argc: cint; argv: JSValueConstArray): JSValue
 proc JS_CallConstructor*(ctx: JSContext; func_obj: JSValueConst; argc: cint;

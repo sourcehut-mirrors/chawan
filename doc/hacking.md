@@ -370,8 +370,7 @@ Of particular interest in the documentation are:
   implements this.
 * Fetch: <https://fetch.spec.whatwg.org/>.  Networking stuff.  Also see
   <https://xhr.spec.whatwg.org> for XMLHttpRequest.
-* Web IDL: <https://webidl.spec.whatwg.org/>.  Relevant for Monoucha/JS
-  bindings.
+* Web IDL: <https://webidl.spec.whatwg.org/>.  Relevant for JS bindings.
 
 Note that some of these are updated daily, such as the HTML standard.
 

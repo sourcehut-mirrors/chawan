@@ -1,7 +1,7 @@
-import monoucha/fromjs
-import monoucha/jsbind
-import monoucha/jsref
-import monoucha/quickjs
+import js/fromjs
+import js/jsbind
+import js/jsref
+import js/quickjs
 
 type
   Test = JSRef[TestObj]

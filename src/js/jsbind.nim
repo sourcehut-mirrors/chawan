@@ -251,7 +251,7 @@ proc jsMarkRaw(rt: JSRuntime; this: JSValueConst; markFunc: JS_MarkFunc)
     rt.getOpaque().marking = marking
 
 proc newJSRuntime*(): JSRuntime =
-  ## Instantiate a Monoucha `JSRuntime`.
+  ## Instantiate a `JSRuntime` that uses Nim's allocator.
   var mf {.global.} = JSMallocFunctions(
     js_malloc: bindMalloc,
     js_free: bindFree,
@@ -272,9 +272,8 @@ proc newGlobalJSRuntime*(): JSRuntime =
   return rt
 
 proc newJSContext*(rt: JSRuntime): JSContext =
-  ## Instantiate a Monoucha `JSContext`.
-  ## It is only valid to call Monoucha procedures on contexts initialized with
-  ## `newJSContext`, as it does extra initialization over `JS_NewContext`.
+  ## Instantiate a `JSContext` with an appropriate opaque.
+  ## Wraps `JS_NewContext`.
   let ctx = JS_NewContext(rt)
   let opaque = newJSContextOpaque(ctx)
   JS_SetContextOpaque(ctx, opaque)
@@ -393,7 +392,7 @@ proc newClassConstructor(ctx: JSContext; def: ChaClassDef): JSValue =
     JS_CFUNC_constructor_or_func
   else:
     JS_CFUNC_constructor
-  let fun = JS_NewCFunction2(ctx, ctor, cstringConst(def.className), 0,
+  let fun = JS_NewCFunction2(ctx, ctor, cstringConst(def.class_name), 0,
     ctorType, 0)
   if def.parent != JS_INVALID_CLASS_ID:
     let proto = ctx.getOpaque().ctors[int(def.parent)]

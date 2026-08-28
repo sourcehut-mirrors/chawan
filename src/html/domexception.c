@@ -1,7 +1,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#include "qjs/quickjs.h"
+#include "../../lib/quickjs/quickjs.h"
 
 #define COUNTOF(x) (sizeof(x) / sizeof(*(x)))
 

@@ -2,9 +2,9 @@
 
 import std/os
 
-import monoucha/fromjs
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/quickjs
+import js/tojs
 import types/opt
 import utils/myposix
 import utils/twtstr

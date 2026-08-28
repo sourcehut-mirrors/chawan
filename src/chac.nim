@@ -3,8 +3,8 @@
 import std/os
 
 import io/chafile
-import monoucha/jsutils
-import monoucha/quickjs
+import js/jsutils
+import js/quickjs
 import types/opt
 
 proc die(s: string) {.noreturn.} =

@@ -1,7 +1,7 @@
 {.push raises: [].}
 
-import monoucha/jsopaque
-import monoucha/quickjs
+import js/jsopaque
+import js/quickjs
 import types/opt
 
 {.compile("domexception.c", "").}

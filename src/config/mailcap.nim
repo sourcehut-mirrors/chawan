@@ -7,8 +7,8 @@ import std/posix
 
 import io/chafile
 import io/dynstream
-import monoucha/jsref
-import monoucha/libregexp
+import js/jsref
+import js/libregexp
 import types/opt
 import types/url
 import utils/lrewrap

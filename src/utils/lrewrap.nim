@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import monoucha/libregexp
+import js/libregexp
 import types/opt
 
 when NimMajor < 2:

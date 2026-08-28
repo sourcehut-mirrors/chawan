@@ -4,9 +4,9 @@ import std/algorithm
 import std/times
 
 import io/console
-import monoucha/fromjs
-import monoucha/jsutils
-import monoucha/quickjs
+import js/fromjs
+import js/jsutils
+import js/quickjs
 
 type
   TimeoutType* = enum

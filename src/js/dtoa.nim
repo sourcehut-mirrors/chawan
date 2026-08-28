@@ -14,11 +14,11 @@ when not compileOption("threads"):
 else:
   const CFLAGS = "-fwrapv"
 
-{.compile("qjs/dtoa.c", CFLAGS).}
+{.compile("../../lib/quickjs/dtoa.c", CFLAGS).}
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "qjs/dtoa.h", importc.}
+{.push header: "../../lib/quickjs/dtoa.h", importc.}
 # maximum number of digits for fixed and frac formats
 const JS_DTOA_MAX_DIGITS* = 101
 
@@ -50,10 +50,10 @@ const JS_ATOD_ACCEPT_LEGACY_OCTAL* = (1 shl 2)
 const JS_ATOD_ACCEPT_UNDERSCORES* = (1 shl 3)
 
 type
-  JSDTOATempMem* {.importc, header: "qjs/dtoa.h".} = object
+  JSDTOATempMem* {.importc, header: "../../lib/quickjs/dtoa.h".} = object
     mem*: array[37, uint64]
 
-  JSATODTempMem* {.importc, header: "qjs/dtoa.h".} = object
+  JSATODTempMem* {.importc, header: "../../lib/quickjs/dtoa.h".} = object
     mem*: array[27, uint64]
 
 # return a maximum bound of the string length

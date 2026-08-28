@@ -1,9 +1,9 @@
 {.push raises: [].}
 
-import monoucha/fromjs
-import monoucha/jstypes
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/jstypes
+import js/quickjs
+import js/tojs
 
 type RefString* = ref object
   s*: string

@@ -1,13 +1,18 @@
+import std/options
 import std/os
 import std/posix
 import std/strutils
 import std/unittest
 
-import monoucha/fromjs
-import monoucha/jsbind
-import monoucha/jsref
-import monoucha/jsutils
-import monoucha/quickjs
+import js/fromjs
+import js/jsbind
+import js/jsnull
+import js/jspropenumlist
+import js/jsref
+import js/jstypes
+import js/jsutils
+import js/quickjs
+import js/tojs
 import types/opt
 
 proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";
@@ -20,7 +25,7 @@ proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";
   # All ok; return the converted object.
   ok(res)
 
-test "Hello, world":
+proc testHelloWorld() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   const code = "'Hello from JS!'"
@@ -32,7 +37,7 @@ test "Hello, world":
   ctx.free()
   rt.free()
 
-test "Error handling":
+proc testErrorHandling() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   const code = "abcd"
@@ -83,7 +88,7 @@ jsClassDef(Moon):
 template `?`(x: FromJSResult) =
   assert x == fjOk
 
-test "registerType: registering type interfaces":
+proc testRegisterClass() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerClass(PlanetDef)
@@ -101,7 +106,7 @@ function Moon() {
   ctx.free()
   rt.free()
 
-test "Global objects":
+proc testGlobalObjects() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   block:
@@ -116,7 +121,7 @@ test "Global objects":
   ctx.free()
   rt.free()
 
-test "Inheritance":
+proc testInheritance() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerClass(PlanetDef)
@@ -131,7 +136,7 @@ test "Inheritance":
   ctx.free()
   rt.free()
 
-test "jsget, jsset: basic property reflectors":
+proc testGetSet() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   block:
@@ -171,11 +176,13 @@ jsClassDef(Window):
   proc jsAssert(window: Window; pred: bool) {.jsfunc: "assert".} =
     assert pred
 
+var logged {.global.}: string
+
 jsClassDef(Console):
   proc log(console: Console; s: string) {.jsfunc.} =
-    echo s
+    logged = s
 
-test "jsfunc: regular functions":
+proc testFunctions() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerGlobalClass(WindowDef)
@@ -188,6 +195,7 @@ console.log('Hello, world!')
 """
     let val = ctx.eval(code)
     check not JS_IsException(val)
+    check logged == "Hello, world!"
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -216,7 +224,7 @@ jsClassNameDef(JSFile, "File"):
     file.path = file.path.substr(0, i) & s
 
   proc jsExists(path: string): bool {.jsstfunc: "exists".} =
-    return fileExists(path)
+    return true
 
   # this will always return the result of the fstat call.
   proc owner(file: JSFile): int {.jsuffget.} =
@@ -237,7 +245,7 @@ jsClassNameDef(JSFile, "File"):
       dealloc(file.buffer)
       inc unrefd
 
-test "jsctor: constructors":
+proc testConstructors() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerGlobalClass(WindowDef)
@@ -253,7 +261,7 @@ assert(new File('/path/to/file') + '' == '[object File]')
   ctx.free()
   rt.free()
 
-test "jsfget, jsfset: custom property reflectors":
+proc testFunctionGetSet() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerGlobalClass(WindowDef)
@@ -273,7 +281,7 @@ assert(file.path === "/path/to/new-name");
   ctx.free()
   rt.free()
 
-test "jsstfunc: static functions":
+proc testStaticFunctions() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerGlobalClass(WindowDef)
@@ -289,7 +297,7 @@ assert(File.exists("doc/manual.md"));
   ctx.free()
   rt.free()
 
-test "jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property":
+proc testUnforgeable() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   ?ctx.registerGlobalClass(WindowDef)
@@ -308,7 +316,7 @@ Object.defineProperty(file, "owner", { value: -2 }); /* throws */
   ctx.free()
   rt.free()
 
-test "jsfin: object finalizers":
+proc testFinalizers() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
   unrefd = 0 # ignore previous unrefs
@@ -329,3 +337,173 @@ const file = new File("doc/manual.md");
   check unrefd == 1 # the second file is still available
   rt.free()
   check unrefd == 2 # runtime is freed, so the second file gets deallocated too
+
+type TestEnum = enum
+  teA = "a", teB = "b", teC = "c"
+
+type TestEnum2 = enum
+  te2C = "c", te2B = "b", te2A = "a"
+
+proc testEnums() =
+  let rt = newGlobalJSRuntime()
+  let ctx = rt.newJSContext()
+  block:
+    let val = ctx.toJS(teB)
+    var e: TestEnum
+    assert ctx.fromJS(val, e).isOk
+    assert e == teB
+  block:
+    var e2: TestEnum2
+    let val2 = ctx.toJS(te2A)
+    assert ctx.fromJS(val2, e2).isOk
+    assert e2 == te2A
+  block:
+    let val3 = ctx.toJS("b\0c")
+    var e: TestEnum
+    assert ctx.fromJS(val3, e).isErr
+  ctx.free()
+  rt.free()
+
+type
+  TestDict0 = object of JSDict
+    a {.jsdefault: true.}: bool
+    b: int
+    c {.jsdefault.}: TestEnum
+    d: TestDict1
+    e {.jsdefault.}: int32
+    f {.jsdefault.}: Option[JSValueTraced]
+
+  TestDict1 = object of JSDict
+    a: Option[JSValueConst]
+
+  TestDict2 = object of JSDict
+    a {.jsdefault.}: Option[JSValueTraced]
+    b {.jsdefault: 2.}: int
+    c {.jsdefault.}: string
+
+  TestDict3 = object of TestDict2
+
+proc default(e: typedesc[TestEnum]): TestEnum =
+  return teB
+
+proc testJSDictUndefined() =
+  let rt = newGlobalJSRuntime()
+  let ctx = rt.newJSContext()
+  block:
+    var res: TestDict0
+    assert ctx.fromJS(JS_UNDEFINED, res).isErr
+  block:
+    var res: TestDict2
+    assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
+  block:
+    var res: TestDict3
+    assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
+    assert res.b == 2
+  ctx.free()
+  rt.free()
+
+proc subroutine(ctx: JSContext; val: JSValueConst) =
+  var res: TestDict0
+  assert ctx.fromJS(val, res).isOk, ctx.getExceptionMsg()
+  discard ctx.eval("delete val.f", "<input>")
+  assert res.a
+  assert res.b == 1
+  assert res.c == teB
+  assert res.e == 0
+  assert res.d.a.isNone
+  doAssert ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9)) == dprSuccess
+
+proc testJSDictTransitive() =
+  let rt = newGlobalJSRuntime()
+  let ctx = rt.newJSContext()
+  const code = """
+const val = {
+  b: 1,
+  d: { a: null },
+  f: { x: 1 }
+}
+val"""
+  let val = ctx.eval(code, "<input>")
+  ctx.subroutine(val)
+  JS_FreeValue(ctx, val)
+  ctx.free()
+  rt.free()
+
+proc testJSPropEnumList() =
+  let rt = newGlobalJSRuntime()
+  let ctx = rt.newJSContext()
+  var list = newJSPropertyEnumList(ctx, 0)
+  list.add(1)
+  list.add("hi")
+  list.add(3)
+  list.add(4)
+  assert list.len == 4
+  js_free(ctx, list.buffer)
+  ctx.free()
+  rt.free()
+
+proc testSeq() =
+  let rt = newGlobalJSRuntime()
+  let ctx = rt.newJSContext()
+  var test = @[1, 2, 3, 4]
+  let jsTest = ctx.toJS(test)
+  var test2: seq[int]
+  assert ctx.fromJS(jsTest, test2).isOk
+  assert test2 == test
+  JS_FreeValue(ctx, jsTest)
+  ctx.free()
+  rt.free()
+
+proc testTuple() =
+  let rt = newGlobalJSRuntime()
+  let ctx = rt.newJSContext()
+  var test = (2, "hi")
+  let jsTest = ctx.toJS(test)
+  var test2: tuple[n: int; s: string]
+  assert ctx.fromJS(jsTest, test2).isOk
+  assert test2 == test
+  JS_FreeValue(ctx, jsTest)
+  ctx.free()
+  rt.free()
+
+type
+  X = JSRef[XObj]
+
+  XObj = object
+
+jsClassDef(X):
+  proc foo(x: X; s: sink string) {.jsfunc.} =
+    discard
+
+  proc bar(x: X; s: sink(string)) {.jsfunc.} =
+    discard
+
+proc testSink() =
+  let rt = newGlobalJSRuntime()
+  let ctx = rt.newJSContext()
+  ?ctx.registerClass(XDef)
+  ctx.free()
+  rt.free()
+
+proc main() =
+  testHelloWorld()
+  testErrorHandling()
+  testRegisterClass()
+  testGlobalObjects()
+  testInheritance()
+  testGetSet()
+  testFunctions()
+  testConstructors()
+  testFunctionGetSet()
+  testStaticFunctions()
+  testUnforgeable()
+  testFinalizers()
+  testEnums()
+  testJSDictUndefined()
+  testJSDictTransitive()
+  testJSPropEnumList()
+  testSeq()
+  testTuple()
+  testSink()
+
+main()

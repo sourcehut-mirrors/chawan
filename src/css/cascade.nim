@@ -13,7 +13,7 @@ import css/sheet
 import html/catom
 import html/dom
 import html/script
-import monoucha/jsref
+import js/jsref
 import types/color
 import types/jscolor
 import types/opt

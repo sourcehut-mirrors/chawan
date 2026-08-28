@@ -13,10 +13,10 @@ import std/hashes
 import std/macros
 
 import chame/tags
-import monoucha/fromjs
-import monoucha/jstypes
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/jstypes
+import js/quickjs
+import js/tojs
 import types/jsopt
 import utils/tabutil
 import utils/twtstr

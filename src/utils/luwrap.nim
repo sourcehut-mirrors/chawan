@@ -2,8 +2,8 @@
 
 import std/algorithm
 
-import monoucha/libunicode
-import monoucha/libregexp
+import js/libunicode
+import js/libregexp
 import utils/twtstr
 
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =

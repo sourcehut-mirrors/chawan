@@ -6,7 +6,7 @@ import css/cssvalues
 import css/mediaquery
 import html/catom
 import html/script
-import monoucha/jsref
+import js/jsref
 import types/opt
 import types/url
 import utils/tabutil

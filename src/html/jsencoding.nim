@@ -2,12 +2,12 @@
 
 import encoding/charset
 import encoding/decoder
-import monoucha/fromjs
-import monoucha/jsbind
-import monoucha/jsref
-import monoucha/jstypes
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/jsbind
+import js/jsref
+import js/jstypes
+import js/quickjs
+import js/tojs
 import types/jsopt
 import types/opt
 import utils/twtstr

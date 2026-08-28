@@ -2,10 +2,10 @@
 
 import config/conftypes
 import html/catom
-import monoucha/jsopaque
-import monoucha/jsref
-import monoucha/jsutils
-import monoucha/quickjs
+import js/jsopaque
+import js/jsref
+import js/jsutils
+import js/quickjs
 import server/headers
 import types/opt
 import types/url

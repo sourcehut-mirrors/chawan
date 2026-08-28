@@ -4,7 +4,7 @@ when not compileOption("threads"):
 else:
   const CFLAGS = "-fwrapv"
 
-{.compile("qjs/cutils.c", CFLAGS).}
+{.compile("../../lib/quickjs/cutils.c", CFLAGS).}
 
 type JS_BOOL* = distinct cint
 

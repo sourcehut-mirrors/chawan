@@ -5,7 +5,7 @@ import css/cssvalues
 import css/lunit
 import html/dom
 import html/domrect
-import monoucha/jsref
+import js/jsref
 import types/bitmap
 import types/refstring
 

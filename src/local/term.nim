@@ -12,7 +12,7 @@ import encoding/encoder
 import encoding/encodercore
 import io/dynstream
 import io/poll
-import monoucha/jsref
+import js/jsref
 import server/loaderiface
 import types/bitmap
 import types/blob

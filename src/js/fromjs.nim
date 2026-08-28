@@ -605,6 +605,11 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): FromJSResult 
   res = JS_DupValue(ctx, val)
   fjOk
 
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueTraced):
+    FromJSResult =
+  res = trace(JS_DupValue(ctx, val))
+  fjOk
+
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =
   res = atom
   fjOk

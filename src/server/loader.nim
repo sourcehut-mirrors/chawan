@@ -35,8 +35,8 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
-import monoucha/jsref
-import monoucha/quickjs
+import js/jsref
+import js/quickjs
 import server/connectionerror
 import server/headers
 import server/loaderiface

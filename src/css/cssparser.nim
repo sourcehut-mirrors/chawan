@@ -3,7 +3,7 @@
 import std/algorithm
 
 import html/catom
-import monoucha/jstypes
+import js/jstypes
 import types/opt
 import utils/dtoawrap
 import utils/twtstr

@@ -148,8 +148,7 @@ tinfl = adapter/protocol/tinfl.h
 # git can't deal with this, it seems.
 $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/chawan.html res/license.md \
 		res/quirk.css res/ua.css res/*.tab res/version lib/chame0/chame/* \
-		lib/monoucha0/monoucha/* lib/monoucha0/monoucha/qjs/* $(chaseccomp) \
-		res/charwidth_gen.nim nim.cfg
+		lib/quickjs/* $(chaseccomp) res/charwidth_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
@@ -174,11 +173,8 @@ unicode_gen:
 	$(OBJDIR)/gencharwidth > res/charwidth_gen.nim~
 	mv res/charwidth_gen.nim~ res/charwidth_gen.nim
 
-$(OUTDIR_CGI_BIN)/man: $(lcgi) src/utils/lrewrap.nim \
-	lib/monoucha0/monoucha/libregexp.nim \
-	lib/monoucha0/monoucha/qjs/libregexp.* \
-	lib/monoucha0/monoucha/qjs/libunicode.* \
-	lib/monoucha0/monoucha/qjs/cutils.*
+$(OUTDIR_CGI_BIN)/man: $(lcgi) src/utils/lrewrap.nim src/js/libregexp.nim \
+	lib/quickjs/libregexp.* lib/quickjs/libunicode.* lib/quickjs/cutils.*
 $(OUTDIR_CGI_BIN)/file: $(lcgi)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/http.nim adapter/protocol/gemini.nim \
@@ -244,7 +240,7 @@ $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 FLAGS_FOR_BUILD += $(foreach flag,$(HOSTCFLAGS),-t:$(flag))
 FLAGS_FOR_BUILD += $(foreach flag,$(HOSTLDFLAGS),-l:$(flag))
 
-$(OBJDIR)/chac: src/chac.nim lib/monoucha0/monoucha/* lib/monoucha0/monoucha/qjs/*
+$(OBJDIR)/chac: src/chac.nim src/js/* lib/quickjs/*
 	$(NIMC) $(FLAGS_FOR_BUILD) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
 
 $(OUTDIR_LIBEXEC)/%.jsb: src/%.js $(OBJDIR)/chac
@@ -379,10 +375,13 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
 	CGS_TESTDIR=$(OBJDIR)/chagashi_test $(NIM) r $(test_flags) test/charset/data.nim
 
 .PHONY: test_nim
-test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim test/nim/tjsref.nim
+test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim test/nim/tjsref.nim \
+		test/nim/tjsbind.nim test/nim/tlibregexp.nim
 	$(NIM) r $(test_flags) test/nim/ttwtstr.nim
 	$(NIM) r $(test_flags) test/nim/tcatom.nim
 	$(NIM) r $(test_flags) test/nim/tjsref.nim
+	$(NIM) r $(test_flags) test/nim/tjsbind.nim
+	$(NIM) r $(test_flags) test/nim/tlibregexp.nim
 
 # slow, for manual use only
 .PHONY: test_oklab

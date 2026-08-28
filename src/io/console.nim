@@ -1,10 +1,10 @@
 {.push raises: [].}
 
 import io/chafile
-import monoucha/fromjs
-import monoucha/jsbind
-import monoucha/jsutils
-import monoucha/quickjs
+import js/fromjs
+import js/jsbind
+import js/jsutils
+import js/quickjs
 import types/jsopt
 import types/opt
 import utils/twtstr

@@ -26,7 +26,7 @@ consistent.
 A JS type must be defined as follows:
 
 ```nim
-import monoucha/jsref
+import js/jsref
 
 type
   MyClass = JSRef[MyClassObj]
@@ -407,7 +407,7 @@ In particular, handling `JSValue`s is unavoidable when:
 ### Option vs Opt
 
 In converters, the conventional way to represent null values is to
-`import std/options`, `import monoucha/jsnull`, and use `Option[T]`.
+`import std/options`, `import js/jsnull`, and use `Option[T]`.
 
 This applies to e.g. strings (which are not nilable in Nim), but also to
 refs in fromJS so that a registered ref object parameter of a `.jsfunc` is
@@ -499,7 +499,7 @@ proc toJS[T](ctx: JSContext; val: T): JSValue
 
 The `jsClassDef` macro uses the overloaded `toJS` function to convert bound
 function return values to JS values.  This can be called by user code too
-by importing `monoucha/tojs`.
+by importing `js/tojs`.
 
 `JSValue`s you get from toJS are owned by you, so you should call
 `JS_FreeValue` on these when you no longer need them.
@@ -527,7 +527,7 @@ proc fromJS[T](ctx: JSContext; val: JSValueConst; res: var T): FromJSResult
 ```
 
 `fromJS` converts QJS `JSValue`s into Nim values.  The default converters
-reside in `monoucha/fromjs`.
+reside in `js/fromjs`.
 
 On success, `fromJS` fills `res` and returns `fjOk`.
 
@@ -554,7 +554,7 @@ information is swallowed if you simply press `q`.  Also, it doesn't work in
 significantly slower than `TARGET=debug`.
 
 Some other useful flags are defined in QuickJS.  The simplest way to
-enable these is to uncomment them in `lib/monoucha0/monoucha/qjs/quickjs.c`:
+enable these is to uncomment them in `lib/quickjs/quickjs.c`:
 
 * FORCE_GC_AT_MALLOC: forces a GC before each JS object allocation.
   Useful to stress test init, but very slow.

@@ -1,12 +1,12 @@
 {.push raises: [].}
 
 import config/history
-import monoucha/fromjs
-import monoucha/jsbind
-import monoucha/jsref
-import monoucha/jsutils
-import monoucha/quickjs
-import monoucha/tojs
+import js/fromjs
+import js/jsbind
+import js/jsref
+import js/jsutils
+import js/quickjs
+import js/tojs
 import types/cell
 import types/color
 import types/winattrs
