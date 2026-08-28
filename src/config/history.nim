@@ -57,6 +57,14 @@ proc newHistory*(maxLen: int; mtime = 0i64): History =
 proc add*(hist: History; s: sink string) =
   hist.add(HistoryEntry(s: s), merge = false)
 
+proc clear*(hist: History) =
+  var it = move(hist.first)
+  hist.last = nil
+  while it != nil:
+    let next = move(it.next)
+    it.prev = nil
+    it = next
+
 proc parse0(hist: History; file: ChaFile; merge: bool): Opt[void] =
   var line = ""
   while ?file.readLine(line):
