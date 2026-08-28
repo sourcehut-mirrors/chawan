@@ -6465,6 +6465,9 @@ static void no_inline free_foreign_object(JSRuntime *rt, JSForeignObject *p)
         if (finalizer)
             (*finalizer)(rt, JS_MKPTR(JS_TAG_MODULE, p->data));
 
+        /* fail safe */
+        p->class_id = 0;
+
         remove_gc_object(header);
         if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES &&
             js_rc(p)->ref_count != 0)
@@ -6474,9 +6477,6 @@ static void no_inline free_foreign_object(JSRuntime *rt, JSForeignObject *p)
     } else {
         __JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, p->header.link.next));
     }
-
-    /* fail safe */
-    p->class_id = 0;
 }
 
 static JSForeignObject *js_data_to_foreign(void *p)
