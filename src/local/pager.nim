@@ -341,7 +341,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     handleInput: ctx.eval("Pager.prototype.handleInput", "<init>",
       JS_EVAL_TYPE_GLOBAL),
     showConsole: ctx.eval("Pager.prototype.showConsole", "<init>",
-      JS_EVAL_TYPE_GLOBAL)
+      JS_EVAL_TYPE_GLOBAL),
+    consoleLFSeen: true
   )
   if pager == nil:
     return pager
