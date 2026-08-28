@@ -11,10 +11,13 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
+import monoucha/fromjs
+import monoucha/jsbind
 import monoucha/jsref
 import monoucha/quickjs
 import server/buffer
 import server/bufferiface
+import server/headers
 import server/loader
 import server/loaderiface
 import types/opt
@@ -288,6 +291,15 @@ img-codec+svg+xml;	nanosvg %s;		cgioutput; resource; internal
 proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
     rt: JSRuntime) =
   setProcessTitle("cha forkserver")
+  let jsctx = rt.newDummyContext()
+  if jsctx == nil:
+    quit(2)
+  # init JS classes needed in forkserver & loader
+  if jsctx.addURLModule().isErr:
+    quit(2)
+  if jsctx.addHeadersModule().isErr:
+    quit(2)
+  JS_FreeContext(jsctx)
   var ctx = ForkServerContext(stream: controlStream)
   discard myposix.signal(SIGCHLD, myposix.SIG_IGN)
   discard myposix.signal(SIGPIPE, myposix.SIG_IGN)

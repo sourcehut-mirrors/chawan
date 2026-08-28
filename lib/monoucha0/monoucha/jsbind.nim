@@ -1650,6 +1650,12 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
   let rt = JS_GetRuntime(ctx)
   let id = def.id
   let rtOpaque = rt.getOpaque()
+  if rtOpaque.classes.len <= int(id):
+    rtOpaque.classes.setLen(int(id) + 1)
+  # allow multiple inits in different ctxs
+  if rtOpaque.classes[int(id)].initialized:
+    return fjOk
+  rtOpaque.classes[int(id)].initialized = true
   var cdef: JSClassDef
   cdef.class_name = def.class_name
   cdef.exotic = def.exotic
@@ -1663,8 +1669,6 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
     cdef.finalizer = jsFinalize
   if JS_NewClass(rt, id, addr cdef) != 0:
     return fjErr
-  if rtOpaque.classes.len <= int(id):
-    rtOpaque.classes.setLen(int(id) + 1)
   rtOpaque.classes[int(id)].raw = raw
   rtOpaque.classes[int(id)].parent = def.parent
   if not rtOpaque.addClass(def):

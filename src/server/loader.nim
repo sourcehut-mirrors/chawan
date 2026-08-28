@@ -35,7 +35,6 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
-import monoucha/jsbind
 import monoucha/jsref
 import monoucha/quickjs
 import server/connectionerror
@@ -2016,14 +2015,6 @@ proc loaderLoop(ctx: var LoaderContext) =
 proc runFileLoader*(rt: JSRuntime; config: LoaderConfig;
     stream, forkStream: PosixStream; pagerPid: int;
     pagerConfig: LoaderClientConfig; browsecap: Mailcap) =
-  # init JS class for URL
-  # (we don't need anything else in loader)
-  let jsctx = rt.newDummyContext()
-  if jsctx == nil:
-    return
-  if jsctx.addURLModule().isErr:
-    return
-  JS_FreeContext(jsctx)
   var ctx {.global.}: LoaderContext
   ctx = LoaderContext(
     config: config,
