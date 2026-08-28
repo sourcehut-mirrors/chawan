@@ -550,6 +550,9 @@ when a buffer is closed or the browser ends.  (Note that buffer leak
 information is swallowed if you simply press `q`.  Also, it doesn't work in
 `make test`.  (TODO: it should.))
 
+`make TARGET=asan` may help with memory errors too, although it is
+significantly slower than `TARGET=debug`.
+
 Some other useful flags are defined in QuickJS.  The simplest way to
 enable these is to uncomment them in `lib/monoucha0/monoucha/qjs/quickjs.c`:
 

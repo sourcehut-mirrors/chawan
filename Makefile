@@ -66,6 +66,11 @@ else ifeq ($(TARGET),release0)
 FLAGS += -d:release --stacktrace:on
 else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
+else ifeq ($(TARGET),asan)
+CFLAGS += -fsanitize=address -DDUMP_LEAKS=1
+LDFLAGS += -fsanitize=address
+FLAGS += -d:debug --debugger:native -d:useMalloc
+DANGER_DISABLE_SANDBOX = 1
 endif
 
 ssl_link = http https gemini sftp
