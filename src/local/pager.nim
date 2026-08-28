@@ -2556,7 +2556,7 @@ jsClassDef(Pager):
     ok(init)
 
   type ExternDict = object of JSDict
-    env {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    env {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
     suspend {.jsdefault: true.}: bool
     wait {.jsdefault: false.}: bool
 
@@ -2575,7 +2575,8 @@ jsClassDef(Pager):
   # retval, then deprecate the rest.
   # public
   proc extern(ctx: JSContext; pager: Pager; cmd: string;
-      t = ExternDict(env: JS_UNDEFINED, suspend: true)): JSValue {.jsfunc.} =
+      t = ExternDict(env: trace(JS_UNDEFINED), suspend: true)): JSValue
+      {.jsfunc.} =
     var env = newSeq[EnvVar]()
     if ctx.readEnvSeq(pager, t.env, env) == fjErr:
       return JS_EXCEPTION

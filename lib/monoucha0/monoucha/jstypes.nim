@@ -9,19 +9,7 @@ when NimMajor < 2:
 # This is the WebIDL dictionary type.
 # We only use it for type inference in generics.
 type
-  # JSDictToFreeAux is a hack to ensure JSValues are freed only
-  # when the JSDict goes out of scope. Ugly and sub-optimal, but it does
-  # the job.
-  JSDictToFreeAux* = ref JSDictToFreeAuxObj
-  JSDictToFreeAuxObj = object
-    vals*: seq[JSValue]
-
   JSDict* {.pure, inheritable.} = object
-    toFree*: JSDictToFreeAux
-
-proc `=destroy`*(x: var JSDictToFreeAuxObj) =
-  for val in x.vals:
-    JS_FreeValueRT(globalRuntime, val)
 
 # Example usage:
 #
@@ -163,5 +151,32 @@ proc moveJSValue*(p: var JSObjectTraced): JSValue =
 proc JS_MarkValue*(rt: JSRuntime; p: JSObjectTraced; markFunc: JS_MarkFunc) =
   if p != nil:
     JS_MarkValue(rt, p.value, markFunc)
+
+type
+  JSValueTraced* = object
+    v*: JSValue
+
+proc `=destroy`(t: var JSValueTraced) =
+  JS_FreeValueRT(globalRuntime, t.v)
+
+proc `=wasMoved`(t: var JSValueTraced) =
+  t.v = JS_UNINITIALIZED
+
+proc `=copy`(dest: var JSValueTraced; src: JSValueTraced) =
+  JS_FreeValueRT(globalRuntime, dest.v)
+  dest.v = JS_DupValueRT(globalRuntime, src.v)
+
+proc `=sink`(dest: var JSValueTraced; src: JSValueTraced) =
+  JS_FreeValueRT(globalRuntime, dest.v)
+  dest.v = src.v
+
+proc `=dup`(t: JSValueTraced): JSValueTraced =
+  JSValueTraced(v: JS_DupValueRT(globalRuntime, t.v))
+
+proc trace*(val: JSValue): JSValueTraced =
+  JSValueTraced(v: val)
+
+converter toJSValueConst*(t: JSValueTraced): JSValueConst =
+  JSValueConst(t.v)
 
 {.pop.} # raises

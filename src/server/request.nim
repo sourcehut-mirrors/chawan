@@ -259,14 +259,14 @@ type
       s: string
 
   RequestInit = object of JSDict
-    `method` {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    `method` {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
     headers {.jsdefault.}: HeadersInit
     body {.jsdefault.}: BodyInit
-    referrer {.jsdefault: JS_UNDEFINED.}: JSValueConst
-    referrerPolicy {.jsdefault: JS_UNDEFINED.}: JSValueConst
-    credentials {.jsdefault: JS_UNDEFINED.}: JSValueConst
-    mode {.jsdefault: JS_UNDEFINED.}: JSValueConst
-    window {.jsdefault: JS_UNDEFINED.}: JSValueConst
+    referrer {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
+    referrerPolicy {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
+    credentials {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
+    mode {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
+    window {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BodyInit):
     FromJSResult =

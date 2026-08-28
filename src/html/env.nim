@@ -807,8 +807,7 @@ jsClassDef(Window):
     let data = JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
       "<postMessage>".toCStringConst)
     let event = ctx.newMessageEvent(satMessage.view(),
-      MessageEventInit(data: data))
-    JS_FreeValue(ctx, data)
+      MessageEventInit(data: trace(data)))
     if event != nil:
       window.fireEvent(event.asEvent, window.asEventTarget)
     ok()

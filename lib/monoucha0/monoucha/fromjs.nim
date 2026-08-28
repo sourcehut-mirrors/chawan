@@ -64,6 +64,15 @@ template `?`(res: FromJSResult) =
   if res == fjErr:
     return fjErr
 
+proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): FromJSResult =
+  result = ctx.fromJS(val, res)
+  JS_FreeValue(ctx, val)
+
+proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSValueTraced):
+    FromJSResult =
+  res = trace(val)
+  fjOk
+
 proc isInstanceOf*(ctx: JSContext; classid, tclassid: JSClassID): bool =
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   var classid = classid
@@ -99,10 +108,6 @@ proc isSequence*(ctx: JSContext; o: JSValueConst): bool =
   # prop can't be exception (throws_ref_error is 0 and tag is object)
   result = not JS_IsUndefined(prop)
   JS_FreeValue(ctx, prop)
-
-proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): FromJSResult =
-  result = ctx.fromJS(val, res)
-  JS_FreeValue(ctx, val)
 
 proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t; narrow: bool;
     res: var string): FromJSResult =
@@ -505,8 +510,6 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       if name.kind == nnkPostfix:
         # This is a public field. We are skipping the postfix *
         name = name[1]
-      if $name == "toFree":
-        continue
       if fallback != nil:
         undefInit.add(quote do: `res`.`name` = `fallback`)
       else:
@@ -518,8 +521,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
           if JS_IsException(prop):
             return fjErr
           if not JS_IsUndefined(prop):
-            res.toFree.vals.add(prop)
-            if `ctx`.fromJS(prop, `res`.`name`) == fjErr:
+            if `ctx`.fromJSFree(prop, `res`.`name`) == fjErr:
               return fjErr
       else:
         quote do:
@@ -529,8 +531,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
             return fjErr
           if JS_IsUndefined(prop):
             break `success`
-          res.toFree.vals.add(prop)
-          if `ctx`.fromJS(prop, `res`.`name`) == fjErr:
+          if `ctx`.fromJSFree(prop, `res`.`name`) == fjErr:
             return fjErr
       convertStmts.add(it)
   let undefCheck = if isOptional:
@@ -545,7 +546,6 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
     if not JS_IsObject(val):
       JS_ThrowTypeError(ctx, "dictionary is not an object")
       return fjErr
-    res.toFree = JSDictToFreeAux()
     var missing {.inject.}: cstring = nil
     block `success`:
       `convertStmts`

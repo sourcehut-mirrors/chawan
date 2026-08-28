@@ -211,10 +211,10 @@ type
     composed* {.jsdefault.}: bool
 
   CustomEventInit = object of EventInit
-    detail {.jsdefault: JS_NULL.}: JSValueConst
+    detail {.jsdefault: trace(JS_NULL).}: JSValueTraced
 
   MessageEventInit* = object of EventInit
-    data* {.jsdefault: JS_NULL.}: JSValueConst
+    data* {.jsdefault: trace(JS_NULL).}: JSValueTraced
     origin {.jsdefault.}: string
     lastEventId {.jsdefault.}: string
 
@@ -329,7 +329,7 @@ jsClassDef(CustomEvent):
   jsget CustomEvent, detail
 
   proc newCustomEvent*(ctx: JSContext; ctype: CAtom;
-      eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent
+      eventInitDict = CustomEventInit(detail: trace(JS_NULL))): CustomEvent
       {.jsctor.} =
     let event = jsNew CustomEventObj(
       ctype: ctype,
@@ -349,7 +349,7 @@ jsClassDef(CustomEvent):
 
 # MessageEvent
 proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
-    eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
+    eventInit = MessageEventInit(data: trace(JS_NULL))): MessageEvent =
   let event = jsNew MessageEventObj(
     ctype: ctype,
     data: JS_DupValue(ctx, eventInit.data),
@@ -549,7 +549,7 @@ type MutationObserverInit {.pure.} = object of JSDict
   subtree {.jsdefault.}: bool
   attributeOldValue {.jsdefault.}: OptionalBool
   characterDataOldValue {.jsdefault.}: OptionalBool
-  attributeFilter {.jsdefault: JS_UNDEFINED.}: JSValueConst
+  attributeFilter {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
 
 proc queueRecord*(observer: MutationObserver; target: EventTarget;
     t: MutationRecordType; name, namespace: CAtom; oldValue: RefString;
@@ -585,7 +585,7 @@ jsClassDef(MutationObserver):
     ?ctx.fromJS(jsTarget, nodeClassID, targetp)
     let target = cast[ptr EventTargetObj](targetp)
     var init = MutationObserverInit(
-      attributeFilter: JS_UNDEFINED
+      attributeFilter: trace(JS_UNDEFINED)
     )
     if not JS_IsUndefined(jsInit):
       ?ctx.fromJS(jsInit, init)
