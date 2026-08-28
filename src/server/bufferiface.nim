@@ -30,7 +30,6 @@ import types/cell
 import types/color
 import types/jsopt
 import types/opt
-import types/referrer
 import types/refstring
 import types/url
 import types/winattrs
@@ -399,7 +398,8 @@ proc applyResponse*(init: BufferInit; response: Response;
   # set referrer policy, if any
   if init.config.refererFrom:
     let referrerPolicy = response.getReferrerPolicy()
-    init.loaderConfig.referrerPolicy = referrerPolicy.get(DefaultPolicy)
+    init.loaderConfig.referrerPolicy =
+      referrerPolicy.get(rpStrictOriginWhenCrossOrigin)
   else:
     init.loaderConfig.referrerPolicy = rpSameOrigin
   # setup content type; note that isSome means an override so we skip it

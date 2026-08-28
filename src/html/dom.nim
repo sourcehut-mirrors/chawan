@@ -46,7 +46,6 @@ import types/formdata
 import types/jsopt
 import types/opt
 import types/path
-import types/referrer
 import types/refstring
 import types/url
 import types/winattrs

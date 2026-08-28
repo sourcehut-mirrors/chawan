@@ -6,8 +6,8 @@ import monoucha/jsopaque
 import monoucha/jsref
 import monoucha/jsutils
 import monoucha/quickjs
+import server/headers
 import types/opt
-import types/referrer
 import types/url
 import types/winattrs
 import utils/twtstr

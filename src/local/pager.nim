@@ -48,7 +48,6 @@ import types/cell
 import types/color
 import types/jsopt
 import types/opt
-import types/referrer
 import types/url
 import types/winattrs
 import utils/lrewrap

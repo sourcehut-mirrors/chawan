@@ -28,7 +28,6 @@ import server/request
 import types/blob
 import types/jsopt
 import types/opt
-import types/referrer
 import types/url
 import utils/twtstr
 
