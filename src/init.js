@@ -339,7 +339,7 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
     addDefaultOmniRule("wd", /^wd:/,
         "https://en.wiktionary.org/w/index.php?title=Special:Search&search=");
     addDefaultOmniRule("ms", /^ms:/,
-        "https://old-search.marginalia.nu/search?q=");
+        "https://old-search.marginalia.nu/search?query=");
     this.runStartupScript();
     if (pipe) {
         this.loadSubmit("stream:-", {
