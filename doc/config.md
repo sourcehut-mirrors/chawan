@@ -735,7 +735,7 @@ Currently, these are:
 * `br:` - Brave Search.
 * `wk:` - English Wikipedia.
 * `wd:` - English Wiktionary.
-* `mo:` - Mojeek.
+* `ms:` - Marginalia Search (old version).
 
 Omnirule options:
 

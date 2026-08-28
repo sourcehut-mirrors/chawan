@@ -338,7 +338,8 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
         "https://en.wikipedia.org/wiki/Special:Search?search=");
     addDefaultOmniRule("wd", /^wd:/,
         "https://en.wiktionary.org/w/index.php?title=Special:Search&search=");
-    addDefaultOmniRule("mo", /^mo:/, "https://mojeek.com/search?q=");
+    addDefaultOmniRule("ms", /^ms:/,
+        "https://old-search.marginalia.nu/search?q=");
     this.runStartupScript();
     if (pipe) {
         this.loadSubmit("stream:-", {
