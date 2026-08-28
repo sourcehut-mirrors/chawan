@@ -277,7 +277,7 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
 
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
 proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
-    seq[Node] =
+    seq[Node] {.exportc: "cha_$1".} =
   let url = parseURL0("about:blank")
   if url == nil:
     return @[]
@@ -370,7 +370,7 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
 
 # Called from dom whenever document.write is executed.
 # We consume everything pushed into the top buffer.
-proc parseDocumentWriteChunk(wrapper: RootRef) =
+proc parseDocumentWriteChunk(wrapper: RootRef) {.exportc: "cha_$1".} =
   let wrapper = HTML5ParserWrapper(wrapper)
   let builder = wrapper.builder
   let document = builder.document
@@ -440,10 +440,6 @@ jsClassRaw(DOMParserDef, "DOMParser"):
       return ctx.toJS(document)
     else:
       return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
-
-# Forward declaration hack
-parseHTMLFragmentImpl = parseHTMLFragment
-parseDocumentWriteChunkImpl = parseDocumentWriteChunk
 
 proc addHTMLModule*(ctx: JSContext): FromJSResult =
   ctx.registerClass(DOMParserDef)

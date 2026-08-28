@@ -17,7 +17,7 @@ proc flush*(console: Console)
 
 # Forward declaration hacks
 # set in html/env
-var getConsoleImpl*: proc(ctx: JSContext): Console {.nimcall, raises: [].}
+proc getConsole(ctx: JSContext): Console {.importc: "cha_$1".}
 
 proc newConsole*(err: ChaFile): Console =
   return Console(err: err)
@@ -55,7 +55,7 @@ jsNamespaceDef(console):
   proc log(ctx: JSContext; argv: varargs[JSValueConst]): Opt[void] {.jsstfunc,
       jsstfunc: "debug", jsstfunc: "error", jsstfunc: "info", jsstfunc: "warn",
       jsstfunc: "assert".} =
-    let console = ctx.getConsoleImpl()
+    let console = ctx.getConsole()
     for i, val in argv:
       if JS_IsString(val):
         var res: string

@@ -33,8 +33,8 @@ type
 proc getClassID*(t: typedesc[FormData]): JSClassID
 
 # Forward declaration hack
-var newFormDataImpl*: proc(ctx: JSContext; argv: varargs[JSValueConst]):
-  Opt[FormData] {.raises: [], nimcall.}
+proc newFormDataImpl(ctx: JSContext; argv: varargs[JSValueConst]):
+  Opt[FormData] {.importc: "cha_$1".}
 
 proc swrite*(w: var PacketWriter; part: FormDataEntry) =
   w.swrite(part.isstr)

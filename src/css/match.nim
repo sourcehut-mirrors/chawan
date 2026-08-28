@@ -330,8 +330,8 @@ proc matches*(element: Element; cxsel: ComplexSelector;
   var dummy: bool
   return element.matches(cxsel, depends, dummy)
 
-# Forward declaration hack
-matchesImpl = proc(element: Element; slist: SelectorList): bool {.nimcall.} =
+proc matchesList(element: Element; slist: SelectorList): bool {.
+    exportc: "cha_$1".} =
   var dummy = DependencyInfo.default
   var dummy2: bool
   return element.matches(slist, dummy, dummy2)

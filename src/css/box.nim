@@ -363,7 +363,7 @@ proc unlinkElementBoxRecurse(box: CSSBox; element: Element) =
     for child in box.children:
       unlinkElementBoxRecurse(box, element)
 
-proc unlinkElementBox(element: Element) =
+proc unlinkElementBox(element: Element) {.exportc: "cha_$1".} =
   if element.box != nil:
     let box = CSSBox(element.box)
     box.elementPtr = nil
@@ -379,7 +379,7 @@ proc unlinkElementBox(element: Element) =
       unlinkElementBoxRecurse(child, element)
 
 proc getClientRects(element: Element; firstOnly, blockOnly: bool):
-    seq[DOMRect] =
+    seq[DOMRect] {.exportc: "cha_$1".} =
   result = @[]
   if element.box != nil:
     result.getClientRects(CSSBox(element.box), firstOnly, blockOnly)
@@ -394,10 +394,6 @@ proc getImageBitmap*(box: BlockBox): NetworkBitmap =
   if box.computed{"display"} in {DisplayImageInline, DisplayImageBlock}:
     return box.getBitmap()
   return nil
-
-# Forward declaration hacks
-dom.unlinkElementBoxImpl = unlinkElementBox
-dom.getClientRectsImpl = getClientRects
 
 when defined(debug):
   import chame/tags

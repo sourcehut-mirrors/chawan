@@ -113,8 +113,8 @@ type
 proc getClassID(t: typedesc[Request]): JSClassID
 
 # Forward declaration hack
-var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall, raises: [].}
-var getOriginImpl*: proc(ctx: JSContext): Origin {.nimcall, raises: [].}
+proc getAPIBaseURL(ctx: JSContext): URL {.importc: "cha_$1".}
+proc getOrigin(ctx: JSContext): Origin {.importc: "cha_$1".}
 
 proc swrite*(w: var PacketWriter; o: RequestBody) =
   w.swrite(o.t)
@@ -354,8 +354,8 @@ jsClassDef(Request):
     var mode = rmNoCors
     if not JS_IsUndefined(init.mode):
       ?ctx.fromJS(init.mode, mode)
-    let apiBaseURL = ctx.getAPIBaseURLImpl()
-    let origin = ctx.getOriginImpl()
+    let apiBaseURL = ctx.getAPIBaseURL()
+    let origin = ctx.getOrigin()
     if (var res: Request; ctx.fromJS(resource, res).isOk):
       url = res.url
       if JS_IsUndefined(init.`method`):

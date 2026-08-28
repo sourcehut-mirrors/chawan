@@ -283,7 +283,7 @@ proc cursorBytes(bc: BufferContext; y, cc: int): int =
     w += u.width()
   return i
 
-proc navigate(bc: RootRef; url: URL) =
+proc navigate(bc: RootRef; url: URL) {.exportc: "cha_$1".} =
   let bc = BufferContext(bc)
   let stderr = cast[ChaFile](stderr)
   bc.navigateUrl = url
@@ -559,7 +559,7 @@ proc maybeReshape(bc: BufferContext; suppressFouc = false) =
         handle.onReshapeImmediately = true
   document.invalid = false
 
-proc ensureLayout(bc: RootRef; element: Element) =
+proc ensureLayout(bc: RootRef; element: Element) {.exportc: "cha_$1".} =
   let bc = BufferContext(bc)
   bc.maybeReshape(suppressFouc = true)
 
@@ -779,7 +779,7 @@ proc sheetsLoaded(bc: BufferContext) =
   else:
     bc.imagesLoaded()
 
-proc sheetLoaded(bc: RootRef) =
+proc sheetLoaded(bc: RootRef) {.exportc: "cha_$1".} =
   let bc = BufferContext(bc)
   if bc.state == bsLoadingStyle:
     for handle in bc.handles:
@@ -789,7 +789,7 @@ proc sheetLoaded(bc: RootRef) =
     if bc.window.loadedSheetNum == bc.window.remoteSheetNum:
       bc.sheetsLoaded()
 
-proc imageLoaded(bc: RootRef) =
+proc imageLoaded(bc: RootRef) {.exportc: "cha_$1".} =
   let bc = BufferContext(bc)
   for handle in bc.handles:
     if bc.state == bsLoadingImages and handle.hasTask(bcLoad):
@@ -1442,7 +1442,7 @@ proc click(bc: BufferContext; handle: PagerHandle;
     return initClickResult(newRequest(url, hmGet))
   return initClickResult()
 
-proc click0(bc: RootRef; element: HTMLElement) =
+proc clickCallback(bc: RootRef; element: HTMLElement) {.exportc: "cha_$1".} =
   let bc = BufferContext(bc)
   #TODO not sure if this is the right behavior for app mode.
   # (for normal mode it's the right design, I think.)
@@ -1900,12 +1900,5 @@ proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
   ctx.free()
   rt.free()
   quit(0)
-
-# Forward declaration hack
-sheetLoadedImpl = sheetLoaded
-imageLoadedImpl = imageLoaded
-navigateImpl = navigate
-ensureLayoutImpl = ensureLayout
-clickImpl = click0
 
 {.pop.} # raises: []

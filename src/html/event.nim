@@ -176,12 +176,10 @@ proc getClassID*(t: typedesc[Event]): JSClassID
 proc getClassID(t: typedesc[MessageEvent]): JSClassID
 
 # Forward declaration hack
-var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
-  raises: [].}
-var getParentImpl*: proc(ctx: JSContext; target: EventTarget; isLoad: bool):
-  EventTarget {.nimcall, raises: [].}
-var setEventImpl*: proc(ctx: JSContext; event: Event): Event {.
-  nimcall, raises: [].}
+proc isDefaultPassive(target: EventTarget): bool {.importc: "cha_$1".}
+proc getParentImpl(target: EventTarget; isLoad: bool): EventTarget {.
+  importc: "cha_$1".}
+proc setEvent(ctx: JSContext; event: Event): Event {.importc: "cha_$1".}
 
 var windowClassID* {.global.}: JSClassID
 var nodeClassID* {.global.}: JSClassID
@@ -666,7 +664,7 @@ template asEventTarget*[T: EventTargetObj](x: JSRef[T]): EventTarget =
 
 proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
-  return ctype.toStaticAtom() in check and eventTarget.isDefaultPassiveImpl()
+  return ctype.toStaticAtom() in check and eventTarget.isDefaultPassive()
 
 proc findEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: CAtom; callback: JSValueConst; capture: bool): EventListener =
@@ -873,7 +871,7 @@ proc collectItems(dctx: var DispatchContext; target: EventTarget) =
       dctx.capture.add(DispatchItem(target: it, els: move(capture)))
     if bubble.len > 0:
       dctx.bubble.add(DispatchItem(target: it, els: move(bubble)))
-    it = dctx.ctx.getParentImpl(it, isLoad)
+    it = it.getParentImpl(isLoad)
 
 proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
   let ctx = dctx.ctx
@@ -899,7 +897,7 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
 
 proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
     targetOverride = false): bool =
-  let prev = ctx.setEventImpl(event)
+  let prev = ctx.setEvent(event)
   var dctx = DispatchContext(ctx: ctx, event: event)
   event.flags.incl(efDispatch)
   if not targetOverride:
@@ -921,7 +919,7 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
     dctx.dispatchEvent0(item)
   event.eventPhase = 0
   event.flags.excl(efDispatch)
-  discard ctx.setEventImpl(prev)
+  discard ctx.setEvent(prev)
   return dctx.canceled
 
 jsClassPublicDef(EventTarget):

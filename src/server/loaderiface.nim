@@ -153,7 +153,7 @@ proc unregister*(loader: FileLoader; data: MapData)
 proc getClassID(t: typedesc[Response]): JSClassID
 
 # Forward declaration hack
-var getLoaderImpl*: proc(ctx: JSContext): FileLoader {.nimcall, raises: [].}
+proc getLoader(ctx: JSContext): FileLoader {.importc: "cha_$1".}
 
 template isErr*(x: TextResult): bool =
   not x.isOk
@@ -315,7 +315,7 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
     reject: traceObj(funs[1])
   )
   response.onFinish = finish
-  let loader = ctx.getLoaderImpl()
+  let loader = ctx.getLoader()
   loader.blob(response, opaque)
   return res
 

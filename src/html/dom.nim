@@ -807,6 +807,7 @@ proc applyStyleDependencies*(document: Document; element: Element;
   depends: DependencyInfo)
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
+proc findFirst*(document: Document; tagType: TagType): HTMLElement
 proc focus*(document: Document): Element
 proc invalidateCollections(document: Document)
 proc invalidateCollectionsRemove(document: Document; node: Node)
@@ -955,26 +956,23 @@ proc getClassID*(t: typedesc[HTMLStyleElement]): JSClassID
 proc getClassID*(t: typedesc[HTMLTemplateElement]): JSClassID
 proc getClassID*(t: typedesc[SVGSVGElement]): JSClassID
 proc getClassID*(t: typedesc[Text]): JSClassID
+proc getClassID*(t: typedesc[Node]): JSClassID
 
 # Forward declaration hacks
-# set in css/match
-var matchesImpl*: proc(element: Element; cxsels: SelectorList): bool {.nimcall,
-  raises: [].}
-# set in html/chadombuilder
-var parseHTMLFragmentImpl*: proc(ctx: JSContext; element: Element;
-  s: openArray[char]): seq[Node] {.nimcall, raises: [].}
-var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
-var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
-var getClientRectsImpl*: proc(element: Element; firstOnly, blockOnly: bool):
-  seq[DOMRect] {.nimcall, raises: [].}
-# set in server/buffer
-var sheetLoadedImpl*: proc(bc: RootRef) {.nimcall, raises: [].}
-var imageLoadedImpl*: proc(bc: RootRef) {.nimcall, raises: [].}
-var navigateImpl*: proc(bc: RootRef; url: URL) {.nimcall, raises: [].}
-var ensureLayoutImpl*: proc(bc: RootRef; element: Element) {.
-  nimcall, raises: [].}
-var clickImpl*: proc(bc: RootRef; element: HTMLElement) {.nimcall, raises: [].}
-var unlinkElementBoxImpl*: proc(element: Element) {.nimcall, raises: [].}
+proc matchesList(element: Element; cxsels: SelectorList): bool {.
+  importc: "cha_$1".}
+proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
+  seq[Node] {.importc: "cha_$1".}
+proc parseDocumentWriteChunk(wrapper: RootRef) {.importc: "cha_$1".}
+proc applyStyle(element: Element) {.importc: "cha_$1".}
+proc getClientRects(element: Element; firstOnly, blockOnly: bool): seq[DOMRect]
+  {.importc: "cha_$1".}
+proc sheetLoaded(bc: RootRef) {.importc: "cha_$1".}
+proc imageLoaded(bc: RootRef) {.importc: "cha_$1".}
+proc navigate(bc: RootRef; url: URL) {.importc: "cha_$1".}
+proc ensureLayout(bc: RootRef; element: Element) {.importc: "cha_$1".}
+proc clickCallback(bc: RootRef; element: HTMLElement) {.importc: "cha_$1".}
+proc unlinkElementBox(element: Element) {.importc: "cha_$1".}
 
 # Reflected attributes.
 type
@@ -1447,6 +1445,26 @@ proc getGlobal*(ctx: JSContext): Window =
 proc getWindow*(ctx: JSContext): Window =
   cast[Window](ctx.getOpaque().globalObj)
 
+proc getAPIBaseURL(ctx: JSContext): URL {.exportc: "cha_$1".} =
+  let window = ctx.getWindow()
+  if window == nil or window.document == nil:
+    return URL(nil)
+  return window.document.baseURL
+
+proc getOrigin(ctx: JSContext): Origin {.exportc: "cha_$1".} =
+  ctx.getGlobal().settings.origin
+
+proc consoleError(ctx: JSContext; ss: varargs[string]) {.exportc: "cha_$1".} =
+  ctx.getGlobal().console.error(ss)
+
+proc setEvent(ctx: JSContext; event: Event): Event {.exportc: "cha_$1".} =
+  let window = ctx.getWindow()
+  if window != nil:
+    let res = move(window.event)
+    window.event = event
+    return res
+  Event(nil)
+
 const WindowEvents* = [satError, satLoad, satFocus, satBlur]
 
 proc isHTMLElementOf(this: Collection; node: Node): bool =
@@ -1499,12 +1517,12 @@ proc corsFetch(window: Window; input: Request; finish: FetchFinish;
 proc sheetLoaded(window: Window) =
   inc window.loadedSheetNum
   if window.bc != nil:
-    sheetLoadedImpl(window.bc)
+    sheetLoaded(window.bc)
 
 proc imageLoaded(window: Window) =
   inc window.loadedImageNum
   if window.bc != nil:
-    imageLoadedImpl(window.bc)
+    imageLoaded(window.bc)
 
 proc importSheetFinish(window: Window; this: SheetElement;
     res: LoadSheetResult; env: ParseSheetEnv; i: int) =
@@ -1900,15 +1918,15 @@ proc loadSVG*(window: Window; svg: SVGSVGElement) =
 
 proc navigate*(window: Window; url: URL) =
   if window.bc != nil:
-    navigateImpl(window.bc, url)
+    navigate(window.bc, url)
 
 proc ensureLayout(window: Window; element: Element) =
   if window.bc != nil:
-    ensureLayoutImpl(window.bc, element)
+    ensureLayout(window.bc, element)
 
 proc click(window: Window; element: HTMLElement) =
   if window.bc != nil:
-    clickImpl(window.bc, element)
+    clickCallback(window.bc, element)
 
 proc runJSJobs*(window: Window) =
   let rt = JS_GetRuntime(window.jsctx)
@@ -2811,6 +2829,33 @@ proc getLiveCollection(node: Node; name: StaticAtom): CollectionLike =
       return collection
   CollectionLike(nil)
 
+proc isDefaultPassive(target: EventTarget): bool {.exportc: "cha_$1".} =
+  let node = target as Node
+  if node == nil:
+    return false
+  #TODO what with Window?
+  let document = node.document
+  return document.asEventTarget == target or
+    document.documentElement.asEventTarget == target or
+    document.findFirst(ttBody).asEventTarget == target
+
+proc getParentImpl(eventTarget: EventTarget; isLoad: bool): EventTarget {.
+    exportc: "cha_$1".} =
+  let node = eventTarget as Node
+  if node != nil:
+    let document = node as Document
+    if document != nil:
+      if isLoad:
+        return EventTarget(nil)
+      # if no browsing context, then window will be nil anyway
+      return document.window.asEventTarget
+    if eventTarget of ShadowRoot:
+      let shadow = ShadowRoot(eventTarget)
+      #TODO composed
+      return shadow.host.asEventTarget
+    return node.parentNode.asEventTarget
+  return EventTarget(nil)
+
 type GetRootNodeOptions {.pure.} = object of JSDict
   composed {.jsdefault.}: bool
 
@@ -3375,7 +3420,7 @@ proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: DOMString):
   if selectors.len == 0:
     return JS_EXCEPTION
   for element in node.elementDescendants:
-    if element.matchesImpl(selectors):
+    if element.matchesList(selectors):
       return ctx.toJS(element)
   return JS_NULL
 
@@ -3386,7 +3431,7 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
     return JS_EXCEPTION
   let this = newEmptyNodeList()
   for element in node.elementDescendants:
-    if element.matchesImpl(selectors):
+    if element.matchesList(selectors):
       this.snapshot.add(element.asNode)
   return ctx.toJS(this)
 
@@ -4523,7 +4568,7 @@ jsClassPublicDef(Document):
       return JS_UNDEFINED #TODO (probably covered by open above)
     buffer.data &= text
     if document.parserBlockingScript == nil:
-      parseDocumentWriteChunkImpl(document.parser)
+      parseDocumentWriteChunk(document.parser)
     return JS_UNDEFINED
 
   proc childElementCount(this: Document): uint32 {.jsfget.} =
@@ -5755,7 +5800,7 @@ proc getFormMethod*(element: Element): FormMethod =
 proc parseFragment*(ctx: JSContext; element: Element; s: openArray[char]):
     DocumentFragment =
   #TODO xml
-  let newChildren = parseHTMLFragmentImpl(ctx, element, s)
+  let newChildren = parseHTMLFragment(ctx, element, s)
   let fragment = element.asNode.document.newDocumentFragment()
   if fragment != nil:
     for child in newChildren:
@@ -5808,13 +5853,17 @@ proc parseColor(element: Element; s: DOMString): Opt[ARGBColor] =
     of cctCell: discard
   return err()
 
+proc parseColorImpl(target: EventTarget; s: DOMString): Opt[ARGBColor] {.
+    exportc: "cha_$1".} =
+  return (target as Element).parseColor(s)
+
 proc getBlockRect(element: Element): DOMRect =
   let window = element.asNode.document.window
   if window != nil:
     if window.settings.scripting != smApp:
       return element.getBoundingClientRect()
     window.ensureLayout(element)
-    let res = element.getClientRectsImpl(firstOnly = true, blockOnly = true)
+    let res = element.getClientRects(firstOnly = true, blockOnly = true)
     if res.len > 0:
       return res[0]
   return DOMRect(nil)
@@ -6053,7 +6102,7 @@ proc invalidate*(element: Element) =
 proc ensureStyle*(element: Element) =
   if element.computed == nil or efRestyle in element.flags:
     element.flags.excl(efRestyle)
-    element.applyStyleImpl()
+    element.applyStyle()
 
 proc resetElement*(element: Element; ctx: JSContext) =
   case element.tagType
@@ -6152,7 +6201,7 @@ proc insertionSteps(element: Element): bool =
 proc removingSteps(element: Element) =
   # We'll have to restyle on insert anyway, so don't keep style/layout data
   # alive for out-of-tree elements.
-  unlinkElementBoxImpl(element)
+  unlinkElementBox(element)
   element.box = nil
   element.computed = nil
   if (let element = element as FormAssociatedElement; element != nil):
@@ -6340,7 +6389,7 @@ jsClassPublicDef(Element):
   jsget Element, id
 
   proc finalize(rt: JSRuntime; element: Element) {.jsfin.} =
-    unlinkElementBoxImpl(element)
+    unlinkElementBox(element)
 
   proc getClassList(this: Element): DOMTokenList {.jsfget: "classList".} =
     this.getDOMTokenList(this.classList, satClass)
@@ -6530,8 +6579,7 @@ jsClassPublicDef(Element):
       return jsNew DOMRectObj()
     if window.settings.scripting == smApp:
       window.ensureLayout(element)
-      let objs = getClientRectsImpl(element, firstOnly = true,
-        blockOnly = false)
+      let objs = getClientRects(element, firstOnly = true, blockOnly = false)
       if objs.len > 0:
         return objs[0]
       return jsNew DOMRectObj()
@@ -6550,7 +6598,7 @@ jsClassPublicDef(Element):
     if window != nil:
       if window.settings.scripting == smApp:
         window.ensureLayout(element)
-        res.list = getClientRectsImpl(element, firstOnly = false,
+        res.list = getClientRects(element, firstOnly = false,
           blockOnly = false)
       else:
         res.list.add(element.getBoundingClientRect())
@@ -6752,7 +6800,7 @@ jsClassPublicDef(Element):
     if selectors.len == 0:
       return JS_EXCEPTION
     for element in this.branchElems:
-      if element.matchesImpl(selectors):
+      if element.matchesList(selectors):
         return ctx.toJS(element)
     return JS_NULL
 
@@ -6761,7 +6809,7 @@ jsClassPublicDef(Element):
     let selectors = ctx.parseSelectors(q)
     if selectors.len == 0:
       return JS_EXCEPTION
-    return ctx.toJS(this.matchesImpl(selectors))
+    return ctx.toJS(this.matchesList(selectors))
 
   proc style(element: Element): CSSStyleDeclaration {.jsnfget.} =
     if element.cachedStyle == nil:
@@ -7555,6 +7603,29 @@ proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
   form.constructingEntryList = false
   move(entrylist)
 
+proc newFormDataImpl(ctx: JSContext; argv: varargs[JSValueConst]):
+    Opt[FormData] {.exportc: "cha_$1".} =
+  let urandom = ctx.getGlobal().urandom
+  let this = newFormData0(urandom)
+  if this != nil and argv.len > 0:
+    var form: HTMLFormElement
+    var submitter: HTMLElement
+    ?ctx.fromJS(argv[0], form)
+    if argv.len > 1:
+      ?ctx.fromJS(argv[1], submitter)
+      if not submitter.asElement.isSubmitButton():
+        JS_ThrowDOMException(ctx, "InvalidStateError",
+          "submitter must be a submit button")
+        return err()
+      if (submitter as FormAssociatedElement).form != form:
+        JS_ThrowDOMException(ctx, "InvalidStateError",
+          "submitter's form owner is not form")
+        return err()
+    if not form.constructingEntryList:
+      this.entries = constructEntryList(form, submitter)
+  ok(this)
+
+
 proc isFormControl(this: Collection; node: Node): bool =
   let element = node as FormAssociatedElement
   if element != nil:
@@ -7614,7 +7685,7 @@ proc getImageRect(this: HTMLImageElement): tuple[w, h: float64] =
   let window = this.asNode.document.window
   if window != nil and window.settings.scripting == smApp:
     window.ensureLayout(this.asElement)
-    let objs = getClientRectsImpl(this.asElement, firstOnly = true,
+    let objs = getClientRects(this.asElement, firstOnly = true,
       blockOnly = false)
     if objs.len > 0:
       return (objs[0].width, objs[0].height)
@@ -9108,78 +9179,5 @@ proc addDOMModule*(ctx: JSContext): Opt[void] =
   if ctx.definePropertyCW(global, "NodeFilter", nodeFilter) == dprException:
     return err()
   ok()
-
-# Forward declaration hack
-isDefaultPassiveImpl = proc(target: EventTarget): bool =
-  let node = target as Node
-  if node == nil:
-    return false
-  #TODO what with Window?
-  let document = node.document
-  return document.asEventTarget == target or
-    document.documentElement.asEventTarget == target or
-    document.findFirst(ttBody).asEventTarget == target
-
-getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; isLoad: bool):
-    EventTarget =
-  let node = eventTarget as Node
-  if node != nil:
-    let document = node as Document
-    if document != nil:
-      if isLoad:
-        return EventTarget(nil)
-      # if no browsing context, then window will be nil anyway
-      return document.window.asEventTarget
-    if eventTarget of ShadowRoot:
-      let shadow = ShadowRoot(eventTarget)
-      #TODO composed
-      return shadow.host.asEventTarget
-    return node.parentNode.asEventTarget
-  return EventTarget(nil)
-
-errorImpl = proc(ctx: JSContext; ss: varargs[string]) =
-  ctx.getGlobal().console.error(ss)
-
-getAPIBaseURLImpl = proc(ctx: JSContext): URL =
-  let window = ctx.getWindow()
-  if window == nil or window.document == nil:
-    return URL(nil)
-  return window.document.baseURL
-
-getOriginImpl = proc(ctx: JSContext): Origin =
-  ctx.getGlobal().settings.origin
-
-parseColorImpl = proc(target: EventTarget; s: DOMString): Opt[ARGBColor] =
-  return (target as Element).parseColor(s)
-
-setEventImpl = proc(ctx: JSContext; event: Event): Event =
-  let window = ctx.getWindow()
-  if window != nil:
-    let res = move(window.event)
-    window.event = event
-    return res
-  Event(nil)
-
-newFormDataImpl = proc(ctx: JSContext; argv: varargs[JSValueConst]):
-    Opt[FormData] =
-  let urandom = ctx.getGlobal().urandom
-  let this = newFormData0(urandom)
-  if this != nil and argv.len > 0:
-    var form: HTMLFormElement
-    var submitter: HTMLElement
-    ?ctx.fromJS(argv[0], form)
-    if argv.len > 1:
-      ?ctx.fromJS(argv[1], submitter)
-      if not submitter.asElement.isSubmitButton():
-        JS_ThrowDOMException(ctx, "InvalidStateError",
-          "submitter must be a submit button")
-        return err()
-      if (submitter as FormAssociatedElement).form != form:
-        JS_ThrowDOMException(ctx, "InvalidStateError",
-          "submitter's form owner is not form")
-        return err()
-    if not form.constructingEntryList:
-      this.entries = constructEntryList(form, submitter)
-  ok(this)
 
 {.pop.} # raises: []

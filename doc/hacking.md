@@ -106,19 +106,18 @@ efficient code.
 In Nim, you can't have circular dependencies between modules.  This gets
 unwieldy as the HTML/DOM/etc. specs are a huge cyclic OOP mess.
 
-The preferred workaround is global function pointer variables:
+The preferred workaround is using the foreign function interface:
 
 ```nim
 # Forward declaration hack
-var forwardDeclImpl*: proc(window: Window; x, y: int) {.nimcall, raises: [].}
+proc forwardDecl(window: Window; x, y: int) {.importc: "cha_$1".}
 # in the other module:
-forwardDeclImpl = proc(window: Window; x, y: int) =
+proc forwardDecl(window: Window; x, y: int) {.exportc: "cha_$1".} =
   # [...]
 ```
 
-Don't forget to make it `.nimcall`, and to comment "Forward declaration
-hack" above.  (Hopefully we can remove these once Nim supports cyclic module
-dependencies.)
+Don't forget to comment "Forward declaration hack" above.  (Hopefully we
+can remove these once Nim supports cyclic module dependencies.)
 
 ## Features to avoid
 

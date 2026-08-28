@@ -104,10 +104,7 @@ type
 
 # Forward declaration hack
 # set in html/dom
-var errorImpl*: proc(ctx: JSContext; ss: varargs[string]) {.
-  nimcall, raises: [].}
-var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.
-  nimcall, raises: [].}
+proc consoleError(ctx: JSContext; ss: varargs[string]) {.importc: "cha_$1".}
 
 proc free*(script: Script) =
   let record = script.record
@@ -229,10 +226,7 @@ proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
   JS_FreeValue(ctx, funcVal)
 
 proc logException*(ctx: JSContext) =
-  ctx.errorImpl(ctx.getExceptionMsg())
-
-proc getEnvSettings*(ctx: JSContext): EnvironmentSettings =
-  return ctx.getEnvSettingsImpl()
+  ctx.consoleError(ctx.getExceptionMsg())
 
 proc addReflectFunction*(ctx: JSContext; proto: JSValueConst; name: cstring;
     get: JSGetterMagicFunction; set: JSSetterMagicFunction; magic: cint):

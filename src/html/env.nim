@@ -1073,10 +1073,10 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addEncodingModule()
   ctx.addPerformanceModule()
 
-proc getConsole(ctx: JSContext): Console =
+proc getConsole(ctx: JSContext): Console {.exportc: "cha_$1".} =
   ctx.getGlobal().console
 
-proc getLoader(ctx: JSContext): FileLoader =
+proc getLoader(ctx: JSContext): FileLoader {.exportc: "cha_$1".} =
   ctx.getGlobal().loader
 
 proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
@@ -1163,9 +1163,5 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream;
   if ctx.addCommonModules(window).isErr:
     return Window(nil)
   window
-
-# Forward declaration hack
-getConsoleImpl = getConsole
-getLoaderImpl = getLoader
 
 {.pop.} # raises: []

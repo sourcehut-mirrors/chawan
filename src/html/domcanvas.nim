@@ -70,8 +70,8 @@ proc getClassID(t: typedesc[CanvasRenderingContext2D]): JSClassID
 proc getClassID(t: typedesc[TextMetrics]): JSClassID
 
 # Forward declaration hack
-var parseColorImpl*: proc(target: EventTarget; s: DOMString): Opt[ARGBColor]
-  {.nimcall, raises: [].}
+proc parseColorImpl(target: EventTarget; s: DOMString): Opt[ARGBColor]
+  {.importc: "cha_$1".}
 
 proc parseColor(target: EventTarget; s: DOMString): Opt[ARGBColor] =
   return target.parseColorImpl(s)

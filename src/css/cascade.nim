@@ -517,7 +517,7 @@ proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
     parent, element: Element; window: Window; old: CSSValues): CSSValues =
   map[pseudo].applyDeclarations(pseudo, parent, element, window, old)
 
-proc applyStyle(element: Element) =
+proc applyStyle(element: Element) {.exportc: "cha_$1".} =
   let document = element.asNode.document
   let window = document.window
   var depends = DependencyInfo.default
@@ -559,8 +559,5 @@ proc applyStyle(element: Element) =
       computed.next = pcomputed
       computed = pcomputed
   element.computed = element.computed.atomize()
-
-# Forward declaration hack
-applyStyleImpl = applyStyle
 
 {.pop.} # raises: []
