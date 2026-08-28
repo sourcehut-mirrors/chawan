@@ -157,8 +157,6 @@ type
   WindowObj* {.pure, final.} = object of EventTargetObj
     bc*: RootRef # backref to BufferContext
     console*: Console
-    localStorage*: Storage
-    sessionStorage*: Storage
     event*: Event
     settings*: EnvironmentSettings
     loader*: FileLoader
@@ -184,12 +182,6 @@ type
     performance*: Performance
     customElements*: CustomElementRegistry
     urandom*: PosixStream
-
-  # Navigator stuff
-  StorageObj* = object
-    map*: seq[tuple[key, value: string]]
-
-  Storage* = JSRef[StorageObj]
 
   CECallbackType = enum
     cctConnected = "connectedCallback"

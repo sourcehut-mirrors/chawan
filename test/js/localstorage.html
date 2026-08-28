@@ -7,5 +7,10 @@ localStorage.testKey = "test value";
 assertEquals(localStorage.key(localStorage.length - 1), "testKey");
 assertEquals(localStorage.key(-1), null);
 assertEquals(localStorage.getItem("testKey"), "test value");
+const length = localStorage.__proto__.__lookupGetter__("length");
+assertEquals(length.call(sessionStorage), 0);
+window.localStorage = null;
+assertInstanceof(window.localStorage, Storage);
+assertNotEquals(window.localStorage, window.sessionStorage);
 document.getElementById("x").textContent = "Success";
 </script>

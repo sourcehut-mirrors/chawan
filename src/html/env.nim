@@ -16,6 +16,7 @@ import html/jsencoding
 import html/jsintl
 import html/performance
 import html/script
+import html/storage
 import html/xmlhttprequest
 import io/chafile
 import io/console
@@ -24,7 +25,6 @@ import io/timeout
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsopaque
-import monoucha/jspropenumlist
 import monoucha/jsref
 import monoucha/jstypes
 import monoucha/jsutils
@@ -257,65 +257,6 @@ jsClassRaw(HistoryDef, "History"):
         return ctx.setLocation(window, s)
     return JS_UNDEFINED
 
-# Storage
-jsClassDef(Storage):
-  proc find(this: Storage; key: DOMString): int =
-    for i in 0 ..< this.map.len:
-      if this.map[i].key == key.toOpenArray():
-        return i
-    return -1
-
-  proc length(this: Storage): uint32 {.jsfget.} =
-    return uint32(this.map.len)
-
-  proc key(ctx: JSContext; this: Storage; u: uint32): JSValue {.jsfunc.} =
-    if u < uint32(this.map.len):
-      return ctx.toJS(this.map[int(u)].key)
-    return JS_NULL
-
-  proc getItem(ctx: JSContext; this: Storage; s: DOMString): JSValue
-      {.jsfunc.} =
-    let i = this.find(s)
-    if i >= 0:
-      return ctx.toJS(this.map[i].value)
-    return JS_NULL
-
-  proc setItem(ctx: JSContext; this: Storage; key, value: DOMString): JSValue
-      {.jsfunc.} =
-    let i = this.find(key)
-    if i >= 0:
-      this.map[i].value = $value
-    else:
-      if this.map.len >= 64:
-        return JS_ThrowDOMException(ctx, "QuotaExceededError",
-          "quota exceeded")
-      this.map.add(($key, $value))
-    return JS_UNDEFINED
-
-  proc removeItem(this: Storage; key: DOMString) {.jsfunc.} =
-    let i = this.find(key)
-    if i >= 0:
-      this.map.del(i)
-
-  proc names(ctx: JSContext; this: Storage): JSPropertyEnumList
-      {.jspropnames.} =
-    var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
-    for it in this.map:
-      list.add(it.key)
-    return list
-
-  proc getter(ctx: JSContext; this: Storage; s: DOMString): JSValue
-      {.jsgetownprop.} =
-    return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
-
-  proc setter(ctx: JSContext; this: Storage; k, v: DOMString): JSValue
-      {.jssetprop.} =
-    return ctx.setItem(this, k, v)
-
-  proc delete(this: Storage; k: DOMString): bool {.jsdelprop.} =
-    this.removeItem(k)
-    return true
-
 # Crypto
 jsClassRaw(CryptoDef, "Crypto"):
   type Crypto = distinct Window
@@ -525,16 +466,10 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
     t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
   ?ctx.registerClass(def)
-  let prop = ctx.getOpaque().strRefs[name]
-  let parentClass = JS_NewInt32(ctx, int32(parentClass))
-  var data = [JSValueConst(JS_UNDEFINED), parentClass]
-  let getter = JS_NewCFunctionData(ctx, windowAutoInitGetter, 0,
-    cast[cint](def.id), 2, data.toJSValueConstArray())
+  let ctxOpaque = ctx.getOpaque()
+  let getter = ctx.newGetterFunctionData(windowAutoInitGetter, cstring($name),
+    cast[cint](def.id), JS_UNDEFINED, JS_NewInt32(ctx, int32(parentClass)))
   if JS_IsException(getter):
-    return err()
-  if ctx.definePropertyC(getter, prop,
-      JS_AtomToValue(ctx, prop)) == dprException:
-    JS_FreeValue(ctx, getter)
     return err()
   var setter = JS_UNDEFINED
   var flags = cint(JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
@@ -553,12 +488,12 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
   if JS_IsException(setter):
     JS_FreeValue(ctx, getter)
     return err()
+  let prop = ctxOpaque.strRefs[name]
   if JS_DefinePropertyGetSet(ctx, namespace, prop, getter, setter, flags) < 0:
     return err()
   ok()
 
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerClass(StorageDef)
   ?ctx.registerClass(NotificationDef)
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
@@ -700,8 +635,6 @@ jsClassDef(Window):
 
   event.windowClassID = classDef.id
 
-  jsget Window, localStorage
-  jsget Window, sessionStorage
   jsget Window, referrer
   jsget Window, performance
   jsget Window, customElements
@@ -1056,6 +989,7 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.registerClass(MediaQueryListDef)
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
   ?ctx.addConsoleModule()
+  ?ctx.addStorageModule()
   ?ctx.addNavigatorModule()
   ?ctx.addDOMExceptionModule()
   ?ctx.addDOMRectModule()
@@ -1134,8 +1068,6 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     userAgent: userAgent,
     referrer: referrer,
     urandom: urandom,
-    localStorage: jsNew StorageObj(),
-    sessionStorage: jsNew StorageObj(),
     customElements: newCustomElementRegistry(),
     importMapsAllowed: true,
     jsctx: ctx

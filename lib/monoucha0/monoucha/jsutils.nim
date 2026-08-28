@@ -442,4 +442,20 @@ proc JS_ThrowTypeErrorInvalidClass*(ctx: JSContext; classid: JSClassID):
   discard JS_GetOpaque2(ctx, JS_UNDEFINED, classid)
   return JS_EXCEPTION
 
+proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
+    name: cstring; magic: cint; data: varargs[JSValueConst]): JSValue =
+  let getter = JS_NewCFunctionData(ctx, fun, 0, magic, cint(data.len),
+    data.toJSValueConstArray())
+  if JS_IsException(getter):
+    return JS_EXCEPTION
+  let getName = JS_NewString(ctx, cstring("get " & $name))
+  if JS_IsException(getName):
+    JS_FreeValue(ctx, getter)
+    return JS_EXCEPTION
+  let nameRef = ctx.getOpaque.strRefs[jstName]
+  if ctx.definePropertyC(getter, nameRef, getName) == dprException:
+    JS_FreeValue(ctx, getter)
+    return JS_EXCEPTION
+  return getter
+
 {.pop.} # raises

@@ -28,6 +28,7 @@ type
     jstLocation = "location"
     jstBuffer = "buffer"
     jstAcceptNode = "acceptNode"
+    jstName = "name"
 
   JSValueRef* = enum
     jsvArrayPrototypeForEach = "Array.prototype.forEach"
