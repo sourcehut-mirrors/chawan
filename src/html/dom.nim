@@ -4278,6 +4278,18 @@ jsClassPublicDef(Document):
   jsget Document, window, "defaultView"
   jsget Document, currentScript
 
+  proc finalize(rt: JSRuntime; document: Document) {.jsfin.} =
+    var sheet = move(document.uaSheetsHead)
+    while sheet != nil:
+      let next = move(sheet.next)
+      sheet.prev = nil
+      sheet = next
+    sheet = move(document.authorSheetsHead)
+    while sheet != nil:
+      let next = move(sheet.next)
+      sheet.prev = nil
+      sheet = next
+
   proc mark(rt: JSRuntime; document: Document; markFunc: JS_MarkFunc)
       {.jsmark.} =
     for element in document.renderBlockingElements:
