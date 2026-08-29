@@ -21,8 +21,26 @@ const shadow = el.attachShadow({mode: "open"})
 	assertInstanceof(el.firstChild, Text);
 }
 {
+	shadow.innerHTML = "<div id=test-id>test</div>";
+	assertEquals(shadow.firstElementChild.id, "test-id");
+	assertEquals(document.getElementById("test-id"), null);
+	assertEquals(window["test-id"], undefined);
+	const x = shadow.getElementById("test-id");
+	assertEquals(x.id, "test-id");
+	x.remove();
+	assertEquals(shadow.getElementById("test-id"), null);
+}
+{
+	shadow.innerHTML = "<div id=test-remove>test</div>";
+	const x = shadow.getElementById("test-remove");
+	el.remove();
+	assertEquals(x.getRootNode(), shadow);
+	x.remove();
+}
+{
 	z.attachShadow({mode: "open"});
 }
 shadow.append("Success")
+x.before(shadow);
 document.getElementById("x").remove();
 </script>

@@ -1644,7 +1644,8 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           of '&': data &= "&amp;"
           else: data &= c
           inc j
-        let replacement = bc.window.jsctx.parseFragment(html.asElement, data)
+        let replacement = bc.window.jsctx.parseFragment(html.asParentNode,
+          data)
         if replacement != nil:
           discard element.asNode.replaceChildWith(bc.window.jsctx, text.asNode,
             replacement.asNode)
