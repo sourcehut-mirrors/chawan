@@ -417,7 +417,7 @@ proc cleanup(pager: Pager) =
   # break up cycles
   for it in pager.loader.data:
     pager.loader.unset(it)
-  for hist in pager.lineHist:
+  for hist in pager.lineHist.myitems:
     if hist != nil:
       hist.clear()
   if pager.console != nil and pager.dumpConsoleFile:
