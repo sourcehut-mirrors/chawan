@@ -335,7 +335,7 @@ proc setupStartupScript(ctx: JSContext; script: string) =
       die(ctx.getExceptionMsg())
     JS_FreeValue(ctx, ret)
   else:
-    die("failed to read startup bytecode")
+    die("failed to read startup bytecode at " & path)
 
 jsNamespaceDef(Client): # fake namespace
   proc readFile(ctx: JSContext; path: string): JSValue {.jsstfunc.} =
@@ -440,8 +440,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     die("failed to create pager")
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs
-  let code = pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
-  return code
+  return pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
 
 proc main() =
   let rt = newGlobalJSRuntime()
