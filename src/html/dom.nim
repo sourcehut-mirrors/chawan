@@ -3351,19 +3351,21 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
     #TODO assign slottables for a tree with root
   if node.nextSibling == nil:
     node.internalNext = rootNode
+  let rootDocumentLike = rootNode as RootNode
   var specialElement: Element
   for desc in node.descendantsShadowIncl:
     let last = desc.lastChild
-    if last != nil: # update root
+    if last != nil and last.internalNext == node:
+      # update root (but only if it isn't a shadow root inside node)
       last.internalNext = rootNode
-    if (let el = desc as Element; el != nil):
-      if el.id != satUempty:
-        let root = el.asNode.rootNode as RootNode
-        if root != nil:
-          root.addElementId(el)
-      if specialElement == nil and el.hasInsertionSteps():
-        specialElement = el
-      if el.custom == cesCustom:
+    if (let element = desc as Element; element != nil):
+      if element.id != satUempty:
+        if element.asNode.rootNode == rootDocumentLike.asNode:
+          # rootNode cannot be nil, so neither can rootDocumentLike here
+          rootDocumentLike.addElementId(element)
+      if specialElement == nil and element.hasInsertionSteps():
+        specialElement = element
+      if element.custom == cesCustom:
         #TODO append parentDocument to element custom registry
         #TODO enqueue connectedCallback (custom elements)
         discard

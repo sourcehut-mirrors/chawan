@@ -38,6 +38,17 @@ const shadow = el.attachShadow({mode: "open"})
 	x.remove();
 }
 {
+	const doc = document.implementation.createHTMLDocument();
+	const el = doc.createElement("div");
+	assertEquals(el.getRootNode(), el);
+	const shadow = el.attachShadow({mode: "open"});
+	shadow.innerHTML = "<div id=x>blah</div>";
+	const x = shadow.getElementById("x");
+	doc.body.appendChild(el);
+	assertEquals(x.getRootNode(), shadow);
+	assertEquals(el.getRootNode(), doc);
+}
+{
 	z.attachShadow({mode: "open"});
 }
 shadow.append("Success")
