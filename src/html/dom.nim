@@ -714,10 +714,6 @@ type
 
   HTMLTableRowElementObj {.pure, final.} = object of HTMLElementObj
 
-  HTMLDetailsElement = JSRef[HTMLDetailsElementObj]
-
-  HTMLDetailsElementObj {.pure, final.} = object of HTMLElementObj
-
   HTMLFrameElement = JSRef[HTMLFrameElementObj]
 
   HTMLFrameElementObj {.pure, final.} = object of HTMLElementObj
@@ -726,33 +722,13 @@ type
 
   HTMLHeadElementObj {.pure, final.} = object of HTMLElementObj
 
-  HTMLTitleElement = JSRef[HTMLTitleElementObj]
-
-  HTMLTitleElementObj {.pure, final.} = object of HTMLElementObj
-
   HTMLObjectElement = JSRef[HTMLObjectElementObj]
 
   HTMLObjectElementObj {.pure, final.} = object of HTMLElementObj
 
-  HTMLSourceElement = JSRef[HTMLSourceElementObj]
-
-  HTMLSourceElementObj {.pure, final.} = object of HTMLElementObj
-
   HTMLSlotElement = JSRef[HTMLSlotElementObj]
 
   HTMLSlotElementObj {.pure, final.} = object of HTMLElementObj
-
-  HTMLPictureElementObj {.pure, final.} = object of HTMLElementObj
-
-  HTMLPictureElement = JSRef[HTMLPictureElementObj]
-
-  HTMLEmbedElementObj {.pure, final.} = object of HTMLElementObj
-
-  HTMLEmbedElement = JSRef[HTMLEmbedElementObj]
-
-  HTMLMapElementObj {.pure, final.} = object of HTMLElementObj
-
-  HTMLMapElement = JSRef[HTMLMapElementObj]
 
 # Forward declarations
 proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
@@ -8771,13 +8747,13 @@ jsClassDef(HTMLTextAreaElement):
     this.asParentNode.replaceAll(ctx, ds)
 
 # <title>
-jsClassDef(HTMLTitleElement):
+jsClassRaw(HTMLTitleElementDef, "HTMLTitleElement"):
   jsextends HTMLElementDef
 
-  proc text(this: HTMLTitleElement): string {.jsfget.} =
+  proc titleText(this: HTMLElement): string {.jsfget: "text".} =
     this.asParentNode.childTextContent
 
-  proc setText(ctx: JSContext; this: HTMLTitleElement; ds: DOMString) {.
+  proc setTitleText(ctx: JSContext; this: HTMLElement; ds: DOMString) {.
       jsfset: "text".} =
     this.asParentNode.replaceAll(ctx, ds)
 
@@ -8785,15 +8761,10 @@ jsClassDef(HTMLTitleElement):
 htmlClassDef(HTMLVideoElement)
 htmlClassDef(HTMLAudioElement)
 htmlClassDef(HTMLIFrameElement)
-htmlClassDef(HTMLDetailsElement)
 htmlClassDef(HTMLFrameElement)
 htmlClassDef(HTMLHeadElement)
 htmlClassDef(HTMLObjectElement)
-htmlClassDef(HTMLSourceElement)
 htmlClassDef(HTMLSlotElement)
-htmlClassDef(HTMLPictureElement)
-htmlClassDef(HTMLEmbedElement)
-htmlClassDef(HTMLMapElement)
 
 template htmlClassRaw(name: untyped) =
   jsClassRaw(`name Def`, astToStr(name)):
@@ -8832,6 +8803,11 @@ htmlClassRaw(HTMLQuoteElement)
 htmlClassRaw(HTMLDialogElement)
 htmlClassRaw(HTMLDataElement)
 htmlClassRaw(HTMLTrackElement)
+htmlClassRaw(HTMLPictureElement)
+htmlClassRaw(HTMLSourceElement)
+htmlClassRaw(HTMLMapElement)
+htmlClassRaw(HTMLDetailsElement)
+htmlClassRaw(HTMLEmbedElement)
 
 jsClassDef(SVGElement):
   jsextends ElementDef
@@ -8889,16 +8865,10 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
   of ttTbody, ttThead, ttTfoot:
     return (jsNew HTMLTableSectionElementObj()).asHTMLElement
   of ttIframe: return (jsNew HTMLIFrameElementObj()).asHTMLElement
-  of ttDetails: return (jsNew HTMLDetailsElementObj()).asHTMLElement
   of ttFrame: return (jsNew HTMLFrameElementObj()).asHTMLElement
-  of ttTitle: return (jsNew HTMLTitleElementObj()).asHTMLElement
   of ttObject: return (jsNew HTMLObjectElementObj()).asHTMLElement
-  of ttSource: return (jsNew HTMLSourceElementObj()).asHTMLElement
   of ttSlot: return (jsNew HTMLSlotElementObj()).asHTMLElement
   of ttOutput: return (jsNew HTMLOutputElementObj()).asHTMLElement
-  of ttPicture: return (jsNew HTMLPictureElementObj()).asHTMLElement
-  of ttEmbed: return (jsNew HTMLEmbedElementObj()).asHTMLElement
-  of ttMap: return (jsNew HTMLMapElementObj()).asHTMLElement
   of ttHead: return (jsNew HTMLHeadElementObj()).asHTMLElement
   else: discard
   # These interfaces only have reflectors, which we can implement without a
@@ -8940,6 +8910,12 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
   of ttLegend: HTMLLegendElementDef.id
   of ttSelectedcontent: HTMLSelectedContentElementDef.id
   of ttDialog: HTMLDialogElementDef.id
+  of ttPicture: HTMLPictureElementDef.id
+  of ttSource: HTMLSourceElementDef.id
+  of ttTitle: HTMLTitleElementDef.id
+  of ttMap: HTMLMapElementDef.id
+  of ttDetails: HTMLDetailsElementDef.id
+  of ttEmbed: HTMLEmbedElementDef.id
   of ttArticle, ttSection, ttNav, ttAside, ttHgroup, ttHeader, ttFooter,
       ttAddress, ttDt, ttDd, ttFigure, ttFigcaption, ttMain, ttSearch, ttEm,
       ttStrong, ttSmall, ttS, ttCite, ttDfn, ttAbbr, ttRuby, ttRt, ttRp,
