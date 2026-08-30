@@ -4525,6 +4525,7 @@ jsClassDef(NodeIterator):
 
   proc traverse(ctx: JSContext; this: NodeIterator; next: bool): Opt[Node] {.
       jsmfunc("previousNode", false), jsmfunc("nextNode", true).} =
+    var resultNode = Node(nil)
     this.iterNode = this.currentNode
     this.iterBefore = this.before
     while true:
@@ -4537,15 +4538,16 @@ jsClassDef(NodeIterator):
           this.iterNode.previousDescendant(this.root)
         if this.iterNode == nil:
           return ok(Node(nil))
-      let res = ctx.filter(this, this.iterNode)
+      resultNode = this.iterNode
+      let res = ctx.filter(this, resultNode)
       if res.isErr:
         this.iterNode = Node(nil)
         return err()
       if res.get == uint32(nfrAccept):
         break
-    this.currentNode = this.iterNode
+    this.currentNode = move(this.iterNode)
     this.before = this.iterBefore
-    ok(move(this.iterNode))
+    ok(move(resultNode))
 
   proc detach(this: NodeIterator) {.jsfunc.} =
     discard

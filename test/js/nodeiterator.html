@@ -33,6 +33,12 @@
 </div>
 </div>
 
+<div id=test5>
+<div id=inner5>
+<div id=m>first</div>
+</div>
+</div>
+
 <script src=asserts.js></script>
 <script>
 {
@@ -101,6 +107,20 @@
 	iter.referenceNode.remove();
 	assertEquals(iter.referenceNode.id, "k");
 	test4.remove();
+}
+
+{
+	const iter = document.createNodeIterator(test5.firstElementChild, 0xFFFFFFFF, x => {
+		if (x instanceof Element && x.id == "m")
+			x.remove();
+		if (!(x instanceof Element))
+			return 2;
+		return 1;
+	}, 1);
+	assertEquals(iter.nextNode().id, "inner5");
+	assertEquals(iter.nextNode().id, "m");
+	assertInstanceof(iter.referenceNode, Text);
+	test5.remove();
 }
 
 
