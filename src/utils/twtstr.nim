@@ -190,6 +190,8 @@ proc kebabToCamelCase*(s: string): string =
       else:
         result &= c
       flip = false
+  if flip:
+    result &= '-'
 
 proc camelToKebabCase*(s: openArray[char]; dashPrefix = false): string =
   result = newStringOfCap(s.len)

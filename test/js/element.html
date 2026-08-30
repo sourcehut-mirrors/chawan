@@ -99,6 +99,9 @@ function testDataset() {
 	assertThrows(() => { el.dataset["test-test"] = "hi" }, DOMException);
 	el.dataset["test-Test"] = "hi";
 	assertEquals(el.getAttribute("data-test--test"), "hi");
+	el.dataset["test-"] = "test";
+	assertEquals(Object.getOwnPropertyNames(el.dataset).sort().join(','),
+		"test,test-,testTest");
 }
 
 testName();
