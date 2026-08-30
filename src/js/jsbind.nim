@@ -1528,7 +1528,7 @@ macro jsClassImpl(def: untyped; jsname: static string; typ: typed;
   if typ != nil:
     when NimMajor < 2:
       stmts.add(quote do:
-        globalJSTypeMap[getJSTypeId(`typ`.T)] = classDef.id
+        globalJSTypeMap[getJSTypeID(`typ`.T)] = classDef.id
       )
     let markList = newStmtList()
     if markFun != nil:

@@ -458,7 +458,7 @@ proc fromJS*[T: object](ctx: JSContext; val: JSValueConst; res: var ptr T):
   when NimMajor < 2:
     # I don't know why, but Nim 1.6.14 fails to generate the forward decls
     # in C.  So we add a little indirection instead.
-    let classId = globalJSTypeMap[getJSTypeId(T)]
+    let classId = globalJSTypeMap[getJSTypeID(T)]
   else:
     mixin getClassID
     let classId = getClassID(JSRef[T])

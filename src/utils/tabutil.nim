@@ -100,6 +100,9 @@ iterator items*(map: StrMap): lent StrMapItem =
     if it != nil:
       yield it
 
+when NimMajor < 2:
+  from utils/twtstr import substr
+
 template myHash(s: openArray[char]): Hash =
   when nimvm:
     when (NimMajor, NimMinor) < (2, 2):
