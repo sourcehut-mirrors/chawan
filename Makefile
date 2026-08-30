@@ -52,14 +52,18 @@ FORCE_POLL_MODE ?= 0
 
 chac_flags =
 
+embed_startup = 0
+
 # Nim compiler flags
 ifeq ($(TARGET),debug)
 FLAGS += -d:debug --debugger:native
 CFLAGS += -DDUMP_LEAKS=1
 else ifeq ($(TARGET),release)
+embed_startup = 1
 chac_flags = -s
 FLAGS += -d:release -d:strip -d:lto
 else ifeq ($(TARGET),release-nolto)
+embed_startup = 1
 chac_flags = -s
 FLAGS += -d:release -d:strip
 else ifeq ($(TARGET),release0)
@@ -73,6 +77,17 @@ FLAGS += -d:debug --debugger:native -d:useMalloc
 DANGER_DISABLE_SANDBOX = 1
 endif
 
+ifeq ($(embed_startup),1)
+embed_script = $(OBJDIR)/init.jsb
+scripts =
+FLAGS += -d:embedStartup
+script_target = $(OBJDIR)/%.jsb
+else
+embed_script =
+scripts = init.jsb
+script_target = $(OUTDIR_LIBEXEC)/%.jsb
+endif
+
 ssl_link = http https gemini sftp
 tohtml_link = gopher2html md2html ansi2html gmi2html dirlist2html img2html
 
@@ -83,7 +98,6 @@ tools_bin = urlenc nc
 protocols = $(protocols_bin) $(ssl_link)
 converters = $(converters_bin) $(tohtml_link)
 tools = $(tools_bin) urldec
-scripts = init.jsb
 
 ifeq ($(STATIC_LINK),1)
 LDFLAGS += -static
@@ -148,7 +162,8 @@ tinfl = adapter/protocol/tinfl.h
 # git can't deal with this, it seems.
 $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/chawan.html res/license.md \
 		res/quirk.css res/ua.css res/*.tab res/version lib/chame0/chame/* \
-		lib/quickjs/* $(chaseccomp) res/charwidth_gen.nim nim.cfg
+		lib/quickjs/* $(chaseccomp) res/charwidth_gen.nim nim.cfg \
+		$(embed_script)
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
@@ -243,7 +258,7 @@ FLAGS_FOR_BUILD += $(foreach flag,$(HOSTLDFLAGS),-l:$(flag))
 $(OBJDIR)/chac: src/chac.nim src/js/* lib/quickjs/*
 	$(NIMC) $(FLAGS_FOR_BUILD) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
 
-$(OUTDIR_LIBEXEC)/%.jsb: src/%.js $(OBJDIR)/chac
+$(script_target): src/%.js $(OBJDIR)/chac
 	$(OBJDIR)/chac $(chac_flags) $< $@
 
 doc/%.1: doc/%.md md2man

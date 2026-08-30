@@ -319,23 +319,31 @@ proc forkForkServer(loaderSockVec: array[2, cint]; pagerPid: int;
       westream: westream
     )
 
-proc setupStartupScript(ctx: JSContext; script: string) =
-  let path = ChaPath("$CHA_LIBEXEC_DIR/" & script).unquoteGet()
-  let ps = newPosixStream(path)
-  if ps != nil:
+when defined(embedStartup):
+  proc readStartupScriptROM(ctx: JSContext; src: string): JSValue =
+    JS_ReadObject(ctx, cast[ptr uint8](unsafeAddr src[0]),
+      csize_t(src.len), JS_READ_OBJ_BYTECODE or JS_READ_OBJ_ROM_DATA)
+
+proc setupStartupScript(ctx: JSContext) =
+  when defined(embedStartup):
+    const src = staticRead".obj/init.jsb"
+    let obj = ctx.readStartupScriptROM(src)
+  else:
+    let path = ChaPath("$CHA_LIBEXEC_DIR/init.jsb").unquoteGet()
+    let ps = newPosixStream(path)
+    if ps == nil:
+      die("failed to read startup bytecode at " & path)
     let src = ps.readAllOrMmap()
     let obj = JS_ReadObject(ctx, cast[ptr uint8](src.p), csize_t(src.len),
       JS_READ_OBJ_BYTECODE)
     deallocMem(src)
-    if JS_IsException(obj):
-      die(ctx.getExceptionMsg())
-    let ret = JS_EvalFunction(ctx, obj)
-    JS_FreeValue(ctx, obj)
-    if JS_IsException(ret):
-      die(ctx.getExceptionMsg())
-    JS_FreeValue(ctx, ret)
-  else:
-    die("failed to read startup bytecode at " & path)
+  if JS_IsException(obj):
+    die(ctx.getExceptionMsg())
+  let ret = JS_EvalFunction(ctx, obj)
+  JS_FreeValue(ctx, obj)
+  if JS_IsException(ret):
+    die(ctx.getExceptionMsg())
+  JS_FreeValue(ctx, ret)
 
 jsNamespaceDef(Client): # fake namespace
   proc readFile(ctx: JSContext; path: string): JSValue {.jsstfunc.} =
@@ -433,7 +441,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     else:
       discard myposix.signal(SIGINT, myposix.SIG_DFL);
       discard kill(getpid(), SIGINT)
-  jsctx.setupStartupScript("init.jsb")
+  jsctx.setupStartupScript()
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
     client.console, addr client.timeouts)
   if pager == nil:
