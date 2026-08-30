@@ -24,5 +24,12 @@ for (let x of cl)
 	assertEquals(el.__proto__, Element.prototype);
 	assertEquals(el.getAttribute("class"), "hi");
 }
+{
+	const coll1 = document.getElementsByClassName("a");
+	assertEquals(coll1, document.getElementsByClassName("a"));
+	const coll2 = document.getElementsByClassName("a b")
+	assertEquals(coll2, document.getElementsByClassName("a b"));
+	assertNotEquals(coll2, document.getElementsByClassName("a  b"));
+}
 div.textContent = "Success";
 </script>

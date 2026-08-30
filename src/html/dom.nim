@@ -262,6 +262,25 @@ type
   LoadSheetFinish = proc(window: Window; this: SheetElement;
     res: LoadSheetResult; env: ParseSheetEnv; i: int) {.  nimcall, raises: [].}
 
+  CollectionName = enum
+    cnUnknown # reserved for unmarked collections
+    cnChildren
+    cnChildNodes
+    cnForms
+    cnLinks
+    cnImages
+    cnGetElementsByName
+    cnGetElementsByTagName
+    cnGetElementsByClassName
+    cnGetElementsById
+    cnSelectedOptions
+    cnTBodies
+    cnRows
+    cnCells
+    cnOptions
+    cnAll
+    cnElements
+
   CollectionLike = JSRef[CollectionLikeObj]
 
   CollectionLikeObj {.pure.} = object of JSRootObj
@@ -272,8 +291,11 @@ type
 
   Collection = JSRef[CollectionObj]
 
+  CollectionMode = enum
+    cmSubtree, cmChildren, cmTree
+
   CollectionObj {.pure.} = object of CollectionLikeObj
-    childonly: bool
+    mode: CollectionMode
     invalid: bool
     match: CollectionMatchFun
     snapshot: seq[Node]
@@ -307,7 +329,6 @@ type
   HTMLCollection = JSRef[HTMLCollectionObj]
 
   HTMLFormControlsCollectionObj {.pure, final.} = object of HTMLCollectionObj
-    form: HTMLFormElement
 
   HTMLFormControlsCollection = JSRef[HTMLFormControlsCollectionObj]
 
@@ -412,11 +433,9 @@ type
     authorSheetsHead: CSSStylesheet
     sheetTitle: string
     ruleMap: CSSRuleMap
-    cachedLinks: HTMLCollection
     parser*: RootRef
     liveCollections: seq[ptr CollectionLikeObj]
     liveCollectionsLoad: int
-    cachedAll: HTMLAllCollection
     customElements: CustomElementRegistry #TODO ?
 
   XMLDocumentObj {.pure, final.} = object of DocumentObj
@@ -573,7 +592,6 @@ type
 
   HTMLSelectElementObj {.pure, final.} = object of FormAssociatedElementObj
     userValidity: bool
-    cachedOptions: HTMLOptionsCollection
 
   HTMLOptionElement* = JSRef[HTMLOptionElementObj]
 
@@ -605,7 +623,6 @@ type
     firing*: bool
     controlsHead: FormAssociatedElement
     controlsTail: FormAssociatedElement
-    cachedElements: HTMLFormControlsCollection
     relList: DOMTokenArray
 
   HTMLTemplateElement* = JSRef[HTMLTemplateElementObj]
@@ -758,13 +775,12 @@ proc newElement*(document: Document; localName: CAtom;
 proc newElement(document: Document;
   localName, namespaceURI, tagName: CAtom): Element
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
-proc newHTMLCollection(root: Node; match: CollectionMatchFun; childonly: bool):
-  HTMLCollection
-proc newHTMLCollectionChildren(root: Node): HTMLCollection
+proc newHTMLCollection(root: Node; match: CollectionMatchFun;
+  mode: CollectionMode; name: CollectionName): HTMLCollection
 proc newEmptyNodeList(): NodeList
 proc newNodeList(nodes: openArray[Node]): NodeList
-proc newNodeList(root: Node; match: CollectionMatchFun;
-  islive, childonly: bool): NodeList
+proc newNodeList(root: Node; match: CollectionMatchFun; mode: CollectionMode;
+  name: CollectionName): NodeList
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
   readonly = false): CSSStyleDeclaration
 
@@ -917,6 +933,7 @@ proc getClassID(t: typedesc[DocumentFragment]): JSClassID
 proc getClassID(t: typedesc[DocumentType]): JSClassID
 proc getClassID(t: typedesc[HTMLAllCollection]): JSClassID
 proc getClassID(t: typedesc[HTMLAreaElement]): JSClassID
+proc getClassID(t: typedesc[Collection]): JSClassID
 proc getClassID(t: typedesc[HTMLCollection]): JSClassID
 proc getClassID(t: typedesc[HTMLFormControlsCollection]): JSClassID
 proc getClassID(t: typedesc[HTMLHeadElement]): JSClassID
@@ -1245,8 +1262,40 @@ proc isOptionOf(node, select: Node): bool =
 proc isOptionOfRoot(this: Collection; node: Node): bool =
   node.isOptionOf(this.root)
 
+proc isSelectedOptionOf(this: Collection; node: Node): bool =
+  this.isOptionOfRoot(node) and (node as HTMLOptionElement).selected
+
+proc isRowOf(this: Collection; node: Node): bool =
+  if node.parentNode.asNode == this.root or
+      node.parentNode.parentNode.asNode == this.root:
+    return node of HTMLTableRowElement
+  false
+
 proc isElement(this: Collection; node: Node): bool =
   node of Element
+
+proc isElementOf(this: Collection; node: Node): bool =
+  let node = node as Element
+  if node != nil:
+    let atom = this.atoms[0]
+    if node.namespaceURI == satNamespaceHTML:
+      return node.tagName.equalsIgnoreCase(atom)
+    return node.tagName == atom
+  return false
+
+proc isElementWithClass(this: Collection; node: Node): bool =
+  let element = node as Element
+  if element == nil:
+    return false
+  if element.asNode.document.mode == qmQuirks:
+    for i in 1 ..< this.atoms.len:
+      if not element.hasClassIgnoreCase(this.atoms[i]):
+        return false
+  else:
+    for i in 1 ..< this.atoms.len:
+      if not element.hasClass(this.atoms[i]):
+        return false
+  true
 
 proc isLink(this: Collection; node: Node): bool =
   let element = node as HTMLElement
@@ -2589,13 +2638,23 @@ proc findAncestor*(node: Node; tagType: TagType): Element =
 proc assignSlot(node: Node) =
   discard
 
-proc getLiveCollection(node: Node; name: StaticAtom): CollectionLike =
+proc getLiveCollection(node: Node; name: CollectionName): CollectionLike =
   # Returns the live collection with magic `name' rooted at `node'.
   let document = node.document
   for collection in document.liveCollections(node):
     if collection.getMagic() == uint32(name):
       return collection
   CollectionLike(nil)
+
+proc getHTMLCollection(node: ParentNode; match: CollectionMatchFun;
+    mode: CollectionMode; name: CollectionName): HTMLCollection =
+  let collection = node.asNode.getLiveCollection(name)
+  if collection != nil:
+    return collection as HTMLCollection
+  newHTMLCollection(node.asNode, match, mode, name)
+
+proc childrenImpl(node: ParentNode): HTMLCollection =
+  node.getHTMLCollection(isElement, cmChildren, cnChildren)
 
 proc isDefaultPassive(target: EventTarget): bool {.exportc: "cha_$1".} =
   let node = target as Node
@@ -2756,11 +2815,9 @@ jsClassDef(Node):
     return node == other
 
   proc childNodes(node: Node): NodeList {.jsfget.} =
-    var list = node.getLiveCollection(satChildNodes) as NodeList
+    var list = node.getLiveCollection(cnChildNodes) as NodeList
     if list == nil:
-      list = newNodeList(node, match = nil, islive = true, childonly = true)
-      if list != nil:
-        list.setMagic(uint32(satChildNodes))
+      list = newNodeList(node, match = nil, cmChildren, cnChildNodes)
     move(list)
 
   proc isEqualNode(node, other: Node): bool {.jsfunc.} =
@@ -3004,14 +3061,6 @@ proc replaceAll(parent: ParentNode; ctx: JSContext; ds: DOMString) =
   let text = if ds.len > 0: parent.asNode.document.newText(ds) else: Text(nil)
   parent.replaceAll(ctx, text.asNode)
 
-proc childrenImpl(node: ParentNode): HTMLCollection =
-  var collection = node.asNode.getLiveCollection(satChildren) as HTMLCollection
-  if collection == nil:
-    collection = newHTMLCollectionChildren(node.asNode)
-    if collection != nil:
-      collection.setMagic(uint32(satChildren))
-  collection
-
 proc childElementCountImpl(node: ParentNode): uint32 =
   let last = node.lastElementChild
   if last == nil:
@@ -3024,46 +3073,38 @@ proc childTextContent*(node: ParentNode): string =
     if (let child = child as Text; child != nil):
       result &= child.data.s
 
+proc getParamCollection(root: ParentNode; name: CollectionName; param: CAtom):
+    Collection =
+  let document = root.asNode.document
+  for collection in document.liveCollections(root.asNode):
+    if collection.getMagic() == uint32(name):
+      let collection = collection as Collection
+      if collection.atoms[0] == param:
+        return collection
+  Collection(nil)
+
 proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtom):
     HTMLCollection =
-  if $tagName == "*":
-    return newHTMLCollection(root.asNode, isElement, childonly = false)
-  let this = newHTMLCollection(
-    root.asNode,
-    proc(this: Collection; node: Node): bool {.nimcall.} =
-      let element = node as Element
-      if element != nil:
-        let atom = this.atoms[0]
-        if element.namespaceURI == satNamespaceHTML:
-          return element.tagName.equalsIgnoreCase(atom)
-        return element.tagName == atom
-      return false,
-    childonly = false
-  )
+  let collection = root.getParamCollection(cnGetElementsByTagName, tagName)
+  if collection != nil:
+    return collection as HTMLCollection
+  let match = if $tagName == "*": isElement else: isElementOf
+  let this = newHTMLCollection(root.asNode, match, cmSubtree,
+    cnGetElementsByTagName)
   if this != nil:
     this.atoms = @[tagName]
   this
 
-proc getElementsByClassNameImpl(node: ParentNode; classNames: DOMString):
+proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
     HTMLCollection =
-  let this = newHTMLCollection(
-    node.asNode,
-    proc(this: Collection; node: Node): bool =
-      let element = node as Element
-      if element == nil:
-        return false
-      if element.asNode.document.mode == qmQuirks:
-        for class in this.atoms:
-          if not element.hasClassIgnoreCase(class):
-            return false
-      else:
-        for class in this.atoms:
-          if not element.hasClass(class):
-            return false
-      true,
-    childonly = false
-  )
+  let param = classNames.toAtom()
+  let collection = root.getParamCollection(cnGetElementsByClassName, param)
+  if collection != nil:
+    return collection as HTMLCollection
+  let this = newHTMLCollection(root.asNode, isElementWithClass, cmSubtree,
+    cnGetElementsByClassName)
   if this != nil:
+    this.atoms.add(param)
     for class in classNames.toOpenArray().split(AsciiWhitespace):
       this.atoms.add(class.toAtom())
   this
@@ -3207,15 +3248,14 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
       this.snapshot.add(element.asNode)
   return ctx.toJS(this)
 
-proc getChildrenOf(node: ParentNode; name: StaticAtom; childonly: bool;
-    tags: varargs[TagType]): HTMLCollection =
+proc getChildrenOf(node: ParentNode; name: CollectionName;
+    mode: CollectionMode; tags: varargs[TagType]): HTMLCollection =
   var collection = node.asNode.getLiveCollection(name) as HTMLCollection
   if collection == nil:
-    collection = newHTMLCollection(node.asNode, isHTMLElementOf, childonly)
+    collection = newHTMLCollection(node.asNode, isHTMLElementOf, mode, name)
     if collection != nil:
       for tag in tags:
         collection.atoms.add(tag.view())
-      collection.setMagic(uint32(name))
   collection
 
 jsClassDef(ParentNode): # fake class
@@ -3300,14 +3340,21 @@ template asCollectionLike[T: CollectionLikeObj](x: JSRef[T]): CollectionLike =
 proc populateCollection(this: Collection) =
   let root = this.root as ParentNode
   if root != nil:
-    if this.childonly:
+    case this.mode
+    of cmChildren:
       for child in root.childList:
         if this.match == nil or this[].match(this, child):
           this.snapshot.add(child)
-    else:
+    of cmSubtree:
       for desc in root.descendants:
         if this.match == nil or this[].match(this, desc):
           this.snapshot.add(desc)
+    of cmTree:
+      let root = root.asNode.rootNode as ParentNode
+      if root != nil:
+        for desc in root.descendants:
+          if this.match == nil or this[].match(this, desc):
+            this.snapshot.add(desc)
 
 proc refreshCollection(this: Collection) =
   if this.invalid:
@@ -3329,7 +3376,7 @@ proc attach(collection: CollectionLike) =
   document.addLiveCollection(collection)
 
 proc newEmptyNodeList(): NodeList =
-  jsNew NodeListObj(childonly: false, match: nil, document: nil)
+  jsNew NodeListObj(match: nil, document: nil)
 
 proc newNodeList(nodes: openArray[Node]): NodeList =
   let list = newEmptyNodeList()
@@ -3338,33 +3385,30 @@ proc newNodeList(nodes: openArray[Node]): NodeList =
   list
 
 proc newHTMLCollection(root: Node; match: CollectionMatchFun;
-    childonly: bool): HTMLCollection =
+    mode: CollectionMode; name: CollectionName): HTMLCollection =
   let this = jsNew HTMLCollectionObj(
-    childonly: childonly,
+    mode: mode,
     match: match,
     root: root,
     invalid: true
   )
   if this != nil:
     this.asCollectionLike.attach()
+    this.setMagic(uint32(name))
   this
 
-proc newHTMLCollectionChildren(root: Node): HTMLCollection =
-  newHTMLCollection(root, isElement, childonly = true)
-
-proc newNodeList(root: Node; match: CollectionMatchFun;
-    islive, childonly: bool): NodeList =
+proc newNodeList(root: Node; match: CollectionMatchFun; mode: CollectionMode;
+    name: CollectionName): NodeList =
+  # returns a live node list
   let this = jsNew NodeListObj(
-    childonly: childonly,
+    mode: mode,
     match: match,
     root: root,
-    invalid: islive
+    invalid: true
   )
   if this != nil:
-    if islive:
-      this.asCollectionLike.attach()
-    else:
-      this.asCollection.populateCollection()
+    this.asCollectionLike.attach()
+    this.setMagic(uint32(name))
   this
 
 jsClassDef(CollectionLike): # fake class
@@ -3678,7 +3722,8 @@ proc getElementsById*(document: Document; id: CAtom): JSRootRef =
               if element != nil:
                 return element.id == this.atoms[0]
               false,
-            childonly = false
+            cmSubtree,
+            cnGetElementsById
           )
           if collection != nil:
             collection.atoms = @[id]
@@ -3980,19 +4025,13 @@ jsClassPublicDef(Document):
     return "CSS1Compat"
 
   proc forms(document: Document): HTMLCollection {.jsnfget.} =
-    document.asParentNode.getChildrenOf(satForm, childonly = false, ttForm)
+    document.asParentNode.getChildrenOf(cnForms, cmSubtree, ttForm)
 
   proc links(document: Document): HTMLCollection {.jsnfget.} =
-    if document.cachedLinks == nil:
-      document.cachedLinks = newHTMLCollection(
-        document.asNode,
-        isLink,
-        childonly = false
-      )
-    document.cachedLinks
+    document.asParentNode.getHTMLCollection(isLink, cmSubtree, cnLinks)
 
   proc images(document: Document): HTMLCollection {.jsnfget.} =
-    document.asParentNode.getChildrenOf(satImages, childonly = false, ttImg)
+    document.asParentNode.getChildrenOf(cnImages, cmSubtree, ttImg)
 
   proc getURL(ctx: JSContext; document: Document): JSValue {.
       jsfget: "URL", jsfget: "documentURI".} =
@@ -4124,13 +4163,18 @@ jsClassPublicDef(Document):
 
   proc getElementsByName(document: Document; name: CAtom): NodeList
       {.jsfunc.} =
+    let collection = document.asParentNode.getParamCollection(
+      cnGetElementsByName, name
+    )
+    if collection != nil:
+      return collection as NodeList
     let this = newNodeList(
       document.asNode,
       proc(this: Collection; node: Node): bool {.nimcall.} =
         let element = node as Element
         element != nil and element.name == this.atoms[0],
-      islive = true,
-      childonly = false
+      cmSubtree,
+      cnGetElementsByName
     )
     if this != nil:
       this.atoms = @[name]
@@ -4286,22 +4330,21 @@ jsClassPublicDef(Document):
     return JS_UNINITIALIZED
 
   proc all(ctx: JSContext; document: Document): JSValue {.jsfget.} =
-    if document.cachedAll == nil:
-      let res = jsNew HTMLAllCollectionObj(
+    var collection = document.asNode.getLiveCollection(cnAll) as
+      HTMLAllCollection
+    if collection == nil:
+      collection = jsNew HTMLAllCollectionObj(
         match: isElement,
         root: document.asNode,
         invalid: true
       )
-      if res == nil:
-        return JS_ThrowOutOfMemory(ctx)
-      res.asCollectionLike.attach()
-      document.cachedAll = res
-      let val = ctx.toJS(res)
+      let val = ctx.toJSNew(collection)
       if JS_IsException(val):
         return val
+      collection.asCollectionLike.attach()
       JS_SetIsHTMLDDA(ctx, val)
       return val
-    return ctx.toJS(document.cachedAll)
+    return ctx.toJS(collection)
 
   proc fullscreen(document: Document): bool {.
       jsfget, jsfget: "fullscreenEnabled".} =
@@ -4940,7 +4983,8 @@ jsClassDef(HTMLFormControlsCollection):
       root: this.root,
       invalid: true,
       atoms: @[name],
-      parent: this
+      parent: this,
+      mode: cmTree
     )
     if nodes == nil:
       return JS_ThrowOutOfMemory(ctx)
@@ -6060,7 +6104,7 @@ jsClassPublicDef(Element):
   proc finalize(rt: JSRuntime; element: Element) {.jsfin.} =
     unlinkElementBox(element)
 
-  proc getClassList(this: Element): DOMTokenList {.jsfget: "classList".} =
+  proc getClassList(this: Element): DOMTokenList {.jsnfget: "classList".} =
     this.getDOMTokenList(this.classList, satClass)
 
   proc firstElementChild*(this: Element): Element {.jsfget.} =
@@ -6096,14 +6140,13 @@ jsClassPublicDef(Element):
   proc hasAttributes(element: Element): bool {.jsfunc.} =
     return element.attrs.len > 0
 
-  proc attributes(ctx: JSContext; element: Element): JSValue {.jsfget.} =
+  proc attributes(element: Element): NamedNodeMap {.jsnfget.} =
     var map = element.getCachedAttributes()
     if map == nil:
       map = jsNew NamedNodeMapObj(element: element)
-      if map == nil:
-        return JS_ThrowOutOfMemory(ctx)
-      element.addAccessor(map.asElementAccessor, satAttributes)
-    ctx.toJS(map)
+      if map != nil:
+        element.addAccessor(map.asElementAccessor, satAttributes)
+    map
 
   proc hasAttribute(element: Element; qualifiedName: CAtom): bool
       {.jsfunc.} =
@@ -7284,7 +7327,7 @@ jsClassPublicDef(HTMLAnchorElement):
     return ""
 
   proc getRelList(this: HTMLAnchorElement): DOMTokenList {.
-      jsfget: "relList".} =
+      jsnfget: "relList".} =
     this.asElement.getDOMTokenList(this.relList, satRel)
 
   proc setRelList(ctx: JSContext; this: HTMLAnchorElement; ds: DOMString) {.
@@ -7594,8 +7637,7 @@ proc isFormControl(this: Collection; node: Node): bool =
   let element = node as FormAssociatedElement
   if element != nil:
     if element.asHTMLElement.tagType in ListedElements:
-      let this = this as HTMLFormControlsCollection
-      return element.form == this.form
+      return element.form.asNode == this.root
   return false
 
 jsClassPublicDef(HTMLFormElement):
@@ -7608,27 +7650,34 @@ jsClassPublicDef(HTMLFormElement):
       jsfset: "relList".} =
     this.asElement.setAttr(ctx, satRel, s)
 
-  proc elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
-    if form.cachedElements == nil:
-      let root = form.asNode.rootNode
-      let collection = jsNew HTMLFormControlsCollectionObj(
-        root: root,
+  proc elements(this: HTMLFormElement): HTMLFormControlsCollection
+      {.jsnfget.} =
+    var collection = this.asNode.getLiveCollection(cnElements) as
+      HTMLFormControlsCollection
+    if collection == nil:
+      collection = jsNew HTMLFormControlsCollectionObj(
+        root: this.asNode,
         match: isFormControl,
         invalid: true,
-        form: form
+        mode: cmTree
       )
       if collection != nil:
         collection.asCollectionLike.attach()
-        form.cachedElements = collection
-    form.cachedElements
+        collection.setMagic(uint32(cnElements))
+    collection
 
   proc getter(ctx: JSContext; this: HTMLFormElement; atom: JSAtom): JSValue
       {.jsgetownprop.} =
     let elements = this.elements()
+    if elements == nil:
+      return JS_ThrowOutOfMemory(ctx)
     return ctx.getter(elements, atom)
 
   proc length(this: HTMLFormElement): uint32 {.jsfget.} =
-    this.elements().asCollection.getLength()
+    let elements = this.elements()
+    if elements == nil:
+      return 0
+    return elements.asCollection.getLength()
 
 # <img>
 proc newImage(ctx: JSContext; _: JSValueConst; argc: cint;
@@ -8011,17 +8060,19 @@ jsClassPublicDef(HTMLSelectElement):
       return "select-multiple"
     return "select-one"
 
-  proc options(this: HTMLSelectElement): HTMLOptionsCollection {.jsfget.} =
-    if this.cachedOptions == nil:
-      let collection = jsNew HTMLOptionsCollectionObj(
+  proc options(this: HTMLSelectElement): HTMLOptionsCollection {.jsnfget.} =
+    var collection = this.asNode.getLiveCollection(cnOptions) as
+      HTMLOptionsCollection
+    if collection == nil:
+      collection = jsNew HTMLOptionsCollectionObj(
         match: isOptionOfRoot,
         root: this.asNode,
         invalid: true
       )
       if collection != nil:
         collection.asCollectionLike.attach()
-        this.cachedOptions = collection
-    this.cachedOptions
+        collection.setMagic(uint32(cnOptions))
+    collection
 
   proc length(ctx: JSContext; this: HTMLSelectElement): uint32 {.jsfget.} =
     this.options().asCollection.getLength()
@@ -8043,21 +8094,14 @@ jsClassPublicDef(HTMLSelectElement):
   proc namedItem(ctx: JSContext; this: HTMLSelectElement; atom: CAtom):
       Element {.jsfunc.} =
     let options = this.options()
-    options.asHTMLCollection.namedItem(atom)
+    if options != nil:
+      options.asHTMLCollection.namedItem(atom)
+    else:
+      Element(nil)
 
   proc selectedOptions(this: HTMLSelectElement): HTMLCollection {.jsnfget.} =
-    var collection = this.asNode.getLiveCollection(satSelectedOptions) as
-      HTMLCollection
-    if collection == nil:
-      collection = newHTMLCollection(
-        this.asNode,
-        match = proc(this: Collection; node: Node): bool =
-          this.isOptionOfRoot(node) and (node as HTMLOptionElement).selected,
-        childonly = false
-      )
-      if collection != nil:
-        collection.setMagic(uint32(satSelectedOptions))
-    move(collection)
+    this.asParentNode.getHTMLCollection(isSelectedOptionOf, cmSubtree,
+      cnSelectedOptions)
 
   proc selectedIndex*(this: HTMLSelectElement): int {.jsfget.} =
     var i = 0
@@ -8583,23 +8627,10 @@ jsClassDef(HTMLTableElement):
       option(this.asParentNode.firstChild))
 
   proc tBodies(this: HTMLTableElement): HTMLCollection {.jsnfget.} =
-    this.asParentNode.getChildrenOf(satTBodies, childonly = true, ttTbody)
+    this.asParentNode.getChildrenOf(cnTBodies, cmChildren, ttTbody)
 
   proc rows(this: HTMLTableElement): HTMLCollection {.jsnfget.} =
-    var collection = this.asNode.getLiveCollection(satRows) as HTMLCollection
-    if collection == nil:
-      collection = newHTMLCollection(
-        this.asNode,
-        match = proc(this: Collection; node: Node): bool {.nimcall.} =
-          if node.parentNode.asNode == this.root or
-              node.parentNode.parentNode.asNode == this.root:
-            return node of HTMLTableRowElement
-          false,
-        childonly = false
-      )
-      if collection != nil:
-        collection.setMagic(uint32(satChildren))
-    collection
+    this.asParentNode.getHTMLCollection(isRowOf, cmSubtree, cnRows)
 
   proc createTableChild(ctx: JSContext; this: HTMLTableElement;
       tagType: TagType): Element {.jsmfunc("createCaption", ttCaption),
@@ -8628,6 +8659,9 @@ jsClassDef(HTMLTableElement):
   proc insertRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
       Opt[HTMLElement] {.jsfunc.} =
     let rows = this.rows()
+    if rows == nil:
+      JS_ThrowOutOfMemory(ctx)
+      return err()
     let nrows = rows.asCollection.getLength()
     if index < -1 or index > int64(nrows):
       JS_ThrowDOMException(ctx, "IndexSizeError", "index out of bounds")
@@ -8655,7 +8689,7 @@ jsClassDef(HTMLTableSectionElement):
   jsextends HTMLElementDef
 
   proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsnfget.} =
-    this.asParentNode.getChildrenOf(satRows, childonly = true, ttTr)
+    this.asParentNode.getChildrenOf(cnRows, cmChildren, ttTr)
 
   proc insertRow(ctx: JSContext; this: HTMLTableSectionElement;
       index: int32 = -1): Opt[HTMLElement] {.jsfunc.} =
@@ -8682,7 +8716,7 @@ jsClassDef(HTMLTableRowElement):
   jsextends HTMLElementDef
 
   proc cells(this: HTMLTableRowElement): HTMLCollection {.jsnfget.} =
-    this.asParentNode.getChildrenOf(satCells, childonly = true, ttTd, ttTh)
+    this.asParentNode.getChildrenOf(cnCells, cmChildren, ttTd, ttTh)
 
   proc rowIndex(this: HTMLTableRowElement): int {.jsfget.} =
     let table = this.asNode.findAncestor(ttTable) as HTMLTableElement

@@ -6,6 +6,7 @@
 <input id=0 name=input>
 <textarea id=ta>test test</textarea>
 </form>
+<input id=outside form=test name=outside value="hi">
 <script src=asserts.js></script>
 <script>
 (function() { /* button */
@@ -20,11 +21,12 @@
 	assertEquals(document.getElementsByName("input").length, 2);
 })();
 (function() { /* form */
+	const form = document.forms[0];
 	const test = document.getElementById("test");
-	assertEquals(document.forms[0], test);
+	assertEquals(form, test);
 	assertEquals(document.forms["test"], test);
-	const elements = test.elements;
-	assertEquals(elements.length, test.length);
+	const elements = form.elements;
+	assertEquals(elements.length, form.length);
 	assertEquals(elements["a"], undefined);
 	assertInstanceof(elements[0], HTMLInputElement);
 	assertEquals(elements[0].id, "1");
@@ -38,11 +40,17 @@
 	assertEquals(elements[2].value, "test test");
 	elements[2].defaultValue = "";
 	assertEquals(elements[2].value, "");
+	assertEquals(elements[3].name, "outside")
+	const outside = elements[3];
+	form.remove();
+	assertEquals(elements[3], undefined)
 	let el = elements[0];
 	el.remove();
 	el.remove();
 	elements[0].remove();
 	elements[0].remove();
+	outside.remove();
+	x.after(form);
 })();
 (function() { /* select */
 	let test = document.forms[0];
