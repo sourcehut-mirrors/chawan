@@ -51,6 +51,14 @@ const shadow = el.attachShadow({mode: "open"})
 {
 	z.attachShadow({mode: "open"});
 }
+{
+	/* closed */
+	const el = document.createElement("div");
+	el.attachShadow({mode: "closed"});
+	assertEquals(el.shadowRoot, null);
+	assertThrows(() => el.attachShadow({mode: "closed"}), DOMException);
+	assertThrows(() => el.attachShadow({mode: "open"}), DOMException);
+}
 shadow.append("Success")
 x.before(shadow);
 document.getElementById("x").remove();

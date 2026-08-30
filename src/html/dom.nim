@@ -6094,6 +6094,9 @@ proc reflectTokens(element: Element; arr: var DOMTokenArray; name: StaticAtom;
       # references element
       list.toks = DOMTokenArrayView(arr)
 
+proc shadowRoot(this: Element): ShadowRoot =
+  this.internalFirst as ShadowRoot
+
 jsClassPublicDef(Element):
   jsextends ParentNodeDef
 
@@ -6450,8 +6453,11 @@ jsClassPublicDef(Element):
     JS_ThrowTypeError(ctx, "fullscreen is not supported")
     return ctx.newRejectedPromise()
 
-  proc shadowRoot(this: Element): ShadowRoot {.jsfget.} =
-    this.internalFirst as ShadowRoot
+  proc getOpenShadowRoot(this: Element): ShadowRoot {.jsfget: "shadowRoot".} =
+    let shadow = this.shadowRoot
+    if shadow == nil or shadow.mode == srmClosed:
+      return ShadowRoot(nil)
+    shadow
 
   proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
       Opt[ShadowRoot] {.jsfunc.} =
