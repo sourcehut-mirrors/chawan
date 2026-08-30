@@ -47,6 +47,7 @@ type
     parent*: JSClassID
     raw*: bool
     initialized*: bool
+    final*: bool
     # Parent unforgeables are merged on class creation.
     # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
     # `unforgeable[classid]'.)

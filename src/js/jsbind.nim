@@ -1655,6 +1655,7 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
   if rtOpaque.classes[int(id)].initialized:
     return fjOk
   rtOpaque.classes[int(id)].initialized = true
+  rtOpaque.classes[int(id)].final = true
   var cdef: JSClassDef
   cdef.class_name = def.class_name
   cdef.exotic = def.exotic
@@ -1670,6 +1671,8 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): FromJSResult =
     return fjErr
   rtOpaque.classes[int(id)].raw = raw
   rtOpaque.classes[int(id)].parent = def.parent
+  if def.parent != JS_INVALID_CLASS_ID:
+    rtOpaque.classes[int(def.parent)].final = false
   if not rtOpaque.addClass(def):
     return fjErr
   fjOk

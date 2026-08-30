@@ -188,12 +188,16 @@ template `.=`*[T](t: JSRef[T]; field, val: untyped): untyped =
 proc ofImpl(p: pointer; tclassid: JSClassID): bool =
   if p == nil:
     return false
-  var classid = JS_GetForeignClassID(p)
   let rtOpaque = globalRuntime.getOpaque()
-  while classid != JS_INVALID_CLASS_ID:
+  var classid = JS_GetForeignClassID(p)
+  if rtOpaque.classes[int(tclassid)].final:
+    return classid == tclassid
+  while true:
     if tclassid == classid:
       return true
     classid = rtOpaque.classes[int(classid)].parent
+    if classid == JS_INVALID_CLASS_ID:
+      break
   false
 
 template `of`*[T; U: T](r: JSRef[T]; u: typedesc[JSRef[U]]): bool =
