@@ -841,6 +841,7 @@ proc attrl*(element: Element; s: StaticAtom): Opt[int32]
 proc attrul*(element: Element; s: StaticAtom): Opt[uint32]
 proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(element: Element; ctx: JSContext; i: int)
+proc delAttr(element: Element; ctx: JSContext; name: CAtom)
 proc elIndex*(this: Element): uint32
 proc ensureStyle*(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtom): int
@@ -872,8 +873,6 @@ proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
 
 proc crossOrigin(element: HTMLElement): CORSAttribute
-proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
-  JSValue {.cdecl.}
 proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy]
 proc tagType*(element: HTMLElement): TagType
 
@@ -971,242 +970,6 @@ proc navigate(bc: RootRef; url: URL) {.importc: "cha_$1".}
 proc ensureLayout(bc: RootRef; element: Element) {.importc: "cha_$1".}
 proc clickCallback(bc: RootRef; element: HTMLElement) {.importc: "cha_$1".}
 proc unlinkElementBox(element: Element) {.importc: "cha_$1".}
-
-# Reflected attributes.
-type
-  ReflectType = enum
-    rtStr, rtStrNull, rtUrl, rtBool, rtLong, rtUlongGz, rtUlong, rtDoubleGz,
-    rtFunction, rtReferrerPolicy, rtCrossOrigin, rtMethod, rtForm
-
-  ReflectEntry = object
-    attrname: StaticAtom
-    funcname: StaticAtom
-    t: ReflectType
-    u: uint32 # 32 bits of opaque associated data (mostly default values)
-
-  ReflectEntryTag = object
-    tags: seq[TagType]
-    e: ReflectEntry
-
-proc makes(attrname, funcname: StaticAtom; ts: varargs[TagType]):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: attrname,
-      funcname: funcname,
-      t: rtStr,
-    )
-  )
-
-proc makesnull(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: name,
-      funcname: name,
-      t: rtStrNull,
-    )
-  )
-
-proc makes(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
-  makes(name, name, ts)
-
-proc makeurl(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: name,
-      funcname: name,
-      t: rtUrl,
-    )
-  )
-
-proc makeb(attrname, funcname: StaticAtom; ts: varargs[TagType]):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: attrname,
-      funcname: funcname,
-      t: rtBool,
-    )
-  )
-
-proc makeb(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
-  makeb(name, name, ts)
-
-proc makel(name: StaticAtom; ts: varargs[TagType]; default = 0u32):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: name,
-      funcname: name,
-      t: rtLong,
-      u: default
-    )
-  )
-
-proc makeul(name: StaticAtom; ts: varargs[TagType]; default = 0u32):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: name,
-      funcname: name,
-      t: rtUlong,
-      u: default
-    )
-  )
-
-proc makeulgz(name: StaticAtom; ts: varargs[TagType]; default = 0u32):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: name,
-      funcname: name,
-      t: rtUlongGz,
-      u: default
-    )
-  )
-
-proc makef(name, ctype: StaticAtom): ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @[],
-    e: ReflectEntry(
-      attrname: name,
-      funcname: name,
-      t: rtFunction,
-      u: uint32(ctype)
-    )
-  )
-
-proc makerp(attrName, funcName: StaticAtom; ts: varargs[TagType]):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: attrName,
-      funcname: funcName,
-      t: rtReferrerPolicy,
-    )
-  )
-
-proc makeco(attrName, funcName: StaticAtom; ts: varargs[TagType]):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: attrName,
-      funcname: funcName,
-      t: rtCrossOrigin,
-    )
-  )
-
-proc makem(attrname, funcname: StaticAtom; ts: varargs[TagType]):
-    ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(
-      attrname: attrname,
-      funcname: funcname,
-      t: rtMethod
-    )
-  )
-
-proc makedgz(name: StaticAtom; t: TagType; u: uint32): ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @[t],
-    e: ReflectEntry(
-      attrname: name,
-      funcname: name,
-      t: rtDoubleGz,
-      u: u,
-    )
-  )
-
-proc makem(name: StaticAtom; ts: varargs[TagType]): ReflectEntryTag =
-  makem(name, name, ts)
-
-proc makeform(ts: varargs[TagType]): ReflectEntryTag =
-  ReflectEntryTag(
-    tags: @ts,
-    e: ReflectEntry(attrname: satForm, funcname: satForm, t: rtForm)
-  )
-
-# Note: this table only works for tag types with a registered interface.
-const ReflectMap0 = [
-  # non-global attributes
-  makes(satTarget, ttA, ttArea, ttBase, ttLabel, ttLink),
-  makes(satHref, ttLink),
-  makesnull(satColor, ttFont),
-  makes(satFace, ttFont),
-  makes(satSize, ttFont),
-  makes(satValue, ttButton, ttData),
-  makel(satValue, ttLi),
-  makeb(satRequired, ttInput, ttSelect, ttTextarea),
-  makeb(satReversed, ttOl),
-  makes(satName, ttA, ttInput, ttSelect, ttTextarea, ttMeta,
-    ttIframe, ttFrame, ttImg, ttObject, ttParam, ttObject, ttMap,
-    ttForm, ttOutput, ttFieldset, ttDetails, ttSlot, ttOutput, ttFieldset),
-  makes(satOpen, ttDetails, ttDialog),
-  makeb(satNovalidate, satHNoValidate, ttForm),
-  makeb(satSelected, satDefaultSelected, ttOption),
-  makes(satRel, ttA, ttLink, ttLabel),
-  makes(satFor, satHtmlFor, ttLabel, ttOutput),
-  makes(satHttpEquiv, satHHttpEquiv, ttMeta),
-  makes(satContent, ttMeta),
-  makes(satMedia, ttMeta, ttSource),
-  makes(satDatetime, satHDateTime, ttTime, ttIns, ttDel),
-  makes(satType, ttSource, ttA, ttOl, ttLink, ttScript, ttObject),
-  makeul(satCols, ttTextarea, 20u32),
-  makeul(satRows, ttTextarea, 1u32),
-  makeulgz(satSize, ttSelect, 0u32),
-  makeulgz(satSize, ttInput, 20u32),
-  makeul(satWidth, ttCanvas, ttSource, 300u32),
-  makeul(satHeight, ttCanvas, ttSource, 150u32),
-  makes(satAlt, ttImg),
-  makes(satSrcset, ttImg, ttSource),
-  makes(satSizes, ttImg, ttSource),
-  makeco(satCrossorigin, satHCrossOrigin, ttImg, ttScript),
-  makerp(satReferrerpolicy, satHReferrerPolicy, ttImg, ttScript),
-  makem(satMethod, ttForm),
-  makem(satFormmethod, satHFormMethod, ttInput, ttButton),
-  makes(satUsemap, satHUseMap, ttImg),
-  makeb(satIsmap, satHIsMap, ttImg),
-  makeb(satDisabled, ttLink, ttOption, ttSelect, ttOptgroup, ttFieldset),
-  makeurl(satSrc, ttImg, ttScript, ttIframe, ttFrame, ttInput,
-    ttSource),
-  makeurl(satCite, ttBlockquote, ttQ, ttIns, ttDel),
-  makeurl(satHref, ttLink),
-  makeurl(satData, ttObject),
-  makedgz(satValue, ttProgress, 0),
-  makedgz(satMax, ttProgress, 1),
-  makeform(ttButton, ttInput, ttOutput, ttSelect, ttTextarea),
-  # super-global attributes
-  makes(satClass, satClassName),
-  makef(satOnclick, satClick),
-  makef(satOninput, satInput),
-  makef(satOnchange, satChange),
-  makef(satOnload, satLoad),
-  makef(satOnerror, satError),
-  makef(satOnblur, satBlur),
-  makef(satOnfocus, satFocus),
-  makef(satOnsubmit, satSubmit),
-  makef(satOncontextmenu, satContextmenu),
-  makef(satOndblclick, satDblclick),
-  makes(satSlot),
-  makes(satTitle),
-  makes(satLang),
-  makeb(satHidden)
-]
-
-static:
-  # In the reflection magic we allocate 9 bits to attribute names and 7 bits
-  # to class names.
-  doAssert ReflectMap0.len < 512
 
 const VoidElements = {
   ttArea, ttBase, ttBr, ttCol, ttEmbed, ttHr, ttImg, ttInput,
@@ -4020,33 +3783,12 @@ proc validateAndExtract(ctx: JSContext; namespace, localName: var CAtom;
   let sns = namespace.toStaticAtom()
   let isXmlns = prefix == satXmlns or
     prefix == CAtomNull and localName == satXmlns
-  if namespace == CAtomNull and prefix != satUempty or
+  if namespace == CAtomNull and prefix != CAtomNull or
       prefix == satXml and sns != satNamespaceXML or
       isXmlns != (sns == satNamespaceXMLNS):
     JS_ThrowDOMException(ctx, "NamespaceError", "unexpected namespace")
     return err()
   ok()
-
-const (ReflectMap, TagReflectMap, ReflectAllStartIndex) = (proc(): (
-    seq[ReflectEntry],
-    array[TagType, seq[int16]],
-    int16) =
-  var i: int16 = 0
-  while i < ReflectMap0.len:
-    let x = ReflectMap0[i]
-    result[0].add(x.e)
-    if x.tags.len == 0:
-      break
-    for tag in x.tags:
-      result[1][tag].add(i)
-    inc i
-  result[2] = i
-  while i < ReflectMap0.len:
-    let x = ReflectMap0[i]
-    assert x.tags.len == 0
-    result[0].add(x.e)
-    inc i
-)()
 
 proc parseFormMethod(s: string): FormMethod =
   return parseEnumNoCase[FormMethod](s).get(fmGet)
@@ -4067,124 +3809,6 @@ proc getEventTarget(element: Element; name: StaticAtom): EventTarget =
       return EventTarget(nil)
     return window.asEventTarget
   element.asEventTarget
-
-proc jsReflectGet0(ctx: JSContext; htmlElement: HTMLElement; magic: cint):
-    JSValue =
-  let element = htmlElement.asElement
-  let entry = ReflectMap[uint16(magic) and 0x1FF]
-  case entry.t
-  of rtStr: return ctx.toJS(element.attr(entry.attrname))
-  of rtStrNull: return ctx.toJS(element.attr(entry.attrname))
-  of rtUrl:
-    let s = element.attr(entry.attrname)
-    if url := element.asNode.document.parseURL(s):
-      return ctx.toJS($url)
-    return ctx.toJS(s)
-  of rtReferrerPolicy:
-    if s := htmlElement.referrerPolicy:
-      return ctx.toJS($s)
-    return ctx.toJS("")
-  of rtCrossOrigin:
-    case (let co = htmlElement.crossOrigin; co)
-    of caNoCors: return JS_NULL
-    else: return ctx.toJS($co)
-  of rtMethod:
-    let s = element.attr(entry.attrname)
-    if entry.attrname == satFormmethod and s == "":
-      return ctx.toJS("")
-    return ctx.toJS($parseFormMethod(s))
-  of rtForm: return ctx.toJS((element as FormAssociatedElement).form)
-  of rtBool: return ctx.toJS(element.attrb(entry.attrname))
-  of rtLong:
-    let i = cast[int32](entry.u)
-    return ctx.toJS(element.attrl(entry.attrname).get(i))
-  of rtUlong: return ctx.toJS(element.attrul(entry.attrname).get(entry.u))
-  of rtUlongGz: return ctx.toJS(element.attrulgz(entry.attrname).get(entry.u))
-  of rtDoubleGz:
-    # we do not have fractional default values, so we actually store them
-    # as uint32 and convert here.
-    let f = float32(entry.u)
-    return ctx.toJS(element.attrdgz(entry.attrname).get(f))
-  of rtFunction:
-    let name = StaticAtom(entry.u)
-    let this = element.getEventTarget(name)
-    if this == nil:
-      return JS_UNDEFINED
-    return ctx.eventReflectGetImpl(this, name)
-
-proc jsReflectSet0(ctx: JSContext; htmlElement: HTMLElement; val: JSValueConst;
-    magic: cint): JSValue {.cdecl.} =
-  let element = htmlElement.asElement
-  let entry = ReflectMap[uint16(magic) and 0x1FF]
-  case entry.t
-  of rtStr, rtUrl, rtReferrerPolicy, rtMethod, rtStrNull:
-    if entry.t == rtStrNull:
-      var x: DOMStringNull
-      ?ctx.fromJS(val, x)
-      element.setAttr(ctx, entry.attrname, x)
-    else:
-      var x: DOMString
-      ?ctx.fromJS(val, x)
-      element.setAttr(ctx, entry.attrname, x)
-  of rtCrossOrigin:
-    if JS_IsNull(val):
-      let i = element.findAttr(entry.attrname.view())
-      if i >= 0:
-        element.delAttr(ctx, i)
-    else:
-      var x: DOMString
-      ?ctx.fromJS(val, x)
-      element.setAttr(ctx, entry.attrname, x)
-  of rtBool:
-    var x: bool
-    ?ctx.fromJS(val, x)
-    if x:
-      element.setAttr(ctx, entry.attrname, "")
-    else:
-      let i = element.findAttr(entry.attrname.view())
-      if i >= 0:
-        element.delAttr(ctx, i)
-  of rtLong:
-    var x: int32
-    ?ctx.fromJS(val, x)
-    element.setAttr(ctx, entry.attrname, $x)
-  of rtUlong:
-    var x: uint32
-    ?ctx.fromJS(val, x)
-    element.setAttr(ctx, entry.attrname, $x)
-  of rtUlongGz:
-    var x: uint32
-    ?ctx.fromJS(val, x)
-    if x > 0:
-      element.setAttr(ctx, entry.attrname, $x)
-  of rtDoubleGz:
-    var x: float64
-    ?ctx.fromJS(val, x)
-    if classify(x) in {fcInf, fcNegInf, fcNan}:
-      return JS_ThrowTypeError(ctx, "double expected")
-    element.setAttr(ctx, entry.attrname, dtoa(x))
-  of rtFunction:
-    let name = StaticAtom(entry.u)
-    let this = element.getEventTarget(name)
-    if this == nil:
-      return JS_UNDEFINED
-    return ctx.eventReflectSetImpl(this, val, StaticAtom(entry.u))
-  of rtForm: discard
-  return JS_UNDEFINED
-
-proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
-    {.cdecl.} =
-  let element = ctx.getReflectElement(this, magic)
-  if element == nil:
-    return JS_EXCEPTION
-  ctx.jsReflectGet0(cast[HTMLElement](element), magic)
-
-proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
-    JSValue {.cdecl.} =
-  let element = ctx.getReflectElement(this, magic)
-  if element == nil:
-    return JS_EXCEPTION
-  ctx.jsReflectSet0(cast[HTMLElement](element), val, magic)
 
 proc reflectEvent(document: Document; target: EventTarget;
     name, ctype: StaticAtom; value: string) =
@@ -5905,21 +5529,22 @@ proc getBlockRect(element: Element): DOMRect =
       return res[0]
   return DOMRect(nil)
 
+const ScriptEventMap = {
+  satOnclick: satClick,
+  satOninput: satInput,
+  satOnchange: satChange,
+  satOnload: satLoad,
+  satOnerror: satError,
+  satOnblur: satBlur,
+  satOnfocus: satFocus,
+  satOnsubmit: satSubmit,
+  satOncontextmenu: satContextmenu,
+  satOndblclick: satDblclick,
+}
+
 proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
     bool =
   let document = element.asNode.document
-  const ScriptEventMap = {
-    satOnclick: satClick,
-    satOninput: satInput,
-    satOnchange: satChange,
-    satOnload: satLoad,
-    satOnerror: satError,
-    satOnblur: satBlur,
-    satOnfocus: satFocus,
-    satOnsubmit: satSubmit,
-    satOncontextmenu: satContextmenu,
-    satOndblclick: satDblclick,
-  }
   for (n, t) in ScriptEventMap:
     if n == name:
       let target = element.getEventTarget(t)
@@ -6275,6 +5900,11 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
       map.attrlist.del(j) # ordering does not matter
   element.attrs.delete(i) # ordering matters
   element.reflectAttrDel(name)
+
+proc delAttr(element: Element; ctx: JSContext; name: CAtom) =
+  let i = element.findAttr(name)
+  if i >= 0:
+    element.delAttr(ctx, i)
 
 proc setAttr(element: Element; ctx: JSContext; name: CAtom;
     value: sink string) =
@@ -6727,9 +6357,7 @@ jsClassPublicDef(Element):
 
   proc removeAttribute(ctx: JSContext; element: Element;
       qualifiedName: CAtom) {.jsfunc.} =
-    let i = element.findAttr(qualifiedName)
-    if i >= 0:
-      element.delAttr(ctx, i)
+    element.delAttr(ctx, qualifiedName)
 
   proc removeAttributeNS(ctx: JSContext; element: Element;
       namespace, localName: CAtom) {.jsfunc.} =
@@ -6745,15 +6373,14 @@ jsClassPublicDef(Element):
       return err()
     ?ctx.validateAttrName(qualifiedName.toOpenArray())
     let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtom())
-    if not element.attrb(qualifiedName):
+    let i = element.findAttr(qualifiedName)
+    if i < 0:
       if JS_IsUndefined(force) or forceBool == 1:
         element.setAttr(ctx, qualifiedName, "")
         return ok(true)
       return ok(false)
     if JS_IsUndefined(force) or forceBool == 0:
-      let i = element.findAttr(qualifiedName)
-      if i >= 0:
-        element.delAttr(ctx, i)
+      element.delAttr(ctx, i)
       return ok(false)
     return ok(true)
 
@@ -6858,6 +6485,16 @@ jsClassPublicDef(Element):
   proc setStyle(ctx: JSContext; element: Element; s: CSSOMString) {.
       jsfset: "style".} =
     element.setAttr(ctx, satStyle, s)
+
+  #TODO slot should be unscopable
+  proc getAttrMagic(element: Element; magic: StaticAtom): lent string {.
+      jsmfget("className", satClass), jsmfget("slot", satSlot).} =
+    element.attr(magic)
+
+  proc setAttrMagic(ctx: JSContext; element: Element; magic: StaticAtom;
+      name: DOMString) {.jsmfset("className", satClass),
+      jsmfset("slot", satSlot).} =
+    element.setAttr(ctx, magic, name)
 
 # AttrDummyElement
 jsClassDef(AttrDummyElement): # fake class
@@ -7225,20 +6862,296 @@ proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
 proc tagType*(element: HTMLElement): TagType =
   return element.asElement.tagTypeNoNS
 
+type
+  ReflectType = enum
+    rtStr, rtStrNull, rtUrl, rtBool, rtLong, rtUlongGz, rtUlong, rtDoubleGz,
+    rtReferrerPolicy, rtCrossOrigin, rtMethod, rtForm, rtDir
+
+  ReflectEntry = object
+    attrname: StaticAtom
+    t: ReflectType
+    u: uint32 # 32 bits of opaque associated data (mostly default values)
+
+template makes(name: StaticAtom): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtStr)
+
+template makesnull(name: StaticAtom): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtStrNull)
+
+template makeurl(name: StaticAtom): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtUrl)
+
+template makeb(name: StaticAtom): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtBool)
+
+template makel(name: StaticAtom; default = 0'u32): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtLong, u: default)
+
+template makeul(name: StaticAtom; default = 0'u32): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtUlong, u: default)
+
+template makeulgz(name: StaticAtom; default = 0'u32): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtUlongGz, u: default)
+
+template makerp(name: StaticAtom): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtReferrerPolicy)
+
+template makeco(name: StaticAtom): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtCrossOrigin)
+
+template makem(name: StaticAtom): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtMethod)
+
+template makedgz(name: StaticAtom; default: uint32): ReflectEntry =
+  ReflectEntry(attrname: name, t: rtDoubleGz, u: default)
+
+template makeform(): ReflectEntry =
+  ReflectEntry(attrname: satForm, t: rtForm)
+
+template makedir(): ReflectEntry =
+  ReflectEntry(attrname: satDir, t: rtDir)
+
+# Note: this table only works for tag types with a registered interface.
+type ReflectedAttr = enum
+  raTarget = "target"
+  raColor = "color"
+  raFace = "face"
+  raSizeStr = "size"
+  raValueStr = "value"
+  raValueLong = "value"
+  raRequired = "required"
+  raReversed = "reversed"
+  raName = "name"
+  raOpen = "open"
+  raNovalidate = "novalidate"
+  raSelected = "selected"
+  raRel = "rel"
+  raFor = "for"
+  raHttpequiv = "http-equiv"
+  raContent = "content"
+  raMedia = "media"
+  raDatetime = "datetime"
+  raType = "type"
+  raCols = "cols"
+  raRows = "rows"
+  raSizeSelect = "size"
+  raSizeInput = "size"
+  raWidth = "width"
+  raHeight = "height"
+  raAlt = "alt"
+  raSrcset = "srcset"
+  raSizes = "sizes"
+  raCrossorigin = "crossorigin"
+  raReferrerpolicy = "referrerpolicy"
+  raMethod = "method"
+  raFormmethod = "formmethod"
+  raUsemap = "usemap"
+  raIsmap = "ismap"
+  raDisabled = "disabled"
+  raSrc = "src"
+  raCite = "cite"
+  raHref = "href"
+  raData = "data"
+  raValueDoubleGz = "value"
+  raValuetype = "valuetype"
+  raMax = "max"
+  raForm = "form"
+  # super-global attributes
+  raTitle = "title"
+  raLang = "lang"
+  raDir = "dir"
+  raHidden = "hidden"
+
+const ReflectMap = [
+  # non-global attributes
+  raTarget: makes(satTarget),
+  raColor: makesnull(satColor),
+  raFace: makes(satFace),
+  raSizeStr: makes(satSize),
+  raValueStr: makes(satValue),
+  raValueLong: makel(satValue),
+  raRequired: makeb(satRequired),
+  raReversed: makeb(satReversed),
+  raName: makes(satName),
+  raOpen: makes(satOpen),
+  raNovalidate: makeb(satNovalidate),
+  raSelected: makeb(satSelected),
+  raRel: makes(satRel),
+  raFor: makes(satFor),
+  raHttpequiv: makes(satHttpEquiv),
+  raContent: makes(satContent),
+  raMedia: makes(satMedia),
+  raDatetime: makes(satDatetime),
+  raType: makes(satType),
+  raCols: makeul(satCols, 20u32),
+  raRows: makeul(satRows, 1u32),
+  raSizeSelect: makeulgz(satSize, 0u32),
+  raSizeInput: makeulgz(satSize, 20u32),
+  raWidth: makeul(satWidth, 300u32),
+  raHeight: makeul(satHeight, 150u32),
+  raAlt: makes(satAlt),
+  raSrcset: makes(satSrcset),
+  raSizes: makes(satSizes),
+  raCrossorigin: makeco(satCrossorigin),
+  raReferrerpolicy: makerp(satReferrerpolicy),
+  raMethod: makem(satMethod),
+  raFormmethod: makem(satFormmethod),
+  raUsemap: makes(satUsemap),
+  raIsmap: makeb(satIsmap),
+  raDisabled: makeb(satDisabled),
+  raSrc: makeurl(satSrc),
+  raCite: makeurl(satCite),
+  raHref: makeurl(satHref),
+  raData: makeurl(satData),
+  raValueDoubleGz: makedgz(satValue, 0),
+  raValuetype: makedgz(satValue, 0),
+  raMax: makedgz(satMax, 1),
+  raForm: makeform(),
+  # super-global attributes
+  raTitle: makes(satTitle),
+  raLang: makes(satLang),
+  raDir: makedir(),
+  raHidden: makeb(satHidden)
+]
+
+const SuperGlobalAttrs = [raTitle, raLang, raDir, raHidden]
+
+static:
+  # In the reflection magic we allocate 9 bits to attribute names and 7 bits
+  # to class names.
+  doAssert ReflectMap.len < 512
+
+proc jsReflectGet0(ctx: JSContext; htmlElement: HTMLElement; magic: cint):
+    JSValue =
+  let element = htmlElement.asElement
+  let entry = ReflectMap[ReflectedAttr(uint16(magic) and 0x1FF)]
+  let name = entry.attrname
+  case entry.t
+  of rtStr, rtStrNull: return ctx.toJS(element.attr(name))
+  of rtUrl:
+    let s = element.attr(name)
+    if url := element.asNode.document.parseURL(s):
+      return ctx.toJS($url)
+    return ctx.toJS(s)
+  of rtReferrerPolicy:
+    if s := htmlElement.referrerPolicy:
+      return ctx.toJS($s)
+    return ctx.toJS("")
+  of rtCrossOrigin:
+    case (let co = htmlElement.crossOrigin; co)
+    of caNoCors: return JS_NULL
+    else: return ctx.toJS($co)
+  of rtMethod:
+    let s = element.attr(name)
+    if name == satFormmethod and s == "":
+      return ctx.toJS("")
+    return ctx.toJS($parseFormMethod(s))
+  of rtDir:
+    let value = element.attr(name)
+    if value in ["ltr", "rtl", "auto"]:
+      return ctx.toJS(value)
+    return ctx.toJS("")
+  of rtForm: return ctx.toJS((element as FormAssociatedElement).form)
+  of rtBool: return ctx.toJS(element.attrb(name))
+  of rtLong:
+    let i = cast[int32](entry.u)
+    return ctx.toJS(element.attrl(name).get(i))
+  of rtUlong: return ctx.toJS(element.attrul(name).get(entry.u))
+  of rtUlongGz: return ctx.toJS(element.attrulgz(name).get(entry.u))
+  of rtDoubleGz:
+    # we do not have fractional default values, so we actually store them
+    # as uint32 and convert here.
+    let f = float32(entry.u)
+    return ctx.toJS(element.attrdgz(name).get(f))
+
+proc jsReflectSet0(ctx: JSContext; htmlElement: HTMLElement; val: JSValueConst;
+    magic: cint): JSValue {.cdecl.} =
+  let element = htmlElement.asElement
+  let entry = ReflectMap[ReflectedAttr(uint16(magic) and 0x1FF)]
+  let name = entry.attrname
+  case entry.t
+  of rtStr, rtUrl, rtReferrerPolicy, rtMethod, rtDir:
+    var x: DOMString
+    ?ctx.fromJS(val, x)
+    element.setAttr(ctx, name, x)
+  of rtStrNull:
+    var x: DOMStringNull
+    ?ctx.fromJS(val, x)
+    element.setAttr(ctx, name, x)
+  of rtCrossOrigin:
+    if JS_IsNull(val):
+      element.delAttr(ctx, name.view())
+    else:
+      var x: DOMString
+      ?ctx.fromJS(val, x)
+      element.setAttr(ctx, name, x)
+  of rtBool:
+    var x: bool
+    ?ctx.fromJS(val, x)
+    if x:
+      element.setAttr(ctx, name, "")
+    else:
+      element.delAttr(ctx, name.view())
+  of rtLong:
+    var x: int32
+    ?ctx.fromJS(val, x)
+    element.setAttr(ctx, name, $x)
+  of rtUlong:
+    var x: uint32
+    ?ctx.fromJS(val, x)
+    element.setAttr(ctx, name, $x)
+  of rtUlongGz:
+    var x: uint32
+    ?ctx.fromJS(val, x)
+    if x > 0:
+      element.setAttr(ctx, name, $x)
+  of rtDoubleGz:
+    var x: float64
+    ?ctx.fromJS(val, x)
+    if classify(x) in {fcInf, fcNegInf, fcNan}:
+      return JS_ThrowTypeError(ctx, "double expected")
+    element.setAttr(ctx, name, dtoa(x))
+  of rtForm: discard
+  return JS_UNDEFINED
+
+proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
+    {.cdecl.} =
+  let element = ctx.getReflectElement(this, magic)
+  if element == nil:
+    return JS_EXCEPTION
+  ctx.jsReflectGet0(cast[HTMLElement](element), magic)
+
+proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
+    JSValue {.cdecl.} =
+  let element = ctx.getReflectElement(this, magic)
+  if element == nil:
+    return JS_EXCEPTION
+  ctx.jsReflectSet0(cast[HTMLElement](element), val, magic)
+
+proc jsReflectEventGet(ctx: JSContext; this: JSValueConst; magic: cint):
+    JSValue {.cdecl.} =
+  var element: ptr HTMLElementObj
+  ?ctx.fromJS(this, element)
+  let name = StaticAtom(magic)
+  let this = Element(element).getEventTarget(name)
+  if this == nil:
+    return JS_UNDEFINED
+  return ctx.eventReflectGetImpl(this, name)
+
+proc jsReflectEventSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
+    JSValue {.cdecl.} =
+  var element: ptr HTMLElementObj
+  ?ctx.fromJS(this, element)
+  let name = StaticAtom(magic)
+  let target = Element(element).getEventTarget(name)
+  if target == nil:
+    return JS_UNDEFINED
+  return ctx.eventReflectSetImpl(target, val, name)
+
 jsClassPublicDef(HTMLElement):
   jsextends ElementDef
 
   event.htmlElementClassID = classDef.id
-
-  proc dir(ctx: JSContext; element: HTMLElement): JSValue {.jsfget.} =
-    let value = element.asElement.attr(satDir)
-    if value in ["ltr", "rtl", "auto"]:
-      return ctx.toJS(value)
-    return ctx.toJS("")
-
-  proc setDir(ctx: JSContext; element: HTMLElement; value: DOMString) {.
-      jsfset: "dir".} =
-    element.asElement.setAttr(ctx, satDir, value)
 
   proc dataset(element: HTMLElement): DOMStringMap {.jsnfget.} =
     var dataset = element.asElement.getAccessor(satDataset) as DOMStringMap
@@ -8850,6 +8763,7 @@ htmlClassRaw(HTMLBRElement)
 htmlClassRaw(HTMLHtmlElement)
 htmlClassRaw(HTMLModElement)
 htmlClassRaw(HTMLParagraphElement)
+htmlClassRaw(HTMLParamElement)
 htmlClassRaw(HTMLDivElement)
 htmlClassRaw(HTMLDListElement)
 htmlClassRaw(HTMLFontElement)
@@ -8967,6 +8881,7 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
   of ttIns, ttDel: HTMLModElementDef.id
   of ttHtml: HTMLHtmlElementDef.id
   of ttP: HTMLParagraphElementDef.id
+  of ttParam: HTMLParamElementDef.id
   of ttProgress: HTMLProgressElementDef.id
   of ttDiv: HTMLDivElementDef.id
   of ttDl: HTMLDListElementDef.id
@@ -9020,28 +8935,47 @@ proc newElement(document: Document; localName, namespaceURI, tagName: CAtom):
     cesUncustomized
   element
 
-proc addElementReflection(ctx: JSContext; class: JSClassID): Opt[void] =
+proc addHTMLElementReflection(ctx: JSContext): Opt[void] =
   if ctx.getOpaque() == nil:
     return ok()
-  let proto = JS_GetClassProto(ctx, class)
-  for i in ReflectAllStartIndex ..< int16(ReflectMap.len):
-    let name = $ReflectMap[i].funcname
-    if ctx.addReflectFunction(proto, cstring(name), jsReflectGet, jsReflectSet,
-        cint(i)).isErr:
+  let proto = JS_GetClassProto(ctx, HTMLElementDef.id)
+  for i in SuperGlobalAttrs:
+    if ctx.addReflectFunction(proto, cstring($ReflectMap[i].attrname),
+        jsReflectGet, jsReflectSet, cint(i)).isErr:
+      JS_FreeValue(ctx, proto)
+      return err()
+  for (name, eventType) in ScriptEventMap:
+    if ctx.definePropertyGetSetCE(proto, cstring($name), jsReflectEventGet,
+        jsReflectEventSet, cint(eventType)) == dprException:
       JS_FreeValue(ctx, proto)
       return err()
   JS_FreeValue(ctx, proto)
   ok()
 
 proc addAttributeReflection(ctx: JSContext; class: JSClassID;
-    attrs: openArray[int16]): Opt[void] =
+    attrs: openArray[ReflectedAttr]): Opt[void] =
   if ctx.getOpaque() == nil:
     return ok()
   let proto = JS_GetClassProto(ctx, class)
   let diff = (uint16(class) - uint16(HTMLElementDef.id)) shl 9
   for i in attrs:
-    if ctx.addReflectFunction(proto, cstring($ReflectMap[i].funcname),
-        jsReflectGet, jsReflectSet, cint(diff or uint16(i))).isErr:
+    let name = ReflectMap[i].attrname
+    let nameStr = $name
+    let nameCStr = case name
+    of satFor: cstring"htmlFor"
+    of satValuetype: cstring"valueType"
+    of satNovalidate: cstring"noValidate"
+    of satSelected: cstring"defaultSelected"
+    of satHttpEquiv: cstring"httpEquiv"
+    of satDatetime: cstring"dateTime"
+    of satCrossorigin: cstring"crossOrigin"
+    of satReferrerpolicy: cstring"referrerPolicy"
+    of satFormmethod: cstring"formMethod"
+    of satIsmap: cstring"isMap"
+    of satUsemap: cstring"useMap"
+    else: cstring(nameStr)
+    if ctx.addReflectFunction(proto, nameCStr, jsReflectGet, jsReflectSet,
+        cint(diff or uint16(i))).isErr:
       JS_FreeValue(ctx, proto)
       return err()
   JS_FreeValue(ctx, proto)
@@ -9079,83 +9013,85 @@ proc registerElements(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(ElementDef)
   ?ctx.registerFakeClass(AttrDummyElementDef)
   ?ctx.registerClass(HTMLElementDef)
-  ?ctx.addElementReflection(HTMLElementDef.id)
+  ?ctx.addHTMLElementReflection()
   ?ctx.registerFakeClass(SheetElementDef)
   ?ctx.registerFakeClass(FormAssociatedElementDef)
-  template register(def: ChaClassDef; tag: TagType) =
+  template register(def: ChaClassDef; attrs: varargs[ReflectedAttr]) =
     ?ctx.registerClass(def)
-    const attrs = TagReflectMap[tag]
     when attrs.len > 0:
       ?ctx.addAttributeReflection(def.id, attrs)
-  template register(def: ChaClassDef; tags: openArray[TagType]) =
-    # does not really make a difference; only for documentation purposes
-    register(def, tags[0])
-  register(HTMLInputElementDef, ttInput)
-  register(HTMLAnchorElementDef, ttA)
-  register(HTMLSelectElementDef, ttSelect)
-  register(HTMLSpanElementDef, ttSpan)
-  register(HTMLOptGroupElementDef, ttOptgroup)
-  register(HTMLOptionElementDef, ttOption)
-  register(HTMLHeadingElementDef, [ttH1, ttH2, ttH3, ttH4, ttH5, ttH6])
-  register(HTMLBRElementDef, ttBr)
-  register(HTMLMenuElementDef, ttMenu)
-  register(HTMLUListElementDef, ttUl)
-  register(HTMLOListElementDef, ttOl)
-  register(HTMLLIElementDef, ttLi)
-  register(HTMLStyleElementDef, ttStyle)
-  register(HTMLLinkElementDef, ttLink)
-  register(HTMLFormElementDef, ttForm)
-  register(HTMLTemplateElementDef, ttTemplate)
-  register(HTMLUnknownElementDef, ttUnknown)
-  register(HTMLScriptElementDef, ttScript)
-  register(HTMLBaseElementDef, ttBase)
-  register(HTMLAreaElementDef, ttArea)
-  register(HTMLButtonElementDef, ttButton)
-  register(HTMLTextAreaElementDef, ttTextarea)
-  register(HTMLLabelElementDef, ttLabel)
-  register(HTMLCanvasElementDef, ttCanvas)
-  register(HTMLImageElementDef, ttImg)
-  register(HTMLVideoElementDef, ttVideo)
-  register(HTMLAudioElementDef, ttAudio)
-  register(HTMLIFrameElementDef, ttIframe)
-  register(HTMLTableElementDef, ttTable)
-  register(HTMLTableCaptionElementDef, ttCaption)
-  register(HTMLTableRowElementDef, ttTr)
-  register(HTMLTableSectionElementDef, [ttTbody, ttThead, ttTfoot])
-  register(HTMLMetaElementDef, ttMeta)
-  register(HTMLDetailsElementDef, ttDetails)
-  register(HTMLFrameElementDef, ttFrame)
-  register(HTMLTimeElementDef, ttTime)
-  register(HTMLQuoteElementDef, [ttBlockquote, ttQ])
-  register(HTMLDataElementDef, ttData)
-  register(HTMLHeadElementDef, ttHead)
-  register(HTMLTitleElementDef, ttTitle)
-  register(HTMLObjectElementDef, ttObject)
-  register(HTMLSourceElementDef, ttSource)
-  register(HTMLModElementDef, [ttIns, ttDel])
-  register(HTMLProgressElementDef, ttProgress)
-  register(HTMLSlotElementDef, ttSlot)
-  register(HTMLOutputElementDef, ttOutput)
-  register(HTMLHtmlElementDef, ttHtml)
-  register(HTMLParagraphElementDef, ttP)
-  register(HTMLDivElementDef, ttDiv)
-  register(HTMLDListElementDef, ttDl)
-  register(HTMLFontElementDef, ttFont)
-  register(HTMLBodyElementDef, ttBody)
-  register(HTMLHRElementDef, ttHr)
-  register(HTMLPreElementDef, ttPre)
-  register(HTMLPictureElementDef, ttPicture)
-  register(HTMLEmbedElementDef, ttEmbed)
-  register(HTMLTrackElementDef, ttTrack)
-  register(HTMLMapElementDef, ttMap)
-  register(HTMLTableColElementDef, [ttCol, ttColgroup])
-  register(HTMLTableCellElementDef, [ttTd, ttTh])
-  register(HTMLDataListElementDef, ttDatalist)
-  register(HTMLMeterElementDef, ttMeter)
-  register(HTMLFieldSetElementDef, ttFieldset)
-  register(HTMLLegendElementDef, ttLegend)
-  register(HTMLSelectedContentElementDef, ttSelectedcontent)
-  register(HTMLDialogElementDef, ttDialog)
+  register(HTMLInputElementDef, raRequired, raName, raSizeInput, raFormmethod,
+    raSrc, raForm)
+  register(HTMLAnchorElementDef, raTarget, raName, raRel, raType)
+  register(HTMLSelectElementDef, raRequired, raName, raSizeSelect, raDisabled,
+    raForm)
+  register(HTMLSpanElementDef)
+  register(HTMLOptGroupElementDef, raDisabled)
+  register(HTMLOptionElementDef, raSelected, raDisabled)
+  register(HTMLHeadingElementDef)
+  register(HTMLBRElementDef)
+  register(HTMLMenuElementDef)
+  register(HTMLUListElementDef)
+  register(HTMLOListElementDef, raReversed, raType)
+  register(HTMLLIElementDef, raValueLong)
+  register(HTMLStyleElementDef)
+  register(HTMLLinkElementDef, raTarget, raRel, raType, raDisabled, raHref)
+  register(HTMLFormElementDef, raName, raNovalidate, raMethod)
+  register(HTMLTemplateElementDef)
+  register(HTMLUnknownElementDef)
+  register(HTMLScriptElementDef, raType, raCrossorigin, raReferrerpolicy,
+    raSrc)
+  register(HTMLBaseElementDef, raTarget)
+  register(HTMLAreaElementDef, raTarget)
+  register(HTMLButtonElementDef, raValueStr, raFormmethod)
+  register(HTMLTextAreaElementDef, raRequired, raName, raCols, raRows, raForm)
+  register(HTMLLabelElementDef, raTarget, raRel, raFor)
+  register(HTMLCanvasElementDef, raWidth, raHeight)
+  register(HTMLImageElementDef, raName, raAlt, raSrcset, raSizes,
+    raCrossorigin, raReferrerpolicy, raUsemap, raIsmap, raSrc)
+  register(HTMLVideoElementDef)
+  register(HTMLAudioElementDef)
+  register(HTMLIFrameElementDef, raName, raSrc)
+  register(HTMLTableElementDef)
+  register(HTMLTableCaptionElementDef)
+  register(HTMLTableRowElementDef)
+  register(HTMLTableSectionElementDef)
+  register(HTMLMetaElementDef, raName, raHttpequiv, raContent, raMedia)
+  register(HTMLDetailsElementDef, raName, raOpen)
+  register(HTMLFrameElementDef, raName, raSrc)
+  register(HTMLTimeElementDef, raDatetime)
+  register(HTMLQuoteElementDef, raCite)
+  register(HTMLDataElementDef, raValueStr)
+  register(HTMLHeadElementDef)
+  register(HTMLTitleElementDef)
+  register(HTMLObjectElementDef, raName, raType, raData)
+  register(HTMLSourceElementDef, raMedia, raType, raWidth, raHeight, raSrc,
+    raSrcset, raSizes)
+  register(HTMLModElementDef, raDatetime, raCite)
+  register(HTMLProgressElementDef, raValueDoubleGz, raMax)
+  register(HTMLSlotElementDef, raName)
+  register(HTMLOutputElementDef, raName, raFor, raForm)
+  register(HTMLHtmlElementDef)
+  register(HTMLParagraphElementDef)
+  register(HTMLParamElementDef, raName, raValueStr, raType, raValuetype)
+  register(HTMLDivElementDef)
+  register(HTMLDListElementDef)
+  register(HTMLFontElementDef, raColor, raFace, raSizeStr)
+  register(HTMLBodyElementDef)
+  register(HTMLHRElementDef)
+  register(HTMLPreElementDef)
+  register(HTMLPictureElementDef)
+  register(HTMLEmbedElementDef)
+  register(HTMLTrackElementDef)
+  register(HTMLMapElementDef, raName)
+  register(HTMLTableColElementDef)
+  register(HTMLTableCellElementDef)
+  register(HTMLDataListElementDef)
+  register(HTMLMeterElementDef)
+  register(HTMLFieldSetElementDef, raName, raDisabled)
+  register(HTMLLegendElementDef)
+  register(HTMLSelectedContentElementDef)
+  register(HTMLDialogElementDef, raOpen)
   # 65/127 (warning: the 128th interface won't fit in the top 7 bits of
   # the getter/setter magic)
   ?ctx.registerClass(SVGElementDef)
