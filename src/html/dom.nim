@@ -5828,10 +5828,10 @@ proc hasInsertionSteps(element: Element): bool =
     element.tagType(satNamespaceSVG) == ttSvg or
     element of FormAssociatedElement
 
-proc hasClass*(element: Element; class: CAtom): bool =
+proc hasClassIgnoreCase*(element: Element; class: CAtom): bool =
   element.classList.containsIgnoreCase(class)
 
-proc hasClassIgnoreCase*(element: Element; class: CAtom): bool =
+proc hasClass*(element: Element; class: CAtom): bool =
   element.classList.contains(class)
 
 # Returns true if has post-connection steps.
