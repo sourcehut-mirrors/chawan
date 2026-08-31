@@ -92,6 +92,13 @@ Public functions of this are:
 `line`
 : The line editor. Implements `LineEdit`, as described below.
 
+`buffer`
+: The currently focused buffer.  Implements `Buffer`, as described below.
+
+`select`
+: The currently focused select menu.  Implements `Select`, as described
+  below.
+
 `config`
 : The config object.
 
@@ -108,10 +115,10 @@ Public functions of this are:
 
   The configuration directory itself can be queried as `config.dir`.
 
-`Client` also implements various web standards normally available on the
-`Window` object on websites, e.g. fetch().  Note however that it does *not*
-give access to JS objects in buffers, so e.g. `globalThis.document` is not
-available.
+`Client` is derived from `Window`, so it indirectly implements various
+web standards normally available on the `Window` object on websites,
+e.g. fetch().  However, it does *not* give access to JS objects in buffers,
+so for example, `globalThis.document` always returns a blank document.
 
 ### Pager
 
@@ -119,15 +126,15 @@ available.
 pager (i.e. browser chrome).  It is accessible as `globalThis.pager`, or
 simply `pager`.
 
-Note that there is a quirk of questionable value, where accessing
-properties that do not exist on the pager will dispatch those to the
-current buffer (`pager.buffer`).  So if you see e.g. `pager.url`, that is
-actually equivalent to `pager.buffer.url`, because `Pager` has no `url`
-getter.
+Note that there is a quirk of questionable value where some (but not all)
+functions defined on `Buffer` are also defined on `Pager`.  For example,
+`pager.url` dispatches to `buffer.url`.  This quirk is deprecated and may
+be removed in the future; users are encouraged to use the `buffer` variable
+directly.
 
 Following properties (functions/getters) are defined by `Pager`:
 
-`load(url = pager.buffer.url)`
+`load(url = buffer.url)`
 : Opens a prompt to load a resource, with `url` pre-filled.
 
 `loadSubmit(url)`
@@ -162,7 +169,7 @@ Following properties (functions/getters) are defined by `Pager`:
 `dupeBuffer()`
 : Duplicate the current buffer by loading its source in a new buffer.
 
-`discardBuffer(buffer = pager.buffer, dir = pager.navDirection)`
+`discardBuffer(buffer = globalThis.buffer, dir = pager.navDirection)`
 : Discard `buffer`, then move back to the buffer opposite to `dir`
   (interpreted as in `Buffer#find`).
 
@@ -290,15 +297,15 @@ Following properties (functions/getters) are defined by `Pager`:
   If the editor signals an error (crash or non-zero exit code), `null` is
   returned.  Otherwise, the user's input is returned as a string.
 
-`openMenu(x = pager.acursorx, y = pager.acursory)`
+`openMenu(x = buffer.acursorx, y = buffer.acursory)`
 : Opens the context menu at the specified x/y positions.
 
 `closeMenu()`
 : Closes the menu if it is opened.
 
 `buffer`
-: Getter for the currently displayed buffer.  Returns a `Buffer` object;
-  see below.
+: Same as `globalThis.buffer` (which you can access without typing
+  `globalThis`, i.e., just `buffer`).  Use that instead.
 
 `menu`
 : Getter for the currently displayed menu.  Returns a `Select` object.
@@ -319,11 +326,10 @@ Also, the following static function is defined on `Pager` itself:
 
 ### Buffer
 
-Each buffer is exposed as an object that implements the `Buffer`
-interface.  To get a reference to the currently displayed buffer, use
-`pager.buffer`.
+Each buffer is exposed as an object that implements the `Buffer` interface.
+To get a reference to the currently displayed buffer, use `buffer`.
 
-Note the quirk mentioned above where `Pager` dispatches unknown
+Note the deprecated quirk mentioned above where `Pager` dispatches some
 properties onto the current buffer.
 
 Following properties (functions/getters) are defined by `Buffer`:
@@ -571,6 +577,57 @@ Following properties (functions/getters) are defined by `Buffer`:
   This object implements the `Select` interface, which is somewhat
   compatible with the `Buffer` interface with some exceptions.  (TODO:
   elaborate)
+
+### Select
+
+The currently focused select menu widget can be retrieved using
+`globalThis.select` (or, normally, just `select`).
+
+A select widget "line" is defined to include both options *and* separator
+lines.
+
+Following properties (functions/getters) are defined by `Select`:
+
+`click()`
+: Submit the widget with the selected option.
+
+`cancel()`
+: Close the widget without submitting anything.
+
+`cursorFirstLine()`, `cursorLastLine()`
+: Move to the first/last selectable option.
+
+`cursorTop()`, `cursorMiddle()`, `cursorBottom()`
+: Move to the top/middle/bottom visible option on the screen.
+
+`cursorUp(n = 1)`, `cursorDown(n = 1)`
+: Move the cursor up/down by `n` options.  Separator lines are skipped.
+
+`scrollUp(n = 1)`, `scrollDown(n = 1)`
+: Scroll the  menu up/down by `n` lines.
+
+`unselect()`
+: Set the menu to an "unselected" state in which it cannot be submitted
+  until an option is selected again.
+
+`setCursorY(y)`
+: Set the cursor to the `y`'th line.  If the line is a separator line,
+  then the menu switches to an "unselected" state.
+
+`width`, `height`
+: Width/height of the select menu.
+
+`x`, `y`
+: x/y position of the menu on the screen.
+
+`numLines`
+: Count of lines in the menu.
+
+`fromy`
+: First line to be displayed.
+
+`cursory`
+: Line pointed at by the cursor.
 
 ### LineEdit
 

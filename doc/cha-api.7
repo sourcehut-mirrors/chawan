@@ -103,6 +103,14 @@ Implements \f[CR]Pager\f[R], as described below.
 The line editor.
 Implements \f[CR]LineEdit\f[R], as described below.
 .TP
+\f[CR]buffer\f[R]
+The currently focused buffer.
+Implements \f[CR]Buffer\f[R], as described below.
+.TP
+\f[CR]select\f[R]
+The currently focused select menu.
+Implements \f[CR]Select\f[R], as described below.
+.TP
 \f[CR]config\f[R]
 The config object.
 .RS
@@ -122,27 +130,29 @@ The configuration directory itself can be queried as
 \f[CR]config.dir\f[R].
 .RE
 .PP
-\f[CR]Client\f[R] also implements various web standards normally
-available on the \f[CR]Window\f[R] object on websites, e.g.\ fetch().
-Note however that it does \f[I]not\f[R] give access to JS objects in
-buffers, so e.g.\ \f[CR]globalThis.document\f[R] is not available.
+\f[CR]Client\f[R] is derived from \f[CR]Window\f[R], so it indirectly
+implements various web standards normally available on the
+\f[CR]Window\f[R] object on websites, e.g.\ fetch().
+However, it does \f[I]not\f[R] give access to JS objects in buffers, so
+for example, \f[CR]globalThis.document\f[R] always returns a blank
+document.
 .SS Pager
 \f[CR]Pager\f[R] is a separate interface from \f[CR]Client\f[R] that
 gives access to the pager (i.e.\ browser chrome).
 It is accessible as \f[CR]globalThis.pager\f[R], or simply
 \f[CR]pager\f[R].
 .PP
-Note that there is a quirk of questionable value, where accessing
-properties that do not exist on the pager will dispatch those to the
-current buffer (\f[CR]pager.buffer\f[R]).
-So if you see e.g.\ \f[CR]pager.url\f[R], that is actually equivalent to
-\f[CR]pager.buffer.url\f[R], because \f[CR]Pager\f[R] has no
-\f[CR]url\f[R] getter.
+Note that there is a quirk of questionable value where some (but not
+all) functions defined on \f[CR]Buffer\f[R] are also defined on
+\f[CR]Pager\f[R].
+For example, \f[CR]pager.url\f[R] dispatches to \f[CR]buffer.url\f[R].
+This quirk is deprecated and may be removed in the future; users are
+encouraged to use the \f[CR]buffer\f[R] variable directly.
 .PP
 Following properties (functions/getters) are defined by
 \f[CR]Pager\f[R]:
 .TP
-\f[CR]load(url = pager.buffer.url)\f[R]
+\f[CR]load(url = buffer.url)\f[R]
 Opens a prompt to load a resource, with \f[CR]url\f[R] pre\-filled.
 .TP
 \f[CR]loadSubmit(url)\f[R]
@@ -177,7 +187,7 @@ Same as \f[CR]traverse(\(dqnext\(dq)\f[R] and
 \f[CR]dupeBuffer()\f[R]
 Duplicate the current buffer by loading its source in a new buffer.
 .TP
-\f[CR]discardBuffer(buffer = pager.buffer, dir = pager.navDirection)\f[R]
+\f[CR]discardBuffer(buffer = globalThis.buffer, dir = pager.navDirection)\f[R]
 Discard \f[CR]buffer\f[R], then move back to the buffer opposite to
 \f[CR]dir\f[R] (interpreted as in \f[CR]Buffer#find\f[R]).
 .TP
@@ -319,15 +329,16 @@ If the editor signals an error (crash or non\-zero exit code),
 Otherwise, the user\(cqs input is returned as a string.
 .RE
 .TP
-\f[CR]openMenu(x = pager.acursorx, y = pager.acursory)\f[R]
+\f[CR]openMenu(x = buffer.acursorx, y = buffer.acursory)\f[R]
 Opens the context menu at the specified x/y positions.
 .TP
 \f[CR]closeMenu()\f[R]
 Closes the menu if it is opened.
 .TP
 \f[CR]buffer\f[R]
-Getter for the currently displayed buffer.
-Returns a \f[CR]Buffer\f[R] object; see below.
+Same as \f[CR]globalThis.buffer\f[R] (which you can access without
+typing \f[CR]globalThis\f[R], i.e., just \f[CR]buffer\f[R]).
+Use that instead.
 .TP
 \f[CR]menu\f[R]
 Getter for the currently displayed menu.
@@ -354,10 +365,10 @@ for \(lqany\(rq, it\(cqs the same.
 Each buffer is exposed as an object that implements the
 \f[CR]Buffer\f[R] interface.
 To get a reference to the currently displayed buffer, use
-\f[CR]pager.buffer\f[R].
+\f[CR]buffer\f[R].
 .PP
-Note the quirk mentioned above where \f[CR]Pager\f[R] dispatches unknown
-properties onto the current buffer.
+Note the deprecated quirk mentioned above where \f[CR]Pager\f[R]
+dispatches some properties onto the current buffer.
 .PP
 Following properties (functions/getters) are defined by
 \f[CR]Buffer\f[R]:
@@ -636,6 +647,58 @@ somewhat compatible with the \f[CR]Buffer\f[R] interface with some
 exceptions.
 (TODO: elaborate)
 .RE
+.SS Select
+The currently focused select menu widget can be retrieved using
+\f[CR]globalThis.select\f[R] (or, normally, just \f[CR]select\f[R]).
+.PP
+A select widget \(lqline\(rq is defined to include both options
+\f[I]and\f[R] separator lines.
+.PP
+Following properties (functions/getters) are defined by
+\f[CR]Select\f[R]:
+.TP
+\f[CR]click()\f[R]
+Submit the widget with the selected option.
+.TP
+\f[CR]cancel()\f[R]
+Close the widget without submitting anything.
+.TP
+\f[CR]cursorFirstLine()\f[R], \f[CR]cursorLastLine()\f[R]
+Move to the first/last selectable option.
+.TP
+\f[CR]cursorTop()\f[R], \f[CR]cursorMiddle()\f[R], \f[CR]cursorBottom()\f[R]
+Move to the top/middle/bottom visible option on the screen.
+.TP
+\f[CR]cursorUp(n = 1)\f[R], \f[CR]cursorDown(n = 1)\f[R]
+Move the cursor up/down by \f[CR]n\f[R] options.
+Separator lines are skipped.
+.TP
+\f[CR]scrollUp(n = 1)\f[R], \f[CR]scrollDown(n = 1)\f[R]
+Scroll the menu up/down by \f[CR]n\f[R] lines.
+.TP
+\f[CR]unselect()\f[R]
+Set the menu to an \(lqunselected\(rq state in which it cannot be
+submitted until an option is selected again.
+.TP
+\f[CR]setCursorY(y)\f[R]
+Set the cursor to the \f[CR]y\f[R]\(cqth line.
+If the line is a separator line, then the menu switches to an
+\(lqunselected\(rq state.
+.TP
+\f[CR]width\f[R], \f[CR]height\f[R]
+Width/height of the select menu.
+.TP
+\f[CR]x\f[R], \f[CR]y\f[R]
+x/y position of the menu on the screen.
+.TP
+\f[CR]numLines\f[R]
+Count of lines in the menu.
+.TP
+\f[CR]fromy\f[R]
+First line to be displayed.
+.TP
+\f[CR]cursory\f[R]
+Line pointed at by the cursor.
 .SS LineEdit
 The line editor at the bottom of the screen is exposed to the JavaScript
 context as \f[CR]globalThis.line\f[R], or simply \f[CR]line\f[R], and

@@ -200,6 +200,17 @@ globalThis.cmd = {
             else
                 return line.cancel();
         }
+    },
+    select: {
+        /* TODO might want to define these on select separately */
+        /* vi G */
+        gotoLineOrEnd: n => pager.gotoLine(n ?? select.numLines),
+        /* vim gg */
+        gotoLineOrStart: n => pager.gotoLine(n ?? 1),
+        searchNext: n => pager.searchNext(n),
+        searchPrev: n => pager.searchPrev(n),
+        searchForward: () => pager.searchForward(),
+        searchBackward: () => pager.searchBackward()
     }
 }
 
@@ -218,12 +229,22 @@ globalThis.feedNext = function() {
     pager.feedNext = true;
 }
 
-/* private */
+/* public */
 globalThis.__defineGetter__("line", function() {
     return pager.lineEdit;
 });
 
-/* buffer, precnum */
+/* public */
+globalThis.__defineGetter__("buffer", function() {
+    return pager.tab.current;
+});
+
+/* public */
+globalThis.__defineGetter__("select", function() {
+    return pager.menu ?? pager.buffer?.select;
+});
+
+/* buffer, precnum (TODO call buffer instead of pager?) */
 for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
         "cursorNextWord", "cursorNextViWord", "cursorNextBigWord",
         "cursorWordBegin", "cursorViWordBegin", "cursorBigWordBegin",
@@ -239,28 +260,30 @@ for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
     cmd[it] = n => pager[it](n);
 }
 
-/* pager, no precnum */
-for (const it of ["redraw", "cancel", "toggleSource", "nextBuffer",
-        "prevBuffer", "lineInfo", "discardBuffer", "discardBufferTree",
-        "searchForward", "searchBackward", "isearchForward", "isearchBackward",
-        "discardTree", "dupeBuffer", "load", "loadCursor", "saveLink",
-        "toggleImages", "writeInputBuffer", "showFullAlert", "toggleLinkHints",
-        "peek", "peekCursor", "quit", "suspend"]) {
-    cmd[it] = () => pager[it]();
-}
-
 /* buffer, no precnum */
 for (const it of ["cursorLineBegin", "cursorLineTextStart", "cursorLineEnd",
-        "cursorMiddleColumn", "cursorLeftEdge", "cursorRightEdge",
-        "cursorMiddle"]) {
+        "cancel", "cursorMiddleColumn", "cursorLeftEdge", "cursorRightEdge",
+        "cursorMiddle", "markURL", "reshape", "editScreen", "editSource",
+        "saveLink", "saveScreen", "saveSource", "toggleImages"]) {
+    cmd[it] = () => buffer[it]();
+}
+
+/* pager, no precnum */
+for (const it of ["redraw", "toggleSource", "nextBuffer", "prevBuffer",
+        "lineInfo", "discardBuffer", "discardBufferTree", "searchForward",
+        "searchBackward", "isearchForward", "isearchBackward", "discardTree",
+        "dupeBuffer", "load", "loadCursor", "saveLink", "toggleImages",
+        "writeInputBuffer", "showFullAlert", "toggleLinkHints", "peek",
+        "peekCursor", "quit", "suspend"]) {
     cmd[it] = () => pager[it]();
 }
 
-/* buffer, unshared with select
- * (really select should have adifferent keymap) */
-for (const it of ["markURL", "reshape", "editScreen", "editSource",
-        "saveLink", "saveScreen", "saveSource", "toggleImages"]) {
-    cmd[it] = () => pager.buffer[it]();
+/* select */
+for (const it of ["cursorDown", "cursorUp", "cursorTop", "cursorBottom",
+        "cursorMiddle", "halfPageDown", "halfPageUp", "halfPageLeft",
+        "halfPageRight", "pageDown", "pageUp", "pageLeft", "pageRight",
+        "scrollDown", "scrollUp", "click", "cancel"]) {
+    cmd.select[it] = n => select[it](n);
 }
 
 /* line */
@@ -558,7 +581,7 @@ Pager.prototype.searchBackward = function() {
 Pager.prototype.isearchForward = async function(reverse = false) {
     const buffer = this.buffer;
     if (this.menu || buffer?.select) {
-        /* isearch doesn't work in menus. */
+        /* isearch doesn't work in menus. TODO remove */
         this.searchForward(reverse)
     } else if (buffer != null) {
         const cx = buffer.cursorx;
@@ -966,7 +989,7 @@ Pager.prototype.command = async function() {
 /* public */
 Pager.prototype.gotoLine = async function(n) {
     const buffer = this.buffer;
-    const target = this.menu ?? buffer?.select ?? buffer;
+    const target = globalThis.select ?? buffer;
     if (!target)
         return;
     if (n === undefined) {
@@ -1102,7 +1125,7 @@ const MenuMap = [
     ["Copy image link         (yI)", cmd.copyCursorImage],
     ["Reload                   (U)", cmd.reloadBuffer],
     null,
-    ["Save link             (sC-m)", cmd.saveLink],
+    ["Save link            (s RET)", cmd.saveLink],
     ["View source              (\\)", cmd.toggleSource],
     ["Edit source             (sE)", cmd.sourceEdit],
     ["Save source             (sS)", cmd.saveSource],
@@ -1115,6 +1138,8 @@ const MenuMap = [
     ["Bookmark page          (M-a)", cmd.addBookmark],
     ["Open bookmarks         (M-b)", cmd.openBookmarks],
     ["Open history           (C-h)", cmd.openHistory],
+    null,
+    ["Force-quit browser       (q)", cmd.quit],
 ];
 
 /* public */
@@ -1347,19 +1372,19 @@ Pager.prototype.handleMouseInput = async function(input) {
                  */
                 if (!inside) {
                     mouse.blockTillRelease = true;
-                    select.cursorLeft();
+                    select.cancel();
                 }
             } else if (input.t == "release") {
                 if (inside && (input.x != pressedX || input.y != pressedY))
                     select.click();
                 else if (outside)
-                    select.cursorLeft();
+                    select.cancel();
             }
         } else if (button == "left") {
             if (input.t == "press") {
                 if (outside) { /* clicked outside the select */
                     mouse.blockTillRelease = true;
-                    select.cursorLeft();
+                    select.cancel();
                 }
             } else if (input.t == "release") {
                 if (input.x == pressedX && input.y == pressedY && inside) {
@@ -1371,16 +1396,10 @@ Pager.prototype.handleMouseInput = async function(input) {
         } else if (input.t == "press") {
             switch (button) {
             case "wheelUp":
-                this.scrollUp(config.input.wheelScroll);
+                select.scrollUp(config.input.wheelScroll);
                 break;
             case "wheelDown":
-                this.scrollDown(config.input.wheelScroll);
-                break;
-            case "wheelLeft":
-                this.scrollLeft(config.input.sideWheelScroll);
-                break;
-            case "wheelRight":
-                this.scrollRight(config.input.sideWheelScroll);
+                select.scrollDown(config.input.wheelScroll);
                 break;
             }
         }
@@ -1559,7 +1578,7 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
         } else if (this.updateNumericPrefix()) {
             this.queueStatusUpdate();
         } else {
-            const map = config.page;
+            const map = globalThis.select ? config.select : config.page;
             const p = this.evalInputAction(map, this.arg0);
             /*
              * We must queue the status update before the await in order to

@@ -45,6 +45,7 @@ distribution.
 * [Keybindings](#keybindings)
    * [Pager actions](#pager-actions)
    * [Buffer actions](#buffer-actions)
+   * [Select actions](#select-actions)
    * [Line-editing actions](#line-editing-actions)
 * [Appendix](#appendix)
    * [Regex handling](#regex-handling)
@@ -1102,17 +1103,23 @@ enterCommand
 searchForward, searchBackward
 
 : Search for a string in the current buffer, forwards or backwards.
+  An empty string repeats the previous search in the respective direction.
 
 isearchForward, searchBackward
 : **/** (slash), **?** (question mark)
 
 : Incremental-search for a string, highlighting the first result, forwards
-  or backwards.
+  or backwards.  (That is, the search result will be highlighted as you
+  type.)  An empty string repeats the previous search in the respective
+  direction.
 
 searchNext, searchPrev
 : **n**, **N**
 
-: Jump to the nth (or if unspecified, first) next/previous search result.
+: Jump to the nth (or if unspecified, first) next/previous search result
+  in the current search direction.  E.g., if you searched with **/**
+  (slash), then searchPrev will jump to the previous item, but if you
+  searched with **?** (question mark), then it will jump to the next item.
 
 peek
 
@@ -1417,7 +1424,72 @@ cursorSearchWordBackward
 
 : Search for the word currently under the cursor, backwards.
 
+### Select actions
+
+Select menu actions are to be specified in the `[select]` section.
+These keybindings apply to both `<select>` tags and the context menu
+(invoked with `c`).
+
+`n` refers to a number preceding the action.  e.g. in `10gg`, `n` is 10.
+If no preceding number is input, then it is left unspecified.
+
+Default keybindings are highlighted in **bold**.
+
+select.cursorUp, select.cursorDown
+: **j**/**C-p**/**Up**/**[**, **k**/**C-n**/**Down**/**]**
+
+: Move the cursor upwards/downwards by `n` menu items, or if `n` is
+  unspecified, by 1.
+
+select.scrollUp, select.scrollDown
+: **K**/**C-y**, **J**/**C-e**, **z h**, **z l**
+
+: Scroll up/down/left/right by `n` lines, or if `n` is unspecified, by one
+  line.
+
+select.click
+: **RET**/**LF**/**l**/**Right**
+
+: Submit the currently selected option.
+
+select.cancel
+: **C-c**/**c**/**C**/**h**/**Left**
+
+: Close the select menu.  (The **c**/**C** defaults are for symmetry with
+  opening the context menu.)
+
+select.pageUp, select.pageDown
+: **C-u**, **C-d**
+
+: Move up/down one page on the select menu.
+
+select.halfPageUp, select.halfPageDown
+: **C-u**, **C-d**
+
+: Move up/down by half the select menu's size.
+
+select.gotoLineOrStart, select.gotoLineOrEnd
+: **g g**, **G**
+
+: Move to the first/last line of the select menu.
+
+select.searchForward, select.searchBackward
+: **/** (slash), **?** (question mark)
+
+: Search & jump to a menu item.  An empty string repeats the previous
+  search in the respective direction.
+
+select.searchNext, select.searchPrev
+: **n**, **N**
+
+: Jump to the nth (or if unspecified, first) next/previous search result
+  in the current search direction.  E.g., if you searched with **/**
+  (slash), then searchPrev will jump to the previous item, but if you
+  searched with **?** (question mark), then it will jump to the next item.
+
 ### Line-editing actions
+
+Line-editing actions are to be specified in the `[line]` section.
 
 line.submit
 : **RET**, **LF**

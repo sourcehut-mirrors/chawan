@@ -156,6 +156,7 @@ type
     # command sections
     csCmd = "cmd"
     csPage = "page"
+    csSelect = "select"
     csLine = "line"
     # array sections
     csSiteconf = "siteconf"
@@ -671,7 +672,7 @@ proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
     return ctx.compileScript("cmd." & s, "<command>")
   return ctx.compileScript(s, "<command>")
 
-proc newActionMap(ctx: JSContext; s, defaultAction: string): ActionMap =
+proc newActionMap*(ctx: JSContext; s, defaultAction: string): ActionMap =
   let map = jsNew ActionMapObj(defaultAction: JS_UNDEFINED)
   if map == nil:
     return map
@@ -764,7 +765,7 @@ proc toJS*(ctx: JSContext; val: ScriptingMode): JSValue =
   of smFalse: return JS_FALSE
   of smApp: return JS_NewString(ctx, "app")
 
-proc sort(ctx: JSContext; map: ActionMap) =
+proc sort*(map: ActionMap; ctx: JSContext) =
   map.t.sort(proc(a, b: Action): int =
     cmp(a.k, b.k), SortOrder.Ascending)
   #TODO we could probably do this more efficiently
@@ -1314,7 +1315,7 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
     if cp.keysSeen[section].hasKeyOrPut(item):
       return cp.err("duplicate command")
     return ok(n)
-  of csPage, csLine:
+  of csPage, csSelect, csLine:
     if cp.key.len > 0:
       return cp.err("unexpected nested key for section " & $section)
     n = ?cp.consumeKey(camel = false, line, n)
@@ -1903,7 +1904,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
     else:
       nil
     cp.addCmdInit().add((cp.key, fun))
-  of csPage, csLine:
+  of csPage, csSelect, csLine:
     ?cp.typeCheck(ttString)
     let ctx = cp.ctx
     let val = ctx.evalCmdDecl(cp.buf)
@@ -2286,6 +2287,48 @@ C-Left line.prevWord
 C-Right line.nextWord
 """
 
+const SelectCommands = """
+RET select.click
+LF select.click
+Right select.click
+l select.click
+C-h select.cancel
+C-? select.cancel
+C-c select.cancel
+c select.cancel
+C select.cancel
+Left select.cancel
+h select.cancel
+C-d select.halfPageDown
+C-u select.halfPageUp
+C-f select.pageDown
+C-b select.pageUp
+Up select.cursorUp
+k select.cursorUp
+C-p select.cursorUp
+[ select.cursorUp
+Down select.cursorDown
+j select.cursorDown
+C-n select.cursorDown
+] select.cursorDown
+C-y select.scrollUp
+K select.scrollUp
+C-e select.scrollDown
+J select.scrollDown
+G select.gotoLineOrEnd
+g g select.gotoLineOrStart
+H select.cursorTop
+M select.cursorMiddle
+L select.cursorBottom
+/ select.searchForward
+? select.searchBackward
+n select.searchNext
+N select.searchPrev
+M-c enterCommand
+C-l load
+C-k webSearch
+"""
+
 # boolean options that initialize to true
 const ConfigInitTrue = [
   coConsoleBuffer, coWrap, coShowDownloadPanel, coViNumericPrefix,
@@ -2444,6 +2487,7 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
 proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
   let page = newActionMap(ctx, PageCommands, "")
   let line = newActionMap(ctx, LineCommands, "writeInputBuffer")
+  let select = newActionMap(ctx, SelectCommands, "pager.menuCommand()")
   if page == nil or line == nil:
     return Config(nil)
   let config = jsNew ConfigObj(
@@ -2451,6 +2495,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
     dataDir: dataDir,
     actionMap: [
       csPage: page,
+      csSelect: select,
       csLine: line,
     ],
     documentCharset: @[
@@ -2512,11 +2557,10 @@ jsClassDef(Config):
     for list in config.lists.mitems:
       list.clear(rt)
 
-  proc page*(config: Config): lent ActionMap {.jsfget.} =
-    config.actionMap[csPage]
-
-  proc line*(config: Config): lent ActionMap {.jsfget.} =
-    config.actionMap[csLine]
+  proc getActionMap(config: Config; cs: ConfigSection): lent ActionMap {.
+      jsmfget("page", csPage), jsmfget("line", csLine),
+      jsmfget("select", csSelect).} =
+    config.actionMap[cs]
 
   proc addOmniRule(ctx: JSContext; config: Config; name: string;
       re, fun: JSValueConst): JSValue {.jsfunc.} =
@@ -2567,8 +2611,8 @@ jsClassDef(Config):
         return err()
     JS_FreeValue(ctx, obj)
     config.cmdInit = @[]
-    ctx.sort(config.page)
-    ctx.sort(config.line)
+    for cs in csPage..csLine:
+      config.actionMap[cs].sort(ctx)
     ok()
 
 jsClassPublicDef(ActionMap):
@@ -2598,7 +2642,7 @@ jsClassPublicDef(ActionMap):
       return err()
     a.t.add(Action(k: rk, val: val2, n: a.num))
     inc a.num
-    ctx.sort(a)
+    a.sort(ctx)
     ok()
 
   proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue

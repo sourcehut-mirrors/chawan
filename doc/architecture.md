@@ -261,16 +261,34 @@ config.
 The DOM is implemented through the same wrappers as those in pager, except
 the pager modules are not exposed to buffer JS.
 
-Aside from the Node structure and document.write, it is mostly
-straightforward, and usually works OK, though many features are still
-missing.
+This is mostly straightforward, except for the implementation of
+`document.write` (don't ask) and `Node`.
 
-Some special attention is needed when dealing with the Node structure,
-which crams a bunch of different pointers in a few internal slots to save
-memory.  See the source code comments for details.
+As common in browsers with a DOM, `Node` is a doubly-linked list, with a
+`firstChild` pointer allocated for node types that can hold children
+(`Element` etc.)  To reduce memory use, Chawan also applies these space
+optimizations:
 
-As for document.write: don't ask.  It works as far as I can tell, but I
-wouldn't know why.
+* Instead of `previousSibling`, a `Node` holds `internalPrev`, which is
+  either the previous node, or, if the node has no previous siblings, the
+  last child of the parent node.
+
+* `internalNext` holds either the next sibling, or if it is the last node,
+  the root of the tree it belongs to.  (Note: I'm not sure about this one,
+  the performance impact might not be worth the space gained...)
+
+* Event listeners and mutation observers are stored in the same singly
+  linked list (attached to `EventTarget`, from which `Node` is derived).
+
+* JS element accessors such as `classList`, `dataset`, `attributes`,
+  etc. are stored in a singly linked list pointed to by `Element`.
+
+* `HTMLCollection`s such as `children` are stored in a separate hash table
+  on the document, keyed on their originating node.
+
+* `shadowRoot` is stored as the first child element of its parent
+  (`internalFirst`).  This is then skipped by the `Node#firstChild` getter
+  (& similar).
 
 ## CSS
 

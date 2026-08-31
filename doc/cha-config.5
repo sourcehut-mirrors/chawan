@@ -1174,18 +1174,25 @@ displayed.
 .TP
 searchForward, searchBackward
 Search for a string in the current buffer, forwards or backwards.
+An empty string repeats the previous search in the respective direction.
 .TP
 isearchForward, searchBackward
 \f[B]/\f[R] (slash), \f[B]?\f[R] (question mark)
 .RS
 Incremental\-search for a string, highlighting the first result,
 forwards or backwards.
+(That is, the search result will be highlighted as you type.)
+An empty string repeats the previous search in the respective direction.
 .RE
 .TP
 searchNext, searchPrev
 \f[B]n\f[R], \f[B]N\f[R]
 .RS
-Jump to the nth (or if unspecified, first) next/previous search result.
+Jump to the nth (or if unspecified, first) next/previous search result
+in the current search direction.
+E.g., if you searched with \f[B]/\f[R] (slash), then searchPrev will
+jump to the previous item, but if you searched with \f[B]?\f[R]
+(question mark), then it will jump to the next item.
 .RE
 .TP
 peek
@@ -1543,7 +1550,85 @@ cursorSearchWordBackward
 .RS
 Search for the word currently under the cursor, backwards.
 .RE
+.SS Select actions
+Select menu actions are to be specified in the \f[CR][select]\f[R]
+section.
+These keybindings apply to both \f[CR]<select>\f[R] tags and the context
+menu (invoked with \f[CR]c\f[R]).
+.PP
+\f[CR]n\f[R] refers to a number preceding the action.
+e.g.\ in \f[CR]10gg\f[R], \f[CR]n\f[R] is 10.
+If no preceding number is input, then it is left unspecified.
+.PP
+Default keybindings are highlighted in \f[B]bold\f[R].
+.TP
+select.cursorUp, select.cursorDown
+\f[B]j\f[R]/\f[B]C\-p\f[R]/\f[B]Up\f[R]/\f[B][\f[R],
+\f[B]k\f[R]/\f[B]C\-n\f[R]/\f[B]Down\f[R]/\f[B]]\f[R]
+.RS
+Move the cursor upwards/downwards by \f[CR]n\f[R] menu items, or if
+\f[CR]n\f[R] is unspecified, by 1.
+.RE
+.TP
+select.scrollUp, select.scrollDown
+\f[B]K\f[R]/\f[B]C\-y\f[R], \f[B]J\f[R]/\f[B]C\-e\f[R], \f[B]z h\f[R],
+\f[B]z l\f[R]
+.RS
+Scroll up/down/left/right by \f[CR]n\f[R] lines, or if \f[CR]n\f[R] is
+unspecified, by one line.
+.RE
+.TP
+select.click
+\f[B]RET\f[R]/\f[B]LF\f[R]/\f[B]l\f[R]/\f[B]Right\f[R]
+.RS
+Submit the currently selected option.
+.RE
+.TP
+select.cancel
+\f[B]C\-c\f[R]/\f[B]c\f[R]/\f[B]C\f[R]/\f[B]h\f[R]/\f[B]Left\f[R]
+.RS
+Close the select menu.
+(The \f[B]c\f[R]/\f[B]C\f[R] defaults are for symmetry with opening the
+context menu.)
+.RE
+.TP
+select.pageUp, select.pageDown
+\f[B]C\-u\f[R], \f[B]C\-d\f[R]
+.RS
+Move up/down one page on the select menu.
+.RE
+.TP
+select.halfPageUp, select.halfPageDown
+\f[B]C\-u\f[R], \f[B]C\-d\f[R]
+.RS
+Move up/down by half the select menu\(cqs size.
+.RE
+.TP
+select.gotoLineOrStart, select.gotoLineOrEnd
+\f[B]g g\f[R], \f[B]G\f[R]
+.RS
+Move to the first/last line of the select menu.
+.RE
+.TP
+select.searchForward, select.searchBackward
+\f[B]/\f[R] (slash), \f[B]?\f[R] (question mark)
+.RS
+Search & jump to a menu item.
+An empty string repeats the previous search in the respective direction.
+.RE
+.TP
+select.searchNext, select.searchPrev
+\f[B]n\f[R], \f[B]N\f[R]
+.RS
+Jump to the nth (or if unspecified, first) next/previous search result
+in the current search direction.
+E.g., if you searched with \f[B]/\f[R] (slash), then searchPrev will
+jump to the previous item, but if you searched with \f[B]?\f[R]
+(question mark), then it will jump to the next item.
+.RE
 .SS Line\-editing actions
+Line\-editing actions are to be specified in the \f[CR][line]\f[R]
+section.
 .TP
 line.submit
 \f[B]RET\f[R], \f[B]LF\f[R]

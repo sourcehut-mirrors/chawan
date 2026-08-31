@@ -103,6 +103,8 @@ type
     paste: bool # set in fulfillAsk
     mousePaste: bool
     consoleLFSeen: bool
+    keepInputBuffer: bool
+    keepMenuFlag: bool
     updateStatus: UpdateStatusState
     alertState: PagerAlertState
     # current number prefix (when vi-numeric-prefix is true)
@@ -143,6 +145,7 @@ type
     mimeTypes: MimeTypes
     bufferInit: BufferInit # visible BufferInit (may != iface.init)
     bufferIface: BufferInterface # visible BufferInterface
+    menuActions: ActionMap
 
   Pager* = JSRef[PagerObj]
 
@@ -320,6 +323,31 @@ proc loadAutoMailcap(pager: Pager) =
   pager.loadMailcap(pager.autoMailcap, config{"autoMailcap"})
   pager.autoMailcap.parseBuiltin(DefaultAutoMailcap)
 
+const MenuCommands = """
+v selectOrCopy
+, prevBuffer
+. nextBuffer
+D discardBuffer
+M-y copyURL
+yu copyCursorLink
+I viewImage
+yI copyCursorImage
+U reloadBuffer
+s RET saveLink
+s LF saveLink
+\ toggleSource
+s E editSource
+s S saveSource
+: markURL
+M-i toggleImages
+M-j toggleScripting
+M-k toggleCookie
+M-a addBookmark
+M-b openBookmarks
+C-h openHistory
+q quit
+"""
+
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int;
     console: Console; timeouts: ptr TimeoutState): Pager =
@@ -342,12 +370,14 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
       JS_EVAL_TYPE_GLOBAL),
     showConsole: ctx.eval("Pager.prototype.showConsole", "<init>",
       JS_EVAL_TYPE_GLOBAL),
-    consoleLFSeen: true
+    consoleLFSeen: true,
+    menuActions: newActionMap(ctx, MenuCommands, "pager.keepMenu()")
   )
-  if pager == nil:
-    return pager
+  if pager == nil or pager.menuActions == nil:
+    return Pager(nil)
   if JS_IsException(pager.handleInput) or JS_IsException(pager[].showConsole):
     return Pager(nil)
+  pager.menuActions.sort(ctx)
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(rt, interruptHandler, nil)
@@ -2037,7 +2067,8 @@ proc hasSelectFds(pager: Pager): bool =
 # List of properties that are defined on both Buffer and as reflectors
 # on Pager.
 # It's a horrible setup that should not be extended anymore, instead users
-# should just use `pager.buffer'.
+# should use `buffer' directly.
+#TODO move to init.js?
 const LegacyReflectFuncList = [
   cstring"cursorUp", "cursorDown", "cursorLeft", "cursorRight",
   "cursorLineBegin", "cursorLineEnd", "cursorLineTextStart", "cursorNextWord",
@@ -2068,13 +2099,7 @@ const LegacyReflectGetList = [
 
 proc legacyReflectFunction(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint): JSValue {.cdecl.} =
-  var pager: Pager
-  if ctx.fromJS(this, pager).isErr:
-    return JS_EXCEPTION
-  let cval = if pager.menu != nil:
-    ctx.toJS(pager.menu)
-  else:
-    JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
+  let cval = JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
   if JS_IsException(cval):
     return cval
   let val = JS_GetPropertyStr(ctx, cval, LegacyReflectFuncList[magic])
@@ -2090,13 +2115,7 @@ proc legacyReflectFunction(ctx: JSContext; this: JSValueConst; argc: cint;
 
 proc legacyReflectGetter(ctx: JSContext; this: JSValueConst; magic: cint):
     JSValue {.cdecl.} =
-  var pager: Pager
-  if ctx.fromJS(this, pager).isErr:
-    return JS_EXCEPTION
-  let cval = if pager.menu != nil:
-    ctx.toJS(pager.menu)
-  else:
-    JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
+  let cval = JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
   if JS_IsException(cval):
     return cval
   let res = JS_GetPropertyStr(ctx, cval, LegacyReflectGetList[magic])
@@ -2206,9 +2225,12 @@ jsClassDef(Pager):
       if JS_IsUndefined(map.defaultAction):
         pager.inputBuffer.setLen(0)
         return JS_UNDEFINED
+      let keepInputBuffer = pager.keepInputBuffer
       let res = pager.evalAction(JS_DupValue(ctx, map.defaultAction), arg0,
         map.defaultAction)
-      pager.inputBuffer.setLen(0)
+      if not pager.keepInputBuffer:
+        pager.inputBuffer.setLen(0)
+      pager.keepInputBuffer = keepInputBuffer
       return res
     # note: this may replace val inside the ActionMap
     let res = pager.evalAction(JS_DupValue(ctx, val), arg0, map.mgetValue())
@@ -2801,6 +2823,24 @@ jsClassDef(Pager):
       pager.bufferIface.redraw = true
     pager.display.redraw = true
     ok()
+
+  # private
+  proc menuCommand(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
+    if pager.menu != nil:
+      pager.keepMenuFlag = false
+      let res = ctx.evalInputAction(pager, pager.menuActions, 0)
+      if pager.inputBuffer.len == 0 and not pager.keepMenuFlag:
+        # command found; close menu
+        discard ctx.setMenu(pager, JS_NULL)
+      else:
+        # do not let a nested call clear the input buffer
+        pager.keepInputBuffer = true
+      return res
+    return JS_UNDEFINED
+
+  # private
+  proc keepMenu(pager: Pager) {.jsfunc.} =
+    pager.keepMenuFlag = true
 
   # private
   proc handleStderr(pager: Pager) {.jsfunc.} =

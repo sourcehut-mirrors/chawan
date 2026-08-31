@@ -13,7 +13,7 @@ handlers (e.g. [**mutt**](man:mutt(1))(1) for *mailto*).  When combined
 with [**cha-cgi**](cgi.md)(5), browsecap also enables extending Chawan
 with user-specified schemes.
 
-(browsecap is a more capable replacement for
+(Browsecap is a more capable replacement for
 [**cha-urimethodmap**](urimethodmap.md)(5); the latter is deprecated.)
 
 Note that Chawan's default mime.types file only recognizes a few file
