@@ -227,13 +227,9 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stType:
     return element.localName == sel.atom
   of stClass:
-    if element.asNode.document.mode == qmQuirks:
-      return element.hasClassIgnoreCase(sel.atom)
     return element.hasClass(sel.atom)
   of stId:
-    if element.asNode.document.mode == qmQuirks:
-      return sel.atom.equalsIgnoreCase(element.id)
-    return sel.atom == element.id
+    return element.hasId(sel.atom)
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:

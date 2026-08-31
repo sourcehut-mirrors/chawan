@@ -575,7 +575,7 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
       doAssert bc.htmlParser.parseBuffer(s) != pcrStop
       plaintext = bc.document.findFirst(ttPlaintext)
     if data.len > 0:
-      let lastText = plaintext.asNode.lastChild as Text
+      let lastText = plaintext.asParentNode.lastChild as Text
       if lastText != nil:
         lastText.data.s &= data
       else:

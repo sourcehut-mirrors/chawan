@@ -97,7 +97,7 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   wrapper.parser = initHTML5Parser(builder, wrapper.opts)
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
-  builder.document.mode = quirksMode
+  builder.document.quirksMode = quirksMode
   if quirksMode == qmQuirks:
     builder.document.applyQuirksSheet()
 
@@ -178,11 +178,7 @@ proc insertBeforeImpl(builder: ChaDOMBuilder; parent, child: ParentNode;
 
 proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode;
     text: sink string; before: ParentNode) =
-  let prevSibling = if before != nil:
-    before.asNode.previousSibling
-  else:
-    parent.asNode.lastChild
-  let prevText = prevSibling as Text
+  let prevText = parent.lastChildBefore(before.asNode) as Text
   if prevText != nil:
     if prevText.data.s.len == 0:
       prevText.data.s = move(text)
@@ -283,7 +279,7 @@ proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
     return @[]
   let builder = newChaDOMBuilder(url, Window(nil), ccIrrelevant, ctx)
   let document = builder.document
-  document.mode = element.asNode.document.mode
+  document.quirksMode = element.asNode.document.quirksMode
   let root = document.newHTMLElement(ttHtml)
   if root == nil:
     return @[]

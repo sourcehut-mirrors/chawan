@@ -406,7 +406,7 @@ type
     activeParserWasAborted: bool
     invalid*: bool # whether the document must be rendered again
     charset*: Charset
-    mode*: QuirksMode
+    quirksMode*: QuirksMode
     readyState*: DocumentReadyState
     contentType*: StaticAtom
     window*: Window
@@ -515,7 +515,8 @@ type
     cesCustom = "custom"
 
   ElementFlag = enum
-    efHint, efHover, efShadowRoot, efChildElIndicesInvalid, efRestyle
+    efHint, efHover, efShadowRoot, efChildElIndicesInvalid, efRestyle,
+    efQuirks
 
   CSSStyleDeclarationObj* = object
     computed: bool
@@ -762,14 +763,13 @@ proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
 
 proc document*(node: Node): Document
 proc isConnected(node: Node): bool
-proc lastChild*(node: Node): Node
+proc lastChild(node: Node): Node
 proc nextDescendant(node, start: Node): Node
 proc nextDescendantShadow(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc parentNodeHost(node: Node): Node
-proc parentNodeShadow(node: Node): Node
+proc parentNodeShadow(node: Node): lent Node
 proc previousSibling*(node: Node): Node
-proc rootNode(node: Node): Node
 proc serializeFragment(res: var string; node: Node; writeShadow: bool)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
   writeShadow: bool)
@@ -779,8 +779,9 @@ proc insert*(parent: ParentNode; ctx: JSContext; node, before: Node;
   suppressObservers = false)
 proc replaceAll(parent: ParentNode; ctx: JSContext; node: Node)
 proc replaceAll(parent: ParentNode; ctx: JSContext; ds: DOMString)
-proc firstChild(parent: ParentNode): Node
-proc firstChildShadow(parent: ParentNode): Node
+proc firstChild(parent: ParentNode): lent Node
+proc lastChild*(parent: ParentNode): lent Node
+proc firstChildShadow(parent: ParentNode): lent Node
 proc nextSibling(node: Node): Node
 proc previousElementSiblingImpl(this: Node): Element
 proc setFirstChild(node: ParentNode; child: Node)
@@ -843,7 +844,6 @@ proc getBoundingClientRect(element: Element): DOMRect
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc hasClass*(element: Element; class: CAtom): bool
-proc hasClassIgnoreCase*(element: Element; class: CAtom): bool
 proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element): bool
 proc invalidate*(element: Element)
@@ -1149,12 +1149,6 @@ iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
             input.inputType == itRadio:
           yield input
 
-iterator textNodes*(node: ParentNode): Text {.inline.} =
-  for node in node.childList:
-    let text = node as Text
-    if text != nil:
-      yield text
-
 iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
   for child in select.asParentNode.elementList:
     if (let child = child as HTMLOptionElement; child != nil):
@@ -1263,14 +1257,9 @@ proc isElementWithClass(this: Collection; node: Node): bool =
   let element = node as Element
   if element == nil:
     return false
-  if element.asNode.document.mode == qmQuirks:
-    for i in 1 ..< this.atoms.len:
-      if not element.hasClassIgnoreCase(this.atoms[i]):
-        return false
-  else:
-    for i in 1 ..< this.atoms.len:
-      if not element.hasClass(this.atoms[i]):
-        return false
+  for i in 1 ..< this.atoms.len:
+    if not element.hasClass(this.atoms[i]):
+      return false
   true
 
 proc isLink(this: Collection; node: Node): bool =
@@ -1942,27 +1931,23 @@ when defined(debug):
 
 proc document*(node: Node): Document =
   # Return the owner document, or node itself if it is a document.
-  var node = node
+  var node = (ptr NodeObj)(node) # skip some refcounts
   while true:
-    node = node.rootNode
-    if (let node = node as Document; node != nil):
-      return node
-    let shadow = node as ShadowRoot
-    if shadow != nil:
-      node = shadow.host.asNode
-    else:
-      node = node.internalNext
-      return node as Document
-  assert false
-  Document(nil)
+    if node.parentNode != nil:
+      node = (ptr NodeObj)(node.parentNode.lastChild.internalNext)
+    if Node(node) of Document:
+      break
+    if not (Node(node) of ShadowRoot):
+      return node.internalNext as Document
+    node = (ptr NodeObj)(ShadowRoot(node).host)
+  cast[Document](node)
 
-proc parentNodeShadow(node: Node): Node =
-  let parent = node.parentNode
-  if parent == nil:
+proc parentNodeShadow(node: Node): lent Node =
+  if node.parentNode == nil:
     let shadow = node as ShadowRoot
     if shadow != nil:
       return shadow.host.asNode
-  return parent.asNode
+  return node.parentNode.asNode
 
 proc parentNodeHost(node: Node): Node =
   let parent = node.parentNode
@@ -1972,13 +1957,15 @@ proc parentNodeHost(node: Node): Node =
       return shadow.host.asNode
   return parent.asNode
 
-proc nextSiblingShadow(node: Node): Node =
+proc nextSiblingShadow(node: Node): lent Node =
   let next = node.internalNext
-  if next == nil or next.parentNode == nil:
-    # if next is nil, then node is a Document.
-    # if next.parentNode is nil, then next is the root.
-    return Node(nil)
-  return next
+  if next == nil:
+    # node is a Document.
+    return node.internalNext
+  if next.parentNode == nil:
+    # next is the root, return nil.
+    return next.parentNode.asNode
+  return node.internalNext
 
 # performance-sensitive, so we inline this with a template
 template nextDescendantExclImpl(node, start: Node): Node =
@@ -2043,7 +2030,7 @@ proc previousDescendant(node: Node): Node =
   while (let pnode = prev as ParentNode; pnode != nil):
     if pnode.firstChild == nil:
       break
-    prev = pnode.asNode.lastChild
+    prev = pnode.lastChild
   prev
 
 proc previousDescendant(node, start: Node): Node =
@@ -2080,18 +2067,18 @@ proc checkParentValidity(parent: Node): Result[ParentNode, cstring] =
     return ok(parent)
   return err("parent must be a document, a document fragment, or an element")
 
-proc rootNodeShadow(node: Node): Node =
-  var node = node.rootNode
-  while (let shadow = node as ShadowRoot; shadow != nil):
-    node = shadow.host.asNode.rootNode
-  node
-
 proc rootNode(node: Node): Node =
   # If connected, return root; otherwise, return the owner document.
   let parent = node.parentNode
   if parent == nil:
     return node
-  parent.asNode.lastChild.internalNext
+  parent.lastChild.internalNext
+
+proc rootNodeShadow(node: Node): Node =
+  var node = node.rootNode
+  while (let shadow = node as ShadowRoot; shadow != nil):
+    node = shadow.host.asNode.rootNode
+  node
 
 proc isInclusiveAncestorHost(a, b: Node): bool =
   for it in b.branchHost:
@@ -2457,7 +2444,7 @@ proc clone(node: Node; document: Document; deep: bool;
     x.charset = document.charset
     x.contentType = document.contentType
     x.origin = document.origin
-    x.mode = document.mode
+    x.quirksMode = document.quirksMode
     x.asNode
   elif (let node = node as DocumentType; node != nil):
     document.newDocumentType(node.name, node.publicId, node.systemId).asNode
@@ -2745,10 +2732,9 @@ jsClassDef(Node):
       return node.firstChild
     Node(nil)
 
-  proc lastChild*(node: Node): Node {.jsfget.} =
-    let first = node.firstChild
-    if first != nil:
-      return first.internalPrev
+  proc lastChild(node: Node): Node {.jsfget.} =
+    if (let node = node as ParentNode; node != nil):
+      return node.lastChild
     Node(nil)
 
   proc hasChildNodes(node: Node): bool {.jsfunc.} =
@@ -2965,15 +2951,15 @@ proc replaceWithImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
   return JS_UNDEFINED
 
 # ParentNode
-proc firstChild(parent: ParentNode): Node =
+proc firstChild(parent: ParentNode): lent Node =
   let child = parent.internalFirst
   if child != nil and child.parentNode == nil:
     when defined(debug):
       assert child of ShadowRoot
     return child.internalNext
-  return child
+  return parent.internalFirst
 
-proc firstChildShadow(parent: ParentNode): Node =
+proc firstChildShadow(parent: ParentNode): lent Node =
   return parent.internalFirst
 
 proc setFirstChild(node: ParentNode; child: Node) =
@@ -2982,6 +2968,24 @@ proc setFirstChild(node: ParentNode; child: Node) =
     first.internalNext = child
   else:
     node.internalFirst = child
+
+proc lastChild*(parent: ParentNode): lent Node =
+  let first = parent.internalFirst
+  if first == nil:
+    return parent.internalFirst
+  if first.parentNode == nil:
+    # skip shadow root
+    let next = first.internalNext
+    if next == nil:
+      return first.internalNext
+    return next.internalPrev
+  return first.internalPrev
+
+proc lastChildBefore*(parent: ParentNode; before: Node): Node =
+  if before != nil:
+    before.previousSibling
+  else:
+    parent.lastChild
 
 proc firstElementChild*(node: ParentNode): Element =
   for child in node.elementList:
@@ -3172,10 +3176,7 @@ proc insert0(parent: ParentNode; ctx: JSContext; nodes: openArray[Node];
     discard
   if (let parent = parent as Element; parent != nil):
     parent.invalidate()
-  let beforeBefore = if before != nil:
-    before.previousSibling
-  else:
-    parent.asNode.lastChild
+  let beforeBefore = parent.lastChildBefore(before)
   var postConnectionNodes: seq[Element] = @[]
   for node in nodes:
     parent.insert1(ctx, node, before, postConnectionNodes)
@@ -3627,12 +3628,17 @@ proc adopt(document: Document; node: Node; ctx: JSContext) =
       for collection in collections:
         oldDocument.removeLiveCollection(collection)
         document.addLiveCollection(collection)
+      let quirks = document.quirksMode
       for desc in node.asNode.descendantsShadowIncl:
         if (let root = desc as ShadowRoot; root != nil):
           if root.customElements == nil and not root.unsetCustomElements or
               root.customElements != nil and not root.customElements.scoped:
             root.customElements = document.globalCustomElements
         elif (let element = desc as Element; element != nil):
+          if quirks == qmQuirks:
+            element.flags.incl(efQuirks)
+          else:
+            element.flags.excl(efQuirks)
           let map = element.getCachedAttributes()
           if map != nil:
             for it in map.attrlist:
@@ -3872,7 +3878,7 @@ proc applyUserSheet*(document: Document; user: string) =
 
 proc getRuleMap*(document: Document): CSSRuleMap =
   if document.ruleMap == nil:
-    let map = newCSSRuleMap(document.mode == qmQuirks)
+    let map = newCSSRuleMap(document.quirksMode == qmQuirks)
     var sheet = document.uaSheetsHead
     while sheet != nil:
       map.add(sheet)
@@ -3996,7 +4002,7 @@ jsClassPublicDef(Document):
     ctx.cloneNodeImpl(node, document, deep, ParentNode(nil), registry)
 
   proc compatMode(document: Document): string {.jsfget.} =
-    if document.mode == qmQuirks:
+    if document.quirksMode == qmQuirks:
       return "BackCompat"
     return "CSS1Compat"
 
@@ -4259,7 +4265,7 @@ jsClassPublicDef(Document):
 
   proc scrollingElement(document: Document): Element {.jsfget.} =
     let window = document.window
-    if document.mode == qmQuirks and window != nil and
+    if document.quirksMode == qmQuirks and window != nil and
         window.settings.scripting == smApp:
       let body = document.body.asElement
       if body != nil:
@@ -5828,11 +5834,15 @@ proc hasInsertionSteps(element: Element): bool =
     element.tagType(satNamespaceSVG) == ttSvg or
     element of FormAssociatedElement
 
-proc hasClassIgnoreCase*(element: Element; class: CAtom): bool =
-  element.classList.containsIgnoreCase(class)
-
 proc hasClass*(element: Element; class: CAtom): bool =
-  element.classList.contains(class)
+  if efQuirks in element.flags:
+    return element.classList.containsIgnoreCase(class)
+  return element.classList.contains(class)
+
+proc hasId*(element: Element; id: CAtom): bool =
+  if efQuirks in element.flags:
+    return element.id.equalsIgnoreCase(id)
+  return element.id == id
 
 # Returns true if has post-connection steps.
 proc insertionSteps(element: Element): bool =
@@ -8947,6 +8957,8 @@ proc newElement(document: Document; localName, namespaceURI, tagName: CAtom):
   element.namespaceURI = namespaceURI
   element.tagName = tagName
   element.internalNext = document.asNode
+  if document.quirksMode == qmQuirks:
+    element.flags.incl(efQuirks)
   element.custom = if localName.isValidCustomElementName():
     cesUndefined
   else:
