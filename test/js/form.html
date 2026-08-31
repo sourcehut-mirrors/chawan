@@ -85,6 +85,9 @@
 <meter id=x>meter</meter>
 <label id=y for=x>label</label>
 <label id=z><input type=hidden>test</input></label>
+<label id=wrong for=non-existent>label<input name=hi></label>
+<label id=wrong2 for>label<input name=hi></label>
+<input id name=wat>
 `;
 	const label = doc.getElementById("y");
 	const meter = label.control;
@@ -92,6 +95,10 @@
 	assertInstanceof(meter, HTMLMeterElement);
 	const label2 = doc.getElementById("z");
 	assertEquals(label2.control, null);
+	const wrong = doc.getElementById("wrong");
+	assertEquals(wrong.control, null);
+	const wrong2 = doc.getElementById("wrong2");
+	assertEquals(wrong2.control, null);
 })();
 document.getElementById("x").textContent = "Success";
 </script>

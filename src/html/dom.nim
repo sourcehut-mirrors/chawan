@@ -5305,6 +5305,9 @@ proc findAttr(element: Element; qualifiedName: CAtom): int =
     return n
   return -1
 
+proc findAttr(element: Element; name: StaticAtom): int =
+  element.findAttr(name.view())
+
 proc findAttrNS(element: Element; namespace, localName: CAtom): int =
   if namespace == CAtomNull:
     for i, attr in element.attrs.mypairs:
@@ -7794,11 +7797,11 @@ jsClassDef(HTMLLabelElement):
   jsextends HTMLElementDef
 
   proc control*(label: HTMLLabelElement): HTMLElement {.jsfget.} =
-    let f = label.asElement.attr(satFor)
-    if f != "":
-      let id = f.toAtom()
+    let i = label.asElement.findAttr(satFor)
+    if i >= 0:
+      let id = label.attrs[i].value.toAtom()
       let element = label.asNode.document.asRootNode.getElementById(id)
-      if element.isLabelable():
+      if element != nil and element.isLabelable():
         return element as HTMLElement
       return HTMLElement(nil)
     for element in label.asParentNode.elementDescendants:
