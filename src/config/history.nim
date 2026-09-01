@@ -65,12 +65,6 @@ proc clear*(hist: History) =
     it.prev = nil
     it = next
 
-proc parse0(hist: History; file: ChaFile; merge: bool): Opt[void] =
-  var line = ""
-  while ?file.readLine(line):
-    hist.add(HistoryEntry(s: move(line)), merge)
-  ok()
-
 # Consumes `ps'.
 # If the history file's mtime is less than otime, it won't be parsed.
 # (This is used when writing the file, to merge in new data from other
@@ -83,14 +77,16 @@ proc parse*(hist: History; ps: PosixStream; otime = int64.low;
     return err()
   let mtime = int64(stats.st_mtime)
   if otime < mtime:
-    let file = ?ps.fdopen("r")
-    let res = hist.parse0(file, merge)
-    ?file.close()
-    ?res
+    let file = ?ps.afdopen("r")
+    var line = ""
+    while ?file.readLine(line):
+      hist.add(HistoryEntry(s: move(line)), merge)
     hist.mtime = mtime
   ok()
 
-proc write0(hist: History; file: ChaFile; reverse: bool): Opt[void] =
+# Consumes `ps'.
+proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
+  let file = ?ps.afdopen("w")
   if reverse:
     var entry = hist.last
     while entry != nil:
@@ -101,16 +97,10 @@ proc write0(hist: History; file: ChaFile; reverse: bool): Opt[void] =
     while entry != nil:
       ?file.writeLine(entry.s)
       entry = entry.next
-  file.flush()
-
-# Consumes `ps'.
-proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
-  let file = ?ps.fdopen("w")
-  var res = hist.write0(file, reverse)
-  if res.isOk and sync and fsync(ps.fd) != 0:
-    res = err()
-  ?file.close()
-  res
+  ?file.flush()
+  if sync and fsync(ps.fd) != 0:
+    return err()
+  ok()
 
 proc write*(hist: History; file: string): Opt[void] =
   let ps = newPosixStream(file)

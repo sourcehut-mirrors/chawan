@@ -399,9 +399,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
         pager.alert("failed to read cookies")
   pager.loadAutoMailcap()
   for p in config{"mimeTypes"}:
-    if f := chafile.fopen($p, "r"):
+    if f := chafile.afopen($p, "r"):
       let res = pager.mimeTypes.parseMimeTypes(f)
-      f.close()
       if res.isErr:
         pager.alert("error reading file " & $p)
   return pager
@@ -450,7 +449,7 @@ proc cleanup(pager: Pager) =
     if hist != nil:
       hist.clear()
   if pager.console != nil and pager.dumpConsoleFile:
-    if file := chafile.fopen(pager.consoleFile, "r+"):
+    if file := chafile.afopen(pager.consoleFile, "r+"):
       let stderr = cast[ChaFile](stderr)
       var buffer {.noinit.}: array[1024, uint8]
       while (let n = file.read(buffer); n != 0):

@@ -326,9 +326,8 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
       if res.isErr:
         warnings.add(res.error)
     for path in urimethodmapPaths:
-      if file := chafile.fopen(path, "r"):
+      if file := chafile.afopen(path, "r"):
         discard browsecap.parseURIMethodMap(file)
-        discard file.close()
     browsecap.parseBuiltin(DefaultBrowsecap)
     for t in browsecap.mainTypes:
       ctx.schemes.add(t)

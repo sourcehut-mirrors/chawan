@@ -270,7 +270,6 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
     else:
       "config.toml"
     ?config.parseConfig(config.dir, file.get, warnings, jsctx, name)
-    discard file.get.close()
   for opt in ctx.opts:
     ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", laxnames = true)
   config{"userStyle"} &= ctx.stylesheet

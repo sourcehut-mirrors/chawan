@@ -331,7 +331,7 @@ proc nextInt64(state: var ParseState; iq: openArray[char]): int64 =
   state.error = true
   return 0
 
-proc parse0(map: CookieJarMap; file: ChaFile; warnings: var seq[string]):
+proc parse0(map: CookieJarMap; file: AChaFile; warnings: var seq[string]):
     Opt[void] =
   var line = ""
   var nline = 0
@@ -389,14 +389,12 @@ proc parse*(map: CookieJarMap; ps: PosixStream; warnings: var seq[string];
     return err()
   let mtime = int64(stats.st_mtime)
   if mtime < otime:
-    let file = ?ps.fdopen("r")
-    let res = map.parse0(file, warnings)
-    ?file.close()
-    ?res
+    let file = ?ps.afdopen("r")
+    ?map.parse0(file, warnings)
     map.mtime = mtime
   ok()
 
-proc write0(map: CookieJarMap; file: ChaFile; ps: PosixStream;
+proc write0(map: CookieJarMap; file: AChaFile; ps: PosixStream;
     tmp, path: string): Opt[void] =
   ?file.write("""
 # Netscape HTTP Cookie file
@@ -449,10 +447,9 @@ proc write*(map: CookieJarMap; path: string): Opt[void] =
   let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT or O_EXCL, 0o600)
   if ps2 == nil:
     return err()
-  let file = ?ps2.fdopen("w")
-  let res = map.write0(file, ps2, tmp, path)
-  ?file.close()
-  res
+  let file = ?ps2.afdopen("w")
+  ?map.write0(file, ps2, tmp, path)
+  ok()
 
 proc needsWrite*(map: CookieJarMap): bool =
   not map.transient and map.jarsHead != nil

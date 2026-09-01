@@ -56,7 +56,7 @@ type
 proc cmpMimeTypesImageItem*(x: MimeTypesImageItem; ext: string): int =
   cmp(x.ext, ext)
 
-proc parseMimeTypes*(mimeTypes: var MimeTypes; file: ChaFile): Opt[void] =
+proc parseMimeTypes*(mimeTypes: var MimeTypes; file: AChaFile): Opt[void] =
   var line: string
   while ?file.readLine(line):
     if line.len == 0 or line[0] == '#':

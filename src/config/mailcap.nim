@@ -289,7 +289,7 @@ proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
     mailcap.add(entry, t)
 
 proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
-    file: ChaFile): Opt[void] =
+    file: AChaFile): Opt[void] =
   var line: string
   while file.readLine(line).get(false):
     if line.len <= 0 or line[0] == '#':
@@ -313,13 +313,12 @@ proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
 
 proc parseMailcap*(mailcap: var Mailcap; path: string;
     lenient = false): Err[string] =
-  let file0 = chafile.fopen(path, "r")
+  let file0 = chafile.afopen(path, "r")
   if file0.isErr:
     return ok()
   let file = file0.get
   var state = MailcapParser(line: 1, lenient: lenient)
   let res = state.parseMailcap(mailcap, file)
-  file.close()
   if res.isErr:
     return err(path & '(' & $state.line & "): " & state.error)
   ok()
@@ -762,7 +761,7 @@ proc saveEntry*(mailcap: var Mailcap; path, t: string; entry: MailcapEntry):
   ps.sclose()
   res
 
-proc parseURIMethodMap*(this: var Mailcap; file: ChaFile): Opt[void] =
+proc parseURIMethodMap*(this: var Mailcap; file: AChaFile): Opt[void] =
   var line: string
   while ?file.readLine(line):
     if line.len == 0 or line[0] == '#':

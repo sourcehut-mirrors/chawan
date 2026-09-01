@@ -39,7 +39,7 @@ proc rename*(oldname, newname: string): Opt[void] =
     return err()
   ok()
 
-proc fopen*(name: string; mode: cstring): Opt[ChaFile] =
+proc fopen(name: string; mode: cstring): Opt[ChaFile] =
   let file = fopen(cstring(name), mode)
   if file == nil:
     return err()
@@ -181,50 +181,31 @@ proc seek*(file: ChaFile; offset: clong): Opt[void] =
     return err()
   ok()
 
-when defined(gcDestructors):
-  type AChaFile* = object
-    p: ChaFile
+type AChaFile* = distinct ChaFile
 
-  proc `=destroy`(f: var AChaFile) =
-    if f.p != nil:
-      discard f.p.fclose()
+proc `=destroy`(f: var AChaFile) =
+  if cast[ChaFile](f) != nil:
+    discard fclose(cast[ChaFile](f))
 
-  proc `=wasMoved`(f: var AChaFile) =
-    f.p = nil
+proc `=copy`(a: var AChaFile; b: AChaFile) {.error.} =
+  discard
 
-  proc `=copy`(a: var AChaFile; b: AChaFile) {.error.} =
-    discard
+proc afopen*(name: string; mode: cstring): Opt[AChaFile] =
+  let p = ?fopen(name, mode)
+  ok(AChaFile(p))
 
-  proc afopen*(name: string; mode: cstring): Opt[AChaFile] =
-    let p = ?fopen(name, mode)
-    ok(AChaFile(p: p))
+proc afdopen*(ps: PosixStream; mode: cstring): Opt[AChaFile] =
+  let p = ?ps.fdopen(mode)
+  ok(AChaFile(p))
 
-  proc afdopen*(ps: PosixStream; mode: cstring): Opt[AChaFile] =
-    let p = ?ps.fdopen(mode)
-    ok(AChaFile(p: p))
-
-  proc read*(file: AChaFile; s: var openArray[uint8]): int =
-    file.p.read(s)
-
-  proc read*(file: AChaFile; s: var openArray[char]): int =
-    file.p.read(s)
-
-  proc readLine*(file: AChaFile; s: var string): Opt[bool] =
-    file.p.readLine(s)
-
-  proc write*(file: AChaFile; s: openArray[char]): Opt[void] =
-    file.p.write(s)
-
-  proc writeLine*(file: AChaFile; s: openArray[char]): Opt[void] =
-    file.p.writeLine(s)
-
-  proc writeCRLine*(file: AChaFile; s: openArray[char]): Opt[void] =
-    file.p.writeCRLine(s)
-
-  proc flush*(file: AChaFile): Opt[void] =
-    file.p.flush()
-
-  proc seek*(file: AChaFile; offset: clong): Opt[void] =
-    file.p.seek(offset)
+proc read*(file: AChaFile; s: var openArray[uint8]): int {.borrow.}
+proc read*(file: AChaFile; s: var openArray[char]): int {.borrow.}
+proc readLine*(file: AChaFile; s: var string): Opt[bool] {.borrow.}
+proc readLineAppend*(file: AChaFile; s: var string): Opt[bool] {.borrow.}
+proc write*(file: AChaFile; s: openArray[char]): Opt[void] {.borrow.}
+proc writeLine*(file: AChaFile; s: openArray[char]): Opt[void] {.borrow.}
+proc writeCRLine*(file: AChaFile; s: openArray[char]): Opt[void] {.borrow.}
+proc flush*(file: AChaFile): Opt[void] {.borrow.}
+proc seek*(file: AChaFile; offset: clong): Opt[void] {.borrow.}
 
 {.pop.} # raises: []

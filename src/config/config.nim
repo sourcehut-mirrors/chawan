@@ -2012,7 +2012,7 @@ proc initConfigParser(config: Config; dir: string; ctx: JSContext; name: string;
     opt: coAddEntry
   )
 
-proc parseFile(cp: var ConfigParser; file: ChaFile): Opt[void] =
+proc parseFile(cp: var ConfigParser; file: AChaFile): Opt[void] =
   var line: string
   while ?file.readLine(line):
     ?cp.parseConfigLine(line)
@@ -2034,7 +2034,7 @@ proc cleanup(cp: var ConfigParser) =
   if cp.error == "":
     cp.error = "failed to read config"
 
-proc parseConfig*(config: Config; dir: string; file: ChaFile;
+proc parseConfig*(config: Config; dir: string; file: AChaFile;
     warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
     Err[string] =
   var cp = initConfigParser(config, dir, ctx, name, laxnames)
@@ -2046,12 +2046,11 @@ proc parseConfig*(config: Config; dir: string; file: ChaFile;
   # or just remove include
   var includes = move(config{"include"})
   for s in includes:
-    let x = chafile.fopen(s, "r")
+    var x = chafile.afopen(s, "r")
     if x.isErr:
       return err("include file not found: " & s)
-    let f = x.get
+    let f = move(x.get)
     ?config.parseConfig(dir, f, warnings, ctx, s.afterLast('/'))
-    f.close()
   warnings.add(cp.warnings)
   ok()
 
@@ -2076,21 +2075,21 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   ok()
 
 proc openConfig*(dir, dataDir: var string; override: string;
-    warnings: var seq[string]): Opt[ChaFile] =
+    warnings: var seq[string]): Opt[AChaFile] =
   if override.len > 0:
     if override[0] == '/':
       dir = parentDir(override)
       dataDir = dir
-      return chafile.fopen(override, "r")
+      return chafile.afopen(override, "r")
     let path = myposix.getcwd() / override
     dir = parentDir(path)
     dataDir = dir
-    return chafile.fopen(path, "r")
+    return chafile.afopen(path, "r")
   dir = getEnvEmpty("CHA_DIR")
   if dir != "":
     # mainly just to behave sanely in nested invocations
     dataDir = getEnvEmpty("CHA_DATA_DIR", dir)
-    return chafile.fopen(dir / "config.toml", "r")
+    return chafile.afopen(dir / "config.toml", "r")
   dir = getEnvEmpty("XDG_CONFIG_HOME")
   var xdg: string
   if dir != "":
@@ -2100,7 +2099,7 @@ proc openConfig*(dir, dataDir: var string; override: string;
     xdg = "~/.config/chawan"
     dir = expandPath(xdg)
   let hasXdg = dirExists(dir)
-  if hasXdg and (let fs = chafile.fopen(dir / "config.toml", "r"); fs.isOk):
+  if hasXdg and (let fs = chafile.afopen(dir / "config.toml", "r"); fs.isOk):
     let s = getEnvEmpty("XDG_DATA_HOME")
     if s != "":
       dataDir = s / "chawan"
@@ -2112,7 +2111,7 @@ proc openConfig*(dir, dataDir: var string; override: string;
     return fs
   dir = expandPath("~/.chawan")
   dataDir = dir
-  let fs = chafile.fopen(dir / "config.toml", "r")
+  let fs = chafile.afopen(dir / "config.toml", "r")
   if fs.isOk and hasXdg:
     warnings.add("found both ~/.chawan and " & xdg &
       ", but only ~/.chawan will be used")
