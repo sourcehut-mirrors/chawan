@@ -12,6 +12,7 @@ import html/domcanvas
 import html/domexception
 import html/domrect
 import html/event
+import html/form
 import html/jsencoding
 import html/jsintl
 import html/performance
@@ -993,6 +994,7 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addDOMExceptionModule()
   ?ctx.addDOMRectModule()
   ?ctx.addDOMModule()
+  ?ctx.addFormModule()
   ?ctx.addCanvasModule()
   ?ctx.addURLModule()
   ?ctx.addHTMLModule()

@@ -36,6 +36,7 @@ import css/cssparser
 import css/cssvalues
 import html/catom
 import html/dom
+import html/form
 import js/jsref
 import types/bitmap
 import types/color

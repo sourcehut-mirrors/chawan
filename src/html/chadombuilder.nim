@@ -10,6 +10,7 @@ import encoding/charset
 import html/catom
 import html/dom
 import html/event
+import html/form
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -144,7 +145,7 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
   let document = builder.document
   let element = document.newElement(localName, namespace.toStaticAtom())
   element.sinkAttrs(move(attrs))
-  element.resetElement(nil)
+  element.resetElement(builder.ctx)
   if (let script = element as HTMLScriptElement; script != nil):
     script.parserDocument = document
     script.forceAsync = false
@@ -239,7 +240,7 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
   let element = element as Element
   let document = builder.document
   if element.tagType == ttTextarea:
-    element.resetElement(nil)
+    element.resetElement(builder.ctx)
   elif (let script = element as HTMLScriptElement; script != nil):
     if document.scriptingEnabled:
       assert builder.poppedScript == nil

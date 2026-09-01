@@ -12,6 +12,7 @@ import css/match
 import css/sheet
 import html/catom
 import html/dom
+import html/form
 import html/script
 import js/jsref
 import types/color

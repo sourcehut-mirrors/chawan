@@ -21,6 +21,7 @@ import html/chadombuilder
 import html/dom
 import html/env
 import html/event
+import html/form
 import io/chafile
 import io/console
 import io/dynstream
@@ -28,13 +29,13 @@ import io/packetreader
 import io/packetwriter
 import io/poll
 import io/timeout
-import local/select
 import js/fromjs
 import js/jsbind
 import js/jsref
 import js/jsutils
 import js/libregexp
 import js/quickjs
+import local/select
 import server/bufferiface
 import server/headers
 import server/loaderiface
@@ -1240,7 +1241,7 @@ proc click(bc: BufferContext; option: HTMLOptionElement): ClickResult =
 
 proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
-    case button.ctype
+    case button.buttonType
     of btSubmit:
       let open = bc.submitFormClick(button.form, button.asHTMLElement)
       bc.setFocus(button.asElement)

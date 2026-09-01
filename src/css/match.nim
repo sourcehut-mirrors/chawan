@@ -4,6 +4,7 @@ import chame/tags
 import css/cssparser
 import html/catom
 import html/dom
+import html/form
 import js/jsref
 import types/opt
 import utils/twtstr
