@@ -2819,6 +2819,13 @@ proc findFirstChildOf(node: ParentNode; tagType: TagType): Element =
       return element
   return Element(nil)
 
+proc findFirstChildOf(node: ParentNode; localName, namespace: StaticAtom):
+    Element =
+  for element in node.elementList:
+    if element.localName == localName and element.namespaceURI == namespace:
+      return element
+  return Element(nil)
+
 proc findLastChildOf(node: ParentNode; tagType: TagType): Element =
   for element in node.relementList:
     if element.tagType == tagType:
@@ -3936,19 +3943,35 @@ jsClassPublicDef(Document):
     HTMLElement(nil)
 
   proc title*(document: Document): string {.jsfget.} =
-    if (let title = document.findFirst(ttTitle); title != nil):
+    let svg = document.documentElement as SVGSVGElement
+    let title = if svg != nil:
+      svg.asParentNode.findFirstChildOf(satTitle, satNamespaceSVG)
+    else:
+      document.findFirst(ttTitle).asElement
+    if title != nil:
       return title.asParentNode.childTextContent.stripAndCollapse()
     return ""
 
   proc setTitle(ctx: JSContext; document: Document; ds: DOMString) {.
       jsfset: "title".} =
-    var title = document.findFirst(ttTitle)
+    let root = document.documentElement
+    let svg = root as SVGSVGElement
+    var title = if svg != nil:
+      root.asParentNode.findFirstChildOf(satTitle, satNamespaceSVG)
+    elif root != nil and root.namespaceURI == satNamespaceHTML:
+      document.findFirst(ttTitle).asElement
+    else:
+      return
     if title == nil:
-      let head = document.findFirst(ttHead)
+      let namespace = if svg != nil: satNamespaceSVG else: satNamespaceHTML
+      let head = if svg != nil: svg.asElement else: document.head.asElement
       if head != nil:
-        title = document.newHTMLElement(ttTitle)
+        title = document.newElement(satTitle.view(), namespace)
         if title != nil:
-          head.asParentNode.append(ctx, title.asNode)
+          var before = Node(nil)
+          if svg != nil:
+            before = svg.asParentNode.firstChild
+          head.asParentNode.insert(ctx, title.asNode, before)
     if title != nil:
       title.asParentNode.replaceAll(ctx, ds)
 
