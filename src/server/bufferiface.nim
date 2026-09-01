@@ -12,15 +12,16 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
-import local/select
 import js/fromjs
 import js/jsbind
+import js/jsnull
 import js/jsref
 import js/jstypes
 import js/jsutils
 import js/libregexp
 import js/quickjs
 import js/tojs
+import local/select
 import server/headers
 import server/loaderiface
 import server/request
@@ -286,7 +287,9 @@ type
 
   BufferInit* = JSRef[BufferInitObj]
 
-  BufferInitObj* = object
+  BufferInitNil* = JSNullRef[BufferInitObj]
+
+  BufferInitObj = object
     stream*: PosixStream # response stream
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig

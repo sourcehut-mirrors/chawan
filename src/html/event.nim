@@ -452,7 +452,7 @@ type MouseEventInit* = object of EventModifierInit
   clientY* {.jsdefault.}: int32
   button* {.jsdefault.}: int16
   buttons* {.jsdefault.}: uint16
-  relatedTarget {.jsdefault.}: JSNullRef[EventTarget]
+  relatedTarget {.jsdefault.}: JSNullRef[EventTargetObj]
 
 jsClassDef(MouseEvent):
   jsextends UIEventDef

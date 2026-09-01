@@ -107,6 +107,8 @@ type
 
   HTMLOptionElement* = JSRef[HTMLOptionElementObj]
 
+  HTMLOptionElementNil = JSNullRef[HTMLOptionElementObj]
+
   HTMLOptionElementObj {.pure, final.} = object of HTMLElementObj
     selected*: bool
     dirty: bool
@@ -502,7 +504,7 @@ jsClassDef(HTMLOptionsCollection):
         it.asNode.removeImpl(ctx)
 
   proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
-      value: JSNullRef[HTMLOptionElement]): JSValue {.jssetprop.} =
+      value: HTMLOptionElementNil): JSValue {.jssetprop.} =
     var u: uint32
     case ctx.fromIdx(atom, u)
     of fiIdx: discard

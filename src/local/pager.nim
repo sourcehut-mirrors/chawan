@@ -2105,7 +2105,7 @@ jsClassDef(Pager):
       iface.clearCachedImages(pager.loader)
 
   # private
-  proc setBufferInit(ctx: JSContext; pager: Pager; init: JSNullRef[BufferInit])
+  proc setBufferInit(ctx: JSContext; pager: Pager; init: BufferInitNil)
       {.jsfset: "bufferInit".} =
     pager.bufferInit = init.get
 
@@ -2495,8 +2495,8 @@ jsClassDef(Pager):
     scripting {.jsdefault.}: Option[ScriptingMode]
     cookie {.jsdefault.}: Option[CookieMode]
     charset {.jsdefault.}: Charset
-    url {.jsdefault.}: JSNullRef[URL]
-    referrer {.jsdefault.}: JSNullRef[BufferInit]
+    url {.jsdefault.}: URLNil
+    referrer {.jsdefault.}: BufferInitNil
     redirectDepth {.jsdefault.}: int
     title {.jsdefault.}: string
 

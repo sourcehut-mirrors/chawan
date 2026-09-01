@@ -317,6 +317,8 @@ type
   # cases do not conflict because a root node cannot be firstChild.
   Node* = JSRef[NodeObj]
 
+  NodeNil = JSNullRef[NodeObj]
+
   NodeObj {.pure.} = object of EventTargetObj
     parentNode*: ParentNode
     internalNext: Node # either nextSibling, rootNode or ownerDocument
@@ -2169,7 +2171,7 @@ proc insertBefore(parent: Node; ctx: JSContext; node, before: Node):
   ok()
 
 proc insertBeforeUndefined*(ctx: JSContext; parent, node: Node;
-    before: JSNullRef[Node]): JSValue =
+    before: NodeNil): JSValue =
   let res = parent.insertBefore(ctx, node, before.get)
   if res.isErr:
     return ctx.insertThrow(res.error)
@@ -2527,7 +2529,7 @@ jsClassDef(Node):
   proc isConnected*(node: Node): bool {.jsfget.} =
     return node.rootNodeShadow of Document
 
-  proc contains(a: Node; b: JSNullRef[Node]): bool {.jsfunc.} =
+  proc contains(a: Node; b: NodeNil): bool {.jsfunc.} =
     let b = b.get
     if b == nil:
       return false
@@ -2552,8 +2554,8 @@ jsClassDef(Node):
     node.removeImpl(ctx)
     return ctx.toJS(node)
 
-  proc insertBefore(ctx: JSContext; parent, node: Node;
-      before: JSNullRef[Node]): JSValue {.jsfunc.} =
+  proc insertBefore(ctx: JSContext; parent, node: Node; before: NodeNil):
+      JSValue {.jsfunc.} =
     let res = parent.insertBefore(ctx, node, before.get)
     if res.isErr:
       return ctx.insertThrow(res.error)

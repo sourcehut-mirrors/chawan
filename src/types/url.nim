@@ -8,6 +8,7 @@ import io/packetreader
 import io/packetwriter
 import js/fromjs
 import js/jsbind
+import js/jsnull
 import js/jsopaque
 import js/jsref
 import js/jstypes
@@ -63,6 +64,8 @@ type
     i: int
 
   URL* = JSRef[URLObj]
+
+  URLNil* = JSNullRef[URLObj]
 
   URLObj = object
     scheme: string
