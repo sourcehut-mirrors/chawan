@@ -4344,6 +4344,11 @@ jsClassPublicDef(Document):
     JS_ThrowTypeError(ctx, "fullscreen is not supported")
     return ctx.newRejectedPromise()
 
+  proc referrer(ctx: JSContext; document: Document): JSValue {.jsfget.} =
+    if document.window != nil:
+      return ctx.toJS(document.window.referrer)
+    return ctx.toJS("")
+
   proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
       whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL):
       JSValue {.jsfunc.} =
