@@ -311,8 +311,8 @@ first glance.
 
 Cascading works OK.  To speed up selector matching, various properties
 are hashed to filter out irrelevant CSS rules.  In addition, class
-descendant selectors are optimized using a hash set, and identical style
-objects are hashed and shared with unrelated elements.
+descendant selectors are optimized using a Bloom filter, and identical
+style objects are hashed and shared with unrelated elements.
 
 Style calculation is incremental, and results are cached until an element's
 style is invalidated, so re-styles are quite fast.  (The invalidation logic
