@@ -3043,6 +3043,8 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
   if selectors.len == 0:
     return JS_EXCEPTION
   let this = newEmptyNodeList()
+  if this == nil:
+    return JS_ThrowOutOfMemory(ctx)
   for element in node.elementDescendants:
     if element.matchesList(selectors):
       this.snapshot.add(element.asNode)
@@ -3980,7 +3982,7 @@ jsClassPublicDef(Document):
     document.asRootNode.getElementById(ctx, val)
 
   proc getElementsByName(document: Document; name: CAtom): NodeList
-      {.jsfunc.} =
+      {.jsnfunc.} =
     let collection = document.asParentNode.getParamCollection(
       cnGetElementsByName, name
     )
@@ -3999,11 +4001,11 @@ jsClassPublicDef(Document):
     this
 
   proc getElementsByTagName(document: Document; tagName: CAtom):
-      HTMLCollection {.jsfunc.} =
+      HTMLCollection {.jsnfunc.} =
     document.asParentNode.getElementsByTagNameImpl(tagName)
 
   proc getElementsByClassName(document: Document; classNames: DOMString):
-      HTMLCollection {.jsfunc.} =
+      HTMLCollection {.jsnfunc.} =
     document.asParentNode.getElementsByClassNameImpl(classNames)
 
   proc children(this: Document): HTMLCollection {.jsnfget.} =
@@ -4030,10 +4032,10 @@ jsClassPublicDef(Document):
       satNamespaceHTML
     else:
       satUempty
-    ctx.toJS(document.newElement(localName, namespace))
+    ctx.toJSNew(document.newElement(localName, namespace))
 
   proc createElementNS(ctx: JSContext; document: Document;
-      namespace, qualifiedName: CAtom): Opt[Element] {.jsfunc.} =
+      namespace, qualifiedName: CAtom): Opt[Element] {.jsnfunc.} =
     var namespace = namespace
     var localName = qualifiedName
     ?ctx.validateAndExtract(namespace, localName, nvElement)
@@ -4041,10 +4043,10 @@ jsClassPublicDef(Document):
     ok(document.newElement(localName, namespace, qualifiedName))
 
   proc createDocumentFragment(document: Document): DocumentFragment
-      {.jsfunc.} =
+      {.jsnfunc.} =
     return newDocumentFragment(document)
 
-  proc createTextNode(document: Document; data: DOMString): Text {.jsfunc.} =
+  proc createTextNode(document: Document; data: DOMString): Text {.jsnfunc.} =
     return newText(document, data)
 
   proc prepend(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
@@ -5741,11 +5743,11 @@ jsClassPublicDef(Element):
     return JS_NULL
 
   proc getElementsByTagName(element: Element; tagName: CAtom):
-      HTMLCollection {.jsfunc.} =
+      HTMLCollection {.jsnfunc.} =
     element.asParentNode.getElementsByTagNameImpl(tagName)
 
   proc getElementsByClassName(element: Element; classNames: DOMString):
-      HTMLCollection {.jsfunc.} =
+      HTMLCollection {.jsnfunc.} =
     element.asParentNode.getElementsByClassNameImpl(classNames)
 
   proc children(element: Element): HTMLCollection {.jsnfget.} =
@@ -5867,19 +5869,18 @@ jsClassPublicDef(Element):
       (width, height) = img.getImageRect()
     jsNew DOMRectObj(width: width, height: height)
 
-  proc getClientRects(ctx: JSContext; element: Element): JSValue {.jsfunc.} =
+  proc getClientRects(element: Element): DOMRectList {.jsnfunc.} =
     let res = jsNew DOMRectListObj()
-    if res == nil:
-      return JS_ThrowOutOfMemory(ctx)
-    let window = element.asNode.document.window
-    if window != nil:
-      if window.settings.scripting == smApp:
-        window.ensureLayout(element)
-        res.list = getClientRects(element, firstOnly = false,
-          blockOnly = false)
-      else:
-        res.list.add(element.getBoundingClientRect())
-    ctx.toJS(res)
+    if res != nil:
+      let window = element.asNode.document.window
+      if window != nil:
+        if window.settings.scripting == smApp:
+          window.ensureLayout(element)
+          res.list = getClientRects(element, firstOnly = false,
+            blockOnly = false)
+        else:
+          res.list.add(element.getBoundingClientRect())
+    res
 
   #TODO clientLeft, clientTop, offsetLeft, offsetTop
 
@@ -6021,7 +6022,7 @@ jsClassPublicDef(Element):
     shadow
 
   proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
-      Opt[ShadowRoot] {.jsfunc.} =
+      Opt[ShadowRoot] {.jsnfunc.} =
     let document = this.asNode.document
     let customElements = if init.customElementRegistry != nil:
       init.customElementRegistry
@@ -6066,10 +6067,8 @@ jsClassPublicDef(Element):
       serializable: init.serializable,
       customElements: customElements
     )
-    if shadow == nil:
-      JS_ThrowOutOfMemory(ctx)
-      return err()
-    this.setShadowRoot(shadow)
+    if shadow != nil:
+      this.setShadowRoot(shadow)
     ok(shadow)
 
   proc closest(ctx: JSContext; this: Element; q: DOMString): JSValue
@@ -6773,11 +6772,12 @@ jsClassPublicDef(HTMLElement):
   proc click(ctx: JSContext; element: HTMLElement) {.jsfunc.} =
     let event = newEvent(satClick, element.asEventTarget, bubbles = true,
       cancelable = true)
-    let canceled = ctx.dispatch(element.asEventTarget, event)
-    if not canceled:
-      let window = ctx.getWindow()
-      if window != nil:
-        window.click(element)
+    if event != nil:
+      let canceled = ctx.dispatch(element.asEventTarget, event)
+      if not canceled:
+        let window = ctx.getWindow()
+        if window != nil:
+          window.click(element)
 
 template htmlClassDef(name: untyped) =
   jsClassDef(name):
@@ -7668,6 +7668,9 @@ jsClassDef(HTMLTableElement):
   proc deleteRow(ctx: JSContext; this: HTMLTableElement; index: int32 = -1):
       Opt[void] {.jsfunc.} =
     let rows = this.rows()
+    if rows == nil:
+      JS_ThrowOutOfMemory(ctx)
+      return err()
     return ctx.deleteRow(rows, index)
 
 # <tbody>
@@ -7695,6 +7698,9 @@ jsClassDef(HTMLTableSectionElement):
   proc deleteRow(ctx: JSContext; this: HTMLTableSectionElement;
       index: int32 = -1): Opt[void] {.jsfunc.} =
     let rows = this.rows()
+    if rows == nil:
+      JS_ThrowOutOfMemory(ctx)
+      return err()
     return ctx.deleteRow(rows, index)
 
 # <tr>

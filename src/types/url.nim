@@ -1363,7 +1363,7 @@ jsClassPublicDef(URL):
     else:
       JS_ThrowTypeError(ctx, "%s is not a valid URL", s)
 
-  proc searchParams(url: URL): URLSearchParams {.jsfget.} =
+  proc searchParams(url: URL): URLSearchParams {.jsnfget.} =
     if url.searchParamsInternal == nil:
       let i = int(url.search.len > 0)
       url.searchParamsInternal = jsNew URLSearchParamsObj(

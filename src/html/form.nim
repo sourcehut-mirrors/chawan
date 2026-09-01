@@ -402,15 +402,14 @@ jsClassDef(HTMLFormControlsCollection):
       parent: this,
       mode: cmTree
     )
-    if nodes == nil:
-      return JS_ThrowOutOfMemory(ctx)
-    nodes.asCollectionLike.attach()
-    let len = nodes.asCollection.getLength()
-    if len == 0:
-      return JS_NULL
-    if len == 1:
-      return ctx.toJS(nodes.snapshot[0])
-    return ctx.toJS(nodes)
+    if nodes != nil:
+      nodes.asCollectionLike.attach()
+      let len = nodes.asCollection.getLength()
+      if len == 0:
+        return JS_NULL
+      if len == 1:
+        return ctx.toJS(nodes.snapshot[0])
+    return ctx.toJSNew(nodes)
 
   proc names(ctx: JSContext; this: HTMLFormControlsCollection):
       JSPropertyEnumList {.jspropnames.} =
@@ -1018,24 +1017,33 @@ jsClassPublicDef(HTMLSelectElement):
     collection
 
   proc length(ctx: JSContext; this: HTMLSelectElement): uint32 {.jsfget.} =
-    this.options().asCollection.getLength()
+    let options = this.options()
+    if options == nil:
+      return 0
+    options.asCollection.getLength()
 
   proc setLength(ctx: JSContext; this: HTMLSelectElement; n: uint32) {.
       jsfset: "length".} =
     let options = this.options()
-    ctx.setLength(options, n)
+    if options != nil:
+      ctx.setLength(options, n)
 
   proc getter(ctx: JSContext; this: HTMLSelectElement; u: JSAtom): JSValue
       {.jsgetownprop.} =
     let options = this.options()
+    if options == nil:
+      return JS_ThrowOutOfMemory(ctx)
     return ctx.getter(options, u)
 
-  proc item(this: HTMLSelectElement; u: uint32): Element {.jsfunc.} =
+  proc item(this: HTMLSelectElement; u: uint32): Element {.jsnfunc.} =
     let options = this.options()
-    options.asHTMLCollection.item(u)
+    if options != nil:
+      options.asHTMLCollection.item(u)
+    else:
+      Element(nil)
 
   proc namedItem(ctx: JSContext; this: HTMLSelectElement; atom: CAtom):
-      Element {.jsfunc.} =
+      Element {.jsnfunc.} =
     let options = this.options()
     if options != nil:
       options.asHTMLCollection.namedItem(atom)
@@ -1096,6 +1104,8 @@ jsClassPublicDef(HTMLSelectElement):
   proc add(ctx: JSContext; this: HTMLSelectElement; element: Element;
       before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
     let options = this.options()
+    if options == nil:
+      return JS_ThrowOutOfMemory(ctx)
     return ctx.add(options, element, before)
 
   proc remove(ctx: JSContext; this: HTMLSelectElement;

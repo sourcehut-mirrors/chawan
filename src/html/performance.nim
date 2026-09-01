@@ -92,9 +92,7 @@ jsClassDef(Performance):
       startTime: startTime,
       detail: detail
     )
-    if mark == nil:
-      return JS_ThrowOutOfMemory(ctx)
-    ctx.toJS(mark)
+    ctx.toJSNew(mark)
 
 # PerformanceEntry
 jsClassDef(PerformanceEntry):

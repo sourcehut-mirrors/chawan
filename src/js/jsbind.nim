@@ -1299,6 +1299,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
         of "jsctor2": (t = bfConstructor; flag = bffThis)
         of "jsfctor": t = bfConstructorFunction
         of "jsfunc": t = bfFunction
+        of "jsnfunc": (t = bfFunction; flag = bffNew)
         of "jsmfunc": (t = bfFunction; flag = bffMagic)
         of "jsstfunc": (t = bfFunction; flag = bffStatic)
         of "jsuffunc": (t = bfFunction; flag = bffUnforgeable)
@@ -1350,7 +1351,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
         of bfFunction:
           let len = gen.length
           case flag
-          of bffNone:
+          of bffNone, bffNew:
             info.tabFuns.add(quote do:
               JS_CFUNC_DEF(`name`, `len`, `id`, JS_PROP_C_W_E)
             )
