@@ -40,7 +40,7 @@ type
 proc setCursorY(select: Select; y: int)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var SelectOption):
-    FromJSResult =
+    JSCode =
   if JS_IsNull(val):
     res = SelectOption(nop: true)
   else:
@@ -424,7 +424,7 @@ jsClassPublicDef(Select):
       select.setCursorY(selected)
     ok(select)
 
-proc addSelectModule*(ctx: JSContext): FromJSResult =
+proc addSelectModule*(ctx: JSContext): JSCode =
   ctx.registerClass(SelectDef)
 
 {.pop.} # raises: []

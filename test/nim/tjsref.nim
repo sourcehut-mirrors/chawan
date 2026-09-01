@@ -1,6 +1,6 @@
-import js/fromjs
 import js/jsbind
 import js/jsref
+import js/jsutils
 import js/quickjs
 
 type

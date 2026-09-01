@@ -6,6 +6,7 @@
 import std/algorithm
 
 import js/fromjs
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/jsopt
@@ -512,8 +513,7 @@ proc toJS*(ctx: JSContext; charset: Charset): JSValue =
     return JS_NULL
   tojs.toJS(ctx, charset)
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; charset: var Charset):
-    FromJSResult =
+proc fromJS*(ctx: JSContext; val: JSValueConst; charset: var Charset): JSCode =
   if JS_IsNull(val):
     charset = csUnknown
   else:

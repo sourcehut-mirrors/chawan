@@ -8,6 +8,7 @@ import js/fromjs
 import js/jsbind
 import js/jsref
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/jsopt
@@ -97,7 +98,7 @@ proc sort(headers: Headers) =
   headers.list.sort()
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
-    FromJSResult =
+    JSCode =
   var headers: Headers
   if ctx.fromJS(val, headers).isOk:
     res = HeadersInit()
@@ -501,7 +502,7 @@ jsClassDef(Headers):
       return ctx.toJS(this.get(name.s, n))
     return JS_NULL
 
-proc addHeadersModule*(ctx: JSContext): FromJSResult =
+proc addHeadersModule*(ctx: JSContext): JSCode =
   ctx.registerClass(HeadersDef)
 
 {.pop.} # raises: []

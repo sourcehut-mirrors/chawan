@@ -149,7 +149,7 @@ proc `=destroy`(obj: var BlobPartObj) =
     JS_FreeValueRT(globalRuntime, obj.val)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var BlobPart):
-    FromJSResult =
+    JSCode =
   var blob: Blob
   var abuf: JSArrayBuffer
   var view: JSArrayBufferView

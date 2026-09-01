@@ -95,7 +95,7 @@ proc storageAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
     func_data[0] = obj
   return JS_DupValue(ctx, func_data[0])
 
-proc registerAutoInitStorage(ctx: JSContext; name: cstring): FromJSResult =
+proc registerAutoInitStorage(ctx: JSContext; name: cstring): JSCode =
   let ctxOpaque = ctx.getOpaque()
   let getter = ctx.newGetterFunctionData(storageAutoInitGetter,
     name, cast[cint](StorageDef.id), JS_UNDEFINED)
@@ -109,7 +109,7 @@ proc registerAutoInitStorage(ctx: JSContext; name: cstring): FromJSResult =
     return fjErr
   fjOk
 
-proc addStorageModule*(ctx: JSContext): FromJSResult =
+proc addStorageModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(StorageDef)
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:

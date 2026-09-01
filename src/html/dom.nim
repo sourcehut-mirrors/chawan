@@ -7917,7 +7917,7 @@ proc addHTMLElementReflection(ctx: JSContext): Opt[void] =
       return err()
   for (name, eventType) in ScriptEventMap:
     if ctx.definePropertyGetSetCE(proto, cstring($name), jsReflectEventGet,
-        jsReflectEventSet, cint(eventType)) == dprException:
+        jsReflectEventSet, cint(eventType)).isErr:
       JS_FreeValue(ctx, proto)
       return err()
   JS_FreeValue(ctx, proto)
@@ -7957,11 +7957,10 @@ proc addConstructorAlias*(ctx: JSContext; fun: JSCFunction; class: JSClassID;
   if JS_IsException(val):
     return err()
   let proto = JS_GetClassProto(ctx, class)
-  if ctx.defineProperty(val, "prototype", proto) == dprException:
+  if ctx.defineProperty(val, "prototype", proto).isErr:
     JS_FreeValue(ctx, val)
     return err()
-  if ctx.definePropertyCW(ctx.getOpaque().global, name, val) == dprException:
-    return err()
+  ?ctx.definePropertyCW(ctx.getOpaque().global, name, val)
   ok()
 
 proc addHyperlinkUtils*(ctx: JSContext; class: JSClassID): Opt[void] =
@@ -7972,7 +7971,7 @@ proc addHyperlinkUtils*(ctx: JSContext; class: JSClassID): Opt[void] =
   let proto = JS_GetClassProto(ctx, class)
   for atom in atoms:
     if ctx.definePropertyGetSetCE(proto, cstring($atom), hyperlinkGet,
-        hyperlinkSet, cint(atom)) == dprException:
+        hyperlinkSet, cint(atom)).isErr:
       JS_FreeValue(ctx, proto)
       return err()
   JS_FreeValue(ctx, proto)
@@ -8084,10 +8083,9 @@ proc registerElements(ctx: JSContext): Opt[void] =
     ?ctx.reflectAttributes(HTMLDialogElementDef.id, raOpen)
   ok()
 
-proc addDOMModule*(ctx: JSContext): Opt[void] =
+proc addDOMModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(NodeDef)
-  if ctx.defineConsts(NodeDef.id, NodeType) == dprException:
-    return err()
+  ?ctx.defineConsts(NodeDef.id, NodeType)
   ?ctx.registerFakeClass(ParentNodeDef)
   ?ctx.registerFakeClass(RootNodeDef)
   ?ctx.registerFakeClass(ElementAccessorDef)
@@ -8123,24 +8121,19 @@ proc addDOMModule*(ctx: JSContext): Opt[void] =
     return ok()
   let global = ctxOpaque.global
   let document = JS_GetPropertyStr(ctx, global, "Document")
-  if ctx.definePropertyCW(global, "HTMLDocument", document) == dprException:
+  if JS_IsException(document):
     return err()
+  ?ctx.definePropertyCW(global, "HTMLDocument", document)
   let nodeFilter = JS_NewObject(ctx)
   if JS_IsException(nodeFilter):
     return err()
   for e in NodeFilterNode:
     let n = ctx.toJS(1u32 shl uint32(e))
-    if ctx.definePropertyE(nodeFilter, $e, n) == dprException:
-      return err()
+    ?ctx.definePropertyE(nodeFilter, $e, n)
   for e in NodeFilterResult:
     let n = ctx.toJS(uint32(e))
-    if ctx.definePropertyE(nodeFilter, $e, n) == dprException:
-      return err()
-  case ctx.definePropertyE(nodeFilter, "SHOW_ALL", ctx.toJS(0xFFFFFFFFu32))
-  of dprException: return err()
-  else: discard
-  if ctx.definePropertyCW(global, "NodeFilter", nodeFilter) == dprException:
-    return err()
-  ok()
+    ?ctx.definePropertyE(nodeFilter, $e, n)
+  ?ctx.definePropertyE(nodeFilter, "SHOW_ALL", ctx.toJS(0xFFFFFFFFu32))
+  ctx.definePropertyCW(global, "NodeFilter", nodeFilter)
 
 {.pop.} # raises: []

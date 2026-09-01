@@ -414,7 +414,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     die(cres.error)
   let config = cres.get
   let global = jsctx.getOpaque().global
-  if jsctx.definePropertyConvert(global, "config", config) == dprException:
+  if jsctx.definePropertyConvert(global, "config", config).isErr:
     die(jsctx.getExceptionMsg())
   var history = true
   let ps = newPosixStream(STDIN_FILENO)

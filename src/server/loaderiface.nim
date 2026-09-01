@@ -392,7 +392,7 @@ jsClassDef(Response):
   proc json(ctx: JSContext; this: Response): JSValue {.jsfunc.} =
     return ctx.blob0(this, onFinishJSON)
 
-proc addResponseModule*(ctx: JSContext): FromJSResult =
+proc addResponseModule*(ctx: JSContext): JSCode =
   ctx.registerClass(ResponseDef)
 
 proc getRedirect*(response: Response; request: Request): Request =

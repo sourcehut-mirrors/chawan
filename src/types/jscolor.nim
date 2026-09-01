@@ -3,6 +3,7 @@
 import css/cssparser
 import css/cssvalues
 import js/fromjs
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/color
@@ -26,7 +27,7 @@ proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =
   return toJS(ctx, res)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColor):
-    FromJSResult =
+    JSCode =
   var s: string
   ?ctx.fromJS(val, s)
   let x = parseLegacyColor(s)
@@ -50,7 +51,7 @@ proc toJS*(ctx: JSContext; c: CSSColor): JSValue =
   return ctx.toJS($c)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor):
-    FromJSResult =
+    JSCode =
   if JS_IsNumber(val):
     # as hex
     return ctx.fromJS(val, uint32(res))
@@ -64,7 +65,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor):
   fjErr
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CSSColor):
-    FromJSResult =
+    JSCode =
   var argb: ARGBColor
   if ctx.fromJS(val, argb).isOk:
     res = cssColor(argb)

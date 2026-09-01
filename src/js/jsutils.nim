@@ -176,86 +176,84 @@ proc newRejectedPromise*(ctx: JSContext): JSValue =
     return JS_EXCEPTION
   return res
 
-type DefinePropertyResult* = enum
-  dprException, dprSuccess, dprFail
+type JSCode* = enum
+  fjErr, fjOk
 
 proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSAtom;
-    prop: JSValue; flags = cint(0)): DefinePropertyResult =
+    prop: JSValue; flags = cint(0)): JSCode =
   ## Frees/consumes `prop'.
-  return case JS_DefinePropertyValue(ctx, this, name, prop, flags)
-  of 0: dprFail
-  of 1: dprSuccess
-  else: dprException
+  if JS_DefinePropertyValue(ctx, this, name, prop, flags) < 0:
+    return fjErr
+  fjOk
 
 proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSAtom;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Define a configurable property on `this`.
   ##
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
 proc defineProperty*(ctx: JSContext; this: JSValueConst; name: cstring;
-    prop: JSValue; flags = cint(0)): DefinePropertyResult =
+    prop: JSValue; flags = cint(0)): JSCode =
   ## Define an immutable property on `this`.
   ##
   ## Frees `prop'.
-  return case JS_DefinePropertyValueStr(ctx, this, name, prop, flags)
-  of 0: dprFail
-  of 1: dprSuccess
-  else: dprException
+  if JS_DefinePropertyValueStr(ctx, this, name, prop, flags) < 0:
+    return fjErr
+  fjOk
 
 proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: string;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Define a configurable property on `this`.
   ##
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
 proc definePropertyE*(ctx: JSContext; this: JSValueConst; name: string;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Define an enumerable property on `this`.
   ##
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_ENUMERABLE)
 
 proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: JSAtom;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
 
 proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: cstring;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
 
 proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSAtom;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
 proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: cstring;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
 proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
-    prop: JSValue): DefinePropertyResult =
+    prop: JSValue): JSCode =
   ## Frees `prop'.
   ctx.defineProperty(this, ctx.getOpaque().strRefs[name], prop, JS_PROP_C_W_E)
 
 proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
     getter: JSGetterMagicFunction; setter: JSSetterMagicFunction; magic: cint):
-    DefinePropertyResult =
+    JSCode =
   let prop = JS_NewAtom(ctx, cstringConst(name))
   if prop == JS_ATOM_NULL:
-    return dprException
+    return fjErr
   var f: JSCFunctionType
   f.getter_magic = getter
   let getterVal = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 0,
     JS_CFUNC_getter_magic, magic)
   if JS_IsException(getterVal):
     JS_FreeAtom(ctx, prop)
-    return dprException
+    return fjErr
   var setterVal = JS_UNDEFINED
   if setter != nil:
     f.setter_magic = setter
@@ -264,14 +262,13 @@ proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
     if JS_IsException(setterVal):
       JS_FreeAtom(ctx, prop)
       JS_FreeValue(ctx, getterVal)
-      return dprException
+      return fjErr
   let res = JS_DefinePropertyGetSet(ctx, this, prop, getterVal, setterVal,
     JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
   JS_FreeAtom(ctx, prop)
-  case res
-  of 0: dprFail
-  of 1: dprSuccess
-  else: dprException
+  if res < 0:
+    return fjErr
+  fjOk
 
 proc strictEquals*(ctx: JSContext; a, b: JSValueConst): bool =
   ## Returns true if `a === b', false otherwise.
@@ -351,21 +348,21 @@ proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =
   return JS_EvalFunction(ctx, val)
 
 proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
-    DefinePropertyResult =
+    JSCode =
   ## Define a list of constants expressed as a Nim enum on a class.
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
-    return dprSuccess
+    return fjOk
   let proto = JS_GetClassProto(ctx, classid)
   let ctor = ctx.getOpaque().ctors[int(classid)]
-  var res = dprSuccess
+  var res = fjOk
   for e in consts:
     let s = $e
     res = ctx.definePropertyE(proto, s, JS_NewUint32(ctx, uint32(e)))
-    if res != dprSuccess:
+    if res != fjOk:
       break
     res = ctx.definePropertyE(ctor, s, JS_NewUint32(ctx, uint32(e)))
-    if res != dprSuccess:
+    if res != fjOk:
       break
   JS_FreeValue(ctx, proto)
   res
@@ -453,9 +450,16 @@ proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
     JS_FreeValue(ctx, getter)
     return JS_EXCEPTION
   let nameRef = ctx.getOpaque.strRefs[jstName]
-  if ctx.definePropertyC(getter, nameRef, getName) == dprException:
+  if ctx.definePropertyC(getter, nameRef, getName) == fjErr:
     JS_FreeValue(ctx, getter)
     return JS_EXCEPTION
   return getter
+
+proc addReflectFunction*(ctx: JSContext; proto: JSValueConst; name: cstring;
+    get: JSGetterMagicFunction; set: JSSetterMagicFunction; magic: cint):
+    JSCode =
+  if ctx.definePropertyGetSetCE(proto, name, get, set, magic) == fjErr:
+    return fjErr
+  fjOk
 
 {.pop.} # raises

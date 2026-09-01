@@ -736,26 +736,25 @@ proc toJS(ctx: JSContext; x: ClickResult): JSValue =
   if JS_IsException(obj):
     return JS_EXCEPTION
   block good:
-    if ctx.definePropertyConvert(obj, "t", x.t) == dprException:
+    if ctx.definePropertyConvert(obj, "t", x.t).isErr:
       break good
     case x.t
     of crtNone: discard
     of crtOpen:
       let open = x.open
-      if ctx.definePropertyConvert(obj, "open", open) == dprException:
+      if ctx.definePropertyConvert(obj, "open", open).isErr:
         break good
-      if ctx.definePropertyConvert(obj, "contentType", x.contentType) ==
-          dprException:
+      if ctx.definePropertyConvert(obj, "contentType", x.contentType).isErr:
         break good
     of crtSelect:
-      if ctx.definePropertyConvert(obj, "selected", x.selected) == dprException:
+      if ctx.definePropertyConvert(obj, "selected", x.selected).isErr:
         break good
-      if ctx.definePropertyConvert(obj, "options", x.options) == dprException:
+      if ctx.definePropertyConvert(obj, "options", x.options).isErr:
         break good
     of crtReadText, crtReadPassword, crtReadArea, crtReadFile:
-      if ctx.definePropertyConvert(obj, "prompt", x.prompt) == dprException:
+      if ctx.definePropertyConvert(obj, "prompt", x.prompt).isErr:
         break good
-      if ctx.definePropertyConvert(obj, "value", x.value) == dprException:
+      if ctx.definePropertyConvert(obj, "value", x.value).isErr:
         break good
     return obj
   JS_FreeValue(ctx, obj)
@@ -782,9 +781,9 @@ proc toJS(ctx: JSContext; x: CursorXY): JSValue =
   if JS_IsException(obj):
     return JS_EXCEPTION
   block good:
-    if ctx.definePropertyCWE(obj, "x", ctx.toJS(x.x)) == dprException:
+    if ctx.definePropertyCWE(obj, "x", ctx.toJS(x.x)).isErr:
       break good
-    if ctx.definePropertyCWE(obj, "y", ctx.toJS(x.y)) == dprException:
+    if ctx.definePropertyCWE(obj, "y", ctx.toJS(x.y)).isErr:
       break good
     return obj
   JS_FreeValue(ctx, obj)

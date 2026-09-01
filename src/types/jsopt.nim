@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import js/fromjs
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/opt
@@ -8,13 +9,16 @@ import types/opt
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue
 proc toJSNew*[T](ctx: JSContext; opt: Opt[T]; ctor: JSValueConst): JSValue
 
-template err*(t: type JSValue): JSValue =
+template err*(t: typedesc[JSValue]): JSValue =
   JS_EXCEPTION
 
-template err*(t: type FromJSResult): FromJSResult =
+template ok*(t: typedesc[JSCode]): JSCode =
+  fjOk
+
+template err*(t: typedesc[JSCode]): JSCode =
   fjErr
 
-template `?`*(res: FromJSResult) =
+template `?`*(res: JSCode) =
   if res == fjErr:
     return err()
 

@@ -493,11 +493,11 @@ proc toJS(ctx: JSContext; input: MouseInput): JSValue =
   let button = input.button
   let mods = cast[int32](input.mods)
   let (x, y) = input.pos
-  if ctx.definePropertyConvert(obj, "t", t) == dprException or
-      ctx.definePropertyConvert(obj, "button", button) == dprException or
-      ctx.definePropertyConvert(obj, "mods", mods) == dprException or
-      ctx.definePropertyConvert(obj, "x", x) == dprException or
-      ctx.definePropertyConvert(obj, "y", y) == dprException:
+  if ctx.definePropertyConvert(obj, "t", t).isErr or
+      ctx.definePropertyConvert(obj, "button", button).isErr or
+      ctx.definePropertyConvert(obj, "mods", mods).isErr or
+      ctx.definePropertyConvert(obj, "x", x).isErr or
+      ctx.definePropertyConvert(obj, "y", y).isErr:
     JS_FreeValue(ctx, obj)
     return JS_EXCEPTION
   return obj
@@ -2528,7 +2528,7 @@ jsClassDef(Pager):
     wait {.jsdefault: false.}: bool
 
   proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueConst;
-      s: var seq[EnvVar]): FromJSResult =
+      s: var seq[EnvVar]): JSCode =
     if JS_IsUndefined(val):
       s = pager.defaultEnv()
       return fjOk
@@ -2895,7 +2895,7 @@ jsClassDef(Pager):
       ?pager.runJSJobs()
     ok()
 
-proc addPagerModule*(ctx: JSContext): FromJSResult =
+proc addPagerModule*(ctx: JSContext): JSCode =
   ctx.registerClass(PagerDef)
 
 {.pop.} # raises: []

@@ -429,11 +429,10 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
         return JS_EXCEPTION
     if classid == LocationDef.id:
       let valueOf0 = ctxOpaque.valRefs[jsvObjectPrototypeValueOf]
-      if ctx.defineProperty(obj, "valueOf",
-          JS_DupValue(ctx, valueOf0)) == dprException:
+      if ctx.defineProperty(obj, "valueOf", JS_DupValue(ctx, valueOf0)).isErr:
         JS_FreeValue(ctx, obj)
         return JS_EXCEPTION
-      if ctx.defineProperty(obj, "toPrimitive", JS_UNDEFINED) == dprException:
+      if ctx.defineProperty(obj, "toPrimitive", JS_UNDEFINED).isErr:
         JS_FreeValue(ctx, obj)
         return JS_EXCEPTION
       #TODO [[DefaultProperties]], exotic
@@ -974,7 +973,7 @@ proc addWindowProperties(ctx: JSContext): JSValue =
     return JS_EXCEPTION
   return proto
 
-proc addWindowModule(ctx: JSContext): FromJSResult =
+proc addWindowModule(ctx: JSContext): JSCode =
   ?ctx.addEventTarget()
   let proto = ctx.addWindowProperties()
   let res = ctx.registerGlobalClass(WindowDef, proto)

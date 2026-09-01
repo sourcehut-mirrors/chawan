@@ -6,6 +6,7 @@ import js/fromjs
 import js/jsbind
 import js/jsref
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/jsopt
@@ -111,7 +112,7 @@ jsClassRaw(TextEncoderDef, "TextEncoder"):
 
   #TODO encodeInto
 
-proc addEncodingModule*(ctx: JSContext): FromJSResult =
+proc addEncodingModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(JSTextDecoderDef)
   ctx.registerClass(TextEncoderDef)
 

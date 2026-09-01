@@ -149,7 +149,7 @@ jsClassDef(Collator):
 
 # NumberFormat
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
-    FromJSResult =
+    JSCode =
   var s: string
   ?ctx.fromJS(val, s)
   let i = s.find("-per-")

@@ -15,6 +15,7 @@ import std/macros
 import chame/tags
 import js/fromjs
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/jsopt
@@ -522,8 +523,7 @@ proc matchesLocalName*(qualifiedName, localName: CAtom): bool =
     return qualifiedName == localName
   return ($qualifiedName).toOpenArray(i, ($qualifiedName).high) == $localName
 
-proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtomRaw):
-    FromJSResult =
+proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtomRaw): JSCode =
   if JS_IsNull(val):
     res = CAtomNullRaw
   else:
@@ -542,14 +542,13 @@ proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtomRaw):
     JS_FreeCString(ctx, cs)
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom):
-    FromJSResult =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): JSCode =
   var atom: CAtomRaw
   let status = ctx.fromJSImpl(val, atom)
   res = atom.trace()
   status
 
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var CAtom): FromJSResult =
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var CAtom): JSCode =
   if atom == JS_ATOM_NULL:
     res = CAtomNullRaw.trace()
   else:
@@ -559,7 +558,7 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var CAtom): FromJSResult =
     ?ctx.fromJSFree(val, res)
   fjOk
 
-proc fromJSView*(ctx: JSContext; atom: JSAtom; res: var CAtomRaw): FromJSResult =
+proc fromJSView*(ctx: JSContext; atom: JSAtom; res: var CAtomRaw): JSCode =
   if atom == JS_ATOM_NULL:
     res = CAtomNullRaw
   else:
@@ -579,14 +578,14 @@ proc fromJSView*(ctx: JSContext; atom: JSAtom; res: var CAtomRaw): FromJSResult 
   fjOk
 
 proc fromJS*(ctx: JSContext; vals: openArray[JSValueConst];
-    res: var seq[CAtom]): FromJSResult =
+    res: var seq[CAtom]): JSCode =
   var tmp = newSeq[CAtom](vals.len)
   for i in 0 ..< vals.len:
     ?ctx.fromJS(vals[i], tmp[i])
   res = move(tmp)
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): FromJSResult =
+proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): JSCode =
   var ca: CAtom
   ?ctx.fromJS(val, ca)
   res = ca.toStaticAtom()

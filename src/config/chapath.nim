@@ -3,6 +3,7 @@
 import std/os
 
 import js/fromjs
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/opt
@@ -252,7 +253,7 @@ proc toJS*(ctx: JSContext; p: ChaPath): JSValue =
   toJS(ctx, $p)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ChaPath):
-    FromJSResult =
+    JSCode =
   ctx.fromJS(val, string(res))
 
 proc unquote*(p: ChaPath; base: string): ChaPathResult[string] =

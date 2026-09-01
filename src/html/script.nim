@@ -210,8 +210,8 @@ proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   let moduleNameAtom = JS_GetModuleName(ctx, m)
   let metaObj = JS_GetImportMeta(ctx, m)
   doAssert ctx.definePropertyCWE(metaObj, "url",
-    JS_AtomToValue(ctx, moduleNameAtom)) == dprSuccess
-  doAssert ctx.definePropertyCWE(metaObj, "main", JS_FALSE) == dprSuccess
+    JS_AtomToValue(ctx, moduleNameAtom)) == fjOk
+  doAssert ctx.definePropertyCWE(metaObj, "main", JS_FALSE) == fjOk
   JS_FreeValue(ctx, metaObj)
   JS_FreeAtom(ctx, moduleNameAtom)
 
@@ -227,12 +227,5 @@ proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
 
 proc logException*(ctx: JSContext) =
   ctx.consoleError(ctx.getExceptionMsg())
-
-proc addReflectFunction*(ctx: JSContext; proto: JSValueConst; name: cstring;
-    get: JSGetterMagicFunction; set: JSSetterMagicFunction; magic: cint):
-    Opt[void] =
-  if ctx.definePropertyGetSetCE(proto, name, get, set, magic) == dprException:
-    return err()
-  ok()
 
 {.pop.} # raises: []

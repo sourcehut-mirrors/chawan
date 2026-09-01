@@ -96,7 +96,7 @@ jsNamespaceDef(Util):
   proc width(s: string): int {.jsstfunc.} =
     strwidth.width(s)
 
-proc addUtilModule*(ctx: JSContext): FromJSResult =
+proc addUtilModule*(ctx: JSContext): JSCode =
   ctx.registerNamespaceFree(UtilDef)
 
 {.pop.}

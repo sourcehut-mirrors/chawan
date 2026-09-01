@@ -607,7 +607,7 @@ template defineAuto(typ, other: untyped) =
       return ctx.toJS(v.get)
     return JS_NULL
 
-  proc fromJS*(ctx: JSContext; val: JSValueConst; res: var typ): FromJSResult =
+  proc fromJS*(ctx: JSContext; val: JSValueConst; res: var typ): JSCode =
     if not JS_IsNull(val):
       res = typ(0)
     else:
@@ -631,7 +631,7 @@ proc toJS*(ctx: JSContext; v: FormatModeAuto): JSValue =
   return JS_NULL
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var FormatModeAuto):
-    FromJSResult =
+    JSCode =
   if JS_IsNull(val):
     res = FormatModeAuto(0)
   else:
@@ -655,7 +655,7 @@ proc toJS*(ctx: JSContext; v: RGBColorAuto): JSValue =
   return JS_NULL
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColorAuto):
-    FromJSResult =
+    JSCode =
   if JS_IsNull(val):
     res = RGBColorAuto(0)
   else:
@@ -2472,15 +2472,13 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
     let s = $opt
     let start = s.find('.') + 1
     let name = cast[cstring](unsafeAddr s[start])
-    if ctx.definePropertyGetSetCE(obj, name, getConfigOption, setConfigOption,
-        cint(opt)) == dprException:
-      return err()
+    ?ctx.definePropertyGetSetCE(obj, name, getConfigOption, setConfigOption,
+      cint(opt))
   let configObj = ctx.toJS(config)
   for section in csBuffer..csStatus:
     let s = $section
     let obj = objs[section]
-    if ctx.defineProperty(configObj, cstring(s), obj) == dprException:
-      return err()
+    ?ctx.defineProperty(configObj, cstring(s), obj)
   JS_FreeValue(ctx, configObj)
   ok()
 
@@ -2591,11 +2589,9 @@ jsClassDef(Config):
           var prop = JS_GetPropertyStr(ctx, objIt, cstring(ss))
           if JS_IsUndefined(prop):
             prop = JS_NewObject(ctx)
-            case ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop))
-            of dprException:
+            if ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop)) == fjErr:
               JS_FreeValue(ctx, obj)
               return err()
-            else: discard
           if JS_IsException(prop):
             JS_FreeValue(ctx, obj)
             return err()
@@ -2606,7 +2602,7 @@ jsClassDef(Config):
       let dpr = ctx.definePropertyE(objIt, name, JS_MKPTR(JS_TAG_OBJECT, cmd))
       JS_FreeValue(ctx, objIt)
       cmd = nil
-      if dpr == dprException:
+      if dpr == fjErr:
         JS_FreeValue(ctx, obj)
         return err()
     JS_FreeValue(ctx, obj)

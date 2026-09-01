@@ -8,6 +8,7 @@ import std/options
 
 import js/fromjs
 import js/jsref
+import js/jsutils
 import js/quickjs
 import js/tojs
 
@@ -17,7 +18,7 @@ proc toJS*[T](ctx: JSContext; opt: Option[T]): JSValue =
   return JS_NULL
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
-    FromJSResult =
+    JSCode =
   mixin fromJS
   if JS_IsNull(val):
     res = none(T)
@@ -34,7 +35,7 @@ proc toJS*[T: JSRef](ctx: JSContext; r: JSNullRef[T]): JSValue =
   ctx.toJS(T(r))
 
 proc fromJS*[T: JSRef](ctx: JSContext; val: JSValueConst;
-    res: var JSNullRef[T]): FromJSResult =
+    res: var JSNullRef[T]): JSCode =
   mixin fromJS
   if JS_IsNull(val):
     res = JSNullRef[T](nil)

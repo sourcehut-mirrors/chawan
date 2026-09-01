@@ -458,7 +458,7 @@ jsClassDef(LineEdit):
       return ctx.update(edit)
     return JS_UNDEFINED
 
-proc addLineEditModule*(ctx: JSContext): FromJSResult =
+proc addLineEditModule*(ctx: JSContext): JSCode =
   ctx.registerClass(LineEditDef)
 
 {.pop.} # raises: []

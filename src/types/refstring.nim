@@ -2,6 +2,7 @@
 
 import js/fromjs
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
 
@@ -30,7 +31,7 @@ proc toJS*(ctx: JSContext; rs: RefString): JSValue =
   return ctx.toJS($rs)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; rs: var RefString):
-    FromJSResult =
+    JSCode =
   rs = RefString()
   var ds: DOMString
   if ctx.fromJS(val, ds).isErr:

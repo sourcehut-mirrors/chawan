@@ -15,6 +15,7 @@ import js/fromjs
 import js/jsbind
 import js/jsref
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/refstring
@@ -438,7 +439,7 @@ jsClassRaw(DOMParserDef, "DOMParser"):
     else:
       return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
 
-proc addHTMLModule*(ctx: JSContext): FromJSResult =
+proc addHTMLModule*(ctx: JSContext): JSCode =
   ctx.registerClass(DOMParserDef)
 
 {.pop.} # raises: []

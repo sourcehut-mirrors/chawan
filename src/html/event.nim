@@ -368,7 +368,7 @@ jsClassDef(MessageEvent):
 # SubmitEvent
 type EventTargetHTMLElement* = distinct EventTarget
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetHTMLElement):
-    FromJSResult =
+    JSCode =
   var res0: pointer
   ?ctx.fromJS(val, htmlElementClassID, res0)
   res = cast[EventTargetHTMLElement](res0)
@@ -396,7 +396,7 @@ jsClassDef(SubmitEvent):
 type EventTargetWindowNull* = distinct EventTarget
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindowNull):
-    FromJSResult =
+    JSCode =
   if JS_IsNull(val):
     res = EventTargetWindowNull(nil)
   else:
@@ -532,7 +532,7 @@ type OptionalBool = enum
   obNone, obFalse, obTrue
 
 proc fromJS(ctx: JSContext; val: JSValueConst; ob: var OptionalBool):
-    FromJSResult =
+    JSCode =
   var status = fjOk
   if JS_IsUndefined(val):
     ob = obNone
@@ -1099,7 +1099,7 @@ jsClassDef(AbortController):
       discard ctx.dispatch(signal.asEventTarget, event)
     return JS_UNDEFINED
 
-proc addEventTarget*(ctx: JSContext): FromJSResult =
+proc addEventTarget*(ctx: JSContext): JSCode =
   # must do this first, so that we can init Window ASAP
   ctx.registerClass(EventTargetDef)
 
@@ -1111,8 +1111,7 @@ proc addEventModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(UIEventDef)
   ?ctx.registerClass(MouseEventDef)
   ?ctx.registerClass(InputEventDef)
-  if ctx.defineConsts(EventDef.id, EventPhase) == dprException:
-    return err()
+  ?ctx.defineConsts(EventDef.id, EventPhase)
   ?ctx.registerClass(MutationRecordDef)
   ?ctx.registerClass(MutationObserverDef)
   ?ctx.registerClass(AbortSignalDef)

@@ -6,6 +6,7 @@ import io/packetwriter
 import js/fromjs
 import js/jsbind
 import js/jsref
+import js/jsutils
 import js/quickjs
 import js/tojs
 import types/blob
@@ -233,7 +234,7 @@ proc toNameValuePairs*(list: seq[FormDataEntry]):
     else:
       result.add((entry.name, entry.name))
 
-proc addFormDataModule*(ctx: JSContext): FromJSResult =
+proc addFormDataModule*(ctx: JSContext): JSCode =
   ctx.registerClass(FormDataDef)
 
 {.pop.} # raises: []

@@ -7,6 +7,7 @@ import js/fromjs
 import js/jsbind
 import js/jsref
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
 import server/headers
@@ -269,7 +270,7 @@ type
     window {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BodyInit):
-    FromJSResult =
+    JSCode =
   if JS_IsNull(val):
     res = BodyInit(t: bitNull)
     return fjOk
@@ -424,7 +425,7 @@ jsClassDef(Request):
       window = window
     ))
 
-proc addRequestModule*(ctx: JSContext): FromJSResult =
+proc addRequestModule*(ctx: JSContext): JSCode =
   ctx.registerClass(RequestDef)
 
 {.pop.} # raises: []

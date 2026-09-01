@@ -558,16 +558,13 @@ jsClassDef(XMLHttpRequest):
       this.responseObject = JS_UNDEFINED
     return JS_DupValue(ctx, this.responseObject)
 
-proc addXMLHttpRequestModule*(ctx: JSContext): Opt[void] =
+proc addXMLHttpRequestModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(XMLHttpRequestEventTargetDef)
   ?ctx.addXHREventTargetEvents()
   ?ctx.registerClass(ProgressEventDef)
   ?ctx.registerClass(XMLHttpRequestUploadDef)
   ?ctx.registerClass(XMLHttpRequestDef)
   ?ctx.addXHREvents()
-  case ctx.defineConsts(XMLHttpRequestDef.id, XMLHttpRequestState)
-  of dprException: return err()
-  else: discard
-  ok()
+  ctx.defineConsts(XMLHttpRequestDef.id, XMLHttpRequestState)
 
 {.pop.} # raises: []
