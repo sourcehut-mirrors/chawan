@@ -2106,9 +2106,9 @@ jsClassDef(Pager):
       iface.clearCachedImages(pager.loader)
 
   # private
-  proc setBufferInit(ctx: JSContext; pager: Pager; init: Option[BufferInit])
+  proc setBufferInit(ctx: JSContext; pager: Pager; init: JSNullRef[BufferInit])
       {.jsfset: "bufferInit".} =
-    pager.bufferInit = init.get(BufferInit(nil))
+    pager.bufferInit = init.get
 
   # private
   proc setBufferIface(ctx: JSContext; pager: Pager; iface: BufferInterface) {.
@@ -2496,8 +2496,8 @@ jsClassDef(Pager):
     scripting {.jsdefault.}: Option[ScriptingMode]
     cookie {.jsdefault.}: Option[CookieMode]
     charset {.jsdefault.}: Charset
-    url {.jsdefault.}: Option[URL]
-    referrer {.jsdefault.}: Option[BufferInit]
+    url {.jsdefault.}: JSNullRef[URL]
+    referrer {.jsdefault.}: JSNullRef[BufferInit]
     redirectDepth {.jsdefault.}: int
     title {.jsdefault.}: string
 
@@ -2515,11 +2515,11 @@ jsClassDef(Pager):
     var loaderConfig: LoaderClientConfig
     var bufferConfig: BufferConfig
     var filterCmd: string
-    pager.initGotoURL(request, t.charset, t.referrer.get(BufferInit(nil)),
-      t.cookie, t.scripting, loaderConfig, bufferConfig, filterCmd)
+    pager.initGotoURL(request, t.charset, t.referrer.get, t.cookie,
+      t.scripting, loaderConfig, bufferConfig, filterCmd)
     let init = pager.gotoURL0(request, t.save, t.history, bufferConfig,
       loaderConfig, t.title, t.contentType.get(""), t.redirectDepth,
-      t.url.get(URL(nil)), filterCmd)
+      t.url.get, filterCmd)
     ok(init)
 
   type ExternDict = object of JSDict

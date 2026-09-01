@@ -6,17 +6,15 @@
 
 import std/options
 
-import fromjs
-import quickjs
-import tojs
+import js/fromjs
+import js/jsref
+import js/quickjs
+import js/tojs
 
-proc toJS*(ctx: JSContext; opt: Option): JSValue =
+proc toJS*[T](ctx: JSContext; opt: Option[T]): JSValue =
   if opt.isSome:
     return ctx.toJS(opt.get)
   return JS_NULL
-
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
-  FromJSResult
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
     FromJSResult =
@@ -29,3 +27,31 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
       return fjErr
     res = option(move(x))
   fjOk
+
+type JSNullRef*[T: JSRef] = distinct T
+
+proc toJS*[T: JSRef](ctx: JSContext; r: JSNullRef[T]): JSValue =
+  ctx.toJS(T(r))
+
+proc fromJS*[T: JSRef](ctx: JSContext; val: JSValueConst;
+    res: var JSNullRef[T]): FromJSResult =
+  mixin fromJS
+  if JS_IsNull(val):
+    res = JSNullRef[T](nil)
+  else:
+    var x: T
+    if ctx.fromJS(val, x).isErr:
+      return fjErr
+    res = JSNullRef[T](x)
+  fjOk
+
+template get*[T: JSRef](r: JSNullRef[T]): T =
+  T(r)
+
+template jsNull*[T: JSRef](r: T): JSNullRef[T] =
+  JSNullRef[T](r)
+
+template jsNull*[T: JSRef](r: typedesc[T]): JSNullRef[T] =
+  JSNullRef[T](nil)
+
+{.pop.} # raises: []

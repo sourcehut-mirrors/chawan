@@ -2358,8 +2358,8 @@ proc insertBefore(parent: Node; ctx: JSContext; node, before: Node):
   ok()
 
 proc insertBeforeUndefined(ctx: JSContext; parent, node: Node;
-    before: Option[Node]): JSValue =
-  let res = parent.insertBefore(ctx, node, before.get(Node(nil)))
+    before: JSNullRef[Node]): JSValue =
+  let res = parent.insertBefore(ctx, node, before.get)
   if res.isErr:
     return ctx.insertThrow(res.error)
   return JS_UNDEFINED
@@ -2721,8 +2721,8 @@ jsClassDef(Node):
   proc isConnected(node: Node): bool {.jsfget.} =
     return node.rootNodeShadow of Document
 
-  proc contains(a: Node; b: Option[Node]): bool {.jsfunc.} =
-    let b = b.get(Node(nil))
+  proc contains(a: Node; b: JSNullRef[Node]): bool {.jsfunc.} =
+    let b = b.get
     if b == nil:
       return false
     a.contains(b)
@@ -2746,15 +2746,15 @@ jsClassDef(Node):
     node.removeImpl(ctx)
     return ctx.toJS(node)
 
-  proc insertBefore(ctx: JSContext; parent, node: Node; before: Option[Node]):
-      JSValue {.jsfunc.} =
-    let res = parent.insertBefore(ctx, node, before.get(Node(nil)))
+  proc insertBefore(ctx: JSContext; parent, node: Node;
+      before: JSNullRef[Node]): JSValue {.jsfunc.} =
+    let res = parent.insertBefore(ctx, node, before.get)
     if res.isErr:
       return ctx.insertThrow(res.error)
     return ctx.toJS(node)
 
   proc appendChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
-    return ctx.insertBefore(parent, node, none(Node))
+    return ctx.insertBefore(parent, node, jsNull(Node))
 
   # Warning: the ordering is counter-intuitive here.
   proc jsReplaceChild(ctx: JSContext; parent, node, child: Node): JSValue {.
@@ -2881,12 +2881,12 @@ proc toNode(ctx: JSContext; argv: openArray[JSValueConst];
 proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     JSValue =
   let node = ?ctx.toNode(nodes, parent.document)
-  return ctx.insertBeforeUndefined(parent, node, option(parent.firstChild))
+  return ctx.insertBeforeUndefined(parent, node, jsNull(parent.firstChild))
 
 proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     JSValue =
   let node = ?ctx.toNode(nodes, parent.document)
-  return ctx.insertBeforeUndefined(parent, node, none(Node))
+  return ctx.insertBeforeUndefined(parent, node, jsNull(Node))
 
 proc replaceChildrenImpl(ctx: JSContext; parent: Node;
     nodes: openArray[JSValueConst]): JSValue =
@@ -5057,7 +5057,7 @@ jsClassDef(HTMLOptionsCollection):
       else:
         this.root
       return ctx.insertBeforeUndefined(parent, element.asNode,
-        option(beforeEl.asNode))
+        jsNull(beforeEl.asNode))
     return JS_UNDEFINED
 
   proc remove(ctx: JSContext; this: HTMLOptionsCollection; i: int32)
@@ -5087,14 +5087,14 @@ jsClassDef(HTMLOptionsCollection):
         it.asNode.removeImpl(ctx)
 
   proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
-      value: Option[HTMLOptionElement]): JSValue {.jssetprop.} =
+      value: JSNullRef[HTMLOptionElement]): JSValue {.jssetprop.} =
     var u: uint32
     case ctx.fromIdx(atom, u)
     of fiIdx: discard
     of fiStr: return JS_UNINITIALIZED
     of fiErr: return JS_EXCEPTION
     let element = this.asHTMLCollection.item(u)
-    let value = value.get(HTMLOptionElement(nil)).asNode
+    let value = value.get.asNode
     if value == nil:
       if element != nil:
         element.asNode.removeImpl(ctx)
@@ -5109,7 +5109,7 @@ jsClassDef(HTMLOptionsCollection):
       if option == nil:
         return JS_ThrowOutOfMemory(ctx)
       parent.append(ctx, option.asNode)
-    return ctx.insertBeforeUndefined(parent.asNode, value, none(Node))
+    return ctx.insertBeforeUndefined(parent.asNode, value, jsNull(Node))
 
   proc selectedIndex(this: HTMLOptionsCollection): int {.jsfget.} =
     return (this.root as HTMLSelectElement).selectedIndex
@@ -5515,11 +5515,11 @@ proc insertAdjacent(ctx: JSContext; this: Node; position: DOMString;
     if this.parentNode == nil:
       JS_NULL
     else:
-      ctx.insertBefore(this.parentNode.asNode, node, option(this))
-  of iapAfterBegin: ctx.insertBefore(this, node, option(this.firstChild))
-  of iapBeforeEnd: ctx.insertBefore(this, node, none(Node))
+      ctx.insertBefore(this.parentNode.asNode, node, jsNull(this))
+  of iapAfterBegin: ctx.insertBefore(this, node, jsNull(this.firstChild))
+  of iapBeforeEnd: ctx.insertBefore(this, node, jsNull(Node))
   of iapAfterEnd:
-    ctx.insertBefore(this.parentNode.asNode, node, option(this.nextSibling))
+    ctx.insertBefore(this.parentNode.asNode, node, jsNull(this.nextSibling))
 
 proc hover*(element: Element): bool =
   return efHover in element.flags
@@ -8619,7 +8619,7 @@ jsClassDef(HTMLTableElement):
     if sect == nil:
       return JS_UNDEFINED
     return ctx.insertBeforeUndefined(this.asNode, sect.asNode,
-      option(this.asParentNode.firstChild))
+      jsNull(this.asParentNode.firstChild))
 
   proc tBodies(this: HTMLTableElement): HTMLCollection {.jsnfget.} =
     this.asParentNode.getChildrenOf(cnTBodies, cmChildren, ttTbody)
