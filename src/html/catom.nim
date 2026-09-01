@@ -734,7 +734,7 @@ proc newDOMTokenArray*(toks: openArray[CAtom]): DOMTokenArray =
   assert int64(toks.len) < int64(uint32.high)
   if toks.len == 0:
     return DOMTokenArray(nil)
-  let this = cast[DOMTokenArray](createDOMTokenArray(uint32(toks.len)))
+  let this = DOMTokenArray(createDOMTokenArray(uint32(toks.len)))
   for i, tok in toks.mypairs:
     this[uint32(i)] = tok
   this
