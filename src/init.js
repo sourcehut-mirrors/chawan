@@ -9,13 +9,13 @@
 
 globalThis.cmd = {
     copyURL: () => {
-        if (pager.clipboardWrite(pager.url))
+        if (pager.clipboardWrite(buffer.url))
             pager.alert("Copied URL to clipboard.");
         else
             pager.alert("Error; please install xsel or adjust external.copy-cmd");
     },
     copyCursorLink: () => {
-        const link = pager.hoverLink;
+        const link = buffer.hoverLink;
         if (!link)
             pager.alert("Please move the cursor above a link and try again.");
         else if (pager.clipboardWrite(link))
@@ -24,7 +24,7 @@ globalThis.cmd = {
             pager.alert("Error; please install xsel or adjust external.copy-cmd");
     },
     copyCursorImage: () => {
-        const link = pager.buffer.hoverImage;
+        const link = buffer.hoverImage;
         if (!link)
             pager.alert("Please move the cursor above an image and try again.");
         else if (pager.clipboardWrite(link))
@@ -46,8 +46,8 @@ globalThis.cmd = {
     loadEmpty: () => pager.load(""),
     webSearch: () => pager.load("br:"),
     addBookmark: () => {
-        const url = encodeURIComponent(pager.url);
-        const title = encodeURIComponent(pager.title);
+        const url = encodeURIComponent(buffer.url);
+        const title = encodeURIComponent(buffer.title);
         pager.gotoURL(`cgi-bin:chabookmark?url=${url}&title=${title}`);
     },
     openBookmarks: () => {
@@ -61,11 +61,11 @@ globalThis.cmd = {
         });
     },
     reloadBuffer: () => pager.reload(),
-    discardBufferPrev: () => pager.discardBuffer(pager.buffer, "prev"),
-    discardBufferNext: () => pager.discardBuffer(pager.buffer, "next"),
+    discardBufferPrev: () => pager.discardBuffer(buffer, "prev"),
+    discardBufferNext: () => pager.discardBuffer(buffer, "next"),
     enterCommand: () => pager.command(),
     toggleCommandMode: () => {
-        if ((pager.commandMode = pager.pinned.console != pager.buffer)) {
+        if ((pager.commandMode = pager.pinned.console != buffer)) {
             if (!line)
                 pager.command();
             console.show();
@@ -78,8 +78,8 @@ globalThis.cmd = {
             pager.click();
     },
     rightClick: async () => {
-        if (!pager.menu && pager.buffer != null) {
-            const canceled = await pager.buffer.contextMenu();
+        if (!pager.menu && buffer != null) {
+            const canceled = await buffer.contextMenu();
             if (!canceled)
                 return pager.openMenu()
         } else
@@ -89,16 +89,16 @@ globalThis.cmd = {
     viewImage: (_, save) => {
         let contentType = null;
         let url = null;
-        if (pager.buffer.hoverCachedImage) {
-            [url, contentType] = pager.buffer.hoverCachedImage.split(' ');
-            url = 'file:' + pager.getCacheFile(url, pager.buffer.process);
-        } else if (pager.buffer.hoverImage)
-            url = new Request(pager.buffer.hoverImage, {headers: {Accept: "*/*"}});
+        if (buffer.hoverCachedImage) {
+            [url, contentType] = buffer.hoverCachedImage.split(' ');
+            url = 'file:' + pager.getCacheFile(url, buffer.process);
+        } else if (buffer.hoverImage)
+            url = new Request(buffer.hoverImage, {headers: {Accept: "*/*"}});
         if (url)
             pager.gotoURL(url, {contentType: contentType, save: save});
     },
     toggleScripting: () => {
-        const buffer = pager.buffer;
+        const buffer = globalThis.buffer;
         const buffer2 = pager.gotoURL(buffer.url, {
             contentType: buffer.init.contentType,
             history: buffer.init.history,
@@ -110,7 +110,7 @@ globalThis.cmd = {
             buffer2.init.copyCursorPos(buffer.iface ?? buffer.init)
     },
     toggleCookie: () => {
-        const buffer = pager.buffer;
+        const buffer = globalThis.buffer;
         const buffer2 = pager.gotoURL(buffer.url, {
             contentType: buffer.init.contentType,
             history: buffer.init.history,
@@ -122,23 +122,23 @@ globalThis.cmd = {
             buffer2.init.copyCursorPos(buffer.iface ?? buffer.init)
     },
     /* vi G */
-    gotoLineOrEnd: n => pager.gotoLine(n ?? pager.buffer.numLines),
+    gotoLineOrEnd: n => pager.gotoLine(n ?? buffer.numLines),
     /* vim gg */
     gotoLineOrStart: n => pager.gotoLine(n ?? 1),
     /* vi | */
-    gotoColumnOrBegin: n => pager.buffer.setCursorXCenter((n ?? 1) - 1),
+    gotoColumnOrBegin: n => buffer.setCursorXCenter((n ?? 1) - 1),
     gotoColumnOrEnd: n =>
-        n ? pager.buffer.setCursorXCenter(n - 1) : pager.buffer.cursorLineEnd(),
+        n ? buffer.setCursorXCenter(n - 1) : buffer.cursorLineEnd(),
     selectOrCopy: n => {
         if (pager.currentSelection)
             cmd.buffer.copySelection();
         else
-            pager.buffer.cursorToggleSelection(n)
+            buffer.cursorToggleSelection(n)
     },
     cursorToggleSelectionLine:
-        n => pager.buffer.cursorToggleSelection(n, {selectionType: "line"}),
+        n => buffer.cursorToggleSelection(n, {selectionType: "line"}),
     cursorToggleSelectionBlock:
-        n => pager.buffer.cursorToggleSelection(n, {selectionType: "block"}),
+        n => buffer.cursorToggleSelection(n, {selectionType: "block"}),
     saveImage: () => cmd.buffer.viewImage(1, true),
     mark: async () => {
         const c = await pager.askChar('m');
@@ -160,7 +160,7 @@ globalThis.cmd = {
             feedNext();
             return;
         }
-        const text = await pager.buffer.getSelectionText();
+        const text = await buffer.getSelectionText();
         const s = text.length != 1 ? "s" : "";
         if (pager.clipboardWrite(text))
             pager.alert(`Copied ${text.length} character${s}.`);
@@ -241,7 +241,7 @@ globalThis.__defineGetter__("buffer", function() {
 
 /* public */
 globalThis.__defineGetter__("select", function() {
-    return pager.menu ?? pager.buffer?.select;
+    return pager.menu ?? buffer?.select;
 });
 
 /* buffer, precnum (TODO call buffer instead of pager?) */
@@ -335,6 +335,46 @@ function addDefaultOmniRule(name, match, url) {
     config.addOmniRule(name, match, fun);
 }
 
+/*
+ * Some properties defined on Buffer are also reflected on Pager.
+ * This is for backwards compatibility only, and it should not be
+ * extended anymore; instead, users should use `buffer' directly.
+ */
+for (const it of ["cursorUp", "cursorDown", "cursorLeft", "cursorRight",
+        "cursorLineBegin", "cursorLineEnd", "cursorLineTextStart",
+        "cursorNextWord", "cursorNextViWord", "cursorNextBigWord",
+        "cursorPrevWord", "cursorPrevViWord", "cursorPrevBigWord",
+        "cursorWordEnd", "cursorViWordEnd", "cursorBigWordEnd",
+        "cursorWordBegin", "cursorViWordBegin", "cursorBigWordBegin",
+        "getCurrentWord", "cursorNextLink", "cursorPrevLink",
+        "cursorLinkNavDown", "cursorLinkNavUp", "cursorNextParagraph",
+        "cursorPrevParagraph", "cursorNthLink", "cursorRevNthLink",
+        "pageUp", "pageDown", "pageLeft", "pageRight", "halfPageUp",
+        "halfPageDown", "halfPageLeft", "halfPageRight", "scrollUp",
+        "scrollDown", "scrollLeft", "scrollRight", "click", "cursorFirstLine",
+        "cursorLastLine", "cursorTop", "cursorMiddle", "cursorBottom",
+        "lowerPage", "lowerPageBegin", "centerLine", "centerLineBegin",
+        "raisePage", "raisePageBegin", "nextPageBegin", "cursorLeftEdge",
+        "cursorMiddleColumn", "cursorRightEdge", "centerColumn",
+        "findPrevMark", "findNextMark", "setMark", "clearMark", "gotoMark",
+        "gotoMarkY", "getMarkPos", "cursorToggleSelection", "getSelectionText",
+        "markURL", "showLinkHints", "toggleImages", "saveLink", "saveSource",
+        "setCursorX", "setCursorY", "setCursorXY", "setCursorXCenter",
+        "setCursorYCenter", "setCursorXYCenter", "setFromX", "setFromY",
+        "setFromXY", "find", "cancel", "reshape"]) {
+    Pager.prototype[it] = function(...args) {
+        return buffer[it](...args);
+    }
+}
+
+for (const it of ["url", "hoverTitle", "hoverLink", "hoverImage", "cursorx",
+        "cursory", "fromx", "fromy", "numLines", "width", "height", "process",
+        "title", "next", "prev", "select", "currentSelection"]) {
+    Pager.prototype.__defineGetter__(it, function() {
+        return buffer[it];
+    });
+}
+
 /* private */
 Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
     globalThis.pager = this;
@@ -398,7 +438,7 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
 /* public */
 console.hide = function() {
     const pager = globalThis.pager;
-    if (pager.consoleCacheId != -1 && pager.buffer == pager.pinned.console)
+    if (pager.consoleCacheId != -1 && buffer == pager.pinned.console)
         pager.setBuffer(pager.pinned.prev);
 }
 
@@ -580,10 +620,7 @@ Pager.prototype.searchBackward = function() {
 /* public */
 Pager.prototype.isearchForward = async function(reverse = false) {
     const buffer = this.buffer;
-    if (this.menu || buffer?.select) {
-        /* isearch doesn't work in menus. TODO remove */
-        this.searchForward(reverse)
-    } else if (buffer != null) {
+    if (buffer != null) {
         const cx = buffer.cursorx;
         const cy = buffer.cursory;
         const fx = buffer.fromx;
@@ -2001,7 +2038,7 @@ const ReTextStart = /\S/gu;
         titlePromise = this.iface.getTitle().then(title => {
             if (title != "") {
                 this.init.title = title;
-                if (pager.buffer == this) {
+                if (globalThis.buffer == this) {
                     if (this.iface != null && this.iface.loadState != "loading")
                         pager.queueStatusUpdate();
                     pager.updateTitle(this.init);
@@ -2132,7 +2169,7 @@ const ReTextStart = /\S/gu;
             /* TODO this is horrible UX, async actions shouldn't block input */
             const hover = URL.parse(this.hoverLink);
             let open = false;
-            if (pager.buffer != this ||
+            if (globalThis.buffer != this ||
                 !save && (hover == null ||
                           !Util.isSameAuthOrigin(hover, url))) {
                 const x = await pager.ask("Open pop-up? " + url);
@@ -2986,7 +3023,7 @@ const ReTextStart = /\S/gu;
     }
 
     /* public */ editSource() {
-        const url = pager.url;
+        const url = buffer.url;
         const path = url.protocol == "file:" ?
             decodeURIComponent(url.pathname) :
             pager.cacheFile;

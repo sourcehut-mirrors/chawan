@@ -29,7 +29,6 @@ import local/term
 import js/fromjs
 import js/jsbind
 import js/jsnull
-import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -2064,64 +2063,6 @@ proc hasSelectFds(pager: Pager): bool =
   return not pager.timeouts[].empty or pager.numload > 0 or
     pager.loader.hasFds()
 
-# List of properties that are defined on both Buffer and as reflectors
-# on Pager.
-# It's a horrible setup that should not be extended anymore, instead users
-# should use `buffer' directly.
-#TODO move to init.js?
-const LegacyReflectFuncList = [
-  cstring"cursorUp", "cursorDown", "cursorLeft", "cursorRight",
-  "cursorLineBegin", "cursorLineEnd", "cursorLineTextStart", "cursorNextWord",
-  "cursorNextViWord", "cursorNextBigWord", "cursorPrevWord", "cursorPrevViWord",
-  "cursorPrevBigWord", "cursorWordEnd", "cursorViWordEnd", "cursorBigWordEnd",
-  "cursorWordBegin", "cursorViWordBegin", "cursorBigWordBegin",
-  "getCurrentWord", "cursorNextLink", "cursorPrevLink", "cursorLinkNavDown",
-  "cursorLinkNavUp", "cursorNextParagraph", "cursorPrevParagraph",
-  "cursorNthLink", "cursorRevNthLink", "pageUp", "pageDown", "pageLeft",
-  "pageRight", "halfPageUp", "halfPageDown", "halfPageLeft", "halfPageRight",
-  "scrollUp", "scrollDown", "scrollLeft", "scrollRight", "click",
-  "cursorFirstLine", "cursorLastLine", "cursorTop", "cursorMiddle",
-  "cursorBottom", "lowerPage", "lowerPageBegin", "centerLine",
-  "centerLineBegin", "raisePage", "raisePageBegin", "nextPageBegin",
-  "cursorLeftEdge", "cursorMiddleColumn", "cursorRightEdge", "centerColumn",
-  "findPrevMark", "findNextMark", "setMark", "clearMark", "gotoMark",
-  "gotoMarkY", "getMarkPos", "cursorToggleSelection", "getSelectionText",
-  "markURL", "showLinkHints", "toggleImages", "saveLink", "saveSource",
-  "setCursorX", "setCursorY", "setCursorXY", "setCursorXCenter",
-  "setCursorYCenter", "setCursorXYCenter", "setFromX", "setFromY", "setFromXY",
-  "find", "cancel", "reshape"
-]
-const LegacyReflectGetList = [
-  cstring"url", "hoverTitle", "hoverLink", "hoverImage", "cursorx", "cursory",
-  "fromx", "fromy", "numLines", "width", "height", "process", "title",
-  "next", "prev", "select", "currentSelection"
-]
-
-proc legacyReflectFunction(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint): JSValue {.cdecl.} =
-  let cval = JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
-  if JS_IsException(cval):
-    return cval
-  let val = JS_GetPropertyStr(ctx, cval, LegacyReflectFuncList[magic])
-  if JS_IsException(val):
-    JS_FreeValue(ctx, cval)
-    return JS_EXCEPTION
-  if JS_IsUndefined(val):
-    JS_FreeValue(ctx, cval)
-    return JS_UNDEFINED
-  let res = JS_Call(ctx, val, cval, argc, argv)
-  ctx.freeValues(val, cval)
-  return res
-
-proc legacyReflectGetter(ctx: JSContext; this: JSValueConst; magic: cint):
-    JSValue {.cdecl.} =
-  let cval = JS_GetProperty(ctx, this, ctx.getOpaque().strRefs[jstBuffer])
-  if JS_IsException(cval):
-    return cval
-  let res = JS_GetPropertyStr(ctx, cval, LegacyReflectGetList[magic])
-  JS_FreeValue(ctx, cval)
-  return res
-
 jsClassDef(Pager):
   jsget Pager, paste
   jsget Pager, arg0 # private
@@ -2954,22 +2895,7 @@ jsClassDef(Pager):
       ?pager.runJSJobs()
     ok()
 
-proc addPagerModule*(ctx: JSContext): Opt[void] =
-  ?ctx.registerClass(PagerDef)
-  let proto = JS_GetClassProto(ctx, PagerDef.id)
-  var f: JSCFunctionType
-  f.generic_magic = legacyReflectFunction
-  for i, name in LegacyReflectFuncList.mypairs:
-    let fun = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 0,
-      JS_CFUNC_generic_magic, cint(i))
-    if ctx.defineProperty(proto, name, fun) == dprException:
-      return err()
-  f.getter_magic = legacyReflectGetter
-  for i, name in LegacyReflectGetList.mypairs:
-    if ctx.definePropertyGetSetCE(proto, name, legacyReflectGetter, nil,
-        cint(i)) == dprException:
-      return err()
-  JS_FreeValue(ctx, proto)
-  ok()
+proc addPagerModule*(ctx: JSContext): FromJSResult =
+  ctx.registerClass(PagerDef)
 
 {.pop.} # raises: []
