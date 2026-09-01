@@ -7,6 +7,7 @@ import js/jsutils
 import js/quickjs
 import types/jsopt
 import types/opt
+import types/url
 import utils/twtstr
 
 type Console* = ref object
@@ -61,6 +62,8 @@ jsNamespaceDef(console):
         var res: string
         ?ctx.fromJS(val, res)
         console.write(res)
+      elif (var url: URL; ctx.fromJS(val, url).isOk):
+        console.write($url)
       else:
         JS_PrintValue(ctx, consoleWriteCb, cast[pointer](console), val, nil)
       if i != argv.high:
