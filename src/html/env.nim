@@ -45,8 +45,8 @@ import utils/twtstr
 
 type JSFetchOpaque {.final.} = ref object of RootObj
   ctx: JSContext
-  resolve: JSObjectTraced
-  reject: JSObjectTraced
+  resolve: JSObject
+  reject: JSObject
 
 # Forward declarations
 proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
@@ -813,14 +813,13 @@ jsClassDef(Window):
     ok()
 
   proc requestAnimationFrame(ctx: JSContext; window: Window;
-      callback: JSValueConst): JSValue {.jsfunc.} =
-    if not JS_IsFunction(ctx, callback):
-      return JS_ThrowTypeError(ctx, "not a function")
+      callback: JSCallback): JSValue {.jsfunc.} =
     let handler = JS_NewCFunction(ctx, animationFrameHandler,
       "animation frame handler".toCStringConst, 1)
     if JS_IsException(handler):
       return handler
-    let res = window.timeouts.setTimeout(ctx, ttTimeout, handler, 0, callback)
+    let res = window.timeouts.setTimeout(ctx, ttTimeout, handler, 0,
+      callback.value)
     JS_FreeValue(ctx, handler)
     ctx.toJS(res)
 
@@ -829,11 +828,9 @@ jsClassDef(Window):
       {.jsfunc.} =
     return ctx.getComputedStyle0(window, element, pseudoElt)
 
-  proc queueMicrotask(ctx: JSContext; window: Window; fun: JSValueConst):
+  proc queueMicrotask(ctx: JSContext; window: Window; fun: JSCallback):
       JSValue {.jsfunc.} =
-    if not JS_IsFunction(ctx, fun):
-      return JS_ThrowTypeError(ctx, "not a function")
-    if ctx.enqueueJob(microtaskJob, fun) < 0:
+    if ctx.enqueueJob(microtaskJob, fun.value) < 0:
       return JS_EXCEPTION
     return JS_UNDEFINED
 

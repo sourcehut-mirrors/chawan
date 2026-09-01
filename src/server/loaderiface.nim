@@ -142,8 +142,8 @@ type
 
   JSBlobOpaque {.final.} = ref object of BlobOpaque
     ctx: JSContext
-    resolve: JSObjectTraced
-    reject: JSObjectTraced
+    resolve: JSObject
+    reject: JSObject
 
 # Forward declarations
 proc bodyUsed*(response: Response): bool

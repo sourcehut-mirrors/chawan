@@ -154,7 +154,7 @@ type
     cctFormDisabled = "formDisabledCallback"
     cctFormStateRestore = "formStateRestoreCallback"
 
-  CECallbackMap = array[CECallbackType, JSValue]
+  CECallbackMap = array[CECallbackType, JSCallback]
 
   CustomElementFlag = enum
     cefFormAssociated, cefInternals, cefShadow
@@ -162,7 +162,7 @@ type
   CustomElementDef = ref object
     name: CAtom
     localName: CAtom
-    ctor: JSObjectTraced
+    ctor: JSObject
     observedAttrs: seq[CAtom]
     callbacks: CECallbackMap
     flags: set[CustomElementFlag]
@@ -265,7 +265,7 @@ type
   NodeIteratorLikeObj {.pure.} = object of CollectionLikeObj
     active: bool
     whatToShow: uint32
-    filter: JSObjectTraced
+    filter: JSObject
     currentNode: Node
 
   NodeIteratorObj {.pure, final.} = object of NodeIteratorLikeObj
@@ -358,7 +358,7 @@ type
     window*: Window
     url*: URL # not nil
     currentScript: HTMLScriptElement
-    implementation: JSObjectTraced
+    implementation: JSObject
     origin: Origin
     # document.write
     ignoreDestructiveWrites: int
@@ -753,7 +753,7 @@ proc tagType*(element: HTMLElement): TagType
 proc insertSheet(this: SheetElement)
 proc removeSheet(this: SheetElement)
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet)
-proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
+proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSCallback;
   contentType = "image/png"; qualityVal: JSValueConst = JS_UNDEFINED)
 proc getImageRect(this: HTMLImageElement): tuple[w, h: float64]
 proc isDisabled(link: HTMLLinkElement): bool
@@ -1626,10 +1626,7 @@ proc tryGetCallback(ctx: JSContext; proto: JSValueConst; t: CECallbackType;
   if JS_IsException(val):
     return err()
   if not JS_IsUndefined(val):
-    callbacks[t] = val # val is freed by caller
-    if not JS_IsFunction(ctx, val):
-      JS_ThrowTypeError(ctx, "not a function")
-      return err()
+    ?ctx.fromJSFree(val, callbacks[t])
   ok()
 
 proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
@@ -1639,7 +1636,7 @@ proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
     return err()
   for t in cctConnected..cctAttributeChanged:
     ?ctx.tryGetCallback(proto, t, def.callbacks)
-  if not JS_IsNull(def.callbacks[cctAttributeChanged]):
+  if def.callbacks[cctAttributeChanged] != nil:
     ?ctx.tryGetStrSeq(ctor, "observedAttributes", def.observedAttrs)
   var disabled: seq[CAtom]
   ?ctx.tryGetStrSeq(ctor, "disabledFeatures", disabled)
@@ -1656,14 +1653,11 @@ proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
   ok()
 
 proc newCustomElementDef(name, localName: CAtom): CustomElementDef =
-  let def = CustomElementDef(
+  CustomElementDef(
     name: name,
     localName: localName,
     flags: {cefInternals, cefShadow}
   )
-  for it in def.callbacks.mitems:
-    it = JS_NULL
-  return def
 
 proc addScopedDocument(this: CustomElementRegistry; document: Document) =
   if document notin this.scopedDocuments:
@@ -1677,14 +1671,11 @@ jsClassDef(CustomElementRegistry):
       {.jsmark.} =
     for def in this.defs:
       JS_MarkValue(rt, def.ctor.value, markFunc)
-      for val in def.callbacks.myitems:
-        JS_MarkValue(rt, val, markFunc)
+      for cb in def.callbacks.myitems:
+        if cb != nil:
+          JS_MarkValue(rt, cb.value, markFunc)
     for document in this.scopedDocuments:
       rt.markObj(document, markFunc)
-
-  proc finalize(rt: JSRuntime; this: CustomElementRegistry) {.jsfin.} =
-    for def in this.defs:
-      rt.freeValues(def.callbacks)
 
   proc define(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
       ctor: JSValueConst; options = CustomElementDefinitionOptions()): JSValue
@@ -1711,7 +1702,6 @@ jsClassDef(CustomElementRegistry):
     JS_FreeValue(ctx, proto)
     this.inDefine = false
     if res.isErr:
-      ctx.freeValues(def.callbacks)
       return JS_EXCEPTION
     def.ctor = ctx.dupTraceObj(ctor)
     if this.defsTail == nil:
@@ -6869,7 +6859,7 @@ jsClassDef(HTMLBaseElement):
 # <canvas>
 type ToBlobEnv* {.final.} = ref object of BlobOpaque
   ctx: JSContext
-  callback: JSValue
+  callback: JSCallback
   isPNG: bool
   this: HTMLCanvasElement
   url: URL
@@ -6882,20 +6872,18 @@ proc mark*(rt: JSRuntime; env: ToBlobEnv; markFunc: JS_MarkFunc) =
 proc onFinishToBlob(response: Response; success: bool) =
   let env = ToBlobEnv(response.opaque)
   let ctx = env.ctx
-  let callback = env.callback
+  let callback = move(env.callback)
   let this = env.this
   let blob = response.onFinishBlob(success)
   if blob == nil:
-    JS_FreeValue(ctx, callback)
     JS_FreeContext(ctx)
     return
   let jsBlob = ctx.toJS(blob)
   if JS_IsException(jsBlob):
-    JS_FreeValue(ctx, callback)
     JS_FreeContext(ctx)
     return
   let window = this.asNode.document.window
-  let res = ctx.callSinkFree(callback, JS_UNDEFINED, jsBlob)
+  let res = ctx.callSink(callback.value, JS_UNDEFINED, jsBlob)
   if JS_IsException(res):
     window.console.error("Exception in canvas toBlob:",
       ctx.getExceptionMsg())
@@ -6906,16 +6894,15 @@ proc onFinishToBlob(response: Response; success: bool) =
 proc toBlob1(opaque: RootRef; response: Response) =
   let env = ToBlobEnv(opaque)
   let ctx = env.ctx
-  let callback = env.callback
   let this = env.this
   if response == nil:
+    let callback = move(env.callback)
     if not env.isPNG:
       # Redo as PNG.  (Yes, this is spec-mandated.)
       ctx.toBlob(this, callback, "image/png")
     else: # the png encoder doesn't work...
       let window = this.asNode.document.window
       window.console.error("missing/broken PNG encoder")
-    JS_FreeValue(ctx, callback)
     JS_FreeContext(ctx)
   else:
     response.onFinish = onFinishToBlob
@@ -6926,7 +6913,6 @@ proc toBlob0(opaque: RootRef; response: Response) =
   let env = ToBlobEnv(opaque)
   let ctx = env.ctx
   if response == nil:
-    JS_FreeValue(ctx, env.callback)
     JS_FreeContext(ctx)
     return
   let this = env.this
@@ -6961,9 +6947,9 @@ jsClassDef(HTMLCanvasElement):
       return this.ctx2d
     return CanvasRenderingContext2D(nil)
 
-  proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
-      contentType = "image/png"; qualityVal: JSValueConst = JS_UNDEFINED)
-      {.jsfunc.} =
+  proc toBlob(ctx: JSContext; this: HTMLCanvasElement;
+      callback: JSCallback; contentType = "image/png";
+      qualityVal: JSValueConst = JS_UNDEFINED) {.jsfunc.} =
     let contentType = contentType.toLowerAscii()
     if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:
       return
@@ -6982,8 +6968,6 @@ jsClassDef(HTMLCanvasElement):
         quality *= 99
         quality += 1
         headers.add("Cha-Image-Quality", dtoa(quality))
-    # callback will go out of scope when we return, so capture a new reference.
-    let callback = JS_DupValue(ctx, callback)
     let request = newRequest(
       "img-codec+x-cha-canvas:decode",
       httpMethod = hmPost,
@@ -6992,7 +6976,7 @@ jsClassDef(HTMLCanvasElement):
     )
     let env = ToBlobEnv(
       ctx: JS_DupContext(ctx),
-      callback: JS_DupValue(ctx, callback),
+      callback: callback,
       isPNG: contentType == "image/png",
       this: this,
       url: url

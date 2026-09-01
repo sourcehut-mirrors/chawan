@@ -117,40 +117,66 @@ proc toDOMStringNull*(ds: sink DOMString): DOMStringNull =
 proc `$`*(bs: ByteString): lent string =
   bs.s
 
-type JSObjectTraced* = distinct pointer
+type JSObject* = distinct pointer
 
-proc `=destroy`(p: var JSObjectTraced) =
+proc `=destroy`(p: var JSObject) =
   if cast[pointer](p) != nil:
     JS_FreeValueRT(globalRuntime, JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)))
 
-proc `=wasMoved`(p: var JSObjectTraced) =
+proc `=wasMoved`(p: var JSObject) =
   cast[ptr pointer](addr p)[] = nil
 
-proc `=copy`(dest: var JSObjectTraced; src: JSObjectTraced) {.error.} =
-  discard
+proc `=copy`(dest: var JSObject; src: JSObject) =
+  `=destroy`(dest)
+  if cast[pointer](src) == nil:
+    cast[ptr pointer](addr dest)[] = nil
+  else:
+    let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](src))
+    let val2 = JS_DupValueRT(globalRuntime, val)
+    cast[ptr pointer](addr dest)[] = JS_VALUE_GET_PTR(val2)
 
-proc `==`*(a: JSObjectTraced; b: typeof(nil)): bool =
-  cast[pointer](a) == nil
+proc `=dup`(src: JSObject): JSObject {.noinit.} =
+  if pointer(src) == nil:
+    cast[ptr pointer](addr result)[] = nil
+  else:
+    let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](src))
+    let val2 = JS_DupValueRT(globalRuntime, val)
+    cast[ptr pointer](addr result)[] = JS_VALUE_GET_PTR(val2)
 
-proc traceObj*(val: JSValue): JSObjectTraced =
-  JSObjectTraced(JS_VALUE_GET_PTR(val))
+proc `==`*(a: JSObject; b: typeof(nil)): bool =
+  pointer(a) == nil
 
-proc dupTraceObj*(ctx: JSContext; val: JSValueConst): JSObjectTraced =
+proc traceObj*(val: JSValue): JSObject =
+  JSObject(JS_VALUE_GET_PTR(val))
+
+proc dupTraceObj*(ctx: JSContext; val: JSValueConst): JSObject =
   let val2 = JS_DupValue(ctx, val)
   val2.traceObj()
 
-proc value*(p: JSObjectTraced): JSValueConst =
-  #TODO translate nil to JS_NULL?  it would be slightly safer
-  JSValueConst(JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)))
+proc value*(p: JSObject): JSValueConst =
+  if pointer(p) != nil:
+    JSValueConst(JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)))
+  else:
+    JS_NULL
 
-proc moveJSValue*(p: var JSObjectTraced): JSValue =
+proc moveJSValue*(p: var JSObject): JSValue =
   let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p))
   cast[ptr pointer](addr p)[] = nil
   val
 
-proc JS_MarkValue*(rt: JSRuntime; p: JSObjectTraced; markFunc: JS_MarkFunc) =
-  if p != nil:
-    JS_MarkValue(rt, p.value, markFunc)
+proc JS_MarkValue*(rt: JSRuntime; p: JSObject; markFunc: JS_MarkFunc) =
+  JS_MarkValue(rt, p.value, markFunc)
+
+type
+  JSCallback* = distinct JSObject
+
+proc `==`*(a: JSCallback; b: typeof(nil)): bool =
+  pointer(a) == nil
+
+proc value*(p: JSCallback): JSValueConst {.borrow.}
+proc moveJSValue*(p: var JSCallback): JSValue {.borrow.}
+proc JS_MarkValue*(rt: JSRuntime; p: JSCallback; markFunc: JS_MarkFunc)
+  {.borrow.}
 
 type
   JSValueTraced* = object

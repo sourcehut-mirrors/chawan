@@ -9,7 +9,6 @@ import io/packetwriter
 import io/timeout
 import js/fromjs
 import js/jsbind
-import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -107,16 +106,14 @@ type
   BlobPartType = enum
     bptString, bptBlob, bptArrayBuffer, bptArrayBufferView
 
-  BlobPartObj = object
+  BlobPart = ref object
     case t: BlobPartType
     of bptString:
       s: string
     of bptBlob:
       blob: Blob
     of bptArrayBuffer, bptArrayBufferView:
-      val: JSValue
-
-  BlobPart = ref BlobPartObj
+      obj: JSObject
 
 proc getBase(ctx: JSContext; part: BlobPart; p: var pointer): int =
   case part.t
@@ -131,22 +128,18 @@ proc getBase(ctx: JSContext; part: BlobPart; p: var pointer): int =
     return part.blob.size
   of bptArrayBuffer:
     var abuf: JSArrayBuffer
-    if ctx.fromJS(part.val, abuf).isErr:
+    if ctx.fromJS(part.obj.value, abuf).isErr:
       p = nil
       return -1
     p = abuf.p
     return abuf.len
   of bptArrayBufferView:
     var view: JSArrayBufferView
-    if ctx.fromJS(part.val, view).isErr:
+    if ctx.fromJS(part.obj.value, view).isErr:
       p = nil
       return -1
     p = view.base
     return view.len
-
-proc `=destroy`(obj: var BlobPartObj) =
-  if obj.t in {bptArrayBuffer, bptArrayBufferView}:
-    JS_FreeValueRT(globalRuntime, obj.val)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var BlobPart):
     JSCode =
@@ -157,9 +150,9 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var BlobPart):
     #TODO this doesn't work for File
     res = BlobPart(t: bptBlob, blob: blob)
   elif ctx.fromJS(val, abuf).isOk:
-    res = BlobPart(t: bptArrayBuffer, val: JS_DupValue(ctx, val))
+    res = BlobPart(t: bptArrayBuffer, obj: ctx.dupTraceObj(val))
   elif ctx.fromJS(val, view).isOk:
-    res = BlobPart(t: bptArrayBufferView, val: JS_DupValue(ctx, val))
+    res = BlobPart(t: bptArrayBufferView, obj: ctx.dupTraceObj(val))
   else:
     res = BlobPart(t: bptString)
     ?ctx.fromJS(val, res.s)

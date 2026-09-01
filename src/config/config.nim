@@ -20,6 +20,7 @@ import js/jsbind
 import js/jsopaque
 import js/jspropenumlist
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
@@ -2560,17 +2561,15 @@ jsClassDef(Config):
     config.actionMap[cs]
 
   proc addOmniRule(ctx: JSContext; config: Config; name: string;
-      re, fun: JSValueConst): JSValue {.jsfunc.} =
+      re: JSValueConst; fun: JSCallback): JSValue {.jsfunc.} =
     var len: cint
     let p = JS_GetRegExpBytecode(ctx, re, len)
     if p == nil:
       return JS_EXCEPTION
-    if not JS_IsFunction(ctx, fun):
-      return JS_ThrowTypeError(ctx, "function expected")
     config.omnirule.put(ctx, ConfigRule(
       name: name,
       regex: bytecodeToRegex(cast[REBytecode](p), len),
-      fun: JS_DupValue(ctx, fun)
+      fun: JS_DupValue(ctx, fun.value)
     ))
     return JS_UNDEFINED
 

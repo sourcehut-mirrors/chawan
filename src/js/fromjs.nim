@@ -71,6 +71,23 @@ proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSValueTraced):
   res = trace(val)
   fjOk
 
+proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSCallback):
+    JSCode =
+  if not JS_IsFunction(ctx, val):
+    JS_FreeValue(ctx, val)
+    JS_ThrowTypeError(ctx, "function expected")
+    return fjErr
+  res = JSCallback(traceObj(val))
+  fjOk
+
+proc fromJSCallback*(ctx: JSContext; val: JSValueConst;
+    res: var pointer): JSCode =
+  if not JS_IsFunction(ctx, val):
+    JS_ThrowTypeError(ctx, "function expected")
+    return fjErr
+  res = JS_VALUE_GET_PTR(val)
+  fjOk
+
 proc isInstanceOf*(ctx: JSContext; classid, tclassid: JSClassID): bool =
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   var classid = classid
@@ -606,6 +623,14 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): JSCode =
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueTraced):
     JSCode =
   res = trace(JS_DupValue(ctx, val))
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSCallback):
+    JSCode =
+  if not JS_IsFunction(ctx, val):
+    JS_ThrowTypeError(ctx, "function expected")
+    return fjErr
+  res = JSCallback(ctx.dupTraceObj(val))
   fjOk
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): JSCode =

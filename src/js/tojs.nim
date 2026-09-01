@@ -232,7 +232,7 @@ proc toJS*[T: enum](ctx: JSContext; e: T): JSValue =
 proc toJS*(ctx: JSContext; j: JSValue): JSValue =
   return j
 
-proc toJS*(ctx: JSContext; p: JSObjectTraced): JSValue =
+proc toJS*(ctx: JSContext; p: JSObject): JSValue =
   # this is inconsistent, but I don't have a better idea right now
   if p == nil:
     return JS_NULL

@@ -79,7 +79,7 @@ type
 
   BufferIfaceItem = ref object
     id: int
-    fun: JSObjectTraced
+    fun: JSObject
     get: GetValueProc
 
   HighlightType = enum
@@ -319,7 +319,7 @@ type
     charsetStack*: seq[Charset]
     refreshUrl: URL
     refreshMillis: int
-    connected: JSObjectTraced
+    connected: JSCallback
     # this really doesn't belong in here, but I don't want to expose
     # PosixStream to JS so instead I'll just smuggle it through init
     ostream*: PosixStream
@@ -553,13 +553,11 @@ jsClassPublicDef(BufferInit):
       return JS_EXCEPTION
     return ctx.callSinkThisFree(fun, this, arg0, arg1, ctx.toJS(force))
 
-  proc setConnected(ctx: JSContext; init: BufferInit; connected: JSValueConst):
+  proc setConnected(ctx: JSContext; init: BufferInit; connected: JSCallback):
         JSValue {.jsfset: "connected".} =
-    if not JS_IsFunction(ctx, connected):
-      return JS_ThrowTypeError(ctx, "not a function")
     if init.connected != nil:
       return JS_ThrowTypeError(ctx, "connected is already set")
-    init.connected = ctx.dupTraceObj(connected)
+    init.connected = connected
     return JS_UNDEFINED
 
   proc closeMailcap*(init: BufferInit) {.jsfunc.} =
@@ -880,7 +878,7 @@ proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
 proc addPromise(iface: BufferInterface; get: GetValueProc) =
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
-    fun: JSObjectTraced(nil),
+    fun: JSObject(nil),
     get: get
   ))
   inc iface.packetid

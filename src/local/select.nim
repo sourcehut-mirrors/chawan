@@ -3,6 +3,7 @@
 import js/fromjs
 import js/jsbind
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
@@ -32,7 +33,7 @@ type
     y: int
     redraw*: bool
     unselected: bool
-    finish: JSValue
+    finish: JSObject
 
   Select* = JSRef[SelectObj]
 
@@ -71,8 +72,7 @@ proc finish(ctx: JSContext; select: Select): JSValue =
   let selected = ctx.toJS(select.selected)
   if JS_IsException(selected):
     return JS_EXCEPTION
-  let finish = move(select.finish)
-  select.finish = JS_UNDEFINED
+  let finish = moveJSValue(select.finish)
   ctx.callSinkFree(finish, JS_UNDEFINED, selected)
 
 proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
@@ -408,7 +408,7 @@ jsClassPublicDef(Select):
       x: x,
       y: y,
       options: options,
-      finish: JS_DupValue(ctx, finish)
+      finish: ctx.dupTraceObj(finish)
     )
     if select != nil:
       var maxw = 0

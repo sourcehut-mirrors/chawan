@@ -741,6 +741,10 @@ proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
       var `s` {.noinit.}: pointer
       if dl != fjErr and ctx.fromJS(`id`, getClassID(`t`), `s`) == fjErr:
         dl = fjErr
+    elif `t` is JSCallback:
+      var `s` {.noinit.}: pointer
+      if dl != fjErr and ctx.fromJSCallback(`id`, `s`) == fjErr:
+        dl = fjErr
     else:
       when `t` is SomeNumber or `t` is enum or `t` is bool:
         var `s` {.noinit.}: `t`
@@ -1216,7 +1220,8 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
           finList.add(quote do:
             JS_FreeValueRT(rt, this.`varNode`)
           )
-        elif inst.sameType(JSObjectTraced.getType()):
+        elif inst.sameType(JSObject.getType()) or
+            inst.sameType(JSCallback.getType()):
           markList.add(quote do:
             JS_MarkValue(rt, this.`varNode`, markFunc)
           )

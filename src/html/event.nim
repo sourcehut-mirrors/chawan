@@ -118,7 +118,7 @@ type
   MutationRecord = JSRef[MutationRecordObj]
 
   MutationObserverObj = object
-    callback*: JSObjectTraced
+    callback*: JSObject
     nodes: seq[ptr EventTargetObj]
     records*: seq[MutationRecord]
 
@@ -131,24 +131,26 @@ type
     oifChildList, oifAttributes, oifAttributeFilter, oifAttributeOldValue,
     oifCharacterData, oifCharacterDataOldValue, oifSubtree
 
+  EventListenerFlag = enum
+    elfOnce, elfPassive
+
   EventListener {.acyclic.} = ref object
+    flags*: set[ObservedItemFlag]
     case t: EventListenerType
     of eltEventListener:
       # callback may be
-      # * undefined (if the listener has been removed)
       # * null (accepted from addEventListener)
       # * an object (whose handleEvent property will be invoked)
       # * a function
-      callback: JSValue
+      callback: JSObject
       ctype: CAtom
+      eflags: set[EventListenerFlag]
       capture: bool
-      once: bool
       internal: bool
-      passive: bool
+      removed: bool
       signal: AbortSignal
     of eltMutationObserver:
       observer*: MutationObserver
-      flags*: set[ObservedItemFlag]
       attributeFilter*: seq[CAtom]
     # order is: eltEventListener nodes -> eltMutationObserver nodes
     next: EventListener
@@ -669,15 +671,16 @@ proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
 proc findEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: CAtom; callback: JSValueConst; capture: bool): EventListener =
   for it in eventTarget.eventListeners:
-    if not it.internal and it.ctype == ctype and
-        ctx.strictEquals(it.callback, callback) and it.capture == capture:
+    if not it.internal and not it.removed and it.ctype == ctype and
+        ctx.strictEquals(it.callback.value, callback) and
+        it.capture == capture:
       return it
   nil
 
 proc findInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom): EventListener =
   for it in eventTarget.eventListeners:
-    if it.internal and it.ctype == ctype:
+    if it.internal and not it.removed and it.ctype == ctype:
       return it
   nil
 
@@ -688,7 +691,7 @@ proc hasEventListener*(eventTarget: EventTarget; ctype: CAtom): bool =
   false
 
 proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
-  if JS_IsNull(listener.callback):
+  if listener.callback == nil:
     return JS_UNDEFINED
   let jsTarget = ctx.toJS(event.currentTarget)
   if JS_IsException(jsTarget):
@@ -699,7 +702,7 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
     return JS_EXCEPTION
   var ret = JS_UNINITIALIZED
   #TODO user object operation
-  let callback = JS_DupValue(ctx, listener.callback)
+  let callback = JS_DupValue(ctx, listener.callback.value)
   if JS_IsFunction(ctx, callback):
     # Apparently it's a bad idea to call a function that can then delete
     # the reference it was called from (hence the dup).
@@ -728,7 +731,7 @@ proc removeEventListenerData(ctx: JSContext; _: JSValueConst;
 proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtom;
     capture, once, internal: bool; passive: Option[bool];
     callback: JSValueConst; signal: AbortSignal): Opt[void] =
-  if signal != nil and signal.aborted or JS_IsUndefined(callback):
+  if signal != nil and signal.aborted:
     return ok()
   let passive = passive.get(defaultPassiveValue(ctype, target))
   if ctx.findEventListener(target, ctype, callback, capture) == nil:
@@ -737,13 +740,15 @@ proc addEventListener(ctx: JSContext; target: EventTarget; ctype: CAtom;
       t: eltEventListener,
       ctype: ctype,
       capture: capture,
-      once: once,
       internal: internal,
-      passive: passive,
-      callback: JS_DupValue(ctx, callback),
+      callback: ctx.dupTraceObj(callback),
       next: target.eventListener,
       signal: signal
     )
+    if passive:
+      listener.eflags.incl(elfPassive)
+    if once:
+      listener.eflags.incl(elfOnce)
     target.eventListener = listener
     if signal != nil:
       let jsTarget = ctx.toJS(target)
@@ -802,9 +807,8 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
   var prev: EventListener = nil
   for it in eventTarget.eventListeners:
     if it.ctype == ctype and it.internal:
-      let callback = it.callback
-      it.callback = JS_UNDEFINED
-      JS_FreeValue(ctx, callback)
+      it.callback = JSObject(nil)
+      it.removed = true
       if prev == nil:
         eventTarget.eventListener = it.next
       else:
@@ -827,7 +831,7 @@ proc eventReflectGetImpl*(ctx: JSContext; this: EventTarget; name: StaticAtom):
   let el = ctx.findInternalEventListener(this, name)
   if el == nil:
     return JS_NULL
-  return JS_DupValue(ctx, el.callback)
+  return JS_DupValue(ctx, el.callback.value)
 
 proc eventReflectSetImpl*(ctx: JSContext; this: EventTarget; val: JSValueConst;
     atom: StaticAtom): JSValue =
@@ -878,15 +882,15 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
   let event = dctx.event
   event.currentTarget = item.target
   for el in item.els.ritems:
-    if JS_IsUndefined(el.callback):
+    if el.removed:
       continue # removed, presumably by a previous handler
-    if el.passive:
+    if elfPassive in el.eflags:
       event.flags.incl(efInPassiveListener)
     let e = ctx.invoke(el, event)
     if JS_IsException(e):
       ctx.logException()
     JS_FreeValue(ctx, e)
-    if el.passive:
+    if elfPassive in el.eflags:
       event.flags.excl(efInPassiveListener)
     if efCanceled in event.flags:
       dctx.canceled = true
@@ -926,10 +930,7 @@ jsClassPublicDef(EventTarget):
   proc finalize(rt: JSRuntime; this: EventTarget) {.jsfin.} =
     # Can't take rt as param here, because elements may be unbound in JS.
     for el in this.eventListenersRaw:
-      case el.t
-      of eltEventListener:
-        JS_FreeValueRT(rt, el.callback)
-      of eltMutationObserver:
+      if el.t == eltMutationObserver:
         let i = el.observer.nodes.find(cast[ptr EventTargetObj](this))
         if i >= 0: # might have already been destroyed
           el.observer.nodes.del(i)
@@ -964,11 +965,11 @@ jsClassPublicDef(EventTarget):
     let capture = ?ctx.flatten(options)
     var prev: EventListener = nil
     for it in eventTarget.eventListeners:
-      if not it.internal and it.ctype == ctype and
-          ctx.strictEquals(it.callback, callback) and it.capture == capture:
-        let callback = it.callback
-        it.callback = JS_UNDEFINED
-        JS_FreeValue(ctx, callback)
+      if not it.internal and not it.removed and it.ctype == ctype and
+          ctx.strictEquals(it.callback.value, callback) and
+          it.capture == capture:
+        it.callback = JSObject(nil)
+        it.removed = true
         if prev == nil:
           eventTarget.eventListener = it.next
         else:
