@@ -126,6 +126,10 @@ proc `=destroy`(p: var JSObject) =
 proc `=wasMoved`(p: var JSObject) =
   cast[ptr pointer](addr p)[] = nil
 
+proc `=sink`(dest: var JSObject; src: JSObject) =
+  `=destroy`(dest)
+  cast[ptr pointer](addr dest)[] = cast[pointer](src)
+
 proc `=copy`(dest: var JSObject; src: JSObject) =
   `=destroy`(dest)
   if cast[pointer](src) == nil:

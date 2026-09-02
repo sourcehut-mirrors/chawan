@@ -78,9 +78,9 @@ type
   GetValueProc = proc(ctx: JSContext; iface: BufferInterface;
     r: var PacketReader): JSValue {.nimcall, raises: [].}
 
-  BufferIfaceItem = ref object
+  BufferIfaceItem = object
     id: int
-    fun: JSObject
+    fun: JSCallback
     get: GetValueProc
 
   HighlightType = enum
@@ -339,7 +339,6 @@ type
 proc queueDraw*(iface: BufferInterface)
 proc sendCursorPosition(iface: BufferInterface)
 proc requestLinesFast*(iface: BufferInterface; force = false)
-proc fromx*(iface: BufferInterface): int
 proc fromy*(iface: BufferInterface): int
 proc cursorx*(iface: BufferInterface): int
 proc cursory*(iface: BufferInterface): int
@@ -872,7 +871,7 @@ proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
   JS_FreeValue(ctx, funs[1])
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
-    fun: traceObj(funs[0]),
+    fun: JSCallback(traceObj(funs[0])),
     get: get
   ))
   inc iface.packetid
@@ -881,7 +880,7 @@ proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
 proc addPromise(iface: BufferInterface; get: GetValueProc) =
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
-    fun: JSObject(nil),
+    fun: JSCallback(nil),
     get: get
   ))
   inc iface.packetid
@@ -1121,8 +1120,7 @@ jsClassPublicDef(BufferInterface):
   proc mark(rt: JSRuntime; iface: BufferInterface; markFunc: JS_MarkFunc)
       {.jsmark.} =
     for it in iface.map:
-      if it.fun != nil:
-        JS_MarkValue(rt, it.fun.value, markFunc)
+      JS_MarkValue(rt, it.fun, markFunc)
     for highlight in iface.highlights:
       rt.markObj(highlight, markFunc)
 
