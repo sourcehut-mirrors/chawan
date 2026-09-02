@@ -2392,14 +2392,14 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox; space: Space;
     box.state.baselineSet = true
 
 # Grow cells with a rowspan > 1 (to occupy their place in a new row).
-proc growRowspan(tctx: var TableContext; growi, n: var int; ntill, growlen: int;
-    width: var LUnit; cellHead, cellTail: var CellWrapper) =
+proc growRowspan(tctx: var TableContext; growi, n: var int; flush: bool;
+    growlen: int; width: var LUnit; cellHead, cellTail: var CellWrapper) =
   while growi < growlen:
     let cellw = tctx.cols[growi].growing
     if cellw == nil:
       inc growi
       continue
-    if growi > ntill:
+    if growi > n and not flush:
       break
     dec tctx.cols[growi].grown
     let grown = tctx.cols[growi].grown
@@ -2527,7 +2527,8 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     let firstRow = rowi == 0 or not tctx.rows[rowi - 1].hasBottomBorder
     let colspan = box.computed{"-cha-colspan"}
     # grow until n, but not more
-    tctx.growRowspan(growi, n, n, growlen, width, cellHead, cellTail)
+    tctx.growRowspan(growi, n, flush = false, growlen, width, cellHead,
+      cellTail)
     let rowspan = min(box.computed{"-cha-rowspan"}, numrows - rowi)
     let cw = box.computed{"width"}
     let ch = box.computed{"height"}
@@ -2563,7 +2564,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     borderWidth += spacing
     n = nextn
     firstCell = false
-  tctx.growRowspan(growi, n, tctx.cols.len, growlen, width, cellHead, cellTail)
+  tctx.growRowspan(growi, n, flush = true, growlen, width, cellHead, cellTail)
   width += borderWidth
   tctx.maxwidth = max(width, tctx.maxwidth)
   tctx.borderWidth = max(borderWidth, tctx.borderWidth)
