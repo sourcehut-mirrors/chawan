@@ -1348,6 +1348,15 @@ jsClassPublicDef(BufferInterface):
   proc cursorBytes(iface: BufferInterface; y, cc: int): int {.jsfunc.} =
     return iface.getLineStr(y).findColBytes(cc, 0, 0)
 
+  proc emptyCommand(ctx: JSContext; iface: BufferInterface;
+      cmd: BufferCommand): JSValue {.jsmfunc("forceReshape", bcForceReshape),
+      jsmfunc("hideHints", bcHideHints), jsmfunc("markURL", bcMarkURL),
+      jsmfunc("onReshape", bcOnReshape),
+      jsmfunc("readCanceled", bcReadCanceled).} =
+    ctx.withPacketWriter iface, cmd, w:
+      discard
+    return addEmptyPromise(ctx, iface)
+
   proc cancel*(iface: BufferInterface) {.jsfunc.} =
     iface.withPacketWriter bcCancel, w:
       discard
@@ -1503,12 +1512,6 @@ jsClassPublicDef(BufferInterface):
       w.swrite(n)
     return addPromise[PagePos](ctx, iface)
 
-  proc forceReshape(ctx: JSContext; iface: BufferInterface): JSValue
-      {.jsfunc.} =
-    ctx.withPacketWriter iface, bcForceReshape, w:
-      discard
-    return addEmptyPromise(ctx, iface)
-
   proc requestLines(ctx: JSContext; iface: BufferInterface; force = false):
       JSValue {.jsfunc.} =
     let slice = iface.lineWindow
@@ -1542,31 +1545,10 @@ jsClassPublicDef(BufferInterface):
       w.swrite(target)
     return addPromise[GotoAnchorResult](ctx, iface)
 
-  proc hideHints(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
-    ctx.withPacketWriter iface, bcHideHints, w:
-      discard
-    return addEmptyPromise(ctx, iface)
-
   proc load(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
     ctx.withPacketWriter iface, bcLoad, w:
       discard
     return addPromise[LoadResult](ctx, iface)
-
-  proc markURL(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
-    ctx.withPacketWriter iface, bcMarkURL, w:
-      discard
-    return addEmptyPromise(ctx, iface)
-
-  proc onReshape(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
-    ctx.withPacketWriter iface, bcOnReshape, w:
-      discard
-    return addEmptyPromise(ctx, iface)
-
-  proc readCanceled(ctx: JSContext; iface: BufferInterface): JSValue
-      {.jsfunc.} =
-    ctx.withPacketWriter iface, bcReadCanceled, w:
-      discard
-    return addEmptyPromise(ctx, iface)
 
   proc readSuccess(ctx: JSContext; iface: BufferInterface; s: string; fd: cint):
       JSValue {.jsfunc.} =
