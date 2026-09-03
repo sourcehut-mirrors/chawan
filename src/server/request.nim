@@ -16,6 +16,7 @@ import types/formdata
 import types/jsopt
 import types/opt
 import types/url
+import utils/twtstr
 
 type
   HttpMethod* = enum
@@ -347,8 +348,14 @@ jsClassDef(Request):
     if not JS_IsUndefined(init.credentials):
       ?ctx.fromJS(init.credentials, credentials)
     if not JS_IsUndefined(init.`method`):
+      var s: DOMString
+      ?ctx.fromJS(init.`method`, s)
       #TODO the spec allows this to be any string :(
-      ?ctx.fromJS(init.method, httpMethod)
+      let res = parseEnumNoCase[HttpMethod](s.toOpenArray())
+      if res.isErr:
+        JS_ThrowTypeError(ctx, "unexpected HTTP method %s", s.p)
+        return err()
+      httpMethod = res.get
     var hasReferrer = true
     var referrer: URL
     var url: URL
