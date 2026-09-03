@@ -23,7 +23,7 @@ type
 
   BlobObj {.pure.} = object of JSRootObj
     size*: int
-    ctype*: string
+    contentType*: string
     buffer*: pointer
     opaque*: pointer
     deallocFun*: DeallocFun
@@ -71,7 +71,7 @@ proc swrite*(w: var PacketWriter; blob: Blob) =
     if fd != -1:
       w.sendFd(fd)
     w.swrite(file.name)
-  w.swrite(blob.ctype)
+  w.swrite(blob.contentType)
   w.swrite(blob.size)
   if blob.size > 0:
     w.writeData(blob.buffer, blob.size)
@@ -90,7 +90,7 @@ proc sread*(r: var PacketReader; blob: var Blob) =
     else:
       file.fd = -1
     r.sread(file.name)
-  r.sread(blob.ctype)
+  r.sread(blob.contentType)
   r.sread(blob.size)
   if blob.size > 0:
     let buffer = alloc(blob.size)
@@ -181,7 +181,7 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
     i += n
   blob.size = len
   if AllChars - {char(0x20)..char(0x7E)} notin blobType.toOpenArray():
-    blob.ctype = blobType.toOpenArray().toLowerAscii()
+    blob.contentType = blobType.toOpenArray().toLowerAscii()
   ok()
 
 proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
@@ -192,12 +192,12 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
         part.s = part.s.normalizeLF()
   ctx.init(blob, parts, blobType)
 
-proc newBlob*(buffer: pointer; size: int; ctype: string;
+proc newBlob*(buffer: pointer; size: int; contentType: string;
     deallocFun: DeallocFun; opaque: pointer = nil): Blob =
   jsNew BlobObj(
     buffer: buffer,
     size: size,
-    ctype: ctype,
+    contentType: contentType,
     deallocFun: deallocFun,
     opaque: opaque
   )
@@ -228,7 +228,7 @@ template toOpenArray*(blob: Blob): openArray[char] =
 
 jsClassDef(Blob):
   jsget Blob, size
-  jsget Blob, ctype, "type"
+  jsget Blob, contentType, "type"
 
   proc newBlob(ctx: JSContext; blobParts: seq[BlobPart] = @[];
       options = BlobPropertyBag()): Opt[Blob] {.jsctor.} =
@@ -247,7 +247,7 @@ proc newWebFile*(name: string; fd: cint): WebFile =
   jsNew WebFileObj(
     name: name,
     fd: fd,
-    ctype: DefaultGuess.guessContentType(name)
+    contentType: DefaultGuess.guessContentType(name)
   )
 
 type FilePropertyBag = object of BlobPropertyBag

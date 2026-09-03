@@ -551,7 +551,7 @@ type
     readyForParserExec*: bool
     alreadyStarted*: bool
     delayingTheLoadEvent: bool
-    ctype: ScriptType
+    scriptType: ScriptType
     internalNonce: string
     scriptResult*: ScriptResult
     onReady: (proc(element: HTMLScriptElement) {.nimcall, raises: [].})
@@ -689,7 +689,7 @@ proc invalidateCollectionsRemove(document: Document; node: Node)
 proc parseURL0*(document: Document; s: string): URL
 proc parseURL*(document: Document; s: string): Opt[URL]
 proc reflectEvent(document: Document; target: EventTarget;
-  name, ctype: StaticAtom; value: string)
+  name, eventType: StaticAtom; value: string)
 
 proc adjustForRemoval(iter: NodeIterator; node: Node)
 
@@ -3652,14 +3652,14 @@ proc getEventTarget(element: Element; name: StaticAtom): EventTarget =
   element.asEventTarget
 
 proc reflectEvent(document: Document; target: EventTarget;
-    name, ctype: StaticAtom; value: string) =
+    name, eventType: StaticAtom; value: string) =
   let ctx = document.window.jsctx
   let fun = ctx.newFunction(["event"], value)
   assert ctx != nil
   if JS_IsException(fun):
     document.window.logException(document.baseURL)
   else:
-    let res = ctx.eventReflectSetImpl(target, fun, ctype)
+    let res = ctx.eventReflectSetImpl(target, fun, eventType)
     if JS_IsException(res):
       document.window.logException(document.baseURL)
     JS_FreeValue(ctx, res)
@@ -5390,7 +5390,7 @@ proc isRenderBlocking(element: Element): bool =
     return true
   let script = element as HTMLScriptElement
   if script != nil:
-    if script.ctype == stClassic and script.parserDocument != nil and
+    if script.scriptType == stClassic and script.parserDocument != nil and
         not element.attrb(satAsync) and not element.attrb(satDefer):
       return true
   return false
@@ -7370,10 +7370,10 @@ proc execute*(element: HTMLScriptElement) =
     window.fireEvent(satError, element.asEventTarget, bubbles = false,
       cancelable = false, trusted = true)
     return
-  let needsInc = element.external or element.ctype == stModule
+  let needsInc = element.external or element.scriptType == stModule
   if needsInc:
     inc document.ignoreDestructiveWrites
-  case element.ctype
+  case element.scriptType
   of stClassic:
     let oldCurrentScript = document.currentScript
     document.currentScript = if not (element.asNode.rootNode of ShadowRoot):
@@ -7422,11 +7422,11 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
   else:
     "text/javascript"
   if typeString.isJavaScriptType():
-    element.ctype = stClassic
+    element.scriptType = stClassic
   elif typeString.equalsIgnoreCase("module"):
-    element.ctype = stModule
+    element.scriptType = stModule
   elif typeString.equalsIgnoreCase("importmap"):
-    element.ctype = stImportMap
+    element.scriptType = stImportMap
   else:
     return
   if parserDocument != nil:
@@ -7437,10 +7437,10 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
   element.preparationTimeDocument = document
   if parserDocument != nil and parserDocument != document or
       not element.asElement.scriptingEnabled or
-      element.asElement.attrb(satNomodule) and element.ctype == stClassic:
+      element.asElement.attrb(satNomodule) and element.scriptType == stClassic:
     return
   #TODO content security policy
-  if element.ctype == stClassic and element.asElement.attrb(satEvent) and
+  if element.scriptType == stClassic and element.asElement.attrb(satEvent) and
       element.asElement.attrb(satFor):
     let f = element.asElement.attr(satFor).strip(chars = AsciiWhitespace)
     let event = element.asElement.attr(satEvent).strip(chars = AsciiWhitespace)
@@ -7465,8 +7465,8 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
   if element.asElement.attrb(satSrc):
     let src = element.asElement.attr(satSrc)
     let url = document.parseURL0(src)
-    element.external = src != "" and element.ctype != stImportMap
-    if element.ctype == stImportMap or url == nil:
+    element.external = src != "" and element.scriptType != stImportMap
+    if element.scriptType == stImportMap or url == nil:
       window.fireEvent(satError, element.asEventTarget, bubbles = false,
         cancelable = false, trusted = true)
       return
@@ -7475,13 +7475,13 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
     element.delayingTheLoadEvent = true
     if element.asElement in document.renderBlockingElements:
       options.renderBlocking = true
-    if element.ctype == stClassic:
+    if element.scriptType == stClassic:
       response = element.fetchClassicScript(url, classicCORS, markAsReady)
     else: # stModule
       element.fetchExternalModuleGraph(url, options, markAsReady)
   else:
     let baseURL = document.baseURL
-    case element.ctype
+    case element.scriptType
     of stClassic:
       let script = ctx.newClassicScript(sourceText, baseURL, options, settings)
       element.markAsReady(script)
@@ -7494,8 +7494,8 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
     of stImportMap:
       #TODO
       element.markAsReady(ScriptResult(t: srtNull))
-  if element.ctype == stClassic and element.asElement.attrb(satSrc) or
-      element.ctype == stModule:
+  if element.scriptType == stClassic and element.asElement.attrb(satSrc) or
+      element.scriptType == stModule:
     let prepdoc = element.preparationTimeDocument
     if element.asElement.attrb(satAsync) or element.forceAsync:
       element.next = prepdoc.scriptsToExecSoon
@@ -7509,7 +7509,7 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
         prepdoc.scriptsToExecInOrder = element
       prepdoc.scriptsToExecInOrderTail = element
       element.onReady = scriptOnReadyNoParser
-    elif element.ctype == stModule or element.asElement.attrb(satDefer):
+    elif element.scriptType == stModule or element.asElement.attrb(satDefer):
       let tail = element.parserDocument.scriptsToExecOnLoadTail
       if tail != nil:
         tail.next = element

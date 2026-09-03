@@ -301,7 +301,7 @@ proc extract*(init: BodyInit; body: var RequestBody): string =
     return "application/x-www-form-urlencoded;charset=UTF-8"
   of bitBlob:
     body = RequestBody(t: rbtBlob, blob: init.blob)
-    return init.blob.ctype
+    return init.blob.contentType
 
 proc safeExtract*(init: BodyInit; body: var RequestBody): string =
   #TODO check for ReadableStream once we have it

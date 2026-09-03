@@ -101,7 +101,7 @@ proc calcLength*(this: FormData): int =
       result += entry.filename.count('"') * 2
       # content type
       result += "Content-Type: \r\n".len
-      result += entry.value.ctype.len
+      result += entry.value.contentType.len
       result += entry.value.getSize()
     result += "\r\n".len # header is always followed by \r\n
     result += "\r\n".len # value is always followed by \r\n
@@ -128,11 +128,16 @@ proc writeEntry(stream: PosixStream; entry: FormDataEntry; boundary: string):
     let filename = percentEncode(entry.filename, {'"', '\r', '\n'})
     buf &= " filename=\"" & filename & "\"\r\n"
     let blob = entry.value
-    let ctype = if blob.ctype == "":
+    let contentType = if blob.contentType == "":
       "application/octet-stream"
     else:
-      blob.ctype
-    buf &= "Content-Type: " & ctype & "\r\n\r\n"
+      blob.contentType
+    buf &= "Content-Type: "
+    if blob.contentType == "":
+      buf &= "application/octet-stream"
+    else:
+      buf &= contentType
+    buf &= "\r\n\r\n"
     ?stream.writeLoop(buf)
     if (let file = blob as WebFile; file != nil and file.fd != -1):
       let ps = newPosixStream(file.fd)
