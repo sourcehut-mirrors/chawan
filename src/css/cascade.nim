@@ -389,17 +389,16 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
     ctx.applyColorHint(cptColor, element.attr(satText))
   of ttTextarea:
-    let textarea = HTMLTextAreaElement(element)
-    let cols = textarea.asElement.attrul(satCols).get(20)
-    let rows = textarea.asElement.attrul(satRows).get(1)
+    let cols = element.attrul(satCols).get(20)
+    let rows = element.attrul(satRows).get(1)
     ctx.applyLengthHint(cptWidth, cuCh, cols)
     ctx.applyLengthHint(cptHeight, cuEm, rows)
   of ttFont:
     ctx.applyColorHint(cptColor, element.attr(satColor))
   of ttInput:
-    let input = (element as HTMLInputElement)
+    let input = element as HTMLInputElement
     if input.inputType in InputTypeWithSize:
-      let n = float32(element.attrulgz(satSize).get(20))
+      let n = float32(input.asElement.attrulgz(satSize).get(20))
       let length = resolveLength(cuCh, n, ctx.window.settings.attrsp[])
       ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, length.npx))
   of ttProgress:
