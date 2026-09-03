@@ -753,7 +753,14 @@ proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
       if dl != fjErr and ctx.fromJS(`id`, `s`) == fjErr:
         dl = fjErr
   )
-  gen.jsFunCall.add(quote do: cast[`t`](`s`))
+  gen.jsFunCall.add(quote do:
+    when `t` is JSRef:
+      cast[`t`](`s`)
+    elif `t` is JSCallback:
+      cast[JSCallback](`s`)
+    else:
+      `s`
+  )
   inc gen.i
 
 proc addArgv(gen: var JSFuncGenerator) =
