@@ -480,7 +480,7 @@ type
   ElementObj* {.pure.} = object of ParentNodeObj
     # magic is internalElIndex
     namespaceURI*: CAtom # 4
-    tagName: CAtom # 8, like DOM tagName but not upper-cased
+    tagName: CAtom # 8
     relayout*: set[PseudoElement] # 9
     flags: set[ElementFlag] # 10
     selfDepends: set[DependencyType] # 11
@@ -634,7 +634,7 @@ proc newProcessingInstruction(document: Document; target: string;
 proc newElement*(document: Document; localName: CAtom;
   namespace = satNamespaceHTML): Element
 proc newElement(document: Document;
-  localName, namespaceURI, tagName: CAtom): Element
+  localName, namespaceURI, tagName: sink CAtom): Element
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc newHTMLCollection(root: Node; match: CollectionMatchFun;
   mode: CollectionMode; name: CollectionName): HTMLCollection
@@ -743,7 +743,6 @@ proc reflectTokens*(element: Element; arr: var DOMTokenArray; name: StaticAtom;
 proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
-proc tagName(ctx: JSContext; element: Element): JSValue
 proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
 
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
@@ -1072,7 +1071,7 @@ proc isElementOf(this: Collection; node: Node): bool =
   if node != nil:
     let atom = this.atoms[0]
     if node.namespaceURI == satNamespaceHTML:
-      return node.tagName.equalsIgnoreCase(atom)
+      return node.localName == atom or node.tagName.equalsIgnoreCase(atom)
     return node.tagName == atom
   return false
 
@@ -2497,7 +2496,7 @@ jsClassDef(Node):
 
   proc nodeName(ctx: JSContext; node: Node): JSValue {.jsfget.} =
     if (let node = node as Element; node != nil):
-      return ctx.tagName(node)
+      return ctx.toJS(node.tagName)
     if (let node = node as Attr; node != nil):
       return ctx.toJS(node.data.name)
     if (let node = node as DocumentType; node != nil):
@@ -5383,7 +5382,8 @@ proc isDisabled*(this: Element): bool =
 
 proc newElement*(document: Document; localName: CAtom;
     namespace = satNamespaceHTML): Element =
-  return document.newElement(localName, namespace.view(), localName)
+  let tagName = ($localName).toUpperAscii().toAtom()
+  return document.newElement(localName, namespace.view(), tagName)
 
 proc isRenderBlocking(element: Element): bool =
   if element.attr(satBlocking).containsToken("render"):
@@ -5657,6 +5657,7 @@ jsClassPublicDef(Element):
   jsget Element, namespaceURI
   jsget Element, localName
   jsget Element, id
+  jsget Element, tagName
 
   proc finalize(rt: JSRuntime; element: Element) {.jsfin.} =
     unlinkElementBox(element)
@@ -5688,11 +5689,6 @@ jsClassPublicDef(Element):
     if i < 0:
       return ""
     return ($element.tagName).substr(0, i - 1)
-
-  proc tagName(ctx: JSContext; element: Element): JSValue {.jsfget.} =
-    if element.namespaceURI == satNamespaceHTML:
-      return ctx.toJS(($element.tagName).toUpperAscii())
-    return ctx.toJS(element.tagName)
 
   proc hasAttributes(element: Element): bool {.jsfunc.} =
     return element.attrs.len > 0
@@ -7895,13 +7891,12 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
   move(p)
 
 #TODO custom elements
-proc newElement(document: Document; localName, namespaceURI, tagName: CAtom):
-    Element =
+proc newElement(document: Document;
+    localName, namespaceURI, tagName: sink CAtom): Element =
   let tagType = localName.toTagType()
-  let sns = namespaceURI.toStaticAtom()
   let element = if namespaceURI == satNamespaceHTML:
     newHTMLElementInternal(tagType, document).asElement
-  elif sns == satNamespaceSVG:
+  elif namespaceURI == satNamespaceSVG:
     if tagType == ttSvg:
       (jsNew SVGSVGElementObj()).asElement
     else:
