@@ -191,8 +191,8 @@ proc getTitleAttr(bc: BufferContext; element: Element): Str =
   return str("")
 
 const ClickableElements = {
-  ttA, ttInput, ttOption, ttButton, ttTextarea, ttLabel,
-  ttVideo, ttAudio, ttIframe, ttFrame
+  ttA, ttInput, ttOption, ttButton, ttTextarea, ttLabel, ttVideo, ttAudio,
+  ttIframe, ttFrame, ttSummary
 }
 
 proc isClickable(element: Element): bool =
@@ -1402,6 +1402,10 @@ proc click(bc: BufferContext; clickable: Element): ClickResult =
     return bc.click(HTMLAudioElement(clickable))
   of ttVideo:
     return bc.click(HTMLVideoElement(clickable))
+  of ttSummary:
+    HTMLElement(clickable).clickSummary(bc.window.jsctx)
+    bc.restoreFocus()
+    return ClickResult()
   of ttIframe, ttFrame:
     return bc.clickFrame(clickable)
   else:
@@ -1609,7 +1613,8 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   doAssert compileRegex(buf.toStr(), {LRE_FLAG_GLOBAL}, regex)
   # Dummy element for the fragment parsing algorithm. We can't just use parent
   # there, because e.g. plaintext would not parse the text correctly.
-  let html = bc.document.newHTMLElement(ttDiv)
+  let ctx = bc.window.jsctx
+  let html = bc.document.newHTMLElement(ctx, ttDiv)
   var stack = @[body]
   while stack.len > 0:
     let element = stack.pop()
@@ -1619,13 +1624,13 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
       if (let text = node as Text; text != nil):
         if lastText != nil:
           lastText.data &= text.data
-          text.asNode.removeImpl(bc.window.jsctx)
+          text.asNode.removeImpl(ctx)
         else:
           texts.add(text)
           lastText = text
       elif (let element = node as HTMLElement; element != nil):
         if element.tagType in {ttNobr, ttWbr}:
-          element.asNode.removeImpl(bc.window.jsctx)
+          element.asNode.removeImpl(ctx)
         elif element.tagType notin {ttHead, ttScript, ttStyle, ttA}:
           stack.add(element)
           lastText = Text(nil)
@@ -1670,10 +1675,10 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           of '&': data &= "&amp;"
           else: data &= c
           inc j
-        let replacement = bc.window.jsctx.parseFragment(html.asParentNode,
+        let replacement = ctx.parseFragment(html.asParentNode,
           data.toOpenArray())
         if replacement != nil:
-          discard element.asNode.replaceChildWith(bc.window.jsctx, text.asNode,
+          discard element.asNode.replaceChildWith(ctx, text.asNode,
             replacement.asNode)
   bc.maybeReshape()
 

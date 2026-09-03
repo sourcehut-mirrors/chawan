@@ -101,6 +101,13 @@ type
 
   ProgressEvent = JSRef[ProgressEventObj]
 
+  ToggleEventObj {.pure, final.} = object of EventObj
+    oldState: CAtom
+    newState: CAtom
+    #TODO source
+
+  ToggleEvent = JSRef[ToggleEventObj]
+
   EventTargetObj* = object of JSRootObj
     eventListener: EventListener
 
@@ -556,6 +563,29 @@ proc fireProgressEvent*(ctx: JSContext; target: EventTarget; name: StaticAtom;
   if event != nil:
     event.asEvent.setTrusted()
     discard ctx.dispatch(target, event.asEvent)
+
+# ToggleEvent
+type ToggleEventInit* = object of EventInit
+  oldState* {.jsdefault: satUempty.view().}: CAtom
+  newState* {.jsdefault: satUempty.view().}: CAtom
+  #TODO source
+
+jsClassDef(ToggleEvent):
+  jsextends EventDef
+
+  jsget ToggleEvent, oldState
+  jsget ToggleEvent, newState
+
+  proc newToggleEvent*(eventType: CAtom; init = ToggleEventInit()): ToggleEvent
+      {.jsctor.} =
+    let event = jsNew ToggleEventObj(
+      oldState: init.oldState,
+      newState: init.newState,
+      #TODO source
+    )
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(init))
+    event
 
 # MutationRecord
 jsClassDef(MutationRecord):
@@ -1106,6 +1136,7 @@ proc addEventModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(MouseEventDef)
   ?ctx.registerClass(InputEventDef)
   ?ctx.registerClass(ProgressEventDef)
+  ?ctx.registerClass(ToggleEventDef)
   ?ctx.defineConsts(EventDef.id, EventPhase)
   ?ctx.registerClass(MutationRecordDef)
   ?ctx.registerClass(MutationObserverDef)

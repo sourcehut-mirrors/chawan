@@ -503,7 +503,7 @@ jsClassDef(HTMLOptionsCollection):
         let parent = this.root as ParentNode
         let document = parent.asNode.document
         for i in 0 ..< n - len:
-          let option = document.newHTMLElement(ttOption)
+          let option = document.newHTMLElement(ctx, ttOption)
           if option == nil:
             break
           parent.append(ctx, option.asNode)
@@ -530,7 +530,7 @@ jsClassDef(HTMLOptionsCollection):
     let len = this.length
     let document = parent.asNode.document
     for i in len ..< u:
-      let option = document.newHTMLElement(ttOption)
+      let option = document.newHTMLElement(ctx, ttOption)
       if option == nil:
         return JS_ThrowOutOfMemory(ctx)
       parent.append(ctx, option.asNode)
@@ -877,7 +877,7 @@ jsClassDef(HTMLLabelElement):
 proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let document = ctx.getDocument()
-  let this = document.newHTMLElement(ttOption) as HTMLOptionElement
+  let this = document.newHTMLElement(ctx, ttOption) as HTMLOptionElement
   if argc >= 1 and not JS_IsUndefined(argv[0]):
     var text: DOMString
     ?ctx.fromJS(argv[0], text)

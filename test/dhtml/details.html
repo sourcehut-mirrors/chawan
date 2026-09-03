@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<details id=x open>
+<summary id=xs>summary</summary>
+blah blah
+</details>
+<details id=y>
+<summary id=ys>summary 2</summary>
+blah blah 2
+</details>
+<details id=z>
+<summary id=zs>summary 3</summary>
+blah blah 3
+</details>
+
+<p>
+group:
+<details id=g1 name=group open>
+<summary>group 1</summary>
+group blah 1
+</details>
+<details id=g2 name=group>
+<summary>group 2</summary>
+group blah 2
+</details>
+
+<p>
+multiple summaries:
+<details open>
+<summary>first summary</summary>
+<summary>second summary</summary>
+</details>
+
+<p>
+no summary:
+<details open>
+blah
+</details>
+
+<script>
+x.childNodes[2].remove();
+y.setAttribute("open", "");
+z.removeAttribute("open");
+g2.setAttribute("open", "");
+</script>

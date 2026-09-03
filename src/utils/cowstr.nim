@@ -1155,6 +1155,11 @@ proc toStrNil*(s: Str): lent StrNil =
     return hack
   StrNil(s)
 
+proc `$`*(s: StrNil): string =
+  if s == nil:
+    return "nil"
+  s.asStr.toOpenArray().substr()
+
 const strNil = StrNil(initStrLit(nil, 0))
 
 template str*(s: typeof(nil)): StrNil =

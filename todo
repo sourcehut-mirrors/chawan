@@ -28,7 +28,6 @@ javascript:
 - separate console for each buffer
 - PutForwards
 layout:
-- details element
 - merge csstree into layout: first factor out tree traversal, then move
   build to before each layout
 	* split each layout into pre, child pre, child post, post,

@@ -471,6 +471,17 @@ proc addAnchorChildren(frame: var TreeFrame; anchor: HTMLAnchorElement) =
     frame.addPseudo(peLinkMarker)
   frame.addElementChildren()
 
+proc addSlotChildren(frame: var TreeFrame; slot: HTMLSlotElement) =
+  if slot.nodes.len > 0:
+    for it in slot.nodes:
+      if it of Element:
+        frame.addElement(Element(it))
+      elif it of Text:
+        #TODO collapse subsequent text nodes into one StyledNode
+        frame.addText(Text(it).data)
+  else:
+    frame.addElementChildren()
+
 proc addProgress(frame: var TreeFrame; element: Element) =
   if element.attr(satValue) != "":
     let computed = frame.computed.inheritProperties()
@@ -499,6 +510,8 @@ proc addChildren(frame: var TreeFrame) =
     frame.addOptionChildren(option)
   of ttA:
     frame.addAnchorChildren(HTMLAnchorElement(frame.parent))
+  of ttSlot:
+    frame.addSlotChildren(HTMLSlotElement(frame.parent))
   elif frame.parent.tagType(satNamespaceSVG) == ttSvg:
     frame.addImage(SVGSVGElement(frame.parent).bitmap)
   else:

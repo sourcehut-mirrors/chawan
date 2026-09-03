@@ -8,7 +8,7 @@ param, rp, script, style, template, title, noframes { display: none }
 address, article, aside, blockquote, body, center, dd, details, dialog,
 dir, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4,
 h5, h6, header, hgroup, hr, html, legend, listing, main, menu, nav,
-noscript, ol, p, plaintext, pre, search, section, ul, xmp, frame {
+noscript, ol, p, plaintext, pre, search, section, ul, xmp, frame, summary {
 	display: block
 }
 
@@ -129,7 +129,16 @@ textarea {
 	overflow: clip !important
 }
 
-li, summary { display: list-item }
+li { display: list-item }
+
+details > summary:first-of-type {
+	display: list-item;
+	list-style: disclosure-closed inside;
+	counter-increment: list-item 0
+}
+details[open] > summary:first-of-type {
+	list-style-type: disclosure-open
+}
 
 i, em, address, cite { font-style: italic }
 
