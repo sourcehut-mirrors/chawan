@@ -105,7 +105,7 @@ proc fullsize*(s: string): string =
   for u in s.points:
     let i = fullSizeMap.binarySearch(u,
       proc(x: (uint32, uint32); y: uint32): int = cmp(x[0], y))
-    if i == -1:
+    if i < 0:
       result.addUTF8(u)
     else:
       result.addUTF8(fullSizeMap[i][1])

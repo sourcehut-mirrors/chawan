@@ -170,7 +170,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
         line.insertFormat(cx, fi, initFormat(), Element(nil))
   # Now for the text's formats:
   var format = format
-  if fi == -1:
+  if fi < 0:
     # No formats => just insert a new format at 0
     inc fi
     line.insertFormat(x, fi, format, node)

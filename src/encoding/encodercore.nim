@@ -239,13 +239,13 @@ proc encodeBig5(te: var TextEncoder; iq: openArray[uint8];
     let c = te.c
     let p = if c <= uint16.high:
       let i = Big5EncodeLow.findPair(uint16(c))
-      if i == -1:
+      if i < 0:
         te.i += cl
         return terError
       Big5EncodeLow[i].p
     else:
       let i = Big5EncodeHigh.findPair(uint16(c - 0x20000))
-      if i == -1:
+      if i < 0:
         te.i += cl
         return terError
       Big5EncodeHigh[i].p

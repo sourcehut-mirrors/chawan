@@ -154,7 +154,7 @@ proc mark*(rt: JSRuntime; moduleMap: ModuleMap; markFunc: JS_MarkFunc) =
 proc get*(moduleMap: ModuleMap; url: URL; moduleType: ModuleType):
     ScriptResult =
   let i = moduleMap.find(url, moduleType)
-  if i == -1:
+  if i < 0:
     return nil
   return moduleMap[i].value.clone()
 

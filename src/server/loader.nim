@@ -1142,7 +1142,7 @@ proc findPassedFd(client: ClientHandle; name: string): int =
 proc loadStream(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; request: RawRequest) =
   let i = client.findPassedFd(request.url.pathname)
-  if i == -1:
+  if i < 0:
     ctx.rejectHandleClose(handle, ceFileNotFound, "stream not found")
     return
   case ctx.sendResult(handle, 0)

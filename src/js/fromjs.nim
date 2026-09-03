@@ -417,7 +417,7 @@ proc fromJSEnumBody(ctx: JSContext; val: JSValueConst; enumId: int;
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   let i = rtOpaque.enumMap[enumId].enums.binarySearch(atom, cmpItem)
   JS_FreeAtom(ctx, atom)
-  if i == -1:
+  if i < 0:
     JS_ThrowTypeError(ctx, "invalid value for enumeration %s", tname)
     return -1
   return rtOpaque.enumMap[enumId].enums[i].n
