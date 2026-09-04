@@ -3093,7 +3093,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   var intr = size(w = 0'lu, h = 0'lu)
   var offset = fctx.offset
   var diff = if fctx.space[dim].t == scStretch:
-    fctx.space.w.u - mctx.totalMainSize
+    max(fctx.space.w.u - mctx.totalMainSize, 0'lu)
   else:
     0'lu
   var marginDiff = 0'lu
