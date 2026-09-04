@@ -62,7 +62,7 @@ proc sread*(r: var PacketReader; part: var FormDataEntry) =
 
 proc swrite*(w: var PacketWriter; formData: FormData) =
   w.swrite(formData != nil)
-  if formData == nil:
+  if formData != nil:
     w.swrite(formData.entries)
     w.swrite(formData.boundary)
 

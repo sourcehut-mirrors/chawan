@@ -20,6 +20,8 @@ import server/bufferiface
 import server/headers
 import server/loader
 import server/loaderiface
+import types/blob
+import types/formdata
 import types/opt
 import types/url
 import types/winattrs
@@ -295,9 +297,10 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
   if jsctx == nil:
     quit(2)
   # init JS classes needed in forkserver & loader
-  if jsctx.addURLModule().isErr:
-    quit(2)
-  if jsctx.addHeadersModule().isErr:
+  if jsctx.addURLModule().isErr or
+      jsctx.addHeadersModule().isErr or
+      jsctx.addBlobModule().isErr or
+      jsctx.addFormDataModule().isErr:
     quit(2)
   JS_FreeContext(jsctx)
   var ctx = ForkServerContext(stream: controlStream)

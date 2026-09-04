@@ -186,7 +186,7 @@ proc getReferrer*(this: Request): URL =
   return parseURL0(this.headers.getFirst("Referer"))
 
 proc setReferrer*(this: Request; value: string) =
-  this.flags.excl(rqfReferrer)
+  this.flags.incl(rqfReferrer)
   this.headers["Referer"] = value
 
 proc unsetReferrer*(this: Request) =
