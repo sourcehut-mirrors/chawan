@@ -102,7 +102,7 @@ type
     shared*: seq[HTMLImageElement]
     bmp: NetworkBitmap
     cacheId: int
-    t: string
+    subtype: string
 
   CachedSVG* {.final.} = ref object of StrMapItem
     window*: Window #TODO weak?
@@ -645,14 +645,12 @@ proc newNodeList(root: Node; match: CollectionMatchFun; mode: CollectionMode;
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
   readonly = false): CSSStyleDeclaration
 
-proc document*(node: Node): Document
 proc isConnected*(node: Node): bool
 proc lastChild(node: Node): Node
 proc nextDescendant(node, start: Node): Node
 proc nextDescendantShadow(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc parentNodeHost(node: Node): Node
-proc parentNodeShadow(node: Node): lent Node
 proc previousSibling*(node: Node): Node
 proc serializeFragment(res: var string; node: Node; writeShadow: bool)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
@@ -688,12 +686,8 @@ proc invalidateCollections*(document: Document)
 proc invalidateCollectionsRemove(document: Document; node: Node)
 proc parseURL0*(document: Document; s: string): URL
 proc parseURL*(document: Document; s: string): Opt[URL]
-proc reflectEvent(document: Document; target: EventTarget;
-  name, eventType: StaticAtom; value: string)
 
 proc adjustForRemoval(iter: NodeIterator; node: Node)
-
-proc `$`(this: DOMTokenList): string
 
 proc newAttr(document: Document; data: AttrData): Attr
 proc data(attr: Attr): lent AttrData
@@ -711,12 +705,6 @@ proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
   value: sink string)
 proc attr*(element: Element; s: StaticAtom): lent string
 proc attrb*(element: Element; at: StaticAtom): bool
-proc attrb*(element: Element; s: CAtom): bool
-proc attrd*(element: Element; s: StaticAtom): Opt[float64]
-proc attrdgz*(element: Element; s: StaticAtom): Opt[float64]
-proc attrl*(element: Element; s: StaticAtom): Opt[int32]
-proc attrul*(element: Element; s: StaticAtom): Opt[uint32]
-proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32]
 proc delAttr(element: Element; ctx: JSContext; i: int)
 proc delAttr(element: Element; ctx: JSContext; name: CAtom)
 proc elIndex*(this: Element): uint32
@@ -747,11 +735,8 @@ proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
 
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
 
-proc crossOrigin(element: HTMLElement): CORSAttribute
-proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy]
 proc tagType*(element: HTMLElement): TagType
 
-proc insertSheet(this: SheetElement)
 proc removeSheet(this: SheetElement)
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet)
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSCallback;
@@ -1317,8 +1302,8 @@ proc loadImageFinish(opaque: RootRef; response: Response) =
     height: height,
     cacheId: cachedURL.cacheId,
     imageId: window.getImageId(),
-    contentType: "image/" & cachedURL.t,
-    vector: cachedURL.t == "image/svg+xml"
+    contentType: "image/" & cachedURL.subtype,
+    vector: cachedURL.subtype == "svg+xml"
   )
   cachedURL.bmp = bmp
   for share in shared:
@@ -1372,7 +1357,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
     body = RequestBody(t: rbtOutput, outputId: response.outputId),
     internal = true
   )
-  cachedURL.t = subtype
+  cachedURL.subtype = subtype
   window.corsFetch(request, loadImageFinish, opaque)
   window.loader.close(response)
   var expiry = -1i64
