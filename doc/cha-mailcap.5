@@ -9,7 +9,7 @@ displaying them in Chawan.
 .PP
 The \f[I]browsecap\f[R] file fulfills a similar purpose for URI scheme
 handling.
-browsecap can override handling of any built\-in scheme, or to add
+Browsecap can override handling of any built\-in scheme, or to add
 custom handlers (e.g.\ \f[B]mutt\f[R](1) for \f[I]mailto\f[R]).
 When combined with \f[B]cha\-cgi\f[R](5), browsecap also enables
 extending Chawan with user\-specified schemes.
@@ -200,8 +200,8 @@ However, \f[CR]x\-type\f[R] entries do not apply if the content type was
 forced (e.g.\ using the \f[CR]\-T\f[R] flag).
 .RE
 .IP \(bu 2
-\f[CR]x\-match\f[R] (from w3mmee) restricts an entry\(cqs URI to the
-specified regex.
+\f[CR]x\-match\f[R] (from w3mmee) restricts an entry\(cqs URI to a full
+match of the specified regex.
 \f[CR]x\-nc\-match\f[R] is the same, but it is case\-insensitive.
 For example, \f[CR]x\-match=https?://example\(rs.org/.*\f[R] restricts
 the entry to example.org (note the backslash).
@@ -209,6 +209,16 @@ the entry to example.org (note the backslash).
 .PP
 When one of these fields is present together with \f[CR]test\f[R], the
 result is ANDed together.
+.PP
+Note: in w3mmee, \f[CR]x\-match\f[R] applied to URIs that
+\f[I]substring\-matched\f[R] the regex; this has been changed in Chawan
+to a \f[I]full match\f[R] to reduce confusion.
+(For example, in w3mmee, a user could have mistaken
+\f[CR]example\(rs.org\f[R] for a regex that matches
+\f[CR]example.org\f[R], even though it would also match
+\f[CR]notexample.org\f[R].
+In Chawan, you\(cqd have to use \f[CR].*example\(rs.org.*\f[R] for this
+to happen.)
 .RE
 .IP \(bu 2
 \f[CR]x\-uri\f[R] (from w3mmee) substitutes matching URIs with the URI

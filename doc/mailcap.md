@@ -8,7 +8,7 @@ commands, or to convert them to HTML/plain text before displaying them
 in Chawan.
 
 The *browsecap* file fulfills a similar purpose for URI scheme handling.
-browsecap can override handling of any built-in scheme, or to add custom
+Browsecap can override handling of any built-in scheme, or to add custom
 handlers (e.g. [**mutt**](man:mutt(1))(1) for *mailto*).  When combined
 with [**cha-cgi**](cgi.md)(5), browsecap also enables extending Chawan
 with user-specified schemes.
@@ -165,13 +165,20 @@ extension fields is optional; in mailcap, it is mandatory.)
   normally excluded from mailcap).  However, `x-type` entries do not apply
   if the content type was forced (e.g. using the `-T` flag).
 
-* `x-match` (from w3mmee) restricts an entry's URI to the specified regex.
-  `x-nc-match` is the same, but it is case-insensitive.  For example,
-  `x-match=https?://example\.org/.*` restricts the entry to example.org
-  (note the backslash).
+* `x-match` (from w3mmee) restricts an entry's URI to a full match of the
+  specified regex.  `x-nc-match` is the same, but it is case-insensitive.
+  For example, `x-match=https?://example\.org/.*` restricts the entry to
+  example.org (note the backslash).
 
   When one of these fields is present together with `test`, the result is
   ANDed together.
+
+  Note: in w3mmee, `x-match` applied to URIs that *substring-matched*
+  the regex; this has been changed in Chawan to a *full match* to
+  reduce confusion.  (For example, in w3mmee, a user could have mistaken
+  `example\.org` for a regex that matches `example.org`, even though it
+  would also match `notexample.org`.  In Chawan, you'd have to use
+  `.*example\.org.*` for this to happen.)
 
 * `x-uri` (from w3mmee) substitutes matching URIs with the URI specified
   inside the command field after template expansion.  Like `x-type`, this

@@ -19,10 +19,6 @@ Further notes on processing CGI paths:
 * Paths beginning with `/cgi-bin/` or `/$LIB/` are stripped of this segment
   automatically. So e.g. `cgi-bin:/cgi-bin/script-name` becomes
   `cgi-bin:script-name`.
-* If `external.w3m-cgi-compat` is true, file: URLs are converted to
-  `cgi-bin:` URLs if the path name starts with `/cgi-bin/`, `/$LIB/`, or the
-  path of a local CGI script.  Note: this is unsafe, please do not use it
-  unless you must.
 * Absolute paths are accepted as e.g. `cgi-bin:/path/to/cgi/dir/script-name`.
   Note however, that this only works if `/path/to/cgi/dir` has already been
   specified as a CGI directory in `external.cgi-dir`.

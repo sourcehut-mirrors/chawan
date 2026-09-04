@@ -29,12 +29,6 @@ stripped of this segment automatically.
 So e.g.\ \f[CR]cgi\-bin:/cgi\-bin/script\-name\f[R] becomes
 \f[CR]cgi\-bin:script\-name\f[R].
 .IP \(bu 2
-If \f[CR]external.w3m\-cgi\-compat\f[R] is true, file: URLs are
-converted to \f[CR]cgi\-bin:\f[R] URLs if the path name starts with
-\f[CR]/cgi\-bin/\f[R], \f[CR]/$LIB/\f[R], or the path of a local CGI
-script.
-Note: this is unsafe, please do not use it unless you must.
-.IP \(bu 2
 Absolute paths are accepted as
 e.g.\ \f[CR]cgi\-bin:/path/to/cgi/dir/script\-name\f[R].
 Note however, that this only works if \f[CR]/path/to/cgi/dir\f[R] has

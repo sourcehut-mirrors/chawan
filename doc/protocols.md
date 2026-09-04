@@ -26,7 +26,7 @@ into a single `tohtml` program that dispatches based on its `argv[0]`.
 	- [Finger](#finger)
 	- [Spartan](#spartan)
 * [Local schemes: file:, man:, cgi-bin:](#local-schemes-file-man-cgi-bin)
-* [Internal schemes: cgi-bin:, stream:, cache:, data:, about:](#internal-schemes-cgi-bin-stream-cache-data-about)
+* [Internal schemes: stream:, cache:, data:, about:](#internal-schemes-stream-cache-data-about)
 * [Custom protocols](#custom-protocols)
 
 <!-- MANON -->
@@ -53,7 +53,7 @@ of the public domain tinfl.h decompressor by Rich Geldreich.
 Brotli decompression (Accept-Encoding: br) is supported using the
 decoder provided by the reference implementation.
 
-The `bonus` directory contains two alternative HTTP clients:
+The `bonus` directory includes two alternative HTTP clients:
 
 * curlhttp; this is the old HTTP client based on libcurl.  It can be
   built using curl-impersonate; see [README.md](../bonus/README.md) in
