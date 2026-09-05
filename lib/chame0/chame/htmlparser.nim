@@ -176,10 +176,11 @@ proc createHTMLElement[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
   mixin createHTMLElementImpl
   return parser.dombuilder.createHTMLElementImpl()
 
-proc insertCommentImpl[Handle, Atom](parser: HTML5Parser[Handle, Atom];
+proc insertCommentImpl[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     parent: Handle; before: Handle) =
   mixin insertCommentImpl
-  parser.dombuilder.insertCommentImpl(parent, parser.tok.tagNameBuf, before)
+  parser.dombuilder.insertCommentImpl(parent, move(parser.tok.tagNameBuf),
+    before)
 
 proc appendDocumentType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     name, publicId, systemId: string) =

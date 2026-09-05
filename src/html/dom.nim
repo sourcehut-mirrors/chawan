@@ -620,7 +620,7 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
   layer: CAtom; finish: LoadSheetFinish; i: int; parseEnv: ParseSheetEnv)
 
 proc newCDATASection(document: Document; data: RefString): CDATASection
-proc newComment(document: Document; data: RefString): Comment
+proc newComment*(document: Document; data: RefString): Comment
 proc newText*(document: Document; data: sink string): Text
 proc newText*(document: Document; data: DOMString): Text
 proc newText(ctx: JSContext; data = initDOMStringLit("")): Text
@@ -3277,7 +3277,7 @@ jsClassDef(ProcessingInstruction):
   jsget ProcessingInstruction, target
 
 # Comment
-proc newComment(document: Document; data: RefString): Comment =
+proc newComment*(document: Document; data: RefString): Comment =
   jsNew CommentObj(internalNext: document.asNode, data: data)
 
 jsClassDef(Comment):
@@ -3860,7 +3860,8 @@ jsClassPublicDef(Document):
         "CDATA sections may not contain the string ]]>")
     return ctx.toJSNew(newCDATASection(document, newRefString(data)))
 
-  proc createComment*(document: Document; data: string): Comment {.jsfunc.} =
+  proc createComment(document: Document; data: DOMString): Comment
+      {.jsnfunc.} =
     return newComment(document, newRefString(data))
 
   proc createProcessingInstruction(ctx: JSContext; document: Document;

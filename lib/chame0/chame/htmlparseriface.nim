@@ -178,7 +178,7 @@ proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
   ## exists in a document.
 
 proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
-    text: string; before: HandleImpl) {.doc.}
+    text: sink string; before: HandleImpl) {.doc.}
   ## Create a new comment node, and insert it into `parent` before the node
   ## `before`.
   ## `text` is a string representing the new comment node's character data.

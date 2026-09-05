@@ -395,8 +395,8 @@ proc insertBefore(parent, child, before: Node) =
 proc insertBeforeImpl(builder: MiniDOMBuilder; parent, child, before: Node) =
   parent.insertBefore(child, before)
 
-proc insertCommentImpl(builder: MiniDOMBuilder; parent: Node; text: string;
-    before: Node) =
+proc insertCommentImpl(builder: MiniDOMBuilder; parent: Node;
+    text: sink string; before: Node) =
   let comment = Comment(data: text.toValidUTF8())
   parent.insertBefore(comment, before)
 

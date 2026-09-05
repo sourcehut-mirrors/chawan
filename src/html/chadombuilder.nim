@@ -164,8 +164,8 @@ proc insertBefore(builder: ChaDOMBuilder; parent: ParentNode; child: Node;
   parent.insert(builder.ctx, child, before.asNode, suppressObservers = true)
 
 proc insertCommentImpl(builder: ChaDOMBuilder; parent: ParentNode;
-    text: string; before: ParentNode) =
-  let comment = builder.document.createComment(text)
+    text: sink string; before: ParentNode) =
+  let comment = builder.document.newComment(newRefString(text))
   builder.insertBefore(parent, comment.asNode, before)
 
 proc appendDocumentTypeImpl(builder: ChaDOMBuilder;
