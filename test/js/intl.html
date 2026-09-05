@@ -9,6 +9,19 @@ assert(desc.writable);
 assert(!desc.enumerable);
 assertEquals(new Intl.PluralRules().resolvedOptions().locale, "en-US");
 assertThrows(() => Intl.PluralRules(), TypeError);
-assertEquals(Intl.NumberFormat().format("1"), "1");
+{
+	/* NumberFormat */
+	assertEquals(Intl.NumberFormat().format("1"), "1");
+	const kb = Intl.NumberFormat("en", {unit: "kilobyte", style: "unit"});
+	assertEquals(kb.format("1"), "1 kB");
+	const month = Intl.NumberFormat("en", {unit: "month", style: "unit"});
+	assertEquals(month.format("1"), "1 mth");
+}
+{
+	/* Collator */
+	const coll = new Intl.Collator("en");
+	assertEquals(coll.compare("a", "a"), 0);
+	assertEquals(coll.compare("\uDC00", "\uDFFF"), -1);
+}
 document.getElementById("x").textContent = "Success";
 </script>

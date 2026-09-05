@@ -144,8 +144,15 @@ jsClassDef(Collator):
   proc newCollator(): Collator {.jsctor.} =
     jsNew CollatorObj()
 
-  proc compare(this: Collator; a, b: string): bool {.jsfunc.} =
-    return a == b
+  proc compare(this: Collator; a, b: DOMString): int {.jsfunc.} =
+    let alen = a.len
+    let blen = b.len
+    let L = min(alen, blen)
+    for i in 0 ..< L:
+      let n = cmp(a.p[i], b.p[i])
+      if n != 0:
+        return n
+    cmp(alen, blen)
 
 # NumberFormat
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
@@ -217,15 +224,16 @@ const UnitTable = [
 ]
 
 proc stringify(part: NumberUnitPart; s: string; part2 = false): string =
-  let s = UnitTable[part]
-  if s == nil:
-    result = $part
+  let unit = UnitTable[part]
+  var res = if unit == nil:
+    $part
   else:
-    result = $s
+    $unit
   if part in {nupDay, nupMonth, nupWeek, nupYear} and s != "1":
-    result &= 's' # plural
+    res &= 's' # plural
   if part2 and part in {nupSecond, nupDay, nupMonth, nupYear}:
-    result.setLen(1)
+    res.setLen(1)
+  move(res)
 
 proc stringifyUnit(unit: NumberUnit; s: string): string =
   result = ""
