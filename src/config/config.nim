@@ -1007,7 +1007,7 @@ proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string =
     realk &= ' '
   move(realk)
 
-proc find(a: ActionMap; s: string): int =
+proc find(a: ActionMap; s: openArray[char]): int =
   var dummy: seq[string]
   let rk = parseKeyComb(s, dummy)
   return a.t.binarySearch(rk, proc(x: Action; k: string): int = cmp(x.k, k))
@@ -2560,7 +2560,7 @@ jsClassDef(Config):
       jsmfget("select", csSelect).} =
     config.actionMap[cs]
 
-  proc addOmniRule(ctx: JSContext; config: Config; name: string;
+  proc addOmniRule(ctx: JSContext; config: Config; name: sink string;
       re: JSValueConst; fun: JSCallback): JSValue {.jsfunc.} =
     var len: cint
     let p = JS_GetRegExpBytecode(ctx, re, len)
@@ -2620,10 +2620,10 @@ jsClassPublicDef(ActionMap):
     for it in map.t:
       JS_MarkValue(rt, it.val, markFunc)
 
-  proc setter(ctx: JSContext; a: ActionMap; k: string; val: JSValueConst):
+  proc setter(ctx: JSContext; a: ActionMap; k: DOMString; val: JSValueConst):
       Opt[void] {.jssetprop.} =
     var dummy: seq[string]
-    let rk = parseKeyComb(k, dummy)
+    let rk = parseKeyComb(k.toOpenArray(), dummy)
     if rk == "":
       return ok()
     let val2 = if JS_IsFunction(ctx, val):
@@ -2639,9 +2639,9 @@ jsClassPublicDef(ActionMap):
     a.sort(ctx)
     ok()
 
-  proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue
+  proc getter(ctx: JSContext; a: ActionMap; s: DOMString): JSValue
       {.jsgetownprop.} =
-    let i = a.find(s)
+    let i = a.find(s.toOpenArray())
     if i < 0:
       return JS_UNINITIALIZED
     let val = a.t[i].val
@@ -2650,8 +2650,8 @@ jsClassPublicDef(ActionMap):
     # bytecode function
     return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1, val.toJSValueArray)
 
-  proc delete(a: ActionMap; k: string): bool {.jsdelprop.} =
-    let i = a.find(k)
+  proc delete(a: ActionMap; k: DOMString): bool {.jsdelprop.} =
+    let i = a.find(k.toOpenArray())
     if i >= 0:
       a.t.delete(i)
     return i != -1
