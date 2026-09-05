@@ -1941,9 +1941,14 @@ static inline int js_resize_array(JSContext *ctx, void **parray, int elem_size,
         return 0;
 }
 
+static void *js_realloc_rt_dbuf(void *rt, void *ptr, size_t size)
+{
+    return js_realloc_rt(rt, ptr, size);
+}
+
 static inline void js_dbuf_init(JSContext *ctx, DynBuf *s)
 {
-    dbuf_init2(s, ctx->rt, (DynBufReallocFunc *)js_realloc_rt);
+    dbuf_init2(s, ctx->rt, js_realloc_rt_dbuf);
 }
 
 static void *js_realloc_bytecode_rt(void *opaque, void *ptr, size_t size)
