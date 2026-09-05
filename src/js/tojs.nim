@@ -7,8 +7,8 @@
 ##   contents.
 ## * enum is converted to its stringifier's output.
 ## * JSValue is returned as-is, *without* a DupValue operation.
-## * JSArrayBuffer, JSUint8Array are converted to a JS object without copying
-##   their contents.
+## * JSArrayBuffer, JSArrayBufferViewInit are converted to a JS object without
+##   copying their contents.
 ## * NarrowString is converted to a JS narrow string (with copying). For more
 ##   information on JS string handling, see js/jstypes.nim.
 ## * Finally, ref object is converted to a JS object whose opaque is the ref
@@ -55,8 +55,8 @@ proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue
 proc toJS*[T: enum](ctx: JSContext; e: T): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
 proc toJS*[T](ctx: JSContext; obj: JSRef[T]): JSValue
-proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
-proc toJS*(ctx: JSContext; u8a: JSArrayBufferView): JSValue
+proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue
+proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
 proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 
@@ -238,11 +238,11 @@ proc toJS*(ctx: JSContext; p: JSObject): JSValue =
     return JS_NULL
   return JS_DupValue(ctx, p.value)
 
-proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue =
+proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue =
   let len = csize_t(abuf.len)
   return JS_NewArrayBuffer(ctx, abuf.p, len, abuf.dealloc, nil, false)
 
-proc toJS*(ctx: JSContext; u8a: JSArrayBufferView): JSValue =
+proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue =
   let jsabuf = ctx.toJS(u8a.abuf)
   if JS_IsException(jsabuf):
     return jsabuf

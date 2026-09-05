@@ -29,22 +29,18 @@ type NarrowString* = distinct string
 # Various containers for array buffer types.
 # Converting these only requires copying the metadata; buffers are never copied.
 type
-  JSArrayBuffer* = object
+  JSArrayBufferInit* = object
     p*: ptr UncheckedArray[uint8]
     len*: int
     dealloc*: JSFreeArrayBufferDataFunc
 
-  JSArrayBufferView* = object
-    abuf*: JSArrayBuffer
+  JSArrayBufferViewInit* = object
+    abuf*: JSArrayBufferInit
     offset*: int # offset into the buffer
     len*: int # number of members
-    bytesPerItem*: uint8 # ignored in toJS
     t*: JSTypedArrayEnum # type
 
-template toOpenArray*(view: JSArrayBufferView): openArray[uint8] =
-  view.abuf.p.toOpenArray(view.offset, view.offset + view.len - 1)
-
-proc base*(view: JSArrayBufferView): ptr UncheckedArray[uint8] =
+proc base*(view: JSArrayBufferViewInit): ptr UncheckedArray[uint8] =
   if view.len <= 0:
     return nil
   return cast[ptr UncheckedArray[uint8]](addr view.abuf.p[view.offset])
@@ -174,13 +170,21 @@ proc JS_MarkValue*(rt: JSRuntime; p: JSObject; markFunc: JS_MarkFunc) =
 type
   JSCallback* = distinct JSObject
 
-proc `==`*(a: JSCallback; b: typeof(nil)): bool =
-  pointer(a) == nil
+  BufferSource* = distinct JSObject
 
-proc value*(p: JSCallback): JSValueConst {.borrow.}
-proc moveJSValue*(p: var JSCallback): JSValue {.borrow.}
-proc JS_MarkValue*(rt: JSRuntime; p: JSCallback; markFunc: JS_MarkFunc)
-  {.borrow.}
+  JSArrayBufferView* = distinct JSObject
+
+template jsObjectBorrow(typ: untyped) =
+  proc `==`*(a: typ; b: typeof(nil)): bool =
+    pointer(a) == nil
+
+  proc value*(p: typ): JSValueConst {.borrow.}
+  proc moveJSValue*(p: var typ): JSValue {.borrow.}
+  proc JS_MarkValue*(rt: JSRuntime; p: typ; markFunc: JS_MarkFunc) {.borrow.}
+
+jsObjectBorrow(JSCallback)
+jsObjectBorrow(BufferSource)
+jsObjectBorrow(JSArrayBufferView)
 
 type
   JSValueTraced* = object

@@ -55,23 +55,16 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
     stream {.jsdefault.}: bool
 
   #TODO AllowSharedBufferSource
-  proc decode(ctx: JSContext; this: JSTextDecoder;
-      jsInput: JSValueConst = JS_UNDEFINED;
-      jsOptions: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
-    var input: JSArrayBufferView
-    if not JS_IsUndefined(jsInput):
-      ?ctx.fromJS(jsInput, input)
-    var options: TextDecodeOptions
-    if not JS_IsUndefined(jsOptions):
-      ?ctx.fromJS(jsOptions, options)
+  proc decode(ctx: JSContext; this: JSTextDecoder; input = BufferSource(nil);
+      options = TextDecodeOptions()): JSValue {.jsfunc.} =
     if not this.stream:
       this.tdctx = initTextDecoderContext(this[].encoding, this.errorMode)
       this.bomSeen = false
     this.stream = options.stream
     var oq = ""
     let stream = this.stream
-    if not JS_IsUndefined(jsInput):
-      for chunk in this.tdctx.decode(input.toOpenArray(), not stream):
+    if input != nil:
+      for chunk in this.tdctx.decode(input.toOpenArray(ctx), not stream):
         oq &= chunk
     else:
       for chunk in this.tdctx.decode([], not stream):
@@ -96,16 +89,17 @@ jsClassRaw(TextEncoderDef, "TextEncoder"):
   proc encoding(ctx: JSContext; this: JSTextEncoder): JSValue {.jsfget.} =
     return ctx.toJS("utf-8")
 
-  proc encode(this: JSTextEncoder; input = ""): JSArrayBufferView {.jsfunc.} =
+  proc encode(this: JSTextEncoder; input = ""): JSArrayBufferViewInit
+      {.jsfunc.} =
     let p = if input.len > 0:
       let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
       copyMem(buf, unsafeAddr input[0], input.len)
       buf
     else:
       nil
-    JSArrayBufferView(
+    JSArrayBufferViewInit(
       t: JS_TYPED_ARRAY_UINT8,
-      abuf: JSArrayBuffer(p: p, len: input.len, dealloc: deallocWrap),
+      abuf: JSArrayBufferInit(p: p, len: input.len, dealloc: deallocWrap),
       offset: 0,
       len: input.len
     )

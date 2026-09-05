@@ -104,7 +104,7 @@ type
     endings {.jsdefault.}: EndingType
 
   BlobPartType = enum
-    bptString, bptBlob, bptArrayBuffer, bptArrayBufferView
+    bptString, bptBlob, bptBufferSource
 
   BlobPart = ref object
     case t: BlobPartType
@@ -112,8 +112,8 @@ type
       s: string
     of bptBlob:
       blob: Blob
-    of bptArrayBuffer, bptArrayBufferView:
-      obj: JSObject
+    of bptBufferSource:
+      abuf: BufferSource
 
 proc getBase(ctx: JSContext; part: BlobPart; p: var pointer): int =
   case part.t
@@ -126,33 +126,20 @@ proc getBase(ctx: JSContext; part: BlobPart; p: var pointer): int =
   of bptBlob:
     p = part.blob.buffer
     return part.blob.size
-  of bptArrayBuffer:
-    var abuf: JSArrayBuffer
-    if ctx.fromJS(part.obj.value, abuf).isErr:
-      p = nil
-      return -1
-    p = abuf.p
-    return abuf.len
-  of bptArrayBufferView:
-    var view: JSArrayBufferView
-    if ctx.fromJS(part.obj.value, view).isErr:
-      p = nil
-      return -1
+  of bptBufferSource:
+    let view = ctx.getUnsafeView(part.abuf)
     p = view.base
     return view.len
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var BlobPart):
     JSCode =
   var blob: Blob
-  var abuf: JSArrayBuffer
-  var view: JSArrayBufferView
+  var abuf: BufferSource
   if ctx.fromJS(val, blob).isOk:
     #TODO this doesn't work for File
     res = BlobPart(t: bptBlob, blob: blob)
   elif ctx.fromJS(val, abuf).isOk:
-    res = BlobPart(t: bptArrayBuffer, obj: ctx.dupTraceObj(val))
-  elif ctx.fromJS(val, view).isOk:
-    res = BlobPart(t: bptArrayBufferView, obj: ctx.dupTraceObj(val))
+    res = BlobPart(t: bptBufferSource, abuf: abuf)
   else:
     res = BlobPart(t: bptString)
     ?ctx.fromJS(val, res.s)
@@ -310,7 +297,7 @@ jsClassDef(FileList):
     uint32(this.files.len)
 
   proc item(this: FileList; u: uint32): WebFile {.jsfunc.} =
-    if u >= 0 and int64(u) < int64(this.files.len):
+    if int64(u) < int64(this.files.len):
       return this.files[int(u)]
     return WebFile(nil)
 

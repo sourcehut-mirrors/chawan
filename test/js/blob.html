@@ -4,5 +4,15 @@
 <script src=asserts.js></script>
 <script>
 assertEquals(new Blob(["a", "b"]).size, 2);
+{
+	const abuf = new ArrayBuffer(8);
+	const view = new Uint8Array(abuf);
+	const options = {};
+	options.__defineGetter__("type", function() {
+		abuf.transfer();
+	});
+	const blob = new Blob([view], options);
+	assertEquals(blob.size, 0);
+}
 document.getElementById("x").textContent = "Success";
 </script>

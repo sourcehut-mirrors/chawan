@@ -269,18 +269,17 @@ jsClassRaw(CryptoDef, "Crypto"):
       {.jsmark.} =
     JS_MarkForeignObject(rt, this, markFunc)
 
-  proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
-      JSValue {.jsfunc.} =
+  proc getRandomValues(ctx: JSContext; crypto: Crypto;
+      view: JSArrayBufferView): JSValue {.jsfunc.} =
     let window = Window(crypto)
-    var view: JSArrayBufferView
-    ?ctx.fromJS(array, view)
-    if view.t == JS_TYPED_ARRAY_UINT8C or view.t > JS_TYPED_ARRAY_BIG_UINT64:
+    var uv = ctx.getUnsafeView(view)
+    if uv.t == JS_TYPED_ARRAY_UINT8C or uv.t > JS_TYPED_ARRAY_BIG_UINT64:
       return JS_ThrowDOMException(ctx, "TypeMismatchError",
         "Wrong typed array type")
-    if view.abuf.len > 65536:
+    if uv.abuf.len > 65536:
       return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
-    doAssert window.urandom.readLoop(view.toOpenArray()).isOk
-    return JS_DupValue(ctx, array)
+    doAssert window.urandom.readLoop(uv.toOpenArray()).isOk
+    return JS_DupValue(ctx, view.value)
 
 # Location
 type Location = distinct Window

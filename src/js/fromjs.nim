@@ -13,12 +13,9 @@ import js/tojs
 import utils/twtstr
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
-  JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
-  JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ByteString):
-  JSCode
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString): JSCode
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull): JSCode
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ByteString): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): JSCode
@@ -26,27 +23,19 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint16): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint32): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): JSCode
-proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
-  JSCode
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]):
-  JSCode
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]):
-  JSCode
+proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T): JSCode
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): JSCode
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): JSCode
 proc fromJS*[K, T](ctx: JSContext; val: JSValueConst;
   res: var JSKeyValuePair[K, T]): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): JSCode
-proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
-  JSCode
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSRef[T]):
-  JSCode
-proc fromJS*[T: JSDict](ctx: JSContext; val: JSValueConst; res: var T):
-  JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBuffer):
-  JSCode
+proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T): JSCode
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var JSRef[T]): JSCode
+proc fromJS*[T: JSDict](ctx: JSContext; val: JSValueConst; res: var T): JSCode
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BufferSource): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
   JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
-  JSCode
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): JSCode
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): JSCode
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): JSCode
@@ -573,8 +562,8 @@ proc fromJS*[T: JSDict](ctx: JSContext; val: JSValueConst; res: var T):
     JSCode =
   fromJSDictBody(ctx, val, res, T)
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBuffer):
-    JSCode =
+proc fromJSUnsafeView(ctx: JSContext; val: JSValueConst;
+    res: var JSArrayBufferInit): JSCode =
   var len {.noinit.}: csize_t
   let p = JS_GetArrayBuffer(ctx, len, val)
   if p == nil:
@@ -582,14 +571,14 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBuffer):
   if len > csize_t(int.high):
     JS_ThrowRangeError(ctx, "array buffer size out of range")
     return fjErr
-  res = JSArrayBuffer(
+  res = JSArrayBufferInit(
     len: cast[int](len),
     p: cast[ptr UncheckedArray[uint8]](p)
   )
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
-    JSCode =
+proc fromJSUnsafeView(ctx: JSContext; val: JSValueConst;
+    res: var JSArrayBufferViewInit): JSCode =
   var offset {.noinit.}: csize_t
   var len {.noinit.}: csize_t
   var bytesPerItem {.noinit.}: csize_t
@@ -600,15 +589,56 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
     JS_FreeValue(ctx, jsbuf)
     JS_ThrowRangeError(ctx, "array buffer view too large")
     return fjErr
-  var abuf: JSArrayBuffer
-  ?ctx.fromJSFree(jsbuf, abuf)
-  res = JSArrayBufferView(
+  var abuf: JSArrayBufferInit
+  let code = ctx.fromJSUnsafeView(jsbuf, abuf)
+  JS_FreeValue(ctx, jsbuf)
+  if code == fjErr:
+    return fjErr
+  res = JSArrayBufferViewInit(
     abuf: abuf,
     offset: cast[int](offset),
     len: cast[int](len),
-    bytesPerItem: uint8(bytesPerItem),
     t: JSTypedArrayEnum(JS_GetTypedArrayType(val))
   )
+  fjOk
+
+proc getUnsafeView*(ctx: JSContext; av: BufferSource): JSArrayBufferViewInit =
+  var view: JSArrayBufferViewInit
+  if ctx.fromJSUnsafeView(av.value, view).isErr:
+    var abuf: JSArrayBufferInit
+    discard ctx.fromJSUnsafeView(av.value, abuf)
+    view.abuf = abuf
+    view.len = abuf.len
+  view
+
+proc getUnsafeView*(ctx: JSContext; av: JSArrayBufferView):
+    JSArrayBufferViewInit =
+  var vi: JSArrayBufferViewInit
+  discard ctx.fromJSUnsafeView(av.value, vi)
+  vi
+
+template toOpenArray*(vi: JSArrayBufferViewInit): var openArray[uint8] =
+  vi.abuf.p.toOpenArray(vi.offset, vi.offset + vi.len - 1)
+
+template toOpenArray*(view: BufferSource; ctx: JSContext):
+    var openArray[uint8] =
+  let vi = ctx.getUnsafeView(view)
+  vi.toOpenArray()
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BufferSource):
+    JSCode =
+  var dummy: JSArrayBufferInit
+  if ctx.fromJSUnsafeView(val, dummy).isErr:
+    var dummy2: JSArrayBufferViewInit
+    ?ctx.fromJSUnsafeView(val, dummy2)
+  res = BufferSource(ctx.dupTraceObj(val))
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
+    JSCode =
+  var dummy: JSArrayBufferViewInit
+  ?ctx.fromJSUnsafeView(val, dummy)
+  res = JSArrayBufferView(ctx.dupTraceObj(val))
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
