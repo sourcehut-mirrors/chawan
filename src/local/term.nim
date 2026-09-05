@@ -2692,13 +2692,11 @@ const ANSIColorMap = [
 
 proc newTerminal*(ostream: PosixStream; config: Config; loader: FileLoader):
     Terminal =
-  const DefaultBackground = namedRGBColor("black").get
-  const DefaultForeground = namedRGBColor("white").get
   return Terminal(
     ostream: ostream,
     config: config,
-    defaultBackground: DefaultBackground,
-    defaultForeground: DefaultForeground,
+    defaultBackground: rgb(0, 0, 0),
+    defaultForeground: rgb(255, 255, 255),
     colorMap: ANSIColorMap,
     termType: ttXterm,
     sixelRegisterNum: 256,
