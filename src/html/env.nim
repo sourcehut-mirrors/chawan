@@ -5,6 +5,7 @@ import config/mimetypes
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
+import encoding/jsencoding
 import html/catom
 import html/chadombuilder
 import html/dom
@@ -13,8 +14,6 @@ import html/domexception
 import html/domrect
 import html/event
 import html/form
-import html/jsencoding
-import html/jsintl
 import html/performance
 import html/script
 import html/storage
@@ -25,7 +24,9 @@ import io/dynstream
 import io/timeout
 import js/fromjs
 import js/jsbind
+import js/jsintl
 import js/jsopaque
+import js/jsopt
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -36,7 +37,6 @@ import server/loaderiface
 import server/request
 import types/blob
 import types/formdata
-import types/jsopt
 import types/opt
 import types/url
 import types/winattrs

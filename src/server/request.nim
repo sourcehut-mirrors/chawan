@@ -13,7 +13,7 @@ import js/tojs
 import server/headers
 import types/blob
 import types/formdata
-import types/jsopt
+import js/jsopt
 import types/opt
 import types/url
 import utils/twtstr

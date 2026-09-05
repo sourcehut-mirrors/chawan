@@ -2,12 +2,12 @@
 
 import js/fromjs
 import js/jsbind
+import js/jsopt
 import js/jsref
 import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/jsopt
 import types/opt
 import utils/twtstr
 

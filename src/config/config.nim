@@ -18,6 +18,7 @@ import js/dtoa
 import js/fromjs
 import js/jsbind
 import js/jsopaque
+import js/jsopt
 import js/jspropenumlist
 import js/jsref
 import js/jstypes
@@ -28,7 +29,6 @@ import server/headers
 import types/cell
 import types/color
 import types/jscolor
-import types/jsopt
 import types/opt
 import types/url
 import utils/dtoawrap

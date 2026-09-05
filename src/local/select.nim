@@ -8,7 +8,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import types/cell
-import types/jsopt
+import js/jsopt
 import types/opt
 import utils/lrewrap
 import utils/luwrap

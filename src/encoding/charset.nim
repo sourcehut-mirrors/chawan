@@ -6,10 +6,10 @@
 import std/algorithm
 
 import js/fromjs
+import js/jsopt
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/jsopt
 import utils/twtstr
 
 type Charset* = enum

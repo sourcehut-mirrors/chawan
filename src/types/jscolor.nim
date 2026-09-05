@@ -7,7 +7,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import types/color
-import types/jsopt
+import js/jsopt
 import types/opt
 import utils/twtstr
 

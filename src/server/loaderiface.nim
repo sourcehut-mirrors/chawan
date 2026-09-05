@@ -26,7 +26,7 @@ import js/tojs
 import server/headers
 import server/request
 import types/blob
-import types/jsopt
+import js/jsopt
 import types/opt
 import types/url
 import utils/twtstr

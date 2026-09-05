@@ -5,7 +5,7 @@ import js/fromjs
 import js/jsbind
 import js/jsutils
 import js/quickjs
-import types/jsopt
+import js/jsopt
 import types/opt
 import types/url
 import utils/twtstr

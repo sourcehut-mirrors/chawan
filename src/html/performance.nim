@@ -12,7 +12,7 @@ import js/jsref
 import js/jstypes
 import js/quickjs
 import js/tojs
-import types/jsopt
+import js/jsopt
 import types/opt
 
 type

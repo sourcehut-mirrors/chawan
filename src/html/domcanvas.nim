@@ -8,6 +8,7 @@ import io/dynstream
 import io/packetwriter
 import js/fromjs
 import js/jsbind
+import js/jsopt
 import js/jsref
 import js/jstypes
 import js/quickjs
@@ -18,7 +19,6 @@ import server/request
 import types/bitmap
 import types/canvastypes
 import types/color
-import types/jsopt
 import types/opt
 import types/path
 import utils/strwidth
