@@ -18,7 +18,6 @@ import js/dtoa
 import js/fromjs
 import js/jsbind
 import js/jsopaque
-import js/jsopt
 import js/jspropenumlist
 import js/jsref
 import js/jstypes

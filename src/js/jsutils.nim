@@ -2,9 +2,25 @@
 
 {.push raises: [].}
 
-import dtoa
-import jsopaque
-import quickjs
+import js/dtoa
+import js/jsopaque
+import js/quickjs
+
+type JSCode* = enum
+  fjErr, fjOk
+
+template `?`*(res: JSCode) =
+  if res == fjErr:
+    return err()
+
+template err*(t: typedesc[JSValue]): JSValue =
+  JS_EXCEPTION
+
+template ok*(t: typedesc[JSCode]): JSCode =
+  fjOk
+
+template err*(t: typedesc[JSCode]): JSCode =
+  fjErr
 
 template toJSValueArray*(a: openArray[JSValue]): JSValueArray =
   if a.len > 0:
@@ -175,9 +191,6 @@ proc newRejectedPromise*(ctx: JSContext): JSValue =
     JS_FreeValue(ctx, res)
     return JS_EXCEPTION
   return res
-
-type JSCode* = enum
-  fjErr, fjOk
 
 proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSAtom;
     prop: JSValue; flags = cint(0)): JSCode =

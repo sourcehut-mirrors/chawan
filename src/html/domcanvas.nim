@@ -8,9 +8,9 @@ import io/dynstream
 import io/packetwriter
 import js/fromjs
 import js/jsbind
-import js/jsopt
 import js/jsref
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
 import server/headers

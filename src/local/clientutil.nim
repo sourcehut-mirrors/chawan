@@ -12,7 +12,6 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import types/blob
-import js/jsopt
 import types/opt
 import types/url
 import utils/myposix

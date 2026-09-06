@@ -42,7 +42,6 @@ import server/request
 import types/bitmap
 import types/blob
 import types/color
-import js/jsopt
 import types/opt
 import types/refstring
 import types/url

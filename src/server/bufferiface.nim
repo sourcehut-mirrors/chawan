@@ -29,7 +29,6 @@ import types/bitmap
 import types/blob
 import types/cell
 import types/color
-import js/jsopt
 import types/opt
 import types/refstring
 import types/url

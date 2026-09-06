@@ -18,7 +18,6 @@ import io/poll
 import js/fromjs
 import js/jsbind
 import js/jsopaque
-import js/jsopt
 import js/jsref
 import js/jsutils
 import js/quickjs

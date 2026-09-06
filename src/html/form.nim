@@ -18,7 +18,6 @@ import js/quickjs
 import js/tojs
 import types/blob
 import types/formdata
-import js/jsopt
 import types/opt
 import types/refstring
 import types/url

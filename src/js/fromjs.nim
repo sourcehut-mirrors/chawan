@@ -10,6 +10,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import types/opt
 import utils/twtstr
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): JSCode
@@ -47,10 +48,6 @@ template isOk*(res: JSCode): bool =
 template isErr*(res: JSCode): bool =
   res == fjErr
 
-template `?`(res: JSCode) =
-  if res == fjErr:
-    return fjErr
-
 proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): JSCode =
   result = ctx.fromJS(val, res)
   JS_FreeValue(ctx, val)
@@ -76,6 +73,18 @@ proc fromJSCallback*(ctx: JSContext; val: JSValueConst;
     return fjErr
   res = JS_VALUE_GET_PTR(val)
   fjOk
+
+proc fromJSGetProp*[T](ctx: JSContext; this: JSValueConst; name: cstring;
+    res: var T): Opt[bool] =
+  if JS_IsUndefined(this):
+    return ok(false)
+  let prop = JS_GetPropertyStr(ctx, this, name)
+  if JS_IsException(prop):
+    return err()
+  if JS_IsUndefined(prop):
+    return ok(false)
+  ?ctx.fromJSFree(prop, res)
+  ok(true)
 
 proc isInstanceOf*(ctx: JSContext; classid, tclassid: JSClassID): bool =
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
@@ -105,13 +114,15 @@ proc checkInstanceOf*(ctx: JSContext; this: JSValueConst; tclassid: JSClassID):
     return fjErr
   fjOk
 
-proc isSequence*(ctx: JSContext; o: JSValueConst): bool =
+proc isSequence*(ctx: JSContext; o: JSValueConst): Opt[bool] =
   if not JS_IsObject(o):
-    return false
+    return ok(false)
   let prop = JS_GetProperty(ctx, o, ctx.getOpaque().symRefs[jsyIterator])
-  # prop can't be exception (throws_ref_error is 0 and tag is object)
-  result = not JS_IsUndefined(prop)
+  if JS_IsException(prop):
+    return err()
+  let res = not JS_IsUndefined(prop)
   JS_FreeValue(ctx, prop)
+  ok(res)
 
 proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t; narrow: bool;
     res: var string): JSCode =
@@ -285,7 +296,8 @@ proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
   var iter: JSValue
   var nextMethod: JSValue
   var status = sirContinue
-  ?ctx.fromJSSeqInit(val, iter, nextMethod)
+  if ctx.fromJSSeqInit(val, iter, nextMethod).isErr:
+    return fjErr
   for f in res.fields:
     var val: JSValue
     status = ctx.fromJSSeqIt(iter, nextMethod, val)
@@ -318,7 +330,8 @@ proc fromJSSeqInit*(ctx: JSContext; val: JSValueConst;
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): JSCode =
   var iter: JSValue
   var nextMethod: JSValue
-  ?ctx.fromJSSeqInit(val, iter, nextMethod)
+  if ctx.fromJSSeqInit(val, iter, nextMethod).isErr:
+    return fjErr
   var status = fjOk
   var tmp = newSeq[T]()
   while status.isOk:

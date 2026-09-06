@@ -10,7 +10,6 @@ import js/fromjs
 import js/jsbind
 import js/jsnull
 import js/jsopaque
-import js/jsopt
 import js/jsref
 import js/jstypes
 import js/jsutils

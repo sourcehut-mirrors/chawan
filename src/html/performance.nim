@@ -10,9 +10,9 @@ import js/fromjs
 import js/jsbind
 import js/jsref
 import js/jstypes
+import js/jsutils
 import js/quickjs
 import js/tojs
-import js/jsopt
 import types/opt
 
 type

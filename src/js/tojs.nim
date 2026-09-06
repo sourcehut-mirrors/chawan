@@ -33,11 +33,12 @@
 import std/macrocache
 import std/typetraits
 
-import jsopaque
-import jsref
-import jstypes
-import jsutils
-import quickjs
+import js/jsopaque
+import js/jsref
+import js/jstypes
+import js/jsutils
+import js/quickjs
+import types/opt
 
 # Convert Nim types to the corresponding JavaScript type.
 proc toJS*(ctx: JSContext; s: string): JSValue
@@ -59,11 +60,14 @@ proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
 proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
+proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue
 
 # Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
 # Note: nil is translated to an OOM exception.
 proc toJSNew*[T](ctx: JSContext; obj: JSRef[T]; ctor: JSValueConst): JSValue
+proc toJSNew*[T](ctx: JSContext; opt: Opt[T]; ctor: JSValueConst): JSValue
+proc toJSNew*[T](ctx: JSContext; opt: Opt[T]): JSValue
 
 proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
     JSValue =
@@ -283,5 +287,32 @@ proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue =
     return obj
   JS_FreeValue(ctx, obj)
   return JS_EXCEPTION
+
+proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue =
+  if opt.isOk:
+    when not (T is void):
+      return ctx.toJS(opt.get)
+    else:
+      return JS_UNDEFINED
+  else:
+    return JS_EXCEPTION
+
+proc toJSNew*[T](ctx: JSContext; opt: Opt[T]; ctor: JSValueConst): JSValue =
+  if opt.isOk:
+    when not (T is void):
+      return ctx.toJSNew(opt.get, ctor)
+    else:
+      return JS_UNDEFINED
+  else:
+    return JS_EXCEPTION
+
+proc toJSNew*[T](ctx: JSContext; opt: Opt[T]): JSValue =
+  if opt.isOk:
+    when not (T is void):
+      return ctx.toJSNew(opt.get)
+    else:
+      return JS_UNDEFINED
+  else:
+    return JS_EXCEPTION
 
 {.pop.} # raises: []

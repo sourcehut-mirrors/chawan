@@ -12,10 +12,10 @@ import js/jsnull
 import js/jsopaque
 import js/jsref
 import js/jstypes
+import js/jsutils
 import js/libunicode
 import js/quickjs
 import js/tojs
-import js/jsopt
 import types/opt
 import utils/luwrap
 import utils/twtstr
@@ -1201,9 +1201,11 @@ jsClassPublicDef(URLSearchParams):
       Opt[URLSearchParams] {.jsctor.} =
     let params = jsNew URLSearchParamsObj()
     if params != nil and not JS_IsUndefined(init):
-      if ctx.fromJS(init, params.list).isOk:
-        discard
-      elif (var t: JSKeyValuePair[string, string]; ctx.fromJS(init, t).isOk):
+      if ?ctx.isSequence(init):
+        ?ctx.fromJS(init, params.list)
+      elif JS_IsObject(init):
+        var t: JSKeyValuePair[string, string]
+        ?ctx.fromJS(init, t)
         params.list = move(t.s)
       else:
         var res: string

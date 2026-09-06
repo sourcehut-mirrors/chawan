@@ -26,7 +26,6 @@ import js/fromjs
 import js/jsbind
 import js/jsintl
 import js/jsopaque
-import js/jsopt
 import js/jsref
 import js/jstypes
 import js/jsutils

@@ -76,13 +76,13 @@
 import std/macros
 import std/typetraits
 
-import fromjs
-import jsopaque
-import jsref
-import jstypes
-import jsutils
-import quickjs
-import tojs
+import js/fromjs
+import js/jsopaque
+import js/jsref
+import js/jstypes
+import js/jsutils
+import js/quickjs
+import js/tojs
 import utils/tabutil
 
 type

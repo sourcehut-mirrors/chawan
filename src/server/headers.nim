@@ -11,7 +11,6 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import js/jsopt
 import types/opt
 import types/url
 import utils/twtstr
@@ -105,14 +104,12 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     for it in headers.list:
       res.s.add((ByteString(s: it.name), ByteString(s: it.value)))
     return fjOk
-  if ctx.isSequence(val):
+  if ?ctx.isSequence(val):
     res = HeadersInit()
-    if ctx.fromJS(val, res.s).isOk:
-      return fjOk
-  res = HeadersInit()
+    ?ctx.fromJS(val, res.s)
   var record: JSKeyValuePair[ByteString, ByteString]
   ?ctx.fromJS(val, record)
-  res.s = move(record.s)
+  res = HeadersInit(s: move(record.s))
   fjOk
 
 const TokenChars = {

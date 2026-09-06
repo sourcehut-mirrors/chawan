@@ -18,7 +18,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import js/jsopt
+import types/opt
 import utils/tabutil
 import utils/twtstr
 

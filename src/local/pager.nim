@@ -23,9 +23,6 @@ import io/packetreader
 import io/packetwriter
 import io/poll
 import io/timeout
-import local/lineedit
-import local/select
-import local/term
 import js/fromjs
 import js/jsbind
 import js/jsnull
@@ -35,6 +32,9 @@ import js/jsutils
 import js/libregexp
 import js/quickjs
 import js/tojs
+import local/lineedit
+import local/select
+import local/term
 import server/bufferiface
 import server/connectionerror
 import server/forkserver
@@ -45,7 +45,6 @@ import types/bitmap
 import types/blob
 import types/cell
 import types/color
-import js/jsopt
 import types/opt
 import types/url
 import types/winattrs
