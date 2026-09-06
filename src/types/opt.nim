@@ -71,21 +71,27 @@ proc get*[T, E](res: Result[T, E]; v: T): T =
   else:
     result = v
 
+template myMove(x: untyped): untyped =
+  when NimMajor < 2:
+    move(x)
+  else:
+    ensureMove(x)
+
 template `?`*[T, E](res: Result[T, E]): auto =
   var x = res # for when res is a funcall
   if not x.isOk:
     when typeof(result) is Result[T, E]:
-      return move(x)
+      return myMove(x)
     elif E is cstring:
       return err(x.error)
     elif E isnot void:
       {.push checks: off.}
-      return err(move(x.error))
+      return err(myMove(x.error))
       {.pop.}
     else:
       return err()
   when T isnot void:
-    move(x.get)
+    myMove(x.get)
 
 template `:=`*(a, res: untyped): bool =
   var x = res # for when res is a funcall
@@ -93,6 +99,6 @@ template `:=`*(a, res: untyped): bool =
   let r = x.isOk
   if r:
     {.push checks: off.}
-    a = move(x.get)
+    a = myMove(x.get)
     {.pop.}
   r
