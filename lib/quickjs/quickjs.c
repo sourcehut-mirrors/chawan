@@ -4581,12 +4581,7 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
 
 void JS_FreeCString(JSContext *ctx, const char *ptr)
 {
-    JSString *p;
-    if (!ptr)
-        return;
-    /* purposely removing constness */
-    p = container_of(ptr, JSString, u);
-    JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
+    JS_FreeCStringRT(ctx->rt, ptr);
 }
 
 void JS_FreeCStringRT(JSRuntime *rt, const char *ptr)
