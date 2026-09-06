@@ -1255,11 +1255,12 @@ jsClassPublicDef(URLSearchParams):
           return JS_TRUE
     return JS_FALSE
 
-  proc set(params: URLSearchParams; name: string; value: string) {.jsfunc.} =
+  proc set(params: URLSearchParams; name: string; value: sink string)
+      {.jsfunc.} =
     var found = false
     for param in params.list.mitems:
       if param.name == name:
-        param.value = value
+        param.value = move(value)
         found = true
         break
     if found:
