@@ -2294,6 +2294,7 @@ l select.click
 C-h select.cancel
 C-? select.cancel
 C-c select.cancel
+C-g select.cancel
 c select.cancel
 C select.cancel
 Left select.cancel

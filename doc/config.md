@@ -1453,7 +1453,7 @@ select.click
 : Submit the currently selected option.
 
 select.cancel
-: **C-c**/**c**/**C**/**h**/**Left**
+: **C-c**/**C-g**/**c**/**C**/**h**/**Left**
 
 : Close the select menu.  (The **c**/**C** defaults are for symmetry with
   opening the context menu.)
