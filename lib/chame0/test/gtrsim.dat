@@ -53,3 +53,45 @@
 |   <head>
 |   <body>
 |     "�"
+
+#data
+&g
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     "&g"
+
+#data
+&
+
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     "&
+"
+
+#data
+&#x
+
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     "&#x
+"
+
+#data
+&#
+
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     "&#
+"

@@ -5,6 +5,7 @@ import std/algorithm
 import dombuilder
 import htmltokenizer
 import tags
+import utils/twtstr
 
 # Heavily inspired by html5ever's TreeSink design.
 type
@@ -555,10 +556,44 @@ proc insertCharacter(parser: var HTML5Parser; data: sink string) =
     parser.insertText(location.inside, move(data), location.before)
 
 proc insertCharbuf(parser: var HTML5Parser) =
-  let location = parser.appropriatePlaceForInsert()
-  if location.inside != parser.getDocument():
-    parser.insertText(location.inside, move(parser.tok.charbufOut),
-      location.before)
+  parser.insertCharacter(move(parser.tok.charbuf))
+
+proc insertWhitespace(parser: var HTML5Parser) =
+  var buf = move(parser.tok.charbuf)
+  var s = ""
+  var j = 0
+  for i in 0 ..< buf.len:
+    let c = buf[i]
+    if j < i:
+      buf[j] = c
+    if c in AsciiWhitespace:
+      s &= c
+    else:
+      inc j
+  buf.setLen(j)
+  if s.len > 0:
+    parser.insertCharacter(s)
+  parser.tok.charbuf = move(buf)
+
+proc insertInitialWhitespace(parser: var HTML5Parser) =
+  var s = ""
+  var i = 0
+  while i < parser.tok.charbuf.len:
+    let c = parser.tok.charbuf[i]
+    if c notin AsciiWhitespace:
+      break
+    s &= c
+    inc i
+  if s.len > 0:
+    parser.insertCharacter(s)
+    parser.tok.charbuf.delete(0..<i)
+
+proc skipWhitespace(parser: var HTML5Parser) =
+  var i = 0
+  while i < parser.tok.charbuf.len and
+      parser.tok.charbuf[i] in AsciiWhitespace:
+    inc i
+  parser.tok.charbuf.delete(0..<i)
 
 proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     position: InsertionLocation[Handle]) =
@@ -1029,9 +1064,13 @@ proc closeCell[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
 
 proc processInitial[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
+  var anythingElse = false
   case parser.tok.t
   of ttWhitespace: discard
   of ttComment: parser.insertComment(lastChildOf(parser.getDocument()))
+  of ttCharacter:
+    parser.skipWhitespace()
+    anythingElse = true
   of ttDoctype:
     var name = move(parser.tok.tagNameBuf)
     var pubid = ""
@@ -1051,6 +1090,8 @@ proc processInitial[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
         parser.setQuirksMode(qmLimitedQuirks)
     parser.insertionMode = imBeforeHtml
   else:
+    anythingElse = true
+  if anythingElse:
     parser.setQuirksMode(qmQuirks)
     parser.insertionMode = imBeforeHtml
     return parser.processBeforeHtml()
@@ -1061,6 +1102,9 @@ proc processBeforeHtml[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   var anythingElse = false
   case parser.tok.t
   of ttDoctype, ttWhitespace: discard
+  of ttCharacter:
+    parser.skipWhitespace()
+    anythingElse = true
   of ttComment: parser.insertComment(lastChildOf(parser.getDocument()))
   of ttStartTag:
     if parser.toTagType(parser.tok.tagname) == ttHtml:
@@ -1090,6 +1134,9 @@ proc processBeforeHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   case parser.tok.t
   of ttWhitespace, ttDoctype: discard
   of ttComment: parser.insertComment()
+  of ttCharacter:
+    parser.skipWhitespace()
+    anythingElse = true
   of ttStartTag:
     case parser.toTagType(parser.tok.tagname)
     of ttHtml:
@@ -1113,6 +1160,9 @@ proc processInHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   var anythingElse = false
   case parser.tok.t
   of ttWhitespace: parser.insertCharbuf()
+  of ttCharacter:
+    parser.insertInitialWhitespace()
+    anythingElse = true
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1203,6 +1253,9 @@ proc processInHeadNoscript[Handle, Atom](
       parser.insertionMode = imInHead
     else: discard
   of ttWhitespace, ttComment: return parser.processInHead()
+  of ttCharacter:
+    parser.insertInitialWhitespace()
+    anythingElse = true
   else: anythingElse = true
   if anythingElse:
     discard parser.popElement()
@@ -1215,6 +1268,9 @@ proc processAfterHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   var anythingElse = false
   case parser.tok.t
   of ttWhitespace: parser.insertCharbuf()
+  of ttCharacter:
+    parser.insertInitialWhitespace()
+    anythingElse = true
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1250,15 +1306,14 @@ proc processAfterHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
 
 proc processInBody[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
-  case parser.tok.t
-  of ttWhitespace:
+  let tokType = parser.tok.t
+  case tokType
+  of ttWhitespace, ttCharacter:
     parser.reconstructActiveFormatting()
     parser.insertCharbuf()
+    if tokType == ttCharacter:
+      parser.framesetOk = false
   of ttNull, ttDoctype: discard
-  of ttCharacter:
-    parser.reconstructActiveFormatting()
-    parser.insertCharbuf()
-    parser.framesetOk = false
   of ttComment: parser.insertComment()
   of ttStartTag:
     let tagType = parser.toTagType(parser.tok.tagname)
@@ -1551,12 +1606,11 @@ proc processLineFeedTrim[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     parser.insertionMode = parser.oldInsertionMode
   else:
     parser.insertionMode = imText
-  if parser.tok.t == ttWhitespace and parser.tok.charbufOut[0] == '\n':
-    if parser.tok.charbufOut.len == 1:
+  if parser.tok.t in {ttWhitespace, ttCharacter} and
+      parser.tok.charbuf[0] == '\n':
+    if parser.tok.charbuf.len == 1:
       return pcrContinue
-    for i in 1 ..< parser.tok.charbufOut.len:
-      parser.tok.charbufOut[i - 1] = parser.tok.charbufOut[i]
-    parser.tok.charbufOut.setLen(parser.tok.charbufOut.high)
+    parser.tok.charbuf.delete(0..0)
   parser.processInHTML()
 
 proc processText[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
@@ -1653,12 +1707,13 @@ proc processInTable[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
 
 proc processInTableText[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
-  case parser.tok.t
+  let tokType = parser.tok.t
+  case tokType
   of ttNull: discard
-  of ttWhitespace: parser.pendingTableChars &= parser.tok.charbufOut
-  of ttCharacter:
-    parser.pendingTableCharsWhitespace = false
-    parser.pendingTableChars &= parser.tok.charbufOut
+  of ttCharacter, ttWhitespace:
+    parser.pendingTableChars &= parser.tok.charbuf
+    if tokType == ttCharacter:
+      parser.pendingTableCharsWhitespace = false
   else:
     if not parser.pendingTableCharsWhitespace:
       # I *think* this is effectively the same thing the specification
@@ -1711,6 +1766,9 @@ proc processInColumnGroup[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
   var anythingElse = false
   case parser.tok.t
   of ttWhitespace: parser.insertCharbuf()
+  of ttCharacter:
+    parser.insertWhitespace()
+    anythingElse = true
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1911,6 +1969,7 @@ proc processInFrameset[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   case parser.tok.t
   of ttWhitespace: parser.insertCharbuf()
+  of ttCharacter: parser.insertWhitespace()
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:
@@ -1934,6 +1993,7 @@ proc processAfterFrameset[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   case parser.tok.t
   of ttWhitespace: parser.insertCharbuf()
+  of ttCharacter: parser.insertWhitespace()
   of ttComment: parser.insertComment()
   of ttStartTag:
     case parser.toTagType(parser.tok.tagname)
@@ -1966,6 +2026,7 @@ proc processAfterAfterFrameset[Handle, Atom](
   case parser.tok.t
   of ttComment: parser.insertComment(lastChildOf(parser.getDocument()))
   of ttDoctype, ttWhitespace: return parser.processInBody()
+  of ttCharacter: parser.insertWhitespace()
   of ttStartTag:
     case parser.toTagType(parser.tok.tagname)
     of ttHtml: return parser.processInBody()
@@ -2093,12 +2154,13 @@ proc otherForeignEndTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
 
 proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
-  case parser.tok.t
+  let tokType = parser.tok.t
+  case tokType
   of ttNull: parser.insertCharacter("\uFFFD")
-  of ttWhitespace: parser.insertCharbuf()
-  of ttCharacter:
+  of ttCharacter, ttWhitespace:
     parser.insertCharbuf()
-    parser.framesetOk = false
+    if tokType == ttCharacter:
+      parser.framesetOk = false
   of ttComment: parser.insertComment()
   of ttDoctype: discard
   of ttStartTag:

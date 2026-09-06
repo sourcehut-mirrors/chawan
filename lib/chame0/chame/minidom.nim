@@ -11,7 +11,8 @@
 import std/algorithm
 import std/hashes
 import std/streams
-import std/strutils
+
+import utils/twtstr
 
 import dombuilder
 import htmlparser

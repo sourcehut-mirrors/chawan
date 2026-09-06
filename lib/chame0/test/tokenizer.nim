@@ -172,7 +172,7 @@ proc checkTokens(ctx: var TestContext; tok: var Tokenizer[Node, MAtom]) =
   var otherAttrs: ParsedAttrs[MAtom]
   var flags: set[TokenFlag]
   if tok.t in {ttCharacter, ttWhitespace}:
-    ctx.charbuf &= tok.charbufOut
+    ctx.charbuf &= tok.charbuf
   elif tok.t == ttNull:
     ctx.charbuf &= char(0)
   else:
