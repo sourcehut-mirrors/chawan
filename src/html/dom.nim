@@ -958,17 +958,19 @@ iterator elementDescendants*(node: ParentNode): Element {.inline.} =
     if (let child = child as Element; child != nil):
       yield child
 
-iterator elementDescendants*(node: ParentNode; tag: TagType): Element
+iterator elementDescendants*(node: ParentNode; tag: TagType): HTMLElement
     {.inline.} =
-  for desc in node.elementDescendants:
-    if desc.tagType == tag:
-      yield desc
+  for desc in node.descendants:
+    if (let desc = desc as HTMLElement; desc != nil):
+      if desc.tagType == tag:
+        yield desc
 
-iterator elementDescendants*(node: ParentNode; tag: set[TagType]): Element
+iterator elementDescendants*(node: ParentNode; tag: set[TagType]): HTMLElement
     {.inline.} =
-  for desc in node.elementDescendants:
-    if desc.tagType in tag:
-      yield desc
+  for desc in node.descendants:
+    if (let desc = desc as HTMLElement; desc != nil):
+      if desc.tagType in tag:
+        yield desc
 
 iterator displayedElements*(window: Window): Element
     {.inline.} =
@@ -3517,8 +3519,8 @@ proc baseURL*(document: Document): URL =
   #TODO frozen base url...
   var href = ""
   for base in document.asParentNode.elementDescendants(ttBase):
-    if base.attrb(satHref):
-      href = base.attr(satHref)
+    if base.asElement.attrb(satHref):
+      href = base.asElement.attr(satHref)
   if href == "":
     return document.url
   let url = parseURL0(href, document.url)
@@ -3700,11 +3702,11 @@ proc findAnchor*(document: Document; id: string): Element =
       return child
   return Element(nil)
 
-proc findMetaRefresh*(document: Document): Element =
+proc findMetaRefresh*(document: Document): HTMLElement =
   for child in document.asParentNode.elementDescendants(ttMeta):
-    if child.attr(satHttpEquiv).equalsIgnoreCase("refresh"):
+    if child.asElement.attr(satHttpEquiv).equalsIgnoreCase("refresh"):
       return child
-  return Element(nil)
+  return HTMLElement(nil)
 
 proc checkRegistryScope(ctx: JSContext; document: Document;
     registry: CustomElementRegistry): Opt[void] =
@@ -6438,9 +6440,9 @@ proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
   if src != "":
     return (src, "")
   for el in this.asParentNode.elementDescendants(ttSource):
-    let src = el.attr(satSrc)
+    let src = el.asElement.attr(satSrc)
     if src != "":
-      return (src, el.attr(satType))
+      return (src, el.asElement.attr(satType))
   return ("", "")
 
 proc tagType*(element: HTMLElement): TagType =

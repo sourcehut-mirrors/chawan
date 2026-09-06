@@ -510,7 +510,7 @@ proc checkRefresh(bc: BufferContext; handle: PagerHandle): CheckRefreshResult
   let element = bc.document.findMetaRefresh()
   if element == nil:
     return (n: -1, url: URL(nil))
-  return parseRefresh(element.attr(satContent), bc.document.url)
+  return parseRefresh(element.asElement.attr(satContent), bc.document.url)
 
 proc hasTask(handle: PagerHandle; cmd: BufferCommand): bool =
   return handle.tasks[cmd] != 0
