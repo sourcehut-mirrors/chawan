@@ -244,7 +244,7 @@ globalThis.__defineGetter__("select", function() {
     return pager.menu ?? buffer?.select;
 });
 
-/* buffer, precnum (TODO call buffer instead of pager?) */
+/* buffer, precnum */
 for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
         "cursorNextWord", "cursorNextViWord", "cursorNextBigWord",
         "cursorWordBegin", "cursorViWordBegin", "cursorBigWordBegin",
@@ -253,11 +253,11 @@ for (const it of ["cursorLeft", "cursorDown", "cursorUp", "cursorRight",
         "cursorNextParagraph", "cursorTop", "cursorBottom",
         "halfPageDown", "halfPageUp", "halfPageLeft", "halfPageRight",
         "pageDown", "pageUp", "pageLeft", "pageRight", "scrollDown", "scrollUp",
-        "scrollLeft", "scrollRight", "click", "searchPrev", "searchNext",
-        "centerLineBegin", "raisePageBegin", "lowerPageBegin", "nextPageBegin",
+        "scrollLeft", "scrollRight", "click", "centerLineBegin",
+        "raisePageBegin", "lowerPageBegin", "nextPageBegin",
         "previousPageBegin", "centerLine", "raisePage", "lowerPage",
         "cursorToggleSelection", "cursorNthLink", "cursorRevNthLink"]) {
-    cmd[it] = n => pager[it](n);
+    cmd[it] = n => buffer[it](n);
 }
 
 /* buffer, no precnum */
@@ -274,7 +274,7 @@ for (const it of ["redraw", "toggleSource", "nextBuffer", "prevBuffer",
         "searchBackward", "isearchForward", "isearchBackward", "discardTree",
         "dupeBuffer", "load", "loadCursor", "saveLink", "toggleImages",
         "writeInputBuffer", "showFullAlert", "toggleLinkHints", "peek",
-        "peekCursor", "quit", "suspend"]) {
+        "peekCursor", "quit", "suspend", "searchPrev", "searchNext"]) {
     cmd[it] = () => pager[it]();
 }
 
@@ -580,7 +580,6 @@ Pager.prototype.searchNext = async function(n = 1) {
         }
         const fun = reverse ? "cursorPrevMatch" : "cursorNextMatch";
         const wrap = config.search.wrap;
-        /* TODO probably we should add a separate keymap for menu/select */
         if (this.menu)
             return this.menu[fun](this.regex, wrap, true, n);
         const buffer = this.buffer;
@@ -640,7 +639,7 @@ Pager.prototype.isearchForward = async function(reverse = false) {
                 }
                 const re = this.iregex;
                 if (re instanceof RegExp) {
-                    buffer.highlight = true; /* TODO private variable */
+                    buffer.highlight = true;
                     let wrap = config.search.wrap;
                     const iface = buffer.iface;
                     if (iface != null) {
@@ -1758,6 +1757,7 @@ const ReTextStart = /\S/gu;
     /* private BufferInterface */ iface = null;
     /* private BufferInit */ init;
     /* private Tab */ tab;
+    /* private bool */ highlight = false;
 
     /* private */ constructor(init, tab, iface = null) {
         if (!(init instanceof BufferInit) || !(tab instanceof Tab))
