@@ -27,7 +27,6 @@ import js/tojs
 import server/headers
 import types/cell
 import types/color
-import types/jscolor
 import types/opt
 import types/url
 import utils/dtoawrap
@@ -515,6 +514,9 @@ unionHooks(ConfigOptionWord)
 proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void]
 proc parseConfigValue(cp: var ConfigParser): Opt[void]
 proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string
+proc parseConfig*(config: Config; dir: string; buf: openArray[char];
+  warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
+  Err[string]
 proc getClassID(t: typedesc[Config]): JSClassID
 proc getClassID*(t: typedesc[ActionMap]): JSClassID
 
@@ -567,10 +569,6 @@ macro `{}`*(config: Config; s: static string): untyped =
   of cotRegex, cotFunction: # only used in omnirule/siteconf
     error("no such config value")
 
-proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-  warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
-  Err[string]
-
 template siteconf*(config: Config): ConfigList =
   config.lists[csSiteconf]
 
@@ -602,12 +600,12 @@ template defineAuto(typ, other: untyped) =
   template get*(v: typ): other =
     other(uint8(v) - 1)
 
-  proc toJS*(ctx: JSContext; v: typ): JSValue =
+  proc toJS(ctx: JSContext; v: typ): JSValue =
     if v.isSome:
       return ctx.toJS(v.get)
     return JS_NULL
 
-  proc fromJS*(ctx: JSContext; val: JSValueConst; res: var typ): JSCode =
+  proc fromJS(ctx: JSContext; val: JSValueConst; res: var typ): JSCode =
     if not JS_IsNull(val):
       res = typ(0)
     else:
@@ -625,12 +623,12 @@ template isSome*(v: FormatModeAuto): bool =
 template get*(v: FormatModeAuto): FormatMode =
   cast[set[FormatFlag]](uint32(v) - 1)
 
-proc toJS*(ctx: JSContext; v: FormatModeAuto): JSValue =
+proc toJS(ctx: JSContext; v: FormatModeAuto): JSValue =
   if v.isSome:
     return ctx.toJS(v.get)
   return JS_NULL
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var FormatModeAuto):
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var FormatModeAuto):
     JSCode =
   if JS_IsNull(val):
     res = FormatModeAuto(0)
@@ -638,6 +636,65 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var FormatModeAuto):
     var res2: FormatMode
     ?ctx.fromJS(val, res2)
     res = FormatModeAuto(cast[uint32](res2) + 1)
+  fjOk
+
+proc toJS(ctx: JSContext; rgb: RGBColor): JSValue =
+  var res = "#"
+  res.pushHex(rgb.r)
+  res.pushHex(rgb.g)
+  res.pushHex(rgb.b)
+  return toJS(ctx, res)
+
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var RGBColor):
+    JSCode =
+  var s: string
+  ?ctx.fromJS(val, s)
+  let x = parseLegacyColor(s)
+  if x.isErr:
+    JS_ThrowTypeError(ctx, x.error)
+    return fjErr
+  res = x.get
+  fjOk
+
+proc toJS(ctx: JSContext; rgba: ARGBColor): JSValue =
+  var res = "#"
+  res.pushHex(rgba.r)
+  res.pushHex(rgba.g)
+  res.pushHex(rgba.b)
+  res.pushHex(rgba.a)
+  return toJS(ctx, res)
+
+proc toJS(ctx: JSContext; c: CSSColor): JSValue =
+  if c.t in {cctArgb, cctOklab}:
+    return ctx.toJS(c.argb())
+  return ctx.toJS($c)
+
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var ARGBColor): JSCode =
+  if JS_IsNumber(val):
+    # as hex
+    return ctx.fromJS(val, uint32(res))
+  # parse
+  var s: string
+  ?ctx.fromJS(val, s)
+  if x := parseARGBColor(s):
+    res = x
+    return fjOk
+  JS_ThrowTypeError(ctx, "unrecognized color")
+  fjErr
+
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var CSSColor): JSCode =
+  var argb: ARGBColor
+  if ctx.fromJS(val, argb).isOk:
+    res = cssColor(argb)
+    return fjOk
+  var s: string
+  ?ctx.fromJS(val, s)
+  var p = initCSSParser(s)
+  let c = p.parseColor()
+  if c.isErr or p.has():
+    JS_ThrowTypeError(ctx, "invalid color %s", cstring(s))
+    return fjErr
+  res = c.get
   fjOk
 
 template isSome*(v: RGBColorAuto): bool =
@@ -649,13 +706,12 @@ template isNone*(v: RGBColorAuto): bool =
 template get*(v: RGBColorAuto): RGBColor =
   cast[RGBColor](int64(v))
 
-proc toJS*(ctx: JSContext; v: RGBColorAuto): JSValue =
+proc toJS(ctx: JSContext; v: RGBColorAuto): JSValue =
   if v.isSome:
     return ctx.toJS(v.get)
   return JS_NULL
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColorAuto):
-    JSCode =
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var RGBColorAuto): JSCode =
   if JS_IsNull(val):
     res = RGBColorAuto(0)
   else:

@@ -35,10 +35,8 @@ import server/headers
 import server/loaderiface
 import server/request
 import types/blob
-import types/formdata
 import types/opt
 import types/url
-import types/winattrs
 import utils/tabutil
 import utils/twtstr
 
@@ -994,7 +992,6 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addHTMLModule()
   ?ctx.addIntlModule()
   ?ctx.addBlobModule()
-  ?ctx.addFormDataModule()
   ?ctx.addXMLHttpRequestModule()
   ?ctx.addHeadersModule()
   ?ctx.addRequestModule()

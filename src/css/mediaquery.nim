@@ -6,7 +6,6 @@ import css/cssvalues
 import html/catom
 import html/script
 import types/opt
-import types/winattrs
 import utils/dtoawrap
 import utils/twtstr
 

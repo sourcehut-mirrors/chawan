@@ -198,9 +198,8 @@ $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.h \
 	adapter/img/stb_image_write.h $(lcgi)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.h $(lcgi)
 $(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(lcgi)
-$(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
-	src/io/packetreader.nim src/types/color.nim adapter/img/stb_image.h \
-	$(lcgi)
+$(OUTDIR_CGI_BIN)/canvas: src/types/path.nim src/io/packetreader.nim \
+	src/types/color.nim adapter/img/stb_image.h $(lcgi)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(lcgi)
 $(OUTDIR_CGI_BIN)/nanosvg: adapter/img/nanosvg.nim adapter/img/nanosvg.h \
 	adapter/img/nanosvgrast.h $(lcgi)

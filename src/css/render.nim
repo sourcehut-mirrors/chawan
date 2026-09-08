@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import config/conftypes
 import css/box
 import css/cssvalues
 import css/lunit
@@ -7,7 +8,6 @@ import html/dom
 import types/bitmap
 import types/cell
 import types/color
-import types/winattrs
 import utils/strwidth
 import utils/twtstr
 

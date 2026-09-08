@@ -47,7 +47,6 @@ import types/cell
 import types/color
 import types/opt
 import types/url
-import types/winattrs
 import utils/lrewrap
 import utils/luwrap
 import utils/myposix

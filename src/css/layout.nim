@@ -5,12 +5,12 @@
 
 import std/math
 
+import config/conftypes
 import css/box
 import css/cssparser
 import css/cssvalues
 import css/lunit
 import types/bitmap
-import types/winattrs
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr

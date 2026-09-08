@@ -9,7 +9,6 @@ import js/quickjs
 import server/headers
 import types/opt
 import types/url
-import types/winattrs
 import utils/twtstr
 
 type

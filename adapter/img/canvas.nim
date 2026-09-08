@@ -14,7 +14,6 @@ import std/posix
 
 import io/dynstream
 import io/packetreader
-import types/canvastypes
 import types/color
 import types/path
 

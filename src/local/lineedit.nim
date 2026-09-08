@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import config/conftypes
 import config/history
 import js/fromjs
 import js/jsbind
@@ -9,7 +10,6 @@ import js/quickjs
 import js/tojs
 import types/cell
 import types/color
-import types/winattrs
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr

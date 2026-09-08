@@ -42,7 +42,6 @@ import server/headers
 import server/loaderiface
 import server/request
 import types/blob
-import types/formdata
 import types/opt
 import types/url
 import utils/tabutil

@@ -32,7 +32,6 @@ import types/color
 import types/opt
 import types/refstring
 import types/url
-import types/winattrs
 import utils/lrewrap
 import utils/strwidth
 import utils/twtstr

@@ -1019,17 +1019,20 @@ proc myHexValue(c: char): uint32 =
     return uint32(n)
   return 0
 
-proc parseLegacyColor0*(s: string): RGBColor =
-  if s.len <= 0:
-    return rgb(0, 0, 0)
+proc parseLegacyColor*(s: string): Result[RGBColor, cstring] =
+  if s <= "":
+    return err(cstring"color value must not be the empty string")
+  let s = s.strip(chars = AsciiWhitespace)
+  if s.equalsIgnoreCase("transparent"):
+    return err(cstring"color must not be transparent")
   if x := namedRGBColor(s):
-    return x
+    return ok(x)
   if s.len == 4 and s[0] == '#':
     let r = hexValue(s[1])
     let g = hexValue(s[2])
     let b = hexValue(s[3])
     if r != -1 and g != -1 and b != -1:
-      return rgb(uint8(r * 17), uint8(g * 17), uint8(b * 17))
+      return ok(rgb(uint8(r * 17), uint8(g * 17), uint8(b * 17)))
   # o_0
   var s2 = if s[0] == '#':
     s.substr(1)
@@ -1046,6 +1049,6 @@ proc parseLegacyColor0*(s: string): RGBColor =
     (myHexValue(s2[0]) shl 20) or (myHexValue(s2[1]) shl 16) or
     (myHexValue(s2[l]) shl 12) or (myHexValue(s2[l + 1]) shl 8) or
     (myHexValue(s2[l * 2]) shl 4) or myHexValue(s2[l * 2 + 1])
-  return RGBColor(c)
+  ok(RGBColor(c))
 
 {.pop.} # raises: []

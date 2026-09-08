@@ -4,6 +4,7 @@ import std/os
 import std/posix
 
 import config/config
+import config/conftypes
 import config/mailcap
 import encoding/charset
 import io/chafile
@@ -20,11 +21,10 @@ import server/bufferiface
 import server/headers
 import server/loader
 import server/loaderiface
+import server/request
 import types/blob
-import types/formdata
 import types/opt
 import types/url
-import types/winattrs
 import utils/myposix
 import utils/proctitle
 import utils/sandbox
@@ -300,7 +300,7 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
   if jsctx.addURLModule().isErr or
       jsctx.addHeadersModule().isErr or
       jsctx.addBlobModule().isErr or
-      jsctx.addFormDataModule().isErr:
+      jsctx.addRequestModule().isErr:
     quit(2)
   JS_FreeContext(jsctx)
   var ctx = ForkServerContext(stream: controlStream)

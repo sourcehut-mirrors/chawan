@@ -17,7 +17,6 @@ import server/headers
 import server/loaderiface
 import server/request
 import types/bitmap
-import types/canvastypes
 import types/color
 import types/opt
 import types/path

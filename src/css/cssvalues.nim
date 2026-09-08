@@ -5,6 +5,7 @@ import std/hashes
 import std/macros
 import std/math
 
+import config/conftypes
 import css/cssparser
 import css/lunit
 import html/catom
@@ -12,7 +13,6 @@ import types/bitmap
 import types/color
 import types/opt
 import types/refstring
-import types/winattrs
 import utils/dtoawrap
 import utils/tabutil
 import utils/twtstr

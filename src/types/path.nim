@@ -1,5 +1,23 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/math
+
+type
+  CanvasFillRule* = enum
+    cfrNonZero = "nonzero"
+    cfrEvenOdd = "evenodd"
+
+  PaintCommand* = enum
+    pcSetDimensions, pcFillRect, pcStrokeRect, pcFillPath, pcStrokePath,
+    pcFillText, pcStrokeText
+
+  CanvasTextAlign* = enum
+    ctaStart = "start"
+    ctaEnd = "end"
+    ctaLeft = "left"
+    ctaRight = "right"
+    ctaCenter = "center"
 
 type Vector2D* = object
   x*: float64
@@ -532,3 +550,5 @@ proc roundRect*(path: Path; x, y, w, h, radii: float64) =
       return
   #TODO implement
   path.rect(x, y, w, h) # :P
+
+{.pop.} # raises: []

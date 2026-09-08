@@ -43,11 +43,9 @@ import server/request
 import types/blob
 import types/cell
 import types/color
-import types/formdata
 import types/opt
 import types/refstring
 import types/url
-import types/winattrs
 import utils/lrewrap
 import utils/luwrap
 import utils/strwidth

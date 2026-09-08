@@ -16,7 +16,6 @@ import html/form
 import html/script
 import js/jsref
 import types/color
-import types/jscolor
 import types/opt
 import utils/dtoawrap
 import utils/twtstr
