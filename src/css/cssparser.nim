@@ -257,6 +257,12 @@ type
     cstBorderBlock = "border-block"
     cstOverflowInline = "overflow-inline"
     cstOverflowBlock = "overflow-block"
+    cstInlineSize = "inline-size"
+    cstBlockSize = "block-size"
+    cstMinInlineSize = "min-inline-size"
+    cstMinBlockSize = "min-block-size"
+    cstMaxInlineSize = "max-inline-size"
+    cstMaxBlockSize = "max-block-size"
 
   CSSPropertyType* = enum
     # primitive/enum properties: stored as byte

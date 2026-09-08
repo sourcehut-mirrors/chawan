@@ -2335,6 +2335,12 @@ const ShorthandMap* = [
     cptBorderBottomWidth],
   cstOverflowInline: @[cptOverflowX],
   cstOverflowBlock: @[cptOverflowY],
+  cstInlineSize: @[cptWidth],
+  cstBlockSize: @[cptHeight],
+  cstMinInlineSize: @[cptMinWidth],
+  cstMinBlockSize: @[cptMinHeight],
+  cstMaxInlineSize: @[cptMaxWidth],
+  cstMaxBlockSize: @[cptMaxHeight],
 ]
 
 proc parseBorder(ctx: var CSSParser; sh: CSSShorthandType;
@@ -2617,7 +2623,8 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSWidePropertyType;
   of cstOverflow: return ctx.parseOverflow(attrs, tok, res)
   of cstVerticalAlign: return ctx.parseVerticalAlign(attrs, res)
   of cstBorderSpacing: return ctx.parseBorderSpacing(attrs, tok, res)
-  of cstOverflowInline, cstOverflowBlock:
+  of cstOverflowInline, cstOverflowBlock, cstInlineSize, cstBlockSize,
+      cstMinInlineSize, cstMinBlockSize, cstMaxInlineSize, cstMaxBlockSize:
     return ctx.parseValueOuter(ShorthandMap[p.sh][0], attrs, res)
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry];

@@ -99,9 +99,8 @@ or `hsl(from hsl(20, 50, 50) calc(h + 9) s l)`) are not supported.
 
 Logical properties such as `margin-inline-start` etc. are currently *not*
 supported (and neither is `writing-mode`).  However, for compatibility,
-logical properties for `margin`, `padding`, `border` and `overflow` are
-treated as aliases to the respective physical properties with
-`writing-mode: horizontal-tb`.
+logical properties are treated as aliases to the respective physical
+properties with `writing-mode: horizontal-tb`.
 
 ## Selectors
 
