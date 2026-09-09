@@ -219,24 +219,24 @@ proc flushNumericCharacterReference(tok: var Tokenizer) =
     u = 0xFFFD
   if u < 0x80:
     let c = char(u)
-    if c notin AsciiWhitespace:
+    if not tok.consumedAsAttribute() and c notin AsciiWhitespace:
       tok.isws = false
     tok.tmp &= c
-  elif u < 0x800:
-    tok.isws = false
-    tok.tmp &= char(u shr 6 or 0xC0)
-    tok.tmp &= char(u and 0x3F or 0x80)
-  elif u < 0x10000:
-    tok.isws = false
-    tok.tmp &= char(u shr 12 or 0xE0)
-    tok.tmp &= char(u shr 6 and 0x3F or 0x80)
-    tok.tmp &= char(u and 0x3F or 0x80)
   else:
-    tok.isws = false
-    tok.tmp &= char(u shr 18 or 0xF0)
-    tok.tmp &= char(u shr 12 and 0x3F or 0x80)
-    tok.tmp &= char(u shr 6 and 0x3F or 0x80)
-    tok.tmp &= char(u and 0x3F or 0x80)
+    if not tok.consumedAsAttribute():
+      tok.isws = false
+    if u < 0x800:
+      tok.tmp &= char(u shr 6 or 0xC0)
+      tok.tmp &= char(u and 0x3F or 0x80)
+    elif u < 0x10000:
+      tok.tmp &= char(u shr 12 or 0xE0)
+      tok.tmp &= char(u shr 6 and 0x3F or 0x80)
+      tok.tmp &= char(u and 0x3F or 0x80)
+    else:
+      tok.tmp &= char(u shr 18 or 0xF0)
+      tok.tmp &= char(u shr 12 and 0x3F or 0x80)
+      tok.tmp &= char(u shr 6 and 0x3F or 0x80)
+      tok.tmp &= char(u and 0x3F or 0x80)
 
 proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
     TokenizerState =

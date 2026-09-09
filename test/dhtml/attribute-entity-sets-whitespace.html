@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<head><meta a="&quot">
+<script id=s></script>
+</head>
+<script src=../asserts.js></script>
+<div id=x>Fail</div>
+<script>
+assertEquals(s.parentNode, document.head);
+x.textContent = "Success";
+</script>

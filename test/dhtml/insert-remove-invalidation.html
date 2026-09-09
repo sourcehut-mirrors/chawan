@@ -9,6 +9,7 @@
 <div id=y>test 1</div>
 <div id=z>test 2</div>
 </div>
+<div id=ok>Fail</div>
 <script>
 const x = document.getElementById("x"),
 	y = document.getElementById("y"),
@@ -19,4 +20,5 @@ assertEquals(window.getComputedStyle(z).color, "rgb(255, 0, 0)")
 y.getBoundingClientRect();
 z.getBoundingClientRect();
 x.insertBefore(y, z);
+ok.textContent = "Success";
 </script>
