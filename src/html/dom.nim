@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/hashes
 import std/math
 import std/options
 import std/setutils
@@ -45,6 +44,7 @@ import types/color
 import types/opt
 import types/refstring
 import types/url
+import utils/chahash
 import utils/dtoawrap
 import utils/tabutil
 import utils/twtstr

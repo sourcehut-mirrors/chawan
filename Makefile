@@ -390,12 +390,14 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
 
 .PHONY: test_nim
 test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim test/nim/tjsref.nim \
-		test/nim/tjsbind.nim test/nim/tlibregexp.nim
+		test/nim/tjsbind.nim test/nim/tlibregexp.nim \
+		test/nim/tchahash.nim
 	$(NIM) r $(test_flags) test/nim/ttwtstr.nim
 	$(NIM) r $(test_flags) test/nim/tcatom.nim
 	$(NIM) r $(test_flags) test/nim/tjsref.nim
 	$(NIM) r $(test_flags) test/nim/tjsbind.nim
 	$(NIM) r $(test_flags) test/nim/tlibregexp.nim
+	$(NIM) r $(test_flags) test/nim/tchahash.nim
 
 # slow, for manual use only
 .PHONY: test_oklab

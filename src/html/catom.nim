@@ -9,7 +9,6 @@
 
 {.push raises: [].}
 
-import std/hashes
 import std/macros
 
 import chame/tags
@@ -19,6 +18,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import types/opt
+import utils/chahash
 import utils/tabutil
 import utils/twtstr
 

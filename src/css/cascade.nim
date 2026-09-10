@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/hashes
 import std/math
 
 import chame/tags
@@ -17,6 +16,7 @@ import html/script
 import js/jsref
 import types/color
 import types/opt
+import utils/chahash
 import utils/dtoawrap
 import utils/twtstr
 

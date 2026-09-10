@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import std/hashes
+import utils/chahash
 
 # Robin Hood hashing helpers
 iterator prepareTableAdd*[T](tab: var seq[T]; load, init: int): T {.inline.} =
@@ -78,7 +78,7 @@ proc tabSwap*(ourHome: var int; theirHash: Hash; i, mask: int): bool =
 # StrMap
 type
   StrMapItem* = ref object of RootObj
-    hcache*: int
+    hcache*: Hash
     s*: string
 
   StrMap* = object

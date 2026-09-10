@@ -23,6 +23,7 @@ Table of contents:
 * [Chawan](#chawan)
 * [STB image](#stb-image)
 * [tinfl](#tinfl)
+* [ChibiHash](#chibihash)
 * [JebP](#jebp)
 * [NanoSVG](#nanosvg)
 * [QuickJS](#quickjs)
@@ -73,6 +74,12 @@ public domain, and is distributed under the same terms as Chawan.
 (Notably, this is based on the old public domain miniz v1.16 beta
 release, not the more recent MIT version.  In practice, there are no
 substantial differences between the two.)
+
+## ChibiHash
+
+A port of [ChibiHash](https://github.com/N-R-K/ChibiHash) by NRK is used
+for hashing.  It is public domain, distributed under the same terms as
+Chawan.
 
 ## JebP
 
