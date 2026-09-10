@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import dombuilder
 import entity_gen
 import tags
@@ -101,20 +103,20 @@ proc startsWithIgnoreCase*(str, prefix: string): bool =
 proc equalsIgnoreCase*(s1, s2: string): bool =
   s1.len == s2.len and s1.startsWithIgnoreCase(s2)
 
-proc strToAtom[Handle, Atom](tok: Tokenizer[Handle, Atom];
+proc strToAtom*[Handle, Atom](tok: Tokenizer[Handle, Atom];
     s: string): Atom =
   mixin strToAtomImpl
-  tok.dombuilder.strToAtomImpl(s)
+  tok.dombuilder.toDOMBuilderImpl().strToAtomImpl(s)
 
 proc namespaceToAtom[Handle, Atom](tok: Tokenizer[Handle, Atom];
     namespace: Namespace): Atom =
   mixin namespaceToAtomImpl
-  tok.dombuilder.namespaceToAtomImpl(namespace)
+  tok.dombuilder.toDOMBuilderImpl().namespaceToAtomImpl(namespace)
 
 proc toTagType[Handle, Atom](tok: Tokenizer[Handle, Atom]; atom: Atom):
     TagType =
   mixin atomToTagTypeImpl
-  tok.dombuilder.atomToTagTypeImpl(atom)
+  tok.dombuilder.toDOMBuilderImpl().atomToTagTypeImpl(atom)
 
 proc initTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom]):
     Tokenizer[Handle, Atom] =
@@ -313,7 +315,7 @@ proc flushAttr[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
 proc flushAttrs[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
   mixin sortAttrsImpl
   if tok.t == ttStartTag:
-    tok.dombuilder.sortAttrsImpl(tok.attrs)
+    tok.dombuilder.toDOMBuilderImpl().sortAttrsImpl(tok.attrs)
 
 type EatStrResult = enum
   esrFail, esrNext, esrSuccess
@@ -1492,3 +1494,5 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
   if tok.tmp.len > 0:
     return tok.flushChars()
   trDone
+
+{.pop.} # raises: []

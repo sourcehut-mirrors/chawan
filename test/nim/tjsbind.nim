@@ -411,7 +411,7 @@ proc subroutine(ctx: JSContext; val: JSValueConst) =
   assert res.c == teB
   assert res.e == 0
   assert res.d.a.isNone
-  doAssert ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9)) == fjOk
+  doAssert ctx.defineProperty(res.f.get.v, "x", JS_NewInt32(ctx, 9)) == fjOk
 
 proc testJSDictTransitive() =
   let rt = newGlobalJSRuntime()

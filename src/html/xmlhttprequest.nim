@@ -538,7 +538,7 @@ jsClassDef(XMLHttpRequest):
         let len = csize_t(this.received.len)
         let (opaque, p) = this.received.ptrify()
         this.responseObject = JS_NewArrayBuffer(ctx, p, len, abufFree, opaque,
-          false)
+          JS_BOOL(0))
       of xhrtBlob:
         let len = this.received.len
         let (opaque, p) = this.received.ptrify()

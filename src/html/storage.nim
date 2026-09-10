@@ -84,7 +84,7 @@ proc storageAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray):
     JSValue {.cdecl.} =
   let ctxOpaque = ctx.getOpaque()
-  if not JS_SameValue(ctx, this, ctxOpaque.global):
+  if not ctx.strictEquals(this, ctxOpaque.global):
     return JS_ThrowTypeErrorInvalidClass(ctx, ctxOpaque.gclass)
   # data[0] is object
   if JS_IsUndefined(func_data[0]):

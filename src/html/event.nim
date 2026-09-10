@@ -334,7 +334,7 @@ jsClassDef(CustomEvent):
       {.jsctor.} =
     let event = jsNew CustomEventObj(
       eventType: eventType,
-      detail: JS_DupValue(ctx, eventInitDict.detail)
+      detail: JS_DupValue(ctx, eventInitDict.detail.v)
     )
     if event != nil:
       event.asEvent.innerEventCreationSteps(EventInit(eventInitDict))
@@ -353,7 +353,7 @@ proc newMessageEvent*(ctx: JSContext; eventType: CAtom;
     eventInit = MessageEventInit(data: trace(JS_NULL))): MessageEvent =
   let event = jsNew MessageEventObj(
     eventType: eventType,
-    data: JS_DupValue(ctx, eventInit.data),
+    data: JS_DupValue(ctx, eventInit.data.v),
     origin: eventInit.origin
   )
   if event != nil:
@@ -760,7 +760,7 @@ proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
       let jsCapture = ctx.toJS(capture)
       let data = [jsTarget, jsType, JS_DupValue(ctx, callback), jsCapture]
       let fun = JS_NewCFunctionData(ctx, removeEventListenerData, 0, 0, 4,
-        data.toJSValueArray())
+        data.toJSValueConstArray())
       ctx.freeValues(data)
       if JS_IsException(fun):
         return err()

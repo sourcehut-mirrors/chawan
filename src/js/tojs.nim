@@ -76,7 +76,7 @@ proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
     paramList.add(ctx.toJS(arg))
   paramList.add(ctx.toJS(body))
   let fun = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvFunction],
-    cint(paramList.len), paramList.toJSValueArray())
+    cint(paramList.len), paramList.toJSValueConstArray())
   for param in paramList:
     JS_FreeValue(ctx, param)
   return fun
@@ -124,7 +124,7 @@ proc toJS*(ctx: JSContext; n: float64): JSValue =
   return JS_NewFloat64(ctx, n)
 
 proc toJS*(ctx: JSContext; b: bool): JSValue =
-  return JS_NewBool(ctx, b)
+  return JS_NewBool(ctx, JS_BOOL(b))
 
 proc toJS*[T](ctx: JSContext; s: seq[T]): JSValue =
   var vals = newSeqOfCap[JSValue](s.len)
@@ -148,7 +148,7 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
   if JS_IsException(a):
     return a
   let ret = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvSet], 1,
-    a.toJSValueArray())
+    a.toJSValueConstArray())
   JS_FreeValue(ctx, a)
   return ret
 
@@ -244,7 +244,7 @@ proc toJS*(ctx: JSContext; p: JSObject): JSValue =
 
 proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue =
   let len = csize_t(abuf.len)
-  return JS_NewArrayBuffer(ctx, abuf.p, len, abuf.dealloc, nil, false)
+  return JS_NewArrayBuffer(ctx, abuf.p, len, abuf.dealloc, nil, JS_BOOL(0))
 
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue =
   let jsabuf = ctx.toJS(u8a.abuf)

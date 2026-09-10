@@ -573,7 +573,7 @@ proc windowSetPrototype(ctx: JSContext; obj, proto: JSValueConst): cint
   let ours = JS_GetPrototype(ctx, obj)
   if JS_IsException(ours):
     return -1
-  let res = JS_SameValue(ctx, obj, ours)
+  let res = ctx.sameValue(obj, ours)
   JS_FreeValue(ctx, ours)
   cint(res)
 
@@ -874,7 +874,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
 
 proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     isHandled: JS_BOOL; opaque: pointer) {.cdecl.} =
-  if not isHandled:
+  if isHandled == 0:
     let window = ctx.getGlobal()
     var s: string
     if fromJS(ctx, reason, s).isOk:

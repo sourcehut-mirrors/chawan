@@ -44,9 +44,11 @@ static:
   # HandleImpl and atom type AtomImpl.
   doAssert DOMBuilderImpl is DOMBuilder[HandleImpl, AtomImpl]
 
-converter toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl, AtomImpl]):
+{.push objChecks: off.}
+template toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl, AtomImpl]):
     DOMBuilderImpl =
-  return DOMBuilderImpl(dombuilder)
+  DOMBuilderImpl(dombuilder)
+{.pop.}
 
 when defined(nimdocdummy):
   import std/macros

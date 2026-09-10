@@ -46,6 +46,9 @@ template toJSValueConstOpenArray*(a: openArray[JSValue]):
 template toJSValueArray*(a: JSValue): JSValueArray =
   cast[JSValueArray](unsafeAddr a)
 
+template toJSValueConstArray*(a: JSValue): JSValueConstArray =
+  cast[JSValueConstArray](unsafeAddr a)
+
 template toJSValueConstArray*(a: JSValueConst): JSValueConstArray =
   cast[JSValueConstArray](unsafeAddr a)
 
@@ -119,7 +122,7 @@ proc invokeSink*(ctx: JSContext; val: JSValueConst; atom: JSAtom;
   ## Invoke the function named `atom` on `val`, then free each element of
   ## `argv`.
   let res = JS_Invoke(ctx, val, atom, cast[cint](argv.len),
-    argv.toJSValueArray())
+    argv.toJSValueConstArray())
   for arg in argv:
     JS_FreeValue(ctx, arg)
   res
@@ -285,7 +288,10 @@ proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
 
 proc strictEquals*(ctx: JSContext; a, b: JSValueConst): bool =
   ## Returns true if `a === b', false otherwise.
-  return JS_StrictEq(ctx, a, b)
+  JS_StrictEq(ctx, a, b) != 0
+
+proc sameValue*(ctx: JSContext; a, b: JSValueConst): bool =
+  JS_SameValue(ctx, a, b) != 0
 
 proc addRow(s: var string; title: string; count, size, sz2, cnt2: int64;
     name: string) =
@@ -419,7 +425,7 @@ proc getExceptionMsg*(ctx: JSContext): string =
 proc runJSJobs*(rt: JSRuntime): JSContext =
   ## Returns the first JSContext that threw an exception, or nil if no
   ## exception was thrown.
-  while JS_IsJobPending(rt):
+  while JS_IsJobPending(rt) != 0:
     var ctx: JSContext
     let r = JS_ExecutePendingJob(rt, ctx)
     if r == -1:

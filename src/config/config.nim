@@ -2704,7 +2704,8 @@ jsClassPublicDef(ActionMap):
     if JS_IsFunction(ctx, val):
       return JS_DupValue(ctx, val)
     # bytecode function
-    return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1, val.toJSValueArray)
+    return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1,
+      val.toJSValueConstArray())
 
   proc delete(a: ActionMap; k: DOMString): bool {.jsdelprop.} =
     let i = a.find(k.toOpenArray())

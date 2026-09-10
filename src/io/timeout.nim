@@ -72,7 +72,7 @@ proc runEntry(ctx: JSContext; entry: TimeoutEntry; console: Console) =
   var ret = JS_EXCEPTION
   if JS_IsFunction(ctx, entry.val):
     ret = JS_Call(ctx, entry.val, JS_UNDEFINED, cint(entry.args.len),
-      entry.args.toJSValueArray())
+      entry.args.toJSValueConstArray())
   else:
     var s: string
     if ctx.fromJS(entry.val, s).isOk:

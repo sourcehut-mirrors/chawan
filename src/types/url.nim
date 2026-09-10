@@ -1283,10 +1283,10 @@ jsClassNameDef(URLSearchParamsIterator, "URLSearchParams Iterator"):
     let params = iter.params
     let i = iter.i
     if i >= params.list.len:
-      done = true
+      done = JS_BOOL(1)
       return JS_UNDEFINED
     inc iter.i
-    done = false
+    done = JS_BOOL(0)
     case iter.t
     of sitEntries: ctx.toJS(params.list[i])
     of sitKeys: ctx.toJS(params.list[i].name)

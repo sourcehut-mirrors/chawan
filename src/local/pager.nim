@@ -2198,7 +2198,7 @@ jsClassDef(Pager):
       jsfunc: "quit".} =
     pager.exitCode = int(code)
     JS_ThrowInternalError(ctx, "interrupted")
-    JS_SetUncatchableException(ctx, true)
+    JS_SetUncatchableException(ctx, JS_BOOL(1))
     return JS_EXCEPTION
 
   # private
@@ -2524,7 +2524,7 @@ jsClassDef(Pager):
     suspend {.jsdefault: true.}: bool
     wait {.jsdefault: false.}: bool
 
-  proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueConst;
+  proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueTraced;
       s: var seq[EnvVar]): JSCode =
     if JS_IsUndefined(val):
       s = pager.defaultEnv()
@@ -2547,7 +2547,7 @@ jsClassDef(Pager):
     let res = pager.runCommand(cmd, t.suspend, t.wait, env)
     if res.isErr:
       return ctx.jsQuit(pager, 1)
-    return JS_NewBool(ctx, res.get == 0)
+    return ctx.toJS(res.get == 0)
 
   # public
   proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue

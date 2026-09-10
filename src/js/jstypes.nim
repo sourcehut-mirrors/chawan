@@ -210,7 +210,10 @@ proc `=dup`(t: JSValueTraced): JSValueTraced =
 proc trace*(val: JSValue): JSValueTraced =
   JSValueTraced(v: val)
 
-converter toJSValueConst*(t: JSValueTraced): JSValueConst =
-  JSValueConst(t.v)
+proc JS_IsUndefined*(t: JSValueTraced): bool =
+  JS_IsUndefined(t.v)
+
+proc JS_IsNull*(t: JSValueTraced): bool =
+  JS_IsNull(t.v)
 
 {.pop.} # raises

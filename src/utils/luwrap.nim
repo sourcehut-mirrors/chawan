@@ -53,7 +53,7 @@ proc capitalizeLU*(s: string): string =
   result = newStringOfCap(s.len)
   var wordStart = true
   for u in s.points:
-    if lre_is_space(u):
+    if lre_is_space(u) != 0:
       wordStart = true
       result.addUTF8(u)
     elif wordStart:

@@ -307,9 +307,8 @@ converter toJSValueConst*(val: JSValue): JSValueConst {.importc,
     header: "quickjs-aux.h".} =
   JSValueConst(val)
 
-converter toJSValueConstArray*(val: JSValueArray): JSValueConstArray {.
-    importc, header: "quickjs-aux.h".} =
-  JSValueConstArray(val)
+proc toJSValueConstArray*(val: JSValueArray): JSValueConstArray {.
+  importc, header: "quickjs-aux.h".}
 
 template JS_NULL*(): untyped = JS_MKVAL(JS_TAG_NULL, 0)
 template JS_UNDEFINED*(): untyped = JS_MKVAL(JS_TAG_UNDEFINED, 0)
@@ -569,16 +568,6 @@ proc JS_NewNumber*(ctx: JSContext; val: cdouble): JSValue
 proc JS_NewBigInt64*(ctx: JSContext; val: int64): JSValue
 proc JS_NewBigUInt64*(ctx: JSContext; val: uint64): JSValue
 proc JS_NewFloat64*(ctx: JSContext; val: cdouble): JSValue
-proc JS_IsNumber*(v: JSValueConst): JS_BOOL
-proc JS_IsBigInt*(v: JSValueConst): JS_BOOL
-proc JS_IsBool*(v: JSValueConst): JS_BOOL
-proc JS_IsNull*(v: JSValueConst): JS_BOOL
-proc JS_IsUndefined*(v: JSValueConst): JS_BOOL
-proc JS_IsException*(v: JSValueConst): JS_BOOL
-proc JS_IsUninitialized*(v: JSValueConst): JS_BOOL
-proc JS_IsString*(v: JSValueConst): JS_BOOL
-proc JS_IsSymbol*(v: JSValueConst): JS_BOOL
-proc JS_IsObject*(v: JSValueConst): JS_BOOL
 
 proc JS_Throw*(ctx: JSContext; obj: JSValue): JSValue
 proc JS_SetUncatchableException*(ctx: JSContext; flag: JS_BOOL)
@@ -663,8 +652,6 @@ proc JS_NewObjectClass*(ctx: JSContext; class_id: JSClassID): JSValue
 proc JS_NewObjectProto*(ctx: JSContext; proto: JSValueConst): JSValue
 proc JS_NewObject*(ctx: JSContext): JSValue
 
-proc JS_IsFunction*(ctx: JSContext; val: JSValueConst): JS_BOOL
-proc JS_IsConstructor*(ctx: JSContext; val: JSValueConst): JS_BOOL
 proc JS_SetConstructorBit*(ctx: JSContext; func_obj: JSValueConst;
   val: JS_BOOL): JS_BOOL
 
@@ -931,5 +918,42 @@ proc JS_PrintValue*(ctx: JSContext; write_func: JSPrintValueWrite;
   write_opaque: pointer; val: JSValueConst; options: ptr JSPrintValueOptions)
 
 {.pop.} # header, importc
+
+{.push header: qjsheader.}
+proc JS_IsNumberImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsNumber".}
+proc JS_IsBigIntImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsBigInt".}
+proc JS_IsBoolImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsBool".}
+proc JS_IsNullImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsNull".}
+proc JS_IsUndefinedImpl*(v: JSValueConst): JS_BOOL {.
+  importc: "JS_IsUndefined".}
+proc JS_IsExceptionImpl*(v: JSValueConst): JS_BOOL {.
+  importc: "JS_IsException".}
+proc JS_IsUninitializedImpl*(v: JSValueConst): JS_BOOL {.
+  importc: "JS_IsUninitialized".}
+proc JS_IsStringImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsString".}
+proc JS_IsSymbolImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsSymbol".}
+proc JS_IsObjectImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsObject".}
+
+template JS_IsNumber*(v: JSValueConst): bool = JS_IsNumberImpl(v) != 0
+template JS_IsBigInt*(v: JSValueConst): bool = JS_IsBigIntImpl(v) != 0
+template JS_IsBool*(v: JSValueConst): bool = JS_IsBoolImpl(v) != 0
+template JS_IsNull*(v: JSValueConst): bool = JS_IsNullImpl(v) != 0
+template JS_IsUndefined*(v: JSValueConst): bool = JS_IsUndefinedImpl(v) != 0
+template JS_IsException*(v: JSValueConst): bool = JS_IsExceptionImpl(v) != 0
+template JS_IsUninitialized*(v: JSValueConst): bool =
+  JS_IsUninitializedImpl(v) != 0
+template JS_IsString*(v: JSValueConst): bool = JS_IsStringImpl(v) != 0
+template JS_IsSymbol*(v: JSValueConst): bool = JS_IsSymbolImpl(v) != 0
+template JS_IsObject*(v: JSValueConst): bool = JS_IsObjectImpl(v) != 0
+
+proc JS_IsFunctionImpl*(ctx: JSContext; val: JSValueConst): JS_BOOL {.
+  importc: "JS_IsFunction".}
+proc JS_IsConstructorImpl*(ctx: JSContext; val: JSValueConst): JS_BOOL {.
+  importc: "JS_IsConstructor".}
+template JS_IsFunction*(ctx: JSContext; val: JSValueConst): bool =
+  JS_IsFunctionImpl(ctx, val) != 0
+template JS_IsConstructor*(ctx: JSContext; val: JSValueConst): bool =
+  JS_IsConstructorImpl(ctx, val) != 0
+{.pop.}
 
 {.pop.} # raises

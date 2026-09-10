@@ -66,6 +66,9 @@ proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSCallback):
   res = JSCallback(traceObj(val))
   fjOk
 
+template fromJS*[T](ctx: JSContext; val: JSValueTraced; res: var T): JSCode =
+  ctx.fromJS(val.v, res)
+
 proc fromJSCallback*(ctx: JSContext; val: JSValueConst;
     res: var pointer): JSCode =
   if not JS_IsFunction(ctx, val):

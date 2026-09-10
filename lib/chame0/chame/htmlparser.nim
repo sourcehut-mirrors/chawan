@@ -117,54 +117,49 @@ template dombuilder[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     DOMBuilder[Handle, Atom] =
   parser.tok.dombuilder
 
-proc strToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom]; s: string):
-    Atom =
-  mixin strToAtomImpl
-  return parser.dombuilder.strToAtomImpl(s)
-
 proc toAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom]; tagType: TagType):
     Atom =
   mixin tagTypeToAtomImpl
-  return parser.dombuilder.tagTypeToAtomImpl(tagType)
+  parser.dombuilder.toDOMBuilderImpl().tagTypeToAtomImpl(tagType)
 
 proc toTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     atom: Atom): TagType =
   mixin atomToTagTypeImpl
-  return parser.dombuilder.atomToTagTypeImpl(atom)
+  return parser.dombuilder.toDOMBuilderImpl().atomToTagTypeImpl(atom)
 
 proc setQuirksMode[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     mode: QuirksMode) =
   mixin setQuirksModeImpl
   parser.quirksMode = mode
-  parser.dombuilder.setQuirksModeImpl(mode)
+  parser.dombuilder.toDOMBuilderImpl().setQuirksModeImpl(mode)
 
 proc setEncoding(parser: var HTML5Parser; cs: string): SetEncodingResult =
   mixin setEncodingImpl
-  return parser.dombuilder.setEncodingImpl(cs)
+  return parser.dombuilder.toDOMBuilderImpl().setEncodingImpl(cs)
 
 proc getDocument[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
   mixin getDocumentImpl
-  return parser.dombuilder.getDocumentImpl()
+  return parser.dombuilder.toDOMBuilderImpl().getDocumentImpl()
 
 proc getParentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     handle: Handle): Handle =
   mixin getParentNodeImpl
-  return parser.dombuilder.getParentNodeImpl(handle)
+  return parser.dombuilder.toDOMBuilderImpl().getParentNodeImpl(handle)
 
 proc getLocalName[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     handle: Handle): Atom =
   mixin getLocalNameImpl
-  return parser.dombuilder.getLocalNameImpl(handle)
+  return parser.dombuilder.toDOMBuilderImpl().getLocalNameImpl(handle)
 
 proc getNamespace[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     handle: Handle): Namespace =
   mixin getNamespaceImpl
-  return parser.dombuilder.getNamespaceImpl(handle)
+  return parser.dombuilder.toDOMBuilderImpl().getNamespaceImpl(handle)
 
 proc getTemplateContent[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     handle: Handle): Handle =
   mixin getTemplateContentImpl
-  return parser.dombuilder.getTemplateContentImpl(handle)
+  return parser.dombuilder.toDOMBuilderImpl().getTemplateContentImpl(handle)
 
 proc getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     handle: Handle): TagType =
@@ -175,52 +170,55 @@ proc getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
 proc createHTMLElement[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     Handle =
   mixin createHTMLElementImpl
-  return parser.dombuilder.createHTMLElementImpl()
+  return parser.dombuilder.toDOMBuilderImpl().createHTMLElementImpl()
 
 proc insertCommentImpl[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     parent: Handle; before: Handle) =
   mixin insertCommentImpl
-  parser.dombuilder.insertCommentImpl(parent, move(parser.tok.tagNameBuf),
-    before)
+  parser.dombuilder.toDOMBuilderImpl().insertCommentImpl(parent,
+    move(parser.tok.tagNameBuf), before)
 
 proc appendDocumentType[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     name, publicId, systemId: string) =
   mixin appendDocumentTypeImpl
-  parser.dombuilder.appendDocumentTypeImpl(name, publicId, systemId)
+  parser.dombuilder.toDOMBuilderImpl().appendDocumentTypeImpl(name, publicId,
+    systemId)
 
 proc insertBefore[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     parent, child: Handle; before: Handle) =
   mixin insertBeforeImpl
-  parser.dombuilder.insertBeforeImpl(parent, child, before)
+  parser.dombuilder.toDOMBuilderImpl().insertBeforeImpl(parent, child, before)
 
 proc insertText[Handle, Atom](parser: HTML5Parser[Handle, Atom]; parent: Handle;
     text: sink string; before: Handle) =
   mixin insertTextImpl
-  parser.dombuilder.insertTextImpl(parent, move(text), before)
+  parser.dombuilder.toDOMBuilderImpl().insertTextImpl(parent, move(text),
+    before)
 
 proc remove[Handle, Atom](parser: HTML5Parser[Handle, Atom]; child: Handle) =
   mixin removeImpl
-  parser.dombuilder.removeImpl(child)
+  parser.dombuilder.toDOMBuilderImpl().removeImpl(child)
 
 proc moveChildren[Handle, Atom](parser: HTML5Parser[Handle, Atom]; handleFrom,
     handleTo: Handle) =
   mixin moveChildrenImpl
-  parser.dombuilder.moveChildrenImpl(handleFrom, handleTo)
+  parser.dombuilder.toDOMBuilderImpl().moveChildrenImpl(handleFrom, handleTo)
 
 proc addAttrsIfMissing[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     element: Handle; attrs: ParsedAttrs[Atom]) =
   mixin addAttrsIfMissingImpl
-  parser.dombuilder.addAttrsIfMissingImpl(element, attrs)
+  parser.dombuilder.toDOMBuilderImpl().addAttrsIfMissingImpl(element, attrs)
 
 proc setScriptAlreadyStarted[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     script: Handle) =
   mixin setScriptAlreadyStartedImpl
-  parser.dombuilder.setScriptAlreadyStartedImpl(script)
+  parser.dombuilder.toDOMBuilderImpl().setScriptAlreadyStartedImpl(script)
 
 proc associateWithForm[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     element, form, intendedParent: Handle) =
   mixin associateWithFormImpl
-  parser.dombuilder.associateWithFormImpl(element, form, intendedParent)
+  parser.dombuilder.toDOMBuilderImpl().associateWithFormImpl(element, form,
+    intendedParent)
 
 # Parser
 iterator ropenElements[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
@@ -445,8 +443,8 @@ proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom];
     namespace == nsHTML and tagType in FormAssociatedElements and
     parser.form != Handle.default and not parser.hasElement(ttTemplate) and
     (tagType notin ListedElements or parser.toAtom(ttForm) notin attrs)
-  let element = parser.dombuilder.createElementForTokenImpl(localName,
-    namespace, intendedParent, attrs)
+  let element = parser.dombuilder.toDOMBuilderImpl()
+    .createElementForTokenImpl(localName, namespace, intendedParent, attrs)
   if shouldAssociate:
     parser.associateWithForm(element, parser.form, intendedParent)
   element
@@ -483,7 +481,7 @@ proc pushHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
 proc popElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom]): Handle =
   mixin elementPoppedImpl
   result = parser.openElements.pop().element
-  parser.dombuilder.elementPoppedImpl(result)
+  parser.dombuilder.toDOMBuilderImpl().elementPoppedImpl(result)
   if parser.openElements.len == 0:
     parser.tok.namespace = nsHTML
     parser.tok.htmlIntegrationPoint = false
@@ -2121,20 +2119,6 @@ proc processHTMLForeignTag[Handle, Atom](
     discard parser.popElement()
   parser.processInHTML()
 
-proc otherForeignStartTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
-    ParseChunkResult =
-  let namespace = parser.getNamespace(parser.adjustedCurrentNode)
-  var tagname = parser.tok.tagname
-  if namespace in {nsSVG, nsMathML}:
-    tagname = parser.strToAtom(parser.tok.tagNameBuf)
-  discard parser.insertForeignElement(parser.tok.tagname, tagname,
-    namespace, false, move(parser.tok.attrs))
-  if tfSelfClosing in parser.tok.flags:
-    discard parser.popElement()
-    if namespace == nsSVG and parser.toTagType(tagname) == ttScript:
-      return pcrScript
-  return pcrContinue
-
 proc otherForeignEndTag[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     ParseChunkResult =
   for i in countdown(parser.openElements.high, 0): # loop
@@ -2182,7 +2166,17 @@ proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
         return parser.processHTMLForeignTag()
       # fall through
     else: discard
-    return parser.otherForeignStartTag()
+    let namespace = parser.getNamespace(parser.adjustedCurrentNode)
+    var tagname = parser.tok.tagname
+    if namespace in {nsSVG, nsMathML}:
+      tagname = parser.tok.strToAtom(parser.tok.tagNameBuf)
+    discard parser.insertForeignElement(parser.tok.tagname, tagname,
+      namespace, false, move(parser.tok.attrs))
+    if tfSelfClosing in parser.tok.flags:
+      discard parser.popElement()
+      if namespace == nsSVG and parser.toTagType(tagname) == ttScript:
+        return pcrScript
+    return pcrContinue
   of ttEndTag:
     case parser.toTagType(parser.tok.tagname)
     of ttBr, ttP: return parser.processHTMLForeignTag()
@@ -2294,4 +2288,4 @@ proc finish*[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
   while parser.openElements.len > 0:
     discard parser.popElement()
 
-{.pop.}
+{.pop.} # raises: []
