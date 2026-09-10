@@ -704,15 +704,9 @@ proc limitedQuirksConditions(pubid, sysid: string): bool =
   return false
 
 # 13.2.6.2
-proc genericRawtextElementParsingAlgorithm(parser: var HTML5Parser) =
+proc parseRawtextElement(parser: var HTML5Parser; state: TokenizerState) =
   discard parser.insertHTMLElement()
-  parser.tok.state = tsRawtext
-  parser.oldInsertionMode = parser.insertionMode
-  parser.insertionMode = imText
-
-proc genericRCDATAElementParsingAlgorithm(parser: var HTML5Parser) =
-  discard parser.insertHTMLElement()
-  parser.tok.state = tsRcdata
+  parser.tok.state = state
   parser.oldInsertionMode = parser.insertionMode
   parser.insertionMode = imText
 
@@ -1182,15 +1176,15 @@ proc processInHead[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
       parser.insertHTMLElementPop()
       if res == seStop:
         return pcrStop
-    of ttTitle: parser.genericRCDATAElementParsingAlgorithm()
+    of ttTitle: parser.parseRawtextElement(tsRcdata)
     of ttNoscript:
       if parser.scripting:
-        parser.genericRawtextElementParsingAlgorithm()
+        parser.parseRawtextElement(tsRawtext)
       else:
         discard parser.insertHTMLElement()
         parser.insertionMode = imInHeadNoscript
     of ttNoframes, ttStyle:
-      parser.genericRawtextElementParsingAlgorithm()
+      parser.parseRawtextElement(tsRawtext)
     of ttScript:
       let location = parser.appropriatePlaceForInsert()
       let element = parser.createHTMLElement(parser.tok.tagname, location.inside,
@@ -1490,14 +1484,14 @@ proc processInBody[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
       parser.closeP()
       parser.reconstructActiveFormatting()
       parser.framesetOk = false
-      parser.genericRawtextElementParsingAlgorithm()
+      parser.parseRawtextElement(tsRawtext)
     of ttIframe:
       parser.framesetOk = false
-      parser.genericRawtextElementParsingAlgorithm()
-    of ttNoembed: parser.genericRawtextElementParsingAlgorithm()
+      parser.parseRawtextElement(tsRawtext)
+    of ttNoembed: parser.parseRawtextElement(tsRawtext)
     of ttNoscript:
       if parser.scripting:
-        parser.genericRawtextElementParsingAlgorithm()
+        parser.parseRawtextElement(tsRawtext)
       else:
         parser.reconstructActiveFormatting()
         discard parser.insertHTMLElement()

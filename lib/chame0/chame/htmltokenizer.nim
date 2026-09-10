@@ -498,7 +498,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsData, tsRcdata, tsRawtext, tsScriptData:
       case c
       of '&':
-        if state == tsScriptData:
+        if state in {tsScriptData, tsRawtext}:
           emit_nws c
         else:
           switch_state_return tsCharacterReference
