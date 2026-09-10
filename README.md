@@ -17,7 +17,7 @@ assumed.  On Windows you have to use WSL.
 1. Clone the Chawan repository:  
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 2.0.0 or newer, ideally 2.2.10.  (`nim -v` displays your
+	* Please use 2.0.0 or newer, ideally 2.2.12.  (`nim -v` displays your
 	  Nim compiler's version.)
 	  The 1.6 branch from 1.6.14 upwards may still work, but it isn't
 	  recommended unless you have no other choice.
@@ -99,17 +99,16 @@ First, read the [troubleshooting](doc/troubleshooting.md) document.
 If it doesn't help, [open a ticket](https://todo.sr.ht/~bptato/chawan).
 
 When using the ticket tracker, please make sure your tickets are valid
-markdown, or they become unreadable on the web interface.
-
-If you want to send plain text e-mails not formatted as markdown,
-use the [mailing list](mailto:~bptato/chawan-devel@lists.sr.ht) instead.
+markdown, or they become unreadable on the web interface.  If you want to
+send plain text e-mails not formatted as markdown, use the [mailing
+list](mailto:~bptato/chawan-devel@lists.sr.ht) instead.
 
 If you're having troubles accessing SourceHut, you can also use the
-[Codeberg mirror](https://codeberg.org/bptato/chawan).
+[Codeberg mirror](https://codeberg.org/bptato/chawan).  Patches can be sent
+to the mailing list, as Codeberg pull requests, or in private.
 
-Patches can be sent to the mailing list, as Codeberg pull requests, or
-in private.  (Please do not submit code generated with artificial neural
-networks.)
+(Please do not submit tickets or patches directly or indirectly generated
+with artificial neural networks.)
 
 ## Documentation index
 
