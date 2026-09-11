@@ -700,22 +700,7 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   if JS_IsException(jsEvent):
     JS_FreeValue(ctx, jsTarget)
     return JS_EXCEPTION
-  var ret = JS_UNINITIALIZED
-  #TODO user object operation
-  let callback = JS_DupValue(ctx, listener.callback.value)
-  if JS_IsFunction(ctx, callback):
-    # Apparently it's a bad idea to call a function that can then delete
-    # the reference it was called from (hence the dup).
-    ret = ctx.call(callback, jsTarget, jsEvent)
-  else:
-    assert JS_IsObject(callback)
-    ret = JS_GetPropertyStr(ctx, callback, "handleEvent")
-    if not JS_IsException(ret):
-      ret = ctx.callFree(ret, callback, jsEvent)
-  JS_FreeValue(ctx, callback)
-  JS_FreeValue(ctx, jsTarget)
-  JS_FreeValue(ctx, jsEvent)
-  return ret
+  ctx.callUserObject(listener.callback, jstHandleEvent, jsTarget, jsEvent)
 
 proc removeEventListenerData(ctx: JSContext; _: JSValueConst;
     argc: cint; argv: JSValueConstArray; magic: cint;

@@ -29,6 +29,7 @@ type
     jstBuffer = "buffer"
     jstAcceptNode = "acceptNode"
     jstName = "name"
+    jstHandleEvent = "handleEvent"
 
   JSValueRef* = enum
     jsvArrayPrototypeForEach = "Array.prototype.forEach"

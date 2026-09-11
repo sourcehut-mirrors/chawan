@@ -4315,14 +4315,7 @@ proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
   if JS_IsException(node):
     return err()
   this.active = true
-  #TODO call user object's operation (prepare etc.)
-  let filter = JS_DupValue(ctx, this.filter.value)
-  let val = if JS_IsFunction(ctx, filter):
-    ctx.callSink(filter, JS_UNDEFINED, node)
-  else:
-    let atom = ctx.getOpaque().strRefs[jstAcceptNode]
-    ctx.invokeSink(filter, atom, node)
-  JS_FreeValue(ctx, filter)
+  let val = ctx.callUserObject(this.filter, jstAcceptNode, JS_UNDEFINED, node)
   if JS_IsException(val):
     this.active = false
     return err()
