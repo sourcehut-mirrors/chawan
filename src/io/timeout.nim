@@ -5,6 +5,7 @@ import std/times
 
 import io/console
 import js/fromjs
+import js/jstypes
 import js/jsutils
 import js/quickjs
 
@@ -15,7 +16,7 @@ type
 
   TimeoutEntry = ref object
     expires: int64
-    val: JSValue
+    val: JSValueTraced
     args: seq[JSValue]
     timeout: int32
     id: int32
@@ -32,7 +33,6 @@ proc empty*(state: TimeoutState): bool =
 
 proc clearTimeout0(state: var TimeoutState; ctx: JSContext; i: int) =
   let entry = state.timeouts[i]
-  JS_FreeValue(ctx, entry.val)
   ctx.freeValues(entry.args)
   state.timeouts.del(i)
   if state.timeouts.len != i: # only set if we del'd in the middle
@@ -58,7 +58,7 @@ proc setTimeout*(state: var TimeoutState; ctx: JSContext; t: TimeoutType;
   let entry = TimeoutEntry(
     t: t,
     id: id,
-    val: JS_DupValue(ctx, handler),
+    val: ctx.dupTrace(handler),
     expires: getUnixMillis() + int64(timeout),
     timeout: timeout
   )
@@ -71,7 +71,7 @@ proc setTimeout*(state: var TimeoutState; ctx: JSContext; t: TimeoutType;
 proc runEntry(ctx: JSContext; entry: TimeoutEntry; console: Console) =
   var ret = JS_EXCEPTION
   if JS_IsFunction(ctx, entry.val):
-    ret = JS_Call(ctx, entry.val, JS_UNDEFINED, cint(entry.args.len),
+    ret = JS_Call(ctx, entry.val.v, JS_UNDEFINED, cint(entry.args.len),
       entry.args.toJSValueConstArray())
   else:
     var s: string
@@ -126,7 +126,6 @@ proc mark*(rt: JSRuntime; state: TimeoutState; markFunc: JS_MarkFunc) =
 
 proc finalize*(rt: JSRuntime; state: TimeoutState) =
   for entry in state.timeouts:
-    JS_FreeValueRT(rt, entry.val)
     rt.freeValues(entry.args)
 
 {.pop.} # raises: []

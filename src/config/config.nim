@@ -44,11 +44,11 @@ type
   Action = object
     k: string
     n: uint32
-    val: JSValue
+    val: JSValueTraced
 
   ActionMapObj = object
-    defaultAction*: JSValue
-    t*: seq[Action]
+    defaultAction*: JSValueTraced
+    tab: seq[Action]
     keyIdx: int
     keyLast*: int
     num: uint32
@@ -729,11 +729,11 @@ proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
   return ctx.compileScript(s, "<command>")
 
 proc newActionMap*(ctx: JSContext; s, defaultAction: string): ActionMap =
-  let map = jsNew ActionMapObj(defaultAction: JS_UNDEFINED)
+  let map = jsNew ActionMapObj(defaultAction: trace(JS_UNDEFINED))
   if map == nil:
-    return map
+    return ActionMap(nil)
   if defaultAction != "":
-    map.defaultAction = ctx.evalCmdDecl(defaultAction)
+    map.defaultAction = trace(ctx.evalCmdDecl(defaultAction))
   var dummy: seq[string]
   for it in s.split('\n'):
     var i = 0
@@ -744,7 +744,7 @@ proc newActionMap*(ctx: JSContext; s, defaultAction: string): ActionMap =
           break
         var key = parseKeyComb(it.toOpenArray(0, i - 2), dummy)
         let val = ctx.evalCmdDecl(it.substr(i))
-        map.t.add(Action(k: move(key), val: val, n: map.num))
+        map.tab.add(Action(k: move(key), val: trace(val), n: map.num))
         inc map.num
         break
       i = j + 1
@@ -763,6 +763,13 @@ proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
     JS_FreeValue(ctx, JSValue(funcData[0]))
     funcData[0] = JSValueConst(res)
   return JS_Call(ctx, funcData[0], this, argc, argv)
+
+proc toForwardAction(ctx: JSContext; val: JSValueTraced): JSValue =
+  if JS_IsFunction(ctx, val):
+    return JS_DupValue(ctx, val.v)
+  # bytecode function
+  return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1,
+    val.v.toJSValueConstArray())
 
 iterator items*(list: ConfigList): ConfigRule =
   var it = list.head
@@ -822,19 +829,18 @@ proc toJS*(ctx: JSContext; val: ScriptingMode): JSValue =
   of smApp: return JS_NewString(ctx, "app")
 
 proc sort*(map: ActionMap; ctx: JSContext) =
-  map.t.sort(proc(a, b: Action): int =
+  map.tab.sort(proc(a, b: Action): int =
     cmp(a.k, b.k), SortOrder.Ascending)
   #TODO we could probably do this more efficiently
-  for i in countdown(map.t.high - 1, 0):
+  for i in countdown(map.tab.high - 1, 0):
     let j = i + 1
-    if map.t[j].k.startsWith(map.t[i].k):
+    if map.tab[j].k.startsWith(map.tab[i].k):
       # always remove the older keybinding
-      let k = if map.t[j].n < map.t[i].n: j else: i
-      JS_FreeValue(ctx, map.t[k].val)
-      map.t.delete(k)
-  for i in countdown(map.t.high, 0):
-    if JS_IsUndefined(map.t[i].val):
-      map.t.delete(i)
+      let k = if map.tab[j].n < map.tab[i].n: j else: i
+      map.tab.delete(k)
+  for i in countdown(map.tab.high, 0):
+    if JS_IsUndefined(map.tab[i].val):
+      map.tab.delete(i)
   #TODO not sure what happens if this is called after feedNext, but probably
   # not what you'd expect
   map.keyIdx = 0
@@ -842,41 +848,41 @@ proc sort*(map: ActionMap; ctx: JSContext) =
 
 # Helper function for evalAction in case it wants to replace the value we
 # are reading.
-proc mgetValue*(map: ActionMap): var JSValue =
-  return map.t[map.keyIdx].val
+proc mgetValue*(map: ActionMap): var JSValueTraced =
+  map.tab[map.keyIdx].val
 
-proc advance*(map: ActionMap; k: string): JSValueConst =
+proc advance*(map: ActionMap; k: string): bool =
   var i = map.keyIdx
   var j = map.keyLast
   if i == 0 and j == 0 and k.len > 0:
     # optimization: bisearch for the first char
     let c = k[0]
-    i = map.t.binarySearch(c, proc(x: Action; c: char): int = cmp(x.k[0], c))
+    i = map.tab.binarySearch(c, proc(x: Action; c: char): int = cmp(x.k[0], c))
     if i < 0:
-      return JS_UNDEFINED
+      return false
     # go back to first relevant key
-    while i >= 0 and map.t[i].k[0] == c:
+    while i >= 0 and map.tab[i].k[0] == c:
       dec i
     inc i
-  while i < map.t.len:
+  while i < map.tab.len:
     block current:
-      let ik = map.t[i].k
+      let ik = map.tab[i].k
       while j < ik.len:
         if j >= k.len:
           map.keyIdx = i
           map.keyLast = j
-          return JS_UNDEFINED
+          return false
         if k[j] != ik[j]:
           j = 0
           break current
         inc j
       map.keyIdx = i
       map.keyLast = 0
-      return map.t[i].val
+      return true
     inc i
   map.keyIdx = 0
   map.keyLast = 0
-  return JS_UNDEFINED
+  return false
 
 proc feedNext*(ctx: JSContext; map: ActionMap; b: bool; k: string) =
   if b:
@@ -1065,7 +1071,7 @@ proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string =
 proc find(a: ActionMap; s: openArray[char]): int =
   var dummy: seq[string]
   let rk = parseKeyComb(s, dummy)
-  return a.t.binarySearch(rk, proc(x: Action; k: string): int = cmp(x.k, k))
+  a.tab.binarySearch(rk, proc(x: Action; k: string): int = cmp(x.k, k))
 
 proc isCompatibleIdent(s: string): bool =
   if s.len == 0 or s[0] notin AsciiAlpha + {'_', '$'}:
@@ -1968,7 +1974,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
       return cp.err(ctx.getExceptionMsg())
     #TODO this won't fly for dynamic reloading
     let map = cp.config.actionMap[section]
-    map.t.add(Action(k: move(cp.key), val: val, n: map.num))
+    map.tab.add(Action(k: move(cp.key), val: trace(val), n: map.num))
     inc map.num
   elif cp.opt != coAddEntry: # add entry here means "not found"
     ?cp.parseConfigValue1()
@@ -2668,12 +2674,8 @@ jsClassDef(Config):
 jsClassPublicDef(ActionMap):
   jsget ActionMap, keyLast
 
-  proc finalize(rt: JSRuntime; map: ActionMap) {.jsfin.} =
-    for it in map.t:
-      JS_FreeValueRT(rt, it.val)
-
   proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
-    for it in map.t:
+    for it in map.tab:
       JS_MarkValue(rt, it.val, markFunc)
 
   proc setter(ctx: JSContext; a: ActionMap; k: DOMString; val: JSValueConst):
@@ -2690,7 +2692,7 @@ jsClassPublicDef(ActionMap):
       ctx.evalCmdDecl(s)
     if JS_IsException(val2):
       return err()
-    a.t.add(Action(k: rk, val: val2, n: a.num))
+    a.tab.add(Action(k: rk, val: trace(val2), n: a.num))
     inc a.num
     a.sort(ctx)
     ok()
@@ -2700,24 +2702,19 @@ jsClassPublicDef(ActionMap):
     let i = a.find(s.toOpenArray())
     if i < 0:
       return JS_UNINITIALIZED
-    let val = a.t[i].val
-    if JS_IsFunction(ctx, val):
-      return JS_DupValue(ctx, val)
-    # bytecode function
-    return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1,
-      val.toJSValueConstArray())
+    ctx.toForwardAction(a.tab[i].val)
 
   proc delete(a: ActionMap; k: DOMString): bool {.jsdelprop.} =
     let i = a.find(k.toOpenArray())
     if i >= 0:
-      a.t.delete(i)
+      a.tab.delete(i)
     return i != -1
 
   proc names(ctx: JSContext; a: ActionMap): JSPropertyEnumList
       {.jspropnames.} =
-    let L = uint32(a.t.len)
+    let L = uint32(a.tab.len)
     var list = newJSPropertyEnumList(ctx, L)
-    for it in a.t:
+    for it in a.tab:
       list.add(it.k)
     return list
 

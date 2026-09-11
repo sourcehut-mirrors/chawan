@@ -60,7 +60,7 @@ type
     requestURL: URL
     headers: Headers
     response: Response
-    responseObject: JSValue
+    responseObject: JSValueTraced
     received: string
     contentTypeOverride: string
 
@@ -304,7 +304,7 @@ jsClassDef(XMLHttpRequest):
     jsNew XMLHttpRequestObj(
       upload: upload,
       headers: headers,
-      responseObject: JS_UNDEFINED,
+      responseObject: trace(JS_UNDEFINED),
       response: response
     )
 
@@ -533,29 +533,29 @@ jsClassDef(XMLHttpRequest):
     if this.readyState != xhrsDone:
       return JS_NULL
     if JS_IsUndefined(this.responseObject):
-      case this.responseType
+      let res = case this.responseType
       of xhrtArraybuffer:
         let len = csize_t(this.received.len)
         let (opaque, p) = this.received.ptrify()
-        this.responseObject = JS_NewArrayBuffer(ctx, p, len, abufFree, opaque,
-          JS_BOOL(0))
+        JS_NewArrayBuffer(ctx, p, len, abufFree, opaque, JS_BOOL(0))
       of xhrtBlob:
         let len = this.received.len
         let (opaque, p) = this.received.ptrify()
         let blob = newBlob(p, len, this.getContentType(), blobFree, opaque)
-        this.responseObject = ctx.toJS(blob)
+        ctx.toJS(blob)
       of xhrtDocument:
         #TODO this is certainly not compliant
-        let res = ctx.parseHTMLDocument(this.received,
+        let document = ctx.parseHTMLDocument(this.received,
           parseURL0("about:blank"))
-        this.responseObject = ctx.toJS(res)
+        ctx.toJS(document)
       of xhrtJSON:
-        this.responseObject = JS_ParseJSON(ctx, this.received.toCStringConst,
+        JS_ParseJSON(ctx, this.received.toCStringConst,
           csize_t(this.received.len), "<input>".toCStringConst)
-      else: discard
-    if JS_IsException(this.responseObject):
-      this.responseObject = JS_UNDEFINED
-    return JS_DupValue(ctx, this.responseObject)
+      else:
+        JS_UNDEFINED
+      if not JS_IsException(res):
+        this.responseObject = trace(res)
+    return ctx.toJS(this.responseObject)
 
 proc addXMLHttpRequestModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(XMLHttpRequestEventTargetDef)

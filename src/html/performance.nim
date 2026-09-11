@@ -33,7 +33,7 @@ type
   PerformanceEntry = JSRef[PerformanceEntryObj]
 
   PerformanceMarkObj {.pure, final.} = object of PerformanceEntryObj
-    detail: JSValue
+    detail: JSValueTraced
 
   PerformanceMark = JSRef[PerformanceMarkObj]
 
@@ -82,9 +82,8 @@ jsClassDef(Performance):
         return JS_ThrowTypeError(ctx, "startTime must not be negative")
     else:
       startTime = this.now()
-    var detail: JSValue
-    if not ?ctx.fromJSGetProp(init, "detail", detail):
-      detail = JS_NULL
+    var detail = trace(JS_NULL)
+    discard ?ctx.fromJSGetProp(init, "detail", detail)
     #TODO serialize/deserialize detail
     let mark = jsNew PerformanceMarkObj(
       id: this.getEntryId(),

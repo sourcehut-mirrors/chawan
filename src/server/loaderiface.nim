@@ -141,8 +141,8 @@ type
 
   JSBlobOpaque {.final.} = ref object of BlobOpaque
     ctx: JSContext
-    resolve: JSObject
-    reject: JSObject
+    resolve: JSCallback
+    reject: JSCallback
 
 # Forward declarations
 proc bodyUsed*(response: Response): bool
@@ -310,8 +310,8 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
     return res
   let opaque = JSBlobOpaque(
     ctx: JS_DupContext(ctx),
-    resolve: traceObj(funs[0]),
-    reject: traceObj(funs[1])
+    resolve: traceCallback(funs[0]),
+    reject: traceCallback(funs[1])
   )
   response.onFinish = finish
   let loader = ctx.getLoader()

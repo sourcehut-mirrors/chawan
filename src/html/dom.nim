@@ -7218,17 +7218,16 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     destination: RequestDestination; onComplete: OnCompleteProc) =
   let window = element.asNode.document.window
   let ctx = window.jsctx
-  let record = script.record
+  let record = moveJSValue(script.record)
   if JS_ResolveModule(ctx, record) < 0:
     window.logException(script.baseURL)
-    script.free()
-    return
-  ctx.setImportMeta(record, true)
-  script.record = JS_UNINITIALIZED
-  let res = JS_EvalFunction(ctx, record) # consumes record
-  if JS_IsException(res):
-    window.logException(script.baseURL)
-  JS_FreeValue(ctx, res)
+    JS_FreeValue(ctx, record)
+  else:
+    ctx.setImportMeta(record, true)
+    let res = JS_EvalFunction(ctx, record) # consumes record
+    if JS_IsException(res):
+      window.logException(script.baseURL)
+    JS_FreeValue(ctx, res)
 
 type
   FetchModuleEnv* {.final.} = ref object of BlobOpaque
@@ -7363,8 +7362,7 @@ proc execute*(element: HTMLScriptElement) =
       let ctx = window.jsctx
       if window.settings.scripting != smFalse:
         element.prepare(ctx)
-        let record = script.record
-        script.record = JS_UNINITIALIZED
+        let record = moveJSValue(script.record)
         let ret = JS_EvalFunction(ctx, record) # consumes record
         if JS_IsException(ret):
           window.logException(script.baseURL)
@@ -7515,12 +7513,6 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
 
 jsClassPublicDef(HTMLScriptElement):
   jsextends HTMLElementDef
-
-  proc finalize(rt: JSRuntime; element: HTMLScriptElement) {.jsfin.} =
-    if element.scriptResult != nil and element.scriptResult.t == srtScript:
-      let script = element.scriptResult.script
-      if not JS_IsUninitialized(script.record):
-        script.free()
 
   proc mark(rt: JSRuntime; element: HTMLScriptElement; markFunc: JS_MarkFunc)
       {.jsmark.} =

@@ -2,8 +2,8 @@
 
 import config/conftypes
 import html/catom
-import js/jsopaque
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import server/headers
@@ -71,7 +71,7 @@ type
     options*: ScriptOptions
     mutedErrors*: bool
     #TODO parse error/error to rethrow
-    record*: JSValue
+    record*: JSValueTraced
 
   ScriptOptions* = object
     nonce*: string
@@ -105,15 +105,7 @@ type
 # set in html/dom
 proc consoleError(ctx: JSContext; ss: varargs[string]) {.importc: "cha_$1".}
 
-proc free*(script: Script) =
-  let record = script.record
-  script.record = JS_UNINITIALIZED
-  JS_FreeValueRT(globalRuntime, record)
-
 proc clear*(moduleMap: var ModuleMap; rt: JSRuntime) =
-  for it in moduleMap.mitems:
-    if it.value.t == srtScript:
-      it.value.script.free()
   moduleMap.setLen(0)
 
 proc find(moduleMap: ModuleMap; url: URL; moduleType: ModuleType): int =
@@ -129,7 +121,7 @@ proc clone(script: Script): Script =
     options: script.options,
     mutedErrors: script.mutedErrors,
     #TODO parse error/error to rethrow
-    record: JS_DupValueRT(globalRuntime, script.record)
+    record: script.record
   )
 
 proc clone*(value: ScriptResult): ScriptResult =
@@ -161,9 +153,6 @@ proc put*(moduleMap: var ModuleMap; url: URL; moduleType: ModuleType;
     value: ScriptResult) =
   let i = moduleMap.find(url, moduleType)
   if i >= 0:
-    let ovalue = moduleMap[i].value
-    if ovalue.t == srtScript:
-      ovalue.script.free()
     moduleMap[i].value = value
   else:
     moduleMap.add(ModuleMapEntry(key: ($url, moduleType), value: value))
@@ -180,11 +169,11 @@ proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
     options: ScriptOptions; settings: EnvironmentSettings;
     mutedErrors = false): ScriptResult =
   let record = ctx.compileScript(source, $baseURL)
-  return ScriptResult(
+  ScriptResult(
     t: srtScript,
     script: Script(
       settings: settings,
-      record: record,
+      record: trace(record),
       baseURL: baseURL,
       options: options,
       mutedErrors: mutedErrors
@@ -194,11 +183,11 @@ proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
 proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
     options: ScriptOptions; settings: EnvironmentSettings): ScriptResult =
   let record = ctx.compileModule(source, $baseURL)
-  return ScriptResult(
+  ScriptResult(
     t: srtScript,
     script: Script(
       settings: settings,
-      record: record,
+      record: trace(record),
       baseURL: baseURL,
       options: options
     )

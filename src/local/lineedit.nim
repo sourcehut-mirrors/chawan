@@ -5,6 +5,7 @@ import config/history
 import js/fromjs
 import js/jsbind
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
@@ -40,8 +41,8 @@ type
     skipLast: bool
     escNext: bool
     hide: bool
-    update: JSValue
-    resolve: JSValue
+    update: JSCallback
+    resolve: JSCallback
 
   LineEdit* = JSRef[LineEditObj]
 
@@ -189,17 +190,13 @@ proc generateOutput*(edit: LineEdit; hlcolor: CellColor): FixedGrid =
     x += w
 
 proc resolve(ctx: JSContext; edit: LineEdit; val: JSValue): JSValue =
-  if not JS_IsFunction(ctx, edit.resolve):
-    JS_FreeValue(ctx, val)
-    return JS_ThrowTypeError(ctx, "nothing to resolve")
-  let resolve = edit.resolve
-  edit.resolve = JS_UNDEFINED
+  let resolve = moveJSValue(edit.resolve)
   return ctx.callSinkFree(resolve, JS_UNDEFINED, val)
 
 proc update(ctx: JSContext; edit: LineEdit): JSValue =
-  if JS_IsUndefined(edit.update):
+  if edit.update == nil:
     return JS_UNDEFINED
-  return ctx.call(edit.update, JS_UNDEFINED)
+  return ctx.call(edit.update.value, JS_UNDEFINED)
 
 proc deleteTextTo(edit: LineEdit; ei: int) =
   edit.text.delete(edit.cursori ..< ei)
@@ -214,7 +211,8 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.redraw = true
 
 proc readLine*(prompt, current: string; termwidth: int; hide: bool;
-    hist: History; luctx: LUContext; update, resolve: JSValue): LineEdit =
+    hist: History; luctx: LUContext; update, resolve: sink JSCallback):
+    LineEdit =
   let promptw = prompt.width()
   let edit = jsNew LineEditObj(
     prompt: prompt,

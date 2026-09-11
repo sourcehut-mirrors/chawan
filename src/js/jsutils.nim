@@ -159,7 +159,8 @@ proc newArrayFrom*(ctx: JSContext; vals: varargs[JSValue]): JSValue =
     inc u
   return obj
 
-proc newPromiseCapability*(ctx: JSContext; funs: array[2, JSValue]): JSValue =
+proc newPromiseCapability*(ctx: JSContext; funs: var array[2, JSValue]):
+    JSValue =
   return JS_NewPromiseCapability(ctx, funs.toJSValueArray())
 
 proc enqueueJob*(ctx: JSContext; fun: JSJobFunc;

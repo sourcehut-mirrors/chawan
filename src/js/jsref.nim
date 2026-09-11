@@ -125,13 +125,6 @@ template getMagic*[T](r: JSRef[T]): uint32 =
 proc jsNew0(p: ptr pointer; class: JSClassID; size: csize_t) =
   p[] = JS_NewForeignObject(globalRuntime, class, size)
 
-when NimMajor >= 2:
-  proc jsNewAsgn*[T](p: ptr T; x {.byref.}: sink T; len: csize_t) {.
-    importc: "memcpy", header: "<string.h>".}
-else:
-  proc jsSinkIntoEther*[T](x: sink T) {.importc: "cha_jsSinkIntoEther",
-    header: "quickjs-aux.h".}
-
 template jsNewOf*[T](x: T; classid: JSClassID): JSRef[T] =
   ## Create a new JSForeignObject with a specific classid.  Useful if you
   ## want to instantiate a fake subclass.
@@ -141,17 +134,14 @@ template jsNewOf*[T](x: T; classid: JSClassID): JSRef[T] =
   var r: JSRef[T]
   jsNew0(cast[ptr pointer](addr r), classid, csize_t(sizeof(T)))
   if r != nil:
-    when NimMajor < 2: # sadly, .byref won't work on sink
-      var y = x
-      copyMem(cast[ptr T](r), addr y, sizeof(T))
-      # inhibit destroy
-      jsSinkIntoEther(y)
-    else:
-      # In-place object construction hack: we inhibit the temporary's
-      # destruction by passing it as `sink T` to memcpy.  (A sufficiently
-      # advanced compiler will hopefully optimize out the temporary in most
-      # cases.)
-      jsNewAsgn(cast[ptr T](r), x, csize_t(sizeof(T)))
+    # Assign x to a temporary, copy it to the pointer, then inhibit its
+    # destruction.  Effectively this is the same as storing it there,
+    # but it avoids an unnecessary =destroy call.
+    var y = x
+    copyMem(cast[ptr T](r), addr y, sizeof(T))
+    # inhibit destroy
+    {.cast(raises: []).}:
+      wasMoved(y)
   r
 
 template jsNew*[T](x: T): JSRef[T] =

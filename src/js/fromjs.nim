@@ -37,7 +37,6 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BufferSource): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
   JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst): JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): JSCode
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): JSCode
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): JSCode
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var ByteString): JSCode
@@ -660,10 +659,6 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
     JSCode =
   res = val
-  fjOk
-
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValue): JSCode =
-  res = JS_DupValue(ctx, val)
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueTraced):

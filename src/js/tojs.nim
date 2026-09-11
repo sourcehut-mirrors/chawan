@@ -55,7 +55,8 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue
 proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue
 proc toJS*[T: enum](ctx: JSContext; e: T): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
-proc toJS*[T](ctx: JSContext; obj: JSRef[T]): JSValue
+proc toJS*(ctx: JSContext; t: JSValueTraced): JSValue
+proc toJS*[T](ctx: JSContext; obj: sink JSRef[T]): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
@@ -65,7 +66,8 @@ proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue
 # Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
 # Note: nil is translated to an OOM exception.
-proc toJSNew*[T](ctx: JSContext; obj: JSRef[T]; ctor: JSValueConst): JSValue
+proc toJSNew*[T](ctx: JSContext; obj: sink JSRef[T]; ctor: JSValueConst):
+  JSValue
 proc toJSNew*[T](ctx: JSContext; opt: Opt[T]; ctor: JSValueConst): JSValue
 proc toJSNew*[T](ctx: JSContext; opt: Opt[T]): JSValue
 
@@ -169,17 +171,19 @@ proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue =
   {.pop.}
   return ctx.newArrayFrom(vals)
 
-proc toJSRef(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
+proc toJSRef0(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
   let rt = JS_GetRuntime(ctx)
   let jsptr = JS_GetForeignOpaque(rt, p)
   if jsptr != nil:
     # a JSValue already points to this object.
     if ctx.getOpaque().globalObj == p:
+      JS_FreeForeignObject(rt, p)
       return JS_GetGlobalObject(ctx)
-    return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, jsptr))
+    return JS_MKPTR(JS_TAG_OBJECT, jsptr)
   let classid = JS_GetForeignClassID(p)
   let jsObj = JS_NewObjectFromCtor(ctx, ctor, classid)
   if JS_IsException(jsObj):
+    JS_FreeForeignObject(rt, p)
     return jsObj
   # Set the opaque first, before GC has a chance to run.
   JS_SetForeignOpaque(rt, p, jsObj)
@@ -191,15 +195,26 @@ proc toJSRef(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
     return JS_EXCEPTION
   return jsObj
 
-proc toJS*[T](ctx: JSContext; obj: JSRef[T]): JSValue =
-  if obj == nil:
+proc toJSRef(ctx: JSContext; p: pointer): JSValue =
+  if p == nil:
     return JS_NULL
-  return ctx.toJSRef(cast[pointer](obj), JS_UNDEFINED)
+  ctx.toJSRef0(p, JS_UNDEFINED)
 
-proc toJSNew*[T](ctx: JSContext; obj: JSRef[T]; ctor: JSValueConst): JSValue =
-  if obj == nil:
+proc toJSRefNew(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
+  if p == nil:
     return JS_ThrowOutOfMemory(ctx)
-  return ctx.toJSRef(cast[pointer](obj), ctor)
+  ctx.toJSRef0(p, ctor)
+
+proc toJS*[T](ctx: JSContext; obj: sink JSRef[T]): JSValue =
+  let p = cast[pointer](obj)
+  wasMoved(obj)
+  ctx.toJSRef(p)
+
+proc toJSNew*[T](ctx: JSContext; obj: sink JSRef[T]; ctor: JSValueConst):
+    JSValue =
+  let p = cast[pointer](obj)
+  wasMoved(obj)
+  ctx.toJSRefNew(p, ctor)
 
 template toJSNew*[T](ctx: JSContext; obj: JSRef[T]): JSValue =
   # useful when you want to JSify a new object (i.e., nil converts to OOM)
@@ -236,8 +251,10 @@ proc toJS*[T: enum](ctx: JSContext; e: T): JSValue =
 proc toJS*(ctx: JSContext; j: JSValue): JSValue =
   return j
 
+proc toJS*(ctx: JSContext; t: JSValueTraced): JSValue =
+  return JS_DupValue(ctx, t.v)
+
 proc toJS*(ctx: JSContext; p: JSObject): JSValue =
-  # this is inconsistent, but I don't have a better idea right now
   if p == nil:
     return JS_NULL
   return JS_DupValue(ctx, p.value)

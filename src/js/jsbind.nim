@@ -327,7 +327,7 @@ proc setGlobal*[T](ctx: JSContext; obj: JSRef[T]) =
     let obj = cast[pointer](obj)
     let rt = JS_GetRuntime(ctx)
     let dummy = JS_NewObjectClass(ctx, ctxOpaque.gclass)
-    JS_SetForeignOpaque(rt, obj, dummy)
+    JS_SetForeignOpaque(rt, obj, JS_DupValue(ctx, dummy))
     JS_SetOpaque(dummy, obj)
     ctxOpaque.globalObj = JS_DupForeignObject(rt, obj)
     let sym = ctx.call(ctxOpaque.valRefs[jsvSymbol], JS_UNDEFINED)
@@ -1228,7 +1228,8 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
             JS_FreeValueRT(rt, this.`varNode`)
           )
         elif inst.sameType(JSObject.getType()) or
-            inst.sameType(JSCallback.getType()):
+            inst.sameType(JSCallback.getType()) or
+            inst.sameType(JSValueTraced.getType()):
           markList.add(quote do:
             JS_MarkValue(rt, this.`varNode`, markFunc)
           )

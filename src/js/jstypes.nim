@@ -119,9 +119,6 @@ proc `=destroy`(p: var JSObject) =
   if cast[pointer](p) != nil:
     JS_FreeValueRT(globalRuntime, JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)))
 
-proc `=wasMoved`(p: var JSObject) =
-  cast[ptr pointer](addr p)[] = nil
-
 proc `=sink`(dest: var JSObject; src: JSObject) =
   `=destroy`(dest)
   cast[ptr pointer](addr dest)[] = cast[pointer](src)
@@ -186,15 +183,15 @@ jsObjectBorrow(JSCallback)
 jsObjectBorrow(BufferSource)
 jsObjectBorrow(JSArrayBufferView)
 
+proc traceCallback*(val: JSValue): JSCallback =
+  JSCallback(traceObj(val))
+
 type
   JSValueTraced* = object
     v*: JSValue
 
 proc `=destroy`(t: var JSValueTraced) =
   JS_FreeValueRT(globalRuntime, t.v)
-
-proc `=wasMoved`(t: var JSValueTraced) =
-  t.v = JS_UNINITIALIZED
 
 proc `=copy`(dest: var JSValueTraced; src: JSValueTraced) =
   JS_FreeValueRT(globalRuntime, dest.v)
@@ -210,10 +207,27 @@ proc `=dup`(t: JSValueTraced): JSValueTraced =
 proc trace*(val: JSValue): JSValueTraced =
   JSValueTraced(v: val)
 
+proc dupTrace*(ctx: JSContext; val: JSValueConst): JSValueTraced =
+  trace(JS_DupValue(ctx, val))
+
 proc JS_IsUndefined*(t: JSValueTraced): bool =
   JS_IsUndefined(t.v)
 
 proc JS_IsNull*(t: JSValueTraced): bool =
   JS_IsNull(t.v)
+
+proc JS_IsFunction*(ctx: JSContext; t: JSValueTraced): bool =
+  JS_IsFunction(ctx, t.v)
+
+proc JS_IsException*(t: JSValueTraced): bool =
+  JS_IsException(t.v)
+
+proc JS_MarkValue*(rt: JSRuntime; t: JSValueTraced; markFunc: JS_MarkFunc) =
+  JS_MarkValue(rt, t.v, markFunc)
+
+proc moveJSValue*(t: var JSValueTraced): JSValue =
+  let val = t.v
+  t.v = JS_UNINITIALIZED
+  return val
 
 {.pop.} # raises

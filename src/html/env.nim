@@ -506,16 +506,14 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
     gstReplaceable)
   ?ctx.registerAutoInitGetSet(global, globalId, LocationDef, jstLocation,
     gstUnforgeable)
-  let navigator = JS_GetClassProto(ctx, NavigatorDef.id)
+  let navigator = trace(JS_GetClassProto(ctx, NavigatorDef.id))
   let navigatorId = NavigatorDef.id
-  ?ctx.registerAutoInitGetSet(navigator, navigatorId, PluginArrayDef,
+  ?ctx.registerAutoInitGetSet(navigator.v, navigatorId, PluginArrayDef,
     jstPlugins, gstProto)
-  ?ctx.registerAutoInitGetSet(navigator, navigatorId, MimeTypeArrayDef,
+  ?ctx.registerAutoInitGetSet(navigator.v, navigatorId, MimeTypeArrayDef,
     jstMimeTypes, gstProto)
-  ?ctx.registerAutoInitGetSet(navigator, navigatorId, PermissionsDef,
+  ctx.registerAutoInitGetSet(navigator.v, navigatorId, PermissionsDef,
     jstPermissions, gstProto)
-  JS_FreeValue(ctx, navigator)
-  ok()
 
 # CSS
 jsNamespaceDef(CSS):

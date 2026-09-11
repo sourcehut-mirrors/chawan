@@ -338,7 +338,6 @@ proc setupStartupScript(ctx: JSContext) =
   if JS_IsException(obj):
     die(ctx.getExceptionMsg())
   let ret = JS_EvalFunction(ctx, obj)
-  JS_FreeValue(ctx, obj)
   if JS_IsException(ret):
     die(ctx.getExceptionMsg())
   JS_FreeValue(ctx, ret)

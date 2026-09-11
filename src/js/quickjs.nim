@@ -307,8 +307,8 @@ converter toJSValueConst*(val: JSValue): JSValueConst {.importc,
     header: "quickjs-aux.h".} =
   JSValueConst(val)
 
-proc toJSValueConstArray*(val: JSValueArray): JSValueConstArray {.
-  importc, header: "quickjs-aux.h".}
+template toJSValueConstArray*(val: JSValueArray): JSValueConstArray =
+  cast[JSValueConstArray](val)
 
 template JS_NULL*(): untyped = JS_MKVAL(JS_TAG_NULL, 0)
 template JS_UNDEFINED*(): untyped = JS_MKVAL(JS_TAG_UNDEFINED, 0)
@@ -631,7 +631,7 @@ proc JS_FreeForeignObjectMemory*(rt: JSRuntime; p: pointer)
 proc JS_FreeForeignObjectGC*(rt: JSRuntime; p: pointer)
 proc JS_GetForeignClassID*(p: pointer): JSClassID
 proc JS_GetForeignOpaque*(rt: JSRuntime; p: pointer): pointer
-proc JS_SetForeignOpaque*(rt: JSRuntime; p: pointer; val: JSValueConst)
+proc JS_SetForeignOpaque*(rt: JSRuntime; p: pointer; val: JSValue)
 proc JS_GetForeignMagic*(p: pointer): uint32
 proc JS_SetForeignMagic*(p: pointer; val: uint32)
 proc JS_GetForeignObjectRefs*(p: pointer): cint {.importc.}

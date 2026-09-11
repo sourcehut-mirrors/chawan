@@ -6569,7 +6569,7 @@ void *JS_GetForeignOpaque(JSRuntime *rt, void *p)
 }
 
 /* val must be an object. */
-void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val)
+void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValue val)
 {
     JSForeignObject *obj = js_data_to_foreign(p);
     JSObject *jsobj;
@@ -6578,7 +6578,7 @@ void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val)
     jsobj = JS_VALUE_GET_OBJ(val);
 
     /* move refcount to the JSObject */
-    js_rc(jsobj)->ref_count += js_rc(obj)->ref_count;
+    js_rc(jsobj)->ref_count += js_rc(obj)->ref_count - 1;
     js_rc(obj)->ref_count = 1;
     remove_gc_object(&obj->header);
     obj->header.link.next = (struct list_head *)&jsobj->header;

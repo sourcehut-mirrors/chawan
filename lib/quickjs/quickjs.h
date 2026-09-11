@@ -766,7 +766,7 @@ void JS_MarkForeignObject(JSRuntime *rt, void *p, JS_MarkFunc mark_func);
 void JS_FreeForeignObject(JSRuntime *rt, void *p);
 void JS_FreeForeignObjectMemory(JSRuntime *rt, void *p);
 void *JS_GetForeignOpaque(JSRuntime *rt, void *p);
-void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValueConst val);
+void JS_SetForeignOpaque(JSRuntime *rt, void *p, JSValue val);
 uint32_t JS_GetForeignMagic(void *p);
 void JS_SetForeignMagic(void *p, uint32_t magic);
 int JS_GetForeignObjectRefs(void *p); /* debug */

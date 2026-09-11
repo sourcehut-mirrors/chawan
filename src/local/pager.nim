@@ -465,16 +465,14 @@ proc runJSJobs(pager: Pager): Opt[void] =
     return err()
   ok()
 
-proc evalAction(pager: Pager; val: JSValue; arg0: int32; oval: var JSValue):
-    JSValue =
+proc evalAction(pager: Pager; arg0: int32; oval: var JSValueTraced): JSValue =
   let ctx = pager.jsctx
-  var val = val
+  var val = JS_DupValue(ctx, oval.v)
   if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
     val = ctx.evalFunction(val)
     if JS_IsFunction(ctx, val):
       # optimization: skip this eval on the next call.
-      JS_FreeValue(ctx, oval)
-      oval = JS_DupValue(ctx, val)
+      oval = ctx.dupTrace(val)
   # If an action evaluates to a function that function is evaluated too.
   if JS_IsFunction(ctx, val):
     if arg0 != 0:
@@ -2117,24 +2115,18 @@ jsClassDef(Pager):
       obj: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
     var current = ""
     var hide = false
-    var update = JS_UNDEFINED
-    if not JS_IsUndefined(obj):
-      if ctx.fromJSGetProp(obj, "current", current).isErr:
-        return JS_EXCEPTION
-      if ctx.fromJSGetProp(obj, "hide", hide).isErr:
-        return JS_EXCEPTION
-      update = JS_GetPropertyStr(ctx, obj, "update")
-      if JS_IsException(update):
-        return JS_EXCEPTION
+    var update = JSCallback(nil)
+    discard ?ctx.fromJSGetProp(obj, "current", current)
+    discard ?ctx.fromJSGetProp(obj, "hide", hide)
+    discard ?ctx.fromJSGetProp(obj, "update", update)
     var funs {.noinit.}: array[2, JSValue]
     let res = ctx.newPromiseCapability(funs)
     if JS_IsException(res):
-      JS_FreeValue(ctx, update)
       return JS_EXCEPTION
     JS_FreeValue(ctx, funs[1])
     let hist = pager.getHist(mode)
     let lineEdit = readLine(prompt, current, pager.attrs.width, hide, hist,
-      pager.luctx, update, funs[0])
+      pager.luctx, update, traceCallback(funs[0]))
     if lineEdit == nil:
       JS_FreeValue(ctx, res)
       return JS_ThrowOutOfMemory(ctx)
@@ -2156,22 +2148,20 @@ jsClassDef(Pager):
   # private
   proc evalInputAction(ctx: JSContext; pager: Pager; map: ActionMap; arg0: int32):
       JSValue {.jsfunc.} =
-    let val = map.advance(pager.inputBuffer)
-    if JS_IsUndefined(val):
+    if not map.advance(pager.inputBuffer):
       if map.keyLast != 0:
         return JS_UNDEFINED
       if JS_IsUndefined(map.defaultAction):
         pager.inputBuffer.setLen(0)
         return JS_UNDEFINED
       let keepInputBuffer = pager.keepInputBuffer
-      let res = pager.evalAction(JS_DupValue(ctx, map.defaultAction), arg0,
-        map.defaultAction)
+      let res = pager.evalAction(arg0, map.defaultAction)
       if not pager.keepInputBuffer:
         pager.inputBuffer.setLen(0)
       pager.keepInputBuffer = keepInputBuffer
       return res
     # note: this may replace val inside the ActionMap
-    let res = pager.evalAction(JS_DupValue(ctx, val), arg0, map.mgetValue())
+    let res = pager.evalAction(arg0, map.mgetValue())
     ctx.feedNext(map, pager.feedNext, pager.inputBuffer)
     pager.feedNext = false
     if map.keyLast == 0:
