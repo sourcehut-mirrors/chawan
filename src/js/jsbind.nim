@@ -1615,12 +1615,15 @@ macro jsClassImpl(def: untyped; jsname: static string; typ: typed;
     )
   stmts
 
-template jsClassRaw*(def: untyped; jsname: string; body: untyped) =
-  # why Nim insists on zero-initing global variables is an eternal mystery.
-  var def {.global, noinit, inject.}: ChaClassDef
+template jsClassRawForward*(def: untyped; jsname: string; body: untyped) =
   def.flags.incl(ccfRaw)
   discard JS_NewClassID(def.id)
   jsClassImpl(def, jsname, nil, body)
+
+template jsClassRaw*(def: untyped; jsname: string; body: untyped) =
+  # why Nim insists on zero-initing global variables is an eternal mystery.
+  var def {.global, noinit, inject.}: ChaClassDef
+  jsClassRawForward(def, jsname, body)
 
 template jsClassNameDef*(nimt: typedesc; jsname: string; body: untyped) =
   var `nimt Def` {.global, noinit, inject.}: ChaClassDef

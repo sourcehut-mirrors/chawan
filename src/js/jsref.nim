@@ -122,7 +122,7 @@ template setMagic*[T](r: JSRef[T]; magic: uint32) =
 template getMagic*[T](r: JSRef[T]): uint32 =
   JS_GetForeignMagic(dotGet(T, r))
 
-proc jsNew0*(p: ptr pointer; class: JSClassID; size: csize_t) =
+proc jsNew0(p: ptr pointer; class: JSClassID; size: csize_t) =
   p[] = JS_NewForeignObject(globalRuntime, class, size)
 
 when NimMajor >= 2:
@@ -132,13 +132,14 @@ else:
   proc jsSinkIntoEther*[T](x: sink T) {.importc: "cha_jsSinkIntoEther",
     header: "quickjs-aux.h".}
 
-template jsNew*[T](x: T): JSRef[T] =
-  mixin getClassID
+template jsNewOf*[T](x: T; classid: JSClassID): JSRef[T] =
+  ## Create a new JSForeignObject with a specific classid.  Useful if you
+  ## want to instantiate a fake subclass.
   # Can't noinit, because p can be hoisted up by Nim's asinine codegen.
   # Simply assigning to a pointer doesn't work either as that would result
   # in a dup at the end (i.e., once we cast to JSRef).
   var r: JSRef[T]
-  jsNew0(cast[ptr pointer](addr r), getClassID(JSRef[T]), csize_t(sizeof(T)))
+  jsNew0(cast[ptr pointer](addr r), classid, csize_t(sizeof(T)))
   if r != nil:
     when NimMajor < 2: # sadly, .byref won't work on sink
       var y = x
@@ -152,6 +153,13 @@ template jsNew*[T](x: T): JSRef[T] =
       # cases.)
       jsNewAsgn(cast[ptr T](r), x, csize_t(sizeof(T)))
   r
+
+template jsNew*[T](x: T): JSRef[T] =
+  ## Create a new JSForeignObject.  The class id is derived from the
+  ## getClassID procedure, so to use this before the class definition,
+  ## you have to forward-declare getClassID.
+  mixin getClassID
+  jsNewOf(x, getClassID(JSRef[T]))
 
 when NimMajor < 2:
   var globalJSTypeMap* {.global, noinit.}: array[1024, JSClassID]
