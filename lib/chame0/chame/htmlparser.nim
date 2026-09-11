@@ -734,20 +734,15 @@ proc hasElementInScopePop[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
   false
 
 # https://html.spec.whatwg.org/multipage/parsing.html#closing-elements-that-have-implied-end-tags
-proc generateImpliedEndTags(parser: var HTML5Parser) =
+proc generateImpliedEndTags(parser: var HTML5Parser; exclude = ttUnknown) =
   const tags = {
     ttDd, ttDt, ttLi, ttOptgroup, ttOption, ttP, ttRb, ttRp,
     ttRt, ttRtc
   }
-  while parser.getTagType(parser.currentNode) in tags:
-    discard parser.popElement()
-
-proc generateImpliedEndTags(parser: var HTML5Parser; exclude: TagType) =
-  let tags = {
-    ttDd, ttDt, ttLi, ttOptgroup, ttOption, ttP, ttRb, ttRp,
-    ttRt, ttRtc
-  } - {exclude}
-  while parser.getTagType(parser.currentNode) in tags:
+  while true:
+    let tagType = parser.getTagType(parser.currentNode)
+    if tagType == exclude or tagType notin tags:
+      break
     discard parser.popElement()
 
 proc generateImpliedEndTagsThoroughly(parser: var HTML5Parser) =

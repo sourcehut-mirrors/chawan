@@ -341,14 +341,12 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
   # set insertion point for when it's needed
   var ip = wrapper.parser.getInsertionPoint()
   while res == pcrScript:
-    let script = builder.poppedScript
+    let script = move(builder.poppedScript)
     if script != nil: # SVG script?
-      builder.poppedScript = HTMLScriptElement(nil)
       document.addWriteBuffer()
       script.prepare(builder.ctx)
       while document.parserBlockingScript != nil:
-        let script = document.parserBlockingScript
-        document.parserBlockingScript = HTMLScriptElement(nil)
+        let script = move(document.parserBlockingScript)
         #TODO style sheet
         script.execute()
         assert document.parserBlockingScript != script
@@ -378,13 +376,11 @@ proc parseDocumentWriteChunk(wrapper: RootRef) {.exportc: "cha_$1".} =
     document.addWriteBuffer()
     while true:
       buffer.i += wrapper.parser.getInsertionPoint()
-      let script = builder.poppedScript
+      let script = move(builder.poppedScript)
       if script != nil: # SVG script?
-        builder.poppedScript = HTMLScriptElement(nil)
         script.prepare(builder.ctx)
         while document.parserBlockingScript != nil:
-          let script = document.parserBlockingScript
-          document.parserBlockingScript = HTMLScriptElement(nil)
+          let script = move(document.parserBlockingScript)
           #TODO style sheet
           script.execute()
           assert document.parserBlockingScript != script
