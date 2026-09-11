@@ -77,7 +77,7 @@ substantial differences between the two.)
 
 ## ChibiHash
 
-A port of [ChibiHash](https://github.com/N-R-K/ChibiHash) by NRK is used
+A port of NRK's [ChibiHash](https://github.com/N-R-K/ChibiHash) is used
 for hashing.  It is public domain, distributed under the same terms as
 Chawan.
 

@@ -281,6 +281,10 @@ global scope:
 var myVariable {.global.}: int
 ```
 
+### `converter`
+
+Avoid, it slows down the compiler to a crawl.
+
 ## Debugging
 
 Note: following text assumes you are compiling in debug mode, i.e.
