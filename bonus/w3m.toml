@@ -9,44 +9,44 @@ show-cursor-position = false
 show-hover-link = false
 
 [cmd.w3m]
-pageDown = '(n = 1) => pager.scrollDown(pager.height * n)'
-pageUp = '(n = 1) => pager.scrollUp(pager.height * n)'
+pageDown = '(n = 1) => buffer.scrollDown(buffer.height * n)'
+pageUp = '(n = 1) => buffer.scrollUp(buffer.height * n)'
 mark = '''
 () => {
 	/* id is always the current position; this way we can clear by
 	   setting a mark twice at the same position. */
-	const id = pager.buffer.cursorx + " " + pager.buffer.cursory;
-	if (!pager.getMarkPos(id))
-		pager.setMark(id);
+	const id = buffer.cursorx + " " + buffer.cursory;
+	if (!buffer.getMarkPos(id))
+		buffer.setMark(id);
 	else
-		pager.clearMark(id);
+		buffer.clearMark(id);
 }
 '''
 gotoLine = 'n => pager.gotoLine(n)'
-centerColumn = '() => pager.centerColumn()'
-centerLine = '() => pager.centerLine()'
+centerColumn = '() => buffer.centerColumn()'
+centerLine = '() => buffer.centerLine()'
 prevMark = '''
 () => {
-	const next = pager.findPrevMark();
+	const next = buffer.findPrevMark();
 	if (next)
-		pager.gotoMark(next);
+		buffer.gotoMark(next);
 	else
 		pager.alert("No mark exists before here");
 }
 '''
 nextMark = '''
 () => {
-	const next = pager.findNextMark();
+	const next = buffer.findNextMark();
 	if (next)
-		pager.gotoMark(next);
+		buffer.gotoMark(next);
 	else
 		pager.alert("No mark exists before here");
 }
 '''
 editFile = '''
 () => {
-	if (pager.url.protocol == "file:")
-		pager.extern(pager.getEditorCommand(pager.url.pathname))
+	if (buffer.url.protocol == "file:")
+		pager.extern(pager.getEditorCommand(buffer.url.pathname))
 	else
 		pager.alert("Can't edit other than local file");
 }
@@ -54,10 +54,10 @@ editFile = '''
 askQuit = '''
 () => pager.ask("Do you want to exit Chawan?").then(x => x ? quit() : void(0))
 '''
-cursorUp = '(n = 1) => pager.setCursorYCenter(pager.cursory - n)'
-cursorDown = '(n = 1) => pager.setCursorYCenter(pager.cursory + n)'
-cursorLeft = '(n = 1) => pager.setCursorXCenter(pager.cursorx - n)'
-cursorRight = '(n = 1) => pager.setCursorXCenter(pager.cursorx + n)'
+cursorUp = '(n = 1) => buffer.setCursorYCenter(buffer.cursory - n)'
+cursorDown = '(n = 1) => buffer.setCursorYCenter(buffer.cursory + n)'
+cursorLeft = '(n = 1) => buffer.setCursorXCenter(buffer.cursorx - n)'
+cursorRight = '(n = 1) => buffer.setCursorXCenter(buffer.cursorx + n)'
 
 [page]
 # Page/cursor movement
