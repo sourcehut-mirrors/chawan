@@ -16,7 +16,6 @@ import html/script
 import js/jsref
 import types/color
 import types/opt
-import utils/chahash
 import utils/dtoawrap
 import utils/twtstr
 
@@ -67,33 +66,42 @@ template size(ancestors: AncestorCache): uint =
   uint(ancestors.classes.len) * 8
 
 proc contains(ancestors: AncestorCache; class: CAtom): bool =
-  let h1 = uint(hash(class)) mod ancestors.size
-  let idx1 = uint8(h1 div 8)
-  let bit1 = uint8(1 shl (h1 mod 8))
+  # h1 is the precomputed hash.
+  # h2 is the atom id, which is a pretty good hash function by itself
+  # (given that we are guaranteed that no collisions will happen).
+  # The actual hash functions are derived from h1 & h2, as per
+  # Kirsch & Mitzenmacher.
+  let h1 = uint(hash(class))
+  let h2 = uint(class)
+  let g1 = h1 mod ancestors.size
+  let g2 = (h1 + h2) mod ancestors.size
+  let g3 = (h1 + 2 * h2) mod ancestors.size
+  let idx1 = uint8(g1 div 8)
+  let bit1 = uint8(1 shl (g1 mod 8))
   if (ancestors.classes[idx1] and bit1) == 0:
     return false
-  let h2 = uint(hash(uint32(class))) mod ancestors.size
-  let idx2 = uint8(h2 div 8)
-  let bit2 = uint8(1 shl (h2 mod 8))
+  let idx2 = uint8(g2 div 8)
+  let bit2 = uint8(1 shl (g2 mod 8))
   if (ancestors.classes[idx2] and bit2) == 0:
     return false
-  let h3 = uint(hash(uint32(class) + 1)) mod ancestors.size
-  let idx3 = uint8(h3 div 8)
-  let bit3 = uint8(1 shl (h3 mod 8))
+  let idx3 = uint8(g3 div 8)
+  let bit3 = uint8(1 shl (g3 mod 8))
   return (ancestors.classes[idx3] and bit3) != 0
 
 proc incl(ancestors: var AncestorCache; class: CAtom) =
-  let h1 = uint(hash(class)) mod ancestors.size
-  let idx1 = uint8(h1 div 8)
-  let bit1 = uint8(1 shl (h1 mod 8))
+  let h1 = uint(hash(class))
+  let h2 = uint(class)
+  let g1 = h1 mod ancestors.size
+  let g2 = (h1 + h2) mod ancestors.size
+  let g3 = (h1 + 2 * h2) mod ancestors.size
+  let idx1 = uint8(g1 div 8)
+  let bit1 = uint8(1 shl (g1 mod 8))
   ancestors.classes[idx1] = ancestors.classes[idx1] or bit1
-  let h2 = uint(hash(uint32(class))) mod ancestors.size
-  let idx2 = uint8(h2 div 8)
-  let bit2 = uint8(1 shl (h2 mod 8))
+  let idx2 = uint8(g2 div 8)
+  let bit2 = uint8(1 shl (g2 mod 8))
   ancestors.classes[idx2] = ancestors.classes[idx2] or bit2
-  let h3 = uint(hash(uint32(class) + 1)) mod ancestors.size
-  let idx3 = uint8(h3 div 8)
-  let bit3 = uint8(1 shl (h3 mod 8))
+  let idx3 = uint8(g3 div 8)
+  let bit3 = uint8(1 shl (g3 mod 8))
   ancestors.classes[idx3] = ancestors.classes[idx3] or bit3
 
 proc hasClass(ancestors: var AncestorCache; class: CAtom): bool =

@@ -70,15 +70,15 @@ proc hash*(s: openArray[char]): Hash =
   cast[Hash](chibihash64(s, 0))
 
 proc hash*(n: int): Hash =
-  let pc = cast[ptr UncheckedArray[char]](unsafeAddr n)
-  hash(pc.toOpenArray(0, sizeof(n) - 1))
+  # Currently, this is only used for pids, where the distribution is
+  # already good enough.
+  #TODO ideally we'd have a distinct pid type to guarantee this...
+  n
 
 proc hash*(p: pointer): Hash =
-  hash(cast[int](p))
-
-proc hash*(u: uint32): Hash =
-  let pc = cast[ptr UncheckedArray[char]](unsafeAddr u)
-  hash(pc.toOpenArray(0, 3))
+  # endianness-specific, but for pointers this doesn't matter
+  let pc = cast[ptr UncheckedArray[char]](unsafeAddr p)
+  hash(pc.toOpenArray(0, sizeof(p) - 1))
 
 # from std
 proc `!&`*(h: Hash; val: int): Hash =
