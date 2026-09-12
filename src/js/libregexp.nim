@@ -9,10 +9,7 @@ import libunicode
 
 export libunicode.JS_BOOL
 
-when not compileOption("threads"):
-  const CFLAGS = "-fwrapv -DCHA_NO_THREADS"
-else:
-  const CFLAGS = "-fwrapv"
+const CFLAGS = "-fwrapv"
 
 {.compile("../../lib/quickjs/libregexp.c", CFLAGS).}
 

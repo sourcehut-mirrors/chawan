@@ -68,7 +68,7 @@
 
 /* define to include Atomics.* operations which depend on the OS
    threads */
-#if !defined(__EMSCRIPTEN__) && !defined(CHA_NO_THREADS)
+#if !defined(__EMSCRIPTEN__) && !defined(CHA_BUILD)
 #define CONFIG_ATOMICS
 #endif
 

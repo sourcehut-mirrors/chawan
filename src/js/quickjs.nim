@@ -14,12 +14,7 @@ export libregexp.JS_BOOL
 
 {.passl: "-lm".}
 
-const CFLAGS0 = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCHA_BUILD"
-when not compileOption("threads"):
-  const CFLAGS = CFLAGS0 & " -DCHA_NO_THREADS"
-else:
-  const CFLAGS = CFLAGS0
-  {.passl: "-lpthread".}
+const CFLAGS = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCHA_BUILD"
 
 {.compile("../../lib/quickjs/quickjs.c", CFLAGS).}
 
