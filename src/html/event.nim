@@ -693,14 +693,9 @@ proc hasEventListener*(eventTarget: EventTarget; eventType: CAtom): bool =
 proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   if listener.callback == nil:
     return JS_UNDEFINED
-  let jsTarget = ctx.toJS(event.currentTarget)
-  if JS_IsException(jsTarget):
-    return JS_EXCEPTION
-  let jsEvent = ctx.toJS(event)
-  if JS_IsException(jsEvent):
-    JS_FreeValue(ctx, jsTarget)
-    return JS_EXCEPTION
-  ctx.callUserObject(listener.callback, jstHandleEvent, jsTarget, jsEvent)
+  let this = ?trace(ctx.toJS(event.currentTarget))
+  let arg = ?trace(ctx.toJS(event))
+  ctx.callUserObject(listener.callback, jstHandleEvent, this.v, arg.v)
 
 proc removeEventListenerData(ctx: JSContext; _: JSValueConst;
     argc: cint; argv: JSValueConstArray; magic: cint;
@@ -736,18 +731,13 @@ proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
       listener.eflags.incl(elfOnce)
     target.eventListener = listener
     if signal != nil:
-      let jsTarget = ctx.toJS(target)
-      if JS_IsException(jsTarget):
-        return err()
-      let jsType = ctx.toJS(eventType)
-      if JS_IsException(jsType):
-        JS_FreeValue(ctx, jsTarget)
-        return err()
-      let jsCapture = ctx.toJS(capture)
-      let data = [jsTarget, jsType, JS_DupValue(ctx, callback), jsCapture]
+      let jsTarget = ?trace(ctx.toJS(target))
+      let jsType = ?trace(ctx.toJS(eventType))
+      let jsCapture = ?trace(ctx.toJS(capture))
+      let data = [JSValueConst(jsTarget.v), JSValueConst(jsType.v), callback,
+        JSValueConst(jsCapture.v)]
       let fun = JS_NewCFunctionData(ctx, removeEventListenerData, 0, 0, 4,
         data.toJSValueConstArray())
-      ctx.freeValues(data)
       if JS_IsException(fun):
         return err()
       signal.abortSteps.add(traceObj(fun))
@@ -980,7 +970,7 @@ proc addEventGetSetImpl*(ctx: JSContext; obj: JSValueConst; id: JSClassID;
   assert ctx.isInstanceOf(id, EventTargetDef.id)
   for atom in atoms:
     let name = "on" & $atom
-    ?ctx.addReflectFunction(obj, cstring(name), get, set, cint(atom))
+    ?ctx.definePropertyGetSetCE(obj, cstring(name), get, set, cint(atom))
   ok()
 
 proc fromJSEventTarget(ctx: JSContext; this: JSValueConst;
@@ -1016,10 +1006,8 @@ template addEventGetSet*(ctx: JSContext; id: JSClassID;
     atoms: varargs[StaticAtom]): Opt[void] =
   if ctx.getOpaque() == nil:
     return ok()
-  let proto = JS_GetClassProto(ctx, id)
-  let res = ctx.addEventGetSetObj(proto, id, atoms)
-  JS_FreeValue(ctx, proto)
-  res
+  let proto = trace(JS_GetClassProto(ctx, id))
+  ctx.addEventGetSetObj(proto.v, id, atoms)
 
 # AbortSignal
 proc toSignalReason(ctx: JSContext; reason: JSValueConst): JSValueTraced =
@@ -1071,10 +1059,7 @@ jsClassDef(AbortController):
       signal.reason = ctx.toSignalReason(reason)
       #TODO dependent signals
       for step in signal.abortSteps:
-        let res = ctx.call(step.value, JS_UNDEFINED)
-        if JS_IsException(res):
-          return res
-        JS_FreeValue(ctx, res)
+        discard ?trace(ctx.call(step.value, JS_UNDEFINED))
       let event = newTrustedEvent(satAbort, signal.asEventTarget,
         bubbles = false, cancelable = false)
       discard ctx.dispatch(signal.asEventTarget, event)

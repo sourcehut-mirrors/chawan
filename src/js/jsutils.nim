@@ -14,6 +14,19 @@ template `?`*(res: JSCode) =
   if res == fjErr:
     return err()
 
+template myMove(x: untyped): untyped =
+  when NimMajor < 2:
+    move(x)
+  else:
+    ensureMove(x)
+
+template `?`*(res: JSValueTraced): JSValueTraced =
+  var val = res
+  if JS_IsException(val):
+    wasMoved(val)
+    return err()
+  myMove(val)
+
 template err*(t: typedesc[JSValue]): JSValue =
   JS_EXCEPTION
 
@@ -476,26 +489,16 @@ proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
     return JS_EXCEPTION
   return getter
 
-proc addReflectFunction*(ctx: JSContext; proto: JSValueConst; name: cstring;
-    get: JSGetterMagicFunction; set: JSSetterMagicFunction; magic: cint):
-    JSCode =
-  if ctx.definePropertyGetSetCE(proto, name, get, set, magic) == fjErr:
-    return fjErr
-  fjOk
-
 proc callUserObject*(ctx: JSContext; callback: JSObject; name: JSStrRef;
-    this, arg: JSValue): JSValue =
+    this, arg: JSValueConst): JSValue =
   #TODO switch the context as the spec mandates
   # must dup the callback first, otherwise the function might delete the
   # callback itself
-  let callback = JS_DupValue(ctx, callback.value)
+  let callback = trace(JS_DupValue(ctx, callback.value))
   let ret = if JS_IsFunction(ctx, callback):
-    ctx.call(callback, this, arg)
+    ctx.call(callback.v, this, arg)
   else:
-    ctx.invoke(callback, ctx.getOpaque().strRefs[name], arg)
-  JS_FreeValue(ctx, callback)
-  JS_FreeValue(ctx, this)
-  JS_FreeValue(ctx, arg)
+    ctx.invoke(callback.v, ctx.getOpaque().strRefs[name], arg)
   ret
 
 {.pop.} # raises
