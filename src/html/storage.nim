@@ -81,8 +81,8 @@ jsClassDef(Storage):
     return true
 
 proc storageAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray):
-    JSValue {.cdecl.} =
+    argv: JSValueConstArray; magic: cint; func_data: JSValueArray): JSValue
+    {.cdecl.} =
   let ctxOpaque = ctx.getOpaque()
   if not ctx.strictEquals(this, ctxOpaque.global):
     return JS_ThrowTypeErrorInvalidClass(ctx, ctxOpaque.gclass)

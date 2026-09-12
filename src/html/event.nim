@@ -697,9 +697,9 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   let arg = ?trace(ctx.toJS(event))
   ctx.callUserObject(listener.callback, jstHandleEvent, this.v, arg.v)
 
-proc removeEventListenerData(ctx: JSContext; _: JSValueConst;
-    argc: cint; argv: JSValueConstArray; magic: cint;
-    funcData: JSValueConstArray): JSValue {.cdecl.} =
+proc removeEventListenerData(ctx: JSContext; _: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
+    {.cdecl.} =
   var this: EventTarget
   ?ctx.fromJS(funcData[0], this)
   var eventType: CAtom

@@ -751,7 +751,7 @@ proc newActionMap*(ctx: JSContext; s, defaultAction: string): ActionMap =
   map
 
 proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint; funcData: JSValueConstArray): JSValue
+    argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
     {.cdecl.} =
   if not JS_IsFunction(ctx, funcData[0]):
     let res = JS_EvalFunction(ctx, JS_DupValue(ctx, funcData[0]))
@@ -760,8 +760,8 @@ proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
     if not JS_IsFunction(ctx, res):
       JS_FreeValue(ctx, res)
       return JS_UNDEFINED
-    JS_FreeValue(ctx, JSValue(funcData[0]))
-    funcData[0] = JSValueConst(res)
+    JS_FreeValue(ctx, funcData[0])
+    funcData[0] = res
   return JS_Call(ctx, funcData[0], this, argc, argv)
 
 proc toForwardAction(ctx: JSContext; val: JSValueTraced): JSValue =

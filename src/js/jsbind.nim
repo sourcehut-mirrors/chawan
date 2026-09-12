@@ -393,7 +393,7 @@ proc newClassConstructor(ctx: JSContext; def: ChaClassDef): JSValue =
   return fun
 
 proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint; data: JSValueConstArray): JSValue
+    argv: JSValueConstArray; magic: cint; data: JSValueArray): JSValue
     {.cdecl.} =
   let this = ctx.toObject(this)
   if JS_IsException(this):

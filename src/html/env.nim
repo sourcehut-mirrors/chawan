@@ -401,8 +401,8 @@ jsClassRaw(LocationDef, "Location"):
     document.window.navigate(copyURL)
 
 proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray):
-    JSValue {.cdecl.} =
+    argv: JSValueConstArray; magic: cint; func_data: JSValueArray): JSValue
+    {.cdecl.} =
   # data[0] is object, data[1] is parent's class id
   var parent0: int32
   discard JS_ToInt32(ctx, parent0, func_data[1])

@@ -107,8 +107,8 @@ type
   JSCFunctionMagic* = proc(ctx: JSContext; this_val: JSValueConst; argc: cint;
       argv: JSValueConstArray; magic: cint): JSValue {.cdecl, raises: [].}
   JSCFunctionData* = proc(ctx: JSContext; this_val: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint;
-    func_data: JSValueConstArray): JSValue {.cdecl, raises: [].}
+    argv: JSValueConstArray; magic: cint; func_data: JSValueArray): JSValue
+    {.cdecl, raises: [].}
   JSGetterFunction* = proc(ctx: JSContext; this_val: JSValueConst): JSValue
     {.cdecl, raises: [].}
   JSSetterFunction* = proc(ctx: JSContext; this_val, val: JSValueConst):
