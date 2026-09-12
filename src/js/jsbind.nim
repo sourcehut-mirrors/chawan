@@ -290,10 +290,6 @@ proc free*(ctx: JSContext) =
   ## JSValues stored on context startup by `newJSContext`.
   let opaque = ctx.getOpaque()
   if opaque != nil:
-    for a in opaque.symRefs:
-      JS_FreeAtom(ctx, a)
-    for a in opaque.strRefs:
-      JS_FreeAtom(ctx, a)
     ctx.freeValues(opaque.valRefs)
     ctx.freeValues(opaque.ctors)
     let globalObj = move(opaque.globalObj)
@@ -309,11 +305,7 @@ proc free*(ctx: JSContext) =
 proc free*(rt: JSRuntime) =
   ## Free the `JSRuntime` rt and remove it from the global JSRuntime pool.
   let rtOpaque = rt.getOpaque()
-  for map in rtOpaque.enumMap:
-    for atom in map.atoms:
-      JS_FreeAtomRT(rt, atom)
-    for it in map.enums:
-      JS_FreeAtomRT(rt, it.atom)
+  rtOpaque.enumMap = @[]
   JS_FreeRuntime(rt)
   # free opaque after runtime to preserve class data for mark & finalization
   `=destroy`(rtOpaque[])
@@ -332,10 +324,9 @@ proc setGlobal*[T](ctx: JSContext; obj: JSRef[T]) =
     ctxOpaque.globalObj = JS_DupForeignObject(rt, obj)
     let sym = ctx.call(ctxOpaque.valRefs[jsvSymbol], JS_UNDEFINED)
     assert not JS_IsException(sym)
-    let atom = JS_ValueToAtom(ctx, sym)
-    assert ctx.defineProperty(ctxOpaque.global, atom, dummy) == fjOk
+    assert ctx.defineProperty(ctxOpaque.global, JS_ValueToAtom(ctx, sym),
+      dummy) == fjOk
     JS_FreeValue(ctx, sym)
-    JS_FreeAtom(ctx, atom)
 
 # Add all LegacyUnforgeable functions defined on the prototype chain to
 # the opaque.
@@ -417,7 +408,7 @@ proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
   if JS_IsException(iter):
     JS_FreeValue(ctx, this)
     return iter
-  let nextMethod = JS_GetProperty(ctx, iter, ctx.getOpaque().strRefs[jstNext])
+  let nextMethod = ctx.getProperty(iter, jstNext)
   if JS_IsException(nextMethod):
     JS_FreeValue(ctx, this)
     JS_FreeValue(ctx, iter)
@@ -461,8 +452,7 @@ proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
   of jitNone: discard
   of jitValue:
     let values = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
-    let itSym = ctxOpaque.symRefs[jsyIterator]
-    if ctx.definePropertyCW(proto, itSym, values) == fjErr:
+    if ctx.definePropertyCW(proto, ctx.getAtom(jsyIterator), values) == fjErr:
       return fjErr
     const map = {
       jstEntries: jsvArrayPrototypeEntries,
@@ -476,18 +466,16 @@ proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
         return fjErr
   of jitIndexed:
     let values = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
-    let itSym = ctxOpaque.symRefs[jsyIterator]
-    if ctx.definePropertyCWE(proto, itSym, values) == fjErr:
+    if ctx.definePropertyCWE(proto, ctx.getAtom(jsyIterator), values) == fjErr:
       return fjErr
   of jitPair:
-    let pairs = JS_GetProperty(ctx, proto, ctxOpaque.strRefs[jstEntries])
+    let pairs = ctx.getProperty(proto, jstEntries)
     let forEach = JS_NewCFunctionData(ctx, pairsForEach, 1, cint(class), 1,
       cast[JSValueConstArray](unsafeAddr pairs))
     if ctx.definePropertyCWE(proto, jstForEach, forEach) == fjErr:
       JS_FreeValue(ctx, pairs)
       return fjErr
-    let itSym = ctxOpaque.symRefs[jsyIterator]
-    if ctx.definePropertyCWE(proto, itSym, pairs) == fjErr:
+    if ctx.definePropertyCWE(proto, ctx.getAtom(jsyIterator), pairs) == fjErr:
       return fjErr
   of jitIterator:
     discard
@@ -1705,8 +1693,7 @@ proc registerClass*(ctx: JSContext; def: ChaClassDef; namespace = JS_NULL):
   let id = def.id
   JS_SetClassProto(ctx, id, JS_DupValue(ctx, proto))
   let name = JS_NewString(ctx, def.class_name)
-  let strSym = ctxOpaque.symRefs[jsyToStringTag]
-  if ctx.definePropertyC(proto, strSym, name) == fjErr or
+  if ctx.definePropertyC(proto, ctx.getAtom(jsyToStringTag), name) == fjErr or
       not ctx.setPropertyFunctionList(proto, def.funs):
     JS_FreeValue(ctx, proto)
     return fjErr
@@ -1742,12 +1729,11 @@ proc registerNamespace*(ctx: JSContext; def: ChaClassDef): JSValue =
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
     return obj
-  let strSym = ctxOpaque.symRefs[jsyToStringTag]
   let name = ctx.toJS(def.class_name)
   if JS_IsException(name):
     JS_FreeValue(ctx, obj)
     return name
-  if ctx.definePropertyC(obj, strSym, name) == fjErr or
+  if ctx.definePropertyC(obj, ctx.getAtom(jsyToStringTag), name) == fjErr or
       not ctx.setPropertyFunctionList(obj, def.staticFuns):
     JS_FreeValue(ctx, obj)
     return JS_EXCEPTION
@@ -1800,14 +1786,13 @@ proc registerGlobalClass*(ctx: JSContext; def: ChaClassDef;
   let id = def.id
   JS_SetClassProto(ctx, id, JS_DupValue(ctx, proto))
   let name = JS_NewString(ctx, def.class_name)
-  let strSym = ctxOpaque.symRefs[jsyToStringTag]
   let global = ctxOpaque.global
   assert ctxOpaque.gclass == JS_INVALID_CLASS_ID
   ctxOpaque.gclass = def.id
   let name2 = JS_DupValue(ctx, name)
   # Global already exists, so set unforgeable functions here
-  if ctx.definePropertyC(global, strSym, name2) == fjErr or
-      ctx.definePropertyC(proto, strSym, name) == fjErr or
+  if ctx.definePropertyC(global, jsyToStringTag, name2) == fjErr or
+      ctx.definePropertyC(proto, jsyToStringTag, name) == fjErr or
       JS_SetPrototype(ctx, global, proto) != 1 or
       not ctx.setPropertyFunctionList(global, def.funs) or
       not ctx.setUnforgeable(global, def.id):

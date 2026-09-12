@@ -121,7 +121,8 @@ type
     argc: cint; argv: JSValueConstArray; pdone: var JS_BOOL; magic: cint):
     JSValue {.cdecl, raises: [].}
   JSClassID* = distinct uint32
-  JSAtom* {.importc: "JSAtom", header: qjsheader.} = distinct uint32
+  JSAtomRaw {.importc: "JSAtom", header: qjsheader.} = distinct uint32
+  JSAtom* = distinct JSAtomRaw
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
     cdecl, raises: [].}
   JSClassGCMark* = proc(rt: JSRuntime; val: JSValueConst;
@@ -293,6 +294,7 @@ type
 proc `==`*(a, b: JSValue): bool {.error.} =
   discard
 
+proc `==`*(a, b: JSAtomRaw): bool {.borrow.}
 proc `==`*(a, b: JSAtom): bool {.borrow.}
 proc `==`*(a, b: JSClassID): bool {.borrow.}
 
@@ -533,10 +535,9 @@ const JS_ATOM_NULL* = JSAtom(0)
 proc JS_NewAtomLen*(ctx: JSContext; str: cstringConst; len: csize_t): JSAtom
 proc JS_NewAtom*(ctx: JSContext; str: cstringConst): JSAtom
 proc JS_NewAtomUInt32*(ctx: JSContext; u: uint32): JSAtom
-proc JS_DupAtom*(ctx: JSContext; v: JSAtom): JSAtom
+proc JS_DupAtomRT(rt: JSRuntime; v: JSAtom): JSAtomRaw
 proc JS_AtomIsNumericIndex1*(ctx: JSContext; atom: JSAtom): JSValue
-proc JS_FreeAtom*(ctx: JSContext; atom: JSAtom)
-proc JS_FreeAtomRT*(rt: JSRuntime; atom: JSAtom)
+proc JS_FreeAtomRT(rt: JSRuntime; atom: JSAtom)
 proc JS_AtomToValue*(ctx: JSContext; atom: JSAtom): JSValue
 proc JS_AtomToString*(ctx: JSContext; atom: JSAtom): JSValue
 proc JS_AtomToCStringLen*(ctx: JSContext; plen: var csize_t; atom: JSAtom):
@@ -950,5 +951,21 @@ template JS_IsFunction*(ctx: JSContext; val: JSValueConst): bool =
 template JS_IsConstructor*(ctx: JSContext; val: JSValueConst): bool =
   JS_IsConstructorImpl(ctx, val) != 0
 {.pop.}
+
+var globalRuntime* {.global.}: JSRuntime
+
+proc `=destroy`(atom: var JSAtom) =
+  JS_FreeAtomRT(globalRuntime, atom)
+
+proc `=sink`(dst: var JSAtom; src: JSAtom) =
+  `=destroy`(dst)
+  cast[ptr JSAtomRaw](addr dst)[] = cast[ptr JSAtomRaw](unsafeAddr src)[]
+
+proc `=dup`(atom: JSAtom): JSAtom {.noinit.} =
+  cast[ptr JSAtomRaw](addr result)[] = JS_DupAtomRT(globalRuntime, atom)
+
+proc `=copy`(dst: var JSAtom; src: JSAtom) =
+  `=destroy`(dst)
+  cast[ptr JSAtomRaw](addr dst)[] = JS_DupAtomRT(globalRuntime, src)
 
 {.pop.} # raises

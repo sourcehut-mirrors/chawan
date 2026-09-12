@@ -1676,7 +1676,7 @@ jsClassDef(CustomElementRegistry):
       return JS_ThrowDOMException(ctx, "NotSupportedError",
         "recursive custom element definition is not allowed")
     this.inDefine = true
-    let proto = JS_GetPropertyStr(ctx, ctor, "prototype")
+    let proto = ctx.getProperty(ctor, jstPrototype)
     if JS_IsException(proto):
       this.inDefine = false
       return JS_EXCEPTION
@@ -3079,14 +3079,9 @@ proc getElementById*(this: RootNode; id: CAtom): Element =
 
 proc getElementById(this: RootNode; ctx: JSContext; val: JSValueConst):
     JSValue =
-  let atom = JS_ValueToAtom(ctx, val)
-  if atom == JS_ATOM_NULL:
-    return JS_EXCEPTION
+  let atom = ?JS_ValueToAtom(ctx, val)
   var id: CAtomRaw
-  let status = ctx.fromJSView(atom, id)
-  JS_FreeAtom(ctx, atom)
-  if status == fjErr:
-    return JS_EXCEPTION
+  ?ctx.fromJSView(atom, id)
   ctx.toJS(this.getElementById(id.view()))
 
 proc removeElementId(this: RootNode; element: Element) =
@@ -3881,12 +3876,12 @@ jsClassPublicDef(Document):
   proc location(ctx: JSContext; document: Document): JSValue {.jsuffget.} =
     if document.window == nil:
       return JS_NULL
-    return JS_GetPropertyStr(ctx, ctx.getOpaque().global, "location")
+    return ctx.getProperty(ctx.getOpaque().global, jstLocation)
 
   proc setLocation*(ctx: JSContext; document: Document; s: string): JSValue
       {.jsfset: "location".} =
     let obj = ?trace(ctx.location(document))
-    let res = JS_SetPropertyStr(ctx, obj.v, "href", ctx.toJS(s))
+    let res = JS_SetProperty(ctx, obj.v, ctx.getAtom(jstHref), ctx.toJS(s))
     if res < 0:
       return JS_EXCEPTION
     return JS_UNDEFINED
@@ -6745,11 +6740,11 @@ proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
   ?ctx.fromJS(this, element)
-  let sa = StaticAtom(magic)
+  let magic = JSStrRef(magic)
   if url := element.reinitURL():
     let href = ?trace(ctx.toJS(url))
-    return JS_GetPropertyStr(ctx, href.v, cstring($sa))
-  if sa == satProtocol:
+    return ctx.getProperty(href.v, magic)
+  if magic == jstProtocol:
     return ctx.toJS(":")
   return ctx.toJS("")
 
@@ -6757,8 +6752,8 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
   ?ctx.fromJS(this, element)
-  let sa = StaticAtom(magic)
-  if sa == satHref:
+  let magic = JSStrRef(magic)
+  if magic == jstHref:
     var s: DOMString
     if ctx.fromJS(val, s).isOk:
       element.setAttr(ctx, satHref, s)
@@ -6766,7 +6761,10 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     return JS_EXCEPTION
   if url := element.reinitURL():
     let href = ctx.toJS(url)
-    let res = JS_SetPropertyStr(ctx, href, cstring($sa), JS_DupValue(ctx, val))
+    if JS_IsException(href):
+      return JS_EXCEPTION
+    let res = JS_SetProperty(ctx, href, ctx.getAtom(magic),
+      JS_DupValue(ctx, val))
     if res < 0:
       return JS_EXCEPTION
     var ds: DOMString
@@ -7910,8 +7908,8 @@ proc addConstructorAlias*(ctx: JSContext; fun: JSCFunction; class: JSClassID;
 
 proc addHyperlinkUtils*(ctx: JSContext; class: JSClassID): Opt[void] =
   const atoms = [
-    satHref, satOrigin, satProtocol, satUsername, satPassword, satHost,
-    satHostname, satPort, satPathname, satSearch, satHash
+    jstHref, jstOrigin, jstProtocol, jstUsername, jstPassword, jstHost,
+    jstHostname, jstPort, jstPathname, jstSearch, jstHash
   ]
   let proto = trace(JS_GetClassProto(ctx, class))
   for atom in atoms:

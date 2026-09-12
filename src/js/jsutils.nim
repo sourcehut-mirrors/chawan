@@ -6,6 +6,7 @@ import js/dtoa
 import js/jsopaque
 import js/jstypes
 import js/quickjs
+import types/opt
 
 type JSCode* = enum
   fjErr, fjOk
@@ -23,6 +24,13 @@ template myMove(x: untyped): untyped =
 template `?`*(res: JSValueTraced): JSValueTraced =
   var val = res
   if JS_IsException(val):
+    wasMoved(val)
+    return err()
+  myMove(val)
+
+template `?`*(res: JSAtom): JSAtom =
+  var val = res
+  if val == JS_ATOM_NULL:
     wasMoved(val)
     return err()
   myMove(val)
@@ -210,6 +218,14 @@ proc newRejectedPromise*(ctx: JSContext): JSValue =
     return JS_EXCEPTION
   return res
 
+proc getProperty*(ctx: JSContext; this: JSValueConst; name: JSStrRef):
+    JSValue =
+  JS_GetProperty(ctx, this, ctx.getAtom(name))
+
+proc getProperty*(ctx: JSContext; this: JSValueConst; name: JSSymbolRef):
+    JSValue =
+  JS_GetProperty(ctx, this, ctx.getAtom(name))
+
 proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSAtom;
     prop: JSValue; flags = cint(0)): JSCode =
   ## Frees/consumes `prop'.
@@ -223,6 +239,13 @@ proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSAtom;
   ##
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
+
+proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSSymbolRef;
+    prop: JSValue): JSCode =
+  ## Define a configurable property on `this`.
+  ##
+  ## Frees `prop'.
+  ctx.defineProperty(this, ctx.getAtom(name), prop, JS_PROP_CONFIGURABLE)
 
 proc defineProperty*(ctx: JSContext; this: JSValueConst; name: cstring;
     prop: JSValue; flags = cint(0)): JSCode =
@@ -270,20 +293,17 @@ proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: cstring;
 proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
     prop: JSValue): JSCode =
   ## Frees `prop'.
-  ctx.defineProperty(this, ctx.getOpaque().strRefs[name], prop, JS_PROP_C_W_E)
+  ctx.defineProperty(this, ctx.getAtom(name), prop, JS_PROP_C_W_E)
 
 proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
     getter: JSGetterMagicFunction; setter: JSSetterMagicFunction; magic: cint):
     JSCode =
-  let prop = JS_NewAtom(ctx, cstringConst(name))
-  if prop == JS_ATOM_NULL:
-    return fjErr
+  let prop = ?JS_NewAtom(ctx, cstringConst(name))
   var f: JSCFunctionType
   f.getter_magic = getter
   let getterVal = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 0,
     JS_CFUNC_getter_magic, magic)
   if JS_IsException(getterVal):
-    JS_FreeAtom(ctx, prop)
     return fjErr
   var setterVal = JS_UNDEFINED
   if setter != nil:
@@ -291,13 +311,10 @@ proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
     setterVal = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 1,
       JS_CFUNC_setter_magic, magic)
     if JS_IsException(setterVal):
-      JS_FreeAtom(ctx, prop)
       JS_FreeValue(ctx, getterVal)
       return fjErr
-  let res = JS_DefinePropertyGetSet(ctx, this, prop, getterVal, setterVal,
-    JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
-  JS_FreeAtom(ctx, prop)
-  if res < 0:
+  if JS_DefinePropertyGetSet(ctx, this, prop, getterVal, setterVal,
+      JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE) < 0:
     return fjErr
   fjOk
 
@@ -425,7 +442,7 @@ proc getExceptionMsg*(ctx: JSContext): string =
       copyMem(addr result[0], cstring(outp), plen)
     JS_FreeCString(ctx, outp)
     result &= '\n'
-  let stack = JS_GetPropertyStr(ctx, ex, cstring("stack"))
+  let stack = ctx.getProperty(ex, jstStack)
   JS_FreeValue(ctx, ex)
   if not JS_IsUndefined(stack):
     let outp = JS_ToCStringLen(ctx, plen, stack) # cstring
@@ -483,8 +500,7 @@ proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
   if JS_IsException(getName):
     JS_FreeValue(ctx, getter)
     return JS_EXCEPTION
-  let nameRef = ctx.getOpaque.strRefs[jstName]
-  if ctx.definePropertyC(getter, nameRef, getName) == fjErr:
+  if ctx.definePropertyC(getter, ctx.getAtom(jstName), getName) == fjErr:
     JS_FreeValue(ctx, getter)
     return JS_EXCEPTION
   return getter
@@ -498,7 +514,7 @@ proc callUserObject*(ctx: JSContext; callback: JSObject; name: JSStrRef;
   let ret = if JS_IsFunction(ctx, callback):
     ctx.call(callback.v, this, arg)
   else:
-    ctx.invoke(callback.v, ctx.getOpaque().strRefs[name], arg)
+    ctx.invoke(callback.v, ctx.getAtom(name), arg)
   ret
 
 {.pop.} # raises

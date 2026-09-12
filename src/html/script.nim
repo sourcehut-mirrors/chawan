@@ -201,7 +201,6 @@ proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
     JS_AtomToValue(ctx, moduleNameAtom)) == fjOk
   doAssert ctx.definePropertyCWE(metaObj, "main", JS_FALSE) == fjOk
   JS_FreeValue(ctx, metaObj)
-  JS_FreeAtom(ctx, moduleNameAtom)
 
 proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
   let funcVal = compileModule(ctx, source, name)

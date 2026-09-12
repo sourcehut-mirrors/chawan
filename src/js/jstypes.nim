@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import jsopaque
 import quickjs
 
 when NimMajor < 2:

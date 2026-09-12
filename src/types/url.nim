@@ -1395,9 +1395,7 @@ jsClassPublicDef(URL):
     var atom = rtOpaque.enumMap[enumId].atoms[n]
     if atom == JS_ATOM_NULL:
       let s = url.scheme & ':'
-      atom = JS_NewAtomLen(ctx, cstringConst(s), csize_t(s.len))
-      if atom == JS_ATOM_NULL:
-        return JS_EXCEPTION
+      atom = ?JS_NewAtomLen(ctx, cstringConst(s), csize_t(s.len))
       rtOpaque.enumMap[enumId].atoms[n] = atom
     return JS_AtomToValue(ctx, atom)
 

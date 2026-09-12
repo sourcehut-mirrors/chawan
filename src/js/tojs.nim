@@ -229,9 +229,7 @@ proc toJSEnum(ctx: JSContext; enumId: int; n: int; s: string): JSValue =
     rtOpaque.enumMap[enumId].atoms.setLen(n + 1)
   var atom = rtOpaque.enumMap[enumId].atoms[n]
   if atom == JS_ATOM_NULL:
-    atom = JS_NewAtomLen(ctx, cstringConst(s), csize_t(s.len))
-    if atom == JS_ATOM_NULL:
-      return JS_EXCEPTION
+    atom = ?JS_NewAtomLen(ctx, cstringConst(s), csize_t(s.len))
     rtOpaque.enumMap[enumId].atoms[n] = atom
   return JS_AtomToValue(ctx, atom)
 

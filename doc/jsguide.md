@@ -491,6 +491,20 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   JS_FreeValue(ctx, jsEvent)
 ```
 
+### JSAtom
+
+QuickJS has its own string interning facility called `JSAtom`.  Currently
+this is distinct from Chawan's string interning facility called `CAtom`,
+but they might be merged in the future.
+
+A `JSAtom` is manually refcounted on the QuickJS side, with callee-cleanup
+semantics.  In Chawan's bindings however, it is attached a set of Nim hooks
+that automate this, so you don't have to bother with JS_FreeAtom etc. so
+long as you're writing Nim code.
+
+(This is a deviation from how we handle `JSValue`; ideally, `JSValue`
+should be automatically refcounted too in the future for improved safety.)
+
 ### Using toJS
 
 ```nim
@@ -539,6 +553,9 @@ Passing `JS_EXCEPTION` to `fromJS` is invalid.
 ### Custom type converters
 
 It is possible to add custom `fromJS` and `toJS` overloads for any type.
+In most cases, these should be scoped to the module where you need them,
+and only exported if the types are converted from/to JS in other modules
+too.
 
 ---
 

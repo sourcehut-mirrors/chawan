@@ -181,7 +181,7 @@ jsClassRaw(PermissionsDef, "Permissions"):
 
   proc query(ctx: JSContext; this: JSValueConst; desc: JSValueConst): JSValue
       {.jsfunc.} =
-    let name = JS_GetPropertyStr(ctx, desc, "name")
+    let name = ctx.getProperty(desc, jstName)
     if JS_IsException(name):
       return name
     JS_FreeValue(ctx, name)
@@ -437,9 +437,8 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
 
 proc windowAutoInitSetter(ctx: JSContext; this, val: JSValueConst;
     magic: cint): JSValue {.cdecl.} =
-  let atom = ctx.getOpaque().strRefs[JSStrRef(magic)]
-  if JS_DefinePropertyValue(ctx, this, atom, JS_DupValue(ctx, val),
-      JS_PROP_C_W_E) < 0:
+  if JS_DefinePropertyValue(ctx, this, ctx.getAtom(JSStrRef(magic)),
+      JS_DupValue(ctx, val), JS_PROP_C_W_E) < 0:
     return JS_EXCEPTION
   return JS_UNDEFINED
 
@@ -462,7 +461,6 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
     t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
   ?ctx.registerClass(def)
-  let ctxOpaque = ctx.getOpaque()
   let getter = ctx.newGetterFunctionData(windowAutoInitGetter, cstring($name),
     cast[cint](def.id), JS_UNDEFINED, JS_NewInt32(ctx, int32(parentClass)))
   if JS_IsException(getter):
@@ -484,8 +482,8 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
   if JS_IsException(setter):
     JS_FreeValue(ctx, getter)
     return err()
-  let prop = ctxOpaque.strRefs[name]
-  if JS_DefinePropertyGetSet(ctx, namespace, prop, getter, setter, flags) < 0:
+  if JS_DefinePropertyGetSet(ctx, namespace, ctx.getAtom(name), getter, setter,
+      flags) < 0:
     return err()
   ok()
 
@@ -957,8 +955,7 @@ proc addWindowProperties(ctx: JSContext): JSValue =
     JS_FreeValue(ctx, name)
     return JS_EXCEPTION
   # must circumvent the exotic handler here
-  let strSym = ctx.getOpaque().symRefs[jsyToStringTag]
-  if JS_DefinePropertyValue(ctx, proto, strSym, name,
+  if JS_DefinePropertyValue(ctx, proto, ctx.getAtom(jsyToStringTag), name,
       JS_PROP_CONFIGURABLE or JS_PROP_NO_EXOTIC) < 0:
     JS_FreeValue(ctx, proto)
     return JS_EXCEPTION

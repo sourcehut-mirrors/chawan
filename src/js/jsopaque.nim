@@ -30,6 +30,20 @@ type
     jstAcceptNode = "acceptNode"
     jstName = "name"
     jstHandleEvent = "handleEvent"
+    jstHref = "href"
+    jstOrigin = "origin"
+    jstProtocol = "protocol"
+    jstUsername = "username"
+    jstPassword = "password"
+    jstHost = "host"
+    jstHostname = "hostname"
+    jstPort = "port"
+    jstPathname = "pathname"
+    jstSearch = "search"
+    jstHash = "hash"
+    jstStack = "stack"
+    jstLength = "length"
+    jstPrototype = "prototype"
 
   JSValueRef* = enum
     jsvArrayPrototypeForEach = "Array.prototype.forEach"
@@ -61,8 +75,8 @@ type
     gclass*: JSClassID # class ID of the global object
     ctors*: seq[JSValue] # class ID -> constructor
     global*: JSValue
-    symRefs*: array[JSSymbolRef, JSAtom]
-    strRefs*: array[JSStrRef, JSAtom]
+    symRefs: array[JSSymbolRef, JSAtom]
+    strRefs: array[JSStrRef, JSAtom]
     valRefs*: array[JSValueRef, JSValue]
     globalObj*: pointer
 
@@ -90,8 +104,6 @@ type
       marking*: bool
 
   JSRuntimeOpaque* = ptr JSRuntimeOpaqueObj
-
-var globalRuntime* {.global.}: JSRuntime
 
 iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
     ChaFinalizerFunction =
@@ -168,7 +180,7 @@ proc putEnums0(ctx: JSContext; entry: var EnumMapEntry;
     if atom == JS_ATOM_NULL:
       return false
     if entry.atoms[i] == JS_ATOM_NULL:
-      entry.atoms[i] = JS_DupAtom(ctx, atom)
+      entry.atoms[i] = atom
     entry.enums.add(EnumMapItem(n: i, atom: atom))
   entry.enums.sort(proc(x, y: EnumMapItem): int {.nimcall.} =
     cmp(uint32(x.atom), uint32(y.atom))
@@ -185,5 +197,11 @@ proc putEnums*(ctx: JSContext; enumId: int; atoms: openArray[string]): bool =
 
 proc getName*(rt: JSRuntime; classid: JSClassID): string =
   $rt.getOpaque().classes[int(classid)].name
+
+proc getAtom*(ctx: JSContext; jst: JSStrRef): lent JSAtom =
+  ctx.getOpaque().strRefs[jst]
+
+proc getAtom*(ctx: JSContext; jsy: JSSymbolRef): lent JSAtom =
+  ctx.getOpaque().symRefs[jsy]
 
 {.pop.} # raises

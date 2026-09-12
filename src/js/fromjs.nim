@@ -119,7 +119,7 @@ proc checkInstanceOf*(ctx: JSContext; this: JSValueConst; tclassid: JSClassID):
 proc isSequence*(ctx: JSContext; o: JSValueConst): Opt[bool] =
   if not JS_IsObject(o):
     return ok(false)
-  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().symRefs[jsyIterator])
+  let prop = ctx.getProperty(o, jsyIterator)
   if JS_IsException(prop):
     return err()
   let res = not JS_IsUndefined(prop)
@@ -254,7 +254,7 @@ proc fromJSSeqIt*(ctx: JSContext; iter, nextMethod: JSValueConst;
   let next = JS_Call(ctx, nextMethod, iter, 0, nil)
   if JS_IsException(next):
     return sirException
-  let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
+  let doneVal = ctx.getProperty(next, jstDone)
   if JS_IsException(doneVal):
     JS_FreeValue(ctx, next)
     return sirException
@@ -263,7 +263,7 @@ proc fromJSSeqIt*(ctx: JSContext; iter, nextMethod: JSValueConst;
     JS_FreeValue(ctx, next)
     return sirException
   if not done:
-    res = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
+    res = ctx.getProperty(next, jstValue)
     JS_FreeValue(ctx, next)
     if JS_IsException(res):
       return sirException
@@ -318,10 +318,10 @@ proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
 
 proc fromJSSeqInit*(ctx: JSContext; val: JSValueConst;
     oit, onextMethod: var JSValue): JSCode =
-  let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
+  let it = JS_Invoke(ctx, val, ctx.getAtom(jsyIterator), 0, nil)
   if JS_IsException(it):
     return fjErr
-  let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
+  let nextMethod = ctx.getProperty(it, jstNext)
   if JS_IsException(nextMethod):
     JS_FreeValue(ctx, it)
     return fjErr
@@ -420,7 +420,6 @@ proc fromJSEnumBody(ctx: JSContext; val: JSValueConst; enumId: int;
     return -1
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   let i = rtOpaque.enumMap[enumId].enums.binarySearch(atom, cmpItem)
-  JS_FreeAtom(ctx, atom)
   if i < 0:
     JS_ThrowTypeError(ctx, "invalid value for enumeration %s", tname)
     return -1

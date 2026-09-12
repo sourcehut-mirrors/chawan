@@ -2,6 +2,7 @@
 
 import js/fromjs
 import js/jsbind
+import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -103,7 +104,7 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
   if JS_IsUndefined(val):
     return JS_NewArray(ctx)
   #TODO InitializedLocale, actually validate locales, dedup
-  let lengthVal = JS_GetPropertyStr(ctx, val, "length")
+  let lengthVal = ctx.getProperty(val, jstLength)
   if JS_IsException(lengthVal):
     return lengthVal
   let len = ctx.toIntIndex(lengthVal)
@@ -111,11 +112,8 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
     return JS_EXCEPTION
   var tags: seq[string]
   for k in 0 ..< len:
-    let prop = JS_NewAtomUInt32(ctx, uint32(k))
-    if prop == JS_ATOM_NULL:
-      return JS_EXCEPTION
+    let prop = ?JS_NewAtomUInt32(ctx, uint32(k))
     let has = JS_HasProperty(ctx, val, prop)
-    JS_FreeAtom(ctx, prop)
     if has < 0:
       return JS_EXCEPTION
     if has > 0:

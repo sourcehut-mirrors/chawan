@@ -37,6 +37,7 @@ proc add(this: var JSPropertyEnumList; atom: JSAtom) =
   inc this.len
   if this.size < this.len:
     this.grow()
+  wasMoved(this.buffer[i].atom)
   this.buffer[i].atom = atom
 
 proc contains(this: JSPropertyEnumList; atom: JSAtom): bool =
@@ -45,11 +46,9 @@ proc contains(this: JSPropertyEnumList; atom: JSAtom): bool =
       return true
   false
 
-proc incl(this: var JSPropertyEnumList; atom: JSAtom) =
+proc incl(this: var JSPropertyEnumList; atom: sink JSAtom) =
   if atom notin this:
-    this.add(atom)
-  else:
-    JS_FreeAtom(this.ctx, atom)
+    this.add(move(atom))
 
 proc add*(this: var JSPropertyEnumList; val: uint32) =
   let atom = JS_NewAtomUInt32(this.ctx, val)
