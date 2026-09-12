@@ -34,7 +34,14 @@ function testProperties() {
 	assertEquals(ex.__proto__, DOMException.prototype);
 	/* Note: browsers set "stack" on the prototype, not the object.
 	 * This follows node. */
-	assert(Object.getOwnPropertyNames(ex), ["stack"]);
+	assertDeepEquals(Object.getOwnPropertyNames(ex), ["stack"]);
+	const names = Object.getOwnPropertyNames(DOMException.prototype);
+	for (const it of ["code", "message", "name"]) {
+		const desc = Object.getOwnPropertyDescriptor(
+			DOMException.prototype, it);
+		assertEquals(desc.configurable, true);
+		assertEquals(desc.enumerable, true);
+	}
 }
 
 testCode();

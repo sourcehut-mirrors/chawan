@@ -160,10 +160,12 @@ static JSValue js_domexception_get_code(JSContext *ctx, JSValueConst this_val)
     return JS_NewInt32(ctx, s->code);
 }
 
+#define JS_CGETSET_DEF_E(name, fgetter, fsetter) { name, JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE, JS_DEF_CGETSET, 0, .u = { .getset = { .get = { .getter = fgetter }, .set = { .setter = fsetter } } } }
+
 static const JSCFunctionListEntry js_domexception_proto_funcs[] = {
-    JS_CGETSET_DEF("name", js_domexception_get_name, NULL ),
-    JS_CGETSET_DEF("message", js_domexception_get_message, NULL ),
-    JS_CGETSET_DEF("code", js_domexception_get_code, NULL ),
+    JS_CGETSET_DEF_E("name", js_domexception_get_name, NULL ),
+    JS_CGETSET_DEF_E("message", js_domexception_get_message, NULL ),
+    JS_CGETSET_DEF_E("code", js_domexception_get_code, NULL ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "DOMException", JS_PROP_CONFIGURABLE ),
 };
 

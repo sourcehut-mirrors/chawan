@@ -1,54 +1,65 @@
 function assert(x, msg) {
-	const mymsg = msg ? ": " + msg : "";
-	if (!x)
-		throw new TypeError("Assertion failed" + mymsg);
+    const mymsg = msg ? ": " + msg : "";
+    if (!x)
+        throw new TypeError("Assertion failed" + mymsg);
 }
 
 function assertThrows(fun, error) {
-	if (typeof fun == "string") {
-		const x = fun;
-		fun = () => eval(x);
-	}
-	if (!(fun instanceof Function))
-		throw new TypeError("error expected to be Function");
-	let me;
-	try {
-		fun();
-	} catch (e) {
-		if (e instanceof error)
-			return;
-		me = e;
-	}
-	throw new TypeError("Assertion failed: expected " + error + ", got " + me + " for: " + fun);
+    if (typeof fun == "string") {
+        const x = fun;
+        fun = () => eval(x);
+    }
+    if (!(fun instanceof Function))
+        throw new TypeError("error expected to be Function");
+    let me;
+    try {
+        fun();
+    } catch (e) {
+        if (e instanceof error)
+            return;
+        me = e;
+    }
+    throw new TypeError("Assertion failed: expected " + error + ", got " + me +
+        " for: " + fun);
 }
 
 async function assertThrowsAsync(fun, error) {
-	if (typeof fun == "string") {
-		const x = fun;
-		fun = async () => eval(x);
-	}
-	if (!(fun instanceof Function))
-		throw new TypeError("error expected to be Function");
-	let me;
-	try {
-		await fun();
-	} catch (e) {
-		if (e instanceof error)
-			return;
-		me = e;
-	}
-	throw new TypeError("Assertion failed: expected " + error + ", got " + me + " for: " + fun);
+    if (typeof fun == "string") {
+        const x = fun;
+        fun = async () => eval(x);
+    }
+    if (!(fun instanceof Function))
+        throw new TypeError("error expected to be Function");
+    let me;
+    try {
+        await fun();
+    } catch (e) {
+        if (e instanceof error)
+            return;
+        me = e;
+    }
+    throw new TypeError("Assertion failed: expected " + error + ", got " + me +
+        " for: " + fun);
 }
 
 function assertEquals(a, b) {
-	if (a !== b)
-		throw new TypeError("Assertion failed: expected " + b + " but got " + a);
+    if (a !== b)
+        throw new TypeError("Assertion failed: expected " + b + " but got " + a);
 }
 
 function assertNotEquals(a, b) {
-	assert(a !== b, "Expected " + b + " to have some different value");
+    assert(a !== b, "Expected " + b + " to have some different value");
+}
+
+function assertDeepEquals(a, b) {
+    if (a instanceof Array && b instanceof Array) {
+        assertEquals(a.length, b.length);
+        for (let i = 0; i < a.length; i++)
+            assertDeepEquals(a[i], b[i]);
+    } else if (a !== b)
+        throw new TypeError("Assertion failed: expected " + b + " but got " + a);
 }
 
 function assertInstanceof(a, b) {
-	assert(a instanceof b, a + " not an instance of " + b);
+    assert(a instanceof b, a + " not an instance of " + b);
 }
