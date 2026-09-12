@@ -58,6 +58,7 @@ unreleased
 * fix underscore not being treated as vi word char
 * fix bytecode functions being returned from `config.page` etc. sometimes
 * fix table borders overprinting content in some cases
+* fix findPrevMark/findNextMark actions
 
 0.4.0 (2026.05.17)
 

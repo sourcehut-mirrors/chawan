@@ -2666,16 +2666,16 @@ const ReTextStart = /\S/gu;
         return this.iface.getMarkPos(id);
     }
 
-    /* public */ findNextMark(id, x = this.cursorx, y = this.cursory) {
+    /* public */ findNextMark(x = this.cursorx, y = this.cursory) {
         if (this.iface == null)
             return false;
-        return this.iface.findNextMark(id, x, y);
+        return this.iface.findNextMark(x, y);
     }
 
-    /* public */ findPrevMark(id, x = this.cursorx, y = this.cursory) {
+    /* public */ findPrevMark(x = this.cursorx, y = this.cursory) {
         if (this.iface == null)
             return false;
-        return this.iface.findPrevMark(id, x, y);
+        return this.iface.findPrevMark(x, y);
     }
 
     /* public */ cursorPrevWord(n) {
