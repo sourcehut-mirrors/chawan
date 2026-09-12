@@ -5,7 +5,7 @@
 # the executable bit, e.g. chmod +x magnet.cgi), then add the following line
 # to your browsecap:
 #
-# magnet; /cgi-bin/magnet.cgi?%s; cgioutput
+# magnet; /cgi-bin/magnet.cgi?%u; cgioutput
 #
 # Then, set the remote transmission session's address using the
 # CHA_TRANSMISSION_ADDRESS environment variable, and if needed, the
