@@ -168,7 +168,7 @@ type
   AbortController = JSRef[AbortControllerObj]
 
 # Forward declarations
-proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
+proc removeEventListener*(ctx: JSContext; eventTarget: EventTarget;
   eventType: CAtom; callback: JSValueConst;
   options: JSValueConst = JS_UNDEFINED): Opt[void]
 proc getClassID*(t: typedesc[EventTarget]): JSClassID
@@ -923,7 +923,7 @@ jsClassPublicDef(EventTarget):
   proc newEventTarget(): EventTarget {.jsctor.} =
     jsNew EventTargetObj()
 
-  proc addEventListener(ctx: JSContext; eventTarget: EventTarget;
+  proc addEventListener*(ctx: JSContext; eventTarget: EventTarget;
       eventType: CAtom; callback: JSValueConst;
       options: JSValueConst = JS_UNDEFINED): Opt[void] {.jsfunc.} =
     if not JS_IsObject(callback) and not JS_IsNull(callback):
@@ -934,7 +934,7 @@ jsClassPublicDef(EventTarget):
     ctx.addEventListener(eventTarget, eventType, res.capture, res.once,
       internal = false, res.passive, callback, res.signal)
 
-  proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
+  proc removeEventListener*(ctx: JSContext; eventTarget: EventTarget;
       eventType: CAtom; callback: JSValueConst;
       options: JSValueConst = JS_UNDEFINED): Opt[void] {.jsfunc.} =
     let capture = ?ctx.flatten(options)

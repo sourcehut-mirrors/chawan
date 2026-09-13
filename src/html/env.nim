@@ -545,6 +545,8 @@ type
     media: string
     matches: bool
     #TODO onchange
+    # also there should be a list of these on window that gets dispatched
+    # to on window change
 
   MediaQueryList = JSRef[MediaQueryListObj]
 
@@ -553,6 +555,15 @@ jsClassDef(MediaQueryList):
 
   jsget MediaQueryList, media
   jsget MediaQueryList, matches
+
+  proc addListener(ctx: JSContext; this: MediaQueryList;
+      callback: JSValueConst): Opt[void] {.jsfunc.} =
+    ctx.addEventListener(this.asEventTarget, satChange.view(), callback)
+
+  proc removeListener(ctx: JSContext; this: MediaQueryList;
+      callback: JSValueConst): Opt[void] {.jsfunc.} =
+    ctx.removeEventListener(this.asEventTarget, satChange.view(), callback,
+      JS_FALSE)
 
 # Window
 #TODO CORS: get prototype proxy
@@ -826,7 +837,7 @@ jsClassDef(Window):
       return JS_EXCEPTION
     return JS_UNDEFINED
 
-  proc matchMedia(window: Window; s: CSSOMString): MediaQueryList {.jsfunc.} =
+  proc matchMedia(window: Window; s: CSSOMString): MediaQueryList {.jsnfunc.} =
     var ctx = initCSSParser(s)
     let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)
     jsNew MediaQueryListObj(
