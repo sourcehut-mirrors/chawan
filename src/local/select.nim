@@ -244,13 +244,6 @@ jsClassPublicDef(Select):
       if not select.unselected:
         select.unselected = true
         select.queueDraw()
-      # move y to the nearest valid slot
-      if select.cursory > y:
-        while y < select.options.high and select.options[y].nop:
-          inc y
-      else:
-        while y > 0 and select.options[y].nop:
-          dec y
     else:
       select.unselected = false
     if select.fromy > y:
@@ -259,6 +252,19 @@ jsClassPublicDef(Select):
       select.setFromY(y - select.maxh + 1)
     select.cursory = y
     select.queueDraw()
+
+  #TODO expose?
+  proc setCursorYNear(select: Select; y: int) =
+    var y = max(min(y, select.options.high), 0)
+    if y < select.options.len and select.options[y].nop:
+      # move y to the nearest valid slot
+      if select.cursory > y:
+        while y < select.options.high and select.options[y].nop:
+          inc y
+      else:
+        while y > 0 and select.options[y].nop:
+          dec y
+    select.setCursorY(y)
 
   # public
   proc cursorDown(select: Select; n = 1) {.jsfunc.} =
@@ -351,15 +357,15 @@ jsClassPublicDef(Select):
 
   # public
   proc cursorTop(select: Select) {.jsfunc.} =
-    select.setCursorY(select.fromy)
+    select.setCursorYNear(select.fromy)
 
   # public
   proc cursorMiddle(select: Select) {.jsfunc.} =
-    select.setCursorY(select.fromy + (select.maxh - 1) div 2)
+    select.setCursorYNear(select.fromy + (select.maxh - 1) div 2)
 
   # public
   proc cursorBottom(select: Select) {.jsfunc.} =
-    select.setCursorY(select.fromy + select.maxh - 1)
+    select.setCursorYNear(select.fromy + select.maxh - 1)
 
   # private
   proc cursorPrevMatch(ctx: JSContext; select: Select; re: JSValueConst;
@@ -397,7 +403,7 @@ jsClassPublicDef(Select):
     if select.x + select.maxw + 2 > width:
       #TODO I don't know why but - 2 does not work.
       select.x = max(width - select.maxw - 3, 0)
-    select.setCursorY(select.cursory)
+    select.setCursorYNear(select.cursory)
     select.queueDraw()
 
   proc newSelect(ctx: JSContext; options: seq[SelectOption]; selected: int;
