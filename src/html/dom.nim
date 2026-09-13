@@ -102,13 +102,6 @@ type
     cacheId: int
     subtype: string
 
-  CachedSVG* {.final.} = ref object of StrMapItem
-    window*: Window #TODO weak?
-    shared*: seq[SVGSVGElement] # elements that serialize to the same string
-    bmp: NetworkBitmap
-    cacheId: int
-    imageId: int
-
   Window* = JSRef[WindowObj]
 
   WindowObj* {.pure, final.} = object of EventTargetObj
@@ -497,17 +490,6 @@ type
 
   HTMLElement* = JSRef[HTMLElementObj]
 
-  SVGElementObj {.pure.} = object of ElementObj
-
-  SVGElement = JSRef[SVGElementObj]
-
-  SVGSVGElement* = JSRef[SVGSVGElementObj]
-
-  SVGSVGElementObj {.pure, final.} = object of SVGElementObj
-    bitmap*: NetworkBitmap
-    parserDocument*: Document
-    fetchStarted: bool
-
   HTMLAnchorElement* = JSRef[HTMLAnchorElementObj]
 
   HTMLAnchorElementObj* {.pure, final.} = object of HTMLElementObj
@@ -647,7 +629,7 @@ proc parentElement*(node: Node): Element
 proc parentNodeHost(node: Node): Node
 proc previousSibling*(node: Node): Node
 proc serializeFragment(res: var string; node: Node; writeShadow: bool)
-proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
+proc serializeFragmentInner*(res: var string; child: Node; parentType: TagType;
   writeShadow: bool)
 
 proc getChildList*(node: ParentNode): seq[Node]
@@ -716,7 +698,6 @@ proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
 proc nextDisplayedElement(element: Element): Element
 proc nextElementSibling*(element: Element): Element
-proc outerHTML(element: Element): string
 proc postConnectionSteps(element: Element; ctx: JSContext)
 proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
@@ -784,7 +765,6 @@ proc getClassID*(t: typedesc[HTMLTemplateElement]): JSClassID
 proc getClassID*(t: typedesc[NodeList]): JSClassID
 proc getClassID*(t: typedesc[Node]): JSClassID
 proc getClassID*(t: typedesc[ParentNode]): JSClassID
-proc getClassID*(t: typedesc[SVGSVGElement]): JSClassID
 proc getClassID*(t: typedesc[Text]): JSClassID
 
 # Forward declaration hacks
@@ -812,6 +792,9 @@ proc getElementForm(element: Element): HTMLElement {.importc: "cha_$1".}
 proc getFormMethodAttr(element: Element; name: StaticAtom): string {.
   importc: "cha_$1".}
 proc newHTMLElementForm(tagType: TagType): HTMLElement {.importc: "cha_$1".}
+proc insertionStepsSVG(element: Element) {.importc: "cha_$1".}
+proc getBitmapSVG(element: Element): NetworkBitmap {.importc: "cha_$1".}
+proc newSVGElementInternal(tagType: TagType): Element {.importc: "cha_$1".}
 
 var TreeWalkerDef {.global, noinit.}: ChaClassDef
 
@@ -1101,7 +1084,7 @@ proc sheetLoaded(window: Window) =
   if window.bc != nil:
     sheetLoaded(window.bc)
 
-proc imageLoaded(window: Window) =
+proc imageLoaded*(window: Window) =
   inc window.loadedImageNum
   if window.bc != nil:
     imageLoaded(window.bc)
@@ -1262,7 +1245,7 @@ proc loadLink(window: Window; link: HTMLLinkElement) =
     inc window.remoteSheetNum
     window.loadSheet(link.asSheetElement, url, loadLinkFinish)
 
-proc getImageId(window: Window): int =
+proc getImageId*(window: Window): int =
   result = window.imageId
   inc window.imageId
 
@@ -1418,85 +1401,6 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
   inc window.remoteImageNum
   let request = newRequest(url, headers = headers)
   window.corsFetch(request, loadImage0, cachedURL)
-
-proc loadSVGFinish(opaque: RootRef; response: Response) =
-  let env = CachedSVG(opaque)
-  let window = move(env.window)
-  if response == nil: # no SVG module; give up
-    window.imageLoaded()
-    return
-  let loader = window.loader
-  # close immediately; all data we're interested in is in the headers.
-  loader.close(response)
-  let dims = response.headers.getFirst("Cha-Image-Dimensions")
-  let width = parseIntP(dims.until('x')).get(-1)
-  let height = parseIntP(dims.after('x')).get(-1)
-  if width < 0 or height < 0:
-    window.console.error("wrong Cha-Image-Dimensions in", $response.url)
-    window.imageLoaded()
-    return
-  let bitmap = NetworkBitmap(
-    width: width,
-    height: height,
-    cacheId: env.cacheId,
-    imageId: env.imageId,
-    contentType: "image/svg+xml",
-    vector: true
-  )
-  for svg in env.shared:
-    svg.bitmap = bitmap
-    svg.asElement.invalidate()
-  window.imageLoaded()
-
-proc loadSVG*(window: Window; svg: SVGSVGElement) =
-  if not window.settings.images:
-    if svg.bitmap != nil:
-      svg.asElement.invalidate()
-      svg.bitmap = nil
-    svg.fetchStarted = false
-    return
-  if svg.fetchStarted:
-    return
-  svg.fetchStarted = true
-  var s = svg.asElement.outerHTML
-  if s.len <= 4096: # try to dedupe if the SVG is small enough.
-    let item = CachedSVG(window.svgCache.getOrDefault(s))
-    if item != nil:
-      svg.bitmap = item.bmp
-      if svg.bitmap != nil: # already decoded
-        svg.asElement.invalidate()
-      else: # tell me when you're done
-        item.shared.add(svg)
-      return
-  let imageId = window.getImageId()
-  let loader = window.loader
-  let (ps, svgres) = loader.doPipeRequest("svg-" & $imageId)
-  if ps == nil:
-    return
-  let cacheId = loader.addCacheFile(svgres.outputId)
-  let res = ps.writeLoop(s)
-  ps.sclose()
-  if res.isErr:
-    return
-  let request = newRequest(
-    "img-codec+svg+xml:decode",
-    httpMethod = hmPost,
-    headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
-    body = RequestBody(t: rbtOutput, outputId: svgres.outputId),
-    internal = true
-  )
-  let env = CachedSVG(
-    window: window,
-    shared: @[svg],
-    cacheId: cacheId,
-    imageId: imageId
-  )
-  if s.len <= 4096:
-    env.s = move(s)
-    window.svgCache.put(env)
-  inc window.remoteImageNum
-  loader.fetch(request, loadSVGFinish, env)
-  loader.close(svgres)
 
 proc navigate*(window: Window; url: URL) =
   if window.bc != nil:
@@ -2283,7 +2187,7 @@ proc nextElementSiblingImpl(this: Node): Element =
       return element
   Element(nil)
 
-proc serializeFragmentInner(res: var string; child: Node; parentType: TagType;
+proc serializeFragmentInner*(res: var string; child: Node; parentType: TagType;
     writeShadow: bool) =
   if (let element = child as Element; element != nil):
     const LocalNamespace = [
@@ -3904,9 +3808,9 @@ jsClassPublicDef(Document):
     HTMLElement(nil)
 
   proc title*(document: Document): string {.jsfget.} =
-    let svg = document.documentElement as SVGSVGElement
-    let title = if svg != nil:
-      svg.asParentNode.findFirstChildOf(satTitle, satNamespaceSVG)
+    let root = document.documentElement
+    let title = if root != nil and root.tagType(satNamespaceSVG) == ttSvg:
+      root.asParentNode.findFirstChildOf(satTitle, satNamespaceSVG)
     else:
       document.findFirst(ttTitle).asElement
     if title != nil:
@@ -3916,22 +3820,24 @@ jsClassPublicDef(Document):
   proc setTitle(ctx: JSContext; document: Document; ds: DOMString) {.
       jsfset: "title".} =
     let root = document.documentElement
-    let svg = root as SVGSVGElement
-    var title = if svg != nil:
+    var title = if root != nil and root.tagType(satNamespaceSVG) == ttSvg:
       root.asParentNode.findFirstChildOf(satTitle, satNamespaceSVG)
     elif root != nil and root.namespaceURI == satNamespaceHTML:
       document.findFirst(ttTitle).asElement
     else:
       return
     if title == nil:
-      let namespace = if svg != nil: satNamespaceSVG else: satNamespaceHTML
-      let head = if svg != nil: svg.asElement else: document.head.asElement
+      let namespace = root.namespaceURI.toStaticAtom()
+      let head = if namespace == satNamespaceSVG:
+        root
+      else:
+        document.head.asElement
       if head != nil:
         title = document.newElement(satTitle.view(), namespace)
         if title != nil:
           var before = Node(nil)
-          if svg != nil:
-            before = svg.asParentNode.firstChild
+          if head == root:
+            before = root.asParentNode.firstChild
           head.asParentNode.insert(ctx, title.asNode, before)
     if title != nil:
       title.asParentNode.replaceAll(ctx, ds)
@@ -5415,14 +5321,8 @@ proc insertionSteps(element: Element): bool =
       style.updateSheet()
   of ttScript:
     return true
-  elif element.tagType(satNamespaceSVG) == ttSvg:
-    #TODO this doesn't work if JS adds descendants to the SVG tag
-    let svg = element as SVGSVGElement
-    let document = svg.asNode.document
-    if svg.parserDocument != document:
-      let window = document.window
-      if window != nil:
-        window.loadSVG(svg)
+  elif element.namespaceURI == satNamespaceSVG:
+    element.insertionStepsSVG()
   else:
     element.insertionStepsForm()
   false
@@ -5557,7 +5457,7 @@ proc getBitmap*(element: Element): NetworkBitmap =
       return bmp
     return nil
   elif element.tagType(satNamespaceSVG) == ttSvg:
-    return (element as SVGSVGElement).bitmap
+    return element.getBitmapSVG()
   else:
     return nil
 
@@ -5635,7 +5535,7 @@ jsClassPublicDef(Element):
     #TODO xml
     return element.asNode.serializeFragment(writeShadow = true)
 
-  proc outerHTML(element: Element): string {.jsfget.} =
+  proc outerHTML*(element: Element): string {.jsfget.} =
     #TODO xml
     result = ""
     result.serializeFragmentInner(element.asNode, ttUnknown,
@@ -6055,19 +5955,6 @@ jsClassPublicDef(Element):
 # AttrDummyElement
 jsClassDef(AttrDummyElement): # fake class
   jsextends ElementDef
-
-# XMLSerializer
-jsClassRaw(XMLSerializerDef, "XMLSerializer"):
-  proc newXMLSerializer(ctx: JSContext; ctor: JSValueConst): JSValue
-      {.jsctor2.} =
-    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
-
-  proc serializeToString(ctx: JSContext; this: JSValueConst; root: Node):
-      JSValue {.jsfunc.} =
-    #TODO ...yeah
-    var res = ""
-    res.serializeFragmentInner(root, ttUnknown, writeShadow = true)
-    ctx.toJS(res)
 
 # ShadowRoot
 proc globalCustomElements(this: ShadowRoot): CustomElementRegistry =
@@ -7721,12 +7608,6 @@ htmlClassRaw(HTMLMapElement)
 htmlClassRaw(HTMLDetailsElement)
 htmlClassRaw(HTMLEmbedElement)
 
-jsClassDef(SVGElement):
-  jsextends ElementDef
-
-jsClassPublicDef(SVGSVGElement):
-  jsextends SVGElementDef
-
 # this is here so that we have access to all class ids
 proc newHTMLElementInternal(tagType: TagType; document: Document):
     HTMLElement =
@@ -7839,10 +7720,7 @@ proc newElement(document: Document;
   let element = if namespaceURI == satNamespaceHTML:
     newHTMLElementInternal(tagType, document).asElement
   elif namespaceURI == satNamespaceSVG:
-    if tagType == ttSvg:
-      (jsNew SVGSVGElementObj()).asElement
-    else:
-      (jsNew SVGElementObj()).asElement
+    newSVGElementInternal(tagType)
   else:
     jsNew ElementObj()
   element.id = satUempty.view()
@@ -7983,8 +7861,6 @@ proc registerElements(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(HTMLDialogElementDef)
   # 69/127 (warning: the 128th interface won't fit in the top 7 bits of
   # the getter/setter magic)
-  ?ctx.registerClass(SVGElementDef)
-  ?ctx.registerClass(SVGSVGElementDef)
   if ctx.getOpaque() != nil:
     ?ctx.addConstructorAlias(newAudio, HTMLAudioElementDef.id, "Audio")
     ?ctx.addConstructorAlias(newImage, HTMLImageElementDef.id, "Image")
@@ -8053,7 +7929,6 @@ proc addDOMModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(NamedNodeMapDef)
   ?ctx.registerClass(CSSStyleDeclarationDef)
   ?ctx.registerClass(CustomElementRegistryDef)
-  ?ctx.registerClass(XMLSerializerDef)
   ?ctx.registerClass(ShadowRootDef)
   ?ctx.registerElements()
   let ctxOpaque = ctx.getOpaque()

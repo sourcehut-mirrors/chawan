@@ -22,6 +22,7 @@ import html/dom
 import html/env
 import html/event
 import html/form
+import html/xml
 import io/chafile
 import io/console
 import io/dynstream

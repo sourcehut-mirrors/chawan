@@ -17,6 +17,7 @@ import html/form
 import html/performance
 import html/script
 import html/storage
+import html/xml
 import html/xmlhttprequest
 import io/chafile
 import io/console
@@ -994,6 +995,7 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addDOMModule()
   ?ctx.addFormModule()
   ?ctx.addCanvasModule()
+  ?ctx.addXMLModule()
   ?ctx.addURLModule()
   ?ctx.addHTMLModule()
   ?ctx.addIntlModule()

@@ -11,6 +11,7 @@ import html/catom
 import html/dom
 import html/event
 import html/form
+import html/xml
 import js/fromjs
 import js/jsbind
 import js/jsref
