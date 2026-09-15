@@ -19,7 +19,6 @@ unreleased
 * add external.ask-download-dir option (can be overridden in siteconf)
 * rework keybinding API for select widget (there is a [select] section now)
 * retry connections with ipv6 if ipv4 resolves but connect() fails
-* reduce leaks from interned strings
 * reduce copying of strings between Nim <-> JS
 * reduce memory usage of CSS values & variables
 * more lenient CR parsing in HTTP (for compatibility)
@@ -59,6 +58,7 @@ unreleased
 * fix bytecode functions being returned from `config.page` etc. sometimes
 * fix table borders overprinting content in some cases
 * fix findPrevMark/findNextMark actions
+* fix leaks from interned strings
 
 0.4.0 (2026.05.17)
 

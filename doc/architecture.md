@@ -209,10 +209,11 @@ must sync our output to ensure the browser remains responsive:
    next frame in its place.  Repeat until the terminal catches up.
 
 This way, every time the terminal starts receiving a new frame, it is
-guaranteed that it's at most one frame behind.  Note that there is no
-backpressure here, which is not much of a problem right now, but it will be
-if we ever add something like animated GIFs (which could overwhelm the link
-with copious amounts of data).
+guaranteed that it's at most one frame behind.  Note that this only
+backpressures output, but not input; it's not really a problem right
+now, but it will be with things like animated GIFs (which would *not*
+overwhelm the link itself, but might spin the CPU at 100% despite the
+terminal not processing most of the frames).
 
 Input, meanwhile, is rather straightforward: we have a state machine
 (again, async), which parses the sequences a terminal might possibly

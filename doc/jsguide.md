@@ -748,7 +748,7 @@ a dummy created with `JS_NewContextRaw`, which uses minimal resources.
 #### The global object
 
 ...is a special case.  We aren't allowed to set the opaque for
-`JS_GetGlobalValue(ctx)`, because QuickJS already uses it for storing
+`JS_GetGlobalObject(ctx)`, because QuickJS already uses it for storing
 global variables.  So we do it in the following way:
 
 * Allocate a new Window foreign object.
