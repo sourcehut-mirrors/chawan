@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<title>AbortController test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const a = new AbortController();
+assertEquals(a.signal.reason, undefined);
+a.abort("test");
+assertEquals(a.signal.reason, "test");
+a.abort();
+assertEquals(a.signal.reason, "test");
+const b = new AbortController();
+b.abort();
+assertInstanceof(b.signal.reason, DOMException);
+b.abort("hi");
+assertInstanceof(b.signal.reason, DOMException);
+document.getElementById("x").textContent = "Success";
+</script>

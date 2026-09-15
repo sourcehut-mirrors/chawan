@@ -158,7 +158,6 @@ type
 
   AbortSignalObj {.pure, final.} = object of EventTargetObj
     reason: JSValueTraced
-    aborted: bool
     abortSteps: seq[JSObject]
     #TODO source/dependent signals
 
@@ -711,7 +710,7 @@ proc removeEventListenerData(ctx: JSContext; _: JSValueConst; argc: cint;
 proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
     capture, once, internal: bool; passive: Option[bool];
     callback: JSValueConst; signal: AbortSignal): Opt[void] =
-  if signal != nil and signal.aborted:
+  if signal != nil and not JS_IsUndefined(signal.reason):
     return ok()
   let passive = passive.get(defaultPassiveValue(eventType, target))
   if ctx.findEventListener(target, eventType, callback, capture) == nil:
@@ -1023,7 +1022,9 @@ jsClassDef(AbortSignal):
     ctx.addEventGetSet(classDef.id, satAbort)
 
   jsget AbortSignal, reason
-  jsget AbortSignal, aborted
+
+  proc aborted(this: AbortSignal): bool {.jsfget.} =
+    not JS_IsUndefined(this.reason)
 
   proc mark(rt: JSRuntime; this: AbortSignal; markFun: JS_MarkFunc) {.
       jsmark.} =
@@ -1052,8 +1053,8 @@ jsClassDef(AbortController):
       return AbortController(nil)
     jsNew AbortControllerObj(signal: signal)
 
-  proc abort(ctx: JSContext; this: AbortController; reason: JSValueConst):
-      JSValue {.jsfunc.} =
+  proc abort(ctx: JSContext; this: AbortController;
+      reason: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
     let signal = this.signal
     if not signal.aborted:
       signal.reason = ctx.toSignalReason(reason)
