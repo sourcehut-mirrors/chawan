@@ -1,16 +1,26 @@
 <!doctype html>
 <title>Hyperlink test</title>
-<a id=invalid>invalid</a>
+<base id=base>
+<a id=empty>empty</a>
 <a id=valid href='https://username:password@example.org/path?search#hash'>valid</a>
+<a id=invalid href='http://f:b'>invalid</a>
 <div id=x>Fail</div>
 <script src=asserts.js></script>
 <script>
 const invalid = document.getElementById("invalid");
-assertEquals(invalid.href, "");
+assertEquals(empty.href, "");
+assertEquals(empty.protocol, ":");
+assertEquals(empty.search, "");
+assertEquals(empty.hostname, "");
+assertEquals(empty.hash, "");
 assertEquals(invalid.protocol, ":");
+assertEquals(invalid.href, "http://f:b");
 assertEquals(invalid.search, "");
 assertEquals(invalid.hostname, "");
 assertEquals(invalid.hash, "");
+base.href = "https://example.org"
+assertEquals(base.href, "https://example.org/");
+base.remove();
 const valid = document.getElementById("valid");
 const url = new URL("https://username:password@example.org/path?search#hash");
 assertEquals(valid.protocol, "https:");
@@ -18,8 +28,9 @@ for (const x in ["href", "origin", "protocol", "username", "password", "host",
 	"hostname", "port", "pathname", "search", "hash"]) {
 	assertEquals(valid[x], url[x]);
 }
-invalid.remove();
+empty.remove();
 valid.remove();
+invalid.remove();
 const a = document.createElement("a");
 a.href = "https://example.org";
 assertEquals(a + "", "https://example.org/");

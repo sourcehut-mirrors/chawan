@@ -6631,6 +6631,8 @@ proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
   if url := element.reinitURL():
     let href = ?trace(ctx.toJS(url))
     return ctx.getProperty(href.v, magic)
+  if magic == jstHref:
+    return ctx.toJS(element.attr(satHref))
   if magic == jstProtocol:
     return ctx.toJS(":")
   return ctx.toJS("")
@@ -7865,6 +7867,7 @@ proc registerElements(ctx: JSContext): Opt[void] =
     ?ctx.addConstructorAlias(newAudio, HTMLAudioElementDef.id, "Audio")
     ?ctx.addConstructorAlias(newImage, HTMLImageElementDef.id, "Image")
     ?ctx.addHyperlinkUtils(HTMLAnchorElementDef.id)
+    ?ctx.addHyperlinkUtils(HTMLBaseElementDef.id)
     ?ctx.reflectAttributes(HTMLAnchorElementDef.id, raTarget, raName, raRel,
       raType)
     ?ctx.reflectAttributes(HTMLOptGroupElementDef.id, raDisabled)
