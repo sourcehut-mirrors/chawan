@@ -20,6 +20,8 @@ export CSSPropertyType
 
 type
   CSSValueType* = enum
+    cvtAlignItems = "alignItems"
+    cvtAlignSelf = "alignSelf"
     cvtBgcolorIsCanvas = "bgcolorIsCanvas"
     cvtBorderCollapse = "borderCollapse"
     cvtBorderStyle = "borderStyle"
@@ -263,6 +265,22 @@ type
     JustifyContentSpaceBetween = "space-between"
     JustifyContentSpaceAround = "space-around"
 
+  CSSAlignSelf = enum
+    AlignSelfAuto = "auto"
+    AlignSelfStretch = "stretch"
+    AlignSelfFlexStart = "flex-start"
+    AlignSelfFlexEnd = "flex-end"
+    AlignSelfCenter = "center"
+    AlignSelfBaseline = "baseline"
+
+  CSSAlignItems* = enum
+    # assumed to match CSSAlignSelf besides auto
+    AlignItemsStretch = "stretch"
+    AlignItemsFlexStart = "flex-start"
+    AlignItemsFlexEnd = "flex-end"
+    AlignItemsCenter = "center"
+    AlignItemsBaseline = "baseline"
+
 type
   # CSSLength may represent:
   # * if isNaN(px) and isNaN(perc), the ident "auto"
@@ -299,6 +317,8 @@ type
 
   CSSValueBit* {.union.} = object
     dummy*: uint8
+    alignItems*: CSSAlignItems
+    alignSelf*: CSSAlignSelf
     bgcolorIsCanvas*: bool
     borderCollapse*: CSSBorderCollapse
     borderStyle*: CSSBorderStyle
@@ -482,6 +502,8 @@ static:
 
 const ValueTypes = [
   # bits
+  cptAlignItems: cvtAlignItems,
+  cptAlignSelf: cvtAlignSelf,
   cptBgcolorIsCanvas: cvtBgcolorIsCanvas,
   cptBorderBottomStyle: cvtBorderStyle,
   cptBorderCollapse: cvtBorderCollapse,
@@ -886,6 +908,8 @@ proc serialize(val: CSSValueWord; t: CSSValueType): string =
 
 proc serialize(val: CSSValueBit; t: CSSValueType): string =
   case t
+  of cvtAlignItems: return $val.alignItems
+  of cvtAlignSelf: return $val.alignSelf
   of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
   of cvtBorderCollapse: return $val.borderCollapse
   of cvtBorderStyle: return $val.borderStyle
@@ -2125,6 +2149,16 @@ proc parseDeclWithVar*(p: CSSWidePropertyType; value: openArray[CSSToken]):
   let cvar = CSSVarEntry(items: move(items))
   return ok(CSSComputedEntry(et: ceVar, p: p, cvar: cvar))
 
+proc toAlignItems(val: CSSAlignSelf): CSSAlignItems =
+  CSSAlignItems(int(val) - 1)
+
+proc getAlignSelf*(computed: CSSValues; alignItems: CSSAlignItems):
+    CSSAlignItems =
+  let alignSelf = computed{"align-self"}
+  if alignSelf == AlignSelfAuto:
+    return alignItems
+  alignSelf.toAlignItems()
+
 proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
     entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
   ?ctx.skipBlanksCheckHas()
@@ -2187,6 +2221,12 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   of cvtOverflow: makeEntry(t, ?parseIdent[CSSOverflow](ctx))
   of cvtLineWidth: makeEntry(t, ?ctx.parseLineWidth(attrs))
   of cvtJustifyContent: makeEntry(t, ?parseIdent[CSSJustifyContent](ctx))
+  of cvtAlignSelf: makeEntry(t, ?parseIdent[CSSAlignSelf](ctx))
+  of cvtAlignItems:
+    let x = ?parseIdent[CSSAlignSelf](ctx)
+    if x == AlignSelfAuto:
+      return err()
+    makeEntry(t, x.toAlignItems())
   ok()
 
 proc getInitialColor(t: CSSPropertyType): CSSColor =

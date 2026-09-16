@@ -524,7 +524,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: Space; box: BlockBox):
   return input
 
 proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
-    box: BlockBox): LayoutInput =
+    box: BlockBox; alignItems: CSSAlignItems): LayoutInput =
   let computed = box.computed
   let padding = lctx.resolvePadding(space.w, computed)
   let paddingSum = padding.sum()
@@ -547,14 +547,18 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
     if olength.isPx:
       input.bounds.mi[odim].start = max(u, input.bounds.mi[odim].start)
       input.bounds.mi[odim].send = min(u, input.bounds.mi[odim].send)
-  elif input.space[odim].t == scStretch:
-    hasCross = true
-    let u = input.space[odim].u - input.margin[odim].sum() -
-      paddingSum[odim] - input.borderSum(odim, lctx)
-    input.space[odim] = stretch(minClamp(u, input.bounds.a[odim]))
-    if computed.getLength(MarginStartMap[odim]).auto or
-        computed.getLength(MarginEndMap[odim]).auto:
-      input.space[odim].t = scFitContent
+  else:
+    let crossAlign = computed.getAlignSelf(alignItems)
+    if crossAlign != AlignItemsStretch:
+      input.space[odim] = maxContent()
+    elif input.space[odim].t == scStretch:
+      hasCross = true
+      let u = input.space[odim].u - input.margin[odim].sum() -
+        paddingSum[odim] - input.borderSum(odim, lctx)
+      input.space[odim] = stretch(minClamp(u, input.bounds.a[odim]))
+      if computed.getLength(MarginStartMap[odim]).auto or
+          computed.getLength(MarginEndMap[odim]).auto:
+        input.space[odim].t = scFitContent
   let length = computed.getLength(SizeMap[dim])
   if length.canpx(space[dim]):
     let u = length.spx(space[dim], computed, paddingSum[dim])
@@ -2967,6 +2971,7 @@ type
     reverse: bool
     dim: DimensionType # main dimension
     baselineSet: bool
+    alignItems: CSSAlignItems
     justifyContent: CSSJustifyContent
 
   FlexMainContext = object
@@ -3061,6 +3066,36 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       lctx.layoutFlexItem(child, mctx.pending[i].input)
       mctx.updateMaxSizes(child, mctx.pending[i].input, dim, lctx)
 
+proc stretchItem(fctx: var FlexContext; it: var FlexPendingItem; h: LUnit) =
+  let lctx = fctx.lctx
+  let odim = fctx.dim.opposite()
+  if it.input.space[odim].t != scStretch:
+    # If the box's available height was indefinite, it is possible that
+    # we can compute it now.
+    let oborder = it.child.input.borderSum(odim, lctx)
+    let paddingSum = it.input.padding.sum()
+    let computed = it.child.computed
+    let olength = computed.getLength(SizeMap[odim])
+    var space = fctx.space
+    space[odim] = stretch(h)
+    it.input.bounds = lctx.resolveBounds(space, paddingSum, computed,
+      replaced = false, flexItem = true)
+    let u = if olength.canpx(stretch(h)):
+      # We couldn't compute the initial size because it was fit-content
+      # and this is a percentage cross size.
+      olength.spx(stretch(h), computed, paddingSum[odim])
+    else:
+      # If the max height is greater than our height, then take max height
+      # instead.
+      var tmp = h - it.input.margin[odim].sum() - paddingSum[odim] - oborder
+      if odim == dtVertical:
+        # Exclude the bottom margin; space only applies to the actual
+        # height.
+        tmp -= it.child.state.marginTodo.sum()
+      tmp
+    it.input.space[odim] = stretch(u.minClamp(it.input.bounds.a[odim]))
+    lctx.layoutFlexItem(it.child, it.input)
+
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     input: LayoutInput) =
   let dim = fctx.dim
@@ -3080,6 +3115,10 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     mctx.redistributeMainSize(diff, fwtGrow, dim, lctx)
   let maxMarginSum = mctx.maxCrossMargin.sum()
   let h = (mctx.maxCrossSize + maxMarginSum).minClamp(input.bounds.a[odim])
+  let hclamp = if fctx.space[odim].t in {scStretch, scFitContent}:
+    fctx.space[odim].u
+  else:
+    h
   var intr = size(w = 0'lu, h = 0'lu)
   var offset = fctx.offset
   var diff = if fctx.space[dim].t == scStretch:
@@ -3096,32 +3135,17 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   of JustifyContentCenter: offset[dim] += diff div 2'lu
   of JustifyContentSpaceBetween, JustifyContentSpaceAround: discard
   for it in mctx.pending.mitems:
-    let oborder = it.child.input.borderSum(odim, lctx)
-    if it.input.space[odim].t != scStretch:
-      # If the box's available height was indefinite, it is possible that
-      # we can compute it now.
-      let paddingSum = it.input.padding.sum()
-      let computed = it.child.computed
-      let olength = computed.getLength(SizeMap[odim])
-      var space = fctx.space
-      space[odim] = stretch(h)
-      it.input.bounds = lctx.resolveBounds(space, paddingSum, computed,
-        replaced = false, flexItem = true)
-      let u = if olength.canpx(stretch(h)):
-        # We couldn't compute the initial size because it was fit-content
-        # and this is a percentage cross size.
-        olength.spx(stretch(h), computed, paddingSum[odim])
-      else:
-        # If the max height is greater than our height, then take max height
-        # instead.
-        var tmp = h - it.input.margin[odim].sum() - paddingSum[odim] - oborder
-        if odim == dtVertical:
-          # Exclude the bottom margin; space only applies to the actual
-          # height.
-          tmp -= it.child.state.marginTodo.sum()
-        tmp
-      it.input.space[odim] = stretch(u.minClamp(it.input.bounds.a[odim]))
-      lctx.layoutFlexItem(it.child, it.input)
+    let crossAlign = it.child.computed.getAlignSelf(fctx.alignItems)
+    case crossAlign
+    of AlignItemsStretch: fctx.stretchItem(it, h)
+    of AlignItemsFlexStart: discard
+    of AlignItemsCenter:
+      it.child.state.offset[odim] += hclamp div 2'lu -
+        it.child.outerSize(odim, it.input, lctx) div 2'lu
+    of AlignItemsFlexEnd:
+      it.child.state.offset[odim] += hclamp -
+        it.child.outerSize(odim, it.input, lctx)
+    of AlignItemsBaseline: discard #TODO
     var mainMarginStart = it.input.margin[dim].start
     if it.child.computed.getLength(MarginStartMap[dim]).auto:
       mainMarginStart = marginDiff
@@ -3181,7 +3205,8 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
   var parentSpace = fctx.space
   if dim == dtVertical or fctx.canWrap:
     parentSpace.h = maxContent()
-  var childSizes = lctx.resolveFlexItemSizes(parentSpace, dim, child)
+  var childSizes = lctx.resolveFlexItemSizes(parentSpace, dim, child,
+    fctx.alignItems)
   let flexBasis = child.computed{"flex-basis"}
   if not flexBasis.auto and parentSpace[dim].isDefinite:
     childSizes.space[dim] = stretch(flexBasis.spx(parentSpace[dim],
@@ -3220,6 +3245,7 @@ proc initFlexContext(lctx: LayoutContext; computed: CSSValues;
     canWrap: computed{"flex-wrap"} != FlexWrapNowrap,
     reverse: computed{"flex-direction"} in FlexReverse,
     justifyContent: computed{"justify-content"},
+    alignItems: computed{"align-items"},
     dim: dim,
   )
 

@@ -268,6 +268,8 @@ type
     # primitive/enum properties: stored as byte
     # (when adding a new property, sort the individual lists, and update
     # LastBitPropType/LastWordPropType if needed.)
+    cptAlignItems = "align-items"
+    cptAlignSelf = "align-self"
     cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
     cptBorderBottomStyle = "border-bottom-style"
     cptBorderCollapse = "border-collapse"
