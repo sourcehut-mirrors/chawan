@@ -33,7 +33,6 @@ assertEquals(new URL("https://example.org//") + "", "https://example.org//");
 assertEquals(new URL("https://example.com/[]?[]#[]") + "", "https://example.com/[]?[]#[]");
 assertEquals(new URL("https://example/%?%#%") + "", "https://example/%?%#%");
 assertEquals(new URL("https://example/%25?%25#%25") + "", "https://example/%25?%25#%25");
-assertThrows(() => new URL("https:example\r.org"), TypeError);
 assertEquals(new URL("  https:exa\tmple\n.org\n/  ") + "", "https://example.org/");
 assertEquals(new URL("  https:exa\tmple.org\n:\n2\n4\n5\n2\n\n/  ") + "", "https://example.org:2452/");
 assertEquals(new URL("  h\nt\tt\np\ts\n:\t/\n/\te\nx\ta\nm\tp\nl\te\n/\tp\na\tt\n\nh\t?\nq\tu\ne\tr\ny\t#\nf\tr\na\tg\nm\te\nnt") + "", "https://example/path?query#fragment");
@@ -58,14 +57,12 @@ assertEquals(new URL("https://あああ") + "", "https://xn--l8jaa/");
 assertEquals(new URL("https://\u00DF.example") + "", "https://xn--zca.example/");
 assertEquals(new URL("https://\u03C2.example") + "", "https://xn--3xa.example/");
 assertEquals(new URL("test://") + "", "test://");
-assertThrows(() => new URL("https://xn--ta.example"), TypeError);
 assertThrows(() => new URL("https://\u{2F800}\u0093.example"), TypeError);
 assertThrows(() => new URL("https://\u202D.example"), TypeError);
 assertThrows(() => new URL("https://\u200C.example"), TypeError);
 assertThrows(() => new URL("https://\u200D.example"), TypeError);
 assertThrows(() => new URL("https://\uFFFC.example"), TypeError);
 assertThrows(() => new URL("https://\uFFFD.example"), TypeError);
-assertThrows(() => new URL("https://xn--"), TypeError);
 assertEquals(new URL("https://いろは-にほへと") + "", "https://xn----07t3els0dua4l/");
 assertEquals(new URL("https://xn----07t3els0dua4l/") + "", "https://xn----07t3els0dua4l/");
 assertEquals(new URL("file:/test") + "", "file:///test");
@@ -107,6 +104,21 @@ assertThrows(() => new URL("https://user:pass@"), TypeError);
 assertThrows(() => new URL("https://example.org:70000"), TypeError);
 assertThrows(() => new URL("https://example.org:7z"), TypeError);
 assertThrows(() => new URL("https://example.org", null), TypeError);
+assertThrows(() => new URL("https://exa  mple.org"), TypeError);
+assertThrows(() => new URL("test://:/"), TypeError);
+assertThrows(() => new URL("https://example\u0002.org/"), TypeError);
+assertThrows(() => new URL("https://example\u007f.org/"), TypeError);
+assertThrows(() => new URL("https://..0."), TypeError);
+assertEquals(new URL("", "https://example.org/foo") + "", "https://example.org/foo");
+assertEquals(new URL(" ", "https://example.org/foo") + "", "https://example.org/foo");
+assertEquals(new URL("https://exam\u200b\u2060\ufeffple.org") + "", "https://example.org/");
+assertEquals(new URL("https://exam\rple.org") + "", "https://example.org/");
+assertEquals(new URL("https://../") + "", "https://../");
+assertEquals(new URL("https://0x.0x.0x.0/") + "", "https://0.0.0.0/");
+assertEquals(new URL("", "file:///test?test#test") + "", "file:///test?test");
+assertEquals(new URL("https://xn--bad.example") + "", "https://xn--bad.example/");
+assertEquals(new URL("https://xn--ta.example") + "", "https://xn--ta.example/");
+assertEquals(new URL("https://xn--") + "", "https://xn--/");
 {
 	const x = new URL("file:/test");
 	x.protocol = "abcd";
@@ -209,6 +221,12 @@ assertThrows(() => new URL("https://example.org", null), TypeError);
 	assertEquals(decodeURIComponent(url.pathname), "/\uFFFDaaaaa");
 	url.pathname = "aaa\uD800aaaaa";
 	assertEquals(decodeURIComponent(url.pathname), "/aaa\uFFFDaaaaa");
+}
+{
+	const url = new URL("https://example.org/?#");
+	assertEquals(url + "", "https://example.org/?#");
+	assertEquals(url.search, "");
+	assertEquals(url.hash, "");
 }
 document.getElementById("x").textContent = "Success";
 </script>

@@ -94,6 +94,7 @@ type
     lurIDSU = "IDSU"
     lurIDSB = "IDSB"
     lurIDST = "IDST"
+    lurDI = "DI"
 
   LUContextObj = object
     crs: array[LURangeType, CharRange]
@@ -158,5 +159,9 @@ proc isIDSOperator*(ctx: LUContext; u: uint32): bool =
   ctx.initProp(lurIDSB)
   ctx.initProp(lurIDST)
   return u in ctx.crs[lurIDSU] or u in ctx.crs[lurIDSB] or u in ctx.crs[lurIDST]
+
+proc isDefaultIgnorable*(ctx: LUContext; u: uint32): bool =
+  ctx.initProp(lurDI)
+  return u in ctx.crs[lurDI]
 
 {.pop.} # raises: []

@@ -212,6 +212,8 @@ proc parseIpv4Number(s: openArray[char]): Opt[uint32] =
     else:
       i = 1
       R = 8
+    if i == s.len:
+      return ok(0)
   return parseUInt32Base(s.toOpenArray(i, s.high), radix = R)
 
 proc parseIpv4(input: string): Opt[uint32] =
@@ -247,7 +249,7 @@ const ForbiddenHostChars = {
   '\0', '\t', '\n', '\r', ' ', '#', '/', ':', '<', '>', '?', '@', '[',
   '\\', ']', '^', '|'
 }
-const ForbiddenDomainChars = ForbiddenHostChars + {'%'}
+const ForbiddenDomainChars = ForbiddenHostChars + Controls + {'%'}
 proc opaqueParseHost(input: string; schemeType: SchemeType;
     hostType: var HostType): string =
   var o = ""
@@ -265,6 +267,8 @@ proc endsInNumber(input: string): bool =
   var i = input.high
   if input[i] == '.':
     dec i
+  if i < 0 or input[i] == '.': # empty part
+    return false
   # if no period, start from 0
   i = input.rfind('.', start = 0, last = i) + 1
   if i + 1 < input.len and input[i] == '0' and input[i + 1] in {'x', 'X'}:
@@ -401,18 +405,22 @@ proc mapIdna(ctx: LUContext; mapped: var seq[uint32]; u: uint32): Opt[void] =
   of 0xFF0E, 0x3002, 0xFF61: mapped &= 0x2E # dot-likes map to period
   of 0xDF, 0x1E9E: mapped &= 0xDF # scharfes S
   of 0x03C2: mapped &= u # sigma maps to itself
+  of 0x200C, 0x200D: return err() # ZWJ/ZWNJ maps to itself & is GC other
   elif ctx.isBidiControl(u): return err() # bidi_control is disallowed
   else:
-    var res {.noinit.}: array[LRE_CC_RES_LEN_MAX, uint32]
-    let p = cast[ptr UncheckedArray[uint32]](addr res[0])
-    let len = lre_case_conv(p, u, 2) # case fold
-    let mapping = res.toOpenArray(0, len - 1).normalize(UNICODE_NFKC)
-    for mu in mapping:
-      if mu == 0xFFFC or mu == 0xFFFD or mu in 0xE0001u32..0xE007Fu32:
-        return err() # base exclusion set
-      if ctx.isIDSOperator(mu) or ctx.isWhiteSpace(mu) or ctx.isOther(mu):
-        return err() # not in base valid set
-    mapped &= mapping
+    let norm = [u].normalize(UNICODE_NFKC)
+    for nu in norm:
+      var res {.noinit.}: array[LRE_CC_RES_LEN_MAX, uint32]
+      let p = cast[ptr UncheckedArray[uint32]](addr res[0])
+      let len = lre_case_conv(p, nu, 2) # case fold
+      for mu in res.toOpenArray(0, len - 1):
+        if ctx.isDefaultIgnorable(mu):
+          continue # NFKC_CF
+        if mu == 0xFFFC or mu == 0xFFFD or mu in 0xE0001u32..0xE007Fu32:
+          return err() # base exclusion set
+        if ctx.isIDSOperator(mu) or ctx.isWhiteSpace(mu) or ctx.isOther(mu):
+          return err() # not in base valid set
+        mapped &= mu
   ok()
 
 proc processIdna(str: string; beStrict: bool): string =
@@ -430,7 +438,6 @@ proc processIdna(str: string; beStrict: bool): string =
   mapped = mapped.normalize()
   if mapped.len == 0:
     return ""
-  let luctx = LUContext()
   var labels = ""
   var first = true
   for label in mapped.toUTF8().split('.'):
@@ -440,7 +447,7 @@ proc processIdna(str: string; beStrict: bool): string =
         return ""
       let x1 = x0.get.normalize()
       # CheckHyphens is false
-      if x0.get != x1 or x1.len > 0 and luctx.isMark(x1[0]):
+      if x0.get != x1 or x1.len > 0 and ctx.isMark(x1[0]):
         return "" #error
       for u in x1:
         if u == uint32('.'):
@@ -493,10 +500,11 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
   move(labels)
 
 proc domainToAscii(domain: string; beStrict: bool): string =
-  result = domain.toLowerAscii()
-  if beStrict or result.startsWith("xn--") or result.find(".xn--") != -1 or
-      NonAscii in result:
-    result = domain.unicodeToAscii(beStrict)
+  var res = domain.toLowerAscii()
+  if beStrict or NonAscii in domain:
+    if res.startsWith("xn--") or result.find(".xn--") != -1 or NonAscii in res:
+      res = domain.unicodeToAscii(beStrict)
+  move(res)
 
 proc parseHost*(input: string; schemeType: SchemeType; hostType: var HostType):
     string =
@@ -605,11 +613,14 @@ proc parseRelative(input: openArray[char]; pointer: var int;
   url.pathname = base.pathname
   url.opaquePath = base.opaquePath
   url.search = base.search
-  if pointer < input.len and input[pointer] == '?':
+  if pointer >= input.len:
+    return usDone
+  let c = input[pointer]
+  if c == '?':
     url.search = "?"
     inc pointer
     return usQuery
-  if pointer < input.len and input[pointer] == '#':
+  if c == '#':
     url.hash = "#"
     inc pointer
     return usFragment
@@ -770,7 +781,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; url: URL;
   while pointer < input.len:
     let c = input[pointer]
     if c == ':' and not insideBrackets:
-      if override and state == usHostname:
+      if buffer == "" or override and state == usHostname:
         return usFail
       var t = htNone
       let hostname = parseHost(buffer, url.schemeType, t)
@@ -865,22 +876,23 @@ proc parseFile(input: openArray[char]; pointer: var int; base, url: URL;
     url.pathname = base.pathname
     url.opaquePath = base.opaquePath
     url.search = base.search
-    if pointer < input.len:
-      let c = input[pointer]
-      if c == '?':
-        url.search = "?"
-        inc pointer
-        return usQuery
-      elif c == '#':
-        url.hash = "#"
-        inc pointer
-        return usFragment
+    if pointer >= input.len:
+      return usDone
+    let c = input[pointer]
+    if c == '?':
+      url.search = "?"
+      inc pointer
+      return usQuery
+    elif c == '#':
+      url.hash = "#"
+      inc pointer
+      return usFragment
+    else:
+      url.search = ""
+      if not input.startsWithWinDriveLetter(pointer):
+        url.shortenPath()
       else:
-        url.search = ""
-        if not input.startsWithWinDriveLetter(pointer):
-          url.shortenPath()
-        else:
-          url.pathname = ""
+        url.pathname = ""
   return usPath
 
 proc parsePathStart(input: openArray[char]; pointer: var int; url: URL;
@@ -992,7 +1004,7 @@ proc parseQuery(input: openArray[char]; pointer: var int; url: URL;
 proc parseURLImpl(input: openArray[char]; base, url: URL;
     state: URLState; override: bool): URLState =
   var pointer = 0
-  let input = input.deleteChars({'\n', '\t'})
+  let input = input.deleteChars({'\r', '\n', '\t'})
   var state = state
   if state == usSchemeStart:
     state = input.parseSchemeStart(pointer, base, url, override)
@@ -1020,10 +1032,11 @@ proc parseURLImpl(input: openArray[char]; base, url: URL;
 proc parseURL0*(input: openArray[char]; base = URL(nil)): URL =
   let url = jsNew URLObj(port: -1)
   const NoStrip = AllChars - C0Controls - {' '}
-  let starti0 = input.find(NoStrip)
-  let starti = if starti0 == -1: 0 else: starti0
-  let endi0 = input.rfind(NoStrip)
-  let endi = if endi0 == -1: input.high else: endi0
+  var starti = input.find(NoStrip)
+  var endi = input.rfind(NoStrip)
+  if starti < 0:
+    starti = 0
+    endi = -1
   if input.toOpenArray(starti, endi).parseURLImpl(base, url, usSchemeStart,
       override = false) == usFail:
     return URL(nil)
@@ -1341,8 +1354,6 @@ jsClassPublicDef(URL):
   jsget URL, password
   jsget URL, hostname
   jsget URL, pathname
-  jsget URL, search
-  jsget URL, hash
 
   proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
       Opt[URL] {.jsctor.} =
@@ -1442,6 +1453,11 @@ jsClassPublicDef(URL):
       url.pathname = ""
       parseURL1(s, url, usPathStart)
 
+  proc search(ctx: JSContext; url: URL): JSValue {.jsfget.} =
+    if url.search.len <= 1:
+      return ctx.toJS("")
+    ctx.toJS(url.search)
+
   proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
     if s.len <= 0:
       url.search = ""
@@ -1453,6 +1469,11 @@ jsClassPublicDef(URL):
     parseURL1(s, url, usQuery)
     if url.searchParamsInternal != nil:
       url.searchParamsInternal.list = parseFromURLEncoded(s)
+
+  proc hash(ctx: JSContext; url: URL): JSValue {.jsfget.} =
+    if url.hash.len <= 1:
+      return ctx.toJS("")
+    ctx.toJS(url.hash)
 
   proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
     if s.len <= 0:
