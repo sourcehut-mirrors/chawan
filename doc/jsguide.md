@@ -31,12 +31,17 @@ import js/jsref
 type
   MyClass = JSRef[MyClassObj]
 
-  MyClassObj {.pure.} = object
+  MyClassObj {.pure.} = object of JSRootObj
+    someField: int
+
+  # or, if not inherited:
+  MyClassObj = object
     someField: int
 ```
 
-Note the `.pure` field; this is necessary for Nim 1.6.14 to generate
-correct code.
+The `.pure` pragma is necessary for Nim 1.6.14 to generate correct code if
+the object is derived of another (in this case, `JSRootObj`).  However, it
+can be omitted if the object is not derived from any other object.
 
 Constructing such an object is performed using the `jsNew` template:
 

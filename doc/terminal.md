@@ -121,4 +121,4 @@ fully overlap.  You can test whether a charset is supported using
 
 ## See also
 
-[**cha**](cha.md)(1)
+[**cha**](cha.md)(1), [**cha-image**](image.md)(7)

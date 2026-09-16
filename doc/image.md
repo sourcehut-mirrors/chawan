@@ -202,9 +202,9 @@ stdout is (currently) a file in the tmp directory for:
 * decode stdout, always
 * encode stdin, always
 
-This makes it possible to [mmap](man:mmap(3)) stdin/stdout instead of
-streaming through them with [read](man:read(3)) and [write](man:write(3)).
-When doing this, mind the following:
+This makes it possible to [**mmap**](man:mmap(3))(3) stdin/stdout
+instead of streaming through them with [**read**](man:read(3))(3) and
+[**write**](man:write(3))(3).  When doing this, mind the following:
 
 * When reading, you must check your initial position in the file with
   [lseek](man:lseek(3)).

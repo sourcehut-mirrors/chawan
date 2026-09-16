@@ -140,8 +140,8 @@ If you're interested in modifying the code:
 [w3m](https://sr.ht/~rkta/w3m) has been the main inspiration for Chawan;
 although the two do not share code, the UI and feature set is similar.
 
-[Ferus](https://github.com/ferus-web/ferus) is a separate graphical browser
-engine written in Nim, which uses Chawan's HTML parser.
+Some mailcap extensions, together with the browsecap facility, were
+borrowed from its fork [w3mmee](https://pub.ks-and-ks.ne.jp/prog/w3mmee/).
 
 ## License
 
