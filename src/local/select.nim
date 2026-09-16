@@ -7,8 +7,8 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/cell
-import types/opt
+import css/cell
+import utils/opt
 import utils/lrewrap
 import utils/luwrap
 import utils/strwidth

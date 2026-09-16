@@ -40,6 +40,14 @@ type
     prefersDark*: bool # prefers-color-scheme accepts "dark" (not "light")
     colorMode*: ColorMode
 
+  NetworkBitmap* = ref object
+    width*: int
+    height*: int
+    cacheId*: int
+    imageId*: int
+    vector*: bool # not a bitmap?
+    contentType*: string
+
 let dummyAttrs* {.global.} = WindowAttributes(
   width: 80,
   height: 24,

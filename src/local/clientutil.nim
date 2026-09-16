@@ -11,9 +11,9 @@ import js/jsref
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/blob
-import types/opt
-import types/url
+import server/blob
+import utils/opt
+import server/url
 import utils/myposix
 import utils/strwidth
 import utils/twtstr

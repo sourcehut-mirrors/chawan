@@ -9,10 +9,10 @@ import io/chafile
 import io/dynstream
 import js/jsref
 import js/libregexp
-import types/opt
-import types/url
+import server/url
 import utils/lrewrap
 import utils/myposix
+import utils/opt
 import utils/tabutil
 import utils/twtstr
 

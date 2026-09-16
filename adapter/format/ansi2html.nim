@@ -3,10 +3,10 @@
 import std/os
 import std/posix
 
+import css/color
 import io/chafile
 import io/dynstream
-import types/color
-import types/opt
+import utils/opt
 import utils/twtstr
 
 type

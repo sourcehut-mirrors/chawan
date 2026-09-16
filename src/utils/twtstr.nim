@@ -4,7 +4,7 @@ import std/algorithm
 import std/math
 import std/posix
 
-import types/opt
+import utils/opt
 
 const AllChars* = {char.low..char.high}
 const C0Controls* = {'\0'..'\x1F'}

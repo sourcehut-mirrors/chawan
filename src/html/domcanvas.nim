@@ -2,6 +2,7 @@
 
 import std/math
 
+import config/conftypes
 import html/domexception
 import html/event
 import io/dynstream
@@ -16,10 +17,9 @@ import js/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import types/bitmap
-import types/color
-import types/opt
-import types/path
+import css/color
+import utils/opt
+import html/path
 import utils/strwidth
 import utils/twtstr
 

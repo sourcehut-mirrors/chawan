@@ -3,7 +3,7 @@
 import std/algorithm
 
 import io/chafile
-import types/opt
+import utils/opt
 import utils/tabutil
 import utils/twtstr
 

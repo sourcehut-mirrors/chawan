@@ -41,12 +41,11 @@ import server/forkserver
 import server/headers
 import server/loaderiface
 import server/request
-import types/bitmap
-import types/blob
-import types/cell
-import types/color
-import types/opt
-import types/url
+import server/blob
+import css/cell
+import css/color
+import utils/opt
+import server/url
 import utils/lrewrap
 import utils/luwrap
 import utils/myposix

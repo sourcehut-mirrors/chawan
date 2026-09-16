@@ -16,7 +16,7 @@ import js/jsutils
 import js/libunicode
 import js/quickjs
 import js/tojs
-import types/opt
+import utils/opt
 import utils/luwrap
 import utils/twtstr
 

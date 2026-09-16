@@ -30,7 +30,7 @@ import local/term
 import server/bufferiface
 import server/forkserver
 import server/loaderiface
-import types/opt
+import utils/opt
 import utils/myposix
 import utils/sandbox
 import utils/strwidth

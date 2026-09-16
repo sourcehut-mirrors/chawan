@@ -3,6 +3,7 @@
 {.push raises: [].}
 
 import chame/tags
+import config/conftypes
 import html/dom
 import io/console
 import io/dynstream
@@ -14,9 +15,8 @@ import js/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import types/bitmap
-import types/opt
-import types/url
+import utils/opt
+import server/url
 import utils/tabutil
 import utils/twtstr
 

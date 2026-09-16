@@ -38,7 +38,7 @@ import js/jsref
 import js/jstypes
 import js/jsutils
 import js/quickjs
-import types/opt
+import utils/opt
 
 # Convert Nim types to the corresponding JavaScript type.
 proc toJS*(ctx: JSContext; s: string): JSValue

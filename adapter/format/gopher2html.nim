@@ -3,7 +3,7 @@
 import std/os
 
 import io/chafile
-import types/opt
+import utils/opt
 import utils/twtstr
 
 proc getField(line: string; i: var int): string =

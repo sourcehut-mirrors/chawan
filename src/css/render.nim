@@ -5,9 +5,8 @@ import css/box
 import css/cssvalues
 import css/lunit
 import html/dom
-import types/bitmap
-import types/cell
-import types/color
+import css/cell
+import css/color
 import utils/strwidth
 import utils/twtstr
 

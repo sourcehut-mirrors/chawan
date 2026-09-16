@@ -5,7 +5,7 @@
 import std/posix
 
 import io/dynstream
-import types/opt
+import utils/opt
 import utils/twtstr
 
 type

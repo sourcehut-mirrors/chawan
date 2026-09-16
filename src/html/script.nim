@@ -7,8 +7,8 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import server/headers
-import types/opt
-import types/url
+import utils/opt
+import server/url
 import utils/twtstr
 
 type

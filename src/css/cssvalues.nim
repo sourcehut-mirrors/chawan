@@ -8,10 +8,9 @@ import config/conftypes
 import css/cssparser
 import css/lunit
 import html/catom
-import types/bitmap
-import types/color
-import types/opt
-import types/refstring
+import css/color
+import utils/opt
+import utils/refstring
 import utils/chahash
 import utils/dtoawrap
 import utils/tabutil

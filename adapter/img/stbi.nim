@@ -4,7 +4,7 @@ import std/os
 import std/posix
 
 import io/dynstream
-import types/opt
+import utils/opt
 import utils/sandbox
 import utils/twtstr
 

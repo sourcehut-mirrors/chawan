@@ -2,7 +2,7 @@
 
 import std/math
 
-import types/opt
+import utils/opt
 import utils/dtoawrap
 import utils/twtstr
 

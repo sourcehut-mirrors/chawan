@@ -5,7 +5,7 @@ import std/os
 import io/chafile
 import js/jsutils
 import js/quickjs
-import types/opt
+import utils/opt
 
 proc die(s: string) {.noreturn.} =
   discard cast[ChaFile](stderr).writeLine("chac: " & s)

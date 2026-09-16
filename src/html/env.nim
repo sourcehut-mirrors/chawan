@@ -35,9 +35,9 @@ import js/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import types/blob
-import types/opt
-import types/url
+import server/blob
+import utils/opt
+import server/url
 import utils/tabutil
 import utils/twtstr
 

@@ -13,7 +13,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/opt
+import utils/opt
 
 proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";
     flags = JS_EVAL_TYPE_GLOBAL): Result[T, string] =

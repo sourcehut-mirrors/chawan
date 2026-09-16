@@ -10,7 +10,6 @@ import css/box
 import css/cssparser
 import css/cssvalues
 import css/lunit
-import types/bitmap
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr

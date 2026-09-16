@@ -14,11 +14,10 @@ import io/dynstream
 import io/poll
 import js/jsref
 import server/loaderiface
-import types/bitmap
-import types/blob
-import types/cell
-import types/color
-import types/opt
+import server/blob
+import css/cell
+import css/color
+import utils/opt
 import utils/strwidth
 import utils/twtstr
 

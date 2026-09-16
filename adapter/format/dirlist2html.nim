@@ -4,7 +4,7 @@ import std/algorithm
 import std/os
 
 import io/chafile
-import types/opt
+import utils/opt
 import utils/twtstr
 
 type DirlistItemType = enum

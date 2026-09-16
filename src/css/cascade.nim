@@ -14,8 +14,8 @@ import html/dom
 import html/form
 import html/script
 import js/jsref
-import types/color
-import types/opt
+import css/color
+import utils/opt
 import utils/dtoawrap
 import utils/twtstr
 

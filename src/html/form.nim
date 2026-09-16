@@ -17,10 +17,10 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import server/request
-import types/blob
-import types/opt
-import types/refstring
-import types/url
+import server/blob
+import utils/opt
+import utils/refstring
+import server/url
 import utils/twtstr
 
 type

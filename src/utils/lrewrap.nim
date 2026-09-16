@@ -1,7 +1,7 @@
 {.push raises: [].}
 
 import js/libregexp
-import types/opt
+import utils/opt
 
 when NimMajor < 2:
   from utils/twtstr import substr

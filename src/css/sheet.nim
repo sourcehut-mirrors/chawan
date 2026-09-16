@@ -7,8 +7,8 @@ import css/mediaquery
 import html/catom
 import html/script
 import js/jsref
-import types/opt
-import types/url
+import utils/opt
+import server/url
 import utils/tabutil
 
 type

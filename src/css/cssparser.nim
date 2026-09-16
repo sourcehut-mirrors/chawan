@@ -4,7 +4,7 @@ import std/algorithm
 
 import html/catom
 import js/jstypes
-import types/opt
+import utils/opt
 import utils/dtoawrap
 import utils/twtstr
 

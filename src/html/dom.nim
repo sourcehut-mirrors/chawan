@@ -38,12 +38,11 @@ import js/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import types/bitmap
-import types/blob
-import types/color
-import types/opt
-import types/refstring
-import types/url
+import server/blob
+import css/color
+import utils/opt
+import utils/refstring
+import server/url
 import utils/chahash
 import utils/dtoawrap
 import utils/tabutil

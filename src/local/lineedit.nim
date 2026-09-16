@@ -9,8 +9,8 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/cell
-import types/color
+import css/cell
+import css/color
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr

@@ -9,8 +9,8 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import js/jsref
-import types/opt
-import types/url
+import utils/opt
+import server/url
 import utils/tabutil
 import utils/twtstr
 

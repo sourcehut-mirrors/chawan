@@ -6,8 +6,8 @@ import css/lunit
 import html/dom
 import html/domrect
 import js/jsref
-import types/bitmap
-import types/refstring
+import config/conftypes
+import utils/refstring
 
 type
   DimensionType* = enum

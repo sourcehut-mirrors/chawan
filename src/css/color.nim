@@ -3,7 +3,7 @@
 import std/algorithm
 import std/bitops
 
-import types/opt
+import utils/opt
 import utils/dtoawrap
 import utils/twtstr
 

@@ -19,8 +19,8 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/refstring
-import types/url
+import utils/refstring
+import server/url
 import utils/twtstr
 
 # DOMBuilder implementation for Chawan.

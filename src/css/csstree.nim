@@ -39,9 +39,9 @@ import html/dom
 import html/form
 import html/xml
 import js/jsref
-import types/bitmap
-import types/color
-import types/refstring
+import config/conftypes
+import css/color
+import utils/refstring
 import utils/twtstr
 
 type

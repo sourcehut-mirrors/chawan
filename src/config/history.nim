@@ -7,7 +7,7 @@ import utils/tabutil
 
 import io/chafile
 import io/dynstream
-import types/opt
+import utils/opt
 
 type
   History* = ref object

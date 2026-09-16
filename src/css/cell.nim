@@ -1,4 +1,4 @@
-import types/color
+import css/color
 import utils/strwidth
 
 type

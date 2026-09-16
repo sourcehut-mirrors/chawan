@@ -17,7 +17,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import types/opt
+import utils/opt
 import utils/chahash
 import utils/tabutil
 import utils/twtstr

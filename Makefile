@@ -147,7 +147,7 @@ lib/chaseccomp/chaseccomp.o: .FORCE
 .FORCE:
 endif
 
-twtstr = src/utils/twtstr.nim src/types/opt.nim
+twtstr = src/utils/twtstr.nim src/utils/opt.nim
 dynstream = src/io/dynstream.nim
 chafile = src/io/chafile.nim $(dynstream)
 myposix = src/utils/myposix.nim
@@ -197,9 +197,9 @@ $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/http.nim adapter/protocol/gemini.nim \
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.h \
 	adapter/img/stb_image_write.h $(lcgi)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.h $(lcgi)
-$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(lcgi)
-$(OUTDIR_CGI_BIN)/canvas: src/types/path.nim src/io/packetreader.nim \
-	src/types/color.nim adapter/img/stb_image.h $(lcgi)
+$(OUTDIR_CGI_BIN)/sixel: src/css/color.nim $(lcgi)
+$(OUTDIR_CGI_BIN)/canvas: src/html/path.nim src/io/packetreader.nim \
+	src/css/color.nim adapter/img/stb_image.h $(lcgi)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(lcgi)
 $(OUTDIR_CGI_BIN)/nanosvg: adapter/img/nanosvg.nim adapter/img/nanosvg.h \
 	adapter/img/nanosvgrast.h $(lcgi)
@@ -208,7 +208,7 @@ $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2html.nim \
 	adapter/format/gmi2html.nim adapter/format/gopher2html.nim \
 	adapter/format/md2html.nim adapter/format/img2html.nim \
-	$(twtstr) $(chafile) $(dynstream) src/types/color.nim
+	$(twtstr) $(chafile) $(dynstream) src/css/color.nim
 
 $(foreach it,$(ssl_link),$(OUTDIR_CGI_BIN)/$(it)): $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl $(notdir $@))

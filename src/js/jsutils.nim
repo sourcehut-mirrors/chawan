@@ -6,7 +6,7 @@ import js/dtoa
 import js/jsopaque
 import js/jstypes
 import js/quickjs
-import types/opt
+import utils/opt
 
 type JSCode* = enum
   fjErr, fjOk

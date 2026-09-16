@@ -5,8 +5,8 @@ import std/posix
 import io/chafile
 import io/dynstream
 import server/connectionerror
-import types/opt
 import utils/myposix
+import utils/opt
 import utils/sandbox
 import utils/twtstr
 

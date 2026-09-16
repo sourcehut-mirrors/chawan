@@ -35,10 +35,8 @@ Explanation for the separate directories found in `src/`:
 * js: JavaScript binding generator and related code.
 * local: code for the main process (i.e. the pager).
 * server: code for processes other than the main process: buffer,
-  forkserver, loader.
-* types: mainly definitions of data types and things I didn't know where
-  to put.
-* utils: things I didn't know where to put, part 2
+  forkserver, loader.  Also anything network-related.
+* utils: things I didn't know where to put
 
 Additionally, "adapters" of various protocols and file formats can be found in
 `adapter/`:

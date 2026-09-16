@@ -2,7 +2,7 @@
 
 import js/jsopaque
 import js/quickjs
-import types/opt
+import utils/opt
 
 {.compile("domexception.c", "").}
 

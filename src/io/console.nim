@@ -5,8 +5,8 @@ import js/fromjs
 import js/jsbind
 import js/jsutils
 import js/quickjs
-import types/opt
-import types/url
+import utils/opt
+import server/url
 import utils/twtstr
 
 type Console* = ref object

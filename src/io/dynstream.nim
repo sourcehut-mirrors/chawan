@@ -2,7 +2,7 @@
 
 import std/posix
 
-import types/opt
+import utils/opt
 
 type PosixStream* = ref object
   fd*: cint

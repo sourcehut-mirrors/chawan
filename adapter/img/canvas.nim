@@ -12,10 +12,10 @@ import std/algorithm
 import std/os
 import std/posix
 
+import css/color
+import html/path
 import io/dynstream
 import io/packetreader
-import types/color
-import types/path
 
 import ../protocol/lcgi
 

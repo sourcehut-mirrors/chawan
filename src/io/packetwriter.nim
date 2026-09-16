@@ -10,8 +10,8 @@ import std/algorithm
 import std/posix
 
 import io/dynstream
-import types/color
-import types/opt
+import css/color
+import utils/opt
 
 type PacketWriter* = object
   buffer*: seq[uint8]

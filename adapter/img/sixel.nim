@@ -27,7 +27,7 @@ import std/algorithm
 import std/os
 import std/posix
 
-import types/color
+import css/color
 
 import ../protocol/lcgi
 

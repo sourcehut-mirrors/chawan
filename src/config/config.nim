@@ -25,10 +25,10 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import server/headers
-import types/cell
-import types/color
-import types/opt
-import types/url
+import css/cell
+import css/color
+import utils/opt
+import server/url
 import utils/dtoawrap
 import utils/lrewrap
 import utils/myposix

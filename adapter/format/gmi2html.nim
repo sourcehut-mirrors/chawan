@@ -1,7 +1,7 @@
 {.push raises: [].}
 
 import io/chafile
-import types/opt
+import utils/opt
 import utils/twtstr
 
 proc parse(): Opt[void] =

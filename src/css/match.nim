@@ -6,7 +6,7 @@ import html/catom
 import html/dom
 import html/form
 import js/jsref
-import types/opt
+import utils/opt
 import utils/twtstr
 
 # Matching is slightly complicated by dependency tracking.

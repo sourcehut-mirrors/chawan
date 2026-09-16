@@ -1,5 +1,5 @@
 import js/jsref
-import types/url
+import server/url
 
 when defined(freebsd):
   proc c_setproctitle(fmt: cstring) {.header: "<unistd.h>", importc:
