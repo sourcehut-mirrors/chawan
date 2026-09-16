@@ -737,12 +737,14 @@ proc buildOuterBox(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
   if not root:
     let index = frame.computed{"z-index"}
     if position != PositionStatic and display notin DisplayNeverHasStack or
-        forceZ and not index.auto:
+        forceZ:
       stackItem = ctx.pushStackItem(styledNode)
       if not index.auto:
         ctx.stackItem = stackItem
-    elif frame.computed{"float"} != FloatNone:
-      # floats don't really create a new stacking context, but you have to
+    elif frame.computed{"float"} != FloatNone or
+        display in
+          DisplayInlineBlockLike - {DisplayInlineFlex, DisplayInlineGrid}:
+      # these don't really create a new stacking context, but you have to
       # treat them "as if" they did.  (effectively it's the same as the
       # auto index case)
       stackItem = ctx.pushStackItem(styledNode)
