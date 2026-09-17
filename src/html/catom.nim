@@ -259,7 +259,7 @@ proc freeAtom(atom: CAtomRaw) =
     if desc.refc == 0:
       freeAtomImpl(u)
 
-proc dup*(atom: CAtomRaw): CAtomRaw =
+proc dup(atom: CAtomRaw): CAtomRaw =
   let factory = getFactory()
   inc factory.atomMap[uint32(atom)].refc
   atom
@@ -391,7 +391,7 @@ template view*(satom: StaticAtom): CAtom =
   assert tmp != satUnknown
   CAtom(CAtomRaw(uint32(tmp)))
 
-proc `$`*(atom: CAtomRaw): lent string =
+proc `$`(atom: CAtomRaw): lent string =
   getFactory().atomMap[int(atom)].s
 
 proc `$`*(atom: CAtom): lent string =

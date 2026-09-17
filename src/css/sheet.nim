@@ -244,20 +244,19 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
   # layer switches happen rarely enough anyway.
   map.layers.add(sheet.s.layers)
   var def = sheet.s.defsHead
-  var prevLayer = CAtomNullRaw
+  var prevLayer = CAtomNull
   var layerId = 0u16
   let sheetIdShifted = (uint64(sheetId) shl 32)
   while def != nil:
     def.idx = sheetIdShifted or uint32(def.idx)
-    let layer = def.layer.view()
-    if layer != CAtomNull:
-      if layer != prevLayer:
-        if ($layer)[0] == '!':
+    if def.layer != CAtomNull:
+      if def.layer != prevLayer:
+        if ($def.layer)[0] == '!':
           layerId = 20000 + map.anonLayers # ought to be enough for anybody
           inc map.anonLayers
         else:
-          layerId = uint16(map.layers.find(layer)) + 1
-        prevLayer = layer
+          layerId = uint16(map.layers.find(def.layer)) + 1
+        prevLayer = def.layer
       def.layerId = layerId
     map.add(def)
     def = def.next
