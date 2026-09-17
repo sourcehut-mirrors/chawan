@@ -1,12 +1,13 @@
 {.push raises: [].}
 
 import io/chafile
+import js/constcharp
 import js/fromjs
 import js/jsbind
 import js/jsutils
 import js/quickjs
-import utils/opt
 import server/url
+import utils/opt
 import utils/twtstr
 
 type Console* = ref object

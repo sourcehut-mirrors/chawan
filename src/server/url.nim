@@ -6,6 +6,8 @@ import std/algorithm
 
 import io/packetreader
 import io/packetwriter
+import js/constcharp
+import js/cutils
 import js/fromjs
 import js/jsbind
 import js/jsnull
@@ -16,8 +18,8 @@ import js/jsutils
 import js/libunicode
 import js/quickjs
 import js/tojs
-import utils/opt
 import utils/luwrap
+import utils/opt
 import utils/twtstr
 
 type

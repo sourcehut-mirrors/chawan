@@ -33,6 +33,8 @@
 import std/macrocache
 import std/typetraits
 
+import js/constcharp
+import js/cutils
 import js/jsopaque
 import js/jsref
 import js/jstypes

@@ -11,6 +11,8 @@ import html/domexception
 import html/event
 import html/script
 import io/dynstream
+import js/constcharp
+import js/cutils
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -18,12 +20,12 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import server/blob
 import server/headers
 import server/loaderiface
 import server/request
-import server/blob
-import utils/opt
 import server/url
+import utils/opt
 import utils/twtstr
 
 type

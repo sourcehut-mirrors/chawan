@@ -1,3 +1,6 @@
+{.push raises: [].}
+
+import js/constcharp
 import js/dtoa
 
 # n: start pointer -> end pointer
@@ -34,3 +37,5 @@ proc addDouble*(s: var string; d: float64) =
 proc dtoa*(d: float64): string =
   result = ""
   result.addDouble(d)
+
+{.pop.} # raises: []

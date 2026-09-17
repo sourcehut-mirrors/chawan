@@ -16,8 +16,6 @@ import utils/dtoawrap
 import utils/tabutil
 import utils/twtstr
 
-export CSSPropertyType
-
 type
   CSSValueType* = enum
     cvtAlignItems = "alignItems"

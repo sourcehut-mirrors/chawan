@@ -1,6 +1,7 @@
 {.push raises: [].}
 
-import quickjs
+import js/constcharp
+import js/quickjs
 
 when NimMajor < 2:
   import utils/twtstr

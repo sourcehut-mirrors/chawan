@@ -76,6 +76,7 @@
 import std/macros
 import std/typetraits
 
+import js/constcharp
 import js/fromjs
 import js/jsopaque
 import js/jsref

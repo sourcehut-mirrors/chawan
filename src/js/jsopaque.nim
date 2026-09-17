@@ -2,7 +2,8 @@
 
 import std/algorithm
 
-import quickjs
+import js/constcharp
+import js/quickjs
 import utils/twtstr
 
 type

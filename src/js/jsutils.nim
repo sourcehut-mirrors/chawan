@@ -2,6 +2,7 @@
 
 {.push raises: [].}
 
+import js/constcharp
 import js/dtoa
 import js/jsopaque
 import js/jstypes

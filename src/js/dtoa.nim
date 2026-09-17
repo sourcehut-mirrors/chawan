@@ -2,10 +2,8 @@
 
 from std/os import parentDir
 
-import cutils
-
-import constcharp
-export constcharp
+import js/constcharp
+import js/cutils
 
 {.used.}
 

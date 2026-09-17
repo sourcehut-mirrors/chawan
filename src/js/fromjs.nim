@@ -4,6 +4,7 @@ import std/algorithm
 import std/macros
 import std/typetraits
 
+import js/constcharp
 import js/jsopaque
 import js/jsref
 import js/jstypes

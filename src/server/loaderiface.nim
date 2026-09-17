@@ -16,6 +16,7 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
+import js/constcharp
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -23,11 +24,11 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import server/blob
 import server/headers
 import server/request
-import server/blob
-import utils/opt
 import server/url
+import utils/opt
 import utils/twtstr
 
 type

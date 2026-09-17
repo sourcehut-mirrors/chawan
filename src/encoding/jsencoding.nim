@@ -2,6 +2,7 @@
 
 import encoding/charset
 import encoding/decoder
+import js/constcharp
 import js/fromjs
 import js/jsbind
 import js/jsref

@@ -2,7 +2,8 @@
 
 #TODO handle OOM
 
-import quickjs
+import js/constcharp
+import js/quickjs
 
 type
   JSPropertyEnumArray* = ptr UncheckedArray[JSPropertyEnum]

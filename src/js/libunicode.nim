@@ -4,8 +4,6 @@ from std/os import parentDir
 
 import cutils
 
-export cutils.JS_BOOL
-
 {.used.}
 
 {.compile("../../lib/quickjs/libunicode.c", "-fwrapv").}

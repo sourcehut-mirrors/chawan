@@ -23,6 +23,8 @@ import io/chafile
 import io/console
 import io/dynstream
 import io/timeout
+import js/constcharp
+import js/cutils
 import js/fromjs
 import js/jsbind
 import js/jsintl
@@ -32,12 +34,12 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import server/blob
 import server/headers
 import server/loaderiface
 import server/request
-import server/blob
-import utils/opt
 import server/url
+import utils/opt
 import utils/tabutil
 import utils/twtstr
 

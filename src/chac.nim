@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import io/chafile
+import js/constcharp
 import js/jsutils
 import js/quickjs
 import utils/chaos

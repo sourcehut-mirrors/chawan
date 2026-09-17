@@ -2,13 +2,10 @@
 
 from std/os import parentDir
 
-import constcharp
-import libregexp
-import dtoa
-
-export constcharp
-
-export libregexp.JS_BOOL
+import js/constcharp
+import js/cutils
+import js/dtoa
+import js/libregexp
 
 {.passc: "-DNOT_LRE_ONLY".}
 

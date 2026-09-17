@@ -5,9 +5,8 @@ from std/os import parentDir
 {.used.}
 # used so that we can import it from quickjs.nim
 
+import cutils
 import libunicode
-
-export libunicode.JS_BOOL
 
 const CFLAGS = "-fwrapv"
 

@@ -12,13 +12,14 @@
 import std/macros
 
 import chame/tags
+import js/constcharp
 import js/fromjs
 import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import utils/opt
 import utils/chahash
+import utils/opt
 import utils/tabutil
 import utils/twtstr
 
