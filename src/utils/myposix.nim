@@ -5,6 +5,8 @@
 import std/os
 import std/posix
 
+import utils/twtstr
+
 proc free(p: pointer) {.importc, header: "<stdlib.h>".}
 
 proc realPath(path: string): string =
@@ -27,15 +29,6 @@ proc getcwd*(): string =
   $cs
 
 proc system*(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
-
-proc getAppFilename*(): string =
-  result = ""
-  try:
-    result = os.getAppFilename()
-    # The NetBSD sysctl does not resolve symlinks.
-    result = realPath(result)
-  except OSError:
-    discard
 
 type SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
 
@@ -70,5 +63,38 @@ proc basename*(s: cstring): cstring =
 iterator getArgvIter*(): cstring =
   for i in 1 ..< getArgvCount():
     yield getArgvCString(i)
+
+proc readlink(path: cstring; buf: cstring; buflen: csize_t): int {.
+  importc, header: "<unistd.h>".}
+
+proc readLink*(s: string): string =
+  var res = newString(1024)
+  var len = readlink(cstring(s), cstring(res), csize_t(res.len))
+  if len < 0 or len == res.len:
+    return ""
+  res.setLen(int(len))
+  move(res)
+
+proc getAppFilename*(): string =
+  var res = ""
+  when defined(linux):
+    res = readLink("/proc/self/exe")
+  elif defined(solaris):
+    res = readLink("/proc/" & $getpid() & "/path/a.out")
+  if res.len == 0:
+    var a0 = getArgv(0)
+    if a0.len > 0 and a0[0] == '/': # absolute
+      res = move(a0)
+    else: # relative
+      if '/' notin a0: # basename only; try searching PATH
+        for it in getEnvEmpty("PATH").split(':'):
+          var rp = realPath(it / a0)
+          if fileExists(rp):
+            res = move(rp)
+            break
+      if res.len == 0:
+        # not in path; return ./$0 and hope for the best
+        res = getcwd() / a0
+  realPath(res)
 
 {.pop.}

@@ -7,9 +7,6 @@ import lcgi
 proc my_strftime(s: cstring; slen: csize_t; format: cstring;
   tm: ptr Tm): csize_t {.importc: "strftime", header: "<time.h>".}
 
-proc my_readlink(path: cstring; buf: cstring; buflen: csize_t):
-  int {.importc: "readlink", header: "<unistd.h>".}
-
 proc loadDir(path, opath: string): Opt[void] =
   let title = ("Directory list of " & path).mimeQuote()
   let stdout = cast[ChaFile](stdout)
@@ -58,11 +55,10 @@ proc loadDir(path, opath: string): Opt[void] =
     line &= file
     if S_ISLNK(stats.st_mode):
       let len = int(stats.st_size)
-      var target = newString(len)
-      let n = my_readlink(cstring(fullpath), cstring(target), csize_t(len))
-      if n == len and stat(cstring(target), stats) == 0:
-        if S_ISDIR(stats.st_mode) and (target.len == 0 or target[^1] != '/'):
-          target &= '/'
+      var target = readLink(fullpath)
+      if stat(cstring(target), stats) == 0 and S_ISDIR(stats.st_mode) and
+          (target.len <= 0 or target[^1] != '/'):
+        target &= '/'
       line &= " -> " & target
     ?stdout.writeLine(line)
   ok()
