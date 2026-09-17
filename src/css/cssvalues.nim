@@ -594,6 +594,7 @@ const InheritedProperties = {
 }
 
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
+const OverflowNonScrollable* = {OverflowVisible, OverflowClip}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const DisplayInlineLike* = {DisplayInline, DisplayInlineListItem}
@@ -968,14 +969,17 @@ when defined(debug):
   proc `$`*(val: CSSValue): string =
     return val.serialize()
 
-proc getLength*(vals: CSSValues; p: CSSPropertyType): CSSLength =
-  return vals.words[p].length
+proc getLength*(computed: CSSValues; p: CSSPropertyType): CSSLength =
+  computed.words[p].length
 
-proc getLineWidth*(vals: CSSValues; p: CSSPropertyType): float32 =
-  return vals.hwords[p].lineWidth
+proc getLineWidth*(computed: CSSValues; p: CSSPropertyType): float32 =
+  computed.hwords[p].lineWidth
 
-proc getBorderStyle*(vals: CSSValues; p: CSSPropertyType): CSSBorderStyle =
-  return vals.bits[p].borderStyle
+proc getBorderStyle*(computed: CSSValues; p: CSSPropertyType): CSSBorderStyle =
+  computed.bits[p].borderStyle
+
+proc getOverflow*(computed: CSSValues; p: CSSPropertyType): CSSOverflow =
+  computed.bits[p].overflow
 
 macro `{}`*(vals: CSSValues; s: static string): untyped =
   let t = propertyType(s).get

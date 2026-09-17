@@ -187,10 +187,11 @@ proc applySize(box: BlockBox; input: LayoutInput; maxChildSize: Size;
   for dim in DimensionType:
     box.applySize(input.bounds, maxChildSize[dim], space, dim)
 
+const OverflowMap = [dtHorizontal: cptOverflowX, dtVertical: cptOverflowY]
+
 proc applyIntr(box: BlockBox; input: LayoutInput; intr: Size) =
   for dim in DimensionType:
-    const pt = [dtHorizontal: cptOverflowX, dtVertical: cptOverflowY]
-    if box.computed.bits[pt[dim]].overflow notin OverflowScrollLike:
+    if box.computed.getOverflow(OverflowMap[dim]) notin OverflowScrollLike:
       box.state.intr[dim] = intr[dim].minClamp(input.bounds.mi[dim])
     else:
       # We do not have a scroll bar, so do the next best thing: expand the
@@ -3008,6 +3009,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
   var diff = diff
   var totalWeight = mctx.totalWeight[wt]
   var relayout: seq[int] = @[]
+  var first = true
   while (wt == fwtGrow and diff > 0'lu or wt == fwtShrink and diff < 0'lu) and
       totalWeight > 0:
     # redo maxCrossSize calculation; we only need height here
@@ -3030,10 +3032,14 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       if it.weights[wt] == 0:
         mctx.updateMaxSizes(it.child, it.input, dim, lctx)
         continue
+      let size = if first:
+        it.child.state.size[dim]
+      else:
+        it.input.space[dim].u
       var uw = unit * it.weights[wt]
       if wt == fwtShrink:
-        uw *= it.child.state.size[dim].toFloat32()
-      var u = it.child.state.size[dim] + uw.toLUnit()
+        uw *= size.toFloat32()
+      var u = size + uw.toLUnit()
       # check for min/max violation
       let minu = max(it.child.state.intr[dim], it.input.bounds.a[dim].start)
       if minu > u:
@@ -3041,7 +3047,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
         if wt == fwtShrink: # freeze
           diff += u - minu
           it.weights[wt] = 0
-          mctx.shrinkSize -= it.child.state.size[dim]
+          mctx.shrinkSize -= size
         u = minu
         it.input.bounds.mi[dim].start = u
       let maxu = max(minu, it.input.bounds.a[dim].send)
@@ -3061,10 +3067,11 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
         mctx.updateMaxSizes(it.child, it.input, dim, lctx)
       else: # delay relayout
         relayout.add(i)
-    for i in relayout:
-      let child = mctx.pending[i].child
-      lctx.layoutFlexItem(child, mctx.pending[i].input)
-      mctx.updateMaxSizes(child, mctx.pending[i].input, dim, lctx)
+    first = false
+  for i in relayout:
+    let child = mctx.pending[i].child
+    lctx.layoutFlexItem(child, mctx.pending[i].input)
+    mctx.updateMaxSizes(child, mctx.pending[i].input, dim, lctx)
 
 proc stretchItem(fctx: var FlexContext; it: var FlexPendingItem; h: LUnit) =
   let lctx = fctx.lctx
