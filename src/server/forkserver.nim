@@ -25,7 +25,7 @@ import server/request
 import server/blob
 import utils/opt
 import server/url
-import utils/myposix
+import utils/chaos
 import utils/proctitle
 import utils/sandbox
 import utils/strwidth
@@ -216,9 +216,9 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
     # reset SIGCHLD to the default handler. this is useful if the child
     # process expects SIGCHLD to be untouched.
     # (e.g. git dies a horrible death with SIGCHLD as SIG_IGN)
-    discard myposix.signal(SIGCHLD, myposix.SIG_DFL)
+    discard chaos.signal(SIGCHLD, chaos.SIG_DFL)
     # let's also reset SIGPIPE, which we ignored on init
-    discard myposix.signal(SIGPIPE, myposix.SIG_DFL)
+    discard chaos.signal(SIGPIPE, chaos.SIG_DFL)
     const ExecErrorMsg =
       "Cha-Control: ConnectionError InternalError failed to execute CGI script"
     let stdout = cast[ChaFile](stdout)
@@ -304,8 +304,8 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
     quit(2)
   JS_FreeContext(jsctx)
   var ctx = ForkServerContext(stream: controlStream)
-  discard myposix.signal(SIGCHLD, myposix.SIG_IGN)
-  discard myposix.signal(SIGPIPE, myposix.SIG_IGN)
+  discard chaos.signal(SIGCHLD, chaos.SIG_IGN)
+  discard chaos.signal(SIGPIPE, chaos.SIG_IGN)
   ctx.stream.withPacketReader r:
     var config: LoaderConfig
     var clientConfig: LoaderClientConfig

@@ -30,7 +30,7 @@ import server/bufferiface
 import server/forkserver
 import server/loaderiface
 import utils/opt
-import utils/myposix
+import utils/chaos
 import utils/sandbox
 import utils/strwidth
 import utils/twtstr
@@ -262,7 +262,7 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
   let config = newConfig(jsctx, dir, dataDir)
   if config == nil:
     return err(jsctx.getExceptionMsg())
-  let cwd = myposix.getcwd()
+  let cwd = chaos.getcwd()
   if file.isOk:
     let name = if ctx.configPath.len > 0:
       ctx.configPath.afterLast('/')
@@ -436,7 +436,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     if acceptSigint:
       sigintCaught = true
     else:
-      discard myposix.signal(SIGINT, myposix.SIG_DFL);
+      discard chaos.signal(SIGINT, chaos.SIG_DFL);
       discard kill(getpid(), SIGINT)
   jsctx.setupStartupScript()
   let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
@@ -450,7 +450,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
 proc main() =
   let rt = newGlobalJSRuntime()
   initCAtomFactory()
-  let binDir = myposix.getAppFilename().untilLast('/')
+  let binDir = chaos.getAppFilename().untilLast('/')
   if twtstr.setEnv("CHA_BIN_DIR", binDir).isErr or
       twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
     die("failed to set env vars")

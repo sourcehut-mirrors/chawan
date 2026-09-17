@@ -11,7 +11,7 @@ import js/jsref
 import js/libregexp
 import server/url
 import utils/lrewrap
-import utils/myposix
+import utils/chaos
 import utils/opt
 import utils/tabutil
 import utils/twtstr
@@ -628,7 +628,7 @@ proc checkEntry(entry: MailcapEntry; contentType: string; url: URL;
         closeStdin()
         closeStdout()
         closeStderr()
-        discard myposix.signal(SIGINT, myposix.SIG_IGN)
+        discard chaos.signal(SIGINT, chaos.SIG_IGN)
         discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
         exitnow(127)
       else:

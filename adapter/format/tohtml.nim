@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import utils/myposix
+import utils/chaos
 
 import ansi2html
 import dirlist2html

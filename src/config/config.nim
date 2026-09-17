@@ -31,7 +31,7 @@ import utils/opt
 import server/url
 import utils/dtoawrap
 import utils/lrewrap
-import utils/myposix
+import utils/chaos
 import utils/tabutil
 import utils/twtstr
 
@@ -2143,7 +2143,7 @@ proc openConfig*(dir, dataDir: var string; override: string;
       dir = parentDir(override)
       dataDir = dir
       return chafile.afopen(override, "r")
-    let path = myposix.getcwd() / override
+    let path = chaos.getcwd() / override
     dir = parentDir(path)
     dataDir = dir
     return chafile.afopen(path, "r")

@@ -7,7 +7,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import utils/opt
-import utils/myposix
+import utils/chaos
 import utils/twtstr
 
 type ChaPath* = distinct string
@@ -73,7 +73,7 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     ctx.state = usNormal
   of '0':
     # Use getAppFilename so that any symbolic links are resolved.
-    ctx.s &= myposix.getAppFilename()
+    ctx.s &= chaos.getAppFilename()
     ctx.state = usNormal
   of AsciiAlpha:
     ctx.identStr = $c
@@ -122,7 +122,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   case c
   of '}':
     if ctx.identStr == "0":
-      ctx.s &= myposix.getAppFilename()
+      ctx.s &= chaos.getAppFilename()
     else:
       ctx.s &= getEnvEmpty(ctx.identStr)
     ctx.identStr = ""

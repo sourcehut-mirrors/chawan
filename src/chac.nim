@@ -3,7 +3,7 @@
 import io/chafile
 import js/jsutils
 import js/quickjs
-import utils/myposix
+import utils/chaos
 import utils/opt
 
 proc die(s: string) {.noreturn.} =

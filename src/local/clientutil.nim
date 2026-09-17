@@ -14,13 +14,13 @@ import js/tojs
 import server/blob
 import utils/opt
 import server/url
-import utils/myposix
+import utils/chaos
 import utils/strwidth
 import utils/twtstr
 
 jsNamespaceDef(Util):
   proc getcwd(): string {.jsstfunc.} =
-    return myposix.getcwd()
+    return chaos.getcwd()
 
   proc unquote(ctx: JSContext; s: string; base = ""): JSValue {.jsstfunc.} =
     let res = ChaPath(s).unquote(base)

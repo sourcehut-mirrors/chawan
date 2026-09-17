@@ -5,7 +5,7 @@ import std/posix
 import io/chafile
 import io/dynstream
 import server/connectionerror
-import utils/myposix
+import utils/chaos
 import utils/opt
 import utils/sandbox
 import utils/twtstr
@@ -13,7 +13,7 @@ import utils/twtstr
 export chafile
 export connectionerror
 export dynstream
-export myposix
+export chaos
 export opt
 export sandbox
 export twtstr

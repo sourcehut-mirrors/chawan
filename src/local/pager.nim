@@ -48,7 +48,7 @@ import utils/opt
 import server/url
 import utils/lrewrap
 import utils/luwrap
-import utils/myposix
+import utils/chaos
 import utils/strwidth
 import utils/tabutil
 import utils/twtstr
@@ -195,7 +195,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   let moduleName = $moduleName
   let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../"):
-    parseURL0(moduleName, parseURL0("file://" & myposix.getcwd() & "/"))
+    parseURL0(moduleName, parseURL0("file://" & chaos.getcwd() & "/"))
   else:
     parseURL0(moduleName)
   if x == nil or x.schemeType != stFile:

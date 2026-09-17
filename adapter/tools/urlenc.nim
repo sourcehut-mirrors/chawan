@@ -7,7 +7,7 @@
 {.push raises: [].}
 
 import io/chafile
-import utils/myposix
+import utils/chaos
 import utils/opt
 import utils/twtstr
 

@@ -5,7 +5,7 @@ import std/posix
 import css/color
 import io/chafile
 import io/dynstream
-import utils/myposix
+import utils/chaos
 import utils/opt
 import utils/twtstr
 
