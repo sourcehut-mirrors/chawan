@@ -55,13 +55,7 @@ jsNamespaceDef(Util):
     let rt = JS_GetRuntime(ctx)
     return rt.getMemoryUsage()
 
-  proc nimCollect() {.jsstfunc.} =
-    try:
-      GC_fullCollect()
-    except Exception:
-      discard
-
-  proc jsCollect(ctx: JSContext) {.jsstfunc.} =
+  proc gc(ctx: JSContext) {.jsstfunc.} =
     let rt = JS_GetRuntime(ctx)
     JS_RunGC(rt)
 
