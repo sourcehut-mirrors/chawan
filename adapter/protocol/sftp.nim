@@ -2,7 +2,6 @@
 
 {.push raises: [].}
 
-import std/os
 import std/times
 
 import lcgi
@@ -383,13 +382,13 @@ please remove this host from """ & hostsPath & ".")
   hosts.libssh2_knownhost_free()
 
 proc main*() =
-  if paramCount() != 3:
+  if getArgvCount() != 4:
     cgiDie(ceInternalError, "usage: sftp [host] [port] [path]")
-  let host = paramStr(1)
-  var port = paramStr(2)
+  let host = getArgv(1)
+  var port = getArgv(2)
   if port == "":
     port = "22"
-  let opath = paramStr(3)
+  let opath = getArgv(3)
   let path = if opath == "": "/" else: percentDecode(opath)
   let os = newPosixStream(STDOUT_FILENO)
   let ps = connectSocket(host, port).orDie()

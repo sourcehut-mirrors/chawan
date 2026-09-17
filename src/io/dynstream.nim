@@ -149,14 +149,18 @@ proc newPosixStream*(fd: cint): PosixStream =
 proc newPosixStream*(fd: SocketHandle): PosixStream =
   return newPosixStream(cint(fd))
 
-proc newPosixStream*(path: string; flags = cint(O_RDONLY); mode = cint(0)):
+proc newPosixStream*(path: cstring; flags = cint(O_RDONLY); mode = cint(0)):
     PosixStream =
   if path == "":
     return nil
-  let fd = open(cstring(path), flags, mode)
+  let fd = open(path, flags, mode)
   if fd == -1:
     return nil
   return newPosixStream(fd)
+
+proc newPosixStream*(path: string; flags = cint(O_RDONLY); mode = cint(0)):
+    PosixStream =
+  newPosixStream(cstring(path), flags, mode)
 
 type
   MaybeMappedMemory* = ptr MaybeMappedMemoryObj

@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import lcgi
@@ -139,13 +138,13 @@ proc retrieve(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =
 
 proc main() =
   let stdout = cast[ChaFile](stdout)
-  if paramCount() != 3:
+  if getArgvCount() != 4:
     cgiDie(ceInternalError, "usage: ftp [host] [port] [path]")
-  let host = paramStr(1)
-  var port = paramStr(2)
+  let host = getArgv(1)
+  var port = getArgv(2)
   if port == "":
     port = "21"
-  var path = percentDecode(paramStr(3))
+  var path = percentDecode(getArgv(3))
   if path == "":
     path = "/"
   let (username, password) = cgiAuthorization()

@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import std/os
+from std/os import fileExists, dirExists, symlinkExists, quoteShellPosix
 import std/posix
 
 import lcgi
@@ -185,7 +185,7 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
       elif ctx.cap(3).s >= 0: # mail
         oline &= "<a href='mailto:" & s & "'>" & s & "</a>"
       elif ctx.cap(6).s >= 0: # file
-        let target = s.expandTilde()
+        let target = expandPath(s)
         if not fileExists(target) and not symlinkExists(target) and
             not dirExists(target):
           oline &= s
@@ -365,10 +365,10 @@ proc main() =
       apropos = man
     else:
       apropos = "/usr/bin/apropos" # this is where it should be.
-  if paramCount() != 2:
+  if getArgvCount() != 3:
     cgiDie(ceInternalError, "usage: man [-rkl] [path]")
-  let t = paramStr(1)
-  let path = paramStr(2)
+  let t = getArgvCString(1)
+  let path = getArgv(2)
   if t == "-r":
     let (keyword, section) = parseSection(path)
     doMan(man, keyword, section)

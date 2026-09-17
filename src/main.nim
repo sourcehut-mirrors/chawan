@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import config/chapath
@@ -98,7 +97,6 @@ proc version() =
   quit(0)
 
 type ParamParseContext = object
-  params: seq[string]
   i: int
   next: string
   configPath: string
@@ -122,10 +120,10 @@ proc addDefaultPages(ctx: var ParamParseContext; config: Config;
   if ctx.visual:
     history = false
     return ctx.addPage(config{"visualHome"})
-  if (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
+  if (let httpHome = getEnvEmpty("HTTP_HOME"); httpHome != ""):
     history = false
     return ctx.addPage(httpHome)
-  if (let wwwHome = getEnv("WWW_HOME"); wwwHome != ""):
+  if (let wwwHome = getEnvEmpty("WWW_HOME"); wwwHome != ""):
     history = false
     return ctx.addPage(wwwHome)
   ok()
@@ -140,10 +138,10 @@ else:
 
 proc getNext(ctx: var ParamParseContext): string {.myProveInit.} =
   if ctx.next != "":
-    return ctx.next
+    return move(ctx.next)
   inc ctx.i
-  if ctx.i < ctx.params.len:
-    return ctx.params[ctx.i]
+  if ctx.i < getArgvCount():
+    return $getArgvCString(ctx.i)
   help(1)
 
 proc parseConfig(ctx: var ParamParseContext) =
@@ -189,8 +187,8 @@ proc parseRun(ctx: var ParamParseContext) =
 
 proc parse(ctx: var ParamParseContext): Opt[void] =
   var escapeAll = false
-  while ctx.i < ctx.params.len:
-    let param = ctx.params[ctx.i]
+  while ctx.i < getArgvCount():
+    let param = $getArgvCString(ctx.i)
     if escapeAll: # after --
       ?ctx.addPage(param)
       inc ctx.i
@@ -209,8 +207,10 @@ proc parse(ctx: var ParamParseContext): Opt[void] =
       if param[1] != '-':
         for j in 1 ..< param.len:
           const NeedsNextParam = {'C', 'I', 'O', 'T', 'c', 'o', 'r'}
+          var hasNext = false
           if j < param.high and param[j] in NeedsNextParam:
             ctx.next = param.substr(j + 1)
+            hasNext = true
           case param[j]
           of 'C': ctx.parseConfig()
           of 'I': ctx.parseInputCharset()
@@ -225,7 +225,7 @@ proc parse(ctx: var ParamParseContext): Opt[void] =
           of 'r': ctx.parseRun()
           of 'v': version()
           else: help(1)
-          if ctx.next != "":
+          if hasNext:
             ctx.next = ""
             break
       else:
@@ -398,7 +398,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
-  var ctx = ParamParseContext(jsctx: jsctx, params: commandLineParams(), i: 0)
+  var ctx = ParamParseContext(jsctx: jsctx, i: 1)
   if ctx.parse().isErr:
     die(jsctx.getExceptionMsg())
   let loaderControl = newPosixStream(loaderSockVec[0])
@@ -457,7 +457,7 @@ proc main() =
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
     die("failed to set up initial socket pair")
-  let pagerPid = getCurrentProcessId()
+  let pagerPid = int(getpid())
   let forkserver = forkForkServer(loaderSockVec, pagerPid, rt)
   let jsctx = rt.newJSContext()
   let code = main2(jsctx, loaderSockVec, pagerPid, forkserver)

@@ -1,10 +1,9 @@
 {.push raises: [].}
 
-import std/os
-
 import io/chafile
 import js/jsutils
 import js/quickjs
+import utils/myposix
 import utils/opt
 
 proc die(s: string) {.noreturn.} =
@@ -26,20 +25,19 @@ proc bindRealloc(s: JSMallocStateP; p: pointer; size: csize_t): pointer
   return realloc(p, size)
 
 proc main() =
-  let params = commandLineParams()
   var strip = false
-  var ifile = ""
-  var ofile = ""
-  for param in params:
+  var ifile: cstring = nil
+  var ofile: cstring = nil
+  for param in getArgvIter():
     if param == "-s":
       strip = true
-    elif ifile == "":
+    elif ifile == nil:
       ifile = param
-    elif ofile == "":
+    elif ofile == nil:
       ofile = param
     else:
       usage()
-  if ifile == "" or ofile == "":
+  if ifile == nil or ofile == nil:
     usage()
   var mf {.global.} = JSMallocFunctions(
     js_malloc: bindMalloc,
@@ -57,16 +55,16 @@ proc main() =
     die("failed to allocate JS context")
   var src: string
   if chafile.readFile(ifile, src).isErr:
-    die("failed to read " & ifile)
-  let obj = ctx.eval(src, ifile,
-    JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
+    die("failed to read " & $ifile)
+  let obj = JS_Eval(ctx, src.toCStringConst, csize_t(src.len),
+    cstringConst(ifile), JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
   if JS_IsException(obj):
     die(ctx.getExceptionMsg())
   var plen: csize_t
   let p = cast[ptr UncheckedArray[char]](
     JS_WriteObject(ctx, addr plen, obj, JS_WRITE_OBJ_BYTECODE))
   if chafile.writeFile(ofile, p.toOpenArray(0, int(plen) - 1), 0o600).isErr:
-    die("failed to write " & ofile)
+    die("failed to write " & $ofile)
   js_free(ctx, p)
   JS_FreeValue(ctx, obj)
   JS_FreeContext(ctx)

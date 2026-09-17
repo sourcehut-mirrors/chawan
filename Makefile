@@ -205,12 +205,12 @@ $(OUTDIR_CGI_BIN)/canvas: src/html/path.nim src/io/packetreader.nim \
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(lcgi)
 $(OUTDIR_CGI_BIN)/nanosvg: adapter/img/nanosvg.nim adapter/img/nanosvg.h \
 	adapter/img/nanosvgrast.h $(lcgi)
-$(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile)
+$(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile) $(myposix)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2html.nim \
 	adapter/format/gmi2html.nim adapter/format/gopher2html.nim \
 	adapter/format/md2html.nim adapter/format/img2html.nim \
-	$(twtstr) $(chafile) $(dynstream) src/css/color.nim
+	$(twtstr) $(chafile) $(dynstream) $(myposix) src/css/color.nim
 
 $(foreach it,$(ssl_link),$(OUTDIR_CGI_BIN)/$(it)): $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl $(notdir $@))

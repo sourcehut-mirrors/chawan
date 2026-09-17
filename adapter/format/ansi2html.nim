@@ -1,11 +1,11 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import css/color
 import io/chafile
 import io/dynstream
+import utils/myposix
 import utils/opt
 import utils/twtstr
 
@@ -387,24 +387,24 @@ proc usage() =
 proc main*() =
   var state = State(os: newPosixStream(STDOUT_FILENO))
   # parse args
-  let H = paramCount()
+  let L = getArgvCount()
   var i = 1
   var standalone = false
   var title = ""
-  while i <= H:
-    let s = paramStr(i)
-    if s == "":
-      inc i
+  while i < L:
+    let s = getArgvCString(i)
     if s[0] != '-':
       usage()
-    for j in 1 ..< s.len:
-      case s[j]
+    for j, c in s:
+      if j == 0:
+        continue
+      case c
       of 's':
         standalone = true
       of 't':
         inc i
-        if i > H: usage()
-        title = paramStr(i).percentDecode()
+        if i >= L: usage()
+        title = getArgv(i).percentDecode()
       else:
         usage()
     inc i

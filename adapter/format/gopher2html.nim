@@ -1,8 +1,7 @@
 {.push raises: [].}
 
-import std/os
-
 import io/chafile
+import utils/myposix
 import utils/opt
 import utils/twtstr
 
@@ -16,10 +15,10 @@ proc getField(line: string; i: var int): string =
 proc parse(): Opt[void] =
   let stdout = cast[ChaFile](stdout)
   let stdin = cast[ChaFile](stdin)
-  if paramCount() != 2 or paramStr(1) != "-u":
+  if getArgvCount() != 3 or getArgvCString(1) != "-u":
     discard stdout.writeLine("Usage: gopher2html [-u URL]")
     quit(1)
-  let url = htmlEscape(paramStr(2))
+  let url = htmlEscape(getArgv(2))
   ?stdout.write("""<!DOCTYPE html>
 <title>Index of """ & url & """</title>
 <h1>Index of """ & url & """</h1>""")

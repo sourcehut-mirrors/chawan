@@ -8,7 +8,6 @@
 
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import ../protocol/lcgi
@@ -18,7 +17,7 @@ import utils/sandbox
 
 proc usage() {.noreturn.} =
   let stderr = cast[ChaFile](stderr)
-  discard stderr.writeLine("Usage: " & paramStr(0) & " [host] [port] [-m msg]")
+  discard stderr.writeLine("Usage: " & getArgv(0) & " [host] [port] [-m msg]")
   quit(1)
 
 proc main() =
@@ -26,17 +25,17 @@ proc main() =
   var port = ""
   var msg = ""
   var i = 1
-  while i <= paramCount():
-    let s = paramStr(i)
+  while i < getArgvCount():
+    let s = getArgvCString(i)
     if s == "-m":
-      if i + 1 > paramCount():
-        usage()
       inc i
-      msg = paramStr(i)
+      if i >= getArgvCount():
+        usage()
+      msg = getArgv(i)
     elif s != "" and host == "":
-      host = s
+      host = $s
     elif s != "" and port == "":
-      port = s
+      port = $s
     else:
       usage()
     inc i

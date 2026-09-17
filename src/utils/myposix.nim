@@ -45,4 +45,30 @@ let SIG_IGN* {.importc, header: "<signal.h>".}: SighandlerT
 proc signal*(signum: cint; handler: SighandlerT): SighandlerT {.
   importc, header: "<signal.h>".}
 
+let cmdLine {.importc, global.}: cstringArray
+let cmdCount {.importc, global.}: cint
+
+proc getArgvCString*(i: int): cstring =
+  assert i >= 0 and i < cmdCount
+  cmdLine[i]
+
+proc getArgv*(i: int): string =
+  $getArgvCString(i)
+
+proc getArgvCount*(): int =
+  int(cmdCount)
+
+proc basename*(s: cstring): cstring =
+  var i = 0
+  var j = 0
+  while (let c = s[i]; c != '\0'):
+    if c == '/':
+      j = i + 1
+    inc i
+  return cast[cstring](unsafeAddr s[j])
+
+iterator getArgvIter*(): cstring =
+  for i in 1 ..< getArgvCount():
+    yield getArgvCString(i)
+
 {.pop.}

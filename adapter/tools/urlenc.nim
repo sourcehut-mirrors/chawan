@@ -6,9 +6,8 @@
 
 {.push raises: [].}
 
-import std/os
-
 import io/chafile
+import utils/myposix
 import utils/opt
 import utils/twtstr
 
@@ -31,26 +30,36 @@ The input to be decoded is read from stdin, with the last line feed removed.
   quit(1)
 
 proc main(): Opt[void] =
-  let isdec = paramStr(0).afterLast('/') == "urldec"
-  let npars = paramCount()
-  if not isdec and npars > 2:
+  let isdec = basename(getArgvCString(0)) == "urldec"
+  let npars = getArgvCount()
+  if not isdec and npars > 3:
     usage()
   var set = ApplicationXWWWFormUrlEncodedSet
   var spacesAsPlus = false
   if not isdec:
-    for i in 1 .. npars:
-      case paramStr(i)
-      of "control": set = ControlPercentEncodeSet
-      of "fragment": set = FragmentPercentEncodeSet
-      of "query": set = QueryPercentEncodeSet
-      of "special-query": set = SpecialQueryPercentEncodeSet
-      of "path": set = PathPercentEncodeSet
-      of "userinfo": set = UserInfoPercentEncodeSet
-      of "component": set = ComponentPercentEncodeSet
-      of "", "form", "application-x-www-form-urlencoded":
+    for i in 1 ..< npars:
+      let arg = getArgvCString(i)
+      if arg == "control":
+        set = ControlPercentEncodeSet
+      elif arg == "fragment":
+        set = FragmentPercentEncodeSet
+      elif arg == "query":
+        set = QueryPercentEncodeSet
+      elif arg == "special-query":
+        set = SpecialQueryPercentEncodeSet
+      elif arg == "path":
+        set = PathPercentEncodeSet
+      elif arg == "userinfo":
+        set = UserInfoPercentEncodeSet
+      elif arg == "component":
+        set = ComponentPercentEncodeSet
+      elif arg == "" or arg == "form" or
+          arg == "application-x-www-form-urlencoded":
         set = ApplicationXWWWFormUrlEncodedSet
-      of "-s": spacesAsPlus = true
-      else: usage()
+      elif arg == "-s":
+        spacesAsPlus = true
+      else:
+        usage()
   let stdin = cast[ChaFile](stdin)
   var s: string
   ?stdin.readAll(s)
@@ -58,10 +67,9 @@ proc main(): Opt[void] =
     s.setLen(s.len - 1)
   let stdout = cast[ChaFile](stdout)
   if isdec:
-    ?stdout.writeLine(s.percentDecode())
+    stdout.writeLine(s.percentDecode())
   else:
-    ?stdout.writeLine(s.percentEncode(set, spacesAsPlus))
-  ok()
+    stdout.writeLine(s.percentEncode(set, spacesAsPlus))
 
 discard main()
 

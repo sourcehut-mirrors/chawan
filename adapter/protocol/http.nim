@@ -2,7 +2,6 @@
 
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import io/dynstream
@@ -445,13 +444,13 @@ proc close(op: HTTPHandle) =
   else:
     op.httpStream.sclose()
 
-proc main*(scheme: string) =
-  if paramCount() != 4:
+proc main*(scheme: cstring) =
+  if getArgvCount() != 5:
     cgiDie(ceInternalError, "usage: http [host] [port] [path] [query]")
-  let host = paramStr(1)
-  var port = paramStr(2)
-  let path = paramStr(3)
-  let query = paramStr(4)
+  let host = getArgv(1)
+  var port = getArgv(2)
+  let path = getArgv(3)
+  let query = getArgv(4)
   let secure = scheme == "https"
   if port == "":
     port = if secure: "443" else: "80"

@@ -9,7 +9,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/os
 import std/posix
 
 import css/color
@@ -271,9 +270,9 @@ proc main() =
   enterNetworkSandbox()
   let os = newPosixStream(STDOUT_FILENO)
   let ps = newPosixStream(STDIN_FILENO)
-  if paramCount() != 1:
+  if getArgvCount() != 2:
     cgiDie(ceInternalError, "usage: canvas [command]")
-  if paramStr(1) == "decode":
+  if getArgvCString(1) == "decode":
     let headers = getEnvEmpty("REQUEST_HEADERS")
     for hdr in headers.split('\n'):
       if hdr.strip() == "Cha-Image-Info-Only: 1":

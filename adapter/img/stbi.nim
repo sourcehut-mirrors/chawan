@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import io/dynstream
@@ -109,13 +108,13 @@ proc puts(s: string) =
     writeAll(unsafeAddr s[0], s.len)
 
 proc main() =
-  if paramCount() != 2:
+  if getArgvCount() != 3:
     cgiDie(ceInternalError, "usage: stbi [format] [command]")
-  let f = paramStr(1)
-  case paramStr(2)
-  of "decode":
-    if f notin ["jpeg", "gif", "bmp", "png", "x-unknown"]:
-      cgiDie(ceInternalError, "unknown format " & f)
+  let format = getArgvCString(1)
+  let cmd = getArgvCString(2)
+  if cmd == "decode":
+    if format notin [cstring"jpeg", "gif", "bmp", "png", "x-unknown"]:
+      cgiDie(ceInternalError, "unknown format " & $format)
     enterNetworkSandbox()
     var user = StbiUser()
     var x: cint
@@ -147,9 +146,9 @@ proc main() =
       puts("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
       writeAll(p, x * y * 4)
       stbi_image_free(p)
-  of "encode":
-    if f notin ["png", "bmp", "jpeg"]:
-      cgiDie(ceInternalError, "unknown format " & f)
+  elif cmd == "encode":
+    if format notin [cstring"png", "bmp", "jpeg"]:
+      cgiDie(ceInternalError, "unknown format " & $format)
     let headers = getEnvEmpty("REQUEST_HEADERS")
     var quality = cint(50)
     var width = cint(0)
@@ -171,13 +170,12 @@ proc main() =
     enterNetworkSandbox() # don't swallow stat
     puts("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
     let p = src.p
-    case f
-    of "png":
+    if format == "png":
       stbi_write_png_to_func(myWriteFunc, nil, cint(width), cint(height), 4, p,
         0)
-    of "bmp":
+    elif format == "bmp":
       stbi_write_bmp_to_func(myWriteFunc, nil, cint(width), cint(height), 4, p)
-    of "jpeg":
+    else: # jpeg
       stbi_write_jpg_to_func(myWriteFunc, nil, cint(width), cint(height), 4, p,
         quality)
     deallocMem(src)

@@ -1,9 +1,9 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/os
 
 import io/chafile
+import utils/myposix
 import utils/opt
 import utils/twtstr
 
@@ -129,20 +129,20 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
   ok()
 
 proc parseArgs(title: var string) =
-  let H = paramCount()
+  let L = getArgvCount()
   var i = 1
-  while i <= H:
-    let s = paramStr(i)
-    if s == "":
-      inc i
+  while i < L:
+    let s = getArgv(i)
     if s[0] != '-':
       usage()
-    for j in 1 ..< s.len:
-      case s[j]
-      of 't':
+    for j, c in s:
+      if j == 0:
+        continue
+      if c == 't':
         inc i
-        if i > H: usage()
-        title = paramStr(i)
+        if i >= L:
+          usage()
+        title = getArgv(i)
       else:
         usage()
     inc i
@@ -170,8 +170,7 @@ proc parse(): Opt[void] =
     return cmp(a.dname, b.dname)
   )
   ?stdout.printDirlist(items)
-  ?stdout.write("</pre></body>")
-  ok()
+  stdout.write("</pre></body>")
 
 proc main*() =
   discard parse()

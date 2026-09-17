@@ -1,8 +1,5 @@
 {.push raises: [].}
 
-import std/os
-import std/posix
-
 import ../protocol/lcgi
 
 {.passc: "-I" & currentSourcePath().untilLast('/').}
@@ -45,9 +42,9 @@ proc nsvgDeleteRasterizer(r: ptr NSVGrasterizer)
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
   enterNetworkSandbox()
-  if paramCount() != 1:
+  if getArgvCount() != 2:
     cgiDie(ceInternalError, "usage: sixel [command]")
-  if paramStr(1) == "decode":
+  if getArgvCString(1) == "decode":
     # Unfortunate as it is, I can't just mmap the string because nanosvg
     # wants to modify it.
     var ss = newPosixStream(STDIN_FILENO).readAll()

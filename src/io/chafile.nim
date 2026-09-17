@@ -160,14 +160,19 @@ proc close*(file: ChaFile): Opt[void] {.discardable.} =
     return err()
   ok()
 
-proc readFile*(path: string; s: var string): Opt[void] =
-  let file = ?fopen(path, "r")
+proc readFile*(path: cstring; s: var string): Opt[void] =
+  let file = fopen(path, "r")
+  if file == nil:
+    return err()
   let res = file.readAll(s)
   ?file.close()
   res
 
-proc writeFile*(path: string; content: openArray[char]; mode: cint): Opt[void] =
-  discard unlink(cstring(path))
+proc readFile*(path: string; s: var string): Opt[void] =
+  readFile(cstring(path), s)
+
+proc writeFile*(path: cstring; content: openArray[char]; mode: cint): Opt[void] =
+  discard unlink(path)
   let ps = newPosixStream(path, O_CREAT or O_WRONLY or O_EXCL, mode)
   if ps == nil:
     return err()

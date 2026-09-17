@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import ../protocol/lcgi
@@ -70,9 +69,9 @@ proc puts(s: string) =
 
 proc main() =
   enterNetworkSandbox()
-  if paramCount() != 1:
+  if getArgvCount() != 2:
     cgiDie(ceInternalError, "usage: jebp [command]")
-  if paramStr(1) == "decode":
+  if getArgvCString(1) == "decode":
     let headers = getEnvEmpty("REQUEST_HEADERS")
     var infoOnly = false
     for hdr in headers.split('\n'):

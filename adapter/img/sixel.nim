@@ -24,7 +24,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/os
 import std/posix
 
 import css/color
@@ -481,9 +480,9 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
 
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
-  if paramCount() != 1:
+  if getArgvCount() != 2:
     cgiDie(ceInternalError, "usage: sixel [command]")
-  if paramStr(1) == "encode":
+  if getArgvCString(1) == "encode":
     var width = 0
     var height = 0
     var offx = 0

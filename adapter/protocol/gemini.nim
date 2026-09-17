@@ -2,7 +2,6 @@
 
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import lcgi_ssl
@@ -276,16 +275,16 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
 proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
   var (knownHosts, knownHostsPath) = os.openKnownHosts()
-  if paramCount() != 4:
+  if getArgvCount() != 5:
     cgiDie(ceInternalError, "usage: gemini [host] [port] [path] [query]")
-  let host = paramStr(1)
-  var port = paramStr(2)
+  let host = getArgv(1)
+  var port = getArgv(2)
   if port == "":
     port = "1965"
-  var path = paramStr(3)
+  var path = getArgv(3)
   if path == "":
     path = "/"
-  var query = paramStr(4)
+  var query = getArgv(4)
   var reqBuf = "gemini://" & host & path
   var tmpEntry = "" # for accepting a self signed cert "once"
   if getEnvEmpty("REQUEST_METHOD") == "POST":
