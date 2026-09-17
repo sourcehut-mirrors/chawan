@@ -13,6 +13,7 @@ open a ticket at <https://todo.sr.ht/~bptato/chawan>.
 A list of supported standard properties, with notes on unimplemented values:
 
 * align-items (flex only; baseline is treated as flex-start)
+* align-self (see above)
 * background-color (see color)
 * background-image (displays placeholders only)
 * border-collapse

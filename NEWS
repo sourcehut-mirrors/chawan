@@ -9,7 +9,7 @@ unreleased
 * support oklab(), oklch(), relative color syntax (e.g. hsl(from ...))
 * support "hidden" global attribute
 * emulate logical properties (always interpreted in horizontal-tb writing-mode)
-* support `justify-content' property
+* support `justify-content`, `align-content`, `align-self` properties
 * support `:empty` pseudo-class
 * improve BFC placement logic with floats
 * support accessing elements by id on Window object
