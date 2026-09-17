@@ -2284,8 +2284,8 @@ U reloadBuffer
 C-g lineInfo
 \ toggleSource
 D discardBuffer
-d, discardBufferPrev
-d. discardBufferNext
+d , discardBufferPrev
+d . discardBufferNext
 M-d discardTree
 , prevBuffer
 . nextBuffer
