@@ -62,10 +62,9 @@ proc width(edit: LineEdit; u: uint32): int =
   return u.width()
 
 proc width(edit: LineEdit; s: string): int =
-  var n = 0
-  for u in s.points:
-    n += edit.width(u)
-  n
+  if edit.hide:
+    return s.pointLen()
+  return s.width()
 
 # Note: capped at edit.maxwidth.
 proc getDisplayWidth(edit: LineEdit): int =
@@ -210,30 +209,32 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
   edit.redraw = true
 
-proc readLine*(prompt, current: string; termwidth: int; hide: bool;
+proc readLine*(prompt, current: sink string; termwidth: int; hide: bool;
     hist: History; luctx: LUContext; update, resolve: sink JSCallback):
     LineEdit =
   let promptw = prompt.width()
+  let cursori = current.len
+  # Skip the last history entry if it's identical to the input.
+  let skipLast = hist.last != nil and hist.last.s == current
   let edit = jsNew LineEditObj(
     prompt: prompt,
     promptw: promptw,
     text: current,
     hide: hide,
     redraw: true,
-    cursori: current.len,
+    cursori: cursori,
     # - 1, so that the cursor always has place
     maxwidth: termwidth - promptw - 1,
     selecti: -1,
     hist: hist,
     currHist: nil,
     luctx: luctx,
-    # Skip the last history entry if it's identical to the input.
-    skipLast: hist.last != nil and hist.last.s == current,
+    skipLast: skipLast,
     update: update,
     resolve: resolve
   )
   if edit != nil:
-    edit.cursorx = edit.width(current)
+    edit.cursorx = edit.width(edit.text)
   return edit
 
 jsClassDef(LineEdit):

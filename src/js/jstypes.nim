@@ -105,10 +105,19 @@ proc `$`*(ds: DOMString): string =
 proc toDOMStringView*(s: string): DOMString =
   DOMString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
 
+proc `==`*(ds: DOMString; s: string): bool =
+  ds.toOpenArray() == s
+
+proc `==`*(s: string; ds: DOMString): bool =
+  ds.toOpenArray() == s
+
 proc toDOMStringNull*(ds: sink DOMString): DOMStringNull =
   let p = ds.p
   ds.p = nil
   DOMStringNull(p: p, ilen: ds.ilen)
+
+proc `$`*(ds: DOMStringNull): string =
+  ds.toOpenArray().substr()
 
 proc `$`*(bs: ByteString): lent string =
   bs.s

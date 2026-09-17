@@ -2368,7 +2368,8 @@ proc draw*(term: Terminal; redraw, mouse: bool;
     term.frame.mouseEnabled = mouse
   term.startFlush()
 
-proc sendOSC52*(term: Terminal; s: string; clipboard = true): Opt[bool] =
+proc sendOSC52*(term: Terminal; s: openArray[char]; clipboard = true):
+    Opt[bool] =
   if not term.osc52Copy:
     return ok(false)
   var buf = OSC & "52;"

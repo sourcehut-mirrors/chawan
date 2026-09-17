@@ -349,9 +349,10 @@ proc getClassID(t: typedesc[Highlight]): JSClassID
 
 # BufferInit
 proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
-    url: URL; request: Request; attrs: WindowAttributes; title: string;
+    url: URL; request: Request; attrs: WindowAttributes; title: sink string;
     redirectDepth: int; flags: set[BufferInitFlag];
-    contentType, filterCmd: string; charsetStack: seq[Charset]): BufferInit =
+    contentType, filterCmd: sink string; charsetStack: seq[Charset]):
+    BufferInit =
   let cacheId = if request.url.schemeType == stCache:
     parseInt32(request.url.pathname).get(-1)
   else:
@@ -533,7 +534,7 @@ jsClassPublicDef(BufferInit):
       return init[].title
     return init.url.serialize(excludepassword = true)
 
-  proc setTitle(init: BufferInit; title: string) {.jsfset: "title".} =
+  proc setTitle(init: BufferInit; title: sink string) {.jsfset: "title".} =
     init.title = title
 
   proc connected*(ctx: JSContext; init: BufferInit; res: BufferConnectionResult;
@@ -1211,35 +1212,35 @@ jsClassPublicDef(BufferInterface):
     if iface.cursorx != pos.x or iface.cursory != pos.y:
       iface.jumpMark = pos
 
-  proc findMark(iface: BufferInterface; id: string): int =
+  proc findMark(iface: BufferInterface; id: DOMString): int =
     for i, it in iface.marks.mypairs:
       if it.id == id:
         return i
     -1
 
-  proc setMark(iface: BufferInterface; id: string; x, y: int): bool
+  proc setMark(iface: BufferInterface; id: DOMString; x, y: int): bool
       {.jsfunc.} =
     let i = iface.findMark(id)
-    if i != -1:
+    if i >= 0:
       iface.marks[i].pos = (x, y)
     else:
-      iface.marks.add(Mark(id: id, pos: (x, y)))
+      iface.marks.add(Mark(id: $id, pos: (x, y)))
     iface.queueDraw()
     i == -1
 
-  proc clearMark(iface: BufferInterface; id: string): bool {.jsfunc.} =
+  proc clearMark(iface: BufferInterface; id: DOMString): bool {.jsfunc.} =
     let i = iface.findMark(id)
-    if i != -1:
+    if i >= 0:
       iface.marks.del(i)
       iface.queueDraw()
     i != -1
 
-  proc getMarkPos(ctx: JSContext; iface: BufferInterface; id: string): JSValue
-      {.jsfunc.} =
+  proc getMarkPos(ctx: JSContext; iface: BufferInterface; id: DOMString):
+      JSValue {.jsfunc.} =
     if id == "`" or id == "'":
       return ctx.toJS(iface.jumpMark)
     let i = iface.findMark(id)
-    if i != -1:
+    if i >= 0:
       return ctx.toJS(iface.marks[i].pos)
     return JS_NULL
 
@@ -1267,7 +1268,7 @@ jsClassPublicDef(BufferInterface):
       if mark.pos.y > best.y or mark.pos.y == best.y and mark.pos.x > best.x:
         best = mark.pos
         j = i
-    if j != -1:
+    if j >= 0:
       return ctx.toJS(iface.marks[j].id)
     return JS_NULL
 

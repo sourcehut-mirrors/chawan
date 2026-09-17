@@ -1095,7 +1095,7 @@ proc parseEnumNoCase*[T: enum](s: openArray[char]): Opt[T] =
 const tchar = AsciiAlphaNumeric +
   {'!', '#'..'\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
 
-proc findContentTypeAttr(contentType, attrname: string): int =
+proc findContentTypeAttr(contentType, attrname: openArray[char]): int =
   var i = contentType.find(';')
   while i != -1:
     i = contentType.skipBlanks(i + 1)
@@ -1110,7 +1110,7 @@ proc findContentTypeAttr(contentType, attrname: string): int =
     i = contentType.find(';', i)
   return -1
 
-proc getContentTypeAttr*(contentType, attrname: string): string =
+proc getContentTypeAttr*(contentType, attrname: openArray[char]): string =
   var i = contentType.findContentTypeAttr(attrname)
   if i < 0:
     return ""

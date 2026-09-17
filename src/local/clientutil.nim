@@ -8,13 +8,14 @@ import io/dynstream
 import js/fromjs
 import js/jsbind
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
 import server/blob
-import utils/opt
 import server/url
 import utils/chaos
+import utils/opt
 import utils/strwidth
 import utils/twtstr
 
@@ -28,8 +29,8 @@ jsNamespaceDef(Util):
       return ctx.toJS(res.get)
     return JS_ThrowTypeError(ctx, "%s", cstring(res.error))
 
-  proc openFile(path: string): cint {.jsstfunc.} =
-    let ps = newPosixStream(path, O_RDONLY, 0)
+  proc openFile(path: DOMString): cint {.jsstfunc.} =
+    let ps = newPosixStream(path.p, O_RDONLY, 0)
     if ps == nil:
       return -1
     return ps.fd
@@ -70,17 +71,17 @@ jsNamespaceDef(Util):
   proc isSameAuthOrigin(a, b: URL): bool {.jsstfunc.} =
     return a.authOrigin.isSameOrigin(b.authOrigin);
 
-  proc encodeURIPath(s: string): string {.jsstfunc.} =
-    return percentEncode(s, PathPercentEncodeSet + {'%'})
+  proc encodeURIPath(s: DOMString): string {.jsstfunc.} =
+    return percentEncode(s.toOpenArray(), PathPercentEncodeSet + {'%'})
 
   proc expandPath(s: string): string {.jsstfunc.} =
     return twtstr.expandPath(s)
 
-  proc mkdir(s: string; mode: cint): cint {.jsstfunc.} =
-    return posix.mkdir(cstring(s), Mode(mode))
+  proc mkdir(s: DOMString; mode: cint): cint {.jsstfunc.} =
+    return posix.mkdir(s.p, Mode(mode))
 
-  proc unlink(s: string) {.jsstfunc.} =
-    discard posix.unlink(cstring(s))
+  proc unlink(s: DOMString) {.jsstfunc.} =
+    discard posix.unlink(s.p)
 
   proc readBlob(path: string): WebFile {.jsstfunc.} =
     let ps = newPosixStream(path, O_RDONLY, 0)
@@ -92,8 +93,8 @@ jsNamespaceDef(Util):
   proc convertSize(n: float64): string {.jsstfunc.} =
     twtstr.convertSize(uint64(n))
 
-  proc width(s: string): int {.jsstfunc.} =
-    strwidth.width(s)
+  proc width(s: DOMString): int {.jsstfunc.} =
+    strwidth.width(s.toOpenArray())
 
 proc addUtilModule*(ctx: JSContext): JSCode =
   ctx.registerNamespaceFree(UtilDef)

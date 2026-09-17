@@ -149,7 +149,7 @@ type
 
 # Forward declarations
 proc addConsole2(pager: Pager; interactive: bool)
-proc alert(pager: Pager; msg: string)
+proc alert(pager: Pager; msg: sink string)
 proc redraw(pager: Pager)
 proc windowChange(pager: Pager): Opt[void]
 proc bufWidth(pager: Pager): int
@@ -1054,9 +1054,9 @@ proc writeAskPrompt(pager: Pager; s = "") =
 
 proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; url: URL;
-    contentType, filterCmd: string; title = ""; redirectDepth = 0;
-    flags: set[BufferInitFlag] = {}; charsetStack: seq[Charset] = @[]):
-    BufferInit =
+    contentType, filterCmd: sink string; title: sink string = "";
+    redirectDepth = 0; flags: set[BufferInitFlag] = {};
+    charsetStack: seq[Charset] = @[]): BufferInit =
   let stream = pager.loader.startRequest(request, loaderConfig)
   if stream == nil:
     pager.alert("failed to start request for " & $request.url)
@@ -1083,8 +1083,8 @@ proc addInterface(pager: Pager; init: BufferInit; stream: PosixStream;
 proc alertExitCode(pager: Pager; cmd: string; ret: cint) =
   pager.alert("Command " & cmd & " exited with code " & $ret)
 
-template myExec(cmd: string) =
-  discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+template myExec(cmd: cstring) =
+  discard execl("/bin/sh", "sh", "-c", cmd, nil)
   exitnow(127)
 
 type EnvVar = tuple[name, value: string]
@@ -1106,7 +1106,7 @@ proc setEnvVars(pager: Pager; env: openArray[EnvVar]) =
 
 # Run process (and suspend the terminal controller).
 # For the most part, this emulates system(3).
-proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
+proc runCommand(pager: Pager; cmd: cstring; suspend, wait: bool;
     env: openArray[EnvVar]): Opt[cint] {.noinit.} =
   if suspend:
     ?pager.term.quit()
@@ -1135,7 +1135,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
         if errno != EINTR:
           ?pager.term.restart()
     else:
-      pager.pidMap.put(CommandItem(n: int(pid), cmd: cmd))
+      pager.pidMap.put(CommandItem(n: int(pid), cmd: $cmd))
     if not suspend:
       return ok(0)
     if wait:
@@ -1149,29 +1149,6 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     elif WIFSIGNALED(wstatus):
       code = 128 + WTERMSIG(wstatus)
     return ok(code)
-
-# Run process, and capture its output.
-proc runProcessCapture(cmd: string; outs: var string): bool =
-  let file = chafile.popen(cmd, "r")
-  if file == nil:
-    return false
-  let res = file.readAll(outs).isOk
-  let rv = file.pclose()
-  if not res or rv == -1:
-    return false
-  return rv == 0
-
-# Run process, and write an arbitrary string into its standard input.
-proc runProcessInto(cmd, ins: string): bool =
-  let file = chafile.popen(cmd, "w")
-  if file == nil:
-    return false
-  # It is OK if a process refuses to read all input.
-  discard file.write(ins)
-  let rv = file.pclose()
-  if rv == -1:
-    return false
-  return rv == 0
 
 proc windowChange(pager: Pager): Opt[void] =
   # maybe we didn't change dimensions, just color mode
@@ -1351,8 +1328,8 @@ proc initGotoURL(pager: Pager; request: Request; charset: Charset;
 
 proc gotoURL0(pager: Pager; request: Request; save, history: bool;
     bufferConfig: BufferConfig; loaderConfig: LoaderClientConfig;
-    title, contentType: string; redirectDepth: int; url: URL;
-    filterCmd: string): BufferInit =
+    title, contentType: sink string; redirectDepth: int; url: URL;
+    filterCmd: sink string): BufferInit =
   var flags: set[BufferInitFlag] = {}
   if save:
     flags.incl(bifSave)
@@ -2112,8 +2089,9 @@ jsClassDef(Pager):
     pager.bufferIface = iface
 
   # private
-  proc setLineEdit0(ctx: JSContext; pager: Pager; mode: LineMode; prompt: string;
-      obj: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+  proc setLineEdit0(ctx: JSContext; pager: Pager; mode: LineMode;
+      prompt: sink string; obj: JSValueConst = JS_UNDEFINED): JSValue
+      {.jsfunc.} =
     var current = ""
     var hide = false
     var update = JSCallback(nil)
@@ -2274,7 +2252,8 @@ jsClassDef(Pager):
     inc pager.tmpfSeq
 
   # public
-  proc askChar(ctx: JSContext; pager: Pager; prompt: string): JSValue {.jsfunc.} =
+  proc askChar(ctx: JSContext; pager: Pager; prompt: sink string): JSValue
+      {.jsfunc.} =
     var funs {.noinit.}: array[2, JSValue]
     let res = ctx.newPromiseCapability(funs)
     if JS_IsException(res):
@@ -2285,7 +2264,7 @@ jsClassDef(Pager):
     pager.askPromise = funs[0]
     return res
 
-  proc fitAskPrompt(pager: Pager; prompt0: string): string {.jsfunc.} =
+  proc fitAskPrompt(pager: Pager; prompt0: sink string): string {.jsfunc.} =
     var prompt = prompt0
     let choice = " (y/n)"
     let maxw = pager.status.grid.width - choice.width()
@@ -2341,7 +2320,7 @@ jsClassDef(Pager):
 
   # private
   proc initBufferFrom(pager: Pager; init: BufferInit;
-      contentType, filterCmd: string): BufferInit {.jsfunc.} =
+      contentType, filterCmd: sink string): BufferInit {.jsfunc.} =
     return pager.initBuffer(
       init.config,
       init.loaderConfig,
@@ -2375,7 +2354,7 @@ jsClassDef(Pager):
     return iface2
 
   # public
-  proc alert(pager: Pager; msg: string) {.jsfunc.} =
+  proc alert(pager: Pager; msg: sink string) {.jsfunc.} =
     if msg != "":
       pager.alerts.add(msg)
       pager.updateStatus = ussUpdate
@@ -2416,19 +2395,20 @@ jsClassDef(Pager):
     return pager.loader.getCacheFile(cacheId, pid)
 
   # private
-  proc getEditorCommand(pager: Pager; file: string; line = 1): string
+  proc getEditorCommand(pager: Pager; file: DOMString; line = 1): string
       {.jsfunc.} =
     var editor = pager.config{"editor"}
     if uqEditor := ChaPath(editor).unquote(""):
       if uqEditor in ["vi", "nvi", "vim", "nvim"]:
         editor = uqEditor & " +%d"
     var canpipe = true
-    var s = unquoteCommand(editor, "", file, URL(nil), canpipe, line)
+    var s = unquoteCommand(editor, "", file.toOpenArray(), URL(nil), canpipe,
+      line)
     if s.len > 0 and canpipe:
       # %s not in command; add file name ourselves
       if s[^1] != ' ':
         s &= ' '
-      s &= quoteFile(file, qsNormal)
+      s &= quoteFile(file.toOpenArray(), qsNormal)
     move(s)
 
   # private
@@ -2478,7 +2458,7 @@ jsClassDef(Pager):
 
   # Go to specific URL (for JS)
   type GotoURLDict = object of JSDict
-    contentType {.jsdefault.}: Option[string]
+    contentType {.jsdefault.}: DOMStringNull
     save {.jsdefault.}: bool
     history {.jsdefault: true.}: bool
     scripting {.jsdefault.}: Option[ScriptingMode]
@@ -2487,7 +2467,7 @@ jsClassDef(Pager):
     url {.jsdefault.}: URLNil
     referrer {.jsdefault.}: BufferInitNil
     redirectDepth {.jsdefault.}: int
-    title {.jsdefault.}: string
+    title {.jsdefault.}: DOMString
 
   # public
   proc gotoURLImpl(ctx: JSContext; pager: Pager; v: JSValueConst;
@@ -2506,7 +2486,7 @@ jsClassDef(Pager):
     pager.initGotoURL(request, t.charset, t.referrer.get, t.cookie,
       t.scripting, loaderConfig, bufferConfig, filterCmd)
     let init = pager.gotoURL0(request, t.save, t.history, bufferConfig,
-      loaderConfig, t.title, t.contentType.get(""), t.redirectDepth,
+      loaderConfig, $t.title, $t.contentType, t.redirectDepth,
       t.url.get, filterCmd)
     ok(init)
 
@@ -2529,30 +2509,42 @@ jsClassDef(Pager):
   # or perhaps just an extern2 that can use JS readablestreams and returns
   # retval, then deprecate the rest.
   # public
-  proc extern(ctx: JSContext; pager: Pager; cmd: string;
+  proc extern(ctx: JSContext; pager: Pager; cmd: DOMString;
       t = ExternDict(env: trace(JS_UNDEFINED), suspend: true)): JSValue
       {.jsfunc.} =
     var env = newSeq[EnvVar]()
     if ctx.readEnvSeq(pager, t.env, env) == fjErr:
       return JS_EXCEPTION
-    let res = pager.runCommand(cmd, t.suspend, t.wait, env)
+    let res = pager.runCommand(cmd.p, t.suspend, t.wait, env)
     if res.isErr:
       return ctx.jsQuit(pager, 1)
     return ctx.toJS(res.get == 0)
 
   # public
-  proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue
+  proc externCapture(ctx: JSContext; pager: Pager; cmd: DOMString): JSValue
       {.jsfunc.} =
     pager.setEnvVars(pager.defaultEnv())
-    var s: string
-    if runProcessCapture(cmd, s):
-      return ctx.toJS(s)
+    let file = chafile.popen(cmd.p, "r")
+    if file != nil:
+      var outs: string
+      let res = file.readAll(outs).isOk
+      let rv = file.pclose()
+      if res and rv == 0:
+        return ctx.toJS(outs)
     return JS_NULL
 
   # public
-  proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
+  proc externInto(pager: Pager; cmd: string; ins: DOMString): bool {.jsfunc.} =
     pager.setEnvVars(pager.defaultEnv())
-    return runProcessInto(cmd, ins)
+    let file = chafile.popen(cmd, "w")
+    if file == nil:
+      return false
+    # It is OK if a process refuses to read all input.
+    discard file.write(ins.toOpenArray())
+    let rv = file.pclose()
+    if rv == -1:
+      return false
+    return rv == 0
 
   # private
   proc suspend(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
@@ -2566,9 +2558,9 @@ jsClassDef(Pager):
     return JS_UNDEFINED
 
   # public
-  proc clipboardWrite(ctx: JSContext; pager: Pager; s: string;
+  proc clipboardWrite(ctx: JSContext; pager: Pager; s: DOMString;
       clipboard = true): JSValue {.jsfunc.} =
-    if res := pager.term.sendOSC52(s, clipboard):
+    if res := pager.term.sendOSC52(s.toOpenArray(), clipboard):
       if res:
         return JS_TRUE
       if not clipboard:
@@ -2577,7 +2569,7 @@ jsClassDef(Pager):
     return ctx.jsQuit(pager, 1)
 
   # private
-  proc addHist(pager: Pager; mode: LineMode; s: string) {.jsfunc.} =
+  proc addHist(pager: Pager; mode: LineMode; s: sink string) {.jsfunc.} =
     pager.getHist(mode).add(s)
 
   # private
@@ -2592,12 +2584,12 @@ jsClassDef(Pager):
       if pager.runMailcap(init, list.entries[i]).isErr:
         return ctx.jsQuit(pager, 1)
     else:
-      var s: string
+      var s: DOMString
       ?ctx.fromJS(val, s)
       let entry = MailcapEntry()
       var state = MailcapParser()
       var dummy: string
-      let res = state.parseEntry(s, entry, dummy)
+      let res = state.parseEntry(s.toOpenArray(), entry, dummy)
       if res.isOk:
         if pager.runMailcap(init, entry).isErr:
           return ctx.jsQuit(pager, 1)
@@ -2693,7 +2685,7 @@ jsClassDef(Pager):
     ok()
 
   # private
-  proc addMailcapEntry(pager: Pager; init: BufferInit; cmd: string;
+  proc addMailcapEntry(pager: Pager; init: BufferInit; cmd: sink string;
       flag: MailcapFlag) {.jsfunc.} =
     pager.saveEntry(init.shortContentType, MailcapEntry(cmd: cmd, flags: {flag}))
 
