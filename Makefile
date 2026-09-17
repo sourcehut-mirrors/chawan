@@ -87,6 +87,8 @@ embed_script =
 scripts = init.jsb
 script_target = $(OUTDIR_LIBEXEC)/%.jsb
 endif
+# used because past versions installed init.jsb for release builds too
+scripts_uninstall = init.jsb
 
 ssl_link = http https gemini sftp
 tohtml_link = gopher2html md2html ansi2html gmi2html dirlist2html img2html
@@ -322,7 +324,7 @@ uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
 # intentionally not quoted
 	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
-	for f in $(converters) $(tools) $(scripts); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
+	for f in $(converters) $(tools) $(scripts_uninstall); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # We only want to uninstall binaries that the main distribution
 # includes or has ever included, but not those that the user might have
 # added.  Some of these cannot be directly derived from our variables:
