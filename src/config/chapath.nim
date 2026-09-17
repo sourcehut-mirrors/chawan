@@ -89,7 +89,7 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   ok()
 
 proc flushIdent(ctx: var UnquoteContext) =
-  ctx.s &= getEnv(ctx.identStr)
+  ctx.s &= getEnvEmpty(ctx.identStr)
   ctx.identStr = ""
 
 const BareChars = AsciiAlphaNumeric + {'_'}
@@ -124,7 +124,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     if ctx.identStr == "0":
       ctx.s &= myposix.getAppFilename()
     else:
-      ctx.s &= getEnv(ctx.identStr)
+      ctx.s &= getEnvEmpty(ctx.identStr)
     ctx.identStr = ""
     ctx.state = usNormal
     return ok()
@@ -153,7 +153,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
 proc stateCurlyHash(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${#ident
   if c == '}':
-    let s = getEnv(ctx.identStr)
+    let s = getEnvEmpty(ctx.identStr)
     ctx.s &= $s.len
     ctx.identStr = ""
     ctx.state = usNormal
@@ -183,23 +183,28 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
     if ctx.hasColon:
       ctx.s &= getEnvEmpty(ctx.identStr, word)
     else:
-      ctx.s &= getEnv(ctx.identStr, word)
+      let cs = getEnvCString(ctx.identStr)
+      if cs != nil:
+        ctx.s &= $cs
+      else:
+        ctx.s &= word
   of '?':
     if ctx.hasColon:
-      let s = getEnv(ctx.identStr)
+      let s = getEnvEmpty(ctx.identStr)
       if s.len == 0:
         return err(word)
       ctx.s &= s
     else:
-      if not existsEnv(ctx.identStr):
+      let cs = getEnvCString(ctx.identStr)
+      if cs == nil:
         return err(word)
-      ctx.s &= getEnv(ctx.identStr)
+      ctx.s &= $cs
   of '+':
     if ctx.hasColon:
-      if getEnv(ctx.identStr).len > 0:
+      if getEnvEmpty(ctx.identStr).len > 0:
         ctx.s &= word
     else:
-      if existsEnv(ctx.identStr):
+      if getEnvCString(ctx.identStr) != nil:
         ctx.s &= word
   else: assert false
   ctx.subChar = '\0'

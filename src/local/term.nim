@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 import std/termios
 
@@ -110,7 +109,7 @@ type
     n: int # bytes of s already flushed
     next: TerminalPage
 
-  TermdescFlag = enum # 16 bits, 1 free
+  TermdescFlag = enum # 16 bits, 0 free
     tfTitle # can set window title
     tfPreEcma48 # does not support ECMA-48/VT100-like queries (DA1 etc.)
     tfXtermQuery # supports XTerm-like queries (background color etc.)
@@ -1852,7 +1851,7 @@ proc applyConfig(term: Terminal) =
   else:
     term.cs = DefaultCharset
     for s in ["LC_ALL", "LC_CTYPE", "LANG"]:
-      let env = getEnv(s)
+      let env = getEnvEmpty(s)
       if env == "":
         continue
       let cs = getLocaleCharset(env)
@@ -2556,7 +2555,7 @@ proc parseTERM(term: Terminal): TerminalType =
   if s.startsWith("screen."):
     res = ttScreen
   # tmux says it's screen, but it isn't.
-  if res == ttScreen and getEnv("TMUX") != "":
+  if res == ttScreen and getEnvEmpty("TMUX") != "":
     return ttTmux
   when defined(freebsd):
     # FreeBSD console says it's an XTerm, but it responds to *absolutely
@@ -2567,7 +2566,7 @@ proc parseTERM(term: Terminal): TerminalType =
       if ioctl(term.istream.fd, KDGETMODE, addr mode) != -1:
         res = ttFreebsd
   # zellij says it's its underlying terminal, but it isn't.
-  if getEnv("ZELLIJ") != "":
+  if getEnvEmpty("ZELLIJ") != "":
     return ttZellij
   return res
 
@@ -2597,7 +2596,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
     return ok()
   if not windowOnly:
     term.termType = term.parseTERM()
-    let colorterm = getEnv("COLORTERM")
+    let colorterm = getEnvEmpty("COLORTERM")
     if colorterm in ["24bit", "truecolor"]:
       term.attrs.colorMode = cmTrueColor
     term.applyTermDesc(TermdescMap[term.termType])
@@ -2611,9 +2610,9 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
       term.attrs.height = int(win.ws_row)
       term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
   if term.attrs.width == 0:
-    term.attrs.width = parseIntP(getEnv("COLUMNS")).get(0) - margin
+    term.attrs.width = parseIntP(getEnvEmpty("COLUMNS")).get(0) - margin
   if term.attrs.height == 0:
-    term.attrs.height = parseIntP(getEnv("LINES")).get(0)
+    term.attrs.height = parseIntP(getEnvEmpty("LINES")).get(0)
   ok()
 
 proc initCanvas(term: Terminal) =
