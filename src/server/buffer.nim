@@ -1136,6 +1136,29 @@ proc implicitSubmit(bc: BufferContext; input: HTMLInputElement): Request =
     return bc.submitFormClick(form, form.asHTMLElement)
   return Request(nil)
 
+proc updateInput(bc: BufferContext; element: Element; s: string;
+    isFile: bool) =
+  if bc.config.scripting != smFalse:
+    let window = bc.window
+    if isFile:
+      window.fireEvent(satInput, element.asEventTarget, bubbles = true,
+        cancelable = true, trusted = true)
+    else:
+      let inputEvent = newInputEvent(satInput.view(),
+        InputEventInit(
+          data: some(s),
+          inputType: "insertText",
+          bubbles: true,
+          cancelable: true
+        )
+      ).asEvent
+      if inputEvent != nil:
+        inputEvent.setTrusted()
+        window.fireEvent(inputEvent, element.asEventTarget)
+    bc.window.fireEvent(satChange, element.asEventTarget, bubbles = true,
+      cancelable = true, trusted = true)
+  bc.maybeReshape()
+
 proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
   if bc.document.focus != nil:
     let focus = bc.document.focus
@@ -1149,26 +1172,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
         input.addFile(file)
       else:
         input.setValue(s)
-      if bc.config.scripting != smFalse:
-        let window = bc.window
-        if input.inputType == itFile:
-          window.fireEvent(satInput, input.asEventTarget, bubbles = true,
-            cancelable = true, trusted = true)
-        else:
-          let inputEvent = newInputEvent(satInput.view(),
-            InputEventInit(
-              data: some(s),
-              inputType: "insertText",
-              bubbles: true,
-              cancelable: true
-            )
-          ).asEvent
-          if inputEvent != nil:
-            inputEvent.setTrusted()
-            window.fireEvent(inputEvent, input.asEventTarget)
-        bc.window.fireEvent(satChange, input.asEventTarget, bubbles = true,
-          cancelable = true, trusted = true)
-      bc.maybeReshape()
+      bc.updateInput(focus, s, input.inputType == itFile)
       return bc.implicitSubmit(input)
     of ttTextarea:
       let textarea = HTMLTextAreaElement(focus)
@@ -1176,7 +1180,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
       if bc.config.scripting != smFalse:
         bc.window.fireEvent(satChange, textarea.asEventTarget, bubbles = true,
           cancelable = true, trusted = true)
-      bc.maybeReshape()
+      bc.updateInput(focus, s, isFile = false)
     else: discard
   return Request(nil)
 
