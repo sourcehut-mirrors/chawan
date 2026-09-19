@@ -3,7 +3,12 @@
 import std/posix
 
 import config/mimetypes
+import encoding/charset
+import encoding/decoder
 import html/catom
+import html/domexception
+import html/event
+import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/timeout
@@ -46,11 +51,41 @@ type
     etTransparent = "transparent"
     etNative = "native"
 
+  FileReaderState = enum
+    frsEmpty = (0u16, "EMPTY")
+    frsLoading = (1u16, "LOADING")
+    frsDone = (2u16, "DONE")
+
+  PackageType = enum
+    ptDataURL, ptText, ptArrayBuffer, ptBinaryString
+
+  FileReaderObj = object of EventTargetObj
+    error: JSObject # may be nil
+    result: JSValueTraced # may be null
+    blob: Blob # may be nil
+    readyState: FileReaderState
+    packageType: PackageType
+
+  FileReader = JSRef[FileReaderObj]
+
+  ProgressEventObj {.pure, final.} = object of EventObj
+    lengthComputable: bool
+    loaded: float64
+    total: float64
+
+  ProgressEvent = JSRef[ProgressEventObj]
+
+  ProgressEventInit = object of EventInit
+    lengthComputable {.jsdefault.}: bool
+    loaded {.jsdefault.}: float64
+    total {.jsdefault.}: float64
+
 # Forward declarations
 proc deallocBlob*(opaque, p: pointer)
 proc getClassID(t: typedesc[Blob]): JSClassID
 proc getClassID*(t: typedesc[WebFile]): JSClassID
 proc getClassID(t: typedesc[FileList]): JSClassID
+proc getClassID(t: typedesc[FileReader]): JSClassID
 
 # Iterators
 iterator items*(this: FileList): lent WebFile =
@@ -308,10 +343,143 @@ jsClassDef(FileList):
     of fiStr: JS_UNINITIALIZED
     of fiErr: JS_EXCEPTION
 
+# ProgressEvent
+jsClassDef(ProgressEvent):
+  jsextends EventDef
+
+  jsget ProgressEvent, lengthComputable
+  jsget ProgressEvent, loaded
+  jsget ProgressEvent, total
+
+  proc newProgressEvent(eventType: CAtom; init = ProgressEventInit()):
+      ProgressEvent {.jsctor.} =
+    let event = jsNew ProgressEventObj(
+      eventType: eventType,
+      lengthComputable: init.lengthComputable,
+      loaded: init.loaded,
+      total: init.total
+    )
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(init))
+    event
+
+proc fireProgressEvent*(ctx: JSContext; target: EventTarget; name: StaticAtom;
+    loaded, length: int64) =
+  let event = newProgressEvent(name.view(), ProgressEventInit(
+    loaded: float64(loaded),
+    total: float64(length),
+    lengthComputable: length != 0
+  ))
+  if event != nil:
+    event.asEvent.setTrusted()
+    discard ctx.dispatch(target, event.asEvent)
+
+# FileReader
+#TODO definitely not compliant, but I guess it's fine for now
+proc package(ctx: JSContext; s: openArray[char]; contentType: string;
+    packageType: PackageType; jsEncoding: JSValueConst): JSValueTraced =
+  case packageType
+  of ptDataURL:
+    var res = "data:" & contentType & ";base64,"
+    res.btoa(s.toOpenArrayByte(0, s.high))
+    return trace(ctx.toJS(res))
+  of ptArrayBuffer:
+    let p = if s.len > 0:
+      cast[ptr UncheckedArray[uint8]](unsafeAddr s[0])
+    else:
+      nil
+    return trace(JS_NewArrayBufferCopy(ctx, p, csize_t(s.len)))
+  of ptText:
+    var charset = csUnknown
+    if not JS_IsUndefined(jsEncoding):
+      discard ctx.fromJS(jsEncoding, charset)
+    if charset == csUnknown:
+      charset = getCharset(contentType.getContentTypeAttr("charset"))
+    if charset == csUnknown:
+      charset = csUtf8
+    return trace(ctx.toJS(s.decodeAll(charset)))
+  of ptBinaryString:
+    if s.len == 0:
+      return trace(JS_NewString(ctx, ""))
+    let res = JS_NewNarrowStringLen(ctx, cast[cstring](unsafeAddr s[0]),
+      csize_t(s.len))
+    return trace(res)
+
+proc fulfillReadJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
+    JSValue {.cdecl.} =
+  assert argc == 2
+  var this: FileReader
+  ?ctx.fromJS(argv[0], this)
+  #TODO queue a task
+  ctx.fireProgressEvent(this.asEventTarget, satLoadstart, 0, 0)
+  this.readyState = frsDone
+  var len: int
+  if this.blob of WebFile:
+    let fd = WebFile(this.blob).fd
+    let ps = newPosixStream(fd)
+    let res = ps.readAll()
+    discard ps.seek(0)
+    this.result = ?ctx.package(res, this.blob.contentType, this.packageType,
+      argv[1])
+    len = res.len
+  else:
+    this.result = ?ctx.package(this.blob.toOpenArray(), this.blob.contentType,
+      this.packageType, argv[1])
+    len = this.blob.size
+  ctx.fireProgressEvent(this.asEventTarget, satLoad, int64(len), int64(len))
+  if this.readyState == frsDone:
+    ctx.fireProgressEvent(this.asEventTarget, satLoadend, int64(len),
+      int64(len))
+  return JS_UNDEFINED
+
+jsClassDef(FileReader):
+  jsextends EventTargetDef
+
+  jsget FileReader, result
+  jsget FileReader, error
+
+  proc newFileReader(): FileReader {.jsctor.} =
+    jsNew FileReaderObj()
+
+  proc read(ctx: JSContext; jsThis: JSValueConst; packageType: PackageType;
+      blob: Blob; encoding: JSValueConst = JS_UNDEFINED): JSValue {.
+      jsmfunc("readAsArrayBuffer", ptArrayBuffer),
+      jsmfunc("readAsBinaryString", ptBinaryString),
+      jsmfunc("readAsText", ptText), jsmfunc("readAsDataURL", ptDataURL).} =
+    var this: ptr FileReaderObj
+    ?ctx.fromJS(jsThis, this)
+    if this.readyState == frsLoading:
+      return JS_ThrowDOMException(ctx, "InvalidStateError",
+        "a file is already being loaded")
+    this.readyState = frsLoading
+    this.result = trace(JS_NULL)
+    this.error = JSObject(nil)
+    this.blob = blob
+    this.packageType = packageType
+    var encoding2 = trace(JS_UNDEFINED)
+    if packageType == ptText and not JS_IsUndefined(encoding):
+      var ds: DOMString
+      ?ctx.fromJS(encoding, ds)
+      encoding2 = ?trace(ctx.toJS(ds))
+    ?ctx.enqueueJob(fulfillReadJob, jsThis, encoding2.v)
+    return JS_UNDEFINED
+
+  #TODO abort
+
+  proc readyState(this: FileReader): uint16 {.jsfget.} =
+    uint16(this.readyState)
+
+  proc addFileReaderEvents(ctx: JSContext): Opt[void] =
+    ctx.addEventGetSet(classDef.id, satLoadstart, satProgress, satLoad,
+      satAbort, satError, satLoadend)
+
 proc addBlobModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(BlobDef)
   ?ctx.registerClass(WebFileDef)
   ?ctx.registerClass(FileListDef)
-  ok()
+  ?ctx.registerClass(FileReaderDef)
+  ?ctx.registerClass(ProgressEventDef)
+  ?ctx.defineConsts(FileReaderDef.id, FileReaderState)
+  ctx.addFileReaderEvents()
 
 {.pop.} # raises: []

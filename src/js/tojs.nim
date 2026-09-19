@@ -259,8 +259,6 @@ proc toJS*(ctx: JSContext; t: JSValueTraced): JSValue =
   return JS_DupValue(ctx, t.v)
 
 proc toJS*(ctx: JSContext; p: JSObject): JSValue =
-  if p == nil:
-    return JS_NULL
   return JS_DupValue(ctx, p.value)
 
 proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue =

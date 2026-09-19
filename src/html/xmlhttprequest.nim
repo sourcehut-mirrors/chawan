@@ -68,44 +68,12 @@ type
 
   XMLHttpRequest = JSRef[XMLHttpRequestObj]
 
-  ProgressEventObj {.pure, final.} = object of EventObj
-    lengthComputable: bool
-    loaded: float64
-    total: float64
-
-  ProgressEvent = JSRef[ProgressEventObj]
-
-  ProgressEventInit = object of EventInit
-    lengthComputable {.jsdefault.}: bool
-    loaded {.jsdefault.}: float64
-    total {.jsdefault.}: float64
-
 jsClassRaw(XMLHttpRequestEventTargetDef, "XMLHttpRequestEventTarget"):
   jsextends EventTargetDef
 
   proc addXHREventTargetEvents(ctx: JSContext): Opt[void] =
     ctx.addEventGetSet(classDef.id, satLoadstart, satProgress, satAbort,
       satError, satLoad, satTimeout, satLoadend)
-
-# ProgressEvent
-jsClassDef(ProgressEvent):
-  jsextends EventDef
-
-  jsget ProgressEvent, lengthComputable
-  jsget ProgressEvent, loaded
-  jsget ProgressEvent, total
-
-  proc newProgressEvent(eventType: CAtom; init = ProgressEventInit()):
-      ProgressEvent {.jsctor.} =
-    let event = jsNew ProgressEventObj(
-      eventType: eventType,
-      lengthComputable: init.lengthComputable,
-      loaded: init.loaded,
-      total: init.total
-    )
-    if event != nil:
-      event.asEvent.innerEventCreationSteps(EventInit(init))
-    event
 
 # XMLHttpRequestUpload
 jsClassDef(XMLHttpRequestUpload):
@@ -121,6 +89,10 @@ proc parseMethod(ctx: JSContext; s: DOMString): Opt[HttpMethod] =
   else:
     JS_ThrowDOMException(ctx, "SyntaxError", "invalid method")
   err()
+
+proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
+    loaded, length: int64) =
+  window.jsctx.fireProgressEvent(target, name, loaded, length)
 
 proc fireReadyStateChangeEvent(window: Window; target: XMLHttpRequest) =
   window.fireEvent(satReadystatechange, target.asEventTarget, bubbles = false,
@@ -138,17 +110,6 @@ proc checkSendFlag(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
     JS_ThrowDOMException(ctx, "InvalidStateError", "`send' flag is set")
     return err()
   ok()
-
-proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
-    loaded, length: int64) =
-  let event = newProgressEvent(name.view(), ProgressEventInit(
-    loaded: float64(loaded),
-    total: float64(length),
-    lengthComputable: length != 0
-  ))
-  if event != nil:
-    event.asEvent.setTrusted()
-    window.fireEvent(event.asEvent, target)
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
   this.readyState = xhrsDone
@@ -561,7 +522,6 @@ jsClassDef(XMLHttpRequest):
 proc addXMLHttpRequestModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(XMLHttpRequestEventTargetDef)
   ?ctx.addXHREventTargetEvents()
-  ?ctx.registerClass(ProgressEventDef)
   ?ctx.registerClass(XMLHttpRequestUploadDef)
   ?ctx.registerClass(XMLHttpRequestDef)
   ?ctx.addXHREvents()
