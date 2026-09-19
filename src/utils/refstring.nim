@@ -28,6 +28,8 @@ proc len*(rs: RefString): int =
   rs.s.len
 
 proc toJS*(ctx: JSContext; rs: RefString): JSValue =
+  if rs == nil:
+    return JS_NULL
   return ctx.toJS($rs)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; rs: var RefString):

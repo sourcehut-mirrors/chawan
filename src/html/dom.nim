@@ -5378,9 +5378,14 @@ proc postConnectionSteps(element: Element; ctx: JSContext) =
     script.prepare(ctx)
 
 proc delAttr(element: Element; ctx: JSContext; i: int) =
-  let name = element.attrs[i].name
-  element.asNode.queueMutationRecord(ctx, mrtAttributes, name, CAtomNull,
-    nil, true, element.attrs[i].value, [], [], Node(nil), Node(nil))
+  var name = element.attrs[i].name
+  if element.attrs[i].namespace != CAtomNull:
+    let i = name.find(':')
+    if i >= 0:
+      name = name.substr(i)
+  element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
+    element.attrs[i].namespace, nil, true, element.attrs[i].value, [], [],
+    Node(nil), Node(nil))
   let map = element.getCachedAttributes()
   if map != nil:
     # delete from attrlist + adjust indices invalidated
@@ -5827,12 +5832,12 @@ jsClassPublicDef(Element):
     ?ctx.validateAndExtract(namespace, localName, nvAttribute)
     var i = element.findAttrNS(namespace, localName)
     if i >= 0:
-      element.asNode.queueMutationRecord(ctx, mrtAttributes, qualifiedName,
+      element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
         namespace, nil, true, element.attrs[i].value, [], [], Node(nil),
         Node(nil))
       element.attrs[i].value = $value
     else:
-      element.asNode.queueMutationRecord(ctx, mrtAttributes, qualifiedName,
+      element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
         namespace, nil, false, "", [], [], Node(nil), Node(nil))
       i = element.attrs.upperBound(qualifiedName, cmpAttrName)
       element.attrs.insert(AttrData(

@@ -4,6 +4,8 @@
 <div id=node></div>
 <script src=asserts.js></script>
 <script>
+assertThrows(() => new MutationObserver(1234), TypeError);
+assertThrows(() => new MutationObserver(null), TypeError);
 let a, b, c, d;
 const o1 = new MutationObserver((list, o) => {
 	for (const it of list) {
