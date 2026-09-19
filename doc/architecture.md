@@ -126,8 +126,11 @@ alive.
 Buffer processes parse HTML, optionally query external resources from
 loader, run styling, JS, and finally render the page to an internal canvas.
 
-Buffers are managed by the pager through Container objects. A UNIX domain
-socket is established between each buffer and the pager for IPC.
+Buffers are exposed to the (JS-based) browser shell through BufferInterface
+objects, which communicate with the buffer process through a Unix domain
+socket.  There is a second layer for the user-facing API as well in the
+form of Buffer objects, which are implemented entirely in JS.  (The latter
+is described in detail by [**cha-api**](api.md)(7).)
 
 ## Opening buffers
 
