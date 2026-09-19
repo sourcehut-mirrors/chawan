@@ -61,7 +61,7 @@ proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtom =
   return tagType.view()
 
 proc namespaceToAtomImpl(builder: ChaDOMBuilder; ns: Namespace): CAtom =
-  return ns.toStaticAtom().view()
+  return ns.toAtom()
 
 proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
   return s.toAtom()
