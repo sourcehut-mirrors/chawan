@@ -194,6 +194,7 @@ proc getHist(pager: Pager; mode: LineMode): History =
 
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JSModuleDef {.cdecl.} =
+  #TODO module map
   let moduleName = $moduleName
   let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../"):
@@ -205,7 +206,10 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     return nil
   var source: string
   if chafile.readFile(x.pathname, source).isOk:
-    return ctx.finishLoadModule(source, moduleName)
+    let funcVal = compileModule(ctx, source, moduleName)
+    if JS_IsException(funcVal):
+      return nil
+    return ctx.finishLoadModule(funcVal, moduleName)
   JS_ThrowTypeError(ctx, "failed to read file %s", cstring(moduleName))
   return nil
 

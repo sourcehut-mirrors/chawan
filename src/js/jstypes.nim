@@ -234,6 +234,9 @@ proc JS_IsException*(t: JSValueTraced): bool =
 proc JS_MarkValue*(rt: JSRuntime; t: JSValueTraced; markFunc: JS_MarkFunc) =
   JS_MarkValue(rt, t.v, markFunc)
 
+proc JS_DupValue*(ctx: JSContext; t: JSValueTraced): JSValue =
+  JS_DupValue(ctx, t.v)
+
 proc moveJSValue*(t: var JSValueTraced): JSValue =
   let val = t.v
   t.v = JS_UNINITIALIZED

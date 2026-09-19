@@ -202,10 +202,8 @@ proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   doAssert ctx.definePropertyCWE(metaObj, "main", JS_FALSE) == fjOk
   JS_FreeValue(ctx, metaObj)
 
-proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
-  let funcVal = compileModule(ctx, source, name)
-  if JS_IsException(funcVal):
-    return nil
+proc finishLoadModule*(ctx: JSContext; funcVal: JSValue; name: string):
+    JSModuleDef =
   ctx.setImportMeta(funcVal, false)
   # "the module is already referenced, so we must free it"
   # idk how this works, so for now let's just do what qjs does

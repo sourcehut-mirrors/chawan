@@ -908,15 +908,23 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   if url == nil or not window.isSameOrigin(url.origin):
     JS_ThrowTypeError(ctx, "invalid URL: %s", moduleName)
     return nil
-  let request = newRequest(url)
-  let response = window.loader.doRequest(request)
-  if response.stream == nil:
-    JS_ThrowTypeError(ctx, "Failed to load module %s", moduleName)
-    return nil
-  window.loader.resume(response)
-  let source = response.stream.readAll()
-  window.loader.close(response)
-  return ctx.finishLoadModule(source, name)
+  var module = window.settings.moduleMap.get(url, mtJavascript)
+  if module == nil:
+    let request = newRequest(url)
+    let response = window.loader.doRequest(request)
+    if response.stream == nil:
+      JS_ThrowTypeError(ctx, "Failed to load module %s", moduleName)
+      return nil
+    window.loader.resume(response)
+    let source = response.stream.readAll()
+    window.loader.close(response)
+    #TODO ScriptOptions
+    module = ctx.newJSModuleScript(source, url, ScriptOptions(),
+      window.settings)
+    if JS_IsException(module.script.record):
+      return nil
+    window.settings.moduleMap.put(url, mtJavascript, module)
+  return ctx.finishLoadModule(JS_DupValue(ctx, module.script.record), name)
 
 proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     isHandled: JS_BOOL; opaque: pointer) {.cdecl.} =
