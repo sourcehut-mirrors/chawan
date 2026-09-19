@@ -14,9 +14,11 @@ unreleased
 * improve BFC placement logic with floats
 * support accessing elements by id on Window object
 * support MutationObserver
+* support FileReader
 * support Delete key, add default aliases for alternate Home/End
 * support browsecap for external URI handlers (based on w3mmee)
 * add external.ask-download-dir option (can be overridden in siteconf)
+* allow CORS requests in app mode
 * rework keybinding API for select widget (there is a [select] section now)
 * retry connections with ipv6 if ipv4 resolves but connect() fails
 * reduce copying of strings between Nim <-> JS
@@ -59,6 +61,7 @@ unreleased
 * fix table borders overprinting content in some cases
 * fix findPrevMark/findNextMark actions
 * fix leaks from interned strings
+* fix module scripts being fetched multiple times on import
 
 0.4.0 (2026.05.17)
 
