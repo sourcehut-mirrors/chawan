@@ -742,9 +742,7 @@ jsClassDef(Window):
   proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
       init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
     let input = ?newRequest(ctx, input, init)
-    if input.url.schemeType != stData and
-        not window.isSameOrigin(input.url.origin):
-      # reject immediately
+    if not window.checkCORSRequest(input):
       discard ctx.throwNetworkError()
       return ctx.newRejectedPromise()
     var funs {.noinit.}: array[2, JSValue]

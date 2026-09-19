@@ -392,6 +392,17 @@ proc getAllCommaSplit*(this: Headers; k: string): seq[string] =
     for value in it.value.split(','):
       result.add(value.strip(chars = {' ', '\t'}))
 
+proc getAll*(this: Headers; k: string): string =
+  var s = ""
+  let n = this.lowerBound(k)
+  for it in this.list.toOpenArray(n, this.list.high):
+    if not it.name.equalsIgnoreCase(k):
+      break
+    if s.len > 0:
+      s &= ", "
+    s &= it.value
+  move(s)
+
 # n is timeout in millis. -1 => not found
 # url == nil => self
 type CheckRefreshResult* = tuple[n: int; url: URL]

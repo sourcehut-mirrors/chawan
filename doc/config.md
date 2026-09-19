@@ -156,9 +156,9 @@ scripting = false
 : Enable/disable JavaScript in *all* buffers.
 
   `"app"` also enables JavaScript APIs that can be used to fingerprint
-  users (e.g. querying the window's size).  This may achieve better
-  compatibility with websites that behave like applications, at the cost of
-  reduced privacy.
+  users (e.g. querying the window's size), as well as CORS requests from
+  JavaScript.  This may achieve better compatibility with websites that
+  behave like applications, at the cost of reduced privacy.
 
   For security and performance reasons, users are encouraged to selectively
   enable JavaScript with `[[siteconf]]` instead of using this setting.

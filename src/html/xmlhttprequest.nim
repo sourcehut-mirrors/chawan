@@ -433,8 +433,7 @@ jsClassDef(XMLHttpRequest):
       let opaque = XHROpaque(this: this, window: window)
       window.fetch(request, sendAsync, opaque)
     else: # sync
-      #TODO cors requests?
-      if window.settings.origin.isSameOrigin(request.url.origin):
+      if window.checkCORSRequest(request):
         let response = window.loader.doRequest(request)
         if response.stream != nil:
           #TODO timeout
