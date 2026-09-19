@@ -1,9 +1,14 @@
 {.push raises: [].}
 
+import std/options
+
+import html/catom
 import html/domexception
+import html/event
 import js/constcharp
 import js/fromjs
 import js/jsbind
+import js/jsnull
 import js/jsopaque
 import js/jspropenumlist
 import js/jsref
@@ -18,6 +23,17 @@ type
     map: seq[tuple[key, value: string]]
 
   Storage = JSRef[StorageObj]
+
+  StorageNil = JSNullRef[StorageObj]
+
+  StorageEventObj {.pure, final.} = object of EventObj
+    key: Option[string]
+    oldValue: Option[string]
+    newValue: Option[string]
+    url: string
+    storageArea: StorageNil
+
+  StorageEvent = JSRef[StorageEventObj]
 
 proc getClassID(t: typedesc[Storage]): JSClassID
 
@@ -107,8 +123,51 @@ proc registerAutoInitStorage(ctx: JSContext; name: cstring): JSCode =
     return fjErr
   fjOk
 
+# StorageEvent
+type StorageEventInit = object of EventInit
+  key {.jsdefault.}: Option[string] #TODO DOMString
+  oldValue {.jsdefault.}: Option[string] #TODO DOMString
+  newValue {.jsdefault.}: Option[string] #TODO DOMString
+  url {.jsdefault.}: string
+  storageArea {.jsdefault.}: StorageNil
+
+jsClassDef(StorageEvent):
+  jsextends EventDef
+
+  jsget StorageEvent, key
+  jsget StorageEvent, oldValue
+  jsget StorageEvent, newValue
+  jsget StorageEvent, url
+  jsget StorageEvent, storageArea
+
+  proc newStorageEvent(eventType: CAtom;
+      eventInitDict: sink StorageEventInit = StorageEventInit()):
+      StorageEvent {.jsctor.} =
+    let event = jsNew StorageEventObj(
+      key: move(eventInitDict.key),
+      oldValue: move(eventInitDict.oldValue),
+      newValue: move(eventInitDict.newValue),
+      url: move(eventInitDict.url),
+      storageArea: move(eventInitDict.storageArea)
+    )
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(eventInitDict))
+    event
+
+  proc initStorageEvent(this: StorageEvent; eventType: CAtom; bubbles = false;
+      cancelable = false; key = none(string); oldValue = none(string);
+      newValue = none(string); url: sink string = "";
+      storageArea = StorageNil(nil)) {.jsfunc.} =
+    if efDispatch notin this.flags:
+      this.key = key
+      this.oldValue = oldValue
+      this.newValue = newValue
+      this.storageArea = storageArea
+      this.asEvent.initialize(eventType, bubbles, cancelable)
+
 proc addStorageModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(StorageDef)
+  ?ctx.registerClass(StorageEventDef)
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return fjOk

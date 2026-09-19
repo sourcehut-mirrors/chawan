@@ -346,7 +346,8 @@ jsClassRaw(LocationDef, "Location"):
     return location.url.serialize()
 
   proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
-      jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =
+      jsuffunc: "open", jsfset: "href", jsuffunc: "assign",
+      jsuffunc: "replace".} =
     let window = location.window
     return ctx.setLocation(window, s)
 

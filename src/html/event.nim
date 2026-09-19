@@ -26,7 +26,7 @@ type
     AT_TARGET = 2u16
     BUBBLING_PHASE = 3u16
 
-  EventFlag = enum
+  EventFlag* = enum
     efStopPropagation
     efStopImmediatePropagation
     efCanceled
@@ -44,7 +44,7 @@ type
     currentTarget*: EventTarget
     eventType*: CAtom
     eventPhase: uint16
-    flags: set[EventFlag]
+    flags*: set[EventFlag]
 
   Event* = JSRef[EventObj]
 
@@ -278,7 +278,7 @@ jsClassPublicDef(Event):
       jsmfget("composed", efComposed).} =
     flag in event.flags
 
-  proc initialize(this: Event; eventType: CAtom; bubbles, cancelable: bool) =
+  proc initialize*(this: Event; eventType: CAtom; bubbles, cancelable: bool) =
     this.flags.incl(efInitialized)
     this.flags.excl(efTrusted)
     this.target = EventTarget(nil)
