@@ -62,7 +62,8 @@ type
   FileReaderObj = object of EventTargetObj
     error: JSObject # may be nil
     result: JSValueTraced # may be null
-    blob: Blob # may be nil
+    blob: Blob # set when a job is running
+    abort: AbortController # ditto
     readyState: FileReaderState
     packageType: PackageType
 
@@ -410,10 +411,14 @@ proc fulfillReadJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
   assert argc == 2
   var this: FileReader
   ?ctx.fromJS(argv[0], this)
+  if this.abort != nil and this.abort.signal.aborted:
+    return JS_UNDEFINED
   #TODO queue a task
-  ctx.fireProgressEvent(this.asEventTarget, satLoadstart, 0, 0)
+  let len = this.blob.getSize()
+  ctx.fireProgressEvent(this.asEventTarget, satLoadstart, 0, int64(len))
+  if this.abort != nil and this.abort.signal.aborted:
+    return JS_UNDEFINED
   this.readyState = frsDone
-  var len: int
   if this.blob of WebFile:
     let fd = WebFile(this.blob).fd
     let ps = newPosixStream(fd)
@@ -421,12 +426,12 @@ proc fulfillReadJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     discard ps.seek(0)
     this.result = ?ctx.package(res, this.blob.contentType, this.packageType,
       argv[1])
-    len = res.len
   else:
     this.result = ?ctx.package(this.blob.toOpenArray(), this.blob.contentType,
       this.packageType, argv[1])
-    len = this.blob.size
   ctx.fireProgressEvent(this.asEventTarget, satLoad, int64(len), int64(len))
+  if this.abort != nil and this.abort.signal.aborted:
+    return JS_UNDEFINED
   if this.readyState == frsDone:
     ctx.fireProgressEvent(this.asEventTarget, satLoadend, int64(len),
       int64(len))
@@ -455,6 +460,7 @@ jsClassDef(FileReader):
     this.result = trace(JS_NULL)
     this.error = JSObject(nil)
     this.blob = blob
+    this.abort = newAbortController()
     this.packageType = packageType
     var encoding2 = trace(JS_UNDEFINED)
     if packageType == ptText and not JS_IsUndefined(encoding):
@@ -464,7 +470,17 @@ jsClassDef(FileReader):
     ?ctx.enqueueJob(fulfillReadJob, jsThis, encoding2.v)
     return JS_UNDEFINED
 
-  #TODO abort
+  proc abort(ctx: JSContext; this: FileReader): Opt[void] {.jsfunc.} =
+    this.result = trace(JS_NULL)
+    if this.readyState == frsLoading:
+      this.readyState = frsDone
+      if this.abort != nil:
+        discard ?trace(ctx.abort(this.abort))
+        this.readyState = frsDone
+      ctx.fireProgressEvent(this.asEventTarget, satAbort, 0, 0)
+      if this.readyState != frsLoading:
+        ctx.fireProgressEvent(this.asEventTarget, satLoadend, 0, 0)
+    ok()
 
   proc readyState(this: FileReader): uint16 {.jsfget.} =
     uint16(this.readyState)

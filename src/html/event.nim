@@ -158,13 +158,13 @@ type
 
   AbortSignalObj {.pure, final.} = object of EventTargetObj
     reason: JSValueTraced
-    abortSteps: seq[JSObject]
+    abortSteps: seq[JSCallback]
     #TODO source/dependent signals
 
   AbortControllerObj = object
-    signal: AbortSignal
+    signal*: AbortSignal
 
-  AbortController = JSRef[AbortControllerObj]
+  AbortController* = JSRef[AbortControllerObj]
 
 # Forward declarations
 proc removeEventListener*(ctx: JSContext; eventTarget: EventTarget;
@@ -739,7 +739,7 @@ proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
         data.toJSValueConstArray())
       if JS_IsException(fun):
         return err()
-      signal.abortSteps.add(traceObj(fun))
+      signal.abortSteps.add(traceCallback(fun))
   ok()
 
 proc flatten(ctx: JSContext; options: JSValueConst): Opt[bool] =
@@ -1023,7 +1023,7 @@ jsClassDef(AbortSignal):
 
   jsget AbortSignal, reason
 
-  proc aborted(this: AbortSignal): bool {.jsfget.} =
+  proc aborted*(this: AbortSignal): bool {.jsfget.} =
     not JS_IsUndefined(this.reason)
 
   proc mark(rt: JSRuntime; this: AbortSignal; markFun: JS_MarkFunc) {.
@@ -1047,13 +1047,13 @@ jsClassDef(AbortSignal):
 jsClassDef(AbortController):
   jsget AbortController, signal
 
-  proc newAbortController(ctx: JSContext): AbortController {.jsctor.} =
+  proc newAbortController*(): AbortController {.jsctor.} =
     let signal = jsNew AbortSignalObj(reason: trace(JS_UNDEFINED))
     if signal == nil:
       return AbortController(nil)
     jsNew AbortControllerObj(signal: signal)
 
-  proc abort(ctx: JSContext; this: AbortController;
+  proc abort*(ctx: JSContext; this: AbortController;
       reason: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
     let signal = this.signal
     if not signal.aborted:

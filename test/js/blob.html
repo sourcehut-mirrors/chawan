@@ -2,7 +2,7 @@
 <title>Blob test</title>
 <div id=x>Fail</div>
 <script src=asserts.js></script>
-<script>
+<script type=module>
 assertEquals(new Blob(["a", "b"]).size, 2);
 {
 	const abuf = new ArrayBuffer(8);
@@ -13,6 +13,50 @@ assertEquals(new Blob(["a", "b"]).size, 2);
 	});
 	const blob = new Blob([view], options);
 	assertEquals(blob.size, 0);
+}
+{
+	const blob = new Blob(["a"]);
+	const fr = new FileReader();
+	fr.readAsText(blob)
+	let count = 0;
+	await new Promise(resolve => {
+		fr.onloadstart = e => {
+			assertEquals(e.loaded, 0);
+			assertEquals(e.total, 1);
+			count++;
+		}
+		fr.onload = e => {
+			assertEquals(e.loaded, 1);
+			assertEquals(e.total, 1);
+			assertEquals(fr.result, "a");
+			count++;
+		}
+		fr.onloadend = e => {
+			assertEquals(e.loaded, 1);
+			assertEquals(e.total, 1);
+			count++;
+			resolve();
+		}
+	});
+	assertEquals(count, 3);
+
+	fr.readAsDataURL(blob)
+	await new Promise(resolve => {
+		fr.onloadstart = e => {
+			assertEquals(e.loaded, 0);
+			assertEquals(e.total, 1);
+			count++;
+			fr.abort();
+		}
+		fr.onload = e => {
+			count--;
+		}
+		fr.onloadend = e => {
+			count++;
+			resolve();
+		}
+	});
+	assertEquals(count, 5);
 }
 document.getElementById("x").textContent = "Success";
 </script>
