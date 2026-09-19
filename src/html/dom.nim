@@ -1838,9 +1838,8 @@ proc mutationJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
   return JS_UNDEFINED
 
 proc queueMutationJob(ctx: JSContext) =
-  if not mutationJobQueued:
-    if ctx.enqueueJob(mutationJob) >= 0:
-      mutationJobQueued = true
+  if not mutationJobQueued and ctx.enqueueJob(mutationJob) == fjOk:
+    mutationJobQueued = true
 
 proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
     name, namespace: CAtom; oldValue: RefString; hasOldValue2: bool;

@@ -187,21 +187,23 @@ proc newPromiseCapability*(ctx: JSContext; funs: var array[2, JSValue]):
   return JS_NewPromiseCapability(ctx, funs.toJSValueArray())
 
 proc enqueueJob*(ctx: JSContext; fun: JSJobFunc;
-    argv: varargs[JSValueConst]): cint =
-  return JS_EnqueueJob(ctx, fun, cint(argv.len), argv.toJSValueConstArray())
+    argv: varargs[JSValueConst]): JSCode =
+  if JS_EnqueueJob(ctx, fun, cint(argv.len), argv.toJSValueConstArray()) < 0:
+    return fjErr
+  fjOk
 
 proc rejectJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   return ctx.call(argv[0], JS_UNDEFINED, argv[1])
 
-proc enqueueRejection*(ctx: JSContext; reject: JSValue): cint =
+proc enqueueRejection*(ctx: JSContext; reject: JSValue): JSCode =
   ## Usage: throw an exception, then call queueRejection with the reject fun.
   ## reject is freed.
   let ex = JS_GetException(ctx)
   let code = ctx.enqueueJob(rejectJob, reject, ex)
   JS_FreeValue(ctx, reject)
   JS_FreeValue(ctx, ex)
-  return code
+  code
 
 proc newRejectedPromise*(ctx: JSContext): JSValue =
   ## Usage: throw an exception, then create the rejected promise.
@@ -214,7 +216,7 @@ proc newRejectedPromise*(ctx: JSContext): JSValue =
   let code = ctx.enqueueJob(rejectJob, funs[1], ex)
   ctx.freeValues(funs)
   JS_FreeValue(ctx, ex)
-  if code < 0:
+  if code == fjErr:
     JS_FreeValue(ctx, res)
     return JS_EXCEPTION
   return res

@@ -167,13 +167,43 @@ jsClassRaw(NotificationDef, "Notification"):
       return res
     let code = ctx.enqueueJob(resolveToDenied, funs[0], callback)
     ctx.freeValues(funs)
-    if code < 0:
+    if code == fjErr:
       JS_FreeValue(ctx, res)
       return JS_EXCEPTION
     return res
 
+# PermissionStatus
+type
+  PermissionState = enum
+    psDenied = "denied"
+    psGranted = "granted"
+    psPrompt = "prompt"
+
+  PermissionStatusObj = object of EventTargetObj
+    state: PermissionState
+    name: string
+    #TODO onchange
+
+  PermissionStatus = JSRef[PermissionStatusObj]
+
+jsClassDef(PermissionStatus):
+  jsextends EventTargetDef
+
+  jsget PermissionStatus, state
+  jsget PermissionStatus, name
+
 # Permissions
-# See above.
+proc denyPermissionJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
+    JSValue {.cdecl.} =
+  assert argc == 2
+  var name: string
+  ?ctx.fromJS(argv[1], name)
+  let obj = ?trace(ctx.toJSNew(jsNew PermissionStatusObj(
+    name: move(name),
+    state: psDenied
+  )))
+  return ctx.call(argv[0], JS_UNDEFINED, obj.v)
+
 jsClassRaw(PermissionsDef, "Permissions"):
   proc finalizePermissions(rt: JSRuntime; this: pointer) {.jsfin.} =
     JS_FreeForeignObject(rt, this)
@@ -182,15 +212,21 @@ jsClassRaw(PermissionsDef, "Permissions"):
       {.jsmark.} =
     JS_MarkForeignObject(rt, this, markFunc)
 
-  proc query(ctx: JSContext; this: JSValueConst; desc: JSValueConst): JSValue
-      {.jsfunc.} =
-    let name = ctx.getProperty(desc, jstName)
-    if JS_IsException(name):
-      return name
-    JS_FreeValue(ctx, name)
-    # reject immediately
-    JS_ThrowTypeError(ctx, "permissions are not supported")
-    return ctx.newRejectedPromise()
+  proc query(ctx: JSContext; this, desc: JSValueConst): JSValue {.jsfunc.} =
+    let jsName = ctx.getProperty(desc, jstName)
+    if JS_IsException(jsName):
+      return JS_EXCEPTION
+    var name: DOMString
+    ?ctx.fromJSFree(jsName, name)
+    let jsName2 = ?trace(ctx.toJS(name))
+    var funs {.noinit.}: array[2, JSValue]
+    var res = ?trace(ctx.newPromiseCapability(funs))
+    #TODO permission task source
+    let code = ctx.enqueueJob(denyPermissionJob, funs[0], jsName2.v)
+    ctx.freeValues(funs)
+    if code == fjErr:
+      return JS_EXCEPTION
+    moveJSValue(res)
 
 # Screen
 jsClassRaw(ScreenDef, "Screen"):
@@ -492,6 +528,7 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
 
 proc addNavigatorModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(NotificationDef)
+  ?ctx.registerClass(PermissionStatusDef)
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return ok()
@@ -836,8 +873,7 @@ jsClassDef(Window):
 
   proc queueMicrotask(ctx: JSContext; window: Window; fun: JSCallback):
       JSValue {.jsfunc.} =
-    if ctx.enqueueJob(microtaskJob, fun.value) < 0:
-      return JS_EXCEPTION
+    ?ctx.enqueueJob(microtaskJob, fun.value)
     return JS_UNDEFINED
 
   proc matchMedia(window: Window; s: CSSOMString): MediaQueryList {.jsnfunc.} =
