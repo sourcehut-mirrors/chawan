@@ -86,6 +86,13 @@ proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
     JS_FreeValue(ctx, param)
   return fun
 
+proc newArrayBuffer*(ctx: JSContext; s: openArray[char]): JSValue =
+  let p = if s.len > 0:
+    cast[ptr UncheckedArray[uint8]](unsafeAddr s[0])
+  else:
+    nil
+  return JS_NewArrayBufferCopy(ctx, p, csize_t(s.len))
+
 proc toJS*(ctx: JSContext; s: cstring): JSValue =
   return JS_NewString(ctx, s)
 

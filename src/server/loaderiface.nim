@@ -341,6 +341,16 @@ proc onFinishJSON(response: Response; success: bool) =
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
 
+proc onFinishArrayBuffer(response: Response; success: bool) =
+  let blob = response.onFinishBlob(success)
+  let opaque = JSBlobOpaque(response.opaque)
+  let ctx = opaque.ctx
+  let val = if blob != nil:
+    ctx.newArrayBuffer(blob.toOpenArray())
+  else:
+    JS_ThrowTypeError(ctx, "error reading response body")
+  jsFinish0(opaque, val)
+
 jsClassDef(Response):
   jsget Response, responseType, "type"
   jsget Response, status
@@ -391,6 +401,9 @@ jsClassDef(Response):
 
   proc json(ctx: JSContext; this: Response): JSValue {.jsfunc.} =
     return ctx.blob0(this, onFinishJSON)
+
+  proc arrayBuffer(ctx: JSContext; this: Response): JSValue {.jsfunc.} =
+    return ctx.blob0(this, onFinishArrayBuffer)
 
 proc addResponseModule*(ctx: JSContext): JSCode =
   ctx.registerClass(ResponseDef)

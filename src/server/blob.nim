@@ -385,11 +385,7 @@ proc package(ctx: JSContext; s: openArray[char]; contentType: string;
     res.btoa(s.toOpenArrayByte(0, s.high))
     return trace(ctx.toJS(res))
   of ptArrayBuffer:
-    let p = if s.len > 0:
-      cast[ptr UncheckedArray[uint8]](unsafeAddr s[0])
-    else:
-      nil
-    return trace(JS_NewArrayBufferCopy(ctx, p, csize_t(s.len)))
+    return trace(ctx.newArrayBuffer(s))
   of ptText:
     var charset = csUnknown
     if not JS_IsUndefined(jsEncoding):
