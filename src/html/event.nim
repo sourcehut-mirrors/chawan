@@ -614,6 +614,8 @@ jsClassDef(MutationObserver):
       flags.incl(oifCharacterDataOldValue)
     if init.childList:
       flags.incl(oifChildList)
+    if init.subtree:
+      flags.incl(oifSubtree)
     block add:
       for el in cast[EventTarget](target).mutationObservers:
         if el.observer == this:

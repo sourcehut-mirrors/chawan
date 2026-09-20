@@ -7,7 +7,8 @@
 assertThrows(() => new MutationObserver(1234), TypeError);
 assertThrows(() => new MutationObserver(null), TypeError);
 let a, b, c, d;
-const o1 = new MutationObserver((list, o) => {
+const o1 = new MutationObserver(function(list, o) {
+	assertEquals(this, o);
 	for (const it of list) {
 		a = it.addedNodes;
 		b = it.removedNodes;
@@ -22,6 +23,19 @@ const o2 = new MutationObserver((list, o) => {
 o1.observe(node, {childList: true});
 o2.observe(node, {childList: true});
 node.insertBefore(new Text("hi"), null)
+
+const node3 = document.createElement("div");
+let ok3 = false;
+const o3 = new MutationObserver((list, o) => {
+	assertEquals(list.length, 1);
+	const record = list[0];
+	assertEquals(record.oldValue, "test");
+	assertEquals(record.target.data, "test2");
+	ok3 = true;
+});
+node3.textContent = "test";
+o3.observe(node3, {characterDataOldValue: true, childList: true, subtree: true});
+node3.childNodes[0].data = "test2";
 queueMicrotask(() => {
 	assertEquals(a.length, 1);
 	assertEquals(b.length, 0);
@@ -29,6 +43,7 @@ queueMicrotask(() => {
 	assertEquals(d.length, 0);
 	assertNotEquals(a, c);
 	assertNotEquals(b, d);
+	assertEquals(ok3, true);
 	node.remove();
 	x.textContent = "Success";
 });
