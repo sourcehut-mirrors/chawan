@@ -2,7 +2,6 @@
 
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import io/chafile
@@ -330,29 +329,6 @@ type UnquoteState = enum
 type UnquoteResult* = object
   canpipe*: bool
   cmd*: string
-
-type QuoteState* = enum
-  qsNormal, qsDoubleQuoted, qsSingleQuoted
-
-proc quoteFile*(file: openArray[char]; qs: QuoteState): string =
-  var s = ""
-  for c in file:
-    case c
-    of '$', '`', '"', '\\':
-      if qs != qsSingleQuoted:
-        s &= '\\'
-    of '\'':
-      if qs == qsSingleQuoted:
-        s &= "'\\'" # then re-open the quote by appending c
-      elif qs == qsNormal:
-        s &= '\\'
-      # double-quoted: append normally
-    of AsciiAlphaNumeric, '_', '.', ':', '/':
-      discard # no need to quote
-    elif qs == qsNormal:
-      s &= '\\'
-    s &= c
-  move(s)
 
 proc unquoteCommand*(ecmd, contentType, outpath: openArray[char]; url: URL;
     canpipe: var bool; line = -1; uriparams = false; shellQuote = true):

@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import std/os
+import std/posix
 
 import js/fromjs
 import js/jsutils
@@ -69,7 +69,7 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # $
   case c
   of '$':
-    ctx.s &= $getCurrentProcessId()
+    ctx.s &= $getpid()
     ctx.state = usNormal
   of '0':
     # Use getAppFilename so that any symbolic links are resolved.

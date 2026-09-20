@@ -2,13 +2,36 @@
 
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import utils/twtstr
 
-proc free(p: pointer) {.importc, header: "<stdlib.h>".}
+# POSIX types
+type SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
 
+# POSIX functions
+{.push importc, header: "<stdlib.h>".}
+proc free(p: pointer)
+proc system*(cmd: cstring): cint
+{.pop.} # importc, header: "<stdlib.h>"
+
+{.push importc, header: "<signal.h>".}
+let SIG_DFL*: SighandlerT
+let SIG_IGN*: SighandlerT
+
+proc signal*(signum: cint; handler: SighandlerT): SighandlerT
+{.pop.}
+
+{.push importc, header: "<unistd.h>".}
+proc getcwd(buf: cstring; size: csize_t): cstring
+{.pop.} # importc, header: "<unistd.h>"
+
+{.push importc, header: "<time.h>".}
+proc nanosleep(a1: var Timespec; a2: ptr Timespec): cint
+proc strftime*(s: cstring; slen: csize_t; format: cstring; tm: ptr Tm): csize_t
+{.pop.} # importc, header: "<time.h>"
+
+# wrappers
 proc realPath(path: string): string =
   let p = realpath(cstring(path), nil)
   if p == nil:
@@ -17,26 +40,12 @@ proc realPath(path: string): string =
   free(p)
   move(s)
 
-# std's getcwd binding uses int for size, but it's size_t...
-proc my_getcwd(buf: cstring; size: csize_t): cstring {.
-  importc: "getcwd", header: "<unistd.h>".}
-
 proc getcwd*(): string =
   var s = newString(4096)
-  let cs = my_getcwd(cstring(s), csize_t(s.len))
+  let cs = getcwd(cstring(s), csize_t(s.len))
   if cs == nil:
     return ""
   $cs
-
-proc system*(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
-
-type SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
-
-let SIG_DFL* {.importc, header: "<signal.h>".}: SighandlerT
-let SIG_IGN* {.importc, header: "<signal.h>".}: SighandlerT
-
-proc signal*(signum: cint; handler: SighandlerT): SighandlerT {.
-  importc, header: "<signal.h>".}
 
 let cmdLine {.importc, global.}: cstringArray
 let cmdCount {.importc, global.}: cint
@@ -75,6 +84,53 @@ proc readLink*(s: string): string =
   res.setLen(int(len))
   move(res)
 
+proc fileExists*(s: string): bool =
+  var stats {.noinit.}: Stat
+  stat(cstring(s), stats) == 0 and S_ISREG(stats.st_mode)
+
+proc dirExists*(s: string): bool =
+  var stats {.noinit.}: Stat
+  stat(cstring(s), stats) == 0 and S_ISDIR(stats.st_mode)
+
+proc symlinkExists*(s: string): bool =
+  var stats {.noinit.}: Stat
+  stat(cstring(s), stats) == 0 and S_ISLNK(stats.st_mode)
+
+proc parentDir*(s: string): string =
+  s.untilLast('/')
+
+proc sleep*(millis: int) =
+  var duration: Timespec
+  duration.tv_sec = Time(millis div 1000)
+  duration.tv_nsec = typeof(duration.tv_nsec)((millis mod 1000) * 1_000_000)
+  discard nanosleep(duration, nil)
+
+proc normalizedPath*(s: string): string =
+  var res = newStringOfCap(s.len)
+  var first = true
+  for name in s.split('/'):
+    if name == ".." and res.len > 0: # one dir up
+      if res.len > 0 and res[^1] == '/':
+        res.setLen(res.high)
+      let i = res.rfind('/')
+      if i < 0:
+        res = ""
+        first = true
+      else:
+        res.setLen(i + 1)
+      continue
+    if not first and (res.len == 0 or res[^1] != '/'):
+      res &= '/'
+    if name != "." and name != "":
+      res &= name
+    first = false
+  move(res)
+
+proc `/`*(a, b: string): string =
+  if a.len == 0:
+    return normalizedPath(b)
+  normalizedPath(a & '/' & b)
+
 proc getAppFilename*(): string =
   var res = ""
   when defined(linux):
@@ -97,4 +153,34 @@ proc getAppFilename*(): string =
         res = getcwd() / a0
   realPath(res)
 
-{.pop.}
+type QuoteState* = enum
+  qsNormal, qsDoubleQuoted, qsSingleQuoted
+
+proc quoteFile*(file: openArray[char]; qs: QuoteState): string =
+  var s = newStringOfCap(file.len)
+  for c in file:
+    case c
+    of '$', '`', '"', '\\':
+      if qs != qsSingleQuoted:
+        s &= '\\'
+    of '\'':
+      if qs == qsSingleQuoted:
+        s &= "'\\'" # then re-open the quote by appending c
+      elif qs == qsNormal:
+        s &= '\\'
+      # double-quoted: append normally
+    of AsciiAlphaNumeric, '_', '.', ':', '/':
+      discard # no need to quote
+    elif qs == qsNormal:
+      s &= '\\'
+    s &= c
+  move(s)
+
+proc quoteShellPosix*(file: openArray[char]): string =
+  var res = newStringOfCap(file.len + 2)
+  res &= '\''
+  res &= quoteFile(file, qsSingleQuoted)
+  res &= '\''
+  move(res)
+
+{.pop.} # raises: []

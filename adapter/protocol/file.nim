@@ -4,9 +4,6 @@ import std/posix
 
 import lcgi
 
-proc my_strftime(s: cstring; slen: csize_t; format: cstring;
-  tm: ptr Tm): csize_t {.importc: "strftime", header: "<time.h>".}
-
 proc loadDir(path, opath: string): Opt[void] =
   let title = ("Directory list of " & path).mimeQuote()
   let stdout = cast[ChaFile](stdout)
@@ -49,15 +46,14 @@ proc loadDir(path, opath: string): Opt[void] =
     var time = stats.st_mtime
     let modified = localtime(time)
     var s = newString(64)
-    let n = my_strftime(cstring(s), csize_t(s.len), "%b %d %Y", modified)
+    let n = chaos.strftime(cstring(s), csize_t(s.len), "%b %d %Y", modified)
     s.setLen(int(n))
     line &= s & ' '
     line &= file
     if S_ISLNK(stats.st_mode):
       let len = int(stats.st_size)
       var target = readLink(fullpath)
-      if stat(cstring(target), stats) == 0 and S_ISDIR(stats.st_mode) and
-          (target.len <= 0 or target[^1] != '/'):
+      if fileExists(target) and (target.len <= 0 or target[^1] != '/'):
         target &= '/'
       line &= " -> " & target
     ?stdout.writeLine(line)

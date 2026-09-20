@@ -23,7 +23,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/os
 import std/posix
 import std/times
 
@@ -37,13 +36,14 @@ import io/packetwriter
 import io/poll
 import js/jsref
 import js/quickjs
+import server/blob
 import server/connectionerror
 import server/headers
 import server/loaderiface
 import server/request
-import server/blob
-import utils/opt
 import server/url
+import utils/chaos
+import utils/opt
 import utils/tabutil
 import utils/twtstr
 
@@ -2017,7 +2017,7 @@ proc runFileLoader*(rt: JSRuntime; config: LoaderConfig;
   var ctx {.global.}: LoaderContext
   ctx = LoaderContext(
     config: config,
-    pid: getCurrentProcessId(),
+    pid: int(getpid()),
     forkStream: forkStream,
     browsecap: browsecap
   )

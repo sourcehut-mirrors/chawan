@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-from std/os import fileExists, dirExists, symlinkExists, quoteShellPosix
 import std/posix
 
 import lcgi

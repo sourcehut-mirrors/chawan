@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-from std/os import parentDir
+import utils/chaos
 
 {.used.}
 # used so that we can import it from quickjs.nim

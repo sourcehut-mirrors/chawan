@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import config/chapath
@@ -60,7 +59,7 @@ jsNamespaceDef(Util):
     JS_RunGC(rt)
 
   proc sleep(millis: int) {.jsstfunc.} =
-    os.sleep(millis)
+    chaos.sleep(millis)
 
   proc isSameAuthOrigin(a, b: URL): bool {.jsstfunc.} =
     return a.authOrigin.isSameOrigin(b.authOrigin);

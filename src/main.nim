@@ -450,7 +450,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
 proc main() =
   let rt = newGlobalJSRuntime()
   initCAtomFactory()
-  let binDir = chaos.getAppFilename().untilLast('/')
+  let binDir = chaos.getAppFilename().parentDir()
   if twtstr.setEnv("CHA_BIN_DIR", binDir).isErr or
       twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
     die("failed to set env vars")

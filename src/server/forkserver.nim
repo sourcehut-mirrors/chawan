@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/os
 import std/posix
 
 import config/config
@@ -160,7 +159,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
     ctx.stream.sclose()
     ctx.loaderStream.sclose()
     setBufferProcessTitle(url)
-    let pid = getCurrentProcessId()
+    let pid = int(getpid())
     let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
     let pstream = newPosixStream(fd)
     var cacheId: int

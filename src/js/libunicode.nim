@@ -1,8 +1,7 @@
 {.push raises: [].}
 
-from std/os import parentDir
-
-import cutils
+import js/cutils
+import utils/chaos
 
 {.used.}
 

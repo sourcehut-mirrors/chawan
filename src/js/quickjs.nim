@@ -1,11 +1,10 @@
 {.push raises: [].}
 
-from std/os import parentDir
-
 import js/constcharp
 import js/cutils
 import js/dtoa
 import js/libregexp
+import utils/chaos
 
 {.passc: "-DNOT_LRE_ONLY".}
 

@@ -400,6 +400,7 @@ test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim test/nim/tjsref.nim \
 	$(NIM) r $(test_flags) test/nim/tjsbind.nim
 	$(NIM) r $(test_flags) test/nim/tlibregexp.nim
 	$(NIM) r $(test_flags) test/nim/tchahash.nim
+	$(NIM) r $(test_flags) test/nim/tchaos.nim
 
 # slow, for manual use only
 .PHONY: test_oklab
