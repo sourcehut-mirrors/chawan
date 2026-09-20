@@ -606,6 +606,36 @@ jsClassDef(MediaQueryList):
     ctx.removeEventListener(this.asEventTarget, satChange.view(), callback,
       JS_FALSE)
 
+# ResizeObserver
+type
+  ResizeObserverObj = object
+    element: Element
+    callback: JSCallback
+
+  ResizeObserver = JSRef[ResizeObserverObj]
+
+  ResizeObserverBoxOptions = enum
+    robContentBox = "content-box"
+    robBorderBox = "border-box"
+    robDevicePixelContentBox = "device-pixel-content-box"
+
+  ResizeObserverOptions = object of JSDict
+    box {.jsdefault.}: ResizeObserverBoxOptions
+
+jsClassDef(ResizeObserver):
+  proc newResizeObserver(callback: JSCallback): ResizeObserver {.jsctor.} =
+    jsNew ResizeObserverObj()
+
+  proc observe(this: ResizeObserver; target: Element;
+      options = ResizeObserverOptions()) {.jsfunc.} =
+    discard #TODO
+
+  proc unobserve(this: ResizeObserver; target: Element) {.jsfunc.} =
+    discard #TODO
+
+  proc disconnect(this: ResizeObserver) {.jsfunc.} =
+    discard #TODO
+
 # Window
 #TODO CORS: get prototype proxy
 
@@ -1031,6 +1061,7 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addWindowEvents()
   ?ctx.registerNamespaceFree(CSSDef)
   ?ctx.registerClass(MediaQueryListDef)
+  ?ctx.registerClass(ResizeObserverDef)
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
   ?ctx.addConsoleModule()
   ?ctx.addStorageModule()
