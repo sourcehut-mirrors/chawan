@@ -86,6 +86,9 @@ assertEquals(old, window.document);
 	/* permissions */
 	assertInstanceof(navigator.permissions, Permissions);
 }
+{
+	assertEquals(Object.getOwnPropertySymbols(window).length, 0);
+}
 queueMicrotask(function() {
 	assertEquals(this, globalThis);
 	document.getElementById("x").textContent = "Success";

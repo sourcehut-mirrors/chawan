@@ -323,7 +323,7 @@ proc setGlobal*[T](ctx: JSContext; obj: JSRef[T]) =
     JS_SetForeignOpaque(rt, obj, JS_DupValue(ctx, dummy))
     JS_SetOpaque(dummy, obj)
     ctxOpaque.globalObj = JS_DupForeignObject(rt, obj)
-    let sym = ctx.call(ctxOpaque.valRefs[jsvSymbol], JS_UNDEFINED)
+    let sym = JS_NewPrivateSymbol(ctx)
     assert not JS_IsException(sym)
     assert ctx.defineProperty(ctxOpaque.global, JS_ValueToAtom(ctx, sym),
       dummy) == fjOk
@@ -1787,13 +1787,14 @@ proc registerGlobalClass*(ctx: JSContext; def: ChaClassDef;
   let id = def.id
   JS_SetClassProto(ctx, id, JS_DupValue(ctx, proto))
   let name = JS_NewString(ctx, def.class_name)
+  if JS_IsException(name):
+    return fjErr
   let global = ctxOpaque.global
   assert ctxOpaque.gclass == JS_INVALID_CLASS_ID
   ctxOpaque.gclass = def.id
-  let name2 = JS_DupValue(ctx, name)
   # Global already exists, so set unforgeable functions here
-  if ctx.definePropertyC(global, jsyToStringTag, name2) == fjErr or
-      ctx.definePropertyC(proto, jsyToStringTag, name) == fjErr or
+  if ctx.definePropertyC(proto, jsyToStringTag, name) == fjErr or
+      JS_DeleteProperty(ctx, global, ctx.getAtom(jsyToStringTag), 0) < 0 or
       JS_SetPrototype(ctx, global, proto) != 1 or
       not ctx.setPropertyFunctionList(global, def.funs) or
       not ctx.setUnforgeable(global, def.id):

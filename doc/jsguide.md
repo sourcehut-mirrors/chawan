@@ -760,7 +760,7 @@ global variables.  So we do it in the following way:
 * Allocate a dummy `JSObject` with Window's class.  Set this as Window's
   foreign opaque and Window as the dummy object's opaque.
 * Finally, define a property on the global object that holds the foreign
-  object.  (The property name is a unique symbol, so this isn't accessible
+  object.  (The property name is a private symbol, so this isn't accessible
   from JS.)
 * When converting a `JSValue` to a `JSRef`, special case the global object:
   if the `JSValue` holds the global `JSObject`, then return `Window`

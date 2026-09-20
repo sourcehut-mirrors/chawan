@@ -3541,6 +3541,11 @@ static JSValue JS_NewSymbol(JSContext *ctx, JSString *p, int atom_type)
     return JS_MKPTR(JS_TAG_SYMBOL, rt->atom_array[atom]);
 }
 
+JSValue JS_NewPrivateSymbol(JSContext *ctx)
+{
+    return JS_NewSymbol(ctx, NULL, JS_ATOM_TYPE_PRIVATE);
+}
+
 /* descr must be a non-numeric string atom */
 static JSValue JS_NewSymbolFromAtom(JSContext *ctx, JSAtom descr,
                                     int atom_type)

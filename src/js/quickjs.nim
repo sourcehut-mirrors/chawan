@@ -637,6 +637,7 @@ proc JS_ThrowTypeErrorOrFalse*(ctx: JSContext; flags: cint; fmt: cstring):
   cint {.varargs.}
 proc JS_NewObjectFromCtor*(ctx: JSContext; ctor: JSValueConst;
   class_id: JSClassID): JSValue
+proc JS_NewPrivateSymbol*(ctx: JSContext): JSValue
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
   class_id: JSClassID): JSValue
@@ -778,9 +779,6 @@ proc JS_NewPromiseCapability*(ctx: JSContext;
 proc JS_PromiseState*(ctx: JSContext; promise: JSValueConst): JSPromiseStateEnum
 proc JS_PromiseResult*(ctx: JSContext; promise: JSValueConst): JSValue
 proc JS_IsPromise*(val: JSValueConst): JS_BOOL
-
-proc JS_NewSymbol*(ctx: JSContext; description: cstringConst;
-  is_global: JS_BOOL): JSValue
 
 # is_handled = TRUE means that the rejection is handled
 type JSHostPromiseRejectionTracker =
