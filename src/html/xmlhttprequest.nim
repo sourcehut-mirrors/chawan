@@ -202,6 +202,8 @@ proc sendAsync(opaque: RootRef; response: Response) =
   if response == nil:
     this.response = makeNetworkError()
     discard window.handleErrors(this, nil)
+    env.this = XMLHttpRequest(nil)
+    env.window = Window(nil)
     return
   this.response = response
   this.readyState = xhrsHeadersReceived
