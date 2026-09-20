@@ -1014,7 +1014,7 @@ proc setEvent(ctx: JSContext; event: Event): Event {.exportc: "cha_$1".} =
     return res
   Event(nil)
 
-const WindowEvents* = [satError, satLoad, satFocus, satBlur]
+const WindowEvents* = [satError, satLoad, satFocus, satBlur, satMessage]
 
 proc isHTMLElementOf(this: Collection; node: Node): bool =
   let element = node as HTMLElement

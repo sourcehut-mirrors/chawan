@@ -699,6 +699,17 @@ proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   ctx.call(argv[0], JS_UNDEFINED)
 
+proc postMessageJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
+    JSValue {.cdecl.} =
+  assert argc == 2
+  var windowp: pointer
+  ?ctx.fromJS(argv[0], event.windowClassID, windowp)
+  let event = ctx.newMessageEvent(satMessage.view(),
+    MessageEventInit(data: ctx.dupTrace(argv[1])))
+  if event != nil:
+    cast[Window](windowp).fireEvent(event.asEvent, cast[EventTarget](windowp))
+  return JS_UNDEFINED
+
 proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let arg0 = ctx.toJS(getUnixMillis())
@@ -868,20 +879,15 @@ jsClassDef(Window):
       return JS_UNDEFINED
     return ctx.toJS(window.event)
 
-  proc postMessage(ctx: JSContext; window: Window; value: JSValueConst):
-      Opt[void] {.jsfunc.} =
-    #TODO structuredClone...
-    let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)
-    if JS_IsException(value):
-      return err()
-    var s: string
-    ?ctx.fromJSFree(value, s)
-    let data = JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
-      "<postMessage>".toCStringConst)
-    let event = ctx.newMessageEvent(satMessage.view(),
-      MessageEventInit(data: trace(data)))
-    if event != nil:
-      window.fireEvent(event.asEvent, window.asEventTarget)
+  proc postMessage(ctx: JSContext; this, value: JSValueConst): Opt[void]
+      {.jsfunc.} =
+    var window: ptr WindowObj
+    ?ctx.fromJS(this, window)
+    let s = ?ctx.serialize(value)
+    let ctx = window.jsctx # target realm
+    let data = ?trace(ctx.deserialize(s))
+    #TODO global task queue
+    ?ctx.enqueueJob(postMessageJob, this, data.v)
     ok()
 
   proc requestAnimationFrame(ctx: JSContext; window: Window;

@@ -520,4 +520,19 @@ proc callUserObject*(ctx: JSContext; callback: JSObject; name: JSStrRef;
     ctx.invoke(callback.v, ctx.getAtom(name), arg)
   ret
 
+proc serialize*(ctx: JSContext; val: JSValueConst): Opt[seq[uint8]] =
+  #TODO we'll have to do something about [Serializable] too
+  var plens: csize_t
+  let pres = JS_WriteObject(ctx, addr plens, val, 0)
+  if pres == nil:
+    return err()
+  let plen = cast[int](plens)
+  var res = newSeqUninit[uint8](plen)
+  if plen > 0:
+    copyMem(addr res[0], pres, plen)
+  ok(move(res))
+
+proc deserialize*(ctx: JSContext; s: openArray[uint8]): JSValue =
+  return JS_ReadObject(ctx, unsafeAddr s[0], csize_t(s.len), 0)
+
 {.pop.} # raises

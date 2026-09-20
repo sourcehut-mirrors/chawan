@@ -347,24 +347,24 @@ jsClassDef(CustomEvent):
       this.asEvent.initialize(eventType, bubbles, cancelable)
 
 # MessageEvent
-proc newMessageEvent*(ctx: JSContext; eventType: CAtom;
-    eventInit: sink MessageEventInit = MessageEventInit(
-      data: trace(JS_NULL)
-    )): MessageEvent =
-  let event = jsNew MessageEventObj(
-    eventType: eventType,
-    data: move(eventInit.data),
-    origin: eventInit.origin
-  )
-  if event != nil:
-    event.asEvent.innerEventCreationSteps(EventInit(eventInit))
-  return event
-
 jsClassDef(MessageEvent):
   jsextends EventDef
 
   jsget MessageEvent, data
   jsget MessageEvent, origin
+
+  proc newMessageEvent*(ctx: JSContext; eventType: CAtom;
+      eventInit: sink MessageEventInit = MessageEventInit(
+        data: trace(JS_NULL)
+      )): MessageEvent {.jsctor.} =
+    let event = jsNew MessageEventObj(
+      eventType: eventType,
+      data: move(eventInit.data),
+      origin: eventInit.origin
+    )
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(eventInit))
+    return event
 
 # SubmitEvent
 type EventTargetHTMLElement* = distinct EventTarget
