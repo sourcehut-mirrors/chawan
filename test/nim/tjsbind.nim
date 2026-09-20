@@ -113,7 +113,7 @@ proc testGlobalObjects() =
     ?ctx.registerClass(PlanetDef)
     ?ctx.registerGlobalClass(EarthDef)
     let earth = jsNew EarthObj()
-    ctx.setGlobal(earth)
+    ?ctx.setGlobal(earth)
     const code = "assert(globalThis instanceof Earth)"
     let val = ctx.eval(code)
     check not JS_IsException(val)
@@ -128,7 +128,7 @@ proc testInheritance() =
   ?ctx.registerGlobalClass(EarthDef)
   ?ctx.registerClass(MoonDef)
   block:
-    ctx.setGlobal(jsNew EarthObj())
+    ?ctx.setGlobal(jsNew EarthObj())
     const code = "assert(globalThis instanceof Planet)"
     let val = ctx.eval(code)
     check not JS_IsException(val)
@@ -145,7 +145,7 @@ proc testGetSet() =
     ?ctx.registerClass(MoonDef)
     let moon = jsNew MoonObj()
     let earth = jsNew EarthObj(moon: moon, population: 1, name: "Earth")
-    ctx.setGlobal(earth)
+    ?ctx.setGlobal(earth)
     const code = """
 globalThis.population = 8e9;
 "name: " + globalThis.name + ", moon: " + globalThis.moon;
@@ -189,7 +189,7 @@ proc testFunctions() =
   ?ctx.registerClass(ConsoleDef)
   block:
     let window = jsNew WindowObj(console: jsNew ConsoleObj())
-    ctx.setGlobal(window)
+    ?ctx.setGlobal(window)
     const code = """
 console.log('Hello, world!')
 """
@@ -251,7 +251,7 @@ proc testConstructors() =
   ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
   block:
-    ctx.setGlobal(jsNew WindowObj())
+    ?ctx.setGlobal(jsNew WindowObj())
     const code = """
 assert(new File('/path/to/file') + '' == '[object File]')
   """
@@ -267,7 +267,7 @@ proc testFunctionGetSet() =
   ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
   block:
-    ctx.setGlobal(jsNew WindowObj())
+    ?ctx.setGlobal(jsNew WindowObj())
     const code = """
 const file = new File("/path/to/file");
 assert(file.path === "/path/to/file");
@@ -287,7 +287,7 @@ proc testStaticFunctions() =
   ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
   block:
-    ctx.setGlobal(jsNew WindowObj())
+    ?ctx.setGlobal(jsNew WindowObj())
     const code = """
 assert(File.exists("doc/manual.md"));
     """

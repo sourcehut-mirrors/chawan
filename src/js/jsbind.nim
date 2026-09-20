@@ -274,15 +274,22 @@ proc newGlobalJSRuntime*(): JSRuntime =
 
 proc newJSContext*(rt: JSRuntime): JSContext =
   ## Instantiate a `JSContext` with an appropriate opaque.
-  ## Wraps `JS_NewContext`.
+  ## Returns nil on OOM.
   let ctx = JS_NewContext(rt)
+  if ctx == nil:
+    return nil
   let opaque = newJSContextOpaque(ctx)
+  if opaque == nil:
+    JS_FreeContext(ctx)
+    return nil
   JS_SetContextOpaque(ctx, opaque)
   return ctx
 
 proc newDummyContext*(rt: JSRuntime): JSContext =
-  ## Like newJSContext, but does not actually set the context opaque.
-  ## Used in no-JS buffers.
+  ## Instantiate a dummy `JSContext` that is only useful for setting up the
+  ## runtime.  Used in no-JS buffers.  (When running JS-specific init, we
+  ## check whether getOpaque returns nil; if so, we only init
+  ## runtime-specific things such as class ids.)
   return JS_NewContextRaw(rt)
 
 proc free*(ctx: JSContext) =
@@ -299,12 +306,13 @@ proc free*(ctx: JSContext) =
       JS_FreeForeignObject(rt, globalObj)
     JS_FreeValue(ctx, opaque.global)
     JS_SetContextOpaque(ctx, nil)
-    `=destroy`(opaque[])
+    {.cast(raises: []).}:
+      `=destroy`(opaque[])
     dealloc(opaque)
   JS_FreeContext(ctx)
 
 proc free*(rt: JSRuntime) =
-  ## Free the `JSRuntime` rt and remove it from the global JSRuntime pool.
+  ## Free the JSRuntime `rt` and unset it as the global runtime.
   let rtOpaque = rt.getOpaque()
   rtOpaque.enumMap = @[]
   JS_FreeRuntime(rt)
@@ -313,21 +321,27 @@ proc free*(rt: JSRuntime) =
   dealloc(rtOpaque)
   globalRuntime = nil
 
-proc setGlobal*[T](ctx: JSContext; obj: JSRef[T]) =
+proc setGlobal(ctx: JSContext; obj: pointer): JSCode =
   ## Set the global variable to the reference `obj`.
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque != nil:
-    let obj = cast[pointer](obj)
     let rt = JS_GetRuntime(ctx)
     let dummy = JS_NewObjectClass(ctx, ctxOpaque.gclass)
+    if JS_IsException(dummy):
+      return fjErr
     JS_SetForeignOpaque(rt, obj, JS_DupValue(ctx, dummy))
     JS_SetOpaque(dummy, obj)
     ctxOpaque.globalObj = JS_DupForeignObject(rt, obj)
     let sym = JS_NewPrivateSymbol(ctx)
-    assert not JS_IsException(sym)
-    assert ctx.defineProperty(ctxOpaque.global, JS_ValueToAtom(ctx, sym),
-      dummy) == fjOk
+    if JS_IsException(sym):
+      return fjErr
+    let atom = JS_ValueToAtom(ctx, sym)
     JS_FreeValue(ctx, sym)
+    ?ctx.defineProperty(ctxOpaque.global, atom, dummy)
+  fjOk
+
+template setGlobal*[T](ctx: JSContext; obj: JSRef[T]): JSCode =
+  ctx.setGlobal(cast[pointer](obj))
 
 # Add all LegacyUnforgeable functions defined on the prototype chain to
 # the opaque.

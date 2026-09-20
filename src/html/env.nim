@@ -1062,7 +1062,7 @@ proc addWindowModule(ctx: JSContext): JSCode =
   res
 
 proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
-  ctx.setGlobal(window)
+  ?ctx.setGlobal(window)
   ?ctx.addEventModule()
   ?ctx.addWindowEvents()
   ?ctx.registerNamespaceFree(CSSDef)
