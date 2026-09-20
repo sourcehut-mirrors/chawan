@@ -701,8 +701,6 @@ proc nextElementSibling*(element: Element): Element
 proc postConnectionSteps(element: Element; ctx: JSContext)
 proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
-proc reflectTokens*(element: Element; arr: var DOMTokenArray; name: StaticAtom;
-  value: string)
 proc removingSteps(element: Element)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
@@ -5118,6 +5116,24 @@ proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
       return true
   false
 
+proc reflectTokens*(element: Element; arr: var DOMTokenArray; name: StaticAtom;
+    value: string) =
+  if value == "":
+    arr = DOMTokenArray(nil)
+  else:
+    var toks = newSeqOfCap[CAtom](16)
+    for x in value.split(AsciiWhitespace):
+      if x != "":
+        let a = x.toAtom()
+        if a notin toks:
+          toks.add(a)
+    arr = newDOMTokenArray(toks)
+  let list = element.getAccessor(name) as DOMTokenList
+  if list != nil:
+    # arr is guaranteed to outlive the DOMTokenList because the latter
+    # references element
+    list.toks = DOMTokenArrayView(arr)
+
 proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
     value: string) =
   case element.tagType
@@ -5525,24 +5541,6 @@ proc getDOMTokenList*(element: Element; arr: DOMTokenArray; name: StaticAtom):
       return list
     element.addAccessor(list.asElementAccessor, name)
   list
-
-proc reflectTokens*(element: Element; arr: var DOMTokenArray; name: StaticAtom;
-    value: string) =
-  if value == "":
-    arr = DOMTokenArray(nil)
-  else:
-    var toks = newSeqOfCap[CAtom](16)
-    for x in value.split(AsciiWhitespace):
-      if x != "":
-        let a = x.toAtom()
-        if a notin toks:
-          toks.add(a)
-    arr = newDOMTokenArray(toks)
-    let list = element.getAccessor(name) as DOMTokenList
-    if list != nil:
-      # arr is guaranteed to outlive the DOMTokenList because the latter
-      # references element
-      list.toks = DOMTokenArrayView(arr)
 
 proc shadowRoot(this: Element): ShadowRoot =
   this.internalFirst as ShadowRoot

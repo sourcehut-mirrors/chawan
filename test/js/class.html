@@ -31,5 +31,13 @@ for (let x of cl)
 	assertEquals(coll2, document.getElementsByClassName("a b"));
 	assertNotEquals(coll2, document.getElementsByClassName("a  b"));
 }
+{
+	const doc = document.implementation.createHTMLDocument();
+	const el = doc.createElement("div");
+	el.setAttribute("class", "div test test hi world asdf asdfghijkl");
+	el.classList;
+	el.setAttribute("class", "");
+	assertEquals(el.classList+"", "");
+}
 div.textContent = "Success";
 </script>
