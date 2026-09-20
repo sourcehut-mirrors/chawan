@@ -463,37 +463,6 @@ proc toStaticAtom*(s: string): StaticAtom =
   let factory = getFactory()
   factory.get(s, s.hash()).toStaticAtom()
 
-proc toNamespace*(atom: CAtom): Namespace =
-  case atom.toStaticAtom()
-  of satUempty: return nsNone
-  of satNamespaceHTML: return nsHTML
-  of satNamespaceMathML: return nsMathML
-  of satNamespaceSVG: return nsSVG
-  of satNamespaceXLink: return nsXLink
-  of satNamespaceXML: return nsXml
-  of satNamespaceXMLNS: return nsXmlns
-  else: return nsUnknown
-
-proc toStaticAtom*(namespace: Namespace): StaticAtom =
-  return case namespace
-  of nsNone, nsUnknown: satUnknown
-  of nsHTML: satNamespaceHTML
-  of nsMathML: satNamespaceMathML
-  of nsSVG: satNamespaceSVG
-  of nsXLink: satNamespaceXLink
-  of nsXml: satNamespaceXML
-  of nsXmlns: satNamespaceXMLNS
-
-proc toAtom*(namespace: Namespace): CAtom =
-  return case namespace
-  of nsNone, nsUnknown: CAtomNull # diverges from toStaticAtom intentionally
-  of nsHTML: satNamespaceHTML.view()
-  of nsMathML: satNamespaceMathML.view()
-  of nsSVG: satNamespaceSVG.view()
-  of nsXLink: satNamespaceXLink.view()
-  of nsXml: satNamespaceXML.view()
-  of nsXmlns: satNamespaceXMLNS.view()
-
 proc `==`*(a: CAtomRaw; b: StaticAtom): bool =
   a.toStaticAtom() == b
 

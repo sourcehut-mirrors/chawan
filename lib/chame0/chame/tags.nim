@@ -171,7 +171,6 @@ type
     nsXLink = "http://www.w3.org/1999/xlink",
     nsXml = "http://www.w3.org/XML/1998/namespace",
     nsXmlns = "http://www.w3.org/2000/xmlns/"
-    nsUnknown = ""
 
   ParsedAttr*[Atom] = object
     name*: Atom ## This is the qualified name.

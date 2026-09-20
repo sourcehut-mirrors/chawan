@@ -61,7 +61,14 @@ proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtom =
   return tagType.view()
 
 proc namespaceToAtomImpl(builder: ChaDOMBuilder; ns: Namespace): CAtom =
-  return ns.toAtom()
+  return case ns
+  of nsNone: CAtomNull
+  of nsHTML: satNamespaceHTML.view()
+  of nsMathML: satNamespaceMathML.view()
+  of nsSVG: satNamespaceSVG.view()
+  of nsXLink: satNamespaceXLink.view()
+  of nsXml: satNamespaceXML.view()
+  of nsXmlns: satNamespaceXMLNS.view()
 
 proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
   return s.toAtom()
@@ -137,7 +144,24 @@ proc getLocalNameImpl(builder: ChaDOMBuilder; handle: ParentNode):
   return (handle as Element).localName
 
 proc getNamespaceImpl(builder: ChaDOMBuilder; handle: ParentNode): Namespace =
-  return (handle as Element).namespaceURI.toNamespace()
+  case (handle as Element).namespaceURI.toStaticAtom()
+  of satNamespaceHTML: return nsHTML
+  of satNamespaceMathML: return nsMathML
+  of satNamespaceSVG: return nsSVG
+  of satNamespaceXLink: return nsXLink
+  of satNamespaceXML: return nsXml
+  of satNamespaceXMLNS: return nsXmlns
+  else: return nsNone
+
+proc toStaticAtom(namespace: Namespace): StaticAtom =
+  return case namespace
+  of nsNone: satUnknown
+  of nsHTML: satNamespaceHTML
+  of nsMathML: satNamespaceMathML
+  of nsSVG: satNamespaceSVG
+  of nsXLink: satNamespaceXLink
+  of nsXml: satNamespaceXML
+  of nsXmlns: satNamespaceXMLNS
 
 proc createHTMLElementImpl(builder: ChaDOMBuilder): ParentNode =
   return builder.document.newHTMLElement(ttHtml).asParentNode
