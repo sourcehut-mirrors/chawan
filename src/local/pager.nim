@@ -16,7 +16,6 @@ import css/color
 import css/render
 import encoding/charset
 import encoding/decoder
-import html/script
 import io/chafile
 import io/console
 import io/dynstream
@@ -29,6 +28,7 @@ import js/cutils
 import js/fromjs
 import js/jsbind
 import js/jsnull
+import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -488,15 +488,17 @@ proc evalAction(pager: Pager; arg0: int32; oval: var JSValueTraced): JSValue =
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =
   #TODO might want to make this an opaque type
   let obj = JS_NewObject(ctx)
+  if JS_IsException(obj):
+    return JS_EXCEPTION
   let t = input.t
   let button = input.button
   let mods = cast[int32](input.mods)
   let (x, y) = input.pos
-  if ctx.definePropertyConvert(obj, "t", t).isErr or
-      ctx.definePropertyConvert(obj, "button", button).isErr or
-      ctx.definePropertyConvert(obj, "mods", mods).isErr or
-      ctx.definePropertyConvert(obj, "x", x).isErr or
-      ctx.definePropertyConvert(obj, "y", y).isErr:
+  if ctx.definePropertyConvert(obj, jstT, t).isErr or
+      ctx.definePropertyConvert(obj, jstButton, button).isErr or
+      ctx.definePropertyConvert(obj, jstMods, mods).isErr or
+      ctx.definePropertyConvert(obj, jstX, x).isErr or
+      ctx.definePropertyConvert(obj, jstY, y).isErr:
     JS_FreeValue(ctx, obj)
     return JS_EXCEPTION
   return obj

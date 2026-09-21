@@ -84,9 +84,6 @@ type
 
   PluralRules = JSRef[PluralRulesObj]
 
-  PRResolvedOptions = object of JSDict
-    locale: string
-
   DateTimeFormatObj = object
 
   DateTimeFormat = JSRef[DateTimeFormatObj]
@@ -311,8 +308,12 @@ jsClassDef(PluralRules):
   proc newPluralRules(): PluralRules {.jsctor.} =
     jsNew PluralRulesObj()
 
-  proc resolvedOptions(this: PluralRules): PRResolvedOptions {.jsfunc.} =
-    return PRResolvedOptions(locale: "en-US")
+  proc resolvedOptions(ctx: JSContext; this: PluralRules): JSValue {.jsfunc.} =
+    let obj = JS_NewObject(ctx)
+    if JS_IsException(obj):
+      return JS_EXCEPTION
+    ?ctx.definePropertyConvert(obj, jstLocale, "en-US")
+    return obj
 
   proc select(this: PluralRules; num: float64): string {.jsfunc.} =
     if num == 1:

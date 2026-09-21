@@ -2948,12 +2948,11 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
   if selectors.len == 0:
     return JS_EXCEPTION
   let this = newEmptyNodeList()
-  if this == nil:
-    return JS_ThrowOutOfMemory(ctx)
-  for element in node.elementDescendants:
-    if element.matchesList(selectors):
-      this.snapshot.add(element.asNode)
-  return ctx.toJS(this)
+  if this != nil:
+    for element in node.elementDescendants:
+      if element.matchesList(selectors):
+        this.snapshot.add(element.asNode)
+  return ctx.toJSNew(this)
 
 proc getChildrenOf(node: ParentNode; name: CollectionName;
     mode: CollectionMode; tags: varargs[TagType]): HTMLCollection =
@@ -7119,15 +7118,15 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   let window = element.asNode.document.window
   let ctx = window.jsctx
   let record = moveJSValue(script.record)
-  if JS_ResolveModule(ctx, record) < 0:
+  if JS_ResolveModule(ctx, record) < 0 or
+      ctx.setImportMeta(record, true) == fjErr:
     window.logException(script.baseURL)
     JS_FreeValue(ctx, record)
-  else:
-    ctx.setImportMeta(record, true)
-    let res = JS_EvalFunction(ctx, record) # consumes record
-    if JS_IsException(res):
-      window.logException(script.baseURL)
-    JS_FreeValue(ctx, res)
+    return
+  let res = JS_EvalFunction(ctx, record) # consumes record
+  if JS_IsException(res):
+    window.logException(script.baseURL)
+  JS_FreeValue(ctx, res)
 
 type
   FetchModuleEnv* {.final.} = ref object of BlobOpaque
@@ -7819,7 +7818,7 @@ proc addConstructorAlias*(ctx: JSContext; fun: JSCFunction; class: JSClassID;
   if JS_IsException(val):
     return err()
   let proto = JS_GetClassProto(ctx, class)
-  if ctx.defineProperty(val, "prototype", proto).isErr:
+  if ctx.defineProperty(val, jstPrototype, proto).isErr:
     JS_FreeValue(ctx, val)
     return err()
   ctx.definePropertyCW(ctx.getOpaque().global, name, val)

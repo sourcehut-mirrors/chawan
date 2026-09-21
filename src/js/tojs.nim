@@ -63,7 +63,6 @@ proc toJS*[T](ctx: JSContext; obj: sink JSRef[T]): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
-proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue
 
 # Same as toJS, but used in constructors. ctor contains the target prototype,
@@ -296,23 +295,11 @@ proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =
   return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
 
 proc definePropertyConvert*[T](ctx: JSContext; this: JSValueConst;
-    name: cstring; x: T): JSCode =
+    name: JSStrRef; x: T): JSCode =
   let val = ctx.toJS(x)
   if JS_IsException(val):
     return fjErr
   ctx.defineProperty(this, name, val)
-
-proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue =
-  let obj = JS_NewObject(ctx)
-  if JS_IsException(obj):
-    return obj
-  block good:
-    for k, v in dict.fieldPairs:
-      if ctx.definePropertyConvert(obj, k, v) == fjErr:
-        break good
-    return obj
-  JS_FreeValue(ctx, obj)
-  return JS_EXCEPTION
 
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue =
   if opt.isOk:

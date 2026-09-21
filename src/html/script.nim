@@ -96,7 +96,7 @@ type
     mtCss = "css"
 
   ModuleMapEntry = object
-    key: tuple[url: string; moduleType: ModuleType]
+    key: tuple[url: CAtom; moduleType: ModuleType]
     value*: ScriptResult
 
   ModuleMap* = seq[ModuleMapEntry]
@@ -109,7 +109,7 @@ proc clear*(moduleMap: var ModuleMap; rt: JSRuntime) =
   moduleMap.setLen(0)
 
 proc find(moduleMap: ModuleMap; url: URL; moduleType: ModuleType): int =
-  let surl = $url
+  let surl = ($url).toAtom()
   for i, entry in moduleMap.mypairs:
     if entry.key.moduleType == moduleType and entry.key.url == surl:
       return i
@@ -155,7 +155,10 @@ proc put*(moduleMap: var ModuleMap; url: URL; moduleType: ModuleType;
   if i >= 0:
     moduleMap[i].value = value
   else:
-    moduleMap.add(ModuleMapEntry(key: ($url, moduleType), value: value))
+    moduleMap.add(ModuleMapEntry(
+      key: (($url).toAtom(), moduleType),
+      value: value
+    ))
 
 proc moduleTypeToRequestDest*(moduleType: ModuleType;
     default: RequestDestination): RequestDestination =
@@ -192,23 +195,6 @@ proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
       options: options
     )
   )
-
-proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
-  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
-  let moduleNameAtom = JS_GetModuleName(ctx, m)
-  let metaObj = JS_GetImportMeta(ctx, m)
-  doAssert ctx.definePropertyCWE(metaObj, "url",
-    JS_AtomToValue(ctx, moduleNameAtom)) == fjOk
-  doAssert ctx.definePropertyCWE(metaObj, "main", JS_FALSE) == fjOk
-  JS_FreeValue(ctx, metaObj)
-
-proc finishLoadModule*(ctx: JSContext; funcVal: JSValue; name: string):
-    JSModuleDef =
-  ctx.setImportMeta(funcVal, false)
-  # "the module is already referenced, so we must free it"
-  # idk how this works, so for now let's just do what qjs does
-  result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
-  JS_FreeValue(ctx, funcVal)
 
 proc logException*(ctx: JSContext) =
   ctx.consoleError(ctx.getExceptionMsg())

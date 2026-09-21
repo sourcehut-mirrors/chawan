@@ -3,6 +3,7 @@
 {.push raises: [].}
 
 import js/constcharp
+import js/cutils
 import js/dtoa
 import js/jsopaque
 import js/jstypes
@@ -259,6 +260,15 @@ proc defineProperty*(ctx: JSContext; this: JSValueConst; name: cstring;
     return fjErr
   fjOk
 
+proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
+    prop: JSValue; flags = cint(0)): JSCode =
+  ## Define an immutable property on `this`.
+  ##
+  ## Frees `prop'.
+  if JS_DefinePropertyValue(ctx, this, ctx.getAtom(name), prop, flags) < 0:
+    return fjErr
+  fjOk
+
 proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: string;
     prop: JSValue): JSCode =
   ## Define a configurable property on `this`.
@@ -284,11 +294,6 @@ proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: cstring;
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
 
 proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSAtom;
-    prop: JSValue): JSCode =
-  ## Frees `prop'.
-  ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
-
-proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: cstring;
     prop: JSValue): JSCode =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
@@ -534,5 +539,25 @@ proc serialize*(ctx: JSContext; val: JSValueConst): Opt[seq[uint8]] =
 
 proc deserialize*(ctx: JSContext; s: openArray[uint8]): JSValue =
   return JS_ReadObject(ctx, unsafeAddr s[0], csize_t(s.len), 0)
+
+proc setImportMeta*(ctx: JSContext; funcVal: JSValueConst; isMain: bool):
+    JSCode =
+  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  let moduleNameAtom = ?JS_GetModuleName(ctx, m)
+  let metaObj = JS_GetImportMeta(ctx, m)
+  ?ctx.definePropertyCWE(metaObj, jstUrl, JS_AtomToValue(ctx, moduleNameAtom))
+  ?ctx.definePropertyCWE(metaObj, jstMain, JS_NewBool(ctx, JS_BOOL(isMain)))
+  JS_FreeValue(ctx, metaObj)
+  fjOk
+
+proc finishLoadModule*(ctx: JSContext; funcVal: JSValue; name: string):
+    JSModuleDef =
+  if ctx.setImportMeta(funcVal, false) == fjErr:
+    return nil
+  # "the module is already referenced, so we must free it"
+  # it seems QJS treats the return value as a const
+  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  JS_FreeValue(ctx, funcVal)
+  m
 
 {.pop.} # raises

@@ -6,6 +6,8 @@ import config/config
 import config/conftypes
 import config/cookie
 import config/mimetypes
+import css/cell
+import css/color
 import css/render
 import encoding/charset
 import io/dynstream
@@ -15,6 +17,7 @@ import io/poll
 import js/fromjs
 import js/jsbind
 import js/jsnull
+import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -22,16 +25,14 @@ import js/libregexp
 import js/quickjs
 import js/tojs
 import local/select
+import server/blob
 import server/headers
 import server/loaderiface
 import server/request
-import server/blob
-import css/cell
-import css/color
-import utils/opt
-import utils/refstring
 import server/url
 import utils/lrewrap
+import utils/opt
+import utils/refstring
 import utils/strwidth
 import utils/twtstr
 
@@ -734,25 +735,25 @@ proc toJS(ctx: JSContext; x: ClickResult): JSValue =
   if JS_IsException(obj):
     return JS_EXCEPTION
   block good:
-    if ctx.definePropertyConvert(obj, "t", x.t).isErr:
+    if ctx.definePropertyConvert(obj, jstT, x.t).isErr:
       break good
     case x.t
     of crtNone: discard
     of crtOpen:
       let open = x.open
-      if ctx.definePropertyConvert(obj, "open", open).isErr:
+      if ctx.definePropertyConvert(obj, jstOpen, open).isErr:
         break good
-      if ctx.definePropertyConvert(obj, "contentType", x.contentType).isErr:
+      if ctx.definePropertyConvert(obj, jstContentType, x.contentType).isErr:
         break good
     of crtSelect:
-      if ctx.definePropertyConvert(obj, "selected", x.selected).isErr:
+      if ctx.definePropertyConvert(obj, jstSelected, x.selected).isErr:
         break good
-      if ctx.definePropertyConvert(obj, "options", x.options).isErr:
+      if ctx.definePropertyConvert(obj, jstOptions, x.options).isErr:
         break good
     of crtReadText, crtReadPassword, crtReadArea, crtReadFile:
-      if ctx.definePropertyConvert(obj, "prompt", x.prompt).isErr:
+      if ctx.definePropertyConvert(obj, jstPrompt, x.prompt).isErr:
         break good
-      if ctx.definePropertyConvert(obj, "value", x.value).isErr:
+      if ctx.definePropertyConvert(obj, jstValue, x.value).isErr:
         break good
     return obj
   JS_FreeValue(ctx, obj)
@@ -779,9 +780,9 @@ proc toJS(ctx: JSContext; x: CursorXY): JSValue =
   if JS_IsException(obj):
     return JS_EXCEPTION
   block good:
-    if ctx.definePropertyCWE(obj, "x", ctx.toJS(x.x)).isErr:
+    if ctx.definePropertyCWE(obj, jstX, ctx.toJS(x.x)).isErr:
       break good
-    if ctx.definePropertyCWE(obj, "y", ctx.toJS(x.y)).isErr:
+    if ctx.definePropertyCWE(obj, jstY, ctx.toJS(x.y)).isErr:
       break good
     return obj
   JS_FreeValue(ctx, obj)
@@ -1640,7 +1641,7 @@ jsClassPublicDef(BufferInterface):
     return JS_UNDEFINED
 
   proc startSelection(ctx: JSContext; iface: BufferInterface; t: SelectionType;
-      mouse: bool; x1, y1, x2, y2: int): JSValue {.jsfunc.} =
+      mouse: bool; x1, y1, x2, y2: int): Highlight {.jsnfunc.} =
     let highlight = jsNew HighlightObj(
       t: hltSelect,
       selectionType: t,
@@ -1650,16 +1651,15 @@ jsClassPublicDef(BufferInterface):
       y2: y2,
       mouse: mouse
     )
-    if highlight == nil:
-      return JS_ThrowOutOfMemory(ctx)
-    iface.highlights.add(highlight)
-    iface.queueDraw()
-    return ctx.toJS(highlight)
+    if highlight != nil:
+      iface.highlights.add(highlight)
+      iface.queueDraw()
+    highlight
 
   proc removeHighlight(iface: BufferInterface; highlight: Highlight)
       {.jsfunc.} =
     let i = iface.highlights.find(highlight)
-    if i != -1:
+    if i >= 0:
       iface.highlights.delete(i)
     iface.queueDraw()
 
