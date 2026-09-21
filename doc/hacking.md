@@ -157,7 +157,7 @@ import ...
 
 ### Implicit initialization
 
-Avoid.  The correct way to create an object:
+Usually, the correct way to create an object is:
 
 ```nim
 let myObj = MyObject(
@@ -170,7 +170,7 @@ let myObj = MyObject(
 
 For primitive types, just set them to 0, "", etc.
 
-As a special case, implicit initialization is allowed for arrays:
+As a special case, implicit initialization is recommended for arrays:
 
 ```nim
 var buf1: array[1234, char] # when you need 0-initialization
@@ -281,6 +281,29 @@ global scope:
 var myVariable {.global.}: int
 ```
 
+### Standard library
+
+For most std modules, Chawan has its own counterparts in the utils
+directory:
+
+* `std/strutils`, `std/unicode` -> `utils/twtstr`
+* `std/os` -> `utils/chaos`
+* `std/hashes` -> `utils/chahash`
+* `std/tables` -> `utils/tabutil`
+
+There are several reasons for not using std: poor performance from using
+old idioms, unpredictable backwards-compatibility, code bloat, and bugs.
+
+This doesn't mean using std is /forbidden/, there are still many modules
+for which we don't have (or need) custom counterparts - for instance,
+`std/algorithm` works well.  The only rule is that when you *do* use std,
+you should prefix the imports with `std/`, e.g.:
+
+```nim
+import algorithm # bad
+import std/algorithm # good
+```
+
 ### `converter`
 
 Avoid, it slows down the compiler to a crawl.
@@ -336,6 +359,36 @@ Don't forget to add a test case after the fix:
 ```sh
 $ ./test/layout/add test/layout/my-test-case.html
 ```
+
+### Debugging JavaScript issues
+
+While Chawan lacks a real debugger, it is possible to "mock" resources as
+follows for printf (or, well, console.log) debugging.
+
+First, check the URL of the JS file to replace, and add to
+~/.chawan/browsecap:
+
+```
+https; /cgi-bin/get-custom-js %s; cgioutput; resource; match=https://example\.org/js/blah\.js
+```
+
+Then, save blah.js in ~/.chawan/mock/blah.js (e.g., using `s S`), and
+create a CGI script in ~/.chawan/cgi-bin/get-custom-js:
+
+```
+#!/bin/sh
+
+echo Content-Type: text/javascript
+echo
+
+case $1 in
+*blah.js)
+	cat ../mock/blah.js
+esac
+```
+
+Now you can edit ~/.chawan/mock/blah.js to your heart's content until the
+source of the issue becomes clear.
 
 ### Sandbox violations
 
