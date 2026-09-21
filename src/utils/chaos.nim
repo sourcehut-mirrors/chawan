@@ -15,10 +15,10 @@ proc free(p: pointer)
 proc system*(cmd: cstring): cint
 {.pop.} # importc, header: "<stdlib.h>"
 
-{.push importc, header: "<signal.h>".}
-let SIG_DFL*: SighandlerT
-let SIG_IGN*: SighandlerT
+let SIG_DFL* {.importc, header: "<signal.h>".}: SighandlerT
+let SIG_IGN* {.importc, header: "<signal.h>".}: SighandlerT
 
+{.push importc, header: "<signal.h>".}
 proc signal*(signum: cint; handler: SighandlerT): SighandlerT
 {.pop.}
 
