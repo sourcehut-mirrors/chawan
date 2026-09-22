@@ -450,7 +450,7 @@ proc getExceptionMsg*(ctx: JSContext): string =
       copyMem(addr result[0], cstring(outp), plen)
     JS_FreeCString(ctx, outp)
     result &= '\n'
-  let stack = ctx.getProperty(ex, jstStack)
+  let stack = JS_GetPropertyStr(ctx, ex, "stack")
   JS_FreeValue(ctx, ex)
   if not JS_IsUndefined(stack):
     let outp = JS_ToCStringLen(ctx, plen, stack) # cstring

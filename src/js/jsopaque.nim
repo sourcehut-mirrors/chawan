@@ -51,7 +51,6 @@ type
     jstScreen = "screen"
     jstSearch = "search"
     jstSelected = "selected"
-    jstStack = "stack"
     jstT = "t"
     jstUrl = "url"
     jstUsername = "username"
