@@ -100,8 +100,6 @@ type
     paste: bool # set in fulfillAsk
     mousePaste: bool
     consoleLFSeen: bool
-    keepInputBuffer: bool
-    keepMenuFlag: bool
     updateStatus: UpdateStatusState
     alertState: PagerAlertState
     # current number prefix (when vi-numeric-prefix is true)
@@ -142,7 +140,6 @@ type
     mimeTypes: MimeTypes
     bufferInit: BufferInit # visible BufferInit (may != iface.init)
     bufferIface: BufferInterface # visible BufferInterface
-    menuActions: ActionMap
 
   Pager* = JSRef[PagerObj]
 
@@ -195,21 +192,17 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JSModuleDef {.cdecl.} =
   #TODO module map
   let moduleName = $moduleName
-  let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
-      moduleName.startsWith("../"):
-    parseURL0(moduleName, parseURL0("file://" & chaos.getcwd() & "/"))
-  else:
-    parseURL0(moduleName)
-  if x == nil or x.schemeType != stFile:
-    JS_ThrowTypeError(ctx, "invalid URL: %s", cstring(moduleName))
+  let res = ChaPath(moduleName).unquote(chaos.getcwd())
+  if res.isErr:
+    JS_ThrowTypeError(ctx, "invalid path %s", cstring(res.error))
     return nil
   var source: string
-  if chafile.readFile(x.pathname, source).isOk:
+  if chafile.readFile(res.get, source).isOk:
     let funcVal = compileModule(ctx, source, moduleName)
     if JS_IsException(funcVal.vc):
       return nil
     return ctx.finishLoadModule(funcVal, moduleName)
-  JS_ThrowTypeError(ctx, "failed to read file %s", cstring(moduleName))
+  JS_ThrowTypeError(ctx, "failed to read file %s", cstring(res.get))
   return nil
 
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
@@ -324,31 +317,6 @@ proc loadAutoMailcap(pager: Pager) =
   pager.loadMailcap(pager.autoMailcap, config{"autoMailcap"})
   pager.autoMailcap.parseBuiltin(DefaultAutoMailcap)
 
-const MenuCommands = """
-v selectOrCopy
-, prevBuffer
-. nextBuffer
-D discardBuffer
-M-y copyURL
-yu copyCursorLink
-I viewImage
-yI copyCursorImage
-U reloadBuffer
-s RET saveLink
-s LF saveLink
-\ toggleSource
-s E editSource
-s S saveSource
-: markURL
-M-i toggleImages
-M-j toggleScripting
-M-k toggleCookie
-M-a addBookmark
-M-b openBookmarks
-C-h openHistory
-q quit
-"""
-
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int;
     console: Console; timeouts: ptr TimeoutState): Pager =
@@ -367,9 +335,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     console: console,
     timeouts: timeouts,
     consoleLFSeen: true,
-    menuActions: newActionMap(ctx, MenuCommands, "pager.keepMenu()")
   )
-  if pager == nil or pager.menuActions == nil:
+  if pager == nil:
     return Pager(nil)
   let handleInput = ctx.eval("Pager.prototype.handleInput", "<init>",
     JS_EVAL_TYPE_GLOBAL)
@@ -383,7 +350,6 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     return Pager(nil)
   pager.handleInput = traceCallback(handleInput)
   pager.showConsole = traceCallback(showConsole)
-  pager.menuActions.sort(ctx)
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(rt, interruptHandler, nil)
@@ -1017,10 +983,15 @@ proc draw(pager: Pager): Opt[void] =
     if pager.display.redraw:
       pager.clear(stDisplay)
     pager.term.unsetScroll()
-  if (let menu = pager.menu; menu != nil and
-      (menu.redraw or pager.display.redraw)):
-    menu.drawSelect(pager.display.grid)
-    menu.redraw = false
+  var selects: seq[Select]
+  var select = pager.menu
+  while select != nil:
+    if select.redraw or pager.display.redraw:
+      selects.add(select)
+    select = Select(select.next)
+  for select in selects.ritems:
+    select.drawSelect(pager.display.grid)
+    select.redraw = false
     pager.display.redraw = true
     imageRedraw = false
     hasMenu = true
@@ -2125,11 +2096,8 @@ jsClassDef(Pager):
       if JS_IsUndefined(map.defaultAction):
         pager.inputBuffer.setLen(0)
         return JS_UNDEFINED
-      let keepInputBuffer = pager.keepInputBuffer
       let res = pager.evalAction(arg0, map.defaultAction)
-      if not pager.keepInputBuffer:
-        pager.inputBuffer.setLen(0)
-      pager.keepInputBuffer = keepInputBuffer
+      pager.inputBuffer.setLen(0)
       return res
     # note: this may replace val inside the ActionMap
     let res = pager.evalAction(arg0, map.mgetValue())
@@ -2727,24 +2695,6 @@ jsClassDef(Pager):
       pager.bufferIface.redraw = true
     pager.display.redraw = true
     ok()
-
-  # private
-  proc menuCommand(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
-    if pager.menu != nil:
-      pager.keepMenuFlag = false
-      let res = ctx.evalInputAction(pager, pager.menuActions, 0)
-      if pager.inputBuffer.len == 0 and not pager.keepMenuFlag:
-        # command found; close menu
-        discard ctx.setMenu(pager, JS_NULL.vc)
-      else:
-        # do not let a nested call clear the input buffer
-        pager.keepInputBuffer = true
-      return res
-    return JS_UNDEFINED
-
-  # private
-  proc keepMenu(pager: Pager) {.jsfunc.} =
-    pager.keepMenuFlag = true
 
   # private
   proc handleStderr(pager: Pager) {.jsfunc.} =

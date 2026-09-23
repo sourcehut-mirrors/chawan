@@ -44,6 +44,7 @@
 #	"/usr/etc/mime.types",
 #	"/usr/local/etc/mime.types"
 #]
+#menu-file = "$CHA_DIR/menu"
 #bookmark = "$CHA_DATA_DIR/bookmark.md"
 #history-file = "$CHA_DATA_DIR/history.uri"
 #history-size = 100
@@ -215,6 +216,7 @@
 #'s LF' = 'saveLink'
 #'s s' = 'saveScreen'
 #'s S' = 'saveSource'
+#'s b' = 'openBufferMenu'
 #m = 'mark'
 #'`' = 'gotoMark'
 #"'" = 'gotoMarkY'

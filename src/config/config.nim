@@ -7,6 +7,8 @@ import std/math
 import config/chapath
 import config/conftypes
 import config/cookie
+import css/cell
+import css/color
 import css/cssparser
 import css/cssvalues
 import encoding/charset
@@ -16,6 +18,7 @@ import io/dynstream
 import js/dtoa
 import js/fromjs
 import js/jsbind
+import js/jsnull
 import js/jsopaque
 import js/jspropenumlist
 import js/jsref
@@ -24,13 +27,11 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import server/headers
-import css/cell
-import css/color
-import utils/opt
 import server/url
+import utils/chaos
 import utils/dtoawrap
 import utils/lrewrap
-import utils/chaos
+import utils/opt
 import utils/tabutil
 import utils/twtstr
 
@@ -53,6 +54,8 @@ type
     num: uint32
 
   ActionMap* = JSRef[ActionMapObj]
+
+  ActionMapNil* = JSNullRef[ActionMapObj]
 
   FormRequestType* = enum
     frtHttp = "http"
@@ -232,6 +235,7 @@ type
     coEditor = "editor"
     coHistoryFile = "historyFile"
     coLinkHintChars = "linkHintChars"
+    coMenuFile = "menuFile"
     coPasteCmd = "pasteCmd"
     coPrependScheme = "prependScheme"
     coStartupScript = "startupScript"
@@ -387,6 +391,7 @@ const OptionMap = [
   coEditor: (cotPath, csExternal),
   coHistoryFile: (cotPath, csExternal),
   coLinkHintChars: (cotCodepointSet, csInput),
+  coMenuFile: (cotPath, csExternal),
   coPasteCmd: (cotString, csExternal),
   coPrependScheme: (cotString, csNetwork),
   coStartupScript: (cotString, csStart),
@@ -514,12 +519,13 @@ unionHooks(ConfigOptionWord)
 # Forward declarations
 proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void]
 proc parseConfigValue(cp: var ConfigParser): Opt[void]
-proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string
+proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
   Err[string]
 proc getClassID(t: typedesc[Config]): JSClassID
 proc getClassID*(t: typedesc[ActionMap]): JSClassID
+proc sort*(map: ActionMap)
 
 static:
   doAssert sizeof(ConfigOptionBit) == 1
@@ -729,28 +735,6 @@ proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
     return ctx.compileScript("cmd." & s, "<command>")
   return ctx.compileScript(s, "<command>")
 
-proc newActionMap*(ctx: JSContext; s, defaultAction: string): ActionMap =
-  let map = jsNew ActionMapObj(defaultAction: trace(JS_UNDEFINED))
-  if map == nil:
-    return ActionMap(nil)
-  if defaultAction != "":
-    map.defaultAction = trace(ctx.evalCmdDecl(defaultAction))
-  var dummy: seq[string]
-  for it in s.split('\n'):
-    var i = 0
-    while true:
-      let j = it.find(' ', i)
-      if j == -1:
-        if i == 0:
-          break
-        var key = parseKeyComb(it.toOpenArray(0, i - 2), dummy)
-        let val = ctx.evalCmdDecl(it.substr(i))
-        map.tab.add(Action(k: move(key), val: trace(val), n: map.num))
-        inc map.num
-        break
-      i = j + 1
-  map
-
 proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
     {.cdecl.} =
@@ -824,7 +808,46 @@ proc toJS*(ctx: JSContext; val: ScriptingMode): JSValue =
   of smFalse: return JS_FALSE
   of smApp: return JS_NewString(ctx, "app")
 
-proc sort*(map: ActionMap; ctx: JSContext) =
+proc addAction*(map: ActionMap; key: sink string; val: JSValue) =
+  map.tab.add(Action(k: move(key), val: trace(val), n: map.num))
+  inc map.num
+
+proc newActionMap(ctx: JSContext; s: openArray[char];
+    defaultAction: JSValueConst): ActionMap =
+  let map = jsNew ActionMapObj(defaultAction: trace(JS_UNDEFINED))
+  if not JS_IsNull(defaultAction):
+    map.defaultAction = ctx.dupTrace(defaultAction)
+  if map == nil:
+    return ActionMap(nil)
+  var dummy: seq[string]
+  for it in s.split('\n'):
+    var i = 0
+    while true:
+      let j = it.find(' ', i)
+      if j == -1:
+        if i == 0:
+          break
+        let key = parseKeyComb(it.toOpenArray(0, i - 2), dummy)
+        let val = ctx.evalCmdDecl(it.substr(i))
+        map.addAction(key, val)
+        break
+      i = j + 1
+  map.sort()
+  map
+
+proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: string):
+    ActionMap =
+  var fun = trace(JS_UNDEFINED)
+  if defaultAction != "":
+    fun = trace(ctx.evalCmdDecl(defaultAction))
+    if JS_IsException(fun):
+      return ActionMap(nil)
+  ctx.newActionMap(s, fun.vc)
+
+proc newActionMap*(map: ActionMap): ActionMap =
+  jsNew map[]
+
+proc sort*(map: ActionMap) =
   map.tab.sort(proc(a, b: Action): int =
     cmp(a.k, b.k), SortOrder.Ascending)
   #TODO we could probably do this more efficiently
@@ -937,7 +960,7 @@ proc toXTermMod(mods: set[KeyModifier]): uint8 =
   elif mods == {kmMeta, kmControl, kmShift}: 14
   else: 0
 
-proc parseKeyComb(key: openArray[char]; warnings: var seq[string]): string =
+proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
   var realk = ""
   var i = 0
   var mods: set[KeyModifier] = {}
@@ -1968,8 +1991,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
       return cp.err(ctx.getExceptionMsg())
     #TODO this won't fly for dynamic reloading
     let map = cp.config.actionMap[section]
-    map.tab.add(Action(k: move(cp.key), val: trace(val), n: map.num))
-    inc map.num
+    map.addAction(move(cp.key), val)
   elif cp.opt != coAddEntry: # add entry here means "not found"
     ?cp.parseConfigValue1()
   # reset to state before this key
@@ -2213,6 +2235,7 @@ s RET saveLink
 s LF saveLink
 s s saveScreen
 s S saveSource
+s b openBufferMenu
 m mark
 ` gotoMark
 ' gotoMarkY
@@ -2406,6 +2429,7 @@ const ConfigInitPath = {
   coTmpdir: "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME",
   coCookieFile: "$CHA_DATA_DIR/cookies.txt",
   coDownloadDir: "${TMPDIR:-/tmp}/",
+  coMenuFile: "$CHA_DIR/menu.js"
 }
 
 const ConfigInitPathSeq = {
@@ -2522,7 +2546,7 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
 proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
   let page = newActionMap(ctx, PageCommands, "")
   let line = newActionMap(ctx, LineCommands, "writeInputBuffer")
-  let select = newActionMap(ctx, SelectCommands, "pager.menuCommand()")
+  let select = newActionMap(ctx, SelectCommands, "")
   let defaultHeaders = newHeaders(hgRequest, {
     "User-Agent": "chawan",
     "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
@@ -2629,11 +2653,15 @@ jsClassDef(Config):
       ?ctx.definePropertyE(objIt, name, move(cmd).toJSValue())
     config.cmdInit = @[]
     for cs in csPage..csLine:
-      config.actionMap[cs].sort(ctx)
+      config.actionMap[cs].sort()
     ok()
 
 jsClassPublicDef(ActionMap):
   jsget ActionMap, keyLast
+
+  proc newActionMap(ctx: JSContext; s: DOMString;
+      defaultAction = JSCallback(nil)): ActionMap {.jsctor.} =
+    ctx.newActionMap(s.toOpenArray(), defaultAction.value)
 
   proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
     for it in map.tab:
@@ -2653,9 +2681,8 @@ jsClassPublicDef(ActionMap):
       ctx.evalCmdDecl(s)
     if JS_IsException(val2.vc):
       return err()
-    a.tab.add(Action(k: rk, val: trace(val2), n: a.num))
-    inc a.num
-    a.sort(ctx)
+    a.addAction(rk, val2)
+    a.sort()
     ok()
 
   proc getter(ctx: JSContext; a: ActionMap; s: DOMString): JSValue

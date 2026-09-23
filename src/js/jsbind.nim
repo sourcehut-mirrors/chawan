@@ -79,6 +79,7 @@ import std/typetraits
 
 import js/constcharp
 import js/fromjs
+import js/jsnull
 import js/jsopaque
 import js/jsref
 import js/jstypes
@@ -1202,7 +1203,8 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
           if typ.kind == nnkSym:
             impl = typ.getImpl()
           if impl.kind == nnkTypeDef and impl[2].kind == nnkBracketExpr and
-              impl[2][0].sameType(JSRef.getType()):
+              (impl[2][0].sameType(JSRef.getType()) or
+               impl[2][0].sameType(JSNullRef.getType())):
             markList.add(quote do:
               JS_MarkForeignObject(rt, cast[pointer](this.`varNode`), markFunc)
             )

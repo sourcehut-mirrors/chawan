@@ -1,23 +1,32 @@
 {.push raises: [].}
 
+import config/config
+import css/cell
 import js/fromjs
 import js/jsbind
+import js/jsnull
 import js/jsref
 import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import css/cell
-import utils/opt
 import utils/lrewrap
 import utils/luwrap
+import utils/opt
 import utils/strwidth
 import utils/twtstr
 
 type
+  SelectOptionType = enum
+    sotItem, sotMenu, sotNop
+
   SelectOption* = object
-    nop*: bool
+    optionType*: SelectOptionType
     s*: string
+
+  Select* = JSRef[SelectObj]
+
+  SelectNil = JSNullRef[SelectObj]
 
   SelectObj = object
     options: seq[SelectOption]
@@ -33,26 +42,100 @@ type
     redraw*: bool
     unselected: bool
     finish: JSCallback
+    map*: ActionMap
+    next*: SelectNil
 
-  Select* = JSRef[SelectObj]
+  SelectBuilderObj = object
+    options: seq[SelectOption]
+    callbacks: seq[JSCallback]
+    map: ActionMap
+    selected: int
+
+  SelectBuilder = JSRef[SelectBuilderObj]
 
 # Forward declarations
 proc setCursorY(select: Select; y: int)
 
+# SelectBuilder
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var SelectOption):
     JSCode =
   if JS_IsNull(val):
-    res = SelectOption(nop: true)
+    res = SelectOption(optionType: sotNop)
   else:
     res = SelectOption()
     ?ctx.fromJS(val, res.s)
   fjOk
 
 proc toJS*(ctx: JSContext; x: SelectOption): JSValue =
-  if x.nop:
+  if x.optionType == sotNop:
     return JS_NULL
   return ctx.toJS(x.s)
 
+jsClassDef(SelectBuilder):
+  # public
+  proc newSelectBuilder(map: ActionMap; options: sink seq[SelectOption] = @[];
+      selected = -1): SelectBuilder {.jsctor.} =
+    let map = newActionMap(map)
+    if map == nil:
+      return SelectBuilder(nil)
+    jsNew SelectBuilderObj(
+      map: map,
+      options: move(options),
+      selected: selected
+    )
+
+  proc mark(rt: JSRuntime; this: SelectBuilder; markFunc: JS_MarkFunc)
+      {.jsmark.} =
+    for it in this.callbacks:
+      JS_MarkValue(rt, it, markFunc)
+
+  # public
+  proc addKey(ctx: JSContext; this: SelectBuilder; key: openArray[char]):
+      Opt[void] =
+    let fun = ctx.newFunction([], "select.setCursorY(" & $this.options.len &
+      ");" & "select.click()")
+    if JS_IsException(fun.vc):
+      return err()
+    var warnings: seq[string]
+    let key = parseKeyComb(key, warnings)
+    this.map.addAction(key, fun)
+    ok()
+
+  # public
+  proc item(ctx: JSContext; this: SelectBuilder; optionType: SelectOptionType;
+      s: sink string; cmd: JSCallback; jsKey = JS_UNDEFINED.vc): Opt[void] {.
+      jsmfunc("item", sotItem), jsmfunc("menu", sotMenu).} =
+    if not JS_IsUndefined(jsKey):
+      var key: DOMString
+      ?ctx.fromJS(jsKey, key)
+      ?ctx.addKey(this, key.toOpenArray())
+    this.options.add(SelectOption(s: s, optionType: optionType))
+    this.callbacks.add(cmd)
+    ok()
+
+  # public
+  proc line(this: SelectBuilder; s: sink string = "") {.jsfunc.} =
+    this.options.add(SelectOption(s: s, optionType: sotNop))
+    this.callbacks.add(JSCallback(nil))
+
+  # public
+  proc bindKey(ctx: JSContext; this: SelectBuilder; cmd: JSCallback;
+      key: sink string): Opt[void] {.jsfunc: "bind".} =
+    this.map.addAction(key, cmd.toJSValue())
+    ok()
+
+  # public
+  proc select(this: SelectBuilder) {.jsfunc.} =
+    this.selected = this.options.high
+
+  # private
+  proc callback(ctx: JSContext; this: SelectBuilder; i: int): JSValue
+      {.jsfunc.} =
+    if i < 0 or i >= this.callbacks.len or this.callbacks[i] == nil:
+      return JS_ThrowRangeError(ctx, "selected index out of range")
+    return ctx.call(this.callbacks[i], JS_UNDEFINED.vc)
+
+# Select
 proc queueDraw(select: Select) =
   select.redraw = true
 
@@ -71,7 +154,11 @@ proc finish(ctx: JSContext; select: Select): JSValue =
   let selected = ctx.toJS(select.selected)
   if JS_IsException(selected.vc):
     return JS_EXCEPTION
-  ctx.callSink(move(select.finish), JS_UNDEFINED.vc, selected)
+  let close = if select.selected >= 0 and select.selected < select.options.len:
+    ctx.toJS(select.options[select.selected].optionType != sotMenu)
+  else:
+    JS_TRUE
+  ctx.callSink(select.finish, JS_UNDEFINED.vc, selected, close)
 
 proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1
@@ -223,6 +310,8 @@ jsClassPublicDef(Select):
   jsget Select, cursory # public
   jsget Select, x # public
   jsget Select, y # public
+  jsget Select, map # private
+  jsget Select, next # public
 
   # public
   proc numLines(select: Select): int {.jsfget.} =
@@ -239,7 +328,7 @@ jsClassPublicDef(Select):
   # public
   proc setCursorY(select: Select; y: int) {.jsfunc.} =
     var y = max(min(y, select.options.high), 0)
-    if y < select.options.len and select.options[y].nop:
+    if y < select.options.len and select.options[y].optionType == sotNop:
       if not select.unselected:
         select.unselected = true
         select.queueDraw()
@@ -255,13 +344,14 @@ jsClassPublicDef(Select):
   #TODO expose?
   proc setCursorYNear(select: Select; y: int) =
     var y = max(min(y, select.options.high), 0)
-    if y < select.options.len and select.options[y].nop:
+    if y < select.options.len and select.options[y].optionType == sotNop:
       # move y to the nearest valid slot
       if select.cursory > y:
-        while y < select.options.high and select.options[y].nop:
+        while y < select.options.high and
+            select.options[y].optionType == sotNop:
           inc y
       else:
-        while y > 0 and select.options[y].nop:
+        while y > 0 and select.options[y].optionType == sotNop:
           dec y
     select.setCursorY(y)
 
@@ -270,11 +360,14 @@ jsClassPublicDef(Select):
     var y = select.cursory + 1
     var n = n
     while y < select.options.len:
-      if not select.options[y].nop:
+      if select.options[y].optionType != sotNop:
         dec n
       if n <= 0:
         break
       inc y
+    y = min(y, select.options.high)
+    while y > select.cursory and select.options[y].optionType == sotNop:
+      dec y
     select.setCursorY(y)
 
   # public
@@ -282,11 +375,14 @@ jsClassPublicDef(Select):
     var y = select.cursory - 1
     var n = n
     while y >= 0:
-      if not select.options[y].nop:
+      if select.options[y].optionType != sotNop:
         dec n
       if n <= 0:
         break
       dec y
+    y = max(y, 0)
+    while y < select.cursory and select.options[y].optionType == sotNop:
+      inc y
     select.setCursorY(y)
 
   # public
@@ -326,7 +422,7 @@ jsClassPublicDef(Select):
     select.cursorUp(select.maxh)
 
   # public
-  proc cancel(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
+  proc cancel*(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
     select.selected = -1
     return ctx.finish(select)
 
@@ -334,11 +430,21 @@ jsClassPublicDef(Select):
   proc click(ctx: JSContext; select: Select): JSValue {.jsfunc.} =
     if select.unselected or
         select.cursory >= 0 and select.cursory < select.options.len and
-        select.options[select.cursory].nop:
+        select.options[select.cursory].optionType == sotNop:
       return JS_UNDEFINED
     else:
       select.selected = select.cursory
       return ctx.finish(select)
+
+  # private
+  proc setCursorYPopup(ctx: JSContext; select: Select; y: int): JSValue
+      {.jsfunc.} =
+    # used for automatic menu popup on mouse hover
+    select.setCursorY(y)
+    if select.cursory >= 0 and select.cursory < select.options.len and
+        select.options[select.cursory].optionType == sotMenu:
+      return ctx.click(select)
+    return JS_UNDEFINED
 
   # public
   proc cursorFirstLine(select: Select) {.jsfunc.} =
@@ -405,15 +511,19 @@ jsClassPublicDef(Select):
     select.setCursorYNear(select.cursory)
     select.queueDraw()
 
-  proc newSelect(ctx: JSContext; options: seq[SelectOption]; selected: int;
-      x, y, width, height: int; finish: JSCallback): Opt[Select] {.jsctor.} =
+  proc newSelect(ctx: JSContext; builder: SelectBuilder;
+      x, y, width, height: int; finish: JSCallback; next: SelectNil):
+      Select {.jsctor.} =
     let select = jsNew SelectObj(
-      selected: selected,
+      selected: builder.selected,
       x: x,
       y: y,
-      options: options,
-      finish: finish
+      options: move(builder.options),
+      finish: finish,
+      next: next,
+      map: move(builder.map)
     )
+    select.map.sort()
     if select != nil:
       var maxw = 0
       for opt in select.options.mitems:
@@ -422,13 +532,14 @@ jsClassPublicDef(Select):
         maxw = max(maxw, opt.s.width())
       select.maxw = maxw
       for opt in select.options.mitems:
-        if opt.nop:
+        if opt.s == "  " and opt.optionType == sotNop:
           opt.s = ' ' & ($bdcHorizontalBarTop).repeat(maxw - 2) & ' '
       select.windowChange(width, height)
-      select.setCursorY(selected)
-    ok(select)
+      select.setCursorY(select.selected)
+    select
 
 proc addSelectModule*(ctx: JSContext): JSCode =
+  ?ctx.registerClass(SelectBuilderDef)
   ctx.registerClass(SelectDef)
 
 {.pop.} # raises: []

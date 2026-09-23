@@ -31337,6 +31337,12 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValue
     JSValueConst args[5];
 
     basename = JS_GetScriptOrModuleName(ctx, 0);
+
+    /* TODO(bptato) hack to allow dynamic import from stripped init.js
+       should find a cleaner solution eventually */
+    if (basename == JS_ATOM_NULL)
+        basename = JS_ATOM_empty_string;
+
     if (basename == JS_ATOM_NULL)
         basename_val = JS_NULL;
     else

@@ -130,8 +130,8 @@ globalThis.cmd = {
     gotoColumnOrEnd: n =>
         n ? buffer.setCursorXCenter(n - 1) : buffer.cursorLineEnd(),
     selectOrCopy: n => {
-        if (pager.currentSelection)
-            cmd.buffer.copySelection();
+        if (buffer.currentSelection)
+            cmd.copySelection();
         else
             buffer.cursorToggleSelection(n)
     },
@@ -156,7 +156,7 @@ globalThis.cmd = {
             pager.gotoMarkY(c);
     },
     copySelection: async () => {
-        if (!pager.currentSelection) {
+        if (!buffer.currentSelection) {
             feedNext();
             return;
         }
@@ -274,7 +274,8 @@ for (const it of ["redraw", "toggleSource", "nextBuffer", "prevBuffer",
         "searchBackward", "isearchForward", "isearchBackward", "discardTree",
         "dupeBuffer", "load", "loadCursor", "saveLink", "toggleImages",
         "writeInputBuffer", "showFullAlert", "toggleLinkHints", "peek",
-        "peekCursor", "quit", "suspend", "searchPrev", "searchNext"]) {
+        "peekCursor", "quit", "suspend", "searchPrev", "searchNext",
+        "openBufferMenu"]) {
     cmd[it] = () => pager[it]();
 }
 
@@ -517,7 +518,8 @@ Pager.prototype.setBuffer = function(buffer) {
 Pager.prototype.setVisibleBuffer = function(buffer) {
     this.updateTitle(buffer.init);
     this.bufferIface = buffer.iface;
-    this.menu = buffer.select;
+    if (this.menu == null)
+        this.menu = buffer.select;
     buffer.iface.queueDraw();
 }
 
@@ -1149,57 +1151,105 @@ Pager.prototype.lineInfo = function() {
     this.alert(`line ${y}/${numLines} (${perc}%) col ${x}/${w} (byte ${b})`);
 }
 
-const MenuMap = [
-    ["Select text              (v)", cmd.selectOrCopy],
-    ["Previous buffer          (,)", cmd.prevBuffer],
-    ["Next buffer              (.)", cmd.nextBuffer],
-    ["Discard buffer           (D)", cmd.discardBuffer],
-    null,
-    ["Copy page URL          (M-y)", cmd.copyURL],
-    ["Copy link              (y u)", cmd.copyCursorLink],
-    ["View image               (I)", cmd.viewImage],
-    ["Copy image link        (y I)", cmd.copyCursorImage],
-    ["Reload                   (U)", cmd.reloadBuffer],
-    null,
-    ["Save link            (s RET)", cmd.saveLink],
-    ["View source              (\\)", cmd.toggleSource],
-    ["Edit source            (s E)", cmd.sourceEdit],
-    ["Save source            (s S)", cmd.saveSource],
-    null,
-    ["Linkify URLs             (:)", cmd.markURL],
-    ["Toggle images          (M-i)", cmd.toggleImages],
-    ["Toggle JS & reload     (M-j)", cmd.toggleScripting],
-    ["Toggle cookie & reload (M-k)", cmd.toggleCookie],
-    null,
-    ["Bookmark page          (M-a)", cmd.addBookmark],
-    ["Open bookmarks         (M-b)", cmd.openBookmarks],
-    ["Open history           (C-h)", cmd.openHistory],
-    null,
-    ["Force-quit browser       (q)", cmd.quit],
-];
+function mainMenu(m) {
+    if (buffer?.currentSelection != null)
+        m.item("Copy selection           (y)", cmd.copySelection, "v")
+    else
+        m.item("Select text              (v)", cmd.cursorToggleSelection, "v")
+    m.menu("Select buffer          (s b)", cmd.openBufferMenu, "s b")
+    m.line()
+    m.item("Copy page URL          (M-y)", cmd.copyURL, "M-y")
+    m.item("Copy link              (y u)", cmd.copyCursorLink, "y u")
+    m.item("View image               (I)", cmd.viewImage, "I")
+    m.item("Copy image link        (y I)", cmd.copyCursorImage, "y I")
+    m.item("Reload                   (U)", cmd.reloadBuffer, "U")
+    m.line()
+    m.item("Save link            (s RET)", cmd.saveLink, "s RET")
+    m.item("View source              (\\)", cmd.toggleSource, "\\")
+    m.item("Edit source            (s E)", cmd.editSource, "s E")
+    m.item("Save source            (s S)", cmd.saveSource, "s S")
+    m.line()
+    m.item("Linkify URLs             (:)", cmd.markURL, ":")
+    m.item("Toggle images          (M-i)", cmd.toggleImages, "M-i")
+    m.item("Toggle JS & reload     (M-j)", cmd.toggleScripting, "M-j")
+    m.item("Toggle cookie & reload (M-k)", cmd.toggleCookie, "M-k")
+    m.line()
+    m.item("Bookmark page          (M-a)", cmd.addBookmark, "M-a")
+    m.item("Open bookmarks         (M-b)", cmd.openBookmarks, "M-b")
+    m.item("Open history           (C-h)", cmd.openHistory, "C-h")
+    m.line()
+    m.item("Force-quit browser       (q)", cmd.quit, "q")
+}
+
+function bufferMenu(m) {
+    for (let buffer = pager.tab.head; buffer != null; buffer = buffer.next) {
+        m.item(buffer.url, () => pager.setBuffer(buffer));
+        if (buffer == pager.buffer)
+            m.select();
+    }
+    /* TODO move up/down (M-, and M-.?) */
+    m.bind(() => { select.cursorUp(); cmd.prevBuffer() }, ",");
+    m.bind(() => { select.cursorDown(); cmd.nextBuffer() }, ".");
+    m.bind(() => {
+        cmd.discardBuffer()
+        select.cancel()
+        cmd.openBufferMenu()
+    }, "D");
+    m.line()
+    m.line("comma (,)/period (.): previous/next │ D: delete");
+}
+
+Pager.prototype.openMenuInternal = async function(init) {
+    let {x, y, options} = init;
+    const buffer = this.buffer;
+    let oldMenu = this.menu;
+    x ??= this.menu ? this.menu.x + this.menu.width - 1 : buffer?.acursorx;
+    y ??= this.menu ? this.menu.y + this.menu.cursory : buffer?.acursory;
+    x = Math.max(x, 0);
+    y = Math.max(y, 0);
+    let commands = "";
+    let select;
+    select = new Select(options, x, y, this.bufWidth, this.bufHeight,
+                        (idx, close) => {
+        if (close)
+            this.menu = this.menu.next;
+        if (idx != -1)
+            options.callback(idx);
+    }, this.menu);
+    this.menu = select;
+}
+
+/* public */
+Pager.prototype.openCustomMenu = async function(init) {
+    const {x, y, name} = init;
+    if (!this.menuMap)
+        this.menuMap = await import("$CHA_DIR/menu.js");
+    if (!(name in this.menuMap))
+        throw TypeError(`menu ${name} not found`);
+    const options = new SelectBuilder(config.select);
+    this.menuMap[name](options);
+    return this.openMenuInternal({x, y, options});
+}
 
 /* public */
 Pager.prototype.openMenu = async function(x = null, y = null) {
-    const buffer = this.buffer;
-    x = Math.max(x ?? buffer?.acursorx, 0);
-    y = Math.max(y ?? buffer?.acursory, 0);
-    const options = MenuMap.map(x => x ? x[0] : null);
-    if (buffer?.currentSelection != null)
-        options[0] = "Copy selection           (y)"
-    const selected = await new Promise(resolve => {
-        this.menu = new Select(options, -1, x, y,
-                               this.bufWidth, this.bufHeight, resolve);
-    });
-    this.menu = null;
-    if (selected != -1)
-        MenuMap[selected][1]();
+    const options = new SelectBuilder(config.select);
+    mainMenu(options);
+    return this.openMenuInternal({x, y, options});
+}
+
+/* private */
+Pager.prototype.openBufferMenu = async function(x = null, y = null) {
+    const options = new SelectBuilder(config.select);
+    bufferMenu(options);
+    return this.openMenuInternal({x, y, options});
 }
 
 /* public */
 Pager.prototype.closeMenu = function() {
     const menu = this.menu;
     if (menu != null) {
-        this.menu = null;
+        this.menu = menu.next;
         return menu.cancel();
     }
 }
@@ -1396,10 +1446,18 @@ Pager.prototype.handleMouseInput = async function(input) {
                 select.unselect();
             else if (input.x != pressedX || input.y != pressedY) {
                 /*
-                 * Prevent immediate movement/submission in case the menu
-                 * appeared under the cursor.
+                 * The above check prevents immediate movement/submission
+                 * in case the menu appeared under the cursor.
+                 *
+                 * If we are near the border, try to popup the next
+                 * sub-menu.  (Ideally, we'd always popup sub-menus and
+                 * clear them on moving to the next item, but that's a bit
+                 * more involved, so this is a quick approximation.)
                  */
-                select.setCursorY(y);
+                if (input.x > select.x + select.width - 6 && input.t == "move")
+                    select.setCursorYPopup(y);
+                else
+                    select.setCursorY(y)
             }
             if (input.t == "press") {
                 /*
@@ -1614,7 +1672,7 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
         } else if (this.updateNumericPrefix()) {
             this.queueStatusUpdate();
         } else {
-            const map = globalThis.select ? config.select : config.page;
+            const map = select?.map ?? config.page;
             const p = this.evalInputAction(map, this.arg0);
             /*
              * We must queue the status update before the await in order to
@@ -1640,24 +1698,19 @@ Pager.prototype.handleInput = async function(t, mouseInput) {
         let tab = this.tabHead;
         const width = this.bufWidth;
         const height = this.bufHeight;
-        while (tab != null) {
-            let buffer = tab.head;
-            while (buffer != null) {
+        for (let tab = this.tabHead; tab != null; tab = tab.next) {
+            for (let buffer = tab.head; buffer != null; buffer = buffer.next) {
                 buffer.init.width = width;
                 buffer.init.height = height;
                 const iface = buffer.iface;
                 if (iface != null) {
-                    (function(buffer) {
-                        iface.windowChange(buffer.cursorx, buffer.cursory)
-                            .then(pos => buffer.setCursorXYCenter(...pos));
-                    })(buffer);
+                    iface.windowChange(buffer.cursorx, buffer.cursory)
+                        .then(pos => buffer.setCursorXYCenter(...pos));
                 }
                 const select = buffer.select;
                 if (select != null)
                     select.windowChange(width, height);
-                buffer = buffer.next;
             }
-            tab = tab.next;
         }
         break;
     }
@@ -2186,11 +2239,13 @@ const ReTextStart = /\S/gu;
             break;
         } case "select": {
             const selected = await new Promise(resolve => {
-                const selected = res.selected;
-                this.select = new Select(res.options, selected,
+                const options = new SelectBuilder(config.select, res.options,
+                                                  res.selected);
+                this.select = new Select(options,
                                          Math.max(this.acursorx - 1, 0),
                                          Math.max(this.acursory - 1 - selected, 0),
-                                         this.width, this.height, resolve);
+                                         this.width, this.height, resolve,
+                                         globalThis.select);
                 pager.menu = this.select;
             });
             if (pager.menu == this.select)

@@ -2,7 +2,6 @@ charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
 display:
-- important: buffer list menu
 - dark mode (basically max Y)
 config:
 - important: config editor

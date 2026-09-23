@@ -102,6 +102,7 @@ beginning)
 <li><kbd>s S</kbd>: save current page's source
 <li><kbd>s I</kbd>: save image
 <li><kbd>s RET</kbd>: save page that link points to
+<li><kbd>s b</kbd>: select buffer from buffer list
 <li><kbd>0</kbd>: cursor to first cell on line
 <li><kbd>^</kbd>: cursor to first non-whitespace on line
 <li><kbd>$</kbd>: cursor to last character on line

@@ -65,6 +65,12 @@ designed to handle file downloads, not web browsing.
 
 A `magnet:` URL handler. It can forward magnet links to transmission.
 
+### [menu.js](menu.js)
+
+Example file of the default menus, to be opened using
+`pager.openCustomMenu`.  See the "Menu" section in
+[**cha-api**](man:cha-api(7))(7) for details.
+
 ### [nex](nex)
 
 A `nex:` URL handler and directory parser.

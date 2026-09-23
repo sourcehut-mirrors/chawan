@@ -331,6 +331,12 @@ urimethodmap = ["\$CHA_DIR/urimethodmap", "~/.urimethodmap", "/etc/urimethodmap"
   instead, `auto-browsecap` should be used.  See
   [**cha-urimethodmap**](urimethodmap.md)(5) for details.
 
+menu-file = "\$CHA_DIR/"
+: **path**
+
+: Path for the menu file.  See the Menu section of
+  [**cha-api**](api.md#Menu)(7) for how to use it.
+
 w3m-cgi-compat = false
 : **boolean**
 
@@ -1289,6 +1295,10 @@ toggleMenu
 : **C**
 
 : Toggle the menu.
+
+openBufferMenu
+
+: Open the buffer selection menu.
 
 viewImage
 : **I**

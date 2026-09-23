@@ -300,6 +300,14 @@ Following properties (functions/getters) are defined by `Pager`:
 `openMenu(x = buffer.acursorx, y = buffer.acursory)`
 : Opens the context menu at the specified x/y positions.
 
+`openCustomMenu(init = {x: buffer.acursorx, y: buffer.acursory, name})`
+: Open a custom menu at the specified x/y positions.  `init` is an object
+  with the optional fields `x`, `y`, and `keymap`, and the mandatory field
+  `options`.
+
+  `x` and `y` are numbers.  `name` is a menu identifier.  See the [Menu](#menu)
+  section for how to define a custom menu.
+
 `closeMenu()`
 : Closes the menu if it is opened.
 
@@ -628,6 +636,59 @@ Following properties (functions/getters) are defined by `Select`:
 
 `cursory`
 : Line pointed at by the cursor.
+
+### Menu
+
+By default, the menus "main" and "selectBuffer" are defined, and can be
+used in `openCustomMenu` as described above ([Pager](#pager) section).
+
+It is also possible to define custom menus.  First, create a file
+`$CHA_DIR/menu.js`.  (The path can be changed using `external.menu-file`.)
+Then, export your menu as follows:
+
+```js
+export function myMenu(m) {
+	m.item("item not bound to any key", () => console.log("pressed item"))
+	m.item("item bound to key `k'", () => console.log("pressed item"), "k")
+	m.line() /* separator line */
+	m.line("some unselectable text")
+	m.menu("pop up another menu",
+		() => pager.openCustomMenu({name: "anotherMenu"}))
+}
+```
+
+Now you can open the custom menu using
+`pager.openCustomMenu({name: "myMenu"})`.
+
+The parameter `m` is an instance of the `SelectBuilder` interface, for
+which public methods are:
+
+item(label, command, key?)
+: Add an item to the menu with `label` that executes `command` when it's
+  selected.  `key` is an optional parameter for a key shortcut.
+
+`menu(label, command, key?)`
+: Like `item`, but `command` is expected to open a popup menu.
+  Selecting such items does not close the menu, and hovering over them with
+  the mouse may execute `command` automatically.  (Currently, this only
+  happens if the mouse is near the menu's right border.)
+
+`line(label?)`
+: A separator line.  If label is not passed, it is set to a line as wide as
+  the menu itself; otherwise, it is a label (useful for displaying keymap
+  hints).
+
+`bind(command, key)`
+: Bind a command to the key specified, using the syntax described in
+  [**cha-config**](5)(config.md#keybinding-format)'s Keybinding format
+  section.
+
+  Such keybindings are distinct from the config's `[select]` section in
+  that they are limited to a single menu, while keys specified in
+  `[select]` apply to all menus as well as HTML select tags.
+
+`select()`
+: Select the previous menu item defined using `item()` or `menu()`.
 
 ### LineEdit
 

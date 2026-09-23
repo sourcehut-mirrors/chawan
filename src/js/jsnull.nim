@@ -55,4 +55,7 @@ template jsNull*[T](r: JSRef[T]): JSNullRef[T] =
 template jsNull*[T](r: typedesc[JSRef[T]]): JSNullRef[T] =
   JSNullRef[T](nil)
 
+proc `==`*[T](r: JSNullRef[T]; t: typeof(nil)): bool =
+  cast[pointer](r) == nil
+
 {.pop.} # raises: []
