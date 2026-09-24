@@ -256,7 +256,7 @@ type
   NodeIteratorLikeObj {.pure.} = object of CollectionLikeObj
     active: bool
     whatToShow: uint32
-    filter: JSObject
+    filter: JSObjectNil
     currentNode: Node
 
   NodeIteratorObj {.pure, final.} = object of NodeIteratorLikeObj
@@ -1866,8 +1866,8 @@ proc mutationJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
       let records = ?trace(ctx.toJS(records))
       let this = trace(ctx.toJS(observer)) # cannot fail
       #TODO invoke (with all the ceremony that entails)
-      let callback = JS_DupValue(ctx, observer.callback.value)
-      discard ?trace(ctx.callFree(callback, this.v, records.v, this.v))
+      let callback = ctx.dup(observer.callback)
+      discard ?trace(ctx.call(callback, this.v, records.v, this.v))
   return JS_UNDEFINED
 
 proc queueMutationJob(ctx: JSContext) =
@@ -3812,7 +3812,7 @@ jsClassPublicDef(Document):
   proc location(ctx: JSContext; document: Document): JSValue {.jsuffget.} =
     if document.window == nil:
       return JS_NULL
-    return ctx.getProperty(ctx.getOpaque().global, jstLocation)
+    return ctx.getProperty(ctx.getOpaque().global.value, jstLocation)
 
   proc setLocation*(ctx: JSContext; document: Document; s: string): JSValue
       {.jsfset: "location".} =
@@ -4085,10 +4085,8 @@ jsClassPublicDef(Document):
     return ctx.toJS("")
 
   proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
-      whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL):
-      JSValue {.jsfunc.} =
-    if not JS_IsObject(filter) and not JS_IsNull(filter):
-      return JS_ThrowTypeError(ctx, "filter is not an object")
+      whatToShow = 0xFFFFFFFFu32; filter = JSObjectNil(nil)): JSValue
+      {.jsfunc.} =
     let this = jsNew NodeIteratorObj(
       root: root,
       currentNode: root,
@@ -4097,23 +4095,20 @@ jsClassPublicDef(Document):
       before: true
     )
     if this != nil:
-      if not JS_IsNull(filter):
-        this.filter = ctx.dupTraceObj(filter)
+      this.filter = filter
       this.asCollectionLike.attach()
     ctx.toJSNew(this)
 
   proc createTreeWalker(ctx: JSContext; document: Document; root: Node;
-      whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL):
-      JSValue {.jsfunc.} =
-    if not JS_IsObject(filter) and not JS_IsNull(filter):
-      return JS_ThrowTypeError(ctx, "filter is not an object")
+      whatToShow = 0xFFFFFFFFu32; filter = JSObjectNil(nil)): JSValue
+      {.jsfunc.} =
     let this = jsNewOf(NodeIteratorLikeObj(
       root: root,
       currentNode: root,
       whatToShow: whatToShow
     ), TreeWalkerDef.id)
-    if this != nil and not JS_IsNull(filter):
-      this.filter = ctx.dupTraceObj(filter)
+    if this != nil:
+      this.filter = filter
     ctx.toJSNew(this)
 
 # XMLDocument
@@ -4236,8 +4231,8 @@ proc filter(ctx: JSContext; this: NodeIteratorLike; node: Node): Opt[uint32] =
     return ok(uint32(nfrAccept))
   let node = ?trace(ctx.toJS(node))
   this.active = true
-  let val = ctx.callUserObject(this.filter, jstAcceptNode, JS_UNDEFINED,
-    node.v)
+  let val = ctx.callUserObject(JSObject(this.filter), jstAcceptNode,
+    JS_UNDEFINED, node.v)
   if JS_IsException(val):
     this.active = false
     return err()
@@ -6763,7 +6758,7 @@ proc onFinishToBlob(response: Response; success: bool) =
     JS_FreeContext(ctx)
     return
   let window = this.asNode.document.window
-  let res = trace(ctx.callSink(callback.value, JS_UNDEFINED, jsBlob))
+  let res = trace(ctx.callSink(callback, JS_UNDEFINED, jsBlob))
   if JS_IsException(res):
     window.console.error("Exception in canvas toBlob:", ctx.getExceptionMsg())
   JS_FreeContext(ctx)
@@ -7821,7 +7816,7 @@ proc addConstructorAlias*(ctx: JSContext; fun: JSCFunction; class: JSClassID;
   if ctx.defineProperty(val, jstPrototype, proto).isErr:
     JS_FreeValue(ctx, val)
     return err()
-  ctx.definePropertyCW(ctx.getOpaque().global, name, val)
+  ctx.definePropertyCW(ctx.getOpaque().global.value, name, val)
 
 proc addHyperlinkUtils*(ctx: JSContext; class: JSClassID): Opt[void] =
   const atoms = [
@@ -7974,11 +7969,10 @@ proc addDOMModule*(ctx: JSContext): JSCode =
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return ok()
-  let global = ctxOpaque.global
-  let document = JS_GetPropertyStr(ctx, global, "Document")
+  let document = JS_GetPropertyStr(ctx, ctxOpaque.global.value, "Document")
   if JS_IsException(document):
     return err()
-  ?ctx.definePropertyCW(global, "HTMLDocument", document)
+  ?ctx.definePropertyCW(ctxOpaque.global.value, "HTMLDocument", document)
   let nodeFilter = JS_NewObject(ctx)
   if JS_IsException(nodeFilter):
     return err()
@@ -7989,6 +7983,6 @@ proc addDOMModule*(ctx: JSContext): JSCode =
     let n = ctx.toJS(uint32(e))
     ?ctx.definePropertyE(nodeFilter, $e, n)
   ?ctx.definePropertyE(nodeFilter, "SHOW_ALL", ctx.toJS(0xFFFFFFFFu32))
-  ctx.definePropertyCW(global, "NodeFilter", nodeFilter)
+  ctx.definePropertyCW(ctxOpaque.global.value, "NodeFilter", nodeFilter)
 
 {.pop.} # raises: []

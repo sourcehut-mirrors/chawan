@@ -167,14 +167,27 @@ proc value*(p: JSObject): JSValueConst =
 
 proc moveJSValue*(p: var JSObject): JSValue =
   let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p))
-  cast[ptr pointer](addr p)[] = nil
+  wasMoved(p)
+  val
+
+proc toJSValue*(p: sink JSObject): JSValue =
+  let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p))
+  wasMoved(p)
   val
 
 proc JS_MarkValue*(rt: JSRuntime; p: JSObject; markFunc: JS_MarkFunc) =
   JS_MarkValue(rt, p.value, markFunc)
 
+proc dup*(ctx: JSContext; p: JSObject): JSObject =
+  p
+
+proc JS_IsFunction*(ctx: JSContext; p: JSObject): bool =
+  JS_IsFunction(ctx, p.value)
+
 type
   JSCallback* = distinct JSObject
+
+  JSObjectNil* = distinct JSObject
 
   BufferSource* = distinct JSObject
 
@@ -184,11 +197,16 @@ template jsObjectBorrow(typ: untyped) =
   proc `==`*(a: typ; b: typeof(nil)): bool =
     pointer(a) == nil
 
+  proc `==`*(a, b: typ): bool =
+    pointer(a) == pointer(b)
+
   proc value*(p: typ): JSValueConst {.borrow.}
   proc moveJSValue*(p: var typ): JSValue {.borrow.}
   proc JS_MarkValue*(rt: JSRuntime; p: typ; markFunc: JS_MarkFunc) {.borrow.}
+  proc dup*(ctx: JSContext; p: typ): typ {.borrow.}
 
 jsObjectBorrow(JSCallback)
+jsObjectBorrow(JSObjectNil)
 jsObjectBorrow(BufferSource)
 jsObjectBorrow(JSArrayBufferView)
 
@@ -230,6 +248,9 @@ proc JS_IsFunction*(ctx: JSContext; t: JSValueTraced): bool =
 
 proc JS_IsException*(t: JSValueTraced): bool =
   JS_IsException(t.v)
+
+proc JS_IsObject*(t: JSValueTraced): bool =
+  JS_IsObject(t.v)
 
 proc JS_MarkValue*(rt: JSRuntime; t: JSValueTraced; markFunc: JS_MarkFunc) =
   JS_MarkValue(rt, t.v, markFunc)

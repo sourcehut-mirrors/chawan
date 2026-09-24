@@ -141,7 +141,7 @@ type
       # * null (accepted from addEventListener)
       # * an object (whose handleEvent property will be invoked)
       # * a function
-      callback: JSObject
+      callback: JSObjectNil
       eventType: CAtom
       eflags: set[EventListenerFlag]
       capture: bool
@@ -168,7 +168,7 @@ type
 
 # Forward declarations
 proc removeEventListener*(ctx: JSContext; eventTarget: EventTarget;
-  eventType: CAtom; callback: JSValueConst;
+  eventType: CAtom; callback: JSObjectNil;
   options: JSValueConst = JS_UNDEFINED): Opt[void]
 proc getClassID*(t: typedesc[EventTarget]): JSClassID
 proc getClassID(t: typedesc[AbortSignal]): JSClassID
@@ -668,16 +668,15 @@ proc defaultPassiveValue(eventType: CAtom; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
   return eventType.toStaticAtom() in check and eventTarget.isDefaultPassive()
 
-proc findEventListener(ctx: JSContext; eventTarget: EventTarget;
-    eventType: CAtom; callback: JSValueConst; capture: bool): EventListener =
+proc findEventListener(eventTarget: EventTarget; eventType: CAtom;
+    callback: JSObjectNil; capture: bool): EventListener =
   for it in eventTarget.eventListeners:
     if not it.internal and not it.removed and it.eventType == eventType and
-        ctx.strictEquals(it.callback.value, callback) and
-        it.capture == capture:
+        it.callback == callback and it.capture == capture:
       return it
   nil
 
-proc findInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
+proc findInternalEventListener(eventTarget: EventTarget;
     eventType: StaticAtom): EventListener =
   for it in eventTarget.eventListeners:
     if it.internal and not it.removed and it.eventType == eventType:
@@ -695,7 +694,8 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
     return JS_UNDEFINED
   let this = ?trace(ctx.toJS(event.currentTarget))
   let arg = ?trace(ctx.toJS(event))
-  ctx.callUserObject(listener.callback, jstHandleEvent, this.v, arg.v)
+  ctx.callUserObject(JSObject(listener.callback), jstHandleEvent, this.v,
+    arg.v)
 
 proc removeEventListenerData(ctx: JSContext; _: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
@@ -704,24 +704,25 @@ proc removeEventListenerData(ctx: JSContext; _: JSValueConst; argc: cint;
   ?ctx.fromJS(funcData[0], this)
   var eventType: CAtom
   ?ctx.fromJS(funcData[1], eventType)
-  if ctx.removeEventListener(this, eventType, funcData[2], funcData[3]).isErr:
+  if ctx.removeEventListener(this, eventType,
+      cast[JSObjectNil](JS_VALUE_GET_PTR(funcData[2])), funcData[3]).isErr:
     return JS_EXCEPTION
   return JS_UNDEFINED
 
 proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
     capture, once, internal: bool; passive: Option[bool];
-    callback: JSValueConst; signal: AbortSignal): Opt[void] =
+    callback: JSObjectNil; signal: AbortSignal): Opt[void] =
   if signal != nil and not JS_IsUndefined(signal.reason):
     return ok()
   let passive = passive.get(defaultPassiveValue(eventType, target))
-  if ctx.findEventListener(target, eventType, callback, capture) == nil:
+  if target.findEventListener(eventType, callback, capture) == nil:
     # dedup
     let listener = EventListener(
       t: eltEventListener,
       eventType: eventType,
       capture: capture,
       internal: internal,
-      callback: ctx.dupTraceObj(callback),
+      callback: callback,
       next: target.eventListener,
       signal: signal
     )
@@ -734,8 +735,8 @@ proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
       let jsTarget = ?trace(ctx.toJS(target))
       let jsType = ?trace(ctx.toJS(eventType))
       let jsCapture = ?trace(ctx.toJS(capture))
-      let data = [JSValueConst(jsTarget.v), JSValueConst(jsType.v), callback,
-        JSValueConst(jsCapture.v)]
+      let data = [JSValueConst(jsTarget.v), JSValueConst(jsType.v),
+        callback.value, JSValueConst(jsCapture.v)]
       let fun = JS_NewCFunctionData(ctx, removeEventListenerData, 0, 0, 4,
         data.toJSValueConstArray())
       if JS_IsException(fun):
@@ -757,8 +758,8 @@ type FlattenMoreResult = object
   passive: Option[bool]
   signal: AbortSignal
 
-proc flattenMore(ctx: JSContext; options: JSValueConst;
-    res: var FlattenMoreResult): Opt[void] =
+proc fromJS(ctx: JSContext; options: JSValueConst; res: var FlattenMoreResult):
+    JSCode =
   let capture = ?ctx.flatten(options)
   var once = false
   var passive = none(bool)
@@ -775,14 +776,14 @@ proc flattenMore(ctx: JSContext; options: JSValueConst;
     passive: passive,
     signal: signal
   )
-  ok()
+  fjOk
 
 proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     eventType: StaticAtom) =
   var prev: EventListener = nil
   for it in eventTarget.eventListeners:
     if it.eventType == eventType and it.internal:
-      it.callback = JSObject(nil)
+      it.callback = JSObjectNil(nil)
       it.removed = true
       if prev == nil:
         eventTarget.eventListener = it.next
@@ -792,7 +793,7 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     prev = it
 
 proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
-    eventType: StaticAtom; callback: JSValueConst): Opt[void] =
+    eventType: StaticAtom; callback: JSObjectNil): Opt[void] =
   ctx.removeInternalEventListener(eventTarget, eventType)
   ctx.addEventListener(eventTarget, eventType.view(), capture = false,
     once = false, internal = true, passive = none(bool), callback,
@@ -803,7 +804,7 @@ proc eventReflectGetImpl*(ctx: JSContext; this: EventTarget; name: StaticAtom):
     JSValue {.cdecl.} =
   if this == nil:
     return JS_EXCEPTION
-  let el = ctx.findInternalEventListener(this, name)
+  let el = this.findInternalEventListener(name)
   if el == nil:
     return JS_NULL
   return JS_DupValue(ctx, el.callback.value)
@@ -815,8 +816,9 @@ proc eventReflectSetImpl*(ctx: JSContext; this: EventTarget; val: JSValueConst;
   if JS_IsFunction(ctx, val) or JS_IsNull(val):
     if JS_IsNull(val):
       ctx.removeInternalEventListener(this, atom)
-    elif ctx.addInternalEventListener(this, atom, val).isErr:
-      return JS_EXCEPTION
+    else:
+      ?ctx.addInternalEventListener(this, atom,
+        cast[JSObjectNil](JS_VALUE_GET_PTR(val)))
   return JS_UNDEFINED
 
 type
@@ -924,26 +926,20 @@ jsClassPublicDef(EventTarget):
     jsNew EventTargetObj()
 
   proc addEventListener*(ctx: JSContext; eventTarget: EventTarget;
-      eventType: CAtom; callback: JSValueConst;
-      options: JSValueConst = JS_UNDEFINED): Opt[void] {.jsfunc.} =
-    if not JS_IsObject(callback) and not JS_IsNull(callback):
-      JS_ThrowTypeError(ctx, "callback is not an object")
-      return err()
-    var res: FlattenMoreResult
-    ?ctx.flattenMore(options, res)
-    ctx.addEventListener(eventTarget, eventType, res.capture, res.once,
-      internal = false, res.passive, callback, res.signal)
+      eventType: CAtom; callback: JSObjectNil;
+      options = FlattenMoreResult()): Opt[void] {.jsfunc.} =
+    ctx.addEventListener(eventTarget, eventType, options.capture, options.once,
+      internal = false, options.passive, callback, options.signal)
 
   proc removeEventListener*(ctx: JSContext; eventTarget: EventTarget;
-      eventType: CAtom; callback: JSValueConst;
+      eventType: CAtom; callback: JSObjectNil;
       options: JSValueConst = JS_UNDEFINED): Opt[void] {.jsfunc.} =
     let capture = ?ctx.flatten(options)
     var prev: EventListener = nil
     for it in eventTarget.eventListeners:
       if not it.internal and not it.removed and it.eventType == eventType and
-          ctx.strictEquals(it.callback.value, callback) and
-          it.capture == capture:
-        it.callback = JSObject(nil)
+          it.callback == callback and it.capture == capture:
+        it.callback = JSObjectNil(nil)
         it.removed = true
         if prev == nil:
           eventTarget.eventListener = it.next
@@ -964,13 +960,13 @@ jsClassPublicDef(EventTarget):
     event.flags.excl(efTrusted)
     ctx.toJS(not ctx.dispatch(this, event))
 
-proc addEventGetSetImpl*(ctx: JSContext; obj: JSValueConst; id: JSClassID;
+proc addEventGetSetImpl*(ctx: JSContext; obj: JSObject; id: JSClassID;
     atoms: openArray[StaticAtom]; get: JSGetterMagicFunction;
     set: JSSetterMagicFunction): Opt[void] =
   assert ctx.isInstanceOf(id, EventTargetDef.id)
   for atom in atoms:
     let name = "on" & $atom
-    ?ctx.definePropertyGetSetCE(obj, cstring(name), get, set, cint(atom))
+    ?ctx.definePropertyGetSetCE(obj.value, cstring(name), get, set, cint(atom))
   ok()
 
 proc fromJSEventTarget(ctx: JSContext; this: JSValueConst;
@@ -978,7 +974,7 @@ proc fromJSEventTarget(ctx: JSContext; this: JSValueConst;
   let ctxOpaque = ctx.getOpaque()
   var classid: JSClassID
   var p: pointer
-  if JS_VALUE_GET_PTR(ctxOpaque.global) != JS_VALUE_GET_PTR(this):
+  if cast[pointer](ctxOpaque.global) != JS_VALUE_GET_PTR(this):
     p = JS_GetAnyOpaque(this, classid)
   else:
     classid = ctxOpaque.gclass
@@ -988,7 +984,7 @@ proc fromJSEventTarget(ctx: JSContext; this: JSValueConst;
     return EventTarget(nil)
   return cast[EventTarget](p)
 
-template addEventGetSetObj*(ctx2: JSContext; obj: JSValueConst; id: JSClassID;
+template addEventGetSetObj*(ctx2: JSContext; obj: JSObject; id: JSClassID;
     atoms: varargs[StaticAtom]): Opt[void] =
   proc eventReflectGet(ctx: JSContext; this: JSValueConst; magic: cint):
       JSValue {.cdecl.} =
@@ -1006,8 +1002,8 @@ template addEventGetSet*(ctx: JSContext; id: JSClassID;
     atoms: varargs[StaticAtom]): Opt[void] =
   if ctx.getOpaque() == nil:
     return ok()
-  let proto = trace(JS_GetClassProto(ctx, id))
-  ctx.addEventGetSetObj(proto.v, id, atoms)
+  let proto = traceObj(JS_GetClassProto(ctx, id))
+  ctx.addEventGetSetObj(proto, id, atoms)
 
 # AbortSignal
 proc toSignalReason(ctx: JSContext; reason: JSValueConst): JSValueTraced =
@@ -1061,7 +1057,7 @@ jsClassDef(AbortController):
       signal.reason = ctx.toSignalReason(reason)
       #TODO dependent signals
       for step in signal.abortSteps:
-        discard ?trace(ctx.call(step.value, JS_UNDEFINED))
+        discard ?trace(ctx.call(step, JS_UNDEFINED))
       let event = newTrustedEvent(satAbort, signal.asEventTarget,
         bubbles = false, cancelable = false)
       discard ctx.dispatch(signal.asEventTarget, event)

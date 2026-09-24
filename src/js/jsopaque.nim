@@ -3,6 +3,7 @@
 import std/algorithm
 
 import js/constcharp
+import js/jstypes
 import js/quickjs
 import utils/twtstr
 
@@ -86,8 +87,8 @@ type
 
   JSContextOpaqueObj* = object
     gclass*: JSClassID # class ID of the global object
-    ctors*: seq[JSValue] # class ID -> constructor
-    global*: JSValue
+    ctors*: seq[JSObject] # class ID -> constructor
+    global*: JSObject
     symRefs: array[JSSymbolRef, JSAtom]
     strRefs: array[JSStrRef, JSAtom]
     valRefs*: array[JSValueRef, JSValue]
@@ -137,9 +138,9 @@ proc getParent*(rtOpaque: JSRuntimeOpaque; class: JSClassID): JSClassID =
 
 proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = create(JSContextOpaqueObj)
-  opaque.global = JS_GetGlobalObject(ctx)
+  opaque.global = traceObj(JS_GetGlobalObject(ctx))
   var fail = false
-  let sym = JS_GetPropertyStr(ctx, opaque.global, "Symbol")
+  let sym = JS_GetPropertyStr(ctx, opaque.global.value, "Symbol")
   if not JS_IsException(sym):
     for s in JSSymbolRef:
       let name = $s
@@ -167,7 +168,6 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   if fail:
     for it in opaque.valRefs:
       JS_FreeValue(ctx, it)
-    JS_FreeValue(ctx, opaque.global)
     {.cast(raises: [])}:
       `=destroy`(opaque[])
     return nil
@@ -183,19 +183,6 @@ proc getOpaque*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
   return nil
-
-proc setUnforgeable*(ctx: JSContext; val: JSValueConst; class: JSClassID):
-    bool =
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let iclass = int(class)
-  if iclass < rtOpaque.classes.len and
-      rtOpaque.classes[iclass].unforgeable.len > 0:
-    let ufp0 = addr rtOpaque.classes[iclass].unforgeable[0]
-    let ufp = cast[JSCFunctionListP](ufp0)
-    if JS_SetPropertyFunctionList(ctx, val, ufp,
-        cint(rtOpaque.classes[iclass].unforgeable.len)) == -1:
-      return false
-  true
 
 proc putEnums0(ctx: JSContext; entry: var EnumMapEntry;
     atoms: openArray[string]): bool =

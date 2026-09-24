@@ -189,13 +189,13 @@ proc generateOutput*(edit: LineEdit; hlcolor: CellColor): FixedGrid =
     x += w
 
 proc resolve(ctx: JSContext; edit: LineEdit; val: JSValue): JSValue =
-  let resolve = moveJSValue(edit.resolve)
-  return ctx.callSinkFree(resolve, JS_UNDEFINED, val)
+  let resolve = move(edit.resolve)
+  return ctx.callSink(resolve, JS_UNDEFINED, val)
 
 proc update(ctx: JSContext; edit: LineEdit): JSValue =
   if edit.update == nil:
     return JS_UNDEFINED
-  return ctx.call(edit.update.value, JS_UNDEFINED)
+  return ctx.call(edit.update, JS_UNDEFINED)
 
 proc deleteTextTo(edit: LineEdit; ei: int) =
   edit.text.delete(edit.cursori ..< ei)

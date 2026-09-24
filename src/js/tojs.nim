@@ -193,19 +193,17 @@ proc toJSRef0(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
       return JS_GetGlobalObject(ctx)
     return JS_MKPTR(JS_TAG_OBJECT, jsptr)
   let classid = JS_GetForeignClassID(p)
-  let jsObj = JS_NewObjectFromCtor(ctx, ctor, classid)
-  if JS_IsException(jsObj):
+  let jsObj = JSObject(ctx.newObjectFromCtor(ctor, classid))
+  if jsObj == nil:
     JS_FreeForeignObject(rt, p)
-    return jsObj
+    return jsObj.toJSValue()
   # Set the opaque first, before GC has a chance to run.
-  JS_SetForeignOpaque(rt, p, jsObj)
-  JS_SetOpaque(jsObj, p)
+  JS_SetForeignOpaque(rt, p, JSValue(jsObj.value))
+  JS_SetOpaque(jsObj.value, p)
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
-  if not ctx.setUnforgeable(jsObj, classid):
-    JS_FreeValue(ctx, jsObj)
-    return JS_EXCEPTION
-  return jsObj
+  ?ctx.setUnforgeable(jsObj, classid)
+  return jsObj.toJSValue()
 
 proc toJSRef(ctx: JSContext; p: pointer): JSValue =
   if p == nil:
@@ -267,6 +265,9 @@ proc toJS*(ctx: JSContext; t: JSValueTraced): JSValue =
 proc toJS*(ctx: JSContext; p: JSObject): JSValue =
   return JS_DupValue(ctx, p.value)
 
+proc toJS*(ctx: JSContext; p: JSObjectNil): JSValue =
+  return JS_DupValue(ctx, p.value)
+
 proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue =
   let len = csize_t(abuf.len)
   return JS_NewArrayBuffer(ctx, abuf.p, len, abuf.dealloc, nil, JS_BOOL(0))
@@ -294,12 +295,12 @@ proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue =
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =
   return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
 
-proc definePropertyConvert*[T](ctx: JSContext; this: JSValueConst;
+proc definePropertyConvert*[T](ctx: JSContext; this: JSObject;
     name: JSStrRef; x: T): JSCode =
   let val = ctx.toJS(x)
   if JS_IsException(val):
     return fjErr
-  ctx.defineProperty(this, name, val)
+  ctx.defineProperty(this.value, name, val)
 
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue =
   if opt.isOk:

@@ -18,6 +18,7 @@ import js/fromjs
 import js/jsbind
 import js/jsopaque
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
@@ -29,8 +30,8 @@ import local/term
 import server/bufferiface
 import server/forkserver
 import server/loaderiface
-import utils/opt
 import utils/chaos
+import utils/opt
 import utils/sandbox
 import utils/strwidth
 import utils/twtstr
@@ -373,17 +374,14 @@ jsNamespaceDef(Client): # fake namespace
         return JS_ThrowTypeError(ctx, "Failed to set environment variable")
     return JS_UNDEFINED
 
-proc addJSModules(client: Window; ctx: JSContext): Opt[void] =
-  let global = ctx.getOpaque().global
-  if not ctx.setPropertyFunctionList(global, ClientDef.staticFuns):
-    return err()
+proc addJSModules(client: Window; ctx: JSContext): JSCode =
+  ?ctx.setPropertyFunctionList(ctx.getOpaque().global, ClientDef.staticFuns)
   ?ctx.addUtilModule()
   ?ctx.addLineEditModule()
   ?ctx.addConfigModule()
   ?ctx.addPagerModule()
   ?ctx.addBufferInterfaceModule()
-  ?ctx.addSelectModule()
-  ok()
+  ctx.addSelectModule()
 
 proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
     urandom: PosixStream): Window {.myProveInit.} =
@@ -410,8 +408,8 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
   if cres.isErr:
     die(cres.error)
   let config = cres.get
-  let global = jsctx.getOpaque().global
-  if jsctx.definePropertyConvert(global, jstConfig, config).isErr:
+  if jsctx.definePropertyConvert(jsctx.getOpaque().global, jstConfig,
+      config).isErr:
     die(jsctx.getExceptionMsg())
   var history = true
   let ps = newPosixStream(STDIN_FILENO)

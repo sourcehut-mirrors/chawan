@@ -828,9 +828,9 @@ const
   JS_WRITE_OBJ_SAB* = (1 shl 2) ## allow SharedArrayBuffer
   JS_WRITE_OBJ_REFERENCE* = (1 shl 3) ## allow object references to encode
                                       ## arbitrary object graph
-proc JS_WriteObject*(ctx: JSContext; psize: ptr csize_t; obj: JSValueConst;
+proc JS_WriteObject*(ctx: JSContext; psize: var csize_t; obj: JSValueConst;
   flags: cint): ptr uint8
-proc JS_WriteObject2*(ctx: JSContext; psize: ptr csize_t; obj: JSValueConst;
+proc JS_WriteObject2*(ctx: JSContext; psize: var csize_t; obj: JSValueConst;
   flags: cint; psab_tab: ptr JSSABTab; psab_tab_len: ptr csize_t):
   ptr uint8
 

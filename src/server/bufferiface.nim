@@ -543,16 +543,17 @@ jsClassPublicDef(BufferInit):
     if init.connected == nil:
       JS_FreeValue(ctx, arg1)
       return JS_UNDEFINED
-    let fun = moveJSValue(init.connected)
+    let fun = move(init.connected)
     let this = ctx.toJS(init)
     if JS_IsException(this):
-      ctx.freeValues(fun, arg1)
+      JS_FreeValue(ctx, arg1)
       return JS_EXCEPTION
     let arg0 = ctx.toJS(res)
     if JS_IsException(arg0):
-      ctx.freeValues(fun, this, arg1)
+      JS_FreeValue(ctx, this)
+      JS_FreeValue(ctx, arg1)
       return JS_EXCEPTION
-    return ctx.callSinkThisFree(fun, this, arg0, arg1, ctx.toJS(force))
+    return ctx.callSinkThis(fun, this, arg0, arg1, ctx.toJS(force))
 
   proc setConnected(ctx: JSContext; init: BufferInit; connected: JSCallback):
         JSValue {.jsfset: "connected".} =
@@ -731,78 +732,38 @@ proc swrite*(w: var PacketWriter; x: ClickResult) =
 proc toJS(ctx: JSContext; x: ClickResult): JSValue =
   if x.t == crtNone:
     return JS_NULL
-  let obj = JS_NewObject(ctx)
-  if JS_IsException(obj):
-    return JS_EXCEPTION
-  block good:
-    if ctx.definePropertyConvert(obj, jstT, x.t).isErr:
-      break good
-    case x.t
-    of crtNone: discard
-    of crtOpen:
-      let open = x.open
-      if ctx.definePropertyConvert(obj, jstOpen, open).isErr:
-        break good
-      if ctx.definePropertyConvert(obj, jstContentType, x.contentType).isErr:
-        break good
-    of crtSelect:
-      if ctx.definePropertyConvert(obj, jstSelected, x.selected).isErr:
-        break good
-      if ctx.definePropertyConvert(obj, jstOptions, x.options).isErr:
-        break good
-    of crtReadText, crtReadPassword, crtReadArea, crtReadFile:
-      if ctx.definePropertyConvert(obj, jstPrompt, x.prompt).isErr:
-        break good
-      if ctx.definePropertyConvert(obj, jstValue, x.value).isErr:
-        break good
-    return obj
-  JS_FreeValue(ctx, obj)
-  return JS_EXCEPTION
+  var obj = ?ctx.newObject()
+  ?ctx.definePropertyConvert(obj, jstT, x.t)
+  case x.t
+  of crtNone: discard
+  of crtOpen:
+    ?ctx.definePropertyConvert(obj, jstOpen, x.open)
+    ?ctx.definePropertyConvert(obj, jstContentType, x.contentType)
+  of crtSelect:
+    ?ctx.definePropertyConvert(obj, jstSelected, x.selected)
+    ?ctx.definePropertyConvert(obj, jstOptions, x.options)
+  of crtReadText, crtReadPassword, crtReadArea, crtReadFile:
+    ?ctx.definePropertyConvert(obj, jstPrompt, x.prompt)
+    ?ctx.definePropertyConvert(obj, jstValue, x.value)
+  moveJSValue(obj)
 
 proc toJS(ctx: JSContext; res: GotoAnchorResult): JSValue =
-  var init = [JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED]
-  block good:
-    init[0] = ctx.toJS(res.x)
-    if JS_IsException(init[0]):
-      break good
-    init[1] = ctx.toJS(res.y)
-    if JS_IsException(init[1]):
-      break good
-    init[2] = ctx.toJS(res.focus)
-    if JS_IsException(init[2]):
-      break good
-    return ctx.newArrayFrom(init)
-  ctx.freeValues(init)
-  return JS_EXCEPTION
+  var x = ?trace(ctx.toJS(res.x))
+  var y = ?trace(ctx.toJS(res.y))
+  var focus = ?trace(ctx.toJS(res.focus))
+  ctx.newArrayFrom([moveJSValue(x), moveJSValue(y), moveJSValue(focus)])
 
 proc toJS(ctx: JSContext; x: CursorXY): JSValue =
-  let obj = JS_NewObject(ctx)
-  if JS_IsException(obj):
-    return JS_EXCEPTION
-  block good:
-    if ctx.definePropertyCWE(obj, jstX, ctx.toJS(x.x)).isErr:
-      break good
-    if ctx.definePropertyCWE(obj, jstY, ctx.toJS(x.y)).isErr:
-      break good
-    return obj
-  JS_FreeValue(ctx, obj)
-  return JS_EXCEPTION
+  var obj = ?trace(JS_NewObject(ctx))
+  ?ctx.definePropertyCWE(obj.v, jstX, ctx.toJS(x.x))
+  ?ctx.definePropertyCWE(obj.v, jstY, ctx.toJS(x.y))
+  moveJSValue(obj)
 
 proc toJS(ctx: JSContext; match: BufferMatch): JSValue =
-  var init = [JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED]
-  block good:
-    init[0] = ctx.toJS(match.x)
-    if JS_IsException(init[0]):
-      break good
-    init[1] = ctx.toJS(match.y)
-    if JS_IsException(init[1]):
-      break good
-    init[2] = ctx.toJS(match.w)
-    if JS_IsException(init[2]):
-      break good
-    return ctx.newArrayFrom(init)
-  ctx.freeValues(init)
-  return JS_EXCEPTION
+  var x = ?trace(ctx.toJS(match.x))
+  var y = ?trace(ctx.toJS(match.y))
+  var w = ?trace(ctx.toJS(match.w))
+  ctx.newArrayFrom([moveJSValue(x), moveJSValue(y), moveJSValue(w)])
 
 proc findPromise(iface: BufferInterface; id: int): int =
   for i, it in iface.map.mypairs:
@@ -829,7 +790,7 @@ proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
       else:
         it.get(ctx, iface, iface.partialReader.r)
       if not JS_IsException(val) and it.fun != nil:
-        let ret = ctx.callSink(it.fun.value, JS_UNDEFINED, val)
+        let ret = ctx.callSink(it.fun, JS_UNDEFINED, val)
         if JS_IsException(ret):
           res = irException
         JS_FreeValue(ctx, ret)
@@ -863,14 +824,14 @@ proc getFromStream[T](ctx: JSContext; iface: BufferInterface;
 
 proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
     JSValue =
-  var funs {.noinit.}: array[2, JSValue]
-  let res = ctx.newPromiseCapability(funs)
+  var resolve: JSCallback
+  var reject: JSCallback
+  let res = ctx.newPromiseCapability(resolve, reject)
   if JS_IsException(res):
     return res
-  JS_FreeValue(ctx, funs[1])
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
-    fun: JSCallback(traceObj(funs[0])),
+    fun: move(resolve),
     get: get
   ))
   inc iface.packetid

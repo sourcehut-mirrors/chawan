@@ -45,8 +45,8 @@ import utils/twtstr
 
 type JSFetchOpaque {.final.} = ref object of RootObj
   ctx: JSContext
-  resolve: JSObject
-  reject: JSObject
+  resolve: JSCallback
+  reject: JSCallback
 
 # Forward declarations
 proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
@@ -141,16 +141,13 @@ jsClassRaw(MimeTypeArrayDef, "MimeTypeArray"):
 # geniuses use it for "browser verification."
 proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
-  let denied = JS_NewString(ctx, "denied")
-  if JS_IsException(denied):
-    return denied
+  let denied = ?trace(JS_NewString(ctx, "denied"))
   if not JS_IsUndefined(argv[0]):
-    let res = ctx.call(argv[0], JS_UNDEFINED, denied)
+    let res = ctx.call(argv[0], JS_UNDEFINED, denied.v)
     if JS_IsException(res):
       #TODO "report" (fire error event)
-      JS_FreeValue(ctx, denied)
-      return res
-  return ctx.callSink(argv[1], JS_UNDEFINED, denied)
+      return JS_EXCEPTION
+  return ctx.call(argv[1], JS_UNDEFINED, denied.v)
 
 jsClassRaw(NotificationDef, "Notification"):
   proc newNotification(ctx: JSContext; ctor: JSValueConst): JSValue
@@ -161,12 +158,12 @@ jsClassRaw(NotificationDef, "Notification"):
       JSValue {.jsstfunc.} =
     if not JS_IsUndefined(callback) and not JS_IsFunction(ctx, callback):
       return JS_ThrowTypeError(ctx, "not a function")
-    var funs {.noinit.}: array[2, JSValue]
-    let res = ctx.newPromiseCapability(funs)
+    var resolve: JSCallback
+    var reject: JSCallback
+    let res = ctx.newPromiseCapability(resolve, reject)
     if JS_IsException(res):
       return res
-    let code = ctx.enqueueJob(resolveToDenied, funs[0], callback)
-    ctx.freeValues(funs)
+    let code = ctx.enqueueJob(resolveToDenied, resolve.value, callback)
     if code == fjErr:
       JS_FreeValue(ctx, res)
       return JS_EXCEPTION
@@ -219,13 +216,11 @@ jsClassRaw(PermissionsDef, "Permissions"):
     var name: DOMString
     ?ctx.fromJSFree(jsName, name)
     let jsName2 = ?trace(ctx.toJS(name))
-    var funs {.noinit.}: array[2, JSValue]
-    var res = ?trace(ctx.newPromiseCapability(funs))
+    var resolve: JSCallback
+    var reject: JSCallback
+    var res = ?trace(ctx.newPromiseCapability(resolve, reject))
     #TODO permission task source
-    let code = ctx.enqueueJob(denyPermissionJob, funs[0], jsName2.v)
-    ctx.freeValues(funs)
-    if code == fjErr:
-      return JS_EXCEPTION
+    ?ctx.enqueueJob(denyPermissionJob, resolve.value, jsName2.v)
     moveJSValue(res)
 
 # Screen
@@ -451,35 +446,25 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
     return JS_ThrowTypeErrorInvalidClass(ctx, parent)
   if JS_IsUndefined(func_data[0]):
     let classid = JSClassID(uint32(magic))
-    let obj = JS_NewObjectClass(ctx, classid)
-    if JS_IsException(obj):
-      return obj
+    let obj = ?ctx.newObjectClass(classid)
     let rt = JS_GetRuntime(ctx)
     let rtOpaque = rt.getOpaque()
     let ctxOpaque = ctx.getOpaque()
-    JS_SetOpaque(obj, JS_DupForeignObject(rt, ctxOpaque.globalObj))
+    JS_SetOpaque(obj.value, JS_DupForeignObject(rt, ctxOpaque.globalObj))
     if int(classid) < rtOpaque.classes.len:
-      if not ctx.setPropertyFunctionList(obj,
-          rtOpaque.classes[int(classid)].unforgeable):
-        JS_FreeValue(ctx, obj)
-        return JS_EXCEPTION
+      ?ctx.setPropertyFunctionList(obj,
+        rtOpaque.classes[int(classid)].unforgeable)
     if classid == LocationDef.id:
       let valueOf0 = ctxOpaque.valRefs[jsvObjectPrototypeValueOf]
-      if ctx.defineProperty(obj, "valueOf", JS_DupValue(ctx, valueOf0)).isErr:
-        JS_FreeValue(ctx, obj)
-        return JS_EXCEPTION
-      if ctx.defineProperty(obj, "toPrimitive", JS_UNDEFINED).isErr:
-        JS_FreeValue(ctx, obj)
-        return JS_EXCEPTION
+      ?ctx.defineProperty(obj.value, "valueOf", JS_DupValue(ctx, valueOf0))
+      ?ctx.defineProperty(obj.value, "toPrimitive", JS_UNDEFINED)
       #TODO [[DefaultProperties]], exotic
-    func_data[0] = obj
+    func_data[0] = obj.toJSValue()
   return JS_DupValue(ctx, func_data[0])
 
 proc windowAutoInitSetter(ctx: JSContext; this, val: JSValueConst;
     magic: cint): JSValue {.cdecl.} =
-  if JS_DefinePropertyValue(ctx, this, ctx.getAtom(JSStrRef(magic)),
-      JS_DupValue(ctx, val), JS_PROP_C_W_E) < 0:
-    return JS_EXCEPTION
+  ?ctx.definePropertyCWE(this, JSStrRef(magic), JS_DupValue(ctx, val))
   return JS_UNDEFINED
 
 type AutoInitGetSetType = enum
@@ -496,7 +481,7 @@ proc windowSetLocation(ctx: JSContext; this, val: JSValueConst): JSValue
     return JS_ThrowTypeError(ctx, "document is null")
   return ctx.setLocation(window, s)
 
-proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
+proc registerAutoInitGetSet(ctx: JSContext; namespace: JSObject;
     parentClass: JSClassID; def: ChaClassDef; name: JSStrRef;
     t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
@@ -522,8 +507,8 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSValueConst;
   if JS_IsException(setter):
     JS_FreeValue(ctx, getter)
     return err()
-  if JS_DefinePropertyGetSet(ctx, namespace, ctx.getAtom(name), getter, setter,
-      flags) < 0:
+  if JS_DefinePropertyGetSet(ctx, namespace.value, ctx.getAtom(name), getter,
+      setter, flags) < 0:
     return err()
   ok()
 
@@ -533,25 +518,24 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return ok()
-  let global = ctxOpaque.global
-  let globalId = JS_GetClassID(global)
-  ?ctx.registerAutoInitGetSet(global, globalId, NavigatorDef, jstNavigator,
-    gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, globalId, ScreenDef, jstScreen,
-    gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, globalId, HistoryDef, jstHistory,
-    gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, globalId, CryptoDef, jstCrypto,
-    gstReplaceable)
-  ?ctx.registerAutoInitGetSet(global, globalId, LocationDef, jstLocation,
-    gstUnforgeable)
-  let navigator = trace(JS_GetClassProto(ctx, NavigatorDef.id))
+  let globalId = JS_GetClassID(ctxOpaque.global.value)
+  ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, NavigatorDef,
+    jstNavigator, gstReplaceable)
+  ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, ScreenDef,
+    jstScreen, gstReplaceable)
+  ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, HistoryDef,
+    jstHistory, gstReplaceable)
+  ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, CryptoDef,
+    jstCrypto, gstReplaceable)
+  ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, LocationDef,
+    jstLocation, gstUnforgeable)
+  let navigator = traceObj(JS_GetClassProto(ctx, NavigatorDef.id))
   let navigatorId = NavigatorDef.id
-  ?ctx.registerAutoInitGetSet(navigator.v, navigatorId, PluginArrayDef,
+  ?ctx.registerAutoInitGetSet(navigator, navigatorId, PluginArrayDef,
     jstPlugins, gstProto)
-  ?ctx.registerAutoInitGetSet(navigator.v, navigatorId, MimeTypeArrayDef,
+  ?ctx.registerAutoInitGetSet(navigator, navigatorId, MimeTypeArrayDef,
     jstMimeTypes, gstProto)
-  ctx.registerAutoInitGetSet(navigator.v, navigatorId, PermissionsDef,
+  ctx.registerAutoInitGetSet(navigator, navigatorId, PermissionsDef,
     jstPermissions, gstProto)
 
 # CSS
@@ -598,11 +582,11 @@ jsClassDef(MediaQueryList):
   jsget MediaQueryList, matches
 
   proc addListener(ctx: JSContext; this: MediaQueryList;
-      callback: JSValueConst): Opt[void] {.jsfunc.} =
+      callback: JSObjectNil): Opt[void] {.jsfunc.} =
     ctx.addEventListener(this.asEventTarget, satChange.view(), callback)
 
   proc removeListener(ctx: JSContext; this: MediaQueryList;
-      callback: JSValueConst): Opt[void] {.jsfunc.} =
+      callback: JSObjectNil): Opt[void] {.jsfunc.} =
     ctx.removeEventListener(this.asEventTarget, satChange.view(), callback,
       JS_FALSE)
 
@@ -681,7 +665,7 @@ proc throwNetworkError(ctx: JSContext): JSValue =
 proc jsFinish(opaque: RootRef; response: Response) =
   let opaque = JSFetchOpaque(opaque)
   let ctx = move(opaque.ctx)
-  let resolve = moveJSValue(opaque.resolve)
+  let resolve = move(opaque.resolve)
   let reject = moveJSValue(opaque.reject)
   if response != nil:
     let val = ctx.toJS(response)
@@ -692,7 +676,6 @@ proc jsFinish(opaque: RootRef; response: Response) =
   else:
     discard ctx.throwNetworkError()
     discard ctx.enqueueRejection(reject)
-  JS_FreeValue(ctx, resolve)
   JS_FreeContext(ctx)
 
 proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
@@ -712,8 +695,8 @@ proc postMessageJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
 
 proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
-  let arg0 = ctx.toJS(getUnixMillis())
-  return ctx.callSink(argv[0], this, arg0)
+  let arg0 = ?trace(ctx.toJS(getUnixMillis()))
+  return ctx.call(argv[0], this, arg0.v)
 
 jsClassDef(Window):
   jsextends EventTargetDef
@@ -787,14 +770,15 @@ jsClassDef(Window):
     if not window.checkCORSRequest(input):
       discard ctx.throwNetworkError()
       return ctx.newRejectedPromise()
-    var funs {.noinit.}: array[2, JSValue]
-    let res = ctx.newPromiseCapability(funs)
+    var resolve: JSCallback
+    var reject: JSCallback
+    let res = ctx.newPromiseCapability(resolve, reject)
     if JS_IsException(res):
       return res
     let opaque = JSFetchOpaque(
       ctx: JS_DupContext(ctx),
-      resolve: traceObj(funs[0]),
-      reject: traceObj(funs[1])
+      resolve: resolve,
+      reject: reject
     )
     window.loader.fetch(input, jsFinish, opaque)
     return res
@@ -980,9 +964,8 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
 
 proc windowPropsGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
     this: JSValueConst; prop: JSAtom): cint {.cdecl.} =
-  let global = ctx.getOpaque().global
   var window: Window
-  discard ctx.fromJS(global, window)
+  discard ctx.fromJS(ctx.getOpaque().global.value, window)
   let document = window.document
   if document != nil:
     var id: CAtomRaw

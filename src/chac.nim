@@ -63,7 +63,7 @@ proc main() =
     die(ctx.getExceptionMsg())
   var plen: csize_t
   let p = cast[ptr UncheckedArray[char]](
-    JS_WriteObject(ctx, addr plen, obj, JS_WRITE_OBJ_BYTECODE))
+    JS_WriteObject(ctx, plen, obj, JS_WRITE_OBJ_BYTECODE))
   if chafile.writeFile(ofile, p.toOpenArray(0, int(plen) - 1), 0o600).isErr:
     die("failed to write " & $ofile)
   js_free(ctx, p)

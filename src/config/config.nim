@@ -300,9 +300,9 @@ type
     of cocRegex:
       regex*: Regex
     of cocFunction:
-      fun*: pointer # JSObject *
+      fun*: JSCallback
     of cocCmdInit:
-      cmdInit*: seq[tuple[k: string; fun: pointer]]
+      cmdInit*: seq[tuple[k: string; fun: JSCallback]]
     of cocClear:
       discard
 
@@ -310,7 +310,7 @@ type
     name: string
     matchType*: SiteconfMatch # only used for siteconf
     regex*: Regex # url for siteconf, match for omnirule
-    fun*: JSValue # substituteUrl for siteconf, rewriteUrl for omnirule
+    fun*: JSCallback # substituteUrl for siteconf, rewriteUrl for omnirule
     entries*: seq[ConfigEntry] # only used for siteconf
     prev: ConfigRule
     next: ConfigRule
@@ -450,7 +450,7 @@ type
     dataDir*: string
     #TODO getset
     lists*: array[csSiteconf..csOmnirule, ConfigList]
-    cmdInit: seq[tuple[k: string; fun: pointer]] # initial k/v map
+    cmdInit: seq[tuple[k: string; fun: JSCallback]] # initial k/v map
     actionMap*: array[csPage..csLine, ActionMap]
 
   TomlState = enum
@@ -786,7 +786,6 @@ proc put(list: var ConfigList; ctx: JSContext; rule: ConfigRule) =
       prev.next = next
     if next != nil:
       next.prev = prev
-    JS_FreeValue(ctx, oldRule.fun)
   list.map.put(rule)
   if list.tail == nil:
     list.head = rule
@@ -798,7 +797,6 @@ proc put(list: var ConfigList; ctx: JSContext; rule: ConfigRule) =
 proc clear(list: var ConfigList; rt: JSRuntime) =
   var it = move(list.head)
   while it != nil:
-    JS_FreeValueRT(rt, it.fun)
     it.prev = nil
     it = move(it.next)
   list.tail = nil
@@ -1704,14 +1702,13 @@ proc parseRegex(cp: var ConfigParser; x: var Regex): Opt[void] =
   x = move(y.get)
   ok()
 
-proc parseFunction(cp: var ConfigParser; x: var pointer): Opt[void] =
+proc parseFunction(cp: var ConfigParser; x: var JSCallback): Opt[void] =
   ?cp.typeCheck(ttString)
   let fun = cp.ctx.eval(cp.buf, "<config>", JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(fun):
     return cp.err(cp.ctx.getExceptionMsg())
-  if not JS_IsFunction(cp.ctx, fun):
+  if cp.ctx.fromJSFree(fun, x).isErr:
     return cp.err("not a function")
-  x = JS_VALUE_GET_PTR(fun)
   ok()
 
 proc saveKeyState(cp: var ConfigParser) =
@@ -1896,12 +1893,12 @@ proc addRegex(cp: var ConfigParser): var Regex =
   cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocRegex))
   cp.entries[^1].regex
 
-proc addFunction(cp: var ConfigParser): var pointer =
+proc addFunction(cp: var ConfigParser): var JSCallback =
   cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocFunction))
   cp.entries[^1].fun
 
 proc addCmdInit(cp: var ConfigParser):
-    var seq[tuple[k: string; fun: pointer]] =
+    var seq[tuple[k: string; fun: JSCallback]] =
   if cp.entries.len == 0 or cp.entries[^1].t != cocCmdInit:
     cp.entries.add(ConfigEntry(
       section: cp.section,
@@ -1958,12 +1955,12 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
       let val = ctx.eval(cp.buf, "<" & cp.key & ">", JS_EVAL_TYPE_GLOBAL)
       if JS_IsException(val):
         return cp.err(ctx.getExceptionMsg())
-      if not JS_IsFunction(ctx, val):
-        JS_FreeValue(ctx, val)
+      var x: JSCallback
+      if ctx.fromJSFree(val, x).isErr:
         return cp.err("not a function")
-      JS_VALUE_GET_PTR(val)
+      move(x)
     else:
-      nil
+      JSCallback(nil)
     cp.addCmdInit().add((cp.key, fun))
   of csPage, csSelect, csLine:
     ?cp.typeCheck(ttString)
@@ -1985,7 +1982,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
   let opt = entry.opt
   if section in {csSiteconf, csOmnirule}:
     if entry.t == cocStr and opt == coAddEntry:
-      let rule = ConfigRule(fun: JS_UNDEFINED, name: move(entry.str))
+      let rule = ConfigRule(name: move(entry.str))
       config.lists[section].put(ctx, rule)
     else:
       let rule = config.lists[section].tail
@@ -1995,7 +1992,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
           rule.matchType = smHost
         rule.regex.bytecode = move(entry.regex.bytecode)
       of cocFunction:
-        rule.fun = JS_MKPTR(JS_TAG_OBJECT, entry.fun)
+        rule.fun = move(entry.fun)
       of cocClear: config.lists[section].clear(JS_GetRuntime(ctx))
       else:
         assert opt in SiteconfOptions
@@ -2082,16 +2079,6 @@ proc parseFile(cp: var ConfigParser; file: AChaFile): Opt[void] =
   ok()
 
 proc cleanup(cp: var ConfigParser) =
-  for entry in cp.entries:
-    case entry.t
-    of cocFunction:
-      if entry.fun != nil:
-        JS_FreeValue(cp.ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
-    of cocCmdInit:
-      for it in entry.cmdInit:
-        if it.fun != nil:
-          JS_FreeValue(cp.ctx, JS_MKPTR(JS_TAG_OBJECT, it.fun))
-    else: discard
   if cp.error == "":
     cp.error = "failed to read config"
 
@@ -2121,15 +2108,9 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   var cp = initConfigParser(config, dir, ctx, name, laxnames)
   for line in buf.split('\n'):
     if cp.parseConfigLine(line).isErr:
-      for entry in cp.entries:
-        if entry.t == cocFunction and entry.fun != nil:
-          JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
       return err(move(cp.error))
     inc cp.line
   if cp.checkRuleRegex().isErr:
-    for entry in cp.entries:
-      if entry.t == cocFunction and entry.fun != nil:
-        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, entry.fun))
     return err(move(cp.error))
   ctx.applyEntries(config, cp.entries)
   warnings.add(cp.warnings)
@@ -2586,7 +2567,6 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
   config.siteconf.put(ctx, ConfigRule(
     name: "downloads",
     regex: compileMatchRegex("about:downloads").get,
-    fun: JS_UNDEFINED,
     entries: @[ConfigEntry(
       section: csSiteconf,
       opt: coMetaRefresh,
@@ -2630,13 +2610,13 @@ jsClassDef(Config):
     config.omnirule.put(ctx, ConfigRule(
       name: name,
       regex: bytecodeToRegex(cast[REBytecode](p), len),
-      fun: JS_DupValue(ctx, fun.value)
+      fun: fun
     ))
     return JS_UNDEFINED
 
   # called at pager init
   proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
-    let obj = JS_GetPropertyStr(ctx, ctx.getOpaque().global, "cmd")
+    let obj = JS_GetPropertyStr(ctx, ctx.getOpaque().global.value, "cmd")
     if JS_IsException(obj):
       JS_FreeValue(ctx, obj)
       return err()
@@ -2658,9 +2638,8 @@ jsClassDef(Config):
           objIt = prop
       if cmd == nil:
         continue
-      let dpr = ctx.definePropertyE(objIt, name, JS_MKPTR(JS_TAG_OBJECT, cmd))
+      let dpr = ctx.definePropertyE(objIt, name, moveJSValue(cmd))
       JS_FreeValue(ctx, objIt)
-      cmd = nil
       if dpr == fjErr:
         JS_FreeValue(ctx, obj)
         return err()

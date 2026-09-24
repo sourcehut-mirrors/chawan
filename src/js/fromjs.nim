@@ -77,6 +77,17 @@ proc fromJSCallback*(ctx: JSContext; val: JSValueConst;
   res = JS_VALUE_GET_PTR(val)
   fjOk
 
+proc fromJSObjectNull*(ctx: JSContext; val: JSValueConst;
+    res: var pointer): JSCode =
+  if JS_IsNull(val):
+    res = nil
+  elif JS_IsObject(val):
+    res = JS_VALUE_GET_PTR(val)
+  else:
+    JS_ThrowTypeError(ctx, "object or null expected")
+    return fjErr
+  fjOk
+
 proc fromJSGetProp*[T](ctx: JSContext; this: JSValueConst; name: cstring;
     res: var T): Opt[bool] =
   if JS_IsUndefined(this):
@@ -107,7 +118,7 @@ proc isInstanceOf*(ctx: JSContext; classid, tclassid: JSClassID): bool =
 proc checkInstanceOf*(ctx: JSContext; this: JSValueConst; tclassid: JSClassID):
     JSCode =
   let ctxOpaque = ctx.getOpaque()
-  let classid = if JS_VALUE_GET_PTR(ctxOpaque.global) != JS_VALUE_GET_PTR(this):
+  let classid = if cast[pointer](ctxOpaque.global) != JS_VALUE_GET_PTR(this):
     JS_GetClassID(this)
   else:
     ctxOpaque.gclass
@@ -452,7 +463,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
   let ctxOpaque = ctx.getOpaque()
   var classid: JSClassID
   var p: pointer
-  if JS_VALUE_GET_PTR(ctxOpaque.global) != JS_VALUE_GET_PTR(val):
+  if cast[pointer](ctxOpaque.global) != JS_VALUE_GET_PTR(val):
     p = JS_GetAnyOpaque(val, classid)
   else:
     classid = ctxOpaque.gclass
@@ -467,7 +478,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
 proc fromJSThis*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
     res: var pointer): JSCode =
   let val = if JS_IsUndefined(val):
-    JSValueConst(ctx.getOpaque().global)
+    ctx.getOpaque().global.value
   else:
     val
   ctx.fromJS(val, tclassid, res)
@@ -672,6 +683,17 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSCallback):
     JS_ThrowTypeError(ctx, "function expected")
     return fjErr
   res = JSCallback(ctx.dupTraceObj(val))
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSObjectNil):
+    JSCode =
+  if JS_IsNull(val):
+    res = JSObjectNil(nil)
+  elif JS_IsObject(val):
+    res = JSObjectNil(ctx.dupTraceObj(val))
+  else:
+    JS_ThrowTypeError(ctx, "object or null expected")
+    return fjErr
   fjOk
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): JSCode =

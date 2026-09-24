@@ -32,7 +32,7 @@ type
     y: int
     redraw*: bool
     unselected: bool
-    finish: JSObject
+    finish: JSCallback
 
   Select* = JSRef[SelectObj]
 
@@ -71,8 +71,8 @@ proc finish(ctx: JSContext; select: Select): JSValue =
   let selected = ctx.toJS(select.selected)
   if JS_IsException(selected):
     return JS_EXCEPTION
-  let finish = moveJSValue(select.finish)
-  ctx.callSinkFree(finish, JS_UNDEFINED, selected)
+  let finish = move(select.finish)
+  ctx.callSink(finish, JS_UNDEFINED, selected)
 
 proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1
@@ -407,13 +407,13 @@ jsClassPublicDef(Select):
     select.queueDraw()
 
   proc newSelect(ctx: JSContext; options: seq[SelectOption]; selected: int;
-      x, y, width, height: int; finish: JSValueConst): Opt[Select] {.jsctor.} =
+      x, y, width, height: int; finish: JSCallback): Opt[Select] {.jsctor.} =
     let select = jsNew SelectObj(
       selected: selected,
       x: x,
       y: y,
       options: options,
-      finish: ctx.dupTraceObj(finish)
+      finish: finish
     )
     if select != nil:
       var maxw = 0

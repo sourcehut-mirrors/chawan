@@ -281,7 +281,7 @@ proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
 
 proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
   let ctx = opaque.ctx
-  let resolve = moveJSValue(opaque.resolve)
+  let resolve = move(opaque.resolve)
   let reject = moveJSValue(opaque.reject)
   opaque.ctx = nil
   if not JS_IsException(val):
@@ -289,7 +289,6 @@ proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
     JS_FreeValue(ctx, res)
   else:
     discard ctx.enqueueRejection(reject)
-  JS_FreeValue(ctx, resolve)
   JS_FreeValue(ctx, reject)
   JS_FreeContext(ctx)
 
@@ -305,14 +304,15 @@ proc jsBlobFinish(response: Response; success: bool) =
 
 proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
     JSValue =
-  var funs {.noinit.}: array[2, JSValue]
-  let res = ctx.newPromiseCapability(funs)
+  var resolve: JSCallback
+  var reject: JSCallback
+  let res = ctx.newPromiseCapability(resolve, reject)
   if JS_IsException(res):
     return res
   let opaque = JSBlobOpaque(
     ctx: JS_DupContext(ctx),
-    resolve: traceCallback(funs[0]),
-    reject: traceCallback(funs[1])
+    resolve: move(resolve),
+    reject: move(reject)
   )
   response.onFinish = finish
   let loader = ctx.getLoader()
