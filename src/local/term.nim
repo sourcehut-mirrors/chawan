@@ -1777,15 +1777,15 @@ proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
     var lastx = 0
     for lx in x ..< x + grid.width:
       let i = ly * term.attrs.width + lx
-      let cell = grid[(ly - y) * grid.width + (lx - x)]
       if term.frame.canvas[i].str != "":
         # if there is a change, we have to start from the last x with
         # a string (otherwise we might overwrite half of a double-width char)
         lastx = lx
-      let format = term.reduceFormat(cell.format)
+      let j = (ly - y) * grid.width + (lx - x)
+      let format = term.reduceFormat(grid[j].format)
       if format != term.frame.canvas[i].format or
-          cell.str != term.frame.canvas[i].str:
-        term.frame.canvas[i].str = cell.str
+          grid[j].str != term.frame.canvas[i].str:
+        term.frame.canvas[i].str = grid[j].str
         term.frame.canvas[i].format = format
         term.frame.lineDamage[ly] = min(term.frame.lineDamage[ly], lastx)
 
@@ -2535,7 +2535,7 @@ proc parseTERM(term: Terminal): TerminalType =
   # (in terminfo.src from ncurses at least...)
   if s.endsWith("color"):
     let i = s.rfind('-')
-    if i != -1:
+    if i >= 0:
       let n = parseInt32(s.toOpenArray(i + 1, s.high - "color".len)).get(-1)
       if n == 256:
         term.attrs.colorMode = cmEightBit

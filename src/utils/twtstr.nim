@@ -550,46 +550,46 @@ proc stripAndCollapse*(s: openArray[char]): string =
   move(res)
 
 proc until*(s: openArray[char]; cc: char; starti = 0): string =
-  result = ""
-  for i in starti ..< s.len:
-    let c = s[i]
-    if c == cc:
-      break
-    result &= c
+  var last = s.find(cc, starti)
+  if last < 0:
+    last = s.high
+  else:
+    dec last
+  return s.toOpenArray(starti, last).substr()
 
 proc until*(s: openArray[char]; cc: set[char]; starti = 0): string =
-  result = ""
-  for i in starti ..< s.len:
-    let c = s[i]
-    if c in cc:
-      break
-    result &= c
+  var last = s.find(cc, starti)
+  if last < 0:
+    last = s.high
+  else:
+    dec last
+  return s.toOpenArray(starti, last).substr()
 
 proc untilLower*(s: openArray[char]; cc: char; starti = 0): string =
-  result = ""
-  for i in starti ..< s.len:
-    let c = s[i]
-    if c == cc:
-      break
-    result &= c.toLowerAscii()
+  var last = s.find(cc, starti)
+  if last < 0:
+    last = s.high
+  else:
+    dec last
+  return s.toOpenArray(starti, last).toLowerAscii()
 
 proc untilLower*(s: openArray[char]; cc: set[char]; starti = 0): string =
-  result = ""
-  for i in starti ..< s.len:
-    let c = s[i]
-    if c in cc:
-      break
-    result &= c.toLowerAscii()
+  var last = s.find(cc, starti)
+  if last < 0:
+    last = s.high
+  else:
+    dec last
+  return s.toOpenArray(starti, last).toLowerAscii()
 
 proc after*(s: string; c: char): string =
   let i = s.find(c)
-  if i != -1:
+  if i >= 0:
     return s.substr(i + 1)
   return ""
 
 proc after*(s: string; c: set[char]): string =
   let i = s.find(c)
-  if i != -1:
+  if i >= 0:
     return s.substr(i + 1)
   return ""
 

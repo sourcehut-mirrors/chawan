@@ -987,7 +987,8 @@ proc needsRedraw(pager: Pager; iface: BufferInterface): bool =
     pager.lineEdit != nil and pager.lineEdit.redraw or
     iface != nil and iface.redraw
 
-proc draw(pager: Pager): bool =
+proc draw(pager: Pager): Opt[void] =
+  # Returns err() if the terminal signaled EOF.
   let term = pager.term
   let iface = pager.bufferIface
   let redraw = pager.needsRedraw(iface)
@@ -1032,8 +1033,8 @@ proc draw(pager: Pager): bool =
     pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
     pager.status.redraw = false
   elif pager.lineEdit != nil and pager.lineEdit.redraw:
-    let x = pager.lineEdit.generateOutput(hlcolor)
-    pager.term.writeGrid(x, 0, pager.attrs.height - 1)
+    pager.lineEdit.generateOutput(hlcolor, pager.status.grid)
+    pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
     pager.lineEdit.redraw = false
   if pager.term.imageMode != imNone:
     if imageRedraw:
@@ -1053,7 +1054,7 @@ proc draw(pager: Pager): bool =
   let (cursorx, cursory) = pager.getAbsoluteCursorXY(iface)
   let mouse = not pager.mousePaste
   let bgcolor = if iface != nil: iface.bgcolor else: defaultColor
-  pager.term.draw(redraw, mouse, cursorx, cursory, bufHeight, bgcolor).isOk
+  pager.term.draw(redraw, mouse, cursorx, cursory, bufHeight, bgcolor)
 
 proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.status.grid.width - s.width()
@@ -2849,7 +2850,7 @@ jsClassDef(Pager):
       of ussNone, ussSkip: discard
       of ussUpdate: pager.refreshStatusMsg()
       pager.updateStatus = ussNone
-      if not pager.draw():
+      if pager.draw().isErr:
         return ok()
     ok()
 

@@ -30,6 +30,10 @@ proc testFind() =
   assert "\na\tb ".containsToken("")
   assert not "ab".containsToken("")
 
+  assert "a b c/d".untilLast('/') == "a b c"
+  assert "a b c/".untilLast('/') == "a b c"
+  assert "a b c".untilLast('/') == "a b c"
+
 proc testStrip() =
   assert " ".strip() == ""
   assert "\f\t test \r\n".strip() == "test"

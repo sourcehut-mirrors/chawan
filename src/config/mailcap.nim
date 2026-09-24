@@ -185,6 +185,7 @@ proc consumeTypeField(state: var MailcapParser; line: openArray[char];
 
 proc consumeCommand(state: var MailcapParser; line: openArray[char];
     outs: var string; n: int): Opt[int] =
+  var cmd = ""
   var n = line.skipBlanks(n)
   var quoted = false
   while n < line.len:
@@ -193,7 +194,7 @@ proc consumeCommand(state: var MailcapParser; line: openArray[char];
       if c == '\r':
         continue
       if c == ';':
-        return ok(n)
+        break
       if c == '\\':
         quoted = true
         # fall through; backslash will be parsed again in unquoteCommand
@@ -201,8 +202,9 @@ proc consumeCommand(state: var MailcapParser; line: openArray[char];
         return state.err("invalid character in command: " & c)
     else:
       quoted = false
-    outs &= c
+    cmd &= c
     inc n
+  outs = move(cmd)
   ok(n)
 
 proc addNamedField(entry: MailcapEntry; t: NamedFieldType;
