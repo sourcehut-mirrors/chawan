@@ -629,8 +629,7 @@ proc writeStatusMessage(status: var Surface; str: string; format = Format();
     let nx = x + w
     inc x
     while x < nx: # clear unset cells
-      status.grid[x].str = ""
-      status.grid[x].format = Format()
+      status.grid[x] = FixedCell()
       inc x
   result = x
   while x < e:

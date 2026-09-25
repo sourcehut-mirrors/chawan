@@ -155,7 +155,11 @@ proc generateOutput*(edit: LineEdit; hlcolor: CellColor;
   var x = 0
   for u in edit.prompt.points:
     grid[x] = FixedCell(str: u.toUTF8())
-    x += u.width()
+    let nx = x + u.width()
+    inc x
+    while x < nx: # clear unset cells
+      grid[x] = FixedCell()
+      inc x
     if x >= grid.width:
       break
   for i in 0 ..< edit.padding:
@@ -176,7 +180,8 @@ proc generateOutput*(edit: LineEdit; hlcolor: CellColor;
     let pi = i
     let u = edit.text.nextUTF8(i)
     let w = edit.width(u)
-    if x + w > grid.width:
+    let nx = x + w
+    if nx > grid.width:
       break
     let str = if not edit.hide:
       if u.isControlChar():
@@ -186,7 +191,10 @@ proc generateOutput*(edit: LineEdit; hlcolor: CellColor;
     else:
       "*"
     grid[x] = FixedCell(str: str, format: format)
-    x += w
+    inc x
+    while x < nx: # clear unset cells
+      grid[x] = FixedCell()
+      inc x
   while x < grid.width:
     grid[x] = FixedCell()
     inc x
