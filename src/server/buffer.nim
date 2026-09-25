@@ -1046,10 +1046,10 @@ proc evalJSURL(bc: BufferContext; url: URL; contentType: string): URL =
   let source = surl.toOpenArray("javascript:".len, surl.high).percentDecode()
   let ctx = bc.window.jsctx
   let val = ctx.eval(source, $bc.baseURL, JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(val):
+  if JS_IsException(val.vc):
     bc.window.console.writeException(ctx)
     return URL(nil) # error
-  if JS_IsUndefined(val):
+  if JS_IsUndefined(val.vc):
     # maybe JS wants to go somewhere?
     return move(bc.navigateUrl)
   var res: string

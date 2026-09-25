@@ -8,10 +8,6 @@ import js/quickjs
 import utils/twtstr
 
 type
-  JSSymbolRef* = enum
-    jsyIterator = "iterator"
-    jsyToStringTag = "toStringTag"
-
   JSStrRef* = enum
     jstAcceptNode = "acceptNode"
     jstBuffer = "buffer"
@@ -59,16 +55,20 @@ type
     jstValues = "values"
     jstX = "x"
     jstY = "y"
+    jsyIterator = "iterator" # must be the first symbol
+    jsyToStringTag = "toStringTag"
 
-  JSValueRef* = enum
-    jsvArrayPrototypeForEach = "Array.prototype.forEach"
-    jsvArrayPrototypeEntries = "Array.prototype.entries"
-    jsvArrayPrototypeKeys = "Array.prototype.keys"
-    jsvArrayPrototypeValues = "Array.prototype.values"
-    jsvObjectPrototypeValueOf = "Object.prototype.valueOf"
-    jsvSet = "Set"
-    jsvFunction = "Function"
-    jsvIteratorPrototype = "Iterator.prototype"
+  JSFunctionRef* = enum
+    jsfArrayPrototypeForEach = "Array.prototype.forEach"
+    jsfArrayPrototypeEntries = "Array.prototype.entries"
+    jsfArrayPrototypeKeys = "Array.prototype.keys"
+    jsfArrayPrototypeValues = "Array.prototype.values"
+    jsfObjectPrototypeValueOf = "Object.prototype.valueOf"
+    jsfSet = "Set"
+    jsfFunction = "Function"
+
+  JSObjectRef* = enum
+    jsoIteratorPrototype = "Iterator.prototype"
 
   BoundRefDestructor* = proc(x: pointer) {.nimcall, raises: [].}
 
@@ -89,9 +89,9 @@ type
     gclass*: JSClassID # class ID of the global object
     ctors*: seq[JSObject] # class ID -> constructor
     global*: JSObject
-    symRefs: array[JSSymbolRef, JSAtom]
     strRefs: array[JSStrRef, JSAtom]
-    valRefs*: array[JSValueRef, JSValue]
+    funRefs*: array[JSFunctionRef, JSCallback]
+    objRefs*: array[JSObjectRef, JSObject]
     globalObj*: pointer
 
   JSContextOpaque* = ptr JSContextOpaqueObj
@@ -140,34 +140,44 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = create(JSContextOpaqueObj)
   opaque.global = traceObj(JS_GetGlobalObject(ctx))
   var fail = false
+  for s in JSStrRef.low..jsyIterator:
+    let ss = $s
+    let atom = JS_NewAtomLen(ctx, ss.toCStringConst, csize_t(ss.len))
+    if atom == JS_ATOM_NULL:
+      fail = true
+    opaque.strRefs[s] = atom
   let sym = JS_GetPropertyStr(ctx, opaque.global.value, "Symbol")
-  if not JS_IsException(sym):
-    for s in JSSymbolRef:
+  if not JS_IsException(sym.vc):
+    for s in jsyIterator..JSStrRef.high:
       let name = $s
-      let val = JS_GetPropertyStr(ctx, sym, cstring(name))
-      if not JS_IsException(val):
-        opaque.symRefs[s] = JS_ValueToAtom(ctx, val)
+      let val = JS_GetPropertyStr(ctx, sym.vc, cstring(name))
+      if not JS_IsException(val.vc):
+        opaque.strRefs[s] = JS_ValueToAtom(ctx, val.vc)
         JS_FreeValue(ctx, val)
       else:
         fail = true
     JS_FreeValue(ctx, sym)
   else:
     fail = true
-  for s in JSStrRef:
+  for s, it in opaque.objRefs.mpairs:
     let ss = $s
-    let atom = JS_NewAtomLen(ctx, ss.toCStringConst, csize_t(ss.len))
-    if atom == JS_ATOM_NULL:
-      fail = true
-    opaque.strRefs[s] = atom
-  for s, it in opaque.valRefs.mpairs:
-    let ss = $s
-    it = JS_Eval(ctx, ss.toCStringConst, csize_t(ss.len),
+    let val = JS_Eval(ctx, ss.toCStringConst, csize_t(ss.len),
       cstringConst("<init>"), 0)
-    if JS_IsException(it):
+    if not JS_IsException(val.vc):
+      assert JS_IsObject(val.vc)
+      it = traceObj(val)
+    else:
+      fail = true
+  for s, it in opaque.funRefs.mpairs:
+    let ss = $s
+    let val = JS_Eval(ctx, ss.toCStringConst, csize_t(ss.len),
+      cstringConst("<init>"), 0)
+    if not JS_IsException(val.vc):
+      assert JS_IsFunction(ctx, val.vc)
+      it = traceCallback(val)
+    else:
       fail = true
   if fail:
-    for it in opaque.valRefs:
-      JS_FreeValue(ctx, it)
     {.cast(raises: [])}:
       `=destroy`(opaque[])
     return nil
@@ -179,7 +189,7 @@ proc getOpaque*(ctx: JSContext): JSContextOpaque =
 proc getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
   return cast[JSRuntimeOpaque](JS_GetRuntimeOpaque(rt))
 
-proc getOpaque*(val: JSValue): pointer =
+proc getOpaque*(val: JSValueConst): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
   return nil
@@ -215,8 +225,5 @@ proc getName*(rt: JSRuntime; classid: JSClassID): string =
 
 proc getAtom*(ctx: JSContext; jst: JSStrRef): lent JSAtom =
   ctx.getOpaque().strRefs[jst]
-
-proc getAtom*(ctx: JSContext; jsy: JSSymbolRef): lent JSAtom =
-  ctx.getOpaque().symRefs[jsy]
 
 {.pop.} # raises

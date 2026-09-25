@@ -545,11 +545,11 @@ jsClassPublicDef(BufferInit):
       return JS_UNDEFINED
     let fun = move(init.connected)
     let this = ctx.toJS(init)
-    if JS_IsException(this):
+    if JS_IsException(this.vc):
       JS_FreeValue(ctx, arg1)
       return JS_EXCEPTION
     let arg0 = ctx.toJS(res)
-    if JS_IsException(arg0):
+    if JS_IsException(arg0.vc):
       JS_FreeValue(ctx, this)
       JS_FreeValue(ctx, arg1)
       return JS_EXCEPTION
@@ -732,7 +732,7 @@ proc swrite*(w: var PacketWriter; x: ClickResult) =
 proc toJS(ctx: JSContext; x: ClickResult): JSValue =
   if x.t == crtNone:
     return JS_NULL
-  var obj = ?ctx.newObject()
+  let obj = ?ctx.newObject()
   ?ctx.definePropertyConvert(obj, jstT, x.t)
   case x.t
   of crtNone: discard
@@ -745,7 +745,7 @@ proc toJS(ctx: JSContext; x: ClickResult): JSValue =
   of crtReadText, crtReadPassword, crtReadArea, crtReadFile:
     ?ctx.definePropertyConvert(obj, jstPrompt, x.prompt)
     ?ctx.definePropertyConvert(obj, jstValue, x.value)
-  moveJSValue(obj)
+  obj.toJSValue()
 
 proc toJS(ctx: JSContext; res: GotoAnchorResult): JSValue =
   var x = ?trace(ctx.toJS(res.x))
@@ -754,10 +754,10 @@ proc toJS(ctx: JSContext; res: GotoAnchorResult): JSValue =
   ctx.newArrayFrom([moveJSValue(x), moveJSValue(y), moveJSValue(focus)])
 
 proc toJS(ctx: JSContext; x: CursorXY): JSValue =
-  var obj = ?trace(JS_NewObject(ctx))
-  ?ctx.definePropertyCWE(obj.v, jstX, ctx.toJS(x.x))
-  ?ctx.definePropertyCWE(obj.v, jstY, ctx.toJS(x.y))
-  moveJSValue(obj)
+  let obj = ?ctx.newObject()
+  ?ctx.definePropertyCWE(obj, jstX, ctx.toJS(x.x))
+  ?ctx.definePropertyCWE(obj, jstY, ctx.toJS(x.y))
+  obj.toJSValue()
 
 proc toJS(ctx: JSContext; match: BufferMatch): JSValue =
   var x = ?trace(ctx.toJS(match.x))
@@ -789,9 +789,9 @@ proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
         JS_UNDEFINED
       else:
         it.get(ctx, iface, iface.partialReader.r)
-      if not JS_IsException(val) and it.fun != nil:
-        let ret = ctx.callSink(it.fun, JS_UNDEFINED, val)
-        if JS_IsException(ret):
+      if not JS_IsException(val.vc) and it.fun != nil:
+        let ret = ctx.callSink(it.fun, JS_UNDEFINED.vc, val)
+        if JS_IsException(ret.vc):
           res = irException
         JS_FreeValue(ctx, ret)
       else:
@@ -827,8 +827,8 @@ proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
   var resolve: JSCallback
   var reject: JSCallback
   let res = ctx.newPromiseCapability(resolve, reject)
-  if JS_IsException(res):
-    return res
+  if JS_IsException(res.vc):
+    return JS_EXCEPTION
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
     fun: move(resolve),

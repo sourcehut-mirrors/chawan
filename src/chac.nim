@@ -59,11 +59,11 @@ proc main() =
     die("failed to read " & $ifile)
   let obj = JS_Eval(ctx, src.toCStringConst, csize_t(src.len),
     cstringConst(ifile), JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
-  if JS_IsException(obj):
+  if JS_IsException(obj.vc):
     die(ctx.getExceptionMsg())
   var plen: csize_t
   let p = cast[ptr UncheckedArray[char]](
-    JS_WriteObject(ctx, plen, obj, JS_WRITE_OBJ_BYTECODE))
+    JS_WriteObject(ctx, plen, obj.vc, JS_WRITE_OBJ_BYTECODE))
   if chafile.writeFile(ofile, p.toOpenArray(0, int(plen) - 1), 0o600).isErr:
     die("failed to write " & $ofile)
   js_free(ctx, p)

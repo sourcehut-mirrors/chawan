@@ -1212,7 +1212,7 @@ proc update(params: URLSearchParams) =
 jsClassPublicDef(URLSearchParams):
   classDef.iterable = jitPair
 
-  proc newURLSearchParams(ctx: JSContext; init: JSValueConst = JS_UNDEFINED):
+  proc newURLSearchParams(ctx: JSContext; init = JS_UNDEFINED.vc):
       Opt[URLSearchParams] {.jsctor.} =
     let params = jsNew URLSearchParamsObj()
     if params != nil and not JS_IsUndefined(init):
@@ -1258,7 +1258,7 @@ jsClassPublicDef(URLSearchParams):
         result.add(it.value)
 
   proc has(ctx: JSContext; params: URLSearchParams; name: string;
-      jsValue: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+      jsValue = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     if JS_IsUndefined(jsValue):
       for it in params.list:
         if it.name == name:
@@ -1357,8 +1357,8 @@ jsClassPublicDef(URL):
   jsget URL, hostname
   jsget URL, pathname
 
-  proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
-      Opt[URL] {.jsctor.} =
+  proc newURL*(ctx: JSContext; s: string; base = JS_UNDEFINED.vc): Opt[URL]
+      {.jsctor.} =
     var baseURL: URL
     if not JS_IsUndefined(base):
       var s: string
@@ -1485,18 +1485,18 @@ jsClassPublicDef(URL):
       url.hash = "#"
       parseURL1(s, url, usFragment)
 
-  proc parse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
-      URL {.jsstfunc.} =
+  proc parse(ctx: JSContext; url: string; base = JS_UNDEFINED.vc): URL
+      {.jsstfunc.} =
     return ctx.newURL(url, base).get(URL(nil))
 
-  proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
-      bool {.jsstfunc.} =
+  proc canParse(ctx: JSContext; url: string; base = JS_UNDEFINED.vc): bool
+      {.jsstfunc.} =
     return ctx.newURL(url, base).isOk
 
 proc addURLModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(URLDef)
   ?ctx.registerClass(URLSearchParamsDef)
-  ?ctx.registerClass(URLSearchParamsIteratorDef, namespace = JS_UNDEFINED)
+  ?ctx.registerClassNoNamespace(URLSearchParamsIteratorDef)
   ok()
 
 {.pop.} # raises: []

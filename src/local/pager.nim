@@ -206,7 +206,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   var source: string
   if chafile.readFile(x.pathname, source).isOk:
     let funcVal = compileModule(ctx, source, moduleName)
-    if JS_IsException(funcVal):
+    if JS_IsException(funcVal.vc):
       return nil
     return ctx.finishLoadModule(funcVal, moduleName)
   JS_ThrowTypeError(ctx, "failed to read file %s", cstring(moduleName))
@@ -375,10 +375,10 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     JS_EVAL_TYPE_GLOBAL)
   let showConsole = ctx.eval("Pager.prototype.showConsole", "<init>",
     JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(handleInput) or JS_IsException(showConsole):
+  if JS_IsException(handleInput.vc) or JS_IsException(showConsole.vc):
     return Pager(nil)
-  if not JS_IsFunction(ctx, handleInput) or
-      not JS_IsFunction(ctx, showConsole):
+  if not JS_IsFunction(ctx, handleInput.vc) or
+      not JS_IsFunction(ctx, showConsole.vc):
     pager.alert("handleInput/showConsole is not a function")
     return Pager(nil)
   pager.handleInput = traceCallback(handleInput)
@@ -476,19 +476,19 @@ proc runJSJobs(pager: Pager): Opt[void] =
 
 proc evalAction(pager: Pager; arg0: int32; oval: var JSValueTraced): JSValue =
   let ctx = pager.jsctx
-  var val = JS_DupValue(ctx, oval.v)
-  if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
+  var val = JS_DupValue(ctx, oval.vc)
+  if not JS_IsFunction(ctx, val.vc): # yes, this looks weird, but it's correct
     val = ctx.evalFunction(val)
-    if JS_IsFunction(ctx, val):
+    if JS_IsFunction(ctx, val.vc):
       # optimization: skip this eval on the next call.
-      oval = ctx.dupTrace(val)
+      oval = ctx.dupTrace(val.vc)
   # If an action evaluates to a function that function is evaluated too.
-  if JS_IsFunction(ctx, val):
+  if JS_IsFunction(ctx, val.vc):
     let fun = traceCallback(val)
     if arg0 != 0:
-      val = ctx.callSink(fun, JS_UNDEFINED, ctx.toJS(arg0))
+      val = ctx.callSink(fun, JS_UNDEFINED.vc, ctx.toJS(arg0))
     else: # no precnum
-      val = ctx.call(fun, JS_UNDEFINED)
+      val = ctx.call(fun, JS_UNDEFINED.vc)
   return val
 
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =
@@ -512,14 +512,14 @@ proc jsQuit(pager: Pager; code: int): JSValue =
 proc handleKeyEnd(pager: Pager; e: InputEvent): int =
   let ctx = pager.jsctx
   let arg0 = ctx.toJS(e.t)
-  if JS_IsException(arg0):
+  if JS_IsException(arg0.vc):
     pager.console.writeException(ctx)
     return 0
   let arg1 = if e.t == ietMouse: ctx.toJS(e.m) else: JS_UNDEFINED
   pager.term.catchSigint()
   let res = ctx.callSinkThis(pager.handleInput, ctx.toJS(pager), arg0, arg1)
   pager.term.respectSigint()
-  if JS_IsException(res):
+  if JS_IsException(res.vc):
     if pager.exitCode != -1: # quit() called
       return -1
     # user code, so catch & log exceptions here
@@ -586,11 +586,11 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   let ctx = pager.jsctx
   let pages = ctx.newArrayFrom(pages)
   let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
-  doAssert not JS_IsException(jsInit)
+  doAssert not JS_IsException(jsInit.vc)
   let fun = traceCallback(jsInit)
   let res = ctx.callSinkThis(fun, ctx.toJS(pager), pages,
     ctx.toJS(contentType), ctx.toJS(charset), ctx.toJS(history), ctx.toJS(pipe))
-  if JS_IsException(res) and pager.exitCode == -1:
+  if JS_IsException(res.vc) and pager.exitCode == -1:
     pager.console.writeException(ctx)
   JS_FreeValue(ctx, res)
   pager.cleanup()
@@ -1179,7 +1179,7 @@ proc windowChange(pager: Pager): Opt[void] =
     pager.queueStatusUpdate()
   let ctx = pager.jsctx
   let arg0 = ctx.toJS(ietWindowChange)
-  if JS_IsException(arg0):
+  if JS_IsException(arg0.vc):
     return err()
   discard ?trace(ctx.callSinkThis(pager.handleInput, ctx.toJS(pager), arg0))
   ok()
@@ -1226,11 +1226,11 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     if sc.fun != nil:
       var tmpUrl = newURL(url)
       let arg0 = ctx.toJS(tmpUrl)
-      if JS_IsException(arg0):
+      if JS_IsException(arg0.vc):
         pager.alert("Error rewriting URL: " & ctx.getExceptionMsg())
       else:
-        let ret = ctx.callSink(sc.fun, JS_UNDEFINED, arg0)
-        if not JS_IsException(ret):
+        let ret = ctx.callSink(sc.fun, JS_UNDEFINED.vc, arg0)
+        if not JS_IsException(ret.vc):
           # Warning: we must only print exceptions if the *call* returned one.
           # Conversion may simply error out because the function didn't return a
           # new URL, and that's fine.
@@ -1753,7 +1753,7 @@ proc fail(pager: Pager; init: BufferInit; errorMessage: string): JSValue =
   dec pager.numload
   let ctx = pager.jsctx
   var msg = ctx.toJS(errorMessage)
-  if JS_IsException(msg): # OOM
+  if JS_IsException(msg.vc): # OOM
     msg = JS_UNDEFINED
   return ctx.toUndefined(ctx.connected(init, bcrFail, msg))
 
@@ -1790,7 +1790,7 @@ proc initMailcap(pager: Pager; init: BufferInit): JSValue =
     if i < 0 and init.shortContentType.isTextType():
       return pager.connected2(init)
     let arg0 = ctx.toJS(i)
-    if JS_IsException(arg0):
+    if JS_IsException(arg0.vc):
       return arg0
     return ctx.toUndefined(ctx.connected(init, bcrMailcap, arg0))
 
@@ -1832,7 +1832,7 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
               let redirect = newRequest(url2, init.request.httpMethod,
                 body = init.request.body)
               let arg0 = ctx.toJS(redirect)
-              if JS_IsException(arg0):
+              if JS_IsException(arg0.vc):
                 return arg0
               return ctx.connected(init, bcrRedirect, arg0, force = true)
             else:
@@ -1986,7 +1986,7 @@ proc handleError(pager: Pager; fd: cint): Opt[bool] =
     if data of BufferInitData:
       let init = BufferInitData(data).init
       let res = pager.fail(init, "loader died while loading")
-      if JS_IsException(res):
+      if JS_IsException(res.vc):
         return err()
       JS_FreeValue(pager.jsctx, res)
     elif data of BufferInterfaceData:
@@ -2095,8 +2095,7 @@ jsClassDef(Pager):
 
   # private
   proc setLineEdit0(ctx: JSContext; pager: Pager; mode: LineMode;
-      prompt: sink string; obj: JSValueConst = JS_UNDEFINED): JSValue
-      {.jsfunc.} =
+      prompt: sink string; obj = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     var current = ""
     var hide = false
     var update = JSCallback(nil)
@@ -2106,7 +2105,7 @@ jsClassDef(Pager):
     var resolve: JSCallback
     var reject: JSCallback
     let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res):
+    if JS_IsException(res.vc):
       return JS_EXCEPTION
     let hist = pager.getHist(mode)
     let lineEdit = readLine(prompt, current, pager.attrs.width, hide, hist,
@@ -2262,7 +2261,7 @@ jsClassDef(Pager):
     var resolve: JSCallback
     var reject: JSCallback
     let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res):
+    if JS_IsException(res.vc):
       return JS_EXCEPTION
     pager.askPrompt = prompt
     pager.writeAskPrompt()
@@ -2291,15 +2290,15 @@ jsClassDef(Pager):
     if pager.askPromise != nil:
       let inputBuffer = move(pager.inputBuffer)
       let text = ctx.toJS(inputBuffer)
-      if JS_IsException(text):
+      if JS_IsException(text.vc):
         return text
       let fun = move(pager.askPromise)
       pager.askPrompt = ""
       pager.paste = paste
       if pager.lineEdit != nil:
         pager.lineEdit.redraw = true
-      let res = ctx.callSink(fun, JS_UNDEFINED, text)
-      if JS_IsException(res):
+      let res = ctx.callSink(fun, JS_UNDEFINED.vc, text)
+      if JS_IsException(res.vc):
         return res
       JS_FreeValue(ctx, res)
       return JS_TRUE
@@ -2423,7 +2422,7 @@ jsClassDef(Pager):
     for rule in pager.config.omnirule:
       if rule.regex.match(s):
         pager.lineHist[lmLocation].add(s)
-        return ctx.call(rule.fun, JS_UNDEFINED, arg0)
+        return ctx.call(rule.fun, JS_UNDEFINED.vc, arg0)
     return JS_DupValue(ctx, arg0)
 
   # private
@@ -2443,7 +2442,7 @@ jsClassDef(Pager):
   proc showConsole(pager: Pager) =
     let ctx = pager.jsctx
     let res = ctx.callSinkThis(pager[].showConsole, ctx.toJS(pager))
-    if JS_IsException(res):
+    if JS_IsException(res.vc):
       pager.console.writeException(ctx)
     JS_FreeValue(ctx, res)
 
@@ -2756,7 +2755,7 @@ jsClassDef(Pager):
       let res = ctx.evalInputAction(pager, pager.menuActions, 0)
       if pager.inputBuffer.len == 0 and not pager.keepMenuFlag:
         # command found; close menu
-        discard ctx.setMenu(pager, JS_NULL)
+        discard ctx.setMenu(pager, JS_NULL.vc)
       else:
         # do not let a nested call clear the input buffer
         pager.keepInputBuffer = true
@@ -2817,7 +2816,7 @@ jsClassDef(Pager):
               ?pager.windowChange()
           else:
             let res = pager.handleRead(efd)
-            if JS_IsException(res):
+            if JS_IsException(res.vc):
               return err()
             JS_FreeValue(ctx, res)
         if (event.revents and POLLOUT) != 0:
@@ -2864,7 +2863,7 @@ jsClassDef(Pager):
         let efd = event.fd
         if (event.revents and POLLIN) != 0:
           let res = pager.handleRead(efd)
-          if JS_IsException(res):
+          if JS_IsException(res.vc):
             return err()
           JS_FreeValue(ctx, res)
         if (event.revents and POLLOUT) != 0:

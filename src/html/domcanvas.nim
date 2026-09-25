@@ -85,8 +85,7 @@ proc resetState(state: var DrawingState) =
   state.path = newPath()
 
 proc create2DContext*(loader: FileLoader; target: EventTarget;
-    bitmap: NetworkBitmap; options: JSValueConst = JS_UNDEFINED):
-    CanvasRenderingContext2D =
+    bitmap: NetworkBitmap; options: JSValueConst): CanvasRenderingContext2D =
   let imageId = bitmap.imageId
   let (ps, ctlres) = loader.doPipeRequest("canvas-ctl-" & $imageId)
   if ps == nil:

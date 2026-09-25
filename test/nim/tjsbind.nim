@@ -31,9 +31,8 @@ proc testHelloWorld() =
   const code = "'Hello from JS!'"
   let val = ctx.eval(code)
   var res: string
-  check ctx.fromJS(val, res).isOk
+  check ctx.fromJSFree(val, res).isOk
   check res == "Hello from JS!"
-  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -42,7 +41,7 @@ proc testErrorHandling() =
   let ctx = rt.newJSContext()
   const code = "abcd"
   let res = ctx.eval(code, "<test>")
-  check JS_IsException(res)
+  check JS_IsException(res.vc)
   const ex = """
 ReferenceError: 'abcd' is not defined
     at <eval> (<test>:1:1)
@@ -97,12 +96,11 @@ proc testRegisterClass() =
     const code = "Moon"
     let val = ctx.eval(code)
     var res: string
-    check ctx.fromJS(val, res).isOk
+    check ctx.fromJSFree(val, res).isOk
     check res == """
 function Moon() {
     [native code]
 }"""
-    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -116,7 +114,7 @@ proc testGlobalObjects() =
     ?ctx.setGlobal(earth)
     const code = "assert(globalThis instanceof Earth)"
     let val = ctx.eval(code)
-    check not JS_IsException(val)
+    check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -131,7 +129,7 @@ proc testInheritance() =
     ?ctx.setGlobal(jsNew EarthObj())
     const code = "assert(globalThis instanceof Planet)"
     let val = ctx.eval(code)
-    check not JS_IsException(val)
+    check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -152,10 +150,9 @@ globalThis.population = 8e9;
   """
     let val = ctx.eval(code)
     var res: string
-    check ctx.fromJS(val, res).isOk
+    check ctx.fromJSFree(val, res).isOk
     check res == "name: Earth, moon: [object Moon]"
     check earth.population == int64(8e9)
-    JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -194,7 +191,7 @@ proc testFunctions() =
 console.log('Hello, world!')
 """
     let val = ctx.eval(code)
-    check not JS_IsException(val)
+    check not JS_IsException(val.vc)
     check logged == "Hello, world!"
     JS_FreeValue(ctx, val)
   ctx.free()
@@ -256,7 +253,7 @@ proc testConstructors() =
 assert(new File('/path/to/file') + '' == '[object File]')
   """
     let val = ctx.eval(code)
-    check not JS_IsException(val)
+    check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -276,7 +273,7 @@ file.name = "new-name";
 assert(file.path === "/path/to/new-name");
     """
     let val = ctx.eval(code)
-    check not JS_IsException(val)
+    check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -292,7 +289,7 @@ proc testStaticFunctions() =
 assert(File.exists("doc/manual.md"));
     """
     let val = ctx.eval(code)
-    check not JS_IsException(val)
+    check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -311,7 +308,7 @@ assert(oldGetOwner == file.getOwner);
 Object.defineProperty(file, "owner", { value: -2 }); /* throws */
     """
     let val = ctx.eval(code)
-    check JS_IsException(val)
+    check JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -350,17 +347,17 @@ proc testEnums() =
   block:
     let val = ctx.toJS(teB)
     var e: TestEnum
-    assert ctx.fromJS(val, e).isOk
+    assert ctx.fromJSFree(val, e).isOk
     assert e == teB
   block:
     var e2: TestEnum2
     let val2 = ctx.toJS(te2A)
-    assert ctx.fromJS(val2, e2).isOk
+    assert ctx.fromJSFree(val2, e2).isOk
     assert e2 == te2A
   block:
     let val3 = ctx.toJS("b\0c")
     var e: TestEnum
-    assert ctx.fromJS(val3, e).isErr
+    assert ctx.fromJSFree(val3, e).isErr
   ctx.free()
   rt.free()
 
@@ -371,7 +368,7 @@ type
     c {.jsdefault.}: TestEnum
     d: TestDict1
     e {.jsdefault.}: int32
-    f {.jsdefault.}: Option[JSValueTraced]
+    f {.jsdefault.}: Option[JSObjectNil]
 
   TestDict1 = object of JSDict
     a: Option[JSValueConst]
@@ -391,13 +388,13 @@ proc testJSDictUndefined() =
   let ctx = rt.newJSContext()
   block:
     var res: TestDict0
-    assert ctx.fromJS(JS_UNDEFINED, res).isErr
+    assert ctx.fromJS(JS_UNDEFINED.vc, res).isErr
   block:
     var res: TestDict2
-    assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
+    assert ctx.fromJS(JS_UNDEFINED.vc, res).isOk, ctx.getExceptionMsg()
   block:
     var res: TestDict3
-    assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
+    assert ctx.fromJS(JS_UNDEFINED.vc, res).isOk, ctx.getExceptionMsg()
     assert res.b == 2
   ctx.free()
   rt.free()
@@ -411,7 +408,8 @@ proc subroutine(ctx: JSContext; val: JSValueConst) =
   assert res.c == teB
   assert res.e == 0
   assert res.d.a.isNone
-  doAssert ctx.defineProperty(res.f.get.v, "x", JS_NewInt32(ctx, 9)) == fjOk
+  doAssert ctx.defineProperty(JSObject(res.f.get), "x",
+    JS_NewInt32(ctx, 9)) == fjOk
 
 proc testJSDictTransitive() =
   let rt = newGlobalJSRuntime()
@@ -424,7 +422,7 @@ const val = {
 }
 val"""
   let val = ctx.eval(code, "<input>")
-  ctx.subroutine(val)
+  ctx.subroutine(val.vc)
   JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -448,9 +446,8 @@ proc testSeq() =
   var test = @[1, 2, 3, 4]
   let jsTest = ctx.toJS(test)
   var test2: seq[int]
-  assert ctx.fromJS(jsTest, test2).isOk
+  assert ctx.fromJSFree(jsTest, test2).isOk
   assert test2 == test
-  JS_FreeValue(ctx, jsTest)
   ctx.free()
   rt.free()
 
@@ -460,9 +457,8 @@ proc testTuple() =
   var test = (2, "hi")
   let jsTest = ctx.toJS(test)
   var test2: tuple[n: int; s: string]
-  assert ctx.fromJS(jsTest, test2).isOk
+  assert ctx.fromJSFree(jsTest, test2).isOk
   assert test2 == test
-  JS_FreeValue(ctx, jsTest)
   ctx.free()
   rt.free()
 

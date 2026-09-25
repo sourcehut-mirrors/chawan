@@ -296,8 +296,7 @@ proc `==`*(a, b: JSClassID): bool {.borrow.}
 
 proc `$`*(id: JSClassID): string {.borrow.}
 
-converter toJSValueConst*(val: JSValue): JSValueConst {.importc,
-    header: "quickjs-aux.h".} =
+template vc*(val: JSValue): JSValueConst =
   JSValueConst(val)
 
 template toJSValueConstArray*(val: JSValueArray): JSValueConstArray =

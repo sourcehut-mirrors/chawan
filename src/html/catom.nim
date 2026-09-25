@@ -523,7 +523,7 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var CAtom): JSCode =
     res = CAtomNullRaw.trace()
   else:
     let val = JS_AtomToString(ctx, atom)
-    if JS_IsException(val):
+    if JS_IsException(val.vc):
       return fjErr
     ?ctx.fromJSFree(val, res)
   fjOk
@@ -566,10 +566,10 @@ type FromIdxResult* = enum
 
 proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult =
   let val = JS_AtomIsNumericIndex1(ctx, atom)
-  if JS_IsException(val):
+  if JS_IsException(val.vc):
     return fiErr
   var i: int64
-  if not JS_IsUndefined(val) and ctx.fromJSFree(val, i).isOk and
+  if not JS_IsUndefined(val.vc) and ctx.fromJSFree(val, i).isOk and
       i in 0..int64(uint32.high - 1):
     idx = uint32(i)
     return fiIdx

@@ -277,6 +277,8 @@ type
     clear*: bool
     s*: seq[HTTPHeader]
 
+  CommandPair = tuple[k: string; fun: JSCallback]
+
   ConfigEntry* = object
     section*: ConfigSection
     opt*: ConfigOption
@@ -302,11 +304,11 @@ type
     of cocFunction:
       fun*: JSCallback
     of cocCmdInit:
-      cmdInit*: seq[tuple[k: string; fun: JSCallback]]
+      cmdInit*: seq[CommandPair]
     of cocClear:
       discard
 
-  ConfigRule* = ref object of StrMapItem
+  ConfigRule = ref object of StrMapItem
     name: string
     matchType*: SiteconfMatch # only used for siteconf
     regex*: Regex # url for siteconf, match for omnirule
@@ -450,7 +452,7 @@ type
     dataDir*: string
     #TODO getset
     lists*: array[csSiteconf..csOmnirule, ConfigList]
-    cmdInit: seq[tuple[k: string; fun: JSCallback]] # initial k/v map
+    cmdInit: seq[CommandPair] # initial k/v map
     actionMap*: array[csPage..csLine, ActionMap]
 
   TomlState = enum
@@ -752,23 +754,23 @@ proc newActionMap*(ctx: JSContext; s, defaultAction: string): ActionMap =
 proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
     {.cdecl.} =
-  if not JS_IsFunction(ctx, funcData[0]):
-    let res = JS_EvalFunction(ctx, JS_DupValue(ctx, funcData[0]))
-    if JS_IsException(res):
+  if not JS_IsFunction(ctx, funcData[0].vc):
+    let res = JS_EvalFunction(ctx, JS_DupValue(ctx, funcData[0].vc))
+    if JS_IsException(res.vc):
       return res
-    if not JS_IsFunction(ctx, res):
+    if not JS_IsFunction(ctx, res.vc):
       JS_FreeValue(ctx, res)
       return JS_UNDEFINED
     JS_FreeValue(ctx, funcData[0])
     funcData[0] = res
-  return JS_Call(ctx, funcData[0], this, argc, argv)
+  return JS_Call(ctx, funcData[0].vc, this, argc, argv)
 
 proc toForwardAction(ctx: JSContext; val: JSValueTraced): JSValue =
   if JS_IsFunction(ctx, val):
-    return JS_DupValue(ctx, val.v)
+    return JS_DupValue(ctx, val.vc)
   # bytecode function
   return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1,
-    val.v.toJSValueConstArray())
+    val.vc.toJSValueConstArray())
 
 iterator items*(list: ConfigList): ConfigRule =
   var it = list.head
@@ -776,7 +778,7 @@ iterator items*(list: ConfigList): ConfigRule =
     yield it
     it = it.next
 
-proc put(list: var ConfigList; ctx: JSContext; rule: ConfigRule) =
+proc put(list: var ConfigList; rule: ConfigRule) =
   # Removes old rules (if any).
   let oldRule = ConfigRule(list.map.getOrDefault(rule.name))
   if oldRule != nil:
@@ -1705,7 +1707,7 @@ proc parseRegex(cp: var ConfigParser; x: var Regex): Opt[void] =
 proc parseFunction(cp: var ConfigParser; x: var JSCallback): Opt[void] =
   ?cp.typeCheck(ttString)
   let fun = cp.ctx.eval(cp.buf, "<config>", JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(fun):
+  if JS_IsException(fun.vc):
     return cp.err(cp.ctx.getExceptionMsg())
   if cp.ctx.fromJSFree(fun, x).isErr:
     return cp.err("not a function")
@@ -1897,8 +1899,7 @@ proc addFunction(cp: var ConfigParser): var JSCallback =
   cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocFunction))
   cp.entries[^1].fun
 
-proc addCmdInit(cp: var ConfigParser):
-    var seq[tuple[k: string; fun: JSCallback]] =
+proc addCmdInit(cp: var ConfigParser): var seq[CommandPair] =
   if cp.entries.len == 0 or cp.entries[^1].t != cocCmdInit:
     cp.entries.add(ConfigEntry(
       section: cp.section,
@@ -1953,7 +1954,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
     let ctx = cp.ctx
     let fun = if cp.buf.len > 0:
       let val = ctx.eval(cp.buf, "<" & cp.key & ">", JS_EVAL_TYPE_GLOBAL)
-      if JS_IsException(val):
+      if JS_IsException(val.vc):
         return cp.err(ctx.getExceptionMsg())
       var x: JSCallback
       if ctx.fromJSFree(val, x).isErr:
@@ -1966,7 +1967,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
     ?cp.typeCheck(ttString)
     let ctx = cp.ctx
     let val = ctx.evalCmdDecl(cp.buf)
-    if JS_IsException(val):
+    if JS_IsException(val.vc):
       return cp.err(ctx.getExceptionMsg())
     #TODO this won't fly for dynamic reloading
     let map = cp.config.actionMap[section]
@@ -1983,7 +1984,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
   if section in {csSiteconf, csOmnirule}:
     if entry.t == cocStr and opt == coAddEntry:
       let rule = ConfigRule(name: move(entry.str))
-      config.lists[section].put(ctx, rule)
+      config.lists[section].put(rule)
     else:
       let rule = config.lists[section].tail
       case entry.t
@@ -2500,12 +2501,10 @@ proc setConfigOption(ctx: JSContext; this, val: JSValueConst; magic: cint):
 
 proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
   discard JS_NewClassID(configSectionCID)
-  var objs {.noinit.}: array[csBuffer..csStatus, JSValue]
+  var objs: array[csBuffer..csStatus, JSObject]
   for obj in objs.mitems:
-    obj = JS_NewObjectClass(ctx, configSectionCID)
-    if JS_IsException(obj):
-      return err()
-    JS_SetOpaque(obj, addr config[])
+    obj = ?ctx.newObjectClass(configSectionCID)
+    JS_SetOpaque(obj.value, addr config[])
   for opt in ConfigOption.low..coAddEntry.pred:
     let desc = OptionMap[opt]
     if desc.section == csNone:
@@ -2516,39 +2515,36 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
     let name = cast[cstring](unsafeAddr s[start])
     ?ctx.definePropertyGetSetCE(obj, name, getConfigOption, setConfigOption,
       cint(opt))
-  let configObj = ctx.toJS(config)
+  let configVal = ctx.toJS(config)
+  assert JS_IsObject(configVal.vc)
+  let configObj = traceObj(configVal)
   for section in csBuffer..csStatus:
     let s = $section
-    let obj = objs[section]
-    ?ctx.defineProperty(configObj, cstring(s), obj)
-  JS_FreeValue(ctx, configObj)
+    let obj = move(objs[section])
+    ?ctx.defineProperty(configObj, cstring(s), obj.toJSValue())
   ok()
 
 proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
   let page = newActionMap(ctx, PageCommands, "")
   let line = newActionMap(ctx, LineCommands, "writeInputBuffer")
   let select = newActionMap(ctx, SelectCommands, "pager.menuCommand()")
-  if page == nil or line == nil:
+  let defaultHeaders = newHeaders(hgRequest, {
+    "User-Agent": "chawan",
+    "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "en;q=1.0",
+    "Pragma": "no-cache",
+    "Cache-Control": "no-cache"
+  })
+  if page == nil or line == nil or select == nil or defaultHeaders == nil:
+    JS_ThrowOutOfMemory(ctx)
     return Config(nil)
   let config = jsNew ConfigObj(
     dir: dir,
     dataDir: dataDir,
-    actionMap: [
-      csPage: page,
-      csSelect: select,
-      csLine: line,
-    ],
-    documentCharset: @[
-      csUtf8, csShiftJIS, csEucJP, csIso8859_2
-    ],
-    defaultHeaders: newHeaders(hgRequest, {
-      "User-Agent": "chawan",
-      "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
-      "Accept-Encoding": "gzip, deflate, br",
-      "Accept-Language": "en;q=1.0",
-      "Pragma": "no-cache",
-      "Cache-Control": "no-cache"
-    }),
+    actionMap: [csPage: page, csSelect: select, csLine: line],
+    documentCharset: @[csUtf8, csShiftJIS, csEucJP, csIso8859_2],
+    defaultHeaders: defaultHeaders
   )
   for it in ConfigInitTrue:
     config.bits[it].bool = true
@@ -2564,7 +2560,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
   for it in ConfigInitPathSeq:
     for path in it[1]:
       config.strSeqs[it[0]].add(ChaPath(path).unquote(dir).get)
-  config.siteconf.put(ctx, ConfigRule(
+  config.siteconf.put(ConfigRule(
     name: "downloads",
     regex: compileMatchRegex("about:downloads").get,
     entries: @[ConfigEntry(
@@ -2607,7 +2603,7 @@ jsClassDef(Config):
     let p = JS_GetRegExpBytecode(ctx, re, len)
     if p == nil:
       return JS_EXCEPTION
-    config.omnirule.put(ctx, ConfigRule(
+    config.omnirule.put(ConfigRule(
       name: name,
       regex: bytecodeToRegex(cast[REBytecode](p), len),
       fun: fun
@@ -2616,34 +2612,26 @@ jsClassDef(Config):
 
   # called at pager init
   proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
-    let obj = JS_GetPropertyStr(ctx, ctx.getOpaque().global.value, "cmd")
-    if JS_IsException(obj):
-      JS_FreeValue(ctx, obj)
+    let prop = JS_GetPropertyStr(ctx, ctx.getOpaque().global.value, "cmd")
+    if JS_IsException(prop.vc):
       return err()
+    var obj: JSObject
+    ?ctx.fromJSFree(prop, obj)
     for (k, cmd) in config.cmdInit.mritems:
-      var objIt = JS_DupValue(ctx, obj)
+      var objIt = obj
       let name = k.afterLast('.')
       if name.len < k.len:
         for ss in k.substr(0, k.high - name.len - 1).split('.'):
-          var prop = JS_GetPropertyStr(ctx, objIt, cstring(ss))
-          if JS_IsUndefined(prop):
+          var prop = JS_GetPropertyStr(ctx, objIt.value, cstring(ss))
+          if JS_IsUndefined(prop.vc):
             prop = JS_NewObject(ctx)
-            if ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop)) == fjErr:
-              JS_FreeValue(ctx, obj)
-              return err()
-          if JS_IsException(prop):
-            JS_FreeValue(ctx, obj)
+            ?ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop.vc))
+          if JS_IsException(prop.vc):
             return err()
-          JS_FreeValue(ctx, objIt)
-          objIt = prop
+          ?ctx.fromJSFree(prop, objIt)
       if cmd == nil:
         continue
-      let dpr = ctx.definePropertyE(objIt, name, moveJSValue(cmd))
-      JS_FreeValue(ctx, objIt)
-      if dpr == fjErr:
-        JS_FreeValue(ctx, obj)
-        return err()
-    JS_FreeValue(ctx, obj)
+      ?ctx.definePropertyE(objIt, name, move(cmd).toJSValue())
     config.cmdInit = @[]
     for cs in csPage..csLine:
       config.actionMap[cs].sort(ctx)
@@ -2668,7 +2656,7 @@ jsClassPublicDef(ActionMap):
       var s: string
       ?ctx.fromJS(val, s)
       ctx.evalCmdDecl(s)
-    if JS_IsException(val2):
+    if JS_IsException(val2.vc):
       return err()
     a.tab.add(Action(k: rk, val: trace(val2), n: a.num))
     inc a.num

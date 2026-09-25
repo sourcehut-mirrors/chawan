@@ -71,11 +71,11 @@ jsClassDef(Performance):
     return JS_NewArray(ctx)
 
   proc getEntriesByName(ctx: JSContext; this: Performance;
-      name: DOMString; t: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+      name: DOMString; t = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     return JS_NewArray(ctx)
 
   proc mark(ctx: JSContext; this: Performance; name: DOMString;
-      init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+      init = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     var startTime: float64
     if ?ctx.fromJSGetProp(init, "startTime", startTime):
       if startTime < 0:

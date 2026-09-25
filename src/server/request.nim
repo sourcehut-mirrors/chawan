@@ -556,7 +556,7 @@ jsClassDef(Request):
     return ctx.toJS("about:client")
 
   proc newRequest*(ctx: JSContext; resource: JSValueConst;
-      jsInit: JSValueConst = JS_UNDEFINED): Opt[Request] {.jsctor.} =
+      jsInit = JS_UNDEFINED.vc): Opt[Request] {.jsctor.} =
     var init: RequestInit
     ?ctx.fromJS(jsInit, init)
     var headers = newHeaders(hgRequest)

@@ -49,7 +49,7 @@ template isErr*(res: JSCode): bool =
   res == fjErr
 
 proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): JSCode =
-  result = ctx.fromJS(val, res)
+  result = ctx.fromJS(val.vc, res)
   JS_FreeValue(ctx, val)
 
 proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSValueTraced):
@@ -59,15 +59,24 @@ proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSValueTraced):
 
 proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSCallback):
     JSCode =
-  if not JS_IsFunction(ctx, val):
+  if not JS_IsFunction(ctx, val.vc):
     JS_FreeValue(ctx, val)
     JS_ThrowTypeError(ctx, "function expected")
     return fjErr
-  res = JSCallback(traceObj(val))
+  res = traceCallback(val)
+  fjOk
+
+proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSObject):
+    JSCode =
+  if not JS_IsObject(val.vc):
+    JS_FreeValue(ctx, val)
+    JS_ThrowTypeError(ctx, "object expected")
+    return fjErr
+  res = traceObj(val)
   fjOk
 
 template fromJS*[T](ctx: JSContext; val: JSValueTraced; res: var T): JSCode =
-  ctx.fromJS(val.v, res)
+  ctx.fromJS(val.vc, res)
 
 proc fromJSCallback*(ctx: JSContext; val: JSValueConst;
     res: var pointer): JSCode =
@@ -93,9 +102,9 @@ proc fromJSGetProp*[T](ctx: JSContext; this: JSValueConst; name: cstring;
   if JS_IsUndefined(this):
     return ok(false)
   let prop = JS_GetPropertyStr(ctx, this, name)
-  if JS_IsException(prop):
+  if JS_IsException(prop.vc):
     return err()
-  if JS_IsUndefined(prop):
+  if JS_IsUndefined(prop.vc):
     return ok(false)
   ?ctx.fromJSFree(prop, res)
   ok(true)
@@ -124,19 +133,15 @@ proc checkInstanceOf*(ctx: JSContext; this: JSValueConst; tclassid: JSClassID):
     ctxOpaque.gclass
   if not ctx.isInstanceOf(classid, tclassid):
     # JS_ThrowTypeErroInvalidClass
-    discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
+    discard JS_GetOpaque2(ctx, JS_UNDEFINED.vc, tclassid)
     return fjErr
   fjOk
 
 proc isSequence*(ctx: JSContext; o: JSValueConst): Opt[bool] =
   if not JS_IsObject(o):
     return ok(false)
-  let prop = ctx.getProperty(o, jsyIterator)
-  if JS_IsException(prop):
-    return err()
-  let res = not JS_IsUndefined(prop)
-  JS_FreeValue(ctx, prop)
-  ok(res)
+  let prop = ?trace(ctx.getProperty(o, jsyIterator))
+  ok(not JS_IsUndefined(prop))
 
 proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t; narrow: bool;
     res: var string): JSCode =
@@ -264,10 +269,10 @@ type SeqItResult* = enum
 proc fromJSSeqIt*(ctx: JSContext; iter, nextMethod: JSValueConst;
     res: var JSValue): SeqItResult =
   let next = JS_Call(ctx, nextMethod, iter, 0, nil)
-  if JS_IsException(next):
+  if JS_IsException(next.vc):
     return sirException
-  let doneVal = ctx.getProperty(next, jstDone)
-  if JS_IsException(doneVal):
+  let doneVal = ctx.getProperty(next.vc, jstDone)
+  if JS_IsException(doneVal.vc):
     JS_FreeValue(ctx, next)
     return sirException
   var done: bool
@@ -275,9 +280,9 @@ proc fromJSSeqIt*(ctx: JSContext; iter, nextMethod: JSValueConst;
     JS_FreeValue(ctx, next)
     return sirException
   if not done:
-    res = ctx.getProperty(next, jstValue)
+    res = ctx.getProperty(next.vc, jstValue)
     JS_FreeValue(ctx, next)
-    if JS_IsException(res):
+    if JS_IsException(res.vc):
       return sirException
     return sirContinue
   JS_FreeValue(ctx, next)
@@ -287,7 +292,7 @@ proc readTupleDone(ctx: JSContext; iter, nextMethod: JSValue): JSCode =
   var res = sirDone
   while true:
     var val: JSValue
-    case ctx.fromJSSeqIt(iter, nextMethod, val)
+    case ctx.fromJSSeqIt(iter.vc, nextMethod.vc, val)
     of sirException:
       res = sirException
       break
@@ -314,7 +319,7 @@ proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
     return fjErr
   for f in res.fields:
     var val: JSValue
-    status = ctx.fromJSSeqIt(iter, nextMethod, val)
+    status = ctx.fromJSSeqIt(iter.vc, nextMethod.vc, val)
     if status != sirContinue:
       break
     if ctx.fromJSFree(val, f).isErr:
@@ -331,10 +336,10 @@ proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
 proc fromJSSeqInit*(ctx: JSContext; val: JSValueConst;
     oit, onextMethod: var JSValue): JSCode =
   let it = JS_Invoke(ctx, val, ctx.getAtom(jsyIterator), 0, nil)
-  if JS_IsException(it):
+  if JS_IsException(it.vc):
     return fjErr
-  let nextMethod = ctx.getProperty(it, jstNext)
-  if JS_IsException(nextMethod):
+  let nextMethod = ctx.getProperty(it.vc, jstNext)
+  if JS_IsException(nextMethod.vc):
     JS_FreeValue(ctx, it)
     return fjErr
   oit = it
@@ -350,7 +355,7 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): JSCode =
   var tmp = newSeq[T]()
   while status.isOk:
     var val: JSValue
-    case ctx.fromJSSeqIt(iter, nextMethod, val)
+    case ctx.fromJSSeqIt(iter.vc, nextMethod.vc, val)
     of sirException:
       status = fjErr
       break
@@ -372,7 +377,7 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): JSCode =
   var tmp: set[T] = {}
   while status.isOk:
     var val: JSValue
-    case ctx.fromJSSeqIt(iter, nextMethod, val)
+    case ctx.fromJSSeqIt(iter.vc, nextMethod.vc, val)
     of sirException:
       status = fjErr
       break
@@ -470,7 +475,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
     p = ctxOpaque.globalObj
   if not ctx.isInstanceOf(classid, tclassid):
     # dumb way to invoke JS_ThrowTypeErrorInvalidClass
-    discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
+    discard JS_GetOpaque2(ctx, JS_UNDEFINED.vc, tclassid)
     return fjErr
   res = p
   fjOk
@@ -548,18 +553,18 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       let it = if fallback != nil:
         quote do:
           let prop = JS_GetPropertyStr(`ctx`, `val`, `nameStr`)
-          if JS_IsException(prop):
+          if JS_IsException(prop.vc):
             return fjErr
-          if not JS_IsUndefined(prop):
+          if not JS_IsUndefined(prop.vc):
             if `ctx`.fromJSFree(prop, `res`.`name`) == fjErr:
               return fjErr
       else:
         quote do:
           missing = `nameStr`
           let prop = JS_GetPropertyStr(`ctx`, `val`, missing)
-          if JS_IsException(prop):
+          if JS_IsException(prop.vc):
             return fjErr
-          if JS_IsUndefined(prop):
+          if JS_IsUndefined(prop.vc):
             break `success`
           if `ctx`.fromJSFree(prop, `res`.`name`) == fjErr:
             return fjErr
@@ -609,14 +614,14 @@ proc fromJSUnsafeView(ctx: JSContext; val: JSValueConst;
   var len {.noinit.}: csize_t
   var bytesPerItem {.noinit.}: csize_t
   let jsbuf = JS_GetTypedArrayBuffer(ctx, val, offset, len, bytesPerItem)
-  if JS_IsException(jsbuf):
+  if JS_IsException(jsbuf.vc):
     return fjErr
   if uint64(offset) + uint64(len) > uint64(int32.high):
     JS_FreeValue(ctx, jsbuf)
     JS_ThrowRangeError(ctx, "array buffer view too large")
     return fjErr
   var abuf: JSArrayBufferInit
-  let code = ctx.fromJSUnsafeView(jsbuf, abuf)
+  let code = ctx.fromJSUnsafeView(jsbuf.vc, abuf)
   JS_FreeValue(ctx, jsbuf)
   if code == fjErr:
     return fjErr

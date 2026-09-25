@@ -452,7 +452,7 @@ jsClassDef(HTMLOptionsCollection):
     return ctx.getter(this.asHTMLCollection, atom)
 
   proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
-      before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
+      before = JS_NULL.vc): JSValue {.jsfunc.} =
     if element.tagType notin {ttOption, ttOptgroup}:
       return JS_ThrowTypeError(ctx, "expected option or optgroup element")
     var beforeEl: HTMLElement
@@ -1103,7 +1103,7 @@ jsClassPublicDef(HTMLSelectElement):
     return JS_ThrowDOMException(ctx, "NotAllowedError", "not allowed")
 
   proc add(ctx: JSContext; this: HTMLSelectElement; element: Element;
-      before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
+      before = JS_NULL.vc): JSValue {.jsfunc.} =
     let options = this.options()
     if options == nil:
       return JS_ThrowOutOfMemory(ctx)

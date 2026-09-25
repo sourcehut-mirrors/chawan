@@ -443,7 +443,7 @@ jsClassDef(FileReader):
     jsNew FileReaderObj()
 
   proc read(ctx: JSContext; jsThis: JSValueConst; packageType: PackageType;
-      blob: Blob; encoding: JSValueConst = JS_UNDEFINED): JSValue {.
+      blob: Blob; encoding = JS_UNDEFINED.vc): JSValue {.
       jsmfunc("readAsArrayBuffer", ptArrayBuffer),
       jsmfunc("readAsBinaryString", ptBinaryString),
       jsmfunc("readAsText", ptText), jsmfunc("readAsDataURL", ptDataURL).} =
@@ -463,7 +463,7 @@ jsClassDef(FileReader):
       var ds: DOMString
       ?ctx.fromJS(encoding, ds)
       encoding2 = ?trace(ctx.toJS(ds))
-    ?ctx.enqueueJob(fulfillReadJob, jsThis, encoding2.v)
+    ?ctx.enqueueJob(fulfillReadJob, jsThis, encoding2.vc)
     return JS_UNDEFINED
 
   proc abort(ctx: JSContext; this: FileReader): Opt[void] {.jsfunc.} =

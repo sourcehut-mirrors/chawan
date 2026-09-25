@@ -79,8 +79,8 @@ proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
   for arg in args:
     paramList.add(ctx.toJS(arg))
   paramList.add(ctx.toJS(body))
-  let fun = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvFunction],
-    cint(paramList.len), paramList.toJSValueConstArray())
+  let fun = ctx.callConstructor(ctx.getOpaque().funRefs[jsfFunction],
+    paramList)
   for param in paramList:
     JS_FreeValue(ctx, param)
   return fun
@@ -144,7 +144,7 @@ proc toJS*[T](ctx: JSContext; s: seq[T]): JSValue =
   var vals = newSeqOfCap[JSValue](s.len)
   for it in s:
     let val = ctx.toJS(it)
-    if JS_IsException(val):
+    if JS_IsException(val.vc):
       ctx.freeValues(vals)
       return val
     vals.add(val)
@@ -154,15 +154,14 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
   var vals: seq[JSValue] = @[]
   for e in s:
     let val = ctx.toJS(e)
-    if JS_IsException(val):
+    if JS_IsException(val.vc):
       ctx.freeValues(vals)
       return val
     vals.add(val)
   let a = ctx.newArrayFrom(vals)
-  if JS_IsException(a):
-    return a
-  let ret = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvSet], 1,
-    a.toJSValueConstArray())
+  if JS_IsException(a.vc):
+    return JS_EXCEPTION
+  let ret = ctx.callConstructor(ctx.getOpaque().funRefs[jsfSet], [a])
   JS_FreeValue(ctx, a)
   return ret
 
@@ -173,7 +172,7 @@ proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue =
   {.push overflowChecks: off.}
   for it in t.fields:
     let val = ctx.toJS(it)
-    if JS_IsException(val):
+    if JS_IsException(val.vc):
       break
     vals[i] = val
     inc i
@@ -193,10 +192,11 @@ proc toJSRef0(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
       return JS_GetGlobalObject(ctx)
     return JS_MKPTR(JS_TAG_OBJECT, jsptr)
   let classid = JS_GetForeignClassID(p)
-  let jsObj = JSObject(ctx.newObjectFromCtor(ctor, classid))
-  if jsObj == nil:
+  var jsObj0 = ctx.newObjectFromCtor(ctor, classid)
+  if jsObj0.isErr:
     JS_FreeForeignObject(rt, p)
-    return jsObj.toJSValue()
+    return JS_EXCEPTION
+  let jsObj = move(jsObj0.get)
   # Set the opaque first, before GC has a chance to run.
   JS_SetForeignOpaque(rt, p, JSValue(jsObj.value))
   JS_SetOpaque(jsObj.value, p)
@@ -208,7 +208,7 @@ proc toJSRef0(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
 proc toJSRef(ctx: JSContext; p: pointer): JSValue =
   if p == nil:
     return JS_NULL
-  ctx.toJSRef0(p, JS_UNDEFINED)
+  ctx.toJSRef0(p, JS_UNDEFINED.vc)
 
 proc toJSRefNew(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
   if p == nil:
@@ -228,7 +228,7 @@ proc toJSNew*[T](ctx: JSContext; obj: sink JSRef[T]; ctor: JSValueConst):
 
 template toJSNew*[T](ctx: JSContext; obj: JSRef[T]): JSValue =
   # useful when you want to JSify a new object (i.e., nil converts to OOM)
-  ctx.toJSNew(obj, JS_UNDEFINED)
+  ctx.toJSNew(obj, JS_UNDEFINED.vc)
 
 proc toJSEnum(ctx: JSContext; enumId: int; n: int; s: string): JSValue =
   let rt = JS_GetRuntime(ctx)
@@ -260,7 +260,7 @@ proc toJS*(ctx: JSContext; j: JSValue): JSValue =
   return j
 
 proc toJS*(ctx: JSContext; t: JSValueTraced): JSValue =
-  return JS_DupValue(ctx, t.v)
+  return JS_DupValue(ctx, t.vc)
 
 proc toJS*(ctx: JSContext; p: JSObject): JSValue =
   return JS_DupValue(ctx, p.value)
@@ -274,17 +274,17 @@ proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue =
 
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue =
   let jsabuf = ctx.toJS(u8a.abuf)
-  if JS_IsException(jsabuf):
+  if JS_IsException(jsabuf.vc):
     return jsabuf
   let offset = ctx.toJS(u8a.offset)
-  if JS_IsException(offset):
+  if JS_IsException(offset.vc):
     JS_FreeValue(ctx, jsabuf)
-    return offset
+    return JS_EXCEPTION
   let len = ctx.toJS(u8a.len)
-  if JS_IsException(len):
+  if JS_IsException(len.vc):
     JS_FreeValue(ctx, jsabuf)
     JS_FreeValue(ctx, offset)
-    return len
+    return JS_EXCEPTION
   let argv = [JSValueConst(jsabuf), JSValueConst(offset), JSValueConst(len)]
   let ret = JS_NewTypedArray(ctx, 3, argv.toJSValueConstArray(), u8a.t)
   JS_FreeValue(ctx, jsabuf)
@@ -298,9 +298,9 @@ proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =
 proc definePropertyConvert*[T](ctx: JSContext; this: JSObject;
     name: JSStrRef; x: T): JSCode =
   let val = ctx.toJS(x)
-  if JS_IsException(val):
+  if JS_IsException(val.vc):
     return fjErr
-  ctx.defineProperty(this.value, name, val)
+  ctx.defineProperty(this, name, val)
 
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue =
   if opt.isOk:

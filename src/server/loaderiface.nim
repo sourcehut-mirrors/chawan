@@ -282,14 +282,13 @@ proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
 proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
   let ctx = opaque.ctx
   let resolve = move(opaque.resolve)
-  let reject = moveJSValue(opaque.reject)
+  let reject = move(opaque.reject)
   opaque.ctx = nil
-  if not JS_IsException(val):
-    let res = ctx.callSink(resolve, JS_UNDEFINED, val)
+  if not JS_IsException(val.vc):
+    let res = ctx.callSink(resolve, JS_UNDEFINED.vc, val)
     JS_FreeValue(ctx, res)
   else:
     discard ctx.enqueueRejection(reject)
-  JS_FreeValue(ctx, reject)
   JS_FreeContext(ctx)
 
 proc jsBlobFinish(response: Response; success: bool) =
@@ -307,7 +306,7 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
   var resolve: JSCallback
   var reject: JSCallback
   let res = ctx.newPromiseCapability(resolve, reject)
-  if JS_IsException(res):
+  if JS_IsException(res.vc):
     return res
   let opaque = JSBlobOpaque(
     ctx: JS_DupContext(ctx),
@@ -362,8 +361,8 @@ jsClassDef(Response):
       JS_MarkValue(rt, opaque.resolve, fun)
       JS_MarkValue(rt, opaque.reject, fun)
 
-  proc newResponse*(ctx: JSContext; body: JSValueConst = JS_UNDEFINED;
-      init: JSValueConst = JS_UNDEFINED): Opt[Response] {.jsctor.} =
+  proc newResponse*(ctx: JSContext; body = JS_UNDEFINED.vc;
+      init = JS_UNDEFINED.vc): Opt[Response] {.jsctor.} =
     if not JS_IsUndefined(body) or not JS_IsUndefined(init):
       #TODO
       JS_ThrowInternalError(ctx, "Response constructor with body or init")

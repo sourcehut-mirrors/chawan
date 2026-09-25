@@ -350,13 +350,13 @@ jsClassDef(XMLHttpRequest):
     this.timeout = value
     return JS_UNDEFINED
 
-  proc send(ctx: JSContext; this: XMLHttpRequest;
-      body: JSValueConst = JS_NULL): Opt[void] {.jsfunc.} =
+  proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL.vc): Opt[void]
+      {.jsfunc.} =
     ?ctx.checkOpened(this)
     ?ctx.checkSendFlag(this)
     var body = body
     if this.requestMethod in {hmGet, hmHead}:
-      body = JS_NULL
+      body = JS_NULL.vc
     let credentials = if this.withCredentials: cmInclude else: cmSameOrigin
     #TODO unsafe request flag, client, initiator type
     let urlCredentials = this.requestURL.includesCredentials()
@@ -428,7 +428,7 @@ jsClassDef(XMLHttpRequest):
   proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest;
       name: ByteString): JSValue {.jsfunc.} =
     let res = ctx.get(this.response.headers, name)
-    if JS_IsException(res):
+    if JS_IsException(res.vc):
       return JS_NULL
     return res
 
@@ -517,7 +517,7 @@ jsClassDef(XMLHttpRequest):
           csize_t(this.received.len), "<input>".toCStringConst)
       else:
         JS_UNDEFINED
-      if not JS_IsException(res):
+      if not JS_IsException(res.vc):
         this.responseObject = trace(res)
     return ctx.toJS(this.responseObject)
 

@@ -167,6 +167,7 @@ assertEquals(new URL("https://xn--") + "", "https://xn--/");
 	assert(x.searchParams.has("ho", "hi"));
 	assertEquals(new URLSearchParams(undefined) + "", "")
 	x.search = "a=b";
+	assertEquals(new URLSearchParams(undefined).forEach.name, "forEach");
 	{
 		let i = 0;
 		for (const it of x.searchParams) {

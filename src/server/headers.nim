@@ -443,8 +443,8 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   return (n: -1, url: URL(nil))
 
 jsClassDef(Headers):
-  proc newHeaders(ctx: JSContext; jsInit: JSValueConst = JS_UNDEFINED):
-      Opt[Headers] {.jsctor.} =
+  proc newHeaders(ctx: JSContext; jsInit = JS_UNDEFINED.vc): Opt[Headers]
+      {.jsctor.} =
     let headers = newHeaders(hgNone)
     if headers != nil and not JS_IsUndefined(jsInit):
       var init: HeadersInit

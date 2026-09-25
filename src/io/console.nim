@@ -4,6 +4,8 @@ import io/chafile
 import js/constcharp
 import js/fromjs
 import js/jsbind
+import js/jsopaque
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import server/url
@@ -76,19 +78,11 @@ jsNamespaceDef(console):
     discard
 
 proc addConsoleModule*(ctx: JSContext): Opt[void] =
-  let obj = ctx.registerNamespace(consoleDef)
-  if JS_IsUndefined(obj):
+  if ctx.getOpaque() == nil:
     return ok()
-  if JS_IsException(obj):
-    return err()
-  let proto = JS_NewObject(ctx)
-  if JS_IsException(proto):
-    JS_FreeValue(ctx, obj)
-    return err()
-  let res = JS_SetPrototype(ctx, obj, proto)
-  JS_FreeValue(ctx, obj)
-  JS_FreeValue(ctx, proto)
-  if res < 0:
+  let obj = ?ctx.registerNamespace(consoleDef)
+  let proto = ?ctx.newObject()
+  if JS_SetPrototype(ctx, obj.value, proto.value) < 0:
     return err()
   ok()
 

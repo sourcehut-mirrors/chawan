@@ -71,13 +71,13 @@ proc setTimeout*(state: var TimeoutState; ctx: JSContext; t: TimeoutType;
 proc runEntry(ctx: JSContext; entry: TimeoutEntry; console: Console) =
   var ret = JS_EXCEPTION
   if JS_IsFunction(ctx, entry.val):
-    ret = JS_Call(ctx, entry.val.v, JS_UNDEFINED, cint(entry.args.len),
+    ret = JS_Call(ctx, entry.val.vc, JS_UNDEFINED.vc, cint(entry.args.len),
       entry.args.toJSValueConstArray())
   else:
     var s: string
     if ctx.fromJS(entry.val, s).isOk:
       ret = ctx.eval(s, $entry.t, JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(ret):
+  if JS_IsException(ret.vc):
     console.writeException(ctx)
   JS_FreeValue(ctx, ret)
 
@@ -122,7 +122,7 @@ proc mark*(rt: JSRuntime; state: TimeoutState; markFunc: JS_MarkFunc) =
   for entry in state.timeouts:
     JS_MarkValue(rt, entry.val, markFunc)
     for arg in entry.args:
-      JS_MarkValue(rt, arg, markFunc)
+      JS_MarkValue(rt, arg.vc, markFunc)
 
 proc finalize*(rt: JSRuntime; state: TimeoutState) =
   for entry in state.timeouts:

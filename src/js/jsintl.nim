@@ -102,8 +102,8 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
     return JS_NewArray(ctx)
   #TODO InitializedLocale, actually validate locales, dedup
   let lengthVal = ctx.getProperty(val, jstLength)
-  if JS_IsException(lengthVal):
-    return lengthVal
+  if JS_IsException(lengthVal.vc):
+    return JS_EXCEPTION
   let len = ctx.toIntIndex(lengthVal)
   if len < 0:
     return JS_EXCEPTION
@@ -115,9 +115,9 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
       return JS_EXCEPTION
     if has > 0:
       let locale = JS_GetPropertyUint32(ctx, val, uint32(k))
-      if JS_IsException(locale):
-        return locale
-      if not JS_IsString(locale) and not JS_IsObject(locale):
+      if JS_IsException(locale.vc):
+        return JS_EXCEPTION
+      if not JS_IsString(locale.vc) and not JS_IsObject(locale.vc):
         JS_FreeValue(ctx, locale)
         return JS_ThrowTypeError(ctx, "unexpected locale type")
       #TODO InitializedLocale
@@ -240,7 +240,7 @@ proc stringifyUnit(unit: NumberUnit; s: string): string =
 
 jsClassDef(NumberFormat):
   proc newNumberFormat(ctx: JSContext; name = "en-US";
-      options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsfctor.} =
+      options = JS_UNDEFINED.vc): Opt[NumberFormat] {.jsfctor.} =
     let nf = jsNew NumberFormatObj()
     if nf != nil and JS_IsObject(options):
       discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",
@@ -291,7 +291,7 @@ jsClassDef(NumberFormat):
     of nsCurrency: discard #TODO?
 
   proc supportedLocalesOf(ctx: JSContext; locales: JSValueConst;
-      options: JSValueConst = JS_UNDEFINED): JSValue {.jsstfunc.} =
+      options = JS_UNDEFINED.vc): JSValue {.jsstfunc.} =
     #TODO
     return ctx.getCanonicalLocales(locales)
 
@@ -335,17 +335,13 @@ jsClassDef(ListFormat):
   proc format(this: ListFormat; s: string): string {.jsfunc.} =
     s #TODO
 
-proc addIntlModule*(ctx: JSContext): Opt[void] =
-  let intl = ctx.registerNamespace(IntlDef)
-  if JS_IsException(intl):
-    return err()
-  ?ctx.registerClass(CollatorDef, namespace = intl)
-  ?ctx.registerClass(NumberFormatDef, namespace = intl)
-  ?ctx.registerClass(DateTimeFormatDef, namespace = intl)
-  ?ctx.registerClass(PluralRulesDef, namespace = intl)
-  ?ctx.registerClass(RelativeTimeFormatDef, namespace = intl)
-  ?ctx.registerClass(ListFormatDef, namespace = intl)
-  JS_FreeValue(ctx, intl)
-  ok()
+proc addIntlModule*(ctx: JSContext): JSCode =
+  let intl = ?ctx.registerNamespace(IntlDef)
+  ?ctx.registerClass(CollatorDef, intl)
+  ?ctx.registerClass(NumberFormatDef, intl)
+  ?ctx.registerClass(DateTimeFormatDef, intl)
+  ?ctx.registerClass(PluralRulesDef, intl)
+  ?ctx.registerClass(RelativeTimeFormatDef, intl)
+  ctx.registerClass(ListFormatDef, intl)
 
 {.pop.}

@@ -30,13 +30,6 @@ template `?`*(res: JSValueTraced): JSValueTraced =
     return err()
   myMove(val)
 
-template `?`*(x: JSObjectNil): JSObject =
-  var obj = x
-  if obj == nil:
-    wasMoved(obj)
-    return err()
-  JSObject(myMove(obj))
-
 template `?`*(res: JSAtom): JSAtom =
   var val = res
   if val == JS_ATOM_NULL:
@@ -117,7 +110,7 @@ proc callSinkThis*(ctx: JSContext; funcObj: JSCallback; this: JSValue;
     argv: varargs[JSValue]): JSValue =
   ## Call `funcObj` with the this value `this` and parameters `argv`, then
   ## free each element of `argv` as well as `this`.
-  let res = ctx.callSink(funcObj, this, argv)
+  let res = ctx.callSink(funcObj, this.vc, argv)
   JS_FreeValue(ctx, this)
   res
 
@@ -127,10 +120,15 @@ proc invoke*(ctx: JSContext; val: JSObject; atom: JSAtom;
   JS_Invoke(ctx, val.value, atom, cast[cint](argv.len),
     argv.toJSValueConstArray())
 
+proc callConstructor*(ctx: JSContext; funcObj: JSCallback;
+    params: openArray[JSValue]): JSValue =
+  JS_CallConstructor(ctx, funcObj.value, cint(params.len),
+    params.toJSValueConstArray())
+
 proc toUndefined*(ctx: JSContext; val: JSValue): JSValue =
   ## Free JSValue, and return JS_EXCEPTION if it's an exception (or
   ## undefined otherwise).
-  if JS_IsException(val):
+  if JS_IsException(val.vc):
     return JS_EXCEPTION
   JS_FreeValue(ctx, val)
   return JS_UNDEFINED
@@ -143,12 +141,12 @@ proc newArrayFrom*(ctx: JSContext; vals: varargs[JSValue]): JSValue =
     ctx.freeValues(vals)
     return JS_ThrowRangeError(ctx, "sequence too large")
   var obj = JS_NewArray(ctx)
-  if JS_IsException(obj):
+  if JS_IsException(obj.vc):
     return obj
   var u = 0u32
   let L = uint32(vals.len)
   while u < L:
-    let res = JS_SetPropertyUint32(ctx, obj, u, vals[u])
+    let res = JS_SetPropertyUint32(ctx, obj.vc, u, vals[u])
     inc u
     if res < 0:
       JS_FreeValue(ctx, obj)
@@ -163,7 +161,7 @@ proc newPromiseCapability*(ctx: JSContext; resolve, reject: var JSCallback):
     JSValue =
   var funs {.noinit.}: array[2, JSValue]
   let res = JS_NewPromiseCapability(ctx, funs.toJSValueArray())
-  if not JS_IsException(res):
+  if not JS_IsException(res.vc):
     resolve = traceCallback(funs[0])
     reject = traceCallback(funs[1])
   res
@@ -176,14 +174,13 @@ proc enqueueJob*(ctx: JSContext; fun: JSJobFunc;
 
 proc rejectJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
-  return ctx.call(argv[0], JS_UNDEFINED, argv[1])
+  return ctx.call(argv[0], JS_UNDEFINED.vc, argv[1])
 
-proc enqueueRejection*(ctx: JSContext; reject: JSValue): JSCode =
+proc enqueueRejection*(ctx: JSContext; reject: JSCallback): JSCode =
   ## Usage: throw an exception, then call queueRejection with the reject fun.
   ## reject is freed.
   let ex = JS_GetException(ctx)
-  let code = ctx.enqueueJob(rejectJob, reject, ex)
-  JS_FreeValue(ctx, reject)
+  let code = ctx.enqueueJob(rejectJob, reject.value, ex.vc)
   JS_FreeValue(ctx, ex)
   code
 
@@ -193,123 +190,115 @@ proc newRejectedPromise*(ctx: JSContext): JSValue =
   var resolve: JSCallback
   var reject: JSCallback
   let res = ctx.newPromiseCapability(resolve, reject)
-  if JS_IsException(res):
+  if JS_IsException(res.vc):
     JS_FreeValue(ctx, ex)
     return res
-  let code = ctx.enqueueJob(rejectJob, reject.value, ex)
+  let code = ctx.enqueueJob(rejectJob, reject.value, ex.vc)
   JS_FreeValue(ctx, ex)
   if code == fjErr:
     JS_FreeValue(ctx, res)
     return JS_EXCEPTION
   return res
 
+proc newCFunction2*(ctx: JSContext; fun: JSCFunction; name: cstring;
+    length: cint; cproto: JSCFunctionEnum; magic: cint): Opt[JSCallback] =
+  let fun = JS_NewCFunction2(ctx, fun, cstringConst(name), length,
+    cproto, magic)
+  if JS_IsException(fun.vc):
+    return err()
+  ok(traceCallback(fun))
+
+proc newCFunction*(ctx: JSContext; fun: JSCFunction; name: cstring;
+    length: cint): Opt[JSCallback] =
+  ctx.newCFunction2(fun, name, length, JS_CFUNC_generic, 0)
+
 proc getProperty*(ctx: JSContext; this: JSValueConst; name: JSStrRef):
     JSValue =
   JS_GetProperty(ctx, this, ctx.getAtom(name))
 
-proc getProperty*(ctx: JSContext; this: JSValueConst; name: JSSymbolRef):
-    JSValue =
-  JS_GetProperty(ctx, this, ctx.getAtom(name))
+proc getProperty*(ctx: JSContext; this: JSObject; name: JSStrRef): JSValue =
+  ctx.getProperty(this.value, name)
 
-proc deleteProperty*(ctx: JSContext; this: JSObject; name: JSSymbolRef):
+proc deleteProperty*(ctx: JSContext; this: JSObject; name: JSStrRef):
     JSCode =
   if JS_DeleteProperty(ctx, this.value, ctx.getAtom(name), 0) < 0:
     return fjErr
   fjOk
 
-proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSAtom;
+proc defineProperty*(ctx: JSContext; this: JSObject; name: JSAtom;
     prop: JSValue; flags = cint(0)): JSCode =
   ## Frees/consumes `prop'.
-  if JS_DefinePropertyValue(ctx, this, name, prop, flags) < 0:
+  if JS_DefinePropertyValue(ctx, this.value, name, prop, flags) < 0:
     return fjErr
   fjOk
 
-proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSAtom;
+proc defineProperty*(ctx: JSContext; this: JSObject; name: cstring;
+    prop: JSValue; flags = cint(0)): JSCode =
+  ## Define an immutable property on `this`.
+  ##
+  ## Frees `prop'.
+  if JS_DefinePropertyValueStr(ctx, this.value, name, prop, flags) < 0:
+    return fjErr
+  fjOk
+
+proc defineProperty*(ctx: JSContext; this: JSObject; name: JSStrRef;
+    prop: JSValue; flags = cint(0)): JSCode =
+  ## Define an immutable property on `this`.
+  ##
+  ## Frees `prop'.
+  if JS_DefinePropertyValue(ctx, this.value, ctx.getAtom(name), prop,
+      flags) < 0:
+    return fjErr
+  fjOk
+
+proc definePropertyC*(ctx: JSContext; this: JSObject; name: JSStrRef;
     prop: JSValue): JSCode =
   ## Define a configurable property on `this`.
   ##
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
-proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSSymbolRef;
-    prop: JSValue): JSCode =
-  ## Define a configurable property on `this`.
-  ##
-  ## Frees `prop'.
-  ctx.defineProperty(this, ctx.getAtom(name), prop, JS_PROP_CONFIGURABLE)
-
-proc defineProperty*(ctx: JSContext; this: JSValueConst; name: cstring;
-    prop: JSValue; flags = cint(0)): JSCode =
-  ## Define an immutable property on `this`.
-  ##
-  ## Frees `prop'.
-  if JS_DefinePropertyValueStr(ctx, this, name, prop, flags) < 0:
-    return fjErr
-  fjOk
-
-proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
-    prop: JSValue; flags = cint(0)): JSCode =
-  ## Define an immutable property on `this`.
-  ##
-  ## Frees `prop'.
-  if JS_DefinePropertyValue(ctx, this, ctx.getAtom(name), prop, flags) < 0:
-    return fjErr
-  fjOk
-
-proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: string;
-    prop: JSValue): JSCode =
-  ## Define a configurable property on `this`.
-  ##
-  ## Frees `prop'.
-  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
-
-proc definePropertyE*(ctx: JSContext; this: JSValueConst; name: string;
+proc definePropertyE*(ctx: JSContext; this: JSObject; name: string;
     prop: JSValue): JSCode =
   ## Define an enumerable property on `this`.
   ##
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_ENUMERABLE)
 
-proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: JSAtom;
+proc definePropertyCW*(ctx: JSContext; this: JSObject; name: cstring;
     prop: JSValue): JSCode =
   ## Frees `prop'.
-  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
+  ctx.defineProperty(this, name, prop,
+    JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
 
-proc definePropertyCW*(ctx: JSContext; this: JSValueConst; name: cstring;
+proc definePropertyCW*(ctx: JSContext; this: JSObject; name: JSStrRef;
     prop: JSValue): JSCode =
   ## Frees `prop'.
-  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
+  ctx.defineProperty(this, name, prop,
+    JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE)
 
-proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSAtom;
+proc definePropertyCWE*(ctx: JSContext; this: JSObject; name: JSStrRef;
     prop: JSValue): JSCode =
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
-proc definePropertyCWE*(ctx: JSContext; this: JSValueConst; name: JSStrRef;
-    prop: JSValue): JSCode =
-  ## Frees `prop'.
-  ctx.defineProperty(this, ctx.getAtom(name), prop, JS_PROP_C_W_E)
-
-proc definePropertyGetSetCE*(ctx: JSContext; this: JSValueConst; name: cstring;
+proc definePropertyGetSetCE*(ctx: JSContext; this: JSObject; name: cstring;
     getter: JSGetterMagicFunction; setter: JSSetterMagicFunction; magic: cint):
     JSCode =
   let prop = ?JS_NewAtom(ctx, cstringConst(name))
   var f: JSCFunctionType
   f.getter_magic = getter
-  let getterVal = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 0,
-    JS_CFUNC_getter_magic, magic)
-  if JS_IsException(getterVal):
-    return fjErr
+  let getterVal = ?ctx.newCFunction2(f.generic, name, 0, JS_CFUNC_getter_magic,
+    magic)
   var setterVal = JS_UNDEFINED
   if setter != nil:
     f.setter_magic = setter
     setterVal = JS_NewCFunction2(ctx, f.generic, cstringConst(name), 1,
       JS_CFUNC_setter_magic, magic)
-    if JS_IsException(setterVal):
-      JS_FreeValue(ctx, getterVal)
+    if JS_IsException(setterVal.vc):
       return fjErr
-  if JS_DefinePropertyGetSet(ctx, this, prop, getterVal, setterVal,
-      JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE) < 0:
+  if JS_DefinePropertyGetSet(ctx, this.value, prop, getterVal.toJSValue(),
+      setterVal, JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE) < 0:
     return fjErr
   fjOk
 
@@ -393,13 +382,18 @@ proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =
   ## Evaluates a bytecode function or a module.  This wraps `JS_EvalFunction`.
   return JS_EvalFunction(ctx, val)
 
+proc getClassProto*(ctx: JSContext; classid: JSClassID): JSObject =
+  let proto = JS_GetClassProto(ctx, classid)
+  assert JS_IsObject(proto.vc)
+  traceObj(proto)
+
 proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
     JSCode =
   ## Define a list of constants expressed as a Nim enum on a class.
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return fjOk
-  let proto = JS_GetClassProto(ctx, classid)
+  let proto = ctx.getClassProto(classid)
   let ctor = ctx.getOpaque().ctors[int(classid)]
   var res = fjOk
   for e in consts:
@@ -407,10 +401,9 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
     res = ctx.definePropertyE(proto, s, JS_NewUint32(ctx, uint32(e)))
     if res != fjOk:
       break
-    res = ctx.definePropertyE(ctor.value, s, JS_NewUint32(ctx, uint32(e)))
+    res = ctx.definePropertyE(ctor, s, JS_NewUint32(ctx, uint32(e)))
     if res != fjOk:
       break
-  JS_FreeValue(ctx, proto)
   res
 
 proc setPropertyFunctionList*(ctx: JSContext; val: JSObject;
@@ -429,7 +422,7 @@ proc setUnforgeable*(ctx: JSContext; obj: JSObject; class: JSClassID): JSCode =
   fjOk
 
 proc uninitIfNull*(val: JSValue): JSValue =
-  if JS_IsNull(val):
+  if JS_IsNull(val.vc):
     return JS_UNINITIALIZED
   return val
 
@@ -438,17 +431,17 @@ proc getExceptionMsg*(ctx: JSContext): string =
   result = ""
   let ex = JS_GetException(ctx)
   var plen: csize_t
-  let outp = JS_ToCStringLen(ctx, plen, ex) # cstring
+  let outp = JS_ToCStringLen(ctx, plen, ex.vc) # cstring
   if outp != nil:
     if plen > 0:
       result.setLen(plen)
       copyMem(addr result[0], cstring(outp), plen)
     JS_FreeCString(ctx, outp)
     result &= '\n'
-  let stack = JS_GetPropertyStr(ctx, ex, "stack")
+  let stack = JS_GetPropertyStr(ctx, ex.vc, "stack")
   JS_FreeValue(ctx, ex)
-  if not JS_IsUndefined(stack):
-    let outp = JS_ToCStringLen(ctx, plen, stack) # cstring
+  if not JS_IsUndefined(stack.vc):
+    let outp = JS_ToCStringLen(ctx, plen, stack.vc) # cstring
     if outp != nil:
       if plen > 0:
         let olen = result.len
@@ -473,7 +466,7 @@ proc toIntIndex*(ctx: JSContext; value: JSValue): int =
   ##
   ## Returns -1 on exception.
   var tmp {.noinit.}: uint64
-  let lenOk = JS_ToIndex(ctx, tmp, value)
+  let lenOk = JS_ToIndex(ctx, tmp, value.vc)
   JS_FreeValue(ctx, value)
   if lenOk < 0:
     return -1
@@ -482,56 +475,57 @@ proc toIntIndex*(ctx: JSContext; value: JSValue): int =
     return -1
   int(tmp)
 
-proc toObject*(ctx: JSContext; val: JSValueConst): JSValue =
+proc tryTraceObj*(val: JSValue): Opt[JSObject] {.inline.} =
+  if JS_IsException(val.vc):
+    return err()
+  when defined(debug):
+    assert JS_IsObject(val.vc)
+  ok(traceObj(val))
+
+proc toObject*(ctx: JSContext; val: JSValueConst): Opt[JSObject] =
   ## Roundabout way to invoke ToObject.
-  let fun = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
-  JS_Call(ctx, fun, val, 0, nil)
+  let res = ctx.call(ctx.getOpaque().funRefs[jsfObjectPrototypeValueOf], val)
+  tryTraceObj(res)
 
 proc JS_ThrowTypeErrorInvalidClass*(ctx: JSContext; classid: JSClassID):
     JSValue {.discardable.} =
   ## Roundabout way to invoke JS_ThrowTypeErrorInvalidClass.
-  discard JS_GetOpaque2(ctx, JS_UNDEFINED, classid)
+  discard JS_GetOpaque2(ctx, JS_UNDEFINED.vc, classid)
   return JS_EXCEPTION
 
-proc newObject*(ctx: JSContext): JSObjectNil =
+proc newObject*(ctx: JSContext): Opt[JSObject] =
   let obj = JS_NewObject(ctx)
-  if JS_IsException(obj):
-    return JSObjectNil(nil)
-  JSObjectNil(traceObj(obj))
+  tryTraceObj(obj)
 
-proc newObjectProto*(ctx: JSContext; proto: JSValueConst): JSObjectNil =
+proc newObjectProto*(ctx: JSContext; proto: JSValueConst): Opt[JSObject] =
   let obj = JS_NewObjectProto(ctx, proto)
-  if JS_IsException(obj):
-    return JSObjectNil(nil)
-  JSObjectNil(traceObj(obj))
+  tryTraceObj(obj)
 
-proc newObjectClass*(ctx: JSContext; class: JSClassID): JSObjectNil =
+proc newObjectClass*(ctx: JSContext; class: JSClassID): Opt[JSObject] =
   let obj = JS_NewObjectClass(ctx, class)
-  if JS_IsException(obj):
-    return JSObjectNil(nil)
-  JSObjectNil(traceObj(obj))
+  tryTraceObj(obj)
 
 proc newObjectFromCtor*(ctx: JSContext; ctor: JSValueConst;
-    classid: JSClassID): JSObjectNil =
+    classid: JSClassID): Opt[JSObject] =
   let obj = JS_NewObjectFromCtor(ctx, ctor, classid)
-  if JS_IsException(obj):
-    return JSObjectNil(nil)
-  JSObjectNil(traceObj(obj))
+  tryTraceObj(obj)
+
+proc newCFunctionData*(ctx: JSContext; fun: JSCFunctionData; name: cstring;
+    length, magic: cint; data: varargs[JSValueConst]): Opt[JSCallback] =
+  let funVal = JS_NewCFunctionData(ctx, fun, length, magic, cint(data.len),
+    data.toJSValueConstArray())
+  if JS_IsException(funVal.vc):
+    return err()
+  let fun = traceCallback(funVal)
+  let nameVal = JS_NewString(ctx, name)
+  if JS_IsException(nameVal.vc) or
+      ctx.definePropertyC(JSObject(fun), jstName, nameVal) == fjErr:
+    return err()
+  ok(fun)
 
 proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
-    name: cstring; magic: cint; data: varargs[JSValueConst]): JSValue =
-  let getter = JS_NewCFunctionData(ctx, fun, 0, magic, cint(data.len),
-    data.toJSValueConstArray())
-  if JS_IsException(getter):
-    return JS_EXCEPTION
-  let getName = JS_NewString(ctx, cstring("get " & $name))
-  if JS_IsException(getName):
-    JS_FreeValue(ctx, getter)
-    return JS_EXCEPTION
-  if ctx.definePropertyC(getter, ctx.getAtom(jstName), getName) == fjErr:
-    JS_FreeValue(ctx, getter)
-    return JS_EXCEPTION
-  return getter
+    name: cstring; magic: cint; data: varargs[JSValueConst]): Opt[JSCallback] =
+  ctx.newCFunctionData(fun, cstring("get " & $name), 0, magic, data)
 
 proc callUserObject*(ctx: JSContext; callback: JSObject; name: JSStrRef;
     this, arg: JSValueConst): JSValue =
@@ -560,23 +554,25 @@ proc serialize*(ctx: JSContext; val: JSValueConst): Opt[seq[uint8]] =
 proc deserialize*(ctx: JSContext; s: openArray[uint8]): JSValue =
   return JS_ReadObject(ctx, unsafeAddr s[0], csize_t(s.len), 0)
 
+proc getImportMeta(ctx: JSContext; m: JSModuleDef): Opt[JSObject] =
+  let obj = JS_GetImportMeta(ctx, m)
+  tryTraceObj(obj)
+
 proc setImportMeta*(ctx: JSContext; funcVal: JSValueConst; isMain: bool):
     JSCode =
   let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   let moduleNameAtom = JS_GetModuleName(ctx, m)
-  let metaObj = ?trace(JS_GetImportMeta(ctx, m))
-  ?ctx.definePropertyCWE(metaObj.v, jstUrl,
-    JS_AtomToValue(ctx, moduleNameAtom))
-  ?ctx.definePropertyCWE(metaObj.v, jstMain, JS_NewBool(ctx, JS_BOOL(isMain)))
-  fjOk
+  let metaObj = ?ctx.getImportMeta(m)
+  ?ctx.definePropertyCWE(metaObj, jstUrl, JS_AtomToValue(ctx, moduleNameAtom))
+  ctx.definePropertyCWE(metaObj, jstMain, JS_NewBool(ctx, JS_BOOL(isMain)))
 
 proc finishLoadModule*(ctx: JSContext; funcVal: JSValue; name: string):
     JSModuleDef =
-  if ctx.setImportMeta(funcVal, false) == fjErr:
+  if ctx.setImportMeta(funcVal.vc, false) == fjErr:
     return nil
   # "the module is already referenced, so we must free it"
   # it seems QJS treats the return value as a const
-  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal.vc))
   JS_FreeValue(ctx, funcVal)
   m
 

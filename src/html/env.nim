@@ -143,26 +143,27 @@ proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   let denied = ?trace(JS_NewString(ctx, "denied"))
   if not JS_IsUndefined(argv[0]):
-    let res = ctx.call(argv[0], JS_UNDEFINED, denied.v)
-    if JS_IsException(res):
+    let res = ctx.call(argv[0], JS_UNDEFINED.vc, denied.vc)
+    if JS_IsException(res.vc):
       #TODO "report" (fire error event)
       return JS_EXCEPTION
-  return ctx.call(argv[1], JS_UNDEFINED, denied.v)
+    JS_FreeValue(ctx, res)
+  return ctx.call(argv[1], JS_UNDEFINED.vc, denied.vc)
 
 jsClassRaw(NotificationDef, "Notification"):
   proc newNotification(ctx: JSContext; ctor: JSValueConst): JSValue
       {.jsctor2.} =
     return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
 
-  proc requestPermission(ctx: JSContext; callback: JSValueConst = JS_UNDEFINED):
-      JSValue {.jsstfunc.} =
+  proc requestPermission(ctx: JSContext; callback = JS_UNDEFINED.vc): JSValue
+      {.jsstfunc.} =
     if not JS_IsUndefined(callback) and not JS_IsFunction(ctx, callback):
       return JS_ThrowTypeError(ctx, "not a function")
     var resolve: JSCallback
     var reject: JSCallback
     let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res):
-      return res
+    if JS_IsException(res.vc):
+      return JS_EXCEPTION
     let code = ctx.enqueueJob(resolveToDenied, resolve.value, callback)
     if code == fjErr:
       JS_FreeValue(ctx, res)
@@ -199,7 +200,7 @@ proc denyPermissionJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     name: move(name),
     state: psDenied
   )))
-  return ctx.call(argv[0], JS_UNDEFINED, obj.v)
+  return ctx.call(argv[0], JS_UNDEFINED.vc, obj.vc)
 
 jsClassRaw(PermissionsDef, "Permissions"):
   proc finalizePermissions(rt: JSRuntime; this: pointer) {.jsfin.} =
@@ -211,7 +212,7 @@ jsClassRaw(PermissionsDef, "Permissions"):
 
   proc query(ctx: JSContext; this, desc: JSValueConst): JSValue {.jsfunc.} =
     let jsName = ctx.getProperty(desc, jstName)
-    if JS_IsException(jsName):
+    if JS_IsException(jsName.vc):
       return JS_EXCEPTION
     var name: DOMString
     ?ctx.fromJSFree(jsName, name)
@@ -220,7 +221,7 @@ jsClassRaw(PermissionsDef, "Permissions"):
     var reject: JSCallback
     var res = ?trace(ctx.newPromiseCapability(resolve, reject))
     #TODO permission task source
-    ?ctx.enqueueJob(denyPermissionJob, resolve.value, jsName2.v)
+    ?ctx.enqueueJob(denyPermissionJob, resolve.value, jsName2.vc)
     moveJSValue(res)
 
 # Screen
@@ -275,7 +276,7 @@ jsClassRaw(HistoryDef, "History"):
   proc forward(history: History) {.jsfunc.} = discard
 
   proc pushState(ctx: JSContext; history: History; data: JSValueConst;
-      unused: DOMString; url: JSValueConst = JS_NULL): JSValue {.jsfunc,
+      unused: DOMString; url = JS_NULL.vc): JSValue {.jsfunc,
       jsfunc: "replaceState".} =
     #TODO figure out some way to emulate the navigation API that isn't as
     # horribly user-hostile as others implement it
@@ -440,11 +441,11 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
     {.cdecl.} =
   # data[0] is object, data[1] is parent's class id
   var parent0: int32
-  discard JS_ToInt32(ctx, parent0, func_data[1])
+  discard JS_ToInt32(ctx, parent0, func_data[1].vc)
   let parent = JSClassID(uint32(parent0))
   if JS_GetClassID(this) != parent:
     return JS_ThrowTypeErrorInvalidClass(ctx, parent)
-  if JS_IsUndefined(func_data[0]):
+  if JS_IsUndefined(func_data[0].vc):
     let classid = JSClassID(uint32(magic))
     let obj = ?ctx.newObjectClass(classid)
     let rt = JS_GetRuntime(ctx)
@@ -455,16 +456,19 @@ proc windowAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
       ?ctx.setPropertyFunctionList(obj,
         rtOpaque.classes[int(classid)].unforgeable)
     if classid == LocationDef.id:
-      let valueOf0 = ctxOpaque.valRefs[jsvObjectPrototypeValueOf]
-      ?ctx.defineProperty(obj.value, "valueOf", JS_DupValue(ctx, valueOf0))
-      ?ctx.defineProperty(obj.value, "toPrimitive", JS_UNDEFINED)
+      ?ctx.defineProperty(obj, "valueOf",
+        ctxOpaque.funRefs[jsfObjectPrototypeValueOf].toJSValue())
+      ?ctx.defineProperty(obj, "toPrimitive", JS_UNDEFINED)
       #TODO [[DefaultProperties]], exotic
     func_data[0] = obj.toJSValue()
-  return JS_DupValue(ctx, func_data[0])
+  return JS_DupValue(ctx, func_data[0].vc)
 
 proc windowAutoInitSetter(ctx: JSContext; this, val: JSValueConst;
     magic: cint): JSValue {.cdecl.} =
-  ?ctx.definePropertyCWE(this, JSStrRef(magic), JS_DupValue(ctx, val))
+  let name = JSStrRef(magic)
+  if JS_DefinePropertyValue(ctx, this, ctx.getAtom(name),
+      JS_DupValue(ctx, val), JS_PROP_C_W_E) < 0:
+    return JS_EXCEPTION
   return JS_UNDEFINED
 
 type AutoInitGetSetType = enum
@@ -486,10 +490,9 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSObject;
     t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
   ?ctx.registerClass(def)
-  let getter = ctx.newGetterFunctionData(windowAutoInitGetter, cstring($name),
-    cast[cint](def.id), JS_UNDEFINED, JS_NewInt32(ctx, int32(parentClass)))
-  if JS_IsException(getter):
-    return err()
+  let getter = ?ctx.newGetterFunctionData(windowAutoInitGetter, cstring($name),
+    cast[cint](def.id), JS_UNDEFINED.vc,
+    JS_NewInt32(ctx, int32(parentClass)).vc)
   var setter = JS_UNDEFINED
   var flags = cint(JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)
   var f: JSCFunctionType
@@ -504,11 +507,10 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSObject;
     f.setter_magic = windowAutoInitSetter
     setter = JS_NewCFunction2(ctx, f.generic, ($name).toCStringConst, 1,
       JS_CFUNC_setter_magic, cint(name))
-  if JS_IsException(setter):
-    JS_FreeValue(ctx, getter)
+  if JS_IsException(setter.vc):
     return err()
-  if JS_DefinePropertyGetSet(ctx, namespace.value, ctx.getAtom(name), getter,
-      setter, flags) < 0:
+  if JS_DefinePropertyGetSet(ctx, namespace.value, ctx.getAtom(name),
+      getter.toJSValue(), setter, flags) < 0:
     return err()
   ok()
 
@@ -529,7 +531,7 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
     jstCrypto, gstReplaceable)
   ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, LocationDef,
     jstLocation, gstUnforgeable)
-  let navigator = traceObj(JS_GetClassProto(ctx, NavigatorDef.id))
+  let navigator = ctx.getClassProto(NavigatorDef.id)
   let navigatorId = NavigatorDef.id
   ?ctx.registerAutoInitGetSet(navigator, navigatorId, PluginArrayDef,
     jstPlugins, gstProto)
@@ -588,7 +590,7 @@ jsClassDef(MediaQueryList):
   proc removeListener(ctx: JSContext; this: MediaQueryList;
       callback: JSObjectNil): Opt[void] {.jsfunc.} =
     ctx.removeEventListener(this.asEventTarget, satChange.view(), callback,
-      JS_FALSE)
+      JS_FALSE.vc)
 
 # ResizeObserver
 type
@@ -633,9 +635,9 @@ proc setLocation(ctx: JSContext; window: Window; s: string): JSValue =
 proc windowSetPrototype(ctx: JSContext; obj, proto: JSValueConst): cint
     {.cdecl.} =
   let ours = JS_GetPrototype(ctx, obj)
-  if JS_IsException(ours):
+  if JS_IsException(ours.vc):
     return -1
-  let res = ctx.sameValue(obj, ours)
+  let res = ctx.sameValue(obj, ours.vc)
   JS_FreeValue(ctx, ours)
   cint(res)
 
@@ -649,9 +651,9 @@ proc windowPreventExtensions(ctx: JSContext; obj: JSValueConst): cint
 proc windowDefineOwnProperty(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
     val, getter, setter: JSValueConst; flags: cint): cint {.cdecl.} =
   let propVal = JS_AtomIsNumericIndex1(ctx, prop)
-  if JS_IsException(propVal):
+  if JS_IsException(propVal.vc):
     return -1
-  if JS_IsUndefined(propVal):
+  if JS_IsUndefined(propVal.vc):
     return JS_DefineProperty(ctx, obj, prop, val, getter, setter,
       flags or JS_PROP_NO_EXOTIC)
   JS_FreeValue(ctx, propVal)
@@ -666,13 +668,14 @@ proc jsFinish(opaque: RootRef; response: Response) =
   let opaque = JSFetchOpaque(opaque)
   let ctx = move(opaque.ctx)
   let resolve = move(opaque.resolve)
-  let reject = moveJSValue(opaque.reject)
+  let reject = move(opaque.reject)
   if response != nil:
     let val = ctx.toJS(response)
-    if not JS_IsException(val):
-      let res = ctx.callSink(resolve, JS_UNDEFINED, val)
+    if not JS_IsException(val.vc):
+      let res = ctx.callSink(resolve, JS_UNDEFINED.vc, val)
+      if JS_IsException(res.vc):
+        ctx.consoleError(ctx.getExceptionMsg())
       JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, reject)
   else:
     discard ctx.throwNetworkError()
     discard ctx.enqueueRejection(reject)
@@ -680,7 +683,7 @@ proc jsFinish(opaque: RootRef; response: Response) =
 
 proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
-  ctx.call(argv[0], JS_UNDEFINED)
+  ctx.call(argv[0], JS_UNDEFINED.vc)
 
 proc postMessageJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
@@ -696,7 +699,7 @@ proc postMessageJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
 proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   let arg0 = ?trace(ctx.toJS(getUnixMillis()))
-  return ctx.call(argv[0], this, arg0.v)
+  return ctx.call(argv[0], this, arg0.vc)
 
 jsClassDef(Window):
   jsextends EventTargetDef
@@ -765,7 +768,7 @@ jsClassDef(Window):
     rt.mark(window.timeouts, markFunc)
 
   proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
-      init: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+      init = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     let input = ?newRequest(ctx, input, init)
     if not window.checkCORSRequest(input):
       discard ctx.throwNetworkError()
@@ -773,8 +776,8 @@ jsClassDef(Window):
     var resolve: JSCallback
     var reject: JSCallback
     let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res):
-      return res
+    if JS_IsException(res.vc):
+      return JS_EXCEPTION
     let opaque = JSFetchOpaque(
       ctx: JS_DupContext(ctx),
       resolve: resolve,
@@ -840,13 +843,13 @@ jsClassDef(Window):
   proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
       {.jsfunc.} =
     let data = JS_ToString(ctx, data)
-    if JS_IsException(data):
+    if JS_IsException(data.vc):
       return JS_EXCEPTION
-    let len = JS_GetStringLength(data)
+    let len = JS_GetStringLength(data.vc)
     if len == 0:
       JS_FreeValue(ctx, data)
       return ctx.toJS("")
-    let buf = JS_GetNarrowStringBuffer(data)
+    let buf = JS_GetNarrowStringBuffer(data.vc)
     if buf == nil:
       JS_FreeValue(ctx, data)
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
@@ -871,23 +874,19 @@ jsClassDef(Window):
     let ctx = window.jsctx # target realm
     let data = ?trace(ctx.deserialize(s))
     #TODO global task queue
-    ?ctx.enqueueJob(postMessageJob, this, data.v)
+    ?ctx.enqueueJob(postMessageJob, this, data.vc)
     ok()
 
   proc requestAnimationFrame(ctx: JSContext; window: Window;
       callback: JSCallback): JSValue {.jsfunc.} =
-    let handler = JS_NewCFunction(ctx, animationFrameHandler,
-      "animation frame handler".toCStringConst, 1)
-    if JS_IsException(handler):
-      return handler
-    let res = window.timeouts.setTimeout(ctx, ttTimeout, handler, 0,
+    let handler = ?ctx.newCFunction(animationFrameHandler,
+      "animation frame handler", 1)
+    let res = window.timeouts.setTimeout(ctx, ttTimeout, handler.value, 0,
       callback.value)
-    JS_FreeValue(ctx, handler)
     ctx.toJS(res)
 
   proc getComputedStyle(ctx: JSContext; window: Window; element: Element;
-      pseudoElt: JSValueConst = JS_UNDEFINED): Opt[CSSStyleDeclaration]
-      {.jsfunc.} =
+      pseudoElt = JS_UNDEFINED.vc): Opt[CSSStyleDeclaration] {.jsfunc.} =
     return ctx.getComputedStyle0(window, element, pseudoElt)
 
   proc queueMicrotask(ctx: JSContext; window: Window; fun: JSCallback):
@@ -977,7 +976,7 @@ proc windowPropsGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
     if element != nil:
       if desc != nil:
         let element = ctx.toJS(element)
-        if JS_IsException(element):
+        if JS_IsException(element.vc):
           return -1
         desc.flags = JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE
         desc.setter = JS_UNDEFINED
@@ -1022,16 +1021,16 @@ proc addWindowProperties(ctx: JSContext): JSValue =
   if ctxOpaque == nil:
     return JS_UNDEFINED
   let name = JS_NewString(ctx, "WindowProperties")
-  if JS_IsException(name):
-    return name
+  if JS_IsException(name.vc):
+    return JS_EXCEPTION
   let parentProto = JS_GetClassProto(ctx, EventTargetDef.id)
-  let proto = JS_NewObjectProtoClass(ctx, parentProto, res)
+  let proto = JS_NewObjectProtoClass(ctx, parentProto.vc, res)
   JS_FreeValue(ctx, parentProto)
-  if JS_IsException(proto):
+  if JS_IsException(proto.vc):
     JS_FreeValue(ctx, name)
     return JS_EXCEPTION
   # must circumvent the exotic handler here
-  if JS_DefinePropertyValue(ctx, proto, ctx.getAtom(jsyToStringTag), name,
+  if JS_DefinePropertyValue(ctx, proto.vc, ctx.getAtom(jsyToStringTag), name,
       JS_PROP_CONFIGURABLE or JS_PROP_NO_EXOTIC) < 0:
     JS_FreeValue(ctx, proto)
     return JS_EXCEPTION
@@ -1039,10 +1038,8 @@ proc addWindowProperties(ctx: JSContext): JSValue =
 
 proc addWindowModule(ctx: JSContext): JSCode =
   ?ctx.addEventTarget()
-  let proto = ctx.addWindowProperties()
-  let res = ctx.registerGlobalClass(WindowDef, proto)
-  JS_FreeValue(ctx, proto)
-  res
+  let proto = ?trace(ctx.addWindowProperties())
+  ctx.registerGlobalClass(WindowDef, proto.vc)
 
 proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.setGlobal(window)

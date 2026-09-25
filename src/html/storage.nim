@@ -103,23 +103,22 @@ proc storageAutoInitGetter(ctx: JSContext; this: JSValueConst; argc: cint;
   if not ctx.strictEquals(this, ctxOpaque.global.value):
     return JS_ThrowTypeErrorInvalidClass(ctx, ctxOpaque.gclass)
   # data[0] is object
-  if JS_IsUndefined(func_data[0]):
+  if JS_IsUndefined(func_data[0].vc):
     let storage = jsNew StorageObj()
     let obj = ctx.toJSNew(storage)
-    if JS_IsException(obj):
-      return obj
+    if JS_IsException(obj.vc):
+      return JS_EXCEPTION
     func_data[0] = obj
-  return JS_DupValue(ctx, func_data[0])
+  return JS_DupValue(ctx, func_data[0].vc)
 
 proc registerAutoInitStorage(ctx: JSContext; name: cstring): JSCode =
   let ctxOpaque = ctx.getOpaque()
-  let getter = ctx.newGetterFunctionData(storageAutoInitGetter,
-    name, cast[cint](StorageDef.id), JS_UNDEFINED)
-  if JS_IsException(getter):
-    return fjErr
+  let getter = ?ctx.newGetterFunctionData(storageAutoInitGetter,
+    name, cast[cint](StorageDef.id), JS_UNDEFINED.vc)
   let prop = JS_NewAtom(ctx, cstringConst(name))
-  if JS_DefinePropertyGetSet(ctx, ctxOpaque.global.value, prop, getter,
-      JS_UNDEFINED, cint(JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)) < 0:
+  if JS_DefinePropertyGetSet(ctx, ctxOpaque.global.value, prop,
+      getter.toJSValue(), JS_UNDEFINED,
+      cint(JS_PROP_CONFIGURABLE or JS_PROP_ENUMERABLE)) < 0:
     return fjErr
   fjOk
 

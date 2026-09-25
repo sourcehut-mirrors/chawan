@@ -111,7 +111,7 @@ type ParamParseContext = object
 
 proc addPage(ctx: var ParamParseContext; s: string): Opt[void] =
   let val = ctx.jsctx.toJS(s)
-  if JS_IsException(val):
+  if JS_IsException(val.vc):
     return err()
   ctx.pages.add(val)
   ok()
@@ -336,10 +336,10 @@ proc setupStartupScript(ctx: JSContext) =
     let obj = JS_ReadObject(ctx, cast[ptr uint8](src.p), csize_t(src.len),
       JS_READ_OBJ_BYTECODE)
     deallocMem(src)
-  if JS_IsException(obj):
+  if JS_IsException(obj.vc):
     die(ctx.getExceptionMsg())
   let ret = JS_EvalFunction(ctx, obj)
-  if JS_IsException(ret):
+  if JS_IsException(ret.vc):
     die(ctx.getExceptionMsg())
   JS_FreeValue(ctx, ret)
 
@@ -356,8 +356,8 @@ jsNamespaceDef(Client): # fake namespace
       return JS_UNDEFINED
     return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
 
-  proc getenv(ctx: JSContext; s: string; fallback: JSValueConst = JS_NULL):
-      JSValue {.jsstfunc.} =
+  proc getenv(ctx: JSContext; s: string; fallback = JS_NULL.vc): JSValue
+      {.jsstfunc.} =
     let env = twtstr.getEnvCString(s)
     if env == nil:
       return JS_DupValue(ctx, fallback)
