@@ -4,5 +4,10 @@
 <script src=asserts.js></script>
 <script>
 assertEquals("&amp".length, 4);
+{
+	let script = document.createElement("script");
+	script.text = "test";
+	assertEquals(script.text, "test");
+}
 document.getElementById("x").textContent = "Success";
 </script>

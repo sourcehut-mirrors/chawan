@@ -7411,7 +7411,7 @@ jsClassPublicDef(HTMLScriptElement):
     this.asParentNode.childTextContent
 
   proc setText(ctx: JSContext; this: HTMLScriptElement; ds: DOMString)
-      {.jsfset.} =
+      {.jsfset: "text".} =
     this.asParentNode.replaceAll(ctx, ds)
 
 # <table>
