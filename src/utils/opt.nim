@@ -72,7 +72,7 @@ proc get*[T, E](res: Result[T, E]; v: T): T =
     result = v
 
 template myMove(x: untyped): untyped =
-  when NimMajor < 2:
+  when (NimMajor, NimMinor, NimPatch) < (2, 2, 2):
     move(x)
   else:
     ensureMove(x)

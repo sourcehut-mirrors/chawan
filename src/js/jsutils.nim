@@ -18,7 +18,7 @@ template `?`*(res: JSCode) =
     return err()
 
 template myMove(x: untyped): untyped =
-  when NimMajor < 2:
+  when (NimMajor, NimMinor, NimPatch) < (2, 2, 2):
     move(x)
   else:
     ensureMove(x)
