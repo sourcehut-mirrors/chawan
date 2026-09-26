@@ -76,7 +76,7 @@ else:
     cast[int32](JSValue(v).tag)
 
   template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
-    cast[pointer](JSValue(v).u)
+    JSValue(v).u.ptr
 
   template JS_MKVAL*(t, val: untyped): JSValue =
     JSValue(u: JSValueUnion(uint64: val), tag: t)

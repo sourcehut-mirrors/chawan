@@ -141,34 +141,25 @@ proc `=copy`(dest: var JSObject; src: JSObject) =
     let val2 = JS_DupValueRT(globalRuntime, val.vc)
     cast[ptr pointer](addr dest)[] = JS_VALUE_GET_PTR(val2.vc)
 
-proc `=dup`(src: JSObject): JSObject {.noinit.} =
+proc `=dup`(src: JSObject): JSObject =
   if pointer(src) == nil:
-    cast[ptr pointer](addr result)[] = nil
+    JSObject(nil)
   else:
     let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](src))
     let val2 = JS_DupValueRT(globalRuntime, val.vc)
-    cast[ptr pointer](addr result)[] = JS_VALUE_GET_PTR(val2.vc)
+    JSObject(JS_VALUE_GET_PTR(val2.vc))
 
 proc `==`*(a: JSObject; b: typeof(nil)): bool =
   pointer(a) == nil
 
-proc traceObj*(val: JSValue): JSObject =
+template traceObj*(val: JSValue): JSObject =
   JSObject(JS_VALUE_GET_PTR(val.vc))
 
-proc dupTraceObj*(ctx: JSContext; val: JSValueConst): JSObject =
-  let val2 = JS_DupValue(ctx, val)
-  val2.traceObj()
+template dupTraceObj*(ctx: JSContext; val: JSValueConst): JSObject =
+  traceObj(JS_DupValue(ctx, val))
 
 proc value*(p: JSObject): JSValueConst =
-  if pointer(p) != nil:
-    JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)).vc
-  else:
-    JS_NULL.vc
-
-proc moveJSValue*(p: var JSObject): JSValue =
-  let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p))
-  wasMoved(p)
-  val
+  JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)).vc
 
 proc toJSValue*(p: sink JSObject): JSValue =
   let val = JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p))
@@ -176,10 +167,8 @@ proc toJSValue*(p: sink JSObject): JSValue =
   val
 
 proc JS_MarkValue*(rt: JSRuntime; p: JSObject; markFunc: JS_MarkFunc) =
-  JS_MarkValue(rt, p.value, markFunc)
-
-proc dup*(ctx: JSContext; p: JSObject): JSObject =
-  p
+  if p != nil:
+    JS_MarkValue(rt, p.value, markFunc)
 
 proc JS_IsFunction*(ctx: JSContext; p: JSObject): bool =
   JS_IsFunction(ctx, p.value)
@@ -187,7 +176,9 @@ proc JS_IsFunction*(ctx: JSContext; p: JSObject): bool =
 type
   JSCallback* = distinct JSObject
 
-  JSObjectNil* = distinct JSObject
+  JSObjectNil* = distinct JSObject # like JSObject, but nil is allowed
+
+  JSObjectErr* = distinct JSObject # like JSObject, but nil -> err
 
   BufferSource* = distinct JSObject
 
@@ -200,46 +191,62 @@ template jsObjectBorrow(typ: untyped) =
   proc `==`*(a, b: typ): bool =
     pointer(a) == pointer(b)
 
-  proc value*(p: typ): JSValueConst {.borrow.}
-  proc moveJSValue*(p: var typ): JSValue {.borrow.}
   proc JS_MarkValue*(rt: JSRuntime; p: typ; markFunc: JS_MarkFunc) {.borrow.}
-  proc dup*(ctx: JSContext; p: typ): typ {.borrow.}
-  proc toJSValue*(p: sink typ): JSValue {.borrow.}
 
 jsObjectBorrow(JSCallback)
-jsObjectBorrow(JSObjectNil)
 jsObjectBorrow(BufferSource)
 jsObjectBorrow(JSArrayBufferView)
+jsObjectBorrow(JSObjectNil)
 
-proc traceCallback*(val: JSValue): JSCallback =
+template value*(p: JSCallback): JSValueConst =
+  JSObject(p).value
+
+template value*(p: BufferSource): JSValueConst =
+  JSObject(p).value
+
+template value*(p: JSArrayBufferView): JSValueConst =
+  JSObject(p).value
+
+proc value*(p: JSObjectNil): JSValueConst =
+  if p == nil:
+    JS_NULL.vc
+  else:
+    JSObject(p).value
+
+proc toJSValue*(p: sink JSCallback): JSValue {.borrow.}
+
+template isErr*(obj: JSObjectErr): bool =
+  JSObject(obj) == nil
+
+template traceCallback*(val: JSValue): JSCallback =
   JSCallback(traceObj(val))
 
 type
-  JSValueTraced* = object
-    v: JSValue
-
-template vc*(t: JSValueTraced): JSValueConst =
-  JSValueConst(t.v)
+  JSValueTraced* = distinct JSValue
 
 proc `=destroy`(t: var JSValueTraced) =
-  JS_FreeValueRT(globalRuntime, t.v)
+  JS_FreeValueRT(globalRuntime, cast[ptr JSValue](addr t)[])
 
 proc `=copy`(dest: var JSValueTraced; src: JSValueTraced) =
-  JS_FreeValueRT(globalRuntime, dest.v)
-  dest.v = JS_DupValueRT(globalRuntime, src.vc)
+  JS_FreeValueRT(globalRuntime, cast[ptr JSValue](addr dest)[])
+  cast[ptr JSValue](addr dest)[] =
+    JS_DupValueRT(globalRuntime, cast[ptr JSValueConst](unsafeAddr src)[])
 
 proc `=sink`(dest: var JSValueTraced; src: JSValueTraced) =
-  JS_FreeValueRT(globalRuntime, dest.v)
-  dest.v = src.v
+  JS_FreeValueRT(globalRuntime, cast[ptr JSValue](addr dest)[])
+  cast[ptr JSValue](addr dest)[] = cast[ptr JSValue](unsafeAddr src)[]
 
 proc `=dup`(t: JSValueTraced): JSValueTraced =
-  JSValueTraced(v: JS_DupValueRT(globalRuntime, t.vc))
+  JSValueTraced(JS_DupValueRT(globalRuntime, JSValueConst(t)))
 
-proc trace*(val: JSValue): JSValueTraced =
-  JSValueTraced(v: val)
+proc trace*(val: JSValue): JSValueTraced {.noinit.} =
+  cast[ptr JSValue](addr result)[] = val
 
 proc dupTrace*(ctx: JSContext; val: JSValueConst): JSValueTraced =
   trace(JS_DupValue(ctx, val))
+
+proc vc*(t: JSValueTraced): JSValueConst =
+  JSValueConst(t)
 
 proc JS_IsUndefined*(t: JSValueTraced): bool =
   JS_IsUndefined(t.vc)
@@ -262,9 +269,9 @@ proc JS_MarkValue*(rt: JSRuntime; t: JSValueTraced; markFunc: JS_MarkFunc) =
 proc JS_DupValue*(ctx: JSContext; t: JSValueTraced): JSValue =
   JS_DupValue(ctx, t.vc)
 
-proc moveJSValue*(t: var JSValueTraced): JSValue =
-  let val = t.v
-  t.v = JS_UNINITIALIZED
+proc toJSValue*(t: sink JSValueTraced): JSValue =
+  let val = JSValue(t)
+  wasMoved(t)
   return val
 
 {.pop.} # raises

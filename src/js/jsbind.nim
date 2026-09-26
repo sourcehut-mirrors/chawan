@@ -325,22 +325,20 @@ proc setGlobal(ctx: JSContext; obj: pointer): JSCode =
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque != nil:
     let rt = JS_GetRuntime(ctx)
-    let dummy = JS_NewObjectClass(ctx, ctxOpaque.gclass)
-    if JS_IsException(dummy.vc):
-      return fjErr
-    JS_SetForeignOpaque(rt, obj, JS_DupValue(ctx, dummy.vc))
-    JS_SetOpaque(dummy.vc, obj)
+    let dummy = ?ctx.newObjectClass(ctxOpaque.gclass)
+    JS_SetForeignOpaque(rt, obj, dummy.toJSValue())
+    JS_SetOpaque(dummy.value, obj)
     ctxOpaque.globalObj = JS_DupForeignObject(rt, obj)
     let sym = ?trace(JS_NewPrivateSymbol(ctx))
     let atom = JS_ValueToAtom(ctx, sym.vc)
-    ?ctx.defineProperty(ctxOpaque.global, atom, dummy)
+    ?ctx.defineProperty(ctxOpaque.global, atom, dummy.toJSValue())
   fjOk
 
 template setGlobal*[T](ctx: JSContext; obj: JSRef[T]): JSCode =
   ctx.setGlobal(cast[pointer](obj))
 
 proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID;
-    iterable: JSIterableType; parentProto: JSValueConst): Opt[JSObject] =
+    iterable: JSIterableType; parentProto: JSValueConst): JSObjectErr =
   if not JS_IsNull(parentProto):
     return ctx.newObjectProto(parentProto)
   if parent != JS_INVALID_CLASS_ID:
@@ -354,7 +352,7 @@ proc jsIllegalCtor(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
 
-proc newClassConstructor(ctx: JSContext; def: ChaClassDef): Opt[JSObject] =
+proc newClassConstructor(ctx: JSContext; def: ChaClassDef): JSObjectErr =
   let ctor = if def.ctor == nil: jsIllegalCtor else: def.ctor
   let ctorType = if ccfConstructorFunction in def.flags:
     JS_CFUNC_constructor_or_func
@@ -366,7 +364,7 @@ proc newClassConstructor(ctx: JSContext; def: ChaClassDef): Opt[JSObject] =
     assert proto != nil
     if JS_SetPrototype(ctx, fun.value, proto.value) < 0:
       return err()
-  ok(JSObject(fun))
+  JSObjectErr(fun)
 
 proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; data: JSValueArray): JSValue

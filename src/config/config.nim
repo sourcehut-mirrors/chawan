@@ -755,22 +755,19 @@ proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
     {.cdecl.} =
   if not JS_IsFunction(ctx, funcData[0].vc):
-    let res = JS_EvalFunction(ctx, JS_DupValue(ctx, funcData[0].vc))
-    if JS_IsException(res.vc):
-      return res
-    if not JS_IsFunction(ctx, res.vc):
-      JS_FreeValue(ctx, res)
+    let res = ?trace(JS_EvalFunction(ctx, JS_DupValue(ctx, funcData[0].vc)))
+    if not JS_IsFunction(ctx, res):
       return JS_UNDEFINED
     JS_FreeValue(ctx, funcData[0])
-    funcData[0] = res
+    funcData[0] = res.toJSValue()
   return JS_Call(ctx, funcData[0].vc, this, argc, argv)
 
-proc toForwardAction(ctx: JSContext; val: JSValueTraced): JSValue =
+proc toForwardAction(ctx: JSContext; val: JSValueConst): JSValue =
   if JS_IsFunction(ctx, val):
-    return JS_DupValue(ctx, val.vc)
+    return JS_DupValue(ctx, val)
   # bytecode function
   return JS_NewCFunctionData(ctx, forwardAction, 0, 0, 1,
-    val.vc.toJSValueConstArray())
+    val.toJSValueConstArray())
 
 iterator items*(list: ConfigList): ConfigRule =
   var it = list.head
@@ -2515,9 +2512,7 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
     let name = cast[cstring](unsafeAddr s[start])
     ?ctx.definePropertyGetSetCE(obj, name, getConfigOption, setConfigOption,
       cint(opt))
-  let configVal = ctx.toJS(config)
-  assert JS_IsObject(configVal.vc)
-  let configObj = traceObj(configVal)
+  let configObj = ?tryTraceObj(ctx.toJS(config))
   for section in csBuffer..csStatus:
     let s = $section
     let obj = move(objs[section])
@@ -2668,7 +2663,7 @@ jsClassPublicDef(ActionMap):
     let i = a.find(s.toOpenArray())
     if i < 0:
       return JS_UNINITIALIZED
-    ctx.toForwardAction(a.tab[i].val)
+    ctx.toForwardAction(a.tab[i].val.vc)
 
   proc delete(a: ActionMap; k: DOMString): bool {.jsdelprop.} =
     let i = a.find(k.toOpenArray())

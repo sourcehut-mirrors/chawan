@@ -600,7 +600,7 @@ proc newText*(document: Document; data: sink string): Text
 proc newText*(document: Document; data: DOMString): Text
 proc newText(ctx: JSContext; data = initDOMStringLit("")): Text
 proc newDocument*(url: URL): Document
-proc newDOMImplementation(ctx: JSContext; document: Document): Opt[JSObject]
+proc newDOMImplementation(ctx: JSContext; document: Document): JSObjectErr
 proc newDocumentType*(document: Document; name, publicId, systemId: string):
   DocumentType
 proc newDocumentFragment(document: Document): DocumentFragment
@@ -1865,8 +1865,7 @@ proc mutationJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
       let records = ?trace(ctx.toJS(records))
       let this = trace(ctx.toJS(observer)) # cannot fail
       #TODO invoke (with all the ceremony that entails)
-      let callback = ctx.dup(observer.callback)
-      discard ?trace(ctx.call(callback, this.vc, records.vc, this.vc))
+      discard ?trace(ctx.call(observer.callback, this.vc, records.vc, this.vc))
   return JS_UNDEFINED
 
 proc queueMutationJob(ctx: JSContext) =
@@ -4073,7 +4072,8 @@ jsClassPublicDef(Document):
 
   proc exitFullscreen(ctx: JSContext; document: Document): JSValue {.jsfunc.} =
     JS_ThrowTypeError(ctx, "fullscreen is not supported")
-    return ctx.newRejectedPromise()
+    let res = ?ctx.newRejectedPromise()
+    return res.toJSValue()
 
   proc referrer(ctx: JSContext; document: Document): JSValue {.jsfget.} =
     if document.window != nil:
@@ -4115,12 +4115,11 @@ jsClassDef(XMLDocument):
 jsClassRaw(DOMImplementationDef, "DOMImplementation"):
   # A JSObject holding a strong reference to the Document it originates
   # from.
-  proc newDOMImplementation(ctx: JSContext; document: Document):
-      Opt[JSObject] =
+  proc newDOMImplementation(ctx: JSContext; document: Document): JSObjectErr =
     let this = ?ctx.newObjectFromCtor(JS_UNDEFINED.vc, classDef.id)
     let rt = JS_GetRuntime(ctx)
     JS_SetOpaque(this.value, JS_DupForeignObject(rt, cast[pointer](document)))
-    ok(this)
+    JSObjectErr(this)
 
   proc finalizeDOMImpl(rt: JSRuntime; this: pointer) {.jsfin.} =
     JS_FreeForeignObject(rt, this)
@@ -5722,7 +5721,11 @@ jsClassPublicDef(Element):
     let text = this.asNode.document.newText(s).asNode
     if text == nil:
       return JS_ThrowOutOfMemory(ctx)
-    ctx.toUndefined(ctx.insertAdjacent(this.asNode, position, text))
+    let res = ctx.insertAdjacent(this.asNode, position, text)
+    if JS_IsException(res.vc):
+      return JS_EXCEPTION
+    JS_FreeValue(ctx, res)
+    return JS_UNDEFINED
 
   proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
     let window = element.asNode.document.window
@@ -5885,7 +5888,8 @@ jsClassPublicDef(Element):
   proc requestFullscreen(ctx: JSContext; element: Element): JSValue
       {.jsfunc.} =
     JS_ThrowTypeError(ctx, "fullscreen is not supported")
-    return ctx.newRejectedPromise()
+    let res = ?ctx.newRejectedPromise()
+    return res.toJSValue()
 
   proc getOpenShadowRoot(this: Element): ShadowRoot {.jsfget: "shadowRoot".} =
     let shadow = this.shadowRoot
@@ -7107,13 +7111,12 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     destination: RequestDestination; onComplete: OnCompleteProc) =
   let window = element.asNode.document.window
   let ctx = window.jsctx
-  let record = moveJSValue(script.record)
+  let record = move(script.record)
   if JS_ResolveModule(ctx, record.vc) < 0 or
       ctx.setImportMeta(record.vc, true) == fjErr:
     window.logException(script.baseURL)
-    JS_FreeValue(ctx, record)
     return
-  let res = JS_EvalFunction(ctx, record) # consumes record
+  let res = JS_EvalFunction(ctx, record.toJSValue()) # consumes record
   if JS_IsException(res.vc):
     window.logException(script.baseURL)
   JS_FreeValue(ctx, res)
@@ -7251,7 +7254,7 @@ proc execute*(element: HTMLScriptElement) =
       let ctx = window.jsctx
       if window.settings.scripting != smFalse:
         element.prepare(ctx)
-        let record = moveJSValue(script.record)
+        let record = move(script.record).toJSValue()
         let ret = trace(JS_EvalFunction(ctx, record)) # consumes record
         if JS_IsException(ret.vc):
           window.logException(script.baseURL)

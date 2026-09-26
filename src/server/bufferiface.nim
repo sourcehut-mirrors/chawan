@@ -539,21 +539,12 @@ jsClassPublicDef(BufferInit):
     init.title = title
 
   proc connected*(ctx: JSContext; init: BufferInit; res: BufferConnectionResult;
-      arg1: JSValue; force = false): JSValue =
+      arg1: JSValueConst; force = false): JSValue =
     if init.connected == nil:
-      JS_FreeValue(ctx, arg1)
       return JS_UNDEFINED
-    let fun = move(init.connected)
-    let this = ctx.toJS(init)
-    if JS_IsException(this.vc):
-      JS_FreeValue(ctx, arg1)
-      return JS_EXCEPTION
-    let arg0 = ctx.toJS(res)
-    if JS_IsException(arg0.vc):
-      JS_FreeValue(ctx, this)
-      JS_FreeValue(ctx, arg1)
-      return JS_EXCEPTION
-    return ctx.callSinkThis(fun, this, arg0, arg1, ctx.toJS(force))
+    let this = ?trace(ctx.toJS(init))
+    let arg0 = ?trace(ctx.toJS(res))
+    ctx.call(move(init.connected), this.vc, arg0.vc, arg1, ctx.toJS(force).vc)
 
   proc setConnected(ctx: JSContext; init: BufferInit; connected: JSCallback):
         JSValue {.jsfset: "connected".} =
@@ -748,10 +739,10 @@ proc toJS(ctx: JSContext; x: ClickResult): JSValue =
   obj.toJSValue()
 
 proc toJS(ctx: JSContext; res: GotoAnchorResult): JSValue =
-  var x = ?trace(ctx.toJS(res.x))
-  var y = ?trace(ctx.toJS(res.y))
-  var focus = ?trace(ctx.toJS(res.focus))
-  ctx.newArrayFrom([moveJSValue(x), moveJSValue(y), moveJSValue(focus)])
+  let x = ?trace(ctx.toJS(res.x))
+  let y = ?trace(ctx.toJS(res.y))
+  let focus = ?trace(ctx.toJS(res.focus))
+  ctx.newArrayFrom([x.toJSValue(), y.toJSValue(), focus.toJSValue()])
 
 proc toJS(ctx: JSContext; x: CursorXY): JSValue =
   let obj = ?ctx.newObject()
@@ -760,10 +751,10 @@ proc toJS(ctx: JSContext; x: CursorXY): JSValue =
   obj.toJSValue()
 
 proc toJS(ctx: JSContext; match: BufferMatch): JSValue =
-  var x = ?trace(ctx.toJS(match.x))
-  var y = ?trace(ctx.toJS(match.y))
-  var w = ?trace(ctx.toJS(match.w))
-  ctx.newArrayFrom([moveJSValue(x), moveJSValue(y), moveJSValue(w)])
+  let x = ?trace(ctx.toJS(match.x))
+  let y = ?trace(ctx.toJS(match.y))
+  let w = ?trace(ctx.toJS(match.w))
+  ctx.newArrayFrom([x.toJSValue(), y.toJSValue(), w.toJSValue()])
 
 proc findPromise(iface: BufferInterface; id: int): int =
   for i, it in iface.map.mypairs:
@@ -826,16 +817,14 @@ proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
     JSValue =
   var resolve: JSCallback
   var reject: JSCallback
-  let res = ctx.newPromiseCapability(resolve, reject)
-  if JS_IsException(res.vc):
-    return JS_EXCEPTION
+  let res = ?ctx.newPromiseCapability(resolve, reject)
   iface.map.add(BufferIfaceItem(
     id: iface.packetid,
     fun: move(resolve),
     get: get
   ))
   inc iface.packetid
-  return res
+  res.toJSValue()
 
 proc addPromise(iface: BufferInterface; get: GetValueProc) =
   iface.map.add(BufferIfaceItem(

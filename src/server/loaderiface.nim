@@ -154,6 +154,7 @@ proc getClassID(t: typedesc[Response]): JSClassID
 
 # Forward declaration hack
 proc getLoader(ctx: JSContext): FileLoader {.importc: "cha_$1".}
+proc consoleError(ctx: JSContext; ss: varargs[string]) {.importc: "cha_$1".}
 
 template isErr*(x: TextResult): bool =
   not x.isOk
@@ -286,6 +287,8 @@ proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
   opaque.ctx = nil
   if not JS_IsException(val.vc):
     let res = ctx.callSink(resolve, JS_UNDEFINED.vc, val)
+    if JS_IsException(res.vc):
+      ctx.consoleError(ctx.getExceptionMsg())
     JS_FreeValue(ctx, res)
   else:
     discard ctx.enqueueRejection(reject)
@@ -305,9 +308,7 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
     JSValue =
   var resolve: JSCallback
   var reject: JSCallback
-  let res = ctx.newPromiseCapability(resolve, reject)
-  if JS_IsException(res.vc):
-    return res
+  let res = ?ctx.newPromiseCapability(resolve, reject)
   let opaque = JSBlobOpaque(
     ctx: JS_DupContext(ctx),
     resolve: move(resolve),
@@ -316,7 +317,7 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
   response.onFinish = finish
   let loader = ctx.getLoader()
   loader.blob(response, opaque)
-  return res
+  res.toJSValue()
 
 proc onFinishText(response: Response; success: bool) =
   let blob = response.onFinishBlob(success)

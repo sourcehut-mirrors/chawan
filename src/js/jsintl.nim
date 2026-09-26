@@ -309,9 +309,9 @@ jsClassDef(PluralRules):
     jsNew PluralRulesObj()
 
   proc resolvedOptions(ctx: JSContext; this: PluralRules): JSValue {.jsfunc.} =
-    var obj = ?ctx.newObject()
+    let obj = ?ctx.newObject()
     ?ctx.definePropertyConvert(obj, jstLocale, "en-US")
-    moveJSValue(obj)
+    obj.toJSValue()
 
   proc select(this: PluralRules; num: float64): string {.jsfunc.} =
     if num == 1:

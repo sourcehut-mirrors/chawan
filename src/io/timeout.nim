@@ -17,7 +17,7 @@ type
   TimeoutEntry = ref object
     expires: int64
     val: JSValueTraced
-    args: seq[JSValue]
+    args: seq[JSValueTraced]
     timeout: int32
     id: int32
     dead: bool
@@ -32,8 +32,6 @@ proc empty*(state: TimeoutState): bool =
   return state.timeouts.len == 0
 
 proc clearTimeout0(state: var TimeoutState; ctx: JSContext; i: int) =
-  let entry = state.timeouts[i]
-  ctx.freeValues(entry.args)
   state.timeouts.del(i)
   if state.timeouts.len != i: # only set if we del'd in the middle
     state.needsSort = true
@@ -63,7 +61,7 @@ proc setTimeout*(state: var TimeoutState; ctx: JSContext; t: TimeoutType;
     timeout: timeout
   )
   for arg in args:
-    entry.args.add(JS_DupValue(ctx, arg))
+    entry.args.add(trace(JS_DupValue(ctx, arg)))
   state.timeouts.add(entry)
   state.needsSort = true
   return id
@@ -123,9 +121,5 @@ proc mark*(rt: JSRuntime; state: TimeoutState; markFunc: JS_MarkFunc) =
     JS_MarkValue(rt, entry.val, markFunc)
     for arg in entry.args:
       JS_MarkValue(rt, arg.vc, markFunc)
-
-proc finalize*(rt: JSRuntime; state: TimeoutState) =
-  for entry in state.timeouts:
-    rt.freeValues(entry.args)
 
 {.pop.} # raises: []

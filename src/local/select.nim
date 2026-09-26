@@ -71,8 +71,7 @@ proc finish(ctx: JSContext; select: Select): JSValue =
   let selected = ctx.toJS(select.selected)
   if JS_IsException(selected.vc):
     return JS_EXCEPTION
-  let finish = move(select.finish)
-  ctx.callSink(finish, JS_UNDEFINED.vc, selected)
+  ctx.callSink(move(select.finish), JS_UNDEFINED.vc, selected)
 
 proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1

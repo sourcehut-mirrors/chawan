@@ -859,10 +859,10 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
       continue # removed, presumably by a previous handler
     if elfPassive in el.eflags:
       event.flags.incl(efInPassiveListener)
-    let e = ctx.invoke(el, event)
-    if JS_IsException(e.vc):
-      ctx.logException()
-    JS_FreeValue(ctx, e)
+    block:
+      let e = trace(ctx.invoke(el, event))
+      if JS_IsException(e):
+        ctx.logException()
     if elfPassive in el.eflags:
       event.flags.excl(efInPassiveListener)
     if efCanceled in event.flags:

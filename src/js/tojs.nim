@@ -196,7 +196,7 @@ proc toJSRef0(ctx: JSContext; p: pointer; ctor: JSValueConst): JSValue =
   if jsObj0.isErr:
     JS_FreeForeignObject(rt, p)
     return JS_EXCEPTION
-  let jsObj = move(jsObj0.get)
+  let jsObj = JSObject(move(jsObj0))
   # Set the opaque first, before GC has a chance to run.
   JS_SetForeignOpaque(rt, p, JSValue(jsObj.value))
   JS_SetOpaque(jsObj.value, p)

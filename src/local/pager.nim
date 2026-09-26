@@ -484,11 +484,11 @@ proc evalAction(pager: Pager; arg0: int32; oval: var JSValueTraced): JSValue =
       oval = ctx.dupTrace(val.vc)
   # If an action evaluates to a function that function is evaluated too.
   if JS_IsFunction(ctx, val.vc):
-    let fun = traceCallback(val)
     if arg0 != 0:
-      val = ctx.callSink(fun, JS_UNDEFINED.vc, ctx.toJS(arg0))
+      let arg = trace(ctx.toJS(arg0))
+      val = ctx.call(traceCallback(val), JS_UNDEFINED.vc, arg.vc)
     else: # no precnum
-      val = ctx.call(fun, JS_UNDEFINED.vc)
+      val = ctx.call(traceCallback(val), JS_UNDEFINED.vc)
   return val
 
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =
@@ -587,8 +587,7 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   let pages = ctx.newArrayFrom(pages)
   let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
   doAssert not JS_IsException(jsInit.vc)
-  let fun = traceCallback(jsInit)
-  let res = ctx.callSinkThis(fun, ctx.toJS(pager), pages,
+  let res = ctx.callSinkThis(traceCallback(jsInit), ctx.toJS(pager), pages,
     ctx.toJS(contentType), ctx.toJS(charset), ctx.toJS(history), ctx.toJS(pipe))
   if JS_IsException(res.vc) and pager.exitCode == -1:
     pager.console.writeException(ctx)
@@ -1751,10 +1750,8 @@ proc runBrowsecap(pager: Pager; init: BufferInit; entry: MailcapEntry):
 proc fail(pager: Pager; init: BufferInit; errorMessage: string): JSValue =
   dec pager.numload
   let ctx = pager.jsctx
-  var msg = ctx.toJS(errorMessage)
-  if JS_IsException(msg.vc): # OOM
-    msg = JS_UNDEFINED
-  return ctx.toUndefined(ctx.connected(init, bcrFail, msg))
+  let msg = ?trace(ctx.toJS(errorMessage))
+  return ctx.connected(init, bcrFail, msg.vc)
 
 proc saveEntry(pager: Pager; contentType: string; entry: MailcapEntry) =
   let path = pager.config{"autoMailcap"}
@@ -1788,10 +1785,8 @@ proc initMailcap(pager: Pager; init: BufferInit): JSValue =
     let (_, i) = pager.findMailcapPrevNext(init, -1)
     if i < 0 and init.shortContentType.isTextType():
       return pager.connected2(init)
-    let arg0 = ctx.toJS(i)
-    if JS_IsException(arg0.vc):
-      return arg0
-    return ctx.toUndefined(ctx.connected(init, bcrMailcap, arg0))
+    let arg0 = ?trace(ctx.toJS(i))
+    return ctx.connected(init, bcrMailcap, arg0.vc)
 
 proc handleRead(pager: Pager; data: BufferInitData): JSValue =
   let init = data.init
@@ -1830,10 +1825,8 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
               let ctx = pager.jsctx
               let redirect = newRequest(url2, init.request.httpMethod,
                 body = init.request.body)
-              let arg0 = ctx.toJS(redirect)
-              if JS_IsException(arg0.vc):
-                return arg0
-              return ctx.connected(init, bcrRedirect, arg0, force = true)
+              let arg0 = ?trace(ctx.toJS(redirect))
+              return ctx.connected(init, bcrRedirect, arg0.vc, force = true)
             else:
               state.error = "received invalid URL from x-uri"
           else:
@@ -1860,9 +1853,11 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
     init.applyResponse(response, pager.mimeTypes)
     let redirect = response.getRedirect(init.request)
     let ctx = pager.jsctx
-    var arg0 = JS_UNDEFINED
+    let arg0 = ?trace(if redirect != nil:
+      ctx.toJS(redirect)
+    else:
+      JS_UNDEFINED)
     let cres = if redirect != nil:
-      arg0 = ctx.toJS(redirect)
       bcrRedirect
     elif response.status == 401:
       bcrUnauthorized
@@ -1880,7 +1875,7 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
           return pager.fail(init, "failed to filter buffer")
       return pager.initMailcap(init)
     stream.sclose()
-    return ctx.connected(init, cres, arg0)
+    return ctx.connected(init, cres, arg0.vc)
   return JS_UNDEFINED
 
 proc handleReadMailcap(pager: Pager; item: MailcapWriteItem) =
@@ -1984,10 +1979,7 @@ proc handleError(pager: Pager; fd: cint): Opt[bool] =
   elif (let data = pager.loader.get(fd); data != nil):
     if data of BufferInitData:
       let init = BufferInitData(data).init
-      let res = pager.fail(init, "loader died while loading")
-      if JS_IsException(res.vc):
-        return err()
-      JS_FreeValue(pager.jsctx, res)
+      discard ?trace(pager.fail(init, "loader died while loading"))
     elif data of BufferInterfaceData:
       let iface = BufferInterfaceData(data).iface
       pager.ifaceDead(iface)
@@ -2103,17 +2095,14 @@ jsClassDef(Pager):
     discard ?ctx.fromJSGetProp(obj, "update", update)
     var resolve: JSCallback
     var reject: JSCallback
-    let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res.vc):
-      return JS_EXCEPTION
+    let res = ?ctx.newPromiseCapability(resolve, reject)
     let hist = pager.getHist(mode)
     let lineEdit = readLine(prompt, current, pager.attrs.width, hide, hist,
       pager.luctx, update, resolve)
     if lineEdit == nil:
-      JS_FreeValue(ctx, res)
       return JS_ThrowOutOfMemory(ctx)
     pager.lineEdit = lineEdit
-    return res
+    res.toJSValue()
 
   # private
   proc unsetLineEdit(pager: Pager) {.jsfunc.} =
@@ -2259,13 +2248,11 @@ jsClassDef(Pager):
       {.jsfunc.} =
     var resolve: JSCallback
     var reject: JSCallback
-    let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res.vc):
-      return JS_EXCEPTION
+    let res = ?ctx.newPromiseCapability(resolve, reject)
     pager.askPrompt = prompt
     pager.writeAskPrompt()
     pager.askPromise = move(resolve)
-    return res
+    res.toJSValue()
 
   proc fitAskPrompt(pager: Pager; prompt0: sink string): string {.jsfunc.} =
     var prompt = prompt0
@@ -2288,18 +2275,13 @@ jsClassDef(Pager):
       {.jsfunc.} =
     if pager.askPromise != nil:
       let inputBuffer = move(pager.inputBuffer)
-      let text = ctx.toJS(inputBuffer)
-      if JS_IsException(text.vc):
-        return text
-      let fun = move(pager.askPromise)
+      let text = ?trace(ctx.toJS(inputBuffer))
       pager.askPrompt = ""
       pager.paste = paste
       if pager.lineEdit != nil:
         pager.lineEdit.redraw = true
-      let res = ctx.callSink(fun, JS_UNDEFINED.vc, text)
-      if JS_IsException(res.vc):
-        return res
-      JS_FreeValue(ctx, res)
+      discard ?trace(ctx.call(move(pager.askPromise), JS_UNDEFINED.vc,
+        text.vc))
       return JS_TRUE
     return JS_FALSE
 
@@ -2440,10 +2422,9 @@ jsClassDef(Pager):
   # private
   proc showConsole(pager: Pager) =
     let ctx = pager.jsctx
-    let res = ctx.callSinkThis(pager[].showConsole, ctx.toJS(pager))
-    if JS_IsException(res.vc):
+    let res = trace(ctx.callSinkThis(pager[].showConsole, ctx.toJS(pager)))
+    if JS_IsException(res):
       pager.console.writeException(ctx)
-    JS_FreeValue(ctx, res)
 
   # private
   proc addConsole(pager: Pager): bool {.jsfunc.} =
@@ -2603,13 +2584,13 @@ jsClassDef(Pager):
   proc connected2(pager: Pager; init: BufferInit): JSValue {.jsfunc.} =
     let loader = pager.loader
     let ctx = pager.jsctx
-    var arg0 = JS_UNDEFINED
+    var arg0 = trace(JS_UNDEFINED)
     let cres = if bifSave in init.flags:
       dec pager.numload
       if init.ostreamOutputId != -1:
         # resume the ostream
         loader.resume(init.ostreamOutputId)
-      arg0 = ctx.toJS(init)
+      arg0 = trace(ctx.toJS(init))
       bcrSave
     elif bifMailcapCancel in init.flags:
       dec pager.numload
@@ -2672,9 +2653,9 @@ jsClassDef(Pager):
       let iface = pager.addInterface(init, stream, newProcessHandle(pid))
       if iface == nil:
         return JS_ThrowOutOfMemory(ctx)
-      arg0 = ctx.toJS(iface)
+      arg0 = trace(ctx.toJS(iface))
       bcrConnected
-    return ctx.toUndefined(ctx.connected(init, cres, arg0))
+    ctx.connected(init, cres, arg0.vc)
 
   # private
   proc saveMailcapEntry(ctx: JSContext; pager: Pager; init: BufferInit;
@@ -2814,10 +2795,7 @@ jsClassDef(Pager):
                 return ok()
               ?pager.windowChange()
           else:
-            let res = pager.handleRead(efd)
-            if JS_IsException(res.vc):
-              return err()
-            JS_FreeValue(ctx, res)
+            discard ?trace(pager.handleRead(efd))
         if (event.revents and POLLOUT) != 0:
           if not pager.handleWrite(efd):
             return ok()
@@ -2861,10 +2839,7 @@ jsClassDef(Pager):
       for event in pager.loader.pollData.events:
         let efd = event.fd
         if (event.revents and POLLIN) != 0:
-          let res = pager.handleRead(efd)
-          if JS_IsException(res.vc):
-            return err()
-          JS_FreeValue(ctx, res)
+          discard ?trace(pager.handleRead(efd))
         if (event.revents and POLLOUT) != 0:
           if not pager.handleWrite(efd):
             return ok()

@@ -132,8 +132,7 @@ proc checkInstanceOf*(ctx: JSContext; this: JSValueConst; tclassid: JSClassID):
   else:
     ctxOpaque.gclass
   if not ctx.isInstanceOf(classid, tclassid):
-    # JS_ThrowTypeErroInvalidClass
-    discard JS_GetOpaque2(ctx, JS_UNDEFINED.vc, tclassid)
+    JS_ThrowTypeErrorInvalidClass(ctx, tclassid)
     return fjErr
   fjOk
 
@@ -474,8 +473,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID;
     classid = ctxOpaque.gclass
     p = ctxOpaque.globalObj
   if not ctx.isInstanceOf(classid, tclassid):
-    # dumb way to invoke JS_ThrowTypeErrorInvalidClass
-    discard JS_GetOpaque2(ctx, JS_UNDEFINED.vc, tclassid)
+    JS_ThrowTypeErrorInvalidClass(ctx, tclassid)
     return fjErr
   res = p
   fjOk

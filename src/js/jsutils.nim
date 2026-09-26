@@ -37,6 +37,13 @@ template `?`*(res: JSAtom): JSAtom =
     return err()
   myMove(val)
 
+template `?`*(res: JSObjectErr): JSObject =
+  var val = res
+  if val.isErr:
+    wasMoved(val)
+    return err()
+  JSObject(myMove(val))
+
 template err*(t: typedesc[JSValue]): JSValue =
   JS_EXCEPTION
 
@@ -45,6 +52,9 @@ template ok*(t: typedesc[JSCode]): JSCode =
 
 template err*(t: typedesc[JSCode]): JSCode =
   fjErr
+
+template err*(t: typedesc[JSObjectErr]): JSObjectErr =
+  JSObjectErr(nil)
 
 template toJSValueArray*(a: openArray[JSValue]): JSValueArray =
   if a.len > 0:
@@ -57,7 +67,13 @@ template toJSValueConstArray*(a: openArray[JSValue]): JSValueConstArray =
 
 template toJSValueConstArray*(a: openArray[JSValueConst]): JSValueConstArray =
   if a.len > 0:
-    cast[ptr UncheckedArray[JSValueConst]](unsafeAddr a[0])
+    cast[JSValueConstArray](unsafeAddr a[0])
+  else:
+    nil
+
+template toJSValueConstArray*(a: openArray[JSValueTraced]): JSValueConstArray =
+  if a.len > 0:
+    cast[JSValueConstArray](unsafeAddr a[0])
   else:
     nil
 
@@ -76,11 +92,6 @@ template toJSValueConstArray*(a: JSValue): JSValueConstArray =
 template toJSValueConstArray*(a: JSValueConst): JSValueConstArray =
   cast[JSValueConstArray](unsafeAddr a)
 
-proc freeValues*(rt: JSRuntime; vals: openArray[JSValue]) =
-  ## Free each individual value in `vals`.
-  for val in vals:
-    JS_FreeValueRT(rt, val)
-
 proc freeValues*(ctx: JSContext; vals: openArray[JSValue]) =
   ## Free each individual value in `vals`.
   for val in vals:
@@ -91,13 +102,17 @@ proc call*(ctx: JSContext; funcObj, this: JSValueConst;
   ## Call `funcObj` with the this value `this` and parameters `argv`.
   JS_Call(ctx, funcObj, this, cast[cint](argv.len), argv.toJSValueConstArray())
 
-proc call*(ctx: JSContext; funcObj: JSCallback; this: JSValueConst;
+proc call*(ctx: JSContext; funcObj: sink JSCallback; this: JSValueConst;
     argv: varargs[JSValueConst]): JSValue =
   ## Call `funcObj` with the this value `this` and parameters `argv`.
+  ##
+  ## Note: funcObj is marked sink to bypass the footgun where code
+  ## running in JS_Call can unref funcObj itself (e.g. if funcObj is a
+  ## member of an object that JS_Call deallocates).
   JS_Call(ctx, funcObj.value, this, cast[cint](argv.len),
     argv.toJSValueConstArray())
 
-proc callSink*(ctx: JSContext; funcObj: JSCallback; this: JSValueConst;
+proc callSink*(ctx: JSContext; funcObj: sink JSCallback; this: JSValueConst;
     argv: varargs[JSValue]): JSValue =
   ## Call `funcObj` with the this value `this` and parameters `argv`, then
   ## free each element of `argv`.
@@ -106,7 +121,7 @@ proc callSink*(ctx: JSContext; funcObj: JSCallback; this: JSValueConst;
   ctx.freeValues(argv)
   res
 
-proc callSinkThis*(ctx: JSContext; funcObj: JSCallback; this: JSValue;
+proc callSinkThis*(ctx: JSContext; funcObj: sink JSCallback; this: JSValue;
     argv: varargs[JSValue]): JSValue =
   ## Call `funcObj` with the this value `this` and parameters `argv`, then
   ## free each element of `argv` as well as `this`.
@@ -120,18 +135,10 @@ proc invoke*(ctx: JSContext; val: JSObject; atom: JSAtom;
   JS_Invoke(ctx, val.value, atom, cast[cint](argv.len),
     argv.toJSValueConstArray())
 
-proc callConstructor*(ctx: JSContext; funcObj: JSCallback;
+proc callConstructor*(ctx: JSContext; funcObj: sink JSCallback;
     params: openArray[JSValue]): JSValue =
   JS_CallConstructor(ctx, funcObj.value, cint(params.len),
     params.toJSValueConstArray())
-
-proc toUndefined*(ctx: JSContext; val: JSValue): JSValue =
-  ## Free JSValue, and return JS_EXCEPTION if it's an exception (or
-  ## undefined otherwise).
-  if JS_IsException(val.vc):
-    return JS_EXCEPTION
-  JS_FreeValue(ctx, val)
-  return JS_UNDEFINED
 
 proc newArrayFrom*(ctx: JSContext; vals: varargs[JSValue]): JSValue =
   ## Create a new array consisting of `vals`.
@@ -158,13 +165,14 @@ proc newArrayFrom*(ctx: JSContext; vals: varargs[JSValue]): JSValue =
   return obj
 
 proc newPromiseCapability*(ctx: JSContext; resolve, reject: var JSCallback):
-    JSValue =
+    JSObjectErr =
   var funs {.noinit.}: array[2, JSValue]
   let res = JS_NewPromiseCapability(ctx, funs.toJSValueArray())
-  if not JS_IsException(res.vc):
-    resolve = traceCallback(funs[0])
-    reject = traceCallback(funs[1])
-  res
+  if JS_IsException(res.vc):
+    return err()
+  resolve = traceCallback(funs[0])
+  reject = traceCallback(funs[1])
+  JSObjectErr(traceObj(res))
 
 proc enqueueJob*(ctx: JSContext; fun: JSJobFunc;
     argv: varargs[JSValueConst]): JSCode =
@@ -184,21 +192,14 @@ proc enqueueRejection*(ctx: JSContext; reject: JSCallback): JSCode =
   JS_FreeValue(ctx, ex)
   code
 
-proc newRejectedPromise*(ctx: JSContext): JSValue =
+proc newRejectedPromise*(ctx: JSContext): JSObjectErr =
   ## Usage: throw an exception, then create the rejected promise.
-  let ex = JS_GetException(ctx)
+  let ex = trace(JS_GetException(ctx))
   var resolve: JSCallback
   var reject: JSCallback
-  let res = ctx.newPromiseCapability(resolve, reject)
-  if JS_IsException(res.vc):
-    JS_FreeValue(ctx, ex)
-    return res
-  let code = ctx.enqueueJob(rejectJob, reject.value, ex.vc)
-  JS_FreeValue(ctx, ex)
-  if code == fjErr:
-    JS_FreeValue(ctx, res)
-    return JS_EXCEPTION
-  return res
+  let res = ?ctx.newPromiseCapability(resolve, reject)
+  ?ctx.enqueueJob(rejectJob, reject.value, ex.vc)
+  return JSObjectErr(res)
 
 proc newCFunction2*(ctx: JSContext; fun: JSCFunction; name: cstring;
     length: cint; cproto: JSCFunctionEnum; magic: cint): Opt[JSCallback] =
@@ -475,14 +476,14 @@ proc toIntIndex*(ctx: JSContext; value: JSValue): int =
     return -1
   int(tmp)
 
-proc tryTraceObj*(val: JSValue): Opt[JSObject] {.inline.} =
+proc tryTraceObj*(val: JSValue): JSObjectErr =
   if JS_IsException(val.vc):
     return err()
   when defined(debug):
     assert JS_IsObject(val.vc)
-  ok(traceObj(val))
+  JSObjectErr(traceObj(val))
 
-proc toObject*(ctx: JSContext; val: JSValueConst): Opt[JSObject] =
+proc toObject*(ctx: JSContext; val: JSValueConst): JSObjectErr =
   ## Roundabout way to invoke ToObject.
   let res = ctx.call(ctx.getOpaque().funRefs[jsfObjectPrototypeValueOf], val)
   tryTraceObj(res)
@@ -493,20 +494,20 @@ proc JS_ThrowTypeErrorInvalidClass*(ctx: JSContext; classid: JSClassID):
   discard JS_GetOpaque2(ctx, JS_UNDEFINED.vc, classid)
   return JS_EXCEPTION
 
-proc newObject*(ctx: JSContext): Opt[JSObject] =
+proc newObject*(ctx: JSContext): JSObjectErr =
   let obj = JS_NewObject(ctx)
   tryTraceObj(obj)
 
-proc newObjectProto*(ctx: JSContext; proto: JSValueConst): Opt[JSObject] =
+proc newObjectProto*(ctx: JSContext; proto: JSValueConst): JSObjectErr =
   let obj = JS_NewObjectProto(ctx, proto)
   tryTraceObj(obj)
 
-proc newObjectClass*(ctx: JSContext; class: JSClassID): Opt[JSObject] =
+proc newObjectClass*(ctx: JSContext; class: JSClassID): JSObjectErr =
   let obj = JS_NewObjectClass(ctx, class)
   tryTraceObj(obj)
 
 proc newObjectFromCtor*(ctx: JSContext; ctor: JSValueConst;
-    classid: JSClassID): Opt[JSObject] =
+    classid: JSClassID): JSObjectErr =
   let obj = JS_NewObjectFromCtor(ctx, ctor, classid)
   tryTraceObj(obj)
 
@@ -530,9 +531,6 @@ proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
 proc callUserObject*(ctx: JSContext; callback: JSObject; name: JSStrRef;
     this, arg: JSValueConst): JSValue =
   #TODO switch the context as the spec mandates
-  # must dup the callback first, otherwise the function might delete the
-  # callback itself
-  let callback = ctx.dup(callback)
   let ret = if JS_IsFunction(ctx, callback):
     ctx.call(JSCallback(callback), this, arg)
   else:
@@ -554,7 +552,7 @@ proc serialize*(ctx: JSContext; val: JSValueConst): Opt[seq[uint8]] =
 proc deserialize*(ctx: JSContext; s: openArray[uint8]): JSValue =
   return JS_ReadObject(ctx, unsafeAddr s[0], csize_t(s.len), 0)
 
-proc getImportMeta(ctx: JSContext; m: JSModuleDef): Opt[JSObject] =
+proc getImportMeta(ctx: JSContext; m: JSModuleDef): JSObjectErr =
   let obj = JS_GetImportMeta(ctx, m)
   tryTraceObj(obj)
 

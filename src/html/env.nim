@@ -161,14 +161,9 @@ jsClassRaw(NotificationDef, "Notification"):
       return JS_ThrowTypeError(ctx, "not a function")
     var resolve: JSCallback
     var reject: JSCallback
-    let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res.vc):
-      return JS_EXCEPTION
-    let code = ctx.enqueueJob(resolveToDenied, resolve.value, callback)
-    if code == fjErr:
-      JS_FreeValue(ctx, res)
-      return JS_EXCEPTION
-    return res
+    let res = ?ctx.newPromiseCapability(resolve, reject)
+    ?ctx.enqueueJob(resolveToDenied, resolve.value, callback)
+    return res.toJSValue()
 
 # PermissionStatus
 type
@@ -219,10 +214,10 @@ jsClassRaw(PermissionsDef, "Permissions"):
     let jsName2 = ?trace(ctx.toJS(name))
     var resolve: JSCallback
     var reject: JSCallback
-    var res = ?trace(ctx.newPromiseCapability(resolve, reject))
+    let res = ?ctx.newPromiseCapability(resolve, reject)
     #TODO permission task source
     ?ctx.enqueueJob(denyPermissionJob, resolve.value, jsName2.vc)
-    moveJSValue(res)
+    res.toJSValue()
 
 # Screen
 jsClassRaw(ScreenDef, "Screen"):
@@ -718,7 +713,6 @@ jsClassDef(Window):
     ctx.addEventGetSetObj(ctxOpaque.global, classDef.id, WindowEvents)
 
   proc finalize(rt: JSRuntime; window: Window) {.jsfin.} =
-    rt.finalize(window.timeouts)
     window.urandom.sclose()
     window.settings.moduleMap.clear(rt)
     for data in window.loader.data:
@@ -772,19 +766,18 @@ jsClassDef(Window):
     let input = ?newRequest(ctx, input, init)
     if not window.checkCORSRequest(input):
       discard ctx.throwNetworkError()
-      return ctx.newRejectedPromise()
+      let res = ?ctx.newRejectedPromise()
+      return res.toJSValue()
     var resolve: JSCallback
     var reject: JSCallback
-    let res = ctx.newPromiseCapability(resolve, reject)
-    if JS_IsException(res.vc):
-      return JS_EXCEPTION
+    let res = ?ctx.newPromiseCapability(resolve, reject)
     let opaque = JSFetchOpaque(
       ctx: JS_DupContext(ctx),
       resolve: resolve,
       reject: reject
     )
     window.loader.fetch(input, jsFinish, opaque)
-    return res
+    res.toJSValue()
 
   proc scrollTo(window: Window) {.jsfunc.} =
     discard #TODO maybe in app mode?
@@ -842,21 +835,16 @@ jsClassDef(Window):
 
   proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
       {.jsfunc.} =
-    let data = JS_ToString(ctx, data)
-    if JS_IsException(data.vc):
-      return JS_EXCEPTION
+    let data = ?trace(JS_ToString(ctx, data))
     let len = JS_GetStringLength(data.vc)
     if len == 0:
-      JS_FreeValue(ctx, data)
       return ctx.toJS("")
     let buf = JS_GetNarrowStringBuffer(data.vc)
     if buf == nil:
-      JS_FreeValue(ctx, data)
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in string")
     let res = btoa(buf.toOpenArray(0, int(len) - 1))
-    JS_FreeValue(ctx, data)
-    return ctx.toJS(res)
+    ctx.toJS(res)
 
   proc alert(window: Window; s: DOMString) {.jsfunc.} =
     window.console.error($s)
@@ -1020,18 +1008,14 @@ proc addWindowProperties(ctx: JSContext): JSValue =
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return JS_UNDEFINED
-  let name = JS_NewString(ctx, "WindowProperties")
-  if JS_IsException(name.vc):
-    return JS_EXCEPTION
-  let parentProto = JS_GetClassProto(ctx, EventTargetDef.id)
-  let proto = JS_NewObjectProtoClass(ctx, parentProto.vc, res)
-  JS_FreeValue(ctx, parentProto)
+  let name = ?trace(JS_NewString(ctx, "WindowProperties"))
+  let parentProto = ctx.getClassProto(EventTargetDef.id)
+  let proto = JS_NewObjectProtoClass(ctx, parentProto.value, res)
   if JS_IsException(proto.vc):
-    JS_FreeValue(ctx, name)
     return JS_EXCEPTION
   # must circumvent the exotic handler here
-  if JS_DefinePropertyValue(ctx, proto.vc, ctx.getAtom(jsyToStringTag), name,
-      JS_PROP_CONFIGURABLE or JS_PROP_NO_EXOTIC) < 0:
+  if JS_DefinePropertyValue(ctx, proto.vc, ctx.getAtom(jsyToStringTag),
+      name.toJSValue(), JS_PROP_CONFIGURABLE or JS_PROP_NO_EXOTIC) < 0:
     JS_FreeValue(ctx, proto)
     return JS_EXCEPTION
   return proto
