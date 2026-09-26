@@ -117,7 +117,7 @@ type
     cotScriptingMode = "scriptingMode"
     # hword (4 bytes)
     cotInt32 = "int32"
-    cotInt32Auto = "int32" # signed int32; parses "auto" as -1
+    cotInt32Auto = "int32" # non-zero int32; parses "auto" as 0
     cotFormatModeAuto = "formatModeAuto"
     # word (8 bytes)
     cotCSSColor = "cssColor"
@@ -2443,7 +2443,7 @@ proc getConfigOption(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
   of cotInt32: return ctx.toJS(config.hwords[opt].int32)
   of cotInt32Auto:
     let i = config.hwords[opt].int32
-    if i < 0:
+    if i <= 0:
       return JS_NULL
     return ctx.toJS(i)
   of cotFormatModeAuto: return ctx.toJS(config.hwords[opt].formatModeAuto)
@@ -2478,7 +2478,7 @@ proc setConfigOption(ctx: JSContext; this, val: JSValueConst; magic: cint):
   of cotInt32: ctx.fromJS(val, config.hwords[opt].int32)
   of cotInt32Auto:
     if JS_IsNull(val):
-      config.hwords[opt].int32 = -1
+      config.hwords[opt].int32 = 0
       fjOk
     else:
       ctx.fromJS(val, config.hwords[opt].int32)
