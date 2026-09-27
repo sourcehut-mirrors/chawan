@@ -81,6 +81,10 @@ template toJSValueConstOpenArray*(a: openArray[JSValue]):
     openArray[JSValueConst] =
   a.toJSValueConstArray().toOpenArray(0, a.high)
 
+template toJSValueConstOpenArray*(a: openArray[JSValueTraced]):
+    openArray[JSValueConst] =
+  a.toJSValueConstArray().toOpenArray(0, a.high)
+
 # This must be a template, because we're taking the address of the passed
 # value, and Nim is pass-by-value.
 template toJSValueArray*(a: JSValue): JSValueArray =
@@ -136,7 +140,7 @@ proc invoke*(ctx: JSContext; val: JSObject; atom: JSAtom;
     argv.toJSValueConstArray())
 
 proc callConstructor*(ctx: JSContext; funcObj: sink JSCallback;
-    params: openArray[JSValue]): JSValue =
+    params: openArray[JSValueConst]): JSValue =
   JS_CallConstructor(ctx, funcObj.value, cint(params.len),
     params.toJSValueConstArray())
 
@@ -214,10 +218,11 @@ proc newCFunction*(ctx: JSContext; fun: JSCFunction; name: cstring;
   ctx.newCFunction2(fun, name, length, JS_CFUNC_generic, 0)
 
 proc getProperty*(ctx: JSContext; this: JSValueConst; name: JSStrRef):
-    JSValue =
-  JS_GetProperty(ctx, this, ctx.getAtom(name))
+    JSValueTraced =
+  trace(JS_GetProperty(ctx, this, ctx.getAtom(name)))
 
-proc getProperty*(ctx: JSContext; this: JSObject; name: JSStrRef): JSValue =
+proc getProperty*(ctx: JSContext; this: JSObject; name: JSStrRef):
+    JSValueTraced =
   ctx.getProperty(this.value, name)
 
 proc deleteProperty*(ctx: JSContext; this: JSObject; name: JSStrRef):
@@ -367,6 +372,12 @@ proc eval*(ctx: JSContext; s: string; file = "<input>";
   return JS_Eval(ctx, s.toCStringConst, csize_t(s.len), file.toCStringConst,
     evalFlags)
 
+proc eval*(ctx: JSContext; s: DOMString; file = "<input>";
+    evalFlags = JS_EVAL_TYPE_GLOBAL): JSValue =
+  ## Wrapper around JS_Eval.
+  return JS_Eval(ctx, cstringConst(s.p), csize_t(s.len), file.toCStringConst,
+    evalFlags)
+
 proc compileScript*(ctx: JSContext; s: string; file = "<input>"): JSValue =
   ## Compiles `s` into bytecode.
   ## You can evaluate the result using `evalFunction`.
@@ -379,9 +390,9 @@ proc compileModule*(ctx: JSContext; s: string; file = "<input>"): JSValue =
   ## distribution if you're interested.
   return ctx.eval(s, file, JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
 
-proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =
+proc evalFunction*(ctx: JSContext; val: JSValue): JSValueTraced =
   ## Evaluates a bytecode function or a module.  This wraps `JS_EvalFunction`.
-  return JS_EvalFunction(ctx, val)
+  return trace(JS_EvalFunction(ctx, val))
 
 proc getClassProto*(ctx: JSContext; classid: JSClassID): JSObject =
   let proto = JS_GetClassProto(ctx, classid)
@@ -563,15 +574,5 @@ proc setImportMeta*(ctx: JSContext; funcVal: JSValueConst; isMain: bool):
   let metaObj = ?ctx.getImportMeta(m)
   ?ctx.definePropertyCWE(metaObj, jstUrl, JS_AtomToValue(ctx, moduleNameAtom))
   ctx.definePropertyCWE(metaObj, jstMain, JS_NewBool(ctx, JS_BOOL(isMain)))
-
-proc finishLoadModule*(ctx: JSContext; funcVal: JSValue; name: string):
-    JSModuleDef =
-  if ctx.setImportMeta(funcVal.vc, false) == fjErr:
-    return nil
-  # "the module is already referenced, so we must free it"
-  # it seems QJS treats the return value as a const
-  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal.vc))
-  JS_FreeValue(ctx, funcVal)
-  m
 
 {.pop.} # raises

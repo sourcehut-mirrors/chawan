@@ -1612,13 +1612,13 @@ jsClassDef(CustomElementRegistry):
       return JS_ThrowDOMException(ctx, "NotSupportedError",
         "recursive custom element definition is not allowed")
     this.inDefine = true
-    let proto = ctx.getProperty(JSObject(ctor), jstPrototype)
-    if JS_IsException(proto.vc):
-      this.inDefine = false
-      return JS_EXCEPTION
     let def = newCustomElementDef(name, name) #TODO extends/localName
-    let res = ctx.define0(this, name, ctor.value, proto.vc, def)
-    JS_FreeValue(ctx, proto)
+    let res = block:
+      let proto = ctx.getProperty(JSObject(ctor), jstPrototype)
+      if JS_IsException(proto):
+        this.inDefine = false
+        return JS_EXCEPTION
+      ctx.define0(this, name, ctor.value, proto.vc, def)
     this.inDefine = false
     if res.isErr:
       return JS_EXCEPTION
@@ -3807,7 +3807,7 @@ jsClassPublicDef(Document):
   proc location(ctx: JSContext; document: Document): JSValue {.jsuffget.} =
     if document.window == nil:
       return JS_NULL
-    return ctx.getProperty(ctx.getOpaque().global, jstLocation)
+    ctx.getProperty(ctx.getOpaque().global, jstLocation).toJSValue()
 
   proc setLocation*(ctx: JSContext; document: Document; s: string): JSValue
       {.jsfset: "location".} =
@@ -5721,10 +5721,7 @@ jsClassPublicDef(Element):
     let text = this.asNode.document.newText(s).asNode
     if text == nil:
       return JS_ThrowOutOfMemory(ctx)
-    let res = ctx.insertAdjacent(this.asNode, position, text)
-    if JS_IsException(res.vc):
-      return JS_EXCEPTION
-    JS_FreeValue(ctx, res)
+    discard ?trace(ctx.insertAdjacent(this.asNode, position, text))
     return JS_UNDEFINED
 
   proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
@@ -6661,7 +6658,7 @@ proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
   let magic = JSStrRef(magic)
   if url := element.reinitURL():
     let href = ?trace(ctx.toJS(url))
-    return ctx.getProperty(href.vc, magic)
+    return ctx.getProperty(href.vc, magic).toJSValue()
   if magic == jstHref:
     return ctx.toJS(element.attr(satHref))
   if magic == jstProtocol:
@@ -7115,11 +7112,10 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   if JS_ResolveModule(ctx, record.vc) < 0 or
       ctx.setImportMeta(record.vc, true) == fjErr:
     window.logException(script.baseURL)
-    return
-  let res = JS_EvalFunction(ctx, record.toJSValue()) # consumes record
-  if JS_IsException(res.vc):
-    window.logException(script.baseURL)
-  JS_FreeValue(ctx, res)
+  else:
+    let res = ctx.evalFunction(record.toJSValue()) # consumes record
+    if JS_IsException(res):
+      window.logException(script.baseURL)
 
 type
   FetchModuleEnv* {.final.} = ref object of BlobOpaque
@@ -7255,8 +7251,8 @@ proc execute*(element: HTMLScriptElement) =
       if window.settings.scripting != smFalse:
         element.prepare(ctx)
         let record = move(script.record).toJSValue()
-        let ret = trace(JS_EvalFunction(ctx, record)) # consumes record
-        if JS_IsException(ret.vc):
+        let ret = ctx.evalFunction(record) # consumes record
+        if JS_IsException(ret):
           window.logException(script.baseURL)
     document.currentScript = oldCurrentScript
   else: discard #TODO

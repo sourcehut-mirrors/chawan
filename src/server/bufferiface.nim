@@ -781,10 +781,9 @@ proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
       else:
         it.get(ctx, iface, iface.partialReader.r)
       if not JS_IsException(val.vc) and it.fun != nil:
-        let ret = ctx.callSink(it.fun, JS_UNDEFINED.vc, val)
-        if JS_IsException(ret.vc):
+        let ret = trace(ctx.callSink(it.fun, JS_UNDEFINED.vc, val))
+        if JS_IsException(ret):
           res = irException
-        JS_FreeValue(ctx, ret)
       else:
         res = irException
       iface.map.del(i)

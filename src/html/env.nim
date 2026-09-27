@@ -143,11 +143,8 @@ proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   let denied = ?trace(JS_NewString(ctx, "denied"))
   if not JS_IsUndefined(argv[0]):
-    let res = ctx.call(argv[0], JS_UNDEFINED.vc, denied.vc)
-    if JS_IsException(res.vc):
-      #TODO "report" (fire error event)
-      return JS_EXCEPTION
-    JS_FreeValue(ctx, res)
+    discard ?trace(ctx.call(argv[0], JS_UNDEFINED.vc, denied.vc))
+    #TODO "report" (fire error event)
   return ctx.call(argv[1], JS_UNDEFINED.vc, denied.vc)
 
 jsClassRaw(NotificationDef, "Notification"):
@@ -206,11 +203,9 @@ jsClassRaw(PermissionsDef, "Permissions"):
     JS_MarkForeignObject(rt, this, markFunc)
 
   proc query(ctx: JSContext; this, desc: JSValueConst): JSValue {.jsfunc.} =
-    let jsName = ctx.getProperty(desc, jstName)
-    if JS_IsException(jsName.vc):
-      return JS_EXCEPTION
+    let jsName = ?ctx.getProperty(desc, jstName)
     var name: DOMString
-    ?ctx.fromJSFree(jsName, name)
+    ?ctx.fromJSFree(jsName.toJSValue(), name)
     let jsName2 = ?trace(ctx.toJS(name))
     var resolve: JSCallback
     var reject: JSCallback
@@ -629,12 +624,10 @@ proc setLocation(ctx: JSContext; window: Window; s: string): JSValue =
 
 proc windowSetPrototype(ctx: JSContext; obj, proto: JSValueConst): cint
     {.cdecl.} =
-  let ours = JS_GetPrototype(ctx, obj)
-  if JS_IsException(ours.vc):
+  let ours = trace(JS_GetPrototype(ctx, obj))
+  if JS_IsException(ours):
     return -1
-  let res = ctx.sameValue(obj, ours.vc)
-  JS_FreeValue(ctx, ours)
-  cint(res)
+  JS_SameValue(ctx, obj, ours.vc)
 
 proc windowIsExtensible(ctx: JSContext; obj: JSValueConst): cint {.cdecl.} =
   return 1
@@ -645,13 +638,14 @@ proc windowPreventExtensions(ctx: JSContext; obj: JSValueConst): cint
 
 proc windowDefineOwnProperty(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
     val, getter, setter: JSValueConst; flags: cint): cint {.cdecl.} =
-  let propVal = JS_AtomIsNumericIndex1(ctx, prop)
-  if JS_IsException(propVal.vc):
+  var propVal = trace(JS_AtomIsNumericIndex1(ctx, prop))
+  if JS_IsException(propVal):
+    wasMoved(propVal)
     return -1
-  if JS_IsUndefined(propVal.vc):
+  if JS_IsUndefined(propVal):
+    wasMoved(propVal)
     return JS_DefineProperty(ctx, obj, prop, val, getter, setter,
       flags or JS_PROP_NO_EXOTIC)
-  JS_FreeValue(ctx, propVal)
   return JS_ThrowTypeErrorOrFalse(ctx, flags,
     "cannot set indexed property on window")
 
@@ -667,10 +661,9 @@ proc jsFinish(opaque: RootRef; response: Response) =
   if response != nil:
     let val = ctx.toJS(response)
     if not JS_IsException(val.vc):
-      let res = ctx.callSink(resolve, JS_UNDEFINED.vc, val)
-      if JS_IsException(res.vc):
+      let res = trace(ctx.callSink(resolve, JS_UNDEFINED.vc, val))
+      if JS_IsException(res):
         ctx.consoleError(ctx.getExceptionMsg())
-      JS_FreeValue(ctx, res)
   else:
     discard ctx.throwNetworkError()
     discard ctx.enqueueRejection(reject)
@@ -930,7 +923,10 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     if JS_IsException(module.script.record):
       return nil
     window.settings.moduleMap.put(url, mtJavascript, module)
-  return ctx.finishLoadModule(JS_DupValue(ctx, module.script.record), name)
+    if ctx.setImportMeta(module.script.record.vc, false) == fjErr:
+      return nil
+  # it seems QJS treats the return value as a const
+  return cast[JSModuleDef](JS_VALUE_GET_PTR(module.script.record.vc))
 
 proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     isHandled: JS_BOOL; opaque: pointer) {.cdecl.} =
@@ -1010,15 +1006,12 @@ proc addWindowProperties(ctx: JSContext): JSValue =
     return JS_UNDEFINED
   let name = ?trace(JS_NewString(ctx, "WindowProperties"))
   let parentProto = ctx.getClassProto(EventTargetDef.id)
-  let proto = JS_NewObjectProtoClass(ctx, parentProto.value, res)
-  if JS_IsException(proto.vc):
-    return JS_EXCEPTION
+  let proto = ?trace(JS_NewObjectProtoClass(ctx, parentProto.value, res))
   # must circumvent the exotic handler here
   if JS_DefinePropertyValue(ctx, proto.vc, ctx.getAtom(jsyToStringTag),
       name.toJSValue(), JS_PROP_CONFIGURABLE or JS_PROP_NO_EXOTIC) < 0:
-    JS_FreeValue(ctx, proto)
     return JS_EXCEPTION
-  return proto
+  proto.toJSValue()
 
 proc addWindowModule(ctx: JSContext): JSCode =
   ?ctx.addEventTarget()

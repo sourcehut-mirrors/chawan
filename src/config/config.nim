@@ -739,7 +739,7 @@ proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
     {.cdecl.} =
   if not JS_IsFunction(ctx, funcData[0].vc):
-    let res = ?trace(JS_EvalFunction(ctx, JS_DupValue(ctx, funcData[0].vc)))
+    let res = ?ctx.evalFunction(JS_DupValue(ctx, funcData[0].vc))
     if not JS_IsFunction(ctx, res):
       return JS_UNDEFINED
     JS_FreeValue(ctx, funcData[0])

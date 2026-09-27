@@ -286,10 +286,9 @@ proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
   let reject = move(opaque.reject)
   opaque.ctx = nil
   if not JS_IsException(val.vc):
-    let res = ctx.callSink(resolve, JS_UNDEFINED.vc, val)
-    if JS_IsException(res.vc):
+    let res = trace(ctx.callSink(resolve, JS_UNDEFINED.vc, val))
+    if JS_IsException(res):
       ctx.consoleError(ctx.getExceptionMsg())
-    JS_FreeValue(ctx, res)
   else:
     discard ctx.enqueueRejection(reject)
   JS_FreeContext(ctx)

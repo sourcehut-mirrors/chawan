@@ -263,6 +263,9 @@ proc JS_IsException*(t: JSValueTraced): bool =
 proc JS_IsObject*(t: JSValueTraced): bool =
   JS_IsObject(t.vc)
 
+proc JS_IsString*(t: JSValueTraced): bool =
+  JS_IsString(t.vc)
+
 proc JS_MarkValue*(rt: JSRuntime; t: JSValueTraced; markFunc: JS_MarkFunc) =
   JS_MarkValue(rt, t.vc, markFunc)
 

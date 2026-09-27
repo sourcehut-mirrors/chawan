@@ -139,7 +139,7 @@ proc checkInstanceOf*(ctx: JSContext; this: JSValueConst; tclassid: JSClassID):
 proc isSequence*(ctx: JSContext; o: JSValueConst): Opt[bool] =
   if not JS_IsObject(o):
     return ok(false)
-  let prop = ?trace(ctx.getProperty(o, jsyIterator))
+  let prop = ?ctx.getProperty(o, jsyIterator)
   ok(not JS_IsUndefined(prop))
 
 proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t; narrow: bool;
@@ -265,26 +265,19 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): JSCode =
 type SeqItResult* = enum
   sirDone, sirContinue, sirException
 
+template err(t: typedesc[SeqItResult]): SeqItResult =
+  sirException
+
 proc fromJSSeqIt*(ctx: JSContext; iter, nextMethod: JSValueConst;
     res: var JSValue): SeqItResult =
-  let next = JS_Call(ctx, nextMethod, iter, 0, nil)
-  if JS_IsException(next.vc):
-    return sirException
-  let doneVal = ctx.getProperty(next.vc, jstDone)
-  if JS_IsException(doneVal.vc):
-    JS_FreeValue(ctx, next)
-    return sirException
+  let next = ?trace(JS_Call(ctx, nextMethod, iter, 0, nil))
+  let doneVal = ?ctx.getProperty(next.vc, jstDone)
   var done: bool
-  if ctx.fromJSFree(doneVal, done).isErr:
-    JS_FreeValue(ctx, next)
-    return sirException
+  ?ctx.fromJSFree(doneVal.toJSValue(), done)
   if not done:
-    res = ctx.getProperty(next.vc, jstValue)
-    JS_FreeValue(ctx, next)
-    if JS_IsException(res.vc):
-      return sirException
+    let val = ?ctx.getProperty(next.vc, jstValue)
+    res = val.toJSValue()
     return sirContinue
-  JS_FreeValue(ctx, next)
   sirDone
 
 proc readTupleDone(ctx: JSContext; iter, nextMethod: JSValue): JSCode =
@@ -334,15 +327,10 @@ proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
 
 proc fromJSSeqInit*(ctx: JSContext; val: JSValueConst;
     oit, onextMethod: var JSValue): JSCode =
-  let it = JS_Invoke(ctx, val, ctx.getAtom(jsyIterator), 0, nil)
-  if JS_IsException(it.vc):
-    return fjErr
-  let nextMethod = ctx.getProperty(it.vc, jstNext)
-  if JS_IsException(nextMethod.vc):
-    JS_FreeValue(ctx, it)
-    return fjErr
-  oit = it
-  onextMethod = nextMethod
+  let it = ?trace(JS_Invoke(ctx, val, ctx.getAtom(jsyIterator), 0, nil))
+  let nextMethod = ?ctx.getProperty(it.vc, jstNext)
+  oit = it.toJSValue()
+  onextMethod = nextMethod.toJSValue()
   fjOk
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): JSCode =
@@ -611,18 +599,13 @@ proc fromJSUnsafeView(ctx: JSContext; val: JSValueConst;
   var offset {.noinit.}: csize_t
   var len {.noinit.}: csize_t
   var bytesPerItem {.noinit.}: csize_t
-  let jsbuf = JS_GetTypedArrayBuffer(ctx, val, offset, len, bytesPerItem)
-  if JS_IsException(jsbuf.vc):
-    return fjErr
+  let jsbuf = ?trace(JS_GetTypedArrayBuffer(ctx, val, offset, len,
+    bytesPerItem))
   if uint64(offset) + uint64(len) > uint64(int32.high):
-    JS_FreeValue(ctx, jsbuf)
     JS_ThrowRangeError(ctx, "array buffer view too large")
     return fjErr
   var abuf: JSArrayBufferInit
-  let code = ctx.fromJSUnsafeView(jsbuf.vc, abuf)
-  JS_FreeValue(ctx, jsbuf)
-  if code == fjErr:
-    return fjErr
+  ?ctx.fromJSUnsafeView(jsbuf.vc, abuf)
   res = JSArrayBufferViewInit(
     abuf: abuf,
     offset: cast[int](offset),

@@ -101,10 +101,8 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
   if JS_IsUndefined(val):
     return JS_NewArray(ctx)
   #TODO InitializedLocale, actually validate locales, dedup
-  let lengthVal = ctx.getProperty(val, jstLength)
-  if JS_IsException(lengthVal.vc):
-    return JS_EXCEPTION
-  let len = ctx.toIntIndex(lengthVal)
+  let lengthVal = ?ctx.getProperty(val, jstLength)
+  let len = ctx.toIntIndex(lengthVal.toJSValue())
   if len < 0:
     return JS_EXCEPTION
   var tags: seq[string]
@@ -114,15 +112,12 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
     if has < 0:
       return JS_EXCEPTION
     if has > 0:
-      let locale = JS_GetPropertyUint32(ctx, val, uint32(k))
-      if JS_IsException(locale.vc):
-        return JS_EXCEPTION
-      if not JS_IsString(locale.vc) and not JS_IsObject(locale.vc):
-        JS_FreeValue(ctx, locale)
+      let locale = ?trace(JS_GetPropertyUint32(ctx, val, uint32(k)))
+      if not JS_IsString(locale) and not JS_IsObject(locale):
         return JS_ThrowTypeError(ctx, "unexpected locale type")
       #TODO InitializedLocale
       var tag: string
-      ?ctx.fromJSFree(locale, tag)
+      ?ctx.fromJSFree(locale.toJSValue(), tag)
       #TODO validate
       if tag notin tags:
         tags.add(tag)

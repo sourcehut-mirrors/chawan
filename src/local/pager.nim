@@ -198,10 +198,13 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     return nil
   var source: string
   if chafile.readFile(res.get, source).isOk:
-    let funcVal = compileModule(ctx, source, moduleName)
-    if JS_IsException(funcVal.vc):
+    let funcVal = trace(compileModule(ctx, source, moduleName))
+    if JS_IsException(funcVal):
       return nil
-    return ctx.finishLoadModule(funcVal, moduleName)
+    if ctx.setImportMeta(funcVal.vc, false) == fjErr:
+      return nil
+    # it seems QJS treats the return value as a const
+    return cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal.vc))
   JS_ThrowTypeError(ctx, "failed to read file %s", cstring(res.get))
   return nil
 
@@ -442,20 +445,21 @@ proc runJSJobs(pager: Pager): Opt[void] =
 
 proc evalAction(pager: Pager; arg0: int32; oval: var JSValueTraced): JSValue =
   let ctx = pager.jsctx
-  var val = JS_DupValue(ctx, oval.vc)
-  if not JS_IsFunction(ctx, val.vc): # yes, this looks weird, but it's correct
-    val = ctx.evalFunction(val)
-    if JS_IsFunction(ctx, val.vc):
+  var val = oval
+  if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
+    val = ctx.evalFunction(val.toJSValue())
+    if JS_IsFunction(ctx, val):
       # optimization: skip this eval on the next call.
-      oval = ctx.dupTrace(val.vc)
+      oval = val
   # If an action evaluates to a function that function is evaluated too.
-  if JS_IsFunction(ctx, val.vc):
-    if arg0 != 0:
+  if JS_IsFunction(ctx, val):
+    let fun = traceCallback(val.toJSValue())
+    val = if arg0 != 0:
       let arg = trace(ctx.toJS(arg0))
-      val = ctx.call(traceCallback(val), JS_UNDEFINED.vc, arg.vc)
+      trace(ctx.call(fun, JS_UNDEFINED.vc, arg.vc))
     else: # no precnum
-      val = ctx.call(traceCallback(val), JS_UNDEFINED.vc)
-  return val
+      trace(ctx.call(fun, JS_UNDEFINED.vc))
+  val.toJSValue()
 
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =
   #TODO might want to make this an opaque type
@@ -483,14 +487,14 @@ proc handleKeyEnd(pager: Pager; e: InputEvent): int =
     return 0
   let arg1 = if e.t == ietMouse: ctx.toJS(e.m) else: JS_UNDEFINED
   pager.term.catchSigint()
-  let res = ctx.callSinkThis(pager.handleInput, ctx.toJS(pager), arg0, arg1)
+  let res = trace(ctx.callSinkThis(pager.handleInput, ctx.toJS(pager), arg0,
+    arg1))
   pager.term.respectSigint()
-  if JS_IsException(res.vc):
+  if JS_IsException(res):
     if pager.exitCode != -1: # quit() called
       return -1
     # user code, so catch & log exceptions here
     pager.console.writeException(ctx)
-  JS_FreeValue(ctx, res)
   1
 
 proc handleUserInput(pager: Pager): JSValue =
@@ -553,11 +557,11 @@ proc run*(pager: Pager; pages: openArray[JSValue]; contentType: string;
   let pages = ctx.newArrayFrom(pages)
   let jsInit = ctx.eval("Pager.prototype.init", "<init>", JS_EVAL_TYPE_GLOBAL)
   doAssert not JS_IsException(jsInit.vc)
-  let res = ctx.callSinkThis(traceCallback(jsInit), ctx.toJS(pager), pages,
-    ctx.toJS(contentType), ctx.toJS(charset), ctx.toJS(history), ctx.toJS(pipe))
-  if JS_IsException(res.vc) and pager.exitCode == -1:
+  let res = trace(ctx.callSinkThis(traceCallback(jsInit), ctx.toJS(pager),
+    pages, ctx.toJS(contentType), ctx.toJS(charset), ctx.toJS(history),
+    ctx.toJS(pipe)))
+  if JS_IsException(res) and pager.exitCode == -1:
     pager.console.writeException(ctx)
-  JS_FreeValue(ctx, res)
   pager.cleanup()
   return max(pager.exitCode, 0)
 

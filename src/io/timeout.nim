@@ -67,17 +67,17 @@ proc setTimeout*(state: var TimeoutState; ctx: JSContext; t: TimeoutType;
   return id
 
 proc runEntry(ctx: JSContext; entry: TimeoutEntry; console: Console) =
-  var ret = JS_EXCEPTION
-  if JS_IsFunction(ctx, entry.val):
-    ret = JS_Call(ctx, entry.val.vc, JS_UNDEFINED.vc, cint(entry.args.len),
-      entry.args.toJSValueConstArray())
+  let ret = if JS_IsFunction(ctx, entry.val):
+    trace(JS_Call(ctx, entry.val.vc, JS_UNDEFINED.vc, cint(entry.args.len),
+      entry.args.toJSValueConstArray()))
   else:
-    var s: string
+    var s: DOMString
     if ctx.fromJS(entry.val, s).isOk:
-      ret = ctx.eval(s, $entry.t, JS_EVAL_TYPE_GLOBAL)
-  if JS_IsException(ret.vc):
+      trace(ctx.eval(s, $entry.t, JS_EVAL_TYPE_GLOBAL))
+    else:
+      trace(JS_EXCEPTION)
+  if JS_IsException(ret):
     console.writeException(ctx)
-  JS_FreeValue(ctx, ret)
 
 # for poll
 proc sortAndGetTimeout*(state: var TimeoutState): cint =

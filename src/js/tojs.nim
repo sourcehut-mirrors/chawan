@@ -75,15 +75,12 @@ proc toJSNew*[T](ctx: JSContext; opt: Opt[T]): JSValue
 
 proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
     JSValue =
-  var paramList: seq[JSValue] = @[]
-  for arg in args:
-    paramList.add(ctx.toJS(arg))
-  paramList.add(ctx.toJS(body))
-  let fun = ctx.callConstructor(ctx.getOpaque().funRefs[jsfFunction],
-    paramList)
-  for param in paramList:
-    JS_FreeValue(ctx, param)
-  return fun
+  var paramList = newSeq[JSValueTraced](args.len + 1)
+  for i in 0 ..< args.len:
+    paramList[i] = ?trace(ctx.toJS(args[i]))
+  paramList[args.len] = ?trace(ctx.toJS(body))
+  ctx.callConstructor(ctx.getOpaque().funRefs[jsfFunction],
+    paramList.toJSValueConstOpenArray())
 
 proc newArrayBuffer*(ctx: JSContext; s: openArray[char]): JSValue =
   let p = if s.len > 0:
@@ -158,12 +155,8 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
       ctx.freeValues(vals)
       return val
     vals.add(val)
-  let a = ctx.newArrayFrom(vals)
-  if JS_IsException(a.vc):
-    return JS_EXCEPTION
-  let ret = ctx.callConstructor(ctx.getOpaque().funRefs[jsfSet], [a])
-  JS_FreeValue(ctx, a)
-  return ret
+  let a = ?trace(ctx.newArrayFrom(vals))
+  ctx.callConstructor(ctx.getOpaque().funRefs[jsfSet], [a.vc])
 
 proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue =
   const L = T.tupleLen

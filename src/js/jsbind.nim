@@ -376,13 +376,8 @@ proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
     return JS_ThrowTypeError(ctx, "unexpected pairs class")
   var fun: JSCallback
   ?ctx.fromJS(argv[0], fun)
-  let iter = JS_Call(ctx, data[0].vc, this.value, 0, nil)
-  if JS_IsException(iter.vc):
-    return iter
-  let nextMethod = ctx.getProperty(iter.vc, jstNext)
-  if JS_IsException(nextMethod.vc):
-    JS_FreeValue(ctx, iter)
-    return JS_EXCEPTION
+  let iter = ?trace(JS_Call(ctx, data[0].vc, this.value, 0, nil))
+  let nextMethod = ?ctx.getProperty(iter.vc, jstNext)
   var res = JS_UNDEFINED
   while true:
     var entry: JSValue
@@ -393,33 +388,28 @@ proc pairsForEach(ctx: JSContext; this: JSValueConst; argc: cint;
     of sirDone:
       break
     of sirContinue:
-      let key = JS_GetPropertyUint32(ctx, entry.vc, 0)
-      if JS_IsException(key.vc):
+      let key = trace(JS_GetPropertyUint32(ctx, entry.vc, 0))
+      if JS_IsException(key):
         JS_FreeValue(ctx, entry)
         res = JS_EXCEPTION
         break
-      let value = JS_GetPropertyUint32(ctx, entry.vc, 1)
+      let value = trace(JS_GetPropertyUint32(ctx, entry.vc, 1))
       JS_FreeValue(ctx, entry)
       if JS_IsException(value.vc):
-        JS_FreeValue(ctx, key)
         res = JS_EXCEPTION
         break
-      let res2 = ctx.call(fun, JS_UNDEFINED.vc, key.vc, value.vc, this.value)
-      JS_FreeValue(ctx, key)
-      JS_FreeValue(ctx, value)
-      if JS_IsException(res2.vc):
+      let res2 = trace(ctx.call(fun, JS_UNDEFINED.vc, key.vc, value.vc,
+        this.value))
+      if JS_IsException(res2):
         res = JS_EXCEPTION
         break
-      JS_FreeValue(ctx, res2)
-  JS_FreeValue(ctx, iter)
-  JS_FreeValue(ctx, nextMethod)
-  return res
+  res
 
 proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
     proto: JSObject; class: JSClassID): JSCode =
   let ctxOpaque = ctx.getOpaque()
   case iterable
-  of jitNone: discard
+  of jitNone, jitIterator: discard
   of jitValue:
     ?ctx.definePropertyCW(proto, jsyIterator,
       ctxOpaque.funRefs[jsfArrayPrototypeValues].toJSValue())
@@ -435,17 +425,11 @@ proc defineIterableProps(ctx: JSContext; iterable: JSIterableType;
     let values = ctxOpaque.funRefs[jsfArrayPrototypeValues]
     ?ctx.definePropertyCWE(proto, jsyIterator, values.toJSValue())
   of jitPair:
-    let pairs = ctx.getProperty(proto, jstEntries)
-    if JS_IsException(pairs.vc):
-      return fjErr
+    let pairs = ?ctx.getProperty(proto, jstEntries)
     let forEach = ?ctx.newCFunctionData(pairsForEach, "forEach", 1,
       cint(class), pairs.vc)
-    if ctx.definePropertyCWE(proto, jstForEach, forEach.toJSValue()) == fjErr:
-      JS_FreeValue(ctx, pairs)
-      return fjErr
-    ?ctx.definePropertyCWE(proto, jsyIterator, pairs)
-  of jitIterator:
-    discard
+    ?ctx.definePropertyCWE(proto, jstForEach, forEach.toJSValue())
+    ?ctx.definePropertyCWE(proto, jsyIterator, pairs.toJSValue())
   fjOk
 
 type

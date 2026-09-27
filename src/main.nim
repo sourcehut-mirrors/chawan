@@ -338,10 +338,9 @@ proc setupStartupScript(ctx: JSContext) =
     deallocMem(src)
   if JS_IsException(obj.vc):
     die(ctx.getExceptionMsg())
-  let ret = JS_EvalFunction(ctx, obj)
-  if JS_IsException(ret.vc):
+  let ret = ctx.evalFunction(obj)
+  if JS_IsException(ret):
     die(ctx.getExceptionMsg())
-  JS_FreeValue(ctx, ret)
 
 jsNamespaceDef(Client): # fake namespace
   proc readFile(ctx: JSContext; path: string): JSValue {.jsstfunc.} =
