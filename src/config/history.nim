@@ -22,6 +22,18 @@ type
     prev*: HistoryEntry
     next*: HistoryEntry
 
+proc shrink(hist: History) =
+  # Provide a buffer of the history length so that merging in another
+  # history doesn't just insert entries we've already shifted out.
+  let maxLen = hist.maxLen * 2
+  while hist.map.load > maxLen:
+    hist.map.del(hist.first)
+    if hist.first.next != nil:
+      hist.first.next.prev = nil
+    hist.first = hist.first.next
+    if hist.first == nil:
+      hist.last = nil
+
 proc add(hist: History; entry: sink HistoryEntry; merge = false) =
   let old = HistoryEntry(hist.map.getOrDefault(entry.s))
   if merge and old != nil:
@@ -43,13 +55,8 @@ proc add(hist: History; entry: sink HistoryEntry; merge = false) =
     hist.last.next = entry
   hist.map.put(entry)
   hist.last = entry
-  if hist.map.load > hist.maxLen:
-    hist.map.del(hist.first)
-    if hist.first.next != nil:
-      hist.first.next.prev = nil
-    hist.first = hist.first.next
-    if hist.first == nil:
-      hist.last = nil
+  if not merge:
+    hist.shrink()
 
 proc newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
@@ -89,11 +96,19 @@ proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
   let file = ?ps.afdopen("w")
   if reverse:
     var entry = hist.last
+    var i = 0
     while entry != nil:
       ?file.writeLine(entry.s)
       entry = entry.prev
+      inc i
+      if i >= hist.maxLen:
+        break # buffered entries follow
   else:
     var entry = hist.first
+    for i in 0 ..< hist.maxLen - hist.map.load: # skip buffered entries
+      if entry == nil:
+        break
+      entry = entry.next
     while entry != nil:
       ?file.writeLine(entry.s)
       entry = entry.next
@@ -106,6 +121,10 @@ proc write*(hist: History; file: string): Opt[void] =
   let ps = newPosixStream(file)
   if ps != nil:
     ?hist.parse(ps, hist.mtime, merge = true)
+    # delay shrink until merge is finished so that deduplication can work
+    # correctly.  (otherwise, we'd get into a loop of shifting out the
+    # last entry and then pushing it to the top with a full history)
+    hist.shrink()
   if hist.first == nil:
     return ok()
   let tmp = file & '~'
