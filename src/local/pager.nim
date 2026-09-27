@@ -126,6 +126,7 @@ type
     loaderPid: int
     luctx: LUContext
     menu: Select
+    menuTail: Select
     numload: int # number of pages currently being loaded
     term*: Terminal
     timeouts: ptr TimeoutState
@@ -987,18 +988,15 @@ proc draw(pager: Pager): Opt[void] =
     if pager.display.redraw:
       pager.clear(stDisplay)
     pager.term.unsetScroll()
-  var selects: seq[Select]
   var select = pager.menu
   while select != nil:
     if select.redraw or pager.display.redraw:
-      selects.add(select)
+      select.drawSelect(pager.display.grid)
+      select.redraw = false
+      pager.display.redraw = true
+      imageRedraw = false
+      hasMenu = true
     select = Select(select.next)
-  for select in selects.ritems:
-    select.drawSelect(pager.display.grid)
-    select.redraw = false
-    pager.display.redraw = true
-    imageRedraw = false
-    hasMenu = true
   if pager.display.redraw:
     pager.term.writeGrid(pager.display.grid)
     pager.display.redraw = false
@@ -2688,17 +2686,33 @@ jsClassDef(Pager):
     return ctx.askChar(pager, msg.substr(j))
 
   # private
-  proc setMenu(ctx: JSContext; pager: Pager; val: JSValueConst): Opt[void] {.
-      jsfset: "menu".} =
-    if JS_IsNull(val):
-      pager.menu = Select(nil)
+  proc pushMenu(ctx: JSContext; pager: Pager; menu: Select): Opt[void]
+      {.jsfunc.} =
+    menu.next = SelectNil(pager.menu)
+    if pager.menu != nil:
+      pager.menu.prev = SelectNil(menu)
     else:
-      ?ctx.fromJS(val, pager.menu)
-      pager.menu.redraw = true
+      pager.menuTail = menu
+    pager.menu = menu
+    pager.menu.redraw = true
     if pager.bufferIface != nil:
       pager.bufferIface.redraw = true
     pager.display.redraw = true
     ok()
+
+  # private
+  proc popMenu(pager: Pager) {.jsfunc.} =
+    if pager.menu != nil:
+      let next = Select(move(pager.menu.next))
+      pager.menu = next
+      if next != nil:
+        next.prev = SelectNil(nil)
+        next.redraw = true
+      else:
+        pager.menuTail = Select(nil)
+      if pager.bufferIface != nil:
+        pager.bufferIface.redraw = true
+      pager.display.redraw = true
 
   # private
   proc handleStderr(pager: Pager) {.jsfunc.} =

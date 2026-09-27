@@ -518,8 +518,8 @@ Pager.prototype.setBuffer = function(buffer) {
 Pager.prototype.setVisibleBuffer = function(buffer) {
     this.updateTitle(buffer.init);
     this.bufferIface = buffer.iface;
-    if (this.menu == null)
-        this.menu = buffer.select;
+    if (this.menu == null && buffer.select != null)
+        this.pushMenu(buffer.select);
     buffer.iface.queueDraw();
 }
 
@@ -1208,15 +1208,14 @@ Pager.prototype.openMenuInternal = async function(init) {
     x = Math.max(x, 0);
     y = Math.max(y, 0);
     let commands = "";
-    let select;
-    select = new Select(options, x, y, this.bufWidth, this.bufHeight,
-                        (idx, close) => {
+    const select = new Select(options, x, y, this.bufWidth, this.bufHeight,
+                              (idx, close) => {
         if (close)
-            this.menu = this.menu.next;
+            this.popMenu();
         if (idx != -1)
             options.callback(idx);
-    }, this.menu);
-    this.menu = select;
+    });
+    this.pushMenu(select);
 }
 
 /* public */
@@ -1249,7 +1248,7 @@ Pager.prototype.openBufferMenu = async function(x = undefined, y = undefined) {
 Pager.prototype.closeMenu = function() {
     const menu = this.menu;
     if (menu != null) {
-        this.menu = menu.next;
+        this.popMenu();
         return menu.cancel();
     }
 }
@@ -2241,15 +2240,16 @@ const ReTextStart = /\S/gu;
             const selected = await new Promise(resolve => {
                 const options = new SelectBuilder(config.select, res.options,
                                                   res.selected);
-                this.select = new Select(options,
-                                         Math.max(this.acursorx - 1, 0),
-                                         Math.max(this.acursory - 1 - selected, 0),
-                                         this.width, this.height, resolve,
-                                         globalThis.select);
-                pager.menu = this.select;
+                const select = new Select(options,
+                                          Math.max(this.acursorx - 1, 0),
+                                          Math.max(this.acursory - 1 -
+                                                   res.selected, 0),
+                                          this.width, this.height, resolve);
+                this.select = select;
+                pager.pushMenu(select);
             });
             if (pager.menu == this.select)
-                pager.menu = null;
+                pager.popMenu();
             this.select = null;
             iface.queueDraw();
             const res2 = await iface.select(selected);

@@ -26,7 +26,7 @@ type
 
   Select* = JSRef[SelectObj]
 
-  SelectNil = JSNullRef[SelectObj]
+  SelectNil* = JSNullRef[SelectObj]
 
   SelectObj = object
     options: seq[SelectOption]
@@ -43,6 +43,7 @@ type
     unselected: bool
     finish: JSCallback
     map*: ActionMap
+    prev*: SelectNil
     next*: SelectNil
 
   SelectBuilderObj = object
@@ -512,19 +513,17 @@ jsClassPublicDef(Select):
     select.queueDraw()
 
   proc newSelect(ctx: JSContext; builder: SelectBuilder;
-      x, y, width, height: int; finish: JSCallback; next: SelectNil):
-      Select {.jsctor.} =
+      x, y, width, height: int; finish: JSCallback): Select {.jsctor.} =
     let select = jsNew SelectObj(
       selected: builder.selected,
       x: x,
       y: y,
       options: move(builder.options),
       finish: finish,
-      next: next,
       map: move(builder.map)
     )
-    select.map.sort()
     if select != nil:
+      select.map.sort()
       var maxw = 0
       for opt in select.options.mitems:
         opt.s.mnormalize()
