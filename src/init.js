@@ -1232,14 +1232,14 @@ Pager.prototype.openCustomMenu = async function(init) {
 }
 
 /* public */
-Pager.prototype.openMenu = async function(x = null, y = null) {
+Pager.prototype.openMenu = async function(x = undefined, y = undefined) {
     const options = new SelectBuilder(config.select);
     mainMenu(options);
     return this.openMenuInternal({x, y, options});
 }
 
-/* private */
-Pager.prototype.openBufferMenu = async function(x = null, y = null) {
+/* public */
+Pager.prototype.openBufferMenu = async function(x = undefined, y = undefined) {
     const options = new SelectBuilder(config.select);
     bufferMenu(options);
     return this.openMenuInternal({x, y, options});

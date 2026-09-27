@@ -329,19 +329,18 @@ If the editor signals an error (crash or non\-zero exit code),
 Otherwise, the user\(cqs input is returned as a string.
 .RE
 .TP
-\f[CR]openMenu(x = buffer.acursorx, y = buffer.acursory)\f[R]
-Opens the context menu at the specified x/y positions.
+\f[CR]openMenu(x?, y?)\f[R]
+Opens the context menu at the specified position.
+.TP
+\f[CR]openBufferMenu(x?, y?)\f[R]
+Opens the buffer selection menu at the specified position.
 .TP
 \f[CR]openCustomMenu(init = {x: buffer.acursorx, y: buffer.acursory, name})\f[R]
-Open a custom menu at the specified x/y positions.
-\f[CR]init\f[R] is an object with the optional fields \f[CR]x\f[R],
-\f[CR]y\f[R], and \f[CR]keymap\f[R], and the mandatory field
-\f[CR]options\f[R].
-.RS
-\f[CR]x\f[R] and \f[CR]y\f[R] are numbers.
-\f[CR]name\f[R] is a menu identifier.
-See the Menu section for how to define a custom menu.
-.RE
+Open a custom menu at the specified position.
+\f[CR]init\f[R] is an object with the optional fields
+\f[CR]x\f[R]/\f[CR]y\f[R] (numbers) and the mandatory field
+\f[CR]name\f[R], which specifies the menu defined in menu.js to open.
+Refer to the Menu section for details.
 .TP
 \f[CR]closeMenu()\f[R]
 Closes the menu if it is opened.
@@ -711,13 +710,13 @@ First line to be displayed.
 \f[CR]cursory\f[R]
 Line pointed at by the cursor.
 .SS Menu
-By default, the menus \(lqmain\(rq and \(lqselectBuffer\(rq are defined,
-and can be used in \f[CR]openCustomMenu\f[R] as described above (Pager
-section).
+By default, the main menu and buffer selection menu can be opened using
+\f[CR]openMenu\f[R] and \f[CR]openBufferMenu\f[R] as described above
+(Pager section).
 .PP
-It is also possible to define custom menus.
+Aside from these, it is also possible to define custom menus.
 First, create a file \f[CR]$CHA_DIR/menu.js\f[R].
-(The path can be changed using \f[CR]external.menu\-file\f[R].)
+(The path can also be changed using \f[CR]external.menu\-file\f[R].)
 Then, export your menu as follows:
 .IP
 .EX
@@ -737,7 +736,7 @@ Now you can open the custom menu using
 The parameter \f[CR]m\f[R] is an instance of the
 \f[CR]SelectBuilder\f[R] interface, for which public methods are:
 .TP
-item(label, command, key?)
+\f[CR]item(label, command, key?)\f[R]
 Add an item to the menu with \f[CR]label\f[R] that executes
 \f[CR]command\f[R] when it\(cqs selected.
 \f[CR]key\f[R] is an optional parameter for a key shortcut.

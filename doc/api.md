@@ -297,16 +297,17 @@ Following properties (functions/getters) are defined by `Pager`:
   If the editor signals an error (crash or non-zero exit code), `null` is
   returned.  Otherwise, the user's input is returned as a string.
 
-`openMenu(x = buffer.acursorx, y = buffer.acursory)`
-: Opens the context menu at the specified x/y positions.
+`openMenu(x?, y?)`
+: Opens the context menu at the specified position.
+
+`openBufferMenu(x?, y?)`
+: Opens the buffer selection menu at the specified position.
 
 `openCustomMenu(init = {x: buffer.acursorx, y: buffer.acursory, name})`
-: Open a custom menu at the specified x/y positions.  `init` is an object
-  with the optional fields `x`, `y`, and `keymap`, and the mandatory field
-  `options`.
-
-  `x` and `y` are numbers.  `name` is a menu identifier.  See the [Menu](#menu)
-  section for how to define a custom menu.
+: Open a custom menu at the specified position.  `init` is an object
+  with the optional fields `x`/`y` (numbers) and the mandatory field
+  `name`, which specifies the menu defined in menu.js to open.
+  Refer to the [Menu](#menu) section for details.
 
 `closeMenu()`
 : Closes the menu if it is opened.
@@ -639,12 +640,13 @@ Following properties (functions/getters) are defined by `Select`:
 
 ### Menu
 
-By default, the menus "main" and "selectBuffer" are defined, and can be
-used in `openCustomMenu` as described above ([Pager](#pager) section).
+By default, the main menu and buffer selection menu can be opened using
+`openMenu` and `openBufferMenu` as described above ([Pager](#pager)
+section).
 
-It is also possible to define custom menus.  First, create a file
-`$CHA_DIR/menu.js`.  (The path can be changed using `external.menu-file`.)
-Then, export your menu as follows:
+Aside from these, it is also possible to define custom menus.  First,
+create a file `$CHA_DIR/menu.js`.  (The path can also be changed using
+`external.menu-file`.)  Then, export your menu as follows:
 
 ```js
 export function myMenu(m) {
@@ -663,7 +665,7 @@ Now you can open the custom menu using
 The parameter `m` is an instance of the `SelectBuilder` interface, for
 which public methods are:
 
-item(label, command, key?)
+`item(label, command, key?)`
 : Add an item to the menu with `label` that executes `command` when it's
   selected.  `key` is an optional parameter for a key shortcut.
 
