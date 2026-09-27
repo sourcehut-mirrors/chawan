@@ -612,6 +612,9 @@ proc JS_ToCStringLen*(ctx: JSContext; plen: var csize_t; val1: JSValueConst):
 proc JS_ToCString*(ctx: JSContext; val1: JSValueConst): cstringConst
 proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
 
+proc JS_NewSymbol*(ctx: JSContext; description: cstringConst;
+  is_global: JS_BOOL): JSValue
+
 # cha extensions - unstable API!
 proc JS_NewForeignObject*(rt: JSRuntime; classId: JSClassID; size: csize_t):
   pointer

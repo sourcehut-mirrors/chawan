@@ -761,6 +761,8 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
 }
 void JS_FreeCString(JSContext *ctx, const char *ptr);
 
+JSValue JS_NewSymbol(JSContext *ctx, const char *description, JS_BOOL is_global);
+
 void *JS_NewForeignObject(JSRuntime *rt, JSClassID class_id, size_t size);
 void *JS_DupForeignObject(JSRuntime *rt, void *p);
 void JS_MarkForeignObject(JSRuntime *rt, void *p, JS_MarkFunc mark_func);
