@@ -4,6 +4,7 @@ import std/posix
 
 import config/chapath
 import io/dynstream
+import js/constcharp
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -88,6 +89,11 @@ jsNamespaceDef(Util):
 
   proc width(s: DOMString): int {.jsstfunc.} =
     strwidth.width(s.toOpenArray())
+
+  proc importModule(ctx: JSContext; path: DOMString): JSValue {.jsstfunc.} =
+    # used in init.js because QJS cannot handle import() if you strip debug
+    # info
+    JS_LoadModule(ctx, chaos.getcwd().toCStringConst(), cstringConst(path.p))
 
 proc addUtilModule*(ctx: JSContext): JSCode =
   ctx.registerNamespaceFree(UtilDef)

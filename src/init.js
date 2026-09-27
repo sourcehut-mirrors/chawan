@@ -1223,7 +1223,7 @@ Pager.prototype.openMenuInternal = async function(init) {
 Pager.prototype.openCustomMenu = async function(init) {
     const {x, y, name} = init;
     if (!this.menuMap)
-        this.menuMap = await import("$CHA_DIR/menu.js");
+        this.menuMap = await Util.importModule("$CHA_DIR/menu.js");
     if (!(name in this.menuMap))
         throw TypeError(`menu ${name} not found`);
     const options = new SelectBuilder(config.select);
