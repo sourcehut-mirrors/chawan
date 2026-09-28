@@ -979,7 +979,7 @@ proc tabHashFast(collection: ptr CollectionLikeObj): Hash =
 proc hash(node: Node): Hash =
   hash(cast[pointer](node))
 
-iterator liveCollections(document: Document; node: Node): CollectionLike =
+iterator liveCollections(document: Document; node: Node): lent CollectionLike =
   for it in document.liveCollections.tabGetAll(node):
     yield CollectionLike(it)
 
@@ -1041,10 +1041,11 @@ proc isElementWithClass(this: Collection; node: Node): bool =
   let element = node as Element
   if element == nil:
     return false
-  for i in 1 ..< this.atoms.len:
+  let L = this.atoms.len
+  for i in 1 ..< L:
     if not element.hasClass(this.atoms[i]):
       return false
-  true
+  L > 1
 
 proc isLink(this: Collection; node: Node): bool =
   let element = node as HTMLElement
@@ -1844,8 +1845,8 @@ type ObserverItem = object
 
 proc find(observers: openArray[ObserverItem]; observer: MutationObserver):
     int =
-  for i in 0 ..< observers.len:
-    if observers[i].observer == observer:
+  for i, item in observers.mypairs:
+    if item.observer == observer:
       return i
   -1
 
@@ -2617,7 +2618,7 @@ proc replaceChildrenImpl(ctx: JSContext; parent: Node;
   return JS_UNDEFINED
 
 proc previousSiblingExcept(this: Node; nodes: openArray[Node]): Node =
-  var node = this
+  var node = this.previousSibling
   while node != nil:
     if node notin nodes:
       break
@@ -2625,7 +2626,7 @@ proc previousSiblingExcept(this: Node; nodes: openArray[Node]): Node =
   node
 
 proc nextSiblingExcept(this: Node; nodes: openArray[Node]): Node =
-  var node = this
+  var node = this.nextSibling
   while node != nil:
     if node notin nodes:
       break
@@ -2812,7 +2813,8 @@ proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
   if this != nil:
     this.atoms.add(param)
     for class in classNames.toOpenArray().split(AsciiWhitespace):
-      this.atoms.add(class.toAtom())
+      if class.len > 0:
+        this.atoms.add(class.toAtom())
   this
 
 proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
@@ -4964,21 +4966,13 @@ proc isDisplayed(element: Element): bool =
   return element.computed{"display"} != DisplayNone
 
 proc nextDisplayedElement(element: Element): Element =
-  for child in element.asParentNode.elementList:
-    if child.isDisplayed():
-      return child
-  # climb up until we find a non-last leaf (this might be node itself)
-  var element = element
-  while true:
-    var next = element.nextElementSibling
-    while next != nil:
-      if next.isDisplayed():
-        return next
-      next = next.nextElementSibling
-    element = element.asNode.parentElement
-    if element == nil:
-      break
-  # done
+  var node = element.asNode.nextDescendant(Node(nil))
+  while node != nil:
+    let element = node as Element
+    if element != nil and element.isDisplayed():
+      return element
+    let skip = element != nil # skip non-displayed elements
+    node = node.nextDescendant(Node(nil), skip)
   Element(nil)
 
 # Does this precede other?
@@ -7584,9 +7578,17 @@ jsClassRaw(HTMLTitleElementDef, "HTMLTitleElement"):
       jsfset: "text".} =
     this.asParentNode.replaceAll(ctx, ds)
 
+# media
+jsClassRaw(HTMLMediaElementDef, "HTMLMediaElement"):
+  jsextends HTMLElementDef
+
+jsClassDef(HTMLVideoElement):
+  jsextends HTMLMediaElementDef
+
+jsClassDef(HTMLAudioElement):
+  jsextends HTMLMediaElementDef
+
 # misc
-htmlClassDef(HTMLVideoElement)
-htmlClassDef(HTMLAudioElement)
 htmlClassDef(HTMLIFrameElement)
 htmlClassDef(HTMLFrameElement)
 htmlClassDef(HTMLHeadElement)
@@ -7824,6 +7826,7 @@ proc registerElements(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(HTMLElementDef)
   ?ctx.addHTMLElementReflection()
   ?ctx.registerFakeClass(SheetElementDef)
+  ?ctx.registerClass(HTMLMediaElementDef)
   ?ctx.registerClass(HTMLAnchorElementDef)
   ?ctx.registerClass(HTMLSpanElementDef)
   ?ctx.registerClass(HTMLOptGroupElementDef)

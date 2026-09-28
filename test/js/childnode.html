@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<title>ChildNode test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+x.before("hi");
+assertEquals(x.previousSibling.textContent, "hi");
+x.previousSibling.remove();
+document.getElementById("x").textContent = "Success";
+</script>

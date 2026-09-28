@@ -3,7 +3,11 @@
 <div class="a b c">Fail</div>
 <script src=asserts.js></script>
 <script>
-const div = document.getElementsByClassName("a")[0]
+const div = document.getElementsByClassName(" a ")[0]
+assertEquals(document.getElementsByClassName("").length, 0)
+assertEquals(document.getElementsByClassName(" ").length, 0)
+assertNotEquals(document.getElementsByClassName(""),
+		document.getElementsByClassName(" "))
 const classes = ["a", "b", "c"];
 let cl = div.classList;
 for (let i = 0; i < classes.length; ++i)
