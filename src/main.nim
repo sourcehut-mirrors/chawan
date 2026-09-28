@@ -382,15 +382,6 @@ proc addJSModules(client: Window; ctx: JSContext): JSCode =
   ?ctx.addBufferInterfaceModule()
   ctx.addSelectModule()
 
-proc newClient(forkserver: ForkServer; loader: FileLoader; jsctx: JSContext;
-    urandom: PosixStream): Window {.myProveInit.} =
-  let console = newConsole(cast[ChaFile](stderr))
-  let client = newClient(jsctx, loader, urandom, console)
-  if client != nil and client.addJSModules(jsctx).isOk:
-    return client
-  else:
-    die("failed to initialize JS: " & jsctx.getExceptionMsg())
-
 proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
@@ -401,7 +392,10 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
   let loaderControl = newPosixStream(loaderSockVec[0])
   loaderControl.setCloseOnExec()
   let loader = newFileLoader(pagerPid, loaderControl)
-  let client = newClient(forkserver, loader, jsctx, urandom)
+  let console = newConsole(cast[ChaFile](stderr))
+  let client = newClient(jsctx, loader, urandom, console)
+  if client == nil or client.addJSModules(jsctx).isErr:
+    die("failed to initialize JS: " & jsctx.getExceptionMsg())
   var warnings = newSeq[string]()
   let cres = ctx.initConfig(warnings, jsctx)
   if cres.isErr:

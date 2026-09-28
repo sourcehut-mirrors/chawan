@@ -2704,12 +2704,12 @@ jsClassDef(Pager):
   proc popMenu(pager: Pager) {.jsfunc.} =
     if pager.menu != nil:
       let next = Select(move(pager.menu.next))
-      pager.menu = next
       if next != nil:
         next.prev = SelectNil(nil)
         next.redraw = true
       else:
         pager.menuTail = Select(nil)
+      pager.menu = next
       if pager.bufferIface != nil:
         pager.bufferIface.redraw = true
       pager.display.redraw = true
