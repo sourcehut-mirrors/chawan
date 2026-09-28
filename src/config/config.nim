@@ -812,13 +812,15 @@ proc addAction*(map: ActionMap; key: sink string; val: JSValue) =
   map.tab.add(Action(k: move(key), val: trace(val), n: map.num))
   inc map.num
 
-proc newActionMap(ctx: JSContext; s: openArray[char];
-    defaultAction: JSValueConst): ActionMap =
+proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: string):
+    ActionMap =
   let map = jsNew ActionMapObj(defaultAction: trace(JS_UNDEFINED))
-  if not JS_IsNull(defaultAction):
-    map.defaultAction = ctx.dupTrace(defaultAction)
   if map == nil:
     return ActionMap(nil)
+  if defaultAction != "":
+    map.defaultAction = trace(ctx.evalCmdDecl(defaultAction))
+    if JS_IsException(map.defaultAction):
+      return ActionMap(nil)
   var dummy: seq[string]
   for it in s.split('\n'):
     var i = 0
@@ -829,20 +831,13 @@ proc newActionMap(ctx: JSContext; s: openArray[char];
           break
         let key = parseKeyComb(it.toOpenArray(0, i - 2), dummy)
         let val = ctx.evalCmdDecl(it.substr(i))
+        if JS_IsException(val.vc):
+          return ActionMap(nil)
         map.addAction(key, val)
         break
       i = j + 1
   map.sort()
   map
-
-proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: string):
-    ActionMap =
-  var fun = trace(JS_UNDEFINED)
-  if defaultAction != "":
-    fun = trace(ctx.evalCmdDecl(defaultAction))
-    if JS_IsException(fun):
-      return ActionMap(nil)
-  ctx.newActionMap(s, fun.vc)
 
 proc newActionMap*(map: ActionMap): ActionMap =
   jsNew map[]
@@ -2658,10 +2653,6 @@ jsClassDef(Config):
 
 jsClassPublicDef(ActionMap):
   jsget ActionMap, keyLast
-
-  proc newActionMap(ctx: JSContext; s: DOMString;
-      defaultAction = JSCallback(nil)): ActionMap {.jsctor.} =
-    ctx.newActionMap(s.toOpenArray(), defaultAction.value)
 
   proc mark(rt: JSRuntime; map: ActionMap; markFunc: JS_MarkFunc) {.jsmark.} =
     for it in map.tab:
