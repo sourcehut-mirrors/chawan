@@ -43,7 +43,6 @@ type
 
   Action = object
     k: string
-    n: uint32
     val: JSValueTraced
 
   ActionMapObj = object
@@ -51,7 +50,6 @@ type
     tab: seq[Action]
     keyIdx: int
     keyLast*: int
-    num: uint32
 
   ActionMap* = JSRef[ActionMapObj]
 
@@ -525,7 +523,6 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   Err[string]
 proc getClassID(t: typedesc[Config]): JSClassID
 proc getClassID*(t: typedesc[ActionMap]): JSClassID
-proc sort*(map: ActionMap)
 
 static:
   doAssert sizeof(ConfigOptionBit) == 1
@@ -809,8 +806,18 @@ proc toJS*(ctx: JSContext; val: ScriptingMode): JSValue =
   of smApp: return JS_NewString(ctx, "app")
 
 proc addAction*(map: ActionMap; key: sink string; val: JSValue) =
-  map.tab.add(Action(k: move(key), val: trace(val), n: map.num))
-  inc map.num
+  if key.len <= 0:
+    return
+  let c = key[0]
+  var i = map.tab.lowerBound(c, proc(x: Action; c: char): int =
+    cmp(x.k[0], c)
+  )
+  while i < map.tab.len and map.tab[i].k < key:
+    if key.startsWith(map.tab[i].k):
+      map.tab.delete(i)
+    else:
+      inc i
+  map.tab.insert(Action(k: move(key), val: trace(val)), i)
 
 proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: string):
     ActionMap =
@@ -836,29 +843,10 @@ proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: string):
         map.addAction(key, val)
         break
       i = j + 1
-  map.sort()
   map
 
 proc newActionMap*(map: ActionMap): ActionMap =
   jsNew map[]
-
-proc sort*(map: ActionMap) =
-  map.tab.sort(proc(a, b: Action): int =
-    cmp(a.k, b.k), SortOrder.Ascending)
-  #TODO we could probably do this more efficiently
-  for i in countdown(map.tab.high - 1, 0):
-    let j = i + 1
-    if map.tab[j].k.startsWith(map.tab[i].k):
-      # always remove the older keybinding
-      let k = if map.tab[j].n < map.tab[i].n: j else: i
-      map.tab.delete(k)
-  for i in countdown(map.tab.high, 0):
-    if JS_IsUndefined(map.tab[i].val):
-      map.tab.delete(i)
-  #TODO not sure what happens if this is called after feedNext, but probably
-  # not what you'd expect
-  map.keyIdx = 0
-  map.keyLast = 0
 
 # Helper function for evalAction in case it wants to replace the value we
 # are reading.
@@ -2647,8 +2635,6 @@ jsClassDef(Config):
         continue
       ?ctx.definePropertyE(objIt, name, move(cmd).toJSValue())
     config.cmdInit = @[]
-    for cs in csPage..csLine:
-      config.actionMap[cs].sort()
     ok()
 
 jsClassPublicDef(ActionMap):
@@ -2664,16 +2650,13 @@ jsClassPublicDef(ActionMap):
     let rk = parseKeyComb(k.toOpenArray(), dummy)
     if rk == "":
       return ok()
-    let val2 = if JS_IsFunction(ctx, val):
-      JS_DupValue(ctx, val)
+    if JS_IsFunction(ctx, val):
+      a.addAction(rk, JS_DupValue(ctx, val))
     else:
       var s: string
       ?ctx.fromJS(val, s)
-      ctx.evalCmdDecl(s)
-    if JS_IsException(val2.vc):
-      return err()
-    a.addAction(rk, val2)
-    a.sort()
+      let val = ?trace(ctx.evalCmdDecl(s))
+      a.addAction(rk, val.toJSValue())
     ok()
 
   proc getter(ctx: JSContext; a: ActionMap; s: DOMString): JSValue

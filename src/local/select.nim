@@ -523,7 +523,6 @@ jsClassPublicDef(Select):
       map: move(builder.map)
     )
     if select != nil:
-      select.map.sort()
       var maxw = 0
       for opt in select.options.mitems:
         opt.s.mnormalize()
