@@ -599,6 +599,11 @@ proc JS_ToFloat64*(ctx: JSContext; pres: var float64; val: JSValueConst): cint
 proc JS_ToBigInt64*(ctx: JSContext; pres: var int64; val: JSValueConst): cint
 # same as JS_ToInt64 but allow BigInt
 proc JS_ToInt64Ext*(ctx: JSContext; pres: var int64; val: JSValueConst): cint
+proc JS_NewBigInt128*(ctx: JSContext; low, high: uint64): JSValue
+proc JS_ToBigInt128*(ctx: JSContext; plow, phigh: var uint64;
+  val: JSValueConst): cint
+proc JS_ToBigInt128Sat*(ctx: JSContext; plow, phigh: var uint64;
+  val: JSValueConst): cint
 
 proc JS_NewStringLen*(ctx: JSContext; str: cstringConst; len1: csize_t): JSValue
 proc JS_NewString*(ctx: JSContext; str: cstring): JSValue
