@@ -390,17 +390,26 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
 	$(NIM) r $(test_flags) test/charset/basic.nim
 	CGS_TESTDIR=$(OBJDIR)/chagashi_test $(NIM) r $(test_flags) test/charset/data.nim
 
+test/nim/%: test/nim/%.nim
+	$(NIM) c $(test_flags) -o:$@ $<
+
+test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos
+test_bin += $(foreach name,$(test_names),test/nim/$(name))
+
+test/nim/ttwtstr: src/utils/twtstr.nim
+test/nim/tcatom: src/html/catom.nim
+test/nim/tjsref: src/js/jsref.nim src/js/jsbind.nim src/js/jsutils.nim \
+	src/js/quickjs.nim
+test/nim/tjsbind: src/js/fromjs.nim src/js/jsbind.nim src/js/jsnull.nim \
+	src/js/jspropenumlist.nim src/js/jsref.nim src/js/jstypes.nim \
+	src/js/jsutils.nim src/js/quickjs.nim src/js/tojs.nim src/utils/opt.nim
+test/nim/tlibregexp: src/js/libregexp.nim
+test/nim/tchahash: src/utils/chahash.nim
+test/nim/tchaos: src/utils/chaos.nim
+
 .PHONY: test_nim
-test_nim: test/nim/ttwtstr.nim test/nim/tcatom.nim test/nim/tjsref.nim \
-		test/nim/tjsbind.nim test/nim/tlibregexp.nim \
-		test/nim/tchahash.nim
-	$(NIM) r $(test_flags) test/nim/ttwtstr.nim
-	$(NIM) r $(test_flags) test/nim/tcatom.nim
-	$(NIM) r $(test_flags) test/nim/tjsref.nim
-	$(NIM) r $(test_flags) test/nim/tjsbind.nim
-	$(NIM) r $(test_flags) test/nim/tlibregexp.nim
-	$(NIM) r $(test_flags) test/nim/tchahash.nim
-	$(NIM) r $(test_flags) test/nim/tchaos.nim
+test_nim: $(test_bin)
+	for f in $(test_names); do test/nim/$$f; done
 
 # slow, for manual use only
 .PHONY: test_oklab
