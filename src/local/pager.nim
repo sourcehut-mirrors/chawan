@@ -988,7 +988,7 @@ proc draw(pager: Pager): Opt[void] =
     if pager.display.redraw:
       pager.clear(stDisplay)
     pager.term.unsetScroll()
-  var select = pager.menu
+  var select = pager.menuTail
   while select != nil:
     if select.redraw or pager.display.redraw:
       select.drawSelect(pager.display.grid)
@@ -996,7 +996,7 @@ proc draw(pager: Pager): Opt[void] =
       pager.display.redraw = true
       imageRedraw = false
       hasMenu = true
-    select = Select(select.next)
+    select = Select(select.prev)
   if pager.display.redraw:
     pager.term.writeGrid(pager.display.grid)
     pager.display.redraw = false
