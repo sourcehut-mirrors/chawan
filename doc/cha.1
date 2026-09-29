@@ -69,6 +69,15 @@ So this works:
 .PP
 However, symbols and words starting with a number must still be quoted,
 i.e.\ you have to quote them twice to bypass shell quoting.
+.PP
+Finally, for options whose name does not appear in any other section, it
+is allowed to skip the section.
+For instance, to enable \f[I]buffer.images\f[R], you can type
+.PP
+\f[B]\-o\f[R] images=true.
+.PP
+However, this may stop working in future versions if \f[I]images\f[R] is
+added to another section, so it shouldn\(cqt be relied upon in scripts.
 .RE
 .TP
 \f[B]\-r\f[R], \f[B]\-\-run\f[R] \f[I]script\f[R]/\f[I]file\f[R]

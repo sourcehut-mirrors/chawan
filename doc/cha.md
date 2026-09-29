@@ -64,13 +64,22 @@ subsequent space.  For example, **\-obuffer.images=true** is valid.
   format described in **cha-config**(5), so the passed string must
   be valid TOML.
 
-    To ease specifying string parameters, unrecognized bare keywords
-    are converted to strings.  So this works:
+  To ease specifying string parameters, unrecognized bare keywords
+  are converted to strings.  So this works:
 
-    **\-\-opt** display.color-mode=*eight-bit*.
+  **\-\-opt** display.color-mode=*eight-bit*.
 
-    However, symbols and words starting with a number must still be
-    quoted, i.e. you have to quote them twice to bypass shell quoting.
+  However, symbols and words starting with a number must still be
+  quoted, i.e. you have to quote them twice to bypass shell quoting.
+
+  Finally, for options whose name does not appear in any other section, it
+  is allowed to skip the section.  For instance, to enable *buffer.images*,
+  you can type
+
+  **\-o** images=true.
+
+  However, this may stop working in future versions if *images* is added to
+  another section, so it shouldn't be relied upon in scripts.
 
 **\-r**, **\-\-run** *script*/*file*
 
@@ -91,8 +100,8 @@ subsequent space.  For example, **\-obuffer.images=true** is valid.
 : Override the character set of all input files.  Useful when Chawan is
   incorrectly recognizing the input character set.
 
-    (If this happens often, consider changing the default input charset
-    recognition list *encoding.document-charset* in the configuration.)
+  (If this happens often, consider changing the default input charset
+  recognition list *encoding.document-charset* in the configuration.)
 
 **\-M**, **\-\-monochrome**
 
