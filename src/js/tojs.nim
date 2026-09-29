@@ -96,13 +96,13 @@ proc toJS*(ctx: JSContext; s: string): JSValue =
   return JS_NewStringLen(ctx, s.toCStringConst, csize_t(s.len))
 
 proc toJS*(ctx: JSContext; s: openArray[char]): JSValue =
-  if s.len < 0:
+  if s.len <= 0:
     return JS_NewString(ctx, "")
   return JS_NewStringLen(ctx, cast[cstringConst](unsafeAddr s[0]),
     csize_t(s.len))
 
 proc toJS*(ctx: JSContext; s: DOMString): JSValue =
-  ctx.toJS(s.toOpenArray())
+  return JS_NewStringLen(ctx, cstringConst(s.p), csize_t(s.len))
 
 proc toJS*(ctx: JSContext; n: int16): JSValue =
   return JS_NewInt32(ctx, int32(n))
