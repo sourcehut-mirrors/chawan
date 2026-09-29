@@ -1459,7 +1459,7 @@ proc parseColorComponent(ctx: var CSSParser): Opt[CSSColorComponent] =
     return ok(colorComponentDegree(deg))
   of cttIdent:
     let tok = ctx.consume()
-    const IdentMap = getIdentMap(ccctNone, ccctR)
+    const IdentMap = getIdentMap(ccctNone, ccctS)
     let n = IdentMap.parseIdent(tok)
     if n < 0:
       return err()
@@ -1820,8 +1820,6 @@ proc parseContent(ctx: var CSSParser): Opt[CSSContent] =
   while ctx.has():
     case (let tok = ctx.consume(); tok.t)
     of cttIdent:
-      if tok.s == "/":
-        break
       let content = if tok.s.equalsIgnoreCase("open-quote"):
         CSSContent(t: ContentOpenQuote)
       elif tok.s.equalsIgnoreCase("no-open-quote"):
@@ -1834,6 +1832,8 @@ proc parseContent(ctx: var CSSParser): Opt[CSSContent] =
         nil
       if content != nil:
         init.add(content)
+    of cttSlash:
+      break
     of cttString:
       init.add(CSSContent(t: ContentString, s: newRefString(tok.s)))
     of cttWhitespace:
