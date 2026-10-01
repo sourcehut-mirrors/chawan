@@ -266,24 +266,11 @@ proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue =
   return JS_NewArrayBuffer(ctx, abuf.p, len, abuf.dealloc, nil, JS_BOOL(0))
 
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue =
-  let jsabuf = ctx.toJS(u8a.abuf)
-  if JS_IsException(jsabuf.vc):
-    return jsabuf
-  let offset = ctx.toJS(u8a.offset)
-  if JS_IsException(offset.vc):
-    JS_FreeValue(ctx, jsabuf)
-    return JS_EXCEPTION
-  let len = ctx.toJS(u8a.len)
-  if JS_IsException(len.vc):
-    JS_FreeValue(ctx, jsabuf)
-    JS_FreeValue(ctx, offset)
-    return JS_EXCEPTION
-  let argv = [JSValueConst(jsabuf), JSValueConst(offset), JSValueConst(len)]
-  let ret = JS_NewTypedArray(ctx, 3, argv.toJSValueConstArray(), u8a.t)
-  JS_FreeValue(ctx, jsabuf)
-  JS_FreeValue(ctx, offset)
-  JS_FreeValue(ctx, len)
-  return ret
+  let jsabuf = ?trace(ctx.toJS(u8a.abuf))
+  let offset = ?trace(ctx.toJS(u8a.offset))
+  let len = ?trace(ctx.toJS(u8a.len))
+  let argv = [jsabuf.vc, offset.vc, len.vc]
+  JS_NewTypedArray(ctx, 3, argv.toJSValueConstArray(), u8a.t)
 
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =
   return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
