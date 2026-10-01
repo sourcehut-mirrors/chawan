@@ -5,10 +5,10 @@
 {.push raises: [].}
 
 import std/macrocache
-import std/macros
 
-import jsopaque
-import quickjs
+import js/jsopaque
+import js/jstypes
+import js/quickjs
 
 type
   JSRootObj* {.pure, inheritable.} = object
@@ -49,78 +49,19 @@ proc `=dup`[T](r: JSRef[T]): JSRef[T] {.
 proc `=sink`[T](dest: var JSRef[T]; r: JSRef[T]) {.
   importc: "cha_jsSink", header: "quickjs-aux.h".}
 
-proc isLocal(t: NimNode): bool =
-  let kind = t.kind
-  # fast path
-  if kind == nnkSym:
-    return true
-  if kind == nnkCall:
-    return false
-  # slow path
-  var t = t
-  while true:
-    case t.kind
-    of nnkCall, nnkCast:
-      # if it's a call, see below.
-      # if it's a cast, preserve it.
-      return true
-    of nnkStmtList, nnkStmtListExpr:
-      # check the last child
-      t = t[^1]
-    of nnkSym, nnkIdent, nnkConv, nnkDerefExpr, nnkDotExpr, nnkHiddenDeref,
-        nnkBracketExpr, nnkCheckedFieldExpr:
-      # if it's a symbol, see below.
-      # if it's a deref, dot, or bracket expr, we don't need a decref.
-      # if it's a bracket expr, that means we're accessing an array/seq,
-      # which always produces lent, so we don't need decref.
-      # if it's a conv, preserve it.
-      break
-    else:
-      # might want to check if it doesn't leak...
-      warning("handle kind " & $t.kind)
-      break
-  true
-
-macro dotGet(T, t: untyped): untyped =
-  # Evil hack to work around compiler bugs:
-  # * if t is a funcall, we have to use a cast so that we don't
-  #   accidentally disarm the destroy hook.  e.g.,
-  #     node.document = other.rootNode.document
-  #     # if we desugar this to
-  #     #   let tmp1 = (ptr NodeObj)(other)
-  #     #   let tmp = (ptr NodeObj)(tmp1.rootNode)
-  #     #   (ptr NodeObj)(node).document = tmp.document
-  #     # then, since tmp is not considered a JSRef anymore, the
-  #     # compiler won't bother unref'ing it.
-  # * otherwise, t is derived from a symbol in the current scope.  in this
-  #   case we we have to use a conversion to defeat move inference.  e.g.,
-  #     document.window = window
-  #     # if we only access window by casts from here on, it's not
-  #     # accounted for in sink inference, and will get sink'ed in by the
-  #     # previous assignment.
-  #     window.document = document
-  #   note that moves are inferred even based on object/array access
-  #   so we have to be broader here.
-  if isLocal(t):
-    quote do:
-      (ptr `T`)(`t`)
-  else:
-    quote do:
-      cast[ptr `T`](`t`)
-
 type JSRootRef* = JSRef[JSRootObj]
 
 template asRootRef*[T: JSRootObj](r: JSRef[T]): JSRootRef =
   JSRootRef(r)
 
 template markObj*[T](rt: JSRuntime; r: JSRef[T]; markFunc: JS_MarkFunc) =
-  JS_MarkForeignObject(rt, dotGet(T, r), markFunc)
+  JS_MarkForeignObject(rt, dotGet(ptr T, r), markFunc)
 
 template setMagic*[T](r: JSRef[T]; magic: uint32) =
-  JS_SetForeignMagic(dotGet(T, r), magic)
+  JS_SetForeignMagic(dotGet(ptr T, r), magic)
 
 template getMagic*[T](r: JSRef[T]): uint32 =
-  JS_GetForeignMagic(dotGet(T, r))
+  JS_GetForeignMagic(dotGet(ptr T, r))
 
 proc jsNew0(p: ptr pointer; class: JSClassID; size: csize_t) =
   p[] = JS_NewForeignObject(globalRuntime, class, size)
@@ -163,25 +104,25 @@ when NimMajor < 2:
     typeId
 
 template `==`*[T](t: typeof(nil); t2: JSRef[T]): bool =
-  dotGet(T, t2) == nil
+  dotGet(ptr T, t2) == nil
 
 template `==`*[T](t2: JSRef[T]; t: typeof(nil)): bool =
-  dotGet(T, t2) == nil
+  dotGet(ptr T, t2) == nil
 
 template `==`*[T; U: T](a: JSRef[T]; b: JSRef[U]): bool =
-  dotGet(T, a) == dotGet(U, b)
+  dotGet(ptr T, a) == dotGet(ptr U, b)
 
 template `[]`*[T](r: JSRef[T]): T =
-  dotGet(T, r)[]
+  dotGet(ptr T, r)[]
 
 template `[]=`*[T](a: JSRef[T]; b: T) =
-  dotGet(T, a)[] = b
+  dotGet(ptr T, a)[] = b
 
 template `.`*[T](t: JSRef[T]; field: untyped): untyped =
-  dotGet(T, t).field
+  dotGet(ptr T, t).field
 
 template `.=`*[T](t: JSRef[T]; field, val: untyped): untyped =
-  dotGet(T, t).field = val
+  dotGet(ptr T, t).field = val
 
 proc ofImpl(p: pointer; tclassid: JSClassID): bool =
   if p == nil:
@@ -200,7 +141,7 @@ proc ofImpl(p: pointer; tclassid: JSClassID): bool =
 
 template `of`*[T; U: T](r: JSRef[T]; u: typedesc[JSRef[U]]): bool =
   mixin getClassID
-  ofImpl(dotGet(T, r), getClassID(JSRef[U]))
+  ofImpl(dotGet(ptr T, r), getClassID(JSRef[U]))
 
 proc sameClass*[T, U](a: JSRef[T]; b: JSRef[U]): bool =
   let aclass = JS_GetForeignClassID(addr a[])
@@ -214,6 +155,6 @@ proc asImpl(p: pointer; classid: JSClassID): pointer =
 
 template `as`*[T; U: T](r: JSRef[T]; u: typedesc[JSRef[U]]): JSRef[U] =
   mixin getClassID
-  cast[u](asImpl(dotGet(T, r), getClassID(JSRef[U])))
+  cast[u](asImpl(dotGet(ptr T, r), getClassID(JSRef[U])))
 
 {.pop.}
