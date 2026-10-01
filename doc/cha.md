@@ -69,14 +69,14 @@ subsequent space.  For example, **\-obuffer.images=true** is valid.
 
   **\-\-opt** display.color-mode=*eight-bit*.
 
-  However, symbols and words starting with a number must still be
-  quoted, i.e. you have to quote them twice to bypass shell quoting.
+  Symbols and words starting with a number must still be quoted, i.e. you
+  have to quote them twice to bypass shell quoting.
 
-  Finally, for options whose name does not appear in any other section, it
-  is allowed to skip the section.  For instance, to enable *buffer.images*,
-  you can type
+  For options whose name does not appear in any other section, skipping the
+  the section name is valid.  For instance, to enable *buffer.images*, you
+  can type
 
-  **\-o** images=true.
+  **\-o** images=*true*.
 
   However, this may stop working in future versions if *images* is added to
   another section, so it shouldn't be relied upon in scripts.

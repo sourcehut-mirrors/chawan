@@ -175,8 +175,8 @@ color components in \f[CR]calc\f[R] expressions
 Logical properties such as \f[CR]margin\-inline\-start\f[R] etc.
 are currently \f[I]not\f[R] supported (and neither is
 \f[CR]writing\-mode\f[R]).
-However, for compatibility, logical properties are treated as aliases to
-the respective physical properties with
+However, for compatibility, they are treated as aliases to the
+respective physical properties with
 \f[CR]writing\-mode: horizontal\-tb\f[R].
 .SS Selectors
 All selector types from CSS 2.1 are supported, except for XML
@@ -293,7 +293,9 @@ For example, you can add
 .RS 2
 .IP
 .EX
-\f[B]\(atmedia\f[R] (\-cha\-content\-type: \(dqtext/markdown\(dq) { body { \f[B]width\f[R]: 80ch } }
+\f[B]\(atmedia\f[R] (\-cha\-content\-type: \(dqtext/markdown\(dq) {
+	body { \f[B]width\f[R]: 80ch }
+}
 .EE
 .PP
 to your \f[CR]user\-style\f[R] to set the body width of all markdown

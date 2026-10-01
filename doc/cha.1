@@ -67,14 +67,14 @@ So this works:
 .PP
 \f[B]\-\-opt\f[R] display.color\-mode=\f[I]eight\-bit\f[R].
 .PP
-However, symbols and words starting with a number must still be quoted,
-i.e.\ you have to quote them twice to bypass shell quoting.
+Symbols and words starting with a number must still be quoted, i.e.\ you
+have to quote them twice to bypass shell quoting.
 .PP
-Finally, for options whose name does not appear in any other section, it
-is allowed to skip the section.
+For options whose name does not appear in any other section, skipping
+the the section name is valid.
 For instance, to enable \f[I]buffer.images\f[R], you can type
 .PP
-\f[B]\-o\f[R] images=true.
+\f[B]\-o\f[R] images=\f[I]true\f[R].
 .PP
 However, this may stop working in future versions if \f[I]images\f[R] is
 added to another section, so it shouldn\(cqt be relied upon in scripts.
