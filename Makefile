@@ -152,7 +152,7 @@ endif
 twtstr = src/utils/twtstr.nim src/utils/opt.nim
 dynstream = src/io/dynstream.nim
 chafile = src/io/chafile.nim $(dynstream)
-chaos = src/utils/chaos.nim
+chaos = src/utils/chaos.nim src/utils/twtstr.nim
 connectionerror = src/server/connectionerror.nim
 lcgi = $(chaos) $(chafile) $(twtstr) $(sandbox) $(connectionerror) \
 	adapter/protocol/lcgi.nim
@@ -279,6 +279,7 @@ clean:
 	rm -rf "$(OBJDIR)/$(TARGET)" "$(OBJDIR)/chac_cache" "$(OBJDIR)/chagashi_test"
 	rm -f "$(OBJDIR)/chac"
 	(cd lib/chaseccomp && $(MAKE) clean)
+	rm -f $(test_bin)
 
 .PHONY: distclean
 distclean: clean
@@ -396,7 +397,7 @@ test/nim/%: test/nim/%.nim
 test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos
 test_bin += $(foreach name,$(test_names),test/nim/$(name))
 
-test/nim/ttwtstr: src/utils/twtstr.nim
+test/nim/ttwtstr: $(twtstr)
 test/nim/tcatom: src/html/catom.nim
 test/nim/tjsref: src/js/jsref.nim src/js/jsbind.nim src/js/jsutils.nim \
 	src/js/quickjs.nim
@@ -405,7 +406,7 @@ test/nim/tjsbind: src/js/fromjs.nim src/js/jsbind.nim src/js/jsnull.nim \
 	src/js/jsutils.nim src/js/quickjs.nim src/js/tojs.nim src/utils/opt.nim
 test/nim/tlibregexp: src/js/libregexp.nim
 test/nim/tchahash: src/utils/chahash.nim
-test/nim/tchaos: src/utils/chaos.nim
+test/nim/tchaos: $(chaos)
 
 .PHONY: test_nim
 test_nim: $(test_bin)
