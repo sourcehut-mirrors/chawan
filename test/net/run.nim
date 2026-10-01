@@ -5,7 +5,7 @@ import std/os
 import std/strutils
 
 import io/chafile
-import types/opt
+import utils/opt
 import utils/twtstr
 
 proc cb(req: Request) {.async.} =
