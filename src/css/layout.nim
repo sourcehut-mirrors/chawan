@@ -1237,7 +1237,6 @@ proc putAtom2(fstate: var FlowState; atom: InlineAtom; takeAbsolutes: bool) =
     x = fstate.lbstate.size.w,
     y = atom.getBaseline(fstate.lctx)
   )
-  atom.iboxStack = move(fstate.iboxStack)
   fstate.lbstate.size.w += atom.size.w
   fstate.lbstate.baseline = max(fstate.lbstate.baseline, atom.offset.y)
   # In all cases, the line's height must at least equal the atom's height.
@@ -1261,6 +1260,7 @@ proc flushNowrap(fstate: var FlowState) =
   fstate.lbstate.nowrapWidth = 0'lu
 
 proc putAtom(fstate: var FlowState; atom: InlineAtom; takeAbsolutes = true) =
+  atom.iboxStack = move(fstate.iboxStack)
   if atom.ibox.computed.nowrap:
     fstate.lbstate.nowrapWidth += atom.size.w
     if fstate.lbstate.nowrapTail == nil:
