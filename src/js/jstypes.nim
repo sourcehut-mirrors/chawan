@@ -185,15 +185,15 @@ proc `$`*(bs: ByteString): lent string =
 
 type JSObject* = distinct pointer
 
-proc `=destroy`(p: var JSObject) =
+proc `=destroy`*(p: var JSObject) =
   if cast[pointer](p) != nil:
     JS_FreeValueRT(globalRuntime, JS_MKPTR(JS_TAG_OBJECT, cast[pointer](p)))
 
-proc `=sink`(dest: var JSObject; src: JSObject) =
+proc `=sink`*(dest: var JSObject; src: JSObject) =
   `=destroy`(dest)
   cast[ptr pointer](addr dest)[] = cast[pointer](src)
 
-proc `=copy`(dest: var JSObject; src: JSObject) =
+proc `=copy`*(dest: var JSObject; src: JSObject) =
   `=destroy`(dest)
   if cast[pointer](src) == nil:
     cast[ptr pointer](addr dest)[] = nil
@@ -202,7 +202,7 @@ proc `=copy`(dest: var JSObject; src: JSObject) =
     let val2 = JS_DupValueRT(globalRuntime, val.vc)
     cast[ptr pointer](addr dest)[] = JS_VALUE_GET_PTR(val2.vc)
 
-proc `=dup`(src: JSObject): JSObject =
+proc `=dup`*(src: JSObject): JSObject =
   if pointer(src) == nil:
     JSObject(nil)
   else:
@@ -285,19 +285,19 @@ template traceCallback*(val: JSValue): JSCallback =
 type
   JSValueTraced* = distinct JSValue
 
-proc `=destroy`(t: var JSValueTraced) =
+proc `=destroy`*(t: var JSValueTraced) =
   JS_FreeValueRT(globalRuntime, cast[ptr JSValue](addr t)[])
 
-proc `=copy`(dest: var JSValueTraced; src: JSValueTraced) =
+proc `=copy`*(dest: var JSValueTraced; src: JSValueTraced) =
   JS_FreeValueRT(globalRuntime, cast[ptr JSValue](addr dest)[])
   cast[ptr JSValue](addr dest)[] =
     JS_DupValueRT(globalRuntime, cast[ptr JSValueConst](unsafeAddr src)[])
 
-proc `=sink`(dest: var JSValueTraced; src: JSValueTraced) =
+proc `=sink`*(dest: var JSValueTraced; src: JSValueTraced) =
   JS_FreeValueRT(globalRuntime, cast[ptr JSValue](addr dest)[])
   cast[ptr JSValue](addr dest)[] = cast[ptr JSValue](unsafeAddr src)[]
 
-proc `=dup`(t: JSValueTraced): JSValueTraced =
+proc `=dup`*(t: JSValueTraced): JSValueTraced =
   JSValueTraced(JS_DupValueRT(globalRuntime, JSValueConst(t)))
 
 proc trace*(val: JSValue): JSValueTraced {.noinit.} =

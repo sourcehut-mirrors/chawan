@@ -1326,10 +1326,10 @@ proc toggleIf*[T](x: var set[T]; y: T; b: bool) =
 template unionHooks*(typ: untyped) =
   # workaround for https://github.com/nim-lang/Nim/issues/25236
   {.push warning[Deprecated]:off.}
-  proc `=destroy`(a: var typ) =
+  proc `=destroy`*(a: var typ) =
     discard
 
-  proc `=copy`(a: var typ; b: typ) =
+  proc `=copy`*(a: var typ; b: typ) =
     copyMem(addr a, unsafeAddr b, sizeof(typ))
   {.pop.}
 

@@ -955,17 +955,17 @@ template JS_IsConstructor*(ctx: JSContext; val: JSValueConst): bool =
 
 var globalRuntime* {.global.}: JSRuntime
 
-proc `=destroy`(atom: var JSAtom) =
+proc `=destroy`*(atom: var JSAtom) =
   JS_FreeAtomRT(globalRuntime, atom)
 
-proc `=sink`(dst: var JSAtom; src: JSAtom) =
+proc `=sink`*(dst: var JSAtom; src: JSAtom) =
   `=destroy`(dst)
   cast[ptr JSAtomRaw](addr dst)[] = cast[ptr JSAtomRaw](unsafeAddr src)[]
 
-proc `=dup`(atom: JSAtom): JSAtom {.noinit.} =
+proc `=dup`*(atom: JSAtom): JSAtom {.noinit.} =
   cast[ptr JSAtomRaw](addr result)[] = JS_DupAtomRT(globalRuntime, atom)
 
-proc `=copy`(dst: var JSAtom; src: JSAtom) =
+proc `=copy`*(dst: var JSAtom; src: JSAtom) =
   `=destroy`(dst)
   cast[ptr JSAtomRaw](addr dst)[] = JS_DupAtomRT(globalRuntime, src)
 

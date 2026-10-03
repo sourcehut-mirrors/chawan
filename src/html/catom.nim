@@ -273,18 +273,18 @@ proc `==`*(a, b: CAtom): bool {.borrow.}
 proc cmp*(a, b: CAtom): int {.borrow.}
 proc hash*(atom: CAtom): Hash {.borrow.}
 
-proc `=destroy`(atom: var CAtom) =
+proc `=destroy`*(atom: var CAtom) =
   freeAtom(cast[CAtomRaw](atom))
 
-proc `=dup`(atom: CAtom): CAtom {.noinit.} =
+proc `=dup`*(atom: CAtom): CAtom {.noinit.} =
   cast[ptr CAtomRaw](addr result)[] = dup(cast[CAtomRaw](atom))
 
-proc `=copy`(x: var CAtom; y: CAtom) =
+proc `=copy`*(x: var CAtom; y: CAtom) =
   if x != y:
     `=destroy`(x)
     cast[ptr CAtomRaw](addr x)[] = dup(cast[CAtomRaw](y))
 
-proc `=sink`(x: var CAtom; y: CAtom) =
+proc `=sink`*(x: var CAtom; y: CAtom) =
   `=destroy`(x)
   cast[ptr CAtomRaw](addr x)[] = cast[CAtomRaw](y)
 
@@ -626,19 +626,19 @@ proc dup(this: DOMTokenArray): ptr DOMTokenArrayBuffer
 proc `==`(a, b: DOMTokenArray): bool {.borrow.}
 proc `==`(a: DOMTokenArray; b: typeof(nil)): bool {.borrow.}
 
-proc `=destroy`(this: var DOMTokenArray) =
+proc `=destroy`*(this: var DOMTokenArray) =
   if this != nil:
     dealloc(cast[pointer](this))
 
-proc `=dup`(this: DOMTokenArray): DOMTokenArray {.noinit.} =
+proc `=dup`*(this: DOMTokenArray): DOMTokenArray {.noinit.} =
   cast[ptr ptr DOMTokenArrayBuffer](addr result)[] = dup(this)
 
-proc `=copy`(x: var DOMTokenArray; y: DOMTokenArray) =
+proc `=copy`*(x: var DOMTokenArray; y: DOMTokenArray) =
   if x != y:
     `=destroy`(x)
     cast[ptr ptr DOMTokenArrayBuffer](addr x)[] = dup(y)
 
-proc `=sink`(x: var DOMTokenArray; y: DOMTokenArray) =
+proc `=sink`*(x: var DOMTokenArray; y: DOMTokenArray) =
   `=destroy`(x)
   cast[ptr ptr DOMTokenArrayBuffer](addr x)[] =
     cast[ptr DOMTokenArrayBuffer](y)

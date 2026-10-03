@@ -37,16 +37,16 @@ proc sinkAux(dest: ptr pointer; r: pointer) {.exportc: "cha_jsSinkImpl".} =
   destroyAux(dest)
   dest[] = r
 
-proc `=destroy`[T](r: var JSRef[T]) {.
+proc `=destroy`*[T](r: var JSRef[T]) {.
   importc: "cha_jsDestroy", header: "quickjs-aux.h".}
 
-proc `=copy`[T](dest: var JSRef[T]; r: JSRef[T]) {.
+proc `=copy`*[T](dest: var JSRef[T]; r: JSRef[T]) {.
   importc: "cha_jsCopy", header: "quickjs-aux.h".}
 
-proc `=dup`[T](r: JSRef[T]): JSRef[T] {.
+proc `=dup`*[T](r: JSRef[T]): JSRef[T] {.
   importc: "cha_jsDup", header: "quickjs-aux.h".}
 
-proc `=sink`[T](dest: var JSRef[T]; r: JSRef[T]) {.
+proc `=sink`*[T](dest: var JSRef[T]; r: JSRef[T]) {.
   importc: "cha_jsSink", header: "quickjs-aux.h".}
 
 type JSRootRef* = JSRef[JSRootObj]

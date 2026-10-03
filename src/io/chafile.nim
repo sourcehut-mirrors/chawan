@@ -188,12 +188,16 @@ proc seek*(file: ChaFile; offset: clong): Opt[void] =
 
 type AChaFile* = distinct ChaFile
 
-proc `=destroy`(f: var AChaFile) =
+proc `=destroy`*(f: var AChaFile) =
   if cast[ChaFile](f) != nil:
     discard fclose(cast[ChaFile](f))
 
-proc `=copy`(a: var AChaFile; b: AChaFile) {.error.} =
+proc `=copy`*(a: var AChaFile; b: AChaFile) {.error.} =
   discard
+
+proc `=sink`*(a: var AChaFile; b: AChaFile) =
+  `=destroy`(a)
+  cast[ptr ChaFile](addr a)[] = cast[ptr ChaFile](unsafeAddr b)[]
 
 proc afopen*(name: string; mode: cstring): Opt[AChaFile] =
   let p = ?fopen(name, mode)
