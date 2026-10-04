@@ -442,7 +442,6 @@ template JS_ITERATOR_NEXT_DEF*(n: cstring; len: uint8;
                            cfunc: JSCFunctionType(iterator_next: func1))))
 
 {.push header: qjsheader, importc.}
-
 proc JS_NewRuntime*(): JSRuntime
 proc JS_SetRuntimeInfo*(rt: JSRuntime; info: cstringConst) ##
   ## info lifetime must
@@ -559,7 +558,37 @@ proc JS_NewNumber*(ctx: JSContext; val: cdouble): JSValue
 proc JS_NewBigInt64*(ctx: JSContext; val: int64): JSValue
 proc JS_NewBigUInt64*(ctx: JSContext; val: uint64): JSValue
 proc JS_NewFloat64*(ctx: JSContext; val: cdouble): JSValue
+{.pop.} # header: qjsheader, importc
 
+{.push header: qjsheader.}
+proc JS_IsNumberImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsNumber".}
+proc JS_IsBigIntImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsBigInt".}
+proc JS_IsBoolImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsBool".}
+proc JS_IsNullImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsNull".}
+proc JS_IsUndefinedImpl*(v: JSValueConst): JS_BOOL {.
+  importc: "JS_IsUndefined".}
+proc JS_IsExceptionImpl*(v: JSValueConst): JS_BOOL {.
+  importc: "JS_IsException".}
+proc JS_IsUninitializedImpl*(v: JSValueConst): JS_BOOL {.
+  importc: "JS_IsUninitialized".}
+proc JS_IsStringImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsString".}
+proc JS_IsSymbolImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsSymbol".}
+proc JS_IsObjectImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsObject".}
+{.pop.} # header: qjsheader
+
+template JS_IsNumber*(v: JSValueConst): bool = JS_IsNumberImpl(v) != 0
+template JS_IsBigInt*(v: JSValueConst): bool = JS_IsBigIntImpl(v) != 0
+template JS_IsBool*(v: JSValueConst): bool = JS_IsBoolImpl(v) != 0
+template JS_IsNull*(v: JSValueConst): bool = JS_IsNullImpl(v) != 0
+template JS_IsUndefined*(v: JSValueConst): bool = JS_IsUndefinedImpl(v) != 0
+template JS_IsException*(v: JSValueConst): bool = JS_IsExceptionImpl(v) != 0
+template JS_IsUninitialized*(v: JSValueConst): bool =
+  JS_IsUninitializedImpl(v) != 0
+template JS_IsString*(v: JSValueConst): bool = JS_IsStringImpl(v) != 0
+template JS_IsSymbol*(v: JSValueConst): bool = JS_IsSymbolImpl(v) != 0
+template JS_IsObject*(v: JSValueConst): bool = JS_IsObjectImpl(v) != 0
+
+{.push header: qjsheader, importc.}
 proc JS_Throw*(ctx: JSContext; obj: JSValue): JSValue
 proc JS_SetUncatchableException*(ctx: JSContext; flag: JS_BOOL)
 proc JS_GetException*(ctx: JSContext): JSValue
@@ -651,10 +680,23 @@ proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
 proc JS_NewObjectClass*(ctx: JSContext; class_id: JSClassID): JSValue
 proc JS_NewObjectProto*(ctx: JSContext; proto: JSValueConst): JSValue
 proc JS_NewObject*(ctx: JSContext): JSValue
+{.pop.} # header: qjsheader, importc
 
+{.push header: qjsheader.}
+proc JS_IsFunctionImpl*(ctx: JSContext; val: JSValueConst): JS_BOOL {.
+  importc: "JS_IsFunction".}
+proc JS_IsConstructorImpl*(ctx: JSContext; val: JSValueConst): JS_BOOL {.
+  importc: "JS_IsConstructor".}
 proc JS_SetConstructorBit*(ctx: JSContext; func_obj: JSValueConst;
   val: JS_BOOL): JS_BOOL
+{.pop.} # header: qjsheader
 
+template JS_IsFunction*(ctx: JSContext; val: JSValueConst): bool =
+  JS_IsFunctionImpl(ctx, val) != 0
+template JS_IsConstructor*(ctx: JSContext; val: JSValueConst): bool =
+  JS_IsConstructorImpl(ctx, val) != 0
+
+{.push header: qjsheader, importc.}
 # takes ownership of the values
 proc JS_NewArray*(ctx: JSContext): JSValue
 proc JS_IsArray*(ctx: JSContext; v: JSValueConst): cint
@@ -770,14 +812,7 @@ proc JS_NewTypedArray*(ctx: JSContext; argc: cint;
   argv: JSValueConstArray; array_type: JSTypedArrayEnum): JSValue
 proc JS_GetTypedArrayBuffer*(ctx: JSContext; obj: JSValueConst;
   pbyte_offset, pbyte_length, pbytes_per_element: var csize_t): JSValue
-proc JS_NewUint8Array*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
-  len: csize_t; free_func: JSFreeArrayBufferDataFunc; opaque: pointer;
-  is_shared: JS_BOOL): JSValue
 proc JS_GetTypedArrayType*(obj: JSValueConst): cint
-proc JS_GetUint8Array*(ctx: JSContext; psize: var csize_t; obj: JSValueConst):
-  JS_BOOL
-proc JS_NewUint8ArrayCopy*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
-  len: csize_t): JSValue
 proc JS_SetSharedArrayBufferFunctions*(rt: JSRuntime;
   sf: ptr JSSharedArrayBufferFunctions)
 
@@ -785,7 +820,6 @@ proc JS_NewPromiseCapability*(ctx: JSContext;
   resolving_funcs: JSValueArray): JSValue
 proc JS_PromiseState*(ctx: JSContext; promise: JSValueConst): JSPromiseStateEnum
 proc JS_PromiseResult*(ctx: JSContext; promise: JSValueConst): JSValue
-proc JS_IsPromise*(val: JSValueConst): JS_BOOL
 
 # is_handled = TRUE means that the rejection is handled
 type JSHostPromiseRejectionTracker =
@@ -913,45 +947,7 @@ proc JS_PrintValueRT*(rt: JSRuntime; write_func: JSPrintValueWrite;
   write_opaque: pointer; val: JSValueConst; options: ptr JSPrintValueOptions)
 proc JS_PrintValue*(ctx: JSContext; write_func: JSPrintValueWrite;
   write_opaque: pointer; val: JSValueConst; options: ptr JSPrintValueOptions)
-
 {.pop.} # header, importc
-
-{.push header: qjsheader.}
-proc JS_IsNumberImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsNumber".}
-proc JS_IsBigIntImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsBigInt".}
-proc JS_IsBoolImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsBool".}
-proc JS_IsNullImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsNull".}
-proc JS_IsUndefinedImpl*(v: JSValueConst): JS_BOOL {.
-  importc: "JS_IsUndefined".}
-proc JS_IsExceptionImpl*(v: JSValueConst): JS_BOOL {.
-  importc: "JS_IsException".}
-proc JS_IsUninitializedImpl*(v: JSValueConst): JS_BOOL {.
-  importc: "JS_IsUninitialized".}
-proc JS_IsStringImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsString".}
-proc JS_IsSymbolImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsSymbol".}
-proc JS_IsObjectImpl*(v: JSValueConst): JS_BOOL {.importc: "JS_IsObject".}
-
-template JS_IsNumber*(v: JSValueConst): bool = JS_IsNumberImpl(v) != 0
-template JS_IsBigInt*(v: JSValueConst): bool = JS_IsBigIntImpl(v) != 0
-template JS_IsBool*(v: JSValueConst): bool = JS_IsBoolImpl(v) != 0
-template JS_IsNull*(v: JSValueConst): bool = JS_IsNullImpl(v) != 0
-template JS_IsUndefined*(v: JSValueConst): bool = JS_IsUndefinedImpl(v) != 0
-template JS_IsException*(v: JSValueConst): bool = JS_IsExceptionImpl(v) != 0
-template JS_IsUninitialized*(v: JSValueConst): bool =
-  JS_IsUninitializedImpl(v) != 0
-template JS_IsString*(v: JSValueConst): bool = JS_IsStringImpl(v) != 0
-template JS_IsSymbol*(v: JSValueConst): bool = JS_IsSymbolImpl(v) != 0
-template JS_IsObject*(v: JSValueConst): bool = JS_IsObjectImpl(v) != 0
-
-proc JS_IsFunctionImpl*(ctx: JSContext; val: JSValueConst): JS_BOOL {.
-  importc: "JS_IsFunction".}
-proc JS_IsConstructorImpl*(ctx: JSContext; val: JSValueConst): JS_BOOL {.
-  importc: "JS_IsConstructor".}
-template JS_IsFunction*(ctx: JSContext; val: JSValueConst): bool =
-  JS_IsFunctionImpl(ctx, val) != 0
-template JS_IsConstructor*(ctx: JSContext; val: JSValueConst): bool =
-  JS_IsConstructorImpl(ctx, val) != 0
-{.pop.}
 
 var globalRuntime* {.global.}: JSRuntime
 
