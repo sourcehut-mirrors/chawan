@@ -482,6 +482,10 @@ template DECSET(s: varargs[string, `$`]): string =
 template DECRST(s: varargs[string, `$`]): string =
   CSI & '?' & s.join(';') & 'l'
 
+# Special graphics
+const SetSpecialGraphics = "\e(0"
+const ResetSpecialGraphics = "\e(B"
+
 # alt screen
 const SetAltScreen = DECSET(1049)
 const ResetAltScreen = DECRST(1049)
@@ -1576,7 +1580,7 @@ proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: bool;
   for u in s.points:
     if u < 0x80:
       if specialGraphics and u in 0x5Fu32..0x7Eu32:
-        res &= "\e(B"
+        res &= ResetSpecialGraphics
         specialGraphics = false
       res &= char(u)
     else:
@@ -1607,7 +1611,7 @@ proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: bool;
           of 0x202F: '\x5F'
           else: break graph
           if not specialGraphics:
-            res &= "\e(0"
+            res &= SetSpecialGraphics
             specialGraphics = true
           res &= c
           continue
@@ -2435,9 +2439,12 @@ proc respectSigint*(term: Terminal) =
 proc quit*(term: Terminal): Opt[void] =
   if term.isatty():
     term.frameType = ftCurrent # drop buffered frames
-    if term.hasMouse() and ffMouseEnabled in term.frame.flags:
+    if ffMouseEnabled in term.frame.flags:
       ?term.write(ResetSGRMouse)
       term.frame.flags.excl(ffMouseEnabled)
+    if ffSpecialGraphics in term.frame.flags:
+      ?term.write(ResetSpecialGraphics)
+      term.frame.flags.excl(ffSpecialGraphics)
     if term.hasBracketedPaste():
       ?term.write(ResetBracketedPaste)
     ?term.resetScrollArea()
