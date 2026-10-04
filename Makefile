@@ -346,6 +346,8 @@ uninstall:
 	for f in cha-protocols.5 cha-api.5 cha-troubleshooting.5 cha-image.5 cha-localcgi.5; do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
 
+test/net/run.nim: src/io/chafile.nim src/utils/opt.nim src/utils/twtstr.nim
+
 test/net/run: test/net/run.nim
 	$(NIMC) test/net/run.nim
 
@@ -385,14 +387,22 @@ $(OBJDIR)/chagashi_test:
 
 test_flags = --verbosity:0 --nimcache:"$(OBJDIR)/$(TARGET)/test" -d:test
 
+test/charset/%: test/charset/%.nim
+	$(NIMC) $(test_flags) -o:$@ $<
+
+test/charset/basic.nim: src/encoding/charset.nim src/encoding/decoder.nim \
+	src/encoding/decodercore.nim src/encoding/encoder.nim
+test/charset/data.nim: src/encoding/decoder.nim src/encoding/encoder.nim \
+	src/encoding/charset.nim
+
 .PHONY: test_charset
-test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test
+test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test test/charset/basic test/charset/data
 	(cd test/charset && ./run.sh)
-	$(NIM) r $(test_flags) test/charset/basic.nim
-	CGS_TESTDIR=$(OBJDIR)/chagashi_test $(NIM) r $(test_flags) test/charset/data.nim
+	test/charset/basic
+	CGS_TESTDIR=$(OBJDIR)/chagashi_test test/charset/data
 
 test/nim/%: test/nim/%.nim
-	$(NIM) c $(test_flags) -o:$@ $<
+	$(NIMC) $(test_flags) -o:$@ $<
 
 test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos
 test_bin += $(foreach name,$(test_names),test/nim/$(name))
