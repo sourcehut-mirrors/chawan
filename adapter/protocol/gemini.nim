@@ -291,7 +291,8 @@ proc main*() =
     os.readPost(query, host, knownHostsPath, knownHosts, tmpEntry)
   reqBuf &= query
   reqBuf &= "\r\n"
-  let ssl = connectSSLSocket(host, port, useDefaultCA = false).orDie()
+  var ip = ""
+  let ssl = connectSSLSocket(host, port, ip, useDefaultCA = false).orDie()
   var storedDigest: string
   var theirDigest: string
   var theirTime: Time
@@ -300,6 +301,7 @@ proc main*() =
   enterNetworkSandbox()
   case res
   of ccrFoundValid:
+    discard os.writeLoop("Cha-Control: Connected " & ip & "\r\n")
     discard SSL_write(ssl, cstring(reqBuf), cint(reqBuf.len))
     os.readResponse(ssl, reqBuf)
   of ccrFoundInvalid:

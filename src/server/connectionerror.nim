@@ -31,6 +31,7 @@ type ConnectionError* = enum
   ceProxyAuthFail = (9, "ProxyAuthFail")
   ceInvalidResponse = (10, "InvalidResponse")
   ceProxyInvalidResponse = (11, "ProxyInvalidResponse")
+  ceDisallowedSubnet = (12, "DisallowedSubnet")
 
 const ErrorMessages* = [
   ceInternalScheme: "protocol only allowed for internal use",
@@ -64,6 +65,7 @@ const ErrorMessages* = [
   ceProxyAuthFail: "proxy authentication failed",
   ceInvalidResponse: "received an invalid response",
   ceProxyInvalidResponse: "proxy returned an invalid response",
+  ceDisallowedSubnet: "tried to access a private subnet from public",
 ]
 
 proc getLoaderErrorMessage*(code: int): string =

@@ -148,8 +148,9 @@ proc main() =
   if path == "":
     path = "/"
   let (username, password) = cgiAuthorization()
-  var ipv6: bool
-  let ps = connectSocket(host, port, ipv6).orDie()
+  var ip: string
+  let ps = connectSocket(host, port, ip).orDie()
+  let ipv6 = ip.startsWith("6")
   let f = ps.afdopen("a+b").orDie(ceInternalError, "failed to open file")
   if f.login(username, password).isOk:
     var obuf = ""

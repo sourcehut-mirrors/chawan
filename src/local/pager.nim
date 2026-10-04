@@ -1778,6 +1778,7 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
         else:
           init.loadInfo = "Connected to " & host & ".  Downloading..."
         pager.copyLoadInfo(init)
+        r.sread(init.loaderConfig.originIp)
       else:
         r.sread(msg)
     if res != 0: # done

@@ -107,7 +107,7 @@ proc openSocket(host, port: string; res: var ptr AddrInfo; family: var cint;
       return errCGIError(ceInternalError, "could not set TCP_NODELAY")
   ok(sock)
 
-proc connectSimpleSocket(host, port: string; outIpv6: var bool; nagle: bool):
+proc connectSimpleSocket(host, port: string; outIp: var string; nagle: bool):
     CGIResult[PosixStream] =
   var res: ptr AddrInfo
   var family = AF_INET
@@ -122,7 +122,18 @@ proc connectSimpleSocket(host, port: string; outIpv6: var bool; nagle: bool):
         continue # retry
       return err(initCGIError(ceConnectionRefused))
     break # success
-  outIpv6 = res.ai_family == AF_INET6
+  var ip = ""
+  if res.ai_family == AF_INET:
+    ip &= '4'
+  elif res.ai_family == AF_INET6:
+    ip &= '6'
+  if ip.len > 0:
+    var host {.noinit.}: array[1025, char]
+    if getnameinfo(res.ai_addr, res.ai_addrlen, cast[cstring](addr host),
+        SockLen(1025), nil, 0, NI_NUMERICHOST) < 0:
+      return err(initCGIError(ceFailedToResolveHost))
+    ip &= cast[cstring](addr host)
+  outIp = move(ip)
   freeAddrInfo(res)
   ok(ps)
 
@@ -153,7 +164,7 @@ proc authenticateSocks5(ps: PosixStream; buf: array[2, uint8];
     return errCGIError(ceProxyInvalidResponse, "received wrong auth method")
   ok()
 
-proc sendSocks5Domain(ps: PosixStream; host, port: string; outIpv6: var bool):
+proc sendSocks5Domain(ps: PosixStream; host, port: string; outIp: var string):
     CGIResult[void] =
   if host.len > 255:
     return errCGIError(ceInternalError, "host too long to send to proxy")
@@ -170,12 +181,17 @@ proc sendSocks5Domain(ps: PosixStream; host, port: string; outIpv6: var bool):
     return errCGIError(ceProxyInvalidResponse)
   if rbuf[1] != 0:
     return errCGIError(ceProxyRefusedToConnect)
+  var ip = ""
   case rbuf[3]
   of 0x01:
     var ipv4 = array[4, uint8].default
     if ps.readLoop(ipv4).isErr:
       return errCGIError(ceProxyInvalidResponse)
-    outIpv6 = false
+    ip &= '4'
+    for i, num in ipv4:
+      if i > 0:
+        ip &= '.'
+      ip &= num
   of 0x03:
     var len = [0u8]
     if ps.readLoop(len).isErr:
@@ -183,15 +199,19 @@ proc sendSocks5Domain(ps: PosixStream; host, port: string; outIpv6: var bool):
     var domain = newString(int(len[0]))
     if ps.readLoop(domain).isErr:
       return errCGIError(ceProxyInvalidResponse)
-    # we don't really know, so just assume it's ipv4.
-    outIpv6 = false
   of 0x04:
     var ipv6 = array[16, uint8].default
     if ps.readLoop(ipv6).isErr:
       return errCGIError(ceProxyInvalidResponse)
-    outIpv6 = true
+    ip &= '6'
+    for i in 0 ..< 8:
+      if i > 0:
+        ip &= ':'
+      ip.pushHex(char(ipv6[i * 2]))
+      ip.pushHex(char(ipv6[i * 2 + 1]))
   else:
     return errCGIError(ceProxyInvalidResponse)
+  outIp = move(ip)
   var bndport = array[2, uint8].default
   if ps.readLoop(bndport).isErr:
     return errCGIError(ceProxyInvalidResponse)
@@ -207,9 +227,9 @@ proc toProxyResult(res: CGIResult[PosixStream]): CGIResult[PosixStream] =
   res
 
 proc connectSocks5Socket(host, port, proxyHost, proxyPort,
-    proxyUser, proxyPass: string; outIpv6: var bool):
+    proxyUser, proxyPass: string; outIp: var string):
     CGIResult[PosixStream] =
-  var dummy = false
+  var dummy = ""
   let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy, nagle = true)
     .toProxyResult()
   const NoAuth = "\x05\x01\x00"
@@ -220,12 +240,12 @@ proc connectSocks5Socket(host, port, proxyHost, proxyPort,
   if ps.readLoop(buf).isErr:
     return errCGIError(ceProxyInvalidResponse)
   ?ps.authenticateSocks5(buf, proxyUser, proxyPass)
-  ?ps.sendSocks5Domain(host, port, outIpv6)
+  ?ps.sendSocks5Domain(host, port, outIp)
   ok(ps)
 
 proc connectHTTPSocket(host, port, proxyHost, proxyPort,
     proxyUser, proxyPass: string): CGIResult[PosixStream] =
-  var dummy = false
+  var dummy = ""
   let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy, nagle = true)
     .toProxyResult()
   var buf = "CONNECT " & host & ':' & port & " HTTP/1.1\r\n"
@@ -254,7 +274,7 @@ proc connectHTTPSocket(host, port, proxyHost, proxyPort,
     return errCGIError(ceProxyRefusedToConnect)
   ok(ps)
 
-proc connectProxySocket(host, port, proxy: string; outIpv6: var bool):
+proc connectProxySocket(host, port, proxy: string; outIp: var string):
     CGIResult[PosixStream] =
   let scheme = proxy.until(':')
   var i = scheme.len + 1
@@ -287,32 +307,61 @@ proc connectProxySocket(host, port, proxy: string; outIpv6: var bool):
   if scheme == "socks5" or scheme == "socks5h":
     # We always use socks5h, actually.
     return connectSocks5Socket(host, port, proxyHost, proxyPort, user, pass,
-      outIpv6)
+      outIp)
   elif scheme == "http":
     return connectHTTPSocket(host, port, proxyHost, proxyPort, user, pass)
   else:
     return errCGIError(ceInternalError,
       "only socks5 or http proxies are supported")
 
+type IpClass = enum
+  icPublic, ic410, ic4172, ic4192, ic6fd, ic4Loopback, ic6Loopback
+
+proc getIpClass(ip: string): IpClass =
+  if ip.startsWith("4127") or ip == "40.0.0.0":
+    return ic4Loopback
+  if ip.startsWith("410"):
+    return ic410
+  if ip.startsWith("4172"):
+    return ic4172
+  if ip.startsWith("4192"):
+    return ic4192
+  if ip.startsWith("6fd"):
+    return ic6fd
+  if ip == "6::1" or ip == "60000:0000:0000:0000:0000:0000:0000:0001":
+    return ic6Loopback
+  icPublic
+
 # Note: outIpv6 is not read; it just indicates whether the socket's
 # address is IPv6.
 # In case we connect to a proxy, only the target matters.
-proc connectSocket*(host, port: string; outIpv6: var bool):
+proc connectSocket*(host, port: string; outIp: var string):
     CGIResult[PosixStream] =
   if host.len == 0:
     return errCGIError(ceInvalidURL, "missing hostname")
   var host = host
   if host.len > 0 and host[0] == '[' and host[^1] == ']':
-    #TODO set outIpv6?
     host.delete(0..0)
     host.setLen(host.high)
   let proxy = getEnvEmpty("ALL_PROXY")
-  if proxy != "":
-    return connectProxySocket(host, port, proxy, outIpv6)
-  return connectSimpleSocket(host, port, outIpv6, nagle = false)
+  var ip: string
+  let res0 = if proxy != "":
+    connectProxySocket(host, port, proxy, ip)
+  else:
+    connectSimpleSocket(host, port, ip, nagle = false)
+  let res = ?res0
+  if ip.len > 0:
+    let originAddr = getEnvEmpty("CHA_ORIGIN_ADDR")
+    if originAddr.len > 0:
+      let originClass = getIpClass(originAddr)
+      let ourClass = getIpClass(ip)
+      if originClass == icPublic and ourClass > icPublic:
+        return errCGIError(ceDisallowedSubnet)
+  outIp = move(ip)
+  ok(res)
 
 proc connectSocket*(host, port: string): CGIResult[PosixStream] =
-  var dummy = false
+  var dummy: string
   return connectSocket(host, port, dummy)
 
 proc cgiAuthorization*(): tuple[user, pass: string] =

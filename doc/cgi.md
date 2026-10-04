@@ -94,6 +94,9 @@ may use either (but not both) in a ConnectionError header.
   specification so badly that it cannot be meaningfully processed.
 * `11 ProxyInvalidResponse`: The proxy's response deviates from the
   specification so badly that it cannot be meaningfully processed.
+* `12 DisallowedSubnet`: Attempting to access a private subnet from a
+  public one.  Used for blocking malicious cross-origin HTTP requests to
+  the local network.
 
 ## Environment variables
 

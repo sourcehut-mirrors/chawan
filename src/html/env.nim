@@ -896,6 +896,7 @@ proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
     if url != nil:
       let surl = $url
       return js_strdup(ctx, surl.toCStringConst)
+  #TODO importmap
   JS_ThrowTypeError(ctx, "relative module names must start with ./, ../ or /")
   return nil
 
@@ -904,12 +905,15 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   let window = ctx.getWindow()
   let name = $moduleName
   let url = parseURL0(name)
-  if url == nil or not window.isSameOrigin(url.origin):
+  if url == nil:
     JS_ThrowTypeError(ctx, "invalid URL: %s", moduleName)
+    return nil
+  let request = newRequest(url)
+  if not window.checkCORSRequest(request):
+    JS_ThrowTypeError(ctx, "CORS request to %s not allowed", moduleName)
     return nil
   var module = window.settings.moduleMap.get(url, mtJavascript)
   if module == nil:
-    let request = newRequest(url)
     let response = window.loader.doRequest(request)
     if response.stream == nil:
       JS_ThrowTypeError(ctx, "Failed to load module %s", moduleName)

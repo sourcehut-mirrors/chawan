@@ -111,9 +111,9 @@ proc SSL_free(ssl: ptr SSL)
 
 # WARNING: you must call SSL_get_verify_result on the returned SSL
 # yourself.
-proc connectSSLSocket*(host, port: string; useDefaultCA: bool):
+proc connectSSLSocket*(host, port: string; ip: var string; useDefaultCA: bool):
     CGIResult[ptr SSL] =
-  let ps = ?connectSocket(host, port)
+  let ps = ?connectSocket(host, port, ip)
   let ctx = SSL_CTX_new(TLS_client_method())
   if useDefaultCA:
     SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nil)

@@ -57,10 +57,6 @@ grep -Ev "^$scheme;[^;]+$params$" "$browsecap" >> "$tmpf"
 # check if there is anything to update at all
 if diff "$browsecap" "$tmpf" >/dev/null; then exit 0; fi
 
-if ! test "$PAGER" || test "$(wc -l "$tmpf" | cut -f1 -d' ')" -lt "${LINES:-24}"
-then	PAGER=cat
-fi
-
 {
 	printf 'Updating %s to:\n\n' "$browsecap"
 	cat "$tmpf"

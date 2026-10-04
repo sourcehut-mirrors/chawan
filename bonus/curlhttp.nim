@@ -160,6 +160,7 @@ type
 
     # String
     CURLINFO_REDIRECT_URL = CURLINFO_STRING + 31
+    CURLINFO_PRIMARY_IP = CURLINFO_STRING + 32
 
     # Long
     CURLINFO_RESPONSE_CODE = CURLINFO_LONG + 2
@@ -560,11 +561,45 @@ proc readFromStdin(p: pointer; size, nitems: csize_t; userdata: pointer):
     csize_t {.cdecl.} =
   return csize_t(read(STDIN_FILENO, p, int(nitems)))
 
+type IpClass = enum
+  icPublic, ic410, ic4172, ic4192, ic6fd, ic4Loopback, ic6Loopback
+
+proc getIpClass(ip: string): IpClass =
+  if ip.startsWith("4127") or ip == "40.0.0.0":
+    return ic4Loopback
+  if ip.startsWith("410"):
+    return ic410
+  if ip.startsWith("4172"):
+    return ic4172
+  if ip.startsWith("4192"):
+    return ic4192
+  if ip.startsWith("6fd"):
+    return ic6fd
+  if ip == "6::1" or ip == "60000:0000:0000:0000:0000:0000:0000:0001":
+    return ic6Loopback
+  icPublic
+
 proc curlPreRequest(clientp: pointer; conn_primary_ip, conn_local_ip: cstring;
     conn_primary_port, conn_local_port: cint): cint {.cdecl.} =
   let op = cast[HttpHandle](clientp)
   op.connectreport = true
-  puts("Cha-Control: Connected\n")
+  var ip: cstring
+  op.curl.getinfo(CURLINFO_PRIMARY_IP, addr ip)
+  var buf = "Cha-Control: Connected "
+  if ip != nil:
+    let sip = $ip
+    let typ = if sip.find(':') >= 0: '6' else: '4'
+    let ours = typ & sip
+    let originAddr = getEnv("CHA_ORIGIN_ADDR")
+    if originAddr.len > 0:
+      let originClass = getIpClass(originAddr)
+      let ourClass = getIpClass(ours)
+      if originClass == icPublic and ourClass > icPublic:
+        puts("Cha-Control: ConnectionError DisallowedSubnet\n")
+        quit(1)
+    buf &= ours
+  buf &= '\n'
+  puts(buf)
   return 0 # ok
 
 func startsWithIgnoreCase(s1, s2: openArray[char]): bool =

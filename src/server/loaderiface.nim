@@ -86,6 +86,7 @@ type
 
   LoaderClientConfig* = object
     originURL*: URL
+    originIp*: string
     cookieJar*: CookieJar
     defaultHeaders*: Headers
     proxy*: URL
@@ -634,12 +635,13 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
     case connectData.state
     of cdsBeforeResult:
       var res: int
+      var msg: string
       r.sread(res) # packet 1
       if res == 0:
         r.sread(connectData.outputId) # packet 1
+        r.sread(msg) # packet 1
         inc connectData.state
       else:
-        var msg: string
         # msg is discarded.
         r.sread(msg) # packet 1
         let fd = connectData.stream.fd

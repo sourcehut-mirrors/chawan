@@ -456,13 +456,14 @@ proc main*(scheme: cstring) =
     port = if secure: "443" else: "80"
   let os = newPosixStream(STDOUT_FILENO)
   let op = HTTPHandle(os: os, chunkSize: uint64.high)
+  var ip = ""
   if secure:
-    let ssl = connectSSLSocket(host, port, useDefaultCA = true).orDie()
+    let ssl = connectSSLSocket(host, port, ip, useDefaultCA = true).orDie()
     if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY", "0") != "1":
       checkCert(ssl)
     op.ssl = ssl
   else:
-    op.httpStream = connectSocket(host, port).orDie()
+    op.httpStream = connectSocket(host, port, ip).orDie()
   let requestMethod = getEnvEmpty("REQUEST_METHOD")
   var buf = requestMethod & ' ' & path & query
   buf &= " HTTP/1.1\r\n"
@@ -483,7 +484,7 @@ proc main*(scheme: cstring) =
     while (let n = ps.read(iq); n > 0):
       op.writeLoop(iq.toOpenArray(0, n - 1))
         .orDie(ceConnectionRefused, "error sending request body")
-  if os.writeLoop("Cha-Control: Connected\r\n").isErr:
+  if os.writeLoop("Cha-Control: Connected " & ip & "\r\n").isErr:
     quit(1)
   block readResponse:
     while (let n = op.read(iq); n > 0):

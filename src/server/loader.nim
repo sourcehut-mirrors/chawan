@@ -308,11 +308,9 @@ proc sendResult(ctx: var LoaderContext; handle: InputHandle; res: int;
   let buffer = bufferFromWriter w:
     w.swrite(res)
     if res == 0: # success
-      assert msg == ""
       w.swrite(output.outputId)
       inc handle.rstate
-    else: # error
-      w.swrite(msg)
+    w.swrite(msg)
   var unregWrite: seq[OutputHandle] = @[]
   ctx.pushBuffer(handle, buffer, ignoreSuspension = true, unregWrite)
   if unregWrite.len > 0:
@@ -380,13 +378,12 @@ proc iclose(ctx: var LoaderContext; handle: InputHandle) =
     ctx.unset(handle)
     handle.stream.sclose()
     handle.stream = nil
-  let client = handle.connectionOwner
+  let client = move(handle.connectionOwner)
   if client != nil:
     if client.numConnections == ctx.config.maxNetConnections and
         client.pendingHead != nil:
       ctx.pendingConnections.add(client)
     dec client.numConnections
-    handle.connectionOwner = nil
 
 proc oclose(ctx: var LoaderContext; output: OutputHandle) =
   ctx.unset(output)
@@ -649,7 +646,8 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
     return crContinue
   if k.equalsIgnoreCase("Cha-Control"):
     if v.startsWithIgnoreCase("Connected"):
-      case ctx.sendResult(handle, 0) # success
+      let originIp = v.substr("Connected ".len)
+      case ctx.sendResult(handle, 0, originIp) # success
       of pbrDone: discard
       of pbrUnregister: return crError
       return crContinue
@@ -952,6 +950,8 @@ proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
     env.add(("ALL_PROXY", $config.proxy))
   if config.insecureSslNoVerify:
     env.add(("CHA_INSECURE_SSL_NO_VERIFY", "1"))
+  if config.originIp != "":
+    env.add(("CHA_ORIGIN_ADDR", config.originIp))
 
 proc writeBody(ctx: var LoaderContext; ostream, istream2: PosixStream;
     body: RequestBody; client: ClientHandle; outputIn: OutputHandle;
