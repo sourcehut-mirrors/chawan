@@ -729,20 +729,26 @@ proc areadChar(term: Terminal): Opt[char] =
   inc term.ibufn
   ok(c)
 
-proc backtrack(eparser: var EventParser; s: string; c: char) =
-  var s = $StateMap[eparser.state]
-  for i, num in eparser.nums:
-    if i != 0:
-      s &= ';'
-    s &= $num
+proc backtrack(eparser: var EventParser; c: char) =
+  eparser.backtrackStack.setLen(0)
+  eparser.backtrackStack.add(c)
+  # append to stack in inverse order
+  for i in countdown(eparser.nums.high, 0):
+    var num = eparser.nums[i]
+    if num == 0:
+      eparser.backtrackStack.add('0')
+    else:
+      while num != 0:
+        eparser.backtrackStack.add(char(uint32('0') + (num mod 10)))
+        num = num div 10
+    if i > 0:
+      eparser.backtrackStack.add(';')
+  let cs = StateMap[eparser.state]
+  let H = cs.high
+  for i in countdown(H, 0):
+    eparser.backtrackStack.add(cs[i])
   eparser.nums.setLen(0)
   eparser.state = esBacktrack
-  eparser.backtrackStack = @[c]
-  for num in s.ritems:
-    eparser.backtrackStack.add(num)
-
-proc backtrack(eparser: var EventParser; c: char) =
-  eparser.backtrack($StateMap[eparser.state], c)
 
 proc nextState(eparser: var EventParser; c, cc: char) =
   if c == cc:
