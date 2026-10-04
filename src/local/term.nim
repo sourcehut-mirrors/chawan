@@ -133,6 +133,14 @@ type
     ftCurrent # non-discardable
     ftNext # discardable
 
+  FrameFlag = enum
+    ffCursorKnown # set if we know the cursor's position
+    ffFastScrollTodo # flag to do fast scroll
+    ffQueueTitle # set title on next draw
+    ffMouseEnabled # if doesn't match term.mouseEnabled, print an SGR
+    ffSpecialGraphics # is terminal in special graphics mode?
+    ffCursorHidden # is the cursor currently hidden?
+
   Frame = object
     head: TerminalPage # output buffer queue
     tail: TerminalPage # last output buffer
@@ -147,12 +155,7 @@ type
     format: Format # current formatting
     cursorx: uint32
     cursory: uint32
-    cursorKnown: bool # set if we know the cursor's position
-    fastScrollTodo: bool # flag to do fast scroll
-    queueTitleFlag: bool # set title on next draw
-    mouseEnabled: bool
-    specialGraphics: bool # flag for special graphics processing
-    cursorHidden: bool
+    flags: set[FrameFlag]
 
   Terminal* = ref object
     termType: TerminalType
@@ -577,14 +580,9 @@ proc swapFrame(term: Terminal; frameType: FrameType) =
   term.frame.pos = term.frames[ot].pos
   term.frame.cursorx = term.frames[ot].cursorx
   term.frame.cursory = term.frames[ot].cursory
-  term.frame.cursorKnown = term.frames[ot].cursorKnown
   term.frame.scrollTodo = term.frames[ot].scrollTodo
   term.frame.scrollBottom = term.frames[ot].scrollBottom
-  term.frame.fastScrollTodo = term.frames[ot].fastScrollTodo
-  term.frame.queueTitleFlag = term.frames[ot].queueTitleFlag
-  term.frame.mouseEnabled = term.frames[ot].mouseEnabled
-  term.frame.specialGraphics = term.frames[ot].specialGraphics
-  term.frame.cursorHidden = term.frames[ot].cursorHidden
+  term.frame.flags = term.frames[ot].flags
 
 # Must be called at the start of draw().
 proc initFrame*(term: Terminal) =
@@ -594,7 +592,7 @@ proc initFrame*(term: Terminal) =
     # dropping the previous buffered frame (if any).
     term.swapFrame(ftNext)
   term.frame.scrollTodo = 0
-  term.frame.fastScrollTodo = false
+  term.frame.flags.excl(ffFastScrollTodo)
 
 proc flush*(term: Terminal): Opt[bool] =
   while true:
@@ -1265,11 +1263,13 @@ proc cursorLineBegin(term: Terminal): Opt[void] =
   term.frame.cursorx = 0
   term.write('\r')
 
+template cursorKnown(term: Terminal): bool =
+  ffCursorKnown in term.frame.flags
+
 proc cursorGoto(term: Terminal; x, y: uint32): Opt[void] =
-  if term.frame.cursorKnown and term.frame.cursorx == x and
-      term.frame.cursory == y:
+  if term.cursorKnown and term.frame.cursorx == x and term.frame.cursory == y:
     return ok()
-  if term.frame.cursorKnown and (x == 0 or x == term.frame.cursorx) and
+  if term.cursorKnown and (x == 0 or x == term.frame.cursorx) and
       y - term.frame.cursory <= 6:
     # This is probably more efficient than setting the cursor by address.
     if x == 0:
@@ -1279,7 +1279,7 @@ proc cursorGoto(term: Terminal; x, y: uint32): Opt[void] =
     return ok()
   term.frame.cursorx = x
   term.frame.cursory = y
-  term.frame.cursorKnown = true
+  term.frame.flags.incl(ffCursorKnown)
   return case term.termType
   of ttAdm3a: term.write("\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
   of ttVt52: term.write("\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
@@ -1289,8 +1289,7 @@ proc cursorGoto(term: Terminal; x, y: int): Opt[void] =
   term.cursorGoto(uint32(x), uint32(y))
 
 proc cursorHome(term: Terminal): Opt[void] =
-  if term.frame.cursorKnown and term.frame.cursorx == 0 and
-      term.frame.cursory == 0:
+  if term.cursorKnown and term.frame.cursorx == 0 and term.frame.cursory == 0:
     return ok()
   if tfPreEcma48 in term.desc:
     return term.cursorGoto(0, 0)
@@ -1299,7 +1298,7 @@ proc cursorHome(term: Terminal): Opt[void] =
   term.write(CSI & 'H')
 
 proc unsetCursorPos(term: Terminal) =
-  term.frame.cursorKnown = false
+  term.frame.flags.excl(ffCursorKnown)
 
 proc clearEnd(term: Terminal): Opt[void] =
   case term.termType
@@ -1570,14 +1569,15 @@ proc encodeAllQMark(res: var string; te: var TextEncoder;
         res &= '?'
       n = res.len
 
-proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: var bool;
-    hasSpecialGraphics: bool) =
-  var sg = specialGraphics
+proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: bool;
+    hasSpecialGraphics: bool): bool =
+  # returns specialGraphics
+  var specialGraphics = specialGraphics
   for u in s.points:
     if u < 0x80:
-      if sg and u in 0x5Fu32..0x7Eu32:
+      if specialGraphics and u in 0x5Fu32..0x7Eu32:
         res &= "\e(B"
-        sg = false
+        specialGraphics = false
       res &= char(u)
     else:
       if hasSpecialGraphics:
@@ -1606,9 +1606,9 @@ proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: var bool;
           of 0xB7: '\x7E'
           of 0x202F: '\x5F'
           else: break graph
-          if not sg:
+          if not specialGraphics:
             res &= "\e(0"
-            sg = true
+            specialGraphics = true
           res &= c
           continue
       # quotes; to be fair these shouldn't have been included, but it looks
@@ -1622,7 +1622,7 @@ proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: var bool;
       else:
         for i in 0 ..< u.width():
           res &= '?'
-  specialGraphics = sg
+  specialGraphics
 
 proc processOutputString*(term: Terminal; s: openArray[char];
     trackCursor = true): Opt[void] =
@@ -1643,8 +1643,9 @@ proc processOutputString*(term: Terminal; s: openArray[char];
     return term.write(s)
   var res = ""
   if term.asciiOnly:
-    res.encodeAscii(s, term.frame.specialGraphics,
-      tfSpecialGraphics in term.desc)
+    let specialGraphics = res.encodeAscii(s,
+      ffSpecialGraphics in term.frame.flags, tfSpecialGraphics in term.desc)
+    term.frame.flags.toggleIf(ffSpecialGraphics, specialGraphics)
   else:
     # Output is not utf-8, so we must encode it first.
     res = newString(s.len) # guess length
@@ -1652,16 +1653,16 @@ proc processOutputString*(term: Terminal; s: openArray[char];
   term.write(res)
 
 proc hideCursor(term: Terminal): Opt[void] =
-  if not term.frame.cursorHidden:
-    term.frame.cursorHidden = true
+  if ffCursorHidden notin term.frame.flags:
+    term.frame.flags.incl(ffCursorHidden)
     case term.termType
     of ttAdm3a, ttVt52: discard
     else: return term.write(HideCursor)
   ok()
 
 proc showCursor(term: Terminal): Opt[void] =
-  if term.frame.cursorHidden:
-    term.frame.cursorHidden = false
+  if ffCursorHidden in term.frame.flags:
+    term.frame.flags.excl(ffCursorHidden)
     case term.termType
     of ttAdm3a, ttVt52: discard
     else: return term.write(ShowCursor)
@@ -1727,7 +1728,7 @@ proc partialDrawScroll(term: Terminal; scroll, scrollBottom: int;
   ?term.setScrollArea(1, scrollBottom) # may move cursor to 0, 0
   # BCE to the buffer's background color to reduce visibility of tearing.
   ?term.processFormat(initFormat(bgcolor, defaultColor, {}))
-  if term.imageMode == imSixel and term.frame.fastScrollTodo and
+  if term.imageMode == imSixel and ffFastScrollTodo in term.frame.flags and
       tfFastScroll in term.desc:
     # Scrolling Sixel images line-by-line isn't very efficient (at least it
     # visibly slows down XTerm on my laptop), so use fast scroll for this.
@@ -2245,7 +2246,7 @@ proc clearCanvas*(term: Terminal) =
 
 proc queueTitle*(term: Terminal; title: string) =
   if term.frame.title != title:
-    term.frame.queueTitleFlag = true
+    term.frame.flags.incl(ffQueueTitle)
     term.frame.title = title
 
 # Must be called directly before draw, otherwise the cursor will disappear.
@@ -2297,7 +2298,7 @@ proc scrollUp*(term: Terminal; n, scrollBottom: int) =
     image = image.next
   if found and (n > 1 or term.termType == ttXterm):
     # XTerm can't do single-line scroll-up correctly, see below.
-    term.frame.fastScrollTodo = true
+    term.frame.flags.incl(ffFastScrollTodo)
   term.frame.scrollTodo -= n
 
 proc scrollDown*(term: Terminal; n, scrollBottom: int) =
@@ -2340,7 +2341,7 @@ proc scrollDown*(term: Terminal; n, scrollBottom: int) =
     prev = image
     image = image.next
   if found and n > 1:
-    term.frame.fastScrollTodo = true
+    term.frame.flags.incl(ffFastScrollTodo)
   term.frame.scrollTodo += n
 
 proc draw*(term: Terminal; redraw, mouse: bool;
@@ -2357,15 +2358,15 @@ proc draw*(term: Terminal; redraw, mouse: bool;
     ?term.resetScrollArea()
   ?term.cursorGoto(cursorx, cursory)
   ?term.showCursor()
-  if term.frame.queueTitleFlag and term.hasTitle():
+  if ffQueueTitle in term.frame.flags and term.hasTitle():
     ?term.write(OSC & "0;" & term.frame.title.replaceControls() & ST)
-    term.frame.queueTitleFlag = false
-  if term.hasMouse() and mouse != term.frame.mouseEnabled:
+    term.frame.flags.excl(ffQueueTitle)
+  if term.hasMouse() and mouse != (ffMouseEnabled in term.frame.flags):
     if mouse:
       ?term.write(SetSGRMouse)
     else:
       ?term.write(ResetSGRMouse)
-    term.frame.mouseEnabled = mouse
+    term.frame.flags.toggleIf(ffMouseEnabled, mouse)
   term.startFlush()
 
 proc sendOSC52*(term: Terminal; s: openArray[char]; clipboard = true):
@@ -2434,9 +2435,9 @@ proc respectSigint*(term: Terminal) =
 proc quit*(term: Terminal): Opt[void] =
   if term.isatty():
     term.frameType = ftCurrent # drop buffered frames
-    if term.hasMouse() and term.frame.mouseEnabled:
+    if term.hasMouse() and ffMouseEnabled in term.frame.flags:
       ?term.write(ResetSGRMouse)
-      term.frame.mouseEnabled = false
+      term.frame.flags.excl(ffMouseEnabled)
     if term.hasBracketedPaste():
       ?term.write(ResetBracketedPaste)
     ?term.resetScrollArea()
@@ -2645,7 +2646,7 @@ proc initScreen(term: Terminal): Opt[void] =
     ?term.write(SetBracketedPaste)
   if term.hasMouse():
     ?term.write(SetSGRMouse)
-    term.frame.mouseEnabled = true
+    term.frame.flags.incl(ffMouseEnabled)
   term.startFlush()
 
 proc start*(term: Terminal; istream: PosixStream): Opt[void] =
