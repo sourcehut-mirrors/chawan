@@ -641,7 +641,7 @@ proc roundI16(n: int64): int32 =
   u += u shr 16
   return sign * int32(min(u shr 16, uint64(int32.high)))
 
-proc icbrt(x: uint32): int32 =
+proc icbrt(x: uint32): int64 =
   if x <= 0:
     return 0
   if x >= 0xFFFF:
@@ -657,7 +657,7 @@ proc icbrt(x: uint32): int32 =
     let u3 = uint64(u * u * u)
     let den = x + int64(roundU32(2 * u3))
     u = (u * (2 * x + int64(roundU32(u3))) + den div 2) div den
-  return int32(u)
+  return int64(u)
 
 # f = (x) => x < 0.04045 ? x / 12.92 : Math.pow(((x + 0.055) / 1.055), 2.4)
 # x = [];
@@ -864,7 +864,7 @@ proc C*(c: OklabColor): int32 =
   let B = int64(c.B)
   let n = A * A + B * B
   # https://stackoverflow.com/a/63452286
-  var shift = fastLog2(n) + 1
+  var shift = if n == 0: 1 else: fastLog2(n) + 1
   shift += shift and 1
   var res = 0
   while shift > 0:
