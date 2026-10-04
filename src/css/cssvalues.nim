@@ -813,25 +813,26 @@ proc isZero*(length: CSSLength): bool {.inline.} =
 proc `$`*(length: CSSLength): string =
   if length.auto:
     return "auto"
-  result = ""
+  var res = ""
   if length.perc != 0:
-    result.addDouble(length.perc * 100)
-    result &= '%'
+    res.addDouble(length.perc * 100)
+    res &= '%'
   if length.npx != 0:
-    let calc = result.len > 0
+    let calc = res.len > 0
     var npx = length.npx
     if calc:
       if length.npx > 0:
-        result &= " + "
+        res &= " + "
       else:
         npx = -npx
-        result &= " - "
-    result.addDouble(npx)
-    result &= "px"
+        res &= " - "
+    res.addDouble(npx)
+    res &= "px"
     if calc:
-      result = "calc(" & result & ')'
-  if result.len == 0:
-    result = "0px"
+      res = "calc(" & res & ')'
+  if res.len == 0:
+    res = "0px"
+  move(res)
 
 proc `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
@@ -839,7 +840,7 @@ proc `$`*(bmp: NetworkBitmap): string =
 proc `$`*(content: CSSContent): string =
   case content.t
   of ContentString:
-    return $content.s
+    return content.s.s
   of ContentCounter:
     return "counter(" & $content.counter & ", " & $content.counterStyle & ')'
   of ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
@@ -851,7 +852,7 @@ proc `$`(quotes: CSSQuotes): string =
     return "auto"
   result = ""
   for (s, e) in quotes.qs:
-    result &= "'" & ($s).cssEscape() & "' '" & ($e).cssEscape() & "'"
+    result &= "'" & s.s.cssEscape() & "' '" & e.s.cssEscape() & "'"
 
 proc `$`(counterreset: CSSCounterSetList): string =
   result = ""

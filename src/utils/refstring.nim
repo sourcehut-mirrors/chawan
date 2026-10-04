@@ -15,9 +15,6 @@ proc newRefString*(s: sink string): RefString =
 proc newRefString*(ds: DOMString): RefString =
   RefString(s: $ds)
 
-proc `$`*(rs: RefString): lent string =
-  rs.s
-
 template `&=`*(rs: var RefString; ss: string) =
   rs.s &= ss
 
@@ -30,7 +27,7 @@ proc len*(rs: RefString): int =
 proc toJS*(ctx: JSContext; rs: RefString): JSValue =
   if rs == nil:
     return JS_NULL
-  return ctx.toJS($rs)
+  return ctx.toJS(rs.s)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; rs: var RefString):
     JSCode =

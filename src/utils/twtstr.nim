@@ -924,14 +924,6 @@ proc matchQNameProduction*(s: openArray[char]): bool =
       colon = true
   return s.matchNameProduction()
 
-proc utf16Len*(s: openArray[char]): int =
-  result = 0
-  for u in s.points:
-    if u < 0x10000: # ucs-2
-      result += 1
-    else: # surrogate
-      result += 2
-
 proc c_getenv(name: cstring): cstring {.
   header: "<stdlib.h>", importc: "getenv".}
 proc c_setenv(envname, envval: cstring; overwrite: cint): cint {.
