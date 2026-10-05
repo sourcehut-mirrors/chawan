@@ -232,6 +232,8 @@ type
 
   CollectionLike = JSRef[CollectionLikeObj]
 
+  # hidden ancestor for NodeIteratorLike & Collection
+  # these are stored inside the RootNode of root, keyed on root itself
   CollectionLikeObj {.pure.} = object of JSRootObj
     hcache: Hash
     root*: Node
@@ -241,8 +243,11 @@ type
   Collection* = JSRef[CollectionObj]
 
   CollectionMode* = enum
-    cmSubtree, cmChildren, cmTree
+    cmSubtree # subtree is visible
+    cmChildren # only children are visible
+    cmTree # tree of root node is visible
 
+  # hidden ancestor for NodeList & Collection (for code sharing)
   CollectionObj {.pure.} = object of CollectionLikeObj
     mode*: CollectionMode
     invalid*: bool
@@ -252,16 +257,17 @@ type
 
   NodeIteratorLike = JSRef[NodeIteratorLikeObj]
 
+  # hidden ancestor for NodeIterator & TreeWalker (for code sharing)
   NodeIteratorLikeObj {.pure.} = object of CollectionLikeObj
     active: bool
+    before: bool # used in NodeIterator; declared here to suppress padding
+    iterBefore: bool # ditto
     whatToShow: uint32
     filter: JSObjectNil
     currentNode: Node
 
   NodeIteratorObj {.pure, final.} = object of NodeIteratorLikeObj
     iterNode: Node
-    before: bool
-    iterBefore: bool
 
   NodeIterator = JSRef[NodeIteratorObj]
 
@@ -3035,20 +3041,21 @@ template asCollectionLike*[T: CollectionLikeObj](x: JSRef[T]): CollectionLike =
 proc populateCollection(this: Collection) =
   let root = this.root as ParentNode
   if root != nil:
+    let match = this.match
     case this.mode
     of cmChildren:
       for child in root.childList:
-        if this.match == nil or this[].match(this, child):
+        if match == nil or match(this, child):
           this.snapshot.add(child)
     of cmSubtree:
       for desc in root.descendants:
-        if this.match == nil or this[].match(this, desc):
+        if match == nil or match(this, desc):
           this.snapshot.add(desc)
     of cmTree:
       let root = root.asNode.rootNode as ParentNode
       if root != nil:
         for desc in root.descendants:
-          if this.match == nil or this[].match(this, desc):
+          if match == nil or match(this, desc):
             this.snapshot.add(desc)
 
 proc refreshCollection(this: Collection) =
@@ -4083,31 +4090,29 @@ jsClassPublicDef(Document):
     return ctx.toJS("")
 
   proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
-      whatToShow = 0xFFFFFFFFu32; filter = JSObjectNil(nil)): JSValue
-      {.jsfunc.} =
+      whatToShow = 0xFFFFFFFF'u32; filter = JSObjectNil(nil)): NodeIterator
+      {.jsnfunc.} =
     let this = jsNew NodeIteratorObj(
       root: root,
       currentNode: root,
       iterNode: root,
       whatToShow: whatToShow,
-      before: true
+      before: true,
+      filter: filter
     )
     if this != nil:
-      this.filter = filter
       this.asCollectionLike.attach()
-    ctx.toJSNew(this)
+    this
 
   proc createTreeWalker(ctx: JSContext; document: Document; root: Node;
-      whatToShow = 0xFFFFFFFFu32; filter = JSObjectNil(nil)): JSValue
-      {.jsfunc.} =
-    let this = jsNewOf(NodeIteratorLikeObj(
+      whatToShow = 0xFFFFFFFF'u32; filter = JSObjectNil(nil)): NodeIteratorLike
+      {.jsnfunc.} =
+    jsNewOf(NodeIteratorLikeObj(
       root: root,
       currentNode: root,
-      whatToShow: whatToShow
+      whatToShow: whatToShow,
+      filter: filter
     ), TreeWalkerDef.id)
-    if this != nil:
-      this.filter = filter
-    ctx.toJSNew(this)
 
 # XMLDocument
 jsClassDef(XMLDocument):
