@@ -206,7 +206,7 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
   for item in items:
     case item.t
     of cvitVar:
-      let varName = item.name.view()
+      let varName = CAtomRaw(item.name)
       var success = false
       for it in ctx.varsSeen.mitems:
         if it == varName:

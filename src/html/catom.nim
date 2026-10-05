@@ -215,7 +215,7 @@ type
   CAtomFactory = ptr CAtomFactoryObj
 
 # This maps to JS null.
-const CAtomNullRaw* = CAtomRaw(0)
+const CAtomNullRaw = CAtomRaw(0)
 
 proc `==`*(a, b: CAtomRaw): bool {.borrow.}
 proc cmp*(a, b: CAtomRaw): int {.borrow.}
@@ -288,14 +288,8 @@ proc `=sink`*(x: var CAtom; y: CAtom) =
   `=destroy`(x)
   cast[ptr CAtomRaw](addr x)[] = cast[CAtomRaw](y)
 
-template trace(atom: CAtomRaw): CAtom =
-  CAtom(atom)
-
 proc view*(atom: CAtomRaw): lent CAtom =
   CAtom(atom)
-
-template view*(atom: CAtom): CAtomRaw =
-  CAtomRaw(atom)
 
 proc put0(factory: CAtomFactory; atom: uint32) =
   let mask = factory.tab.len - 1
@@ -363,7 +357,7 @@ proc toAtomRaw(s: openArray[char]): CAtomRaw =
   return getFactory().toAtomRaw(s)
 
 proc toAtom*(s: openArray[char]): CAtom =
-  s.toAtomRaw().trace()
+  CAtom(s.toAtomRaw())
 
 proc toAtom*(s: DOMString): CAtom =
   s.toOpenArray().toAtom()
@@ -377,25 +371,22 @@ template view*(tagType: TagType): CAtom =
   assert tmp != ttUnknown
   CAtom(tmp)
 
-proc toAtomRawLower(s: openArray[char]): CAtomRaw =
+proc toAtomLower*(s: openArray[char]): CAtom =
   let factory = getFactory()
   var added = false
   var s = s.toLowerAscii()
   let atom = factory.toAtomImpl(s, added)
   if added:
     factory.atomMap[int(atom)].s = move(s)
-  atom
+  CAtom(atom)
 
 template view*(satom: StaticAtom): CAtom =
   let tmp = satom
   assert tmp != satUnknown
   CAtom(CAtomRaw(uint32(tmp)))
 
-proc `$`(atom: CAtomRaw): lent string =
-  getFactory().atomMap[int(atom)].s
-
 proc `$`*(atom: CAtom): lent string =
-  $CAtomRaw(atom)
+  getFactory().atomMap[int(atom)].s
 
 proc find*(atom: CAtom; c: char): int =
   ($atom).find(c)
@@ -422,7 +413,7 @@ proc contains*(atom: CAtom; cs: set[char]): bool =
 proc toLowerAscii*(a: CAtom): CAtom =
   if AsciiUpperAlpha notin $a:
     return a
-  return ($a).toAtomRawLower().trace()
+  return ($a).toAtomLower()
 
 proc equalsIgnoreCase*(a, b: CAtom): bool =
   a == b or ($a).equalsIgnoreCase($b)
@@ -432,9 +423,6 @@ proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
     if a.equalsIgnoreCase(it):
       return true
   return false
-
-proc toAtomLower*(s: openArray[char]): CAtom =
-  s.toAtomRawLower().trace()
 
 proc toAtomLower*(s: DOMString): CAtom =
   s.toOpenArray().toAtomLower()
@@ -515,12 +503,12 @@ proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtomRaw): JSCode =
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): JSCode =
   var atom: CAtomRaw
   let status = ctx.fromJSImpl(val, atom)
-  res = atom.trace()
+  res = CAtom(atom)
   status
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var CAtom): JSCode =
   if atom == JS_ATOM_NULL:
-    res = CAtomNullRaw.trace()
+    res = CAtomNull
   else:
     let val = JS_AtomToString(ctx, atom)
     if JS_IsException(val.vc):
