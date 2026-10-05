@@ -1484,6 +1484,13 @@ Pager.prototype.handleMouseInput = async function(input) {
                     /* clicked inside the select */
                     select.setCursorY(y);
                     select.click();
+                } else if (!outside && !inside) {
+                    /* clicked border */
+                    if (input.y == select.y) {
+                        select.scrollUp(config.input.wheelScroll);
+                    } else if (input.y == select.y + select.height - 1) {
+                        select.scrollDown(config.input.wheelScroll);
+                    }
                 }
             }
         } else if (input.t == "press") {
