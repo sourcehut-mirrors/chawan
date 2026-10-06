@@ -39,5 +39,13 @@ y.remove();
 assertEquals(window.getComputedStyle(y, "").textAlign, "");
 y.style.textAlign = "center";
 assertEquals(window.getComputedStyle(y, "").textAlign, "");
+{
+	const el = document.createElement("div");
+	assertThrows(() => window.getComputedStyle(el, {
+		toString: function() {
+			throw new DOMException()
+		}
+	}), DOMException)
+}
 document.getElementById("x").textContent = "Success";
 </script>

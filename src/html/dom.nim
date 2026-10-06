@@ -495,6 +495,8 @@ type
 
   HTMLElement* = JSRef[HTMLElementObj]
 
+  HTMLElementNil = JSNullRef[HTMLElementObj]
+
   HTMLAnchorElement* = JSRef[HTMLAnchorElementObj]
 
   HTMLAnchorElementObj* {.pure, final.} = object of HTMLElementObj
@@ -1485,20 +1487,20 @@ proc windowChange*(window: Window) =
 
 proc getComputedStyle0*(ctx: JSContext; window: Window; element: Element;
     pseudoElt: JSValueConst): Opt[CSSStyleDeclaration] =
-  if not element.asNode.isConnected():
-    return ok(newCSSStyleDeclaration(Element(nil), ""))
   var pseudo = peNone
   if not JS_IsUndefined(pseudoElt):
     # This isn't what the spec says, but it seems to be what others do.
     # Note: in Gecko this is case-sensitive, in Blink it isn't.  CSS itself
     # is case-insensitive so I assume it's a Gecko bug.
-    var ds: DOMString
+    var ds: CSSOMString
     ?ctx.fromJS(pseudoElt, ds)
     let i = if ds.p[0] != ':': 0 elif ds.p[1] != ':': 1 else: 2
     if i != 0: # if no : at the beginning, ignore pseudoElt
       pseudo = parseEnumNoCase[PseudoElement](ds.toOpenArray(i)).get(peNone)
       if pseudo == peNone or pseudo notin {peBefore, peAfter} and i == 1:
         return ok(newCSSStyleDeclaration(Element(nil), ""))
+  if not element.asNode.isConnected():
+    return ok(newCSSStyleDeclaration(Element(nil), ""))
   if window.settings.scripting == smApp:
     element.ensureStyle()
     return ok(newCSSStyleDeclaration(element, $element.getComputedStyle(pseudo),
@@ -1524,16 +1526,16 @@ proc find(this: CustomElementRegistry; name: CAtom): CustomElementDef =
       return it
   return nil
 
-proc find(this: CustomElementRegistry; ctx: JSContext; ctor: JSValueConst):
+proc find(this: CustomElementRegistry; ctx: JSContext; ctor: JSCallback):
     CustomElementDef =
   for it in this.defs:
-    if ctx.strictEquals(it.ctor.value, ctor):
+    if it.ctor == ctor:
       return it
   return nil
 
-proc tryGetStrSeq(ctx: JSContext; ctor: JSValueConst; name: cstring;
+proc tryGetStrSeq(ctx: JSContext; ctor: JSCallback; name: JSStrRef;
     res: var seq[CAtom]): Opt[void] =
-  let val = JS_GetPropertyStr(ctx, ctor, name)
+  let val = JS_GetProperty(ctx, ctor.value, ctx.getAtom(name))
   if JS_IsException(val.vc):
     return err()
   if not JS_IsUndefined(val.vc):
@@ -1550,22 +1552,22 @@ proc tryGetCallback(ctx: JSContext; proto: JSValueConst; t: CECallbackType;
   ok()
 
 proc define0(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
-    ctor, proto: JSValueConst; def: CustomElementDef): Opt[void] =
+    ctor: JSCallback; proto: JSValueConst; def: CustomElementDef): Opt[void] =
   if not JS_IsObject(proto):
     JS_ThrowTypeError(ctx, "prototype is not an object")
     return err()
   for t in cctConnected..cctAttributeChanged:
     ?ctx.tryGetCallback(proto, t, def.callbacks)
   if def.callbacks[cctAttributeChanged] != nil:
-    ?ctx.tryGetStrSeq(ctor, "observedAttributes", def.observedAttrs)
+    ?ctx.tryGetStrSeq(ctor, jstObservedAttributes, def.observedAttrs)
   var disabled: seq[CAtom]
-  ?ctx.tryGetStrSeq(ctor, "disabledFeatures", disabled)
+  ?ctx.tryGetStrSeq(ctor, jstDisabledFeatures, disabled)
   if satInternals in disabled:
     def.flags.excl(cefInternals)
   if satShadow in disabled:
     def.flags.excl(cefShadow)
   var formAssociated: bool
-  discard ?ctx.fromJSGetProp(ctor, "formAssociated", formAssociated)
+  discard ?ctx.fromJSGetProp(ctor.value, "formAssociated", formAssociated)
   if formAssociated:
     def.flags.incl(cefFormAssociated)
     for t in cctFormAssociated..cctFormStateRestore:
@@ -1602,7 +1604,7 @@ jsClassDef(CustomElementRegistry):
       {.jsfunc.} =
     if not JS_IsConstructor(ctx, ctor.value):
       return JS_ThrowTypeError(ctx, "constructor expected")
-    if this.find(name) != nil or this.find(ctx, ctor.value) != nil:
+    if this.find(name) != nil or this.find(ctx, ctor) != nil:
       return JS_ThrowDOMException(ctx, "NotSupportedError",
         "a custom element with this name/constructor is already defined")
     if options.extends.isSome:
@@ -1619,7 +1621,7 @@ jsClassDef(CustomElementRegistry):
       if JS_IsException(proto):
         this.inDefine = false
         return JS_EXCEPTION
-      ctx.define0(this, name, ctor.value, proto.vc, def)
+      ctx.define0(this, name, ctor, proto.vc, def)
     this.inDefine = false
     if res.isErr:
       return JS_EXCEPTION
@@ -1638,10 +1640,10 @@ jsClassDef(CustomElementRegistry):
       JSValue {.jsfunc.} =
     let def = this.find(name)
     if def != nil:
-      return JS_DupValue(ctx, def.ctor.value)
+      return def.ctor.toJSValue()
     return JS_UNDEFINED
 
-  proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSValueConst):
+  proc getName(ctx: JSContext; this: CustomElementRegistry; ctor: JSCallback):
       CAtom {.jsfunc.} =
     let def = this.find(ctx, ctor)
     if def != nil:
@@ -4089,7 +4091,7 @@ jsClassPublicDef(Document):
       return ctx.toJS(document.window.referrer)
     return ctx.toJS("")
 
-  proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
+  proc createNodeIterator(document: Document; root: Node;
       whatToShow = 0xFFFFFFFF'u32; filter = JSObjectNil(nil)): NodeIterator
       {.jsnfunc.} =
     let this = jsNew NodeIteratorObj(
@@ -4104,7 +4106,7 @@ jsClassPublicDef(Document):
       this.asCollectionLike.attach()
     this
 
-  proc createTreeWalker(ctx: JSContext; document: Document; root: Node;
+  proc createTreeWalker(document: Document; root: Node;
       whatToShow = 0xFFFFFFFF'u32; filter = JSObjectNil(nil)): NodeIteratorLike
       {.jsnfunc.} =
     jsNewOf(NodeIteratorLikeObj(
@@ -4596,7 +4598,7 @@ jsClassPublicDef(NodeList):
   proc length(this: NodeList): uint32 {.jsfget.} =
     return this.asCollection.getLength()
 
-  proc item(ctx: JSContext; this: NodeList; u: uint32): Node {.jsfunc.} =
+  proc item(this: NodeList; u: uint32): Node {.jsfunc.} =
     if u < this.length:
       return this.snapshot[u]
     Node(nil)
@@ -4605,7 +4607,7 @@ jsClassPublicDef(NodeList):
       {.jsgetownprop.} =
     var u: uint32
     case ctx.fromIdx(atom, u)
-    of fiIdx: ctx.toJS(ctx.item(this, u)).uninitIfNull()
+    of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
     of fiStr: JS_UNINITIALIZED
     of fiErr: JS_EXCEPTION
 
@@ -7435,13 +7437,10 @@ jsClassDef(HTMLTableElement):
     this.asParentNode.findFirstChildOf(tagType)
 
   proc setTableChild(ctx: JSContext; this: HTMLTableElement; tagType: TagType;
-      sectVal: JSValueConst): JSValue {.jsmfset("caption", ttCaption),
+      sect: HTMLElementNil): JSValue {.jsmfset("caption", ttCaption),
       jsmfset("tHead", ttThead), jsmfset("tFoot", ttTfoot).} =
-    var sect: HTMLElement
-    if not JS_IsNull(sectVal):
-      ?ctx.fromJS(sectVal, sect)
-    if sect != nil and sect.tagType != tagType:
-      if tagType != ttCaption and sect of HTMLTableSectionElement:
+    if sect != nil and HTMLElement(sect).tagType != tagType:
+      if tagType != ttCaption and HTMLElement(sect) of HTMLTableSectionElement:
         return ctx.insertThrow("wrong element type")
       return JS_ThrowTypeError(ctx, "%s tag expected", cstring($tagType))
     let old = this.asParentNode.findFirstChildOf(tagType)
@@ -7449,7 +7448,7 @@ jsClassDef(HTMLTableElement):
       ctx.remove(old)
     if sect == nil:
       return JS_UNDEFINED
-    return ctx.insertBeforeUndefined(this.asNode, sect.asNode,
+    return ctx.insertBeforeUndefined(this.asNode, HTMLElement(sect).asNode,
       jsNull(this.asParentNode.firstChild))
 
   proc tBodies(this: HTMLTableElement): HTMLCollection {.jsnfget.} =
