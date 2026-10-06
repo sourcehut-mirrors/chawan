@@ -11,7 +11,6 @@ import html/dom
 import html/env
 import html/script
 import io/chafile
-import io/console
 import io/dynstream
 import io/poll
 import js/fromjs
@@ -392,8 +391,7 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
   let loaderControl = newPosixStream(loaderSockVec[0])
   loaderControl.setCloseOnExec()
   let loader = newFileLoader(pagerPid, loaderControl)
-  let console = newConsole(cast[ChaFile](stderr))
-  let client = newClient(jsctx, loader, urandom, console)
+  let client = newClient(jsctx, loader, urandom)
   if client == nil or client.addJSModules(jsctx).isErr:
     die("failed to initialize JS: " & jsctx.getExceptionMsg())
   var warnings = newSeq[string]()

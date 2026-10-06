@@ -1049,7 +1049,12 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addRequestModule()
   ?ctx.addResponseModule()
   ?ctx.addEncodingModule()
-  ctx.addPerformanceModule()
+  ?ctx.addPerformanceModule()
+  window.performance = newPerformance(window.settings.scripting)
+  if window.performance == nil:
+    JS_ThrowOutOfMemory(ctx)
+    return err()
+  ok()
 
 proc getConsole(ctx: JSContext): Console {.exportc: "cha_$1".} =
   ctx.getGlobal().console
@@ -1058,18 +1063,18 @@ proc getLoader(ctx: JSContext): FileLoader {.exportc: "cha_$1".} =
   ctx.getGlobal().loader
 
 proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
+  if window == nil or window.customElements == nil:
+    JS_ThrowOutOfMemory(ctx)
+    return err()
   let rt = JS_GetRuntime(ctx)
   let ctxOpaque = ctx.getOpaque()
   ?ctx.addCommonModules(window)
   if ctxOpaque != nil:
     JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
-    window.performance = newPerformance(window.settings.scripting)
     if window.settings.scripting == smApp:
       window.settings.scriptAttrsp = window.settings.attrsp
     else:
       window.settings.scriptAttrsp = unsafeAddr dummyAttrs
-  if ctxOpaque != nil:
-    #TODO do this in addCommonModules?
     var globalExotic {.global.} = JSClassExoticMethods(
       define_own_property: windowDefineOwnProperty,
       #TODO get_own_property, get, set, delete, own property keys
@@ -1094,7 +1099,6 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     console.error("failed to initialize window")
     console.writeException(ctx)
     quit(1)
-  #TODO OOM
   let window = jsNew WindowObj(
     console: console,
     loader: loader,
@@ -1116,17 +1120,18 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     importMapsAllowed: true,
     jsctx: ctx
   )
-  if window == nil or window.addScripting(ctx).isErr:
+  if addScripting(window, ctx).isErr:
     console.error("failed to initialize JS")
     console.writeException(ctx)
     quit(1)
   return window
 
-proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream;
-    console: Console): Window =
+proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream):
+    Window =
   # global object in the pager
   if ctx.addWindowModule().isErr:
     return Window(nil)
+  let console = newConsole(cast[ChaFile](stderr))
   let window = jsNew WindowObj(
     jsctx: ctx,
     loader: loader,
@@ -1136,6 +1141,9 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream;
     dangerAlwaysSameOrigin: true,
     document: newDocument(parseURL0("about:blank"))
   )
+  if window == nil or window.document == nil:
+    JS_ThrowOutOfMemory(ctx)
+    return Window(nil)
   if ctx.addCommonModules(window).isErr:
     return Window(nil)
   window
