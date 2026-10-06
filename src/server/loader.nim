@@ -389,7 +389,6 @@ proc oclose(ctx: var LoaderContext; output: OutputHandle) =
   ctx.unset(output)
   output.stream.sclose()
   output.stream = nil
-  output.parent = nil # break cycle
 
 proc close(ctx: var LoaderContext; handle: InputHandle) =
   ctx.iclose(handle)
@@ -857,6 +856,7 @@ proc loadStreamRegular(ctx: var LoaderContext;
   if r == hrrBrokenPipe:
     for output in handle.outputs:
       ctx.oclose(output)
+      output.parent = nil
   elif cachedHandle != nil:
     if handle.lastBuffer != nil:
       # cachedHandle has a different tail than handle, so output's
@@ -877,8 +877,8 @@ proc loadStreamRegular(ctx: var LoaderContext;
       cachedHandle.outputs.add(output)
   else:
     for output in handle.outputs:
+      output.parent = nil
       if output.registered or output.suspended:
-        output.parent = nil
         output.istreamAtEnd = true
       else:
         ctx.oclose(output)
@@ -1193,6 +1193,7 @@ proc finishOutputSend(ctx: var LoaderContext; output: OutputHandle) =
     if output.registered:
       ctx.unregister(output)
     ctx.oclose(output)
+    output.parent = nil
 
 # Data URL handler.
 # Moved back into loader from CGI, because data URLs can get extremely long
