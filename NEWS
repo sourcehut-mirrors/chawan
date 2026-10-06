@@ -17,8 +17,10 @@ unreleased
 * support FileReader
 * support Delete key, add default aliases for alternate Home/End
 * support browsecap for external URI handlers (based on w3mmee)
+* support menu customization
 * add external.ask-download-dir option (can be overridden in siteconf)
-* allow CORS requests in app mode
+* allow CORS requests
+* block requests to private networks from public Internet
 * rework keybinding API for select widget (there is a [select] section now)
 * retry connections with ipv6 if ipv4 resolves but connect() fails
 * reduce copying of strings between Nim <-> JS
