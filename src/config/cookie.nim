@@ -10,6 +10,7 @@ import io/packetreader
 import io/packetwriter
 import js/jsref
 import server/url
+import utils/chaos
 import utils/opt
 import utils/tabutil
 import utils/twtstr
@@ -199,7 +200,7 @@ proc add(cookieJar: CookieJar; cookie: Cookie; parseMode = false,
 # if http is true, httpOnly cookies are included too
 proc serialize*(cookieJar: CookieJar; url: URL; http: bool): string =
   var res = ""
-  let t = getTime().toUnix()
+  let t = getUnixSeconds()
   var expired: seq[int] = @[]
   for i, cookie in cookieJar.cookies.mypairs:
     let cookie = cookieJar.cookies[i]
@@ -293,7 +294,7 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
 
 proc setCookie*(cookieJar: CookieJar; header: openArray[string]; url: URL;
     persist, http: bool) =
-  let t = getTime().toUnix()
+  let t = getUnixSeconds()
   var sorted = true
   for s in header:
     if cookie := parseSetCookie(s, t, url, persist, http):
@@ -403,7 +404,7 @@ proc write0(map: CookieJarMap; file: AChaFile; ps: PosixStream;
 
 """)
   var i = 0
-  let time = getTime().toUnix()
+  let time = getUnixSeconds()
   var jar = map.jarsHead
   while jar != nil:
     for cookie in jar.cookies:

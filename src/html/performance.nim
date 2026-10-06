@@ -1,11 +1,9 @@
 {.push raises: [].}
 
 import std/math
-import std/times
 
 import config/conftypes
 import html/event
-import io/timeout
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -13,6 +11,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/chaos
 import utils/opt
 
 type
@@ -44,8 +43,9 @@ proc getClassID(t: typedesc[PerformanceMark]): JSClassID
 # Performance
 proc getTime(scripting: ScriptingMode): float64 =
   if scripting == smApp:
-    let t = getTime()
-    return float64(t.toUnix() * 1000) + floor(t.nanosecond / 100_000) / 10
+    # 0.1ms precision
+    return getUnixMillisFloat()
+  # 1ms precision
   return float64(getUnixMillis())
 
 proc newPerformance*(scripting: ScriptingMode): Performance =

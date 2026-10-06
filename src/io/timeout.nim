@@ -1,13 +1,13 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/times
 
 import io/console
 import js/fromjs
 import js/jstypes
 import js/jsutils
 import js/quickjs
+import utils/chaos
 
 type
   TimeoutType* = enum
@@ -41,10 +41,6 @@ proc clearTimeout*(state: TimeoutState; id: int32) =
     if entry.id == id:
       entry.dead = true
       break
-
-proc getUnixMillis*(): int64 =
-  let now = getTime()
-  return now.toUnix() * 1000 + now.nanosecond div 1_000_000
 
 proc setTimeout*(state: var TimeoutState; ctx: JSContext; t: TimeoutType;
     handler: JSValueConst; timeout: int32; args: varargs[JSValueConst]):

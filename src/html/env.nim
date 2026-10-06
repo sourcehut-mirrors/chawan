@@ -39,6 +39,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/chaos
 import utils/opt
 import utils/tabutil
 import utils/twtstr

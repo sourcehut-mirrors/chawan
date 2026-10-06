@@ -5,7 +5,6 @@ import std/options
 import html/catom
 import html/domexception
 import html/script
-import io/timeout
 import js/fromjs
 import js/jsbind
 import js/jsnull
@@ -15,6 +14,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/chaos
 import utils/opt
 import utils/refstring
 import utils/twtstr

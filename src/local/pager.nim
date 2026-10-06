@@ -2,7 +2,6 @@
 
 import std/options
 import std/posix
-import std/times
 
 import config/chapath
 import config/config
@@ -361,7 +360,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   let cookieStreamOpaque = CookieStreamOpaque(pager: pager)
   pager.loader.fetch(request, initCookieStream, cookieStreamOpaque)
   block history:
-    let hist = newHistory(pager.config{"historySize"}, getTime().toUnix())
+    let hist = newHistory(pager.config{"historySize"}, getUnixSeconds())
     let ps = newPosixStream(pager.config{"historyFile"})
     if ps != nil:
       if hist.parse(ps).isErr:

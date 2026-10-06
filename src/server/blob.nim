@@ -11,7 +11,6 @@ import html/event
 import io/dynstream
 import io/packetreader
 import io/packetwriter
-import io/timeout
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -19,6 +18,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/chaos
 import utils/opt
 import utils/twtstr
 

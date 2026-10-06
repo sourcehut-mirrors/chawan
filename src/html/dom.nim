@@ -4,7 +4,6 @@ import std/algorithm
 import std/math
 import std/options
 import std/setutils
-import std/times
 
 import chame/tags
 import config/conftypes
@@ -42,6 +41,7 @@ import server/loaderiface
 import server/request
 import server/url
 import utils/chahash
+import utils/chaos
 import utils/dtoawrap
 import utils/opt
 import utils/refstring
@@ -1381,7 +1381,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
       let i = s.skipBlanks("max-age=".len)
       let s = s.until(NonDigit, i)
       if pi := parseInt64(s):
-        expiry = getTime().toUnix() + pi
+        expiry = getUnixSeconds() + pi
       break
   cachedURL.loading = false
   cachedURL.expiry = expiry
@@ -1391,7 +1391,7 @@ proc loadImageFromCache(window: Window; image: HTMLImageElement; surl: string):
   let cachedURL = CachedURLImage(window.imageURLCache.getOrDefault(surl))
   if cachedURL == nil:
     return false
-  if cachedURL.expiry > getTime().toUnix():
+  if cachedURL.expiry > getUnixSeconds():
     image.bitmap = cachedURL.bmp
     return true
   if cachedURL.loading:

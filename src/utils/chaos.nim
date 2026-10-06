@@ -31,6 +31,10 @@ proc nanosleep(a1: var Timespec; a2: ptr Timespec): cint
 proc strftime*(s: cstring; slen: csize_t; format: cstring; tm: ptr Tm): csize_t
 {.pop.} # importc, header: "<time.h>"
 
+when defined(macosx):
+  proc gettimeofday(tp: var Timeval; tzp: pointer): cint {.
+    importc, header: "<sys/time.h>".}
+
 # wrappers
 proc realPath(path: string): string =
   let p = realpath(cstring(path), nil)
@@ -182,5 +186,29 @@ proc quoteShellPosix*(file: openArray[char]): string =
   res &= quoteFile(file, qsSingleQuoted)
   res &= '\''
   move(res)
+
+proc getUnixTime(): tuple[sec, usec: int64] =
+  when defined(macosx):
+    var tv {.noinit.}: Timeval
+    if gettimeofday(tv, nil) < 0:
+      return (0'i64, 0'i64)
+    return (int64(tv.tv_sec), int64(tv.tv_usec))
+  else:
+    var ts {.noinit.}: Timespec
+    if clock_gettime(CLOCK_REALTIME, ts) < 0:
+      return (0'i64, 0'i64)
+    return (int64(ts.tv_sec), int64(ts.tv_nsec) div 1000)
+
+proc getUnixMillisFloat*(): float64 =
+  let time = getUnixTime()
+  float64(time.sec) * 1000 + float64(time.usec div 100) / 10
+
+proc getUnixMillis*(): int64 =
+  let time = getUnixTime()
+  time.sec * 1000 + time.usec div 1000
+
+proc getUnixSeconds*(): int64 =
+  let time = getUnixTime()
+  time.sec
 
 {.pop.} # raises: []
