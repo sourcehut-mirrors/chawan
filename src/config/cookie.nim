@@ -2,7 +2,6 @@
 
 import std/algorithm
 import std/posix
-import std/times
 
 import io/chafile
 import io/dynstream
@@ -80,7 +79,16 @@ proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
 proc getMapKey(cookie: Cookie): string =
   return cookie.domain & cookie.path & '\t' & cookie.name
 
-proc parseCookieDate(val: string): Opt[int64] =
+proc getDaysInMonth(month, year: int): int =
+  if month == 2:
+    if year mod 4 == 0 and (year mod 100 != 0 or year mod 400 == 0):
+      return 29
+    return 28
+  if month == 4 or month == 6 or month == 9 or month == 11:
+    return 30
+  31
+
+proc parseCookieDate*(val: string): Opt[int64] =
   # cookie-date
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
   var foundTime = false
@@ -135,14 +143,22 @@ proc parseCookieDate(val: string): Opt[int64] =
       if digits.len == 4:
         year = parseInt32(digits).get
         continue
-  if month == 0 or dayOfMonth notin 1..getDaysInMonth(Month(month), year) or
+  if month == 0 or dayOfMonth notin 1..getDaysInMonth(month, year) or
       year < 1601 or not foundTime or
       time[0] > 23 or time[1] > 59 or time[2] > 59:
     return err()
-  let dt = dateTime(year, Month(month), MonthdayRange(dayOfMonth),
-    HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]),
-    zone = utc())
-  ok(dt.toTime().toUnix())
+  if year < 1970:
+    return ok(0)
+  # https://howardhinnant.github.io/date_algorithms.html
+  if month <= 2:
+    dec year
+  let era = (if year >= 0: year else: year - 399) div 400
+  let yoe = year - era * 400
+  let doy = (153 * (if month > 2: month - 3 else: month + 9) + 2) div 5 +
+    dayOfMonth - 1
+  let doe = yoe * 365 + yoe div 4 - yoe div 100 + doy
+  let day = era * 146097 + doe - 719468
+  ok(day * 24 * 60 * 60 + time[0] * 60 * 60 + time[1] * 60 + time[2])
 
 # For debugging
 proc `$`*(cookieJar: CookieJar): string =

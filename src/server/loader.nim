@@ -24,7 +24,6 @@
 
 import std/algorithm
 import std/posix
-import std/times
 
 import config/conftypes
 import config/cookie
@@ -53,9 +52,6 @@ import utils/twtstr
 #TODO measure this on 32-bit too, we get a few more bytes there
 const LoaderBufferPageSize = 4016 # 4096 - 64 - 16
 
-# Override posix.Time
-type Time = times.Time
-
 type
   CachedItem = ref object
     id: int
@@ -82,7 +78,7 @@ type
     credentials: bool # normalized to "include" (true) or "omit" (false)
     contentLen: uint64 # value of Content-Length; uint64.high if no such header
     bytesSeen: uint64 # number of bytes read until now
-    startTime: Time # time when download of the body was started
+    startTime: int64 # time when download of the body was started in seconds
     connectionOwner: ClientHandle # set if the handle counts in numConnections
     lastBuffer: LoaderBuffer # tail of buffer linked list
 
@@ -149,7 +145,7 @@ type
     output: OutputHandle
     sent: uint64
     contentLen: uint64
-    startTime: Time
+    startTime: int64
 
   LoaderContext = object
     pid: int
@@ -337,7 +333,7 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
   assert handle.rstate == rsBeforeStatus
   inc handle.rstate
   let contentLens = headers.getFirst("Content-Length")
-  handle.startTime = getTime()
+  handle.startTime = getUnixSeconds()
   handle.contentLen = parseUInt64(contentLens).get(uint64.high)
   let output = handle.output
   let cookieJar = output.owner.config.cookieJar
@@ -1250,21 +1246,40 @@ proc formatSize(size: uint64): string =
     ns &= $n
     result.insert(ns, 0)
 
-proc formatDuration(dur: Duration): string =
-  result = ""
-  let parts = dur.toParts()
-  if parts[Weeks] != 0:
-    result &= $parts[Weeks] & " Weeks, "
-  if parts[Days] != 0:
-    result &= $parts[Days] & " Days, "
-  for i, it in [Hours, Minutes, Seconds]:
+proc formatDuration(secs: int64): string =
+  const MinuteSeconds = 60
+  const HourSeconds = MinuteSeconds * 60
+  const DaySeconds = HourSeconds * 24
+  const WeekSeconds = DaySeconds * 7
+  var secs = secs
+  var res = ""
+  let weeks = secs div WeekSeconds
+  secs -= weeks * WeekSeconds
+  if weeks != 0:
+    res &= $weeks & " Week"
+    if weeks > 1:
+      res &= 's'
+    res &= ", "
+  let days = secs div DaySeconds
+  secs -= days * DaySeconds
+  if days != 0:
+    res &= $days & " Day"
+    if days > 1:
+      res &= 's'
+    res &= ", "
+  let hours = secs div HourSeconds
+  secs -= hours * HourSeconds
+  let mins = secs div MinuteSeconds
+  secs -= mins * MinuteSeconds
+  for i, it in [hours, mins, secs]:
     if i > 0:
-      result &= ':'
-    if parts[it] in 0..9:
-      result &= '0'
-    result &= $parts[it]
+      res &= ':'
+    if it in 0..9:
+      res &= '0'
+    res &= $it
+  move(res)
 
-proc makeProgress(it: DownloadItem; now: Time): string =
+proc makeProgress(it: DownloadItem; now: int64): string =
   result = it.displayUrl.htmlEscape() & '\n'
   result &= "  -> "
   if it.output == nil: # linkify path on completion
@@ -1286,12 +1301,12 @@ proc makeProgress(it: DownloadItem; now: Time): string =
     let dur = now - it.startTime
     result &= formatDuration(dur)
     result &= "  rate "
-    let udur = max(uint64(dur.inSeconds()), 1)
+    let udur = uint64(max(dur, 1))
     let rate = it.sent div udur
     result &= convertSize(rate) & "/sec"
     if it.contentLen < uint64.high:
       let left = it.contentLen - it.sent
-      let eta = initDuration(seconds = int64(left div max(rate, 1)))
+      let eta = int64(left div max(rate, 1))
       result &= "  eta " & formatDuration(eta)
   else:
     result &= " bytes loaded"
@@ -1338,7 +1353,7 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
 <hr>
 <pre>
 """
-  let now = getTime()
+  let now = getUnixSeconds()
   var refresh = false
   for i, it in ctx.downloadList.mpairs:
     if it.output != nil:
@@ -1668,7 +1683,7 @@ proc redirectToFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
       output.parent.startTime
     else:
       #TODO ???
-      fromUnix(0)
+      0'i64
     ctx.downloadList.add(DownloadItem(
       escapedPath: targetPath.htmlEscape(),
       output: fileOutput,

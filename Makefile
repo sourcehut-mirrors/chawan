@@ -152,7 +152,7 @@ endif
 twtstr = src/utils/twtstr.nim src/utils/opt.nim
 dynstream = src/io/dynstream.nim
 chafile = src/io/chafile.nim $(dynstream)
-chaos = src/utils/chaos.nim src/utils/twtstr.nim
+chaos = src/utils/chaos.nim $(twtstr)
 connectionerror = src/server/connectionerror.nim
 lcgi = $(chaos) $(chafile) $(twtstr) $(sandbox) $(connectionerror) \
 	adapter/protocol/lcgi.nim
@@ -404,7 +404,7 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test test/charset/basic tes
 test/nim/%: test/nim/%.nim
 	$(NIMC) $(test_flags) -o:$@ $<
 
-test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos
+test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie
 test_bin += $(foreach name,$(test_names),test/nim/$(name))
 
 test/nim/ttwtstr: $(twtstr)
@@ -417,6 +417,7 @@ test/nim/tjsbind: src/js/fromjs.nim src/js/jsbind.nim src/js/jsnull.nim \
 test/nim/tlibregexp: src/js/libregexp.nim
 test/nim/tchahash: src/utils/chahash.nim
 test/nim/tchaos: $(chaos)
+test/nim/tcookie: src/config/cookie.nim $(chafile) $(chaos) $(dynstream)
 
 .PHONY: test_nim
 test_nim: $(test_bin)
