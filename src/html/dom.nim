@@ -7758,16 +7758,16 @@ proc newElement(document: Document;
   else:
     jsNew ElementObj()
   element.id = satUempty.view()
+  element.custom = if localName.isValidCustomElementName():
+    cesUndefined
+  else:
+    cesUncustomized
   element.localName = localName
   element.namespaceURI = namespaceURI
   element.tagName = tagName
   element.internalNext = document.asNode
   if document.quirksMode == qmQuirks:
     element.flags.incl(efQuirks)
-  element.custom = if localName.isValidCustomElementName():
-    cesUndefined
-  else:
-    cesUncustomized
   element
 
 proc addHTMLElementReflection(ctx: JSContext): Opt[void] =
