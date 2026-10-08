@@ -459,10 +459,10 @@ type
     actionMap*: array[csPage..csLine, ActionMap]
 
   TomlState = enum
-    tsTable
-    tsArray
-    tsMultiStringSimple
-    tsMultiStringDouble
+    tsTable = "table"
+    tsArray = "array"
+    tsMultiStringSimple = "single-quoted multi-line string"
+    tsMultiStringDouble = "double-quoted multi-line string"
 
   TomlType = enum
     ttString = "string"
@@ -2073,13 +2073,17 @@ proc initConfigParser(config: Config; dir: string; ctx: JSContext; name: string;
     opt: coAddEntry
   )
 
+proc parseConfigEOF(cp: var ConfigParser): Opt[void] =
+  if cp.states.len > 0:
+    return cp.err("unclosed " & $cp.states[^1])
+  cp.checkRuleRegex()
+
 proc parseFile(cp: var ConfigParser; file: AChaFile): Opt[void] =
   var line: string
   while ?file.readLine(line):
     ?cp.parseConfigLine(line)
     inc cp.line
-  ?cp.checkRuleRegex()
-  ok()
+  cp.parseConfigEOF()
 
 proc cleanup(cp: var ConfigParser) =
   if cp.error == "":
@@ -2113,7 +2117,7 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
     if cp.parseConfigLine(line).isErr:
       return err(move(cp.error))
     inc cp.line
-  if cp.checkRuleRegex().isErr:
+  if cp.parseConfigEOF().isErr:
     return err(move(cp.error))
   ctx.applyEntries(config, cp.entries)
   warnings.add(cp.warnings)
