@@ -1,3 +1,7 @@
+# Despite what the name of this module may suggest, the object defined here
+# is neither dynamic nor a stream, just a simple abstraction over POSIX
+# file descriptors.
+
 {.push raises: [].}
 
 import std/posix
