@@ -39,12 +39,12 @@ then	echo "bad siteconf accepted"
 	exit 1
 fi
 
-if ! $CHA charset.html -Iutf8 | diff charset.expected -
+if ! $CHA charset.html -Cconfig.toml -Iutf8 | diff charset.expected -
 then	echo "charset override doesn't work for files"
 	exit 1
 fi
 
-if ! $CHA <charset.html -Iutf8 -Ttext/html | diff charset.expected -
+if ! $CHA <charset.html -Cconfig.toml -Iutf8 -Ttext/html | diff charset.expected -
 then	echo "charset override doesn't work for stdin"
 	exit 1
 fi
@@ -54,4 +54,4 @@ then	echo "wrong CGI variables"
 	exit 1
 fi
 
-$CHA -r 'quit()'
+$CHA -Cconfig.toml -r 'quit()'
