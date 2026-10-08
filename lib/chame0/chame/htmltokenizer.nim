@@ -59,7 +59,7 @@ type
     htmlIntegrationPoint*: bool # is the stack top an HTML integration point?
     mathMLIntegrationPoint*: bool # is the stack top a MathML int. point?
     ignoreLF: bool # ignore the next consumed line feed (for CRLF normalization)
-    isws: bool # is the current character token whitespace-only?
+    chartok: TokenType # is the current character token whitespace-only?
     flags*: set[TokenFlag]
     quote: char # dedupe states that only differ in their quoting
     entityNameIdx: int8 # index in entity.name
@@ -124,22 +124,17 @@ proc initTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom]):
     dombuilder: dombuilder,
     entityEntryIdx: -1,
     entityMatchIdx: -1,
-    isws: true,
+    chartok: ttWhitespace,
     namespace: nsHTML
   )
 
 template reconsume(tok: var Tokenizer) =
   dec tok.inputBufIdx
 
-proc flushChars[Handle, Atom](tok: var Tokenizer[Handle, Atom]):
-    TokenizeResult =
-  if tok.isws:
-    tok.t = ttWhitespace
-  else:
-    tok.t = ttCharacter
+proc flushChars(tok: var Tokenizer) =
+  tok.t = tok.chartok
   tok.charbuf = move(tok.tmp)
-  tok.isws = true
-  trEmit
+  tok.chartok = ttWhitespace
 
 const AttributeStates = {
   tsAttributeValueQuoted, tsAttributeValueUnquoted
@@ -222,11 +217,11 @@ proc flushNumericCharacterReference(tok: var Tokenizer) =
   if u < 0x80:
     let c = char(u)
     if not tok.consumedAsAttribute() and c notin AsciiWhitespace:
-      tok.isws = false
+      tok.chartok = ttCharacter
     tok.tmp &= c
   else:
     if not tok.consumedAsAttribute():
-      tok.isws = false
+      tok.chartok = ttCharacter
     if u < 0x800:
       tok.tmp &= char(u shr 6 or 0xC0)
       tok.tmp &= char(u and 0x3F or 0x80)
@@ -248,7 +243,7 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
     # No full match found.  Restore the ampersand and the last partial
     # match.  (We don't have to reconsume because partial matches are
     # guaranteed to be alphanumeric.)
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= '&'
     tok.tmp.chameAdd(prev.toOpenArray(0, tok.entityNameIdx - 1))
     return tsAmbiguousAmpersand
@@ -275,7 +270,7 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
     # There is a full match, but we're in an attribute and the character
     # reference looks like a URI component.  Restore the full match,
     # and then the last partial match.
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= '&'
     tok.tmp.chameAdd(entry.toOpenArray(0, matchLen - 1))
     tok.tmp.chameAdd(prev.toOpenArray(matchLen, tok.entityNameIdx - 1))
@@ -428,7 +423,7 @@ proc flushEndTagName(tok: var Tokenizer) =
   tok.tagname = tok.strToAtom(tok.tagNameBuf)
 
 proc emitTmp(tok: var Tokenizer) =
-  tok.isws = false
+  tok.chartok = ttCharacter
   tok.tmp = "</" & tok.tmp
 
 template startTagMatches(tok: Tokenizer): bool =
@@ -445,13 +440,14 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
   template flush_chars =
     if tok.tmp.len > 0:
       dec i
-      res = tok.flushChars()
+      tok.flushChars()
+      res = trEmit
       break
   template emit(s: static string) =
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= s
   template emit(ch: char) =
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= ch
   template emit(tt: TokenType) =
     tok.t = tt
@@ -461,7 +457,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     res = trEmit
     break
   template emit_nws(c: char) =
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= c
   template emit_ws(c: char) =
     tok.tmp &= c
@@ -1337,7 +1333,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       of AsciiAlpha: reconsume_in tsNamedCharacterReference
       of '#': switch_state tsNumericCharacterReference
       else:
-        tok.isws = false
+        tok.chartok = ttCharacter
         tok.tmp &= '&'
         reconsume_in tok.rstate
 
@@ -1364,7 +1360,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         # note: was reconsume
         switch_state tsDecimalCharacterReference
       else:
-        tok.isws = false
+        tok.chartok = ttCharacter
         tok.tmp &= "&#"
         reconsume_in tok.rstate
 
@@ -1381,7 +1377,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         # note: was reconsume
         switch_state tsHexadecimalCharacterReference
       else:
-        tok.isws = false
+        tok.chartok = ttCharacter
         if state == tsHexadecimalCharacterReferenceStartLower:
           tok.tmp &= "&#x"
         else:
@@ -1416,6 +1412,14 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tok.flushNumericCharacterReference()
         switch_state tok.rstate
 
+  if res == trDone and tok.tmp.len > 0 and
+      state in {tsData, tsRcdata, tsRawtext, tsScriptData, tsPlaintext,
+        tsTagOpen, tsEndTagOpen, tsRcdataLessThanSign, tsRawtextLessThanSign,
+        tsScriptDataLessThanSign, tsScriptDataEscaped,
+        tsScriptDataEscapedDash, tsScriptDataEscapedDashDash,
+        tsScriptDataEscapedLessThanSign, tsScriptDataEscapedEndTagOpen}:
+    tok.flushChars()
+    res = trEmit
   tok.state = state
   tok.ignoreLF = ignoreLF
   tok.inputBufIdx = i
@@ -1427,11 +1431,11 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
   case state
   of tsTagOpen, tsRcdataLessThanSign, tsRawtextLessThanSign,
       tsScriptDataLessThanSign, tsScriptDataEscapedLessThanSign:
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= '<'
   of tsEndTagOpen, tsRcdataEndTagOpen, tsRawtextEndTagOpen,
       tsScriptDataEndTagOpen, tsScriptDataEscapedEndTagOpen:
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= "</"
   of tsRcdataEndTagName, tsRawtextEndTagName, tsScriptDataEndTagName,
       tsScriptDataEscapedEndTagName:
@@ -1464,21 +1468,21 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
     tok.t = ttDoctype
     return trEmit
   of tsCdataSectionBracket:
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= ']'
   of tsCdataSectionEnd:
-    tok.isws = false
+    tok.chartok = ttCharacter
     tok.tmp &= "]]"
   of tsCharacterReference:
     if not tok.consumedAsAttribute():
-      tok.isws = false
+      tok.chartok = ttCharacter
       tok.tmp &= '&'
   of tsNamedCharacterReference:
     discard tok.flushNamedCharacterReference([])
   of tsHexadecimalCharacterReferenceStartLower,
       tsHexadecimalCharacterReferenceStartUpper, tsNumericCharacterReference:
     if not tok.consumedAsAttribute():
-      tok.isws = false
+      tok.chartok = ttCharacter
       tok.tmp &= "&#"
       if state == tsHexadecimalCharacterReferenceStartLower:
         tok.tmp &= 'x'
@@ -1492,7 +1496,8 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
     return trDone
   else: discard
   if tok.tmp.len > 0:
-    return tok.flushChars()
+    tok.flushChars()
+    return trEmit
   trDone
 
 {.pop.} # raises: []
