@@ -277,9 +277,8 @@ doc/cha-%.7: doc/%.md md2man
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)" "$(OBJDIR)/chac_cache" "$(OBJDIR)/chagashi_test"
-	rm -f "$(OBJDIR)/chac"
+	rm -f "$(OBJDIR)/chac" $(test_bin) test/nim/toklab
 	(cd lib/chaseccomp && $(MAKE) clean)
-	rm -f $(test_bin)
 
 .PHONY: distclean
 distclean: clean
@@ -385,10 +384,10 @@ $(OBJDIR)/chagashi_test:
 	unxz $(OBJDIR)/chagashi_test/data.tar.xz
 	tar xf $(OBJDIR)/chagashi_test/data.tar -C $(OBJDIR)/chagashi_test
 
-test_flags = --verbosity:0 --nimcache:"$(OBJDIR)/$(TARGET)/test" -d:test
+test_flags = --verbosity:0 -d:test
 
 test/charset/%: test/charset/%.nim
-	$(NIMC) $(test_flags) -o:$@ $<
+	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_charset" -o:$@ $<
 
 test/charset/basic.nim: src/encoding/charset.nim src/encoding/decoder.nim \
 	src/encoding/decodercore.nim src/encoding/encoder.nim
@@ -402,7 +401,7 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test test/charset/basic tes
 	CGS_TESTDIR=$(OBJDIR)/chagashi_test test/charset/data
 
 test/nim/%: test/nim/%.nim
-	$(NIMC) $(test_flags) -o:$@ $<
+	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
 
 test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie
 test_bin += $(foreach name,$(test_names),test/nim/$(name))
@@ -425,8 +424,8 @@ test_nim: $(test_bin)
 
 # slow, for manual use only
 .PHONY: test_oklab
-test_oklab: test/nim/toklab.nim
-	$(NIM) r -d:debug -d:danger $(test_flags) test/nim/toklab.nim
+test_oklab: test/nim/toklab
+	test/nim/toklab
 
 .PHONY: test
 test: test_js test_layout test_dhtml test_net test_md test_pager test_charset \

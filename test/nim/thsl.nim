@@ -1,5 +1,6 @@
-import types/color
 import std/math
+
+import css/color
 
 proc main() =
   var diff = 0

@@ -1,5 +1,6 @@
-import types/color
 import std/math
+
+import css/color
 
 proc unlinear(x: float32): float32 =
   if x < 0:
