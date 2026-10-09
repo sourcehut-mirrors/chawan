@@ -53,6 +53,7 @@ Known stable packages are:
 * Debian (testing): <https://packages.debian.org/chawan>
 * FreeBSD: <https://www.freshports.org/www/chawan/>
 * Gentoo (::guru overlay): <https://codeberg.org/gentoo/guru/src/branch/master/www-client/chawan>
+* Guix: <https://packages.guix.gnu.org/packages/chawan/0.4.4/>
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
 * NetBSD (pkgsrc-wip): <https://github.com/NetBSD/pkgsrc-wip/tree/master/chawan>
 * NixOS: <https://search.nixos.org/packages?show=chawan>
