@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import std/math
-
 import config/conftypes
 import html/event
 import js/fromjs

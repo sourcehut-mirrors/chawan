@@ -235,11 +235,11 @@ proc hasContext[Handle, Atom](parser: HTML5Parser[Handle, Atom]): bool =
 proc resetInsertionMode0[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
     InsertionMode =
   for i in countdown(parser.openElements.high, 0):
-    var node = parser.openElements[i]
     let last = i == 0
-    if last and parser.hasContext():
-      node = parser.ctx
-    let tagType = parser.getTagType(node.element)
+    let tagType = if last and parser.hasContext():
+      parser.getTagType(parser.ctx.element)
+    else:
+      parser.getTagType(parser.openElements[i].element)
     case tagType
     of ttTd, ttTh:
       if not last:
@@ -518,8 +518,8 @@ proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
       integrationPoint = true
   else: discard
   let location = parser.appropriatePlaceForInsert()
-  let parent = location.inside
-  let element = parser.createElement(localName, namespace, parent, attrs)
+  let element = parser.createElement(localName, namespace, location.inside,
+    attrs)
   if not stackOnly:
     parser.insert(location, element)
   parser.pushElement(element, tagname, integrationPoint)
@@ -527,9 +527,8 @@ proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
 
 proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     namespace: Namespace; stackOnly: bool): Handle =
-  let tagname = parser.tok.tagname
-  parser.insertForeignElement(tagname, tagname, namespace, stackOnly,
-    move(parser.tok.attrs))
+  parser.insertForeignElement(parser.tok.tagname, parser.tok.tagname,
+    namespace, stackOnly, move(parser.tok.attrs))
 
 proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom];
     tagname: Atom; attrs: ParsedAttrs[Atom]): Handle =
@@ -2156,9 +2155,10 @@ proc processInForeign[Handle, Atom](parser: var HTML5Parser[Handle, Atom]):
       # fall through
     else: discard
     let namespace = parser.getNamespace(parser.adjustedCurrentNode)
-    var tagname = parser.tok.tagname
-    if namespace in {nsSVG, nsMathML}:
-      tagname = parser.tok.strToAtom(parser.tok.tagNameBuf)
+    let tagname = if namespace in {nsSVG, nsMathML}:
+      parser.tok.strToAtom(parser.tok.tagNameBuf)
+    else:
+      parser.tok.tagname
     discard parser.insertForeignElement(parser.tok.tagname, tagname,
       namespace, false, move(parser.tok.attrs))
     if tfSelfClosing in parser.tok.flags:
@@ -2239,9 +2239,9 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
       startTagName: parser.getLocalName(ctxInit),
       integrationPoint: opts.ctxIsIntegrationPoint
     )
-    parser.ctx = ctx
     namespace = parser.getNamespace(ctx.element)
     isMathMLIntegrationPoint = parser.isMathMLIntegrationPoint(ctx.element)
+    parser.ctx = ctx
   if opts.openElementsInit != Handle.default:
     parser.pushHTMLElement(opts.openElementsInit)
     parser.resetInsertionMode()

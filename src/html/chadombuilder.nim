@@ -32,12 +32,11 @@ type
   HTML5ParserWrapper* {.final.} = ref object of RootObj
     parser: HTML5Parser[ParentNode, CAtom]
     builder*: ChaDOMBuilder
-    opts: HTML5ParserOpts[ParentNode]
-    stoppedFromScript: bool
 
   ChaDOMBuilder {.final.} = ref object of DOMBuilder[ParentNode, CAtom]
     ctx: JSContext
     charset*: Charset
+    stoppedFromScript: bool
     confidence*: CharsetConfidence
     document*: Document
     poppedScript: HTMLScriptElement
@@ -105,7 +104,9 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
     window.document = document
   builder.document = document
   builder.charset = charset
-  wrapper.parser = initHTML5Parser(builder, wrapper.opts)
+  wrapper.parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode](
+    scripting: window.settings.scripting != smFalse
+  ))
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
   builder.document.quirksMode = quirksMode
@@ -339,15 +340,14 @@ proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
 
 proc newHTML5ParserWrapper*(window: Window; url: URL;
     confidence: CharsetConfidence; charset: Charset): HTML5ParserWrapper =
-  let opts = HTML5ParserOpts[ParentNode](
-    scripting: window.settings.scripting != smFalse
-  )
   let builder = newChaDOMBuilder(url, window, confidence, window.jsctx,
     charset)
   let wrapper = HTML5ParserWrapper(
     builder: builder,
-    opts: opts,
-    parser: initHTML5Parser(builder, opts)
+    parser: initHTML5Parser(builder, HTML5ParserOpts[ParentNode](
+      # must be identical to opts in restart()
+      scripting: window.settings.scripting != smFalse
+    ))
   )
   builder.document.setActiveParser(wrapper)
   return wrapper
@@ -376,7 +376,7 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
         #TODO style sheet
         script.execute()
         assert document.parserBlockingScript != script
-      if wrapper.stoppedFromScript:
+      if builder.stoppedFromScript:
         # document.write inserted a meta charset tag
         break
       assert document.writeBuffersTop.toOpenArray().len == 0
@@ -418,7 +418,7 @@ proc parseDocumentWriteChunk(wrapper: RootRef) {.exportc: "cha_$1".} =
   assert builder.poppedScript == nil
   buffer.i = buffer.data.len
   if res == pcrStop:
-    wrapper.stoppedFromScript = true
+    builder.stoppedFromScript = true
 
 proc finish*(wrapper: HTML5ParserWrapper) =
   wrapper.parser.finish()

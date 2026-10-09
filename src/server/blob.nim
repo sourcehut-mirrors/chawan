@@ -309,10 +309,10 @@ proc newFileList*(): FileList =
 
 proc getName*(this: FileList): string =
   var res = ""
-  for i in 0 ..< this.files.len:
+  for i, file in this.files.mypairs:
     if i != 0:
       res &= ','
-    res &= this.files[i].name
+    res &= file.name
   move(res)
 
 proc add*(this: FileList; file: WebFile) =
