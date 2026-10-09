@@ -69,18 +69,6 @@ type
 
   FileReader = JSRef[FileReaderObj]
 
-  ProgressEventObj {.pure, final.} = object of EventObj
-    lengthComputable: bool
-    loaded: float64
-    total: float64
-
-  ProgressEvent = JSRef[ProgressEventObj]
-
-  ProgressEventInit = object of EventInit
-    lengthComputable {.jsdefault.}: bool
-    loaded {.jsdefault.}: float64
-    total {.jsdefault.}: float64
-
 # Forward declarations
 proc deallocBlob*(opaque, p: pointer)
 proc getClassID(t: typedesc[Blob]): JSClassID
@@ -344,37 +332,6 @@ jsClassDef(FileList):
     of fiStr: JS_UNINITIALIZED
     of fiErr: JS_EXCEPTION
 
-# ProgressEvent
-jsClassDef(ProgressEvent):
-  jsextends EventDef
-
-  jsget ProgressEvent, lengthComputable
-  jsget ProgressEvent, loaded
-  jsget ProgressEvent, total
-
-  proc newProgressEvent(eventType: CAtom; init = ProgressEventInit()):
-      ProgressEvent {.jsctor.} =
-    let event = jsNew ProgressEventObj(
-      eventType: eventType,
-      lengthComputable: init.lengthComputable,
-      loaded: init.loaded,
-      total: init.total
-    )
-    if event != nil:
-      event.asEvent.innerEventCreationSteps(EventInit(init))
-    event
-
-proc fireProgressEvent*(ctx: JSContext; target: EventTarget; name: StaticAtom;
-    loaded, length: int64) =
-  let event = newProgressEvent(name.view(), ProgressEventInit(
-    loaded: float64(loaded),
-    total: float64(length),
-    lengthComputable: length != 0
-  ))
-  if event != nil:
-    event.asEvent.setTrusted()
-    discard ctx.dispatch(target, event.asEvent)
-
 # FileReader
 #TODO definitely not compliant, but I guess it's fine for now
 proc package(ctx: JSContext; s: openArray[char]; contentType: string;
@@ -485,13 +442,17 @@ jsClassDef(FileReader):
     ctx.addEventGetSet(classDef.id, satLoadstart, satProgress, satLoad,
       satAbort, satError, satLoadend)
 
-proc addBlobModule*(ctx: JSContext): Opt[void] =
+proc addBlobModule*(ctx: JSContext): JSCode =
+  # only init the classes used in loader here
+  # (TODO: ideally blob/webfile would refer to a backing object in loader,
+  # then we wouldn't have to init them there at all)
   ?ctx.registerClass(BlobDef)
-  ?ctx.registerClass(WebFileDef)
-  ?ctx.registerClass(FileListDef)
+  ctx.registerClass(WebFileDef)
+
+proc addFileReaderModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(FileReaderDef)
-  ?ctx.registerClass(ProgressEventDef)
   ?ctx.defineConsts(FileReaderDef.id, FileReaderState)
+  ?ctx.registerClass(FileListDef)
   ctx.addFileReaderEvents()
 
 {.pop.} # raises: []

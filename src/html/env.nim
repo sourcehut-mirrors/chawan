@@ -1044,6 +1044,7 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   ?ctx.addHTMLModule()
   ?ctx.addIntlModule()
   ?ctx.addBlobModule()
+  ?ctx.addFileReaderModule()
   ?ctx.addXMLHttpRequestModule()
   ?ctx.addHeadersModule()
   ?ctx.addRequestModule()

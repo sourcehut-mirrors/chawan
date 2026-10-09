@@ -1636,6 +1636,7 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): JSCode =
   rtOpaque.classes[int(id)].raw = raw
   rtOpaque.classes[int(id)].parent = def.parent
   if def.parent != JS_INVALID_CLASS_ID:
+    assert rtOpaque.classes[int(def.parent)].initialized
     rtOpaque.classes[int(def.parent)].final = false
   var merged = @(def.unforgeableFuns)
   if int(def.parent) < rtOpaque.classes.len:

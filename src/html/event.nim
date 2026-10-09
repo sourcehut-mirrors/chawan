@@ -86,12 +86,19 @@ type
 
   MouseEvent = JSRef[MouseEventObj]
 
-  InputEventObj {.final.} = object of UIEventObj
+  InputEventObj {.pure, final.} = object of UIEventObj
     data: Option[string]
     isComposing: bool
     inputType: string
 
   InputEvent = JSRef[InputEventObj]
+
+  ProgressEventObj {.pure, final.} = object of EventObj
+    lengthComputable: bool
+    loaded: float64
+    total: float64
+
+  ProgressEvent = JSRef[ProgressEventObj]
 
   EventTargetObj* = object of JSRootObj
     eventListener: EventListener
@@ -174,6 +181,8 @@ proc getClassID*(t: typedesc[EventTarget]): JSClassID
 proc getClassID(t: typedesc[AbortSignal]): JSClassID
 proc getClassID*(t: typedesc[Event]): JSClassID
 proc getClassID(t: typedesc[MessageEvent]): JSClassID
+proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
+  targetOverride = false): bool
 
 # Forward declaration hack
 proc isDefaultPassive(target: EventTarget): bool {.importc: "cha_$1".}
@@ -217,6 +226,11 @@ type
     data* {.jsdefault: trace(JS_NULL).}: JSValueTraced
     origin {.jsdefault.}: string
     lastEventId {.jsdefault.}: string
+
+  ProgressEventInit = object of EventInit
+    lengthComputable {.jsdefault.}: bool
+    loaded {.jsdefault.}: float64
+    total {.jsdefault.}: float64
 
 # Event
 template asEvent*[T: EventObj](x: JSRef[T]): Event =
@@ -515,6 +529,37 @@ jsClassDef(InputEvent):
     if event != nil:
       event.asEvent.innerEventCreationSteps(EventInit(eventInit))
     event
+
+# ProgressEvent
+jsClassDef(ProgressEvent):
+  jsextends EventDef
+
+  jsget ProgressEvent, lengthComputable
+  jsget ProgressEvent, loaded
+  jsget ProgressEvent, total
+
+  proc newProgressEvent(eventType: CAtom; init = ProgressEventInit()):
+      ProgressEvent {.jsctor.} =
+    let event = jsNew ProgressEventObj(
+      eventType: eventType,
+      lengthComputable: init.lengthComputable,
+      loaded: init.loaded,
+      total: init.total
+    )
+    if event != nil:
+      event.asEvent.innerEventCreationSteps(EventInit(init))
+    event
+
+proc fireProgressEvent*(ctx: JSContext; target: EventTarget; name: StaticAtom;
+    loaded, length: int64) =
+  let event = newProgressEvent(name.view(), ProgressEventInit(
+    loaded: float64(loaded),
+    total: float64(length),
+    lengthComputable: length != 0
+  ))
+  if event != nil:
+    event.asEvent.setTrusted()
+    discard ctx.dispatch(target, event.asEvent)
 
 # MutationRecord
 jsClassDef(MutationRecord):
@@ -1071,6 +1116,7 @@ proc addEventModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(UIEventDef)
   ?ctx.registerClass(MouseEventDef)
   ?ctx.registerClass(InputEventDef)
+  ?ctx.registerClass(ProgressEventDef)
   ?ctx.defineConsts(EventDef.id, EventPhase)
   ?ctx.registerClass(MutationRecordDef)
   ?ctx.registerClass(MutationObserverDef)
