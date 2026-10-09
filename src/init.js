@@ -1749,6 +1749,7 @@ Pager.prototype.replaceWith = function(old, replacement) {
 /* private */
 Pager.prototype.deleteBuffer = function(buffer, setTarget = null) {
     const iface = buffer.iface;
+    buffer.iface = null;
     if (iface != null && iface.loadState == "loading")
         iface.cancel();
     if (buffer.sourcePair != null)
