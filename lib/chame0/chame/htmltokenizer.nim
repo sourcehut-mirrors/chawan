@@ -300,17 +300,16 @@ proc flushAttr[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
   # not want to flush attributes.
   if tok.t == ttStartTag:
     tok.attrs.add(ParsedAttr[Atom](
-      name: tok.attrName,
-      namespace: tok.namespaceToAtom(tok.attrNamespace)
+      name: move(tok.attrName),
+      namespace: tok.namespaceToAtom(tok.attrNamespace),
+      value: move(tok.tmp)
     ))
-    tok.attrs[^1].value = move(tok.tmp)
   else:
     tok.tmp = ""
 
 proc flushAttrs[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
   mixin sortAttrsImpl
-  if tok.t == ttStartTag:
-    tok.dombuilder.toDOMBuilderImpl().sortAttrsImpl(tok.attrs)
+  tok.dombuilder.toDOMBuilderImpl().sortAttrsImpl(tok.attrs)
 
 type EatStrResult = enum
   esrFail, esrNext, esrSuccess
@@ -411,13 +410,13 @@ proc flushStartTagName[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
       tok.tagname = tok.strToAtom(tok.tagNameBuf)
   else:
     let tagname = tok.strToAtom(tok.tagNameBuf)
-    tok.tagname = tagname
     let startTag = tok.toTagType(tagname)
     case startTag
     of ttSvg: tok.tagNamespace = nsSVG
     of ttMath: tok.tagNamespace = nsMathML
     else: tok.tagNamespace = nsNone
     tok.startTag = startTag
+    tok.tagname = tagname
 
 proc flushEndTagName(tok: var Tokenizer) =
   tok.tagname = tok.strToAtom(tok.tagNameBuf)
@@ -908,7 +907,10 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiWhitespace: discard
       of '/': switch_state tsSelfClosingStartTag
-      of '>': reconsume_in tsAfterAttributeName
+      of '>':
+        switch_state tsData
+        tok.flushAttrs()
+        emit_tok
       else:
         tok.tmp = ""
         if c == '\0':
@@ -929,7 +931,6 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         if c == '=':
           switch_state tsBeforeAttributeValue
         else:
-          tok.flushAttr()
           reconsume_in tsAfterAttributeName
       of '\0':
         tok.tmp &= "\uFFFD"
@@ -939,14 +940,17 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
     of tsAfterAttributeName:
       case c
       of AsciiWhitespace: discard
-      of '/': switch_state tsSelfClosingStartTag
+      of '/':
+        tok.flushAttr()
+        switch_state tsSelfClosingStartTag
       of '=': switch_state tsBeforeAttributeValue
       of '>':
         switch_state tsData
+        tok.flushAttr()
         tok.flushAttrs()
         emit_tok
       else:
-        tok.tmp = ""
+        tok.flushAttr()
         if c == '\0':
           tok.tmp &= "\uFFFD"
         else:
