@@ -277,7 +277,8 @@ doc/cha-%.7: doc/%.md md2man
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)" "$(OBJDIR)/chac_cache" "$(OBJDIR)/chagashi_test"
-	rm -f "$(OBJDIR)/chac" $(test_bin) test/nim/toklab
+	for name in $(test_names); do rm -rf "$(OBJDIR)/test_$$name"; rm -f test/nim/$$name; done
+	rm -f "$(OBJDIR)/chac" test/nim/toklab test/charset/basic test/charset/data test/net/run
 	(cd lib/chaseccomp && $(MAKE) clean)
 
 .PHONY: distclean
@@ -348,7 +349,7 @@ uninstall:
 test/net/run.nim: src/io/chafile.nim src/utils/opt.nim src/utils/twtstr.nim
 
 test/net/run: test/net/run.nim
-	$(NIMC) test/net/run.nim
+	$(NIMC) --nimcache:"$(OBJDIR)/test_net" test/net/run.nim
 
 .PHONY: map
 map:
@@ -387,7 +388,7 @@ $(OBJDIR)/chagashi_test:
 test_flags = --verbosity:0 -d:test
 
 test/charset/%: test/charset/%.nim
-	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_charset" -o:$@ $<
+	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
 
 test/charset/basic.nim: src/encoding/charset.nim src/encoding/decoder.nim \
 	src/encoding/decodercore.nim src/encoding/encoder.nim
