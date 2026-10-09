@@ -551,7 +551,10 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
   else:
     let crossAlign = computed.getAlignSelf(alignItems)
     if crossAlign != AlignItemsStretch:
-      input.space[odim] = maxContent()
+      input.space[odim] = if odim == dtVertical:
+        maxContent()
+      else:
+        fitContent(space[odim])
     elif input.space[odim].t == scStretch:
       hasCross = true
       let u = input.space[odim].u - input.margin[odim].sum() -
