@@ -238,6 +238,9 @@ proc testIso2022JP() =
   assert "\x1B\x24".decodeAll(csIso2022JP) == "\uFFFD$"
   assert "\x1B\x28".decodeAll(csIso2022JP) == "\uFFFD("
   assert "ｶﾀｶﾅ".encodeAll(csIso2022JP) == "\e$B%+%?%+%J\e(B"
+  assert "\x1B\x24\x50".decodeAll(csIso2022JP) == "\uFFFD$P"
+  assert "\x1B\x28\x42\x50".decodeAll(csIso2022JP) == "P"
+  assert "\x1B\x21".decodeAll(csIso2022JP) == "\uFFFD!"
 
 proc testGb18030() =
   # surrogate

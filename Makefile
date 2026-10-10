@@ -346,7 +346,7 @@ uninstall:
 	for f in cha-protocols.5 cha-api.5 cha-troubleshooting.5 cha-image.5 cha-localcgi.5; do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
 
-test/net/run.nim: src/io/chafile.nim src/utils/opt.nim src/utils/twtstr.nim
+test/net/run: src/io/chafile.nim src/utils/opt.nim src/utils/twtstr.nim
 
 test/net/run: test/net/run.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/test_net" test/net/run.nim
@@ -390,9 +390,9 @@ test_flags = --verbosity:0 -d:test
 test/charset/%: test/charset/%.nim
 	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
 
-test/charset/basic.nim: src/encoding/charset.nim src/encoding/decoder.nim \
+test/charset/basic: src/encoding/charset.nim src/encoding/decoder.nim \
 	src/encoding/decodercore.nim src/encoding/encoder.nim
-test/charset/data.nim: src/encoding/decoder.nim src/encoding/encoder.nim \
+test/charset/data: src/encoding/decoder.nim src/encoding/encoder.nim \
 	src/encoding/charset.nim
 
 .PHONY: test_charset

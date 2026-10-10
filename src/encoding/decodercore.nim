@@ -565,20 +565,25 @@ const
 proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int; finish: bool): TextDecoderResult =
   let s = td.buf
-  var buf = uint8(s and 0xFF)
   var output = ((s shr 8) and 0xFF) != 0
   var state = uint8((s shr 16) and 0xFF)
   var outputState = uint8((s shr 24) and 0xFF)
-  #TODO checking buf in every iteration is not really needed, only in the
-  # first one.  (it's only set before returning error)
-  while (let i = td.i; buf != 0 or i < iq.len):
-    template consume =
-      if buf != 0:
-        buf = 0
+  if (let buf = uint8(s and 0xFF); buf != 0):
+    # The buffer is either 0x24 or 0x28, and `state' is an output state
+    # (ascii, roman, katakana, lead byte).  `output' is already false.
+    if state == i2jsLeadByte:
+      td.lead = buf
+      state = i2jsTrailByte
+    else:
+      let c = if state == i2jsKatakana:
+        0xFF61'u16 - 0x21 + uint16(buf)
       else:
-        inc td.i
-    let b = if buf != 0: buf else: iq[i]
-    td.buf = packState(buf, output, state, outputState)
+        uint16(buf)
+      oq.try_put_utf8 c, n
+  var i = td.i
+  while i < iq.len:
+    let b = iq[i]
+    let ni = i + 1
     case state
     of i2jsAscii:
       case b
@@ -589,8 +594,8 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
         output = false
       else:
         output = false
-        consume
-        td.buf = packState(buf, output, state, outputState)
+        td.i = ni
+        td.buf = packState(0, output, state, outputState)
         return tdrError
     of i2jsRoman:
       case b
@@ -606,8 +611,8 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
         output = false
       else:
         output = false
-        consume
-        td.buf = packState(buf, output, state, outputState)
+        td.i = ni
+        td.buf = packState(0, output, state, outputState)
         return tdrError
     of i2jsKatakana:
       case b
@@ -617,8 +622,8 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
         output = false
       else:
         output = false
-        consume
-        td.buf = packState(buf, output, state, outputState)
+        td.i = ni
+        td.buf = packState(0, output, state, outputState)
         return tdrError
     of i2jsLeadByte:
       case b
@@ -629,15 +634,15 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
         state = i2jsTrailByte
       else:
         output = false
-        consume
-        td.buf = packState(buf, output, state, outputState)
+        td.i = ni
+        td.buf = packState(0, output, state, outputState)
         return tdrError
     of i2jsTrailByte:
       case b
       of 0x1B:
         state = i2jsEscapeStart
-        consume
-        td.buf = packState(buf, output, state, outputState)
+        td.i = ni
+        td.buf = packState(0, output, state, outputState)
         return tdrError
       of 0x21u8..0x7Eu8:
         let row = (uint16(td.lead) - 0x21)
@@ -647,13 +652,13 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
           state = i2jsLeadByte
         else:
           state = i2jsLeadByte
-          consume
-          td.buf = packState(buf, output, state, outputState)
+          td.i = ni
+          td.buf = packState(0, output, state, outputState)
           return tdrError
       else:
         state = i2jsLeadByte
-        consume
-        td.buf = packState(buf, output, state, outputState)
+        td.i = ni
+        td.buf = packState(0, output, state, outputState)
         return tdrError
     of i2jsEscapeStart:
       if b == 0x24 or b == 0x28:
@@ -662,7 +667,8 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
       else:
         output = false
         state = outputState
-        td.buf = packState(buf, output, state, outputState)
+        td.i = i
+        td.buf = packState(0, output, state, outputState)
         # prepend (no inc i)
         return tdrError
     else: # i2jsEscape
@@ -681,30 +687,30 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
       if s != i2jsNull:
         state = s
         outputState = s
-        consume
         if output:
-          td.buf = packState(buf, output, state, outputState)
+          td.i = ni
+          td.buf = packState(0, output, state, outputState)
           return tdrError
+        i = ni
         output = true
         continue
+      td.i = i
       td.buf = packState(l, false, outputState, outputState)
       # prepend (no inc i)
       return tdrError
-    consume
-  if finish:
+    i = ni
+  if not finish:
+    td.buf = packState(0, output, state, outputState)
+  else:
     let l = td.lead
     td.lead = 0
     td.buf = 0
-    case state
-    of i2jsTrailByte, i2jsEscapeStart:
+    if state >= i2jsTrailByte: # trail byte, escape start, or escape
+      td.i = i
+      if state == i2jsEscape:
+        # restore lead to the input queue
+        td.buf = packState(l, false, outputState, outputState)
       return tdrError
-    of i2jsEscape:
-      # restore lead to the input queue
-      td.buf = packState(l, false, outputState, outputState)
-      return tdrError
-    else: discard
-  else:
-    td.buf = packState(buf, output, state, outputState)
   td.i = 0
   tdrDone
 
@@ -801,10 +807,9 @@ proc decodeEucKR(td: var TextDecoder; iq: openArray[uint8];
     let b = iq[i]
     let lead = td.lead
     if lead == 0 and b < 0x80:
-      oq.try_put_utf8 b, n
+      oq.try_put_byte b, n
       inc td.i
-      continue
-    if lead != 0:
+    elif lead != 0:
       if b in 0x41u8..0xFEu8:
         let col = (uint16(b) - 0x41)
         let row = (uint16(lead) - 0x81)
