@@ -286,8 +286,9 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
 
 proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
     ctx: JSContext; charset = DefaultCharset): ChaDOMBuilder =
-  #TODO OOM
   let document = newDocument(url)
+  if document == nil:
+    return nil
   document.charset = charset
   document.contentType = satTextHtml
   if window != nil:
@@ -307,6 +308,8 @@ proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
   if url == nil:
     return @[]
   let builder = newChaDOMBuilder(url, Window(nil), ccIrrelevant, ctx)
+  if builder == nil:
+    return @[]
   let document = builder.document
   document.quirksMode = element.asNode.document.quirksMode
   let root = document.newHTMLElement(ttHtml)
@@ -342,6 +345,8 @@ proc newHTML5ParserWrapper*(window: Window; url: URL;
     confidence: CharsetConfidence; charset: Charset): HTML5ParserWrapper =
   let builder = newChaDOMBuilder(url, window, confidence, window.jsctx,
     charset)
+  if builder == nil:
+    return nil
   let wrapper = HTML5ParserWrapper(
     builder: builder,
     parser: initHTML5Parser(builder, HTML5ParserOpts[ParentNode](
