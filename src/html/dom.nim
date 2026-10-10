@@ -7965,10 +7965,8 @@ proc addDOMModule*(ctx: JSContext): JSCode =
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return ok()
-  let document = JS_GetPropertyStr(ctx, ctxOpaque.global.value, "Document")
-  if JS_IsException(document.vc):
-    return err()
-  ?ctx.definePropertyCW(ctxOpaque.global, "HTMLDocument", document)
+  ?ctx.definePropertyCW(ctxOpaque.global, "HTMLDocument",
+    ctxOpaque.ctors[int(DocumentDef.id)].toJSValue())
   let nodeFilter = ?ctx.newObject()
   for e in NodeFilterNode:
     let n = ctx.toJS(1u32 shl uint32(e))
