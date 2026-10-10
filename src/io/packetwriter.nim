@@ -9,8 +9,9 @@
 import std/algorithm
 import std/posix
 
-import io/dynstream
+import config/conftypes
 import css/color
+import io/dynstream
 import utils/opt
 
 type PacketWriter* = object
@@ -33,13 +34,12 @@ proc swrite*[T: enum](w: var PacketWriter; x: T)
 proc swrite*(w: var PacketWriter; s: string)
 proc swrite*(w: var PacketWriter; b: bool)
 proc swrite*(w: var PacketWriter; tup: tuple)
-proc swrite*[I, T](w: var PacketWriter; a: array[I, T])
 proc swrite*(w: var PacketWriter; s: openArray[char])
 proc swrite*[T](w: var PacketWriter; s: openArray[T])
 proc swrite*(w: var PacketWriter; obj: object)
-proc swrite*(w: var PacketWriter; obj: ref object)
 proc swrite*(w: var PacketWriter; c: ARGBColor)
 proc swrite*(w: var PacketWriter; c: CellColor)
+proc swrite*(w: var PacketWriter; bmp: NetworkBitmap)
 
 # consumes `fd'
 proc sendFd*(w: var PacketWriter; fd: cint) =
@@ -184,10 +184,6 @@ proc swrite*(w: var PacketWriter; tup: tuple) =
   for f in tup.fields:
     w.swrite(f)
 
-proc swrite*[I, T](w: var PacketWriter; a: array[I, T]) =
-  for x in a:
-    w.swrite(x)
-
 proc swrite*(w: var PacketWriter; s: openArray[char]) =
   w.swrite(s.len)
   if s.len > 0:
@@ -202,15 +198,15 @@ proc swrite*(w: var PacketWriter; obj: object) =
   for f in obj.fields:
     w.swrite(f)
 
-proc swrite*(w: var PacketWriter; obj: ref object) =
-  w.swrite(obj != nil)
-  if obj != nil:
-    w.swrite(obj[])
-
 proc swrite*(w: var PacketWriter; c: ARGBColor) =
   w.swrite(uint32(c))
 
 proc swrite*(w: var PacketWriter; c: CellColor) =
   w.swrite(uint32(c))
+
+proc swrite*(w: var PacketWriter; bmp: NetworkBitmap) =
+  w.swrite(bmp != nil)
+  if bmp != nil:
+    w.swrite(bmp[])
 
 {.pop.} # raises: []

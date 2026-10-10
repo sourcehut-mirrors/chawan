@@ -2,8 +2,9 @@
 
 import std/posix
 
-import io/dynstream
+import config/conftypes
 import css/color
+import io/dynstream
 import utils/opt
 
 type
@@ -24,12 +25,11 @@ proc sread*[T: enum](r: var PacketReader; x: var T)
 proc sread*(r: var PacketReader; s: var string)
 proc sread*(r: var PacketReader; b: var bool)
 proc sread*(r: var PacketReader; tup: var tuple)
-proc sread*[I, T](r: var PacketReader; a: var array[I, T])
 proc sread*[T](r: var PacketReader; s: var seq[T])
 proc sread*(r: var PacketReader; obj: var object)
-proc sread*(r: var PacketReader; obj: var ref object)
 proc sread*(r: var PacketReader; c: var ARGBColor)
 proc sread*(r: var PacketReader; c: var CellColor)
+proc sread*(r: var PacketReader; bmp: var NetworkBitmap)
 
 proc initReader*(stream: PosixStream; r: var PacketReader; len, nfds: int): bool =
   assert len != 0 or nfds != 0
@@ -174,10 +174,6 @@ proc sread*(r: var PacketReader; tup: var tuple) =
   for f in tup.fields:
     r.sread(f)
 
-proc sread*[I; T](r: var PacketReader; a: var array[I, T]) =
-  for x in a.mitems:
-    r.sread(x)
-
 proc sread*(r: var PacketReader; s: var seq[char]) =
   var len {.noinit.}: int
   r.sread(len)
@@ -197,19 +193,19 @@ proc sread*(r: var PacketReader; obj: var object) =
   for f in obj.fields:
     r.sread(f)
 
-proc sread*(r: var PacketReader; obj: var ref object) =
-  var n: bool
-  r.sread(n)
-  if n:
-    obj = new(typeof(obj))
-    r.sread(obj[])
-  else:
-    obj = nil
-
 proc sread*(r: var PacketReader; c: var ARGBColor) =
   r.sread(uint32(c))
 
 proc sread*(r: var PacketReader; c: var CellColor) =
   r.sread(uint32(c))
+
+proc sread*(r: var PacketReader; bmp: var NetworkBitmap) =
+  var n: bool
+  r.sread(n)
+  if n:
+    bmp = NetworkBitmap()
+    r.sread(bmp[])
+  else:
+    bmp = nil
 
 {.pop.} # raises: []

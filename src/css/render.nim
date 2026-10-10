@@ -28,7 +28,7 @@ type
 
   FlexibleGrid* = seq[FlexibleLine]
 
-  PosBitmap* = ref object
+  PosBitmap* = object
     x*: int
     y*: int
     offx*: int

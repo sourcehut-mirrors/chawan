@@ -47,8 +47,13 @@ proc sread*(r: var PacketReader; cookieJar: var CookieJar) =
   if n:
     cookieJar = CookieJar()
     r.sread(cookieJar.s)
-    r.sread(cookieJar.cookies)
-    for cookie in cookieJar.cookies:
+    var len: int
+    r.sread(len)
+    cookieJar.cookies = newSeq[Cookie](len)
+    for i in 0 ..< len:
+      let cookie = Cookie()
+      r.sread(cookie[])
+      cookieJar.cookies[i] = cookie
       if not cookie.skip:
         cookieJar.map.put(cookie)
   else:
@@ -58,7 +63,9 @@ proc swrite*(w: var PacketWriter; cookieJar: CookieJar) =
   w.swrite(cookieJar != nil)
   if cookieJar != nil:
     w.swrite(cookieJar.s)
-    w.swrite(cookieJar.cookies)
+    w.swrite(cookieJar.cookies.len)
+    for cookie in cookieJar.cookies:
+      w.swrite(cookie[])
 
 proc newCookieJarMap*(): CookieJarMap =
   return CookieJarMap()
