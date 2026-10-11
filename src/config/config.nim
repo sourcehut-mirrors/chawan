@@ -1068,6 +1068,23 @@ proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
     inc i
   if key.len > 1 and key[^1] == ' ':
     realk &= ' '
+  if key.len > 0 and (key[0] == ' ' or key[^1] == ' '):
+    var buf = ""
+    var first = 0
+    var last = key.high
+    if key[0] == ' ':
+      buf &= "SPC"
+      if key.len > 1:
+        buf &= ' '
+      first = 1
+    if key.len > 1 and key[^1] == ' ':
+      dec last
+    buf &= key.toOpenArray(first, last)
+    if key.len > 1 and key[^1] == ' ':
+      if buf.len <= 0 or buf[^1] != ' ':
+        buf &= ' '
+      buf &= "SPC"
+    warnings.add("deprecated key syntax; use '" & buf & "' instead")
   move(realk)
 
 proc find(a: ActionMap; s: openArray[char]): int =
