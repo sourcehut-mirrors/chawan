@@ -650,7 +650,11 @@ double\-width\-ambiguous = false
 .RS
 Assume the terminal displays characters in the East Asian Ambiguous
 category as double\-width characters.
-Useful when e.g.\ ○ occupies two cells.
+Warning: on most terminals, enabling this option will produce broken
+output.
+(The only case this may be useful in is Windows \f[CR]cmd.exe\f[R] with
+CJK code pages, or ancient hardware terminals.
+On such terminals, ○ occupies two cells, not just one.)
 .RE
 .TP
 minimum\-contrast = 100
@@ -1051,8 +1055,9 @@ However, components that start with an upper\-case letter
 be space\-separated (e.g.\ \f[CR]\(aqG g\(aq\f[R]) to avoid ambiguous
 parsing.
 .PP
-Also, for backwards\-compatibility, spaces at the beginning/end of the
-keybinding are translated to \f[CR]SPC\f[R].
+Also, for backwards\-compatibility, a single space at the beginning/end
+of the keybinding is translated to \f[CR]SPC\f[R].
+This feature is deprecated, and will be removed in a future version.
 .SS Pager actions
 Default keybindings are highlighted in \f[B]bold\f[R].
 .TP

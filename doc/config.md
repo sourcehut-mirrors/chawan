@@ -630,8 +630,12 @@ double-width-ambiguous = false
 : **boolean**
 
 : Assume the terminal displays characters in the East Asian Ambiguous
-  category as double-width characters.  Useful when e.g. ○ occupies two
-  cells.
+  category as double-width characters.  Warning: on most terminals,
+  enabling this option will produce broken output.
+
+  (The only case this may be useful in is Windows `cmd.exe` with CJK code
+  pages, or ancient hardware terminals.  On such terminals, ○ occupies
+  two cells, not just one.)
 
 minimum-contrast = 100
 : **0..235**
@@ -994,8 +998,9 @@ equivalent.  However, components that start with an upper-case letter
 (e.g. `'Gg'`) are reserved for key names, so those must be space-separated
 (e.g. `'G g'`) to avoid ambiguous parsing.
 
-Also, for backwards-compatibility, spaces at the beginning/end of the
-keybinding are translated to `SPC`.
+Also, for backwards-compatibility, a single space at the beginning/end
+of the keybinding is translated to `SPC`.  This feature is deprecated, and
+will be removed in a future version.
 
 ### Pager actions
 

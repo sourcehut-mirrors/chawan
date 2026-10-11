@@ -432,13 +432,13 @@ In general, it is recommended to use `JSValueTraced` instead of `JSValue`,
 because it's less error-prone (as you don't have to call `JS_FreeValue`).
 When calling a procedure that takes `JSValueConst`, use `value.vc`.
 For procedures taking `JSValue`, use `value.toJSValue()`.  (The latter
-`sink`s the `JSValueTraced`, so in general it won't result in spurious
-refcounting operations.)
+`sink`s the `JSValueTraced`, so it won't result in redundant refcounting
+operations.)
 
 `JSValueTraced` also has the variants `JSObject`, `JSCallback`, etc.
 Besides type safety, they also have the benefit that they take less memory
-to store (`JSValue` is two machine words, but `JSObject` is one, because it
-doesn't store the tag).
+to store - `JSValue` is two machine words, but `JSObject` fits into one
+word, because it doesn't store the tag.
 
 Note that `nil` is not a valid state for `JSObject`.  For a `JSObject` that
 allows `null` too, use `JSObjectNil`.  For returning a `JSObject` or an
@@ -446,19 +446,17 @@ exception state, use `JSObjectErr`.
 
 ### Using raw JSValues
 
-When passing around raw JSValues, make sure you reference/unreference
+When passing around raw `JSValue`s, make sure you reference/unreference
 appropriately using the `JS_DupValue` and `JS_FreeValue` functions from
 QuickJS.  (When you only have access to a `JSRuntime`, use `JS_FreeValueRT`
 and `JS_DupValueRT` instead.)
 
-Note the presence of JSValueConst; this is a distinct subtype of JSValue
-that indicates that the value will be free'd by the caller.
+`JSValueConst` is a distinct subtype of `JSValue` that indicates that the
+value will be free'd by the caller.  In contrast, procedures that take a
+non-const `JSValue` are expected to take ownership of said JSValue and
+eventually free it.  This behavior is similar to Nim's `sink` keyword.
 
-In contrast, procedures that take a non-const JSValue are expected to
-take ownership of said JSValue and eventually free it.  This behavior is
-similar to Nim's `sink` keyword.
-
-To get raw JSValues in `.jsfunc` (or similar) bound functions, set the
+To get raw `JSValue`s in `.jsfunc` (or similar) bound functions, set the
 desired parameter's type to `JSValueConst`.
 
 Since JSValues need a JSContext to do anything useful, you'll want to set
@@ -493,11 +491,11 @@ Here, the call is **incorrect**.  The reason is that QuickJS *borrows*
 `listener.callback`, so if the callback removes `listener` (e.g., with
 removeEventListener), then you're suddenly looking at memory corruption.
 
-In general, this can be avoided by storing the callback as `JSCallback`
-and using `ctx.call(callback, ...)` instead.  The reason is that `call`
-dup's the callback before calling, so it is guaranteed to remain valid.
-Note: this is only the case if `callback` is actually `JSCallback`;
-if it is a `JSValue`, you must dup it instead.
+This can be avoided by storing the callback as `JSCallback` and using
+`ctx.call(callback, ...)` instead.  The reason is that `call` dup's the
+callback before calling, so it is guaranteed to remain valid.  (This
+is only the case if `callback` is actually `JSCallback`; if it is a
+`JSValue`, you must dup it even when using `ctx.call`.)
 
 ### JSAtom
 
