@@ -17,7 +17,7 @@ proc runTestIn(test_in, test_in_ref: FileStream, label: string) =
     echo "ours vs theirs len ", ours.len, " ", theirs.len
     let helpfile = newFileStream(dir / "fail_in_" & label, fmWrite)
     helpfile.write(ours)
-    assert false, "Failed in test" & label
+    assert false, "Failed in test " & label
 
 proc runTestOut(test_out, test_out_ref: FileStream, label: string) =
   let cs = getCharset(label)

@@ -57,8 +57,8 @@
 import std/algorithm
 import std/bitops
 
-import charset
-import charset_map
+import encoding/charset
+import encoding/charset_map
 
 type
   TextDecoderResult* = enum
@@ -580,16 +580,16 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
       else:
         uint16(buf)
       oq.try_put_utf8 c, n
-  var i = td.i
-  while i < iq.len:
-    let b = iq[i]
-    let ni = i + 1
+  while td.i < iq.len:
+    let b = iq[td.i]
+    let ni = td.i + 1
     case state
     of i2jsAscii:
       case b
       of 0x1B:
         state = i2jsEscapeStart
       of {0x00u8..0x7Fu8} - {0x0Eu8, 0x0Fu8, 0x1Bu8}:
+        td.buf = packState(0, output, state, outputState)
         oq.try_put_byte b, n
         output = false
       else:
@@ -601,23 +601,26 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
       case b
       of 0x1B: state = i2jsEscapeStart
       of 0x5C:
+        td.buf = packState(0, output, state, outputState)
         oq.try_put_str "\u00A5", n # yen
         output = false
       of 0x7E:
+        td.buf = packState(0, output, state, outputState)
         oq.try_put_str "\u203E", n # overline
         output = false
       of {0x00u8..0x7Fu8} - {0x0Eu8, 0x0Fu8, 0x1Bu8, 0x5Cu8, 0x7Eu8}:
+        td.buf = packState(0, output, state, outputState)
         oq.try_put_byte b, n
         output = false
       else:
-        output = false
         td.i = ni
-        td.buf = packState(0, output, state, outputState)
+        td.buf = packState(0, output = false, state, outputState)
         return tdrError
     of i2jsKatakana:
       case b
       of 0x1B: state = i2jsEscapeStart
       of 0x21u8..0x5Fu8:
+        td.buf = packState(0, output, state, outputState)
         oq.try_put_utf8 0xFF61u16 - 0x21 + uint16(b), n
         output = false
       else:
@@ -633,42 +636,36 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
         td.lead = b
         state = i2jsTrailByte
       else:
-        output = false
         td.i = ni
-        td.buf = packState(0, output, state, outputState)
+        td.buf = packState(0, output = false, state, outputState)
         return tdrError
     of i2jsTrailByte:
       case b
       of 0x1B:
-        state = i2jsEscapeStart
         td.i = ni
-        td.buf = packState(0, output, state, outputState)
+        td.buf = packState(0, output, i2jsEscapeStart, outputState)
         return tdrError
       of 0x21u8..0x7Eu8:
         let row = (uint16(td.lead) - 0x21)
         let col = uint16(b) - 0x21
         if (let c = jis0208ToU16(row, col); c != 0):
+          td.buf = packState(0, output, state, outputState)
           oq.try_put_utf8 c, n
           state = i2jsLeadByte
         else:
-          state = i2jsLeadByte
           td.i = ni
-          td.buf = packState(0, output, state, outputState)
+          td.buf = packState(0, output, i2jsLeadByte, outputState)
           return tdrError
       else:
-        state = i2jsLeadByte
         td.i = ni
-        td.buf = packState(0, output, state, outputState)
+        td.buf = packState(0, output, i2jsLeadByte, outputState)
         return tdrError
     of i2jsEscapeStart:
       if b == 0x24 or b == 0x28:
         td.lead = b
         state = i2jsEscape
       else:
-        output = false
-        state = outputState
-        td.i = i
-        td.buf = packState(0, output, state, outputState)
+        td.buf = packState(0, output = false, outputState, outputState)
         # prepend (no inc i)
         return tdrError
     else: # i2jsEscape
@@ -691,14 +688,13 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
           td.i = ni
           td.buf = packState(0, output, state, outputState)
           return tdrError
-        i = ni
+        td.i = ni
         output = true
         continue
-      td.i = i
-      td.buf = packState(l, false, outputState, outputState)
+      td.buf = packState(l, output = false, outputState, outputState)
       # prepend (no inc i)
       return tdrError
-    i = ni
+    td.i = ni
   if not finish:
     td.buf = packState(0, output, state, outputState)
   else:
@@ -706,10 +702,9 @@ proc decodeIso2022JP(td: var TextDecoder; iq: openArray[uint8];
     td.lead = 0
     td.buf = 0
     if state >= i2jsTrailByte: # trail byte, escape start, or escape
-      td.i = i
       if state == i2jsEscape:
         # restore lead to the input queue
-        td.buf = packState(l, false, outputState, outputState)
+        td.buf = packState(l, output = false, outputState, outputState)
       return tdrError
   td.i = 0
   tdrDone

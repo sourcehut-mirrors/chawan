@@ -391,8 +391,10 @@ test/charset/%: test/charset/%.nim
 	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
 
 test/charset/basic: src/encoding/charset.nim src/encoding/decoder.nim \
-	src/encoding/decodercore.nim src/encoding/encoder.nim
+	src/encoding/decodercore.nim src/encoding/encoder.nim \
+	src/encoding/charset.nim
 test/charset/data: src/encoding/decoder.nim src/encoding/encoder.nim \
+	src/encoding/decodercore.nim src/encoding/encodercore.nim \
 	src/encoding/charset.nim
 
 .PHONY: test_charset

@@ -1,7 +1,7 @@
 {.push raises: [].}
 
-import charset
-import decodercore
+import encoding/charset
+import encoding/decodercore
 
 type DecoderErrorMode* = enum
   demFatal, demReplacement
