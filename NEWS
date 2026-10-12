@@ -4,6 +4,7 @@ unreleased
 * rework NodeIterator, add TreeWalker
 * optimize some inefficient descendant CSS selectors
 * optimize getElementById
+* optimize HTML parser & tokenizer
 * switch to ARC for memory management
 * support multi-keyword CSS display values
 * support oklab(), oklch(), relative color syntax (e.g. hsl(from ...))

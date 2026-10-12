@@ -109,8 +109,8 @@ If you're having troubles accessing SourceHut, you can also use the
 [Codeberg mirror](https://codeberg.org/bptato/chawan).  Patches can be sent
 to the mailing list, as Codeberg pull requests, or in private.
 
-(Please do not submit tickets or patches directly or indirectly generated
-with artificial neural networks.)
+Please do not submit tickets or patches directly or indirectly generated
+with artificial neural networks.
 
 ## Documentation index
 
