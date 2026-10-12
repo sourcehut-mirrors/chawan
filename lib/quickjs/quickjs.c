@@ -1253,6 +1253,7 @@ static void js_promise_resolve_function_mark(JSRuntime *rt, JSValueConst val,
 #define JS_HINT_FORCE_ORDINARY (1 << 4) // don't try Symbol.toPrimitive
 static JSValue JS_ToPrimitiveFree(JSContext *ctx, JSValue val, int hint);
 static JSValue JS_ToStringFree(JSContext *ctx, JSValue val);
+static JSValue JS_ToPropertyKeyFree(JSContext *ctx, JSValue val);
 static int JS_ToBoolFree(JSContext *ctx, JSValue val);
 static int JS_ToInt32Free(JSContext *ctx, int32_t *pres, JSValue val);
 static int JS_ToFloat64Free(JSContext *ctx, double *pres, JSValue val);
@@ -9277,7 +9278,7 @@ static JSAtom js_symbol_to_atom(JSContext *ctx, JSValue val)
 }
 
 /* return JS_ATOM_NULL in case of exception */
-JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
+static JSAtom JS_ValueToAtomFree(JSContext *ctx, JSValue val)
 {
     JSAtom atom;
     uint32_t tag;
@@ -9289,9 +9290,10 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
     } else if (tag == JS_TAG_SYMBOL) {
         JSAtomStruct *p = JS_VALUE_GET_PTR(val);
         atom = JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
+        JS_FreeValue(ctx, val);
     } else {
         JSValue str;
-        str = JS_ToPropertyKey(ctx, val);
+        str = JS_ToPropertyKeyFree(ctx, val);
         if (JS_IsException(str))
             return JS_ATOM_NULL;
         if (JS_VALUE_GET_TAG(str) == JS_TAG_SYMBOL) {
@@ -9301,6 +9303,12 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
         }
     }
     return atom;
+}
+
+/* return JS_ATOM_NULL in case of exception */
+JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
+{
+    return JS_ValueToAtomFree(ctx, JS_DupValue(ctx, val));
 }
 
 static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
@@ -9368,8 +9376,7 @@ static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
             JS_FreeValue(ctx, prop);
             return JS_ThrowTypeError(ctx, "cannot read property of %s", JS_IsNull(this_obj) ? "null" : "undefined");
         }
-        atom = JS_ValueToAtom(ctx, prop);
-        JS_FreeValue(ctx, prop);
+        atom = JS_ValueToAtomFree(ctx, prop);
         if (unlikely(atom == JS_ATOM_NULL))
             return JS_EXCEPTION;
         ret = JS_GetProperty(ctx, this_obj, atom);
@@ -10338,8 +10345,7 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         JSAtom atom;
         int ret;
     slow_path:
-        atom = JS_ValueToAtom(ctx, prop);
-        JS_FreeValue(ctx, prop);
+        atom = JS_ValueToAtomFree(ctx, prop);
         if (unlikely(atom == JS_ATOM_NULL)) {
             JS_FreeValue(ctx, val);
             return -1;
@@ -10972,8 +10978,7 @@ int JS_DefinePropertyValueValue(JSContext *ctx, JSValueConst this_obj,
 {
     JSAtom atom;
     int ret;
-    atom = JS_ValueToAtom(ctx, prop);
-    JS_FreeValue(ctx, prop);
+    atom = JS_ValueToAtomFree(ctx, prop);
     if (unlikely(atom == JS_ATOM_NULL)) {
         JS_FreeValue(ctx, val);
         return -1;
@@ -13893,7 +13898,7 @@ static JSValue js_dtoa2(JSContext *ctx,
     return res;
 }
 
-static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToPropertyKey)
+static JSValue JS_ToStringInternal(JSContext *ctx, JSValue val, BOOL is_ToPropertyKey)
 {
     uint32_t tag;
     char buf[32];
@@ -13901,9 +13906,9 @@ static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToP
     tag = JS_VALUE_GET_NORM_TAG(val);
     switch(tag) {
     case JS_TAG_STRING:
-        return JS_DupValue(ctx, val);
+        return val;
     case JS_TAG_STRING_ROPE:
-        return js_linearize_string_rope(ctx, JS_DupValue(ctx, val));
+        return js_linearize_string_rope(ctx, val);
     case JS_TAG_INT:
         {
             size_t len;
@@ -13922,45 +13927,50 @@ static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToP
         return JS_EXCEPTION;
     case JS_TAG_OBJECT:
         {
-            JSValue val1, ret;
-            val1 = JS_ToPrimitive(ctx, val, JS_HINT_STRING);
+            JSValue val1;
+            val1 = JS_ToPrimitiveFree(ctx, val, JS_HINT_STRING);
             if (JS_IsException(val1))
                 return val1;
-            ret = JS_ToStringInternal(ctx, val1, is_ToPropertyKey);
-            JS_FreeValue(ctx, val1);
-            return ret;
+            return JS_ToStringInternal(ctx, val1, is_ToPropertyKey);
         }
         break;
     case JS_TAG_FUNCTION_BYTECODE:
+        JS_FreeValue(ctx, val);
         return js_new_string8(ctx, "[function bytecode]");
     case JS_TAG_SYMBOL:
         if (is_ToPropertyKey) {
-            return JS_DupValue(ctx, val);
+            return val;
         } else {
+            JS_FreeValue(ctx, val);
             return JS_ThrowTypeError(ctx, "cannot convert symbol to string");
         }
     case JS_TAG_FLOAT64:
-        return js_dtoa2(ctx, JS_VALUE_GET_FLOAT64(val), 10, 0,
-                        JS_DTOA_FORMAT_FREE);
+        {
+            double d = JS_VALUE_GET_FLOAT64(val);
+            JS_FreeValue(ctx, val);
+            return js_dtoa2(ctx, d, 10, 0, JS_DTOA_FORMAT_FREE);
+        }
     case JS_TAG_SHORT_BIG_INT:
     case JS_TAG_BIG_INT:
-        return js_bigint_to_string(ctx, val);
+        {
+            JSValue val1 = js_bigint_to_string(ctx, val);
+            JS_FreeValue(ctx, val);
+            return val1;
+        }
     default:
+        JS_FreeValue(ctx, val);
         return js_new_string8(ctx, "[unsupported type]");
     }
 }
 
 JSValue JS_ToString(JSContext *ctx, JSValueConst val)
 {
-    return JS_ToStringInternal(ctx, val, FALSE);
+    return JS_ToStringInternal(ctx, JS_DupValue(ctx, val), FALSE);
 }
 
 static JSValue JS_ToStringFree(JSContext *ctx, JSValue val)
 {
-    JSValue ret;
-    ret = JS_ToString(ctx, val);
-    JS_FreeValue(ctx, val);
-    return ret;
+    return JS_ToStringInternal(ctx, val, FALSE);
 }
 
 static JSValue JS_ToLocaleStringFree(JSContext *ctx, JSValue val)
@@ -13970,9 +13980,14 @@ static JSValue JS_ToLocaleStringFree(JSContext *ctx, JSValue val)
     return JS_InvokeFree(ctx, val, JS_ATOM_toLocaleString, 0, NULL);
 }
 
-JSValue JS_ToPropertyKey(JSContext *ctx, JSValueConst val)
+static JSValue JS_ToPropertyKeyFree(JSContext *ctx, JSValue val)
 {
     return JS_ToStringInternal(ctx, val, TRUE);
+}
+
+JSValue JS_ToPropertyKey(JSContext *ctx, JSValueConst val)
+{
+    return JS_ToPropertyKeyFree(ctx, JS_DupValue(ctx, val));
 }
 
 static JSValue JS_ToStringCheckObject(JSContext *ctx, JSValueConst val)
@@ -51798,8 +51813,7 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
             JS_ThrowTypeError(ctx, "proxy: properties must be strings or symbols");
             goto fail;
         }
-        atom = JS_ValueToAtom(ctx, val);
-        JS_FreeValue(ctx, val);
+        atom = JS_ValueToAtomFree(ctx, val);
         if (atom == JS_ATOM_NULL)
             goto fail;
         tab[i].atom = atom;
@@ -52933,8 +52947,7 @@ static JSValue js_object_groupBy(JSContext *ctx, JSValueConst this_val,
         if (is_map) {
             prop = js_map_get(ctx, groups, 1, (JSValueConst *)&key, 0);
         } else {
-            key_atom = JS_ValueToAtom(ctx, key);
-            JS_FreeValue(ctx, key);
+            key_atom = JS_ValueToAtomFree(ctx, key);
             key = JS_UNDEFINED;
             if (key_atom == JS_ATOM_NULL)
                 goto iterator_close_exception;
