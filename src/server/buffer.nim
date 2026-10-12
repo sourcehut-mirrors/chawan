@@ -1665,10 +1665,11 @@ proc toggleImages(bc: BufferContext; handle: PagerHandle): bool {.
       bc.window.loadImage(img)
     elif (let svg = element as SVGSVGElement; svg != nil):
       bc.window.loadSVG(svg)
-  bc.savetask = true
   if not bc.config.images:
     # if images were enabled, we reshape after imageLoaded
     bc.maybeReshape()
+  else:
+    bc.savetask = true
   return bc.config.images
 
 proc findLeaf(box: CSSBox; element: Element): CSSBox =

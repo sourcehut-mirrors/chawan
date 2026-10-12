@@ -1153,32 +1153,41 @@ Pager.prototype.lineInfo = function() {
 
 function mainMenu(m) {
     if (buffer?.currentSelection != null)
-        m.item("Copy selection           (y)", cmd.copySelection, "v")
+        m.item("Copy selection             (y)", cmd.copySelection, "v")
     else
-        m.item("Select text              (v)", cmd.cursorToggleSelection, "v")
-    m.menu("Select buffer          (s b)", cmd.openBufferMenu, "s b")
+        m.item("Select text                (v)", cmd.cursorToggleSelection, "v")
+    m.menu("Select buffer            (s b)", cmd.openBufferMenu, "s b")
     m.line()
-    m.item("Copy page URL          (M-y)", cmd.copyURL, "M-y")
-    m.item("Copy link              (y u)", cmd.copyCursorLink, "y u")
-    m.item("View image               (I)", cmd.viewImage, "I")
-    m.item("Copy image link        (y I)", cmd.copyCursorImage, "y I")
-    m.item("Reload                   (U)", cmd.reloadBuffer, "U")
+    m.item("Copy page URL            (M-y)", cmd.copyURL, "M-y")
+    m.item("Copy link                (y u)", cmd.copyCursorLink, "y u")
+    m.item("View image                 (I)", cmd.viewImage, "I")
+    m.item("Copy image link          (y I)", cmd.copyCursorImage, "y I")
+    m.item("Reload                     (U)", cmd.reloadBuffer, "U")
     m.line()
-    m.item("Save link            (s RET)", cmd.saveLink, "s RET")
-    m.item("View source              (\\)", cmd.toggleSource, "\\")
-    m.item("Edit source            (s E)", cmd.editSource, "s E")
-    m.item("Save source            (s S)", cmd.saveSource, "s S")
+    m.item("Save link              (s RET)", cmd.saveLink, "s RET")
+    m.item("View source                (\\)", cmd.toggleSource, "\\")
+    m.item("Edit source              (s E)", cmd.editSource, "s E")
+    m.item("Save source              (s S)", cmd.saveSource, "s S")
     m.line()
-    m.item("Linkify URLs             (:)", cmd.markURL, ":")
-    m.item("Toggle images          (M-i)", cmd.toggleImages, "M-i")
-    m.item("Toggle JS & reload     (M-j)", cmd.toggleScripting, "M-j")
-    m.item("Toggle cookie & reload (M-k)", cmd.toggleCookie, "M-k")
+    m.item("Linkify URLs               (:)", cmd.markURL, ":")
+    function toggle(enable, disable, fun, check, key) {
+        m.item(check ? disable : enable, fun, key)
+    }
+    toggle("Enable images            (M-i)",
+           "Disable images           (M-i)", cmd.toggleImages,
+                                             buffer.init.images, "M-i")
+    toggle("Enable JS & reload       (M-j)",
+           "Disable JS & reload      (M-j)", cmd.toggleScripting,
+                                             buffer.init.scripting, "M-j")
+    toggle("Enable cookies & reload  (M-k)",
+           "Disable cookies & reload (M-k)", cmd.toggleCookie,
+                                             buffer.init.cookie, "M-k")
     m.line()
-    m.item("Bookmark page          (M-a)", cmd.addBookmark, "M-a")
-    m.item("Open bookmarks         (M-b)", cmd.openBookmarks, "M-b")
-    m.item("Open history           (C-h)", cmd.openHistory, "C-h")
+    m.item("Bookmark page            (M-a)", cmd.addBookmark, "M-a")
+    m.item("Open bookmarks           (M-b)", cmd.openBookmarks, "M-b")
+    m.item("Open history             (C-h)", cmd.openHistory, "C-h")
     m.line()
-    m.item("Force-quit browser       (q)", cmd.quit, "q")
+    m.item("Force-quit browser         (q)", cmd.quit, "q")
 }
 
 function bufferMenu(m) {
