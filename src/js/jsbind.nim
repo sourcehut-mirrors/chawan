@@ -1174,13 +1174,21 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
           )
         elif inst.sameType(JSObject.getType()) or
             inst.sameType(JSObjectNil.getType()) or
-            inst.sameType(JSCallback.getType()) or
-            inst.sameType(JSValueTraced.getType()):
+            inst.sameType(JSCallback.getType()):
           markList.add(quote do:
             JS_MarkValue(rt, this.`varNode`, markFunc)
           )
           finList.add(quote do:
-            myDestroy(this.`varNode`)
+            if cast[pointer](this.`varNode`) != nil:
+              JS_FreeValueRT(rt,
+                JS_MKPTR(JS_TAG_OBJECT, cast[pointer](this.`varNode`)))
+          )
+        elif inst.sameType(JSValueTraced.getType()):
+          markList.add(quote do:
+            JS_MarkValue(rt, this.`varNode`, markFunc)
+          )
+          finList.add(quote do:
+            JS_FreeValueRT(rt, JSValue(this.`varNode`))
           )
         else:
           var impl = typ
@@ -1193,7 +1201,7 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
               JS_MarkForeignObject(rt, cast[pointer](this.`varNode`), markFunc)
             )
             finList.add(quote do:
-              myDestroy(this.`varNode`)
+              JS_FreeForeignObject(rt, cast[pointer](this.`varNode`))
             )
           else:
             # The GC delays free'ing JSRef/JSValue until all finalizers

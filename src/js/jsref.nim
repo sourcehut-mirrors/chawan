@@ -16,10 +16,9 @@ type
   JSRef*[T] = distinct ptr T
 
 proc destroyAux(p: ptr pointer) {.exportc: "cha_jsDestroyImpl".} =
-  if p[] != nil:
-    when defined(debug):
-      assert not globalRuntime.getOpaque().marking
-    JS_FreeForeignObject(globalRuntime, p[])
+  when defined(debug):
+    assert p[] == nil or not globalRuntime.getOpaque().marking
+  JS_FreeForeignObject(globalRuntime, p[])
 
 proc dupAux(p: pointer): pointer {.exportc: "cha_jsDup".} =
   if p == nil:

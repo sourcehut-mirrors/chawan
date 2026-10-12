@@ -6559,9 +6559,13 @@ void JS_MarkForeignObject(JSRuntime *rt, void *p, JS_MarkFunc mark_func)
 
 void JS_FreeForeignObject(JSRuntime *rt, void *p)
 {
-    JSForeignObject *obj = js_data_to_foreign(p);
-    if (--js_rc(js_foreign_opaque(obj))->ref_count <= 0)
-        free_foreign_object(rt, obj);
+    JSForeignObject *obj;
+
+    if (p) {
+        obj = js_data_to_foreign(p);
+        if (--js_rc(js_foreign_opaque(obj))->ref_count <= 0)
+            free_foreign_object(rt, obj);
+    }
 }
 
 void JS_FreeForeignObjectMemory(JSRuntime *rt, void *p)
