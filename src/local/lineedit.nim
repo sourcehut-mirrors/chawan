@@ -355,7 +355,7 @@ jsClassDef(LineEdit):
 
   # private
   proc setAbsoluteCursorX(edit: LineEdit; x: int) {.jsfunc.} =
-    let x = max(x - edit.shiftx - edit.promptw, 0)
+    let x = max(x + edit.shiftx - edit.promptw, 0)
     while edit.cursorx < x:
       let x = edit.cursorx
       edit.forward()
