@@ -34,11 +34,11 @@ import js/jsutils
 import js/libregexp
 import js/quickjs
 import js/tojs
+import local/bufferiface
 import local/lineedit
 import local/select
 import local/term
 import server/blob
-import server/bufferiface
 import server/connectionerror
 import server/forkserver
 import server/headers

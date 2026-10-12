@@ -21,12 +21,12 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import local/bufferiface
 import local/clientutil
 import local/lineedit
 import local/pager
 import local/select
 import local/term
-import server/bufferiface
 import server/forkserver
 import server/loaderiface
 import utils/chaos
