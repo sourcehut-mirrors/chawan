@@ -142,7 +142,7 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = create(JSContextOpaqueObj)
   opaque.global = traceObj(JS_GetGlobalObject(ctx))
   var fail = false
-  for s in JSStrRef.low..jsyIterator:
+  for s in JSStrRef.low..jsyIterator.pred:
     let ss = $s
     let atom = JS_NewAtomLen(ctx, ss.toCStringConst, csize_t(ss.len))
     if atom == JS_ATOM_NULL:
