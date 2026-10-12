@@ -443,7 +443,7 @@ jsClassRaw(DOMParserDef, "DOMParser"):
   type DOMParser = distinct pointer
 
   proc newDOMParser*(ctx: JSContext; ctor: JSValueConst): JSValue {.jsctor2.} =
-    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
+    return JS_CreateFromConstructor(ctx, ctor, classDef.id)
 
   type DOMParserSupportedType = enum
     dtHtml = "text/html"

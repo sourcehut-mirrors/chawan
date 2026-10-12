@@ -5,6 +5,7 @@ import std/macros
 import std/typetraits
 
 import js/constcharp
+import js/cutils
 import js/jsopaque
 import js/jsref
 import js/jstypes
@@ -265,18 +266,14 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): JSCode =
 type SeqItResult* = enum
   sirDone, sirContinue, sirException
 
-template err(t: typedesc[SeqItResult]): SeqItResult =
-  sirException
-
 proc fromJSSeqIt*(ctx: JSContext; iter, nextMethod: JSValueConst;
     res: var JSValue): SeqItResult =
-  let next = ?trace(JS_Call(ctx, nextMethod, iter, 0, nil))
-  let doneVal = ?ctx.getProperty(next.vc, jstDone)
-  var done: bool
-  ?ctx.fromJSFree(doneVal.toJSValue(), done)
-  if not done:
-    let val = ?ctx.getProperty(next.vc, jstValue)
-    res = val.toJSValue()
+  var done: JS_BOOL
+  let val = JS_IteratorNext(ctx, iter, nextMethod, done)
+  if JS_IsException(val.vc):
+    return sirException
+  res = val
+  if done == 0:
     return sirContinue
   sirDone
 

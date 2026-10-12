@@ -73,7 +73,7 @@ static JSValue js_domexception_constructor0(JSContext *ctx, JSValueConst new_tar
     JSDOMExceptionData *s;
     JSValue obj, message, name;
 
-    obj = JS_NewObjectFromCtor(ctx, new_target, js_class_dom_exception);
+    obj = JS_CreateFromConstructor(ctx, new_target, js_class_dom_exception);
     if (JS_IsException(obj))
         return JS_EXCEPTION;
     if (argc > 0 && !JS_IsUndefined(argv[0]))

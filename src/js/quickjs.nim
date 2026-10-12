@@ -618,9 +618,16 @@ proc JS_SameValue*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
 proc JS_SameValueZero*(ctx: JSContext; op1, op2: JSValueConst): JS_BOOL
 
 # return -1 for JS_EXCEPTION
+proc JS_ToObject*(ctx: JSContext; val: JSValueConst): JSValue
+const
+  JS_HINT_STRING* = 0
+  JS_HINT_NUMBER* = 1
+  JS_HINT_NONE* = 2
+proc JS_ToPrimitive*(ctx: JSContext; val: JSValueConst; hint: cint): JSValue
 proc JS_ToBool*(ctx: JSContext; val: JSValueConst): cint
 proc JS_ToInt32*(ctx: JSContext; pres: var int32; val: JSValueConst): cint
 proc JS_ToUint32*(ctx: JSContext; pres: var uint32; val: JSValueConst): cint
+proc JS_ToInt32Sat*(ctx: JSContext; pres: var cint; val: JSValueConst);
 proc JS_ToInt64*(ctx: JSContext; pres: var int64; val: JSValueConst): cint
 proc JS_ToIndex*(ctx: JSContext; plen: var uint64; val: JSValueConst): cint
 proc JS_ToFloat64*(ctx: JSContext; pres: var float64; val: JSValueConst): cint
@@ -644,7 +651,10 @@ proc JS_ToCStringLen2*(ctx: JSContext; plen: var csize_t; val1: JSValueConst;
 proc JS_ToCStringLen*(ctx: JSContext; plen: var csize_t; val1: JSValueConst):
   cstringConst
 proc JS_ToCString*(ctx: JSContext; val1: JSValueConst): cstringConst
+proc JS_ToCStringNZ*(ctx: JSContext; val1: JSValueConst): cstringConst
 proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
+proc JS_ToUTF32String*(ctx: JSContext; pbuf: var ptr uint32;
+  val: JSValueConst): cstringConst
 
 proc JS_NewSymbol*(ctx: JSContext; description: cstringConst;
   is_global: JS_BOOL): JSValue
@@ -671,8 +681,6 @@ proc JS_GetRegExpBytecode*(ctx: JSContext; obj: JSValueConst; plen: var cint):
   ptr uint8
 proc JS_ThrowTypeErrorOrFalse*(ctx: JSContext; flags: cint; fmt: cstring):
   cint {.varargs.}
-proc JS_NewObjectFromCtor*(ctx: JSContext; ctor: JSValueConst;
-  class_id: JSClassID): JSValue
 proc JS_NewPrivateSymbol*(ctx: JSContext): JSValue
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
@@ -680,6 +688,8 @@ proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
 proc JS_NewObjectClass*(ctx: JSContext; class_id: JSClassID): JSValue
 proc JS_NewObjectProto*(ctx: JSContext; proto: JSValueConst): JSValue
 proc JS_NewObject*(ctx: JSContext): JSValue
+proc JS_CreateFromConstructor*(ctx: JSContext; ctor: JSValueConst;
+  class_id: JSClassID): JSValue
 {.pop.} # header: qjsheader, importc
 
 {.push header: qjsheader.}
@@ -702,6 +712,8 @@ proc JS_NewArray*(ctx: JSContext): JSValue
 proc JS_IsArray*(ctx: JSContext; v: JSValueConst): cint
 
 proc JS_NewDate*(ctx: JSContext; epoch_ms: float64): JSValue
+proc JS_ThisDateValue*(ctx: JSContext; valp: var float64; this: JSValueConst):
+  JSValue
 
 proc JS_GetProperty*(ctx: JSContext; this_obj: JSValueConst; prop: JSAtom):
   JSValue
@@ -759,6 +771,7 @@ proc JS_Eval*(ctx: JSContext; input: cstringConst; input_len: csize_t;
 proc JS_EvalThis*(ctx: JSContext; this_obj: JSValueConst; input: cstringConst;
   input_len: csize_t; filename: cstringConst; eval_flags: cint): JSValue
 proc JS_GetGlobalObject*(ctx: JSContext): JSValue
+proc JS_OrdinaryIsInstanceOf*(ctx: JSContext; val, obj: JSValueConst): cint
 proc JS_IsInstanceOf*(ctx: JSContext; val, obj: JSValueConst): cint
 proc JS_DefineProperty*(ctx: JSContext; this_obj: JSValueConst; prop: JSAtom;
   val, getter, setter: JSValueConst; flags: cint): cint
@@ -908,6 +921,26 @@ proc JS_SetConstructor*(ctx: JSContext; func_obj, proto: JSValueConst)
 # C property definition
 proc JS_SetPropertyFunctionList*(ctx: JSContext; obj: JSValueConst;
   tab: JSCFunctionListP; len: cint): cint
+
+const JS_NEW_CTOR_NO_GLOBAL* = (1 shl 0) # don't create a global binding
+const JS_NEW_CTOR_PROTO_CLASS* = (1 shl 1) # don't create a global binding
+const JS_NEW_CTOR_PROTO_EXIST* = (1 shl 2) # the prototype is already defined
+const JS_NEW_CTOR_READONLY* = (1 shl 3) # read-only constructor field
+
+proc JS_NewCConstructor*(ctx: JSContext; class_id: cint; name: cstringConst;
+  fun: JSCFunction; length: cint; cproto: JSCFunctionEnum; magic: cint;
+  parent_ctor: JSValueConst; ctor_fields: JSCFunctionListP;
+  ctor_n_fields: cint; proto_fields: JSCFunctionListP;
+  proto_n_fields, flags: cint): JSValue
+
+# iterator helpers
+
+proc JS_GetIterator*(ctx: JSContext; obj: JSValueConst; is_async: JS_BOOL):
+  JSValue
+proc JS_IteratorNext*(ctx: JSContext; enum_obj, method_val: JSValueConst;
+  pdone: var JS_BOOL): JSValue
+proc JS_IteratorClose*(ctx: JSContext; enum_obj: JSValueConst;
+  is_exception_pending: JS_BOOL): cint
 
 # C module definition
 type JSModuleInitFunc* = proc(ctx: JSContext; m: JSModuleDef): cint

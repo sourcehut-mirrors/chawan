@@ -151,7 +151,7 @@ proc resolveToDenied(ctx: JSContext; argc: cint; argv: JSValueConstArray):
 jsClassRaw(NotificationDef, "Notification"):
   proc newNotification(ctx: JSContext; ctor: JSValueConst): JSValue
       {.jsctor2.} =
-    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
+    return JS_CreateFromConstructor(ctx, ctor, classDef.id)
 
   proc requestPermission(ctx: JSContext; callback = JS_UNDEFINED.vc): JSValue
       {.jsstfunc.} =

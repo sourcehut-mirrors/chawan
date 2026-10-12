@@ -495,8 +495,7 @@ proc tryTraceObj*(val: JSValue): JSObjectErr =
   JSObjectErr(traceObj(val))
 
 proc toObject*(ctx: JSContext; val: JSValueConst): JSObjectErr =
-  ## Roundabout way to invoke ToObject.
-  let res = ctx.call(ctx.getOpaque().funRefs[jsfObjectPrototypeValueOf], val)
+  let res = JS_ToObject(ctx, val)
   tryTraceObj(res)
 
 proc JS_ThrowTypeErrorInvalidClass*(ctx: JSContext; classid: JSClassID):
@@ -519,7 +518,7 @@ proc newObjectClass*(ctx: JSContext; class: JSClassID): JSObjectErr =
 
 proc newObjectFromCtor*(ctx: JSContext; ctor: JSValueConst;
     classid: JSClassID): JSObjectErr =
-  let obj = JS_NewObjectFromCtor(ctx, ctor, classid)
+  let obj = JS_CreateFromConstructor(ctx, ctor, classid)
   tryTraceObj(obj)
 
 proc newCFunctionData*(ctx: JSContext; fun: JSCFunctionData; name: cstring;

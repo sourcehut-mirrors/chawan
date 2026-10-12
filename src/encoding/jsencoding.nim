@@ -84,7 +84,7 @@ jsClassRaw(TextEncoderDef, "TextEncoder"):
 
   proc newTextEncoder(ctx: JSContext; ctor: JSValueConst): JSValue
       {.jsctor2.} =
-    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
+    return JS_CreateFromConstructor(ctx, ctor, classDef.id)
 
   proc encoding(ctx: JSContext; this: JSTextEncoder): JSValue {.jsfget.} =
     return ctx.toJS("utf-8")

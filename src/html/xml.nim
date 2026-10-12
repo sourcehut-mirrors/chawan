@@ -48,7 +48,7 @@ proc getClassID*(t: typedesc[SVGSVGElement]): JSClassID
 jsClassRaw(XMLSerializerDef, "XMLSerializer"):
   proc newXMLSerializer(ctx: JSContext; ctor: JSValueConst): JSValue
       {.jsctor2.} =
-    return JS_NewObjectFromCtor(ctx, ctor, classDef.id)
+    return JS_CreateFromConstructor(ctx, ctor, classDef.id)
 
   proc serializeToString(ctx: JSContext; this: JSValueConst; root: Node):
       JSValue {.jsfunc.} =
