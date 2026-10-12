@@ -121,6 +121,7 @@ type
     loadedImageNum*: uint32
     imageURLCache*: StrMap
     svgCache*: StrMap
+    corsCache*: StrMap
     # ID of the next image
     imageId*: int
     # list of streams that must be closed for canvas rendering on load
@@ -1070,6 +1071,20 @@ proc isSameOrigin*(window: Window; origin: Origin): bool =
     return true
   return window.settings.origin.isSameOrigin(origin)
 
+proc checkCORSResponse(input: Request; response: Response;
+    requestOrigin: string): bool =
+  if response.status notin 200'u16..299'u16:
+    return false
+  let origin = response.headers.getAll("Access-Control-Allow-Origin")
+  if origin.len == 0:
+    return false
+  if origin == "*" and input.credentials != cmInclude:
+    return true
+  if origin != requestOrigin:
+    return false
+  input.credentials != cmInclude or
+    response.headers.getAll("Access-Control-Allow-Credentials") == "true"
+
 proc checkCORSRequest*(window: Window; input: Request): bool =
   if input.url.schemeType == stData:
     return true
@@ -1078,6 +1093,8 @@ proc checkCORSRequest*(window: Window; input: Request): bool =
   #TODO redirect-taint
   let requestOrigin = $window.settings.origin
   if input.url.scheme != requestOrigin.until(':'):
+    return false
+  if window.corsCache.getOrDefault($input.url) != nil:
     return false
   input.headers["Origin"] = requestOrigin
   let headers = newHeaders(hgRequest, {"Origin": requestOrigin})
@@ -1090,17 +1107,10 @@ proc checkCORSRequest*(window: Window; input: Request): bool =
   if response == nil:
     return false
   window.loader.close(response)
-  if response.status notin 200'u16..299'u16:
+  if not checkCORSResponse(input, response, requestOrigin):
+    window.corsCache.put(StrMapItem(s: $input.url))
     return false
-  let origin = response.headers.getAll("Access-Control-Allow-Origin")
-  if origin.len == 0:
-    return false
-  if origin == "*" and input.credentials != cmInclude:
-    return true
-  if origin != requestOrigin:
-    return false
-  input.credentials != cmInclude or
-    response.headers.getAll("Access-Control-Allow-Credentials") == "true"
+  true
 
 proc fetch*(window: Window; input: Request; finish: FetchFinish;
     opaque: RootRef) =
