@@ -213,7 +213,7 @@ proc `=dup`*(src: JSObject): JSObject =
 proc `==`*(a: JSObject; b: typeof(nil)): bool =
   pointer(a) == nil
 
-template traceObj*(val: JSValue): JSObject =
+proc traceObj*(val: JSValue): JSObject =
   JSObject(JS_VALUE_GET_PTR(val.vc))
 
 template dupTraceObj*(ctx: JSContext; val: JSValueConst): JSObject =
