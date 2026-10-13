@@ -1665,8 +1665,9 @@ proc toggleImages(bc: BufferContext; handle: PagerHandle): bool {.
       bc.window.loadImage(img)
     elif (let svg = element as SVGSVGElement; svg != nil):
       bc.window.loadSVG(svg)
-  if not bc.config.images:
-    # if images were enabled, we reshape after imageLoaded
+  if not bc.config.images or bc.window.remoteImageNum == 0:
+    # if images were enabled, we reshape after imageLoaded (unless there
+    # are no images at all)
     bc.maybeReshape()
   else:
     bc.savetask = true
