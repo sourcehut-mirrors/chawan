@@ -53,7 +53,7 @@ export function bufferMenu(m) {
     m.bind(() => {
         cmd.discardBuffer()
         select.cancel()
-        cmd.openBufferMenu()
+        pager.openCustomMenu({name: "bufferMenu"})
     }, "D");
     m.line()
     m.line("comma (,)/period (.): previous/next │ D: delete");
