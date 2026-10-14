@@ -48,12 +48,25 @@ export function bufferMenu(m) {
         if (buffer == pager.buffer)
             m.select();
     }
-    m.bind(() => { select.cursorUp(); cmd.prevBuffer() }, ",");
-    m.bind(() => { select.cursorDown(); cmd.nextBuffer() }, ".");
-    m.bind(() => {
-        cmd.discardBuffer()
-        select.cancel()
-        pager.openCustomMenu({name: "bufferMenu"})
+    m.bind(async () => {
+        await select.click();
+        await pager.openCustomMenu({name: "bufferMenu"})
+        select.cursorUp();
+        pager.prevBuffer()
+    }, ",");
+    m.bind(async () => {
+        await select.click();
+        await pager.openCustomMenu({name: "bufferMenu"})
+        select.cursorDown();
+        pager.nextBuffer()
+    }, ".");
+    m.bind(async () => {
+        const buffer = pager.buffer;
+        await select.click();
+        pager.discardBuffer(pager.buffer, "any")
+        await pager.openCustomMenu({name: "bufferMenu"})
+        if (buffer.tab)
+            pager.setBuffer(buffer);
     }, "D");
     m.line()
     m.line("comma (,)/period (.): previous/next │ D: delete");

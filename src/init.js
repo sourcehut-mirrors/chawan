@@ -1197,12 +1197,25 @@ function bufferMenu(m) {
             m.select();
     }
     /* TODO move up/down (M-, and M-.?) */
-    m.bind(() => { select.cursorUp(); cmd.prevBuffer() }, ",");
-    m.bind(() => { select.cursorDown(); cmd.nextBuffer() }, ".");
-    m.bind(() => {
-        cmd.discardBuffer()
-        select.cancel()
-        cmd.openBufferMenu()
+    m.bind(async () => {
+        await select.click();
+        await cmd.openBufferMenu()
+        select.cursorUp();
+        pager.prevBuffer()
+    }, ",");
+    m.bind(async () => {
+        await select.click();
+        await cmd.openBufferMenu()
+        select.cursorDown();
+        pager.nextBuffer()
+    }, ".");
+    m.bind(async () => {
+        const buffer = pager.buffer;
+        await select.click();
+        pager.discardBuffer(pager.buffer, "any")
+        await cmd.openBufferMenu()
+        if (buffer.tab)
+            pager.setBuffer(buffer);
     }, "D");
     m.line()
     m.line("comma (,)/period (.): previous/next │ D: delete");
