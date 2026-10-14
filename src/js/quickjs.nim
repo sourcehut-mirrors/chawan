@@ -25,6 +25,7 @@ const
   JS_TAG_SYMBOL* = -8
   JS_TAG_STRING* = -7
   JS_TAG_STRING_ROPE* = -6
+  JS_TAG_FOREIGN_OBJ* = -4 ## used in GC callbacks
   JS_TAG_MODULE* = -3 ## used internally
   JS_TAG_FUNCTION_BYTECODE* = -2 ## used internally
   JS_TAG_OBJECT* = -1

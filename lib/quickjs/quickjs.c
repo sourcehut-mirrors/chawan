@@ -6499,7 +6499,7 @@ static void no_inline free_foreign_object(JSRuntime *rt, JSForeignObject *p)
     if (p->header.link.prev != NULL) {
         finalizer = rt->class_array[p->class_id].finalizer;
         if (finalizer)
-            (*finalizer)(rt, JS_MKPTR(JS_TAG_MODULE, p->data));
+            (*finalizer)(rt, JS_MKPTR(JS_TAG_FOREIGN_OBJ, p->data));
 
         /* fail safe */
         p->class_id = 0;
@@ -6936,7 +6936,7 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
 
             gc_mark = rt->class_array[p->class_id].gc_mark;
             if (gc_mark)
-                gc_mark(rt, JS_MKPTR(JS_TAG_MODULE, p->data), mark_func);
+                gc_mark(rt, JS_MKPTR(JS_TAG_FOREIGN_OBJ, p->data), mark_func);
         }
         break;
     default:

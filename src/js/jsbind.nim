@@ -195,7 +195,7 @@ proc getForeignPtr*(val: JSValueConst): pointer =
   # ugly hack, but it does the job
   # (we always get a JSValue for mark, so we discriminate unbound foreign
   # objects from bound ones by passing the former with a module tag)
-  if JS_VALUE_GET_TAG(val) == JS_TAG_MODULE:
+  if JS_VALUE_GET_TAG(val) == JS_TAG_FOREIGN_OBJ:
     return JS_VALUE_GET_PTR(val)
   return JS_GetOpaque(val, JS_GetClassID(val))
 

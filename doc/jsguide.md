@@ -633,9 +633,8 @@ is called using a `JSValue`:
 * If there is a corresponding `JSObject` (i.e., the object was ever used
   in JS), the passed `JSValue` is of `JS_TAG_OBJECT`.  The foreign object
   is retrieved by calling `JS_GetOpaque`.
-* Otherwise, the passed `JSValue` is of `JS_TAG_MODULE`.  The foreign
-  object is the JSValue's pointer.  (Of course, this is a hack, but it
-  keeps the QuickJS patch's diff down.)
+* Otherwise, the passed `JSValue` is of `JS_TAG_FOREIGN_OBJ`.  The foreign
+  object is the JSValue's pointer.
 
 The finalizer invokes a chain of functions which first run any operations
 defined in `jsfin` and then call `=destroy` (or JS_FreeValueRT) on the
