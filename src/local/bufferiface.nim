@@ -618,7 +618,7 @@ proc cursorDispX(iface: BufferInterface): int =
   let y = iface.cursory
   if not iface.lineLoaded(y):
     return 0
-  let line = iface.getLineStr(y)
+  let line {.cursor.} = iface.getLineStr(y)
   if line.len == 0:
     return 0
   var w = 0
@@ -1094,7 +1094,7 @@ jsClassPublicDef(BufferInterface):
     let y = iface.cursory
     if not iface.lineLoaded(y):
       return 0
-    let line = iface.getLineStr(y)
+    let line {.cursor.} = iface.getLineStr(y)
     var w = 0
     var i = 0
     let cc = iface.cursorx
@@ -1112,7 +1112,7 @@ jsClassPublicDef(BufferInterface):
     let y = iface.cursory
     if not iface.lineLoaded(y):
       return 0
-    let line = iface.getLineStr(y)
+    let line {.cursor.} = iface.getLineStr(y)
     var w = 0
     var i = 0
     let cc = iface.cursorx
@@ -1123,9 +1123,10 @@ jsClassPublicDef(BufferInterface):
 
   #TODO cache
   proc maxScreenWidth(iface: BufferInterface): int {.jsfunc.} =
-    result = 0
+    var n = 0
     for y in iface.fromy..iface.lastVisibleLine:
-      result = max(iface.getLineStr(y).width(), result)
+      n = max(iface.getLineStr(y).width(), n)
+    n
 
   proc currentLineWidth(iface: BufferInterface; s = 0; e = int.high): int
       {.jsfunc.} =
@@ -1379,7 +1380,7 @@ jsClassPublicDef(BufferInterface):
           w.swrite(wrap)
           w.swrite(if forward: n else: -n)
         return addPromise[BufferMatch](ctx, iface)
-      let s = iface.getLineStr(y)
+      let s {.cursor.} = iface.getLineStr(y)
       if not forward and b < 0:
         b = s.len
       let cap = if forward:
