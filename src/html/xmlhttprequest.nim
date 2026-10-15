@@ -289,12 +289,12 @@ jsClassDef(XMLHttpRequest):
       ?ctx.fromJS(misc[0], async)
       if misc.len > 1 and not JS_IsNull(misc[1]) and
           not JS_IsUndefined(misc[1]):
-        var username: string
+        var username: USVString
         ?ctx.fromJS(misc[1], username)
         parsedURL.setUsername(username)
       if misc.len > 2 and not JS_IsNull(misc[2]) and
           not JS_IsUndefined(misc[2]):
-        var password: string
+        var password: USVString
         ?ctx.fromJS(misc[2], password)
         parsedURL.setPassword(password)
     if not async and ctx.getWindow() != nil and
@@ -468,13 +468,13 @@ jsClassDef(XMLHttpRequest):
     #TODO XML encoding stuff?
     return ctx.toJS(this.received.decodeAll(charset))
 
-  proc overrideMimeType(ctx: JSContext; this: XMLHttpRequest; s: string):
+  proc overrideMimeType(ctx: JSContext; this: XMLHttpRequest; s: DOMString):
       JSValue {.jsfunc.} =
     if this.readyState in {xhrsLoading, xhrsDone}:
       return JS_ThrowDOMException(ctx, "InvalidStateError",
         "readyState must not be loading or done")
     #TODO parse
-    this.contentTypeOverride = s
+    this.contentTypeOverride = $s
     return JS_UNDEFINED
 
   proc setResponseType(ctx: JSContext; this: XMLHttpRequest;

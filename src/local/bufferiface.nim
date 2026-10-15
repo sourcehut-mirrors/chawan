@@ -1454,10 +1454,10 @@ jsClassPublicDef(BufferInterface):
       discard
     return addPromise[string](ctx, iface)
 
-  proc gotoAnchor(ctx: JSContext; iface: BufferInterface; anchor: string;
+  proc gotoAnchor(ctx: JSContext; iface: BufferInterface; anchor: USVString;
       autofocus, target: bool): JSValue {.jsfunc.} =
     ctx.withPacketWriter iface, bcGotoAnchor, w:
-      w.swrite(anchor)
+      w.swrite(anchor.toOpenArray())
       w.swrite(autofocus)
       w.swrite(target)
     return addPromise[GotoAnchorResult](ctx, iface)

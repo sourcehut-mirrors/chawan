@@ -2368,11 +2368,11 @@ jsClassDef(Pager):
   # private
   proc omniRewrite(ctx: JSContext; pager: Pager; arg0: JSValueConst): JSValue
       {.jsfunc.} =
-    var s: string
+    var s: USVString
     ?ctx.fromJS(arg0, s)
     for rule in pager.config.omnirule:
-      if rule.regex.match(s):
-        pager.lineHist[lmLocation].add(s)
+      if rule.regex.match(s.toOpenArray()):
+        pager.lineHist[lmLocation].add($s)
         return ctx.call(rule.fun, JS_UNDEFINED.vc, arg0)
     return JS_DupValue(ctx, arg0)
 
@@ -2429,7 +2429,7 @@ jsClassDef(Pager):
     if ctx.fromJS(v, request).isErr:
       var url: URL
       if ctx.fromJS(v, url).isErr:
-        var s: string
+        var s: USVString
         ?ctx.fromJS(v, s)
         url = ?ctx.newURL(s)
       request = newRequest(url)

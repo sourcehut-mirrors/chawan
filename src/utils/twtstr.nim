@@ -974,15 +974,6 @@ proc replaceControls*(s: openArray[char]): string =
     else:
       result.addUTF8(u)
 
-proc replaceSurrogates*(s: var openArray[char]) =
-  var i = 0
-  let slen = s.len
-  while i < slen:
-    let pi = i
-    let u = s.nextUTF8(i)
-    if u in 0xD800'u32..0xDFFF'u32:
-      copyMem(addr s[pi], cstring("\uFFFD"), i - pi)
-
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc makeCRLF*(s: openArray[char]): string =
   result = newStringOfCap(s.len)

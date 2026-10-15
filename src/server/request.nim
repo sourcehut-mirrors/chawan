@@ -352,17 +352,18 @@ jsClassPublicDef(FormData):
     elif rest.len > 0:
       err()
     else:
-      var s: string
+      var s: USVString
       ?ctx.fromJS(val, s)
-      this.entries.add(FormDataEntry(name: name, isstr: true, svalue: s))
+      this.entries.add(FormDataEntry(name: name, isstr: true, svalue: $s))
       ok()
 
-  proc delete(this: FormData; name: string) {.jsfunc.} =
+  proc delete(this: FormData; name: USVString) {.jsfunc.} =
     for i in countdown(this.entries.high, 0):
       if this.entries[i].name == name:
         this.entries.delete(i)
 
-  proc get(ctx: JSContext; this: FormData; name: string): JSValue {.jsfunc.} =
+  proc get(ctx: JSContext; this: FormData; name: USVString): JSValue
+      {.jsfunc.} =
     for entry in this.entries:
       if entry.name == name:
         if entry.isstr:
@@ -371,7 +372,7 @@ jsClassPublicDef(FormData):
           return ctx.toJS(entry.value)
     return JS_NULL
 
-  proc getAll(ctx: JSContext; this: FormData; name: string): seq[JSValue]
+  proc getAll(ctx: JSContext; this: FormData; name: USVString): seq[JSValue]
       {.jsfunc.} =
     result = newSeq[JSValue]()
     for entry in this.entries:
@@ -564,7 +565,7 @@ jsClassDef(Request):
     var body = RequestBody()
     var credentials = cmSameOrigin
     var httpMethod = hmGet
-    var referrerStr = ""
+    var referrerStr: USVString
     if not JS_IsUndefined(init.referrer):
       ?ctx.fromJS(init.referrer, referrerStr)
     if not JS_IsUndefined(init.credentials):
@@ -604,7 +605,7 @@ jsClassDef(Request):
       body = res.body
       window = res.window
     else:
-      var s: string
+      var s: USVString
       ?ctx.fromJS(resource, s)
       url = ?ctx.parseJSURL(s, apiBaseURL)
       if JS_IsUndefined(init.mode):
@@ -621,7 +622,7 @@ jsClassDef(Request):
       window = RequestWindow(t: rwtNoWindow)
     #TODO flags
     if not JS_IsUndefined(init.referrer):
-      if referrerStr == "":
+      if referrerStr.len == 0:
         hasReferrer = false
       else:
         referrer = ?ctx.parseJSURL(referrerStr, apiBaseURL)

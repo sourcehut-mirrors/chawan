@@ -1019,8 +1019,8 @@ proc myHexValue(c: char): uint32 =
     return uint32(n)
   return 0
 
-proc parseLegacyColor*(s: string): Result[RGBColor, cstring] =
-  if s <= "":
+proc parseLegacyColor*(s: openArray[char]): Result[RGBColor, cstring] =
+  if s.len <= 0:
     return err(cstring"color value must not be the empty string")
   let s = s.strip(chars = AsciiWhitespace)
   if s.equalsIgnoreCase("transparent"):

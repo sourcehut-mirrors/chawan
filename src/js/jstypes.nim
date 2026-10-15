@@ -113,11 +113,11 @@ type JSKeyValuePair*[K, T] = object
 # * DOMString: may include surrogates (encoded as UTF-8).
 # * DOMStringNull: same as DOMString, but JS_NULL is translated to the empty
 #   string (instead of being rejected).
-# * string: the spec calls this USVString.  Encodes surrogates as U+FFFD.
+# * USVString: encodes surrogates as U+FFFD.
+# * string: treated as USVString.
 # * ByteString: like string, but rejects codepoints greater than U+00FF.
 # * CSSOMString: the spec allows aliasing this to DOMString or USVString.
-#   We use DOMString for the simple reason that our USVString isn't
-#   zero-copy.
+#   We use USVString to reduce malformed UTF-8.
 type
   DOMString* {.pure, inheritable.} = object
     p*: cstring
@@ -125,10 +125,12 @@ type
 
   DOMStringNull* {.pure, final.} = object of DOMString
 
+  USVString* {.pure, final.} = object of DOMString
+
   ByteString* = object
     s*: string
 
-  CSSOMString* = DOMString
+  CSSOMString* = USVString
 
 const DOMStringConstFlag = 1 shl (sizeof(int) * 8 - 1)
 
@@ -148,6 +150,12 @@ proc initDOMString*(s: cstring; len: int): DOMString =
 proc initDOMStringLit*(s: cstring): DOMString =
   DOMString(p: s, ilen: s.len or DOMStringConstFlag)
 
+proc initUSVString*(s: cstring; len: int): USVString =
+  USVString(p: s, ilen: len)
+
+proc initUSVStringLit*(s: cstring): USVString =
+  USVString(p: s, ilen: s.len or DOMStringConstFlag)
+
 template toOpenArray*(s: DOMString): openArray[char] =
   {.push overflowChecks: off.}
   let H = s.len - 1
@@ -166,6 +174,9 @@ proc `$`*(ds: DOMString): string =
 proc toDOMStringView*(s: string): DOMString =
   DOMString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
 
+proc toUSVStringView*(s: string): USVString =
+  USVString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
+
 proc `==`*(ds: DOMString; s: string): bool =
   ds.toOpenArray() == s
 
@@ -179,6 +190,9 @@ proc toDOMStringNull*(ds: sink DOMString): DOMStringNull =
 
 proc `$`*(ds: DOMStringNull): string =
   ds.toOpenArray().substr()
+
+proc `$`*(us: USVString): string =
+  us.toOpenArray().substr()
 
 proc `$`*(bs: ByteString): lent string =
   bs.s

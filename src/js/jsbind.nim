@@ -688,7 +688,7 @@ proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
       var `s` {.noinit.}: pointer
       if dl != fjErr and ctx.fromJSObjectNull(`id`, `s`) == fjErr:
         dl = fjErr
-    else:
+    elif `t` isnot JSAtom:
       when `t` is SomeNumber or `t` is enum or `t` is bool:
         var `s` {.noinit.}: `t`
       else:
@@ -703,6 +703,8 @@ proc addFixParam(gen: var JSFuncGenerator; id: NimNode) =
       cast[JSCallback](`s`)
     elif `t` is JSObjectNil:
       cast[JSObjectNil](`s`)
+    elif `t` is JSAtom:
+      `id`
     else:
       `s`
   )

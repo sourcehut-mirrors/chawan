@@ -1044,7 +1044,7 @@ proc parseURL0*(input: openArray[char]; base = URL(nil)): URL =
     return URL(nil)
   return url
 
-proc parseURL1(input: string; url: URL; state: URLState) =
+proc parseURL1(input: openArray[char]; url: URL; state: URLState) =
   discard input.parseURLImpl(base = URL(nil), url, state, override = true)
 
 proc parseURL*(input: string; base = URL(nil)): Opt[URL] =
@@ -1056,10 +1056,11 @@ proc parseURL*(input: string; base = URL(nil)): Opt[URL] =
     discard
   ok(url)
 
-proc parseJSURL*(ctx: JSContext; s: string; base = URL(nil)): Opt[URL] =
-  let url = parseURL0(s, base)
+proc parseJSURL*(ctx: JSContext; s: USVString; base = URL(nil)):
+    Opt[URL] =
+  let url = parseURL0(s.toOpenArray(), base)
   if url == nil:
-    JS_ThrowTypeError(ctx, "%s is not a valid URL", cstring(s))
+    JS_ThrowTypeError(ctx, "%s is not a valid URL", s.p)
     return err()
   ok(url)
 
@@ -1238,33 +1239,34 @@ jsClassPublicDef(URLSearchParams):
     params.list.add((name, value))
     params.update()
 
-  proc delete(params: URLSearchParams; name: string) {.jsfunc.} =
+  proc delete(params: URLSearchParams; name: USVString) {.jsfunc.} =
     for i in countdown(params.list.high, 0):
       if params.list[i][0] == name:
         params.list.delete(i)
     params.update()
 
-  proc get(ctx: JSContext; params: URLSearchParams; name: string): JSValue
+  proc get(ctx: JSContext; params: URLSearchParams; name: USVString): JSValue
       {.jsfunc.} =
     for it in params.list:
       if it.name == name:
         return ctx.toJS(it.value)
     return JS_NULL
 
-  proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
-    result = newSeq[string]()
+  proc getAll(params: URLSearchParams; name: USVString): seq[string] {.jsfunc.} =
+    var res = newSeq[string]()
     for it in params.list:
       if it.name == name:
-        result.add(it.value)
+        res.add(it.value)
+    move(res)
 
-  proc has(ctx: JSContext; params: URLSearchParams; name: string;
+  proc has(ctx: JSContext; params: URLSearchParams; name: USVString;
       jsValue = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     if JS_IsUndefined(jsValue):
       for it in params.list:
         if it.name == name:
           return JS_TRUE
     else:
-      var value: string
+      var value: USVString
       if ctx.fromJS(jsValue, value).isErr:
         return JS_EXCEPTION
       for it in params.list:
@@ -1272,18 +1274,17 @@ jsClassPublicDef(URLSearchParams):
           return JS_TRUE
     return JS_FALSE
 
-  proc set(params: URLSearchParams; name: string; value: sink string)
-      {.jsfunc.} =
+  proc set(params: URLSearchParams; name, value: USVString) {.jsfunc.} =
     var found = false
     for param in params.list.mitems:
       if param.name == name:
-        param.value = move(value)
+        param.value = $value
         found = true
         break
     if found:
       params.update()
     else:
-      params.append(name, value)
+      params.append($name, $value)
 
   proc entries(params: URLSearchParams; t: SearchIteratorType):
       URLSearchParamsIterator {.jsmfunc("entries", sitEntries),
@@ -1357,11 +1358,11 @@ jsClassPublicDef(URL):
   jsget URL, hostname
   jsget URL, pathname
 
-  proc newURL*(ctx: JSContext; s: string; base = JS_UNDEFINED.vc): Opt[URL]
+  proc newURL*(ctx: JSContext; s: USVString; base = JS_UNDEFINED.vc): Opt[URL]
       {.jsctor.} =
     var baseURL: URL
     if not JS_IsUndefined(base):
-      var s: string
+      var s: USVString
       if ctx.fromJS(base, s).isErr:
         return err()
       baseURL = ?ctx.parseJSURL(s)
@@ -1415,13 +1416,15 @@ jsClassPublicDef(URL):
   proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
     parseURL1(s & ':', url, usSchemeStart)
 
-  proc setUsername*(url: URL; username: string) {.jsfset: "username".} =
+  proc setUsername*(url: URL; username: USVString) {.jsfset: "username".} =
     if url.isNetPath():
-      url.username = username.percentEncode(UserInfoPercentEncodeSet)
+      url.username = username.toOpenArray()
+        .percentEncode(UserInfoPercentEncodeSet)
 
-  proc setPassword*(url: URL; password: string) {.jsfset: "password".} =
+  proc setPassword*(url: URL; password: USVString) {.jsfset: "password".} =
     if url.isNetPath():
-      url.password = password.percentEncode(UserInfoPercentEncodeSet)
+      url.password = password.toOpenArray()
+        .percentEncode(UserInfoPercentEncodeSet)
 
   proc host*(url: URL): string {.jsfget.} =
     if url.hostType == htNone:
@@ -1430,30 +1433,30 @@ jsClassPublicDef(URL):
       return url.hostname & ':' & $url.port
     return url.hostname
 
-  proc setHost*(url: URL; s: string) {.jsfset: "host".} =
+  proc setHost*(url: URL; s: USVString) {.jsfset: "host".} =
     if not url.opaquePath:
-      parseURL1(s, url, usHost)
+      parseURL1(s.toOpenArray(), url, usHost)
 
-  proc setHostname*(url: URL; s: string) {.jsfset: "hostname".} =
+  proc setHostname*(url: URL; s: USVString) {.jsfset: "hostname".} =
     if not url.opaquePath:
-      parseURL1(s, url, usHostname)
+      parseURL1(s.toOpenArray(), url, usHostname)
 
   proc port*(url: URL): string {.jsfget.} =
     if url[].port >= 0:
       return $url[].port
     return ""
 
-  proc setPort*(url: URL; s: string) {.jsfset: "port".} =
+  proc setPort*(url: URL; s: USVString) {.jsfset: "port".} =
     if url.isNetPath():
       if s == "":
         url.port = -1
       else:
-        parseURL1(s, url, usPort)
+        parseURL1(s.toOpenArray(), url, usPort)
 
-  proc setPathname*(url: URL; s: string) {.jsfset: "pathname".} =
+  proc setPathname*(url: URL; s: USVString) {.jsfset: "pathname".} =
     if not url.opaquePath:
       url.pathname = ""
-      parseURL1(s, url, usPathStart)
+      parseURL1(s.toOpenArray(), url, usPathStart)
 
   proc search(ctx: JSContext; url: URL): JSValue {.jsfget.} =
     if url.search.len <= 1:
@@ -1485,11 +1488,11 @@ jsClassPublicDef(URL):
       url.hash = "#"
       parseURL1(s, url, usFragment)
 
-  proc parse(ctx: JSContext; url: string; base = JS_UNDEFINED.vc): URL
+  proc parse(ctx: JSContext; url: USVString; base = JS_UNDEFINED.vc): URL
       {.jsstfunc.} =
     return ctx.newURL(url, base).get(URL(nil))
 
-  proc canParse(ctx: JSContext; url: string; base = JS_UNDEFINED.vc): bool
+  proc canParse(ctx: JSContext; url: USVString; base = JS_UNDEFINED.vc): bool
       {.jsstfunc.} =
     return ctx.newURL(url, base).isOk
 

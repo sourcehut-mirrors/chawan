@@ -4503,10 +4503,18 @@ JSValue JS_NewAtomString(JSContext *ctx, const char *str)
     return val;
 }
 
+typedef enum JSToCStringEnum {
+    JS_CSTRING_FLAG_NONE, /* WTF-8 output, unpaired surrogates allowed */
+    JS_CSTRING_FLAG_CESU8, /* non-BMP1 codepoints are encoded as 1 or 2 utf-8
+                              sequences */
+    JS_CSTRING_FLAG_USV, /* UTF-8 output, unpaired surrogates are encoded as
+                            U+FFFD */
+} JSToCStringEnum;
+
 /* return (NULL, 0) if exception. */
 /* return pointer into a JSString with a live ref_count */
-/* cesu8 determines if non-BMP1 codepoints are encoded as 1 or 2 utf-8 sequences */
-const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BOOL cesu8)
+static const char *JS_ToCStringLen3(JSContext *ctx, size_t *plen,
+                                    JSValueConst val1, JSToCStringEnum flag)
 {
     JSValue val;
     JSString *str, *str_new;
@@ -4571,18 +4579,20 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
                 *q++ = c;
             } else {
                 if (is_hi_surrogate(c)) {
-                    if (pos < len && !cesu8) {
+                    if (pos < len && flag != JS_CSTRING_FLAG_CESU8) {
                         c1 = src[pos];
                         if (is_lo_surrogate(c1)) {
                             pos++;
                             c = from_surrogate(c, c1);
                         } else {
-                            /* Keep unmatched surrogate code points */
-                            /* c = 0xfffd; */ /* error */
+                            /* Keep unmatched surrogate code points? */
+                            if (flag == JS_CSTRING_FLAG_USV)
+                                c = 0xfffd; /* error */
                         }
                     } else {
-                        /* Keep unmatched surrogate code points */
-                        /* c = 0xfffd; */ /* error */
+                        /* Keep unmatched surrogate code points? */
+                        if (flag == JS_CSTRING_FLAG_USV)
+                            c = 0xfffd; /* error */
                     }
                 }
                 q += unicode_to_utf8(q, c);
@@ -4600,6 +4610,20 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
     if (plen)
         *plen = 0;
     return NULL;
+}
+
+const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1,
+                             BOOL cesu8)
+{
+    JSToCStringEnum flag;
+
+    flag = cesu8 ? JS_CSTRING_FLAG_CESU8 : JS_CSTRING_FLAG_NONE;
+    return JS_ToCStringLen3(ctx, plen, val1, flag);
+}
+
+const char *JS_ToCStringUSVLen(JSContext *ctx, size_t *plen, JSValueConst val1)
+{
+    return JS_ToCStringLen3(ctx, plen, val1, JS_CSTRING_FLAG_USV);
 }
 
 /* return an exception if the string contains a '\0' character */

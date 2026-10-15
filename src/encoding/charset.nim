@@ -6,6 +6,7 @@
 import std/algorithm
 
 import js/fromjs
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
@@ -477,7 +478,7 @@ const DefaultCharset* = csUtf8
 proc cmpCharsetPair(x: (string, Charset); k: string): int =
   cmpIgnoreCase(x[0], k)
 
-proc getCharset*(s: string): Charset =
+proc getCharset*(s: openArray[char]): Charset =
   ## Return a Charset from the label `s`. This function is equivalent to the
   ## standard "get an encoding from a string label" algorithm:
   ##
@@ -517,11 +518,11 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; charset: var Charset): JSCode =
   if JS_IsNull(val):
     charset = csUnknown
   else:
-    var s: string
+    var s: USVString
     ?ctx.fromJS(val, s)
-    charset = getCharset(s)
+    charset = getCharset(s.toOpenArray())
     if charset == csUnknown:
-      JS_ThrowTypeError(ctx, "unknown charset: %s", cstring(s))
+      JS_ThrowTypeError(ctx, "unknown charset: %s", s.p)
       return fjErr
   fjOk
 

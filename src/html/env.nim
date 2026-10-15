@@ -364,7 +364,7 @@ jsClassRaw(LocationDef, "Location"):
   proc host(location: Location): string {.jsuffget.} =
     return location.url.host
 
-  proc setHost(location: Location; s: string) {.jsfset: "host".} =
+  proc setHost(location: Location; s: USVString) {.jsfset: "host".} =
     let document = location.document
     if document == nil:
       return
@@ -375,7 +375,7 @@ jsClassRaw(LocationDef, "Location"):
   proc hostname(location: Location): string {.jsuffget.} =
     return location.url.hostname
 
-  proc setHostname(location: Location; s: string) {.jsfset: "hostname".} =
+  proc setHostname(location: Location; s: USVString) {.jsfset: "hostname".} =
     let document = location.document
     if document == nil:
       return
@@ -386,7 +386,7 @@ jsClassRaw(LocationDef, "Location"):
   proc port(location: Location): string {.jsuffget.} =
     return location.url.port
 
-  proc setPort(location: Location; s: string) {.jsfset: "port".} =
+  proc setPort(location: Location; s: USVString) {.jsfset: "port".} =
     let document = location.document
     if document == nil:
       return
@@ -397,7 +397,7 @@ jsClassRaw(LocationDef, "Location"):
   proc pathname(location: Location): string {.jsuffget.} =
     return location.url.pathname
 
-  proc setPathname(location: Location; s: string) {.jsfset: "pathname".} =
+  proc setPathname(location: Location; s: USVString) {.jsfset: "pathname".} =
     let document = location.document
     if document == nil:
       return

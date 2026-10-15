@@ -653,6 +653,8 @@ proc JS_ToCStringLen*(ctx: JSContext; plen: var csize_t; val1: JSValueConst):
   cstringConst
 proc JS_ToCString*(ctx: JSContext; val1: JSValueConst): cstringConst
 proc JS_ToCStringNZ*(ctx: JSContext; val1: JSValueConst): cstringConst
+proc JS_ToCStringUSVLen*(ctx: JSContext; plen: var csize_t;
+  val1: JSValueConst): cstringConst
 proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
 proc JS_ToUTF32String*(ctx: JSContext; pbuf: var ptr uint32;
   val: JSValueConst): cstringConst

@@ -651,9 +651,9 @@ proc toJS(ctx: JSContext; rgb: RGBColor): JSValue =
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var RGBColor):
     JSCode =
-  var s: string
+  var s: USVString
   ?ctx.fromJS(val, s)
-  let x = parseLegacyColor(s)
+  let x = parseLegacyColor(s.toOpenArray())
   if x.isErr:
     JS_ThrowTypeError(ctx, x.error)
     return fjErr

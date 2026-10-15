@@ -61,9 +61,9 @@ jsNamespaceDef(console):
     let console = ctx.getConsole()
     for i, val in argv:
       if JS_IsString(val):
-        var res: string
+        var res: USVString
         ?ctx.fromJS(val, res)
-        console.write(res)
+        console.write(res.toOpenArray())
       elif (var url: URL; ctx.fromJS(val, url).isOk):
         console.write($url)
       else:
