@@ -303,11 +303,14 @@ Following properties (functions/getters) are defined by `Pager`:
 `openBufferMenu(x?, y?)`
 : Opens the buffer selection menu at the specified position.
 
-`openCustomMenu(init = {x: buffer.acursorx, y: buffer.acursory, name})`
-: Open a custom menu at the specified position.  `init` is an object
-  with the optional fields `x`/`y` (numbers) and the mandatory field
-  `name`, which specifies the menu defined in menu.js to open.
-  Refer to the [Menu](#menu) section for details.
+`openCustomMenu(name, init = {x: buffer.acursorx, y: buffer.acursory})`
+: Open a custom menu at the specified position.  `name` specifies the menu
+  defined in menu.js to open.  `init` is an object with the optional fields
+  `x`/`y` (numbers).  Refer to the [Menu](#menu) section for details.
+
+  Note: a previous version of this function took `init` as the first
+  parameter, reading `name` from the object.  This still works, but is
+  deprecated and will be removed in the future.
 
 `closeMenu()`
 : Closes the menu if it is opened.
@@ -655,12 +658,12 @@ export function myMenu(m) {
 	m.line() /* separator line */
 	m.line("some unselectable text")
 	m.menu("pop up another menu",
-		() => pager.openCustomMenu({name: "anotherMenu"}))
+		() => pager.openCustomMenu("anotherMenu"))
 }
 ```
 
 Now you can open the custom menu using
-`pager.openCustomMenu({name: "myMenu"})`.
+`pager.openCustomMenu("myMenu")`.
 
 The parameter `m` is an instance of the `SelectBuilder` interface, for
 which public methods are:

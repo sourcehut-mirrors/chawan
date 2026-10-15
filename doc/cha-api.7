@@ -335,12 +335,17 @@ Opens the context menu at the specified position.
 \f[CR]openBufferMenu(x?, y?)\f[R]
 Opens the buffer selection menu at the specified position.
 .TP
-\f[CR]openCustomMenu(init = {x: buffer.acursorx, y: buffer.acursory, name})\f[R]
+\f[CR]openCustomMenu(name, init = {x: buffer.acursorx, y: buffer.acursory})\f[R]
 Open a custom menu at the specified position.
+\f[CR]name\f[R] specifies the menu defined in menu.js to open.
 \f[CR]init\f[R] is an object with the optional fields
-\f[CR]x\f[R]/\f[CR]y\f[R] (numbers) and the mandatory field
-\f[CR]name\f[R], which specifies the menu defined in menu.js to open.
+\f[CR]x\f[R]/\f[CR]y\f[R] (numbers).
 Refer to the Menu section for details.
+.RS
+Note: a previous version of this function took \f[CR]init\f[R] as the
+first parameter, reading \f[CR]name\f[R] from the object.
+This still works, but is deprecated and will be removed in the future.
+.RE
 .TP
 \f[CR]closeMenu()\f[R]
 Closes the menu if it is opened.
@@ -726,12 +731,12 @@ Then, export your menu as follows:
 	m.line() \f[I]/* separator line */\f[R]
 	m.line(\(dqsome unselectable text\(dq)
 	m.menu(\(dqpop up another menu\(dq,
-		() \f[B]=>\f[R] pager.openCustomMenu({name: \(dqanotherMenu\(dq}))
+		() \f[B]=>\f[R] pager.openCustomMenu(\(dqanotherMenu\(dq))
 }
 .EE
 .PP
 Now you can open the custom menu using
-\f[CR]pager.openCustomMenu({name: \(dqmyMenu\(dq})\f[R].
+\f[CR]pager.openCustomMenu(\(dqmyMenu\(dq)\f[R].
 .PP
 The parameter \f[CR]m\f[R] is an instance of the
 \f[CR]SelectBuilder\f[R] interface, for which public methods are:

@@ -1241,8 +1241,10 @@ Pager.prototype.openMenuInternal = async function(init) {
 }
 
 /* public */
-Pager.prototype.openCustomMenu = async function(init) {
-    const {x, y, name} = init;
+Pager.prototype.openCustomMenu = async function(name, init = {}) {
+    if (typeof name === "object") /* backwards compat with 0.5-dev */
+        init = name, name = init.name;
+    const {x, y} = init;
     if (!this.menuMap)
         this.menuMap = await Util.importModule("$CHA_DIR/menu.js");
     if (!(name in this.menuMap))

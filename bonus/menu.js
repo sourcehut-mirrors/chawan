@@ -4,8 +4,8 @@
  * Usage: put it in ~/.chawan/menu.js, customize to your liking, then bind
  * a key in ~/.chawan/config.toml like
 
-c = '() => pager.menu ? pager.closeMenu() : pager.openCustomMenu({name: "mainMenu"})'
-'s b' = '() => pager.openCustomMenu({name: "bufferMenu"})'
+c = '() => pager.menu ? pager.closeMenu() : pager.openCustomMenu("mainMenu")'
+'s b' = '() => pager.openCustomMenu("bufferMenu")'
 
  * Similarly, you can define new menus too; just export another function
  * and use its name in `openCustomMenu`.
@@ -17,7 +17,7 @@ export function mainMenu(m) {
     else
         m.item("Select text              (v)", cmd.cursorToggleSelection, "v")
     m.menu("Select buffer          (s b)",
-            () => pager.openCustomMenu({name: "bufferMenu"}), "s b")
+            () => pager.openCustomMenu("bufferMenu"), "s b")
     m.line()
     m.item("Copy page URL          (M-y)", cmd.copyURL, "M-y")
     m.item("Copy link              (y u)", cmd.copyCursorLink, "y u")
@@ -50,13 +50,13 @@ export function bufferMenu(m) {
     }
     m.bind(async () => {
         await select.click();
-        await pager.openCustomMenu({name: "bufferMenu"})
+        await pager.openCustomMenu("bufferMenu")
         select.cursorUp();
         pager.prevBuffer()
     }, ",");
     m.bind(async () => {
         await select.click();
-        await pager.openCustomMenu({name: "bufferMenu"})
+        await pager.openCustomMenu("bufferMenu")
         select.cursorDown();
         pager.nextBuffer()
     }, ".");
@@ -64,7 +64,7 @@ export function bufferMenu(m) {
         const buffer = pager.buffer;
         await select.click();
         pager.discardBuffer(pager.buffer, "any")
-        await pager.openCustomMenu({name: "bufferMenu"})
+        await pager.openCustomMenu("bufferMenu")
         if (buffer.tab)
             pager.setBuffer(buffer);
     }, "D");
