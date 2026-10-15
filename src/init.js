@@ -696,26 +696,9 @@ Pager.prototype.showFullAlert = function() {
 }
 
 /* private */
-Pager.prototype.setTab = function(buffer, tab) {
-    const removed = buffer.setTab(tab);
-    if (removed != null) {
-        if (removed.next != null)
-            removed.next.prev = removed.prev;
-        if (removed.prev != null)
-            removed.prev.next = removed.next;
-        if (this.tabHead == removed)
-            this.tabHead = removed.next;
-        removed.prev = removed.next = null;
-        /* tab cannot be null */
-        if (this.tabHead == null)
-            this.tab = this.tabHead = new Tab()
-    }
-}
-
-/* private */
 Pager.prototype.addBuffer = function(buffer) {
     this.navDirection = "next";
-    this.setTab(buffer, this.tab);
+    buffer.setTab(this.tab);
     this.setBuffer(buffer);
 }
 
@@ -737,7 +720,7 @@ Pager.prototype.addTab = function(buffer = "about:blank") {
     if (tab.next != null)
         tab.next.prev = tab;
     oldTab.next = tab;
-    pager.setTab(buffer, tab);
+    buffer.setTab(tab);
     this.setBuffer(buffer);
 }
 
@@ -1783,7 +1766,7 @@ Pager.prototype.deleteBuffer = function(buffer, setTarget = null) {
     if (buffer.replace != null)
         buffer.replace = buffer.replace.replaceRef = null;
     const wasCurrent = this.buffer == buffer;
-    this.setTab(buffer, null);
+    buffer.setTab(null);
     for (const name in this.pinned) {
         if (this.pinned[name] == buffer)
             this.pinned[name] = null;
@@ -1905,7 +1888,7 @@ const ReTextStart = /\S/gu;
                             nc.replace = replace;
                             replace.replaceRef = nc;
                         }
-                        nc.setLoadInfo("Redirecting to " + url);
+                        nc.#setLoadInfo("Redirecting to " + url);
                     }
                 }
             } else {
@@ -2093,7 +2076,7 @@ const ReTextStart = /\S/gu;
             if (visible && pager.bufferIface != this.iface)
                 pager.setVisibleBuffer(this);
             if (this.init.loadInfo != "") {
-                this.setLoadInfo("");
+                this.#setLoadInfo("");
                 if (visible && pager.alertState == "loadInfo") {
                     pager.alertState = "normal";
                     pager.queueStatusUpdate();
@@ -2134,13 +2117,13 @@ const ReTextStart = /\S/gu;
             const [n, len, bs] = await this.iface.load();
             switch (bs) {
             case "loadingPage":
-                this.setLoadInfo(`${Util.convertSize(n)} loaded`);
+                this.#setLoadInfo(`${Util.convertSize(n)} loaded`);
                 break;
             case "loadingStyle":
-                this.setLoadInfo(`${n}/${len} stylesheets loaded`);
+                this.#setLoadInfo(`${n}/${len} stylesheets loaded`);
                 break;
             case "loadingImages":
-                this.setLoadInfo(`${n}/${len} images loaded`);
+                this.#setLoadInfo(`${n}/${len} images loaded`);
                 break;
             default: /* loaded */
                 if (!this.iface.gotLines)
@@ -2340,9 +2323,18 @@ const ReTextStart = /\S/gu;
             else
                 tab.current.#append(this);
         }
-        if (oldTab != null && oldTab.current == null)
-            return oldTab;
-        return null;
+        if (oldTab != null && oldTab.current == null) {
+            if (oldTab.next != null)
+                oldTab.next.prev = oldTab.prev;
+            if (oldTab.prev != null)
+                oldTab.prev.next = oldTab.next;
+            if (pager.tabHead == oldTab)
+                pager.tabHead = oldTab.next;
+            oldTab.prev = oldTab.next = null;
+            /* tab cannot be null */
+            if (pager.tabHead == null)
+                pager.tab = pager.tabHead = new Tab()
+        }
     }
 
     /* private */ markPos0() {
@@ -2446,7 +2438,7 @@ const ReTextStart = /\S/gu;
         if (iface != null && iface.loadState != "loading")
             return;
         this.loadState = "canceled";
-        this.setLoadInfo("");
+        this.#setLoadInfo("");
         if (iface != null)
             iface.cancel();
         else {
@@ -2456,7 +2448,7 @@ const ReTextStart = /\S/gu;
         pager.alert("Canceled loading")
     }
 
-    /* private */ setLoadInfo(msg) {
+    #setLoadInfo(msg) {
         this.init.loadInfo = msg;
         pager.copyLoadInfo(this.init);
     }
