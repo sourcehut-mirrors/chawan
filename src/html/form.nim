@@ -399,7 +399,7 @@ jsClassDef(HTMLFormControlsCollection):
       match: isRadioNode,
       root: this.root,
       invalid: true,
-      atoms: @[name],
+      atoms: newDOMTokenArray(name),
       parent: this,
       mode: cmTree
     )

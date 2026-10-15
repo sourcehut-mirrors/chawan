@@ -688,7 +688,7 @@ proc dup(this: DOMTokenArray): ptr DOMTokenArrayBuffer =
     other.toks[u] = tok
   other
 
-proc newDOMTokenArray*(toks: openArray[CAtom]): DOMTokenArray =
+proc newDOMTokenArray*(toks: varargs[CAtom]): DOMTokenArray =
   assert int64(toks.len) < int64(uint32.high)
   if toks.len == 0:
     return DOMTokenArray(nil)

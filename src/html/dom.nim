@@ -254,7 +254,7 @@ type
     invalid*: bool
     match*: CollectionMatchFun
     snapshot*: seq[Node]
-    atoms*: seq[CAtom]
+    atoms*: DOMTokenArray
 
   NodeIteratorLike = JSRef[NodeIteratorLikeObj]
 
@@ -2811,7 +2811,7 @@ proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtom):
   let this = newHTMLCollection(root.asNode, match, cmSubtree,
     cnGetElementsByTagName)
   if this != nil:
-    this.atoms = @[tagName]
+    this.atoms = newDOMTokenArray(tagName)
   this
 
 proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
@@ -2823,10 +2823,11 @@ proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
   let this = newHTMLCollection(root.asNode, isElementWithClass, cmSubtree,
     cnGetElementsByClassName)
   if this != nil:
-    this.atoms.add(param)
+    var atoms = @[param]
     for class in classNames.toOpenArray().split(AsciiWhitespace):
       if class.len > 0:
-        this.atoms.add(class.toAtom())
+        atoms.add(class.toAtom())
+    this.atoms = newDOMTokenArray(atoms)
   this
 
 proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
@@ -2972,8 +2973,10 @@ proc getChildrenOf(node: ParentNode; name: CollectionName;
   if collection == nil:
     collection = newHTMLCollection(node.asNode, isHTMLElementOf, mode, name)
     if collection != nil:
+      var atoms: seq[CAtom] = @[]
       for tag in tags:
-        collection.atoms.add(tag.view())
+        atoms.add(tag.view())
+      collection.atoms = newDOMTokenArray(atoms)
   collection
 
 jsClassPublicDef(ParentNode): # fake class
@@ -3451,7 +3454,7 @@ proc getElementsById*(document: Document; id: CAtom): JSRootRef =
             cnGetElementsById
           )
           if collection != nil:
-            collection.atoms = @[id]
+            collection.atoms = newDOMTokenArray(id)
           return collection.asRootRef
         return cast[Element](it).asRootRef
   JSRootRef(nil)
@@ -3910,7 +3913,7 @@ jsClassPublicDef(Document):
       cnGetElementsByName
     )
     if this != nil:
-      this.atoms = @[name]
+      this.atoms = newDOMTokenArray(name)
     this
 
   proc getElementsByTagName(document: Document; tagName: CAtom):
