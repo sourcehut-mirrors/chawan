@@ -586,6 +586,14 @@ proc fromJS(ctx: JSContext; val: JSValueConst; ob: var OptionalBool):
     ob = if b: obTrue else: obFalse
   status
 
+type NodeView = distinct ptr EventTargetObj
+
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var NodeView): JSCode =
+  var targetp: pointer
+  ?ctx.fromJS(val, nodeClassID, targetp)
+  res = cast[NodeView](targetp)
+  fjOk
+
 type MutationObserverInit {.pure.} = object of JSDict
   childList {.jsdefault.}: bool
   attributes {.jsdefault.}: OptionalBool
@@ -622,16 +630,10 @@ jsClassDef(MutationObserver):
     for record in this.records:
       rt.markObj(record, markFunc)
 
-  proc observe(ctx: JSContext; this: MutationObserver; jsTarget: JSValueConst;
-      jsInit = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
-    var targetp: pointer
-    ?ctx.fromJS(jsTarget, nodeClassID, targetp)
-    let target = cast[ptr EventTargetObj](targetp)
-    var init = MutationObserverInit(
-      attributeFilter: trace(JS_UNDEFINED)
-    )
-    if not JS_IsUndefined(jsInit):
-      ?ctx.fromJS(jsInit, init)
+  proc observe(ctx: JSContext; this: MutationObserver; target: NodeView;
+      init = MutationObserverInit(attributeFilter: trace(JS_UNDEFINED))):
+      JSValue {.jsfunc.} =
+    let target = cast[ptr EventTargetObj](target)
     var flags: set[ObservedItemFlag]
     var attributeFilter: seq[CAtom]
     if not JS_IsUndefined(init.attributeFilter):
