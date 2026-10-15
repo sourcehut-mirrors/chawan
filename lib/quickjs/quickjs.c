@@ -22444,28 +22444,29 @@ typedef struct JSFunctionDef {
     struct list_head child_list; /* list of JSFunctionDef.link */
     struct list_head link;
 
-    BOOL is_eval; /* TRUE if eval code */
     int eval_type; /* only valid if is_eval = TRUE */
-    BOOL is_global_var; /* TRUE if variables are not defined locally:
-                           eval global, eval module or non strict eval */
-    BOOL is_func_expr; /* TRUE if function expression */
-    BOOL has_home_object; /* TRUE if the home object is available */
-    BOOL has_prototype; /* true if a prototype field is necessary */
-    BOOL has_simple_parameter_list;
-    BOOL has_parameter_expressions; /* if true, an argument scope is created */
-    BOOL has_use_strict; /* to reject directive in special cases */
-    BOOL has_eval_call; /* true if the function contains a call to eval() */
-    BOOL has_arguments_binding; /* true if the 'arguments' binding is
-                                   available in the function */
-    BOOL has_this_binding; /* true if the 'this' and new.target binding are
-                              available in the function */
-    BOOL new_target_allowed; /* true if the 'new.target' does not
-                                throw a syntax error */
-    BOOL super_call_allowed; /* true if super() is allowed */
-    BOOL super_allowed; /* true if super. or super[] is allowed */
-    BOOL arguments_allowed; /* true if the 'arguments' identifier is allowed */
-    BOOL is_derived_class_constructor;
-    BOOL in_function_body;
+    BOOL is_eval : 1; /* TRUE if eval code */
+    BOOL is_global_var : 1; /* TRUE if variables are not defined locally:
+                               eval global, eval module or non strict eval */
+    BOOL is_func_expr : 1; /* TRUE if function expression */
+    BOOL has_home_object : 1; /* TRUE if the home object is available */
+    BOOL has_prototype : 1; /* true if a prototype field is necessary */
+    BOOL has_simple_parameter_list : 1;
+    BOOL has_parameter_expressions : 1; /* if true, an argument scope is created */
+    BOOL has_use_strict : 1; /* to reject directive in special cases */
+    BOOL has_eval_call : 1; /* true if the function contains a call to eval() */
+    BOOL has_arguments_binding : 1; /* true if the 'arguments' binding is
+                                       available in the function */
+    BOOL has_this_binding : 1; /* true if the 'this' and new.target binding are
+                                  available in the function */
+    BOOL new_target_allowed : 1; /* true if the 'new.target' does not
+                                    throw a syntax error */
+    BOOL super_call_allowed : 1; /* true if super() is allowed */
+    BOOL super_allowed : 1; /* true if super. or super[] is allowed */
+    BOOL arguments_allowed : 1; /* true if the 'arguments' identifier is allowed */
+    BOOL is_derived_class_constructor : 1;
+    BOOL in_function_body : 1;
+    BOOL need_home_object : 1;
     JSFunctionKindEnum func_kind : 8;
     JSParseFunctionEnum func_type : 8;
     uint8_t js_mode; /* bitmap of JS_MODE_x */
@@ -22491,7 +22492,6 @@ typedef struct JSFunctionDef {
     int new_target_var_idx; /* variable containg the 'new.target' value, -1 if none */
     int this_active_func_var_idx; /* variable containg the 'this.active_func' value, -1 if none */
     int home_object_var_idx;
-    BOOL need_home_object;
 
     int scope_level;    /* index into fd->scopes if the current lexical scope */
     int scope_first;    /* index into vd->vars of first lexically scoped variable */
@@ -22507,8 +22507,8 @@ typedef struct JSFunctionDef {
 
     DynBuf byte_code;
     int last_opcode_pos; /* -1 if no last opcode */
-    const uint8_t *last_opcode_source_ptr;
     BOOL use_short_opcodes; /* true if short opcodes are used in byte_code */
+    const uint8_t *last_opcode_source_ptr;
 
     LabelSlot *label_slots;
     int label_size; /* allocated size for label_slots[] */
@@ -22546,8 +22546,8 @@ typedef struct JSFunctionDef {
     char *source;  /* raw source, utf-8 encoded */
     int source_len;
 
-    JSModuleDef *module; /* != NULL when parsing a module */
     BOOL has_await; /* TRUE if await is used (used in module eval) */
+    JSModuleDef *module; /* != NULL when parsing a module */
 } JSFunctionDef;
 
 typedef struct JSToken {
