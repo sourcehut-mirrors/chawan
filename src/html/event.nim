@@ -138,9 +138,12 @@ type
     oifCharacterData, oifCharacterDataOldValue, oifSubtree
 
   EventListenerFlag = enum
-    elfOnce, elfPassive
+    elfOnce, elfPassive, elfRemoved, elfInternal
 
   EventListener {.acyclic.} = ref object
+    eventType: CAtom
+    eflags: set[EventListenerFlag]
+    capture: bool
     flags*: set[ObservedItemFlag]
     case t: EventListenerType
     of eltEventListener:
@@ -149,15 +152,10 @@ type
       # * an object (whose handleEvent property will be invoked)
       # * a function
       callback: JSObjectNil
-      eventType: CAtom
-      eflags: set[EventListenerFlag]
-      capture: bool
-      internal: bool
-      removed: bool
       signal: AbortSignal
     of eltMutationObserver:
       observer*: MutationObserver
-      attributeFilter*: seq[CAtom]
+      attributeFilter*: DOMTokenArray
     # order is: eltEventListener nodes -> eltMutationObserver nodes
     next: EventListener
 
@@ -666,13 +664,13 @@ jsClassDef(MutationObserver):
         if el.observer == this:
           #TODO remove transient registered observers
           el.flags = flags
-          el.attributeFilter = move(attributeFilter)
+          el.attributeFilter = newDOMTokenArray(attributeFilter)
           break add
       let el = EventListener(
         t: eltMutationObserver,
         observer: this,
         flags: flags,
-        attributeFilter: move(attributeFilter)
+        attributeFilter: newDOMTokenArray(attributeFilter)
       )
       var it = target.eventListener
       if it == nil:
@@ -716,15 +714,17 @@ proc defaultPassiveValue(eventType: CAtom; eventTarget: EventTarget): bool =
 proc findEventListener(eventTarget: EventTarget; eventType: CAtom;
     callback: JSObjectNil; capture: bool): EventListener =
   for it in eventTarget.eventListeners:
-    if not it.internal and not it.removed and it.eventType == eventType and
-        it.callback == callback and it.capture == capture:
+    if it.eflags * {elfInternal, elfRemoved} == {} and
+        it.eventType == eventType and it.callback == callback and
+        it.capture == capture:
       return it
   nil
 
 proc findInternalEventListener(eventTarget: EventTarget;
     eventType: StaticAtom): EventListener =
   for it in eventTarget.eventListeners:
-    if it.internal and not it.removed and it.eventType == eventType:
+    if it.eflags * {elfInternal, elfRemoved} == {elfInternal} and
+        it.eventType == eventType:
       return it
   nil
 
@@ -765,7 +765,6 @@ proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
       t: eltEventListener,
       eventType: eventType,
       capture: capture,
-      internal: internal,
       callback: callback,
       next: target.eventListener,
       signal: signal
@@ -774,6 +773,8 @@ proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
       listener.eflags.incl(elfPassive)
     if once:
       listener.eflags.incl(elfOnce)
+    if internal:
+      listener.eflags.incl(elfInternal)
     target.eventListener = listener
     if signal != nil:
       let jsTarget = ?trace(ctx.toJS(target))
@@ -823,9 +824,9 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     eventType: StaticAtom) =
   var prev: EventListener = nil
   for it in eventTarget.eventListeners:
-    if it.eventType == eventType and it.internal:
+    if it.eventType == eventType and elfInternal in it.eflags:
       it.callback = JSObjectNil(nil)
-      it.removed = true
+      it.eflags.incl(elfRemoved)
       if prev == nil:
         eventTarget.eventListener = it.next
       else:
@@ -900,7 +901,7 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
   let event = dctx.event
   event.currentTarget = item.target
   for el in item.els.ritems:
-    if el.removed:
+    if elfRemoved in el.eflags:
       continue # removed, presumably by a previous handler
     if elfPassive in el.eflags:
       event.flags.incl(efInPassiveListener)
@@ -978,10 +979,11 @@ jsClassPublicDef(EventTarget):
     let capture = ?ctx.flatten(options)
     var prev: EventListener = nil
     for it in eventTarget.eventListeners:
-      if not it.internal and not it.removed and it.eventType == eventType and
-          it.callback == callback and it.capture == capture:
+      if it.eflags * {elfInternal, elfRemoved} == {} and
+          it.eventType == eventType and it.callback == callback and
+          it.capture == capture:
         it.callback = JSObjectNil(nil)
-        it.removed = true
+        it.eflags.incl(elfRemoved)
         if prev == nil:
           eventTarget.eventListener = it.next
         else:
