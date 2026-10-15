@@ -474,25 +474,21 @@ jsClassPublicDef(Select):
     select.setCursorYNear(select.fromy + select.maxh - 1)
 
   # private
-  proc cursorPrevMatch(ctx: JSContext; select: Select; re: JSValueConst;
-      wrap: bool; n: int): Opt[void] {.jsfunc.} =
-    var plen: cint
-    let p = JS_GetRegExpBytecode(ctx, re, plen)
-    if p == nil:
-      return err()
-    for i in 0 ..< n:
-      select.cursorPrevMatch(cast[REBytecode](p), wrap)
-    ok()
-
-  # private
   proc cursorNextMatch(ctx: JSContext; select: Select; re: JSValueConst;
       wrap: bool; n: int): Opt[void] {.jsfunc.} =
     var plen: cint
     let p = JS_GetRegExpBytecode(ctx, re, plen)
     if p == nil:
       return err()
+    let reverse = n < 0
+    var n = n
+    if n < 0:
+      n = -n
     for i in 0 ..< n:
-      select.cursorNextMatch(cast[REBytecode](p), wrap)
+      if not reverse:
+        select.cursorNextMatch(cast[REBytecode](p), wrap)
+      else:
+        select.cursorPrevMatch(cast[REBytecode](p), wrap)
     ok()
 
   # public

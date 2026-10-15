@@ -575,18 +575,17 @@ Pager.prototype.setLineEdit = async function(mode, prompt, obj) {
 Pager.prototype.searchNext = async function(n = 1) {
     const regex = this.regex;
     if (regex) {
-        let reverse = this.reverseSearch;
-        if (n < 0) {
+        if (this.reverseSearch)
             n = -n;
-            reverse = !reverse;
-        }
-        const fun = reverse ? "cursorPrevMatch" : "cursorNextMatch";
         const wrap = config.search.wrap;
         if (this.menu)
-            return this.menu[fun](this.regex, wrap, true, n);
+            return this.menu.cursorNextMatch(this.regex, wrap, true, n);
         const buffer = this.buffer;
         buffer.markPos0();
-        await buffer[fun](regex, wrap, true, n);
+        const y = buffer.cursory;
+        await buffer.cursorNextMatch(regex, wrap, true, n);
+        if ((y > buffer.cursory) != (n < 0))
+            pager.alert("Search wrapped");
         buffer.markPos();
     } else
         this.alert("No previous regular expression");
@@ -645,8 +644,9 @@ Pager.prototype.isearchForward = async function(reverse = false) {
                     let wrap = config.search.wrap;
                     const iface = buffer.iface;
                     if (iface != null) {
-                        const fun = reverse ? "findPrevMatch" : "findNextMatch";
-                        const [x, y, w] = await iface[fun](re, cx, cy, wrap, 1);
+                        const n = reverse ? -1 : 1;
+                        const [x, y, w] = await iface.findNextMatch(re, cx, cy,
+                                                                    wrap, n);
                         if (this.isearchIter === iter)
                             buffer.onMatch(x, y, w, false);
                     }
@@ -2363,8 +2363,6 @@ const ReTextStart = /\S/gu;
     }
 
     /* private */ async cursorNextMatch(re, wrap, refresh, n) {
-        if (this.select)
-            return this.select.cursorNextMatch(re, wrap, n);
         const iface = this.iface;
         const cx = this.cursorx;
         const cy = this.cursory;
@@ -2375,21 +2373,19 @@ const ReTextStart = /\S/gu;
     }
 
     /* private */ async cursorPrevMatch(re, wrap, refresh, n) {
-        if (this.select)
-            return this.select.cursorPrevMatch(re, wrap, n);
         const iface = this.iface;
         const cx = this.cursorx;
         const cy = this.cursory;
         if (iface == null)
             return;
-        const [x, y, w] = await iface.findPrevMatch(re, cx, cy, wrap, n);
+        const [x, y, w] = await iface.findNextMatch(re, cx, cy, wrap, -n);
         this.onMatch(x, y, w, refresh);
     }
 
     /* private */ async #cursorPrevWordImpl(re, n = 1) {
         const cx = this.cursorx;
         const cy = this.cursory;
-        const [x, y, w] = await this.findPrevMatch(re, cx, cy, false, n);
+        const [x, y, w] = await this.findNextMatch(re, cx, cy, false, -n);
         if (y >= 0)
             this.setCursorXY(x + w - 1, y);
         else
@@ -2406,12 +2402,12 @@ const ReTextStart = /\S/gu;
             this.cursorLineEnd();
     }
 
-    /* public */ findPrevMatch(regex, x, y, wrap = false, n = 1) {
-        return this.iface.findPrevMatch(regex, x, y, wrap, n);
-    }
-
     /* public */ findNextMatch(regex, x, y, wrap = false, n = 1) {
         return this.iface.findNextMatch(regex, x, y, wrap, n);
+    }
+
+    /* public */ findPrevMatch(regex, x, y, wrap = false, n = 1) {
+        return this.findNextMatch(regex, x, y, wrap, -n);
     }
 
     /* private */ startSelection(t, mouse, x1 = undefined) {
@@ -2809,7 +2805,7 @@ const ReTextStart = /\S/gu;
         const iface = this.iface
         if (iface == null)
             return;
-        let p1 = iface.findPrevMatch(ReViWordStart, x + 1, y, false, 1);
+        let p1 = iface.findNextMatch(ReViWordStart, x + 1, y, false, -1);
         let p2 = iface.findNextMatch(ReViWordEnd, x - 1, y, false, 1);
         let [x1, y1, w1] = await p1;
         let [x2, y2, w2] = await p2;

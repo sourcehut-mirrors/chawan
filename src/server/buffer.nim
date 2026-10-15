@@ -408,62 +408,44 @@ proc findRevNthLink(bc: BufferContext; handle: PagerHandle; i: int):
         link = fl
   return (-1, -1)
 
-proc findPrevMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
+proc findNextMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
     x, y, endy: int; wrap: bool; n: int): BufferMatch {.proxy.} =
   if n <= 0 or x < 0 or y < 0 or y >= bc.lines.len:
     return BufferMatch(x: -1, y: -1)
-  var n = n
   var y = y
-  var b = bc.cursorBytes(y, x)
-  var first = true
-  while true:
-    if y < 0:
-      if not wrap:
-        break
-      y = bc.lines.high
-    let s = bc.lines[y].str
-    if b < 0:
-      b = s.len
-    let cap = regex.matchLast(s.toOpenArray(0, b - 1), 0)
-    if cap.s >= 0:
-      let x = s.width(0, cap.s)
-      let w = s.toOpenArray(cap.s, cap.e - 1).width()
-      dec n
-      if n == 0:
-        return BufferMatch(x: x, y: y, w: w)
-    if y == endy and not first:
-      break
-    first = false
-    b = -1
-    dec y
-  BufferMatch(x: -1, y: -1)
-
-proc findNextMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
-    cursorx, cursory, endy: int; wrap: bool; n: int): BufferMatch {.proxy.} =
-  if n <= 0 or cursorx < 0 or cursory < 0 or cursory >= bc.lines.len:
-    return BufferMatch(x: -1, y: -1)
-  var y = cursory
   var n = n
-  var b = bc.cursorBytes(y, cursorx + 1)
+  let forward = n > 0
+  if not forward:
+    n = -n
+  var b = if forward: bc.cursorBytes(y, x + 1) else: bc.cursorBytes(y, x)
   var first = true
   while true:
-    if y >= bc.lines.len:
+    if forward and y >= bc.lines.len or not forward and y < 0:
       if not wrap:
         break
-      y = 0
+      y = if forward: 0 else: bc.lines.high
     let s = bc.lines[y].str
-    let cap = regex.matchFirst(s, b)
+    if not forward and b < 0:
+      b = s.len
+    let cap = if forward:
+      regex.matchFirst(s, b)
+    else:
+      regex.matchLast(s.toOpenArray(0, b - 1), 0)
     if cap.s >= 0:
       let x = s.width(0, cap.s)
       let w = s.toOpenArray(cap.s, cap.e - 1).width()
       dec n
       if n == 0:
         return BufferMatch(x: x, y: y, w: w)
-    b = 0
     if y == endy and not first:
       break
     first = false
-    inc y
+    if forward:
+      b = 0
+      inc y
+    else:
+      b = -1
+      dec y
   BufferMatch(x: -1, y: -1)
 
 proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: string;
@@ -1739,7 +1721,6 @@ const ProxyMap = [
   bcFindNextMatch: findNextMatchCmd,
   bcFindNextParagraph: findNextParagraphCmd,
   bcFindPrevLink: findPrevLinkCmd,
-  bcFindPrevMatch: findPrevMatchCmd,
   bcFindRevNthLink: findRevNthLinkCmd,
   bcForceReshape: forceReshapeCmd,
   bcGetLines: getLinesCmd,
