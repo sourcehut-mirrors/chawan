@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import utils/chahash
+import utils/cowstr
 
 # Robin Hood hashing helpers
 iterator prepareTableAdd*[T](tab: var seq[T]; load, init: int): T {.inline.} =
@@ -79,7 +80,7 @@ proc tabSwap*(ourHome: var int; theirHash: Hash; i, mask: int): bool =
 type
   StrMapItem* = ref object of RootObj
     hcache*: Hash
-    s*: string
+    s*: Str
 
   StrMap* = object
     load*: int
@@ -124,6 +125,9 @@ proc getOrDefault*(map: StrMap; s: openArray[char]): StrMapItem =
       return it
   return nil
 
+proc getOrDefault*(map: StrMap; s: Str): StrMapItem =
+  map.getOrDefault(s.toOpenArray())
+
 proc put0(map: var StrMap; item: StrMapItem; override: bool): bool =
   # returns true if a new item was inserted
   # if override, existing items are replaced by the new one
@@ -144,7 +148,7 @@ proc put0(map: var StrMap; item: StrMapItem; override: bool): bool =
   true
 
 proc putInit(map: var StrMap; item: StrMapItem) =
-  item.hcache = item.s.hash()
+  item.hcache = item.s.toOpenArray().hash()
   for it in map.tab.prepareTableAdd(map.load, init = 16):
     if it != nil:
       discard map.put0(it, override = false)

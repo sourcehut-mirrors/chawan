@@ -1,33 +1,15 @@
-## Converts `Option` from `std/options` into nullable JS types.
-## Use this if you want to return either a string or take a ref object
-## parameter that can be nil.
+## Nullable JS types.  Use this if you want to take a ref object parameter
+## that can be nil.
+##
+## For nullable strings, use StrNil or DOMStringNil instead.
 
 {.push raises: [].}
-
-import std/options
 
 import js/fromjs
 import js/jsref
 import js/jsutils
 import js/quickjs
 import js/tojs
-
-proc toJS*[T](ctx: JSContext; opt: Option[T]): JSValue =
-  if opt.isSome:
-    return ctx.toJS(opt.get)
-  return JS_NULL
-
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
-    JSCode =
-  mixin fromJS
-  if JS_IsNull(val):
-    res = none(T)
-  else:
-    var x: T
-    if ctx.fromJS(val, x).isErr:
-      return fjErr
-    res = option(move(x))
-  fjOk
 
 type JSNullRef*[T] = distinct JSRef[T]
 

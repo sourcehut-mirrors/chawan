@@ -4,7 +4,6 @@ when NimMajor >= 2:
   import std/assertions
 import std/algorithm
 import std/math
-import std/options
 import std/setutils
 
 import chame/tags
@@ -41,12 +40,11 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
-import utils/bytearray
 import utils/chahash
 import utils/chaos
+import utils/cowstr
 import utils/dtoawrap
 import utils/opt
-import utils/refstring
 import utils/tabutil
 import utils/twtstr
 
@@ -101,7 +99,7 @@ type
     shared*: seq[HTMLImageElement]
     bmp: NetworkBitmap
     cacheId: int
-    subtype: string
+    subtype: Str
 
   Window* = JSRef[WindowObj]
 
@@ -129,8 +127,8 @@ type
     # list of streams that must be closed for canvas rendering on load
     pendingCanvasCtls*: seq[CanvasRenderingContext2D]
     imageTypes*: MimeTypesImages
-    userAgent*: string
-    referrer*: string
+    userAgent*: Str
+    referrer*: Str
     performance*: Performance
     customElements*: CustomElementRegistry
     urandom*: PosixStream
@@ -339,7 +337,7 @@ type
   DOMImplementation = distinct Document # strong ref
 
   DocumentWriteBuffer* = ref object
-    data*: string
+    data*: Growbuf
     i*: int
     prev*: DocumentWriteBuffer
 
@@ -374,7 +372,7 @@ type
     uaSheetsHead: CSSStylesheet
     userSheet: CSSStylesheet
     authorSheetsHead: CSSStylesheet
-    sheetTitle: string
+    sheetTitle: Str
     ruleMap: CSSRuleMap
     parser*: RootRef
     liveCollections: seq[ptr CollectionLikeObj]
@@ -386,8 +384,7 @@ type
   XMLDocument = JSRef[XMLDocumentObj]
 
   CharacterDataObj {.pure.} = object of NodeObj
-    # Note: layout assumes this is only modified directly by appending text.
-    data*: RefString
+    data*: Str
 
   CharacterData* = JSRef[CharacterDataObj]
 
@@ -404,7 +401,7 @@ type
   CDATASection = JSRef[CDATASectionObj]
 
   ProcessingInstructionObj {.final.} = object of CharacterDataObj
-    target: string
+    target: Str
 
   ProcessingInstruction = JSRef[ProcessingInstructionObj]
 
@@ -441,9 +438,9 @@ type
   ShadowRoot = JSRef[ShadowRootObj]
 
   DocumentTypeObj {.pure, final.} = object of NodeObj
-    name*: string
-    publicId*: string
-    systemId*: string
+    name*: Str
+    publicId*: Str
+    systemId*: Str
 
   DocumentType = JSRef[DocumentTypeObj]
 
@@ -517,7 +514,7 @@ type
   HTMLLinkElementObj {.pure, final.} = object of SheetElementObj
     relList: DOMTokenArray
     fetchStarted: bool
-    enabled: Option[bool]
+    enabled: OptionalBool
 
   HTMLTemplateElement* = JSRef[HTMLTemplateElementObj]
 
@@ -535,7 +532,7 @@ type
     alreadyStarted*: bool
     delayingTheLoadEvent: bool
     scriptType: ScriptType
-    internalNonce: string
+    internalNonce: Str
     scriptResult*: ScriptResult
     onReady: (proc(element: HTMLScriptElement) {.nimcall, raises: [].})
     next*: HTMLScriptElement # scriptsToExecSoon/InOrder/OnLoad
@@ -602,18 +599,18 @@ type
 proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
   layer: CAtom; finish: LoadSheetFinish; i: int; parseEnv: ParseSheetEnv)
 
-proc newCDATASection(document: Document; data: RefString): CDATASection
-proc newComment*(document: Document; data: RefString): Comment
-proc newText*(document: Document; data: sink string): Text
-proc newText*(document: Document; data: DOMString): Text
-proc newText(ctx: JSContext; data = initDOMStringLit("")): Text
+proc newCDATASection(document: Document; data: Str): CDATASection
+proc newComment*(document: Document; data: Str): Comment
+proc newText*(document: Document; data: sink Str): Text
+proc newText*(document: Document; data: sink DOMString): Text
+proc newText(ctx: JSContext; data: sink DOMString = DOMString(str(""))): Text
 proc newDocument*(url: URL): Document
 proc newDOMImplementation(ctx: JSContext; document: Document): JSObjectErr
-proc newDocumentType*(document: Document; name, publicId, systemId: string):
+proc newDocumentType*(document: Document; name, publicId, systemId: sink Str):
   DocumentType
 proc newDocumentFragment(document: Document): DocumentFragment
-proc newProcessingInstruction(document: Document; target: string;
-  data: RefString): ProcessingInstruction
+proc newProcessingInstruction(document: Document; target, data: Str):
+  ProcessingInstruction
 proc newElement*(document: Document; localName: CAtom;
   namespace = satNamespaceHTML): Element
 proc newElement(document: Document;
@@ -625,7 +622,7 @@ proc newEmptyNodeList(): NodeList
 proc newNodeList(nodes: openArray[Node]): NodeList
 proc newNodeList(root: Node; match: CollectionMatchFun; mode: CollectionMode;
   name: CollectionName): NodeList
-proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
+proc newCSSStyleDeclaration(element: Element; value: Str; computed = false;
   readonly = false): CSSStyleDeclaration
 
 proc isConnected*(node: Node): bool
@@ -635,15 +632,15 @@ proc nextDescendantShadow(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc parentNodeHost(node: Node): Node
 proc previousSibling*(node: Node): Node
-proc serializeFragment(res: var string; node: Node; writeShadow: bool)
-proc serializeFragmentInner*(res: var string; child: Node; parentType: TagType;
+proc serializeFragment(res: var Growbuf; node: Node; writeShadow: bool)
+proc serializeFragmentInner*(res: var Growbuf; child: Node; parentType: TagType;
   writeShadow: bool)
 
 proc getChildList*(node: ParentNode): seq[Node]
 proc insert*(parent: ParentNode; ctx: JSContext; node, before: Node;
   suppressObservers = false)
 proc replaceAll(parent: ParentNode; ctx: JSContext; node: Node)
-proc replaceAll*(parent: ParentNode; ctx: JSContext; ds: DOMString)
+proc replaceAll*(parent: ParentNode; ctx: JSContext; ds: sink DOMString)
 proc firstChild(parent: ParentNode): lent Node
 proc lastChild*(parent: ParentNode): lent Node
 proc firstChildShadow(parent: ParentNode): lent Node
@@ -655,7 +652,7 @@ proc firstElementChild*(node: ParentNode): Element
 proc addElementId(this: RootNode; element: Element)
 proc removeElementId(this: RootNode; element: Element)
 
-proc setData(ctx: JSContext; this: CharacterData; data: DOMStringNull)
+proc setData(ctx: JSContext; this: CharacterData; data: DOMStringEmpty)
 
 proc addLiveCollection(document: Document; collection: CollectionLike)
 proc removeLiveCollection(document: Document; collection: CollectionLike)
@@ -668,8 +665,8 @@ proc findFirst*(document: Document; tagType: TagType): HTMLElement
 proc focus*(document: Document): Element
 proc invalidateCollections*(document: Document)
 proc invalidateCollectionsRemove(document: Document; node: Node)
-proc parseURL0*(document: Document; s: string): URL
-proc parseURL*(document: Document; s: string): Opt[URL]
+proc parseURL0*(document: Document; s: Str): URL
+proc parseURL*(document: Document; s: Str): Opt[URL]
 
 proc adjustForRemoval(iter: NodeIterator; node: Node)
 
@@ -680,14 +677,13 @@ proc setValue(ctx: JSContext; attr: Attr; ds: DOMString)
 proc attachShadow(ctx: JSContext; this: Element; init: ShadowRootInit):
   Opt[ShadowRoot]
 proc setAttr(element: Element; ctx: JSContext; name: CAtom;
-  value: DOMString)
+  value: sink DOMString)
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
-  value: DOMString)
-proc setAttr(element: Element; ctx: JSContext; name: CAtom;
-  value: sink string)
+  value: sink DOMString)
+proc setAttr(element: Element; ctx: JSContext; name: CAtom; value: sink Str)
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
-  value: sink string)
-proc attr*(element: Element; s: StaticAtom): lent string
+  value: sink Str)
+proc attr*(element: Element; s: StaticAtom): Str
 proc attrb*(element: Element; at: StaticAtom): bool
 proc delAttr(element: Element; ctx: JSContext; i: int)
 proc delAttr(element: Element; ctx: JSContext; name: CAtom)
@@ -723,7 +719,7 @@ proc insertSheet(this: SheetElement)
 proc removeSheet(this: SheetElement)
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet)
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSCallback;
-  contentType = "image/png"; qualityVal = JS_UNDEFINED.vc)
+  contentType = str("image/png"); qualityVal = JS_UNDEFINED.vc)
 proc getImageRect(this: HTMLImageElement): tuple[w, h: float64]
 proc isDisabled(link: HTMLLinkElement): bool
 proc execute*(element: HTMLScriptElement)
@@ -735,7 +731,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   isTopLevel: bool; onComplete: OnCompleteProc)
 proc updateSheet*(this: HTMLStyleElement)
 
-proc cssText(this: CSSStyleDeclaration): string
+proc cssText(this: CSSStyleDeclaration): Str
 
 proc getClassID(t: typedesc[AttrDummyElement]): JSClassID
 proc getClassID(t: typedesc[Attr]): JSClassID
@@ -795,10 +791,10 @@ proc removingStepsForm(element: Element) {.importc: "cha_$1".}
 proc movingStepsForm(element: Element) {.importc: "cha_$1".}
 proc cloningStepsForm(old, clone: Element) {.importc: "cha_$1".}
 proc reflectAttributeForm(element: Element; name: StaticAtom; has: bool;
-  value: string) {.importc: "cha_$1".}
+  value: Str) {.importc: "cha_$1".}
 proc hasInsertionStepsForm(element: Element): bool {.importc: "cha_$1".}
 proc getElementForm(element: Element): HTMLElement {.importc: "cha_$1".}
-proc getFormMethodAttr(element: Element; name: StaticAtom): string {.
+proc getFormMethodAttr(element: Element; name: StaticAtom): Str {.
   importc: "cha_$1".}
 proc newHTMLElementForm(tagType: TagType): HTMLElement {.importc: "cha_$1".}
 proc insertionStepsSVG(element: Element) {.importc: "cha_$1".}
@@ -1014,7 +1010,7 @@ proc getAPIBaseURL(ctx: JSContext): URL {.exportc: "cha_$1".} =
 proc getOrigin(ctx: JSContext): Origin {.exportc: "cha_$1".} =
   ctx.getGlobal().settings.origin
 
-proc consoleError*(ctx: JSContext; ss: varargs[string]) {.exportc: "cha_$1".} =
+proc consoleError*(ctx: JSContext; ss: varargs[Str]) {.exportc: "cha_$1".} =
   ctx.getGlobal().console.error(ss)
 
 proc setEvent(ctx: JSContext; event: Event): Event {.exportc: "cha_$1".} =
@@ -1066,8 +1062,9 @@ proc isLink(this: Collection; node: Node): bool =
 
 proc logException(window: Window; url: URL) =
   #TODO excludepassword seems pointless?
-  window.console.error("Exception in document",
-    url.serialize(excludepassword = true), window.jsctx.getExceptionMsg())
+  window.console.error(str("Exception in document"),
+    url.serialize(excludepassword = true),
+    window.jsctx.getExceptionMsg())
 
 proc isSameOrigin*(window: Window; origin: Origin): bool =
   if window.dangerAlwaysSameOrigin: # for client
@@ -1075,10 +1072,10 @@ proc isSameOrigin*(window: Window; origin: Origin): bool =
   return window.settings.origin.isSameOrigin(origin)
 
 proc checkCORSResponse(input: Request; response: Response;
-    requestOrigin: string): bool =
+    requestOrigin: ByteString): bool =
   if response.status notin 200'u16..299'u16:
     return false
-  let origin = response.headers.getAll("Access-Control-Allow-Origin")
+  let origin = response.headers.getAll(byteStr("Access-Control-Allow-Origin"))
   if origin.len == 0:
     return false
   if origin == "*" and input.credentials != cmInclude:
@@ -1086,7 +1083,8 @@ proc checkCORSResponse(input: Request; response: Response;
   if origin != requestOrigin:
     return false
   input.credentials != cmInclude or
-    response.headers.getAll("Access-Control-Allow-Credentials") == "true"
+    response.headers.getAll(byteStr("Access-Control-Allow-Credentials")) ==
+      "true"
 
 proc checkCORSRequest*(window: Window; input: Request): bool =
   if input.url.schemeType == stData:
@@ -1094,13 +1092,14 @@ proc checkCORSRequest*(window: Window; input: Request): bool =
   if window.isSameOrigin(input.url.origin):
     return true
   #TODO redirect-taint
-  let requestOrigin = $window.settings.origin
-  if input.url.scheme != requestOrigin.until(':'):
+  let requestOrigin0 = window.settings.origin.toStr()
+  if input.url.scheme != requestOrigin0.until(':'):
     return false
-  if window.corsCache.getOrDefault($input.url) != nil:
+  let requestOrigin = requestOrigin0.asByteString
+  if window.corsCache.getOrDefault(input.url.toStr()) != nil:
     return false
-  input.headers["Origin"] = requestOrigin
-  let headers = newHeaders(hgRequest, {"Origin": requestOrigin})
+  input.headers[byteStr("Origin")] = requestOrigin
+  let headers = newHeaders(hgRequest, {byteStr("Origin"): requestOrigin})
   if headers == nil:
     return false
   let request = newRequest(input.url, hmOptions, headers)
@@ -1111,7 +1110,7 @@ proc checkCORSRequest*(window: Window; input: Request): bool =
     return false
   window.loader.close(response)
   if not checkCORSResponse(input, response, requestOrigin):
-    window.corsCache.put(StrMapItem(s: $input.url))
+    window.corsCache.put(StrMapItem(s: input.url.toStr()))
     return false
   true
 
@@ -1156,9 +1155,9 @@ proc importSheetFinish(window: Window; this: SheetElement;
       env.parent, env.i)
   window.sheetLoaded()
 
-proc parseStylesheet(window: Window; this: SheetElement; s: string;
-    baseURL: URL; charset: Charset; layer: CAtom;
-    finish: LoadSheetFinish; parseEnv: ParseSheetEnv; i: int) =
+proc parseStylesheet(window: Window; this: SheetElement; s: Str;
+    baseURL: URL; charset: Charset; layer: CAtom; finish: LoadSheetFinish;
+    parseEnv: ParseSheetEnv; i: int) =
   let sheet = s.parseStylesheet(baseURL, addr window.settings, coAuthor, layer)
   if sheet.s.importList.len == 0:
     let res = LoadSheetResult(head: sheet, tail: sheet)
@@ -1176,7 +1175,7 @@ proc parseStylesheet(window: Window; this: SheetElement; s: string;
       window.loadSheet(this, it.url, charset, it.layer, importSheetFinish,
         i, env)
 
-proc cssDecode(iq: openArray[char]; fallback: Charset): string =
+proc cssDecode(iq: openArray[char]; fallback: Charset): Str =
   var charset = fallback
   var offset = 0
   const charsetRule = "@charset \""
@@ -1190,12 +1189,14 @@ proc cssDecode(iq: openArray[char]; fallback: Charset): string =
     charset = csUtf8
     offset = 3
   elif iq.startsWith(charsetRule):
-    let s = iq.toOpenArray(charsetRule.len, min(1024, iq.high)).until('"')
-    let n = charsetRule.len + s.len
-    if n >= 0 and n + 1 < iq.len and iq[n] == '"' and iq[n + 1] == ';':
-      charset = getCharset(s)
-      if charset in {csUtf16le, csUtf16be}:
-        charset = csUtf8
+    let i = iq.toOpenArray(0, min(iq.high, 1024)).find('"', charsetRule.len)
+    if i >= 0 and i + 1 < iq.len and iq[i + 1] == ';':
+      let si = iq.find(AllChars - AsciiWhitespace, charsetRule.len, i - 1)
+      let ei = iq.rfind(AllChars - AsciiWhitespace, charsetRule.len, i - 1)
+      if si < ei:
+        charset = getCharset(initStr(iq.toOpenArray(si, ei)))
+        if charset in {csUtf16le, csUtf16be, csUnknown}:
+          charset = csUtf8
   iq.toOpenArray(offset, iq.high).decodeAll(charset)
 
 type
@@ -1220,9 +1221,9 @@ proc onFinishCSSText(response: Response; success: bool) =
   let this = env.this
   let finish = env.finish
   if success:
-    let arr = response.onFinishByteArray()
+    let buf = response.onFinishGrowbuf()
     let charset = env.charset
-    let s = arr.toOpenArray().cssDecode(charset)
+    let s = buf.toOpenArray().cssDecode(charset)
     window.parseStylesheet(this, s, env.url, charset, env.layer, finish,
       env.parseEnv, env.i)
   else:
@@ -1318,11 +1319,11 @@ proc loadImageFinish(opaque: RootRef; response: Response) =
   # close immediately; all data we're interested in is in the headers.
   window.loader.close(response)
   let headers = response.headers
-  let dims = headers.getFirst("Cha-Image-Dimensions")
-  let width = parseIntP(dims.until('x')).get(-1)
-  let height = parseIntP(dims.after('x')).get(-1)
+  let dims = headers.getFirst(byteStr("Cha-Image-Dimensions"))
+  let (width, height) = parseDimensions(Str(dims))
   if width < 0 or height < 0:
-    window.console.error("wrong Cha-Image-Dimensions in", $response.url)
+    window.console.error(str("wrong Cha-Image-Dimensions in"),
+      response.url.toStr())
     window.imageLoaded()
     return
   let bmp = NetworkBitmap(
@@ -1330,7 +1331,7 @@ proc loadImageFinish(opaque: RootRef; response: Response) =
     height: height,
     cacheId: cachedURL.cacheId,
     imageId: window.getImageId(),
-    contentType: "image/" & cachedURL.subtype,
+    contentType: initStrM("image/", cachedURL.subtype),
     vector: cachedURL.subtype == "svg+xml"
   )
   cachedURL.bmp = bmp
@@ -1349,7 +1350,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
   if response == nil:
     window.imageLoaded()
     return
-  let contentType = response.getContentType("image/x-unknown")
+  let contentType = response.getContentType(str("image/x-unknown"))
   if not contentType.startsWith("image/"):
     window.loader.close(response)
     window.imageLoaded()
@@ -1367,13 +1368,13 @@ proc loadImage0(opaque: RootRef; response: Response) =
     # In fact, a) would by itself be enough, but I'm not sure if
     # it's the best way, so I added b) as a fallback measure.
     let i = window.imageTypes.binarySearch(ext,
-      proc(x: MimeTypesImageItem; ext: string): int {.nimcall.} =
+      proc(x: MimeTypesImageItem; ext: Str): int {.nimcall.} =
         cmp(x.ext, ext)
     )
     if i >= 0:
       subtype = window.imageTypes[i].subtype
   cachedURL.cacheId = window.loader.addCacheFile(response.outputId)
-  let url = parseURL0("img-codec+" & subtype & ":decode")
+  let url = parseURL0(initStrM("img-codec+", subtype, ":decode"))
   if url == nil:
     window.loader.close(response)
     window.imageLoaded()
@@ -1381,7 +1382,9 @@ proc loadImage0(opaque: RootRef; response: Response) =
   let request = newRequest(
     url,
     httpMethod = hmPost,
-    headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
+    headers = newHeaders(hgRequest, {
+      byteStr("Cha-Image-Info-Only"): byteStr("1")
+    }),
     body = RequestBody(t: rbtOutput, outputId: response.outputId),
     internal = true
   )
@@ -1389,17 +1392,17 @@ proc loadImage0(opaque: RootRef; response: Response) =
   window.corsFetch(request, loadImageFinish, opaque)
   window.loader.close(response)
   var expiry = -1i64
-  for s in response.headers.getAllCommaSplit("Cache-Control"):
+  for s in response.headers.getAllCommaSplit(byteStr("Cache-Control")):
     if s.startsWithIgnoreCase("max-age="):
-      let i = s.skipBlanks("max-age=".len)
+      let i = s.toOpenArray().skipBlanks("max-age=".len)
       let s = s.until(NonDigit, i)
-      if pi := parseInt64(s):
+      if pi := parseInt64(s.toOpenArray()):
         expiry = getUnixSeconds() + pi
       break
   cachedURL.loading = false
   cachedURL.expiry = expiry
 
-proc loadImageFromCache(window: Window; image: HTMLImageElement; surl: string):
+proc loadImageFromCache(window: Window; image: HTMLImageElement; surl: Str):
     bool =
   let cachedURL = CachedURLImage(window.imageURLCache.getOrDefault(surl))
   if cachedURL == nil:
@@ -1432,8 +1435,8 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
   if window.document.url.schemeType == stHttps and url.schemeType == stHttp:
     # mixed content :/
     #TODO maybe do this in loader?
-    url.setProtocol("https")
-  var surl = $url
+    url.setProtocol(str("https"))
+  var surl = url.toStr()
   if window.loadImageFromCache(image, surl):
     return
   let cachedURL = CachedURLImage(
@@ -1445,7 +1448,7 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
     shared: @[image]
   )
   window.imageURLCache.put(cachedURL)
-  let headers = newHeaders(hgRequest, {"Accept": "*/*"})
+  let headers = newHeaders(hgRequest, {byteStr("Accept"): byteStr("*/*")})
   inc window.remoteImageNum
   let request = newRequest(url, headers = headers)
   window.corsFetch(request, loadImage0, cachedURL)
@@ -1505,19 +1508,22 @@ proc getComputedStyle0*(ctx: JSContext; window: Window; element: Element;
     # This isn't what the spec says, but it seems to be what others do.
     # Note: in Gecko this is case-sensitive, in Blink it isn't.  CSS itself
     # is case-insensitive so I assume it's a Gecko bug.
-    var ds: CSSOMString
-    ?ctx.fromJS(pseudoElt, ds)
-    let i = if ds.p[0] != ':': 0 elif ds.p[1] != ':': 1 else: 2
+    var s: CSSOMString
+    ?ctx.fromJS(pseudoElt, s)
+    let i = if s.startsWith("::"): 2 elif s.startsWith(":"): 1 else: 0
     if i != 0: # if no : at the beginning, ignore pseudoElt
-      pseudo = parseEnumNoCase[PseudoElement](ds.toOpenArray(i)).get(peNone)
+      pseudo = parseEnumNoCase[PseudoElement](s.toOpenArray(i, s.high))
+        .get(peNone)
       if pseudo == peNone or pseudo notin {peBefore, peAfter} and i == 1:
-        return ok(newCSSStyleDeclaration(Element(nil), ""))
+        return ok(newCSSStyleDeclaration(Element(nil), str("")))
   if not element.asNode.isConnected():
-    return ok(newCSSStyleDeclaration(Element(nil), ""))
+    return ok(newCSSStyleDeclaration(Element(nil), str("")))
   if window.settings.scripting == smApp:
     element.ensureStyle()
-    return ok(newCSSStyleDeclaration(element, $element.getComputedStyle(pseudo),
-      computed = true, readonly = true))
+    let decl = newCSSStyleDeclaration(element,
+      element.getComputedStyle(pseudo).toStr(), computed = true,
+      readonly = true)
+    return ok(decl)
   # In lite mode, we just parse the "style" attribute and hope for
   # the best.
   ok(newCSSStyleDeclaration(element, element.attr(satStyle), computed = true,
@@ -1530,8 +1536,8 @@ iterator defs(this: CustomElementRegistry): CustomElementDef =
     yield def
     def = def.next
 
-type CustomElementDefinitionOptions = object of JSDict
-  extends {.jsdefault.}: Option[string]
+type ElementDefinitionOptions = object of JSDict
+  extends {.jsdefault.}: DOMStringNil #TODO this shouldn't be optional
 
 proc find(this: CustomElementRegistry; name: CAtom): CustomElementDef =
   for it in this.defs:
@@ -1557,7 +1563,7 @@ proc tryGetStrSeq(ctx: JSContext; ctor: JSCallback; name: JSStrRef;
 
 proc tryGetCallback(ctx: JSContext; proto: JSValueConst; t: CECallbackType;
     callbacks: var CECallbackMap): Opt[void] =
-  let val = JS_GetPropertyStr(ctx, proto, cstring($t))
+  let val = JS_GetPropertyStr(ctx, proto, t.toStr().toCStringConst())
   if JS_IsException(val.vc):
     return err()
   if not JS_IsUndefined(val.vc):
@@ -1613,14 +1619,14 @@ jsClassDef(CustomElementRegistry):
       rt.markObj(document, markFunc)
 
   proc define(ctx: JSContext; this: CustomElementRegistry; name: CAtom;
-      ctor: JSCallback; options = CustomElementDefinitionOptions()): JSValue
+      ctor: JSCallback; options = ElementDefinitionOptions()): JSValue
       {.jsfunc.} =
     if not JS_IsConstructor(ctx, ctor.value):
       return JS_ThrowTypeError(ctx, "constructor expected")
     if this.find(name) != nil or this.find(ctx, ctor) != nil:
       return JS_ThrowDOMException(ctx, "NotSupportedError",
         "a custom element with this name/constructor is already defined")
-    if options.extends.isSome:
+    if StrNil(options.extends) != nil:
       #TODO extends
       return JS_ThrowDOMException(ctx, "NotSupportedError",
         "extends not supported yet")
@@ -1672,8 +1678,9 @@ when defined(debug):
       return "null"
     if node of Document:
       return "Document"
-    result = ""
-    result.serializeFragmentInner(node, ttUnknown, writeShadow = true)
+    var buf = initGrowbuf()
+    buf.serializeFragmentInner(node, ttUnknown, writeShadow = true)
+    $buf
 
 proc document*(node: Node): Document =
   # Return the owner document, or node itself if it is a document.
@@ -1832,15 +1839,16 @@ proc isInclusiveAncestorHost(a, b: Node): bool =
       return true
   return false
 
-proc textContent*(node: Node): string =
-  var res = ""
+proc textContent*(node: Node): Str =
   if (let characterData = node as CharacterData; characterData != nil):
-    res = characterData.data.s
+    return characterData.data
   elif (let node = node as ParentNode; node != nil):
+    var buf: Str
     for child in node.childList:
       if not (child of Comment):
-        res &= child.textContent
-  move(res)
+        buf &= child.textContent
+    return buf
+  str("")
 
 proc inSameTree*(a, b: Node): bool =
   assert a != nil
@@ -1889,14 +1897,10 @@ proc queueMutationJob(ctx: JSContext) =
     mutationJobQueued = true
 
 proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
-    name, namespace: CAtom; oldValue: RefString; hasOldValue2: bool;
-    oldValue2: string; added, removed: openArray[Node];
+    name, namespace: CAtom; oldValue: StrNil; added, removed: openArray[Node];
     previousSibling, nextSibling: Node) =
   if ctx.getOpaque() == nil:
     return # no scripting
-  # the oldValue mess is a workaround to the fact that we can pass the old
-  # data from CharacterData but not from AttrData.  but maybe AttrData
-  # should be refcounted too...
   var observers: seq[ObserverItem] = @[]
   #TODO can we do this without actually traversing ancestors somehow?
   # (maybe link the last observer with parent's first observer?)
@@ -1925,13 +1929,6 @@ proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
       elif oldValue:
         observers[i].oldValue = true
   for it in observers:
-    let oldValue = if it.oldValue:
-      if hasOldValue2:
-        newRefString(oldValue2)
-      else:
-        oldValue
-    else:
-      nil
     let addedNodes = newNodeList(added)
     let removedNodes = newNodeList(removed)
     it.observer.queueRecord(target.asEventTarget, t, name, namespace, oldValue,
@@ -1943,8 +1940,7 @@ proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
 proc queueTreeMutationRecord(parent: ParentNode; ctx: JSContext;
     added, removed: openArray[Node]; previousSibling, nextSibling: Node) =
   parent.asNode.queueMutationRecord(ctx, mrtChildList, CAtomNull,
-    CAtomNull, nil, true, "", added, removed, previousSibling,
-    nextSibling)
+    CAtomNull, str(nil), added, removed, previousSibling, nextSibling)
 
 type PreInsertExclude = enum
   pieNone, pieBefore, pieChildren
@@ -2170,15 +2166,13 @@ proc clone(node: Node; document: Document; deep: bool;
     newAttr(attr.asNode.document, attr.data).asNode
   elif (let node = node as Text; node != nil):
     if node of CDATASection:
-      document.newCDATASection(newRefString(node.data.s)).asNode
+      document.newCDATASection(node.data).asNode
     else:
-      document.newText(node.data.s).asNode
+      document.newText(node.data).asNode
   elif (let node = node as Comment; node != nil):
-    document.newComment(newRefString(node.data.s)).asNode
+    document.newComment(node.data).asNode
   elif (let node = node as ProcessingInstruction; node != nil):
-    let clone = document.newProcessingInstruction(node.target,
-      newRefString(node.data.s))
-    clone.asNode
+    document.newProcessingInstruction(node.target, node.data).asNode
   elif (let document = node as Document; document != nil):
     let x = newDocument(document.url)
     x.charset = document.charset
@@ -2239,8 +2233,8 @@ proc nextElementSiblingImpl(this: Node): Element =
       return element
   Element(nil)
 
-proc serializeFragmentInner*(res: var string; child: Node; parentType: TagType;
-    writeShadow: bool) =
+proc serializeFragmentInner*(res: var Growbuf; child: Node;
+    parentType: TagType; writeShadow: bool) =
   if (let element = child as Element; element != nil):
     const LocalNamespace = [
       satNamespaceHTML, satNamespaceMathML, satNamespaceSVG
@@ -2249,8 +2243,7 @@ proc serializeFragmentInner*(res: var string; child: Node; parentType: TagType;
       element.localName
     else:
       element.tagName
-    res &= '<'
-    res &= $tag
+    res.addM('<', tag.toStr())
     #TODO custom elements
     for attr in element.attrs:
       res &= ' '
@@ -2268,31 +2261,31 @@ proc serializeFragmentInner*(res: var string; child: Node; parentType: TagType;
         res &= "xlink:"
         local = true
       else:
-        res &= $attr.name
+        res &= attr.name.toStr()
       if local:
         let i = attr.name.find(':') + 1
-        res &= ($attr.name).substr(i)
-      res &= "=\"" & attr.value.htmlEscape(mode = emAttribute) & "\""
+        res &= attr.name.toStr().substr(i)
+      res.addM("=\"", attr.value.htmlEscape(mode = emAttribute), "\"")
     res &= '>'
     res.serializeFragment(element.asNode, writeShadow)
-    res &= "</" & $tag & '>'
+    res.addM("</", tag.toStr(), '>')
   elif (let text = child as Text; text != nil):
     const LiteralTags = {
       ttStyle, ttScript, ttXmp, ttIframe, ttNoembed, ttNoframes,
       ttPlaintext, ttNoscript
     }
     if parentType in LiteralTags:
-      res &= text.data.s
+      res &= text.data
     else:
-      res &= text.data.s.htmlEscape(mode = emText)
+      res &= text.data.toOpenArray().htmlEscape(mode = emText)
   elif (let comment = child as Comment; comment != nil):
-    res &= "<!--" & comment.data.s & "-->"
+    res.addM("<!--", comment.data, "-->")
   elif (let inst = child as ProcessingInstruction; inst != nil):
-    res &= "<?" & inst.target & " " & inst.data.s & '>'
+    res.addM("<?", inst.target, ' ', inst.data, '>')
   elif (let child = child as DocumentType; child != nil):
-    res &= "<!DOCTYPE " & child.name & '>'
+    res.addM("<!DOCTYPE ", child.name, '>')
 
-proc serializeFragment(res: var string; node: Node; writeShadow: bool) =
+proc serializeFragment(res: var Growbuf; node: Node; writeShadow: bool) =
   var node = node
   var parentType = ttUnknown
   if (let element = node as Element; element != nil):
@@ -2309,7 +2302,7 @@ proc serializeFragment(res: var string; node: Node; writeShadow: bool) =
         parentType = ttUnknown
       let shadow = element.shadowRoot
       if shadow != nil and writeShadow and shadow.serializable:
-        res &= "<template shadowrootmode=\"" & $shadow.mode & '"'
+        res.addM("<template shadowrootmode=\"", shadow.mode.toStr(), '"')
         if shadow.delegatesFocus:
           res &= " shadowrootdelegatesfocus=\"\""
         if shadow.serializable:
@@ -2328,9 +2321,10 @@ proc serializeFragment(res: var string; node: Node; writeShadow: bool) =
     for child in node.childList:
       res.serializeFragmentInner(child, parentType, writeShadow)
 
-proc serializeFragment*(node: Node; writeShadow: bool): string =
-  result = ""
-  result.serializeFragment(node, writeShadow)
+proc serializeFragment*(node: Node; writeShadow: bool): Str =
+  var buf = initGrowbuf()
+  buf.serializeFragment(node, writeShadow)
+  buf.toStr()
 
 proc findAncestor*(node: Node; tagType: TagType): Element =
   for element in node.ancestors:
@@ -2396,8 +2390,8 @@ jsClassDef(Node):
 
   jsget Node, parentNode
 
-  proc baseURI(node: Node): string {.jsfget.} =
-    return $node.document.baseURL
+  proc baseURI(node: Node): Str {.jsfget.} =
+    return node.document.baseURL.toStr()
 
   proc getRootNode(node: Node; options = GetRootNodeOptions()): Node
       {.jsfunc.} =
@@ -2557,28 +2551,28 @@ jsClassDef(Node):
     elif (let node = node as ProcessingInstruction; node != nil):
       let other = other as ProcessingInstruction
       if other == nil or node.target != other.target or
-          node.data.s != other.data.s:
+          node.data != other.data:
         return false
     elif (let node = node as CharacterData; node != nil):
       let other = other as CharacterData
       if other == nil or not node.sameClass(other):
         return false
-      return node.data.s == other.data.s
+      return node.data == other.data
     true
 
-  proc setNodeValue(ctx: JSContext; node: Node; data: DOMStringNull): Opt[void]
+  proc setNodeValue(ctx: JSContext; node: Node; data: DOMStringEmpty): Opt[void]
       {.jsfset: "nodeValue".} =
     if (let node = node as CharacterData; node != nil):
       ctx.setData(node, data)
     elif (let node = node as Attr; node != nil):
-      ctx.setValue(node, data)
+      ctx.setValue(node, DOMString(data))
     return ok()
 
-  proc setTextContent(ctx: JSContext; node: Node; data: DOMStringNull):
+  proc setTextContent(ctx: JSContext; node: Node; data: DOMStringEmpty):
       Opt[void] {.jsfset: "textContent".} =
     if node of Element or node of DocumentFragment:
       let node = node as ParentNode
-      node.replaceAll(ctx, data)
+      node.replaceAll(ctx, DOMString(data))
       return ok()
     return ctx.setNodeValue(node, data)
 
@@ -2785,9 +2779,12 @@ proc replaceAll(parent: ParentNode; ctx: JSContext; node: Node) =
   elif removedNodes.len > 0:
     parent.queueTreeMutationRecord(ctx, [], removedNodes, Node(nil), Node(nil))
 
-proc replaceAll*(parent: ParentNode; ctx: JSContext; ds: DOMString) =
-  let text = if ds.len > 0: parent.asNode.document.newText(ds) else: Text(nil)
+proc replaceAll*(parent: ParentNode; ctx: JSContext; s: Str) =
+  let text = if s.len > 0: parent.asNode.document.newText(s) else: Text(nil)
   parent.replaceAll(ctx, text.asNode)
+
+proc replaceAll(parent: ParentNode; ctx: JSContext; ds: sink DOMString) =
+  parent.replaceAll(ctx, ds.toStr())
 
 proc childElementCountImpl(node: ParentNode): uint32 =
   let last = node.lastElementChild
@@ -2795,11 +2792,12 @@ proc childElementCountImpl(node: ParentNode): uint32 =
     return 0
   return last.elIndex + 1
 
-proc childTextContent*(node: ParentNode): string =
-  result = ""
+proc childTextContent*(node: ParentNode): Str =
+  var buf: Str
   for child in node.childList:
     if (let child = child as Text; child != nil):
-      result &= child.data.s
+      buf &= child.data
+  buf
 
 proc getParamCollection(root: ParentNode; name: CollectionName; param: CAtom):
     Collection =
@@ -2816,7 +2814,7 @@ proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtom):
   let collection = root.getParamCollection(cnGetElementsByTagName, tagName)
   if collection != nil:
     return collection as HTMLCollection
-  let match = if $tagName == "*": isElement else: isElementOf
+  let match = if tagName.toStr() == "*": isElement else: isElementOf
   let this = newHTMLCollection(root.asNode, match, cmSubtree,
     cnGetElementsByTagName)
   if this != nil:
@@ -2833,7 +2831,7 @@ proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
     cnGetElementsByClassName)
   if this != nil:
     var atoms = @[param]
-    for class in classNames.toOpenArray().split(AsciiWhitespace):
+    for class in classNames.toStr().split(AsciiWhitespace):
       if class.len > 0:
         atoms.add(class.toAtom())
     this.atoms = newDOMTokenArray(atoms)
@@ -3020,9 +3018,11 @@ proc moveBeforeImpl(parent: ParentNode; ctx: JSContext; node: Node;
   return JS_UNDEFINED
 
 proc parseSelectors(ctx: JSContext; ds: DOMString): SelectorList =
-  result = parseSelectors(ds)
-  if result.len == 0:
-    JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s", ds.p)
+  var sels = parseSelectors(ds.toStr())
+  if sels.len == 0:
+    JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
+      ds.toStr().toCStringConst())
+  move(sels)
 
 proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: DOMString):
     JSValue =
@@ -3229,15 +3229,15 @@ jsClassDef(CharacterData):
 
   jsget CharacterData, data
 
-  proc setData(ctx: JSContext; this: CharacterData; data: DOMStringNull) {.
+  proc setData(ctx: JSContext; this: CharacterData; data: DOMStringEmpty) {.
       jsfset: "data".} =
     this.asNode.queueMutationRecord(ctx, mrtCharacterData, CAtomNull,
-      CAtomNull, this.data, false, "", [], [], Node(nil), Node(nil))
-    this.data = newRefString(data)
+      CAtomNull, this.data.toStrNil(), [], [], Node(nil), Node(nil))
+    this.data = DOMString(data).toStr()
 
   proc length(this: CharacterData): int {.jsfget.} =
     var n = 0
-    for u in this.data.s.points:
+    for u in this.data.toOpenArray().points:
       if u < 0x10000: # ucs-2
         n += 1
       else: # surrogate
@@ -3266,29 +3266,30 @@ jsClassDef(CharacterData):
     this.asNode.removeImpl(ctx)
 
 # Text
-proc newText*(document: Document; data: sink string): Text =
-  jsNew TextObj(internalNext: document.asNode, data: newRefString(move(data)))
+proc newText*(document: Document; data: sink Str): Text =
+  jsNew TextObj(internalNext: document.asNode, data: data)
 
-proc newText*(document: Document; data: DOMString): Text =
-  jsNew TextObj(internalNext: document.asNode, data: newRefString(data))
+proc newText*(document: Document; data: sink DOMString): Text =
+  document.newText(data.toStr())
 
 jsClassPublicDef(Text):
   jsextends CharacterDataDef
 
-  proc newText(ctx: JSContext; data = initDOMStringLit("")): Text {.jsctor.} =
+  proc newText(ctx: JSContext; data: sink DOMString = DOMString(str(""))): Text
+      {.jsctor.} =
     let window = ctx.getGlobal()
-    return window.document.newText(data)
+    window.document.newText(data)
 
 # CDATASection
-proc newCDATASection(document: Document; data: RefString): CDATASection =
+proc newCDATASection(document: Document; data: Str): CDATASection =
   jsNew CDATASectionObj(internalNext: document.asNode, data: data)
 
 jsClassDef(CDATASection):
   jsextends TextDef
 
 # ProcessingInstruction
-proc newProcessingInstruction(document: Document; target: string;
-    data: RefString): ProcessingInstruction =
+proc newProcessingInstruction(document: Document; target, data: Str):
+    ProcessingInstruction =
   jsNew ProcessingInstructionObj(
     internalNext: document.asNode,
     target: target,
@@ -3301,16 +3302,16 @@ jsClassDef(ProcessingInstruction):
   jsget ProcessingInstruction, target
 
 # Comment
-proc newComment*(document: Document; data: RefString): Comment =
+proc newComment*(document: Document; data: Str): Comment =
   jsNew CommentObj(internalNext: document.asNode, data: data)
 
 jsClassDef(Comment):
   jsextends CharacterDataDef
 
-  proc newComment(ctx: JSContext; data = initDOMStringLit("")): Comment {.
+  proc newComment(ctx: JSContext; data = DOMString(str(""))): Comment {.
       jsctor.} =
     let window = ctx.getWindow()
-    return window.document.newComment(newRefString(data))
+    return window.document.newComment(data.toStr())
 
 # DocumentFragment
 template asDocumentFragment[T: DocumentFragmentObj](x: JSRef[T]):
@@ -3341,11 +3342,11 @@ jsClassDef(DocumentFragment):
 
   proc querySelector(ctx: JSContext; this: DocumentFragment; q: DOMString):
       JSValue {.jsfunc.} =
-    return ctx.querySelectorImpl(this.asParentNode, q)
+    ctx.querySelectorImpl(this.asParentNode, q)
 
   proc querySelectorAll(ctx: JSContext; this: DocumentFragment; q: DOMString):
       JSValue {.jsfunc.} =
-    return ctx.querySelectorAllImpl(this.asParentNode, q)
+    ctx.querySelectorAllImpl(this.asParentNode, q)
 
   proc prepend(ctx: JSContext; this: DocumentFragment;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
@@ -3389,7 +3390,7 @@ proc newDocument*(url: URL): Document =
     charset: csUtf8
   )
 
-proc newDocumentType*(document: Document; name, publicId, systemId: string):
+proc newDocumentType*(document: Document; name, publicId, systemId: sink Str):
     DocumentType =
   jsNew DocumentTypeObj(
     internalNext: document.asNode,
@@ -3545,7 +3546,7 @@ proc getElementsById*(document: Document; id: CAtom): JSRootRef =
 
 proc baseURL*(document: Document): URL =
   #TODO frozen base url...
-  var href = ""
+  var href = str("")
   for base in document.asParentNode.elementDescendants(ttBase):
     if base.asElement.attrb(satHref):
       href = base.asElement.attr(satHref)
@@ -3556,11 +3557,11 @@ proc baseURL*(document: Document): URL =
     return document.url
   return url
 
-proc parseURL0*(document: Document; s: string): URL =
+proc parseURL0*(document: Document; s: Str): URL =
   #TODO encodings
   return parseURL0(s, document.baseURL)
 
-proc parseURL*(document: Document; s: string): Opt[URL] =
+proc parseURL*(document: Document; s: Str): Opt[URL] =
   #TODO encodings
   let url = document.parseURL0(s)
   if url == nil:
@@ -3589,7 +3590,7 @@ proc isValidCustomElementName(atom: CAtom): bool =
   ]
   if atom.toStaticAtom() in Disallowed:
     return false
-  let s = $atom
+  let s = atom.toStr()
   if s.len <= 0 or s[0] notin AsciiLowerAlpha:
     return false
   var dash = false
@@ -3635,8 +3636,8 @@ proc validateAndExtract(ctx: JSContext; namespace, localName: var CAtom;
       JS_ThrowDOMException(ctx, "InvalidCharacterError", "invalid prefix")
       return err()
   case t
-  of nvAttribute: ?ctx.validateAttrName($localName)
-  of nvElement: ?ctx.validateElementName($localName)
+  of nvAttribute: ?ctx.validateAttrName(localName.toStr().toOpenArray())
+  of nvElement: ?ctx.validateElementName(localName.toStr().toOpenArray())
   let sns = namespace.toStaticAtom()
   let isXmlns = prefix == satXmlns or
     prefix == CAtomNull and localName == satXmlns
@@ -3665,7 +3666,7 @@ proc getEventTarget(element: Element; name: StaticAtom): EventTarget =
   element.asEventTarget
 
 proc reflectEvent(document: Document; target: EventTarget;
-    name, eventType: StaticAtom; value: string) =
+    name, eventType: StaticAtom; value: Str) =
   let ctx = document.window.jsctx
   let fun = trace(ctx.newFunction(["event"], value))
   assert ctx != nil
@@ -3677,7 +3678,7 @@ proc reflectEvent(document: Document; target: EventTarget;
       document.window.logException(document.baseURL)
 
 proc applyUASheet*(document: Document) =
-  const ua = staticRead"res/ua.css"
+  const ua = str(staticRead"res/ua.css")
   let sheet = parseStylesheet(ua, URL(nil), addr document.window.settings,
     coUserAgent, CAtomNull)
   document.uaSheetsHead = sheet
@@ -3687,7 +3688,7 @@ proc applyUASheet*(document: Document) =
 proc applyQuirksSheet*(document: Document) =
   if document.window == nil:
     return
-  const quirks = staticRead"res/quirk.css"
+  const quirks = str(staticRead"res/quirk.css")
   let sheet = parseStylesheet(quirks, URL(nil), addr document.window.settings,
     coUserAgent, CAtomNull)
   document.uaSheetsHead.next = sheet
@@ -3695,7 +3696,7 @@ proc applyQuirksSheet*(document: Document) =
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
-proc applyUserSheet*(document: Document; user: string) =
+proc applyUserSheet*(document: Document; user: Str) =
   document.userSheet = parseStylesheet(user, URL(nil),
     addr document.window.settings, coUser, CAtomNull)
   if document.documentElement != nil:
@@ -3717,7 +3718,7 @@ proc getRuleMap*(document: Document): CSSRuleMap =
     document.ruleMap = map
   return document.ruleMap
 
-proc findAnchor*(document: Document; id: string): Element =
+proc findAnchor*(document: Document; id: Str): Element =
   if id.len == 0:
     return Element(nil)
   let id = id.toAtom()
@@ -3823,10 +3824,10 @@ jsClassPublicDef(Document):
       ?ctx.checkRegistryScope(document, registry)
     ctx.cloneNodeImpl(node, document, deep, ParentNode(nil), registry)
 
-  proc compatMode(document: Document): string {.jsfget.} =
+  proc compatMode(document: Document): Str {.jsfget.} =
     if document.quirksMode == qmQuirks:
-      return "BackCompat"
-    return "CSS1Compat"
+      return str("BackCompat")
+    return str("CSS1Compat")
 
   proc forms(document: Document): HTMLCollection {.jsnfget.} =
     document.asParentNode.getChildrenOf(cnForms, cmSubtree, ttForm)
@@ -3837,15 +3838,15 @@ jsClassPublicDef(Document):
   proc images(document: Document): HTMLCollection {.jsnfget.} =
     document.asParentNode.getChildrenOf(cnImages, cmSubtree, ttImg)
 
-  proc getURL(ctx: JSContext; document: Document): JSValue {.
-      jsfget: "URL", jsfget: "documentURI".} =
-    return ctx.toJS($document.url)
+  proc getURL(document: Document): Str {.jsfget: "URL",
+      jsfget: "documentURI".} =
+    document.url.toStr()
 
   proc cookie(ctx: JSContext; document: Document): JSValue {.jsfget.} =
     let window = ?ctx.getCookieWindow(document)
     if window == nil:
       return ctx.toJS("")
-    let request = newRequest("x-cha-cookie:get-all", internal = true)
+    let request = newRequest(str("x-cha-cookie:get-all"), internal = true)
     let response = window.loader.doRequest(request)
     if response.stream == nil:
       return JS_ThrowInternalError(ctx, "internal error in cookie getter")
@@ -3853,13 +3854,15 @@ jsClassPublicDef(Document):
     let cookie = response.stream.readAll()
     return ctx.toJS(cookie)
 
-  proc setCookie(ctx: JSContext; document: Document; cookie: USVString):
-      Opt[void] {.jsfset: "cookie".} =
+  proc setCookie(ctx: JSContext; document: Document; cookie: Str): Opt[void]
+      {.jsfset: "cookie".} =
     let window = ?ctx.getCookieWindow(document)
     if window == nil:
       return ok()
-    let headers = newHeaders(hgRequest, {"Set-Cookie": $cookie})
-    let request = newRequest("x-cha-cookie:set", hmPost, headers,
+    let headers = newHeaders(hgRequest, {
+      byteStr("Set-Cookie"): cookie.asByteString
+    })
+    let request = newRequest(str("x-cha-cookie:set"), hmPost, headers,
       credentials = cmOmit, internal = true)
     let response = window.loader.doRequest(request)
     window.loader.close(response)
@@ -3882,11 +3885,11 @@ jsClassPublicDef(Document):
     if "]]>" in data.toOpenArray():
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "CDATA sections may not contain the string ]]>")
-    return ctx.toJSNew(newCDATASection(document, newRefString(data)))
+    return ctx.toJSNew(newCDATASection(document, data.toStr()))
 
-  proc createComment(document: Document; data: DOMString): Comment
+  proc createComment(document: Document; data: sink DOMString): Comment
       {.jsnfunc.} =
-    return newComment(document, newRefString(data))
+    return newComment(document, data.toStr())
 
   proc createProcessingInstruction(ctx: JSContext; document: Document;
       target, data: DOMString): JSValue {.jsfunc.} =
@@ -3894,7 +3897,7 @@ jsClassPublicDef(Document):
         "?>" in data.toOpenArray():
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid data for processing instruction")
-    let pi = newProcessingInstruction(document, $target, newRefString(data))
+    let pi = newProcessingInstruction(document, target.toStr(), data.toStr())
     ctx.toJSNew(pi)
 
   proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
@@ -3917,7 +3920,7 @@ jsClassPublicDef(Document):
       return JS_NULL
     ctx.getProperty(ctx.getOpaque().global, jstLocation).toJSValue()
 
-  proc setLocation*(ctx: JSContext; document: Document; s: string): JSValue
+  proc setLocation*(ctx: JSContext; document: Document; s: Str): JSValue
       {.jsfset: "location".} =
     let obj = ?trace(ctx.location(document))
     let res = JS_SetProperty(ctx, obj.vc, ctx.getAtom(jstHref), ctx.toJS(s))
@@ -3943,24 +3946,24 @@ jsClassPublicDef(Document):
     HTMLElement(nil)
 
   # https://html.spec.whatwg.org/multipage/obsolete.html#Document-partial
-  proc getBodyColorAttr(document: Document; magic: StaticAtom): string {.
+  proc getBodyColorAttr(document: Document; magic: StaticAtom): Str {.
       jsmfget("bgColor", satBgcolor), jsmfget("fgColor", satText),
       jsmfget("linkColor", satLink), jsmfget("vlinkColor", satVlink),
       jsmfget("alinkColor", satAlink).} =
     let body = document.body.asElement
     if body != nil:
       return body.attr(magic)
-    return ""
+    return str("")
 
   proc setBodyColorAttr(ctx: JSContext; document: Document; magic: StaticAtom;
-      s: DOMStringNull) {.jsmfset("bgColor", satBgcolor),
+      s: sink DOMStringEmpty) {.jsmfset("bgColor", satBgcolor),
       jsmfset("fgColor", satText), jsmfset("linkColor", satLink),
       jsmfset("vlinkColor", satVlink), jsmfset("alinkColor", satAlink).} =
     let body = document.body.asElement
     if body != nil:
-      body.setAttr(ctx, magic, s)
+      body.setAttr(ctx, magic, Str(s))
 
-  proc title*(document: Document): string {.jsfget.} =
+  proc title*(document: Document): Str {.jsfget.} =
     let root = document.documentElement
     let title = if root != nil and root.tagType(satNamespaceSVG) == ttSvg:
       root.asParentNode.findFirstChildOf(satTitle, satNamespaceSVG)
@@ -3968,7 +3971,7 @@ jsClassPublicDef(Document):
       document.findFirst(ttTitle).asElement
     if title != nil:
       return title.asParentNode.childTextContent.stripAndCollapse()
-    return ""
+    return str("")
 
   proc setTitle(ctx: JSContext; document: Document; ds: DOMString) {.
       jsfset: "title".} =
@@ -4031,11 +4034,11 @@ jsClassPublicDef(Document):
 
   proc querySelector(ctx: JSContext; this: Document; q: DOMString): JSValue
       {.jsfunc.} =
-    return ctx.querySelectorImpl(this.asParentNode, q)
+    ctx.querySelectorImpl(this.asParentNode, q)
 
   proc querySelectorAll(ctx: JSContext; this: Document; q: DOMString): JSValue
       {.jsfunc.} =
-    return ctx.querySelectorAllImpl(this.asParentNode, q)
+    ctx.querySelectorAllImpl(this.asParentNode, q)
 
   #TODO options/custom elements
   proc createElement(ctx: JSContext; document: Document; localName: DOMString):
@@ -4088,14 +4091,14 @@ jsClassPublicDef(Document):
   proc write(ctx: JSContext; document: Document; nl: bool;
       args: varargs[JSValueConst]): JSValue {.jsmfunc("write", false),
       jsmfunc("writeln", true).} =
-    var text = ""
+    var text = initGrowbuf()
     for arg in args:
       # Note: this diverges from behavior in other browsers, but I'm not
       # convinced that modifying the parser to adjust for this edge case is
       # worth the trouble.
-      var s: USVString
+      var s: Str
       ?ctx.fromJS(arg, s)
-      text &= s.toOpenArray()
+      text &= s
     if nl:
       text &= '\n'
     if document.isxml:
@@ -4155,8 +4158,8 @@ jsClassPublicDef(Document):
     for child in document.asParentNode.elementDescendants(Tags):
       if child.name != CAtomNull and child.name != satUempty:
         if child.tagType == ttImg and child.id != satUempty:
-          list.incl($child.id)
-        list.incl($child.name)
+          list.incl(child.id.toStr())
+        list.incl(child.name.toStr())
     return list
 
   proc getter(ctx: JSContext; document: Document; atom: JSAtom): JSValue
@@ -4260,17 +4263,17 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
     JS_MarkForeignObject(rt, this, markFunc)
 
   proc createDocument(ctx: JSContext; implementation: DOMImplementation;
-      namespace: CAtomNullable; qualifiedName: DOMStringNull;
-      doctype = none(DocumentType)): JSValue {.jsfunc.} =
+      namespace: CAtomNullable; qualifiedName: DOMStringEmpty;
+      doctype = jsNull(DocumentType)): JSValue {.jsfunc.} =
     let document = newXMLDocument()
     if document == nil:
       return JS_ThrowOutOfMemory(ctx)
-    let qualifiedName = qualifiedName.toAtom()
+    let qualifiedName = DOMString(qualifiedName).toStr().toAtom()
     let element = if qualifiedName != satUempty:
       ?ctx.createElementNS(document.asDocument, namespace, qualifiedName)
     else:
       Element(nil)
-    if doctype.isSome:
+    if doctype != nil:
       document.asParentNode.append(ctx, doctype.get.asNode)
     if element != nil:
       document.asParentNode.append(ctx, element.asNode)
@@ -4285,7 +4288,7 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
       title = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     let doc = newDocument(ctx)
     doc.contentType = satTextHtml
-    let doctype = doc.newDocumentType("html", "", "")
+    let doctype = doc.newDocumentType(str("html"), str(""), str(""))
     let html = doc.newHTMLElement(ttHtml)
     let head = doc.newHTMLElement(ttHead)
     let body = doc.newHTMLElement(ttBody)
@@ -4308,12 +4311,14 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
     ctx.toJS(doc)
 
   proc createDocumentType(ctx: JSContext; implementation: DOMImplementation;
-      qualifiedName, publicId, systemId: DOMString): JSValue {.jsfunc.} =
+      qualifiedName, publicId, systemId: sink DOMString): JSValue {.jsfunc.} =
     if AsciiWhitespace + {'\0', '>'} in qualifiedName.toOpenArray():
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in qualified name")
     let document = Document(implementation)
-    ctx.toJS(document.newDocumentType($qualifiedName, $publicId, $systemId))
+    let doctype = document.newDocumentType(qualifiedName.toStr(),
+      publicId.toStr(), systemId.toStr())
+    ctx.toJS(doctype)
 
   proc hasFeature(implementation: DOMImplementation): bool {.jsfunc.} =
     return true
@@ -4533,7 +4538,7 @@ jsClassRawForward(TreeWalkerDef, "TreeWalker"):
 proc localName(this: DOMTokenList): StaticAtom =
   StaticAtom(this.getMagic())
 
-proc update(this: DOMTokenList; ctx: JSContext; value: sink string) =
+proc update(this: DOMTokenList; ctx: JSContext; value: sink Str) =
   this.element.setAttr(ctx, this.localName, move(value))
 
 proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
@@ -4548,27 +4553,27 @@ proc validateDOMTokens(ctx: JSContext; toks: varargs[CAtom]): Opt[void] =
   ok()
 
 proc remove(this: DOMTokenList; ctx: JSContext; toks: varargs[CAtom]) =
-  var buf = ""
+  var buf = initGrowbuf()
   for tok in this.toks:
     if tok in toks:
       continue
     if buf.len > 0:
       buf &= ' '
-    buf &= $tok
-  this.update(ctx, move(buf))
+    buf &= tok.toStr()
+  this.update(ctx, buf.toStr())
 
 proc add(this: DOMTokenList; ctx: JSContext; toks: varargs[CAtom]) =
-  var buf = ""
+  var buf = initGrowbuf()
   for tok in this.toks:
     if buf.len > 0:
       buf &= ' '
-    buf &= $tok
+    buf &= tok.toStr()
   for tok in toks:
     if tok notin this.toks:
       if buf.len > 0:
         buf &= ' '
-      buf &= $tok
-  this.update(ctx, move(buf))
+      buf &= tok.toStr()
+  this.update(ctx, buf.toStr())
 
 jsClassDef(DOMTokenList):
   jsextends ElementAccessorDef
@@ -4587,14 +4592,13 @@ jsClassDef(DOMTokenList):
   proc contains(this: DOMTokenList; s: CAtom): bool {.jsfunc.} =
     return s in this.toks
 
-  proc `$`(this: DOMTokenList): string {.jsfunc: "toString",
-      jsfget: "value".} =
-    var s = ""
+  proc toStr(this: DOMTokenList): Str {.jsfunc: "toString", jsfget: "value".} =
+    var s = initGrowbuf()
     for i, tok in this.toks:
       if i != 0:
         s &= ' '
-      s &= $tok
-    move(s)
+      s &= tok.toStr()
+    s.toStr()
 
   proc add(ctx: JSContext; this: DOMTokenList; argv: varargs[JSValueConst]):
       Opt[void] {.jsfunc.} =
@@ -4633,15 +4637,15 @@ jsClassDef(DOMTokenList):
     ?ctx.validateDOMTokens(token, newToken)
     if not this.contains(token):
       return ok(false)
-    var buf = ""
+    var buf = initGrowbuf()
     for tok in this.toks:
       if buf.len > 0:
         buf &= ' '
       if tok == token:
-        buf &= $newToken
+        buf &= newToken.toStr()
       else:
-        buf &= $tok
-    this.update(ctx, move(buf))
+        buf &= tok.toStr()
+    this.update(ctx, buf.toStr())
     return ok(true)
 
   proc supports(ctx: JSContext; this: DOMTokenList; token: DOMString): JSValue
@@ -4664,8 +4668,7 @@ jsClassDef(DOMTokenList):
 
 # DOMStringMap
 proc toDataStr(name: DOMString): CAtom =
-  let s = "data-" & name.toOpenArray().camelToKebabCase()
-  s.toAtom()
+  initStrM("data-", name.toStr().camelToKebabCase()).toAtom()
 
 jsClassDef(DOMStringMap):
   jsextends ElementAccessorDef
@@ -4697,7 +4700,7 @@ jsClassDef(DOMStringMap):
         "lower case after hyphen is not allowed in dataset")
       return err()
     let name = name.toDataStr()
-    ?ctx.validateAttrName($name)
+    ?ctx.validateAttrName(name.toStr().toOpenArray())
     map.target.asElement.setAttr(ctx, name, value)
     ok()
 
@@ -4705,9 +4708,9 @@ jsClassDef(DOMStringMap):
       {.jspropnames.} =
     var list = newJSPropertyEnumList(ctx, uint32(map.target.attrs.len))
     for attr in map.target.attrs:
-      let k = $attr.name
+      let k = attr.name.toStr()
       if k.startsWith("data-") and AsciiUpperAlpha notin k:
-        list.incl(k["data-".len .. ^1].kebabToCamelCase())
+        list.incl(k.substr("data-".len).kebabToCamelCase())
     return list
 
 # NodeList
@@ -4786,10 +4789,10 @@ jsClassPublicDef(HTMLCollection):
       if element == nil:
         continue
       if element.id != satUempty:
-        list.incl($element.id)
+        list.incl(element.id.toStr())
       if element.namespaceURI == satNamespaceHTML and
           element.name != CAtomNull and element.name != satUempty:
-        list.incl($element.name)
+        list.incl(element.name.toStr())
     return list
 
 # HTMLAllCollection
@@ -4861,7 +4864,7 @@ jsClassDef(Attr):
       let name = attr.name
       let i = name.find(':')
       if i >= 0:
-        return ctx.toJS(($name).toOpenArray(0, i - 1))
+        return ctx.toJS(name.toStr().toOpenArray(0, i - 1))
     return JS_NULL
 
   proc localName(ctx: JSContext; attr: Attr): JSValue {.jsfget.} =
@@ -4869,10 +4872,10 @@ jsClassDef(Attr):
     if attr.namespaceURI != CAtomNull:
       let i = name.find(':')
       if i >= 0:
-        return ctx.toJS(($name).toOpenArray(i + 1, name.len - 1))
+        return ctx.toJS(name.toStr().toOpenArray(i + 1, name.len - 1))
     return ctx.toJS(name)
 
-  proc value(attr: Attr): lent string {.jsfget.} =
+  proc value(attr: Attr): lent Str {.jsfget.} =
     return attr.data.value
 
   proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
@@ -4953,7 +4956,7 @@ jsClassDef(NamedNodeMap):
       let name = attr.name
       if element.namespaceURI == satNamespaceHTML and AsciiUpperAlpha in name:
         continue
-      list.incl($name)
+      list.incl(name.toStr())
     return list
 
 # Element
@@ -4967,7 +4970,7 @@ proc isFirstVisualNode*(element: Element): bool =
       if child == element:
         return true
       if (let text = child as Text; text != nil):
-        if not text.data.s.onlyWhitespace():
+        if not text.data.toOpenArray().onlyWhitespace():
           break
   return false
 
@@ -4980,7 +4983,7 @@ proc isLastVisualNode*(element: Element): bool =
       if child of Element:
         break
       if (let text = child as Text; text != nil):
-        if not text.data.s.onlyWhitespace():
+        if not text.data.toOpenArray().onlyWhitespace():
           break
   return false
 
@@ -4989,7 +4992,7 @@ proc isVisuallyEmpty*(element: Element): bool =
     if child of Element:
       return false
     if (let text = child as Text; text != nil):
-      if not text.data.s.onlyWhitespace():
+      if not text.data.toOpenArray().onlyWhitespace():
         return false
   true
 
@@ -5021,7 +5024,7 @@ proc findAttr(element: Element; qualifiedName: CAtom): int =
 proc findAttr*(element: Element; name: StaticAtom): int =
   element.findAttr(name.view())
 
-proc getAttr*(element: Element; i: int): lent string =
+proc getAttr*(element: Element; i: int): lent Str =
   element.attrs[i].value
 
 proc findAttrNS(element: Element; namespace, localName: CAtom): int =
@@ -5054,28 +5057,26 @@ proc addAccessor(element: Element; accessor: ElementAccessor;
 proc getCachedAttributes(element: Element): NamedNodeMap =
   element.getAccessor(satAttributes) as NamedNodeMap
 
-proc attr*(element: Element; s: CAtom): lent string =
+proc attr*(element: Element; s: CAtom): Str =
   let i = element.findAttr(s)
   if i >= 0:
     return element.attrs[i].value
-  # the compiler cries if I return string literals :/
-  let emptyStr {.global.} = ""
-  return emptyStr
+  str("")
 
-proc attr*(element: Element; s: StaticAtom): lent string =
+proc attr*(element: Element; s: StaticAtom): Str =
   return element.attr(s.view())
 
 proc attrl*(element: Element; s: StaticAtom): Opt[int32] =
-  return parseInt32(element.attr(s))
+  return parseInt32(element.attr(s).toOpenArray())
 
 proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32] =
-  let x = parseUInt32(element.attr(s), allowSign = true).get(0)
+  let x = parseUInt32(element.attr(s).toOpenArray(), allowSign = true).get(0)
   if x > 0:
     return ok(x)
   err()
 
 proc attrul*(element: Element; s: StaticAtom): Opt[uint32] =
-  return parseUInt32(element.attr(s), allowSign = true)
+  return parseUInt32(element.attr(s).toOpenArray(), allowSign = true)
 
 proc attrd*(element: Element; s: StaticAtom): Opt[float64] =
   let d = parseFloat64(element.attr(s))
@@ -5178,8 +5179,8 @@ proc setHover*(element: Element; hover: bool) =
     element.flags.toggle({efHover})
     element.invalidate(dtHover)
 
-proc parseColor(element: Element; s: DOMString): Opt[ARGBColor] =
-  var ctx = initCSSParser(s)
+proc parseColor(element: Element; s: sink DOMString): Opt[ARGBColor] =
+  var ctx = initCSSParser(s.toStr())
   if color := ctx.parseColor():
     case color.t
     of cctArgb, cctOklab: return ok(color.argb())
@@ -5194,7 +5195,7 @@ proc parseColor(element: Element; s: DOMString): Opt[ARGBColor] =
     of cctCell: discard
   return err()
 
-proc parseColorImpl(target: EventTarget; s: DOMString): Opt[ARGBColor] {.
+proc parseColorImpl(target: EventTarget; s: sink DOMString): Opt[ARGBColor] {.
     exportc: "cha_$1".} =
   return (target as Element).parseColor(s)
 
@@ -5222,7 +5223,7 @@ const ScriptEventMap = {
   satOndblclick: satDblclick,
 }
 
-proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
+proc reflectScriptAttr(element: Element; name: StaticAtom; value: Str):
     bool =
   let document = element.asNode.document
   for (n, t) in ScriptEventMap:
@@ -5234,7 +5235,7 @@ proc reflectScriptAttr(element: Element; name: StaticAtom; value: string):
   false
 
 proc reflectTokens*(element: Element; arr: var DOMTokenArray; name: StaticAtom;
-    value: string) =
+    value: Str) =
   if value == "":
     arr = DOMTokenArray(nil)
   else:
@@ -5252,7 +5253,7 @@ proc reflectTokens*(element: Element; arr: var DOMTokenArray; name: StaticAtom;
     list.toks = DOMTokenArrayView(arr)
 
 proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
-    value: string) =
+    value: Str) =
   case element.tagType
   of ttLink:
     let link = element as HTMLLinkElement
@@ -5262,7 +5263,7 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
     let connected = link.asNode.isConnected()
     if name == satDisabled:
       let wasDisabled = link.isDisabled()
-      link.enabled = some(not has)
+      link.enabled = (not has).toOptionalBool()
       let disabled = link.isDisabled()
       if wasDisabled != disabled:
         for sheet in link.asSheetElement.sheets:
@@ -5298,7 +5299,7 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
             canvas.ctx2d.ps.sclose()
             canvas.ctx2d = CanvasRenderingContext2D(nil)
           canvas.bitmap = NetworkBitmap(
-            contentType: "image/x-cha-canvas",
+            contentType: str("image/x-cha-canvas"),
             imageId: window.getImageId(),
             cacheId: -1,
             width: w,
@@ -5318,8 +5319,7 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
 # Called whenever an attribute changes on the element.
 # If `has' is false, then value is "".  Otherwise, value is the new
 # attribute value.
-proc reflectAttr0(element: Element; name: CAtom; has: bool;
-    value: string) =
+proc reflectAttr0(element: Element; name: CAtom; has: bool; value: Str) =
   let name = name.toStaticAtom()
   case name
   of satId:
@@ -5356,14 +5356,13 @@ proc reflectAttr0(element: Element; name: CAtom; has: bool;
   else:
     element.reflectLocalAttr(name, has, value)
 
-proc reflectAttr(element: Element; name: CAtom; has: bool;
-    value: string) =
+proc reflectAttr(element: Element; name: CAtom; has: bool; value: Str) =
   element.reflectAttr0(name, has, value)
   element.asNode.document.invalidateCollections()
   element.invalidate()
 
 proc reflectAttrDel(element: Element; name: CAtom) =
-  element.reflectAttr(name, false, "")
+  element.reflectAttr(name, false, str(""))
 
 proc reflectAttr(element: Element; attr: AttrData) =
   element.reflectAttr(attr.name, true, attr.value)
@@ -5412,7 +5411,7 @@ proc isDisabled*(this: Element): bool =
 
 proc newElement*(document: Document; localName: CAtom;
     namespace = satNamespaceHTML): Element =
-  let tagName = ($localName).toUpperAscii().toAtom()
+  let tagName = localName.toStr().toUpperAscii().toAtom()
   return document.newElement(localName, namespace.view(), tagName)
 
 proc isRenderBlocking(element: Element): bool =
@@ -5529,7 +5528,7 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
     if i >= 0:
       name = name.substr(i)
   element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-    element.attrs[i].namespace, nil, true, element.attrs[i].value, [], [],
+    element.attrs[i].namespace, element.attrs[i].value.toStrNil(), [], [],
     Node(nil), Node(nil))
   let map = element.getCachedAttributes()
   if map != nil:
@@ -5557,43 +5556,54 @@ proc delAttr(element: Element; ctx: JSContext; name: CAtom) =
   if i >= 0:
     element.delAttr(ctx, i)
 
-proc setAttr(element: Element; ctx: JSContext; name: CAtom;
-    value: sink string) =
+proc setAttr(element: Element; ctx: JSContext; name: CAtom; value: sink Str) =
   var i = element.attrs.upperBound(name, cmpAttrName)
   if i > 0 and element.attrs[i - 1].name == name:
     dec i
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNull, nil, true, element.attrs[i].value, [], [], Node(nil),
+      CAtomNull, element.attrs[i].value.toStrNil(), [], [], Node(nil),
       Node(nil))
     element.attrs[i].value = value
   else:
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNull, nil, false, "", [], [], Node(nil), Node(nil))
+      CAtomNull, str(nil), [], [], Node(nil), Node(nil))
     element.attrs.insert(AttrData(name: name, value: value), i)
   element.reflectAttr(element.attrs[i])
 
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
-    value: sink string) =
+    value: sink Str) =
   element.setAttr(ctx, name.view(), value)
 
 proc setAttr(element: Element; ctx: JSContext; name: CAtom;
-    value: DOMString) =
-  var i = element.attrs.upperBound(name, cmpAttrName)
-  if i > 0 and element.attrs[i - 1].name == name:
-    dec i
-    element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNull, nil, true, element.attrs[i].value, [], [], Node(nil),
-      Node(nil))
-    element.attrs[i].value = $value
-  else:
-    element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-      CAtomNull, nil, false, "", [], [], Node(nil), Node(nil))
-    element.attrs.insert(AttrData(name: name, value: $value), i)
-  element.reflectAttr(element.attrs[i])
+    value: sink DOMString) =
+  element.setAttr(ctx, name, value.toStr())
 
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
-    value: DOMString) =
+    value: sink DOMString) =
   element.setAttr(ctx, name.view(), value)
+
+proc setAttrNS(element: Element; ctx: JSContext; namespace: CAtomNullable;
+    qualifiedName: CAtom; value: sink Str): Opt[void] =
+  var namespace = CAtom(namespace)
+  var localName = qualifiedName
+  ?ctx.validateAndExtract(namespace, localName, nvAttribute)
+  var i = element.findAttrNS(namespace, localName)
+  if i >= 0:
+    element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
+      namespace, element.attrs[i].value.toStrNil(), [], [], Node(nil),
+      Node(nil))
+    element.attrs[i].value = value
+  else:
+    element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
+      namespace, str(nil), [], [], Node(nil), Node(nil))
+    i = element.attrs.upperBound(qualifiedName, cmpAttrName)
+    element.attrs.insert(AttrData(
+      namespace: namespace,
+      name: qualifiedName,
+      value: value
+    ), i)
+  element.reflectAttr(element.attrs[i])
+  ok()
 
 proc sinkAttrs*(element: Element; attrs: sink seq[AttrData]) =
   element.attrs = move(attrs)
@@ -5676,7 +5686,7 @@ proc shadowRoot(this: Element): ShadowRoot =
 
 proc toInnerText(this: Element; ctx: JSContext; s: openArray[char]):
     DocumentFragment =
-  var text = newStringOfCap(s.len)
+  var text = initGrowbufOfCap(s.len)
   var cr = false
   for c in s:
     if c == '\n' or cr:
@@ -5688,7 +5698,7 @@ proc toInnerText(this: Element; ctx: JSContext; s: openArray[char]):
     text &= "<br>"
   let root = this.asNode.document.newHTMLElement(ttDiv)
   if root != nil:
-    return ctx.parseFragment(root.asParentNode, text)
+    return ctx.parseFragment(root.asParentNode, text.toOpenArray())
   return DocumentFragment(nil)
 
 jsClassPublicDef(Element):
@@ -5714,21 +5724,21 @@ jsClassPublicDef(Element):
   proc childElementCount(this: Element): uint32 {.jsfget.} =
     return this.asParentNode.childElementCountImpl
 
-  proc innerHTML(element: Element): string {.jsfget.} =
+  proc innerHTML(element: Element): Str {.jsfget.} =
     #TODO xml
-    return element.asNode.serializeFragment(writeShadow = true)
+    element.asNode.serializeFragment(writeShadow = true)
 
-  proc outerHTML*(element: Element): string {.jsfget.} =
+  proc outerHTML*(element: Element): Str {.jsfget.} =
     #TODO xml
-    result = ""
-    result.serializeFragmentInner(element.asNode, ttUnknown,
-      writeShadow = true)
+    var buf = initGrowbuf()
+    buf.serializeFragmentInner(element.asNode, ttUnknown, writeShadow = true)
+    buf.toStr()
 
-  proc prefix(element: Element): string {.jsfget.} =
+  proc prefix(element: Element): Str {.jsfget.} =
     let i = element.tagName.find(':')
     if i < 0:
-      return ""
-    return ($element.tagName).substr(0, i - 1)
+      return str("")
+    return element.tagName.toStr().substr(0, i - 1)
 
   proc hasAttributes(element: Element): bool {.jsfunc.} =
     return element.attrs.len > 0
@@ -5822,10 +5832,10 @@ jsClassPublicDef(Element):
   proc scrollIntoView(element: Element) {.jsfunc.} =
     discard #TODO ditto
 
-  proc setInnerHTML(ctx: JSContext; element: Element; s: DOMStringNull)
+  proc setInnerHTML(ctx: JSContext; element: Element; s: DOMStringEmpty)
       {.jsfset: "innerHTML".} =
     let fragment = ctx.parseFragment(element.asParentNode,
-      s.toOpenArray()).asNode
+      DOMString(s).toOpenArray()).asNode
     if fragment != nil:
       let templ = element as HTMLTemplateElement
       let nodeCtx = if templ != nil:
@@ -5834,7 +5844,7 @@ jsClassPublicDef(Element):
         element.asParentNode
       nodeCtx.replaceAll(ctx, fragment)
 
-  proc outerHTML(ctx: JSContext; element: Element; s: DOMStringNull): JSValue
+  proc outerHTML(ctx: JSContext; element: Element; s: DOMStringEmpty): JSValue
       {.jsfset.} =
     let parent0 = element.parentNode
     if parent0 == nil:
@@ -5848,7 +5858,8 @@ jsClassPublicDef(Element):
       # neither a document, nor a document fragment => parent must be an
       # element node
       parent0 as Element
-    let fragment = ctx.parseFragment(parent.asParentNode, s.toOpenArray())
+    let fragment = ctx.parseFragment(parent.asParentNode,
+      DOMString(s).toOpenArray())
     if fragment == nil:
       return JS_ThrowOutOfMemory(ctx)
     ctx.replaceChildWithThrow(parent.asNode, element.asNode, fragment.asNode)
@@ -5953,11 +5964,11 @@ jsClassPublicDef(Element):
 
   proc querySelector(ctx: JSContext; this: Element; q: DOMString): JSValue
       {.jsfunc.} =
-    return ctx.querySelectorImpl(this.asParentNode, q)
+    ctx.querySelectorImpl(this.asParentNode, q)
 
   proc querySelectorAll(ctx: JSContext; this: Element; q: DOMString): JSValue
       {.jsfunc.} =
-    return ctx.querySelectorAllImpl(this.asParentNode, q)
+    ctx.querySelectorAllImpl(this.asParentNode, q)
 
   proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
       JSValue {.jsfunc.} =
@@ -5987,28 +5998,9 @@ jsClassPublicDef(Element):
     ok()
 
   proc setAttributeNS(ctx: JSContext; element: Element;
-      namespace: CAtomNullable; qualifiedName: CAtom; value: DOMString):
+      namespace: CAtomNullable; qualifiedName: CAtom; value: sink DOMString):
       Opt[void] {.jsfunc.} =
-    var namespace = CAtom(namespace)
-    var localName = qualifiedName
-    ?ctx.validateAndExtract(namespace, localName, nvAttribute)
-    var i = element.findAttrNS(namespace, localName)
-    if i >= 0:
-      element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
-        namespace, nil, true, element.attrs[i].value, [], [], Node(nil),
-        Node(nil))
-      element.attrs[i].value = $value
-    else:
-      element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
-        namespace, nil, false, "", [], [], Node(nil), Node(nil))
-      i = element.attrs.upperBound(qualifiedName, cmpAttrName)
-      element.attrs.insert(AttrData(
-        namespace: namespace,
-        name: qualifiedName,
-        value: $value
-      ), i)
-    element.reflectAttr(element.attrs[i])
-    ok()
+    element.setAttrNS(ctx, namespace, qualifiedName, value.toStr())
 
   proc removeAttribute(ctx: JSContext; element: Element;
       qualifiedName: CAtom) {.jsfunc.} =
@@ -6031,7 +6023,7 @@ jsClassPublicDef(Element):
     let i = element.findAttr(qualifiedName)
     if i < 0:
       if JS_IsUndefined(force) or forceBool == 1:
-        element.setAttr(ctx, qualifiedName, "")
+        element.setAttr(ctx, qualifiedName, str(""))
         return ok(true)
       return ok(false)
     if JS_IsUndefined(force) or forceBool == 0:
@@ -6051,8 +6043,8 @@ jsClassPublicDef(Element):
     let i = element.findAttrNS(attr.namespaceURI, localName)
     let oldAttr = if i >= 0: attributes.getAttr(i) else: Attr(nil)
     if oldAttr != attr:
-      ?ctx.setAttributeNS(element, CAtomNullable(attr.namespaceURI), localName,
-        attr.value.toDOMStringView()) #TODO won't work with Str
+      ?element.setAttrNS(ctx, CAtomNullable(attr.namespaceURI), attr.name,
+        attr.value)
     ctx.toJS(oldAttr)
 
   proc removeAttributeNode(ctx: JSContext; element: Element; attr: Attr):
@@ -6162,7 +6154,7 @@ jsClassPublicDef(Element):
 
   proc style(element: Element): CSSStyleDeclaration {.jsnfget.} =
     if element.cachedStyle == nil:
-      element.cachedStyle = newCSSStyleDeclaration(element, "")
+      element.cachedStyle = newCSSStyleDeclaration(element, str(""))
     return element.cachedStyle
 
   proc setStyle(ctx: JSContext; element: Element; s: CSSOMString) {.
@@ -6170,7 +6162,7 @@ jsClassPublicDef(Element):
     element.setAttr(ctx, satStyle, s)
 
   #TODO slot should be unscopable
-  proc getAttrMagic(element: Element; magic: StaticAtom): lent string {.
+  proc getAttrMagic(element: Element; magic: StaticAtom): Str {.
       jsmfget("className", satClass), jsmfget("slot", satSlot).} =
     element.attr(magic)
 
@@ -6183,22 +6175,22 @@ jsClassPublicDef(Element):
       jsfget: "outerText".} =
     ctx.toJS(this.asNode.textContent)
 
-  proc setInnerText(ctx: JSContext; this: Element; ds: DOMStringNull)
+  proc setInnerText(ctx: JSContext; this: Element; ds: DOMStringEmpty)
       {.jsfset: "innerText".} =
-    let fragment = this.toInnerText(ctx, ds.toOpenArray())
+    let fragment = this.toInnerText(ctx, DOMString(ds).toOpenArray())
     if fragment != nil:
       this.asParentNode.replaceAll(ctx, fragment.asNode)
 
-  proc setOuterText(ctx: JSContext; this: Element; ds: DOMStringNull):
+  proc setOuterText(ctx: JSContext; this: Element; ds: DOMStringEmpty):
       JSValue {.jsfset: "outerText".} =
     let parent = this.asNode.parentNode
     if parent == nil:
       return JS_ThrowDOMExceptionNoParent(ctx)
-    let fragment = this.toInnerText(ctx, ds.toOpenArray())
+    let fragment = this.toInnerText(ctx, DOMString(ds).toOpenArray())
     if fragment == nil:
       return JS_ThrowOutOfMemory(ctx)
     if fragment.asNode.firstChild == nil:
-      let text = newText(this.asNode.document, "")
+      let text = newText(this.asNode.document, str(""))
       if text != nil:
         fragment.asParentNode.append(ctx, text.asNode)
     let prev = this.asNode.previousSibling
@@ -6209,11 +6201,11 @@ jsClassPublicDef(Element):
     if (let next = next as Text; next != nil):
       if (let prev = next.asNode.previousSibling as Text; prev != nil):
         #TODO replace (live ranges etc.)
-        prev.data.s &= next.data.s
+        prev.data &= next.data
     if (let prev = prev as Text; prev != nil):
       if (let next = prev.asNode.nextSibling as Text; next != nil):
         #TODO replace (live ranges etc.)
-        prev.data.s &= next.data.s
+        prev.data &= next.data
     return JS_UNDEFINED
 
 # AttrDummyElement
@@ -6241,12 +6233,13 @@ jsClassDef(ShadowRoot):
   proc host(this: ShadowRoot): Element {.jsfget.} =
     this.asDocumentFragment.host
 
-  proc innerHTML(this: ShadowRoot): string {.jsfget.} =
-    return this.asNode.serializeFragment(writeShadow = true)
+  proc innerHTML(this: ShadowRoot): Str {.jsfget.} =
+    this.asNode.serializeFragment(writeShadow = true)
 
-  proc setInnerHTML(ctx: JSContext; this: ShadowRoot; s: DOMStringNull)
+  proc setInnerHTML(ctx: JSContext; this: ShadowRoot; s: DOMStringEmpty)
       {.jsfset: "innerHTML".} =
-    let fragment = ctx.parseFragment(this.asParentNode, s.toOpenArray()).asNode
+    let fragment = ctx.parseFragment(this.asParentNode,
+      DOMString(s).toOpenArray()).asNode
     if fragment != nil:
       this.asParentNode.replaceAll(ctx, fragment)
 
@@ -6363,7 +6356,7 @@ proc merge*(a: var DependencyInfo; b: DependencyInfo) =
       if x notin a[t]:
         a[t].add(x)
 
-proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
+proc newCSSStyleDeclaration(element: Element; value: Str; computed = false;
     readonly = false): CSSStyleDeclaration =
   # Note: element may be nil
   jsNew CSSStyleDeclarationObj(
@@ -6418,13 +6411,10 @@ proc updateStyleAttr(this: CSSStyleDeclaration; ctx: JSContext) =
   this.element.setAttr(ctx, satStyle, this.cssText)
 
 jsClassDef(CSSStyleDeclaration):
-  proc cssText(this: CSSStyleDeclaration): string {.jsfget.} =
-    result = ""
-    if not this.computed:
-      for it in this.decls:
-        if result.len > 0:
-          result &= ' '
-        result &= $it
+  proc cssText(this: CSSStyleDeclaration): Str {.jsfget.} =
+    if this.computed:
+      return str("")
+    this.decls.toStr()
 
   proc setCSSText(ctx: JSContext; this: CSSStyleDeclaration; s: CSSOMString):
       Opt[void] {.jsfset: "cssText".} =
@@ -6441,61 +6431,61 @@ jsClassDef(CSSStyleDeclaration):
       return ctx.toJS(this.decls[int(u)].name)
     return ctx.toJS("")
 
-  proc getPropertyValue(this: CSSStyleDeclaration; s: CSSOMString): string
+  proc getPropertyValue(this: CSSStyleDeclaration; s: CSSOMString): Str
       {.jsfunc.} =
-    var res = ""
+    var buf = initGrowbuf()
     if (let sh = shorthandType(s.toOpenArray()); sh != cstNone):
       var flags: array[CSSImportantFlag, bool]
       for p in ShorthandMap[sh]:
         let i = this.find(p)
         if i < 0:
-          return ""
+          return str("")
         flags[this.decls[i].f] = true
         if flags[cifNormal] and flags[cifImportant]:
-          return ""
+          return str("")
         for it in this.decls[i].value:
-          res &= $it
-        res &= ' '
-      if res.len > 0:
-        res.setLen(res.high)
+          buf &= it
+        buf &= ' '
+      if buf.len > 0:
+        buf.setLen(buf.high)
     elif (let i = this.find(s.toOpenArray()); i >= 0):
       for it in this.decls[i].value:
-        res &= $it
-    move(res)
+        buf &= it
+    buf.toStr()
 
   proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
       {.jsgetownprop.} =
     var u: uint32
-    var ds: USVString
+    var ds: CSSOMString
     case ctx.fromIdx(atom, u, ds)
     of fiIdx:
       if u < this.length:
         return ctx.toJS(this.decls[int(u)].name)
       return JS_UNINITIALIZED
     of fiStr:
-      if ds.toOpenArray() == "cssFloat":
-        return ctx.toJS(this.getPropertyValue(initUSVStringLit("float")))
+      if ds == "cssFloat":
+        return ctx.toJS(this.getPropertyValue(str("float")))
       if ds.toOpenArray().isSupportedProperty():
         return ctx.toJS(this.getPropertyValue(ds))
-      let s = ds.toOpenArray().camelToKebabCase()
-      if s.isSupportedProperty():
-        return ctx.toJS(this.getPropertyValue(s.toUSVStringView()))
+      let s = ds.camelToKebabCase()
+      if s.toOpenArray().isSupportedProperty():
+        return ctx.toJS(this.getPropertyValue(s))
       return JS_UNINITIALIZED
     of fiErr: return JS_EXCEPTION
 
   proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration;
       name: CSSOMString): JSValue {.jsfunc.} =
     ?ctx.checkReadOnly(this)
-    let name = name.toOpenArray().toLowerAscii()
-    let value = this.getPropertyValue(name.toUSVStringView())
-    let sh = shorthandType(name)
+    let name = name.toLowerAscii()
+    let value = this.getPropertyValue(name)
+    let sh = shorthandType(name.toOpenArray())
     if sh != cstNone:
       for t in ShorthandMap[sh]:
         let i = this.find(t)
         if i >= 0:
           this.decls.delete(i)
     else:
-      let i = this.find(name)
+      let i = this.find(name.toOpenArray())
       if i >= 0:
         this.decls.delete(i)
     this.updateStyleAttr(ctx)
@@ -6508,8 +6498,8 @@ jsClassDef(CSSStyleDeclaration):
       return JS_UNDEFINED
     if value.len == 0:
       return ctx.removeProperty(this, name)
-    let name = name.toOpenArray().toLowerAscii()
-    if (let i = this.find(name); i >= 0):
+    let name = name.toLowerAscii()
+    if (let i = this.find(name.toOpenArray()); i >= 0):
       if this.decls[i].parseDeclValue(value).isErr:
         return JS_UNDEFINED # ignore
     else:
@@ -6527,15 +6517,14 @@ jsClassDef(CSSStyleDeclaration):
       value: CSSOMString): JSValue {.jssetprop.} =
     ?ctx.checkReadOnly(this)
     var u: uint32
-    var ds: DOMString
-    case ctx.fromIdx(atom, u, ds)
+    var name: CSSOMString
+    case ctx.fromIdx(atom, u, name)
     of fiIdx: return JS_UNINITIALIZED
     of fiStr:
-      var name = $ds
       if name == "cssFloat":
-        name = "float"
+        name = str("float")
       name = camelToKebabCase(name)
-      return ctx.setProperty(this, name.toUSVStringView(), value)
+      return ctx.setProperty(this, name, value)
     of fiErr:
       return JS_EXCEPTION
 
@@ -6556,15 +6545,15 @@ proc crossOrigin(element: HTMLElement): CORSAttribute =
 proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy] =
   parseEnumNoCase[ReferrerPolicy](element.asElement.attr(satReferrerpolicy))
 
-proc getSrc*(this: HTMLElement): tuple[src, contentType: string] =
+proc getSrc*(this: HTMLElement): tuple[src, contentType: Str] =
   let src = this.asElement.attr(satSrc)
   if src != "":
-    return (src, "")
+    return (src, str(""))
   for el in this.asParentNode.elementDescendants(ttSource):
     let src = el.asElement.attr(satSrc)
     if src != "":
       return (src, el.asElement.attr(satType))
-  return ("", "")
+  return (str(""), str(""))
 
 proc tagType*(element: HTMLElement): TagType =
   return element.asElement.tagTypeNoNS
@@ -6738,7 +6727,7 @@ proc jsReflectGet0(ctx: JSContext; htmlElement: HTMLElement; magic: cint):
   of rtUrl:
     let s = element.attr(name)
     if url := element.asNode.document.parseURL(s):
-      return ctx.toJS($url)
+      return ctx.toJS(url.toStr())
     return ctx.toJS(s)
   of rtReferrerPolicy:
     if s := htmlElement.referrerPolicy:
@@ -6752,7 +6741,7 @@ proc jsReflectGet0(ctx: JSContext; htmlElement: HTMLElement; magic: cint):
     return ctx.toJS(element.getFormMethodAttr(name))
   of rtDir:
     let value = element.attr(name)
-    if value in ["ltr", "rtl", "auto"]:
+    if value in [str("ltr"), str("rtl"), str("auto")]:
       return ctx.toJS(value)
     return ctx.toJS("")
   of rtForm: return ctx.toJS(element.getElementForm())
@@ -6779,9 +6768,9 @@ proc jsReflectSet0(ctx: JSContext; htmlElement: HTMLElement; val: JSValueConst;
     ?ctx.fromJS(val, x)
     element.setAttr(ctx, name, x)
   of rtStrNull:
-    var x: DOMStringNull
+    var x: DOMStringEmpty
     ?ctx.fromJS(val, x)
-    element.setAttr(ctx, name, x)
+    element.setAttr(ctx, name, DOMString(x))
   of rtCrossOrigin:
     if JS_IsNull(val):
       element.delAttr(ctx, name.view())
@@ -6793,22 +6782,22 @@ proc jsReflectSet0(ctx: JSContext; htmlElement: HTMLElement; val: JSValueConst;
     var x: bool
     ?ctx.fromJS(val, x)
     if x:
-      element.setAttr(ctx, name, "")
+      element.setAttr(ctx, name, str(""))
     else:
       element.delAttr(ctx, name.view())
   of rtLong:
     var x: int32
     ?ctx.fromJS(val, x)
-    element.setAttr(ctx, name, $x)
+    element.setAttr(ctx, name, x.toStr())
   of rtUlong:
     var x: uint32
     ?ctx.fromJS(val, x)
-    element.setAttr(ctx, name, $x)
+    element.setAttr(ctx, name, x.toStr())
   of rtUlongGz:
     var x: uint32
     ?ctx.fromJS(val, x)
     if x > 0:
-      element.setAttr(ctx, name, $x)
+      element.setAttr(ctx, name, x.toStr())
   of rtDoubleGz:
     var x: float64
     ?ctx.fromJS(val, x)
@@ -6929,10 +6918,10 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
 jsClassPublicDef(HTMLAnchorElement):
   jsextends HTMLElementDef
 
-  proc toString(this: HTMLAnchorElement): string {.jsfunc.} =
+  proc toString(this: HTMLAnchorElement): Str {.jsfunc.} =
     if href := this.asElement.reinitURL():
-      return $href
-    return ""
+      return href.toStr()
+    return str("")
 
   proc getRelList(this: HTMLAnchorElement): DOMTokenList {.
       jsnfget: "relList".} =
@@ -6957,11 +6946,11 @@ proc newAudio(ctx: JSContext; this_target: JSValueConst; argc: cint;
 jsClassDef(HTMLBaseElement):
   jsextends HTMLElementDef
 
-  proc href(base: HTMLBaseElement): string {.jsfget.} =
+  proc href(base: HTMLBaseElement): Str {.jsfget.} =
     #TODO with fallback base url
     if url := parseURL(base.asElement.attr(satHref)):
-      return $url
-    return ""
+      return url.toStr()
+    return str("")
 
 # <canvas>
 type ToBlobEnv* {.final.} = ref object of BlobOpaque
@@ -6992,7 +6981,8 @@ proc onFinishToBlob(response: Response; success: bool) =
   let window = this.asNode.document.window
   let res = trace(ctx.callSink(callback, JS_UNDEFINED.vc, jsBlob))
   if JS_IsException(res.vc):
-    window.console.error("Exception in canvas toBlob:", ctx.getExceptionMsg())
+    window.console.error(str("Exception in canvas toBlob:"),
+      ctx.getExceptionMsg())
   JS_FreeContext(ctx)
 
 proc toBlob1(opaque: RootRef; response: Response) =
@@ -7003,7 +6993,7 @@ proc toBlob1(opaque: RootRef; response: Response) =
     let callback = move(env.callback)
     if not env.isPNG:
       # Redo as PNG.  (Yes, this is spec-mandated.)
-      ctx.toBlob(this, callback, "image/png")
+      ctx.toBlob(this, callback, str("image/png"))
     else: # the png encoder doesn't work...
       let window = this.asNode.document.window
       window.console.error("missing/broken PNG encoder")
@@ -7021,7 +7011,8 @@ proc toBlob0(opaque: RootRef; response: Response) =
     return
   let this = env.this
   let headers = newHeaders(hgRequest, {
-    "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
+    byteStr("Cha-Image-Dimensions"):
+      initDimsHeader(this.bitmap.width, this.bitmap.height)
   })
   let request = newRequest(
     env.url,
@@ -7039,7 +7030,7 @@ jsClassDef(HTMLCanvasElement):
   proc getContext*(jctx: JSContext; this: HTMLCanvasElement;
       contextId: DOMString; options = JS_UNDEFINED.vc):
       CanvasRenderingContext2D {.jsfunc.} =
-    if contextId.toOpenArray() == "2d":
+    if contextId.toStr() == "2d":
       if this.ctx2d == nil:
         let window = jctx.getWindow()
         let loader = window.loader
@@ -7051,17 +7042,19 @@ jsClassDef(HTMLCanvasElement):
       return this.ctx2d
     return CanvasRenderingContext2D(nil)
 
-  proc toBlob(ctx: JSContext; this: HTMLCanvasElement;
-      callback: JSCallback; contentType = "image/png";
-      qualityVal = JS_UNDEFINED.vc) {.jsfunc.} =
+  proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSCallback;
+      contentType = str("image/png"); qualityVal = JS_UNDEFINED.vc)
+      {.jsfunc.} =
     let contentType = contentType.toLowerAscii()
     if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:
       return
-    let url = parseURL0("img-codec+" & contentType.after('/') & ":encode")
+    let url = parseURL0(initStrM("img-codec+", contentType.after('/'),
+      ":encode"))
     if url == nil:
       return
     let headers = newHeaders(hgRequest, {
-      "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
+      byteStr("Cha-Image-Dimensions"):
+        initDimsHeader(this.bitmap.width, this.bitmap.height)
     })
     if JS_IsNumber(qualityVal):
       # standard-compliant special case; it also means that we don't have to
@@ -7071,9 +7064,9 @@ jsClassDef(HTMLCanvasElement):
           0 <= quality and quality <= 1:
         quality *= 99
         quality += 1
-        headers.add("Cha-Image-Quality", dtoa(quality))
+        headers.add(byteStr("Cha-Image-Quality"), dtoa(quality).asByteString)
     let request = newRequest(
-      "img-codec+x-cha-canvas:decode",
+      str("img-codec+x-cha-canvas:decode"),
       httpMethod = hmPost,
       body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId),
       internal = true
@@ -7096,11 +7089,11 @@ proc newImage(ctx: JSContext; _: JSValueConst; argc: cint;
   if argc >= 1 and not JS_IsUndefined(argv[0]):
     var x: uint32
     ?ctx.fromJS(argv[0], x)
-    this.asElement.setAttr(ctx, satWidth, $x)
+    this.asElement.setAttr(ctx, satWidth, x.toStr())
   if argc >= 2 and not JS_IsUndefined(argv[1]):
     var x: uint32
     ?ctx.fromJS(argv[1], x)
-    this.asElement.setAttr(ctx, satHeight, $x)
+    this.asElement.setAttr(ctx, satHeight, x.toStr())
   ctx.toJS(this)
 
 proc getImageRect(this: HTMLImageElement): tuple[w, h: float64] =
@@ -7127,14 +7120,14 @@ jsClassPublicDef(HTMLImageElement):
 
   proc setWidth(ctx: JSContext; this: HTMLImageElement; u: uint32) {.
       jsfset: "width".} =
-    this.asElement.setAttr(ctx, satWidth, $u)
+    this.asElement.setAttr(ctx, satWidth, u.toStr())
 
   proc height(this: HTMLImageElement): uint32 {.jsfget.} =
     return uint32(this.getImageRect().h)
 
   proc setHeight(ctx: JSContext; this: HTMLImageElement; u: uint32) {.
       jsfset: "height".} =
-    this.asElement.setAttr(ctx, satHeight, $u)
+    this.asElement.setAttr(ctx, satHeight, u.toStr())
 
 # SheetElement
 proc findPrevSheet(this: SheetElement): CSSStylesheet =
@@ -7219,9 +7212,10 @@ proc isDisabled(link: HTMLLinkElement): bool =
   if title == "":
     return link.relList.containsIgnoreCase(satAlternate) or
       not link.enabled.get(true)
-  if link.enabled.isSome:
-    return not link.enabled.get
-  return link.asNode.document.sheetTitle != title
+  case link.enabled
+  of obNone: return link.asNode.document.sheetTitle != title
+  of obTrue: return false
+  of obFalse: return true
 
 jsClassDef(HTMLLinkElement):
   jsextends SheetElementDef
@@ -7329,7 +7323,7 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
         element.fetchDescendantsAndLink(res.script, rdScript, onComplete)
   )
 
-proc fetchInlineModuleGraph(element: HTMLScriptElement; sourceText: string;
+proc fetchInlineModuleGraph(element: HTMLScriptElement; sourceText: Str;
     url: URL; options: ScriptOptions; onComplete: OnCompleteProc) =
   let window = element.asNode.document.window
   let ctx = window.jsctx
@@ -7384,8 +7378,7 @@ proc onFinishFetchModule(response: Response; success: bool) =
     settings.moduleMap.put(url, moduleType, res)
     element.onComplete(res)
   elif contentType.isJavaScriptType():
-    let arr = response.onFinishByteArray()
-    let source = arr.toOpenArray().toValidUTF8()
+    let source = response.onFinishGrowbuf().toStr().toValidUTF8()
     let res = ctx.newJSModuleScript(source, url, env.options, settings)
     #TODO can't we just return null from newJSModuleScript?
     if JS_IsException(res.script.record.vc):
@@ -7511,13 +7504,12 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
   if not element.asElement.attrb(satSrc) and sourceText == "" or
       not element.asNode.isConnected or window == nil:
     return
-  let t = element.asElement.attr(satType)
-  let typeString = if t != "":
+  let typeString = if (let t = element.asElement.attr(satType); t != ""):
     t.strip(chars = AsciiWhitespace)
   elif (let l = element.asElement.attr(satLanguage); l != ""):
-    "text/" & l
+    initStrM("text/", l)
   else:
-    "text/javascript"
+    str("text/javascript")
   if typeString.isJavaScriptType():
     element.scriptType = stClassic
   elif typeString.equalsIgnoreCase("module"):
@@ -7623,7 +7615,8 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
         element.markAsReady(ScriptResult(t: srtNull))
       else:
         window.loader.resume(response)
-        let source = response.stream.readAll().decodeAll(encoding)
+        let source = response.stream.readAll().toOpenArray()
+          .decodeAll(encoding)
         response.stream.sclose()
         let script = ctx.newClassicScript(source, response.url, options,
           settings, mutedErrors = false)
@@ -7642,7 +7635,7 @@ jsClassPublicDef(HTMLScriptElement):
     if element.scriptResult != nil:
       rt.mark(element.scriptResult, markFunc)
 
-  proc text(this: HTMLScriptElement): string {.jsfget.} =
+  proc text(this: HTMLScriptElement): Str {.jsfget.} =
     this.asParentNode.childTextContent
 
   proc setText(ctx: JSContext; this: HTMLScriptElement; ds: DOMString)
@@ -7810,7 +7803,7 @@ jsClassPublicDef(HTMLTemplateElement):
 jsClassRaw(HTMLTitleElementDef, "HTMLTitleElement"):
   jsextends HTMLElementDef
 
-  proc titleText(this: HTMLElement): string {.jsfget: "text".} =
+  proc titleText(this: HTMLElement): Str {.jsfget: "text".} =
     this.asParentNode.childTextContent
 
   proc setTitleText(ctx: JSContext; this: HTMLElement; ds: DOMString) {.
@@ -7896,7 +7889,7 @@ proc newHTMLElementInternal(tagType: TagType; document: Document):
       -1
     let bitmap = if document.scriptingEnabled:
       NetworkBitmap(
-        contentType: "image/x-cha-canvas",
+        contentType: str("image/x-cha-canvas"),
         imageId: imageId,
         cacheId: -1,
         width: 300,
@@ -8023,7 +8016,6 @@ proc reflectAttributes*(ctx: JSContext; class: JSClassID;
   let diff = (uint16(class) - uint16(HTMLElementDef.id)) shl 9
   for i in attrs:
     let name = ReflectMap[i].attrname
-    let nameStr = $name
     let nameCStr = case name
     of satFor: cstring"htmlFor"
     of satValuetype: cstring"valueType"
@@ -8036,7 +8028,7 @@ proc reflectAttributes*(ctx: JSContext; class: JSClassID;
     of satFormmethod: cstring"formMethod"
     of satIsmap: cstring"isMap"
     of satUsemap: cstring"useMap"
-    else: cstring(nameStr)
+    else: cstring(name.toStr().toCStringConst())
     ?ctx.definePropertyGetSetCE(proto, nameCStr, jsReflectGet, jsReflectSet,
       cint(diff or uint16(i)))
   ok()
@@ -8055,8 +8047,8 @@ proc addHyperlinkUtils*(ctx: JSContext; class: JSClassID): Opt[void] =
   ]
   let proto = ctx.getClassProto(class)
   for atom in atoms:
-    ?ctx.definePropertyGetSetCE(proto, cstring($atom), hyperlinkGet,
-      hyperlinkSet, cint(atom))
+    ?ctx.definePropertyGetSetCE(proto, cstring(atom.toStr().toCStringConst()),
+      hyperlinkGet, hyperlinkSet, cint(atom))
   ok()
 
 proc registerElements(ctx: JSContext): Opt[void] =
@@ -8205,11 +8197,11 @@ proc addDOMModule*(ctx: JSContext): JSCode =
   let nodeFilter = ?ctx.newObject()
   for e in NodeFilterNode:
     let n = ctx.toJS(1u32 shl uint32(e))
-    ?ctx.definePropertyE(nodeFilter, $e, n)
+    ?ctx.definePropertyE(nodeFilter, e.toStr(), n)
   for e in NodeFilterResult:
     let n = ctx.toJS(uint32(e))
-    ?ctx.definePropertyE(nodeFilter, $e, n)
-  ?ctx.definePropertyE(nodeFilter, "SHOW_ALL", ctx.toJS(0xFFFFFFFFu32))
+    ?ctx.definePropertyE(nodeFilter, e.toStr(), n)
+  ?ctx.definePropertyE(nodeFilter, str("SHOW_ALL"), ctx.toJS(0xFFFFFFFFu32))
   ctx.definePropertyCW(ctxOpaque.global, "NodeFilter", nodeFilter.toJSValue())
 
 {.pop.} # raises: []

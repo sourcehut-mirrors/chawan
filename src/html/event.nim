@@ -2,7 +2,6 @@
 
 when NimMajor >= 2:
   import std/assertions
-import std/options
 
 import html/catom
 import html/domexception
@@ -17,8 +16,8 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import utils/chaos
+import utils/cowstr
 import utils/opt
-import utils/refstring
 import utils/twtstr
 
 type
@@ -57,7 +56,7 @@ type
 
   MessageEventObj {.pure, final.} = object of EventObj
     data: JSValueTraced
-    origin: string
+    origin: Str
 
   MessageEvent = JSRef[MessageEventObj]
 
@@ -89,9 +88,9 @@ type
   MouseEvent = JSRef[MouseEventObj]
 
   InputEventObj {.pure, final.} = object of UIEventObj
-    data: Option[string]
+    data: DOMStringNil
     isComposing: bool
-    inputType: string
+    inputType: DOMString
 
   InputEvent = JSRef[InputEventObj]
 
@@ -116,7 +115,7 @@ type
     t: MutationRecordType
     attributeName: CAtom
     attributeNamespace: CAtom
-    oldValue: RefString
+    oldValue: StrNil
     target: EventTarget
     addedNodes: JSRootRef
     removedNodes: JSRootRef
@@ -224,8 +223,8 @@ type
 
   MessageEventInit* = object of EventInit
     data* {.jsdefault: trace(JS_NULL).}: JSValueTraced
-    origin {.jsdefault.}: string
-    lastEventId {.jsdefault.}: string
+    origin {.jsdefault.}: Str
+    lastEventId {.jsdefault.}: DOMString
 
   ProgressEventInit = object of EventInit
     lengthComputable {.jsdefault.}: bool
@@ -371,7 +370,7 @@ jsClassDef(MessageEvent):
     let event = jsNew MessageEventObj(
       eventType: eventType,
       data: move(eventInit.data),
-      origin: eventInit.origin
+      origin: move(eventInit.origin)
     )
     if event != nil:
       event.asEvent.innerEventCreationSteps(EventInit(eventInit))
@@ -502,9 +501,9 @@ jsClassDef(MouseEvent):
 
 # InputEvent
 type InputEventInit* = object of UIEventInit
-  data* {.jsdefault.}: Option[string]
+  data* {.jsdefault.}: DOMStringNil
   isComposing* {.jsdefault.}: bool
-  inputType* {.jsdefault.}: string
+  inputType* {.jsdefault.}: DOMString
 
 jsClassDef(InputEvent):
   jsextends UIEventDef
@@ -571,20 +570,6 @@ jsClassDef(MutationRecord):
   jsget MutationRecord, oldValue
 
 # MutationObserver
-type OptionalBool = enum
-  obNone, obFalse, obTrue
-
-proc fromJS(ctx: JSContext; val: JSValueConst; ob: var OptionalBool):
-    JSCode =
-  var status = fjOk
-  if JS_IsUndefined(val):
-    ob = obNone
-  else:
-    var b: bool
-    status = ctx.fromJS(val, b)
-    ob = if b: obTrue else: obFalse
-  status
-
 type NodeView = distinct ptr EventTargetObj
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var NodeView): JSCode =
@@ -603,7 +588,7 @@ type MutationObserverInit {.pure.} = object of JSDict
   attributeFilter {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
 
 proc queueRecord*(observer: MutationObserver; target: EventTarget;
-    t: MutationRecordType; name, namespace: CAtom; oldValue: RefString;
+    t: MutationRecordType; name, namespace: CAtom; oldValue: StrNil;
     addedNodes, removedNodes: JSRootRef;
     previousSibling, nextSibling: EventTarget) =
   let record = jsNew MutationRecordObj(
@@ -755,11 +740,14 @@ proc removeEventListenerData(ctx: JSContext; _: JSValueConst; argc: cint;
   return JS_UNDEFINED
 
 proc addEventListener(ctx: JSContext; target: EventTarget; eventType: CAtom;
-    capture, once, internal: bool; passive: Option[bool];
+    capture, once, internal: bool; passive: OptionalBool;
     callback: JSObjectNil; signal: AbortSignal): Opt[void] =
   if signal != nil and not JS_IsUndefined(signal.reason):
     return ok()
-  let passive = passive.get(defaultPassiveValue(eventType, target))
+  let passive = case passive
+  of obNone: defaultPassiveValue(eventType, target)
+  of obTrue: true
+  of obFalse: false
   if target.findEventListener(eventType, callback, capture) == nil:
     # dedup
     let listener = EventListener(
@@ -798,20 +786,18 @@ proc flatten(ctx: JSContext; options: JSValueConst): Opt[bool] =
 type FlattenMoreResult = object
   capture: bool
   once: bool
-  passive: Option[bool]
+  passive: OptionalBool
   signal: AbortSignal
 
 proc fromJS(ctx: JSContext; options: JSValueConst; res: var FlattenMoreResult):
     JSCode =
   let capture = ?ctx.flatten(options)
   var once = false
-  var passive = none(bool)
+  var passive = obNone
   var signal: AbortSignal
   if JS_IsObject(options):
     discard ?ctx.fromJSGetProp(options, "once", once)
-    var res: bool
-    if ?ctx.fromJSGetProp(options, "passive", res):
-      passive = some(res)
+    discard ?ctx.fromJSGetProp(options, "passive", passive)
     discard ?ctx.fromJSGetProp(options, "signal", signal)
   res = FlattenMoreResult(
     capture: capture,
@@ -839,7 +825,7 @@ proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     eventType: StaticAtom; callback: JSObjectNil): Opt[void] =
   ctx.removeInternalEventListener(eventTarget, eventType)
   ctx.addEventListener(eventTarget, eventType.view(), capture = false,
-    once = false, internal = true, passive = none(bool), callback,
+    once = false, internal = true, passive = obNone, callback,
     signal = AbortSignal(nil))
 
 # Event reflection
@@ -1009,8 +995,8 @@ proc addEventGetSetImpl*(ctx: JSContext; obj: JSObject; id: JSClassID;
     set: JSSetterMagicFunction): Opt[void] =
   assert ctx.isInstanceOf(id, EventTargetDef.id)
   for atom in atoms:
-    let name = "on" & $atom
-    ?ctx.definePropertyGetSetCE(obj, cstring(name), get, set, cint(atom))
+    let name = initStrM("on", atom.toStr())
+    ?ctx.definePropertyGetSetCE(obj, name.toCString(), get, set, cint(atom))
   ok()
 
 proc fromJSEventTarget(ctx: JSContext; this: JSValueConst;

@@ -8,6 +8,7 @@
 
 import io/chafile
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -59,7 +60,7 @@ proc main(): Opt[void] =
         spacesAsPlus = true
       else:
         usage()
-  var s: string
+  var s: Str
   ?chaStdin.readAll(s)
   if s.len > 0 and s[^1] == '\n':
     s.setLen(s.len - 1)

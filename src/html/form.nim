@@ -19,11 +19,11 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import server/request
 import server/blob
-import utils/opt
-import utils/refstring
+import server/request
 import server/url
+import utils/cowstr
+import utils/opt
 import utils/twtstr
 
 type
@@ -119,23 +119,23 @@ type
 
   HTMLInputElementObj {.pure, final.} = object of FormAssociatedElementObj
     inputType*: InputType
-    internalValue: RefString
+    internalValue: Str
     internalChecked: bool
     internalFiles: FileList # may be nil
-    xcoord*: int
-    ycoord*: int
+    xcoord*: int32
+    ycoord*: int32
 
   HTMLTextAreaElement* = JSRef[HTMLTextAreaElementObj]
 
   HTMLTextAreaElementObj {.pure, final.} = object of FormAssociatedElementObj
     dirty: bool
-    internalValue: string
+    internalValue: Str
 
   HTMLOutputElement = JSRef[HTMLOutputElementObj]
 
   HTMLOutputElementObj {.pure, final.} = object of FormAssociatedElementObj
     dirty: bool
-    internalValue: string
+    internalValue: Str
 
   HTMLLabelElement* = JSRef[HTMLLabelElementObj]
 
@@ -152,13 +152,13 @@ proc resetFormOwner(element: FormAssociatedElement)
 proc files*(this: HTMLInputElement): FileList
 proc checked*(input: HTMLInputElement): bool
 proc setChecked*(input: HTMLInputElement; b: bool)
-proc value*(this: HTMLInputElement): lent string
-proc setValue*(this: HTMLInputElement; value: sink string)
+proc value*(this: HTMLInputElement): Str
+proc setValue*(this: HTMLInputElement; value: sink Str)
 proc selectedIndex*(this: HTMLSelectElement): int
 proc setSelectedness(select: HTMLSelectElement)
-proc defaultValue(this: HTMLOutputElement): string
-proc value*(option: HTMLOptionElement): string
-proc value*(this: HTMLTextAreaElement): string
+proc defaultValue(this: HTMLOutputElement): Str
+proc value*(option: HTMLOptionElement): Str
+proc value*(this: HTMLTextAreaElement): Str
 
 proc getClassID(t: typedesc[HTMLAreaElement]): JSClassID
 proc getClassID(t: typedesc[HTMLOutputElement]): JSClassID
@@ -244,7 +244,7 @@ proc cloningStepsForm(old, clone: Element) {.exportc: "cha_$1".} =
     #TODO dirty checkedness flag
 
 proc reflectAttributeForm(element: Element; name: StaticAtom; has: bool;
-    value: string) {.exportc: "cha_$1".} =
+    value: Str) {.exportc: "cha_$1".} =
   case element.tagType
   of ttInput:
     let input = element as HTMLInputElement
@@ -252,7 +252,8 @@ proc reflectAttributeForm(element: Element; name: StaticAtom; has: bool;
     of satValue: input.setValue(value)
     of satChecked: input.setChecked(has)
     of satType:
-      input.inputType = parseEnumNoCase[InputType](value).get(itText)
+      input.inputType = parseEnumNoCase[InputType](value.toOpenArray())
+        .get(itText)
     else: discard
   of ttOption:
     let option = element as HTMLOptionElement
@@ -274,15 +275,15 @@ proc getElementForm(element: Element): HTMLElement {.exportc: "cha_$1".} =
     return element.form.asHTMLElement
   HTMLElement(nil)
 
-proc parseFormMethod(s: string): FormMethod =
+proc parseFormMethod(s: Str): FormMethod =
   return parseEnumNoCase[FormMethod](s).get(fmGet)
 
-proc getFormMethodAttr(element: Element; name: StaticAtom): string
+proc getFormMethodAttr(element: Element; name: StaticAtom): Str
     {.exportc: "cha_$1".} =
   let s = element.attr(name)
   if name == satFormmethod and s == "":
-    return ""
-  return $parseFormMethod(s)
+    return str("")
+  return parseFormMethod(s).toStr()
 
 proc isSubmitButton*(element: Element): bool =
   if (let element = element as HTMLButtonElement; element != nil):
@@ -298,7 +299,7 @@ proc isButton*(element: Element): bool =
     return element.inputType in {itSubmit, itButton, itReset, itImage}
   return false
 
-proc getFormAction*(element: Element): string =
+proc getFormAction*(element: Element): Str =
   if element.isSubmitButton():
     if element.attrb(satFormaction):
       return element.attr(satFormaction)
@@ -309,7 +310,7 @@ proc getFormAction*(element: Element): string =
         return form.attr(satAction)
   if element.tagType == ttForm:
     return element.attr(satAction)
-  return ""
+  return str("")
 
 proc getFormEnctype*(element: Element): FormEncodingType =
   if element.tagType == ttForm:
@@ -373,9 +374,9 @@ proc resetElement*(element: Element; ctx: JSContext) =
     textarea.asElement.invalidate()
   of ttOutput:
     let output = element as HTMLOutputElement
-    output.asParentNode.replaceAll(ctx, output.defaultValue.toDOMStringView())
+    output.asParentNode.replaceAll(ctx, output.defaultValue)
     output.dirty = false
-    output.internalValue = ""
+    output.internalValue = str("")
   else: discard
 
 proc isLabelable(element: Element): bool =
@@ -594,10 +595,10 @@ jsClassPublicDef(FormAssociatedElement): # fake class
 jsClassDef(HTMLAreaElement):
   jsextends HTMLElementDef
 
-  proc toString(this: HTMLAreaElement): string {.jsfunc.} =
+  proc toString(this: HTMLAreaElement): Str {.jsfunc.} =
     if href := this.asElement.reinitURL():
-      return $href
-    return ""
+      return href.toStr()
+    return str("")
 
   proc getRelList(this: HTMLAreaElement): DOMTokenList {.jsfget: "relList".} =
     this.asElement.getDOMTokenList(this.relList, satRel)
@@ -643,7 +644,7 @@ proc resetForm*(form: HTMLFormElement; ctx: JSContext) =
 # Warning: we skip the first "constructing entry list" check; the caller must
 # do it.
 proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
-    encoding = "UTF-8"): seq[FormDataEntry] =
+    encoding = str("UTF-8")): seq[FormDataEntry] =
   assert not form.constructingEntryList
   form.constructingEntryList = true
   var entrylist: seq[FormDataEntry] = @[]
@@ -656,11 +657,12 @@ proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
       if field.inputType in {itCheckbox, itRadio} and not field.checked:
         continue
       if field.inputType == itImage:
-        var name = field.asElement.attr(satName)
+        var name = initGrowbuf(field.asElement.attr(satName))
         if name != "":
           name &= '.'
-        entrylist.add((name & 'x', $field.xcoord))
-        entrylist.add((name & 'y', $field.ycoord))
+        entrylist.add((initStrM(name, 'x'), field.xcoord.toStr()))
+        name &= 'y'
+        entrylist.add((name.toStr(), field.ycoord.toStr()))
         continue
     #TODO custom elements
     let name = field.asElement.attr(satName)
@@ -677,7 +679,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
         let value = if v != "":
           v
         else:
-          "on"
+          str("on")
         entrylist.add((name, value))
       of itFile:
         for file in field.files:
@@ -699,13 +701,13 @@ proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
     elif (let field = field as HTMLTextAreaElement; field != nil):
       entrylist.add((name, field.value))
     else:
-      assert false, $field.asHTMLElement.tagType
+      assert false
     let input = field as HTMLInputElement
     if field.asHTMLElement.tagType == ttTextarea or
         input != nil and input.inputType in AutoDirInput:
       let dirname = field.asElement.attr(satDirname)
       if dirname != "":
-        let dir = "ltr" #TODO bidi
+        let dir = str("ltr") #TODO bidi
         entrylist.add((dirname, dir))
   form.constructingEntryList = false
   move(entrylist)
@@ -779,32 +781,32 @@ jsClassPublicDef(HTMLFormElement):
     return elements.asCollection.getLength()
 
 # <input>
-proc setValue*(this: HTMLInputElement; value: sink string) =
-  this.internalValue = newRefString(value)
+proc setValue*(this: HTMLInputElement; value: sink Str) =
+  this.internalValue = value
   this.asElement.invalidate()
 
 proc addFile*(this: HTMLInputElement; file: WebFile) =
   this.files.add(file)
   this.asElement.invalidate()
 
-proc inputString*(input: HTMLInputElement): RefString =
+proc inputString*(input: HTMLInputElement): Str =
   case input.inputType
   of itCheckbox, itRadio:
     if input.checked:
-      return newRefString("*")
-    return newRefString(" ")
+      return str("*")
+    return str(" ")
   of itPassword:
-    return newRefString('*'.repeat(input.value.pointLen))
+    return '*'.repeat(input.value.toOpenArray().pointLen)
   of itReset:
     if input.asElement.attrb(satValue):
       return input.internalValue
-    return newRefString("RESET")
+    return str("RESET")
   of itSubmit, itButton:
     if input.asElement.attrb(satValue):
       return input.internalValue
-    return newRefString("SUBMIT")
+    return str("SUBMIT")
   of itFile:
-    return newRefString(input.files.getName())
+    return input.files.getName()
   else:
     return input.internalValue
 
@@ -813,13 +815,12 @@ jsClassPublicDef(HTMLInputElement):
 
   jsget HTMLInputElement, inputType, "type"
 
-  proc value*(this: HTMLInputElement): lent string {.jsfget.} =
-    if this.internalValue == nil:
-      this.internalValue = newRefString("")
-    return this.internalValue.s
+  proc value*(this: HTMLInputElement): Str {.jsfget.} =
+    this.internalValue
 
-  proc setValue(this: HTMLInputElement; ds: DOMString) {.jsfset: "value".} =
-    this.setValue($ds)
+  proc setValue(this: HTMLInputElement; ds: sink DOMString) {.
+      jsfset: "value".} =
+    this.setValue(ds.toStr())
 
   proc setType(ctx: JSContext; this: HTMLInputElement; s: DOMString) {.
       jsfset: "type".} =
@@ -892,7 +893,7 @@ proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
     var defaultSelected: bool
     ?ctx.fromJS(argv[2], defaultSelected)
     if defaultSelected:
-      this.asElement.setAttr(ctx, satSelected, "")
+      this.asElement.setAttr(ctx, satSelected, str(""))
   if argc >= 4:
     ?ctx.fromJS(argv[3], this.selected)
   ctx.toJS(this)
@@ -909,17 +910,17 @@ jsClassPublicDef(HTMLOptionElement):
 
   jsget HTMLOptionElement, selected
 
-  proc text(option: HTMLOptionElement): string {.jsfget.} =
-    var s = ""
+  proc text(option: HTMLOptionElement): Str {.jsfget.} =
+    var s = initGrowbuf()
     for child in option.asParentNode.descendants:
       let parent = child.parentElement
       let child = child as Text
       if child != nil and (parent.tagTypeNoNS != ttScript or
           parent.namespaceURI notin [satNamespaceHTML, satNamespaceSVG]):
-        s &= child.data.s
-    return s.stripAndCollapse()
+        s &= child.data
+    s.toStr().stripAndCollapse()
 
-  proc value*(option: HTMLOptionElement): string {.jsfget.} =
+  proc value*(option: HTMLOptionElement): Str {.jsfget.} =
     if option.asElement.attrb(satValue):
       return option.asElement.attr(satValue)
     return option.text
@@ -953,23 +954,23 @@ jsClassPublicDef(HTMLOptionElement):
 jsClassDef(HTMLOutputElement):
   jsextends FormAssociatedElementDef
 
-  proc getType(this: HTMLOutputElement): string {.jsfget: "type".} =
-    return "output"
+  proc getType(this: HTMLOutputElement): Str {.jsfget: "type".} =
+    return str("output")
 
-  proc defaultValue(this: HTMLOutputElement): string {.jsfget.} =
+  proc defaultValue(this: HTMLOutputElement): Str {.jsfget.} =
     if this.dirty:
       return this.internalValue
     return this.asNode.textContent
 
-  proc setDefaultValue(ctx: JSContext; this: HTMLOutputElement; ds: DOMString)
-      {.jsfset: "defaultValue".} =
+  proc setDefaultValue(ctx: JSContext; this: HTMLOutputElement;
+      ds: sink DOMString) {.jsfset: "defaultValue".} =
     if this.dirty:
       this.dirty = true
-      this.internalValue = $ds
+      this.internalValue = ds.toStr()
     else:
-      this.asParentNode.replaceAll(ctx, ds)
+      this.asParentNode.replaceAll(ctx, ds.toStr())
 
-  proc value(this: HTMLOutputElement): string {.jsfget.} =
+  proc value(this: HTMLOutputElement): Str {.jsfget.} =
     return this.asNode.textContent
 
   proc setValue(ctx: JSContext; this: HTMLOutputElement; ds: DOMString) {.
@@ -1005,10 +1006,10 @@ proc isSelectedOptionOf(this: Collection; node: Node): bool =
 jsClassPublicDef(HTMLSelectElement):
   jsextends FormAssociatedElementDef
 
-  proc jsType(this: HTMLSelectElement): string {.jsfget: "type".} =
+  proc jsType(this: HTMLSelectElement): Str {.jsfget: "type".} =
     if this.asElement.attrb(satMultiple):
-      return "select-multiple"
-    return "select-one"
+      return str("select-multiple")
+    return str("select-one")
 
   proc options(this: HTMLSelectElement): HTMLOptionsCollection {.jsnfget.} =
     var collection = this.asNode.getLiveCollection(cnOptions) as
@@ -1083,11 +1084,11 @@ jsClassPublicDef(HTMLSelectElement):
       inc i
     this.asNode.document.invalidateCollections()
 
-  proc value(this: HTMLSelectElement): string {.jsfget.} =
+  proc value(this: HTMLSelectElement): Str {.jsfget.} =
     for it in this.options:
       if it.selected:
         return it.value
-    return ""
+    return str("")
 
   proc setValue(this: HTMLSelectElement; value: DOMString) {.jsfset: "value".} =
     var found = false
@@ -1128,7 +1129,7 @@ jsClassPublicDef(HTMLSelectElement):
     ok()
 
 # <textarea>
-proc setValue*(this: HTMLTextAreaElement; s: sink string) =
+proc setValue*(this: HTMLTextAreaElement; s: sink Str) =
   this.dirty = true
   this.internalValue = s
   this.asElement.invalidate()
@@ -1136,15 +1137,16 @@ proc setValue*(this: HTMLTextAreaElement; s: sink string) =
 jsClassDef(HTMLTextAreaElement):
   jsextends FormAssociatedElementDef
 
-  proc value*(this: HTMLTextAreaElement): string {.jsfget.} =
+  proc value*(this: HTMLTextAreaElement): Str {.jsfget.} =
     if this.dirty:
       return this.internalValue
     return this.asParentNode.childTextContent
 
-  proc setValue(this: HTMLTextAreaElement; ds: DOMString) {.jsfset: "value".} =
-    this.setValue($ds)
+  proc setValue(this: HTMLTextAreaElement; ds: sink DOMString) {.
+      jsfset: "value".} =
+    this.setValue(ds.toStr())
 
-  proc defaultValue(this: HTMLTextAreaElement): string {.jsfget.} =
+  proc defaultValue(this: HTMLTextAreaElement): Str {.jsfget.} =
     this.asParentNode.childTextContent
 
   proc setDefaultValue(ctx: JSContext; this: HTMLTextAreaElement; ds: DOMString)

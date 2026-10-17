@@ -26,6 +26,7 @@ import server/loaderiface
 import server/request
 import server/url
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/proctitle
 import utils/sandbox
@@ -44,10 +45,10 @@ type
     loaderStream: PosixStream
     pollData: PollData
     linkHintChars: seq[uint32]
-    schemes: seq[string]
+    schemes: seq[Str]
 
 proc loadConfig*(forkserver: ForkServer; config: Config;
-    warnings: var seq[string]): int =
+    warnings: var seq[Str]): int =
   forkserver.stream.withPacketWriter w:
     w.swrite(config{"doubleWidthAmbiguous"})
     w.swrite(config{"linkHintChars"})
@@ -63,14 +64,14 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
     w.swrite(LoaderClientConfig(
       defaultHeaders: config{"defaultHeaders"},
       proxy: config{"proxy"},
-      allowAllSchemes: true
+      allowSchemes: {SchemeType.low..SchemeType.high}
     ))
     w.swrite(config{"urimethodmap"})
     w.swrite(config{"autoBrowsecap"})
   do:
     return -1
   var process = -1
-  var fswarnings: seq[string]
+  var fswarnings: seq[Str]
   forkserver.stream.withPacketReaderFire r:
     r.assert(r.sread(process))
     r.assert(r.sread(fswarnings))
@@ -79,7 +80,7 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
-    contentType: string): tuple[pid: int; cstream: PosixStream] =
+    contentType: Str): tuple[pid: int; cstream: PosixStream] =
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return (-1, nil)
@@ -129,7 +130,7 @@ proc forkLoader(ctx: var ForkServerContext; rt: JSRuntime;
     ctx.stream.sclose()
     discard close(sv[0])
     let forkStream = newPosixStream(sv[1])
-    setProcessTitle("cha loader")
+    setProcessTitle(str("cha loader"))
     runFileLoader(rt, config, loaderStream, forkStream, pagerPid, pagerConfig,
       browsecap)
     exitnow(1)
@@ -145,7 +146,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
   var attrs: WindowAttributes
   var ishtml: bool
   var charsetStack: seq[Charset]
-  var contentType: string
+  var contentType: Str
   r.assert(r.sread(config))
   r.assert(r.sread(url))
   r.assert(r.sread(attrs))
@@ -196,9 +197,9 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
   var hasOstreamOut2: bool
   r.assert(r.sread(hasOstreamOut2))
   let ostreamOut2 = if hasOstreamOut2: newPosixStream(r.recvFd().get) else: nil
-  var env: seq[tuple[name, value: string]]
-  var argv: seq[string]
-  var cmd: string
+  var env: seq[EnvVar]
+  var argv: seq[Str]
+  var cmd: Str
   r.assert(r.sread(env))
   r.assert(r.sread(argv))
   r.assert(r.sread(cmd))
@@ -218,28 +219,28 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
     discard chaos.signal(SIGCHLD, chaos.SIG_DFL)
     # let's also reset SIGPIPE, which we ignored on init
     discard chaos.signal(SIGPIPE, chaos.SIG_DFL)
-    const ExecErrorMsg =
-      "Cha-Control: ConnectionError InternalError failed to execute CGI script"
-    env.add(("SCRIPT_FILENAME", cmd))
+    const ExecErrorMsg = str("Cha-Control: ConnectionError InternalError ")
+    env.add((str("SCRIPT_FILENAME"), cmd))
     for it in env:
       if setEnv(it.name, it.value).isErr:
-        discard chaStdout.writeLine(ExecErrorMsg & " failed to set env vars")
+        discard chaStdout.writeM(ExecErrorMsg,
+          str(" failed to set env vars\n"))
         exitnow(1)
+    var cmd = initGrowbuf(cmd)
     let i = cmd.rfind('/')
     cmd[i] = '\0'
-    if chdir(cstring(cmd)) != 0:
-      discard chaStdout.writeLine(ExecErrorMsg &
-        " failed to set working directory")
+    if chdir(cast[cstring](addr cmd[0])) != 0:
+      discard chaStdout.writeM(ExecErrorMsg,
+        str(" failed to set working directory\n"))
       exitnow(1)
     cmd[i] = '/'
     var cargv = newSeq[cstring](argv.len + 2)
     cargv[0] = cast[cstring](addr cmd[i + 1])
     for i in 0 ..< argv.len:
-      cargv[i + 1] = cstring(argv[i])
-    discard execv(cstring(cmd), cast[cstringArray](addr cargv[0]))
-    let es = $strerror(errno)
-    discard chaStdout.writeLine(ExecErrorMsg & ' ' &
-      es.deleteChars({'\n', '\r'}))
+      cargv[i + 1] = argv[i].toCString()
+    discard execv(cmd.toStr().toCString(), cast[cstringArray](addr cargv[0]))
+    let es = strerror(errno).toStr()
+    discard chaStdout.writeM(ExecErrorMsg, es.deleteChars({'\n', '\r'}))
     exitnow(1)
   else: # parent or error
     if istream != nil:
@@ -293,7 +294,7 @@ proc getTimezoneOffset(opaque: pointer; time: int64): cint {.cdecl.} =
 
 proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
     rt: JSRuntime) =
-  setProcessTitle("cha forkserver")
+  setProcessTitle(str("cha forkserver"))
   let jsctx = rt.newDummyContext()
   if jsctx == nil:
     quit(2)
@@ -311,20 +312,20 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
   ctx.stream.withPacketReader r:
     var config: LoaderConfig
     var clientConfig: LoaderClientConfig
-    var linkHintChars: string
-    var urimethodmapPaths: seq[string]
-    var autoBrowsecapPath: string
+    var linkHintChars: Str
+    var urimethodmapPaths: seq[Str]
+    var autoBrowsecapPath: Str
     r.assert(r.sread(isCJKAmbiguous))
     r.assert(r.sread(linkHintChars))
     r.assert(r.sread(config))
     r.assert(r.sread(clientConfig))
     r.assert(r.sread(urimethodmapPaths))
     r.assert(r.sread(autoBrowsecapPath))
-    ctx.linkHintChars = linkHintChars.toPoints()
+    ctx.linkHintChars = linkHintChars.toOpenArray().toPoints()
     # for CGI
     if setupForkServerEnv(config).isErr:
       quit(1)
-    var warnings: seq[string]
+    var warnings: seq[Str]
     var browsecap: Mailcap
     block:
       let res = browsecap.parseMailcap(autoBrowsecapPath, lenient = true)

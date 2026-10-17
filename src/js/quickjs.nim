@@ -5,7 +5,7 @@ import js/constcharp
 import js/cutils
 import js/dtoa
 import js/libregexp
-import utils/chaos
+import utils/twtstr
 
 {.passl: "-lm".}
 
@@ -659,6 +659,7 @@ proc JS_ToCStringUSVLen*(ctx: JSContext; plen: var csize_t;
   val1: JSValueConst): cstringConst
 proc JS_ToCStringNarrowLen*(ctx: JSContext; plen: var csize_t;
   val1: JSValueConst): cstringConst
+proc JS_DupCStringRT*(rt: JSRuntime; p: cstringConst): cstringConst
 proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
 proc JS_FreeCStringRT*(rt: JSRuntime; p: cstringConst)
 proc JS_ToUTF32String*(ctx: JSContext; pbuf: var ptr uint32;
@@ -725,8 +726,8 @@ proc JS_SetTimezoneOffsetFunc*(rt: JSRuntime; fun: JSTimezoneOffsetFunc)
 
 proc JS_GetProperty*(ctx: JSContext; this_obj: JSValueConst; prop: JSAtom):
   JSValue
-proc JS_GetPropertyStr*(ctx: JSContext; this_obj: JSValueConst; prop: cstring):
-  JSValue
+proc JS_GetPropertyStr*(ctx: JSContext; this_obj: JSValueConst;
+  prop: cstringConst): JSValue
 proc JS_GetPropertyUint32*(ctx: JSContext; this_obj: JSValueConst; idx: uint32):
   JSValue
 

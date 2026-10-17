@@ -10,6 +10,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import utils/chaos
+import utils/cowstr
 import utils/opt
 
 type
@@ -22,7 +23,7 @@ type
 
   PerformanceEntryObj {.pure.} = object of JSRootObj
     id: uint64
-    name: string
+    name: DOMString
     startTime: float64
     duration: float64
     navigationId: uint64
@@ -85,7 +86,7 @@ jsClassDef(Performance):
     #TODO serialize/deserialize detail
     let mark = jsNew PerformanceMarkObj(
       id: this.getEntryId(),
-      name: $name,
+      name: name,
       startTime: startTime,
       detail: detail
     )
@@ -99,10 +100,10 @@ jsClassDef(PerformanceEntry):
   jsget PerformanceEntry, duration
   jsget PerformanceEntry, navigationId
 
-  proc entryType(this: PerformanceEntry): string {.jsfget.} =
+  proc entryType(this: PerformanceEntry): Str {.jsfget.} =
     if this of PerformanceMark:
-      return "mark"
-    return ""
+      return str("mark")
+    return str("")
 
 # PerformanceMark
 jsClassDef(PerformanceMark):

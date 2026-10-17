@@ -8,6 +8,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -105,7 +106,7 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
   let len = ctx.toIntIndex(lengthVal.toJSValue())
   if len < 0:
     return JS_EXCEPTION
-  var tags: seq[string]
+  var tags: seq[DOMString]
   for k in 0 ..< len:
     let prop = ?JS_NewAtomUInt32(ctx, uint32(k))
     let has = JS_HasProperty(ctx, val, prop)
@@ -116,7 +117,7 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
       if not JS_IsString(locale) and not JS_IsObject(locale):
         return JS_ThrowTypeError(ctx, "unexpected locale type")
       #TODO InitializedLocale
-      var tag: string
+      var tag: DOMString
       ?ctx.fromJSFree(locale.toJSValue(), tag)
       #TODO validate
       if tag notin tags:
@@ -134,32 +135,26 @@ jsClassDef(Collator):
     jsNew CollatorObj()
 
   proc compare(this: Collator; a, b: DOMString): int {.jsfunc.} =
-    let alen = a.len
-    let blen = b.len
-    let L = min(alen, blen)
-    for i in 0 ..< L:
-      let n = cmp(a.p[i], b.p[i])
-      if n != 0:
-        return n
-    cmp(alen, blen)
+    clamp(cmp(a.toStr(), b.toStr()), -1, 1)
 
 # NumberFormat
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     JSCode =
-  var s: string
+  var s: Str
   ?ctx.fromJS(val, s)
   let i = s.find("-per-")
   if i >= 0:
-    let part1 = strictParseEnum[NumberUnitPart](s.substr(0, i - 1))
-    let part2 = strictParseEnum[NumberUnitPart](s.substr(i + "-per-".len))
+    let part1 = strictParseEnum[NumberUnitPart](s.toOpenArray(0, i - 1))
+    let part2 = strictParseEnum[NumberUnitPart](
+      s.toOpenArray(i + "-per-".len, s.high))
     if part1.isErr or part2.isErr:
-      JS_ThrowRangeError(ctx, "wrong unit %s", cstring(s))
+      JS_ThrowRangeError(ctx, "wrong unit %s", s.toCString())
       return fjErr
     unit = NumberUnit(part1: part1.get, part2: part2)
   else:
     let part1 = parseEnumNoCase[NumberUnitPart](s)
     if part1.isErr:
-      JS_ThrowRangeError(ctx, "wrong unit %s", cstring(s))
+      JS_ThrowRangeError(ctx, "wrong unit %s", s.toCString())
       return fjErr
     unit = NumberUnit(part1: part1.get)
   fjOk
@@ -212,37 +207,37 @@ const UnitTable = [
   nupYear: cstring"yr"
 ]
 
-proc stringify(part: NumberUnitPart; s: string; part2 = false): string =
+proc addUnitPart(buf: var Growbuf; part: NumberUnitPart; s: Str;
+    part2 = false) =
   let unit = UnitTable[part]
   var res = if unit == nil:
-    $part
+    part.toStr()
   else:
-    $unit
+    unit.toStr()
   if part in {nupDay, nupMonth, nupWeek, nupYear} and s != "1":
-    res &= 's' # plural
+    res &= "s" # plural
   if part2 and part in {nupSecond, nupDay, nupMonth, nupYear}:
     res.setLen(1)
-  move(res)
+  buf &= res
 
-proc stringifyUnit(unit: NumberUnit; s: string): string =
-  result = ""
+proc addUnit(buf: var Growbuf; unit: NumberUnit; s: Str) =
   if unit.part1 notin {nupCelsius, nupFahrenheit, nupPercent}:
-    result &= ' '
-  result &= unit.part1.stringify(s)
+    buf &= ' '
+  buf.addUnitPart(unit.part1, s)
   if unit.part1 != nupPercent and unit.part2.isOk:
-    result &= '/'
-    result &= unit.part2.get.stringify(s, part2 = true)
+    buf &= '/'
+    buf.addUnitPart(unit.part2.get, s, part2 = true)
 
 jsClassDef(NumberFormat):
-  proc newNumberFormat(ctx: JSContext; name = "en-US";
+  proc newNumberFormat(ctx: JSContext; name = str("en-US");
       options = JS_UNDEFINED.vc): Opt[NumberFormat] {.jsfctor.} =
     let nf = jsNew NumberFormatObj()
     if nf != nil and JS_IsObject(options):
       discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",
         nf.maximumFractionDigits)
       if nf.maximumFractionDigits notin 0..100:
-        let s = $nf.maximumFractionDigits
-        JS_ThrowRangeError(ctx, "invalid digits value: %s", cstring(s))
+        JS_ThrowRangeError(ctx, "invalid digits value: %d",
+          cint(nf.maximumFractionDigits))
         return err()
       discard ?ctx.fromJSGetProp(options, "style", nf.style)
       if not ?ctx.fromJSGetProp(options, "unit", nf.unit) and
@@ -252,38 +247,39 @@ jsClassDef(NumberFormat):
         return err()
     ok(nf)
 
-  proc format(nf: NumberFormat; s: string): string {.jsfunc.} =
-    result = ""
+  proc format(nf: NumberFormat; s: Str): Str {.jsfunc.} =
+    var buf = initGrowbuf()
     var i = 0
     var L = s.rfind('.')
     if L == -1:
       L = s.len
     if L mod 3 != 0:
       while i < L mod 3:
-        result &= s[i]
+        buf &= s[i]
         inc i
       if i < L:
-        result &= ','
+        buf &= ','
     let j = i
     while i < L:
       if j != i and i mod 3 == j:
-        result &= ','
-      result &= s[i]
+        buf &= ','
+      buf &= s[i]
       inc i
     if i + 1 < s.len and s[i] == '.' and (s[i + 1] != '0' or s.len != i + 2):
       if nf.maximumFractionDigits > 0:
-        result &= '.'
+        buf &= '.'
         inc i
         var k = 0
         while i < s.len and k < nf.maximumFractionDigits:
-          result &= s[i]
+          buf &= s[i]
           inc k
           inc i
     case nf.style
     of nsDecimal: discard
-    of nsUnit: result &= nf.unit.stringifyUnit(s)
-    of nsPercent: result &= '%'
+    of nsUnit: buf.addUnit(nf.unit, s)
+    of nsPercent: buf &= '%'
     of nsCurrency: discard #TODO?
+    buf.toStr()
 
   proc supportedLocalesOf(ctx: JSContext; locales: JSValueConst;
       options = JS_UNDEFINED.vc): JSValue {.jsstfunc.} =
@@ -295,7 +291,7 @@ jsClassDef(DateTimeFormat):
   proc newDateTimeFormat(): DateTimeFormat {.jsfctor.} =
     jsNew DateTimeFormatObj()
 
-  proc format(this: DateTimeFormat; s: string): string {.jsfunc.} =
+  proc format(this: DateTimeFormat; s: DOMString): DOMString {.jsfunc.} =
     s #TODO
 
 # PluralRules
@@ -308,17 +304,17 @@ jsClassDef(PluralRules):
     ?ctx.definePropertyConvert(obj, jstLocale, "en-US")
     obj.toJSValue()
 
-  proc select(this: PluralRules; num: float64): string {.jsfunc.} =
+  proc select(this: PluralRules; num: float64): Str {.jsfunc.} =
     if num == 1:
-      return "one"
-    return "many"
+      return str("one")
+    return str("many")
 
 # RelativeTimeFormat
 jsClassDef(RelativeTimeFormat):
   proc newRelativeTimeFormat(): RelativeTimeFormat {.jsctor.} =
     jsNew RelativeTimeFormatObj()
 
-  proc format(this: RelativeTimeFormat; s: string): string {.jsfunc.} =
+  proc format(this: RelativeTimeFormat; s: DOMString): DOMString {.jsfunc.} =
     s #TODO
 
 # ListFormat
@@ -327,7 +323,7 @@ jsClassDef(ListFormat):
     #TODO locales, options etc.
     jsNew ListFormatObj()
 
-  proc format(this: ListFormat; s: string): string {.jsfunc.} =
+  proc format(this: ListFormat; s: DOMString): DOMString {.jsfunc.} =
     s #TODO
 
 proc addIntlModule*(ctx: JSContext): JSCode =

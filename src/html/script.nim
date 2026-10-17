@@ -7,8 +7,9 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import server/headers
-import utils/opt
 import server/url
+import utils/cowstr
+import utils/opt
 import utils/twtstr
 
 type
@@ -74,8 +75,8 @@ type
     record*: JSValueTraced
 
   ScriptOptions* = object
-    nonce*: string
-    integrity*: string
+    nonce*: Str
+    integrity*: Str
     parserMetadata*: ParserMetadata
     credentialsMode*: CredentialsMode
     referrerPolicy*: Opt[ReferrerPolicy]
@@ -103,13 +104,13 @@ type
 
 # Forward declaration hack
 # set in html/dom
-proc consoleError(ctx: JSContext; ss: varargs[string]) {.importc: "cha_$1".}
+proc consoleError(ctx: JSContext; ss: varargs[Str]) {.importc: "cha_$1".}
 
 proc clear*(moduleMap: var ModuleMap; rt: JSRuntime) =
   moduleMap.setLen(0)
 
 proc find(moduleMap: ModuleMap; url: URL; moduleType: ModuleType): int =
-  let surl = ($url).toAtom()
+  let surl = url.toStr().toAtom()
   for i, entry in moduleMap.mypairs:
     if entry.key.moduleType == moduleType and entry.key.url == surl:
       return i
@@ -156,7 +157,7 @@ proc put*(moduleMap: var ModuleMap; url: URL; moduleType: ModuleType;
     moduleMap[i].value = value
   else:
     moduleMap.add(ModuleMapEntry(
-      key: (($url).toAtom(), moduleType),
+      key: (url.toStr().toAtom(), moduleType),
       value: value
     ))
 
@@ -168,10 +169,10 @@ proc moduleTypeToRequestDest*(moduleType: ModuleType;
     return rdStyle
   return default
 
-proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
+proc newClassicScript*(ctx: JSContext; source: Str; baseURL: URL;
     options: ScriptOptions; settings: EnvironmentSettings;
     mutedErrors = false): ScriptResult =
-  let record = ctx.compileScript(source, $baseURL)
+  let record = ctx.compileScript(source, baseURL.toStr())
   ScriptResult(
     t: srtScript,
     script: Script(
@@ -183,9 +184,9 @@ proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
     )
   )
 
-proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
+proc newJSModuleScript*(ctx: JSContext; source: Str; baseURL: URL;
     options: ScriptOptions; settings: EnvironmentSettings): ScriptResult =
-  let record = ctx.compileModule(source, $baseURL)
+  let record = ctx.compileModule(source, baseURL.toStr())
   ScriptResult(
     t: srtScript,
     script: Script(

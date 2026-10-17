@@ -8,7 +8,7 @@ when NimMajor >= 2:
   import std/assertions
 import std/posix
 
-import utils/bytearray
+import utils/cowstr
 import utils/opt
 
 type PosixStream* = ref object
@@ -88,40 +88,30 @@ proc writeLoop*(s: PosixStream; buffer: openArray[char]): Opt[void] =
     return s.writeLoop(unsafeAddr buffer[0], buffer.len)
   ok()
 
-proc readAll*(s: PosixStream; buffer: var string): bool =
+proc writeLoop*(s: PosixStream; buf: Growbuf): Opt[void] =
+  s.writeLoop(buf.toOpenArray())
+
+proc writeLoop*(s: PosixStream; str: Str): Opt[void] =
+  s.writeLoop(str.toOpenArray())
+
+proc readAll*(s: PosixStream; outs: var Str): bool =
   assert s.blocking
-  buffer = newString(4096)
+  var buf = initGrowbufUninit(4096)
   var idx = 0
   while true:
-    let n = s.read(addr buffer[idx], buffer.len - idx)
+    let n = s.read(addr buf[idx], buf.len - idx)
     if n == 0:
       break
     if n < 0:
       return false
     idx += n
-    if idx == buffer.len:
-      buffer.setLen(buffer.len + 4096)
-  buffer.setLen(idx)
+    if idx == buf.len:
+      buf.setLen(buf.len + 4096)
+  buf.setLen(idx)
+  outs = buf.toStr()
   true
 
-proc readAll*(s: PosixStream; buffer: var ByteArray): bool =
-  assert s.blocking
-  buffer = initByteArray(alloc(4096), 4096)
-  var idx = 0
-  while true:
-    let n = s.read(addr buffer.p[idx], buffer.len - idx)
-    if n == 0:
-      break
-    if n < 0:
-      return false
-    idx += n
-    if idx == buffer.len:
-      buffer.len += 4096
-      buffer.p = cast[ptr UncheckedArray[char]](realloc(buffer.p, buffer.len))
-  buffer.len = idx
-  true
-
-proc readAll*(s: PosixStream): string =
+proc readAll*(s: PosixStream): Str =
   discard s.readAll(result)
 
 proc setBlocking*(s: PosixStream; blocking: bool) =
@@ -182,9 +172,9 @@ proc newPosixStream*(path: cstring; flags = cint(O_RDONLY); mode = cint(0)):
     return nil
   return newPosixStream(fd)
 
-proc newPosixStream*(path: string; flags = cint(O_RDONLY); mode = cint(0)):
+proc newPosixStream*(path: Str; flags = cint(O_RDONLY); mode = cint(0)):
     PosixStream =
-  newPosixStream(cstring(path), flags, mode)
+  newPosixStream(path.toCString(), flags, mode)
 
 type
   MaybeMappedMemory* = ref MaybeMappedMemoryObj

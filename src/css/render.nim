@@ -5,11 +5,12 @@ when NimMajor >= 2:
 
 import config/conftypes
 import css/box
+import css/cell
+import css/color
 import css/cssvalues
 import css/lunit
 import html/dom
-import css/cell
-import css/color
+import utils/cowstr
 import utils/strwidth
 import utils/twtstr
 
@@ -256,8 +257,9 @@ proc setText1(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
   line.setText0(s, x, targetX, cx, nx, hadStr)
   line.setTextFormat(x, cx, targetX, nx, hadStr, format, node)
 
-proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
-    offset: Offset; format: Format; node: Element; clipBox: ClipBox) =
+proc setText(grid: var FlexibleGrid; state: var RenderState;
+    s: openArray[char]; offset: Offset; format: Format; node: Element;
+    clipBox: ClipBox) =
   if offset.y notin clipBox.start.y ..< clipBox.send.y:
     return
   if offset.x > clipBox.send.x:
@@ -442,7 +444,8 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
     let format = ibox.computed.toFormat()
     for run in ibox.runs:
       let offset = offset + run.offset
-      grid.setText(state, run.s, offset, format, ibox.element, clipBox)
+      grid.setText(state, run.s.toOpenArray(), offset, format, ibox.element,
+        clipBox)
   else: # InlineNewLineBox does not have children, so we handle it here
     # only check position here to avoid skipping leaves that use our
     # computed values
@@ -488,7 +491,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
   let starty = (start.y div state.cellSize.h).toInt()
   let endx = (send.x div state.cellSize.w).toInt()
   var endy = (send.y div state.cellSize.h).toInt()
-  var buf = ""
+  var buf = initGrowbuf()
   var top = box.input.border.top
   var bottom = box.input.border.bottom
   var left = box.input.border.left
@@ -524,7 +527,8 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
       else:
         buf &= top.borderChar(bdcCornerTopRight)
     let format = initFormat(defaultColor, colorTop.cellColor(), {})
-    grid.setText(state, buf, offset, format, box.element, box.render.clipBox)
+    grid.setText(state, buf.toOpenArray(), offset, format, box.element,
+      box.render.clipBox)
     buf.setLen(0)
   if hasLeft or hasRight:
     buf &= left.borderChar(bdcVerticalBarLeft)
@@ -538,12 +542,12 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
       let sy = y.toLUnit() * state.cellSize.h
       if hasLeft:
         soff.y = sy
-        grid.setText(state, buf, soff, formatLeft, Element(nil),
+        grid.setText(state, buf.toOpenArray(), soff, formatLeft, Element(nil),
           box.render.clipBox)
       if hasRight:
         eoff.y = sy
-        grid.setText(state, rbuf, eoff, formatRight, Element(nil),
-          box.render.clipBox)
+        grid.setText(state, rbuf.toOpenArray(), eoff, formatRight,
+          Element(nil), box.render.clipBox)
     buf.setLen(0)
   if bottom notin BorderStyleNoneHidden and not colorBottom.rgbTransparent:
     let proprietary = bottom in BorderStyleInput
@@ -574,7 +578,8 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
       if bottom != BorderStyleHash:
         flags.incl(ffUnderline)
     let format = initFormat(defaultColor, colorBottom.cellColor(), flags)
-    grid.setText(state, buf, offset, format, box.element, box.render.clipBox)
+    grid.setText(state, buf.toOpenArray(), offset, format, box.element,
+      box.render.clipBox)
 
 proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset; pass2 = false) =

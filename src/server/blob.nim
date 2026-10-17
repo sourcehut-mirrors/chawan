@@ -22,6 +22,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -30,7 +31,7 @@ type
 
   BlobObj {.pure.} = object of JSRootObj
     size*: int
-    contentType*: string
+    contentType*: Str
     buffer*: pointer
     opaque*: pointer
     deallocFun*: DeallocFun
@@ -38,8 +39,8 @@ type
   Blob* = JSRef[BlobObj]
 
   WebFileObj {.pure, final.} = object of BlobObj
-    webkitRelativePath: string
-    name*: string
+    webkitRelativePath: Str
+    name*: Str
     lastModified*: int64
     fd*: cint
 
@@ -137,7 +138,7 @@ type
   BlobPart = ref object
     case t: BlobPartType
     of bptString:
-      s: string
+      s: Str
     of bptBlob:
       blob: Blob
     of bptBufferSource:
@@ -146,10 +147,7 @@ type
 proc getBase(ctx: JSContext; part: BlobPart; p: var pointer): int =
   case part.t
   of bptString:
-    if part.s.len > 0:
-      p = addr part.s[0]
-    else:
-      p = nil
+    p = cast[pointer](part.s.toCStringConst())
     return part.s.len
   of bptBlob:
     p = part.blob.buffer
@@ -196,7 +194,7 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
     i += n
   blob.size = len
   if AllChars - {char(0x20)..char(0x7E)} notin blobType.toOpenArray():
-    blob.contentType = blobType.toOpenArray().toLowerAscii()
+    blob.contentType = blobType.toStr().toLowerAscii()
   ok()
 
 proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
@@ -207,7 +205,7 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
         part.s = part.s.normalizeLF()
   ctx.init(blob, parts, blobType)
 
-proc newBlob*(buffer: pointer; size: int; contentType: string;
+proc newBlob*(buffer: pointer; size: int; contentType: Str;
     deallocFun: DeallocFun; opaque: pointer = nil): Blob =
   jsNew BlobObj(
     buffer: buffer,
@@ -255,11 +253,11 @@ jsClassDef(Blob):
       blob.buffer = nil
 
 # File
-proc newWebFile*(name: string; fd: cint): WebFile =
+proc newWebFile*(name: Str; fd: cint): WebFile =
   jsNew WebFileObj(
     name: name,
     fd: fd,
-    contentType: DefaultGuess.guessContentType(name)
+    contentType: guessDefaultContentType(name)
   )
 
 type FilePropertyBag = object of BlobPropertyBag
@@ -276,7 +274,7 @@ jsClassPublicNameDef(WebFile, "File"):
     if file.fd != -1:
       discard close(file.fd)
 
-  proc newWebFile(ctx: JSContext; fileBits: seq[BlobPart]; fileName: string;
+  proc newWebFile(ctx: JSContext; fileBits: seq[BlobPart]; fileName: sink Str;
       options = FilePropertyBag(lastModified: getUnixMillis())): Opt[WebFile]
       {.jsctor.} =
     let file = jsNew WebFileObj(
@@ -297,13 +295,13 @@ jsClassPublicNameDef(WebFile, "File"):
 proc newFileList*(): FileList =
   return jsNew FileListObj()
 
-proc getName*(this: FileList): string =
-  var res = ""
+proc getName*(this: FileList): Str =
+  var res = initGrowbuf()
   for i, file in this.files.mypairs:
     if i != 0:
       res &= ','
     res &= file.name
-  move(res)
+  res.toStr()
 
 proc add*(this: FileList; file: WebFile) =
   this.files.add(file)
@@ -335,11 +333,11 @@ jsClassDef(FileList):
 
 # FileReader
 #TODO definitely not compliant, but I guess it's fine for now
-proc package(ctx: JSContext; s: openArray[char]; contentType: string;
+proc package(ctx: JSContext; s: openArray[char]; contentType: Str;
     packageType: PackageType; jsEncoding: JSValueConst): JSValueTraced =
   case packageType
   of ptDataURL:
-    var res = "data:" & contentType & ";base64,"
+    var res = initGrowbufM("data:", contentType, ";base64,")
     res.btoa(s.toOpenArrayByte(0, s.high))
     return trace(ctx.toJS(res))
   of ptArrayBuffer:
@@ -355,7 +353,7 @@ proc package(ctx: JSContext; s: openArray[char]; contentType: string;
     return trace(ctx.toJS(s.decodeAll(charset)))
   of ptBinaryString:
     if s.len == 0:
-      return trace(JS_NewString(ctx, ""))
+      return trace(ctx.toJS(""))
     let res = JS_NewNarrowStringLen(ctx, cast[cstringConst](unsafeAddr s[0]),
       csize_t(s.len))
     return trace(res)
@@ -378,8 +376,8 @@ proc fulfillReadJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     let ps = newPosixStream(fd)
     let res = ps.readAll()
     discard ps.seek(0)
-    this.result = ?ctx.package(res, this.blob.contentType, this.packageType,
-      argv[1])
+    this.result = ?ctx.package(res.toOpenArray(), this.blob.contentType,
+      this.packageType, argv[1])
   else:
     this.result = ?ctx.package(this.blob.toOpenArray(), this.blob.contentType,
       this.packageType, argv[1])

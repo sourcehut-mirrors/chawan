@@ -15,16 +15,18 @@ import std/posix
 import ../protocol/lcgi
 import io/chafile
 import io/poll
+import utils/cowstr
 import utils/sandbox
 
 proc usage() {.noreturn.} =
-  discard chaStderr.writeLine("Usage: " & getArgv(0) & " [host] [port] [-m msg]")
+  discard chaStderr.writeLine(initStrM("Usage: ", getArgv(0),
+    " [host] [port] [-m msg]"))
   quit(1)
 
 proc main() =
-  var host = ""
-  var port = ""
-  var msg = ""
+  var host: Str
+  var port: Str
+  var msg: Str
   var i = 1
   while i < getArgvCount():
     let s = getArgvCString(i)
@@ -34,9 +36,9 @@ proc main() =
         usage()
       msg = getArgv(i)
     elif s != "" and host == "":
-      host = $s
+      host = s.toStr()
     elif s != "" and port == "":
-      port = $s
+      port = s.toStr()
     else:
       usage()
     inc i

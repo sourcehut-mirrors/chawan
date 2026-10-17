@@ -2,17 +2,17 @@
 
 import io/chafile
 import utils/chaos
+import utils/cowstr
 import utils/opt
-import utils/twtstr
 
 proc parse(): Opt[void] =
   if getArgvCount() != 3:
     discard chaStderr.writeLine("Usage: img2html [content-type] [title]")
     quit(1)
-  ?chaStdout.write("<!DOCTYPE html><title>" & getArgv(2).htmlEscape() &
-    "</title><img src='data:" & getArgv(1) & ";base64,")
+  ?chaStdout.write(initStrM("<!DOCTYPE html><title>", getArgv(2).htmlEscape(),
+    "</title><img src='data:", getArgv(1), ";base64,"))
   var buffer {.noinit.}: array[6144, uint8]
-  var s = ""
+  var s: Growbuf
   while true:
     let n = chaStdin.read(buffer)
     if n <= 0:

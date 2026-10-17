@@ -4,26 +4,27 @@ when NimMajor >= 2:
 import std/os
 import std/streams
 
+import encoding/charset
 import encoding/decoder
 import encoding/encoder
-import encoding/charset
+import utils/cowstr
 
 let dir = getEnv("CGS_TESTDIR")
 
-proc runTestIn(test_in, test_in_ref: FileStream, label: string) =
-  let cs = getCharset(label)
+proc runTestIn(test_in, test_in_ref: FileStream; label: string) =
+  let cs = getCharset(newStr(label))
   assert cs != csUnknown
   let s = test_in.readAll()
   let ours = s.decodeAll(cs)
-  let theirs = test_in_ref.readAll()
+  let theirs = newStr(test_in_ref.readAll())
   if ours != theirs:
     echo "ours vs theirs len ", ours.len, " ", theirs.len
     let helpfile = newFileStream(dir / "fail_in_" & label, fmWrite)
-    helpfile.write(ours)
+    helpfile.write($ours)
     assert false, "Failed in test " & label
 
-proc runTestOut(test_out, test_out_ref: FileStream, label: string) =
-  let cs = getCharset(label)
+proc runTestOut(test_out, test_out_ref: FileStream; label: string) =
+  let cs = getCharset(newStr(label))
   assert cs != csUnknown
   let s = test_out.readAll()
   let ours = s.encodeAll(cs)
@@ -35,7 +36,7 @@ proc runTestOut(test_out, test_out_ref: FileStream, label: string) =
     helpfile.write(ours)
     assert false, "Failed out test " & label
 
-proc runTest(name: string, label: string, no_out = false) =
+proc runTest(name, label: string; no_out = false) =
   let test_in = newFileStream(dir / name & "_in.txt")
   let test_in_ref = newFileStream(dir / name & "_in_ref.txt")
   runTestIn(test_in, test_in_ref, label)

@@ -6,8 +6,8 @@ import html/catom
 import html/dom
 import html/form
 import js/jsref
+import utils/cowstr
 import utils/opt
-import utils/twtstr
 
 # Matching is slightly complicated by dependency tracking.
 # In general, dependencies must be added for any element whose state
@@ -54,8 +54,8 @@ proc matchesAttr(element: Element; sel: Selector): bool =
   of rtToken:
     let val = element.attr(sel.atom)
     case sel.attrCase(element)
-    of csI: return val.containsTokenIgnoreCase(sel.value)
-    of csS: return val.containsToken(sel.value)
+    of csI: return val.containsTokenIgnoreCase(sel.value.toOpenArray())
+    of csS: return val.containsToken(sel.value.toOpenArray())
   of rtBeginDash:
     let val = element.attr(sel.atom)
     case sel.attrCase(element)
@@ -153,7 +153,7 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
   of pcDefined:
     return element.isDefined()
 
-proc matchesLang(element: Element; lang: string): bool =
+proc matchesLang(element: Element; lang: Str): bool =
   for element in element.branchElems:
     if element.attrb(satLang):
       return element.attr(satLang) == lang

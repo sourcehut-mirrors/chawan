@@ -5,6 +5,7 @@ when NimMajor >= 2:
 
 import encoding/charset
 import encoding/decodercore
+import utils/cowstr
 
 type DecoderErrorMode* = enum
   demFatal, demReplacement
@@ -109,16 +110,6 @@ iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
       if slice.p != nil:
         yield slice
 
-proc `&=`*(s: var string; sl: UnsafeSlice) =
-  ## Append the slice `sl` to `s` without unnecessary copying.
-  ##
-  ## Note that setLen is called on the string, which may zero out the
-  ## target space before the copy.
-  if sl.p != nil:
-    let L = s.len
-    s.setLen(s.len + sl.len)
-    copyMem(addr s[L], sl.p, sl.len)
-
 proc high*(sl: UnsafeSlice): int =
   return sl.len - 1
 
@@ -134,39 +125,53 @@ template toOpenArrayByte*(sl: UnsafeSlice; lo, hi: int): openArray[uint8] =
 template toOpenArrayByte*(sl: UnsafeSlice): openArray[uint8] =
   sl.toOpenArrayByte(0, sl.high)
 
+proc add*(s: var Growbuf; sl: UnsafeSlice) =
+  s &= sl.toOpenArray()
+
 proc decodeAll*(iq: openArray[uint8]; charset: Charset; success: var bool):
-    string =
+    Str =
   ## Decode `iq` using `charset`, with `iq` representing a complete
   ## contiguous input queue.  When a decoding error occurs, `success` is
   ## set to `false` and an empty string is returned; otherwise, it is set
   ## to `true` and the decoder's full output is returned.
-  result = newStringOfCap(iq.len)
+  var buf = initGrowbufOfCap(iq.len)
   var ctx = initTextDecoderContext(charset, errorMode = demFatal)
   for s in ctx.decode(iq, finish = true):
-    result &= s
+    buf &= s
   success = not ctx.failed
+  buf.toStr()
 
 proc decodeAll*(iq: openArray[char]; charset: Charset; success: var bool):
-    string =
+    Str =
   return iq.toOpenArrayByte(0, iq.high).decodeAll(charset, success)
 
-proc decodeAll*(iq: openArray[uint8]; charset: Charset): string =
+proc decodeAll*(iq: openArray[uint8]; charset: Charset): Str =
   ## Use `td` to decode `iq`, representing a complete contiguous input
   ## queue.  Decoding errors are represented by U+FFFD replacement
   ## characters in the output.
-  result = newStringOfCap(iq.len)
+  var buf = initGrowbufOfCap(iq.len)
   var ctx = initTextDecoderContext(charset)
   for s in ctx.decode(iq, finish = true):
-    result &= s
+    buf &= s
+  buf.toStr()
 
-proc decodeAll*(iq: openArray[char]; charset: Charset): string =
+proc decodeAll*(iq: openArray[char]; charset: Charset): Str =
   ## See above.
   return iq.toOpenArrayByte(0, iq.high).decodeAll(charset)
 
-proc toValidUTF8*(iq: openArray[char]): string =
+proc toValidUTF8*(iq: openArray[char]): Str =
   ## Validate the UTF-8 string `iq`, replacing invalid characters with
   ## U+FFFD replacement characters.
   return iq.decodeAll(csUtf8)
+
+proc toValidUTF8*(iq: Str): Str =
+  var nonAscii: uint
+  for c in iq:
+    nonAscii += uint8(c) shr 7
+  if nonAscii == 0:
+    return iq
+  #TODO avoid allocation in all valid cases
+  return iq.toOpenArray().decodeAll(csUtf8)
 
 proc validateUTF8*(s: openArray[char]): int =
   var ctx = initTextDecoderContext(csUtf8, errorMode = demFatal)

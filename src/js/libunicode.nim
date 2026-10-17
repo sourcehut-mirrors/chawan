@@ -1,7 +1,7 @@
 {.push raises: [].}
 
 import js/cutils
-import utils/chaos
+import utils/twtstr
 
 {.used.}
 

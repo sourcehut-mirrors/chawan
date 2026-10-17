@@ -36,6 +36,7 @@ import io/packetreader
 import io/packetwriter
 import io/poll
 import js/jsref
+import js/jstypes
 import js/quickjs
 import server/blob
 import server/connectionerror
@@ -44,6 +45,7 @@ import server/loaderiface
 import server/request
 import server/url
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/tabutil
 import utils/twtstr
@@ -59,7 +61,7 @@ type
     id: int
     refc: int
     offset: int64
-    path: string
+    path: Str
 
   LoaderBuffer {.acyclic.} = ref object
     len: int
@@ -102,7 +104,7 @@ type
     state: HandleParserState
     crSeen: bool
     status: uint16
-    lineBuffer: string
+    lineBuffer: Growbuf
     headers: seq[HTTPHeader]
 
   ResponseState = enum
@@ -110,16 +112,16 @@ type
 
   AuthItem = ref object
     origin: Origin
-    username: string
-    password: string
+    username: Str
+    password: Str
 
   PendingRequest = ref object
     handle: InputHandle
     body: RequestBody
     tocache: bool
-    cmd: string
+    cmd: Str
     env: seq[EnvVar]
-    argv: seq[string]
+    argv: seq[Str]
     next: PendingRequest
 
   ClientHandle {.final.} = ref object of LoaderHandle
@@ -127,7 +129,7 @@ type
     # List of cached resources.
     cacheMap: seq[CachedItem]
     # List of file descriptors passed by the client.
-    passedFdMap: seq[tuple[name: string; ps: PosixStream]] # host -> ps
+    passedFdMap: seq[tuple[name: Str; ps: PosixStream]] # host -> ps
     config: LoaderClientConfig
     # List of credentials the client has access to (same origin only).
     authMap: seq[AuthItem]
@@ -142,8 +144,8 @@ type
     handle: ClientHandle
 
   DownloadItem = ref object
-    escapedPath: string
-    displayUrl: string
+    escapedPath: Str
+    displayUrl: Str
     output: OutputHandle
     sent: uint64
     contentLen: uint64
@@ -175,11 +177,11 @@ type
     browsecap: Mailcap
 
   LoaderConfig* = object
-    cgiDir*: seq[string]
-    tmpdir*: string
-    configDir*: string
-    dataDir*: string
-    bookmark*: string
+    cgiDir*: seq[Str]
+    tmpdir*: Str
+    configDir*: Str
+    dataDir*: Str
+    bookmark*: Str
     maxNetConnections*: int
 
   PushBufferResult = enum
@@ -190,16 +192,17 @@ type
 
 # Forward declarations
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
-  body: var RequestBody; config: LoaderClientConfig; cmd: var string;
-  env: var seq[EnvVar]; argv: openArray[string]; tocache, canThrottle: bool)
+  body: var RequestBody; config: LoaderClientConfig; cmd: Str;
+  env: var seq[EnvVar]; argv: openArray[Str]; tocache, canThrottle: bool)
 proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
   buffer: LoaderBuffer; ignoreSuspension: bool;
   unregWrite: var seq[OutputHandle])
 
 proc `$`*(buffer: LoaderBuffer): string {.deprecated: "for debugging only".} =
-  var s = newString(buffer.len)
-  copyMem(addr s[0], addr buffer.page[0], buffer.len)
-  return s
+  if buffer.len == 0:
+    return ""
+  let p = cast[ptr UncheckedArray[char]](buffer.page[0])
+  p.toOpenArray(0, buffer.len - 1).substr()
 
 template withPacketWriter(client: ClientHandle; w, body, fallback: untyped) =
   client.stream.withPacketWriter w:
@@ -298,7 +301,7 @@ template bufferFromWriter(w, body: untyped): LoaderBuffer =
   LoaderBuffer(page: move(w.buffer), len: w.bufLen)
 
 proc sendResult(ctx: var LoaderContext; handle: InputHandle; res: int;
-    msg = ""): PushBufferResult =
+    msg = str("")): PushBufferResult =
   assert handle.rstate == rsBeforeResult
   let output = handle.output
   inc handle.rstate
@@ -315,15 +318,15 @@ proc sendResult(ctx: var LoaderContext; handle: InputHandle; res: int;
   pbrDone
 
 proc updateCookies(ctx: var LoaderContext; cookieJar: CookieJar;
-    url: URL; owner: ClientHandle; values: openArray[string]) =
+    url: URL; owner: ClientHandle; values: openArray[ByteString]) =
   # Syntax: {jarId} RS {url} RS {persist?} RS {header} [ CR {header} ... ] LF
-  # Persist is ASCII digit 0 if persist, 1 if not.
+  # Persist is ASCII digit 1 if persist, 0 if not.
   const RS = '\x1E' # ASCII record separator
-  let persist = if owner.config.cookieMode == cmSave: '1' else: '0'
-  var s = cookieJar.s & RS & $url & RS & persist & RS
+  let persist = if owner.config.cookieMode == cmSave: str("1") else: str("0")
+  var buf = initGrowbufM(cookieJar.s, RS, url.toStr(), RS, persist, RS)
   for i, it in values.mypairs:
-    s &= it & [false: '\r', true: '\n'][i == values.high]
-  let buffer = newLoaderBuffer(s)
+    buf.addM(Str(it), (if i == values.high: '\n' else: '\r'))
+  let buffer = newLoaderBuffer(buf.toOpenArray())
   ctx.pushBuffer(ctx.cookieStream, buffer, ignoreSuspension = false,
     ctx.unregWrite)
   if ctx.cookieStream.output.dead:
@@ -333,14 +336,14 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
     headers: openArray[HTTPHeader]): PushBufferResult =
   assert handle.rstate == rsBeforeStatus
   inc handle.rstate
-  let contentLens = headers.getFirst("Content-Length")
+  let contentLens = headers.getFirst(byteStr("Content-Length"))
   handle.startTime = getUnixSeconds()
-  handle.contentLen = parseUInt64(contentLens).get(uint64.high)
+  handle.contentLen = parseUInt64(contentLens.toOpenArray()).get(uint64.high)
   let output = handle.output
   let cookieJar = output.owner.config.cookieJar
   if cookieJar != nil and handle.credentials:
     # Never persist in loader; we save cookies in the pager.
-    let values = headers.getAllNoComma("Set-Cookie")
+    let values = headers.getAllNoComma(byteStr("Set-Cookie"))
     if values.len > 0:
       let url = handle.url
       cookieJar.setCookie(values, url, persist = false, http = true)
@@ -400,13 +403,13 @@ proc close(ctx: var LoaderContext; client: ClientHandle) =
   for it in client.cacheMap:
     dec it.refc
     if it.refc == 0:
-      discard unlink(cstring(it.path))
+      discard unlink(it.path.toCString())
 
 proc isPrivileged(ctx: LoaderContext; client: ClientHandle): bool =
   return ctx.pagerClient == client
 
 proc rejectHandle(ctx: var LoaderContext; handle: InputHandle;
-    code: ConnectionError; msg = "") =
+    code: ConnectionError; msg = str("")) =
   case ctx.sendResult(handle, int(code), msg)
   of pbrDone: discard
   of pbrUnregister:
@@ -415,7 +418,7 @@ proc rejectHandle(ctx: var LoaderContext; handle: InputHandle;
 
 # use this when the handle is known to not have been registered yet
 proc rejectHandleClose(ctx: var LoaderContext; handle: InputHandle;
-    code: ConnectionError; msg = "") =
+    code: ConnectionError; msg = str("")) =
   ctx.rejectHandle(handle, code, msg)
   # it is possible that the other side is busy and so we cannot send the
   # entire rejection yet
@@ -527,10 +530,11 @@ proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
           ctx.register(output)
 
 proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
-    targetPath: string; fileOutput: var OutputHandle; osent: var uint64): bool =
-  discard mkdir(cstring(ctx.config.tmpdir), 0o700)
-  discard unlink(cstring(targetPath))
-  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_EXCL, 0o600)
+    targetPath: Str; fileOutput: var OutputHandle; osent: var uint64): bool =
+  discard mkdir(ctx.config.tmpdir.toCString(), 0o700)
+  discard unlink(targetPath.toCString())
+  let ps = newPosixStream(targetPath.toCString(),
+    O_CREAT or O_WRONLY or O_EXCL, 0o600)
   if ps == nil:
     return false
   var buffer = output.currentBuffer
@@ -559,9 +563,11 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
     output.parent.outputs.add(fileOutput)
   return true
 
-proc getTempFile(ctx: var LoaderContext): string =
-  result = ctx.config.tmpdir / "chaltmp" & $ctx.pid & "-" & $ctx.tmpfSeq
+proc getTempFile(ctx: var LoaderContext): Str =
+  let s = initStrM(ctx.config.tmpdir / str("chaltmp"), ctx.pid, '-',
+    ctx.tmpfSeq)
   inc ctx.tmpfSeq
+  s
 
 proc addCacheFile(ctx: var LoaderContext; client: ClientHandle;
     output: OutputHandle): int =
@@ -583,7 +589,7 @@ proc openCachedItem(client: ClientHandle; id: int): (PosixStream, int) =
   let n = client.cacheMap.find(id)
   if n != -1:
     let item = client.cacheMap[n]
-    let ps = newPosixStream(client.cacheMap[n].path, O_RDONLY, 0)
+    let ps = newPosixStream(client.cacheMap[n].path.toCString(), O_RDONLY, 0)
     if ps == nil:
       client.cacheMap.del(n)
       return (nil, -1)
@@ -600,12 +606,12 @@ proc addFd(ctx: var LoaderContext; handle: InputHandle) =
 type ControlResult = enum
   crDone, crContinue, crError
 
-proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
+proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: Str):
     ControlResult =
   if line.startsWithIgnoreCase("HTTP/1.0") or
       line.startsWithIgnoreCase("HTTP/1.1"):
     let codes = line.until(' ', "HTTP/1.0 ".len)
-    let code = parseUInt16(codes)
+    let code = parseUInt16(codes.toOpenArray())
     if codes.len > 3 or code.isErr:
       ctx.rejectHandle(handle, ceCGIMalformedHeader)
       return crError
@@ -624,7 +630,7 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
     case ctx.sendResult(handle, 0) # success
     of pbrDone: discard
     of pbrUnregister: return crError
-    let code = parseUInt16(v)
+    let code = parseUInt16(v.toOpenArray())
     if v.len > 3 or code.isErr:
       ctx.rejectHandle(handle, ceCGIMalformedHeader)
       return crError
@@ -639,11 +645,11 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
       return crContinue
     if v.startsWithIgnoreCase("ConnectionError "):
       var code = ceCGIInvalidChaControl
-      var message = ""
+      var message = str("")
       var i = "ConnectionError ".len
       let ns = v.until(' ', i)
       if ns.len > 0:
-        if n := parseInt32(ns):
+        if n := parseInt32(ns.toOpenArray()):
           if n > 0 and n <= int32(ConnectionError.high):
             code = ConnectionError(n)
         else:
@@ -665,33 +671,33 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
   case ctx.sendResult(handle, 0) # success
   of pbrDone: discard
   of pbrUnregister: return crError
-  handle.parser.headers.add((k, v))
+  handle.parser.headers.add((k.asByteString, v.asByteString))
   return crDone
 
-proc handleControlLine(handle: InputHandle; line: string): ControlResult =
+proc handleControlLine(handle: InputHandle; line: Str): ControlResult =
   let k = line.until(':')
   if k.len == line.len:
     # invalid
     return crError
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
-    let code = parseUInt16(v)
+    let code = parseUInt16(v.toOpenArray())
     if v.len > 3 or code.isErr:
       return crError
-    handle.parser.status = parseUInt16(v).get(0)
+    handle.parser.status = parseUInt16(v.toOpenArray()).get(0)
     return crContinue
   if k.equalsIgnoreCase("Cha-Control"):
     if v.startsWithIgnoreCase("ControlDone"):
       return crDone
     return crError
-  handle.parser.headers.add((k, v))
+  handle.parser.headers.add((k.asByteString, v.asByteString))
   return crDone
 
-proc handleLine(handle: InputHandle; line: string) =
+proc handleLine(handle: InputHandle; line: Str) =
   let k = line.until(':')
   if k.len < line.len:
     let v = line.substr(k.len + 1).strip()
-    handle.parser.headers.add((k, v))
+    handle.parser.headers.add((k.asByteString, v.asByteString))
 
 proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
     data: openArray[char]): int =
@@ -704,7 +710,8 @@ proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
     if c == '\r':
       parser.crSeen = true
     elif c == '\n':
-      if parser.lineBuffer == "":
+      let buf = move(parser.lineBuffer).toStr()
+      if buf == "":
         if parser.state == hpsBeforeLines:
           # body comes immediately, so we haven't had a chance to send result
           # yet.
@@ -721,14 +728,14 @@ proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
         of pbrUnregister: -1
       case parser.state
       of hpsBeforeLines:
-        case ctx.handleFirstLine(handle, parser.lineBuffer)
+        case ctx.handleFirstLine(handle, buf)
         of crDone: parser.state = hpsControlDone
         of crContinue: parser.state = hpsAfterFirstLine
         of crError:
           handle.parser = nil
           return -1
       of hpsAfterFirstLine:
-        case handle.handleControlLine(parser.lineBuffer)
+        case handle.handleControlLine(buf)
         of crDone: parser.state = hpsControlDone
         of crContinue: discard
         of crError:
@@ -737,8 +744,7 @@ proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
           handle.parser = nil
           return -1
       of hpsControlDone:
-        handle.handleLine(parser.lineBuffer)
-      parser.lineBuffer = ""
+        handle.handleLine(buf)
     else:
       parser.lineBuffer &= c
   return data.len
@@ -753,7 +759,7 @@ proc parseHeaders(ctx: var LoaderContext; handle: InputHandle;
 proc finishParse(ctx: var LoaderContext; handle: InputHandle) =
   if handle.cacheRef != nil:
     assert handle.cacheRef.offset == -1
-    let ps = newPosixStream(handle.cacheRef.path, O_RDONLY, 0)
+    let ps = newPosixStream(handle.cacheRef.path.toCString(), O_RDONLY, 0)
     if ps != nil:
       var buffer {.noinit.}: array[4096, char]
       var off = 0i64
@@ -812,7 +818,7 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
         nbuffer.len = nlen
         copyMem(addr nbuffer.page[0], addr buffer.page[si], nbuffer.len)
         buffer = nbuffer
-        assert nbuffer.len != 0, $si & ' ' & $buffer.len & " n " & $n
+        assert nbuffer.len != 0, $initGrowbufM(si, ' ', buffer.len, " n ", n)
     else:
       handle.bytesSeen += uint64(n)
       #TODO stop reading if Content-Length exceeded
@@ -885,7 +891,7 @@ proc includeCredentials(config: LoaderClientConfig; request: RawRequest;
       url.origin.isSameOrigin(config.originURL.origin))
 
 proc findAuth(client: ClientHandle; request: RawRequest; url: URL): AuthItem =
-  if not request.headers.contains("Authorization") and
+  if not request.headers.contains(byteStr("Authorization")) and
       client.config.includeCredentials(request, url):
     if request.urlCredentials and url.includesCredentials():
       #TODO this should be sent only after 401 I guess?
@@ -901,51 +907,52 @@ proc findAuth(client: ClientHandle; request: RawRequest; url: URL): AuthItem =
 
 proc setupEnv(env: var seq[EnvVar]; request: RawRequest; contentLen: int;
     config: LoaderClientConfig) =
-  env.add(("REQUEST_METHOD", $request.httpMethod))
+  env.add((str("REQUEST_METHOD"), request.httpMethod.toStr()))
   var contentTypeSeen = false
-  var contentType = ""
+  var contentType = str("")
   var cookieSeen = false
   var refererSeen = false
   var authorizationSeen = false
-  var headers = ""
+  var headers = initGrowbuf()
   for it in request.headers:
-    headers &= it.name & ": " & it.value & "\r\n"
+    headers.addM(Str(it.name), ": ", Str(it.value), "\r\n")
     if not contentTypeSeen and it.name.equalsIgnoreCase("Content-Type"):
-      contentType = it.value
+      contentType = it.value.toStr()
       contentTypeSeen = true
     elif not cookieSeen and it.name.equalsIgnoreCase("Cookie"):
-      env.add(("HTTP_COOKIE", it.value))
+      env.add((str("HTTP_COOKIE"), it.value.toStr()))
       cookieSeen = true
     elif not refererSeen and it.name.equalsIgnoreCase("Referer"):
-      env.add(("HTTP_REFERER", it.value))
+      env.add((str("HTTP_REFERER"), it.value.toStr()))
       refererSeen = true
     elif not authorizationSeen and it.name.equalsIgnoreCase("Authorization"):
-      env.add(("HTTP_AUTHORIZATION", it.value))
+      let val = it.value.toStr()
+      if val.startsWithIgnoreCase("Basic "):
+        var val2: Str
+        if val2.atob(val.toOpenArray("Basic ".len, val.high)).isOk:
+          env.add((str("REMOTE_USER"), val2.until(':')))
+      env.add((str("HTTP_AUTHORIZATION"), val))
       authorizationSeen = true
-      if it.value.startsWithIgnoreCase("Basic "):
-        var val: string
-        if val.atob(it.value.toOpenArray("Basic ".len, it.value.high)).isOk:
-          env.add(("REMOTE_USER", val.until(':')))
-  env.add(("REQUEST_HEADERS", move(headers)))
+  env.add((str("REQUEST_HEADERS"), headers.toStr()))
   if request.httpMethod == hmPost:
     if request.body.t == rbtMultipart:
-      env.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
+      env.add((str("CONTENT_TYPE"), request.body.multipart.getContentType()))
     else:
-      env.add(("CONTENT_TYPE", move(contentType)))
-    env.add(("CONTENT_LENGTH", $contentLen))
+      env.add((str("CONTENT_TYPE"), move(contentType)))
+    env.add((str("CONTENT_LENGTH"), contentLen.toStr()))
   if config.proxy != nil:
-    env.add(("ALL_PROXY", $config.proxy))
+    env.add((str("ALL_PROXY"), config.proxy.toStr()))
   if config.insecureSslNoVerify:
-    env.add(("CHA_INSECURE_SSL_NO_VERIFY", "1"))
+    env.add((str("CHA_INSECURE_SSL_NO_VERIFY"), str("1")))
   if config.originIp != "":
-    env.add(("CHA_ORIGIN_ADDR", config.originIp))
+    env.add((str("CHA_ORIGIN_ADDR"), config.originIp))
 
 proc writeBody(ctx: var LoaderContext; ostream, istream2: PosixStream;
     body: RequestBody; client: ClientHandle; outputIn: OutputHandle;
     cachedHandle: InputHandle) =
   case body.t
   of rbtString:
-    discard ostream.writeLoop(body.s)
+    discard ostream.writeLoop(body.s.toOpenArray())
     ostream.sclose()
   of rbtBlob:
     discard ostream.writeLoop(body.blob.toOpenArray())
@@ -971,10 +978,10 @@ proc writeBody(ctx: var LoaderContext; ostream, istream2: PosixStream;
   of rbtNone:
     discard
 
-proc setupCmd(ctx: LoaderContext; path: string; cmd: var string;
+proc setupCmd(ctx: LoaderContext; path: Str; cmd: var Str;
     env: var seq[EnvVar]): ConnectionError =
-  var path = path #TODO I don't like this copy
-  env.add(("REQUEST_URI", path))
+  var path = path
+  env.add((str("REQUEST_URI"), path))
   if path.startsWith("/cgi-bin/"):
     path.delete(0 .. "/cgi-bin/".high)
   elif path.startsWith("/$LIB/"):
@@ -987,26 +994,26 @@ proc setupCmd(ctx: LoaderContext; path: string; cmd: var string;
         let basename = path.until('/', dir.len)
         cmd = dir / basename
         if fileExists(cmd):
-          env.add(("SCRIPT_NAME", path.substr(0, dir.len + basename.len)))
+          env.add((str("SCRIPT_NAME"), path.substr(0, dir.len + basename.len)))
           var pathInfo = path.substr(dir.len + basename.len)
           if pathInfo != "":
-            env.add(("PATH_INFO", move(pathInfo)))
+            env.add((str("PATH_INFO"), move(pathInfo)))
           return ceNone
   else:
     let basename = path.until('/')
     for dir in ctx.config.cgiDir:
       cmd = dir / basename
       if fileExists(cmd):
-        env.add(("SCRIPT_NAME", "/cgi-bin/" & basename))
+        env.add((str("SCRIPT_NAME"), initStrM("/cgi-bin/", basename)))
         var pathInfo = path.substr(basename.len)
         if pathInfo != "":
-          env.add(("PATH_INFO", move(pathInfo)))
+          env.add((str("PATH_INFO"), move(pathInfo)))
         return ceNone
   ceCGIFileNotFound
 
 proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; body: var RequestBody; config: LoaderClientConfig;
-    cmd: var string; env: var seq[EnvVar]; argv: openArray[string];
+    cmd: Str; env: var seq[EnvVar]; argv: openArray[Str];
     tocache, canThrottle: bool): ConnectionError =
   if canThrottle:
     # Quick hack to throttle the number of simultaneous ongoing
@@ -1022,7 +1029,7 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
         body: move(body),
         tocache: tocache,
         argv: @argv,
-        cmd: move(cmd),
+        cmd: cmd,
         env: move(env)
       )
       if client.pendingTail != nil:
@@ -1044,9 +1051,10 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
     # the process ends. outputId is the cache id.
     var tmpf = ctx.getTempFile()
     ostreamOut2 = ostreamOut
-    discard unlink(cstring(tmpf))
+    discard unlink(tmpf.toCString())
     # RDWR, otherwise mmap won't work
-    ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR or O_EXCL, 0o600)
+    ostreamOut = newPosixStream(tmpf.toCString(), O_CREAT or O_RDWR or O_EXCL,
+      0o600)
     if ostreamOut == nil:
       return ceCGIFailedToOpenCacheOutput
     let cacheId = handle.output.outputId # welp
@@ -1108,9 +1116,8 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
   ceNone
 
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
-    body: var RequestBody; config: LoaderClientConfig; cmd: var string;
-    env: var seq[EnvVar]; argv: openArray[string];
-    tocache, canThrottle: bool) =
+    body: var RequestBody; config: LoaderClientConfig; cmd: Str;
+    env: var seq[EnvVar]; argv: openArray[Str]; tocache, canThrottle: bool) =
   let code = ctx.loadCGIImpl(client, handle, body, config, cmd, env, argv,
     tocache, canThrottle)
   if code == ceNone:
@@ -1119,7 +1126,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
   else:
     ctx.rejectHandleClose(handle, code)
 
-proc findPassedFd(client: ClientHandle; name: string): int =
+proc findPassedFd(client: ClientHandle; name: Str): int =
   for i in 0 ..< client.passedFdMap.len:
     if client.passedFdMap[i].name == name:
       return i
@@ -1129,7 +1136,7 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; request: RawRequest) =
   let i = client.findPassedFd(request.url.pathname)
   if i < 0:
-    ctx.rejectHandleClose(handle, ceFileNotFound, "stream not found")
+    ctx.rejectHandleClose(handle, ceFileNotFound, str("stream not found"))
     return
   case ctx.sendResult(handle, 0)
   of pbrDone: discard
@@ -1151,8 +1158,12 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
 
 proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; request: RawRequest) =
-  let id = parseInt32(request.url.pathname).get(-1)
-  let startFrom = parseInt64(request.url.search.substr(1)).get(0)
+  let id = parseInt32(request.url.pathname.toOpenArray()).get(-1)
+  let startFrom = if request.url.search.len > 0:
+    parseInt64(request.url.search.toOpenArray(1, request.url.search.high))
+      .get(0)
+  else:
+    0
   let (ps, n) = client.openCachedItem(id)
   if ps != nil:
     if startFrom != 0:
@@ -1185,8 +1196,11 @@ proc finishOutputSend(ctx: var LoaderContext; output: OutputHandle) =
 # Data URL handler.
 # Moved back into loader from CGI, because data URLs can get extremely long
 # and thus no longer fit into the environment.
-proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
-  case ctx.sendConnectedStatus(handle, 200, {"Content-Type": ct})
+proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: Str) =
+  let code = ctx.sendConnectedStatus(handle, 200, {
+    byteStr("Content-Type"): ct.asByteString
+  })
+  case code
   of pbrDone: discard
   of pbrUnregister:
     ctx.close(handle)
@@ -1195,7 +1209,7 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
   if s.len == 0:
     ctx.finishOutputSend(output)
     return
-  let buffer = newLoaderBuffer(s)
+  let buffer = newLoaderBuffer(s.toOpenArray())
   var dummy: seq[OutputHandle] = @[]
   ctx.pushBuffer(handle, buffer, ignoreSuspension = false, dummy)
   ctx.finishOutputSend(output)
@@ -1205,15 +1219,15 @@ proc loadData(ctx: var LoaderContext; handle: InputHandle;
   let url = request.url
   var ct = url.pathname.until(',')
   if ct.len == url.pathname.len or NonAscii + Controls - {'\t'} in ct:
-    ctx.rejectHandle(handle, ceInvalidURL, "invalid data URL")
+    ctx.rejectHandle(handle, ceInvalidURL, str("invalid data URL"))
     return
   let sd = ct.len + 1 # data start
-  var body = percentDecode(url.pathname.toOpenArray(sd, url.pathname.high))
+  var body = percentDecode(url.pathname, sd)
   body &= percentDecode(url.search)
   if ct.endsWith(";base64"):
-    var d: string
-    if d.atob(body).isErr:
-      ctx.rejectHandle(handle, ceInvalidURL, "invalid data URL")
+    var d: Str
+    if d.atob(body.toOpenArray()).isErr:
+      ctx.rejectHandle(handle, ceInvalidURL, str("invalid data URL"))
       return
     ct.setLen(ct.len - ";base64".len) # remove base64 indicator
     ctx.loadDataSend(handle, d, ct)
@@ -1221,40 +1235,41 @@ proc loadData(ctx: var LoaderContext; handle: InputHandle;
     ctx.loadDataSend(handle, body, ct)
 
 # Download manager. Based on (you guessed it) w3m.
-proc formatSize(size: uint64): string =
-  result = ""
+proc formatSize(size: uint64): Str =
+  var buf = initGrowbuf()
   var size = size
   while size > 0:
     let n = size mod 1000
     size = size div 1000
-    var ns = ""
+    var ns = initGrowbuf()
     if size != 0:
       ns &= ','
       if n < 100:
         ns &= '0'
       if n < 10:
         ns &= '0'
-    ns &= $n
-    result.insert(ns, 0)
+    ns &= n
+    buf.insert(ns.toStr(), 0)
+  buf.toStr()
 
-proc formatDuration(secs: int64): string =
+proc formatDuration(secs: int64): Str =
   const MinuteSeconds = 60
   const HourSeconds = MinuteSeconds * 60
   const DaySeconds = HourSeconds * 24
   const WeekSeconds = DaySeconds * 7
   var secs = secs
-  var res = ""
+  var res = initGrowbuf()
   let weeks = secs div WeekSeconds
   secs -= weeks * WeekSeconds
   if weeks != 0:
-    res &= $weeks & " Week"
+    res.addM(weeks, " Week")
     if weeks > 1:
       res &= 's'
     res &= ", "
   let days = secs div DaySeconds
   secs -= days * DaySeconds
   if days != 0:
-    res &= $days & " Day"
+    res.addM(days, " Day")
     if days > 1:
       res &= 's'
     res &= ", "
@@ -1267,41 +1282,37 @@ proc formatDuration(secs: int64): string =
       res &= ':'
     if it in 0..9:
       res &= '0'
-    res &= $it
-  move(res)
+    res &= it
+  res.toStr()
 
-proc makeProgress(it: DownloadItem; now: int64): string =
-  result = it.displayUrl.htmlEscape() & '\n'
-  result &= "  -> "
+proc makeProgress(it: DownloadItem; now: int64): Str =
+  var buf = initGrowbufM(it.displayUrl.htmlEscape(), '\n', "  -> ")
   if it.output == nil: # linkify path on completion
-    result &= "<a href=\"file:" & it.escapedPath & "\">" & it.escapedPath &
-      "</a>"
+    buf.addM("<a href=\"file:", it.escapedPath, "\">", it.escapedPath, "</a>")
   else:
-    result &= it.escapedPath
-  result &= '\n'
-  result &= "  <progress value=" & $it.sent & " max="
-  result &= $it.contentLen & "></progress>  \n  "
-  result &= formatSize(it.sent)
+    buf &= it.escapedPath
+  buf.addM("\n  <progress value=", it.sent, " max=", it.contentLen,
+    "></progress>  \n  ", formatSize(it.sent))
   if it.sent < it.contentLen and
       (it.contentLen < uint64.high or it.output != nil):
     if it.contentLen < uint64.high and it.contentLen > 0:
-      result &= " / " & formatSize(it.contentLen) & " bytes (" &
-        $(it.sent * 100 div it.contentLen) & "%)  "
+      buf.addM(" / ", formatSize(it.contentLen), " bytes (",
+        it.sent * 100 div it.contentLen, "%)  ")
     else:
-      result &= " bytes loaded  "
+      buf &= " bytes loaded  "
     let dur = now - it.startTime
-    result &= formatDuration(dur)
-    result &= "  rate "
+    buf.addM(formatDuration(dur), "  rate ")
     let udur = uint64(max(dur, 1))
     let rate = it.sent div udur
-    result &= convertSize(rate) & "/sec"
+    buf.addM(convertSize(rate), "/sec")
     if it.contentLen < uint64.high:
       let left = it.contentLen - it.sent
       let eta = int64(left div max(rate, 1))
-      result &= "  eta " & formatDuration(eta)
+      buf.addM("  eta ", formatDuration(eta))
   else:
-    result &= " bytes loaded"
-  result &= '\n'
+    buf &= " bytes loaded"
+  buf &= '\n'
+  buf.toStr()
 
 type
   DownloadActionType = enum
@@ -1311,12 +1322,13 @@ type
     n: int
     t: DownloadActionType
 
-proc parseDownloadActions(ctx: LoaderContext; s: string): seq[DownloadAction] =
+proc parseDownloadActions(ctx: LoaderContext; s: openArray[char]):
+    seq[DownloadAction] =
   result = @[]
   for it in s.split('&'):
     let name = it.until('=')
     if name.startsWith("stop"):
-      let n = parseIntP(name.substr("stop".len)).get(-1)
+      let n = parseIntP(name.substr("stop".len).toOpenArray()).get(-1)
       if n >= 0 and n < ctx.downloadList.len:
         result.add(DownloadAction(n: n, t: datRemove))
   result.sort(proc(a, b: DownloadAction): int = return cmp(a.n, b.n),
@@ -1327,14 +1339,14 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
   if request.httpMethod == hmPost:
     # OK clicked
     if request.body.t != rbtString:
-      ctx.rejectHandle(handle, ceInvalidURL, "wat")
+      ctx.rejectHandle(handle, ceInvalidURL, str("wat"))
       return
-    for it in ctx.parseDownloadActions(request.body.s):
+    for it in ctx.parseDownloadActions(request.body.s.toOpenArray()):
       let dl = ctx.downloadList[it.n]
       if dl.output != nil:
         ctx.unregWrite.add(dl.output)
       ctx.downloadList.del(it.n)
-  var body = """
+  var body = initGrowbuf("""
 <!DOCTYPE html>
 <title>Download List Panel</title>
 <style>progress { width: calc(100% - 4ch) } </style>
@@ -1343,7 +1355,7 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
 <form method=POST action=about:downloads>
 <hr>
 <pre>
-"""
+""")
   let now = getUnixSeconds()
   var refresh = false
   for i, it in ctx.downloadList.mpairs:
@@ -1352,8 +1364,8 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
       if it.output.stream == nil:
         it.output = nil
       refresh = true
-    body &= it.makeProgress(now)
-    body &= "<input type=submit name=stop" & $i
+    body.addM(it.makeProgress(now),
+      "<input type=submit name=stop", i)
     if it.output != nil:
       body &= " value=STOP"
     else:
@@ -1365,7 +1377,7 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
 </pre>
 </body>
 """
-  ctx.loadDataSend(handle, body, "text/html")
+  ctx.loadDataSend(handle, body.toStr(), str("text/html"))
 
 # Stream for notifying the pager of new cookies set in the loader.
 proc loadCookieStream(ctx: var LoaderContext; handle: InputHandle;
@@ -1382,21 +1394,20 @@ proc loadCookieStream(ctx: var LoaderContext; handle: InputHandle;
 proc loadAbout(ctx: var LoaderContext; handle: InputHandle;
     request: RawRequest) =
   let url = request.url
-  case url.pathname
-  of "blank":
-    ctx.loadDataSend(handle, "", "text/html")
-  of "chawan":
-    const body = staticRead"res/chawan.html"
-    ctx.loadDataSend(handle, body, "text/html")
-  of "downloads":
+  if url.pathname == "blank":
+    ctx.loadDataSend(handle, str(""), str("text/html"))
+  elif url.pathname == "chawan":
+    const body = str(staticRead"res/chawan.html")
+    ctx.loadDataSend(handle, body, str("text/html"))
+  elif url.pathname == "downloads":
     ctx.loadDownloads(handle, request)
-  of "cookie-stream":
+  elif url.pathname == "cookie-stream":
     ctx.loadCookieStream(handle, request)
-  of "license":
-    const body = staticRead"res/license.md"
-    ctx.loadDataSend(handle, body, "text/markdown")
+  elif url.pathname == "license":
+    const body = str(staticRead"res/license.md")
+    ctx.loadDataSend(handle, body, str("text/markdown"))
   else:
-    ctx.rejectHandle(handle, ceInvalidURL, "invalid about URL")
+    ctx.rejectHandle(handle, ceInvalidURL, str("invalid about URL"))
 
 proc loadGetCookie(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle) =
@@ -1410,7 +1421,7 @@ proc loadGetCookie(ctx: var LoaderContext; client: ClientHandle;
   if cookieJar != nil:
     let s = cookieJar.serialize(client.config.originURL, http = false)
     if s.len > 0:
-      let buffer = newLoaderBuffer(s)
+      let buffer = newLoaderBuffer(s.toOpenArray())
       var dummy: seq[OutputHandle] = @[]
       ctx.pushBuffer(handle, buffer, ignoreSuspension = false, dummy)
   ctx.finishOutputSend(output)
@@ -1425,7 +1436,7 @@ proc loadSetCookie(ctx: var LoaderContext; client: ClientHandle;
   let output = handle.output
   let cookieJar = client.config.cookieJar
   if cookieJar != nil:
-    var cookies: seq[string] = @[]
+    var cookies: seq[ByteString] = @[]
     for it in request.headers:
       if it.name.equalsIgnoreCase("Set-Cookie"):
         cookies.add(it.value)
@@ -1438,10 +1449,9 @@ proc loadSetCookie(ctx: var LoaderContext; client: ClientHandle;
 proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; request: RawRequest) =
   let url = request.url
-  case url.pathname
-  of "get-all":
+  if url.pathname == "get-all":
     ctx.loadGetCookie(client, handle)
-  of "set":
+  elif url.pathname == "set":
     ctx.loadSetCookie(client, handle, request)
   else:
     ctx.rejectHandle(handle, ceInvalidURL)
@@ -1449,48 +1459,50 @@ proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: var RawRequest; handle: InputHandle;
     resource: bool) =
-  var typeBuf = request.url.scheme & '/' &
-    ($request.httpMethod).toLowerAscii()
+  var typeBuf = initStrM(request.url.scheme, "/",
+    request.httpMethod.toStr().toLowerAscii())
   var netPathSeen = false
   var internalSeen = false
   var listSeen = false
   let entry = ctx.browsecap.findResourceMut(typeBuf, request.url,
     netPathSeen, internalSeen, listSeen, resource, request.internal)
   if entry != nil and mfCgioutput in entry.flags:
-    var path: string
-    var argv: seq[string]
+    var path: Str
+    var argv: seq[Str]
     var env: seq[EnvVar]
     let auth = client.findAuth(request, request.url)
-    let res = parseCGICommand(entry.cmd, typeBuf, request.url, path, argv,
-      env)
+    let res = parseCGICommand(entry.cmd, typeBuf, request.url, path, argv, env)
     if res.isOk:
-      var cmd: string
+      var cmd: Str
       let code = ctx.setupCmd(path, cmd, env)
       if code == ceNone:
         let canThrottle = not ctx.isPrivileged(client) and
           request.url.isNetPath()
         let contentLen = request.body.contentLength()
         if auth != nil:
-          request.headers.addIfNotFound("Authorization", "Basic " &
-            btoa(auth.username & ':' & auth.password))
+          let buf = initGrowbufM(auth.username, ':', auth.password)
+          var buf2 = initGrowbuf("Basic ")
+          buf2 &= btoa(buf.toOpenArray())
+          request.headers.addIfNotFound(byteStr("Authorization"),
+            buf2.toStr().asByteString)
         if mfUrimethodmap in entry.flags: # backwards-compat
-          env.add(("MAPPED_URI_SCHEME", request.url.scheme))
+          env.add((str("MAPPED_URI_SCHEME"), request.url.scheme))
           if auth != nil:
-            var user = percentEncode(auth.username, UserInfoPercentEncodeSet)
-            var pass = percentEncode(auth.password, UserInfoPercentEncodeSet)
-            env.add(("MAPPED_URI_USERNAME", move(user)))
-            env.add(("MAPPED_URI_PASSWORD", move(pass)))
-          env.add(("MAPPED_URI_HOST", request.url.hostname))
-          env.add(("MAPPED_URI_PORT", request.url.port))
-          env.add(("MAPPED_URI_PATH", request.url.pathname))
-          env.add(("MAPPED_URI_QUERY", request.url.search.substr(1)))
+            let user = percentEncode(auth.username, UserInfoPercentEncodeSet)
+            let pass = percentEncode(auth.password, UserInfoPercentEncodeSet)
+            env.add((str("MAPPED_URI_USERNAME"), user))
+            env.add((str("MAPPED_URI_PASSWORD"), pass))
+          env.add((str("MAPPED_URI_HOST"), request.url.hostname))
+          env.add((str("MAPPED_URI_PORT"), request.url.port))
+          env.add((str("MAPPED_URI_PATH"), request.url.pathname))
+          env.add((str("MAPPED_URI_QUERY"), request.url.search.substr(1)))
         env.setupEnv(request, contentLen, config)
         ctx.loadCGI(client, handle, request.body, config, cmd, env, argv,
           request.tocache, canThrottle)
       else:
         ctx.rejectHandleClose(handle, code)
     else:
-      ctx.rejectHandleClose(handle, ceInvalidBrowsecapEntry, $res.error)
+      ctx.rejectHandleClose(handle, ceInvalidBrowsecapEntry, res.error.toStr())
   elif entry != nil and not resource:
     ctx.rejectHandleClose(handle, ceMailcap, entry.toStr(typeBuf))
   else:
@@ -1529,7 +1541,7 @@ proc setupRequestDefaults(request: var RawRequest; config: LoaderClientConfig;
   if config.cookieJar != nil and credentials:
     let cookie = config.cookieJar.serialize(request.url, http = true)
     if cookie != "":
-      request.headers.addIfNotFound("Cookie", cookie)
+      request.headers.addIfNotFound(byteStr("Cookie"), cookie.asByteString)
   request.headers.setupReferrer(config.originURL, request.url,
     request.hasReferrer, config.referrerPolicy)
 
@@ -1550,9 +1562,9 @@ proc load(ctx: var LoaderContext; request: var RawRequest;
     stream.setBlocking(false)
     let credentials = config.includeCredentials(request, request.url)
     let handle = ctx.newInputHandle(stream, client, request.url, credentials)
-    if not config.allowAllSchemes and
+    if config.allowSchemes != {SchemeType.low..SchemeType.high} and
         request.url.scheme != config.originURL.scheme and
-        request.url.scheme notin config.allowSchemes and
+        request.url.schemeType notin config.allowSchemes and
         not request.url.scheme.startsWith("img-codec+"):
       ctx.rejectHandle(handle, ceDisallowedURL)
     else:
@@ -1592,7 +1604,7 @@ proc getCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
     if n != -1:
       w.swrite(client.cacheMap[n].path)
     else:
-      w.swrite("")
+      w.swrite(str(""))
   cmdrDone
 
 proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
@@ -1649,8 +1661,8 @@ proc addCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc redirectToFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var outputId: int
-  var targetPath: string
-  var displayUrl: string
+  var targetPath: Str
+  var displayUrl: Str
   r.assert(r.sread(outputId))
   r.assert(r.sread(targetPath))
   r.assert(r.sread(displayUrl))
@@ -1725,7 +1737,7 @@ proc openCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
 
 proc passFdCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
-  var id: string
+  var id: Str
   r.assert(r.sread(id))
   let fd = r.recvFd().get
   #TODO cloexec?
@@ -1734,7 +1746,7 @@ proc passFdCmd(ctx: var LoaderContext; rclient: ClientHandle;
 
 proc addPipeCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
-  var id: string
+  var id: Str
   r.assert(r.sread(id))
   var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
@@ -1769,7 +1781,7 @@ proc removeCachedItemCmd(ctx: var LoaderContext; client: ClientHandle;
     client.cacheMap.del(n)
     dec item.refc
     if item.refc == 0:
-      discard unlink(cstring(item.path))
+      discard unlink(item.path.toCString())
   cmdrDone
 
 proc teeCmd(ctx: var LoaderContext; rclient: ClientHandle; r: var PacketReader):
@@ -1893,7 +1905,7 @@ proc exitLoader(ctx: LoaderContext) =
       for it in client.cacheMap:
         dec it.refc
         if it.refc <= 0:
-          discard unlink(cstring(it.path))
+          discard unlink(it.path.toCString())
   exitnow(1)
 
 # This is only called when an OutputHandle could not read enough of one (or
@@ -2025,9 +2037,6 @@ proc runFileLoader*(rt: JSRuntime; config: LoaderConfig;
   onSignal SIGTERM:
     discard sig
     ctx.exitLoader()
-  for dir in ctx.config.cgiDir.mitems:
-    if dir.len > 0 and dir[^1] != '/':
-      dir &= '/'
   ctx.pagerClient = ClientHandle(
     pid: pagerPid,
     stream: stream,

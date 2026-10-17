@@ -1,3 +1,7 @@
+{.push raises: [].}
+
+import utils/cowstr
+
 type ConnectionError* = enum
   ceMailcap = -20 # not necessarily an error; sends entries to choose from
   ceInternalScheme = -19
@@ -34,7 +38,7 @@ type ConnectionError* = enum
   ceDisallowedSubnet = (12, "DisallowedSubnet")
 
 const ErrorMessages* = [
-  ceInternalScheme: "protocol only allowed for internal use",
+  ceInternalScheme: cstring"protocol only allowed for internal use",
   ceNetPathExpected: "expected `//' after colon",
   ceLoaderGone: "loader process crashed",
   ceCookieStreamExists: "cookie stream already exists",
@@ -68,7 +72,9 @@ const ErrorMessages* = [
   ceDisallowedSubnet: "tried to access a private subnet from public",
 ]
 
-proc getLoaderErrorMessage*(code: int): string =
+proc getLoaderErrorMessage*(code: int): Str =
   if code in int(ConnectionError.low)..int(ConnectionError.high):
-    return ErrorMessages[ConnectionError(code)]
-  return "unexpected error code " & $code
+    return str(ErrorMessages[ConnectionError(code)])
+  return initStrM("unexpected error code ", code)
+
+{.pop.} # raises: []

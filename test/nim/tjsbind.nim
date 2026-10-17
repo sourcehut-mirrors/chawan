@@ -15,13 +15,13 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/cowstr
 import utils/opt
-import utils/twtstr
 
-proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";
-    flags = JS_EVAL_TYPE_GLOBAL): Result[T, string] =
+proc evalConvert(ctx: JSContext; code: Str; file = str("<input>");
+    flags = JS_EVAL_TYPE_GLOBAL): Result[Str, Str] =
   let val = ctx.eval(code, file, flags)
-  var res: T
+  var res: Str
   if ctx.fromJSFree(val, res).isErr:
     # Exception when converting the value.
     return err(ctx.getExceptionMsg())
@@ -31,26 +31,27 @@ proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";
 proc testHelloWorld() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  const code = "'Hello from JS!'"
-  let val = ctx.eval(code)
-  var res: string
-  check ctx.fromJSFree(val, res).isOk
-  check res == "Hello from JS!"
+  block:
+    const code = str("'Hello from JS!'")
+    let val = ctx.eval(code)
+    var res: Str
+    check ctx.fromJSFree(val, res).isOk
+    check res == "Hello from JS!"
   ctx.free()
   rt.free()
 
 proc testErrorHandling() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  const code = "abcd"
-  let res = ctx.eval(code, "<test>")
+  const code = str("abcd")
+  let res = ctx.eval(code, str("<test>"))
   check JS_IsException(res.vc)
   const ex = """
 ReferenceError: 'abcd' is not defined
     at <eval> (<test>:1:1)
 """
   check ctx.getExceptionMsg() == ex
-  check evalConvert[string](ctx, code, "<test>").error == ex
+  check evalConvert(ctx, code, str("<test>")).error == ex
   JS_FreeValue(ctx, res)
   ctx.free()
   rt.free()
@@ -64,7 +65,7 @@ type
 
   EarthObj = object of PlanetObj
     moon: Moon
-    name: string
+    name: Str
     population: int64
 
   Moon = JSRef[MoonObj]
@@ -96,9 +97,9 @@ proc testRegisterClass() =
   ?ctx.registerClass(PlanetDef)
   ?ctx.registerClass(MoonDef)
   block:
-    const code = "Moon"
+    const code = str("Moon")
     let val = ctx.eval(code)
-    var res: string
+    var res: Str
     check ctx.fromJSFree(val, res).isOk
     check res == """
 function Moon() {
@@ -115,7 +116,7 @@ proc testGlobalObjects() =
     ?ctx.registerGlobalClass(EarthDef)
     let earth = jsNew EarthObj()
     ?ctx.setGlobal(earth)
-    const code = "assert(globalThis instanceof Earth)"
+    const code = str("assert(globalThis instanceof Earth)")
     let val = ctx.eval(code)
     check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
@@ -130,7 +131,7 @@ proc testInheritance() =
   ?ctx.registerClass(MoonDef)
   block:
     ?ctx.setGlobal(jsNew EarthObj())
-    const code = "assert(globalThis instanceof Planet)"
+    const code = str("assert(globalThis instanceof Planet)")
     let val = ctx.eval(code)
     check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
@@ -145,14 +146,14 @@ proc testGetSet() =
     ?ctx.registerGlobalClass(EarthDef)
     ?ctx.registerClass(MoonDef)
     let moon = jsNew MoonObj()
-    let earth = jsNew EarthObj(moon: moon, population: 1, name: "Earth")
+    let earth = jsNew EarthObj(moon: moon, population: 1, name: str("Earth"))
     ?ctx.setGlobal(earth)
-    const code = """
+    const code = str("""
 globalThis.population = 8e9;
 "name: " + globalThis.name + ", moon: " + globalThis.moon;
-  """
+  """)
     let val = ctx.eval(code)
-    var res: string
+    var res: Str
     check ctx.fromJSFree(val, res).isOk
     check res == "name: Earth, moon: [object Moon]"
     check earth.population == int64(8e9)
@@ -168,6 +169,7 @@ type
   Console = JSRef[ConsoleObj]
 
   ConsoleObj = object
+    logged: Str
 
 jsClassDef(Window):
   jsget Window, console
@@ -176,11 +178,9 @@ jsClassDef(Window):
   proc jsAssert(window: Window; pred: bool) {.jsfunc: "assert".} =
     assert pred
 
-var logged {.global.}: string
-
 jsClassDef(Console):
-  proc log(console: Console; s: string) {.jsfunc.} =
-    logged = s
+  proc log(console: Console; s: Str) {.jsfunc.} =
+    console.logged = s
 
 proc testFunctions() =
   let rt = newGlobalJSRuntime()
@@ -190,12 +190,12 @@ proc testFunctions() =
   block:
     let window = jsNew WindowObj(console: jsNew ConsoleObj())
     ?ctx.setGlobal(window)
-    const code = """
+    const code = str("""
 console.log('Hello, world!')
-"""
+""")
     let val = ctx.eval(code)
     check not JS_IsException(val.vc)
-    check logged == "Hello, world!"
+    check window.console.logged == "Hello, world!"
     JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
@@ -205,30 +205,30 @@ type
 
   JSFileObj = object
     buffer: pointer # some internal buffer handled as managed memory
-    path: string
+    path: Str
 
 jsClassNameDef(JSFile, "File"):
   jsget JSFile, path
 
-  proc newJSFile(path: string): JSFile {.jsctor.} =
+  proc newJSFile(path: Str): JSFile {.jsctor.} =
     jsNew JSFileObj(
       path: path,
       buffer: alloc(4096)
     )
 
-  func name(file: JSFile): string {.jsfget.} =
+  proc name(file: JSFile): Str {.jsfget.} =
     return file.path.substr(file.path.rfind('/') + 1)
 
-  proc setName(file: JSFile; s: string) {.jsfset: "name".} =
+  proc setName(file: JSFile; s: Str) {.jsfset: "name".} =
     let i = file.path.rfind('/')
-    file.path = file.path.substr(0, i) & s
+    file.path = initStrM(file.path.substr(0, i), s)
 
-  proc jsExists(path: string): bool {.jsstfunc: "exists".} =
+  proc jsExists(path: Str): bool {.jsstfunc: "exists".} =
     return true
 
   # this will always return the result of the fstat call.
   proc owner(file: JSFile): int {.jsuffget.} =
-    let fd = open(cstring(file.path), O_RDONLY, 0)
+    let fd = open(file.path.toCString(), O_RDONLY, 0)
     if fd == -1: return -1
     var stats = Stat.default
     if fstat(fd, stats) == -1:
@@ -252,9 +252,9 @@ proc testConstructors() =
   ?ctx.registerClass(JSFileDef)
   block:
     ?ctx.setGlobal(jsNew WindowObj())
-    const code = """
+    const code = str("""
 assert(new File('/path/to/file') + '' == '[object File]')
-  """
+  """)
     let val = ctx.eval(code)
     check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
@@ -268,13 +268,13 @@ proc testFunctionGetSet() =
   ?ctx.registerClass(JSFileDef)
   block:
     ?ctx.setGlobal(jsNew WindowObj())
-    const code = """
+    const code = str("""
 const file = new File("/path/to/file");
 assert(file.path === "/path/to/file");
 assert(file.name === "file"); /* file */
 file.name = "new-name";
 assert(file.path === "/path/to/new-name");
-    """
+    """)
     let val = ctx.eval(code)
     check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
@@ -288,9 +288,9 @@ proc testStaticFunctions() =
   ?ctx.registerClass(JSFileDef)
   block:
     ?ctx.setGlobal(jsNew WindowObj())
-    const code = """
+    const code = str("""
 assert(File.exists("doc/manual.md"));
-    """
+    """)
     let val = ctx.eval(code)
     check not JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
@@ -303,13 +303,13 @@ proc testUnforgeable() =
   ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
   block:
-    const code = """
+    const code = str("""
 const file = new File("doc/manual.md");
 const oldGetOwner = file.getOwner;
 file.getOwner = () => -2; /* doesn't work */
 assert(oldGetOwner == file.getOwner);
 Object.defineProperty(file, "owner", { value: -2 }); /* throws */
-    """
+    """)
     let val = ctx.eval(code)
     check JS_IsException(val.vc)
     JS_FreeValue(ctx, val)
@@ -323,14 +323,14 @@ proc testFinalizers() =
   ?ctx.registerGlobalClass(WindowDef)
   ?ctx.registerClass(JSFileDef)
   block:
-    const code = """
+    const code = str("""
 /* this doesn't leak. yay :D */
 { const file = new File("doc/manual.md"); }
 /* note that I put the above call in a separate scope, so QJS can unref
  * it immediately. in contrast, following file will not be deallocated until
  * the runtime is gone. */
 const file = new File("doc/manual.md");
-    """
+    """)
     JS_FreeValue(ctx, ctx.eval(code))
     check unrefd == 1 # first file is already deallocated
   ctx.free()
@@ -371,15 +371,15 @@ type
     c {.jsdefault.}: TestEnum
     d: TestDict1
     e {.jsdefault.}: int32
-    f {.jsdefault.}: Option[JSObjectNil]
+    f {.jsdefault.}: JSObjectNil
 
   TestDict1 = object of JSDict
-    a: Option[JSValueConst]
+    a: JSValueTraced
 
   TestDict2 = object of JSDict
-    a {.jsdefault.}: Option[JSValueTraced]
+    a {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
     b {.jsdefault: 2.}: int
-    c {.jsdefault.}: string
+    c {.jsdefault.}: Str
 
   TestDict3 = object of TestDict2
 
@@ -394,37 +394,37 @@ proc testJSDictUndefined() =
     assert ctx.fromJS(JS_UNDEFINED.vc, res).isErr
   block:
     var res: TestDict2
-    assert ctx.fromJS(JS_UNDEFINED.vc, res).isOk, ctx.getExceptionMsg()
+    assert ctx.fromJS(JS_UNDEFINED.vc, res).isOk, $ctx.getExceptionMsg()
   block:
     var res: TestDict3
-    assert ctx.fromJS(JS_UNDEFINED.vc, res).isOk, ctx.getExceptionMsg()
+    assert ctx.fromJS(JS_UNDEFINED.vc, res).isOk, $ctx.getExceptionMsg()
     assert res.b == 2
   ctx.free()
   rt.free()
 
 proc subroutine(ctx: JSContext; val: JSValueConst) =
   var res: TestDict0
-  assert ctx.fromJS(val, res).isOk, ctx.getExceptionMsg()
-  discard ctx.eval("delete val.f", "<input>")
+  assert ctx.fromJS(val, res).isOk, $ctx.getExceptionMsg()
+  discard ctx.eval(str("delete val.f"), str("<input>"))
   assert res.a
   assert res.b == 1
   assert res.c == teB
   assert res.e == 0
-  assert res.d.a.isNone
-  doAssert ctx.defineProperty(JSObject(res.f.get), "x",
+  assert JS_IsNull(res.d.a)
+  doAssert ctx.defineProperty(JSObject(res.f), "x",
     JS_NewInt32(ctx, 9)) == fjOk
 
 proc testJSDictTransitive() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  const code = """
+  const code = str("""
 const val = {
   b: 1,
   d: { a: null },
   f: { x: 1 }
 }
-val"""
-  let val = ctx.eval(code, "<input>")
+val""")
+  let val = ctx.eval(code, str("<input>"))
   ctx.subroutine(val.vc)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -436,7 +436,7 @@ proc testJSPropEnumList() =
   block:
     var list = newJSPropertyEnumList(ctx, 0)
     list.add(1)
-    list.add("hi")
+    list.add(str("hi"))
     list.add(3)
     list.add(4)
     assert list.len == 4
@@ -458,11 +458,12 @@ proc testSeq() =
 proc testTuple() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  var test = (2, "hi")
-  let jsTest = ctx.toJS(test)
-  var test2: tuple[n: int; s: string]
-  assert ctx.fromJSFree(jsTest, test2).isOk
-  assert test2 == test
+  block:
+    var test = (2, str("hi"))
+    let jsTest = ctx.toJS(test)
+    var test2: tuple[n: int; s: Str]
+    assert ctx.fromJSFree(jsTest, test2).isOk
+    assert test2 == test
   ctx.free()
   rt.free()
 
@@ -472,10 +473,10 @@ type
   XObj = object
 
 jsClassDef(X):
-  proc foo(x: X; s: sink string) {.jsfunc.} =
+  proc foo(x: X; s: sink Str) {.jsfunc.} =
     discard
 
-  proc bar(x: X; s: sink(string)) {.jsfunc.} =
+  proc bar(x: X; s: sink(Str)) {.jsfunc.} =
     discard
 
 proc testSink() =

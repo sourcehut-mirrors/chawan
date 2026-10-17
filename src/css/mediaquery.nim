@@ -5,8 +5,9 @@ import css/cssparser
 import css/cssvalues
 import html/catom
 import html/script
-import utils/opt
+import utils/cowstr
 import utils/dtoawrap
+import utils/opt
 import utils/twtstr
 
 type
@@ -81,44 +82,54 @@ proc parseMediaCondition(parser: var MediaQueryParser; non = false;
 # Serializer.
 # As usual, the spec is incomplete, so it's hard to say if it's
 # compliant.  What can you do :/
-proc `$`(mf: MediaFeature): string =
+proc add(buf: var Growbuf; mf: MediaFeature) =
   case mf.t
   of mftColor, mftColorIndex, mftMonochrome:
-    return $mf.range.a & " <= " & $mf.t & " <= " & $mf.range.b
+    buf.addM(mf.range.a, " <= ", mf.t.toStr(), " <= ", mf.range.b)
   of mftGrid:
-    return "grid: " & $int(mf.b)
+    buf.addM("grid: ", int32(mf.b))
   of mftHover:
-    return "hover: " & [false: "none", true: "hover"][mf.b]
+    buf.addM("hover: ", if mf.b: cstring"hover" else: cstring"none")
   of mftPrefersColorScheme:
-    return "prefers-color-scheme: " & [false: "light", true: "dark"][mf.b]
+    buf.addM("prefers-color-scheme: ",
+      if mf.b: cstring"dark" else: cstring"light")
   of mftWidth, mftHeight:
-    result = dtoa(mf.lengthrange.s.a) & " <"
+    buf.addDouble(mf.lengthrange.s.a)
+    buf &= " <"
     if mf.lengthrange.aeq:
-      result &= '='
-    result &= ' ' & $mf.t & " <"
+      buf &= '='
+    buf.addM(' ', mf.t.toStr(), " <")
     if mf.lengthrange.beq:
-      result &= '='
-    result &= ' '
-    result.addDouble(mf.lengthrange.s.b)
+      buf &= '='
+    buf &= ' '
+    buf.addDouble(mf.lengthrange.s.b)
   of mftScripting:
-    return "scripting: " & $mf.ms
+    buf.addM("scripting: ", mf.ms.toStr())
   of mftContentType:
-    return $mf.t & ": \"" & ($mf.a).dqEscape() & '"'
+    buf.addM(mf.t.toStr(), ": \"", mf.a.toStr().dqEscape(), '"')
 
-proc `$`(mq: MediaQuery): string =
+proc add(buf: var Growbuf; mq: MediaQuery) =
   case mq.t
-  of mctMedia: return $mq.media
-  of mctFeature: return $mq.feature
-  of mctNot: return "not (" & $mq.n & ")"
-  of mctOr: return "(" & $mq.left & ") or (" & $mq.right & ")"
-  of mctAnd: return "(" & $mq.left & ") or (" & $mq.right & ")"
+  of mctMedia: buf &= mq.media.toStr()
+  of mctFeature: buf &= mq.feature
+  of mctNot:
+    buf &= "not ("
+    buf &= mq.n
+    buf &= ")"
+  of mctOr, mctAnd:
+    buf &= "("
+    buf &= mq.left
+    buf.addM(") ", (if mq.t == mctOr: str("or") else: str("and")), " (")
+    buf &= mq.right
+    buf &= ")"
 
-proc `$`*(mqlist: seq[MediaQuery]): string =
-  result = ""
+proc toStr*(mqlist: seq[MediaQuery]): Str =
+  var buf = initGrowbuf()
   for it in mqlist:
-    if result.len > 0:
-      result &= ", "
-    result &= $it
+    if buf.len > 0:
+      buf &= ", "
+    buf &= it
+  buf.toStr()
 
 const RangeFeatures = {
   mftColor, mftColorIndex, mftMonochrome, mftWidth, mftHeight

@@ -14,13 +14,14 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString): JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull): JSCode
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var USVString): JSCode
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringEmpty):
+  JSCode
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNil): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ByteString): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): JSCode
@@ -42,7 +43,6 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BufferSource): JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
   JSCode
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst): JSCode
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): JSCode
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): JSCode
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var ByteString): JSCode
 
@@ -105,7 +105,7 @@ proc fromJSGetProp*[T](ctx: JSContext; this: JSValueConst; name: cstring;
     res: var T): Opt[bool] =
   if JS_IsUndefined(this):
     return ok(false)
-  let prop = JS_GetPropertyStr(ctx, this, name)
+  let prop = JS_GetPropertyStr(ctx, this, cstringConst(name))
   if JS_IsException(prop.vc):
     return err()
   if JS_IsUndefined(prop.vc):
@@ -146,25 +146,9 @@ proc isSequence*(ctx: JSContext; o: JSValueConst): Opt[bool] =
   let prop = ?ctx.getProperty(o, jsyIterator)
   ok(not JS_IsUndefined(prop))
 
-proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t; res: var string):
-    JSCode =
-  if cs == nil:
-    return fjErr
-  if len > csize_t(int.high):
-    JS_FreeCString(ctx, cs)
-    JS_ThrowRangeError(ctx, "string length out of bounds")
-    return fjErr
-  let ilen = cast[int](len)
-  res = newString(ilen)
-  if ilen > 0:
-    chaArrayCopy(res, cstring(cs).toOpenArray(0, ilen - 1))
-  JS_FreeCString(ctx, cs)
-  fjOk
-
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): JSCode =
-  var len {.noinit.}: csize_t
-  let cs = JS_ToCStringUSVLen(ctx, len, val) # cstring
-  ctx.fromJS(cs, len, res)
+proc initQJSStr(cs: cstringConst; len: csize_t): Str =
+  # we rely on QuickJS allocating 31 bits at maximum for strings here
+  initQJSStr(cstring(cs), cast[int](len))
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
     JSCode =
@@ -172,58 +156,43 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMString):
   let cs = JS_ToCStringLen(ctx, len, val) # cstring
   if cs == nil:
     return fjErr
-  if len > csize_t(int.high):
-    JS_FreeCString(ctx, cs)
-    JS_ThrowRangeError(ctx, "string length out of bounds")
-    return fjErr
-  res = initDOMString(cstring(cs), cast[int](len))
+  res = DOMString(initQJSStr(cs, len))
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var USVString):
-    JSCode =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var Str): JSCode =
   var len {.noinit.}: csize_t
   let cs = JS_ToCStringUSVLen(ctx, len, val) # cstring
   if cs == nil:
     return fjErr
-  if len > csize_t(int.high):
-    JS_FreeCString(ctx, cs)
-    JS_ThrowRangeError(ctx, "string length out of bounds")
-    return fjErr
-  res = initUSVString(cstring(cs), cast[int](len))
+  res = initQJSStr(cs, len)
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNull):
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringEmpty):
     JSCode =
-  var ds = initDOMStringLit("")
+  var ds = DOMString(str(""))
   if not JS_IsNull(val):
     ?ctx.fromJS(val, ds)
-  res = ds.toDOMStringNull()
+  res = ds.toDOMStringEmpty()
   fjOk
 
-proc fromJS(ctx: JSContext; cs: cstringConst; len: csize_t;
-    res: var ByteString): JSCode =
-  if cs == nil:
-    return fjErr
-  if len > csize_t(int.high):
-    JS_FreeCString(ctx, cs)
-    JS_ThrowRangeError(ctx, "string length out of bounds")
-    return fjErr
-  let ilen = cast[int](len)
-  res.s = newString(ilen)
-  for u in cs.toCString.toOpenArray(0, ilen - 1).points:
-    if u > 0xFF:
-      JS_ThrowTypeError(ctx, "ByteString character out of bounds")
-      return fjErr
-  if ilen > 0:
-    copyMem(addr res.s[0], cast[pointer](cs), ilen)
-  JS_FreeCString(ctx, cs)
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var DOMStringNil):
+    JSCode =
+  if JS_IsNull(val):
+    res = DOMStringNil(str(nil))
+  else:
+    var ds: DOMString
+    ?ctx.fromJS(val, ds)
+    res = DOMStringNil(StrNil(Str(ds)))
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ByteString):
     JSCode =
   var len {.noinit.}: csize_t
-  let cs = JS_ToCStringLen(ctx, len, val) # cstring
-  ctx.fromJS(cs, len, res)
+  let cs = JS_ToCStringNarrowLen(ctx, len, val)
+  if cs == nil:
+    return fjErr
+  res = ByteString(initQJSStr(cs, len))
+  fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CStringNZ): JSCode =
   let cs = JS_ToCStringNZ(ctx, val)
@@ -555,7 +524,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       let nameStr = newStrLitNode($name)
       let it = if fallback != nil:
         quote do:
-          let prop = JS_GetPropertyStr(`ctx`, `val`, `nameStr`)
+          let prop = JS_GetPropertyStr(`ctx`, `val`, cstringConst(`nameStr`))
           if JS_IsException(prop.vc):
             return fjErr
           if not JS_IsUndefined(prop.vc):
@@ -564,7 +533,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       else:
         quote do:
           missing = `nameStr`
-          let prop = JS_GetPropertyStr(`ctx`, `val`, missing)
+          let prop = JS_GetPropertyStr(`ctx`, `val`, cstringConst(missing))
           if JS_IsException(prop.vc):
             return fjErr
           if JS_IsUndefined(prop.vc):
@@ -699,30 +668,33 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSObjectNil):
     return fjErr
   fjOk
 
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): JSCode =
+proc fromJS*(ctx: JSContext; val: JSValueConst; ob: var OptionalBool):
+    JSCode =
+  var status = fjOk
+  if JS_IsUndefined(val):
+    ob = obNone
+  else:
+    var b: bool
+    status = ctx.fromJS(val, b)
+    ob = if b: obTrue else: obFalse
+  status
+
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var Str): JSCode =
   let str = JS_AtomToString(ctx, atom);
   if JS_IsException(str.vc):
     return fjErr
-  var len {.noinit.}: csize_t
-  let cs = JS_ToCStringUSVLen(ctx, len, str.vc);
-  JS_FreeValue(ctx, str)
-  ctx.fromJS(cs, len, res)
+  ctx.fromJSFree(str, res)
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var DOMString): JSCode =
-  var len {.noinit.}: csize_t
-  let cs = JS_AtomToCStringLen(ctx, len, atom)
-  if cs == nil:
+  let str = JS_AtomToString(ctx, atom)
+  if JS_IsException(str.vc):
     return fjErr
-  if len > csize_t(int.high):
-    JS_FreeCString(ctx, cs)
-    JS_ThrowRangeError(ctx, "string length out of bounds")
-    return fjErr
-  res = initDOMString(cstring(cs), cast[int](len))
-  fjOk
+  ctx.fromJSFree(str, res)
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var ByteString): JSCode =
-  var len {.noinit.}: csize_t
-  let cs = JS_AtomToCStringLen(ctx, len, atom)
-  ctx.fromJS(cs, len, res)
+  let str = JS_AtomToString(ctx, atom)
+  if JS_IsException(str.vc):
+    return fjErr
+  ctx.fromJSFree(str, res)
 
 {.pop.} # raises: []

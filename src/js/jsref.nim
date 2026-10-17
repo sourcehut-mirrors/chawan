@@ -11,6 +11,7 @@ import std/macrocache
 import js/jsopaque
 import js/jstypes
 import js/quickjs
+import utils/macroutil
 
 type
   JSRootObj* {.pure, inheritable.} = object

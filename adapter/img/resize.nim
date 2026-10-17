@@ -26,10 +26,9 @@ proc main() =
   for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
     let k = hdr.until(':')
     let v = hdr.after(':').strip()
-    case k
-    of "Cha-Image-Target-Dimensions":
+    if k == "Cha-Image-Target-Dimensions":
       (dstWidth, dstHeight) = parseDimensionsC(v, allowZero = false)
-    of "Cha-Image-Dimensions":
+    elif k == "Cha-Image-Dimensions":
       (srcWidth, srcHeight) = parseDimensionsC(v, allowZero = false)
   let ps = newPosixStream(STDIN_FILENO)
   let os = newPosixStream(STDOUT_FILENO)

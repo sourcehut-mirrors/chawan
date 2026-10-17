@@ -5,8 +5,8 @@ when NimMajor >= 2:
 import std/algorithm
 import std/bitops
 
+import utils/cowstr
 import utils/opt
-import utils/dtoawrap
 import utils/twtstr
 
 type
@@ -87,6 +87,9 @@ proc rgb*(c: OklabColor): RGBColor
 proc oklab*(c: RGBColor): OklabColor
 proc A*(c: OklabColor): int32
 proc B*(c: OklabColor): int32
+proc r*(c: RGBColor): uint8
+proc g*(c: RGBColor): uint8
+proc b*(c: RGBColor): uint8
 
 # bitmasked so nimvm doesn't choke on it
 proc r*(c: ARGBColor): uint8 =
@@ -165,7 +168,7 @@ proc cssCurrentColor*(): CSSColor =
 template t*(c: CSSColor): CSSColorType =
   cast[CSSColorType](uint64(c) shr 58)
 
-template n(c: CSSColor): uint32 =
+template n*(c: CSSColor): uint32 =
   uint32(uint64(c) and 0xFFFFFFFF'u32)
 
 template nw(c: CSSColor): uint64 =
@@ -379,52 +382,21 @@ proc namedRGBColor*(s: openArray[char]): Opt[RGBColor] =
     return ok(RGBColor(ColorsRGBMap[i][1]))
   return err()
 
-# https://html.spec.whatwg.org/#serialisation-of-a-color
-proc serialize*(c: ARGBColor; html: bool): string =
-  if html and c.a == 255:
-    var res = "#"
-    res.pushHex(c.r)
-    res.pushHex(c.g)
-    res.pushHex(c.b)
-    return move(res)
-  let a = float64(c.a) / 255
-  var res = "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", "
-  res.addDouble(a)
-  res &= ')'
-  move(res)
-
-proc `$`*(c: ARGBColor): string =
-  return c.serialize(html = false)
+proc toStr*(c: RGBColor): Str =
+  var buf = initGrowbuf("#")
+  buf.addHex(c.r)
+  buf.addHex(c.g)
+  buf.addHex(c.b)
+  buf.toStr()
 
 proc `$`*(c: RGBColor): string =
-  return c.argb().serialize(html = false)
-
-proc `$`*(c: CSSColor): string =
-  case c.t
-  of cctCell: return "-cha-ansi(" & $c.n & ")"
-  of cctCurrent: return "currentcolor"
-  of cctOklab:
-    #TODO should add oklch tag with same internal representation but
-    # different serialization
-    let oc = c.oklab()
-    var s = "oklab(" & $oc.L & " " & $oc.A & " " & $oc.B
-    let a = c.a
-    if a < 255:
-      s &= " / "
-      s.addDouble(float64(a) / 255)
-    s &= ')'
-    return move(s)
-  of cctArgb:
-    let c = c.argb()
-    if c.a != 255:
-      return c.serialize(html = false)
-    return "rgb(" & $c.r & ", " & $c.g & ", " & $c.b & ")"
+  $c.toStr()
 
 proc `$`*(color: CellColor): string =
   case color.t
   of ctNone: "none"
-  of ctRGB: $color.rgb
-  of ctANSI: "-cha-ansi(" & $uint8(color.ansi()) & ")"
+  of ctRGB: $color.rgb.toStr()
+  of ctANSI: "-cha-ansi(" & $uint8(color.ansi()) & ')'
 
 # Divide each component by 255, multiply them by n, and discard the fractions.
 # See https://arxiv.org/pdf/2202.02864.pdf for details.
@@ -1021,13 +993,13 @@ proc myHexValue(c: char): uint32 =
     return uint32(n)
   return 0
 
-proc parseLegacyColor*(s: openArray[char]): Result[RGBColor, cstring] =
+proc parseLegacyColor*(s: Str): Result[RGBColor, cstring] =
   if s.len <= 0:
     return err(cstring"color value must not be the empty string")
   let s = s.strip(chars = AsciiWhitespace)
   if s.equalsIgnoreCase("transparent"):
     return err(cstring"color must not be transparent")
-  if x := namedRGBColor(s):
+  if x := namedRGBColor(s.toOpenArray()):
     return ok(x)
   if s.len == 4 and s[0] == '#':
     let r = hexValue(s[1])
@@ -1037,9 +1009,9 @@ proc parseLegacyColor*(s: openArray[char]): Result[RGBColor, cstring] =
       return ok(rgb(uint8(r * 17), uint8(g * 17), uint8(b * 17)))
   # o_0
   var s2 = if s[0] == '#':
-    s.substr(1)
+    initGrowbuf(s.toOpenArray(1, s.high))
   else:
-    s
+    initGrowbuf(s)
   while s2.len == 0 or s2.len mod 3 != 0:
     s2 &= '0'
   let l = s2.len div 3

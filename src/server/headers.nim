@@ -13,8 +13,9 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import utils/opt
 import server/url
+import utils/cowstr
+import utils/opt
 import utils/twtstr
 
 type
@@ -25,7 +26,21 @@ type
     hgRequestNoCors = "request-no-cors"
     hgResponse = "response"
 
-  HTTPHeader* = tuple[name, value: string]
+  # HTTP header.  Ostensibly UTF-8, but no guarantees are made for this;
+  # in fact, while the network stack treats them as UTF-8, the fetch API
+  # instead returns ByteStrings which produce latin-1 in JS.
+  #
+  # To illustrate: Gecko & Blink both handle headers as follows.
+  # * fetch("", {headers: {a:'\xF3'}}) -> U+00F3 encoded as latin-1
+  # * fetch("", {headers: {a:'\xC3\xB3'}}) -> U+00F3 encoded as UTF-8
+  # * Set-Cookie: a=\u00F3 (encoded as UTF-8) -> document.cookie has U+00F3
+  # * Set-Cookie: a=\u00F3 (encoded as latin-1) -> document.cookie has U+FFFD
+  #
+  # Meanwhile, ByteString -> header conversion looks like:
+  # * Moo: \u00F3 (encoded as UTF-8) -> headers.get("moo") produces
+  #   U+00C3 U+00B3
+  # * Moo: \u00F3 (encoded as latin-1) -> headers.get("moo") produces U+00F3
+  HTTPHeader* = tuple[name, value: ByteString]
 
   HeaderList = seq[HTTPHeader]
 
@@ -52,7 +67,7 @@ type
 
 # Forward declarations
 proc append(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
-proc isForbiddenResponseHeaderName*(name: string): bool
+proc isForbiddenResponseHeaderName*(name: ByteString): bool
 proc getClassID(t: typedesc[Headers]): JSClassID
 proc sort(headers: Headers)
 
@@ -84,13 +99,13 @@ proc swrite*(w: var PacketWriter; headers: Headers) =
   if headers != nil:
     w.swriteList(headers)
 
-iterator pairs*(this: Headers): tuple[name, value: lent string] =
+iterator pairs*(this: Headers): tuple[name, value: lent ByteString] =
   for (name, value) in this.list:
     if this.guard == hgResponse and name.isForbiddenResponseHeaderName():
       continue
     yield (name, value)
 
-iterator allPairs*(headers: Headers): tuple[name, value: lent string] =
+iterator allPairs*(headers: Headers): tuple[name, value: lent ByteString] =
   for (name, value) in headers.list:
     yield (name, value)
 
@@ -100,13 +115,12 @@ proc sort*(list: var HeaderList) =
 proc sort(headers: Headers) =
   headers.list.sort()
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
-    JSCode =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit): JSCode =
   var headers: Headers
   if ctx.fromJS(val, headers).isOk:
     res = HeadersInit()
     for it in headers.list:
-      res.s.add((ByteString(s: it.name), ByteString(s: it.value)))
+      res.s.add((it.name, it.value))
     return fjOk
   if ?ctx.isSequence(val):
     res = HeadersInit()
@@ -120,36 +134,36 @@ const TokenChars = {
   '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'
 } + AsciiAlphaNumeric
 
-proc isValidHeaderName*(s: string): bool =
+proc isValidHeaderName*(s: ByteString): bool =
   return s.len > 0 and AllChars - TokenChars notin s
 
-proc isValidHeaderValue*(s: string): bool =
+proc isValidHeaderValue*(s: ByteString): bool =
   return s.len == 0 or s[0] notin {' ', '\t'} and s[^1] notin {' ', '\t'} and
     '\n' notin s
 
-proc isForbiddenRequestHeader*(name, value: string): bool =
+proc isForbiddenRequestHeader*(name, value: ByteString): bool =
   const ForbiddenNames = [
-    "Accept-Charset",
-    "Accept-Encoding",
-    "Access-Control-Request-Headers",
-    "Access-Control-Request-Method",
-    "Connection",
-    "Content-Length",
-    "Cookie",
-    "Cookie2",
-    "Date",
-    "DNT",
-    "Expect",
-    "Host",
-    "Keep-Alive",
-    "Origin",
-    "Referer",
-    "Set-Cookie",
-    "TE",
-    "Trailer",
-    "Transfer-Encoding",
-    "Upgrade",
-    "Via"
+    byteStr("Accept-Charset"),
+    byteStr("Accept-Encoding"),
+    byteStr("Access-Control-Request-Headers"),
+    byteStr("Access-Control-Request-Method"),
+    byteStr("Connection"),
+    byteStr("Content-Length"),
+    byteStr("Cookie"),
+    byteStr("Cookie2"),
+    byteStr("Date"),
+    byteStr("DNT"),
+    byteStr("Expect"),
+    byteStr("Host"),
+    byteStr("Keep-Alive"),
+    byteStr("Origin"),
+    byteStr("Referer"),
+    byteStr("Set-Cookie"),
+    byteStr("TE"),
+    byteStr("Trailer"),
+    byteStr("Transfer-Encoding"),
+    byteStr("Upgrade"),
+    byteStr("Via")
   ]
   for x in ForbiddenNames:
     if name.equalsIgnoreCase(x):
@@ -162,11 +176,12 @@ proc isForbiddenRequestHeader*(name, value: string): bool =
     return true # meh
   return false
 
-proc isForbiddenResponseHeaderName*(name: string): bool =
-  return name.equalsIgnoreCase("Set-Cookie") or
-    name.equalsIgnoreCase("Set-Cookie2")
+proc isForbiddenResponseHeaderName*(name: ByteString): bool =
+  Str(name).equalsIgnoreCase("Set-Cookie") or
+    Str(name).equalsIgnoreCase("Set-Cookie2")
 
-proc validate(ctx: JSContext; this: Headers; name, value: string): Opt[bool] =
+proc validate(ctx: JSContext; this: Headers; name, value: ByteString):
+    Opt[bool] =
   if not name.isValidHeaderName() or not value.isValidHeaderValue():
     JS_ThrowTypeError(ctx, "invalid header name or value")
     return err()
@@ -179,7 +194,7 @@ proc validate(ctx: JSContext; this: Headers; name, value: string): Opt[bool] =
     return ok(false)
   ok(true)
 
-proc isNoCorsSafelistedName(name: string): bool =
+proc isNoCorsSafelistedName(name: ByteString): bool =
   return name.equalsIgnoreCase("Accept") or
     name.equalsIgnoreCase("Accept-Language") or
     name.equalsIgnoreCase("Content-Language") or
@@ -190,7 +205,7 @@ const CorsUnsafeRequestByte = {
   '?', '@', '[', '\\', ']', '{', '}', '\e'
 }
 
-proc isNoCorsSafelisted(name, value: string): bool =
+proc isNoCorsSafelisted(name, value: ByteString): bool =
   if value.len > 128:
     return false
   if name.equalsIgnoreCase("Accept"):
@@ -202,21 +217,21 @@ proc isNoCorsSafelisted(name, value: string): bool =
     return Forbidden notin value
   if name.equalsIgnoreCase("Content-Type"):
     return value.strip().toLowerAscii() in [
-      "multipart/form-data",
-      "text/plain",
-      "application-x-www-form-urlencoded"
+      byteStr("multipart/form-data"),
+      byteStr("text/plain"),
+      byteStr("application-x-www-form-urlencoded")
     ]
   return false
 
-proc lowerBound(list: HeaderListConst; name: string): int =
-  list.lowerBound(name, proc(it: HTTPHeader; name: string): int =
+proc lowerBound(list: HeaderListConst; name: ByteString): int =
+  list.lowerBound(name, proc(it: HTTPHeader; name: ByteString): int =
     cmpIgnoreCase(it.name, name)
   )
 
-proc lowerBound(this: Headers; name: string): int =
+proc lowerBound(this: Headers; name: ByteString): int =
   this.list.lowerBound(name)
 
-proc removeAll(list: var HeaderList; name: string; n: int) =
+proc removeAll(list: var HeaderList; name: ByteString; n: int) =
   var j = 0
   for i, it in list.toOpenArray(n, list.high).mypairs:
     if not it.name.equalsIgnoreCase(name):
@@ -230,59 +245,59 @@ proc removeAll(list: var HeaderList; name: string; n: int) =
       inc m
     list.setLen(L)
 
-proc removeAll(this: Headers; name: string; n: int) =
+proc removeAll(this: Headers; name: ByteString; n: int) =
   this.list.removeAll(name, n)
 
-proc contains(list: HeaderListConst; name: string; n: int): bool =
+proc contains(list: HeaderListConst; name: ByteString; n: int): bool =
   return n < list.len and list[n].name.equalsIgnoreCase(name)
 
-proc contains(this: Headers; name: string; n: int): bool =
+proc contains(this: Headers; name: ByteString; n: int): bool =
   this.list.contains(name, n)
 
-proc contains*(list: HeaderList; name: string): bool =
+proc contains*(list: HeaderList; name: ByteString): bool =
   list.contains(name, list.lowerBound(name))
 
-proc contains*(this: Headers; name: string): bool =
+proc contains*(this: Headers; name: ByteString): bool =
   this.list.contains(name)
 
-proc removeAll*(this: Headers; name: string) =
+proc removeAll*(this: Headers; name: ByteString) =
   this.removeAll(name, this.lowerBound(name))
 
-proc add(headers: Headers; name, value: string; n: int) =
+proc add(headers: Headers; name, value: ByteString; n: int) =
   var n = n
   while n < headers.list.len and headers.contains(name, n):
     inc n
   headers.list.insert((name, value), n)
 
-proc addIfNotFound*(list: var HeaderList; name, value: string) =
+proc addIfNotFound*(list: var HeaderList; name, value: ByteString) =
   let n = list.lowerBound(name)
   if not list.contains(name, n):
     list.insert((name, value), n)
 
-proc addIfNotFound*(headers: Headers; name, value: string) =
+proc addIfNotFound*(headers: Headers; name, value: ByteString) =
   headers.list.addIfNotFound(name, value)
 
 # returns true if added, false otherwise
-proc addIfNotFoundCheck*(headers: Headers; name, value: string): bool =
+proc addIfNotFoundCheck*(headers: Headers; name, value: ByteString): bool =
   let n = headers.lowerBound(name)
   if not headers.contains(name, n):
     headers.list.insert((name, value), n)
     return true
   false
 
-proc get(this: Headers; name: string; n: int): string =
-  var s = ""
+proc get(this: Headers; name: ByteString; n: int): ByteString =
+  var s = initGrowbuf()
   for it in this.list.toOpenArray(n, this.list.high):
     if not it.name.equalsIgnoreCase(name):
       break
     if s.len > 0:
       s &= ", "
     s &= it.value
-  move(s)
+  s.toByteString()
 
 proc removeRange(this: Headers) =
   if this.guard == hgRequestNoCors:
-    this.removeAll("Range") # privileged no-CORS request headers
+    this.removeAll(byteStr("Range")) # privileged no-CORS request headers
 
 proc fill*(ctx: JSContext; headers: Headers; init: HeadersInit): Opt[void] =
   for (k, v) in init.s:
@@ -292,8 +307,8 @@ proc fill*(ctx: JSContext; headers: Headers; init: HeadersInit): Opt[void] =
 proc newHeaders*(guard: HeaderGuard): Headers =
   jsNew HeadersObj(guard: guard)
 
-proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
-    Headers =
+proc newHeaders*(guard: HeaderGuard; list: openArray[HTTPHeader]): Headers =
+  #TODO sink seq instead?
   let headers = newHeaders(guard)
   if headers != nil:
     headers.list = @list
@@ -303,118 +318,113 @@ proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
 proc clone*(headers: Headers): Headers =
   jsNew HeadersObj(guard: headers.guard, list: headers.list)
 
-proc add*(headers: Headers; name, value: string) =
+proc add*(headers: Headers; name, value: ByteString) =
   headers.add(name, value, headers.lowerBound(name))
 
-proc `[]=`*(this: Headers; name, value: string) =
+proc `[]=`*(this: Headers; name, value: ByteString) =
   let n = this.lowerBound(name)
   this.removeAll(name, n)
   this.add(name, value, n)
 
-proc `[]`*(this: Headers; name: string): var string =
+proc `[]`*(this: Headers; name: ByteString): var ByteString =
   let n = this.lowerBound(name)
   return this.list[n].value
 
-proc getFirst(list: HeaderListConst; name: string; n: int): lent string =
+proc getFirst(list: HeaderListConst; name: ByteString; n: int): ByteString =
   if list.contains(name, n):
     return list[n].value
-  let emptyStr {.global.} = ""
-  return emptyStr
+  byteStr("")
 
-proc getFirst*(list: HeaderListConst; name: string): lent string =
+proc getFirst*(list: HeaderListConst; name: ByteString): ByteString =
   list.getFirst(name, list.lowerBound(name))
 
-proc getFirst*(headers: Headers; name: string): lent string =
+proc getFirst*(headers: Headers; name: ByteString): ByteString =
   headers.list.getFirst(name)
 
-proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): string =
+proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): Str =
   let origin = prev.origin
   if origin.t == otOpaque:
-    return ""
+    return str("")
   if prev.schemeType notin {stHttp, stHttps} or
       target.schemeType notin {stHttp, stHttps}:
-    return ""
+    return str("")
   case policy
   of rpNoReferrer:
-    return ""
+    return str("")
   of rpNoReferrerWhenDowngrade:
     if prev.schemeType == stHttps and target.schemeType == stHttp:
-      return ""
-    return $origin & prev.pathname & prev.search
+      return str("")
+    return initStrM(origin.toStr(), prev.pathname, prev.search)
   of rpSameOrigin:
     if origin.isSameOrigin(target.origin):
-      return $origin
-    return ""
+      return origin.toStr()
+    return str("")
   of rpOrigin:
-    return $origin
+    return origin.toStr()
   of rpStrictOrigin:
     if prev.schemeType == stHttps and target.schemeType == stHttp:
-      return ""
-    return $origin
+      return str("")
+    return origin.toStr()
   of rpOriginWhenCrossOrigin:
     if not origin.isSameOrigin(target.origin):
-      return $origin
-    return $origin & prev.pathname & prev.search
+      return origin.toStr()
+    return initStrM(origin.toStr(), prev.pathname, prev.search)
   of rpStrictOriginWhenCrossOrigin:
-    if prev.schemeType == stHttps and target.schemeType == stHttp:
-      return $origin
-    if not origin.isSameOrigin(target.origin):
-      return $origin
-    return $origin & prev.pathname & prev.search
+    if prev.schemeType == stHttps and target.schemeType == stHttp or
+        not origin.isSameOrigin(target.origin):
+      return origin.toStr()
+    return initStrM(origin.toStr(), prev.pathname, prev.search)
   of rpUnsafeURL:
-    return $origin & prev.pathname & prev.search
+    return initStrM(origin.toStr(), prev.pathname, prev.search)
 
 proc setupReferrer*(list: var HeaderList; originURL, target: URL;
     hasReferrer: bool; referrerPolicy: ReferrerPolicy) =
-  let n = list.lowerBound("Referer")
-  let url = parseURL0(list.getFirst("Referer", n))
-  list.removeAll("Referer", n)
+  let n = list.lowerBound(byteStr("Referer"))
+  let url = parseURL0(list.getFirst(byteStr("Referer"), n).toStr())
+  list.removeAll(byteStr("Referer"), n)
   if hasReferrer:
     let url = if url != nil: url else: originURL
     if url != nil:
       let referrer = url.getReferrer(target, referrerPolicy)
       if referrer != "":
-        list.insert(("Referer", referrer), n)
+        list.insert((byteStr("Referer"), referrer.asByteString), n)
 
-proc getAllNoComma*(list: HeaderListConst; k: string): seq[string] =
-  result = @[]
+proc getAllNoComma*(list: HeaderListConst; k: ByteString): seq[ByteString] =
+  var res = newSeq[ByteString]()
   let n = list.lowerBound(k)
   for it in list.toOpenArray(n, list.high):
     if not it.name.equalsIgnoreCase(k):
       break
-    result.add(it.value)
+    res.add(it.value)
+  move(res)
 
-proc getAllNoComma*(this: Headers; k: string): seq[string] =
+proc getAllNoComma*(this: Headers; k: ByteString): seq[ByteString] =
   this.list.getAllNoComma(k)
 
-proc getAllCommaSplit*(this: Headers; k: string): seq[string] =
-  result = @[]
+proc getAllCommaSplit*(this: Headers; k: ByteString): seq[ByteString] =
+  var res = newSeq[ByteString]()
   let n = this.lowerBound(k)
   for it in this.list.toOpenArray(n, this.list.high):
     if not it.name.equalsIgnoreCase(k):
       break
     for value in it.value.split(','):
-      result.add(value.strip(chars = {' ', '\t'}))
+      res.add(value.strip(chars = {' ', '\t'}))
+  res
 
-proc getAll*(this: Headers; k: string): string =
-  var s = ""
-  let n = this.lowerBound(k)
-  for it in this.list.toOpenArray(n, this.list.high):
-    if not it.name.equalsIgnoreCase(k):
-      break
-    if s.len > 0:
-      s &= ", "
-    s &= it.value
-  move(s)
+proc getAll*(this: Headers; name: ByteString): ByteString =
+  let n = this.lowerBound(name)
+  if this.contains(name, n):
+    return this.get(name, n)
+  return byteStr("")
 
 # n is timeout in millis. -1 => not found
 # url == nil => self
 type CheckRefreshResult* = tuple[n: int; url: URL]
 
-proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
+proc parseRefresh*(s: Str; baseURL: URL): CheckRefreshResult =
   var i = s.skipBlanks(0)
   let s0 = s.until(NonDigit, i)
-  let x = parseUInt32(s0, allowSign = false)
+  let x = parseUInt32(s0.toOpenArray(), allowSign = false)
   if s0 != "":
     if x.isErr and (i >= s.len or s[i] != '.'):
       return (n: -1, url: URL(nil))
@@ -424,7 +434,7 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
     inc i
     let s1 = s.until(NonDigit, i)
     if s1 != "":
-      n += int(parseUInt32(s1, allowSign = false).get(0))
+      n += int(parseUInt32(s1.toOpenArray(), allowSign = false).get(0))
       i = s.skipBlanks(i + s1.len)
   elif s0 == "": # empty string or blanks
     return (n: -1, url: URL(nil))
@@ -439,10 +449,10 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   if i < s.len and s[i] in {'"', '\''}:
     q = true
     inc i
-  var s2 = s.substr(i)
-  if q and s2.len > 0 and s[^1] in {'"', '\''}:
-    s2.setLen(s2.high)
-  if url := parseURL(s2, baseURL):
+  var j = s.high
+  if q and i < s.len and s[^1] in {'"', '\''}:
+    dec j
+  if url := parseURL(s.substr(i, j), baseURL):
     return (n: n, url: url)
   return (n: -1, url: URL(nil))
 
@@ -458,60 +468,60 @@ jsClassDef(Headers):
 
   proc append(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
       {.jsfunc.} =
-    let value = value.s.strip(chars = HTTPWhitespace)
-    if not ?ctx.validate(this, name.s, value):
+    let value = value.strip(chars = HTTPWhitespace)
+    if not ?ctx.validate(this, name, value):
       return ok()
-    let n = this.lowerBound(name.s)
+    let n = this.lowerBound(name)
     if this.guard == hgRequestNoCors:
-      var tmp = this.get(name.s, n)
+      var tmp = this.get(name, n)
       if tmp.len > 0:
         tmp &= ", "
       tmp &= value
-      if not name.s.isNoCorsSafelisted(tmp):
+      if not name.isNoCorsSafelisted(tmp):
         return ok()
-    this.add(name.s, value, n)
+    this.add(name, value, n)
     this.removeRange()
     ok()
 
   proc delete(ctx: JSContext; this: Headers; name: ByteString): Opt[void] {.
       jsfunc.} =
-    if not ?ctx.validate(this, name.s, "") or
-        this.guard == hgRequestNoCors and not name.s.isNoCorsSafelistedName() and
-        not name.s.equalsIgnoreCase("Range"):
+    if not ?ctx.validate(this, name, byteStr("")) or
+        this.guard == hgRequestNoCors and not name.isNoCorsSafelistedName() and
+        not name.equalsIgnoreCase("Range"):
       return ok()
-    let n = this.lowerBound(name.s)
-    if this.contains(name.s, n):
-      this.removeAll(name.s, n)
+    let n = this.lowerBound(name)
+    if this.contains(name, n):
+      this.removeAll(name, n)
       this.removeRange()
     ok()
 
   proc has(ctx: JSContext; this: Headers; name: ByteString): JSValue
       {.jsfunc.} =
-    if not name.s.isValidHeaderName():
+    if not name.isValidHeaderName():
       return JS_ThrowTypeError(ctx, "invalid header name")
-    ctx.toJS(name.s in this)
+    ctx.toJS(name in this)
 
   proc set(ctx: JSContext; this: Headers; name, value: ByteString): Opt[void]
       {.jsfunc.} =
-    let value = value.s.strip(chars = HTTPWhitespace)
-    if not ?ctx.validate(this, name.s, value):
+    let value = value.strip(chars = HTTPWhitespace)
+    if not ?ctx.validate(this, name, value):
       return ok()
-    if this.guard == hgRequestNoCors and not name.s.isNoCorsSafelisted(value):
+    if this.guard == hgRequestNoCors and not name.isNoCorsSafelisted(value):
       return ok()
-    let n = this.lowerBound(name.s)
-    this.removeAll(name.s, n)
-    this.add(name.s, value, n)
+    let n = this.lowerBound(name)
+    this.removeAll(name, n)
+    this.add(name, value, n)
     this.removeRange()
     ok()
 
   proc get*(ctx: JSContext; this: Headers; name: ByteString): JSValue {.
       jsfunc.} =
-    if not name.s.isValidHeaderName():
+    if not name.isValidHeaderName():
       JS_ThrowTypeError(ctx, "Invalid header name")
       return JS_EXCEPTION
-    let n = this.lowerBound(name.s)
-    if this.contains(name.s, n):
-      return ctx.toJS(this.get(name.s, n))
+    let n = this.lowerBound(name)
+    if this.contains(name, n):
+      return ctx.toJS(this.get(name, n))
     return JS_NULL
 
 proc addHeadersModule*(ctx: JSContext): JSCode =

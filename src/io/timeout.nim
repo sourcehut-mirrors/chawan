@@ -8,6 +8,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import utils/chaos
+import utils/cowstr
 
 type
   TimeoutType* = enum
@@ -69,7 +70,7 @@ proc runEntry(ctx: JSContext; entry: TimeoutEntry; console: Console) =
   else:
     var s: DOMString
     if ctx.fromJS(entry.val, s).isOk:
-      trace(ctx.eval(s, $entry.t, JS_EVAL_TYPE_GLOBAL))
+      trace(ctx.eval(s.toStr(), entry.t.toStr(), JS_EVAL_TYPE_GLOBAL))
     else:
       trace(JS_EXCEPTION)
   if JS_IsException(ret):

@@ -8,22 +8,23 @@ import js/fromjs
 import js/jsutils
 import js/quickjs
 import js/tojs
-import utils/opt
 import utils/chaos
+import utils/cowstr
+import utils/opt
 import utils/twtstr
 
-type ChaPath* = distinct string
+type ChaPath* = distinct Str
 
 template `$`*(p: ChaPath): string =
-  string(p)
+  $Str(p)
 
 type
   UnquoteContext = object
     state: UnquoteState
-    s: string
-    p: string
+    s: Growbuf
+    p: Str
     i: int
-    identStr: string
+    identStr: Growbuf
     subChar: char
     hasColon: bool
 
@@ -31,11 +32,9 @@ type
     usNormal, usTilde, usDollar, usIdent, usBslash, usCurly, usCurlyHash,
     usCurlyColon, usCurlyExpand
 
-  ChaPathError = string
+  ChaPathResult[T] = Result[T, Str]
 
-  ChaPathResult[T] = Result[T, ChaPathError]
-
-proc unquote(p: string; starti: var int; terminal: char): ChaPathResult[string]
+proc unquote(p: Str; starti: var int; terminal: char): ChaPathResult[Str]
 proc stateCurlyStart(ctx: var UnquoteContext; c: char): ChaPathResult[void]
 
 proc stateNormal(ctx: var UnquoteContext; c: char) =
@@ -44,7 +43,7 @@ proc stateNormal(ctx: var UnquoteContext; c: char) =
   of '\\': ctx.state = usBslash
   of '~':
     if ctx.i == 0:
-      ctx.identStr = "~"
+      ctx.identStr = initGrowbuf("~")
       ctx.state = usTilde
     else:
       ctx.s &= c
@@ -55,7 +54,8 @@ proc stateTilde(ctx: var UnquoteContext; c: char) =
   if c != '/':
     ctx.identStr &= c
   else:
-    ctx.s &= expandPath(ctx.identStr) & '/'
+    ctx.s &= expandPath(move(ctx.identStr).toStr())
+    ctx.s &= '/'
     ctx.state = usNormal
 
 # Kind of a hack. We special case `\$' (backslash-dollar) in TOML, so that
@@ -71,28 +71,27 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # $
   case c
   of '$':
-    ctx.s &= $getpid()
+    ctx.s &= int(getpid())
     ctx.state = usNormal
   of '0':
     # Use getAppFilename so that any symbolic links are resolved.
     ctx.s &= chaos.getAppFilename()
     ctx.state = usNormal
   of AsciiAlpha:
-    ctx.identStr = $c
+    ctx.identStr = initGrowbuf(c)
     ctx.state = usIdent
   of '{':
     inc ctx.i
     if ctx.i >= ctx.p.len:
-      return err("} expected")
+      return err(str("} expected"))
     let c = ctx.p[ctx.i]
     return ctx.stateCurlyStart(c)
   else:
-    return err("unrecognized dollar substitution $" & c)
+    return err(initStrM("unrecognized dollar substitution $", c))
   ok()
 
 proc flushIdent(ctx: var UnquoteContext) =
-  ctx.s &= getEnvEmpty(ctx.identStr)
-  ctx.identStr = ""
+  ctx.s &= getEnvEmpty(move(ctx.identStr).toStr().toCString())
 
 const BareChars = AsciiAlphaNumeric + {'_'}
 
@@ -116,7 +115,7 @@ proc stateCurlyStart(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     dec ctx.i
     ctx.state = usCurly
   else:
-    return err("unexpected character in substitution: '" & c & "'")
+    return err(initStrM("unexpected character in substitution: '", c, '\''))
   return ok()
 
 proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
@@ -125,19 +124,19 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   of '}':
     if ctx.identStr == "0":
       ctx.s &= chaos.getAppFilename()
+      ctx.identStr.setLen(0)
     else:
-      ctx.s &= getEnvEmpty(ctx.identStr)
-    ctx.identStr = ""
+      ctx.s &= getEnvEmpty(move(ctx.identStr).toStr())
     ctx.state = usNormal
     return ok()
   of '$': # allow $ as first char only
     if ctx.identStr.len > 0:
-      return err("unexpected dollar sign in substitution")
+      return err(str("unexpected dollar sign in substitution"))
     ctx.identStr &= c
     return ok()
   of ':', '-', '?', '+': # note: we don't support `=' (assign)
     if ctx.identStr.len == 0:
-      return err("substitution without parameter name")
+      return err(str("substitution without parameter name"))
     if c == ':':
       ctx.state = usCurlyColon
     else:
@@ -145,72 +144,71 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
       ctx.state = usCurlyExpand
     return ok()
   of '1'..'9':
-    return err("parameter substitution is not supported")
+    return err(str("parameter substitution is not supported"))
   of BareChars - {'1'..'9'}:
     ctx.identStr &= c
     return ok()
   else:
-    return err("unexpected character in substitution: '" & c & "'")
+    return err(initStrM("unexpected character in substitution: '", c, '\''))
 
 proc stateCurlyHash(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${#ident
   if c == '}':
-    let s = getEnvEmpty(ctx.identStr)
+    let s = getEnvEmpty(move(ctx.identStr).toStr())
     ctx.s &= $s.len
-    ctx.identStr = ""
     ctx.state = usNormal
     return ok()
   if c == '$': # allow $ as first char only
     if ctx.identStr.len > 0:
-      return err("unexpected dollar sign in substitution")
+      return err(str("unexpected dollar sign in substitution"))
     # fall through
   elif c notin BareChars:
-    return err("unexpected character in substitution: '" & c & "'")
+    return err(initStrM("unexpected character in substitution: '", c, '\''))
   ctx.identStr &= c
   return ok()
 
 proc stateCurlyColon(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${ident:
   if c notin {'-', '?', '+'}: # Note: we don't support `=' (assign)
-    return err("unexpected character after colon: '" & c & "'")
+    return err(initStrM("unexpected character after colon: '", c, '\''))
   ctx.hasColon = true
   ctx.subChar = c
   ctx.state = usCurlyExpand
   return ok()
 
-proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
+proc flushCurlyExpand(ctx: var UnquoteContext; word: Str):
     ChaPathResult[void] =
+  let ident = move(ctx.identStr).toStr()
   case ctx.subChar
   of '-':
     if ctx.hasColon:
-      ctx.s &= getEnvEmpty(ctx.identStr, word)
+      ctx.s &= getEnvEmpty(ident, word)
     else:
-      let cs = getEnvCString(cstring(ctx.identStr))
+      let cs = getEnvCString(ident.toCString())
       if cs != nil:
-        ctx.s &= $cs
+        ctx.s.addCString(cs)
       else:
         ctx.s &= word
   of '?':
     if ctx.hasColon:
-      let s = getEnvEmpty(ctx.identStr)
+      let s = getEnvEmpty(ident)
       if s.len == 0:
         return err(word)
       ctx.s &= s
     else:
-      let cs = getEnvCString(cstring(ctx.identStr))
+      let cs = getEnvCString(ident.toCString())
       if cs == nil:
         return err(word)
-      ctx.s &= $cs
+      ctx.s.addCString(cs)
   of '+':
     if ctx.hasColon:
-      if getEnvEmpty(ctx.identStr).len > 0:
+      if getEnvEmpty(ident).len > 0:
         ctx.s &= word
     else:
-      if getEnvCString(cstring(ctx.identStr)) != nil:
+      if getEnvCString(ident.toCString()) != nil:
         ctx.s &= word
   else: assert false
   ctx.subChar = '\0'
-  ctx.identStr = ""
   ctx.hasColon = false
   ctx.state = usNormal
   return ok()
@@ -221,8 +219,7 @@ proc stateCurlyExpand(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   let word = ?unquote(ctx.p, ctx.i, '}')
   return ctx.flushCurlyExpand(word)
 
-proc unquote(p: string; starti: var int; terminal: char):
-    ChaPathResult[string] =
+proc unquote(p: Str; starti: var int; terminal: char): ChaPathResult[Str] =
   var ctx = UnquoteContext(p: p, i: starti)
   while ctx.i < p.len:
     let c = p[ctx.i]
@@ -242,17 +239,17 @@ proc unquote(p: string; starti: var int; terminal: char):
     inc ctx.i
   case ctx.state
   of usNormal: discard
-  of usTilde: ctx.s &= expandPath(ctx.identStr)
+  of usTilde: ctx.s &= expandPath(move(ctx.identStr).toStr())
   of usBslash: ctx.s &= '\\'
   of usDollar: ctx.s &= '$'
   of usIdent: ctx.flushIdent()
   of usCurly, usCurlyHash, usCurlyColon:
-    return err("} expected")
-  of usCurlyExpand: ?ctx.flushCurlyExpand("")
+    return err(str("} expected"))
+  of usCurlyExpand: ?ctx.flushCurlyExpand(str(""))
   starti = ctx.i
-  ok(move(ctx.s))
+  ok(ctx.s.toStr())
 
-proc unquote(p: string): ChaPathResult[string] =
+proc unquote(p: Str): ChaPathResult[Str] =
   var dummy = 0
   return unquote(p, dummy, '\0')
 
@@ -261,17 +258,17 @@ proc toJS*(ctx: JSContext; p: ChaPath): JSValue =
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ChaPath):
     JSCode =
-  ctx.fromJS(val, string(res))
+  ctx.fromJS(val, Str(res))
 
-proc unquote*(p: ChaPath; base: string): ChaPathResult[string] =
-  var s = ?unquote(string(p))
+proc unquote*(p: ChaPath; base: Str): ChaPathResult[Str] =
+  var s = ?unquote(Str(p))
   if s.len <= 0:
     return ok(s)
   if base != "" and s[0] != '/':
-    s.insert(base & '/', 0)
+    s.insert(initStrM(base, '/'), 0)
   return ok(normalizedPath(s))
 
-proc unquoteGet*(p: ChaPath): string =
-  return p.unquote("").get
+proc unquoteGet*(p: ChaPath): Str =
+  p.unquote(str("")).get
 
 {.pop.} # raises: []

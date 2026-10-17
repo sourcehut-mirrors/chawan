@@ -150,12 +150,12 @@ lib/chaseccomp/chaseccomp.o: .FORCE
 endif
 
 twtstr = src/utils/twtstr.nim src/utils/opt.nim
-dynstream = src/io/dynstream.nim src/utils/bytearray.nim
-chafile = src/io/chafile.nim $(dynstream)
+cowstr = $(twtstr) src/utils/cowstr.nim src/utils/cowstr.c src/js/constcharp.nim
+dynstream = src/io/dynstream.nim
+chafile = src/io/chafile.nim $(dynstream) $(cowstr)
 chaos = src/utils/chaos.nim $(twtstr)
 connectionerror = src/server/connectionerror.nim
-lcgi = $(chaos) $(chafile) $(twtstr) $(sandbox) $(connectionerror) \
-	adapter/protocol/lcgi.nim
+lcgi = $(chaos) $(chafile) $(sandbox) $(connectionerror) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
 tinfl = adapter/protocol/tinfl.h
@@ -168,7 +168,7 @@ $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/chawan.html res/license.m
 		$(embed_script)
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
-                $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
+                -d:chaCowWithJS $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 
 $(OUTDIR_BIN)/mancha: adapter/tools/mancha
 	@mkdir -p "$(OUTDIR_BIN)"
@@ -210,7 +210,8 @@ $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2html.nim \
 	adapter/format/gmi2html.nim adapter/format/gopher2html.nim \
 	adapter/format/md2html.nim adapter/format/img2html.nim \
-	$(twtstr) $(chafile) $(dynstream) $(chaos) src/css/color.nim
+	$(twtstr) $(chafile) $(dynstream) $(chaos) $(cowstr) src/css/color.nim \
+	src/utils/cowstr.nim
 
 $(foreach it,$(ssl_link),$(OUTDIR_CGI_BIN)/$(it)): $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl $(notdir $@))
@@ -258,7 +259,7 @@ FLAGS_FOR_BUILD += $(foreach flag,$(HOSTCFLAGS),-t:$(flag))
 FLAGS_FOR_BUILD += $(foreach flag,$(HOSTLDFLAGS),-l:$(flag))
 
 $(OBJDIR)/chac: src/chac.nim src/js/* lib/quickjs/*
-	$(NIMC) $(FLAGS_FOR_BUILD) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
+	$(NIMC) -d:chaCowWithJS $(FLAGS_FOR_BUILD) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
 
 $(script_target): src/%.js $(OBJDIR)/chac
 	$(OBJDIR)/chac $(chac_flags) $< $@
@@ -392,7 +393,7 @@ test/charset/%: test/charset/%.nim
 
 test/charset/basic: src/encoding/charset.nim src/encoding/decoder.nim \
 	src/encoding/decodercore.nim src/encoding/encoder.nim \
-	src/encoding/charset.nim
+	src/encoding/charset.nim src/utils/cowstr.nim
 test/charset/data: src/encoding/decoder.nim src/encoding/encoder.nim \
 	src/encoding/decodercore.nim src/encoding/encodercore.nim \
 	src/encoding/charset.nim
@@ -406,21 +407,27 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test test/charset/basic tes
 test/nim/%: test/nim/%.nim
 	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
 
-test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie tlcgi
+test/nim/tjsref test/nim/tjsbind test/nim/tcatom test/nim/tcookie:
+	$(NIMC) -d:chaCowWithJS $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
+
+test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie tlcgi tcowstr
 test_bin += $(foreach name,$(test_names),test/nim/$(name))
 
 test/nim/ttwtstr: $(twtstr)
-test/nim/tcatom: src/html/catom.nim
-test/nim/tjsref: src/js/jsref.nim src/js/jsbind.nim src/js/jsutils.nim \
-	src/js/quickjs.nim
-test/nim/tjsbind: src/js/fromjs.nim src/js/jsbind.nim src/js/jsnull.nim \
-	src/js/jspropenumlist.nim src/js/jsref.nim src/js/jstypes.nim \
-	src/js/jsutils.nim src/js/quickjs.nim src/js/tojs.nim $(twtstr)
-test/nim/tlibregexp: src/js/libregexp.nim src/utils/lrewrap.nim src/utils/opt.nim
+test/nim/tcatom: test/nim/tcatom.nim src/html/catom.nim
+test/nim/tjsref: test/nim/tjsref.nim src/js/jsref.nim src/js/jsbind.nim \
+	src/js/jsutils.nim src/js/quickjs.nim
+test/nim/tjsbind: test/nim/tjsbind.nim src/js/fromjs.nim src/js/jsbind.nim \
+	src/js/jsnull.nim src/js/jspropenumlist.nim src/js/jsref.nim \
+	src/js/jstypes.nim src/js/jsutils.nim src/js/quickjs.nim \
+	src/js/tojs.nim $(twtstr)
+test/nim/tlibregexp: $(cowstr) src/js/libregexp.nim src/utils/lrewrap.nim src/utils/opt.nim
 test/nim/tchahash: src/utils/chahash.nim
 test/nim/tchaos: $(chaos)
-test/nim/tcookie: src/config/cookie.nim $(chafile) $(chaos) $(dynstream)
+test/nim/tcookie: test/nim/tcookie.nim src/config/cookie.nim $(chafile) \
+	$(chaos) $(dynstream)
 test/nim/tlcgi: $(lcgi)
+test/nim/tcowstr: $(cowstr) src/js/dtoa.nim src/js/jstypes.nim src/js/quickjs.nim
 
 .PHONY: test_nim
 test_nim: $(test_bin)

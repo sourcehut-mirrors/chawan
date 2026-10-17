@@ -4,20 +4,21 @@ import std/httpcore
 import std/os
 
 import io/chafile
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
-proc cb(req: Request) {.async.} =
+proc cb(req: Request) {.async, gcsafe.} =
   if req.url.path == "/stop":
     await req.respond(Http200, "")
     quit(0)
-  var res = ""
+  var res: Str
   var headers: seq[(string, string)] = @[]
   if req.url.path == "/headers":
     for k, v in req.headers:
       res &= k & ": " & v & '\n'
   else:
-    if chafile.readFile(req.url.path.after('/'), res).isErr:
+    if chafile.readFile(newStr(req.url.path).after('/'), res).isErr:
       await req.respond(Http404, "Not found")
       return
     if req.url.path.endsWith(".http"):
@@ -28,10 +29,10 @@ proc cb(req: Request) {.async.} =
           break
         let n = line.find(':')
         if n >= 0:
-          headers.add((line.substr(0, n - 1), line.substr(n + 1)))
+          headers.add(($line.substr(0, n - 1), $line.substr(n + 1)))
       res = res.substr(i)
   #echo (req.reqMethod, req.url.path, req.headers)
-  await req.respond(Http200, res, headers.newHttpHeaders())
+  await req.respond(Http200, $res, headers.newHttpHeaders())
 
 proc runServer(server: AsyncHttpServer) {.async.} =
   while true:

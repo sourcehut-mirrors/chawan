@@ -1,5 +1,8 @@
+{.push raises: [].}
+
 import js/jsref
 import server/url
+import utils/cowstr
 
 when defined(freebsd):
   proc c_setproctitle(fmt: cstring) {.header: "<unistd.h>", importc:
@@ -11,20 +14,17 @@ elif defined(linux):
   let PR_SET_NAME {.importc, header: "<sys/prctl.h>", nodecl.}: cint
   proc prctl(option: cint): cint {.importc, header: "<sys/prctl.h>", varargs.}
 
-proc setProcessTitle*(s: string) =
+proc setProcessTitle*(s: Str) =
   when defined(freebsd) or defined(netbsd) or defined(openbsd):
-    c_setproctitle("%s", cstring(s))
+    c_setproctitle("%s", s.toCString())
   elif defined(linux):
-    discard prctl(PR_SET_NAME, cstring(s))
-
-when defined(linux):
-  import utils/twtstr
+    discard prctl(PR_SET_NAME, s.toCString())
 
 proc setBufferProcessTitle*(url: URL) =
   when defined(linux):
     # linux truncates to 15 chars; try to preserve important info
     const initTitle = "cha buf "
-    var title = initTitle
+    var title = initGrowbuf(initTitle)
     var hostname = url.hostname
     if hostname.startsWith("www."):
       hostname.delete(0.."www.".high)
@@ -32,6 +32,8 @@ proc setBufferProcessTitle*(url: URL) =
     if title.len > initTitle.len:
       title &= ' '
     title &= url.pathname.afterLast('/')
-    setProcessTitle(title)
+    setProcessTitle(title.toStr())
   else:
-    setProcessTitle("cha buffer " & $url)
+    setProcessTitle(initStrM("cha buffer ", url.toStr()))
+
+{.pop.} # raises: []

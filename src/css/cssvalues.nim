@@ -7,14 +7,14 @@ import std/macros
 import std/math
 
 import config/conftypes
+import css/color
 import css/cssparser
 import css/lunit
 import html/catom
-import css/color
-import utils/opt
-import utils/refstring
 import utils/chahash
+import utils/cowstr
 import utils/dtoawrap
+import utils/opt
 import utils/tabutil
 import utils/twtstr
 
@@ -294,7 +294,7 @@ type
   CSSContent* = ref object
     case t*: CSSContentType
     of ContentString:
-      s*: RefString
+      s*: Str
     of ContentCounter:
       counter*: CAtom
       counterStyle*: CSSListStyleType
@@ -304,7 +304,7 @@ type
 
   # nil -> auto
   CSSQuotes* = ref object
-    qs*: seq[tuple[s, e: RefString]]
+    qs*: seq[tuple[s, e: Str]]
 
   CSSCounterSet* = object
     name*: CAtom
@@ -812,56 +812,56 @@ proc isPerc*(length: CSSLength): bool {.inline.} =
 proc isZero*(length: CSSLength): bool {.inline.} =
   length.npx == 0 and length.perc == 0
 
-proc `$`*(length: CSSLength): string =
+proc add(buf: var Growbuf; length: CSSLength) =
   if length.auto:
-    return "auto"
-  var res = ""
-  if length.perc != 0:
-    res.addDouble(length.perc * 100)
-    res &= '%'
-  if length.npx != 0:
-    let calc = res.len > 0
-    var npx = length.npx
+    buf &= "auto"
+  elif length.npx == 0 and length.perc == 0:
+    buf &= "0px"
+  else:
+    let calc = length.perc != 0 and length.npx != 0
     if calc:
-      if length.npx > 0:
-        res &= " + "
-      else:
-        npx = -npx
-        res &= " - "
-    res.addDouble(npx)
-    res &= "px"
+      buf &= "calc("
+    if length.perc != 0:
+      buf.addDouble(length.perc * 100)
+      buf &= '%'
+    if length.npx != 0:
+      var npx = length.npx
+      if calc:
+        if length.npx > 0:
+          buf &= " + "
+        else:
+          npx = -npx
+          buf &= " - "
+      buf.addDouble(npx)
+      buf &= "px"
     if calc:
-      res = "calc(" & res & ')'
-  if res.len == 0:
-    res = "0px"
-  move(res)
+      buf &= ')'
 
-proc `$`*(bmp: NetworkBitmap): string =
-  return "" #TODO
+proc add(buf: var Growbuf; bmp: NetworkBitmap) =
+  discard #TODO
 
-proc `$`*(content: CSSContent): string =
+proc add(buf: var Growbuf; content: CSSContent) =
   case content.t
   of ContentString:
-    return content.s.s
+    buf &= content.s
   of ContentCounter:
-    return "counter(" & $content.counter & ", " & $content.counterStyle & ')'
+    buf &= "counter("
+    buf &= content.counter
+    buf.addM(", ", content.counterStyle.toStr(), ')')
   of ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
       ContentNoCloseQuote:
-    return $content.t
+    buf &= content.t.toStr()
 
-proc `$`(quotes: CSSQuotes): string =
+proc add(buf: var Growbuf; quotes: CSSQuotes) =
   if quotes == nil:
-    return "auto"
-  result = ""
-  for (s, e) in quotes.qs:
-    result &= "'" & s.s.cssEscape() & "' '" & e.s.cssEscape() & "'"
+    buf &= "auto"
+  else:
+    for (s, e) in quotes.qs:
+      buf.addM("'", s.cssEscape(), "' '", e.cssEscape(), "'")
 
-proc `$`(counterreset: CSSCounterSetList): string =
-  result = ""
-  for it in counterreset:
-    result &= $it.name
-    result &= ' '
-    result &= $it.num
+proc add(buf: var Growbuf; counterSet: CSSCounterSetList) =
+  for it in counterSet:
+    buf.addM(it.name.toStr(), ' ', it.num)
 
 const CSSZIndexAuto = CSSZIndex(0xFFFFFFFF00000000'i64)
 
@@ -871,104 +871,156 @@ proc `auto`*(zIndex: CSSZIndex): bool =
 proc num*(zIndex: CSSZIndex): int32 =
   cast[int32](zIndex)
 
-proc `$`(zIndex: CSSZIndex): string =
+proc add(buf: var Growbuf; zIndex: CSSZIndex) =
   if zIndex.auto:
-    return "auto"
-  return $zIndex.num
+    buf &= "auto"
+  else:
+    buf &= zIndex.num
 
-proc serialize(val: CSSValue): string =
-  result = ""
+proc add(buf: var Growbuf; val: CSSValue) =
   case val.v
-  of cvtImage: return $val.image
+  of cvtImage: buf &= val.image
   of cvtContent:
-    result = ""
+    var first = true
     for x in val.content:
-      if result.len > 0:
-        result &= ' '
-      result &= $x
-  of cvtQuotes: return $val.quotes
-  of cvtCounterSet: return $val.counterSet
+      if first:
+        first = false
+      else:
+        buf &= ' '
+      buf &= x
+  of cvtQuotes: buf &= val.quotes
+  of cvtCounterSet: buf &= val.counterSet
   else: assert false
 
-proc serialize(val: CSSValueHWord; t: CSSValueType): string =
+# https://html.spec.whatwg.org/#serialisation-of-a-color
+proc serialize*(c: ARGBColor; html: bool): Str =
+  if html and c.a == 255:
+    return c.rgb().toStr()
+  var buf = initGrowbufM("rgba(", uint32(c.r), ", ", uint32(c.g), ", ",
+    uint32(c.b), ", ")
+  buf.addDouble(float64(c.a) / 255)
+  buf &= ')'
+  buf.toStr()
+
+proc add(buf: var Growbuf; c: CSSColor) =
+  case c.t
+  of cctCell:
+    buf.addM("-cha-ansi(", c.n, ')')
+  of cctCurrent: buf &= "currentcolor"
+  of cctOklab:
+    #TODO should add oklch tag with same internal representation but
+    # different serialization
+    let oc = c.oklab()
+    buf.addM("oklab(", oc.L, ' ', oc.A, ' ', oc.B)
+    let a = c.a
+    if a < 255:
+      buf &= " / "
+      buf.addDouble(float64(a) / 255)
+    buf &= ')'
+  of cctArgb:
+    let c = c.argb()
+    if c.a != 255:
+      buf &= c.serialize(html = false)
+    else:
+      buf &= "rgb("
+      buf &= c.r
+      buf &= ", "
+      buf &= c.g
+      buf &= ", "
+      buf &= c.b
+      buf &= ')'
+
+proc toStr*(c: CSSColor): Str =
+  var buf = initGrowbuf()
+  buf &= c
+  buf.toStr()
+
+proc addProperty(buf: var Growbuf; val: CSSValueHWord; t: CSSValueType) =
   case t
-  of cvtInteger: return $val.integer
-  of cvtNumber: return dtoa(val.number)
-  of cvtLineWidth: return dtoa(val.lineWidth) & "px"
+  of cvtInteger: buf &= val.integer
+  of cvtNumber: buf.addDouble(val.number)
+  of cvtLineWidth:
+    buf.addDouble(val.lineWidth)
+    buf &= "px"
   else:
     assert false
-    return ""
 
-proc serialize(val: CSSValueWord; t: CSSValueType): string =
+proc addProperty(buf: var Growbuf; val: CSSValueWord; t: CSSValueType) =
   case t
-  of cvtColor: return $val.color
-  of cvtLength: return $val.length
-  of cvtZIndex: return $val.zIndex
+  of cvtColor: buf &= val.color
+  of cvtLength: buf &= val.length
+  of cvtZIndex: buf &= val.zIndex
+  else: assert false
+
+proc addProperty(buf: var Growbuf; val: CSSValueBit; t: CSSValueType) =
+  case t
+  of cvtAlignItems: buf &= $val.alignItems
+  of cvtAlignSelf: buf &= $val.alignSelf
+  of cvtBgcolorIsCanvas: buf &= $val.bgcolorIsCanvas
+  of cvtBorderCollapse: buf &= $val.borderCollapse
+  of cvtBorderStyle: buf &= $val.borderStyle
+  of cvtBoxSizing: buf &= $val.boxSizing
+  of cvtCaptionSide: buf &= $val.captionSide
+  of cvtClear: buf &= $val.clear
+  of cvtDisplay: buf &= $val.display
+  of cvtFlexDirection: buf &= $val.flexDirection
+  of cvtFlexWrap: buf &= $val.flexWrap
+  of cvtFloat: buf &= $val.float
+  of cvtFontStyle: buf &= $val.fontStyle
+  of cvtJustifyContent: buf &= $val.justifyContent
+  of cvtListStylePosition: buf &= $val.listStylePosition
+  of cvtListStyleType: buf &= $val.listStyleType
+  of cvtOverflow: buf &= $val.overflow
+  of cvtPosition: buf &= $val.position
+  of cvtTextAlign: buf &= $val.textAlign
+  of cvtTextDecoration: buf &= $val.textDecoration
+  of cvtTextTransform: buf &= $val.textTransform
+  of cvtVerticalAlign: buf &= $val.verticalAlign
+  of cvtVisibility: buf &= $val.visibility
+  of cvtWhiteSpace: buf &= $val.whiteSpace
+  of cvtWordBreak: buf &= $val.wordBreak
   else:
     assert false
-    return ""
 
-proc serialize(val: CSSValueBit; t: CSSValueType): string =
-  case t
-  of cvtAlignItems: return $val.alignItems
-  of cvtAlignSelf: return $val.alignSelf
-  of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
-  of cvtBorderCollapse: return $val.borderCollapse
-  of cvtBorderStyle: return $val.borderStyle
-  of cvtBoxSizing: return $val.boxSizing
-  of cvtCaptionSide: return $val.captionSide
-  of cvtClear: return $val.clear
-  of cvtDisplay: return $val.display
-  of cvtFlexDirection: return $val.flexDirection
-  of cvtFlexWrap: return $val.flexWrap
-  of cvtFloat: return $val.float
-  of cvtFontStyle: return $val.fontStyle
-  of cvtJustifyContent: return $val.justifyContent
-  of cvtListStylePosition: return $val.listStylePosition
-  of cvtListStyleType: return $val.listStyleType
-  of cvtOverflow: return $val.overflow
-  of cvtPosition: return $val.position
-  of cvtTextAlign: return $val.textAlign
-  of cvtTextDecoration: return $val.textDecoration
-  of cvtTextTransform: return $val.textTransform
-  of cvtVerticalAlign: return $val.verticalAlign
-  of cvtVisibility: return $val.visibility
-  of cvtWhiteSpace: return $val.whiteSpace
-  of cvtWordBreak: return $val.wordBreak
-  else:
-    assert false
-    return ""
-
-proc serialize*(computed: CSSValues; p: CSSPropertyType): string =
+proc addProperty(buf: var Growbuf; computed: CSSValues; p: CSSPropertyType) =
   case p.reprType
-  of cprtBit: return computed.bits[p].serialize(valueType(p))
-  of cprtHWord: return computed.hwords[p].serialize(valueType(p))
-  of cprtWord: return computed.words[p].serialize(valueType(p))
-  of cprtObject: return computed.objs[p].serialize()
+  of cprtBit: buf.addProperty(computed.bits[p], valueType(p))
+  of cprtHWord: buf.addProperty(computed.hwords[p], valueType(p))
+  of cprtWord: buf.addProperty(computed.words[p], valueType(p))
+  of cprtObject: buf &= computed.objs[p]
 
-proc `$`*(computed: CSSValues): string =
-  result = ""
+proc toStr*(computed: CSSValues): Str =
+  var buf = initGrowbuf()
   const skip = {
     cptVerticalAlignLength, cptBorderSpacingInline, cptBorderSpacingBlock
   }
   for p in CSSPropertyType:
     if p in skip:
       continue
-    result &= $p & ':'
+    buf &= p.toStr()
+    buf &= ':'
     if p == cptVerticalAlign:
       if computed.bits[p].verticalAlign == VerticalAlignLength:
-        result &= computed.serialize(cptVerticalAlignLength)
-        result &= ';'
+        buf.addProperty(computed, cptVerticalAlignLength)
+        buf &= ';'
         continue
-    result &= computed.serialize(p)
-    result &= ';'
-  result &= "border-spacing: " &
-    computed.serialize(cptBorderSpacingInline) & ' ' &
-    computed.serialize(cptBorderSpacingBlock) & ';'
+    buf.addProperty(computed, p)
+    buf &= ';'
+  buf &= "border-spacing: "
+  buf.addProperty(computed, cptBorderSpacingInline)
+  buf &= ' '
+  buf.addProperty(computed, cptBorderSpacingBlock)
+  buf &= ';'
+  buf.toStr()
 
 when defined(debug):
-  proc `$`*(val: CSSValue): string =
-    return val.serialize()
+  proc `$`*(val: CSSValues): string =
+    $val.toStr()
+
+  proc serialize(computed: CSSValues; p: CSSPropertyType): string =
+    var buf = initGrowbuf()
+    buf.addProperty(computed, p)
+    $buf
 
 proc getLength*(computed: CSSValues; p: CSSPropertyType): CSSLength =
   computed.words[p].length
@@ -1057,6 +1109,7 @@ proc imgify*(display: CSSDisplay): CSSDisplay =
   of DisplayNone: return display
   of DisplayInternalTable: return DisplayImageBlock
 
+const LowerAlphaMap = "abcdefghijklmnopqrstuvwxyz".toPoints()
 const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toPoints()
 const LowerGreekMap = "αβγδεζηθικλμνξοπρστυφχψω".toPoints()
 const HiraganaMap = ("あいうえおかきくけこさしすせそたちつてとなにぬねの" &
@@ -1070,39 +1123,42 @@ const KatakanaIrohaMap = ("イロハニホヘトチリヌルヲワカヨタレ�
 const EarthlyBranchMap = "子丑寅卯辰巳午未申酉戌亥".toPoints()
 const HeavenlyStemMap = "甲乙丙丁戊己庚辛壬癸".toPoints()
 
-proc numToBase(n: int; map: openArray[uint32]): string =
+proc addNumToBase(buf: var Growbuf; n: int32; map: openArray[uint32]) =
   if n <= 0 or map.len == 0:
-    return $n
-  var tmp: seq[uint32] = @[]
-  var n = n
-  while n != 0:
-    n -= 1
-    tmp &= map[n mod map.len]
-    n = n div map.len
-  var res = ""
-  for u in tmp.ritems:
-    res.addUTF8(u)
-  move(res)
+    buf &= n
+  else:
+    var tmp: seq[uint32] = @[]
+    var n = n
+    while n != 0:
+      n -= 1
+      tmp &= map[n mod map.len]
+      n = n div int32(map.len)
+    for u in tmp.ritems:
+      buf.addUTF8(u)
 
-proc numToFixed(n: int32; map: openArray[uint32]): string =
+proc addNumToFixed(buf: var Growbuf; n: int32; map: openArray[uint32]) =
   if n in 1 .. map.len:
-    return map[n - 1].toUTF8()
-  return $n
+    buf.addUTF8(map[n - 1])
+  else:
+    buf &= n
 
-proc numberAdditive(i: int32; range: Slice[int32];
-    symbols: openArray[(int32, cstring)]): string =
-  if i notin range:
-    return $i
-  var s = ""
-  var n = i
-  var at = 0
-  while n > 0:
-    if n >= symbols[at][0]:
-      n -= symbols[at][0]
-      s &= $symbols[at][1]
-      continue
-    inc at
-  move(s)
+proc addNumberAdditive(buf: var Growbuf; i: int32; range: Slice[int32];
+    symbols: openArray[(int32, cstring)]; lower: bool) =
+  if i in range:
+    var n = i
+    var at = 0
+    while n > 0:
+      if n >= symbols[at][0]:
+        n -= symbols[at][0]
+        for c in symbols[at][1]:
+          if lower:
+            buf &= c.toLowerAscii()
+          else:
+            buf &= c
+        continue
+      inc at
+  else:
+    buf &= i
 
 type Z = cstring
 const romanNumbers = [
@@ -1111,137 +1167,135 @@ const romanNumbers = [
   (9i32, Z"IX"), (5i32, Z"V"), (4i32, Z"IV"), (1i32, Z"I")
 ]
 
-proc romanNumber(i: int32): string =
-  return numberAdditive(i, 1i32..3999i32, romanNumbers)
+proc addRomanNumber(buf: var Growbuf; i: int32; lower: bool) =
+  buf.addNumberAdditive(i, 1i32..3999i32, romanNumbers, lower)
 
-proc japaneseNumber(i: int32; formal: bool): string =
+proc addJapaneseNumber(buf: var Growbuf; i: int32; formal: bool) =
   if i == 0:
-    return if formal: "〇" else: "零"
-  var n = i
-  var s = ""
-  if i < 0:
-    s &= "マイナス"
-    n *= -1
-  let o = n
-  var ss: seq[cstring] = @[]
-  var d = 0
-  while n > 0:
-    let m = n mod 10
-    if m != 0:
-      case d
+    if formal:
+      buf &= "〇"
+    else:
+      buf &= "零"
+  else:
+    var n = i
+    if i < 0:
+      buf &= "マイナス"
+      n *= -1
+    let o = n
+    var ss: seq[cstring] = @[]
+    var d = 0
+    while n > 0:
+      let m = n mod 10
+      if m != 0:
+        case d
+        of 1:
+          ss.add(if formal: cstring"拾" else: "十")
+          if formal:
+            ss.add("壱")
+        of 2:
+          ss.add("百")
+          if formal:
+            ss.add("壱")
+        of 3:
+          ss.add(if formal: cstring"阡" else: "千")
+          if formal:
+            ss.add("壱")
+        of 4:
+          ss.add("万")
+          ss.add(if formal: cstring"壱" else: "一")
+        of 5:
+          ss.add("万")
+          ss.add(if formal: cstring"拾" else: "十")
+        of 6:
+          ss.add("万")
+          ss.add("百")
+        of 7:
+          ss.add("万")
+          ss.add(if formal: cstring"阡" else: "千")
+          ss.add(if formal: cstring"壱" else: "一")
+        of 8:
+          ss.add("億")
+          ss.add(if formal: cstring"壱" else: "一")
+        of 9:
+          ss.add("億")
+          ss.add(if formal: cstring"拾" else: "十")
+        else: discard
+      case m
+      of 0:
+        inc d
+        n = n div 10
       of 1:
-        ss.add(if formal: cstring"拾" else: "十")
-        if formal:
-          ss.add("壱")
-      of 2:
-        ss.add("百")
-        if formal:
-          ss.add("壱")
-      of 3:
-        ss.add(if formal: cstring"阡" else: "千")
-        if formal:
-          ss.add("壱")
-      of 4:
-        ss.add("万")
-        ss.add(if formal: cstring"壱" else: "一")
-      of 5:
-        ss.add("万")
-        ss.add(if formal: cstring"拾" else: "十")
-      of 6:
-        ss.add("万")
-        ss.add("百")
-      of 7:
-        ss.add("万")
-        ss.add(if formal: cstring"阡" else: "千")
-        ss.add(if formal: cstring"壱" else: "一")
-      of 8:
-        ss.add("億")
-        ss.add(if formal: cstring"壱" else: "一")
-      of 9:
-        ss.add("億")
-        ss.add(if formal: cstring"拾" else: "十")
+        if o == n:
+          ss.add(if formal: cstring"壱" else: "一")
+      of 2: ss.add(if formal: cstring"弐" else: "二")
+      of 3: ss.add(if formal: cstring"参" else: "三")
+      of 4: ss.add("四")
+      of 5: ss.add(if formal: cstring"伍" else: "五")
+      of 6: ss.add("六")
+      of 7: ss.add("七")
+      of 8: ss.add("八")
+      of 9: ss.add("九")
       else: discard
-    case m
-    of 0:
-      inc d
-      n = n div 10
-    of 1:
-      if o == n:
-        ss.add(if formal: cstring"壱" else: "一")
-    of 2: ss.add(if formal: cstring"弐" else: "二")
-    of 3: ss.add(if formal: cstring"参" else: "三")
-    of 4: ss.add("四")
-    of 5: ss.add(if formal: cstring"伍" else: "五")
-    of 6: ss.add("六")
-    of 7: ss.add("七")
-    of 8: ss.add("八")
-    of 9: ss.add("九")
-    else: discard
-    n -= m
-  for it in ss.ritems:
-    s &= $it
-  move(s)
-
-proc listMarker0(t: CSSListStyleType; i: int32; hintMap: openArray[uint32]):
-    string =
-  return case t
-  of ListStyleTypeNone: ""
-  of ListStyleTypeDisc: "•" # U+2022
-  of ListStyleTypeCircle: "○" # U+25CB
-  of ListStyleTypeSquare: "□" # U+25A1
-  of ListStyleTypeDisclosureOpen: "▶" # U+25B6
-  of ListStyleTypeDisclosureClosed: "▼" # U+25BC
-  of ListStyleTypeDecimal: $i
-  of ListStyleTypeUpperRoman: romanNumber(i)
-  of ListStyleTypeLowerRoman: romanNumber(i).toLowerAscii()
-  of ListStyleTypeUpperAlpha: numToBase(i, UpperAlphaMap)
-  of ListStyleTypeLowerAlpha: numToBase(i, UpperAlphaMap).toLowerAscii()
-  of ListStyleTypeLowerGreek: numToBase(i, LowerGreekMap)
-  of ListStyleTypeHiragana: numToBase(i, HiraganaMap)
-  of ListStyleTypeHiraganaIroha: numToBase(i, HiraganaIrohaMap)
-  of ListStyleTypeKatakana: numToBase(i, KatakanaMap)
-  of ListStyleTypeKatakanaIroha: numToBase(i, KatakanaIrohaMap)
-  of ListStyleTypeCjkEarthlyBranch: numToFixed(i, EarthlyBranchMap)
-  of ListStyleTypeCjkHeavenlyStem: numToFixed(i, HeavenlyStemMap)
-  of ListStyleTypeJapaneseInformal: japaneseNumber(i, formal = false)
-  of ListStyleTypeJapaneseFormal: japaneseNumber(i, formal = true)
-  of ListStyleTypeHint: numToBase(i, hintMap)
-
-proc listMarkerSuffix(t: CSSListStyleType): string =
-  return case t
-  of ListStyleTypeNone, ListStyleTypeHint: ""
-  of ListStyleTypeDisc, ListStyleTypeCircle, ListStyleTypeSquare,
-      ListStyleTypeDisclosureOpen, ListStyleTypeDisclosureClosed:
-    " "
-  of ListStyleTypeDecimal, ListStyleTypeUpperRoman, ListStyleTypeLowerRoman,
-      ListStyleTypeUpperAlpha, ListStyleTypeLowerAlpha, ListStyleTypeLowerGreek:
-    ". "
-  of ListStyleTypeHiragana, ListStyleTypeHiraganaIroha, ListStyleTypeKatakana,
-      ListStyleTypeKatakanaIroha, ListStyleTypeCjkEarthlyBranch,
-      ListStyleTypeCjkHeavenlyStem, ListStyleTypeJapaneseInformal,
-      ListStyleTypeJapaneseFormal:
-    "、"
+      n -= m
+    for it in ss.ritems:
+      buf.addCString(it)
 
 proc listMarker*(t: CSSListStyleType; i: int32; suffix: bool;
-    hintMap: openArray[uint32]): RefString =
-  let res = newRefString(listMarker0(t, i, hintMap))
+    hintMap: openArray[uint32]): Str =
+  var buf = initGrowbuf()
+  case t
+  of ListStyleTypeNone: discard
+  of ListStyleTypeDisc: return if suffix: str("• ") else: str("•") # U+2022
+  of ListStyleTypeCircle: return if suffix: str("○ ") else: str("○") # U+25CB
+  of ListStyleTypeSquare: return if suffix: str("□ ") else: str("□") # U+25A1
+  of ListStyleTypeDisclosureClosed:
+    return if suffix: str("▶ ") else: str("▶") # U+25B6
+  of ListStyleTypeDisclosureOpen:
+    return if suffix: str("▼ ") else: str("▼") # U+25BC
+  of ListStyleTypeDecimal: buf &= i
+  of ListStyleTypeUpperRoman: buf.addRomanNumber(i, lower = false)
+  of ListStyleTypeLowerRoman: buf.addRomanNumber(i, lower = true)
+  of ListStyleTypeUpperAlpha: buf.addNumToBase(i, UpperAlphaMap)
+  of ListStyleTypeLowerAlpha: buf.addNumToBase(i, LowerAlphaMap)
+  of ListStyleTypeLowerGreek: buf.addNumToBase(i, LowerGreekMap)
+  of ListStyleTypeHiragana: buf.addNumToBase(i, HiraganaMap)
+  of ListStyleTypeHiraganaIroha: buf.addNumToBase(i, HiraganaIrohaMap)
+  of ListStyleTypeKatakana: buf.addNumToBase(i, KatakanaMap)
+  of ListStyleTypeKatakanaIroha: buf.addNumToBase(i, KatakanaIrohaMap)
+  of ListStyleTypeCjkEarthlyBranch: buf.addNumToFixed(i, EarthlyBranchMap)
+  of ListStyleTypeCjkHeavenlyStem: buf.addNumToFixed(i, HeavenlyStemMap)
+  of ListStyleTypeJapaneseInformal: buf.addJapaneseNumber(i, formal = false)
+  of ListStyleTypeJapaneseFormal: buf.addJapaneseNumber(i, formal = true)
+  of ListStyleTypeHint: buf.addNumToBase(i, hintMap)
   if suffix:
-    res.s &= listMarkerSuffix(t)
-  res
+    case t
+    of ListStyleTypeNone, ListStyleTypeHint, ListStyleTypeDisc,
+        ListStyleTypeCircle, ListStyleTypeSquare, ListStyleTypeDisclosureOpen,
+        ListStyleTypeDisclosureClosed:
+      discard # handled above
+    of ListStyleTypeDecimal, ListStyleTypeUpperRoman, ListStyleTypeLowerRoman,
+        ListStyleTypeUpperAlpha, ListStyleTypeLowerAlpha, ListStyleTypeLowerGreek:
+      buf &= ". "
+    of ListStyleTypeHiragana, ListStyleTypeHiraganaIroha, ListStyleTypeKatakana,
+        ListStyleTypeKatakanaIroha, ListStyleTypeCjkEarthlyBranch,
+        ListStyleTypeCjkHeavenlyStem, ListStyleTypeJapaneseInformal,
+        ListStyleTypeJapaneseFormal:
+      buf &= "、"
+  buf.toStr()
 
-proc quoteStart*(level: int): string =
+proc quoteStart*(level: int): Str =
   if level == 0:
-    return "“"
-  return "‘"
+    return str("“")
+  return str("‘")
 
-proc quoteEnd*(level: int): string =
+proc quoteEnd*(level: int): Str =
   if level == 0:
-    return "“"
-  return "‘"
+    return str("“")
+  return str("‘")
 
 proc parseIdent(map: openArray[IdentMapItem]; tok: CSSToken): int =
   if tok.t == cttIdent:
-    return map.parseEnumNoCase0(tok.s)
+    return map.parseEnumNoCase0(tok.s.toOpenArray())
   return -1
 
 proc parseIdent[T: enum](tok: CSSToken): Opt[T] =
@@ -1671,14 +1725,14 @@ proc parseANSI(ctx: var CSSParser): Opt[CSSColor] =
       bright = true
       name = name.substr("bright-".len)
     const NameTable = [
-      "black",
-      "red",
-      "green",
-      "yellow",
-      "blue",
-      "magenta",
-      "cyan",
-      "white"
+      str("black"),
+      str("red"),
+      str("green"),
+      str("yellow"),
+      str("blue"),
+      str("magenta"),
+      str("cyan"),
+      str("white")
     ]
     for i, it in NameTable.mypairs:
       if it.equalsIgnoreCase(name):
@@ -1710,14 +1764,14 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
   let tok = ctx.consume()
   case tok.t
   of cttHash:
-    let c = ?parseHexColor(tok.s)
+    let c = ?parseHexColor(tok.s.toOpenArray())
     return ok(c.cssColor())
   of cttIdent:
     if tok.s.equalsIgnoreCase("transparent"):
       return ok(rgba(0, 0, 0, 0).cssColor())
     if tok.s.equalsIgnoreCase("currentcolor"):
       return ok(cssCurrentColor())
-    if x := namedRGBColor(tok.s):
+    if x := namedRGBColor(tok.s.toOpenArray()):
       return ok(x.cssColor())
     elif tok.s.equalsIgnoreCase("canvas") or
         tok.s.equalsIgnoreCase("canvastext"):
@@ -1801,7 +1855,7 @@ proc parseQuotes(ctx: var CSSParser): Opt[CSSQuotes] =
       if ctx.peekTokenType() != cttString:
         return err()
       let tok2 = ctx.consume()
-      res.qs.add((newRefString(tok1.s), newRefString(tok2.s)))
+      res.qs.add((tok1.s, tok2.s))
     return ok(move(res))
   else:
     return err()
@@ -1838,7 +1892,7 @@ proc parseContent(ctx: var CSSParser): Opt[CSSContent] =
     of cttSlash:
       break
     of cttString:
-      init.add(CSSContent(t: ContentString, s: newRefString(tok.s)))
+      init.add(CSSContent(t: ContentString, s: tok.s))
     of cttWhitespace:
       discard
     of cttFunction:
@@ -1933,7 +1987,7 @@ proc parseMaxSize(ctx: var CSSParser; attrs: WindowAttributes):
   return ctx.parseLength(attrs, hasAuto = true, allowNegative = false)
 
 #TODO should be URL (parsed with baseurl of document...)
-proc parseURL*(ctx: var CSSParser; tok: CSSToken; src = false): Opt[string] =
+proc parseURL*(ctx: var CSSParser; tok: CSSToken; src = false): Opt[Str] =
   case tok.t
   of cttUrl: return ok(tok.s)
   of cttString:
@@ -2766,67 +2820,67 @@ proc splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
   inner{"display"} = DisplayTableWrapper
   return (outer, inner)
 
-proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): string =
+proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): Str =
   return case style
-  of BorderStyleNone, BorderStyleHidden: ""
+  of BorderStyleNone, BorderStyleHidden: str("")
   of BorderStyleDotted:
     case c
-    of HorizontalBar: "\u2508"
-    of VerticalBar: "\u250A"
-    else: $c # no dotted corners in Unicode
+    of HorizontalBar: str("\u2508")
+    of VerticalBar: str("\u250A")
+    else: c.toStr() # no dotted corners in Unicode
   of BorderStyleDashed:
     case c
-    of HorizontalBar: "\u254C"
-    of VerticalBar: "\u254E"
-    else: $c # likewise
+    of HorizontalBar: str("\u254C")
+    of VerticalBar: str("\u254E")
+    else: c.toStr() # likewise
   of BorderStyleSolid: # the default
-    $c
+    c.toStr()
   of BorderStyleOutset, BorderStyleGroove: # like solid, but thicker
     case c
-    of HorizontalBar: "\u2501"
-    of VerticalBar: "\u2503"
-    of bdcCornerTopLeft: "\u250F"
-    of bdcCornerTopRight: "\u2513"
-    of bdcCornerBottomLeft: "\u2517"
-    of bdcCornerBottomRight: "\u251B"
-    of bdcSideBarLeft: "\u2523"
-    of bdcSideBarRight: "\u252B"
-    of bdcSideBarTop: "\u2533"
-    of bdcSideBarBottom: "\u253B"
-    of bdcSideBarCross: "\u254B"
+    of HorizontalBar: str("\u2501")
+    of VerticalBar: str("\u2503")
+    of bdcCornerTopLeft: str("\u250F")
+    of bdcCornerTopRight: str("\u2513")
+    of bdcCornerBottomLeft: str("\u2517")
+    of bdcCornerBottomRight: str("\u251B")
+    of bdcSideBarLeft: str("\u2523")
+    of bdcSideBarRight: str("\u252B")
+    of bdcSideBarTop: str("\u2533")
+    of bdcSideBarBottom: str("\u253B")
+    of bdcSideBarCross: str("\u254B")
   of BorderStyleDouble, BorderStyleInset, BorderStyleRidge:
     # interpret inset/ridge as double
     case c
-    of HorizontalBar: "\u2550"
-    of VerticalBar: "\u2551"
-    of bdcCornerTopLeft: "\u2554"
-    of bdcCornerTopRight: "\u2557"
-    of bdcCornerBottomLeft: "\u255A"
-    of bdcCornerBottomRight: "\u255D"
-    of bdcSideBarLeft: "\u2560"
-    of bdcSideBarRight: "\u2563"
-    of bdcSideBarTop: "\u2566"
-    of bdcSideBarBottom: "\u2569"
-    of bdcSideBarCross: "\u256C"
+    of HorizontalBar: str("\u2550")
+    of VerticalBar: str("\u2551")
+    of bdcCornerTopLeft: str("\u2554")
+    of bdcCornerTopRight: str("\u2557")
+    of bdcCornerBottomLeft: str("\u255A")
+    of bdcCornerBottomRight: str("\u255D")
+    of bdcSideBarLeft: str("\u2560")
+    of bdcSideBarRight: str("\u2563")
+    of bdcSideBarTop: str("\u2566")
+    of bdcSideBarBottom: str("\u2569")
+    of bdcSideBarCross: str("\u256C")
   of BorderStyleBracket: # proprietary extension
     case c
-    of bdcVerticalBarLeft: "["
-    of bdcVerticalBarRight: "]"
-    else: " "
+    of bdcVerticalBarLeft: str("[")
+    of bdcVerticalBarRight: str("]")
+    else: str(" ")
   of BorderStyleParen: # likewise
     case c
-    of bdcVerticalBarLeft: "("
-    of bdcVerticalBarRight: ")"
-    else: " "
+    of bdcVerticalBarLeft: str("(")
+    of bdcVerticalBarRight: str(")")
+    else: str(" ")
   of BorderStyleHash: # likewise
     case c
-    of bdcHorizontalBarBottom: return "#"
-    of bdcHorizontalBarTop: return "_"
-    else: " "
+    of bdcHorizontalBarBottom: return str("#")
+    of bdcHorizontalBarTop: return str("_")
+    else: str(" ")
   of BorderStylePeriod: # likewise
     case c
-    of bdcHorizontalBarBottom: return "."
-    else: " "
+    of bdcHorizontalBarBottom: return str(".")
+    else: str(" ")
 
 when defined(debug):
   proc serializeEmpty*(computed: CSSValues): string =

@@ -4,6 +4,7 @@ when NimMajor >= 2:
   import std/assertions
 import std/algorithm
 
+import utils/cowstr
 import utils/twtstr
 
 const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &
@@ -48,18 +49,19 @@ const HalfHanDakuten = 0xFF9Fu32 # half-width handakuten
 
 # Note: in unicode, char + 1 is dakuten and char + 2 handakuten
 
-proc halfwidth*(s: string): string =
-  result = ""
+proc halfwidth*(s: openArray[char]): Str =
+  var buf = initGrowbufOfCap(s.len)
   for u in s.points:
     case u
     of HasDakuten:
-      result.addUTF8(halfwidth(u - 1))
-      result.addUTF8(HalfDakuten)
+      buf.addUTF8(halfwidth(u - 1))
+      buf.addUTF8(HalfDakuten)
     of HasHanDakuten:
-      result.addUTF8(halfwidth(u - 2))
-      result.addUTF8(HalfHanDakuten)
+      buf.addUTF8(halfwidth(u - 2))
+      buf.addUTF8(HalfHanDakuten)
     else:
-      result.addUTF8(halfwidth(u))
+      buf.addUTF8(halfwidth(u))
+  buf.toStr()
 
 proc fullwidth(r: uint32): uint32 =
   if r != 0: # special case to avoid comparison with f2
@@ -68,50 +70,68 @@ proc fullwidth(r: uint32): uint32 =
         return f1
   return r
 
-proc fullwidth*(s: string): string =
-  result = ""
+proc fullwidth*(s: openArray[char]): Str =
+  var buf = initGrowbufOfCap(s.len)
   var lastu = 0u32
   for u in s.points:
     if lastu != 0:
       if u == HalfDakuten:
         # flush with dakuten
-        result.addUTF8(lastu + 1)
+        buf.addUTF8(lastu + 1)
         lastu = 0
         continue
       elif u == HalfHanDakuten and lastu in CanHaveHanDakuten:
         # flush with handakuten
-        result.addUTF8(lastu + 2)
+        buf.addUTF8(lastu + 2)
         lastu = 0
         continue
-      result.addUTF8(lastu)
+      buf.addUTF8(lastu)
       lastu = 0
     let u = fullwidth(u)
     if u in CanHaveDakuten:
       lastu = u
     else:
-      result.addUTF8(u)
+      buf.addUTF8(u)
   if lastu != 0:
     # flush
-    result.addUTF8(lastu)
+    buf.addUTF8(lastu)
+  buf.toStr()
 
-const kanamap = staticRead"res/kanamap.tab"
-proc genFullSizeMap(): seq[(uint32, uint32)] =
-  result = @[]
-  for line in kanamap.split('\n'):
-    if line.len == 0: break
-    let rs = line.toPoints()
-    assert rs[1] == uint32('\t')
-    result.add((rs[0], rs[2]))
-const fullSizeMap = genFullSizeMap()
+# this used to be generated at compile time, then I got annoyed with it
+# when switching to CoW strings and just copy pasted the thing here.
+# the drawback is that I have no clue what characters these are...
+const FullSizeMap = [
+  (12353u32, 12354u16), (12355u32, 12356u16), (12357u32, 12358u16),
+  (12359u32, 12360u16), (12361u32, 12362u16), (12387u32, 12388u16),
+  (12419u32, 12420u16), (12421u32, 12422u16), (12423u32, 12424u16),
+  (12430u32, 12431u16), (12437u32, 12363u16), (12438u32, 12369u16),
+  (12449u32, 12450u16), (12451u32, 12452u16), (12453u32, 12454u16),
+  (12455u32, 12456u16), (12457u32, 12458u16), (12483u32, 12484u16),
+  (12515u32, 12516u16), (12517u32, 12518u16), (12519u32, 12520u16),
+  (12526u32, 12527u16), (12533u32, 12459u16), (12534u32, 12465u16),
+  (12784u32, 12463u16), (12785u32, 12471u16), (12786u32, 12473u16),
+  (12787u32, 12488u16), (12788u32, 12492u16), (12789u32, 12495u16),
+  (12790u32, 12498u16), (12791u32, 12501u16), (12792u32, 12504u16),
+  (12793u32, 12507u16), (12794u32, 12512u16), (12795u32, 12521u16),
+  (12796u32, 12522u16), (12797u32, 12523u16), (12798u32, 12524u16),
+  (12799u32, 12525u16), (65383u32, 65393u16), (65384u32, 65394u16),
+  (65385u32, 65395u16), (65386u32, 65396u16), (65387u32, 65397u16),
+  (65388u32, 65428u16), (65389u32, 65429u16), (65390u32, 65430u16),
+  (65391u32, 65410u16), (110898u32, 12371u16), (110928u32, 12432u16),
+  (110929u32, 12433u16), (110930u32, 12434u16), (110933u32, 12467u16),
+  (110948u32, 12528u16), (110949u32, 12529u16), (110950u32, 12530u16),
+  (110951u32, 12531u16),
+]
 
-proc fullsize*(s: string): string =
-  result = ""
+proc fullsize*(s: openArray[char]): Str =
+  var buf = initGrowbufOfCap(s.len)
   for u in s.points:
-    let i = fullSizeMap.binarySearch(u,
-      proc(x: (uint32, uint32); y: uint32): int = cmp(x[0], y))
+    let i = FullSizeMap.binarySearch(u,
+      proc(x: (uint32, uint16); y: uint32): int = cmp(x[0], y))
     if i < 0:
-      result.addUTF8(u)
+      buf.addUTF8(u)
     else:
-      result.addUTF8(fullSizeMap[i][1])
+      buf.addUTF8(uint32(FullSizeMap[i][1]))
+  buf.toStr()
 
 {.pop.} # raises: []

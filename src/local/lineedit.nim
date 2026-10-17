@@ -2,6 +2,8 @@
 
 import config/conftypes
 import config/history
+import css/cell
+import css/color
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -9,8 +11,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import css/cell
-import css/color
+import utils/cowstr
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
@@ -22,8 +23,8 @@ type
     lstLine = "line"
 
   LineEditObj = object
-    text: string # public
-    prompt: string
+    text: Str # public
+    prompt: Str
     promptw: int
     cursorx: int # 0 ..< text.width
     cursori: int # 0 ..< text.len
@@ -34,7 +35,7 @@ type
     selecti: int # start of selection
     hist: History
     currHist: HistoryEntry
-    histtmp: string
+    histtmp: Str
     luctx: LUContext
     selectType: LineSelectType
     redraw*: bool
@@ -61,9 +62,9 @@ proc width(edit: LineEdit; u: uint32): int =
     return 1
   return u.width()
 
-proc width(edit: LineEdit; s: string): int =
+proc width(edit: LineEdit; s: Str): int =
   if edit.hide:
-    return s.pointLen()
+    return s.toOpenArray().pointLen()
   return s.width()
 
 # Note: capped at edit.maxwidth.
@@ -165,7 +166,7 @@ proc generateOutput*(edit: LineEdit; hlcolor: CellColor;
   for i in 0 ..< edit.padding:
     if x >= grid.width:
       break
-    grid[x] = FixedCell(str: " ")
+    grid[x] = FixedCell(str: str(" "))
     inc x
   var i = edit.shifti
   let selectStart = edit.selectStart
@@ -187,9 +188,9 @@ proc generateOutput*(edit: LineEdit; hlcolor: CellColor;
       if u.isControlChar():
         u.controlToVisual()
       else:
-        edit.text.toOpenArray(pi, i - 1).substr()
+        edit.text.substr(pi, i - 1)
     else:
-      "*"
+      str("*")
     grid[x] = FixedCell(str: str, format: format)
     inc x
     while x < nx: # clear unset cells
@@ -220,7 +221,7 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
   edit.redraw = true
 
-proc readLine*(prompt, current: sink string; termwidth: int; hide: bool;
+proc readLine*(prompt, current: sink Str; termwidth: int; hide: bool;
     hist: History; luctx: LUContext; update, resolve: sink JSCallback):
     LineEdit =
   let promptw = prompt.width()
@@ -280,9 +281,9 @@ jsClassDef(LineEdit):
       edit.clearSelection()
 
   # public
-  proc selectedText(edit: LineEdit): string {.jsfget.} =
+  proc selectedText(edit: LineEdit): Str {.jsfget.} =
     if edit.selecti < 0:
-      return ""
+      return str("")
     return edit.text.substr(edit.selectStart, edit.selectEnd - 1)
 
   proc cancel(ctx: JSContext; edit: LineEdit): JSValue {.jsfunc.} =
@@ -305,7 +306,7 @@ jsClassDef(LineEdit):
       return ctx.update(edit)
     return JS_UNDEFINED
 
-  proc write*(ctx: JSContext; edit: LineEdit; s: string): JSValue {.jsfunc.} =
+  proc write*(ctx: JSContext; edit: LineEdit; s: Str): JSValue {.jsfunc.} =
     edit.escNext = false
     if s.len > 0:
       edit.text.insert(s, edit.cursori)
@@ -319,7 +320,7 @@ jsClassDef(LineEdit):
 
   proc delete(ctx: JSContext; edit: LineEdit): JSValue {.jsfunc.} =
     if edit.cursori < edit.text.len:
-      let len = edit.text.pointLenAt(edit.cursori)
+      let len = edit.text.toOpenArray().pointLenAt(edit.cursori)
       edit.deleteTextTo(edit.cursori + len)
       return ctx.update(edit)
     return JS_UNDEFINED

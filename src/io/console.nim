@@ -9,6 +9,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import server/url
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -33,20 +34,27 @@ proc setStream*(console: Console; file: ChaFile; close: bool) =
 proc write*(console: Console; s: openArray[char]) =
   discard console.err.write(s)
 
+proc write*(console: Console; s: Str) =
+  console.write(s.toOpenArray())
+
 proc write*(console: Console; c: char) =
   console.write([c])
 
-proc log*(console: Console; ss: varargs[string]) =
-  var buf = ""
+proc log*(console: Console; ss: varargs[Str]) =
+  var buf = initGrowbuf()
   for i, s in ss.mypairs:
     buf &= s
     if i != ss.high:
       buf &= ' '
   buf &= '\n'
-  console.write(buf)
+  console.write(buf.toStr())
 
-proc error*(console: Console; ss: varargs[string]) =
+proc error*(console: Console; ss: varargs[Str]) =
   console.log(ss)
+
+proc error*(console: Console; s: openArray[char]) =
+  console.write(s)
+  console.write('\n')
 
 proc consoleWriteCb(opaque: pointer; buf: cstringConst; len: csize_t) {.
     cdecl.} =
@@ -61,11 +69,11 @@ jsNamespaceDef(console):
     let console = ctx.getConsole()
     for i, val in argv:
       if JS_IsString(val):
-        var res: USVString
+        var res: Str
         ?ctx.fromJS(val, res)
         console.write(res.toOpenArray())
       elif (var url: URL; ctx.fromJS(val, url).isOk):
-        console.write($url)
+        console.write(url.toStr())
       else:
         JS_PrintValue(ctx, consoleWriteCb, cast[pointer](console), val, nil)
       if i != argv.high:

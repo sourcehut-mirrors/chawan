@@ -495,25 +495,25 @@ proc main() =
     var quality = -1
     for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
       let s = hdr.after(':').strip()
-      case hdr.until(':')
-      of "Cha-Image-Dimensions":
+      let name = hdr.until(':')
+      if name == "Cha-Image-Dimensions":
         (width, height) = parseDimensions(s, allowZero = false)
-      of "Cha-Image-Offset":
+      elif name == "Cha-Image-Offset":
         (offx, offy) = parseDimensions(s, allowZero = true)
-      of "Cha-Image-Crop-Width":
-        let q = parseUInt32(s, allowSign = false)
+      elif name == "Cha-Image-Crop-Width":
+        let q = parseUInt32(s.toOpenArray(), allowSign = false)
         if q.isErr:
           cgiDie(ceInternalError, "wrong crop width")
         cropw = int(q.get)
-      of "Cha-Image-Sixel-Halfdump":
+      elif name == "Cha-Image-Sixel-Halfdump":
         halfdump = true
-      of "Cha-Image-Sixel-Palette":
-        let q = parseUInt16(s, allowSign = false)
+      elif name == "Cha-Image-Sixel-Palette":
+        let q = parseUInt16(s.toOpenArray(), allowSign = false)
         if q.isErr:
           cgiDie(ceInternalError, "wrong palette")
         palette = int(q.get)
-      of "Cha-Image-Quality":
-        let q = parseUInt16(s, allowSign = false)
+      elif name == "Cha-Image-Quality":
+        let q = parseUInt16(s.toOpenArray(), allowSign = false)
         if q.isErr:
           cgiDie(ceInternalError, "wrong quality")
         quality = int(q.get)

@@ -5,6 +5,7 @@ when NimMajor >= 2:
 
 import encoding/charset
 import encoding/encodercore
+import utils/cowstr
 
 type EncoderErrorMode* = enum
   eemFatal, eemHtml
@@ -17,53 +18,53 @@ proc initTextEncoder*(charset: Charset): TextEncoder =
   TextEncoder(charset: charset)
 
 proc encodeAll*(iq: openArray[uint8]; charset: Charset; success: var bool):
-    string =
-  result = newString(iq.len)
+    Str =
+  var buf = initGrowbufUninit(iq.len)
   var te = initTextEncoder(charset)
   var n = 0
   while true:
-    case te.encode(iq, result.toOpenArrayByte(0, result.high), n,
-      finish = true)
+    case te.encode(iq, buf.toOpenArrayByte(0, buf.high), n, finish = true)
     of terDone:
-      result.setLen(n)
+      buf.setLen(n)
       break
     of terReqOutput:
-      result.setLen(result.len * 2)
+      buf.setLenUninit(buf.len * 2)
     of terError:
       success = false
-      return ""
+      return str("")
   success = true
+  buf.toStr()
 
 proc encodeAll*(iq: openArray[char]; charset: Charset; success: var bool):
-    string =
+    Str =
   success = false
-  return iq.toOpenArrayByte(0, iq.high).encodeAll(charset, success)
+  iq.toOpenArrayByte(0, iq.high).encodeAll(charset, success)
 
-proc encodeAll*(iq: openArray[uint8]; charset: Charset): string =
-  result = newString(iq.len)
+proc encodeAll*(iq: openArray[uint8]; charset: Charset): Str =
+  var buf = initGrowbufUninit(iq.len)
   var te = initTextEncoder(charset)
   var n = 0
   while true:
-    case te.encode(iq, result.toOpenArrayByte(0, result.high), n,
-      finish = true)
+    case te.encode(iq, buf.toOpenArrayByte(0, buf.high), n, finish = true)
     of terDone:
-      result.setLen(n)
+      buf.setLen(n)
       break
     of terReqOutput:
-      result.setLen(result.len * 2)
+      buf.setLenUninit(buf.len * 2)
     of terError:
-      result.setLen(n)
-      result &= "&#"
+      buf.setLen(n)
+      buf &= "&#"
       if te.c == 0:
-        result &= '0'
+        buf &= '0'
       else:
         while te.c > 0:
-          result &= char(uint8('0') + uint8(te.c mod 10))
+          buf &= char(uint8('0') + uint8(te.c mod 10))
           te.c = te.c div 10
-      result &= ';'
-      n = result.len
+      buf &= ';'
+      n = buf.len
+  buf.toStr()
 
-proc encodeAll*(iq: openArray[char]; charset: Charset): string =
+proc encodeAll*(iq: openArray[char]; charset: Charset): Str =
   return iq.toOpenArrayByte(0, iq.high).encodeAll(charset)
 
 {.pop.}

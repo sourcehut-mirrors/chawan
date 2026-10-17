@@ -76,7 +76,6 @@
 when NimMajor >= 2:
   import std/assertions
 import std/macros
-import std/options
 import std/typetraits
 
 import js/constcharp
@@ -88,6 +87,8 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/chahash
+import utils/cowstr
 import utils/opt
 import utils/tabutil
 
@@ -455,12 +456,17 @@ type
     jsFunCall: NimNode
     jsCallAndRet: NimNode
 
-  GetSet = ref object of StrMapItem
-    name: string
+  GetSet = ref object
+    hcache: Hash
+    s: string
     get: NimNode
     set: NimNode
     flag: BoundFunctionFlag
     magic: NimNode
+
+  GetSetMap = object
+    load: int
+    tab: seq[GetSet]
 
   RegistryInfo = object
     name: string # JS name, if this is the empty string then it equals tname
@@ -470,7 +476,7 @@ type
     ctorFun: NimNode # constructor ident
     ctorType: JSCFunctionEnum # constructor function type
     hasExotic: bool # set if we have to generate exotics
-    getset: StrMap # name -> value
+    getset: GetSetMap # name -> value
     propGetOwnFun: NimNode # exotic get own property function ident
     propGetFun: NimNode # exotic get function ident
     propSetFun: NimNode # exotic set function ident
@@ -481,6 +487,63 @@ type
     convId: NimNode # automatically generated class mark ident
     finFun: NimNode # class mark ident
     tabReplaceableNames: NimNode # replaceable names array
+
+when NimMajor < 2:
+  from utils/twtstr import substr
+
+template myHash(s: openArray[char]): Hash =
+  when nimvm:
+    when (NimMajor, NimMinor) < (2, 2):
+      s.substr().hash()
+    else:
+      s.hash()
+  else:
+    s.hash()
+
+iterator items(map: GetSetMap): lent GetSet =
+  for it in map.tab:
+    if it != nil:
+      yield it
+
+proc getOrDefault(map: GetSetMap; s: openArray[char]): GetSet =
+  ## Get the first item keyed by `s`, or nil.
+  if map.tab.len <= 0:
+    return nil
+  let hcache = myHash(s)
+  for i, it in map.tab.tabPairs(hcache):
+    if it == nil:
+      break
+    if it.hcache == hcache and it.s == s:
+      return it
+  return nil
+
+proc put0(map: var GetSetMap; item: GetSet): bool =
+  # returns true if a new item was inserted
+  let mask = map.tab.len - 1
+  let hcache = item.hcache
+  var item = item
+  var home = hcache and mask
+  for i, it in map.tab.mtabPairs(hcache):
+    if it == nil:
+      it = item
+      break
+    if it.hcache == item.hcache and it.s == item.s:
+      assert false # I don't think this can happen?
+      return false
+    if tabSwap(home, it.hcache, i, mask): # displace
+      swap(it, item)
+  true
+
+proc putInit(map: var GetSetMap; item: GetSet) =
+  item.hcache = item.s.hash()
+  for it in map.tab.prepareTableAdd(map.load, init = 16):
+    if it != nil:
+      discard map.put0(it)
+
+proc put(map: var GetSetMap; item: GetSet) =
+  map.putInit(item)
+  if map.put0(item):
+    inc map.load
 
 proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
   let formalParams = fun.params
@@ -1073,7 +1136,6 @@ proc bindReplaceableSet(stmts: NimNode; info: RegistryInfo) =
 proc bindGetSet(info: RegistryInfo) =
   var replaceableId = 0u16
   for it in info.getset:
-    let it = GetSet(it)
     let get = if it.get != nil: it.get else: newNilLit()
     let set = if it.set != nil: it.set else: newNilLit()
     let k = it.s
@@ -1218,9 +1280,9 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
 template jsextends*(class: ChaClassDef) =
   classDef.parent = class.id
 
-proc setGet(map: var StrMap; name: string; get: NimNode;
+proc setGet(map: var GetSetMap; name: string; get: NimNode;
     flag: BoundFunctionFlag; magic: NimNode) =
-  let other = GetSet(map.getOrDefault(name))
+  let other = map.getOrDefault(name)
   if other != nil:
     other.get = get
     if flag != bffNone and other.flag != flag:
@@ -1230,9 +1292,9 @@ proc setGet(map: var StrMap; name: string; get: NimNode;
   else:
     map.put(GetSet(s: name, get: get, flag: flag, magic: magic))
 
-proc setSet(map: var StrMap; name: string; set: NimNode;
+proc setSet(map: var GetSetMap; name: string; set: NimNode;
     flag: BoundFunctionFlag; magic: NimNode) =
-  let other = GetSet(map.getOrDefault(name))
+  let other = map.getOrDefault(name)
   if other != nil:
     other.set = set
     if flag != bffNone and other.flag != flag:

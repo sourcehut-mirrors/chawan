@@ -31,6 +31,7 @@ import js/tojs
 import server/headers
 import server/url
 import utils/chaos
+import utils/cowstr
 import utils/dtoawrap
 import utils/lrewrap
 import utils/opt
@@ -44,7 +45,7 @@ type
     rcIgnore = "ignore" # case-insensitive
 
   Action = object
-    k: string
+    k: Str
     val: JSValueTraced
 
   ActionMapObj = object
@@ -76,6 +77,12 @@ type
 
   # ImageMode or -1 for auto
   ImageModeAuto = distinct uint8
+
+  # ScriptingMode or -1 for auto
+  ScriptingModeAuto* = distinct uint8
+
+  # CookieMode or -1 for auto
+  CookieModeAuto* = distinct uint8
 
   # cast[int32] of FormatMode or -1 for auto
   FormatModeAuto = distinct uint32
@@ -280,7 +287,7 @@ type
     clear*: bool
     s*: seq[HTTPHeader]
 
-  CommandPair = tuple[k: string; fun: JSCallback]
+  CommandPair = tuple[k: Str; fun: JSCallback]
 
   ConfigEntry* = object
     section*: ConfigSection
@@ -293,9 +300,9 @@ type
     of cocWord:
       word*: ConfigOptionWord
     of cocStr:
-      str*: string
+      str*: Str
     of cocStrSeq:
-      strSeq*: seq[string]
+      strSeq*: seq[Str]
     of cocCharsetSeq:
       charsetSeq*: seq[Charset]
     of cocHeaders:
@@ -444,14 +451,14 @@ type
     bits*: array[FirstBitOpt..LastBitOpt, ConfigOptionBit]
     hwords*: array[FirstHWordOpt..LastHWordOpt, ConfigOptionHWord]
     words*: array[FirstWordOpt..LastWordOpt, ConfigOptionWord]
-    strs*: array[FirstStrOpt..LastStrOpt, string]
-    strSeqs*: array[FirstStrSeqOpt..LastStrSeqOpt, seq[string]]
+    strs*: array[FirstStrOpt..LastStrOpt, Str]
+    strSeqs*: array[FirstStrSeqOpt..LastStrSeqOpt, seq[Str]]
     # we only have one of these types, so no arrays
     documentCharset*: seq[Charset]
     defaultHeaders*: Headers
     proxy*: URL
-    dir*: string
-    dataDir*: string
+    dir*: Str
+    dataDir*: Str
     #TODO getset
     lists*: array[csSiteconf..csOmnirule, ConfigList]
     cmdInit: seq[CommandPair] # initial k/v map
@@ -481,19 +488,19 @@ type
   ConfigParser = object
     ctx: JSContext
     config: Config
-    dir: string # CWD for -o, config.dir otherwise
-    filename: string
-    key: string # user-specified key
-    buf: string # last consumed string
-    warnings: seq[string]
+    dir: Str # CWD for -o, config.dir otherwise
+    filename: Str
+    key: Growbuf # user-specified key
+    buf: Growbuf # last consumed string
+    warnings: seq[Str]
     states: seq[TomlState]
-    arr: seq[string]
+    arr: seq[Str]
     entries: seq[ConfigEntry]
     beforeTable: seq[BeforeKey]
     # these sections have user-defined keys, so we prevent dupes like this
     keysSeen: array[csCmd..csOmnirule, StrMap]
     tableArrayCount: array[csSiteconf..csOmnirule, uint32]
-    error: string
+    error: Str
     line: int
     entryStart: int # line where siteconf started
     beforeKey: BeforeKey
@@ -514,12 +521,11 @@ unionHooks(ConfigOptionHWord)
 unionHooks(ConfigOptionWord)
 
 # Forward declarations
-proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void]
+proc consumeValue(cp: var ConfigParser; line: Str; n: var int): Opt[void]
 proc parseConfigValue(cp: var ConfigParser): Opt[void]
-proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string
-proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-  warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
-  Err[string]
+proc parseKeyComb*(key: openArray[char]; warnings: var seq[Str]): Str
+proc parseConfig*(config: Config; dir, buf: Str; warnings: var seq[Str];
+  ctx: JSContext; name: Str; laxnames = false): Err[Str]
 proc getClassID(t: typedesc[Config]): JSClassID
 proc getClassID*(t: typedesc[ActionMap]): JSClassID
 
@@ -603,12 +609,18 @@ template defineAuto(typ, other: untyped) =
   template get*(v: typ): other =
     other(uint8(v) - 1)
 
-  proc toJS(ctx: JSContext; v: typ): JSValue =
+  proc get*(v: typ; o: other): other =
+    if v.isSome:
+      v.get
+    else:
+      o
+
+  proc toJS*(ctx: JSContext; v: typ): JSValue =
     if v.isSome:
       return ctx.toJS(v.get)
     return JS_NULL
 
-  proc fromJS(ctx: JSContext; val: JSValueConst; res: var typ): JSCode =
+  proc fromJS*(ctx: JSContext; val: JSValueConst; res: var typ): JSCode =
     if not JS_IsNull(val):
       res = typ(0)
     else:
@@ -616,9 +628,6 @@ template defineAuto(typ, other: untyped) =
       ?ctx.fromJS(val, res2)
       res = typ(uint(res2) + 1)
     fjOk
-
-defineAuto(ColorModeAuto, ColorMode)
-defineAuto(ImageModeAuto, ImageMode)
 
 template isSome*(v: FormatModeAuto): bool =
   uint32(v) > 0
@@ -642,17 +651,17 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var FormatModeAuto):
   fjOk
 
 proc toJS(ctx: JSContext; rgb: RGBColor): JSValue =
-  var res = "#"
-  res.pushHex(rgb.r)
-  res.pushHex(rgb.g)
-  res.pushHex(rgb.b)
+  var res = initGrowbuf("#")
+  res.addHex(rgb.r)
+  res.addHex(rgb.g)
+  res.addHex(rgb.b)
   return toJS(ctx, res)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var RGBColor):
     JSCode =
-  var s: USVString
+  var s: Str
   ?ctx.fromJS(val, s)
-  let x = parseLegacyColor(s.toOpenArray())
+  let x = parseLegacyColor(s)
   if x.isErr:
     JS_ThrowTypeError(ctx, x.error)
     return fjErr
@@ -660,17 +669,17 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var RGBColor):
   fjOk
 
 proc toJS(ctx: JSContext; rgba: ARGBColor): JSValue =
-  var res = "#"
-  res.pushHex(rgba.r)
-  res.pushHex(rgba.g)
-  res.pushHex(rgba.b)
-  res.pushHex(rgba.a)
+  var res = initGrowbuf("#")
+  res.addHex(rgba.r)
+  res.addHex(rgba.g)
+  res.addHex(rgba.b)
+  res.addHex(rgba.a)
   return toJS(ctx, res)
 
 proc toJS(ctx: JSContext; c: CSSColor): JSValue =
   if c.t in {cctArgb, cctOklab}:
     return ctx.toJS(c.argb())
-  return ctx.toJS($c)
+  return ctx.toJS(c.toStr())
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var ARGBColor): JSCode =
   if JS_IsNumber(val):
@@ -692,10 +701,10 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var CSSColor): JSCode =
     return fjOk
   var s: DOMString
   ?ctx.fromJS(val, s)
-  var p = initCSSParser(s)
+  var p = initCSSParser(s.toStr())
   let c = p.parseColor()
   if c.isErr or p.has():
-    JS_ThrowTypeError(ctx, "invalid color %s", s.p)
+    JS_ThrowTypeError(ctx, "invalid color %s", s.toStr().toCStringConst())
     return fjErr
   res = c.get
   fjOk
@@ -723,13 +732,30 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var RGBColorAuto): JSCode =
     res = RGBColorAuto(uint64(res2) + 1)
   fjOk
 
-proc evalCmdDecl(ctx: JSContext; s: string): JSValue =
+proc toJS*(ctx: JSContext; charset: Charset): JSValue =
+  if charset == csUnknown:
+    return JS_NULL
+  tojs.toJS(ctx, charset)
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; charset: var Charset): JSCode =
+  if JS_IsNull(val):
+    charset = csUnknown
+  else:
+    var s: Str
+    ?ctx.fromJS(val, s)
+    charset = getCharset(s)
+    if charset == csUnknown:
+      JS_ThrowTypeError(ctx, "unknown charset: %s", s.toCStringConst())
+      return fjErr
+  fjOk
+
+proc evalCmdDecl(ctx: JSContext; s: Str): JSValue =
   if s.len == 0:
     return JS_UNDEFINED
   if AllChars - AsciiAlphaNumeric - {'_', '$', '.'} notin s and
       not s.startsWith("cmd."):
-    return ctx.compileScript("cmd." & s, "<command>")
-  return ctx.compileScript(s, "<command>")
+    return ctx.compileScript(initStrM("cmd.", s), str("<command>"))
+  return ctx.compileScript(s, str("<command>"))
 
 proc forwardAction(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; funcData: JSValueArray): JSValue
@@ -808,21 +834,26 @@ proc toJS*(ctx: JSContext; val: ScriptingMode): JSValue =
   of smFalse: return JS_FALSE
   of smApp: return JS_NewString(ctx, "app")
 
-proc addAction*(map: ActionMap; key: sink string; val: JSValue) =
+defineAuto(ColorModeAuto, ColorMode)
+defineAuto(ImageModeAuto, ImageMode)
+defineAuto(ScriptingModeAuto, ScriptingMode)
+defineAuto(CookieModeAuto, CookieMode)
+
+proc addAction*(map: ActionMap; key: sink Str; val: JSValue) =
   if key.len <= 0:
     return
   let c = key[0]
   var i = map.tab.lowerBound(c, proc(x: Action; c: char): int =
     cmp(x.k[0], c)
   )
-  while i < map.tab.len and map.tab[i].k < key:
+  while i < map.tab.len and cmp(map.tab[i].k, key) < 0:
     if key.startsWith(map.tab[i].k):
       map.tab.delete(i)
     else:
       inc i
   map.tab.insert(Action(k: move(key), val: trace(val)), i)
 
-proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: string):
+proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: Str):
     ActionMap =
   let map = jsNew ActionMapObj(defaultAction: trace(JS_UNDEFINED))
   if map == nil:
@@ -831,7 +862,7 @@ proc newActionMap(ctx: JSContext; s: openArray[char]; defaultAction: string):
     map.defaultAction = trace(ctx.evalCmdDecl(defaultAction))
     if JS_IsException(map.defaultAction):
       return ActionMap(nil)
-  var dummy: seq[string]
+  var dummy: seq[Str]
   for it in s.split('\n'):
     var i = 0
     while true:
@@ -856,7 +887,7 @@ proc newActionMap*(map: ActionMap): ActionMap =
 proc mgetValue*(map: ActionMap): var JSValueTraced =
   map.tab[map.keyIdx].val
 
-proc advance*(map: ActionMap; k: string): bool =
+proc advance*(map: ActionMap; k: openArray[char]): bool =
   var i = map.keyIdx
   var j = map.keyLast
   if i == 0 and j == 0 and k.len > 0:
@@ -889,7 +920,7 @@ proc advance*(map: ActionMap; k: string): bool =
   map.keyLast = 0
   return false
 
-proc feedNext*(ctx: JSContext; map: ActionMap; b: bool; k: string) =
+proc feedNext*(ctx: JSContext; map: ActionMap; b: bool; k: openArray[char]) =
   if b:
     inc map.keyIdx
     discard map.advance(k)
@@ -946,8 +977,8 @@ proc toXTermMod(mods: set[KeyModifier]): uint8 =
   elif mods == {kmMeta, kmControl, kmShift}: 14
   else: 0
 
-proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
-  var realk = ""
+proc parseKeyComb*(key: openArray[char]; warnings: var seq[Str]): Str =
+  var realk = initGrowbuf()
   var i = 0
   var mods: set[KeyModifier] = {}
   if i < key.len and key[i] == ' ':
@@ -965,7 +996,7 @@ proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
       of 'C': mods.incl(kmControl)
       of 'M': mods.incl(kmMeta)
       of 'S': mods.incl(kmShift)
-      else: warnings.add("invalid modifier " & c & '-')
+      else: warnings.add(initStrM("invalid modifier ", c, '-'))
       i += 2
       continue
     if start and c in AsciiUpperAlpha and
@@ -1005,14 +1036,14 @@ proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
           let n = mods.toXTermMod()
           let c = char(uint8(key) - uint8(ckF1) + uint8('P'))
           if n == 0:
-            realk &= "\eO" & c
+            realk.addM("\eO", c)
           else:
-            realk &= "\e[1;" & $n & c
+            realk.addM("\e[1;", n, c)
         of ckDelete:
           realk &= "\e[3"
           let n = mods.toXTermMod()
           if n > 0:
-            realk &= ";" & $n & '~'
+            realk.addM(';', n, '~')
         else:
           realk &= "\e["
           # see ctlseqs(ms) (from XTerm)
@@ -1038,7 +1069,7 @@ proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
           else: discard
           let n = mods.toXTermMod()
           if n > 0:
-            realk &= "1;" & $n
+            realk.addM("1;", n)
           case key
           of ckLeft: realk &= 'D'
           of ckDown: realk &= 'B'
@@ -1048,12 +1079,12 @@ proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
           of ckEnd: realk &= 'F'
           else: discard
       else:
-        var buf = "unknown key "
+        var buf = initGrowbuf("unknown key ")
         for i in i ..< j:
           let c = key[i]
           realk &= c
           buf &= c
-        warnings.add(buf)
+        warnings.add(buf.toStr())
       start = true
       i = j + 1
       mods = {}
@@ -1072,7 +1103,7 @@ proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
   if key.len > 1 and key[^1] == ' ':
     realk &= ' '
   if key.len > 0 and (key[0] == ' ' or key[^1] == ' '):
-    var buf = ""
+    var buf = initGrowbuf()
     var first = 0
     var last = key.high
     if key[0] == ' ':
@@ -1087,16 +1118,16 @@ proc parseKeyComb*(key: openArray[char]; warnings: var seq[string]): string =
       if buf.len <= 0 or buf[^1] != ' ':
         buf &= ' '
       buf &= "SPC"
-    warnings.add("deprecated key syntax; use '" & buf & "' instead")
-  move(realk)
+    warnings.add(initStrM("deprecated key syntax; use '", buf, "' instead"))
+  realk.toStr()
 
 proc find(a: ActionMap; s: openArray[char]): int =
-  var dummy: seq[string]
+  var dummy: seq[Str]
   let rk = parseKeyComb(s, dummy)
-  a.tab.binarySearch(rk, proc(x: Action; k: string): int = cmp(x.k, k))
+  a.tab.binarySearch(rk, proc(x: Action; k: Str): int = cmp(x.k, k))
 
-proc isCompatibleIdent(s: string): bool =
-  if s.len == 0 or s[0] notin AsciiAlpha + {'_', '$'}:
+proc isCompatibleIdent(s: Growbuf): bool =
+  if s.len <= 0 or s[0] notin AsciiAlpha + {'_', '$'}:
     return false
   for i in 1 ..< s.len:
     if s[i] notin AsciiAlphaNumeric + {'_', '$'}:
@@ -1105,34 +1136,37 @@ proc isCompatibleIdent(s: string): bool =
 
 const ValidBare = AsciiAlphaNumeric + {'-', '_'}
 
-proc setError(cp: var ConfigParser; msg: string) =
+proc setError(cp: var ConfigParser; msg: Str) =
   #TODO add line etc later?
-  cp.error = cp.filename & "(" & $cp.line & "): " & msg
+  cp.error = initStrM(cp.filename, "(", cp.line, "): ", msg)
 
-template err(cp: var ConfigParser; msg: string): untyped =
+template err(cp: var ConfigParser; msg: Str): untyped =
   cp.setError(msg)
   err()
 
-proc warn(cp: var ConfigParser; msg: string) =
-  cp.warnings.add(cp.filename & "(" & $cp.line & "): " & msg)
+template err(cp: var ConfigParser; msg: static cstring): untyped =
+  cp.setError(str(msg))
+  err()
 
-proc expect(cp: var ConfigParser; c: char; line: string; n: var int):
-    Opt[void] =
+proc warn(cp: var ConfigParser; msg: Str) =
+  cp.warnings.add(initStrM(cp.filename, '(', cp.line, "): ", msg))
+
+proc expect(cp: var ConfigParser; c: char; line: Str; n: var int): Opt[void] =
   let m = n
   if m >= line.len:
-    return cp.err("expected `" & c & "', got end of line")
+    return cp.err(initStrM("expected `", c, "', got end of line"))
   let nc = line[m]
   if nc != c:
-    return cp.err("expected `" & c & "', got `" & nc & "'")
+    return cp.err(initStrM("expected `", c, "', got `", nc, "'"))
   inc n
   ok()
 
-proc expectEOL(cp: var ConfigParser; line: string; n: int): Opt[void] =
+proc expectEOL(cp: var ConfigParser; line: Str; n: int): Opt[void] =
   if n < line.len and line[n] != '#':
-    return cp.err("unexpected character `" & line[n] & '\'')
+    return cp.err(initStrM("unexpected character `", line[n], '\''))
   ok()
 
-proc skipTomlBlanks(line: openArray[char]; n: int): int =
+proc skipTomlBlanks(line: Str; n: int): int =
   var n = n
   while n < line.len:
     if line[n] notin {' ', '\t'}:
@@ -1140,17 +1174,16 @@ proc skipTomlBlanks(line: openArray[char]; n: int): int =
     inc n
   n
 
-proc consumeEscape(cp: var ConfigParser; line: openArray[char]; c: char;
-    res: var string; n: int): Opt[n] =
+proc consumeEscape(cp: var ConfigParser; line: Str; c: char; n: int): Opt[n] =
   var n = n
   case c
-  of 'b': res &= '\b'
-  of 't': res &= '\t'
-  of 'n': res &= '\n'
-  of 'f': res &= '\f'
-  of 'r': res &= '\r'
-  of '"': res &= '"'
-  of '\\': res &= '\\'
+  of 'b': cp.buf &= '\b'
+  of 't': cp.buf &= '\t'
+  of 'n': cp.buf &= '\n'
+  of 'f': cp.buf &= '\f'
+  of 'r': cp.buf &= '\r'
+  of '"': cp.buf &= '"'
+  of '\\': cp.buf &= '\\'
   of 'u', 'U':
     var last = n + 4
     if c == 'U':
@@ -1160,7 +1193,7 @@ proc consumeEscape(cp: var ConfigParser; line: openArray[char]; c: char;
     var num = 0'u32
     let val = hexValue(c)
     if val == -1:
-      return cp.err("invalid escaped codepoint: " & $c)
+      return cp.err(initStrM("invalid escaped codepoint: ", c))
     num = uint32(val)
     while n < last:
       let val = hexValue(line[n])
@@ -1172,16 +1205,16 @@ proc consumeEscape(cp: var ConfigParser; line: openArray[char]; c: char;
     if n != last:
       return cp.err("invalid escaped length")
     if num > 0x10FFFF or num in 0xD800'u32..0xDFFF'u32:
-      return cp.err("invalid escaped codepoint: " & $num)
-    res.addUTF8(num)
-  of '$': res &= "\\$" # special case for substitution in paths
-  else: return cp.err("invalid escape sequence \\" & c)
+      return cp.err(initStrM("invalid escaped codepoint: ", num))
+    cp.buf.addUTF8(num)
+  of '$': cp.buf &= "\\$" # special case for substitution in paths
+  else: return cp.err(initStrM("invalid escape sequence \\", c))
   ok(n)
 
 # Consume a string and store it in cp.buf.
 # If `camel' is true, the buffer is converted to camel-case from
 # kebab-case.
-proc consumeKeyString(cp: var ConfigParser; camel: bool; line: string;
+proc consumeKeyString(cp: var ConfigParser; camel: bool; line: Str;
     first: char; n: int): Opt[int] =
   var n = n
   var escape = false
@@ -1190,7 +1223,7 @@ proc consumeKeyString(cp: var ConfigParser; camel: bool; line: string;
     var c = line[n]
     inc n
     if escape:
-      n = ?cp.consumeEscape(line, c, cp.buf, n)
+      n = ?cp.consumeEscape(line, c, n)
       escape = false
     elif c == first:
       break
@@ -1208,7 +1241,7 @@ proc consumeKeyString(cp: var ConfigParser; camel: bool; line: string;
   ok(n)
 
 # Consume a bare token, and store it (optionally camel-cased) in cp.buf.
-proc consumeBare(cp: var ConfigParser; camel: bool; line: string; n: int):
+proc consumeBare(cp: var ConfigParser; camel: bool; line: Str; n: int):
     Opt[int] =
   var n = line.skipTomlBlanks(n)
   var upper = false
@@ -1226,7 +1259,7 @@ proc consumeBare(cp: var ConfigParser; camel: bool; line: string; n: int):
     inc n
   ok(n)
 
-proc consumeKey(cp: var ConfigParser; camel: bool; line: string; n: int):
+proc consumeKey(cp: var ConfigParser; camel: bool; line: Str; n: int):
     Opt[int] =
   var n = line.skipTomlBlanks(n)
   if n >= line.len:
@@ -1239,7 +1272,7 @@ proc consumeKey(cp: var ConfigParser; camel: bool; line: string; n: int):
     n = ?cp.consumeBare(camel, line, n)
   ok(line.skipTomlBlanks(n))
 
-proc consumeString(cp: var ConfigParser; line: string; first: char; n: int):
+proc consumeString(cp: var ConfigParser; line: Str; first: char; n: int):
     Opt[int] =
   var n = n
   var escape = false
@@ -1263,7 +1296,7 @@ proc consumeString(cp: var ConfigParser; line: string; first: char; n: int):
     var c = line[n]
     inc n
     if escape:
-      n = ?cp.consumeEscape(line, c, cp.buf, n)
+      n = ?cp.consumeEscape(line, c, n)
       escape = false
     elif c == first:
       if not multiline:
@@ -1285,39 +1318,36 @@ proc consumeString(cp: var ConfigParser; line: string; first: char; n: int):
     cp.buf &= '\n'
   ok(n)
 
-proc parseSection(cp: var ConfigParser; key: string): Opt[ConfigSection] =
-  let section = strictParseEnum[ConfigSection](key).get(csNone)
-  if section == csNone:
-    return cp.err("unknown section " & key)
-  ok(section)
-
-proc parseOption(cp: var ConfigParser; section: ConfigSection; key: string):
-    Opt[ConfigOption] =
-  var x = parseOption(key)
+proc parseOption(cp: var ConfigParser): Opt[ConfigOption] =
+  let section = cp.section
+  var x = parseOption(cp.buf.toOpenArray())
   if x.isErr:
     # retry ambiguous names
-    let full = if section != csNone: $section & '.' & key else: key
-    x = parseOption(full)
+    let full = if section != csNone:
+      initStrM(section, '.', cp.buf)
+    else:
+      initStr(cp.buf.toOpenArray())
+    x = parseOption(full.toOpenArray())
     if x.isErr:
-      cp.warn("unknown option " & camelToKebabCase(full))
+      cp.warn(initStrM("unknown option ", camelToKebabCase(full)))
       return ok(coAddEntry) # dummy value
   let opt = x.get
   if opt.section != section and
       not (section == csSiteconf and opt in SiteconfOptions) and
       not (section == csNone and cp.laxnames):
-    let kebab = camelToKebabCase(key)
-    cp.warn("unknown option " & $section & '.' & kebab & ", maybe try " &
-      $opt.section & '.' & kebab & '?')
+    let kebab = camelToKebabCase(move(cp.buf).toStr())
+    cp.warn(initStrM("unknown option ", section, '.', kebab, ", maybe try ",
+      opt.section, '.', kebab, '?'))
     return ok(coAddEntry) # dummy value
   if section in {csSiteconf, csOmnirule}:
     if opt in cp.ruleOptionsSeen:
-      let kebab = camelToKebabCase(key)
-      return cp.err("re-definition of option " & kebab)
+      let kebab = camelToKebabCase(move(cp.buf).toStr())
+      return cp.err(initStrM("re-definition of option ", kebab))
     cp.ruleOptionsSeen.incl(opt)
   else:
     if opt in cp.optionsSeen:
-      let kebab = camelToKebabCase(key)
-      return cp.err("re-definition of option " & $section & '.' & kebab)
+      let kebab = camelToKebabCase(move(cp.buf).toStr())
+      return cp.err(initStrM("re-definition of option ", section, '.', kebab))
     cp.optionsSeen.incl(opt)
   x
 
@@ -1326,7 +1356,7 @@ proc addRuleEntry(cp: var ConfigParser) =
     section: cp.section,
     opt: coAddEntry,
     t: cocStr,
-    str: move(cp.buf)
+    str: move(cp.buf).toStr()
   ))
   cp.entryStart = cp.line
   cp.ruleOptionsSeen.incl(coAddEntry)
@@ -1336,32 +1366,32 @@ proc checkRuleRegex(cp: var ConfigParser): Opt[void] =
     let intersection = {coUrl, coHost, coMatch} * cp.ruleOptionsSeen
     if intersection == {}:
       cp.line = cp.entryStart
-      return cp.err("missing match regex for " & $cp.section)
+      return cp.err(initStrM("missing match regex for ", cp.section))
     if intersection notin [{coUrl}, {coHost}, {coMatch}]:
       cp.line = cp.entryStart
-      return cp.err("too many match regexes for " & $cp.section)
+      return cp.err(initStrM("too many match regexes for ", cp.section))
   ok()
 
-proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
+proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: Str;
     n: int): Opt[int] =
   var n = n
   var section = cp.section
   if section == csNone:
     n = ?cp.consumeKey(camel = false, line, n)
-    section = cp.parseSection(cp.buf).get(csNone)
+    section = strictParseEnum[ConfigSection](cp.buf.toOpenArray()).get(csNone)
     if section == csNone:
       if cp.buf == "include":
         cp.opt = coInclude
       elif cp.laxnames: # allow sectionless options from CLI
-        cp.buf = kebabToCamelCase(cp.buf)
-        cp.opt = ?cp.parseOption(cp.section, cp.buf)
+        cp.buf = initGrowbufSink(kebabToCamelCase(move(cp.buf).toStr()))
+        cp.opt = ?cp.parseOption()
         section = cp.opt.section
       else:
-        return err()
+        return cp.err(initStrM("unknown section ", cp.buf))
     cp.section = section
     if single or n >= line.len or line[n] != '.':
       if section in cp.sectionsSeen:
-        cp.warn("re-definition of section " & $section)
+        cp.warn(initStrM("re-definition of section ", section))
       return ok(n)
     if not tableArray and section notin {csSiteconf, csOmnirule}:
       # Duplicate sections are invalid TOML for siteconf/omnirule too,
@@ -1372,9 +1402,9 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
   of csSiteconf, csOmnirule:
     if coAddEntry notin cp.ruleOptionsSeen:
       n = ?cp.consumeKey(camel = false, line, n)
-      let item = StrMapItem(s: cp.buf)
+      let item = StrMapItem(s: initStr(cp.buf.toOpenArray()))
       if cp.keysSeen[section].hasKeyOrPut(item):
-        return cp.err("duplicate key " & $section & '.' & cp.buf)
+        return cp.err(initStrM("duplicate key ", section, '.', cp.buf))
       cp.addRuleEntry()
       if single or n >= line.len or line[n] != '.':
         return ok(n)
@@ -1382,7 +1412,7 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
   of csCmd:
     n = ?cp.consumeKey(camel = false, line, n)
     if not cp.buf.isCompatibleIdent():
-      return cp.err("invalid command name: " & cp.buf)
+      return cp.err(initStrM("invalid command name: ", cp.buf))
     if cp.key.len > 0:
       cp.key &= '.'
     cp.key &= cp.buf
@@ -1390,29 +1420,28 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
       inc n
       n = ?cp.consumeKey(camel = false, line, n)
       if not cp.buf.isCompatibleIdent():
-        return cp.err("invalid command name: " & cp.buf)
-      cp.key &= '.'
-      cp.key &= cp.buf
-    let item = StrMapItem(s: cp.key)
+        return cp.err(initStrM("invalid command name: ", cp.buf))
+      cp.key.addM('.', cp.buf)
+    let item = StrMapItem(s: initStr(cp.key.toOpenArray()))
     if cp.keysSeen[section].hasKeyOrPut(item):
       return cp.err("duplicate command")
     return ok(n)
   of csPage, csSelect, csLine:
     if cp.key.len > 0:
-      return cp.err("unexpected nested key for section " & $section)
+      return cp.err(initStrM("unexpected nested key for section ", section))
     n = ?cp.consumeKey(camel = false, line, n)
-    var warnings: seq[string]
-    cp.key = parseKeyComb(cp.buf, warnings)
+    var warnings: seq[Str]
+    cp.key = initGrowbufSink(parseKeyComb(cp.buf.toOpenArray(), warnings))
     for warning in warnings:
       cp.warn(warning)
-    let item = StrMapItem(s: cp.key)
+    let item = StrMapItem(s: initStr(cp.key.toOpenArray()))
     if cp.keysSeen[section].hasKeyOrPut(item):
       return cp.err("duplicate keybinding")
     return ok(n)
   else: discard
   if cp.opt == coAddEntry:
     n = ?cp.consumeKey(camel = true, line, n)
-    cp.opt = ?cp.parseOption(cp.section, cp.buf)
+    cp.opt = ?cp.parseOption()
     if single or n >= line.len or line[n] != '.':
       return ok(n)
     inc n
@@ -1421,7 +1450,7 @@ proc parseKey(cp: var ConfigParser; single, tableArray: bool; line: string;
     cp.key = move(cp.buf)
   ok(n)
 
-proc parseConfigSection(cp: var ConfigParser; line: string; n: int): Opt[void] =
+proc parseConfigSection(cp: var ConfigParser; line: Str; n: int): Opt[void] =
   var n = n
   if n >= line.len:
     return cp.err("unexpected end of line")
@@ -1439,11 +1468,11 @@ proc parseConfigSection(cp: var ConfigParser; line: string; n: int): Opt[void] =
   let section = cp.section
   if tableArray:
     if section notin {csSiteconf, csOmnirule}:
-      return cp.err("unexpected table array " & $section &
-        ", maybe try [" & $section & "]")
+      return cp.err(initStrM("unexpected table array ", section,
+        ", maybe try [", section, ']'))
     if coAddEntry in cp.ruleOptionsSeen:
-      return cp.err("unexpected name, maybe try [[" & $section & "]]")
-    cp.buf = $cp.tableArrayCount[section]
+      return cp.err(initStrM("unexpected name, maybe try [[", section, "]]"))
+    cp.buf = initGrowbufM(cp.tableArrayCount[section])
     inc cp.tableArrayCount[section]
     cp.addRuleEntry()
   ?cp.expect(']', line, n)
@@ -1455,13 +1484,14 @@ proc parseConfigSection(cp: var ConfigParser; line: string; n: int): Opt[void] =
 proc typeCheck(cp: var ConfigParser; t: TomlType): Opt[void] =
   let vt = cp.tt
   if vt != t:
-    return cp.err("invalid type (got " & $vt & ", expected " & $t & ")")
+    return cp.err(initStrM("invalid type (got ", vt, ", expected ", t, ')'))
   ok()
 
 proc typeCheck(cp: var ConfigParser; t: set[TomlType]): Opt[void] =
   let vt = cp.tt
   if vt notin t:
-    return cp.err("invalid type (got " & $vt & ", expected " & $t & ")")
+    return cp.err(initStrM("invalid type (got ", vt, ", expected ", t.toStr(),
+      ')'))
   ok()
 
 proc parseBool(cp: var ConfigParser; x: var bool): Opt[void] =
@@ -1479,17 +1509,17 @@ proc parseBoolAuto(cp: var ConfigParser; x: var BoolAuto): Opt[void] =
 
 proc parseCharset(cp: var ConfigParser; x: var Charset): Opt[void] =
   ?cp.typeCheck(ttString)
-  let charset = getCharset(cp.buf)
-  if charset == csUnknown and cp.buf != "auto":
+  let s = move(cp.buf).toStr()
+  let charset = getCharset(s)
+  if charset == csUnknown and s != "auto":
     # auto represented as unknown
-    var buf = "unknown charset '" & cp.buf & "', expected one of [\"auto\", "
+    var buf = initGrowbufM("unknown charset '", s,
+      "', expected one of [\"auto\", ")
     for e in csUnknown.succ..Charset.high:
-      buf &= '"'
-      buf &= $e
-      buf &= "\", "
+      buf.addM('"', e, "\", ")
     buf.setLen(buf.high)
     buf[^1] = ']'
-    return cp.err(move(buf))
+    return cp.err(buf.toStr())
   x = charset
   ok()
 
@@ -1498,16 +1528,15 @@ proc parseEnum[T: enum](cp: var ConfigParser; x: var T): Opt[void] =
     strictParseEnum[T]($cp.bval)
   else:
     ?cp.typeCheck(ttString)
-    strictParseEnum[T](cp.buf)
+    strictParseEnum[T](cp.buf.toOpenArray())
   if e.isErr:
-    var buf = "invalid value '" & cp.buf & "', expected one of ["
+    var buf = initGrowbufM("invalid value '", cp.buf,
+      "', expected one of [\"auto\", ")
     for e in T:
-      buf &= '"'
-      buf &= $e
-      buf &= "\", "
+      buf.addM('"', e.toStr(), "\", ")
     buf.setLen(buf.high)
     buf[^1] = ']'
-    return cp.err(move(buf))
+    return cp.err(buf.toStr())
   x = e.get
   ok()
 
@@ -1535,7 +1564,7 @@ proc parseRegexCase(cp: var ConfigParser; x: var RegexCase): Opt[void] =
     x = if cp.bval: rcIgnore else: rcStrict
   else: # string
     if cp.buf != "auto":
-      return cp.err("invalid value '" & cp.buf & "'")
+      return cp.err(initStrM("invalid value '", cp.buf, "'"))
     x = rcAuto
   ok()
 
@@ -1549,7 +1578,7 @@ proc parseSet[T: enum](cp: var ConfigParser; x: var set[T]): Opt[void] =
   cp.tt = ttString
   var tmp: set[T] = {}
   for s in cp.arr.mitems:
-    cp.buf = move(s)
+    cp.buf = initGrowbufSink(move(s))
     var e: T
     ?cp.parseEnum(e)
     tmp.incl(e)
@@ -1583,10 +1612,11 @@ proc parseFormatModeAuto(cp: var ConfigParser; x: var FormatModeAuto):
 
 proc parseCSSColor(cp: var ConfigParser; x: var CSSColor): Opt[void] =
   ?cp.typeCheck(ttString)
-  var ctx = initCSSParser(cp.buf)
+  let s = move(cp.buf).toStr()
+  var ctx = initCSSParser(s)
   let c = ctx.parseColor()
   if c.isErr or ctx.has() or c.get.t == cctCurrent:
-    return cp.err("invalid color '" & cp.buf & "'")
+    return cp.err(initStrM("invalid color '", s, "'"))
   x = c.get
   ok()
 
@@ -1595,21 +1625,23 @@ proc parseRGBColorAuto(cp: var ConfigParser; x: var RGBColorAuto): Opt[void] =
   if cp.buf == "auto":
     x = RGBColorAuto(0)
   else:
-    let c = parseLegacyColor(cp.buf)
+    let s = move(cp.buf).toStr()
+    let c = parseLegacyColor(s)
     if c.isErr:
-      return cp.err("invalid color '" & cp.buf & "'")
+      return cp.err(initStrM("invalid color '", s, "'"))
     x = RGBColorAuto(uint64(c.get) + 1)
   ok()
 
-proc parseString(cp: var ConfigParser; x: var string): Opt[void] =
+proc parseString(cp: var ConfigParser; x: var Str): Opt[void] =
   ?cp.typeCheck(ttString)
-  x = move(cp.buf)
+  x = move(cp.buf).toStr()
   ok()
 
-proc parseStylesheet(cp: var ConfigParser; x: var string): Opt[void] =
+proc parseStylesheet(cp: var ConfigParser; x: var Str): Opt[void] =
   ?cp.typeCheck(ttString)
-  var y = ""
-  var parser = initCSSParser(cp.buf)
+  let s = move(cp.buf).toStr()
+  var y = initGrowbuf()
+  var parser = initCSSParser(s)
   var j = 0
   for it in parser.consumeImports():
     var parser2 = initCSSParserSink(it.prelude)
@@ -1622,30 +1654,32 @@ proc parseStylesheet(cp: var ConfigParser; x: var string): Opt[void] =
       return cp.err("wrong CSS import (unexpected token)")
     let path = ChaPath(tok.s).unquote(cp.config.dir)
     if path.isErr:
-      return cp.err("wrong CSS import (" & tok.s & " is not a valid path)")
-    let ps = newPosixStream(path.get)
+      return cp.err(initStrM("wrong CSS import (", tok.s,
+        " is not a valid path)"))
+    let ps = newPosixStream(path.get.toCString())
     if ps == nil:
-      return cp.err("wrong CSS import (file " & tok.s & " not found)")
+      return cp.err(initStrM("wrong CSS import (file ", tok.s, " not found)"))
     y &= ps.readAll()
     j = parser.i
-  y &= cp.buf.substr(j)
-  x = move(y)
+  y &= s.substr(j)
+  x = y.toStr()
   ok()
 
-proc parsePath(cp: var ConfigParser; x: var string): Opt[void] =
+proc parsePath(cp: var ConfigParser; x: var Str): Opt[void] =
   ?cp.typeCheck(ttString)
-  var y = ChaPath(cp.buf).unquote(cp.config.dir)
+  var y = ChaPath(move(cp.buf).toStr()).unquote(cp.config.dir)
   if y.isErr:
-    return cp.err(move(y.error))
+    return cp.err(y.error)
   x = move(y.get)
   ok()
 
-proc parseCodepointSet(cp: var ConfigParser; x: var string): Opt[void] =
+proc parseCodepointSet(cp: var ConfigParser; x: var Str): Opt[void] =
   ?cp.typeCheck(ttString)
   var seen = newSeqOfCap[uint32](32)
   var bad = -1'i64
   var sorted = true
-  for u in cp.buf.points:
+  let s = move(cp.buf).toStr()
+  for u in s.points:
     if seen.len > 0:
       let prev = seen[^1]
       sorted = sorted and prev < u
@@ -1662,8 +1696,8 @@ proc parseCodepointSet(cp: var ConfigParser; x: var string): Opt[void] =
         bad = int64(seen[i])
         break
   if bad >= 0:
-    return cp.err("duplicate codepoint '" & uint32(bad).toUTF8() & "'")
-  x = move(cp.buf)
+    return cp.err(initStrM("duplicate codepoint '", uint32(bad).toUTF8(), "'"))
+  x = s
   ok()
 
 proc parseCharsetSeq(cp: var ConfigParser; x: var seq[Charset]): Opt[void] =
@@ -1676,16 +1710,16 @@ proc parseCharsetSeq(cp: var ConfigParser; x: var seq[Charset]): Opt[void] =
     x = @[]
     cp.tt = ttString
     for it in cp.arr.mitems:
-      cp.buf = move(it)
+      cp.buf = initGrowbufSink(move(it))
       var charset: Charset
       ?cp.parseCharset(charset)
       x.add(charset)
   ok()
 
-proc parsePathSeq(cp: var ConfigParser; x: var seq[string]): Opt[void] =
+proc parsePathSeq(cp: var ConfigParser; x: var seq[Str]): Opt[void] =
   ?cp.typeCheck({ttString, ttArray})
   if cp.tt == ttString:
-    var s: string
+    var s: Str
     ?cp.parsePath(s)
     x = @[move(s)]
   else:
@@ -1693,8 +1727,8 @@ proc parsePathSeq(cp: var ConfigParser; x: var seq[string]): Opt[void] =
     for it in cp.arr:
       var y = ChaPath(it).unquote(cp.config.dir)
       if y.isErr:
-        return cp.err(move(y.error))
-      x.add(move(y.get))
+        return cp.err(y.error)
+      x.add(y.get)
   ok()
 
 proc parseHeaders(cp: var ConfigParser; x: var ConfigHeadersInit): Opt[void] =
@@ -1704,7 +1738,8 @@ proc parseHeaders(cp: var ConfigParser; x: var ConfigHeadersInit): Opt[void] =
     x.clear = true
   else:
     ?cp.typeCheck(ttString)
-    x.s.add((cp.key, move(cp.buf)))
+    x.s.add((initStr(cp.key.toOpenArray()).asByteString,
+      move(cp.buf).toStr().asByteString))
   ok()
 
 proc parseURL(cp: var ConfigParser; x: var URL): Opt[void] =
@@ -1712,22 +1747,23 @@ proc parseURL(cp: var ConfigParser; x: var URL): Opt[void] =
   if cp.buf == "":
     x = URL(nil)
   else:
-    x = parseURL0(cp.buf)
+    x = parseURL0(cp.buf.toOpenArray())
     if x == nil:
-      return cp.err("invalid URL " & cp.buf)
+      return cp.err(initStrM("invalid URL ", cp.buf))
   ok()
 
 proc parseRegex(cp: var ConfigParser; x: var Regex): Opt[void] =
   ?cp.typeCheck(ttString)
-  var y = compileMatchRegex(cp.buf)
+  var y = compileMatchRegex(move(cp.buf).toStr())
   if y.isErr:
-    return cp.err("invalid regex (" & y.error & ")")
+    return cp.err(initStrM("invalid regex (", y.error, ')'))
   x = move(y.get)
   ok()
 
 proc parseFunction(cp: var ConfigParser; x: var JSCallback): Opt[void] =
   ?cp.typeCheck(ttString)
-  let fun = cp.ctx.eval(cp.buf, "<config>", JS_EVAL_TYPE_GLOBAL)
+  let fun = cp.ctx.eval(move(cp.buf).toStr(), str("<config>"),
+    JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(fun.vc):
     return cp.err(cp.ctx.getExceptionMsg())
   if cp.ctx.fromJSFree(fun, x).isErr:
@@ -1752,7 +1788,7 @@ proc restoreKeyState(cp: var ConfigParser; beforeKey: BeforeKey): Opt[void] =
   cp.key.setLen(beforeKey.keyLen)
   ok()
 
-proc parseKVPair(cp: var ConfigParser; single: bool; line: string; n: var int):
+proc parseKVPair(cp: var ConfigParser; single: bool; line: Str; n: var int):
     Opt[void] =
   let nstates = cp.states.len
   cp.saveKeyState()
@@ -1767,7 +1803,7 @@ proc parseKVPair(cp: var ConfigParser; single: bool; line: string; n: var int):
     return ok()
   cp.parseConfigValue()
 
-proc consumeArray(cp: var ConfigParser; line: string; n: var int): Opt[void] =
+proc consumeArray(cp: var ConfigParser; line: Str; n: var int): Opt[void] =
   let nstates = cp.states.len
   while true:
     n = line.skipTomlBlanks(n)
@@ -1792,10 +1828,10 @@ proc consumeArray(cp: var ConfigParser; line: string; n: var int): Opt[void] =
     if nstates != cp.states.len:
       return cp.err("unexpected nested array")
     ?cp.typeCheck(ttString)
-    cp.arr.add(move(cp.buf))
+    cp.arr.add(move(cp.buf).toStr())
   ok()
 
-proc consumeTable(cp: var ConfigParser; line: string; n: var int): Opt[void] =
+proc consumeTable(cp: var ConfigParser; line: Str; n: var int): Opt[void] =
   let nstates = cp.states.len
   while true:
     n = line.skipTomlBlanks(n)
@@ -1823,7 +1859,7 @@ proc consumeTable(cp: var ConfigParser; line: string; n: var int): Opt[void] =
       cp.commaSeen = false
   ok()
 
-proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void] =
+proc consumeValue(cp: var ConfigParser; line: Str; n: var int): Opt[void] =
   if n >= line.len:
     return cp.err("value expected")
   let c = line[n]
@@ -1847,7 +1883,7 @@ proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void] =
     return cp.consumeTable(line, n)
   of '+', '-', AsciiDigit:
     cp.tt = ttInteger
-    let val = atod(cstring(line), n, 0, JS_ATOD_INT_ONLY or
+    let val = atod(line.toCStringConst(), n, 0, JS_ATOD_INT_ONLY or
       JS_ATOD_ACCEPT_UNDERSCORES)
     if classify(val) in {fcInf, fcNegInf, fcNan}:
       return cp.err("invalid number")
@@ -1867,12 +1903,12 @@ proc consumeValue(cp: var ConfigParser; line: string; n: var int): Opt[void] =
     elif cp.laxnames:
       cp.tt = ttString
     else:
-      return cp.err("invalid token: " & cp.buf)
+      return cp.err(initStrM("invalid token: ", cp.buf))
   of '"', '\'':
     cp.tt = ttString
     n = ?cp.consumeString(line, c, n + 1)
   else:
-    return cp.err("unexpected character in value: `" & c & "'")
+    return cp.err(initStrM("unexpected character in value: `", c, '\''))
   ok()
 
 proc addBit(cp: var ConfigParser): var ConfigOptionBit =
@@ -1887,7 +1923,7 @@ proc addWord(cp: var ConfigParser): var ConfigOptionWord =
   cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocWord))
   cp.entries[^1].word
 
-proc addStr(cp: var ConfigParser): var string =
+proc addStr(cp: var ConfigParser): var Str =
   cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocStr))
   cp.entries[^1].str
 
@@ -1899,7 +1935,7 @@ proc addCharsetSeq(cp: var ConfigParser): var seq[Charset] =
   ))
   cp.entries[^1].charsetSeq
 
-proc addStrSeq(cp: var ConfigParser): var seq[string] =
+proc addStrSeq(cp: var ConfigParser): var seq[Str] =
   cp.entries.add(ConfigEntry(section: cp.section, opt: cp.opt, t: cocStrSeq))
   cp.entries[^1].strSeq
 
@@ -1966,15 +2002,18 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
     ?cp.typeCheck(ttString)
     let dotIdx = cp.key.find('.')
     if dotIdx == -1:
-      cp.warn("please move cmd." & cp.key &
-        " to your own namespace (e.g. [cmd.me]) to avoid name clashes")
-    elif cp.key.startsWith("pager.") or cp.key.startsWith("buffer."):
-      cp.warn("the namespace " & cp.key.until('.') & " is deprecated")
+      cp.warn(initStrM("please move cmd.", cp.key,
+        " to your own namespace (e.g. [cmd.me]) to avoid name clashes"))
+    elif cp.key.toOpenArray().startsWith("pager.") or
+        cp.key.toOpenArray().startsWith("buffer."):
+      cp.warn(initStrM("the namespace ",
+        initStr(cp.key.toOpenArray()).until('.'), " is deprecated"))
     elif AsciiUpperAlpha in cp.key.toOpenArray(0, dotIdx):
-      cp.warn("the first component of namespaces must be lower-case")
+      cp.warn(str("the first component of namespaces must be lower-case"))
     let ctx = cp.ctx
-    let fun = if cp.buf.len > 0:
-      let val = ctx.eval(cp.buf, "<" & cp.key & ">", JS_EVAL_TYPE_GLOBAL)
+    let s = move(cp.buf).toStr()
+    let fun = if s.len > 0:
+      let val = ctx.eval(s, initStrM('<', cp.key, '>'), JS_EVAL_TYPE_GLOBAL)
       if JS_IsException(val.vc):
         return cp.err(ctx.getExceptionMsg())
       var x: JSCallback
@@ -1983,16 +2022,16 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
       move(x)
     else:
       JSCallback(nil)
-    cp.addCmdInit().add((cp.key, fun))
+    cp.addCmdInit().add((initStr(cp.key.toOpenArray()), fun))
   of csPage, csSelect, csLine:
     ?cp.typeCheck(ttString)
     let ctx = cp.ctx
-    let val = ctx.evalCmdDecl(cp.buf)
+    let val = ctx.evalCmdDecl(move(cp.buf).toStr())
     if JS_IsException(val.vc):
       return cp.err(ctx.getExceptionMsg())
     #TODO this won't fly for dynamic reloading
     let map = cp.config.actionMap[section]
-    map.addAction(cp.key, val)
+    map.addAction(initStr(cp.key.toOpenArray()), val)
   elif cp.opt != coAddEntry: # add entry here means "not found"
     ?cp.parseConfigValue1()
   # reset to state before this key
@@ -2047,7 +2086,7 @@ proc applyEntries(ctx: JSContext; config: Config;
   for entry in entries.mitems:
     ctx.applyEntry(config, entry)
 
-proc parseConfigRegular(cp: var ConfigParser; line: string): Opt[void] =
+proc parseConfigRegular(cp: var ConfigParser; line: Str): Opt[void] =
   var n = line.skipTomlBlanks(0)
   if n >= line.len:
     return ok()
@@ -2060,9 +2099,9 @@ proc parseConfigRegular(cp: var ConfigParser; line: string): Opt[void] =
     ?cp.parseKVPair(single = false, line, n)
     return cp.expectEOL(line, n)
   else:
-    return cp.err("unexpected character `" & c & "'")
+    return cp.err(initStrM("unexpected character `", c, "'"))
 
-proc parseConfigLine(cp: var ConfigParser; line: string): Opt[void] =
+proc parseConfigLine(cp: var ConfigParser; line: Str): Opt[void] =
   if cp.states.len == 0:
     return cp.parseConfigRegular(line)
   var n = 0
@@ -2078,7 +2117,7 @@ proc parseConfigLine(cp: var ConfigParser; line: string): Opt[void] =
     n = line.skipTomlBlanks(n)
   cp.expectEOL(line, n)
 
-proc initConfigParser(config: Config; dir: string; ctx: JSContext; name: string;
+proc initConfigParser(config: Config; dir: Str; ctx: JSContext; name: Str;
     laxnames: bool): ConfigParser =
   ConfigParser(
     config: config,
@@ -2093,23 +2132,23 @@ proc initConfigParser(config: Config; dir: string; ctx: JSContext; name: string;
 
 proc parseConfigEOF(cp: var ConfigParser): Opt[void] =
   if cp.states.len > 0:
-    return cp.err("unclosed " & $cp.states[^1])
+    return cp.err(initStrM("unclosed ", cp.states[^1].toStr()))
   cp.checkRuleRegex()
 
 proc parseFile(cp: var ConfigParser; file: AChaFile): Opt[void] =
-  var line: string
+  var line: Growbuf
   while ?file.readLine(line):
-    ?cp.parseConfigLine(line)
+    ?cp.parseConfigLine(move(line).toStr())
     inc cp.line
   cp.parseConfigEOF()
 
 proc cleanup(cp: var ConfigParser) =
   if cp.error == "":
-    cp.error = "failed to read config"
+    cp.error = str("failed to read config")
 
-proc parseConfig*(config: Config; dir: string; file: AChaFile;
-    warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
-    Err[string] =
+proc parseConfig*(config: Config; dir: Str; file: AChaFile;
+    warnings: var seq[Str]; ctx: JSContext; name: Str; laxnames = false):
+    Err[Str] =
   var cp = initConfigParser(config, dir, ctx, name, laxnames)
   if cp.parseFile(file).isErr:
     cp.cleanup()
@@ -2121,15 +2160,14 @@ proc parseConfig*(config: Config; dir: string; file: AChaFile;
   for s in includes:
     var x = chafile.afopen(s, "r")
     if x.isErr:
-      return err("include file not found: " & s)
+      return err(initStrM("include file not found: ", s))
     let f = move(x.get)
     ?config.parseConfig(dir, f, warnings, ctx, s.afterLast('/'))
   warnings.add(cp.warnings)
   ok()
 
-proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-    warnings: var seq[string]; ctx: JSContext; name: string; laxnames = false):
-    Err[string] =
+proc parseConfig*(config: Config; dir, buf: Str; warnings: var seq[Str];
+    ctx: JSContext; name: Str; laxnames = false): Err[Str] =
   var cp = initConfigParser(config, dir, ctx, name, laxnames)
   for line in buf.split('\n'):
     if cp.parseConfigLine(line).isErr:
@@ -2141,8 +2179,8 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   warnings.add(cp.warnings)
   ok()
 
-proc openConfig*(dir, dataDir: var string; override: string;
-    warnings: var seq[string]): Opt[AChaFile] =
+proc openConfig*(dir, dataDir: var Str; override: Str; warnings: var seq[Str]):
+    Opt[AChaFile] =
   if override.len > 0:
     if override[0] == '/':
       dir = parentDir(override)
@@ -2156,32 +2194,33 @@ proc openConfig*(dir, dataDir: var string; override: string;
   if dir != "":
     # mainly just to behave sanely in nested invocations
     dataDir = getEnvEmpty("CHA_DATA_DIR", dir)
-    return chafile.afopen(dir / "config.toml", "r")
+    return chafile.afopen(dir / str("config.toml"), "r")
   dir = getEnvEmpty("XDG_CONFIG_HOME")
-  var xdg: string
+  var xdg: Str
   if dir != "":
-    dir = dir / "chawan"
+    dir = dir / str("chawan")
     xdg = dir
   else:
-    xdg = "~/.config/chawan"
+    xdg = str("~/.config/chawan")
     dir = expandPath(xdg)
   let hasXdg = dirExists(dir)
-  if hasXdg and (let fs = chafile.afopen(dir / "config.toml", "r"); fs.isOk):
+  if hasXdg and
+      (let fs = chafile.afopen(dir / str("config.toml"), "r"); fs.isOk):
     let s = getEnvEmpty("XDG_DATA_HOME")
     if s != "":
-      dataDir = s / "chawan"
+      dataDir = s / str("chawan")
     else:
-      dataDir = expandPath("~/.local/share/chawan")
-    if dirExists(expandPath("~/.chawan")):
-      warnings.add("found both ~/.chawan and " & xdg & ", but only " & xdg &
-        " will be used")
+      dataDir = expandPath(str("~/.local/share/chawan"))
+    if dirExists(expandPath(str("~/.chawan"))):
+      warnings.add(initStrM("found both ~/.chawan and ", xdg, ", but only ",
+        xdg, " will be used"))
     return fs
-  dir = expandPath("~/.chawan")
+  dir = expandPath(str("~/.chawan"))
   dataDir = dir
-  let fs = chafile.afopen(dir / "config.toml", "r")
+  let fs = chafile.afopen(dir / str("config.toml"), "r")
   if fs.isOk and hasXdg:
-    warnings.add("found both ~/.chawan and " & xdg &
-      ", but only ~/.chawan will be used")
+    warnings.add(initStrM("found both ~/.chawan and ", xdg,
+      ", but only ~/.chawan will be used"))
   fs
 
 const PageCommands = """
@@ -2419,51 +2458,57 @@ const ConfigInitInt32 = {
 }
 
 const ConfigInitStr = {
-  coVisualHome: "about:chawan",
-  coEditor: "${VISUAL:-${EDITOR:-vi}}",
-  coCopyCmd: "xsel -bi",
-  coPasteCmd: "xsel -bo",
-  coPrependScheme: "https://",
-  coLinkHintChars: "abcdefghijklmnoprstuvxyz",
+  coVisualHome: str("about:chawan"),
+  coEditor: str("${VISUAL:-${EDITOR:-vi}}"),
+  coCopyCmd: str("xsel -bi"),
+  coPasteCmd: str("xsel -bo"),
+  coPrependScheme: str("https://"),
+  coLinkHintChars: str("abcdefghijklmnoprstuvxyz"),
 }
 
 const ConfigInitPath = {
-  coAutoBrowsecap: "browsecap",
-  coAutoMailcap: "mailcap",
-  coBookmark: "$CHA_DATA_DIR/bookmark.md",
-  coHistoryFile: "$CHA_DATA_DIR/history.uri",
-  coTmpdir: "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME",
-  coCookieFile: "$CHA_DATA_DIR/cookies.txt",
-  coDownloadDir: "${TMPDIR:-/tmp}/",
-  coMenuFile: "$CHA_DIR/menu.js"
+  coAutoBrowsecap: str("browsecap"),
+  coAutoMailcap: str("mailcap"),
+  coBookmark: str("$CHA_DATA_DIR/bookmark.md"),
+  coHistoryFile: str("$CHA_DATA_DIR/history.uri"),
+  coTmpdir: str("${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"),
+  coCookieFile: str("$CHA_DATA_DIR/cookies.txt"),
+  coDownloadDir: str("${TMPDIR:-/tmp}/"),
+  coMenuFile: str("$CHA_DIR/menu.js")
 }
 
 const ConfigInitPathSeq = {
   coMailcap: @[
-    "~/.mailcap", "/etc/mailcap", "/usr/etc/mailcap", "/usr/local/etc/mailcap"
+    str("~/.mailcap"), str("/etc/mailcap"), str("/usr/etc/mailcap"),
+    str("/usr/local/etc/mailcap")
   ],
   coMimeTypes: @[
-    "~/.mime.types", "/etc/mime.types", "/usr/etc/mime.types",
-    "/usr/local/etc/mime.types"
+    str("~/.mime.types"), str("/etc/mime.types"), str("/usr/etc/mime.types"),
+    str("/usr/local/etc/mime.types")
   ],
-  coUrimethodmap: @["urimethodmap", "~/.urimethodmap", "/etc/urimethodmap"],
-  coCgiDir: @["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"],
+  coUrimethodmap: @[
+    str("urimethodmap"), str("~/.urimethodmap"), str("/etc/urimethodmap")
+  ],
+  coCgiDir: @[str("cgi-bin"), str("$CHA_LIBEXEC_DIR/cgi-bin")],
 }
 
 const ConfigInitOmnirule = [
-  ("ddg", "/^ddg:/", "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q="),
-  ("br", "/^br:/", "https://search.brave.com/search?q="),
-  ("wk", "/^wk:/", "https://en.wikipedia.org/wiki/Special:Search?search="),
-  ("wd", "/^wd:/",
-    "https://en.wiktionary.org/w/index.php?title=Special:Search&search="),
-  ("ms", "/^ms:/", "https://old-search.marginalia.nu/search?query="),
+  (str("ddg"), str("^ddg:"),
+    str("https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=")),
+  (str("br"), str("^br:"), str("https://search.brave.com/search?q=")),
+  (str("wk"), str("^wk:"),
+    str("https://en.wikipedia.org/wiki/Special:Search?search=")),
+  (str("wd"), str("^wd:"),
+    str("https://en.wiktionary.org/w/index.php?title=Special:Search&search=")),
+  (str("ms"), str("^ms:"),
+    str("https://old-search.marginalia.nu/search?query=")),
 ]
 
 proc omniRewriteCallback(ctx: JSContext; this: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint): JSValue {.cdecl.} =
-  var s: string
+  var s: Str
   ?ctx.fromJS(argv[0], s)
-  ctx.toJS(ConfigInitOmnirule[magic][2] & s.after(':'))
+  ctx.toJS(initStrM(ConfigInitOmnirule[magic][2], s.after(':')))
 
 var configSectionCID {.global.}: JSClassID
 
@@ -2564,17 +2609,17 @@ proc addConfigSections(ctx: JSContext; config: Config): Opt[void] =
     ?ctx.defineProperty(configObj, cstring(s), obj.toJSValue())
   ok()
 
-proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
-  let page = newActionMap(ctx, PageCommands, "")
-  let line = newActionMap(ctx, LineCommands, "writeInputBuffer")
-  let select = newActionMap(ctx, SelectCommands, "")
+proc newConfig*(ctx: JSContext; dir, dataDir: Str): Config =
+  let page = newActionMap(ctx, PageCommands, str(""))
+  let line = newActionMap(ctx, LineCommands, str("writeInputBuffer"))
+  let select = newActionMap(ctx, SelectCommands, str(""))
   let defaultHeaders = newHeaders(hgRequest, {
-    "User-Agent": "chawan",
-    "Accept": "text/html, text/*;q=0.5, */*;q=0.4",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Accept-Language": "en;q=1.0",
-    "Pragma": "no-cache",
-    "Cache-Control": "no-cache"
+    byteStr("User-Agent"): byteStr("chawan"),
+    byteStr("Accept"): byteStr("text/html, text/*;q=0.5, */*;q=0.4"),
+    byteStr("Accept-Encoding"): byteStr("gzip, deflate, br"),
+    byteStr("Accept-Language"): byteStr("en;q=1.0"),
+    byteStr("Pragma"): byteStr("no-cache"),
+    byteStr("Cache-Control"): byteStr("no-cache")
   })
   if page == nil or line == nil or select == nil or defaultHeaders == nil:
     JS_ThrowOutOfMemory(ctx)
@@ -2601,8 +2646,8 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
     for path in it[1]:
       config.strSeqs[it[0]].add(ChaPath(path).unquote(dir).get)
   config.siteconf.put(ConfigRule(
-    s: "downloads",
-    regex: compileMatchRegex("about:downloads").get,
+    s: str("downloads"),
+    regex: compileMatchRegex(str("about:downloads")).get,
     entries: @[ConfigEntry(
       section: csSiteconf,
       opt: coMetaRefresh,
@@ -2649,8 +2694,8 @@ jsClassDef(Config):
       jsmfget("select", csSelect).} =
     config.actionMap[cs]
 
-  proc addOmniRule(ctx: JSContext; config: Config; name: sink string;
-      re: JSValueConst; fun: JSCallback): JSValue {.jsfunc.} =
+  proc addOmniRule(ctx: JSContext; config: Config; name: Str; re: JSValueConst;
+      fun: JSCallback): JSValue {.jsfunc.} =
     var len: cint
     let p = JS_GetRegExpBytecode(ctx, re, len)
     if p == nil:
@@ -2664,7 +2709,8 @@ jsClassDef(Config):
 
   # called at pager init
   proc initCommands(ctx: JSContext; config: Config): Opt[void] {.jsfunc.} =
-    let prop = JS_GetPropertyStr(ctx, ctx.getOpaque().global.value, "cmd")
+    let prop = JS_GetPropertyStr(ctx, ctx.getOpaque().global.value,
+      cstringConst("cmd"))
     if JS_IsException(prop.vc):
       return err()
     var obj: JSObject
@@ -2674,7 +2720,7 @@ jsClassDef(Config):
       let name = k.afterLast('.')
       if name.len < k.len:
         for ss in k.substr(0, k.high - name.len - 1).split('.'):
-          var prop = JS_GetPropertyStr(ctx, objIt.value, cstring(ss))
+          var prop = JS_GetPropertyStr(ctx, objIt.value, ss.toCStringConst())
           if JS_IsUndefined(prop.vc):
             prop = JS_NewObject(ctx)
             ?ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop.vc))
@@ -2696,14 +2742,14 @@ jsClassPublicDef(ActionMap):
 
   proc setter(ctx: JSContext; a: ActionMap; k: DOMString; val: JSValueConst):
       Opt[void] {.jssetprop.} =
-    var dummy: seq[string]
+    var dummy: seq[Str]
     let rk = parseKeyComb(k.toOpenArray(), dummy)
     if rk == "":
       return ok()
     if JS_IsFunction(ctx, val):
       a.addAction(rk, JS_DupValue(ctx, val))
     else:
-      var s: string
+      var s: Str
       ?ctx.fromJS(val, s)
       let val = ?trace(ctx.evalCmdDecl(s))
       a.addAction(rk, val.toJSValue())

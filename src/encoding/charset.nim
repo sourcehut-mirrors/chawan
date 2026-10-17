@@ -5,12 +5,7 @@
 
 import std/algorithm
 
-import js/fromjs
-import js/jstypes
-import js/jsutils
-import js/quickjs
-import js/tojs
-import utils/opt
+import utils/cowstr
 import utils/twtstr
 
 type Charset* = enum
@@ -467,18 +462,26 @@ const NormalizedCharsetMap = {
   "xxbig5": csBig5,
 }
 
-proc normalizeLocale(s: openArray[char]): string =
-  result = ""
+proc normalizeLocale(s: openArray[char]): Str =
+  var buf = initGrowbuf()
   for c in s:
     if uint8(c) > 0x20 and c notin {'_', '-'}:
-      result &= c.toLowerAscii()
+      buf &= c.toLowerAscii()
+  buf.toStr()
 
 const DefaultCharset* = csUtf8
 
-proc cmpCharsetPair(x: (string, Charset); k: string): int =
-  cmpIgnoreCase(x[0], k)
+proc cmpCharsetPair(x: (string, Charset); k: openArray[char]): int =
+  cmpIgnoreCase2(x[0], k)
 
 proc getCharset*(s: openArray[char]): Charset =
+  # getCharset but assumes whitespace has already been stripped
+  let i = CharsetMap.binarySearch(s, cmpCharsetPair)
+  if i < 0:
+    return csUnknown
+  return CharsetMap[i][1]
+
+proc getCharset*(s: Str): Charset =
   ## Return a Charset from the label `s`. This function is equivalent to the
   ## standard "get an encoding from a string label" algorithm:
   ##
@@ -487,18 +490,15 @@ proc getCharset*(s: openArray[char]): Charset =
   ## On failure, csUnknown is returned.
   const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
   let s = s.strip(chars = AsciiWhitespace)
-  let i = CharsetMap.binarySearch(s, cmpCharsetPair)
-  if i < 0:
-    return csUnknown
-  return CharsetMap[i][1]
+  getCharset(s.toOpenArray())
 
-proc getLocaleCharset*(s: string): Charset =
+proc getLocaleCharset*(s: Str): Charset =
   ## Extract a charset from a locale. e.g. returns EUC_JP for the string
   ## LC_ALL=ja_JP.EUC_JP.
   let i = s.find('.')
   if i >= 0 and i < s.high:
     let ss = s.toOpenArray(i + 1, s.high).normalizeLocale()
-    let i = NormalizedCharsetMap.binarySearch(ss, cmpCharsetPair)
+    let i = NormalizedCharsetMap.binarySearch(ss.toOpenArray(), cmpCharsetPair)
     if i < 0:
       return csUnknown
     return NormalizedCharsetMap[i][1]
@@ -508,22 +508,5 @@ proc getLocaleCharset*(s: string): Charset =
   # than any other charset, irrespective of the language. So we just assume
   # UTF-8.
   return DefaultCharset
-
-proc toJS*(ctx: JSContext; charset: Charset): JSValue =
-  if charset == csUnknown:
-    return JS_NULL
-  tojs.toJS(ctx, charset)
-
-proc fromJS*(ctx: JSContext; val: JSValueConst; charset: var Charset): JSCode =
-  if JS_IsNull(val):
-    charset = csUnknown
-  else:
-    var s: USVString
-    ?ctx.fromJS(val, s)
-    charset = getCharset(s.toOpenArray())
-    if charset == csUnknown:
-      JS_ThrowTypeError(ctx, "unknown charset: %s", s.p)
-      return fjErr
-  fjOk
 
 {.pop.}

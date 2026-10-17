@@ -16,9 +16,8 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import utils/refstring
 import server/url
-import utils/twtstr
+import utils/cowstr
 
 # DOMBuilder implementation for Chawan.
 
@@ -94,7 +93,7 @@ proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
   if quirksMode == qmQuirks:
     builder.document.applyQuirksSheet()
 
-proc setEncodingImpl(builder: ChaDOMBuilder; encoding: string):
+proc setEncodingImpl(builder: ChaDOMBuilder; encoding: Str):
     SetEncodingResult =
   if builder.confidence != ccTentative:
     return seContinue
@@ -172,13 +171,14 @@ proc insertBefore(builder: ChaDOMBuilder; parent: ParentNode; child: Node;
   parent.insert(builder.ctx, child, before.asNode, suppressObservers = true)
 
 proc insertCommentImpl(builder: ChaDOMBuilder; parent: ParentNode;
-    text: sink string; before: ParentNode) =
-  let comment = builder.document.newComment(newRefString(text))
+    text: sink Growbuf; before: ParentNode) =
+  let comment = builder.document.newComment(text.toStr())
   builder.insertBefore(parent, comment.asNode, before)
 
 proc appendDocumentTypeImpl(builder: ChaDOMBuilder;
-    name, publicId, systemId: string) =
-  let doctype = builder.document.newDocumentType(name, publicId, systemId)
+    name, publicId, systemId: sink Growbuf) =
+  let doctype = builder.document.newDocumentType(name.toStr(),
+    publicId.toStr(), systemId.toStr())
   builder.insertBefore(builder.document.asParentNode, doctype.asNode,
     ParentNode(nil))
 
@@ -186,19 +186,16 @@ proc insertBeforeImpl(builder: ChaDOMBuilder; parent, child: ParentNode;
     before: ParentNode) =
   builder.insertBefore(parent, child.asNode, before)
 
-proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode;
-    text: sink string; before: ParentNode) =
+proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: sink Str;
+    before: ParentNode) =
   let prevText = parent.lastChildBefore(before.asNode) as Text
   if prevText != nil:
-    if prevText.data.s.len == 0:
-      prevText.data.s = move(text)
-    else:
-      prevText.data &= text
+    prevText.data &= text
     let parent = parent as Element
     if parent != nil:
       parent.invalidate()
   else:
-    let text = builder.document.newText(move(text))
+    let text = builder.document.newText(text)
     if text != nil:
       builder.insertBefore(parent, text.asNode, before)
 

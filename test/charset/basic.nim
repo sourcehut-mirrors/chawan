@@ -7,22 +7,23 @@ import encoding/charset
 import encoding/decoder
 import encoding/decodercore
 import encoding/encoder
+import utils/cowstr
 
-const iroha = "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす"
+const iroha = str("いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす")
 proc testCJK() =
   const css = [
     csShiftJIS, csIso2022JP, csEucJP, csEucKR, csGb18030, csGbk, csBig5, csUtf8
   ]
-  let iroha100 = iroha.repeat(100)
+  let iroha100 = ($iroha).repeat(100)
   for cs in css:
     let sencoded = if cs != csUtf8:
-      iroha.encodeAll(cs)
+      iroha.toOpenArray().encodeAll(cs)
     else:
       iroha
-    let sdecoded = sencoded.decodeAll(cs)
+    let sdecoded = sencoded.toOpenArray().decodeAll(cs)
     assert sdecoded == iroha
     var ctx = initTextDecoderContext(cs)
-    var dec2 = ""
+    var dec2 = initGrowbuf()
     for i in 0 ..< 100:
       for slice in ctx.decode(sencoded.toOpenArrayByte(0, sencoded.high),
           finish = false):
@@ -62,15 +63,15 @@ proc testUTF8Valid() =
   ]
   for s in utf8_valid:
     assert s.toValidUTF8() == s
-    assert s.toValidUTF8() & 'x' == s & 'x'
+    assert $s.toValidUTF8() & 'x' == s & 'x'
     var ctx = initTextDecoderContext(csUtf8, bufLen = 3)
     block:
-      var res = ""
+      var res = initGrowbuf()
       for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
         res &= s
       assert res == s
     for j in 2 .. 10:
-      var res = ""
+      var res = initGrowbuf()
       var i = 0
       while i < s.len:
         for s in ctx.decode(s.toOpenArrayByte(i, min(i + j, s.len) - 1), finish = i + j >= s.len):
@@ -93,14 +94,14 @@ proc testUTF8Invalid() =
     assert (s & 'x').toValidUTF8() == t & 'x'
     block:
       var ctx = initTextDecoderContext(csUtf8, bufLen = 2)
-      var res = ""
+      var res = initGrowbuf()
       for i in 0 ..< s.len:
         for s in ctx.decode([uint8(s[i])], finish = i == s.high):
           res &= s
       assert res == t
     block:
       var ctx = initTextDecoderContext(csUtf8, bufLen = 2)
-      var res = ""
+      var res = initGrowbuf()
       var i = 0
       while i < s.len:
         for s in ctx.decode(s.toOpenArrayByte(i, min(i + 2, s.len) - 1), finish = i + 2 >= s.len):
@@ -137,7 +138,7 @@ proc testUTF16le() =
     s &= "t\0e\0s\0t\0"
     s8 &= "test"
   var ctx = initTextDecoderContext(csUtf16le, bufLen = 32)
-  var res = ""
+  var res = initGrowbuf()
   for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
     res &= s
   assert res == s8
@@ -166,7 +167,7 @@ gyönyörűszép szívemen.
 
 proc testWindows1250() =
   let sencoded = tisztaszivvel.encodeAll(csWindows1250)
-  let sdecoded = sencoded.decodeAll(csWindows1250)
+  let sdecoded = sencoded.toOpenArray().decodeAll(csWindows1250)
   assert sdecoded == tisztaszivvel
 
 const erlkoenig = """
@@ -213,18 +214,18 @@ In seinen Armen, das Kind war tot.
 
 proc testWindows1252() =
   let sencoded = erlkoenig.encodeAll(csWindows1252)
-  let sdecoded = sencoded.decodeAll(csWindows1252)
+  let sdecoded = sencoded.toOpenArray().decodeAll(csWindows1252)
   assert sdecoded == erlkoenig
 
 proc testIso8859_2() =
   let sencoded = tisztaszivvel.encodeAll(csIso8859_2)
-  let sdecoded = sencoded.decodeAll(csIso8859_2)
+  let sdecoded = sencoded.toOpenArray().decodeAll(csIso8859_2)
   assert sdecoded == tisztaszivvel
 
 proc testGetLocaleCharset() =
-  assert getLocaleCharset("ja_JP.EUC_JP") == csEucJP
-  assert getLocaleCharset("ja_JP.UTF-8") == csUtf8
-  assert getLocaleCharset("") == csUtf8
+  assert getLocaleCharset(str("ja_JP.EUC_JP")) == csEucJP
+  assert getLocaleCharset(str("ja_JP.UTF-8")) == csUtf8
+  assert getLocaleCharset(str("")) == csUtf8
 
 proc testShiftJIS() =
   assert "\u2212".encodeAll(csShiftJIS) ==
@@ -232,7 +233,7 @@ proc testShiftJIS() =
 
 proc testUTF8InvalidStream() =
   var ctx = initTextDecoderContext(csUtf8)
-  var res = ""
+  var res = initGrowbuf()
   for slice in ctx.decode("\xc0a".toOpenArrayByte(0, 0), finish = false):
     res &= slice
   assert res == "\uFFFD"
@@ -248,15 +249,15 @@ proc testIso2022JP() =
 proc testGb18030() =
   # surrogate
   let sencoded = "\uD800".encodeAll(csGb18030)
-  let sdecoded = sencoded.decodeAll(csGb18030)
+  let sdecoded = sencoded.toOpenArray().decodeAll(csGb18030)
   assert sdecoded == "\uFFFD\uFFFD\uFFFD"
   # ranges
   let first = "\u0080".encodeAll(csGb18030)
   assert first == "\x81\x30\x81\x30"
-  assert first.decodeAll(csGb18030) == "\u0080"
+  assert first.toOpenArray().decodeAll(csGb18030) == "\u0080"
   let last = "\u{10000}".encodeAll(csGb18030)
   assert last == "\x90\x30\x81\x30"
-  assert last.decodeAll(csGb18030) == "\u{10000}"
+  assert last.toOpenArray().decodeAll(csGb18030) == "\u{10000}"
   assert "\xfe\x39\xfe\x40".decodeAll(csGb18030) == "\uFFFD9\uFA0C"
   # error with ASCII
   assert "\x81\x3a".decodeAll(csGb18030) == "\uFFFD:"

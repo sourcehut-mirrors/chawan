@@ -107,6 +107,7 @@ proc libssh2_sftp_shutdown(sftp: ptr LIBSSH2_SFTP): cint
 proc matchesPattern(s, pat: openArray[char]): bool =
   var i = 0
   for j, c in pat:
+    #TODO ...
     if c == '*':
       while i < s.len:
         if s.toOpenArray(i, s.high).matchesPattern(pat.toOpenArray(j + 1,
@@ -119,16 +120,16 @@ proc matchesPattern(s, pat: openArray[char]): bool =
     inc i
   return true
 
-proc matchesPattern(s: string; pats: openArray[string]): bool =
+proc matchesPattern(s: Str; pats: openArray[Str]): bool =
   for pat in pats:
-    if s.matchesPattern(pat):
+    if s.toOpenArray().matchesPattern(pat.toOpenArray()):
       return true
   return false
 
-proc parseSSHConfig(f: AChaFile; host: string; pubKey, privKey: var string):
+proc parseSSHConfig(f: AChaFile; host: Str; pubKey, privKey: var Str):
     Opt[void] =
   var skipTillNext = false
-  var line = ""
+  var line: Str
   while ?f.readLine(line):
     var i = line.skipBlanks(0)
     if i == line.len or line[i] == '#':
@@ -139,13 +140,13 @@ proc parseSSHConfig(f: AChaFile; host: string; pubKey, privKey: var string):
       i = line.skipBlanks(i + 1)
     if i == line.len or line[i] == '#':
       continue
-    var args = newSeq[string]()
+    var args = newSeq[Str]()
     while i < line.len:
       let isStr = line[i] in {'"', '\''}
       if isStr:
         inc i
       var quot = false
-      var arg = ""
+      var arg = initGrowbuf()
       while i < line.len:
         if not quot:
           if line[i] == '\\':
@@ -158,7 +159,7 @@ proc parseSSHConfig(f: AChaFile; host: string; pubKey, privKey: var string):
         arg &= line[i]
         inc i
       if arg.len > 0:
-        args.add(arg)
+        args.add(arg.toStr())
     if k == "Match": #TODO support this
       skipTillNext = true
     elif k == "Host":
@@ -181,12 +182,11 @@ proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
   discard os.writeLoop("Status: 401\n")
   quit(0)
 
-proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION;
-    host: string) =
+proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: Str) =
   let (user, pass) = cgiAuthorization()
-  let configs = ["/etc/ssh/ssh_config", expandPath("~/.ssh/config")]
-  var pubKey = ""
-  var privKey = ""
+  let configs = [str("/etc/ssh/ssh_config"), expandPath(str("~/.ssh/config"))]
+  var pubKey: Str
+  var privKey: Str
   for config in configs:
     let f = chafile.afopen(config, "r")
     if f.isErr:
@@ -194,13 +194,14 @@ proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION;
     parseSSHConfig(f.get, host, pubKey, privKey)
       .orDie(ceInternalError, "failed to read SSH config")
   if privKey == "":
-    if session.libssh2_userauth_password(cstring(user), cstring(pass)) != 0:
+    if session.libssh2_userauth_password(user.toCString(),
+        pass.toCString()) != 0:
       os.unauthorized(session)
   else:
     if pubKey == "":
-      pubKey = privKey & ".pub"
-    if session.libssh2_userauth_publickey_fromfile(cstring(user),
-        cstring(pubKey), cstring(privKey), cstring(pass)) != 0:
+      pubKey = initStrM(privKey, ".pub")
+    if session.libssh2_userauth_publickey_fromfile(user.toCString(),
+        pubKey.toCString(), privKey.toCString(), pass.toCString()) != 0:
       os.unauthorized(session)
 
 const LIBSSH2_SFTP_ATTR_SIZE = 0x1
@@ -218,9 +219,10 @@ const LIBSSH2_SFTP_S_IFLNK = 0o120000
 # but I'm also getting attrs... the example handles both... guess I'll
 # do the same, just to be sure.
 proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
-    handle: ptr LIBSSH2_SFTP_HANDLE; path: string) =
-  let title = ("Index of " & path).mimeQuote()
-  discard os.writeLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
+    handle: ptr LIBSSH2_SFTP_HANDLE; path: Str) =
+  let title = initStrM("Index of ", path).mimeQuote()
+  discard os.writeLoop(initStrM("Content-Type: text/x-dirlist;title=", title,
+    "\n\n"))
   var buffer {.noinit.}: array[512, char]
   var longentry {.noinit.}: array[512, char]
   while true:
@@ -229,10 +231,8 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
       addr longentry[0], csize_t(longentry.len), attrs)
     if n <= 0:
       break
-    var name = ""
-    for c in buffer.toOpenArray(0, n - 1):
-      name &= c
-    var buf = ""
+    let name = initStr(buffer.toOpenArray(0, n - 1))
+    var buf = initGrowbuf()
     for c in longentry:
       if c == '\0':
         break
@@ -262,9 +262,9 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
       buf &= name
     if (attrs.flags and LIBSSH2_SFTP_ATTR_PERMISSIONS) != 0 and
         (attrs.permissions and LIBSSH2_SFTP_S_IFLNK) != 0 and
-        buf.find(" -> ") == -1:
-      let n = sftpSession.libssh2_sftp_readlink(cstring(path & name),
-        addr buffer[0], cuint(buffer.len))
+        buf.toOpenArray().find(" -> ") == -1:
+      let n = sftpSession.libssh2_sftp_readlink(
+        initStrM(path, name).toCString(), addr buffer[0], cuint(buffer.len))
       if n > 0:
         buf &= " -> "
         for i in 0 ..< n:
@@ -273,8 +273,9 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
     if os.writeLoop(buf).isErr:
       break
 
-proc readFile(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP; path: string) =
-  let handle = sftpSession.libssh2_sftp_open(cstring(path), LIBSSH2_FXF_READ, 0)
+proc readFile(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP; path: Str) =
+  let handle = sftpSession.libssh2_sftp_open(path.toCString(),
+    LIBSSH2_FXF_READ, 0)
   var attrs: LIBSSH2_SFTP_ATTRIBUTES
   if handle == nil or libssh2_sftp_fstat(handle, attrs) != 0:
     discard os.writeLoop("""Status: 404
@@ -295,25 +296,25 @@ Content-Type: text/html
 
 # Fingerprint validation.
 # Yes, this is actually how you're supposed to do this.
-proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION;
-    host, port: string; hostsPath: var string): ptr LIBSSH2_KNOWNHOSTS =
-  hostsPath = ""
+proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION; host, port: Str;
+    hostsPath: var Str): ptr LIBSSH2_KNOWNHOSTS =
+  hostsPath = str("")
   if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY") == "1":
     return nil
   let hosts = libssh2_knownhost_init(session)
   if hosts == nil:
     cgiDie(ceInternalError, "failed to init knownhost")
   hostsPath = getEnvEmpty("CHA_SSH_KNOWN_HOSTS",
-    expandPath("~/.ssh/known_hosts"))
-  discard hosts.libssh2_knownhost_readfile(cstring(hostsPath),
+    expandPath(str("~/.ssh/known_hosts")))
+  discard hosts.libssh2_knownhost_readfile(hostsPath.toCString(),
     LIBSSH2_KNOWNHOST_FILE_OPENSSH)
   var store: ptr libssh2_knownhost = nil
   let name = if port == "22":
     host
   elif host[0] == '[':
-    host & ':' & port
+    initStrM(host, ':', port)
   else:
-    '[' & host & "]:" & port
+    initStrM('[', host, "]:", port)
   var found = false
   while not found and libssh2_knownhost_get(hosts, addr store, store) == 0:
     if store == nil or store.name == nil:
@@ -335,7 +336,7 @@ proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION;
   return hosts
 
 proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
-    hosts: ptr LIBSSH2_KNOWNHOSTS; host, port, hostsPath: string) =
+    hosts: ptr LIBSSH2_KNOWNHOSTS; host, port, hostsPath: Str) =
   var len: csize_t
   var t: cint
   let fingerprint = session.libssh2_session_hostkey(len, t)
@@ -343,10 +344,10 @@ proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
     cgiDie(ceInternalError, "missing fingerprint")
   if t == LIBSSH2_HOSTKEY_TYPE_UNKNOWN:
     cgiDie(ceInternalError, "unknown host key type")
-  let port = cint(parseIntP(port).get(-1))
+  let port = cint(parseIntP(port.toOpenArray()).get(-1))
   var knownhost: ptr libssh2_knownhost
   let hostBit = (t + 1) shl LIBSSH2_KNOWNHOST_KEY_SHIFT # wtf?
-  let check = hosts.libssh2_knownhost_checkp(cstring(host), port,
+  let check = hosts.libssh2_knownhost_checkp(host.toCString(), port,
     fingerprint, len, LIBSSH2_KNOWNHOST_TYPE_PLAIN or
     LIBSSH2_KNOWNHOST_KEYENC_RAW or hostBit, knownhost)
   if check == LIBSSH2_KNOWNHOST_CHECK_FAILURE:
@@ -354,21 +355,21 @@ proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
   elif check == LIBSSH2_KNOWNHOST_CHECK_MATCH:
     discard
   elif check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND:
-    discard os.writeLoop("""
+    discard os.writeLoop(initStrM("""
 Content-Type: text/html
 
 <!DOCTYPE html>
 <title>Unknown host</title>
 <h1>Unknown host</h1>
 <p>
-Host not found in known_hosts at """ & hostsPath & """.
+Host not found in known_hosts at """, hostsPath, """.
 <p>
 Please try to connect to the server once with SSH:
-ssh """ & host & " -p " & $port)
+ssh """, host, " -p ", port))
     quit(1)
   else:
     assert check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH
-    discard os.writeLoop("""
+    discard os.writeLoop(initStrM("""
 Content-Type: text/html
 
 <!DOCTYPE html>
@@ -379,7 +380,7 @@ The fingerprint received from the server does not match the stored
 fingerprint.  Somebody may be tampering with your connection.
 <p>
 If you are sure that this is not a man-in-the-middle attack,
-please remove this host from """ & hostsPath & ".")
+please remove this host from """, hostsPath, '.'))
     quit(1)
   hosts.libssh2_knownhost_free()
 
@@ -387,17 +388,15 @@ proc main*() =
   if getArgvCount() != 4:
     cgiDie(ceInternalError, "usage: sftp [host] [port] [path]")
   let host = getArgv(1)
-  var port = getArgv(2)
-  if port == "":
-    port = "22"
-  let opath = getArgv(3)
-  let path = if opath == "": "/" else: percentDecode(opath)
+  let port = getArgvOrDefault(2, str("22"))
+  let opath = getArgvOrDefault(3, str("/"))
+  let path = percentDecode(opath)
   let os = newPosixStream(STDOUT_FILENO)
   let ps = connectSocket(host, port).orDie()
   if libssh2_init(0) < 0:
     cgiDie(ceInternalError)
   let session = libssh2_session_init()
-  var hostsPath: string
+  var hostsPath: Str
   let hosts = os.setMethod(session, host, port, hostsPath)
   if session.libssh2_session_handshake(ps.fd) < 0:
     cgiDie(ceInternalError, "handshake failed")
@@ -406,10 +405,10 @@ proc main*() =
   os.authenticate(session, host)
   enterNetworkSandbox()
   let sftpSession = libssh2_sftp_init(session)
-  let handle = sftpSession.libssh2_sftp_opendir(cstring(path))
+  let handle = sftpSession.libssh2_sftp_opendir(path.toCString())
   if handle != nil:
     if path[^1] != '/':
-      discard os.writeLoop("Status: 301\nLocation: " & path & "/\n")
+      discard os.writeLoop(initStrM("Status: 301\nLocation: ", path, "/\n"))
       quit(0)
     os.readDir(sftpSession, handle, path)
   else:

@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-import utils/chaos
+import utils/twtstr
 
 {.used.}
 # used so that we can import it from quickjs.nim

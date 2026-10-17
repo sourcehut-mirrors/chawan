@@ -28,11 +28,6 @@ proc testFind() =
   assert "test".startsWith("t")
   assert "test".startsWith("")
 
-  assert "a\tb ".containsToken("a")
-  assert "a\tb ".containsToken("")
-  assert "\na\tb ".containsToken("")
-  assert not "ab".containsToken("")
-
   assert "a b c/d".untilLast('/') == "a b c"
   assert "a b c/".untilLast('/') == "a b c"
   assert "a b c".untilLast('/') == "a b c"
@@ -44,29 +39,9 @@ proc testStrip() =
   assert " test ".strip(leading = false) == " test"
   assert " \tes\t ".strip(chars = {' '}) == "\tes\t"
 
-proc testDelete() =
-  var x = "test"
-  x.delete(1..4)
-  assert x == "t"
-
-proc testContentType() =
-  var s = "text/html; a = b"
-  assert s.getContentTypeAttr("a") == "b"
-  s.setContentTypeAttr("a", "test")
-  assert s == "text/html; a =test"
-  assert s.getContentTypeAttr("a") == "test"
-  s.setContentTypeAttr("b", "test2")
-  assert s.getContentTypeAttr("b") == "test2"
-  assert "text/html; a=b; c=d".getContentTypeAttr("c") == "d"
-  assert "text/html;a=b".getContentTypeAttr("a") == "b"
-  assert "text/html;aa=b;a=c".getContentTypeAttr("a") == "c"
-  assert "text/html;a=\"b\"".getContentTypeAttr("a") == "b"
-
 proc run() =
   testFind()
   testStrip()
-  testDelete()
-  testContentType()
 
 static:
   run()

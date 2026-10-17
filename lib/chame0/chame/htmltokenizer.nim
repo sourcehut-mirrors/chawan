@@ -8,6 +8,7 @@ import entity_gen
 import tags
 
 import html/catom
+import utils/cowstr
 import utils/twtstr
 
 type TokenizerState* = enum
@@ -46,7 +47,7 @@ type
     tfQuirks, tfSelfClosing
 
   Tokenizer* = object
-    tmp: string # temporary buffer (mentioned by the standard, but also used
+    tmp: Growbuf # temporary buffer (mentioned by the standard, but also used
                 # for attribute names/values and character data)
     startTag*: TagType # last start tag
     attrName: CAtom # atom representing attrn after the attribute name is closed
@@ -69,8 +70,8 @@ type
     entityNameIdx: int8 # index in entity.name
     entityMatchLen: int8 # last matching entity name length
     attrs*: seq[AttrData]
-    charbuf*: string # flushed chars from tmp
-    tagNameBuf*: string # buffer for storing the tag name & doctype name
+    charbuf*: Growbuf # flushed chars from tmp
+    tagNameBuf*: Growbuf # buffer for storing the tag name & doctype name
     inputBufIdx*: int # last character consumed in input buf
 
   TokenType* = enum
@@ -264,10 +265,10 @@ proc flushAttr(tok: var Tokenizer) =
     tok.attrs.add(AttrData(
       name: move(tok.attrName),
       namespace: tok.attrNamespace.view(),
-      value: move(tok.tmp)
+      value: move(tok.tmp).toStr()
     ))
   else:
-    tok.tmp = ""
+    tok.tmp.setLen(0)
 
 proc flushAttrs(tok: var Tokenizer) =
   tok.attrs.sortAttrs()
@@ -281,7 +282,7 @@ proc eatStr(tok: var Tokenizer; c: char; s: string; ibuf: openArray[char]):
     return esrFail
   tok.tmp &= c
   if tok.tmp.len == s.len:
-    tok.tmp = ""
+    tok.tmp.setLen(0)
     return esrSuccess
   esrNext
 
@@ -291,7 +292,7 @@ proc eatStrNoCase(tok: var Tokenizer; c: char; s: string;
     return esrFail
   tok.tmp &= c
   if tok.tmp.len == s.len:
-    tok.tmp = ""
+    tok.tmp.setLen(0)
     return esrSuccess
   esrNext
 
@@ -337,7 +338,7 @@ const AdjustedAttrNames = [
   "xChannelSelector", "yChannelSelector", "zoomAndPan"
 ]
 
-proc cmpAttrName(attr: tuple[name: string; namespace: Namespace]; s: string):
+proc cmpAttrName(attr: tuple[name: string; namespace: Namespace]; s: Growbuf):
     int =
   cmp(attr.name, s)
 
@@ -350,19 +351,21 @@ proc adjustAttrName(tok: var Tokenizer): CAtom =
     tok.attrNamespace = nsNone
     if tok.tagNamespace == nsMathML:
       if tok.tmp == "definitionurl":
-        return "definitionURL".toAtom()
+        tok.tmp.setLen(0)
+        return str("definitionURL").toAtom()
     else: # SVG
-      let i = AdjustedAttrNames.binarySearch(tok.tmp, cmpIgnoreCase)
+      let i = AdjustedAttrNames.binarySearch(tok.tmp, cmpIgnoreCase3)
       if i >= 0:
+        tok.tmp.setLen(0)
         return AdjustedAttrNames[i].toAtom()
-  tok.tmp.toAtom()
+  move(tok.tmp).toStr().toAtom()
 
 proc flushStartTagName(tok: var Tokenizer) =
   if tok.namespace != nsHTML and not tok.mathMLIntegrationPoint and
       not tok.htmlIntegrationPoint:
     tok.tagNamespace = tok.namespace
     let i = if tok.namespace == nsSVG:
-      AdjustedTagNames.binarySearch(tok.tagNameBuf, cmpIgnoreCase)
+      AdjustedTagNames.binarySearch(tok.tagNameBuf, cmpIgnoreCase3)
     else:
       -1
     if i >= 0:
@@ -384,7 +387,8 @@ proc flushEndTagName(tok: var Tokenizer) =
 
 proc emitTmp(tok: var Tokenizer) =
   tok.chartok = ttCharacter
-  tok.tmp = "</" & tok.tmp
+  let tmp = move(tok.tmp)
+  tok.tmp = initGrowbufM("</", tmp)
 
 template startTagMatches(tok: Tokenizer): bool =
   tok.startTag == tok.tagname.toTagType()
@@ -481,7 +485,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       case c
       of '!':
         flush_chars
-        tok.tmp = ""
+        tok.tmp = initGrowbuf()
         switch_state tsMarkupDeclarationOpen
       of '/': switch_state tsEndTagOpen
       of AsciiAlpha:
@@ -489,12 +493,12 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
         tok.t = ttStartTag
         tok.flags = {}
         tok.attrs.setLen(0)
-        tok.tagNameBuf = $c.toLowerAscii()
+        tok.tagNameBuf = initGrowbuf(c.toLowerAscii())
         # note: was reconsume
         switch_state tsTagName
       of '?':
         flush_chars
-        tok.tagNameBuf = "?"
+        tok.tagNameBuf = initGrowbuf('?')
         # note: was reconsume
         switch_state tsBogusComment
       else:
@@ -506,13 +510,13 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       of AsciiAlpha:
         flush_chars
         tok.t = ttEndTag
-        tok.tagNameBuf = $c.toLowerAscii()
+        tok.tagNameBuf = initGrowbuf(c.toLowerAscii())
         # note: was reconsume
         switch_state tsTagName
       of '>': switch_state tsData
       else:
         flush_chars
-        tok.tagNameBuf = ""
+        tok.tagNameBuf = initGrowbuf()
         reconsume_in tsBogusComment
 
     of tsTagName:
@@ -543,7 +547,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       case c
       of AsciiAlpha:
         tok.t = ttEndTag
-        tok.tagNameBuf = $c.toLowerAscii()
+        tok.tagNameBuf = initGrowbuf(c.toLowerAscii())
         tok.tmp &= c
         # note: was reconsume
         switch_state tsRcdataEndTagName
@@ -559,21 +563,21 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       of AsciiWhitespace:
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsBeforeAttributeName
         else:
           anything_else
       of '/':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsSelfClosingStartTag
         else:
           anything_else
       of '>':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsData
           emit ttEndTag
         else:
@@ -597,7 +601,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       case c
       of AsciiAlpha:
         tok.t = ttEndTag
-        tok.tagNameBuf = $c.toLowerAscii()
+        tok.tagNameBuf = initGrowbuf(c.toLowerAscii())
         tok.tmp &= c
         # note: was reconsume
         switch_state tsRawtextEndTagName
@@ -613,21 +617,21 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       of AsciiWhitespace:
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsBeforeAttributeName
         else:
           anything_else
       of '/':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsSelfClosingStartTag
         else:
           anything_else
       of '>':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsData
           emit ttEndTag
         else:
@@ -654,7 +658,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       case c
       of AsciiAlpha:
         tok.t = ttEndTag
-        tok.tagNameBuf = $c.toLowerAscii()
+        tok.tagNameBuf = initGrowbuf(c.toLowerAscii())
         tok.tmp &= c
         # note: was reconsume
         switch_state tsScriptDataEndTagName
@@ -670,21 +674,21 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       of AsciiWhitespace:
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsBeforeAttributeName
         else:
           anything_else
       of '/':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsSelfClosingStartTag
         else:
           anything_else
       of '>':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsData
           emit ttEndTag
         else:
@@ -754,7 +758,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       if c in AsciiAlpha:
         flush_chars
         tok.t = ttEndTag
-        tok.tagNameBuf = $c.toLowerAscii()
+        tok.tagNameBuf = initGrowbuf(c.toLowerAscii())
         tok.tmp &= c
         # note: was reconsume
         switch_state tsScriptDataEscapedEndTagName
@@ -770,21 +774,21 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       of AsciiWhitespace:
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsBeforeAttributeName
         else:
           anything_else
       of '/':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsSelfClosingStartTag
         else:
           anything_else
       of '>':
         tok.flushEndTagName()
         if tok.startTagMatches():
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           switch_state tsData
           emit ttEndTag
         else:
@@ -872,7 +876,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
         tok.flushAttrs()
         emit_tok
       else:
-        tok.tmp = ""
+        tok.tmp = initGrowbuf()
         if c == '\0':
           tok.tmp &= "\uFFFD"
         else:
@@ -883,11 +887,10 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       case c
       of AsciiWhitespace, '/', '>', '=':
         if tok.tagNamespace == nsNone:
-          tok.attrName = tok.tmp.toAtom()
+          tok.attrName = move(tok.tmp).toStr().toAtom()
           tok.attrNamespace = nsNone
         else:
           tok.attrName = tok.adjustAttrName()
-        tok.tmp = ""
         if c == '=':
           switch_state tsBeforeAttributeValue
         else:
@@ -994,7 +997,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
     of tsMarkupDeclarationOpen:
       case tok.eatStr(c, "--", ibuf)
       of esrSuccess:
-        tok.tagNameBuf = ""
+        tok.tagNameBuf = initGrowbuf()
         state = tsCommentStart
       of esrNext: discard
       of esrFail:
@@ -1008,7 +1011,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
             if tok.namespace != nsHTML:
               switch_state tsCdataSection
             else:
-              tok.tagNameBuf = "[CDATA["
+              tok.tagNameBuf = initGrowbuf("[CDATA[")
               switch_state tsBogusComment
           of esrNext: discard
           of esrFail:
@@ -1113,23 +1116,23 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       case c
       of AsciiWhitespace: discard
       of '\0':
-        tok.tagNameBuf = "\uFFFD"
+        tok.tagNameBuf = initGrowbuf("\uFFFD")
         tok.flags = {}
         switch_state tsDoctypeName
       of '>':
-        tok.tagNameBuf = ""
+        tok.tagNameBuf = initGrowbuf()
         tok.flags = {tfQuirks}
         switch_state tsData
         emit_tok
       else:
-        tok.tagNameBuf = $c.toLowerAscii()
+        tok.tagNameBuf = initGrowbuf(c.toLowerAscii())
         tok.flags = {}
         switch_state tsDoctypeName
 
     of tsDoctypeName:
       case c
       of AsciiWhitespace:
-        tok.tmp = ""
+        tok.tmp = initGrowbuf()
         switch_state tsAfterDoctypeName
       of '>':
         switch_state tsData
@@ -1148,7 +1151,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
           switch_state tsAfterDoctypeSystemKeyword
         of esrNext: discard
         of esrFail:
-          tok.tmp = ""
+          tok.tmp = initGrowbuf()
           case c
           of AsciiWhitespace: discard
           of '>':
@@ -1420,7 +1423,7 @@ proc finish*(tok: var Tokenizer): TokenizeResult =
   of tsDoctype, tsBeforeDoctypeName:
     tok.t = ttDoctype
     tok.flags = {tfQuirks}
-    tok.tagNameBuf = ""
+    tok.tagNameBuf = initGrowbuf()
     return trEmit
   of tsDoctypeName, tsAfterDoctypeName, tsAfterDoctypePublicKeyword,
       tsBeforeDoctypePublicIdentifier, tsDoctypePublicIdentifierQuoted,

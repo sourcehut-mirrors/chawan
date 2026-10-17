@@ -2,8 +2,8 @@
 
 #TODO handle OOM
 
-import js/constcharp
 import js/quickjs
+import utils/cowstr
 
 type
   JSPropertyEnumArray* = ptr UncheckedArray[JSPropertyEnum]
@@ -55,7 +55,7 @@ proc add*(this: var JSPropertyEnumList; val: uint32) =
   let atom = JS_NewAtomUInt32(this.ctx, val)
   this.add(atom)
 
-proc add*(this: var JSPropertyEnumList; val: string) =
+proc add*(this: var JSPropertyEnumList; val: Str) =
   let atom = JS_NewAtomLen(this.ctx, val.toCStringConst, csize_t(val.len))
   this.add(atom)
 
@@ -63,7 +63,7 @@ proc incl*(this: var JSPropertyEnumList; val: uint32) =
   let atom = JS_NewAtomUInt32(this.ctx, val)
   this.incl(atom)
 
-proc incl*(this: var JSPropertyEnumList; val: string) =
+proc incl*(this: var JSPropertyEnumList; val: Str) =
   let atom = JS_NewAtomLen(this.ctx, val.toCStringConst, csize_t(val.len))
   this.incl(atom)
 

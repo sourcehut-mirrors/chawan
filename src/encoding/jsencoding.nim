@@ -2,7 +2,6 @@
 
 import encoding/charset
 import encoding/decoder
-import js/constcharp
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -10,8 +9,8 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/cowstr
 import utils/opt
-import utils/twtstr
 
 type
   JSTextDecoderObj = object
@@ -32,8 +31,8 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
     fatal {.jsdefault.}: bool
     ignoreBOM {.jsdefault.}: bool
 
-  proc newJSTextDecoder(ctx: JSContext; ctor: JSValueConst; label = "utf-8";
-      options = TextDecoderOptions()): JSValue {.jsctor2.} =
+  proc newJSTextDecoder(ctx: JSContext; ctor: JSValueConst;
+      label = str("utf-8"); options = TextDecoderOptions()): JSValue {.jsctor2.} =
     let encoding = getCharset(label)
     if encoding in {csUnknown, csReplacement}:
       return JS_ThrowRangeError(ctx, "invalid encoding label")
@@ -45,8 +44,8 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
       encoding: encoding
     ), ctor)
 
-  proc encoding(this: JSTextDecoder): string {.jsfget.} =
-    return ($this[].encoding).toLowerAscii()
+  proc encoding(this: JSTextDecoder): Str {.jsfget.} =
+    return this[].encoding.toStr().toLowerAscii()
 
   proc fatal(this: JSTextDecoder): bool {.jsfget.} =
     return this.errorMode == demFatal
@@ -61,7 +60,7 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
       this.tdctx = initTextDecoderContext(this[].encoding, this.errorMode)
       this.bomSeen = false
     this.stream = options.stream
-    var oq = ""
+    var oq = initGrowbuf()
     let stream = this.stream
     if input != nil:
       for chunk in this.tdctx.decode(input.toOpenArray(ctx), not stream):
@@ -72,7 +71,7 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
     if this.tdctx.failed:
       this.tdctx.failed = false
       return JS_ThrowTypeError(ctx, "failed to decode string")
-    return JS_NewStringLen(ctx, oq.toCStringConst, csize_t(oq.len))
+    return ctx.toJS(oq)
 
 # TextEncoder
 proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
@@ -89,11 +88,11 @@ jsClassRaw(TextEncoderDef, "TextEncoder"):
   proc encoding(ctx: JSContext; this: JSTextEncoder): JSValue {.jsfget.} =
     return ctx.toJS("utf-8")
 
-  proc encode(this: JSTextEncoder; input = ""): JSArrayBufferViewInit
+  proc encode(this: JSTextEncoder; input = str("")): JSArrayBufferViewInit
       {.jsfunc.} =
     let p = if input.len > 0:
       let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
-      copyMem(buf, unsafeAddr input[0], input.len)
+      copyMem(buf, input.toCString(), input.len)
       buf
     else:
       nil

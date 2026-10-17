@@ -7,6 +7,7 @@ import std/algorithm
 import html/catom
 import htmltokenizer
 import tags
+import utils/cowstr
 import utils/twtstr
 
 # Heavily inspired by html5ever's TreeSink design.
@@ -59,7 +60,7 @@ type
     scripting: bool
     isIframeSrcdoc: bool
     activeFormatting: seq[Formatting[Handle]] # nil => marker
-    pendingTableChars: string
+    pendingTableChars: Growbuf
 
   InsertionLocation[Handle] = object
     inside: Handle
@@ -137,7 +138,7 @@ proc setQuirksMode[Handle](parser: var HTML5Parser[Handle];
   parser.quirksMode = mode
   parser.dombuilder.toDOMBuilderImpl().setQuirksModeImpl(mode)
 
-proc setEncoding(parser: var HTML5Parser; cs: string): SetEncodingResult =
+proc setEncoding(parser: var HTML5Parser; cs: Str): SetEncodingResult =
   mixin setEncodingImpl
   return parser.dombuilder.toDOMBuilderImpl().setEncodingImpl(cs)
 
@@ -182,7 +183,7 @@ proc insertCommentImpl[Handle](parser: var HTML5Parser[Handle];
     move(parser.tok.tagNameBuf), before)
 
 proc appendDocumentType[Handle](parser: HTML5Parser[Handle];
-    name, publicId, systemId: string) =
+    name, publicId, systemId: sink Growbuf) =
   mixin appendDocumentTypeImpl
   parser.dombuilder.toDOMBuilderImpl().appendDocumentTypeImpl(name, publicId,
     systemId)
@@ -193,7 +194,7 @@ proc insertBefore[Handle](parser: HTML5Parser[Handle];
   parser.dombuilder.toDOMBuilderImpl().insertBeforeImpl(parent, child, before)
 
 proc insertText[Handle](parser: HTML5Parser[Handle]; parent: Handle;
-    text: sink string; before: Handle) =
+    text: sink Str; before: Handle) =
   mixin insertTextImpl
   parser.dombuilder.toDOMBuilderImpl().insertTextImpl(parent, move(text),
     before)
@@ -548,17 +549,20 @@ proc insertHTMLElementPop[Handle](parser: var HTML5Parser[Handle]) =
   discard parser.insertHTMLElement()
   discard parser.popElement()
 
-proc insertCharacter(parser: var HTML5Parser; data: sink string) =
+proc insertCharacter(parser: var HTML5Parser; data: sink Str) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside != parser.getDocument():
     parser.insertText(location.inside, move(data), location.before)
+
+proc insertCharacter(parser: var HTML5Parser; data: sink Growbuf) =
+  parser.insertCharacter(data.toStr())
 
 proc insertCharbuf(parser: var HTML5Parser) =
   parser.insertCharacter(move(parser.tok.charbuf))
 
 proc insertWhitespace(parser: var HTML5Parser) =
   var buf = move(parser.tok.charbuf)
-  var s = ""
+  var s = initGrowbuf()
   var j = 0
   for i in 0 ..< buf.len:
     let c = buf[i]
@@ -574,7 +578,7 @@ proc insertWhitespace(parser: var HTML5Parser) =
   parser.tok.charbuf = move(buf)
 
 proc insertInitialWhitespace(parser: var HTML5Parser) =
-  var s = ""
+  var s = initGrowbuf()
   var i = 0
   while i < parser.tok.charbuf.len:
     let c = parser.tok.charbuf[i]
@@ -675,7 +679,7 @@ const PublicIdentifierStartsWithLimited = [
   "-//W3C//DTD XHTML 1.0 Transitional//"
 ]
 
-proc quirksConditions(name, pubid, sysid: string): bool =
+proc quirksConditions(name, pubid, sysid: Growbuf): bool =
   if name != "html":
     return true
   if sysid == "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd":
@@ -693,7 +697,7 @@ proc quirksConditions(name, pubid, sysid: string): bool =
           return true
   return false
 
-proc limitedQuirksConditions(pubid, sysid: string): bool =
+proc limitedQuirksConditions(pubid, sysid: Growbuf): bool =
   for id in PublicIdentifierStartsWithLimited:
     if pubid.startsWithIgnoreCase(id):
       return true
@@ -826,21 +830,22 @@ proc clearActiveFormattingTillMarker(parser: var HTML5Parser) =
 
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
-proc until(s: string; c1, c2: char; starti: int): string =
-  result = ""
+proc until(s: Str; c1, c2: char; starti: int): Str =
+  var res = initGrowbuf()
   for i in starti ..< s.len:
     let c = s[i]
     if c == c1 or c == c2:
       break
-    result &= c
+    res &= c
+  res.toStr()
 
-proc extractEncFromMeta(s: string): string =
+proc extractEncFromMeta(s: Str): Str =
   var i = 0
   while true:
     var j = 0
     while j < 7:
       if i >= s.len:
-        return "" # "charset" not found
+        return str("") # "charset" not found
       let cc = s[i].toLowerAscii()
       if cc == "charset"[j]:
         inc j
@@ -856,11 +861,11 @@ proc extractEncFromMeta(s: string): string =
     break
   inc i
   if i >= s.len:
-    return ""
+    return str("")
   if s[i] in {'"', '\''}:
     var s2 = s.until('"', '\'', i + 1)
     if s2.len == 0 or s2[^1] != s[i]:
-      return ""
+      return str("")
     return move(s2)
   return s.until(';', ' ', i)
 
@@ -1057,20 +1062,24 @@ proc processInitial[Handle](parser: var HTML5Parser[Handle]):
     anythingElse = true
   of ttDoctype:
     var name = move(parser.tok.tagNameBuf)
-    var pubid = ""
-    var sysid = ""
+    var pubid = initGrowbuf()
+    var sysid = initGrowbuf()
     if (let i = name.find('\0'); i >= 0):
-      pubid = name.substr(i + 1)
+      pubid = initGrowbufSink(name.substr(i + 1))
       name.setLen(i)
     if (let i = pubid.find('\0'); i >= 0):
-      sysid = pubid.substr(i + 1)
+      sysid = initGrowbufSink(pubid.substr(i + 1))
       pubid.setLen(i)
+    let quirks = if tfQuirks in parser.tok.flags or
+        quirksConditions(name, pubid, sysid):
+      qmQuirks
+    elif limitedQuirksConditions(pubid, sysid):
+      qmLimitedQuirks
+    else:
+      qmNoQuirks
     parser.appendDocumentType(name, pubid, sysid)
-    if not parser.isIframeSrcdoc:
-      if tfQuirks in parser.tok.flags or quirksConditions(name, pubid, sysid):
-        parser.setQuirksMode(qmQuirks)
-      elif limitedQuirksConditions(pubid, sysid):
-        parser.setQuirksMode(qmLimitedQuirks)
+    if not parser.isIframeSrcdoc and quirks != qmNoQuirks:
+      parser.setQuirksMode(quirks)
     parser.insertionMode = imBeforeHtml
   else:
     anythingElse = true
@@ -1617,7 +1626,7 @@ proc processInTable[Handle](parser: var HTML5Parser[Handle]):
       ttTable, ttTbody, ttTfoot, ttThead, ttTr
     }
     if parser.getTagType(parser.currentNode) in CanHaveText:
-      parser.pendingTableChars = ""
+      parser.pendingTableChars = initGrowbuf()
       parser.pendingTableCharsWhitespace = true
       parser.oldInsertionMode = parser.insertionMode
       parser.insertionMode = imInTableText
@@ -2123,7 +2132,7 @@ proc processInForeign[Handle](parser: var HTML5Parser[Handle]):
     ParseChunkResult =
   let tokType = parser.tok.t
   case tokType
-  of ttNull: parser.insertCharacter("\uFFFD")
+  of ttNull: parser.insertCharacter(str("\uFFFD"))
   of ttCharacter, ttWhitespace:
     parser.insertCharbuf()
     if tokType == ttCharacter:

@@ -18,6 +18,7 @@ import io/poll
 import js/jsref
 import server/loaderiface
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/strwidth
 import utils/twtstr
@@ -150,7 +151,7 @@ type
     canvas: seq[FixedCell]
     kittyImagesToClear: seq[uint] # Kitty only; vector of image ids
     lineDamage: seq[int]
-    title: string # current title
+    title: Str # current title
     pos: tuple[pid, x, y: int]
     scrollTodo: int # lines to scroll (negative = up, positive = down)
     scrollBottom: int # last line of currently set scroll area (-1 if reset)
@@ -227,7 +228,7 @@ type
     # stack and restart as soon as we receive all responses to the previous
     # query.
     queryStateStack: seq[QueryState]
-    buf: string # string buffer
+    buf: Growbuf # string buffer
     keyIdx: int # index into string buffer for none/backtrack/bracket states
 
   InputEventType* = enum
@@ -477,33 +478,33 @@ const QueryXtermAllowedOps = OSC & "60" & ST
 const QueryXtermWindowOps = OSC & "61;allowWindowOps" & ST
 
 # DEC set
-template DECSET(s: varargs[string, `$`]): string =
-  CSI & '?' & s.join(';') & 'h'
+template DECSET(s: string): string =
+  CSI & '?' & s & 'h'
 
 # DEC reset
-template DECRST(s: varargs[string, `$`]): string =
-  CSI & '?' & s.join(';') & 'l'
+template DECRST(s: string): string =
+  CSI & '?' & s & 'l'
 
 # Special graphics
 const SetSpecialGraphics = "\e(0"
 const ResetSpecialGraphics = "\e(B"
 
 # alt screen
-const SetAltScreen = DECSET(1049)
-const ResetAltScreen = DECRST(1049)
+const SetAltScreen = DECSET("1049")
+const ResetAltScreen = DECRST("1049")
 
 # mouse tracking
-const SetSGRMouse = DECSET(1002, 1006)
-const ResetSGRMouse = DECRST(1002, 1006)
+const SetSGRMouse = DECSET("1002;1006")
+const ResetSGRMouse = DECRST("1002;1006")
 
-const SetBracketedPaste = DECSET(2004)
-const ResetBracketedPaste = DECRST(2004)
+const SetBracketedPaste = DECSET("2004")
+const ResetBracketedPaste = DECRST("2004")
 const BracketedPasteStart* = CSI & "200~"
 const BracketedPasteEnd* = CSI & "201~"
 
 # show/hide cursor
-const ShowCursor = DECSET(25)
-const HideCursor = DECRST(25)
+const ShowCursor = DECSET("25")
+const HideCursor = DECRST("25")
 
 # application program command
 const APC = "\e_"
@@ -688,6 +689,9 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
 
 proc write(term: Terminal; c: char): Opt[void] =
   term.write([c])
+
+proc write(term: Terminal; buf: Growbuf): Opt[void] =
+  term.write(buf.toOpenArray())
 
 proc readChar(term: Terminal): Opt[char] =
   if term.ibufn == term.ibufLen:
@@ -1061,7 +1065,7 @@ proc parseOSCNumSemi(term: Terminal; c: char): EscParseChunkResult =
   case c
   of ':':
     let rgb = term.eparser.buf == "rgb"
-    term.eparser.buf = ""
+    term.eparser.buf = initGrowbuf()
     if not rgb:
       term.eparser.state = esSkipToST
     else:
@@ -1069,7 +1073,7 @@ proc parseOSCNumSemi(term: Terminal; c: char): EscParseChunkResult =
   of '\a', '\e':
     let state = term.eparser.state
     let i = if state == esOSC4SemiNum: 1 else: 0
-    term.eparser.buf = ""
+    term.eparser.buf = initGrowbuf()
     discard term.eparser.parseST(c)
     if term.eparser.nums.len == i + 3:
       let n = term.eparser.nums[0]
@@ -1105,7 +1109,7 @@ proc parseOSC60Semi(term: Terminal; c: char) =
         term.osc52Copy = true
       if term.config{"osc52Primary"}.isNone:
         term.osc52Primary = true
-    term.eparser.buf = ""
+    term.eparser.buf = initGrowbuf()
     discard term.eparser.parseST(c)
   else:
     term.eparser.buf &= c
@@ -1114,7 +1118,7 @@ proc parseOSC61Semi(term: Terminal; c: char) =
   if c in {',', '\a', '\e'}:
     term.eparser.flag = term.eparser.flag or
       term.eparser.buf.equalsIgnoreCase("SetSelection")
-    term.eparser.buf = ""
+    term.eparser.buf = initGrowbuf()
     if term.eparser.parseST(c):
       if not term.eparser.flag:
         if term.config{"osc52Copy"}.isNone:
@@ -1190,7 +1194,7 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
         inc term.eparser.keyIdx
         if term.eparser.keyIdx == term.eparser.buf.len:
           term.eparser.keyIdx = 0
-          term.eparser.buf = ""
+          term.eparser.buf = initGrowbuf()
         if state != esBracketed:
           if term.eparser.keyLen > 0:
             dec term.eparser.keyLen
@@ -1295,9 +1299,13 @@ proc cursorGoto(term: Terminal; x, y: uint32): Opt[void] =
   term.frame.cursory = y
   term.frame.flags.incl(ffCursorKnown)
   return case term.termType
-  of ttAdm3a: term.write("\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
-  of ttVt52: term.write("\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20))
-  else: term.write(CSI & $(y + 1) & ';' & $(x + 1) & 'H')
+  of ttAdm3a:
+    term.write(
+      initGrowbufM("\e=", char(uint8(y) + 0x20), char(uint8(x) + 0x20)))
+  of ttVt52:
+    term.write(
+      initGrowbufM("\eY", char(uint8(y) + 0x20), char(uint8(x) + 0x20)))
+  else: term.write(initGrowbufM(static(CSI), (y + 1), ';', (x + 1), 'H'))
 
 proc cursorGoto(term: Terminal; x, y: int): Opt[void] =
   term.cursorGoto(uint32(x), uint32(y))
@@ -1446,7 +1454,7 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
   return cfgcolor
 
 proc writeColorSGR(term: Terminal; c: CellColor; bgmod: uint8): Opt[void] =
-  var res = CSI
+  var res = initGrowbuf(CSI)
   case c.t
   of ctNone:
     res &= 39 + bgmod
@@ -1567,7 +1575,7 @@ proc hasBracketedPaste*(term: Terminal): bool =
 proc hasMouse(term: Terminal): bool =
   term.config{"useMouse"}.get(tfMouse in term.desc)
 
-proc encodeAllQMark(res: var string; te: var TextEncoder;
+proc encodeAllQMark(res: var Growbuf; te: var TextEncoder;
     iq: openArray[uint8]) =
   var n = 0
   while true:
@@ -1584,7 +1592,7 @@ proc encodeAllQMark(res: var string; te: var TextEncoder;
         res &= '?'
       n = res.len
 
-proc encodeAscii(res: var string; s: openArray[char]; specialGraphics: bool;
+proc encodeAscii(res: var Growbuf; s: openArray[char]; specialGraphics: bool;
     hasSpecialGraphics: bool): bool =
   # returns specialGraphics
   var specialGraphics = specialGraphics
@@ -1656,14 +1664,15 @@ proc processOutputString*(term: Terminal; s: openArray[char];
   if term.cs == csUtf8:
     # The output encoding matches the internal representation.
     return term.write(s)
-  var res = ""
+  var res = initGrowbuf()
   if term.asciiOnly:
     let specialGraphics = res.encodeAscii(s,
       ffSpecialGraphics in term.frame.flags, tfSpecialGraphics in term.desc)
     term.frame.flags.toggleIf(ffSpecialGraphics, specialGraphics)
   else:
     # Output is not utf-8, so we must encode it first.
-    res = newString(s.len) # guess length
+    res = initGrowbuf()
+    res.setLen(s.len) # guess length
     res.encodeAllQMark(term.te, s.toOpenArrayByte(0, s.high))
   term.write(res)
 
@@ -1690,7 +1699,7 @@ proc setScrollArea(term: Terminal; top, bottom: int): Opt[void] =
     term.frame.cursorx = 0
     term.frame.cursory = 0
     term.frame.flags.incl(ffCursorKnown)
-    return term.write(CSI & $top & ";" & $bottom & 'r')
+    return term.write(initGrowbufM(static(CSI), top, ';', bottom, 'r'))
   ok()
 
 proc resetScrollArea(term: Terminal): Opt[void] =
@@ -1703,10 +1712,10 @@ proc resetScrollArea(term: Terminal): Opt[void] =
   ok()
 
 proc moveLinesUp(term: Terminal; n: int): Opt[void] =
-  term.write(CSI & $n & 'S')
+  term.write(initGrowbufM(static(CSI), n, 'S'))
 
 proc moveLinesDown(term: Terminal; n: int): Opt[void] =
-  term.write(CSI & $n & 'T')
+  term.write(initGrowbufM(static(CSI), n, 'T'))
 
 proc processCell(term: Terminal; cell: FixedCell; x: int): Opt[void] =
   if cell.str.len == 0:
@@ -1717,7 +1726,7 @@ proc processCell(term: Terminal; cell: FixedCell; x: int): Opt[void] =
     ?term.write(' ')
     inc term.frame.cursorx
   ?term.processFormat(cell.format)
-  term.processOutputString(cell.str)
+  term.processOutputString(cell.str.toOpenArray())
 
 proc drawLine(term: Terminal; sx, y: int): Opt[void] =
   for x in sx ..< term.attrs.width:
@@ -1868,7 +1877,7 @@ proc applyConfig(term: Terminal) =
     term.cs = term.config{"displayCharset"}
   else:
     term.cs = DefaultCharset
-    for s in ["LC_ALL", "LC_CTYPE", "LANG"]:
+    for s in [cstring"LC_ALL", cstring"LC_CTYPE", cstring"LANG"]:
       let env = getEnvEmpty(s)
       if env == "":
         continue
@@ -2125,11 +2134,11 @@ proc getU32BE(data: openArray[char]; i: int): uint32 =
     (uint32(data[i + 1]) shl 16) or
     (uint32(data[i]) shl 24)
 
-proc writeSixelAttrs(term: Terminal; data: openArray[char];
-    realw, realh: int): Opt[void] =
+proc writeSixelAttrs(term: Terminal; data: openArray[char]; realw, realh: int):
+    Opt[void] =
   var i = max(data.find('"'), 0) # set raster attrs
   ?term.write(data.toOpenArray(0, i))
-  ?term.write("1;1;" & $realw & ';' & $realh)
+  ?term.write(initGrowbufM("1;1;", realw, ';', realh))
   while i < data.len and data[i] != '#': # skip aspect ratio attrs
     inc i
   term.write(data.toOpenArray(i, data.high))
@@ -2200,27 +2209,27 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
   # note: this looks wrong, but it's correct
   let offx2 = if image.dims.offx > 0: 0 else: image.dims.offx2
   let offy2 = if image.dims.offy > 0: 0 else: image.dims.offy2
-  var outs = APC & "GC=1,s=" & $image.dims.width & ",v=" & $image.dims.height &
-    ",x=" & $image.dims.offx & ",y=" & $image.dims.offy &
-    ",X=" & $offx2 & ",Y=" & $offy2 &
-    ",w=" & $(image.dims.dispw - image.dims.offx) &
-    ",h=" & $(image.dims.disph - image.dims.offy) &
+  var outs = initGrowbufM(static(APC), "GC=1,s=", image.dims.width, ",v=",
+      image.dims.height,
+    ",x=", image.dims.offx, ",y=", image.dims.offy, ",X=", offx2, ",Y=", offy2,
+    ",w=", (image.dims.dispw - image.dims.offx),
+    ",h=", (image.dims.disph - image.dims.offy),
     # for now, we always use placement id 1
-    ",p=1,q=2"
+    ",p=1,q=2")
   if image.kittyId != 0:
-    outs &= ",i=" & $image.kittyId & ",a=p;" & ST
+    outs.addM(",i=", image.kittyId, ",a=p;", static(ST))
     return term.write(outs)
   inc term.kittyId # skip i=0
   if term.kittyId == 0: # unsigned wraparound
     inc term.kittyId
   image.kittyId = term.kittyId
-  outs &= ",i=" & $image.kittyId
+  outs.addM(",i=", image.kittyId)
   const MaxBytes = 4096 * 3 div 4
   var i = MaxBytes
   let p = image.data.p
   let L = image.data.len
   let m = if i < L: '1' else: '0'
-  outs &= ",a=T,f=100,m=" & m & ';'
+  outs.addM(",a=T,f=100,m=", m, ';')
   outs.btoa(p.toOpenArray(0, min(L, i) - 1))
   outs &= ST
   ?term.write(outs)
@@ -2228,7 +2237,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
     let j = i
     i += MaxBytes
     let m = if i < L: '1' else: '0'
-    var outs = APC & "Gm=" & m & ';'
+    var outs = initGrowbufM(static(APC), "Gm=", m, ';')
     outs.btoa(p.toOpenArray(j, min(L, i) - 1))
     outs &= ST
     ?term.write(outs)
@@ -2237,9 +2246,9 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
 proc outputImages(term: Terminal): Opt[void] =
   if term.imageMode == imKitty:
     # clean up unused kitty images
-    var s = ""
+    var s = initGrowbuf()
     for id in term.frame.kittyImagesToClear:
-      s &= APC & "Ga=d,d=I,i=" & $id & ",p=1,q=2;" & ST
+      s.addM(static(APC), "Ga=d,d=I,i=", id, ",p=1,q=2;", static(ST))
     ?term.write(s)
     term.frame.kittyImagesToClear.setLen(0)
   for image in term.frame.canvasImages:
@@ -2261,10 +2270,10 @@ proc clearCanvas*(term: Terminal) =
   term.clearImages(maxh)
   term.frame.canvasImagesHead = nil
 
-proc queueTitle*(term: Terminal; title: string) =
+proc queueTitle*(term: Terminal; title: Str) =
   if term.frame.title != title:
     term.frame.flags.incl(ffQueueTitle)
-    term.frame.title = title
+    term.frame.title = title.replaceControls()
 
 # Must be called directly before draw, otherwise the cursor will disappear.
 proc scrollUp*(term: Terminal; n, scrollBottom: int) =
@@ -2376,7 +2385,9 @@ proc draw*(term: Terminal; redraw, mouse: bool;
   ?term.cursorGoto(cursorx, cursory)
   ?term.showCursor()
   if ffQueueTitle in term.frame.flags and term.hasTitle():
-    ?term.write(OSC & "0;" & term.frame.title.replaceControls() & ST)
+    ?term.write(OSC & "0;")
+    ?term.write(term.frame.title.toOpenArray())
+    ?term.write(ST)
     term.frame.flags.excl(ffQueueTitle)
   if term.hasMouse() and mouse != (ffMouseEnabled in term.frame.flags):
     if mouse:
@@ -2390,7 +2401,7 @@ proc sendOSC52*(term: Terminal; s: openArray[char]; clipboard = true):
     Opt[bool] =
   if not term.osc52Copy:
     return ok(false)
-  var buf = OSC & "52;"
+  var buf = initGrowbuf(static(OSC & "52;"))
   if clipboard:
     buf &= 'c'
   if term.osc52Primary:
@@ -2549,7 +2560,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): Opt[void] =
 
 # Parse TERM variable.  This may adjust color-mode.
 proc parseTERM(term: Terminal): TerminalType =
-  var s = getEnvEmpty("TERM", "xterm")
+  var s = getEnvEmpty(cstring"TERM", str("xterm"))
   # Sometimes, TERM variables contain:
   # -{n}color to denote the number of color registers
   # -direct[n] to denote direct colors (n is irrelevant here)
@@ -2619,7 +2630,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
   if not windowOnly:
     term.termType = term.parseTERM()
     let colorterm = getEnvEmpty("COLORTERM")
-    if colorterm in ["24bit", "truecolor"]:
+    if colorterm == "24bit" or colorterm == "truecolor":
       term.attrs.colorMode = cmTrueColor
     term.applyTermDesc(TermdescMap[term.termType])
   let margin = int(tfMargin in term.desc)
@@ -2632,9 +2643,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): Opt[void] =
       term.attrs.height = int(win.ws_row)
       term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
   if term.attrs.width == 0:
-    term.attrs.width = parseIntP(getEnvEmpty("COLUMNS")).get(0) - margin
+    term.attrs.width = parseIntP(getEnvEmpty("COLUMNS").toOpenArray())
+      .get(0) - margin
   if term.attrs.height == 0:
-    term.attrs.height = parseIntP(getEnvEmpty("LINES")).get(0)
+    term.attrs.height = parseIntP(getEnvEmpty("LINES").toOpenArray()).get(0)
   ok()
 
 proc initCanvas(term: Terminal) =

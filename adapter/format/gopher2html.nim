@@ -2,26 +2,27 @@
 
 import io/chafile
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
-proc getField(line: string; i: var int): string =
-  var s = line.until('\t', i)
+proc getField(line: Str; i: var int): Str =
+  let s = line.until('\t', i)
   i += s.len
   if i < line.len and line[i] == '\t':
     inc i
-  move(s)
+  s
 
 proc parse(): Opt[void] =
   if getArgvCount() != 3 or getArgvCString(1) != "-u":
     discard chaStdout.writeLine("Usage: gopher2html [-u URL]")
     quit(1)
   let url = htmlEscape(getArgv(2))
-  ?chaStdout.write("""<!DOCTYPE html>
-<title>Index of """ & url & """</title>
-<h1>Index of """ & url & """</h1>""")
+  ?chaStdout.write(initStrM("""<!DOCTYPE html>
+<title>Index of """, url, """</title>
+<h1>Index of """, url, """</h1>"""))
   var ispre = false
-  var line = ""
+  var line: Str
   while ?chaStdin.readLine(line):
     if line.len == 0:
       continue
@@ -33,26 +34,26 @@ proc parse(): Opt[void] =
     var file = line.getField(i)
     let host = line.getField(i)
     let port = line.until('\t', i) # ignore anything after port
-    var outs = ""
+    var outs = initGrowbuf()
     if t == 'i':
       if not ispre:
         outs &= "<pre>"
         ispre = true
-      outs &= htmlEscape(name) & '\n'
+      outs &= htmlEscape(name)
     else:
       if ispre:
         outs &= "</pre>"
         ispre = false
       let ourls = if not file.startsWith("URL:"):
         if file.len == 0 or file[0] != '/':
-          file = '/' & file
+          file = initStrM('/', file)
         let pefile = file.percentEncode(PathPercentEncodeSet)
-        "gopher://" & host & ":" & port & "/" & t & pefile
+        initStrM("gopher://", host, ':', port, '/', t, pefile)
       else:
         file.substr("URL:".len)
-      outs &= "<a item-type=\"" & htmlEscape([t]) & "\" href=\"" &
-        htmlEscape(ourls) & "\">" & htmlEscape(name) & "</a><br>\n"
-    ?chaStdout.write(outs)
+      outs.addM("<a item-type=\"", htmlEscape([t]), "\" href=\"",
+        htmlEscape(ourls), "\">", htmlEscape(name), "</a><br>")
+    ?chaStdout.writeLine(outs.toOpenArray())
   ok()
 
 proc main*() =

@@ -3,7 +3,6 @@
 when NimMajor >= 2:
   import std/assertions
 import std/macros
-import std/options
 import std/posix
 
 import chame/htmlparser
@@ -37,6 +36,7 @@ import io/timeout
 import js/fromjs
 import js/jsbind
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/libregexp
 import js/quickjs
@@ -47,10 +47,10 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/cowstr
 import utils/lrewrap
 import utils/luwrap
 import utils/opt
-import utils/refstring
 import utils/strwidth
 import utils/tabutil
 import utils/twtstr
@@ -64,7 +64,7 @@ type
     onReshapeImmediately: bool
     prevHover: Element
     next: PagerHandle
-    hoverText: array[HoverType, string]
+    hoverText: array[HoverType, Str]
 
   BufferContext {.final.} = ref object of RootObj
     firstBufferRead: bool
@@ -85,7 +85,7 @@ type
     htmlParser: HTML5ParserWrapper
     images: seq[PosBitmap]
     linkHintChars: ref seq[uint32]
-    schemes: seq[string]
+    schemes: seq[Str]
     lines: FlexibleGrid
     loader: FileLoader
     navigateUrl: URL # stored when JS tries to navigate
@@ -183,12 +183,12 @@ template proxy(fun: untyped) =
 template proxy(flag, fun: untyped) =
   proxyt(flag, fun)
 
-proc getTitleAttr(bc: BufferContext; element: Element): string =
+proc getTitleAttr(bc: BufferContext; element: Element): Str =
   if element != nil:
     for element in element.branchElems:
       if element.attrb(satTitle):
         return element.attr(satTitle)
-  return ""
+  return str("")
 
 const ClickableElements = {
   ttA, ttInput, ttOption, ttButton, ttTextarea, ttLabel,
@@ -215,52 +215,52 @@ proc canSubmitOnClick(fae: FormAssociatedElement): bool =
     return false
   fae.asElement.isSubmitButton() or fae.form.canSubmitImplicitly()
 
-proc getImageHover(bc: BufferContext; element: Element): string =
+proc getImageHover(bc: BufferContext; element: Element): Str =
   if (let image = element as HTMLImageElement; image != nil):
     let src = image.asElement.attr(satSrc)
     if src != "":
       if url := image.asNode.document.parseURL(src):
-        return $url
-  ""
+        return url.toStr()
+  str("")
 
-proc getClickHover(bc: BufferContext; element: Element): string =
+proc getClickHover(bc: BufferContext; element: Element): Str =
   let clickable = element.getClickable()
   if clickable != nil:
     case clickable.tagType
     of ttA:
       if url := clickable.reinitURL():
-        return $url
+        return url.toStr()
     of ttOption:
-      return "<option>"
+      return str("<option>")
     of ttVideo, ttAudio:
       let (src, _) = HTMLElement(clickable).getSrc()
       if src != "":
         if url := clickable.asNode.document.parseURL(src):
-          return $url
+          return url.toStr()
     of ttFrame, ttIframe:
       let src = clickable.attr(satSrc)
       if src != "":
         if url := clickable.asNode.document.parseURL(src):
-          return $url
+          return url.toStr()
     elif clickable of FormAssociatedElement:
       let fae = FormAssociatedElement(clickable)
       if fae.canSubmitOnClick():
         let req = bc.submitForm(fae.form, fae.asHTMLElement)
         if req != nil:
-          return $req.url
-      return "<" & $clickable.tagType & ">"
-  ""
+          return req.url.toStr()
+      return initStrM('<', clickable.tagType.toStr(), '>')
+  str("")
 
-proc getCachedImageHover(bc: BufferContext; element: Element): string =
+proc getCachedImageHover(bc: BufferContext; element: Element): Str =
   if element of HTMLImageElement:
     let image = HTMLImageElement(element)
     if image.bitmap != nil and image.bitmap.cacheId != 0:
-      return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
+      return initStrM(image.bitmap.cacheId, ' ', image.bitmap.contentType)
   elif element of SVGSVGElement:
     let image = SVGSVGElement(element)
     if image.bitmap != nil and image.bitmap.cacheId != 0:
-      return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
-  ""
+      return initStrM(image.bitmap.cacheId, ' ', image.bitmap.contentType)
+  str("")
 
 proc getCursorElement(bc: BufferContext; cursorx, cursory: int): Element =
   if cursory < 0 or cursory >= bc.lines.len:
@@ -288,7 +288,7 @@ proc cursorBytes(bc: BufferContext; y, cc: int): int =
 proc navigate(bc: RootRef; url: URL) {.exportc: "cha_$1".} =
   let bc = BufferContext(bc)
   bc.navigateUrl = url
-  discard chaStderr.writeLine("navigate to " & $url)
+  discard chaStderr.writeLine(str("navigate to "), url.toStr())
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
 proc findPrevLink(bc: BufferContext; handle: PagerHandle;
@@ -449,7 +449,7 @@ proc findNextMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
       dec y
   BufferMatch(x: -1, y: -1)
 
-proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: string;
+proc gotoAnchor(bc: BufferContext; handle: PagerHandle; anchor: Str;
     autofocus, target: bool): GotoAnchorResult {.proxy.} =
   if bc.document == nil:
     return GotoAnchorResult(x: -1, y: -1)
@@ -560,9 +560,9 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
     if data.len > 0:
       let lastText = plaintext.asParentNode.lastChild as Text
       if lastText != nil:
-        lastText.data.s &= data
+        lastText.data &= data.toOpenArray()
       else:
-        let text = bc.document.newText($data)
+        let text = bc.document.newText(initStr(data.toOpenArray()))
         if text != nil:
           plaintext.asParentNode.append(bc.window.jsctx, text.asNode)
       plaintext.asElement.invalidate()
@@ -626,7 +626,7 @@ const HoverFun = [
 proc updateHover(bc: BufferContext; handle: PagerHandle;
     cursorx, cursory: int): UpdateHoverResult {.proxy.} =
   let thisNode = bc.getCursorElement(cursorx, cursory)
-  var hover = newSeq[tuple[t: HoverType, s: string]]()
+  var hover = newSeq[tuple[t: HoverType, s: Str]]()
   var repaint = false
   let prevHover = handle.prevHover
   if thisNode != prevHover:
@@ -656,7 +656,7 @@ proc updateHover(bc: BufferContext; handle: PagerHandle;
   move(hover)
 
 proc rewind(bc: BufferContext; data: InputData; offset: uint64): bool =
-  let url = parseURL0("cache:" & $bc.cacheId & "?" & $offset)
+  let url = parseURL0(initStrM("cache:", bc.cacheId, '?', offset))
   let response = bc.loader.doRequest(newRequest(url))
   if response.stream == nil:
     return false
@@ -872,16 +872,15 @@ proc onload(bc: BufferContext; data: InputData) =
           handle.resolveTask(bcGetTitle, bc.document.title)
         bc.resolveLoad(handle, bc.bytesRead, 0) #TODO content-length
 
-proc getTitle(bc: BufferContext; handle: PagerHandle): string {.
-    proxy: pfTask.} =
+proc getTitle(bc: BufferContext; handle: PagerHandle): Str {.proxy: pfTask.} =
   if bc.document != nil:
     let title = bc.document.findFirst(ttTitle)
     if title != nil:
       return title.asParentNode.childTextContent.stripAndCollapse()
     if bc.state == bsLoaded:
-      return "" # title no longer expected
+      return str("") # title no longer expected
   bc.savetask = true
-  return ""
+  return str("")
 
 proc forceReshape(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   if bc.document != nil and bc.document.documentElement != nil:
@@ -927,13 +926,11 @@ proc cancel(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   bc.state = bsLoaded
   bc.maybeReshape()
 
-proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
-  result = ""
+proc serializePlainTextFormData(kvs: seq[(Str, Str)]): Str =
+  var buf = initGrowbuf()
   for (name, value) in kvs:
-    result &= name
-    result &= '='
-    result &= value
-    result &= "\r\n"
+    buf.addM(name, '=', value, "\r\n")
+  buf.toStr()
 
 proc getOutputEncoding(charset: Charset): Charset =
   if charset in {csReplacement, csUtf16be, csUtf16le}:
@@ -944,11 +941,44 @@ proc pickCharset(form: HTMLFormElement): Charset =
   if form.asElement.attrb(satAcceptCharset):
     let input = form.asElement.attr(satAcceptCharset)
     for label in input.split(AsciiWhitespace):
-      let charset = label.getCharset()
+      let charset = getCharset(label)
       if charset != csUnknown:
         return charset.getOutputEncoding()
     return csUtf8
   return form.asNode.document.charset.getOutputEncoding()
+
+# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
+proc makeCRLF(s: openArray[char]): Str =
+  var buf = initGrowbufOfCap(s.len)
+  var i = 0
+  let L = s.len - 1
+  while i < L:
+    let c1 = s[i]
+    let c2 = s[i + 1]
+    buf &= c1
+    if c1 == '\r' and c2 != '\n':
+      buf &= '\n'
+    elif c1 != '\r' and c2 == '\n':
+      buf &= '\r'
+      buf &= '\n'
+      inc i
+    inc i
+  if i < s.len:
+    if s[i] == '\r':
+      buf &= '\r'
+      buf &= '\n'
+    else:
+      buf &= s[i]
+  buf.toStr()
+
+proc toNameValuePairs(list: seq[FormDataEntry]): seq[tuple[name, value: Str]] =
+  var pairs = newSeq[tuple[name, value: Str]]()
+  for entry in list:
+    if entry.isstr:
+      pairs.add((entry.name, entry.svalue))
+    else:
+      pairs.add((entry.name, entry.name))
+  pairs
 
 # entryList is consumed
 proc makeFormRequest(bc: BufferContext; parsedAction: URL;
@@ -963,7 +993,8 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      parsedAction.setSearch('?' & serializeFormURLEncoded(kvlist))
+      parsedAction.setSearch(serializeFormURLEncoded(kvlist,
+        questionMark = true))
       return newRequest(parsedAction, httpMethod)
     return newRequest(parsedAction) # get action URL
   of stMailto:
@@ -971,8 +1002,8 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       # mailWithHeaders
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      parsedAction.setSearch('?' & serializeFormURLEncoded(kvlist,
-        spaceAsPlus = false))
+      parsedAction.setSearch(serializeFormURLEncoded(kvlist,
+        spaceAsPlus = false, questionMark = true))
       return newRequest(parsedAction, httpMethod)
     # mail as body
     let kvlist = entryList.toNameValuePairs()
@@ -981,22 +1012,25 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
     else:
       #TODO with charset
       serializeFormURLEncoded(kvlist)
-    if parsedAction.search == "":
-      parsedAction.search = "?"
-    if parsedAction.search != "?":
-      parsedAction.search &= '&'
-    parsedAction.search &= "body=" & body
+    var search = initGrowbufSink(move(parsedAction.search))
+    if search == "":
+      search &= '?'
+    if search.len > 1:
+      search &= '&'
+    search &= "body="
+    search &= body
+    parsedAction.search = search.toStr()
     return newRequest(parsedAction, httpMethod)
   else:
     if httpMethod == hmGet:
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      let search = '?' & serializeFormURLEncoded(kvlist)
+      let search = serializeFormURLEncoded(kvlist, questionMark = true)
       parsedAction.setSearch(search)
       return newRequest(parsedAction, httpMethod)
     # submit as entity body
-    var contentType = $enctype
+    var contentType = enctype.toStr()
     let body = case enctype
     of fetUrlencoded:
       #TODO with charset
@@ -1009,39 +1043,41 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
         return Request(nil)
       formData.entries = move(entryList)
       for entry in formData.entries.mitems:
-        entry.name = makeCRLF(entry.name)
+        entry.name = makeCRLF(entry.name.toOpenArray())
       contentType = formData.getContentType()
       RequestBody(t: rbtMultipart, multipart: formData)
     of fetTextPlain:
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
       RequestBody(t: rbtString, s: serializePlainTextFormData(kvlist))
-    let headers = newHeaders(hgRequest, {"Content-Type": move(contentType)})
+    let headers = newHeaders(hgRequest, {
+      byteStr("Content-Type"): contentType.asByteString
+    })
     return newRequest(parsedAction, httpMethod, headers, body)
 
 proc baseURL(bc: BufferContext): URL =
   return bc.document.baseURL
 
-proc evalJSURL(bc: BufferContext; url: URL; contentType: string): URL =
+proc evalJSURL(bc: BufferContext; url: URL; contentType: Str): URL =
   if bc.config.scripting == smFalse:
     return URL(nil)
-  let surl = $url
-  let source = surl.toOpenArray("javascript:".len, surl.high).percentDecode()
+  let surl = url.toStr()
+  let source = surl.substr("javascript:".len).percentDecode()
   let ctx = bc.window.jsctx
-  let val = ctx.eval(source, $bc.baseURL, JS_EVAL_TYPE_GLOBAL)
+  let val = ctx.eval(source, bc.baseURL.toStr(), JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(val.vc):
     bc.window.console.writeException(ctx)
     return URL(nil) # error
   if JS_IsUndefined(val.vc):
     # maybe JS wants to go somewhere?
     return move(bc.navigateUrl)
-  var res: string
+  var res: Str
   let code = ctx.fromJSFree(val, res)
   bc.maybeReshape()
   if code == fjErr:
     return URL(nil)
   # Navigate to result.
-  return parseURL0("data:" & contentType & ',' & res)
+  return parseURL0(initStrM("data:", contentType, ',', res))
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
 proc submitForm(bc: BufferContext; form: HTMLFormElement;
@@ -1076,7 +1112,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
   let action = if subAction != "":
     subAction
   else:
-    $document.url
+    document.url.toStr()
   #TODO encoding-parse
   let parsedAction = document.parseURL0(action)
   if parsedAction == nil:
@@ -1099,7 +1135,7 @@ proc submitFormClick(bc: BufferContext; form: HTMLFormElement;
     submitter: HTMLElement; jsSubmitCall = false): Request =
   let request = bc.submitForm(form, submitter, jsSubmitCall)
   if request != nil and request.url.schemeType == stJavascript:
-    let url = bc.evalJSURL(request.url, "text/plain")
+    let url = bc.evalJSURL(request.url, str("text/plain"))
     if url == nil:
       return Request(nil)
     return newRequest(url, hmGet)
@@ -1119,7 +1155,7 @@ proc implicitSubmit(bc: BufferContext; input: HTMLInputElement): Request =
     return bc.submitFormClick(form, form.asHTMLElement)
   return Request(nil)
 
-proc updateInput(bc: BufferContext; element: Element; s: string;
+proc updateInput(bc: BufferContext; element: Element; s: Str;
     isFile: bool) =
   if bc.config.scripting != smFalse:
     let window = bc.window
@@ -1129,8 +1165,8 @@ proc updateInput(bc: BufferContext; element: Element; s: string;
     else:
       let inputEvent = newInputEvent(satInput.view(),
         InputEventInit(
-          data: some(s),
-          inputType: "insertText",
+          data: DOMStringNil(StrNil(s)),
+          inputType: DOMString(str("insertText")),
           bubbles: true,
           cancelable: true
         )
@@ -1142,7 +1178,7 @@ proc updateInput(bc: BufferContext; element: Element; s: string;
       cancelable = true, trusted = true)
   bc.maybeReshape()
 
-proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
+proc readSuccess0(bc: BufferContext; s: Str; fd: cint): Request =
   if bc.document.focus != nil:
     let focus = bc.document.focus
     bc.restoreFocus()
@@ -1169,7 +1205,7 @@ proc readSuccess0(bc: BufferContext; s: string; fd: cint): Request =
 
 proc readSuccessCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
     packetid: int): CommandResult =
-  var s: string
+  var s: Str
   var hasfd: bool
   r.assert(r.sread(s))
   r.assert(r.sread(hasfd))
@@ -1196,7 +1232,8 @@ proc click(bc: BufferContext; select: HTMLSelectElement): ClickResult =
   var i = 0
   for option in select.options:
     #TODO: add nop options for each optgroup
-    options.add(SelectOption(s: option.asNode.textContent.stripAndCollapse()))
+    let text = option.asNode.textContent
+    options.add(SelectOption(s: text.stripAndCollapse()))
     if selected == -1 and option.selected:
       selected = i
     inc i
@@ -1206,7 +1243,7 @@ proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
   bc.restoreFocus()
   if url := anchor.asElement.reinitURL():
     if url.schemeType == stJavascript:
-      url = bc.evalJSURL(url, "text/html")
+      url = bc.evalJSURL(url, str("text/html"))
       if url == nil:
         return initClickResult()
     return initClickResult(newRequest(url, hmGet))
@@ -1332,16 +1369,17 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
     initClickResult()
   else:
     # default is text.
-    var prompt = InputTypePrompt[input.inputType]
+    var prompt = initGrowbuf(InputTypePrompt[input.inputType])
     if input.inputType == itRange:
-      prompt &= " (" & input.asElement.attr(satMin) & ".." &
-        input.asElement.attr(satMax) & ")"
+      prompt.addM(" (", input.asElement.attr(satMin), "..",
+        input.asElement.attr(satMax), ')')
     prompt &= ": "
     bc.setFocus(input.asElement)
     if input.inputType == itPassword:
-      ClickResult(t: crtReadPassword, prompt: prompt, value: input.value)
+      ClickResult(t: crtReadPassword, prompt: prompt.toStr(),
+        value: input.value)
     else:
-      ClickResult(t: crtReadText, prompt: prompt, value: input.value)
+      ClickResult(t: crtReadText, prompt: prompt.toStr(), value: input.value)
 
 proc click(bc: BufferContext; clickable: Element): ClickResult =
   case clickable.tagType
@@ -1499,8 +1537,8 @@ proc getLinesCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
   cmdrDone
 
 proc getSelectionText(bc: BufferContext; handle: PagerHandle;
-    sx, sy, ex, ey: int; t: SelectionType): string {.proxy.} =
-  var s = ""
+    sx, sy, ex, ey: int; t: SelectionType): Str {.proxy.} =
+  var s = initGrowbuf()
   let sy = max(sy, 0)
   let ey = min(bc.lines.high, ey)
   case t
@@ -1508,38 +1546,41 @@ proc getSelectionText(bc: BufferContext; handle: PagerHandle;
     if sy == ey:
       let si = bc.lines[sy].str.findColBytes(sx)
       let ei = bc.lines[ey].str.findColBytes(ex + 1, sx, si) - 1
-      s = bc.lines[sy].str.toOpenArray(si, ei).expandPUATabsHard()
+      s.addExpandPUATabsHard(bc.lines[sy].str.toOpenArray(si, ei))
     else:
       let si = bc.lines[sy].str.findColBytes(sx)
       let ei = bc.lines[ey].str.findColBytes(ex + 1) - 1
-      s = bc.lines[sy].str.toOpenArray(si, bc.lines[sy].str.high)
-        .expandPUATabsHard() & '\n'
+      s.addExpandPUATabsHard(bc.lines[sy].str
+        .toOpenArray(si, bc.lines[sy].str.high))
+      s &= '\n'
       for y in sy + 1 .. ey - 1:
-        s &= bc.lines[y].str.expandPUATabsHard() & '\n'
-      s &= bc.lines[ey].str.toOpenArray(0, ei).expandPUATabsHard()
+        s.addExpandPUATabsHard(bc.lines[y].str)
+        s &= '\n'
+      s.addExpandPUATabsHard(bc.lines[ey].str.toOpenArray(0, ei))
   of stBlock:
     for y in sy .. ey:
       let si = bc.lines[y].str.findColBytes(sx)
       let ei = bc.lines[y].str.findColBytes(ex + 1, sx, si) - 1
       if y > sy:
         s &= '\n'
-      s &= bc.lines[y].str.toOpenArray(si, ei).expandPUATabsHard()
+      s.addExpandPUATabsHard(bc.lines[y].str.toOpenArray(si, ei))
   of stLine:
     for y in sy .. ey:
       if y > sy:
         s &= '\n'
-      s &= bc.lines[y].str.expandPUATabsHard()
-  move(s)
+      s.addExpandPUATabsHard(bc.lines[y].str)
+  s.toStr()
 
-proc getLinks(bc: BufferContext; handle: PagerHandle): seq[string] {.proxy.} =
-  result = newSeq[string]()
+proc getLinks(bc: BufferContext; handle: PagerHandle): seq[Str] {.proxy.} =
+  var res = newSeq[Str]()
   if bc.document != nil:
     for element in bc.window.displayedElements:
       if element.tagType == ttA and element.attrb(satHref):
         if url := element.reinitURL():
-          result.add($url)
+          res.add(url.toStr())
         else:
-          result.add(element.attr(satHref))
+          res.add(element.attr(satHref))
+  move(res)
 
 proc onReshape(bc: BufferContext; handle: PagerHandle) {.proxy: pfTask.} =
   if handle.onReshapeImmediately:
@@ -1557,14 +1598,14 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   let body = bc.document.findFirst(ttBody)
   if body == nil:
     return
-  var buf = "("
+  var buf = initGrowbuf('(')
   for i, scheme in bc.schemes.mypairs:
     if i > 0:
       buf &= '|'
     buf &= scheme
   buf &= r"):(//[\w%:.-]+)?[\w/@%:.~-]*\??[\w%:~.=&-]*#?[\w:~.=-]*[\w/~=-]"
   var regex: Regex
-  doAssert compileRegex(buf, {LRE_FLAG_GLOBAL}, regex)
+  doAssert compileRegex(buf.toStr(), {LRE_FLAG_GLOBAL}, regex)
   # Dummy element for the fragment parsing algorithm. We can't just use parent
   # there, because e.g. plaintext would not parse the text correctly.
   let html = bc.document.newHTMLElement(ttDiv)
@@ -1576,7 +1617,7 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
     for node in element.asParentNode.safeChildList:
       if (let text = node as Text; text != nil):
         if lastText != nil:
-          lastText.data &= text.data.s
+          lastText.data &= text.data
           text.asNode.removeImpl(bc.window.jsctx)
         else:
           texts.add(text)
@@ -1592,9 +1633,9 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
       else:
         lastText = Text(nil)
     for text in texts:
-      var data = ""
+      var data = initGrowbuf()
       var j = 0
-      for cap in regex.matchCap(text.data.s, 0):
+      for cap in regex.matchCap(text.data.toOpenArray(), 0):
         let capLen = cap.e - cap.s
         while j < cap.s:
           case (let c = text.data[j]; c)
@@ -1611,9 +1652,12 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           else:
             data &= c
           inc j
-        let s = text.data.s[j ..< j + capLen]
-        let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
-        data &= news
+        let hi = j + capLen - 1
+        data &= "<a href=\""
+        data &= text.data.toOpenArray(j, hi)
+        data &= "\">"
+        data &= text.data.toOpenArray(j, hi).htmlEscape()
+        data &= "</a>"
         j += capLen
       if data.len > 0:
         while j < text.data.len:
@@ -1626,7 +1670,7 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           else: data &= c
           inc j
         let replacement = bc.window.jsctx.parseFragment(html.asParentNode,
-          data)
+          data.toOpenArray())
         if replacement != nil:
           discard element.asNode.replaceChildWith(bc.window.jsctx, text.asNode,
             replacement.asNode)
@@ -1824,8 +1868,8 @@ proc runBuffer(bc: BufferContext) =
 proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
     loader: FileLoader; pstream, istream, urandom: PosixStream; cacheId: int;
-    contentType: string; linkHintChars: sink seq[uint32];
-    schemes: sink seq[string]) =
+    contentType: Str; linkHintChars: sink seq[uint32];
+    schemes: sink seq[Str]) =
   let confidence = if config.charsetOverride == csUnknown:
     ccTentative
   else:

@@ -14,6 +14,7 @@ import std/posix
 import config/conftypes
 import css/color
 import io/dynstream
+import utils/cowstr
 import utils/opt
 
 type PacketWriter* = object
@@ -33,7 +34,7 @@ type
 proc swrite*(w: var PacketWriter; n: SomeNumber)
 proc swrite*[T](w: var PacketWriter; s: set[T])
 proc swrite*[T: enum](w: var PacketWriter; x: T)
-proc swrite*(w: var PacketWriter; s: string)
+proc swrite*(w: var PacketWriter; s: Str)
 proc swrite*(w: var PacketWriter; b: bool)
 proc swrite*(w: var PacketWriter; tup: tuple)
 proc swrite*(w: var PacketWriter; s: openArray[char])
@@ -157,7 +158,8 @@ proc writeData*(w: var PacketWriter; buffer: pointer; len: int) =
   if missing > 0:
     let target = max(w.buffer.len + missing, w.buffer.len * 2)
     w.buffer.setLen(target)
-  copyMem(addr w.buffer[w.bufLen], buffer, len)
+  if len > 0:
+    copyMem(addr w.buffer[w.bufLen], buffer, len)
   w.bufLen = targetLen
 
 proc swrite*(w: var PacketWriter; n: SomeNumber) =
@@ -171,10 +173,10 @@ proc swrite*[T: enum](w: var PacketWriter; x: T) =
 proc swrite*[T](w: var PacketWriter; s: set[T]) =
   w.writeData(unsafeAddr s, sizeof(s))
 
-proc swrite*(w: var PacketWriter; s: string) =
-  w.swrite(s.len)
-  if s.len > 0:
-    w.writeData(unsafeAddr s[0], s.len)
+proc swrite*(w: var PacketWriter; s: Str) =
+  let slen = s.len
+  w.swrite(slen)
+  w.writeData(cast[pointer](s.toCStringConst()), slen)
 
 proc swrite*(w: var PacketWriter; b: bool) =
   if b:

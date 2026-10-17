@@ -22,6 +22,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import utils/chahash
+import utils/cowstr
 import utils/opt
 import utils/tabutil
 import utils/twtstr
@@ -187,7 +188,10 @@ macro makeStaticAtom =
     if t == ttUnknown:
       continue
     let tn = $t
-    let name = "sat" & tn[0].toUpperAscii() & tn.substr(1).kebabToCamelCase()
+    let name = case tn
+    of "annotation-xml": "satAnnotationXml"
+    of "http-equiv": "satHttpEquiv"
+    else: "sat" & tn[0].toUpperAscii() & tn.substr(1)
     decl0.add(newNimNode(nnkEnumFieldDef).add(ident(name), newStrLitNode(tn)))
   for i, f in StaticAtom0.getType():
     if i == 0:
@@ -205,7 +209,7 @@ type
   CAtomRaw* = distinct uint32
 
   AtomDesc = object
-    s: string
+    s: Str
     freeNext: uint32 # if free'd, points to next item in free list
     refc: uint32
     hcache: Hash
@@ -233,7 +237,7 @@ proc hash*(atom: CAtomRaw): Hash =
 
 proc freeAtomImpl(u: uint32) =
   let factory = getFactory()
-  factory.atomMap[u].s = ""
+  factory.atomMap[u].s = str("")
   factory.atomMap[u].freeNext = factory.freeHead
   factory.freeHead = u
   let mask = factory.tab.len - 1
@@ -341,7 +345,14 @@ proc toAtomRaw(factory: CAtomFactory; s: openArray[char]): CAtomRaw =
   var added = false
   let atom = factory.toAtomImpl(s, added)
   if added:
-    factory.atomMap[int(atom)].s = s.substr()
+    factory.atomMap[int(atom)].s = initStr(s)
+  atom
+
+proc toAtomRaw(factory: CAtomFactory; s: Str): CAtomRaw =
+  var added = false
+  let atom = factory.toAtomImpl(s.toOpenArray(), added)
+  if added:
+    factory.atomMap[int(atom)].s = s
   atom
 
 proc toAtomView*(s: openArray[char]): CAtomRaw =
@@ -355,7 +366,7 @@ proc initCAtomFactory*() =
   factory.atomMap.add(AtomDesc())
   # StaticAtom includes TagType too.
   for sa in StaticAtom(1) .. StaticAtom.high:
-    let atom = factory.toAtomRaw($sa)
+    let atom = factory.toAtomRaw(sa.toStr())
     assert uint32(atom) == uint32(sa)
 
 proc toAtomRaw(s: openArray[char]): CAtomRaw =
@@ -364,7 +375,13 @@ proc toAtomRaw(s: openArray[char]): CAtomRaw =
 proc toAtom*(s: openArray[char]): CAtom =
   CAtom(s.toAtomRaw())
 
+proc toAtom*(s: Str): CAtom =
+  CAtom(getFactory().toAtomRaw(s))
+
 proc toAtom*(s: DOMString): CAtom =
+  s.toStr().toAtom()
+
+proc toAtom*(s: Growbuf): CAtom =
   s.toOpenArray().toAtom()
 
 proc toStaticAtom*(tagType: TagType): StaticAtom =
@@ -386,52 +403,50 @@ template view*(ns: Namespace): CAtom =
   of nsXml: satNamespaceXML.view()
   of nsXmlns: satNamespaceXMLNS.view()
 
-proc toAtomLower*(s: openArray[char]): CAtom =
-  let factory = getFactory()
-  var added = false
-  var s = s.toLowerAscii()
-  let atom = factory.toAtomImpl(s, added)
-  if added:
-    factory.atomMap[int(atom)].s = move(s)
-  CAtom(atom)
+proc toAtomLower*(s: Str): CAtom =
+  s.toLowerAscii().toAtom()
 
 template view*(satom: StaticAtom): CAtom =
   let tmp = satom
   assert tmp != satUnknown
   CAtom(CAtomRaw(uint32(tmp)))
 
-proc `$`*(atom: CAtom): lent string =
+proc toStr*(atom: CAtom): lent Str =
   getFactory().atomMap[int(atom)].s
 
+proc add*(buf: var Growbuf; atom: CAtom) =
+  buf &= atom.toStr()
+
 proc find*(atom: CAtom; c: char): int =
-  ($atom).find(c)
+  atom.toStr().find(c)
 
 proc len*(atom: CAtom): int =
-  ($atom).len
+  atom.toStr().len
 
 proc substr*(atom: CAtom; first, last: int): CAtom =
   let atomLen = atom.len
   if first >= atomLen:
     return satUempty.view()
   let last = min(last, atomLen - 1)
-  ($atom).toOpenArray(first, last).toAtom()
+  atom.toStr().toOpenArray(first, last).toAtom()
 
 proc substr*(atom: CAtom; first: int): CAtom =
-  atom.substr(first, ($atom).high)
+  atom.substr(first, atom.toStr().high)
 
 proc contains*(atom: CAtom; c: char): bool =
-  c in $atom
+  c in atom.toStr()
 
 proc contains*(atom: CAtom; cs: set[char]): bool =
-  cs in $atom
+  cs in atom.toStr()
 
 proc toLowerAscii*(a: CAtom): CAtom =
-  if AsciiUpperAlpha notin $a:
-    return a
-  return ($a).toAtomLower()
+  if AsciiUpperAlpha in a:
+    a.toStr().toLowerAscii2().toAtom()
+  else: # skip hash lookup in the common case
+    a
 
 proc equalsIgnoreCase*(a, b: CAtom): bool =
-  a == b or ($a).equalsIgnoreCase($b)
+  a == b or a.toStr().equalsIgnoreCase(b.toStr())
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
   for it in aa:
@@ -440,7 +455,7 @@ proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
   return false
 
 proc toAtomLower*(s: DOMString): CAtom =
-  s.toOpenArray().toAtomLower()
+  s.toStr().toAtomLower()
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
   return aa.containsIgnoreCase(a.view())
@@ -494,22 +509,13 @@ proc matchesLocalName*(qualifiedName, localName: CAtom): bool =
   let i = qualifiedName.find(':') + 1
   if i == 0:
     return qualifiedName == localName
-  return ($qualifiedName).toOpenArray(i, ($qualifiedName).high) == $localName
+  qualifiedName.toStr().toOpenArray(i, qualifiedName.toStr().high) ==
+    localName.toStr()
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): JSCode =
-  var len: csize_t
-  let cs = JS_ToCStringLen(ctx, len, val)
-  if cs == nil:
-    return fjErr
-  if len > csize_t(int.high):
-    JS_FreeCString(ctx, cs)
-    JS_ThrowRangeError(ctx, "string length out of bounds")
-    return fjErr
-  {.push overflowChecks: off.}
-  let H = cast[int](len) - 1
-  {.pop.}
-  res = cstring(cs).toOpenArray(0, H).toAtom()
-  JS_FreeCString(ctx, cs)
+  var ds: DOMString
+  ?ctx.fromJS(val, ds)
+  res = ds.toAtom()
   fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtomNullable):
@@ -570,11 +576,11 @@ proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult2 =
     return FromIdxResult2(fiIdx)
   FromIdxResult2(fiStr)
 
-proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32;
-    ds: var DOMString): FromIdxResult =
+proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32; s: var Str):
+    FromIdxResult =
   if JS_AtomIsArrayIndex(ctx, idx, atom) != 0:
     return fiIdx
-  if ctx.fromJS(atom, ds).isOk:
+  if ctx.fromJS(atom, s).isOk:
     return fiStr
   fiErr
 
@@ -590,7 +596,7 @@ proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32; s: var CAtom):
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
     return JS_NULL
-  return ctx.toJS($atom)
+  return ctx.toJS(atom.toStr())
 
 when defined(test):
   proc testSetHash*(atom: CAtom; h: Hash) =
@@ -725,7 +731,7 @@ type
   AttrData* = object
     name*: CAtom ## This is the qualified name.
     namespace*: CAtom
-    value*: string
+    value*: Str
 
 proc sortAttrs*(attrs: var seq[AttrData]) =
   if attrs.len > 1:

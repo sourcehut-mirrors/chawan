@@ -3,8 +3,11 @@
 import std/math
 
 import config/conftypes
+import css/color
+import css/cssvalues
 import html/domexception
 import html/event
+import html/path
 import io/dynstream
 import io/packetwriter
 import js/fromjs
@@ -17,9 +20,8 @@ import js/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import css/color
+import utils/cowstr
 import utils/opt
-import html/path
 import utils/strwidth
 import utils/twtstr
 
@@ -69,10 +71,10 @@ proc getClassID(t: typedesc[CanvasRenderingContext2D]): JSClassID
 proc getClassID(t: typedesc[TextMetrics]): JSClassID
 
 # Forward declaration hack
-proc parseColorImpl(target: EventTarget; s: DOMString): Opt[ARGBColor]
+proc parseColorImpl(target: EventTarget; s: sink DOMString): Opt[ARGBColor]
   {.importc: "cha_$1".}
 
-proc parseColor(target: EventTarget; s: DOMString): Opt[ARGBColor] =
+proc parseColor(target: EventTarget; s: sink DOMString): Opt[ARGBColor] =
   return target.parseColorImpl(s)
 
 proc resetTransform(state: var DrawingState) =
@@ -87,15 +89,17 @@ proc resetState(state: var DrawingState) =
 proc create2DContext*(loader: FileLoader; target: EventTarget;
     bitmap: NetworkBitmap; options: JSValueConst): CanvasRenderingContext2D =
   let imageId = bitmap.imageId
-  let (ps, ctlres) = loader.doPipeRequest("canvas-ctl-" & $imageId)
+  let (ps, ctlres) = loader.doPipeRequest(initStrM("canvas-ctl-", imageId))
   if ps == nil:
     return CanvasRenderingContext2D(nil)
   let cacheId = loader.addCacheFile(ctlres.outputId)
   bitmap.cacheId = cacheId
   let request = newRequest(
-    "img-codec+x-cha-canvas:decode",
+    str("img-codec+x-cha-canvas:decode"),
     httpMethod = hmPost,
-    headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
+    headers = newHeaders(hgRequest, {
+      byteStr("Cha-Image-Info-Only"): byteStr("1")
+    }),
     body = RequestBody(t: rbtOutput, outputId: ctlres.outputId),
     internal = true
   )
@@ -267,18 +271,19 @@ jsClassDef(CanvasRenderingContext2D):
   proc resetTransform(ctx: CanvasRenderingContext2D) {.jsfunc.} =
     ctx.state.resetTransform()
 
-  proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+  proc fillStyle(ctx: CanvasRenderingContext2D): Str {.jsfget.} =
     return ctx.state.fillStyle.serialize(html = true)
 
-  proc fillStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
+  proc fillStyle(ctx: CanvasRenderingContext2D; s: sink DOMString) {.jsfset.} =
     #TODO gradient, pattern
     if color := ctx.canvas.parseColor(s):
       ctx.state.fillStyle = color
 
-  proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
+  proc strokeStyle(ctx: CanvasRenderingContext2D): Str {.jsfget.} =
     return ctx.state.strokeStyle.serialize(html = true)
 
-  proc strokeStyle(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
+  proc strokeStyle(ctx: CanvasRenderingContext2D; s: sink DOMString)
+      {.jsfset.} =
     #TODO gradient, pattern
     if color := ctx.canvas.parseColor(s):
       ctx.state.strokeStyle = color
@@ -366,7 +371,7 @@ jsClassDef(CanvasRenderingContext2D):
 
   proc measureText(ctx: CanvasRenderingContext2D; text: DOMString): TextMetrics
       {.jsfunc.} =
-    let tw = text.toOpenArray().width()
+    let tw = text.toStr().width()
     return jsNew TextMetricsObj(
       width: 8 * float64(tw),
       actualBoundingBoxLeft: 0,
@@ -390,8 +395,8 @@ jsClassDef(CanvasRenderingContext2D):
     discard #TODO implement
     newSeq[float64]()
 
-  proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
-    return $ctx.state.textAlign
+  proc textAlign(ctx: CanvasRenderingContext2D): CanvasTextAlign {.jsfget.} =
+    return ctx.state.textAlign
 
   proc textAlign(ctx: CanvasRenderingContext2D; s: DOMString) {.jsfset.} =
     if x := parseEnumNoCase[CanvasTextAlign](s.toOpenArray()):

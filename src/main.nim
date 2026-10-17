@@ -30,6 +30,7 @@ import local/term
 import server/forkserver
 import server/loaderiface
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/sandbox
 import utils/strwidth
@@ -64,9 +65,12 @@ const ChaVersionStrLong = block:
   s &= "poll uses " & $PollMode
   s & ")\n"
 
-proc die(s: string) {.noreturn.} =
-  discard chaStderr.writeLine("cha: " & s)
+proc die(s: Str) {.noreturn.} =
+  discard chaStderr.writeLine(initStrM("cha: ", s))
   quit(1)
+
+template die(s: cstring) =
+  die(str(s))
 
 proc help(i: int) {.noreturn.} =
   let s = ChaVersionStr & """
@@ -98,17 +102,17 @@ proc version() =
 
 type ParamParseContext = object
   i: int
-  next: string
-  configPath: string
-  contentType: string
+  next: Str
+  configPath: Str
+  contentType: Str
   charset: Charset
   visual: bool
-  opts: seq[string]
-  stylesheet: string
+  opts: seq[Str]
+  stylesheet: Str
   ctx: JSContext
   pages: seq[JSValue]
 
-proc addPage(ppc: var ParamParseContext; s: string): Opt[void] =
+proc addPage(ppc: var ParamParseContext; s: Str): Opt[void] =
   let val = ppc.ctx.toJS(s)
   if JS_IsException(val.vc):
     return err()
@@ -136,12 +140,12 @@ else:
   template myProveInit(x: untyped): untyped =
     x
 
-proc getNext(ppc: var ParamParseContext): string {.myProveInit.} =
+proc getNext(ppc: var ParamParseContext): Str {.myProveInit.} =
   if ppc.next != "":
     return move(ppc.next)
   inc ppc.i
   if ppc.i < getArgvCount():
-    return $getArgvCString(ppc.i)
+    return getArgv(ppc.i)
   help(1)
 
 proc parseConfig(ppc: var ParamParseContext) =
@@ -150,7 +154,7 @@ proc parseConfig(ppc: var ParamParseContext) =
     die("config override cannot be empty")
 
 proc parseMonochrome(ppc: var ParamParseContext) =
-  ppc.opts.add("display.color-mode = monochrome")
+  ppc.opts.add(str("display.color-mode = monochrome"))
 
 proc parseVisual(ppc: var ParamParseContext) =
   ppc.visual = true
@@ -162,17 +166,18 @@ proc getCharset(ppc: var ParamParseContext): Charset =
   let s = ppc.getNext()
   let charset = getCharset(s)
   if charset == csUnknown:
-    die("unknown charset " & s)
+    die(initStrM("unknown charset ", s))
   return charset
 
 proc parseInputCharset(ppc: var ParamParseContext) =
   ppc.charset = ppc.getCharset()
 
 proc parseOutputCharset(ppc: var ParamParseContext) =
-  ppc.opts.add("encoding.display-charset = '" & $ppc.getCharset() & "'")
+  ppc.opts.add(initStrM("encoding.display-charset = '",
+    ppc.getCharset().toStr(), "'"))
 
 proc parseDump(ppc: var ParamParseContext) =
-  ppc.opts.add("start.headless = 'dump'")
+  ppc.opts.add(str("start.headless = 'dump'"))
 
 proc parseCSS(ppc: var ParamParseContext) =
   ppc.stylesheet &= ppc.getNext()
@@ -182,13 +187,44 @@ proc parseOpt(ppc: var ParamParseContext) =
 
 proc parseRun(ppc: var ParamParseContext) =
   let script = dqEscape(ppc.getNext())
-  ppc.opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
-  ppc.opts.add("start.headless = true")
+  ppc.opts.add(initStrM("start.startup-script = \"\"\"", script, "\"\"\""))
+  ppc.opts.add(str("start.headless = true"))
+
+type ParamKey = enum
+  pkUnknown = ""
+  pkConfig = "config"
+  pkInputCharset = "input-charset"
+  pkMonochrome = "monochrome"
+  pkOutputCharset = "output-charset"
+  pkType = "type"
+  pkVisual = "visual"
+  pkCss = "css"
+  pkDump = "dump"
+  pkHelp = "help"
+  pkOpt = "opt"
+  pkRun = "run"
+  pkVersion = "version"
+
+proc parseKey(ppc: var ParamParseContext; key: ParamKey) =
+  case key
+  of pkConfig: ppc.parseConfig()
+  of pkInputCharset: ppc.parseInputCharset()
+  of pkMonochrome: ppc.parseMonochrome()
+  of pkOutputCharset: ppc.parseOutputCharset()
+  of pkType: ppc.parseContentType()
+  of pkVisual: ppc.parseVisual()
+  of pkCss: ppc.parseCSS()
+  of pkDump: ppc.parseDump()
+  of pkHelp: help(0)
+  of pkOpt: ppc.parseOpt()
+  of pkRun: ppc.parseRun()
+  of pkVersion: version()
+  else: help(1)
 
 proc parse(ppc: var ParamParseContext): Opt[void] =
   var escapeAll = false
   while ppc.i < getArgvCount():
-    let param = $getArgvCString(ppc.i)
+    let param = getArgv(ppc.i)
     if escapeAll: # after --
       ?ppc.addPage(param)
       inc ppc.i
@@ -211,53 +247,43 @@ proc parse(ppc: var ParamParseContext): Opt[void] =
           if j < param.high and param[j] in NeedsNextParam:
             ppc.next = param.substr(j + 1)
             hasNext = true
-          case param[j]
-          of 'C': ppc.parseConfig()
-          of 'I': ppc.parseInputCharset()
-          of 'M': ppc.parseMonochrome()
-          of 'O': ppc.parseOutputCharset()
-          of 'T': ppc.parseContentType()
-          of 'V': ppc.parseVisual()
-          of 'c': ppc.parseCSS()
-          of 'd': ppc.parseDump()
-          of 'h': help(0)
-          of 'o': ppc.parseOpt()
-          of 'r': ppc.parseRun()
-          of 'v': version()
-          else: help(1)
+          let key = case param[j]
+          of 'C': pkConfig
+          of 'I': pkInputCharset
+          of 'O': pkOutputCharset
+          of 'T': pkType
+          of 'V': pkVisual
+          of 'c': pkCss
+          of 'd': pkDump
+          of 'h': pkHelp
+          of 'o': pkOpt
+          of 'r': pkRun
+          of 'v': pkVersion
+          else: pkUnknown
+          ppc.parseKey(key)
           if hasNext:
-            ppc.next = ""
+            ppc.next = str("")
             break
+      elif param.len == 2: # --
+        escapeAll = true
       else:
-        case param
-        of "--config": ppc.parseConfig()
-        of "--input-charset": ppc.parseInputCharset()
-        of "--monochrome": ppc.parseMonochrome()
-        of "--output-charset": ppc.parseOutputCharset()
-        of "--type": ppc.parseContentType()
-        of "--visual": ppc.parseVisual()
-        of "--css": ppc.parseCSS()
-        of "--dump": ppc.parseDump()
-        of "--help": help(0)
-        of "--opt": ppc.parseOpt()
-        of "--run": ppc.parseRun()
-        of "--version": version()
-        of "--": escapeAll = true
-        else: help(1)
+        let key = strictParseEnum[ParamKey](param.toOpenArray(2, param.high))
+          .get(pkUnknown)
+        ppc.parseKey(key)
     else:
       ?ppc.addPage(param)
     inc ppc.i
   ok()
 
-proc initConfig(ppc: ParamParseContext; warnings: var seq[string];
-    ctx: JSContext): Result[Config, string] =
-  var dir, dataDir: string
+proc initConfig(ppc: ParamParseContext; warnings: var seq[Str];
+    ctx: JSContext): Result[Config, Str] =
+  var dir, dataDir: Str
   let file = openConfig(dir, dataDir, ppc.configPath, warnings)
   if file.isErr and ppc.configPath.len > 0:
     # The user specified a non-existent config file.
-    return err("failed to open config file " & ppc.configPath)
+    return err(initStrM("failed to open config file ", ppc.configPath))
   if setEnv("CHA_DIR", dir).isErr or setEnv("CHA_DATA_DIR", dataDir).isErr:
-    die("failed to set env vars")
+    return err(str("failed to set env vars"))
   let config = newConfig(ctx, dir, dataDir)
   if config == nil:
     return err(ctx.getExceptionMsg())
@@ -266,10 +292,11 @@ proc initConfig(ppc: ParamParseContext; warnings: var seq[string];
     let name = if ppc.configPath.len > 0:
       ppc.configPath.afterLast('/')
     else:
-      "config.toml"
+      str("config.toml")
     ?config.parseConfig(config.dir, file.get, warnings, ctx, name)
   for opt in ppc.opts:
-    ?config.parseConfig(cwd, opt, warnings, ctx, "<input>", laxnames = true)
+    ?config.parseConfig(cwd, opt, warnings, ctx, str("<input>"),
+      laxnames = true)
   config{"userStyle"} &= ppc.stylesheet
   isCJKAmbiguous = config{"doubleWidthAmbiguous"}
   ok(config)
@@ -326,12 +353,12 @@ proc setupStartupScript(ctx: JSContext) =
     const src = staticRead".obj/init.jsb"
     let obj = ctx.readStartupScriptROM(src)
   else:
-    let path = ChaPath("$CHA_LIBEXEC_DIR/init.jsb").unquoteGet()
+    let path = ChaPath(str("$CHA_LIBEXEC_DIR/init.jsb")).unquoteGet()
     let ps = newPosixStream(path)
     if ps == nil:
-      die("failed to read startup bytecode at " & path)
+      die(initStrM("failed to read startup bytecode at ", path))
     let src = ps.readAll()
-    let obj = JS_ReadObject(ctx, cast[ptr uint8](unsafeAddr src[0]),
+    let obj = JS_ReadObject(ctx, cast[ptr uint8](src.toCString()),
       csize_t(src.len), JS_READ_OBJ_BYTECODE)
   if JS_IsException(obj.vc):
     die(ctx.getExceptionMsg())
@@ -341,12 +368,12 @@ proc setupStartupScript(ctx: JSContext) =
 
 jsNamespaceDef(Client): # fake namespace
   proc readFile(ctx: JSContext; path: CStringNZ): JSValue {.jsstfunc.} =
-    var s: string
+    var s: Str
     if chafile.readFile(path.p, s).isOk:
       return ctx.toJS(s)
     return JS_NULL
 
-  proc writeFile(ctx: JSContext; path: CStringNZ; content: USVString;
+  proc writeFile(ctx: JSContext; path: CStringNZ; content: Str;
       mode = cint(0o644)): JSValue {.jsstfunc.} =
     if chafile.writeFile(path.p, content.toOpenArray(), mode).isOk:
       return JS_UNDEFINED
@@ -393,8 +420,8 @@ proc main2(ctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
   let loader = newFileLoader(pagerPid, loaderControl)
   let client = newClient(ctx, loader, urandom)
   if client == nil or client.addJSModules(ctx).isErr:
-    die("failed to initialize JS: " & ctx.getExceptionMsg())
-  var warnings = newSeq[string]()
+    die(initStrM("failed to initialize JS: ", ctx.getExceptionMsg()))
+  var warnings = newSeq[Str]()
   let cres = ppc.initConfig(warnings, ctx)
   if cres.isErr:
     die(cres.error)
@@ -411,12 +438,12 @@ proc main2(ctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     if ps.isatty():
       help(1)
   # make sure tmpdir exists
-  let tmpdir = cstring(config{"tmpdir"})
+  let tmpdir = config{"tmpdir"}.toCString()
   discard mkdir(tmpdir, 0o700)
   if chown(tmpdir, getuid(), getgid()) != 0:
-    die("failed to set ownership of " & config{"tmpdir"})
+    die(initStrM("failed to set ownership of ", config{"tmpdir"}))
   if chmod(tmpdir, 0o700) != 0:
-    die("failed to set permissions of " & config{"tmpdir"})
+    die(initStrM("failed to set permissions of ", config{"tmpdir"}))
   let loaderPid = forkserver.loadConfig(config, warnings)
   if loaderPid == -1:
     die("failed to fork loader process")
@@ -441,7 +468,7 @@ proc main() =
   initCAtomFactory()
   let binDir = chaos.getAppFilename().parentDir()
   if setEnv("CHA_BIN_DIR", binDir).isErr or
-      setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
+      setEnv("CHA_LIBEXEC_DIR", ChaPath(str(libexecPath)).unquoteGet()).isErr:
     die("failed to set env vars")
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:

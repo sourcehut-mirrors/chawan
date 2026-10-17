@@ -11,6 +11,7 @@ import js/dtoa
 import js/jsopaque
 import js/jstypes
 import js/quickjs
+import utils/cowstr
 import utils/opt
 
 type JSCode* = enum
@@ -245,12 +246,13 @@ proc definePropertyC*(ctx: JSContext; this: JSObject; name: JSStrRef;
   ## Frees `prop'.
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
-proc definePropertyE*(ctx: JSContext; this: JSObject; name: string;
+proc definePropertyE*(ctx: JSContext; this: JSObject; name: Str;
     prop: JSValue): JSCode =
   ## Define an enumerable property on `this`.
   ##
   ## Frees `prop'.
-  ctx.defineProperty(this, name, prop, JS_PROP_ENUMERABLE)
+  ctx.defineProperty(this, cstring(name.toCStringConst()), prop,
+    JS_PROP_ENUMERABLE)
 
 proc definePropertyCW*(ctx: JSContext; this: JSObject; name: cstring;
     prop: JSValue): JSCode =
@@ -296,75 +298,70 @@ proc strictEquals*(ctx: JSContext; a, b: JSValueConst): bool =
 proc sameValue*(ctx: JSContext; a, b: JSValueConst): bool =
   JS_SameValue(ctx, a, b) != 0
 
-proc addRow(s: var string; title: string; count, size, sz2, cnt2: int64;
-    name: string) =
+proc addRow(s: var Growbuf; title: Str; count, size, sz2, cnt2: int64;
+    name: Str) =
   let d = cdouble(sz2) / cdouble(cnt2)
   let dn = js_dtoa_max_len(d, 10, 1, JS_DTOA_FORMAT_FIXED)
-  var buf = newString(dn)
+  var buf = initGrowbufUninit(dn)
   var tmp: JSDTOATempMem
-  let len = js_dtoa(cstring(buf), d, 10, 1, JS_DTOA_FORMAT_FIXED, tmp)
+  let len = js_dtoa(cast[cstring](buf.p), d, 10, 1, JS_DTOA_FORMAT_FIXED, tmp)
   buf.setLen(int(len))
-  s &= title & ": " & $count & " " & $size & " (" & buf & ")" & name & "\n"
+  s.addM(title, ": ", count, ' ', size, " (", buf, ')', name, '\n')
 
-proc addRow(s: var string; title: string; count, size, sz2: int64;
-    name: string) =
+proc addRow(s: var Growbuf; title: Str; count, size, sz2: int64; name: Str) =
   s.addRow(title, count, size, sz2, count, name)
 
-proc addRow(s: var string; title: string; count, size: int64; name: string) =
+proc addRow(s: var Growbuf; title: Str; count, size: int64; name: Str) =
   s.addRow(title, count, size, size, name)
 
-proc getMemoryUsage*(rt: JSRuntime): string =
+proc getMemoryUsage*(rt: JSRuntime): Str =
   ## Prints a formatted message of the current memory usage.
   ## This wraps `JS_ComputeMemoryUsage`.
   var m: JSMemoryUsage
   JS_ComputeMemoryUsage(rt, m)
-  var s = ""
+  var s = initGrowbuf()
   if m.malloc_count != 0:
-    s.addRow("memory allocated", m.malloc_count, m.malloc_size, "/block")
-    s.addRow("memory used", m.memory_used_count, m.memory_used_size,
-      m.malloc_size - m.memory_used_size, " average slack")
+    s.addRow(str("memory allocated"), m.malloc_count, m.malloc_size,
+      str("/block"))
+    s.addRow(str("memory used"), m.memory_used_count, m.memory_used_size,
+      m.malloc_size - m.memory_used_size, str(" average slack"))
   if m.atom_count != 0:
-    s.addRow("atoms", m.atom_count, m.atom_size, "/atom")
+    s.addRow(str("atoms"), m.atom_count, m.atom_size, str("/atom"))
   if m.str_count != 0:
-    s.addRow("strings", m.str_count, m.str_size, "/string")
+    s.addRow(str("strings"), m.str_count, m.str_size, str("/string"))
   if m.obj_count != 0:
-    s.addRow("objects", m.obj_count, m.obj_size, "/object")
-    s.addRow("properties", m.prop_count, m.prop_size, m.prop_size, m.obj_count,
-      "/object")
-    s.addRow("shapes", m.shape_count, m.shape_size, "/shape")
+    s.addRow(str("objects"), m.obj_count, m.obj_size, str("/object"))
+    s.addRow(str("properties"), m.prop_count, m.prop_size, m.prop_size,
+      m.obj_count, str("/object"))
+    s.addRow(str("shapes"), m.shape_count, m.shape_size, str("/shape"))
   if m.js_func_count != 0:
-    s.addRow("js functions", m.js_func_count, m.js_func_size, "/function")
+    s.addRow(str("js functions"), m.js_func_count, m.js_func_size,
+      str("/function"))
   if m.c_func_count != 0:
-    s &= "native functions: " & $m.c_func_count & "\n"
+    s.addM("native functions: ", m.c_func_count, '\n')
   if m.array_count != 0:
-    s &= "arrays: " & $m.array_count & "\n" &
-      "fast arrays: " & $m.fast_array_count & "\n"
-    s.addRow("fast array elements", m.fast_array_elements,
+    s.addM("arrays: ", m.array_count, '\n', "fast arrays: ",
+      m.fast_array_count, '\n')
+    s.addRow(str("fast array elements"), m.fast_array_elements,
         m.fast_array_elements * sizeof(JSValue), m.fast_array_elements,
-        m.fast_array_count, "")
+        m.fast_array_count, str(""))
   if m.binary_object_count != 0:
-    s &= "binary objects: " & $m.binary_object_count & " " &
-      $m.binary_object_size
-  move(s)
+    s.addM("binary objects: ", m.binary_object_count, ' ',
+      m.binary_object_size)
+  s.toStr()
 
-proc eval*(ctx: JSContext; s: string; file = "<input>";
+proc eval*(ctx: JSContext; s: Str; file = str("<input>");
     evalFlags = JS_EVAL_TYPE_GLOBAL): JSValue =
   ## Wrapper around JS_Eval.
   return JS_Eval(ctx, s.toCStringConst, csize_t(s.len), file.toCStringConst,
     evalFlags)
 
-proc eval*(ctx: JSContext; s: DOMString; file = "<input>";
-    evalFlags = JS_EVAL_TYPE_GLOBAL): JSValue =
-  ## Wrapper around JS_Eval.
-  return JS_Eval(ctx, cstringConst(s.p), csize_t(s.len), file.toCStringConst,
-    evalFlags)
-
-proc compileScript*(ctx: JSContext; s: string; file = "<input>"): JSValue =
+proc compileScript*(ctx: JSContext; s: Str; file = str("<input>")): JSValue =
   ## Compiles `s` into bytecode.
   ## You can evaluate the result using `evalFunction`.
   return ctx.eval(s, file, JS_EVAL_FLAG_COMPILE_ONLY)
 
-proc compileModule*(ctx: JSContext; s: string; file = "<input>"): JSValue =
+proc compileModule*(ctx: JSContext; s: Str; file = str("<input>")): JSValue =
   ## Compiles `s` into a module.
   ##
   ## I forgot how to use this, check quickjs-libc.c in the original
@@ -390,11 +387,10 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
   let ctor = ctx.getOpaque().ctors[int(classid)]
   var res = fjOk
   for e in consts:
-    let s = $e
-    res = ctx.definePropertyE(proto, s, JS_NewUint32(ctx, uint32(e)))
+    res = ctx.definePropertyE(proto, e.toStr(), JS_NewUint32(ctx, uint32(e)))
     if res != fjOk:
       break
-    res = ctx.definePropertyE(ctor, s, JS_NewUint32(ctx, uint32(e)))
+    res = ctx.definePropertyE(ctor, e.toStr(), JS_NewUint32(ctx, uint32(e)))
     if res != fjOk:
       break
   res
@@ -419,29 +415,32 @@ proc uninitIfNull*(val: JSValue): JSValue =
     return JS_UNINITIALIZED
   return val
 
-proc getExceptionMsg*(ctx: JSContext): string =
+proc getExceptionMsg*(ctx: JSContext): Str =
   ## Converts the current exception to a string.
-  result = ""
+  var buf = initGrowbuf()
   let ex = JS_GetException(ctx)
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, plen, ex.vc) # cstring
   if outp != nil:
     if plen > 0:
-      result.setLen(plen)
-      copyMem(addr result[0], cstring(outp), plen)
+      buf.setLen(cast[int](plen))
+      #TODO chaCopyMem
+      copyMem(addr buf[0], cstring(outp), plen)
     JS_FreeCString(ctx, outp)
-    result &= '\n'
-  let stack = JS_GetPropertyStr(ctx, ex.vc, "stack")
+    buf &= '\n'
+  let stack = JS_GetPropertyStr(ctx, ex.vc, cstringConst("stack"))
   JS_FreeValue(ctx, ex)
   if not JS_IsUndefined(stack.vc):
     let outp = JS_ToCStringLen(ctx, plen, stack.vc) # cstring
     if outp != nil:
       if plen > 0:
-        let olen = result.len
-        result.setLen(csize_t(olen) + plen)
-        copyMem(addr result[olen], cstring(outp), plen)
+        let olen = buf.len
+        buf.setLen(cast[int](plen) + olen)
+        #TODO chaCopyMem
+        copyMem(addr buf[olen], cstring(outp), plen)
       JS_FreeCString(ctx, outp)
   JS_FreeValue(ctx, stack)
+  buf.toStr()
 
 proc runJSJobs*(rt: JSRuntime): JSContext =
   ## Returns the first JSContext that threw an exception, or nil if no
@@ -517,7 +516,8 @@ proc newCFunctionData*(ctx: JSContext; fun: JSCFunctionData; name: cstring;
 
 proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
     name: cstring; magic: cint; data: varargs[JSValueConst]): Opt[JSCallback] =
-  ctx.newCFunctionData(fun, cstring("get " & $name), 0, magic, data)
+  let name = initStrM("get ", name)
+  ctx.newCFunctionData(fun, name.toCString(), 0, magic, data)
 
 proc callUserObject*(ctx: JSContext; callback: JSObject; name: JSStrRef;
     this, arg: JSValueConst): JSValue =

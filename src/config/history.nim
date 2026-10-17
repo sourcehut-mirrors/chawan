@@ -6,6 +6,7 @@ import std/posix
 
 import io/chafile
 import io/dynstream
+import utils/cowstr
 import utils/opt
 import utils/tabutil
 
@@ -61,7 +62,7 @@ proc add(hist: History; entry: sink HistoryEntry; merge = false) =
 proc newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
 
-proc add*(hist: History; s: sink string) =
+proc add*(hist: History; s: sink Str) =
   hist.add(HistoryEntry(s: s), merge = false)
 
 proc clear*(hist: History) =
@@ -85,9 +86,9 @@ proc parse*(hist: History; ps: PosixStream; otime = int64.low;
   let mtime = int64(stats.st_mtime)
   if otime < mtime:
     let file = ?ps.afdopen("r")
-    var line = ""
+    var line = initGrowbuf()
     while ?file.readLine(line):
-      hist.add(HistoryEntry(s: move(line)), merge)
+      hist.add(HistoryEntry(s: move(line).toStr()), merge)
     hist.mtime = mtime
   ok()
 
@@ -98,7 +99,7 @@ proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
     var entry = hist.last
     var i = 0
     while entry != nil:
-      ?file.writeLine(entry.s)
+      ?file.writeLine(entry.s.toOpenArray())
       entry = entry.prev
       inc i
       if i >= hist.maxLen:
@@ -110,15 +111,15 @@ proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
         break
       entry = entry.next
     while entry != nil:
-      ?file.writeLine(entry.s)
+      ?file.writeLine(entry.s.toOpenArray())
       entry = entry.next
   ?file.flush()
   if sync and fsync(ps.fd) != 0:
     return err()
   ok()
 
-proc write*(hist: History; file: string): Opt[void] =
-  let ps = newPosixStream(file)
+proc write*(hist: History; file: Str): Opt[void] =
+  let ps = newPosixStream(file.toCString())
   if ps != nil:
     ?hist.parse(ps, hist.mtime, merge = true)
     # delay shrink until merge is finished so that deduplication can work
@@ -127,9 +128,10 @@ proc write*(hist: History; file: string): Opt[void] =
     hist.shrink()
   if hist.first == nil:
     return ok()
-  let tmp = file & '~'
-  discard unlink(cstring(tmp))
-  let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT or O_EXCL, 0o600)
+  let tmp = initStrM(file, '~')
+  discard unlink(tmp.toCString())
+  let ps2 = newPosixStream(tmp.toCString(), O_WRONLY or O_CREAT or O_EXCL,
+    0o600)
   if ps2 == nil:
     return err()
   ?hist.write(ps2, sync = true, reverse = false)

@@ -11,6 +11,7 @@ Set-Cookie: test8=hi; HttpOnly; Expires=Mon, 31 Feb 1999 20:30:00 GMT
 Set-Cookie: test10=invalid; HttpOnly; Domain=localhost:12345
 Set-Cookie: test11=valid; HttpOnly; Domain=localhost
 Set-Cookie: test12=	invalid; test12=invalid
+Moo: a=ó
 
 <link rel=stylesheet href=cookie.css.http>
 <div id=x>Fail</div>

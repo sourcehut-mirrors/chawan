@@ -12,6 +12,7 @@ import css/box
 import css/cssparser
 import css/cssvalues
 import css/lunit
+import utils/cowstr
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
@@ -831,7 +832,7 @@ type
     whitespaceIsLF: bool
 
   WordState = object
-    s: string
+    s: Growbuf
     ibox: InlineTextBox
     wrapPos: int # position of last wrapping opportunity, or -1
     width: LUnit
@@ -1301,9 +1302,7 @@ proc mergeSpace(fstate: var FlowState; ibox: InlineTextBox): InlineAtom =
 proc addSpacing(fstate: var FlowState; ibox: InlineTextBox; shift: int;
     hang = false) =
   let atom = fstate.mergeSpace(ibox)
-  let run = atom.run
-  for i in 0 ..< shift:
-    run.s &= ' '
+  atom.run.s.setLenFill(atom.run.s.len + shift, ' ')
   let w = shift.toLUnit() * fstate.cellSize.w
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
@@ -1509,14 +1508,14 @@ proc addWordEOL(fstate: var FlowState; word: var WordState): bool =
     return false
   let wrapPos = word.wrapPos
   if wrapPos >= 0:
-    var leftstr = word.s.substr(wrapPos)
+    assert wrapPos <= word.s.len
+    var leftstr = initGrowbufSink(word.s.substr(wrapPos))
     word.s.setLen(wrapPos)
     if word.hasSoftHyphen:
-      const shy = "\u00AD" # soft hyphen
-      word.s &= shy
+      word.s &= "\u00AD" # soft hyphen
       word.hasSoftHyphen = false
     let wrapped = fstate.addWord(word)
-    word.width = leftstr.width().toLUnit() * fstate.cellSize.w
+    word.width = leftstr.toOpenArray().width().toLUnit() * fstate.cellSize.w
     word.s = move(leftstr)
     return wrapped
   return fstate.addWord(word)
@@ -1604,7 +1603,8 @@ proc addWrapPos(fstate: var FlowState; word: var WordState) =
   fstate.flushIntrSize(word)
   word.wrapPos = word.s.len
 
-proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
+proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox;
+    s: openArray[char]) =
   var word = fstate.initWord(ibox)
   let luctx = fstate.lctx.luctx
   var i = 0
@@ -1654,11 +1654,13 @@ proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
   #TODO not sure if this works with nowrap...
   fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shiftw
 
-proc layoutText(fstate: var FlowState; ibox: InlineTextBox; s: string) =
+proc layoutText(fstate: var FlowState; ibox: InlineTextBox;
+    s: openArray[char]) =
   let transform = ibox.computed{"text-transform"}
   if transform == TextTransformNone:
     fstate.layoutTextLoop(ibox, s)
   else:
+    #TODO could optimize these if we accepted Str
     let s = case transform
     of TextTransformCapitalize: s.capitalizeLU()
     of TextTransformUppercase: s.toUpperLU()
@@ -1666,8 +1668,8 @@ proc layoutText(fstate: var FlowState; ibox: InlineTextBox; s: string) =
     of TextTransformFullWidth: s.fullwidth()
     of TextTransformFullSizeKana: s.fullsize()
     of TextTransformChaHalfWidth: s.halfwidth()
-    else: ""
-    fstate.layoutTextLoop(ibox, s)
+    else: str("")
+    fstate.layoutTextLoop(ibox, s.toOpenArray())
 
 # size is the parent's size.
 proc popPositioned(lctx: LayoutContext; head: CSSAbsolute; size: Size) =
@@ -2045,7 +2047,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
   if ibox of InlineTextBox:
     let ibox = InlineTextBox(ibox)
     ibox.runs.setLen(0)
-    fstate.layoutText(ibox, ibox.text.s)
+    fstate.layoutText(ibox, ibox.text.toOpenArray())
   elif ibox of InlineNewLineBox:
     let ibox = InlineNewLineBox(ibox)
     fstate.finishLine(ibox, wrap = false, force = true, ibox.computed{"clear"})

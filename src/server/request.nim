@@ -14,10 +14,11 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import server/headers
 import server/blob
-import utils/opt
+import server/headers
 import server/url
+import utils/cowstr
+import utils/opt
 import utils/twtstr
 
 type
@@ -68,17 +69,17 @@ type
     rbtNone, rbtString, rbtBlob, rbtMultipart, rbtOutput, rbtCache
 
   FormDataEntry* = object
-    name*: string
-    filename*: string
+    name*: Str
+    filename*: Str
     case isstr*: bool
     of true:
-      svalue*: string
+      svalue*: Str
     of false:
       value*: Blob
 
   FormDataObj* = object
     entries*: seq[FormDataEntry]
-    boundary*: string
+    boundary*: Str
 
   FormData* = JSRef[FormDataObj]
 
@@ -87,7 +88,7 @@ type
     of rbtNone:
       discard
     of rbtString:
-      s*: string
+      s*: Str
     of rbtMultipart:
       multipart*: FormData
     of rbtOutput:
@@ -228,26 +229,26 @@ proc sread*(r: var PacketReader; o: var RawRequest): PacketCode =
   r.sread(o.credentials)
 
 # FormData
-proc writeEntry(stream: PosixStream; entry: FormDataEntry; boundary: string):
+proc writeEntry(stream: PosixStream; entry: FormDataEntry; boundary: Str):
     Opt[void] =
-  var buf = "--" & boundary & "\r\n"
+  var buf = initGrowbufM("--", boundary, "\r\n")
   let name = percentEncode(entry.name, {'"', '\r', '\n'})
   if entry.isstr:
-    buf &= "Content-Disposition: form-data; name=\"" & name & "\"\r\n\r\n"
+    buf.addM("Content-Disposition: form-data; name=\"", name, "\"\r\n\r\n")
     # try to merge the write call for small entries
     if entry.svalue.len < 4096:
       buf &= entry.svalue
       ?stream.writeLoop(buf)
     else:
       ?stream.writeLoop(buf)
-      ?stream.writeLoop(entry.svalue)
+      ?stream.writeLoop(entry.svalue.toOpenArray())
   else:
-    buf &= "Content-Disposition: form-data; name=\"" & name & "\";"
+    buf.addM("Content-Disposition: form-data; name=\"", name, "\";")
     let filename = percentEncode(entry.filename, {'"', '\r', '\n'})
-    buf &= " filename=\"" & filename & "\"\r\n"
+    buf.addM(" filename=\"", filename, "\"\r\n")
     let blob = entry.value
     let contentType = if blob.contentType == "":
-      "application/octet-stream"
+      str("application/octet-stream")
     else:
       blob.contentType
     buf &= "Content-Type: "
@@ -273,14 +274,14 @@ proc writeEntry(stream: PosixStream; entry: FormDataEntry; boundary: string):
 proc write*(stream: PosixStream; formData: FormData): Opt[void] =
   for entry in formData.entries:
     ?stream.writeEntry(entry, formData.boundary)
-  stream.writeLoop("--" & formData.boundary & "--\r\n")
+  stream.writeLoop(initStrM("--", formData.boundary, "--\r\n").toOpenArray())
 
-proc generateBoundary(urandom: PosixStream): string =
+proc generateBoundary(urandom: PosixStream): Str =
   var s {.noinit.}: array[33, uint8]
   if urandom.readLoop(s).isErr:
-    return ""
+    return str("")
   # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
-  return "----WebKitFormBoundary" & btoa(s)
+  return initStrM("----WebKitFormBoundary", btoa(s))
 
 proc newFormData0*(urandom: PosixStream): FormData =
   var boundary = urandom.generateBoundary()
@@ -288,21 +289,12 @@ proc newFormData0*(urandom: PosixStream): FormData =
     return FormData(nil)
   return jsNew FormDataObj(boundary: move(boundary))
 
-proc add*(list: var seq[FormDataEntry], entry: tuple[name, value: string]) =
+proc add*(list: var seq[FormDataEntry], entry: tuple[name, value: Str]) =
   list.add(FormDataEntry(
     name: entry.name,
     isstr: true,
     svalue: entry.value
   ))
-
-proc toNameValuePairs*(list: seq[FormDataEntry]):
-    seq[tuple[name, value: string]] =
-  result = @[]
-  for entry in list:
-    if entry.isstr:
-      result.add((entry.name, entry.svalue))
-    else:
-      result.add((entry.name, entry.name))
 
 proc calcLength*(this: FormData): int =
   result = 0
@@ -311,7 +303,7 @@ proc calcLength*(this: FormData): int =
     #TODO maybe make CRLF for name first?
     result += entry.name.len # always have name
     # these must be percent-encoded, with 2 char overhead:
-    result += entry.name.count({'\r', '\n', '"'}) * 2
+    result += entry.name.toOpenArray().count({'\r', '\n', '"'}) * 2
     if entry.isstr:
       result += "Content-Disposition: form-data; name=\"\"\r\n".len
       result += entry.svalue.len
@@ -321,7 +313,7 @@ proc calcLength*(this: FormData): int =
       result += " filename=\"\"\r\n".len
       result += entry.filename.len
       # dquot must be quoted with 2 char overhead
-      result += entry.filename.count('"') * 2
+      result += entry.filename.toOpenArray().count('"') * 2
       # content type
       result += "Content-Type: \r\n".len
       result += entry.value.contentType.len
@@ -330,19 +322,19 @@ proc calcLength*(this: FormData): int =
     result += "\r\n".len # value is always followed by \r\n
   result += "--".len + this.boundary.len + "--\r\n".len
 
-proc getContentType*(this: FormData): string =
-  return "multipart/form-data; boundary=" & this.boundary
+proc getContentType*(this: FormData): Str =
+  initStrM("multipart/form-data; boundary=", this.boundary)
 
 jsClassPublicDef(FormData):
   proc newFormData(ctx: JSContext; argv: varargs[JSValueConst]): Opt[FormData]
       {.jsctor.} =
     newFormDataImpl(ctx, argv)
 
-  proc append*(ctx: JSContext; this: FormData; name: string; val: JSValueConst;
+  proc append*(ctx: JSContext; this: FormData; name: Str; val: JSValueConst;
       rest: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
     var blob: Blob
     if ctx.fromJS(val, blob).isOk:
-      var filename = "blob"
+      var filename = str("blob")
       if rest.len > 0:
         ?ctx.fromJS(rest[0], filename)
       elif blob of WebFile:
@@ -357,18 +349,17 @@ jsClassPublicDef(FormData):
     elif rest.len > 0:
       err()
     else:
-      var s: USVString
+      var s: Str
       ?ctx.fromJS(val, s)
-      this.entries.add(FormDataEntry(name: name, isstr: true, svalue: $s))
+      this.entries.add(FormDataEntry(name: name, isstr: true, svalue: s))
       ok()
 
-  proc delete(this: FormData; name: USVString) {.jsfunc.} =
+  proc delete(this: FormData; name: Str) {.jsfunc.} =
     for i in countdown(this.entries.high, 0):
       if this.entries[i].name == name:
         this.entries.delete(i)
 
-  proc get(ctx: JSContext; this: FormData; name: USVString): JSValue
-      {.jsfunc.} =
+  proc get(ctx: JSContext; this: FormData; name: Str): JSValue {.jsfunc.} =
     for entry in this.entries:
       if entry.name == name:
         if entry.isstr:
@@ -377,7 +368,7 @@ jsClassPublicDef(FormData):
           return ctx.toJS(entry.value)
     return JS_NULL
 
-  proc getAll(ctx: JSContext; this: FormData; name: USVString): seq[JSValue]
+  proc getAll(ctx: JSContext; this: FormData; name: Str): seq[JSValue]
       {.jsfunc.} =
     result = newSeq[JSValue]()
     for entry in this.entries:
@@ -411,15 +402,15 @@ proc hasReferrer*(this: Request): bool =
   rqfReferrer in this.flags
 
 proc getReferrer*(this: Request): URL =
-  return parseURL0(this.headers.getFirst("Referer"))
+  return parseURL0(this.headers.getFirst(byteStr("Referer")).toStr())
 
-proc setReferrer*(this: Request; value: string) =
+proc setReferrer*(this: Request; value: ByteString) =
   this.flags.incl(rqfReferrer)
-  this.headers["Referer"] = value
+  this.headers[byteStr("Referer")] = value
 
 proc unsetReferrer*(this: Request) =
   this.flags.excl(rqfReferrer)
-  this.headers.removeAll("Referer")
+  this.headers.removeAll(byteStr("Referer"))
 
 proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); hasReferrer = true; referrer = URL(nil);
@@ -428,7 +419,7 @@ proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     window = RequestWindow(t: rwtNoWindow)): Request =
   assert url != nil
   if referrer != nil:
-    headers["Referer"] = $referrer
+    headers[byteStr("Referer")] = referrer.toStr().asByteString
   var flags: set[RequestFlag] = {}
   if tocache:
     flags.incl(rqfToCache)
@@ -454,7 +445,7 @@ proc newRequest*(raw: RawRequest): Request =
     raw.body, tocache = raw.tocache, credentials = raw.credentials,
     internal = raw.internal, urlCredentials = raw.urlCredentials)
 
-proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
+proc newRequest*(s: Str; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); hasReferrer = true; referrer = URL(nil);
     tocache = false; credentials = cmSameOrigin; internal = false): Request =
   return newRequest(parseURL0(s), httpMethod, headers, body, hasReferrer,
@@ -486,7 +477,7 @@ type
     of bitUrlSearchParams:
       searchParams: URLSearchParams
     of bitString:
-      s: string
+      s: Str
 
   RequestInit = object of JSDict
     `method` {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
@@ -516,23 +507,23 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BodyInit):
   ctx.fromJS(val, res.s)
 
 # Returns the content type
-proc extract*(init: BodyInit; body: var RequestBody): string =
+proc extract*(init: BodyInit; body: var RequestBody): Str =
   case init.t
-  of bitNull: return ""
+  of bitNull: return str("")
   of bitFormData:
     body = RequestBody(t: rbtMultipart, multipart: init.formData)
     return init.formData.getContentType()
   of bitString:
     body = RequestBody(t: rbtString, s: init.s)
-    return "text/plain;charset=UTF-8"
+    return str("text/plain;charset=UTF-8")
   of bitUrlSearchParams:
-    body = RequestBody(t: rbtString, s: $init.searchParams)
-    return "application/x-www-form-urlencoded;charset=UTF-8"
+    body = RequestBody(t: rbtString, s: init.searchParams.toStr())
+    return str("application/x-www-form-urlencoded;charset=UTF-8")
   of bitBlob:
     body = RequestBody(t: rbtBlob, blob: init.blob)
     return init.blob.contentType
 
-proc safeExtract*(init: BodyInit; body: var RequestBody): string =
+proc safeExtract*(init: BodyInit; body: var RequestBody): Str =
   #TODO check for ReadableStream once we have it
   init.extract(body)
 
@@ -550,13 +541,15 @@ jsClassDef(Request):
   jsget Request, mode
   jsget Request, destination
 
-  proc jsUrl(this: Request): string {.jsfget: "url".} =
-    return $this.url
+  proc jsUrl(this: Request): Str {.jsfget: "url".} =
+    return this.url.toStr()
 
   proc referrer(ctx: JSContext; this: Request): JSValue {.jsfget.} =
     if rqfReferrer notin this.flags:
       return ctx.toJS("")
-    let res = this.headers.getFirst("Referer")
+    # treated as USVString
+    #TODO may be better to store as a separate field in Request
+    let res = Str(this.headers.getFirst(byteStr("Referer")))
     if res != "":
       return ctx.toJS(res)
     return ctx.toJS("about:client")
@@ -570,7 +563,7 @@ jsClassDef(Request):
     var body = RequestBody()
     var credentials = cmSameOrigin
     var httpMethod = hmGet
-    var referrerStr: USVString
+    var referrerStr: Str
     if not JS_IsUndefined(init.referrer):
       ?ctx.fromJS(init.referrer, referrerStr)
     if not JS_IsUndefined(init.credentials):
@@ -581,7 +574,8 @@ jsClassDef(Request):
       #TODO the spec allows this to be any string :(
       let res = parseEnumNoCase[HttpMethod](s.toOpenArray())
       if res.isErr:
-        JS_ThrowTypeError(ctx, "unexpected HTTP method %s", s.p)
+        JS_ThrowTypeError(ctx, "unexpected HTTP method %s",
+          s.toStr().toCStringConst())
         return err()
       httpMethod = res.get
     var hasReferrer = true
@@ -610,7 +604,7 @@ jsClassDef(Request):
       body = res.body
       window = res.window
     else:
-      var s: USVString
+      var s: Str
       ?ctx.fromJS(resource, s)
       url = ?ctx.parseJSURL(s, apiBaseURL)
       if JS_IsUndefined(init.mode):
@@ -644,7 +638,7 @@ jsClassDef(Request):
     ?ctx.fill(headers, init.headers)
     let contentType = init.body.extract(body)
     if contentType != "":
-      headers.addIfNotFound("Content-Type", contentType)
+      headers.addIfNotFound(byteStr("Content-Type"), contentType.asByteString)
     if mode == rmNoCors:
       headers.guard = hgRequestNoCors
     ok(newRequest(

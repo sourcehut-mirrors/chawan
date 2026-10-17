@@ -11,8 +11,9 @@ import io/dynstream
 import js/jsref
 import js/libregexp
 import server/url
-import utils/lrewrap
 import utils/chaos
+import utils/cowstr
+import utils/lrewrap
 import utils/opt
 import utils/tabutil
 import utils/twtstr
@@ -21,7 +22,7 @@ type
   MailcapParser* = object
     line: int
     lenient*: bool # accept extensions without x-?  (for browsecap)
-    error*: string
+    error*: Str
 
   MailcapFlag* = enum
     mfNeedsterminal = "needsterminal"
@@ -48,11 +49,11 @@ type
 
   NamedField = ref object
     t: NamedFieldType
-    value*: string
+    value*: Str
     next: NamedField
 
   MailcapEntry* = ref object
-    cmd*: string
+    cmd*: Str
     flags*: set[MailcapFlag]
     id*: uint32 # actual count in mailcap
     fieldsHead: NamedField
@@ -78,19 +79,19 @@ proc getOrDefault*(mailcap: Mailcap; t: openArray[char]): MailcapList =
 proc put(mailcap: var Mailcap; list: MailcapList) =
   mailcap.map.put(list)
 
-proc put(mailcap: var Mailcap; t: string): MailcapList =
+proc put(mailcap: var Mailcap; t: Str): MailcapList =
   let list = MailcapList(s: t)
   mailcap.put(list)
   list
 
-proc getList*(mailcap: Mailcap; t: string): MailcapList =
-  let list = mailcap.getOrDefault(t)
+proc getList*(mailcap: Mailcap; t: Str): MailcapList =
+  let list = mailcap.getOrDefault(t.toOpenArray())
   if list != nil:
     return list
   let i = t.findOrLen('/')
   mailcap.getOrDefault(t.toOpenArray(0, i - 1))
 
-proc isHtmlOrText(s: string): bool =
+proc isHtmlOrText(s: Str): bool =
   s == "text/html" or s == "text/plain"
 
 proc add(list: MailcapList; entry: MailcapEntry) =
@@ -98,8 +99,8 @@ proc add(list: MailcapList; entry: MailcapEntry) =
   if mfResource in entry.flags:
     list.resource.add(entry)
 
-proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
-  let list0 = mailcap.getOrDefault(t)
+proc getListOrAdd(mailcap: var Mailcap; t: Str): MailcapList =
+  let list0 = mailcap.getOrDefault(t.toOpenArray())
   if list0 != nil:
     return list0
   let list = mailcap.put(t)
@@ -127,7 +128,7 @@ proc getListOrAdd(mailcap: var Mailcap; t: string): MailcapList =
     mainList.next = list
   list
 
-proc add(mailcap: var Mailcap; entry: MailcapEntry; t: string) =
+proc add(mailcap: var Mailcap; entry: MailcapEntry; t: Str) =
   if t.isHtmlOrText() and mfType notin entry.flags:
     return
   var list = mailcap.getListOrAdd(t)
@@ -145,47 +146,49 @@ proc find*(entry: MailcapEntry; t: NamedFieldType): NamedField =
       return field
   nil
 
-proc toStr*(entry: MailcapEntry; t: string): string =
-  var s = t & ';' & entry.cmd
+proc toStr*(entry: MailcapEntry; t: Str): Str =
+  var s = initGrowbufM(t, ';', entry.cmd)
   for flag in MailcapFlag:
     if flag in entry.flags:
-      s &= ';' & $flag
+      s.addM(';', flag.toStr())
   for field in entry.fields:
     # if value is regex, then the source is until the first NUL
-    s &= ';' & $field.t & '=' & $cstring(field.value)
-  move(s)
+    s.addM(';', field.t.toStr(), '=', field.value.toCString())
+  s.toStr()
 
-template err(state: MailcapParser; msg: string): untyped =
+template err(state: MailcapParser; msg: Str): untyped =
   state.error = msg
   err()
 
 proc consumeTypeField(state: var MailcapParser; line: openArray[char];
-    outs: var string): Opt[int] =
+    outs: var Str): Opt[int] =
   var slash = -1
   var n = 0
+  var buf = initGrowbuf()
   while n < line.len:
     let c = line[n]
     if c in AsciiWhitespace + {';'}:
       break
     if c == '/':
       if slash >= 0:
-        return state.err("too many slash characters")
-      slash = outs.len
+        return state.err(str("too many slash characters"))
+      slash = buf.len
     elif c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
-      return state.err("invalid character in type field: " & c)
-    outs &= c.toLowerAscii()
+      return state.err(initStrM("invalid character in type field: ", c))
+    buf &= c.toLowerAscii()
     inc n
-  if slash >= 0 and slash + 2 == outs.len and outs[slash + 1] == '*':
+  if slash >= 0 and slash + 2 == buf.len and buf[slash + 1] == '*':
     # normalize type/* to type without a subtype (implicit-wild)
-    outs.setLen(slash)
+    buf.setLen(slash)
   n = line.skipBlanks(n)
   if n >= line.len or line[n] != ';':
-    return state.err("semicolon not found")
+    return state.err(str("semicolon not found"))
+  outs = buf.toStr()
   ok(n + 1)
 
 proc consumeCommand(state: var MailcapParser; line: openArray[char];
-    outs: var string; n: int): Opt[int] =
-  var cmd = ""
+    outs: var Str; n: int): Opt[int] =
+  var cmd = initGrowbuf()
   var n = line.skipBlanks(n)
   var quoted = false
   while n < line.len:
@@ -199,23 +202,24 @@ proc consumeCommand(state: var MailcapParser; line: openArray[char];
         quoted = true
         # fall through; backslash will be parsed again in unquoteCommand
       elif c in Controls:
-        return state.err("invalid character in command: " & c)
+        return state.err(initStrM("invalid character in command: ", c))
     else:
       quoted = false
     cmd &= c
     inc n
-  outs = move(cmd)
+  outs = cmd.toStr()
   ok(n)
 
 proc addNamedField(entry: MailcapEntry; t: NamedFieldType;
-    fieldsTail: var NamedField; cmd: var string): Err[string] =
+    fieldsTail: var NamedField; cmd: var Str): Err[Str] =
   var s = move(cmd)
   if t in {nfMatch, nfNcMatch}:
     let flags = if t == nfNcMatch: {LRE_FLAG_IGNORECASE} else: {}
     var re: Regex
     if not compileRegex(s, flags, re):
-      return err(move(re.bytecode))
-    s &= '\0' & re.bytecode
+      return err(re.bytecode)
+    s &= "\0"
+    s &= re.bytecode
   let field = entry.find(t)
   if field != nil:
     field.value = move(s)
@@ -238,7 +242,7 @@ proc allowField(state: MailcapParser; standard: bool; i: int): bool =
 proc consumeField(state: var MailcapParser; line: openArray[char];
     entry: MailcapEntry; n: int; fieldsTail: var NamedField): Opt[int] =
   var n = line.skipBlanks(n)
-  var s = ""
+  var s = initGrowbuf()
   while n < line.len:
     let c = line[n]
     inc n
@@ -248,11 +252,11 @@ proc consumeField(state: var MailcapParser; line: openArray[char];
     of '\r':
       continue
     of '=':
-      var cmd = ""
+      var cmd: Str
       n = ?state.consumeCommand(line, cmd, n)
       while s.len > 0 and s[^1] in AsciiWhitespace:
-        s.setLen(s.len - 1)
-      let i = if s.startsWith("x-"): 2 else: 0
+        s.setLen(s.high)
+      let i = if s.toOpenArray().startsWith("x-"): 2 else: 0
       if t := parseEnumNoCase[NamedFieldType](s.toOpenArray(i, s.high)):
         if state.allowField(t <= nfEdit, i):
           let res = entry.addNamedField(t, fieldsTail, cmd)
@@ -260,19 +264,19 @@ proc consumeField(state: var MailcapParser; line: openArray[char];
             return state.err(res.error)
       return ok(n)
     elif c in Controls:
-      return state.err("invalid character in field: " & c)
+      return state.err(initStrM("invalid character in field: ", c))
     else:
       s &= c
   while s.len > 0 and s[^1] in AsciiWhitespace:
-    s.setLen(s.len - 1)
-  let i = if s.startsWith("x-"): 2 else: 0
+    s.setLen(s.high)
+  let i = if s.toOpenArray().startsWith("x-"): 2 else: 0
   if x := parseEnumNoCase[MailcapFlag](s.toOpenArray(i, s.high)):
     if state.allowField(x <= mfCopiousoutput, i):
       entry.flags.incl(x)
   return ok(n)
 
 proc parseEntry*(state: var MailcapParser; line: openArray[char];
-    entry: MailcapEntry; t: var string): Opt[void] =
+    entry: MailcapEntry; t: var Str): Opt[void] =
   var n = ?state.consumeTypeField(line, t)
   n = ?state.consumeCommand(line, entry.cmd, n)
   var fieldsTail: NamedField
@@ -287,14 +291,14 @@ proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
       continue
     let entry = MailcapEntry(id: mailcap.len)
     inc mailcap.len
-    var t: string
-    let res = state.parseEntry(line, entry, t)
-    doAssert res.isOk, state.error
+    var t: Str
+    let res = state.parseEntry(line.toOpenArray(), entry, t)
+    doAssert res.isOk, $state.error
     mailcap.add(entry, t)
 
 proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
     file: AChaFile): Opt[void] =
-  var line: string
+  var line: Growbuf
   while file.readLine(line).get(false):
     if line.len <= 0 or line[0] == '#':
       inc state.line
@@ -307,16 +311,16 @@ proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;
       line.setLen(line.high) # trim backslash
       if not ?file.readLineAppend(line):
         break
-    var t: string
     let entry = MailcapEntry(id: mailcap.len)
     inc mailcap.len
-    ?state.parseEntry(line, entry, t)
+    var t: Str
+    ?state.parseEntry(line.toOpenArray(), entry, t)
     mailcap.add(entry, t)
     inc state.line
   return ok()
 
-proc parseMailcap*(mailcap: var Mailcap; path: string;
-    lenient = false): Err[string] =
+proc parseMailcap*(mailcap: var Mailcap; path: Str; lenient = false):
+    Err[Str] =
   let file0 = chafile.afopen(path, "r")
   if file0.isErr:
     return ok()
@@ -324,22 +328,17 @@ proc parseMailcap*(mailcap: var Mailcap; path: string;
   var state = MailcapParser(line: 1, lenient: lenient)
   let res = state.parseMailcap(mailcap, file)
   if res.isErr:
-    return err(path & '(' & $state.line & "): " & state.error)
+    return err(initStrM(path, '(', state.line.toStr(), "): ", state.error))
   ok()
 
 # Mostly based on w3m's mailcap quote/unquote
 type UnquoteState = enum
   usNormal, usQuoted, usPerc, usAttr, usAttrQuoted, usDollar
 
-type UnquoteResult* = object
-  canpipe*: bool
-  cmd*: string
-
-proc unquoteCommand*(ecmd, contentType, outpath: openArray[char]; url: URL;
-    canpipe: var bool; line = -1; uriparams = false; shellQuote = true):
-    string =
-  var cmd = ""
-  var attrname = ""
+proc unquoteCommand*(ecmd, contentType, outpath: Str; url: URL;
+    canpipe: var bool; line = -1; uriparams = false; shellQuote = true): Str =
+  var cmd = initGrowbuf()
+  var attrname = initGrowbuf()
   var state = usNormal
   var qs = qsNormal # current quote state
   var qss: seq[QuoteState] = @[] # quote state stack
@@ -408,9 +407,9 @@ proc unquoteCommand*(ecmd, contentType, outpath: openArray[char]; url: URL;
       of 'u': # Netscape extension
         if url != nil: # nil in getEditorCommand
           if shellQuote:
-            cmd &= quoteFile($url, qs)
+            cmd &= quoteFile(url.toStr(), qs)
           else:
-            cmd &= $url
+            cmd &= url.toStr().toOpenArray()
       of 'h': # w3mmee extension
         if url != nil:
           if shellQuote:
@@ -437,7 +436,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: openArray[char]; url: URL;
             cmd &= url.search
       of 'd': # Chawan extension
         if line != -1: # -1 in mailcap
-          cmd &= $line
+          cmd &= line
       of '{':
         state = usAttr
         continue
@@ -446,66 +445,65 @@ proc unquoteCommand*(ecmd, contentType, outpath: openArray[char]; url: URL;
     of usAttr:
       if c == '}':
         let s = if uriparams:
-          url.getSearchParam(attrname)
+          url.getSearchParam(attrname.toOpenArray())
         else:
-          contentType.getContentTypeAttr(attrname)
+          contentType.getContentTypeAttr(attrname.toOpenArray())
         cmd &= quoteFile(s, qs)
-        attrname = ""
+        attrname.setLen(0)
         state = usNormal
       elif c == '\\':
         state = usAttrQuoted
       else:
         attrname &= c
-  move(cmd)
+  cmd.toStr()
 
-proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
+proc unquoteCommand*(ecmd, contentType, outpath: Str; url: URL): Str =
   var canpipe: bool
-  return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
+  unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
 type
   EnvVar* = tuple
-    name: string
-    value: string
+    name: Str
+    value: Str
 
   CGIParserState = enum
     cpsEnv, cpsArgv
 
   CGICommandParser = object
-    cmd: string
-    name: string
-    argv: seq[string]
+    cmd: Str
+    name: Str
+    argv: seq[Str]
     env: seq[EnvVar]
     quoteSeen: bool
     cps: CGIParserState
 
-proc flush(cc: var CGICommandParser; buf: var string) =
+proc flush(cc: var CGICommandParser; buf: var Growbuf) =
   if not cc.quoteSeen and buf.len == 0:
     return
   cc.quoteSeen = false
   case cc.cps
   of cpsEnv:
     if cc.name.len > 0:
-      cc.env.add((move(cc.name), move(buf)))
+      cc.env.add((move(cc.name), move(buf).toStr()))
     else:
-      cc.cmd = move(buf)
+      cc.cmd = move(buf).toStr()
       # We handle query strings *after* parsing, because we want e.g.
       #  /cgi-bin/blah.cgi%?
       # to set the original URI's query string as blah.cgi's QUERY_STRING.
       let q = cc.cmd.find('?')
       if q >= 0:
-        cc.env.add(("QUERY_STRING", cc.cmd.substr(q + 1)))
+        cc.env.add((str("QUERY_STRING"), cc.cmd.substr(q + 1)))
         cc.cmd.setLen(q)
       cc.cps = cpsArgv
   of cpsArgv:
-    cc.argv.add(move(buf))
+    cc.argv.add(move(buf).toStr())
 
-proc parseCGICommand*(ecmd, typeBuf: string; url: URL;
-    ocmd: var string; oargv: var seq[string]; oenv: var seq[EnvVar]):
-    Err[cstring] =
+proc parseCGICommand*(ecmd, typeBuf: Str; url: URL; ocmd: var Str;
+    oargv: var seq[Str]; oenv: var seq[EnvVar]): Err[cstring] =
   # like unquoteCommand, but for CGI
   var cc = CGICommandParser()
-  var buf = ""
-  var attrname = ""
+  var buf = initGrowbuf()
+  var attrname = initGrowbuf()
   var state = usNormal
   var qs = qsNormal # current quote state
   for c in ecmd:
@@ -554,7 +552,7 @@ proc parseCGICommand*(ecmd, typeBuf: string; url: URL;
         if cc.cps == cpsEnv and cc.name.len == 0:
           if buf.len == 0:
             return err("variable name is the empty string")
-          cc.name = move(buf)
+          cc.name = move(buf).toStr()
         else:
           buf &= c
       else:
@@ -565,7 +563,7 @@ proc parseCGICommand*(ecmd, typeBuf: string; url: URL;
       of '%': buf &= c
       of 's': buf &= url.pathname
       of 't': buf &= typeBuf
-      of 'u': buf &= $url # Netscape extension
+      of 'u': buf &= url.toStr() # Netscape extension
       of 'h': buf &= url.hostname # w3mmee extension
       of 'H': buf &= url.host # Chawan extension
       of 'p': buf &= url.port # w3mmee extension
@@ -577,8 +575,8 @@ proc parseCGICommand*(ecmd, typeBuf: string; url: URL;
       state = usNormal
     of usAttr:
       if c == '}':
-        buf &= url.getSearchParam(attrname)
-        attrname = ""
+        buf &= url.getSearchParam(attrname.toOpenArray())
+        attrname.setLen(0)
         state = usNormal
       elif c == '\\':
         state = usAttrQuoted
@@ -590,7 +588,7 @@ proc parseCGICommand*(ecmd, typeBuf: string; url: URL;
   oargv = move(cc.argv)
   ok()
 
-proc checkEntry(entry: MailcapEntry; contentType: string; url: URL;
+proc checkEntry(entry: MailcapEntry; contentType: Str; url: URL;
     internal: bool): bool =
   if mfNetpath in entry.flags and not url.isNetPath() or
       mfInternal in entry.flags and not internal:
@@ -599,7 +597,7 @@ proc checkEntry(entry: MailcapEntry; contentType: string; url: URL;
     case field.t
     of nfTest:
       var canpipe = true
-      let cmd = unquoteCommand(field.value, contentType, "", url, canpipe)
+      let cmd = unquoteCommand(field.value, contentType, str(""), url, canpipe)
       if not canpipe:
         return false
       let pid = fork()
@@ -610,7 +608,7 @@ proc checkEntry(entry: MailcapEntry; contentType: string; url: URL;
         closeStdout()
         closeStderr()
         discard chaos.signal(SIGINT, chaos.SIG_IGN)
-        discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+        discard execl("/bin/sh", "sh", "-c", cmd.toCString(), nil)
         exitnow(127)
       else:
         var wstatus: cint
@@ -621,15 +619,16 @@ proc checkEntry(entry: MailcapEntry; contentType: string; url: URL;
           return false
     of nfMatch, nfNcMatch:
       let i = field.value.find('\0') + 1
-      let surl = $url
-      let (si, ei) = cast[REBytecode](addr field.value[i]).matchFirst(surl)
+      let surl = url.toStr()
+      let p = addr field.value.toOpenArray()[i]
+      let (si, ei) = cast[REBytecode](p).matchFirst(surl.toOpenArray())
       if si != 0 or ei != surl.len:
         return false
     else: discard
   true
 
 proc findPrevMailcapEntry*(mailcap: Mailcap;
-    shortContentType, contentType: string; url: URL; last: int): int =
+    shortContentType, contentType: Str; url: URL; last: int): int =
   let list = mailcap.getList(shortContentType)
   if list != nil:
     for i in countdown(last - 1, 0):
@@ -639,7 +638,7 @@ proc findPrevMailcapEntry*(mailcap: Mailcap;
         return i
   return -1
 
-proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
+proc findResourceMut*(mailcap: Mailcap; typeBuf: var Str; outUrl: var URL;
     netPathSeen, internalSeen, listSeen: var bool;
     resourceOnly, internal: bool): MailcapEntry =
   var url = outUrl
@@ -671,7 +670,7 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
         url = parseURL0(cmd)
         if url == nil:
           return nil
-        typeBuf = url.scheme & '/' & typeBuf.after('/')
+        typeBuf = initStrM(url.scheme, '/', typeBuf.after('/'))
         id = entry.id
         done = false
         listSeen = false
@@ -680,7 +679,7 @@ proc findResourceMut*(mailcap: Mailcap; typeBuf: var string; outUrl: var URL;
       return entry
   nil
 
-proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
+proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: Str;
     url: URL; outIdx: var int): MailcapEntry =
   let list = mailcap.getList(shortContentType)
   if list != nil:
@@ -697,7 +696,7 @@ proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
 
 # called for auto-mailcap only; allows modifying the type
 proc findMailcapEntryMut*(mailcap: Mailcap;
-    shortContentType, contentType: var string; url: URL):
+    shortContentType, contentType: var Str; url: URL):
     MailcapEntry =
   var id = 0'u32
   var done = false
@@ -713,8 +712,8 @@ proc findMailcapEntryMut*(mailcap: Mailcap;
         continue
       if mfType in entry.flags:
         var canpipe: bool
-        contentType = unquoteCommand(entry.cmd, contentType, "", url, canpipe,
-          shellQuote = false)
+        contentType = unquoteCommand(entry.cmd, contentType, str(""), url,
+          canpipe, shellQuote = false)
         shortContentType = contentType.untilLower(';')
         id = entry.id
         done = false
@@ -722,49 +721,50 @@ proc findMailcapEntryMut*(mailcap: Mailcap;
       return entry
   nil
 
-proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: string;
+proc findMailcapEntry*(mailcap: Mailcap; shortContentType, contentType: Str;
     url: URL): MailcapEntry =
   var start = -1
   mailcap.findMailcapEntry(shortContentType, contentType, url, start)
 
-proc saveEntry*(mailcap: var Mailcap; path, t: string; entry: MailcapEntry):
+proc saveEntry*(mailcap: var Mailcap; path, t: Str; entry: MailcapEntry):
     Opt[void] =
   var s = entry.toStr(t)
-  s &= '\n'
+  s &= "\n"
   let pdir = path.parentDir()
-  discard mkdir(cstring(pdir), 0o700)
+  discard mkdir(pdir.toCString(), 0o700)
   let ps = newPosixStream(path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
   if ps == nil:
     return err()
-  let res = ps.writeLoop(s)
+  let res = ps.writeLoop(s.toOpenArray())
   if res.isOk:
     mailcap.add(entry, t)
   ps.sclose()
   res
 
 proc parseURIMethodMap*(this: var Mailcap; file: AChaFile): Opt[void] =
-  var line: string
+  var line: Growbuf
   while ?file.readLine(line):
     if line.len == 0 or line[0] == '#':
       continue # comments
-    var k = line.untilLower(AsciiWhitespace + {':'})
+    var k = initStr(line.toOpenArray()).untilLower(AsciiWhitespace + {':'})
     var i = k.len
     if i >= line.len or line[i] != ':':
       continue # invalid
-    i = line.skipBlanks(i + 1) # skip colon
-    var v = line.until(AsciiWhitespace, i)
+    i = line.toOpenArray().skipBlanks(i + 1) # skip colon
+    var v = initGrowbufSink(
+      initStr(line.toOpenArray()).until(AsciiWhitespace, i), 0)
     # Basic w3m compatibility.
     var cgi = false
-    if v.startsWith("cgi-bin:"):
+    if v.toOpenArray().startsWith("cgi-bin:"):
       v.delete(0..<"cgi-bin:".len)
       cgi = true
-    if v.startsWith("file:/cgi-bin/"):
+    elif v.toOpenArray().startsWith("file:/cgi-bin/"):
       v.delete(0..<"file:/cgi-bin/".len)
       cgi = true
-    elif v.startsWith("file:///cgi-bin/"):
+    elif v.toOpenArray().startsWith("file:///cgi-bin/"):
       v.delete(0..<"file:///cgi-bin/".len)
       cgi = true
-    elif v.startsWith("/cgi-bin/"):
+    elif v.toOpenArray().startsWith("/cgi-bin/"):
       v.delete(0..<"/cgi-bin/".len)
       cgi = true
     # %s -> %u
@@ -776,8 +776,8 @@ proc parseURIMethodMap*(this: var Mailcap; file: AChaFile): Opt[void] =
         if c == 's':
           c = 'u'
         perc = false
-    if this.getOrDefault(k) == nil:
-      let entry = MailcapEntry(cmd: move(v), flags: {mfResource})
+    if this.getOrDefault(k.toOpenArray()) == nil:
+      let entry = MailcapEntry(cmd: move(v).toStr(), flags: {mfResource})
       if cgi:
         entry.flags.incl(mfCgioutput)
         entry.flags.incl(mfUrimethodmap)
@@ -787,7 +787,7 @@ proc parseURIMethodMap*(this: var Mailcap; file: AChaFile): Opt[void] =
       list.add(entry)
   ok()
 
-iterator mainTypes*(mailcap: Mailcap): string =
+iterator mainTypes*(mailcap: Mailcap): Str =
   for it in mailcap.map:
     let it = MailcapList(it)
     if it.next == nil: # only the last list in the chain

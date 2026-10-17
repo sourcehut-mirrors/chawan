@@ -452,38 +452,38 @@ proc main*(scheme: cstring) =
   let query = getArgv(4)
   let secure = scheme == "https"
   if port == "":
-    port = if secure: "443" else: "80"
+    port = if secure: str("443") else: str("80")
   let os = newPosixStream(STDOUT_FILENO)
   let op = HTTPHandle(os: os, chunkSize: uint64.high)
-  var ip = ""
+  var ip: Str
   if secure:
     let ssl = connectSSLSocket(host, port, ip, useDefaultCA = true).orDie()
-    if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY", "0") != "1":
+    if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY", str("0")) != "1":
       checkCert(ssl)
     op.ssl = ssl
   else:
     op.httpStream = connectSocket(host, port, ip).orDie()
   let requestMethod = getEnvEmpty("REQUEST_METHOD")
-  var buf = requestMethod & ' ' & path & query
-  buf &= " HTTP/1.1\r\n"
-  buf &= "Host: " & host
+  var buf = initGrowbufM(requestMethod, ' ', path, query, " HTTP/1.1\r\n",
+    "Host: ", host)
   if secure and port != "443" or not secure and port != "80":
-    buf &= ':' & port
+    buf.addM(':', port)
   buf &= "\r\n"
   buf &= "Connection: close\r\n"
   let contentLength = getEnvEmpty("CONTENT_LENGTH")
-  if n := parseUInt64(contentLength):
-    buf &= "Content-Length: " & $n & "\r\n"
+  if n := parseUInt64(contentLength.toOpenArray()):
+    buf.addM("Content-Length: ", n, "\r\n")
   buf &= getEnvEmpty("REQUEST_HEADERS")
   buf &= "\r\n"
-  op.writeLoop(buf).orDie(ceConnectionRefused, "error sending request header")
+  op.writeLoop(buf.toOpenArray())
+    .orDie(ceConnectionRefused, "error sending request header")
   var iq {.noinit.}: array[InputBufferSize, char]
   if requestMethod == "POST":
     let ps = newPosixStream(STDIN_FILENO)
     while (let n = ps.read(iq); n > 0):
       op.writeLoop(iq.toOpenArray(0, n - 1))
         .orDie(ceConnectionRefused, "error sending request body")
-  if os.writeLoop("Cha-Control: Connected " & ip & "\r\n").isErr:
+  if os.writeLoop(initStrM("Cha-Control: Connected ", ip, "\r\n")).isErr:
     quit(1)
   block readResponse:
     while (let n = op.read(iq); n > 0):

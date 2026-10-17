@@ -1,13 +1,13 @@
 {.push raises: [].}
 
+import config/conftypes
 import css/cssparser
 import css/cssvalues
 import css/lunit
 import html/dom
 import html/domrect
 import js/jsref
-import config/conftypes
-import utils/refstring
+import utils/cowstr
 
 type
   DimensionType* = enum
@@ -21,7 +21,7 @@ type
   # but that's slower (at least with refc).
   TextRun* = ref object
     offset*: Offset
-    s*: string
+    s*: Growbuf
 
   BorderStyleSpan* = object
     start*: CSSBorderStyle
@@ -183,8 +183,7 @@ type
 
   InlineTextBox* {.final.} = ref object of InlineBox
     runs*: seq[TextRun] # state
-    text*: RefString
-    len*: int # must invalidate if text.s.len != len
+    text*: Str
 
   InlineNewLineBox* {.final.} = ref object of InlineBox
 
@@ -429,7 +428,7 @@ when defined(debug):
       result &= `$`(it, pass2 = false)
     if box of InlineTextBox:
       for run in InlineTextBox(box).runs:
-        result &= run.s
+        result &= $run.s
     if box of BlockBox:
       result &= '\n'
     result &= "</" & name & ">"

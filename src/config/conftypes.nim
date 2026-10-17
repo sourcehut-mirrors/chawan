@@ -1,3 +1,7 @@
+{.push raises: [].}
+
+import utils/cowstr
+
 type
   ColorMode* = enum
     cmMonochrome = "monochrome"
@@ -46,7 +50,7 @@ type
     cacheId*: int
     imageId*: int
     vector*: bool # not a bitmap?
-    contentType*: string
+    contentType*: Str
 
 let dummyAttrs* {.global.} = WindowAttributes(
   width: 80,
@@ -58,3 +62,5 @@ let dummyAttrs* {.global.} = WindowAttributes(
   prefersDark: true,
   colorMode: cmTrueColor
 )
+
+{.pop.} # raises: []

@@ -5,10 +5,11 @@ import std/posix
 import lcgi
 
 import js/libregexp
+import utils/cowstr
 import utils/lrewrap
 
-proc parseSection(query: string): tuple[page, section: string] =
-  var section = ""
+proc parseSection(query: Str): tuple[page, section: Str] =
+  var section = str("")
   if query.len > 0 and query[^1] == ')':
     for i in countdown(query.high, 0):
       if query[i] == '(':
@@ -16,10 +17,10 @@ proc parseSection(query: string): tuple[page, section: string] =
         break
   if section != "":
     return (query.substr(0, query.high - 2 - section.len), section)
-  return (query, "")
+  return (query, str(""))
 
-proc processBackspace(line: string): string =
-  var s = ""
+proc processBackspace(line: Str): Str =
+  var s = initGrowbuf()
   var i = 0
   var thiscs = 0 .. -1
   var bspace = false
@@ -33,7 +34,7 @@ proc processBackspace(line: string): string =
       bspace = true
       inc i
       continue
-    let n = line.pointLenAt(i)
+    let n = line.toOpenArray().pointLenAt(i)
     if thiscs.len == 0:
       thiscs = i ..< i + n
       i += n
@@ -66,9 +67,9 @@ proc processBackspace(line: string): string =
         inB = pendingInB
       if thiscs.len > 0:
         let cs = case line[thiscs.a]
-        of '&': "&amp;"
-        of '<': "&lt;"
-        of '>': "&gt;"
+        of '&': str("&amp;")
+        of '<': str("&lt;")
+        of '>': str("&gt;")
         else: line.substr(thiscs.a, thiscs.b)
         s &= cs
       thiscs = i ..< i + n
@@ -83,23 +84,23 @@ proc processBackspace(line: string): string =
     inB = pendingInB
   if thiscs.len > 0:
     let cs = case line[thiscs.a]
-    of '&': "&amp;"
-    of '<': "&lt;"
-    of '>': "&gt;"
+    of '&': str("&amp;")
+    of '<': str("&lt;")
+    of '>': str("&gt;")
     else: line.substr(thiscs.a, thiscs.b)
     s &= cs
   if inU: s &= "</u>"
   if inB: s &= "</b>"
-  move(s)
+  s.toStr()
 
-proc isCommand(paths: seq[string]; name, s: string): bool =
+proc isCommand(paths: seq[Str]; name, s: Str): bool =
   for p in paths:
-    if p & name == s:
+    if initStrM(p, name) == s:
       return true
   false
 
-proc readErrorMsg(efile: AChaFile; line: var string): string =
-  var msg = ""
+proc readErrorMsg(efile: AChaFile; line: var Str): Str =
+  var msg = initGrowbuf()
   while true:
     # try to get the error message into an acceptable format
     if line.startsWith("man: "):
@@ -112,7 +113,7 @@ proc readErrorMsg(efile: AChaFile; line: var string): string =
     msg &= line
     if not efile.readLine(line).get(false):
       break
-  move(msg)
+  msg.toStr()
 
 const RegexStr =
   r"((https?|ftp)://[\w/~.-]+)|" &              # link, 1
@@ -121,9 +122,8 @@ const RegexStr =
   r"(#include((</?[bu]>|\s)*)&lt;([\w./-]+))|" &  # include, 8-11
   r"((</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\)))" # man, 12-16
 
-proc processManpage(ofile, efile: AChaFile; header, keyword: string):
-    Opt[void] =
-  var line = ""
+proc processManpage(ofile, efile: AChaFile; header, keyword: Str): Opt[void] =
+  var line: Str
   # The "right thing" would be to check for the error code and output error
   # messages accordingly. Unfortunately that would prevent us from streaming
   # the output, so what we do instead is:
@@ -138,7 +138,7 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     var wstatus: cint
     discard wait(addr wstatus)
     if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
-      cgiDie(ceFileNotFound, efile.readErrorMsg(line))
+      cgiDie(ceFileNotFound, $efile.readErrorMsg(line))
   # skip formatting of line 0, like w3mman does
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
@@ -147,18 +147,18 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
   var wasBlank = false
   # regexes partially from w3mman2html
   var re: Regex
-  if not RegexStr.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE}, re):
+  if not str(RegexStr).compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE}, re):
     discard cast[ChaFile](chaStderr).writeLine(re.bytecode)
     quit(1)
-  var paths: seq[string] = @[]
+  var paths: seq[Str] = @[]
   var ignoreMan = keyword.toUpperAscii()
   if ignoreMan == keyword or keyword.len == 1:
-    ignoreMan = ""
+    ignoreMan = str("")
   for p in getEnvEmpty("PATH").split(':'):
     var i = p.high
     while i > 0 and p[i] == '/':
       dec i
-    paths.add(p.substr(0, i) & "/")
+    paths.add(initStrM(p.substr(0, i), '/'))
   while ?ofile.readLine(line):
     if line == "":
       if wasBlank:
@@ -167,21 +167,21 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     else:
       wasBlank = false
     let line = line.processBackspace()
-    var oline = ""
+    var oline = initGrowbuf()
     var offset = 0
     var ctx = initContext(re)
-    for ret in ctx.exec(line):
+    for ret in ctx.exec(line.toOpenArray()):
       if ret != 1:
-        oline &= line.substr(offset)
+        oline &= line.toOpenArray(offset, line.high)
         break
       let cap = ctx.cap(0)
-      oline &= line[offset..<cap.s]
+      oline &= line.toOpenArray(offset, cap.s - 1)
       offset = cap.e
-      var s = line[cap.s..<cap.e]
+      var s = line.substr(cap.s, cap.e - 1)
       if ctx.cap(1).s >= 0: # link
-        oline &= "<a href='" & s & "'>" & s & "</a>"
+        oline.addM("<a href='", s, "'>", s, "</a>")
       elif ctx.cap(3).s >= 0: # mail
-        oline &= "<a href='mailto:" & s & "'>" & s & "</a>"
+        oline.addM("<a href='mailto:", s, "'>", s, "</a>")
       elif ctx.cap(6).s >= 0: # file
         let target = expandPath(s)
         if not fileExists(target) and not symlinkExists(target) and
@@ -190,46 +190,47 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
           continue
         let name = target.afterLast('/')
         if paths.isCommand(name, target):
-          oline &= "<a href='man:" & name & "'>" & s & "</a>"
+          oline.addM("<a href='man:", name, "'>", s, "</a>")
         else:
-          oline &= "<a href='file:" & target & "'>" & s & "</a>"
+          oline.addM("<a href='file:", target, "'>", s, "</a>")
       elif ctx.cap(8).s >= 0: # include
         const includePaths = [
-          "/usr/include/",
-          "/usr/local/include/",
-          "/usr/X11R6/include/",
-          "/usr/X11/include/",
-          "/usr/X/include/",
-          "/usr/include/X11/"
+          str("/usr/include/"),
+          str("/usr/local/include/"),
+          str("/usr/X11R6/include/"),
+          str("/usr/X11/include/"),
+          str("/usr/X/include/"),
+          str("/usr/include/X11/")
         ]
         block notFound:
           let fileCap = ctx.cap(11)
-          let file = line[fileCap.s..<fileCap.e]
+          let file = line.substr(fileCap.s, fileCap.e - 1)
           let paddingCap = ctx.cap(9)
           for dir in includePaths:
-            let path = dir & file
+            let path = initStrM(dir, file)
             if fileExists(path):
-              oline &= "#include" & line[paddingCap.s..<paddingCap.e] &
-               "&lt;<a href='file:" & path & "'>" & file & "</a>"
+              oline.addM("#include",
+                line.substr(paddingCap.s, paddingCap.e - 1),
+               "&lt;<a href='file:", path, "'>", file, "</a>")
               break notFound
           oline &= s
       elif ctx.cap(12).s >= 0:
         let manCap = ctx.cap(14)
         let sectionCap = ctx.cap(16)
-        let man = line[manCap.s..<manCap.e]
+        let man = line.substr(manCap.s, manCap.e - 1)
         # ignore footers like MYPAGE(1)
         # (just to be safe, we also check if it's in paths too)
         if man == ignoreMan and not paths.isCommand(man.afterLast('/'), man):
           oline &= s
           continue
-        let section = line[sectionCap.s..<sectionCap.e]
-        let cat = man & section
+        let section = line.substr(sectionCap.s, sectionCap.e - 1)
+        let cat = initStrM(man, section)
         s.setLen(s.len - section.len)
-        oline &= "<a href='man:" & cat & "'>" & s & "</a>" & section
-    ?chaStdout.writeLine(oline)
+        oline.addM("<a href='man:", cat, "'>", s, "</a>", section)
+    ?chaStdout.writeLine(oline.toOpenArray())
   ok()
 
-proc myOpen(cmd: string): Opt[tuple[ofile, efile: AChaFile]] =
+proc myOpen(cmd: Str): Opt[tuple[ofile, efile: AChaFile]] =
   var opipe = array[2, cint].default
   var epipe = array[2, cint].default
   if pipe(opipe) == -1 or pipe(epipe) == -1:
@@ -242,7 +243,7 @@ proc myOpen(cmd: string): Opt[tuple[ofile, efile: AChaFile]] =
     discard close(epipe[0])
     discard dup2(opipe[1], STDOUT_FILENO)
     discard dup2(epipe[1], STDERR_FILENO)
-    discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+    discard execl("/bin/sh", "sh", "-c", cmd.toCString(), nil)
     exitnow(1)
   else: # parent
     discard close(opipe[1])
@@ -254,23 +255,26 @@ proc myOpen(cmd: string): Opt[tuple[ofile, efile: AChaFile]] =
     discard close(epipe[0])
     return err()
 
-proc doMan(man, keyword, section: string) =
-  let sectionOpt = if section == "": "" else: ' ' & quoteShellPosix(section)
-  let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
-    man & sectionOpt & ' ' & quoteShellPosix(keyword)
+proc doMan(man, keyword, section: Str) =
+  let sectionOpt = if section == "":
+    str("")
+  else:
+    initStrM(' ', quoteShellPosix(section))
+  let cmd = initStrM("MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 ", man,
+    sectionOpt, ' ', quoteShellPosix(keyword))
   let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
-  var manword = keyword
+  var manword = initGrowbuf(keyword)
   if section != "":
-    manword &= '(' & section & ')'
-  discard ofile.processManpage(efile, header = """Content-Type: text/html
+    manword.addM('(', section, ')')
+  let header = initStrM("Content-Type: text/html\n\n<title>man ", manword,
+    "</title><pre>")
+  discard ofile.processManpage(efile, header, keyword)
 
-<title>man """ & manword & """</title>
-<pre>""", keyword = keyword)
-
-proc doLocal(man, path: string) =
+proc doLocal(man, path: Str) =
   # Note: we intentionally do not use -l, because it is not supported on
   # various systems (at the very least FreeBSD, NetBSD, macOS).
-  var cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " & man & ' '
+  var cmd = initGrowbufM("MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 ",
+    man, ' ')
   # ...and this worked fine until OpenBSD intentionally broke it in 7.8,
   # saying this provides "better consistency with POSIX and traditional UNIX
   # and BSD man(1)".
@@ -284,25 +288,31 @@ proc doLocal(man, path: string) =
   when defined(openbsd):
     cmd &= "-l "
   cmd &= quoteShellPosix(path)
-  let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
-  discard ofile.processManpage(efile, header = """Content-Type: text/html
+  let (ofile, efile) = myOpen(cmd.toStr())
+    .orDie(ceInternalError, "failed to run man")
+  let header = initStrM("Content-Type: text/html\n\n<title>man -l ", path,
+    "</title><pre>")
+  discard ofile.processManpage(efile, header,
+    keyword = path.afterLast('/').until('.'))
 
-<title>man -l """ & path & """</title>
-<pre>""", keyword = path.afterLast('/').until('.'))
-
-proc doKeyword(man, keyword, section: string): Opt[void] =
-  let sectionOpt = if section == "": "" else: " -s " & quoteShellPosix(section)
-  let cmd = man & sectionOpt & " -k " & quoteShellPosix(keyword)
+proc doKeyword(man, keyword, section: Str): Opt[void] =
+  let sectionOpt = if section == "":
+    str("")
+  else:
+    initStrM(" -s ", quoteShellPosix(section))
+  let cmd = initStrM(man, sectionOpt, " -k ", quoteShellPosix(keyword))
   let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
-  var line: string
+  var line: Str
   if not ofile.readLine(line).get(false):
     var wstatus = cint(0)
     if wait(addr wstatus) >= 0 and not WIFEXITED(wstatus) or
         WEXITSTATUS(wstatus) != 0:
-      cgiDie(ceFileNotFound, efile.readErrorMsg(line))
+      cgiDie(ceFileNotFound, $efile.readErrorMsg(line))
   ?chaStdout.write("Content-Type: text/html\n\n")
-  ?chaStdout.write("<title>man" & sectionOpt & " -k " & keyword & "</title>\n")
-  ?chaStdout.write("<h1>man" & sectionOpt & " -k <b>" & keyword & "</b></h1>\n")
+  ?chaStdout.write(initStrM("<title>man", sectionOpt, " -k ", keyword,
+    "</title>\n"))
+  ?chaStdout.write(initStrM("<h1>man", sectionOpt, " -k <b>", keyword,
+    "</b></h1>\n"))
   ?chaStdout.write("<ul>")
   while true:
     if line.len == 0:
@@ -311,7 +321,7 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
         break
       continue
     # collect titles
-    var titles: seq[string] = @[]
+    var titles: seq[Str] = @[]
     var i = 0
     while true:
       let title = line.until({'(', ','}, i)
@@ -322,23 +332,23 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
       i = line.skipBlanks(i + 1)
     # collect section
     if line[i] != '(':
-      discard cast[ChaFile](chaStderr).writeLine("Error parsing line! " & line)
+      discard cast[ChaFile](chaStderr).writeLine("Error parsing line! " &
+        $line)
       quit(1)
     let sectionText = line.substr(i, line.find(')', i))
     i += sectionText.len
     # create line
     var section = sectionText.until(',') # for multiple sections, take first
     if section[^1] != ')':
-      section &= ')'
-    var s = "<li>"
+      section &= ")"
+    var s = initGrowbuf("<li>")
     for i, title in titles:
       let title = title.htmlEscape()
-      s &= "<a href='man:" & title & section & "'>" & title & "</a>"
+      s.addM("<a href='man:", title, section, "'>", title, "</a>")
       if i < titles.high:
         s &= ", "
-    s &= sectionText
-    s &= line.substr(i)
-    ?chaStdout.writeLine(s)
+    s.addM(sectionText, line.substr(i))
+    ?chaStdout.writeLine(s.toOpenArray())
     if not ofile.readLine(line).get(false):
       break
   ok()
@@ -347,11 +357,12 @@ proc main() =
   var man = getEnvEmpty("MANCHA_MAN")
   if man == "":
     block notfound:
-      for s in ["/usr/bin/man", "/bin/man", "/usr/local/bin/man"]:
+      for s in [str("/usr/bin/man"), str("/bin/man"),
+          str("/usr/local/bin/man")]:
         if fileExists(s) or symlinkExists(s):
           man = s
           break notfound
-      man = "/usr/bin/env man"
+      man = str("/usr/bin/env man")
   var apropos = getEnvEmpty("MANCHA_APROPOS")
   if apropos == "":
     # on most systems, man is compatible with apropos (using -s syntax for

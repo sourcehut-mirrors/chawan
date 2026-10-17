@@ -111,7 +111,7 @@ proc SSL_free(ssl: ptr SSL)
 
 # WARNING: you must call SSL_get_verify_result on the returned SSL
 # yourself.
-proc connectSSLSocket*(host, port: string; ip: var string; useDefaultCA: bool):
+proc connectSSLSocket*(host, port: Str; ip: var Str; useDefaultCA: bool):
     CGIResult[ptr SSL] =
   let ps = ?connectSocket(host, port, ip)
   let ctx = SSL_CTX_new(TLS_client_method())
@@ -127,9 +127,9 @@ proc connectSSLSocket*(host, port: string; ip: var string; useDefaultCA: bool):
   let ssl = SSL_new(ctx)
   if SSL_set_fd(ssl, ps.fd) != 1:
     return errCGIError(ceInternalError, "failed to set SSL fd")
-  if SSL_set1_host(ssl, cstring(host)) == 0:
+  if SSL_set1_host(ssl, host.toCString()) == 0:
     return errCGIError(ceInternalError, "failed to set host")
-  if SSL_set_tlsext_host_name(ssl, cstring(host)) == 0:
+  if SSL_set_tlsext_host_name(ssl, host.toCString()) == 0:
     return errCGIError(ceInternalError, "failed to set tlsext host name")
   if SSL_connect(ssl) <= 0:
     let e = ERR_get_error()

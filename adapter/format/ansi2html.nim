@@ -8,6 +8,7 @@ import css/color
 import io/chafile
 import io/dynstream
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -36,7 +37,7 @@ type
     outbuf: array[4096, char]
     currentFmt: Format
     pendingFmt: Format
-    ansiParams: string
+    ansiParams: Growbuf
     ansiState: AnsiCodeParseState
     backspaceDecay: int
     tmpFlags: set[FormatFlag]
@@ -45,21 +46,22 @@ type
     aOpen: bool
     hasPrintingBuf: bool
 
-proc getParam(state: State; i: var int; colon = false): string =
-  result = ""
+proc getParam(state: State; i: var int; colon = false): Str =
+  var buf = initGrowbuf()
   while i < state.ansiParams.len:
     let c = state.ansiParams[i]
     if c == ';' or colon and c == ':':
       break
-    result &= c
+    buf &= c
     inc i
   if i < state.ansiParams.len:
     inc i
+  buf.toStr()
 
 proc getParamU8(state: State; i: var int; colon = false): Opt[uint8] =
   if i >= state.ansiParams.len:
     return err()
-  parseUInt8(state.getParam(i), allowSign = false)
+  parseUInt8(state.getParam(i).toOpenArray(), allowSign = false)
 
 proc setColor(format: var Format; c: CellColor; isfg: bool) =
   if isfg:
@@ -167,6 +169,9 @@ proc puts(state: var State; s: openArray[char]) {.inline.} =
   for c in s:
     state.putc(c)
 
+proc puts(state: var State; s: Str) {.inline.} =
+  state.puts(s.toOpenArray())
+
 proc flushFmt(state: var State) =
   if state.pendingFmt != state.currentFmt:
     if state.spanOpen:
@@ -184,14 +189,14 @@ proc flushFmt(state: var State) =
       case fmt.fgcolor.t
       of ctNone: discard
       of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.fgcolor.ansi) & ")"
-      of ctRGB: buf &= $fmt.fgcolor.rgb.argb
+      of ctRGB: buf &= $fmt.fgcolor.rgb
       buf &= ";"
     if fmt.bgcolor.t != ctNone:
       buf &= "background-color:"
       case fmt.bgcolor.t
       of ctNone: discard
       of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.bgcolor.ansi) & ")"
-      of ctRGB: buf &= $fmt.bgcolor.rgb.argb
+      of ctRGB: buf &= $fmt.bgcolor.rgb
       buf &= ";"
     const Decoration = {ffOverline, ffUnderline, ffStrike, ffBlink, ffReverse}
     if Decoration * fmt.flags != {}:
@@ -215,7 +220,7 @@ proc flushFmt(state: var State) =
 
 proc parseOSC(state: var State) =
   let p1 = state.ansiParams.until(';')
-  let n = parseIntP(p1).get(-1)
+  let n = parseIntP(p1.toOpenArray()).get(-1)
   if n == 8: # hyperlink
     let p2start = p1.len + 1
     let p1 = state.ansiParams.until(';', p2start)
@@ -224,7 +229,7 @@ proc parseOSC(state: var State) =
       state.puts("</a>")
       state.aOpen = false
     if url != "":
-      state.puts("<a href='" & url.htmlEscape() & "'>")
+      state.puts(initStrM("<a href='", url.htmlEscape(), "'>"))
       state.aOpen = true
 
 type ParseAnsiCodeResult = enum
@@ -376,7 +381,7 @@ proc processData(state: var State; buf: openArray[char]) =
       state.flushFmt()
     of '\e':
       state.ansiState = acpsStart
-      state.ansiParams = ""
+      state.ansiParams.setLen(0)
     of '\b': state.ansiState = acpsBackspace
     of '\0': state.puts("\uFFFD") # HTML eats NUL, so replace it here
     else: state.putc(c)
@@ -391,7 +396,7 @@ proc main*() =
   let L = getArgvCount()
   var i = 1
   var standalone = false
-  var title = ""
+  var title = str("")
   while i < L:
     let s = getArgvCString(i)
     if s[0] != '-':
@@ -412,7 +417,7 @@ proc main*() =
   if standalone:
     state.puts("<!DOCTYPE html>\n")
   if title != "":
-    state.puts("<title>" & title.htmlEscape() & "</title>\n")
+    state.puts(initStrM("<title>", title.htmlEscape(), "</title>\n"))
   if standalone:
     state.puts("<body>\n")
   state.puts("<pre>\n")

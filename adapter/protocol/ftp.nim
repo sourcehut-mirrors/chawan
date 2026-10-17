@@ -4,17 +4,16 @@ import std/posix
 
 import lcgi
 
-proc sendCommand(f: AChaFile; cmd, param: string; outs: var string):
-    Opt[int32] =
+proc sendCommand(f: AChaFile; cmd, param: Str; outs: var Str): Opt[int32] =
   if cmd != "":
     if param == "":
-      ?f.writeCRLine(cmd)
+      ?f.writeLine(cmd, str("\r"))
     else:
-      ?f.writeCRLine(cmd & ' ' & param)
+      ?f.writeLine(cmd, str(" "), param, str("\r"))
     ?f.flush()
-  var buf = newString(4)
-  outs = ""
-  var n = f.read(buf)
+  var buf = initGrowbufUninit(4)
+  outs = str("")
+  var n = f.read(buf.toOpenArray())
   if n < buf.len:
     return err()
   if not f.readLine(outs).get(false):
@@ -24,11 +23,11 @@ proc sendCommand(f: AChaFile; cmd, param: string; outs: var string):
     return ok(status)
   buf[3] = ' '
   while true: # multiline
-    var lbuf = ""
+    var lbuf: Str
     if not f.readLine(lbuf).get(false):
       cgiDie(ceInvalidResponse)
     outs &= lbuf
-    if lbuf.startsWith(buf):
+    if lbuf.startsWith(buf.toOpenArray()):
       break
   ok(status)
 
@@ -44,10 +43,10 @@ The server has returned the following message:
   quit(1)
 
 const Success = 200 .. 299
-proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
-  var obuf = ""
+proc passiveMode(f: AChaFile; host: Str; ipv6: bool): PosixStream =
+  var obuf: Str
   if ipv6:
-    if f.sendCommand("EPSV", "", obuf).get(-1) != 229:
+    if f.sendCommand(str("EPSV"), str(""), obuf).get(-1) != 229:
       cgiDie(ceInvalidResponse)
     var i = obuf.find('(')
     if i < 0:
@@ -58,7 +57,7 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
       cgiDie(ceInvalidResponse)
     let port = obuf.substr(i, j - 2)
     return connectSocket(host, port).orDie()
-  if f.sendCommand("PASV", "", obuf).get(-1) notin Success:
+  if f.sendCommand(str("PASV"), str(""), obuf).get(-1) notin Success:
     cgiDie(ceInvalidResponse, "couldn't enter passive mode")
   var i = obuf.find(AsciiDigit)
   if i < 0:
@@ -66,7 +65,7 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
   let j = obuf.find(NonDigit - {','}, i)
   if j >= 0:
     obuf.setLen(j)
-  var ipv4 = ""
+  var ipv4 = initGrowbuf()
   var k = 0
   while i < obuf.len:
     let c = obuf[i]
@@ -80,22 +79,22 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
       ipv4 &= c
   let xs = obuf.until(',', i)
   let ys = obuf.until(',', i + xs.len + 1)
-  let x = parseUInt16(xs).orDie(ceInvalidResponse)
-  let y = parseUInt16(ys).orDie(ceInvalidResponse)
-  return connectSocket(ipv4, $((x shl 8) or y)).orDie()
+  let x = parseUInt16(xs.toOpenArray()).orDie(ceInvalidResponse)
+  let y = parseUInt16(ys.toOpenArray()).orDie(ceInvalidResponse)
+  return connectSocket(ipv4.toStr(), uint32((x shl 8) or y).toStr()).orDie()
 
-proc login(f: AChaFile; username, password: string): Opt[void] =
-  var obuf = ""
-  if f.sendCommand("", "", obuf).get(-1) != 220:
-    cgiDie(ceConnectionRefused, obuf.deleteChars({'\n', '\r'}))
-  var ustatus = f.sendCommand("USER", username, obuf).get(-1)
+proc login(f: AChaFile; username, password: Str): Opt[void] =
+  var obuf: Str
+  if f.sendCommand(str(""), str(""), obuf).get(-1) != 220:
+    cgiDie(ceConnectionRefused, $obuf.deleteChars({'\n', '\r'}))
+  var ustatus = f.sendCommand(str("USER"), username, obuf).get(-1)
   if ustatus == 331:
-    ustatus = f.sendCommand("PASS", password, obuf).get(-1)
+    ustatus = f.sendCommand(str("PASS"), password, obuf).get(-1)
   if ustatus in Success:
     discard # no need for pass
   else:
-    sdie(401, "Unauthorized", obuf)
-  discard ?f.sendCommand("TYPE", "I", obuf) # request raw data
+    sdie(401, "Unauthorized", $obuf)
+  discard ?f.sendCommand(str("TYPE"), str("I"), obuf) # request raw data
   ok()
 
 proc cat(passive: PosixStream): Opt[void] =
@@ -111,24 +110,25 @@ proc cat(passive: PosixStream): Opt[void] =
     ?os.writeLoop(buffer.toOpenArray(0, n - 1))
   ok()
 
-proc listDir(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =
+proc listDir(f: AChaFile; path, host: Str; ipv6: bool): Opt[void] =
   let passive = f.passiveMode(host, ipv6)
   enterNetworkSandbox()
-  var obuf = ""
-  if f.sendCommand("LIST", "", obuf).isErr:
+  var obuf: Str
+  if f.sendCommand(str("LIST"), str(""), obuf).isErr:
     passive.sclose()
     return err()
-  let title = ("Index of " & path).mimeQuote()
-  ?chaStdout.writeLine("Content-Type: text/x-dirlist;title=" & title & "\n\n")
+  let title = initStrM("Index of ", path).mimeQuote()
+  ?chaStdout.writeLine(str("Content-Type: text/x-dirlist;title="), title)
+  ?chaStdout.writeLine()
   passive.cat()
 
-proc retrieve(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =
+proc retrieve(f: AChaFile; path, host: Str; ipv6: bool): Opt[void] =
   let passive = f.passiveMode(host, ipv6)
   enterNetworkSandbox()
-  var obuf = ""
-  if f.sendCommand("RETR", path, obuf).get(550) == 550:
+  var obuf: Str
+  if f.sendCommand(str("RETR"), path, obuf).get(550) == 550:
     passive.sclose()
-    sdie(404, "Not found", obuf)
+    sdie(404, "Not found", $obuf)
   ?chaStdout.writeLine()
   passive.cat()
 
@@ -138,20 +138,20 @@ proc main() =
   let host = getArgv(1)
   var port = getArgv(2)
   if port == "":
-    port = "21"
+    port = str("21")
   var path = percentDecode(getArgv(3))
   if path == "":
-    path = "/"
+    path = str("/")
   let (username, password) = cgiAuthorization()
-  var ip: string
+  var ip: Str
   let ps = connectSocket(host, port, ip).orDie()
   let ipv6 = ip.startsWith("6")
   let f = ps.afdopen("a+b").orDie(ceInternalError, "failed to open file")
   if f.login(username, password).isOk:
-    var obuf = ""
-    let res = if f.sendCommand("CWD", path, obuf).get(-1) == 250:
+    var obuf: Str
+    let res = if f.sendCommand(str("CWD"), path, obuf).get(-1) == 250:
       if path[^1] != '/':
-        chaStdout.write("Status: 301\nLocation: " & path & "/\n")
+        chaStdout.writeLine(str("Status: 301\nLocation: "), path, str("/"))
       else:
         f.listDir(path, host, ipv6)
     else:

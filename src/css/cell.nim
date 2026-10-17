@@ -4,6 +4,7 @@ when NimMajor >= 2:
   import std/assertions
 
 import css/color
+import utils/cowstr
 import utils/strwidth
 
 type
@@ -32,7 +33,7 @@ type
   SimpleFlexibleGrid* = seq[SimpleFlexibleLine]
 
   FixedCell* = object
-    str*: string
+    str*: Str
     format*: Format
 
   FixedGrid* = object

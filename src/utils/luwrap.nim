@@ -4,8 +4,9 @@ when NimMajor >= 2:
   import std/assertions
 import std/algorithm
 
-import js/libunicode
 import js/libregexp
+import js/libunicode
+import utils/cowstr
 import utils/twtstr
 
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
@@ -24,48 +25,50 @@ proc normalize*(rs: openArray[uint32]; form = UNICODE_NFC): seq[uint32] =
   dealloc(obuf)
   move(rs)
 
-proc mnormalize*(s: var string) =
-  if NonAscii in s: # no need to normalize ascii
-    let rs = s.toPoints()
+proc mnormalize*(s: var Growbuf) =
+  if NonAscii in s.toOpenArray(): # no need to normalize ascii
+    let rs = s.toOpenArray().toPoints()
     var obuf: ptr uint32
     let olen = unicode_normalize(addr obuf, unsafeAddr rs[0], cint(rs.len),
       UNICODE_NFC, nil, passRealloc)
     if olen > 0:
       let p = cast[ptr UncheckedArray[uint32]](obuf)
-      s = p.toOpenArray(0, int(olen) - 1).toUTF8()
+      s = initGrowbufUTF8(p.toOpenArray(0, int(olen) - 1))
       dealloc(obuf)
     else:
-      s = ""
+      s = initGrowbuf()
 
 # n == 0: upper, 1: lower, 2: case fold
-proc toUpperLU(s: string; n: cint): string =
-  result = newStringOfCap(s.len)
+proc toUpperLU(s: openArray[char]; n: cint): Str =
+  var buf = initGrowbufOfCap(s.len)
   for u in s.points:
     var outa {.noinit.}: array[LRE_CC_RES_LEN_MAX, uint32]
     let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]), u, n)
-    result.addUTF8(outa.toOpenArray(0, n - 1))
+    buf.addUTF8(outa.toOpenArray(0, n - 1))
+  buf.toStr()
 
-proc toUpperLU*(s: string): string =
+proc toUpperLU*(s: openArray[char]): Str =
   return s.toUpperLU(0)
 
-proc toLowerLU*(s: string): string =
+proc toLowerLU*(s: openArray[char]): Str =
   return s.toUpperLU(1)
 
-proc capitalizeLU*(s: string): string =
-  result = newStringOfCap(s.len)
+proc capitalizeLU*(s: openArray[char]): Str =
+  var buf = initGrowbufOfCap(s.len)
   var wordStart = true
   for u in s.points:
     if lre_is_space(u) != 0:
       wordStart = true
-      result.addUTF8(u)
+      buf.addUTF8(u)
     elif wordStart:
       var outa {.noinit.}: array[LRE_CC_RES_LEN_MAX, uint32]
       let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]),
         u, 0)
-      result.addUTF8(outa.toOpenArray(0, n - 1))
+      buf.addUTF8(outa.toOpenArray(0, n - 1))
       wordStart = false
     else:
-      result.addUTF8(u)
+      buf.addUTF8(u)
+  buf.toStr()
 
 type u32pair* {.packed.} = object
   a: uint32

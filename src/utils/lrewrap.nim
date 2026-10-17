@@ -2,15 +2,14 @@
 
 when NimMajor >= 2:
   import std/assertions
-else:
-  from utils/twtstr import substr
 
 import js/libregexp
+import utils/cowstr
 import utils/opt
 
 type
   Regex* = object
-    bytecode*: string
+    bytecode*: Str
 
   REBytecode* = distinct ptr uint8
 
@@ -27,23 +26,25 @@ proc checkStack(opaque: pointer; alloca_size: csize_t): cint {.cdecl.} =
 proc bytecodeToRegex*(p: REBytecode; plen: cint): Regex =
   let plen = int(plen)
   let p = cast[ptr UncheckedArray[char]](p)
-  result = Regex(bytecode: p.toOpenArray(0, plen - 1).substr())
+  result = Regex(bytecode: initStr(p.toOpenArray(0, plen - 1)))
 
-proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
+proc compileRegex*(buf: Str; flags: LREFlags; regex: var Regex): bool =
   ## Compile a regular expression using QuickJS's libregexp library.
   ## If the result is false, regex.bytecode stores the error message emitted
   ## by libregexp instead.
   ##
   ## Use `exec` to actually use the resulting bytecode on a string.
-  var errorMsg = newString(64)
+  var errorMsg = initGrowbuf()
+  errorMsg.setLen(64)
   var plen: cint
-  let bytecode = lre_compile(plen, cstring(errorMsg), cint(errorMsg.len),
-    cstring(buf), csize_t(buf.len), flags.toCInt, passRealloc, checkStack, nil)
+  let bytecode = lre_compile(plen, cast[cstring](addr errorMsg[0]),
+    cint(errorMsg.len), buf.toCString(), csize_t(buf.len), flags.toCInt,
+    passRealloc, checkStack, nil)
   if bytecode == nil: # Failed to compile.
     let i = errorMsg.find('\0')
     if i >= 0:
       errorMsg.setLen(i)
-    regex = Regex(bytecode: move(errorMsg))
+    regex = Regex(bytecode: errorMsg.toStr())
     return false
   assert plen > 0
   regex = bytecodeToRegex(cast[REBytecode](bytecode), plen)
@@ -64,7 +65,7 @@ proc initContext*(bytecode: REBytecode): ExecContext =
   )
 
 proc initContext*(regex: Regex): ExecContext =
-  initContext(cast[REBytecode](unsafeAddr regex.bytecode[0]))
+  initContext(cast[REBytecode](regex.bytecode.toCString()))
 
 template ncaps(ctx: ExecContext): cint =
   lre_get_capture_count(ctx.bytecode)
@@ -153,7 +154,7 @@ proc matchLast*[T: Regex|REBytecode](regex: T; str: openArray[char]; start = 0):
   var ctx = initContext(regex)
   ctx.matchLast(str, start)
 
-proc countBackslashes(buf: string; i: int): int =
+proc countBackslashes(buf: Str; i: int): int =
   var j = 0
   for i in countdown(i, 0):
     if buf[i] != '\\':
@@ -161,7 +162,7 @@ proc countBackslashes(buf: string; i: int): int =
     inc j
   return j
 
-proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
+proc compileRegex*(buf: Str; flags: LREFlags = {}): Result[Regex, Str] =
   var regex: Regex
   if not compileRegex(buf, flags, regex):
     return err(regex.bytecode)
@@ -171,7 +172,7 @@ proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
 # efgh$ -> efgh$
 # ^ijkl$ -> ^ijkl$
 # mnop -> ^mnop$
-proc compileMatchRegex*(buf: string): Result[Regex, string] =
+proc compileMatchRegex*(buf: Str): Result[Regex, Str] =
   if buf.len <= 0:
     return compileRegex(buf)
   if buf[0] == '^':
@@ -188,10 +189,7 @@ proc compileMatchRegex*(buf: string): Result[Regex, string] =
     # Check if the regex contains an invalid trailing backslash.
     let j = buf.countBackslashes(buf.high - 1)
     if j mod 2 != 1: # odd, because we do not count the last backslash
-      return err("unexpected end")
-  var buf2 = "^"
-  buf2 &= buf
-  buf2 &= "$"
-  return compileRegex(buf2)
+      return err(str("unexpected end"))
+  compileRegex(initStrM("^", buf, "$"))
 
 {.pop.}

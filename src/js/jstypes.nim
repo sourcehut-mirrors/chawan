@@ -2,70 +2,14 @@
 
 import std/macros
 
+import encoding/decoder
+import io/packetreader
+import io/packetwriter
 import js/constcharp
 import js/quickjs
-
-when NimMajor < 2:
-  import utils/twtstr
-
-proc isLocal(t: NimNode): bool =
-  let kind = t.kind
-  # fast path
-  if kind == nnkSym:
-    return true
-  if kind == nnkCall:
-    return false
-  # slow path
-  var t = t
-  while true:
-    case t.kind
-    of nnkCall, nnkCast:
-      # if it's a call, see below.
-      # if it's a cast, preserve it.
-      return true
-    of nnkStmtList, nnkStmtListExpr:
-      # check the last child
-      t = t[^1]
-    of nnkSym, nnkIdent, nnkConv, nnkDerefExpr, nnkDotExpr, nnkHiddenDeref,
-        nnkBracketExpr, nnkCheckedFieldExpr:
-      # if it's a symbol, see below.
-      # if it's a deref, dot, or bracket expr, we don't need a decref.
-      # if it's a bracket expr, that means we're accessing an array/seq,
-      # which always produces lent, so we don't need decref.
-      # if it's a conv, preserve it.
-      break
-    else:
-      # might want to check if it doesn't leak...
-      warning("handle kind " & $t.kind)
-      break
-  true
-
-macro dotGet*(T, t: untyped): untyped =
-  # Evil hack to work around compiler bugs:
-  # * if t is a funcall, we have to use a cast so that we don't
-  #   accidentally disarm the destroy hook.  e.g.,
-  #     node.document = other.rootNode.document
-  #     # if we desugar this to
-  #     #   let tmp1 = (ptr NodeObj)(other)
-  #     #   let tmp = (ptr NodeObj)(tmp1.rootNode)
-  #     #   (ptr NodeObj)(node).document = tmp.document
-  #     # then, since tmp is not considered a JSRef anymore, the
-  #     # compiler won't bother unref'ing it.
-  # * otherwise, t is derived from a symbol in the current scope.  in this
-  #   case we we have to use a conversion to defeat move inference.  e.g.,
-  #     document.window = window
-  #     # if we only access window by casts from here on, it's not
-  #     # accounted for in sink inference, and will get sink'ed in by the
-  #     # previous assignment.
-  #     window.document = document
-  #   note that moves are inferred even based on object/array access
-  #   so we have to be broader here.
-  if isLocal(t):
-    quote do:
-      `T`(`t`)
-  else:
-    quote do:
-      cast[`T`](`t`)
+import utils/cowstr
+import utils/macroutil
+import utils/twtstr
 
 # This is the WebIDL dictionary type.
 # We only use it for type inference in generics.
@@ -107,63 +51,27 @@ type JSKeyValuePair*[K, T] = object
   s*: seq[tuple[name: K; value: T]]
 
 # * DOMString: may include surrogates (encoded as UTF-8).
-# * DOMStringNull: same as DOMString, but JS_NULL is translated to the empty
-#   string (instead of being rejected).
-# * USVString: encodes surrogates as U+FFFD.
+# * DOMStringEmpty: same as DOMString, but JS_NULL is translated to the
+#   empty string (instead of being rejected).
+# * DOMStringNil: same as DOMString, but JS_NULL is translated to nil.
+# * Str: USVString in the spec, encodes surrogates as U+FFFD.
 # * string: treated as USVString.
-# * ByteString: like string, but rejects codepoints greater than U+00FF.
+# * ByteString: rejects codepoints greater than U+00FF.
 # * CSSOMString: the spec allows aliasing this to DOMString or USVString.
 #   We use USVString to reduce malformed UTF-8.
 # * CStringNZ: non-zero JS string, may contain surrogates.
 #   Useful for paths.
 type
-  DOMString* {.pure, inheritable.} = object
-    p*: cstring
-    ilen: int
+  DOMString* = distinct Str
 
-  DOMStringNull* {.pure, final.} = object of DOMString
+  DOMStringEmpty* = distinct DOMString
 
-  USVString* {.pure, final.} = object of DOMString
+  DOMStringNil* = distinct StrNil
 
-  ByteString* = object
-    s*: string
-
-  CSSOMString* = USVString
+  ByteString* = distinct Str
 
   CStringNZ* = object
     p*: cstring
-
-const DOMStringConstFlag = 1 shl (sizeof(int) * 8 - 1)
-
-proc `=destroy`*(s: var DOMString) =
-  if (s.ilen and DOMStringConstFlag) == 0:
-    JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
-
-proc `=sink`*(dst: var DOMString; src: DOMString) =
-  `=destroy`(dst)
-  dst.ilen = src.ilen
-  dst.p = src.p
-
-proc `=copy`*(a: var DOMString; b: DOMString) {.error.} =
-  discard
-
-proc `=destroy`*(s: var USVString) =
-  if (s.ilen and DOMStringConstFlag) == 0:
-    JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
-
-proc `=sink`*(dst: var USVString; src: USVString) =
-  `=destroy`(dst)
-  dst.ilen = src.ilen
-  dst.p = src.p
-
-proc `=destroy`*(s: var DOMStringNull) =
-  if (s.ilen and DOMStringConstFlag) == 0:
-    JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
-
-proc `=sink`*(dst: var DOMStringNull; src: DOMStringNull) =
-  `=destroy`(dst)
-  dst.ilen = src.ilen
-  dst.p = src.p
 
 proc `=destroy`*(s: var CStringNZ) =
   if s.p != nil:
@@ -173,65 +81,109 @@ proc `=sink`*(dst: var CStringNZ; src: CStringNZ) =
   `=destroy`(dst)
   dst.p = src.p
 
+# set as .error for now because I haven't found a need for these
+proc `=copy`*(dst: var CStringNZ; src: CStringNZ) {.error.} =
+  `=destroy`(dst)
+  if src.p != nil:
+    dst.p = cstring(JS_DupCStringRT(globalRuntime, cstringConst(s.p)))
+  else:
+    dst.p = nil
+
+proc `=dup`*(src: CStringNZ): CStringNZ {.error.} =
+  let p = if src.p != nil:
+    cstring(JS_DupCStringRT(globalRuntime, cstringConst(s.p)))
+  else:
+    nil
+  CStringNZ(p: p)
+
+proc toStr*(src: sink CStringNZ): Str =
+  let p = src.p
+  wasMoved(src)
+  initQJSStr(p, p.len)
+
 template len*(ds: DOMString): int =
-  ds.ilen and not DOMStringConstFlag
+  Str(ds).len
 
-proc initDOMString*(s: cstring; len: int): DOMString =
-  DOMString(p: s, ilen: len)
-
-proc initDOMStringLit*(s: cstring): DOMString =
-  DOMString(p: s, ilen: s.len or DOMStringConstFlag)
-
-proc initUSVString*(s: cstring; len: int): USVString =
-  USVString(p: s, ilen: len)
-
-proc initUSVStringLit*(s: cstring): USVString =
-  USVString(p: s, ilen: s.len or DOMStringConstFlag)
+template toStr*(ds: DOMString): Str =
+  Str(ds)
 
 template toOpenArray*(s: DOMString): openArray[char] =
-  {.push overflowChecks: off.}
-  let H = s.len - 1
-  {.pop.}
-  s.p.toOpenArray(0, H)
+  Str(s).toOpenArray()
 
-template toOpenArray*(s: DOMString; start: int): openArray[char] =
-  {.push overflowChecks: off.}
-  let H = s.len - 1
-  {.pop.}
-  s.p.toOpenArray(start, H)
+proc `$`*(ds: DOMString): string {.borrow.}
+proc `$`*(ds: DOMStringEmpty): string {.borrow.}
+proc `==`*(ds: DOMString; s: openArray[char]): bool {.borrow.}
+proc `==`*(a, b: DOMString): bool {.borrow.}
 
-proc `$`*(ds: DOMString): string =
-  ds.toOpenArray().substr()
-
-proc toDOMStringView*(s: string): DOMString =
-  DOMString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
-
-proc toUSVStringView*(s: string): USVString =
-  USVString(p: cstring(s), ilen: s.len or DOMStringConstFlag)
-
-proc `==`*(ds: DOMString; s: string): bool =
-  ds.toOpenArray() == s
-
-proc `==`*(s: string; ds: DOMString): bool =
-  ds.toOpenArray() == s
-
-proc toDOMStringNull*(ds: sink DOMString): DOMStringNull =
-  let p = ds.p
-  ds.p = nil
-  DOMStringNull(p: p, ilen: ds.ilen)
-
-proc `$`*(ds: DOMStringNull): string =
-  ds.toOpenArray().substr()
-
-proc `$`*(us: USVString): string =
-  us.toOpenArray().substr()
-
-proc `$`*(bs: ByteString): lent string =
-  bs.s
+template toDOMStringEmpty*(ds: DOMString): DOMStringEmpty =
+  DOMStringEmpty(ds)
 
 proc `$`*(s: CStringNZ): string =
   $s.p
 
+# ByteString
+proc toStr*(s: ByteString): Str =
+  Str(s).toValidUTF8()
+
+template toOpenArray*(s: ByteString): openArray[char] =
+  Str(s).toOpenArray()
+
+template len*(s: ByteString): int =
+  Str(s).len
+
+proc `[]`*(s: ByteString; n: int): char {.borrow.}
+proc contains*(s: ByteString; c: char): bool {.borrow.}
+proc contains*(s: ByteString; cs: set[char]): bool {.borrow.}
+proc startsWithIgnoreCase*(a: ByteString; b: openArray[char]): bool {.borrow.}
+proc equalsIgnoreCase*(a: ByteString; b: openArray[char]): bool {.borrow.}
+proc add*(dst: var ByteString; src: openArray[char]) {.borrow.}
+proc `==`*(a, b: ByteString): bool {.borrow.}
+proc `==`*(a: ByteString; b: openArray[char]): bool {.borrow.}
+proc equalsIgnoreCase*(a, b: ByteString): bool {.borrow.}
+proc until*(s: ByteString; cc: set[char]; starti = 0): ByteString {.borrow.}
+
+proc sread*(r: var PacketReader; s: var ByteString): PacketCode =
+  r.sread(Str(s))
+
+proc swrite*(w: var PacketWriter; s: ByteString) =
+  w.swrite(Str(s))
+
+proc `[]`*(s: ByteString; n: BackwardsIndex): char {.inline.} =
+  Str(s)[n]
+
+proc strip*(s: ByteString; leading = true; trailing = true;
+    chars = AsciiWhitespace): ByteString =
+  ByteString(Str(s).strip(leading, trailing, chars))
+
+proc cmpIgnoreCase*(a, b: ByteString): int =
+  Str(a).cmpIgnoreCase(Str(b))
+
+proc add*(buf: var Growbuf; s: ByteString) =
+  buf &= Str(s)
+
+proc toByteString*(buf: sink Growbuf): ByteString =
+  ByteString(buf.toStr())
+
+template byteStr*(s: cstring): ByteString =
+  ByteString(str(s))
+
+template asByteString*(s: Str): ByteString =
+  ByteString(s)
+
+template add*(dst: var ByteString; src: ByteString) =
+  dst &= src.toOpenArray()
+
+template toLowerAscii*(s: ByteString): ByteString =
+  ByteString(Str(s).toLowerAscii())
+
+iterator split*(s: ByteString; sep: char): ByteString =
+  for it in Str(s).split(sep):
+    yield ByteString(it)
+
+proc initDimsHeader*(w, h: int): ByteString =
+  initStrM(w, 'x', h).asByteString
+
+# JSObject
 type JSObject* = distinct pointer
 
 proc `=destroy`*(p: var JSObject) =
@@ -386,5 +338,18 @@ proc toJSValue*(t: sink JSValueTraced): JSValue =
   let val = JSValue(t)
   wasMoved(t)
   return val
+
+# Either JS bool or undefined.
+type OptionalBool* = enum
+  obNone, obFalse, obTrue
+
+proc toOptionalBool*(b: bool): OptionalBool =
+  if b: obTrue else: obFalse
+
+proc get*(ob: OptionalBool; b: bool): bool =
+  case ob
+  of obNone: b
+  of obFalse: false
+  of obTrue: true
 
 {.pop.} # raises

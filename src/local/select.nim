@@ -11,6 +11,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/cowstr
 import utils/lrewrap
 import utils/luwrap
 import utils/opt
@@ -23,7 +24,7 @@ type
 
   SelectOption* = object
     optionType*: SelectOptionType
-    s*: string
+    s*: Str
 
   Select* = JSRef[SelectObj]
 
@@ -104,11 +105,11 @@ jsClassDef(SelectBuilder):
   proc addKey(ctx: JSContext; this: SelectBuilder; key: openArray[char]):
       Opt[void] =
     ?this.checkMap(ctx)
-    let fun = ctx.newFunction([], "select.setCursorY(" & $this.options.len &
-      ");" & "select.click()")
+    let fun = ctx.newFunction([], initStrM("select.setCursorY(",
+      this.options.len, "); select.click()"))
     if JS_IsException(fun.vc):
       return err()
-    var warnings: seq[string]
+    var warnings: seq[Str]
     let key = parseKeyComb(key, warnings)
     this.map.addAction(key, fun)
     ok()
@@ -122,7 +123,7 @@ jsClassDef(SelectBuilder):
 
   # public
   proc item(ctx: JSContext; this: SelectBuilder; optionType: SelectOptionType;
-      s: sink string; cmd: JSCallback; jsKey = JS_UNDEFINED.vc): Opt[void] {.
+      s: sink Str; cmd: JSCallback; jsKey = JS_UNDEFINED.vc): Opt[void] {.
       jsmfunc("item", sotItem), jsmfunc("menu", sotMenu).} =
     ?this.checkMap(ctx)
     if not JS_IsUndefined(jsKey):
@@ -134,8 +135,8 @@ jsClassDef(SelectBuilder):
     ok()
 
   # public
-  proc line(ctx: JSContext; this: SelectBuilder; s: sink string = ""):
-      Opt[void] {.jsfunc.} =
+  proc line(ctx: JSContext; this: SelectBuilder; s = str("")): Opt[void]
+      {.jsfunc.} =
     ?this.checkMap(ctx)
     this.options.add(SelectOption(s: s, optionType: sotNop))
     this.callbacks.add(JSCallback(nil))
@@ -143,7 +144,7 @@ jsClassDef(SelectBuilder):
 
   # public
   proc bindKey(ctx: JSContext; this: SelectBuilder; cmd: JSCallback;
-      key: sink string): Opt[void] {.jsfunc: "bind".} =
+      key: sink Str): Opt[void] {.jsfunc: "bind".} =
     ?this.checkMap(ctx)
     this.map.addAction(key, cmd.toJSValue())
     ok()
@@ -187,7 +188,7 @@ proc finish(ctx: JSContext; select: Select): JSValue =
 proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1
   for i in select.cursory + 1 ..< select.options.len:
-    if regex.match(select.options[i].s):
+    if regex.match(select.options[i].s.toOpenArray()):
       j = i
       break
   if j != -1:
@@ -195,7 +196,7 @@ proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
     select.queueDraw()
   elif wrap:
     for i in 0 ..< select.cursory:
-      if regex.match(select.options[i].s):
+      if regex.match(select.options[i].s.toOpenArray()):
         j = i
         break
     if j != -1:
@@ -205,7 +206,7 @@ proc cursorNextMatch(select: Select; regex: REBytecode; wrap: bool) =
 proc cursorPrevMatch(select: Select; regex: REBytecode; wrap: bool) =
   var j = -1
   for i in countdown(select.cursory - 1, 0):
-    if regex.match(select.options[i].s):
+    if regex.match(select.options[i].s.toOpenArray()):
       j = i
       break
   if j != -1:
@@ -213,7 +214,7 @@ proc cursorPrevMatch(select: Select; regex: REBytecode; wrap: bool) =
     select.queueDraw()
   elif wrap:
     for i in countdown(select.options.high, select.cursory):
-      if regex.match(select.options[i].s):
+      if regex.match(select.options[i].s.toOpenArray()):
         j = i
         break
     if j != -1:
@@ -227,11 +228,11 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     let yi = y * display.width
     while true:
       if display[yi + x].str == "":
-        display[yi + x].str = " "
+        display[yi + x].str = str(" ")
       let w = display[yi + x].str.width()
       if x + w > sx:
         while x < sx:
-          display[yi + x].str = " "
+          display[yi + x].str = str(" ")
           inc x
         break
       x += w
@@ -250,17 +251,20 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
   display[ey * display.width + sx].format = fmt
   display[ey * display.width + ex].format = fmt
   # Draw top, bottom borders.
-  let ups = if upmore: " " else: style.borderChar(bdcHorizontalBarTop)
-  let downs = if downmore: " " else: style.borderChar(bdcHorizontalBarBottom)
+  let ups = if upmore: str(" ") else: style.borderChar(bdcHorizontalBarTop)
+  let downs = if downmore:
+    str(" ")
+  else:
+    style.borderChar(bdcHorizontalBarBottom)
   for x in sx + 1 .. ex - 1:
     display[sy * display.width + x].str = ups
     display[ey * display.width + x].str = downs
     display[sy * display.width + x].format = fmt
     display[ey * display.width + x].format = fmt
   if upmore:
-    display[sy * display.width + sx + (ex - sx) div 2].str = ":"
+    display[sy * display.width + sx + (ex - sx) div 2].str = str(":")
   if downmore:
-    display[ey * display.width + sx + (ex - sx) div 2].str = ":"
+    display[ey * display.width + sx + (ex - sx) div 2].str = str(":")
   # Draw left, right borders.
   for y in sy + 1 .. ey - 1:
     display[y * display.width + sx].str = style.borderChar(bdcVerticalBarLeft)
@@ -309,23 +313,21 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       let nx = x + uw
       if nx > ex:
         break
-      display[dls + x].str = ""
       if u.isControlChar():
-        display[dls + x].str &= u.controlToVisual()
+        display[dls + x].str = u.controlToVisual()
       else:
-        for l in pj ..< j:
-          display[dls + x].str &= select.options[i].s[l]
+        display[dls + x].str = select.options[i].s.substr(pj, j - 1)
       display[dls + x].format = format
       if x == sx:
         # do not reverse the position of the cursor
         display[dls + x].format.excl(ffReverse)
       inc x
       while x < nx:
-        display[dls + x].str = ""
+        display[dls + x].str = str("")
         display[dls + x].format = format
         inc x
     while x < ex:
-      display[dls + x].str = " "
+      display[dls + x].str = str(" ")
       display[dls + x].format = format
       inc x
 
@@ -544,13 +546,16 @@ jsClassPublicDef(Select):
     if select != nil:
       var maxw = 0
       for opt in select.options.mitems:
-        opt.s.mnormalize()
-        opt.s = ' ' & opt.s & ' '
-        maxw = max(maxw, opt.s.width())
+        var buf = initGrowbuf(' ')
+        buf.addUTF8(opt.s.toOpenArray().toPoints().normalize())
+        buf &= ' '
+        opt.s = buf.toStr()
+        maxw = max(maxw, opt.s.toOpenArray().width())
       select.maxw = maxw
       for opt in select.options.mitems:
         if opt.s == "  " and opt.optionType == sotNop:
-          opt.s = ' ' & ($bdcHorizontalBarTop).repeat(maxw - 2) & ' '
+          opt.s = initStrM(' ', bdcHorizontalBarTop.toStr().repeat(maxw - 2),
+            ' ')
       select.windowChange(width, height)
       select.setCursorY(select.selected)
     select

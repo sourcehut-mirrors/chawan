@@ -4,6 +4,7 @@ import std/algorithm
 
 import io/chafile
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -11,12 +12,12 @@ type DirlistItemType = enum
   ditFile, ditLink, ditDir
 
 type DirlistItem = ref object
-  name: string # real name
-  dname: string # display name
-  modified: string # date last modified
+  name: Str # real name
+  dname: Str # display name
+  modified: Str # date last modified
   case t: DirlistItemType
   of ditLink:
-    linkto: string
+    linkto: Str
   of ditFile:
     nsize: int64
   of ditDir:
@@ -25,21 +26,19 @@ type DirlistItem = ref object
 proc printDirlist(f: ChaFile; items: openArray[DirlistItem]): Opt[void] =
   ?f.writeLine("<a href=\"../\">[Upper Directory]</a><table>")
   for item in items:
-    var path = percentEncode(item.name, PathPercentEncodeSet)
+    var path = initGrowbufSink(percentEncode(item.name, PathPercentEncodeSet))
     if item.t == ditLink and item.linkto.len > 0 and item.linkto[^1] == '/':
       # If the target is a directory, treat it as a directory. (For FTP.)
       path &= '/'
     # this depends on a CSS hack in ua.css where for dirlist, hr gets a
     # proprietary border style and anchors are moved upwards by -1em.
-    var line = "<tr>"
-    line &= "<td><hr>"
-    line &= "<a href=\"" & path & "\">" & htmlEscape(item.dname) & "</a>"
-    line &= "<td>"
-    line &= htmlEscape(item.modified)
+    var line = initGrowbufM("<tr>",
+      "<td><hr><a href=\"", path, "\">", htmlEscape(item.dname), "</a>",
+      "<td>", htmlEscape(item.modified))
     if item.t == ditFile:
-      line &= ' ' & convertSize(uint64(max(item.nsize, 0)))
+      line.addM(' ', convertSize(uint64(max(item.nsize, 0))))
     elif item.t == ditLink:
-      line &= " -> " & htmlEscape(item.linkto)
+      line.addM(" -> ", htmlEscape(item.linkto))
     line &= "</tr>"
     ?f.write(line)
   ok()
@@ -50,20 +49,20 @@ proc usage() =
 
 proc addItem(items: var seq[DirlistItem]; item: DirlistItem) =
   if item.t == ditDir:
-    item.name &= '/'
+    item.name &= "/"
   item.dname = item.name
   if item.t == ditLink:
-    item.dname &= '@'
+    item.dname &= "@"
   items.add(item)
 
-proc skipTillSpace(line: openArray[char]; i: int): int =
+proc skipTillSpace(line: Str; i: int): int =
   var i = i
   while i < line.len and line[i] != ' ':
     inc i
   return i
 
 proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
-  var line: string
+  var line: Str
   while ?f.readLine(line):
     if line.len == 0: continue
     var i = 10 # permission
@@ -101,7 +100,7 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
       continue
     case line[0]
     of 'l': # link
-      let linki = name.findOrLen(" -> ")
+      let linki = name.toOpenArray().findOrLen(" -> ")
       let linkfrom = name.substr(0, linki - 1)
       let linkto = name.substr(linki + 4) # you?
       items.addItem(DirlistItem(
@@ -125,9 +124,11 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
       ))
   ok()
 
-proc parseArgs(title: var string) =
+proc parseArgs(): Str =
+  # returns title
   let L = getArgvCount()
   var i = 1
+  var title: Str
   while i < L:
     let s = getArgv(i)
     if s[0] != '-':
@@ -143,18 +144,18 @@ proc parseArgs(title: var string) =
       else:
         usage()
     inc i
+  title
 
 proc parse(): Opt[void] =
-  var title = ""
-  parseArgs(title)
-  ?chaStdout.write("""
+  let title = parseArgs()
+  ?chaStdout.write(initStrM("""
 <!DOCTYPE html>
 <head>
-<title>""" & title.htmlEscape() & """</title>
+<title>""", title.htmlEscape(), """</title>
 </head>
 <body>
-<pre><h1>""" & title.htmlEscape() & """</h1>
-""")
+<pre><h1>""", title.htmlEscape(), """</h1>
+"""))
   var items: seq[DirlistItem] = @[]
   ?chaStdin.parseInput(items)
   items.sort(proc(a, b: DirlistItem): int =

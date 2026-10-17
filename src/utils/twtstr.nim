@@ -3,7 +3,6 @@
 when NimMajor >= 2:
   import std/assertions
 import std/algorithm
-import std/math
 import std/posix
 
 import utils/opt
@@ -106,34 +105,6 @@ proc toPoints*(s: openArray[char]): seq[uint32] =
     res.add(u)
   move(res)
 
-proc addUTF8*(res: var string; u: uint32) =
-  if u < 0x80:
-    res &= char(u)
-  elif u < 0x800:
-    res &= char(u shr 6 or 0xC0)
-    res &= char(u and 0x3F or 0x80)
-  elif u < 0x10000:
-    res &= char(u shr 12 or 0xE0)
-    res &= char(u shr 6 and 0x3F or 0x80)
-    res &= char(u and 0x3F or 0x80)
-  else:
-    res &= char(u shr 18 or 0xF0)
-    res &= char(u shr 12 and 0x3F or 0x80)
-    res &= char(u shr 6 and 0x3F or 0x80)
-    res &= char(u and 0x3F or 0x80)
-
-proc addUTF8*(res: var string; us: openArray[uint32]) =
-  for u in us:
-    res.addUTF8(u)
-
-proc toUTF8*(u: uint32): string =
-  result = ""
-  result.addUTF8(u)
-
-proc toUTF8*(us: openArray[uint32]): string =
-  result = newStringOfCap(us.len)
-  result.addUTF8(us)
-
 proc pointLen*(s: openArray[char]): int =
   var n = 0
   for u in s.points:
@@ -156,53 +127,21 @@ proc isControlChar*(u: uint32): bool =
 
 proc toLowerAscii*(c: char): char {.inline.} =
   if c in AsciiUpperAlpha:
-    result = char(uint8(c) xor 0x20'u8)
+    char(uint8(c) xor 0x20'u8)
   else:
-    result = c
+    c
 
 proc toUpperAscii*(c: char): char {.inline.} =
   if c in AsciiLowerAlpha:
-    result = char(uint8(c) xor 0x20'u8)
+    char(uint8(c) xor 0x20'u8)
   else:
-    result = c
+    c
 
 proc toLowerAscii*(s: openArray[char]): string =
   let L = s.len
   result = newString(L)
   for i in 0 ..< L:
     result[i] = s[i].toLowerAscii()
-
-proc toUpperAscii*(s: openArray[char]): string =
-  let L = s.len
-  result = newString(L)
-  for i in 0 ..< L:
-    result[i] = s[i].toUpperAscii()
-
-proc kebabToCamelCase*(s: string): string =
-  result = ""
-  var flip = false
-  for c in s:
-    if c == '-':
-      flip = true
-    else:
-      if flip:
-        result &= c.toUpperAscii()
-      else:
-        result &= c
-      flip = false
-  if flip:
-    result &= '-'
-
-proc camelToKebabCase*(s: openArray[char]; dashPrefix = false): string =
-  result = newStringOfCap(s.len)
-  if dashPrefix:
-    result &= '-'
-  for c in s:
-    if c in AsciiUpperAlpha:
-      result &= '-'
-      result &= c.toLowerAscii()
-    else:
-      result &= c
 
 proc hexValue*(c: char): int =
   if c in AsciiDigit:
@@ -217,44 +156,6 @@ proc decValue*(c: char): int =
   if c in AsciiDigit:
     return int(uint8(c) - uint8('0'))
   return -1
-
-const HexCharsUpper = "0123456789ABCDEF"
-const HexCharsLower = "0123456789abcdef"
-proc pushHex*(buf: var string; u: uint8) =
-  buf &= HexCharsUpper[u shr 4]
-  buf &= HexCharsUpper[u and 0xF]
-
-proc pushHex*(buf: var string; c: char) =
-  buf.pushHex(uint8(c))
-
-proc toHexLower*(u: uint16): string =
-  var x = u
-  let len = if (u and 0xF000) != 0:
-    4
-  elif (u and 0x0F00) != 0:
-    3
-  elif (u and 0xF0) != 0:
-    2
-  else:
-    1
-  var s = newString(len)
-  for i in countdown(len - 1, 0):
-    s[i] = HexCharsLower[x and 0xF]
-    x = x shr 4
-  move(s)
-
-proc controlToVisual*(u: uint32): string =
-  if u <= 0x1F:
-    return "^" & char(u or 0x40)
-  if u == 0x7F:
-    return "^?"
-  var res = "["
-  res.pushHex(uint8(u))
-  res &= ']'
-  move(res)
-
-proc add*(s: var string; u: uint8) =
-  s.addInt(uint64(u))
 
 proc cmpIgnoreCase2*(a, b: openArray[char]): int =
   let alen = a.len
@@ -339,15 +240,6 @@ proc chaMemset*(s: var openArray[char]; c: char) =
     if slen > 0:
       discard memset(addr s[0], cint(c), csize_t(slen))
 
-proc repeat*(c: char; n: int): string =
-  result = newString(n)
-  chaMemset(result, c)
-
-proc repeat*(s: string; n: int): string =
-  result = newStringOfCap(s.len * n)
-  for i in 0 ..< n:
-    result &= s
-
 proc memchr(s: pointer; c: cint; n: csize_t): pointer {.
   importc, header: "<string.h>".}
 
@@ -409,7 +301,7 @@ proc findOrLen*(s: openArray[char]; cc: set[char]; start: int): int =
 proc memmem(haystack: pointer; haystacklen: csize_t; needle: pointer;
   needlelen: csize_t): pointer {.importc, header: "<string.h>".}
 
-proc find*(haystack: openArray[char]; needle: string): int =
+proc find*(haystack, needle: openArray[char]): int =
   let haystacklen = haystack.len
   let needlelen = needle.len
   if haystacklen < needlelen:
@@ -432,7 +324,10 @@ proc find*(haystack: openArray[char]; needle: string): int =
       return cast[int](cast[uint](p) - cast[uint](sp))
   return -1
 
-proc find*(haystack: openArray[char]; needle: string; start: int; last = -1):
+proc find*(haystack: openArray[char]; needle: string): int =
+  haystack.find(needle.toOpenArray(0, needle.high))
+
+proc find*(haystack, needle: openArray[char]; start: int; last = -1):
     int =
   let last = if last == -1: haystack.high else: last
   if start > last:
@@ -488,7 +383,7 @@ proc rfind*(s: openArray[char]; cs: set[char]; start = 0; last = -1): int =
       return i
   return -1
 
-proc contains*(s1: openArray[char]; s2: string): bool =
+proc contains*(s1, s2: openArray[char]): bool =
   s1.find(s2) != -1
 
 proc contains*(s: openArray[char]; cs: set[char]): bool =
@@ -496,12 +391,6 @@ proc contains*(s: openArray[char]; cs: set[char]): bool =
 
 proc onlyWhitespace*(s: openArray[char]): bool =
   AllChars - AsciiWhitespace notin s
-
-proc containsIgnoreCase*(ss: openArray[string]; s: string): bool =
-  for it in ss:
-    if it.equalsIgnoreCase(s):
-      return true
-  false
 
 proc count*(s: openArray[char]; c: char): int =
   var n = 0
@@ -516,24 +405,6 @@ proc count*(s: openArray[char]; cs: set[char]): int =
     if c in cs:
       inc n
   n
-
-proc delete*(s: var string; slice: Slice[int]) =
-  let a = max(0, slice.a)
-  let b = min(s.high, slice.b)
-  if b >= a:
-    var i = a
-    var j = b + 1
-    let moveLen = s.len - j
-    let len = moveLen + i
-    when nimvm:
-      while i < len:
-        s[i] = s[j]
-        inc i
-        inc j
-    else:
-      if moveLen > 0:
-        moveMem(addr s[i], addr s[j], moveLen)
-    s.setLen(len)
 
 proc skipBlanks*(buf: openArray[char]; at: int): int =
   result = at
@@ -561,89 +432,14 @@ proc strip*(s: openArray[char]; leading = true; trailing = true;
     return ""
   return s.toOpenArray(i, j).substr()
 
-proc stripAndCollapse*(s: openArray[char]): string =
-  var res = newStringOfCap(s.len)
-  var space = false
-  for c in s.toOpenArray(s.skipBlanks(0), s.high):
-    let cspace = c in AsciiWhitespace
-    if not cspace:
-      if space:
-        res &= ' '
-      res &= c
-    space = cspace
-  move(res)
-
-proc until*(s: openArray[char]; cc: char; starti = 0): string =
-  let endi = s.findOrLen(cc, starti)
-  return s.toOpenArray(starti, endi - 1).substr()
-
-proc until*(s: openArray[char]; cc: set[char]; starti = 0): string =
-  let endi = s.findOrLen(cc, starti)
-  return s.toOpenArray(starti, endi - 1).substr()
-
-proc untilLower*(s: openArray[char]; cc: char; starti = 0): string =
-  let endi = s.findOrLen(cc, starti)
-  return s.toOpenArray(starti, endi - 1).toLowerAscii()
-
-proc untilLower*(s: openArray[char]; cc: set[char]; starti = 0): string =
-  let endi = s.findOrLen(cc, starti)
-  return s.toOpenArray(starti, endi - 1).toLowerAscii()
-
-proc after*(s: string; c: char): string =
-  let i = s.find(c)
-  if i >= 0:
-    return s.substr(i + 1)
-  return ""
-
-proc after*(s: string; c: set[char]): string =
-  let i = s.find(c)
-  if i >= 0:
-    return s.substr(i + 1)
-  return ""
-
-proc afterLast*(s: string; c: char): string =
-  let i = s.rfind(c)
-  if i >= 0:
-    return s.substr(i + 1)
-  return s
-
-proc afterLast*(s: string; c: set[char]): string =
-  let i = s.rfind(c)
-  if i >= 0:
-    return s.substr(i + 1)
-  return s
-
 proc untilLast*(s: string; c: char): string =
   let i = s.rfind(c)
   if i >= 0:
     return s.substr(0, i - 1)
   return s
 
-proc untilLast*(s: string; c: set[char]): string =
-  let i = s.rfind(c)
-  if i >= 0:
-    return s.substr(0, i - 1)
-  return s
-
-proc snprintf(str: cstring; size: csize_t; format: cstring): cint
-  {.header: "<stdio.h>", importc, varargs}
-
-# From w3m
-const SizeUnit = [
-  cstring"b", cstring"kb", cstring"Mb", cstring"Gb", cstring"Tb", cstring"Pb",
-  cstring"Eb", cstring"Zb", cstring"Bb", cstring"Yb"
-]
-proc convertSize*(size: uint64): string =
-  var sizepos = 0
-  var csize = float32(size)
-  while csize >= 999.495 and sizepos < SizeUnit.len:
-    csize = csize / 1024.0
-    inc sizepos
-  result = newString(10)
-  let f = floor(csize * 100 + 0.5) / 100
-  discard snprintf(cstring(result), csize_t(result.len), "%.3g%s", f,
-    SizeUnit[sizepos])
-  result.setLen(cstring(result).len)
+proc parentDir*(s: string): string =
+  s.untilLast('/')
 
 # https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#numbers
 proc parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
@@ -725,154 +521,10 @@ const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
 const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +
   {'!', '\''..')', '~'}
 
-proc percentEncode*(append: var string; c: char; set: set[char];
-    spaceAsPlus = false) {.inline.} =
-  if spaceAsPlus and c == ' ':
-    append &= '+'
-  elif c notin set:
-    append &= c
-  else:
-    append &= '%'
-    append.pushHex(c)
-
-proc percentEncode*(append: var string; s: openArray[char]; set: set[char];
-    spaceAsPlus = false) =
-  for c in s:
-    append.percentEncode(c, set, spaceAsPlus)
-
-proc percentEncode*(s: openArray[char]; set: set[char]; spaceAsPlus = false):
-    string =
-  result = ""
-  result.percentEncode(s, set, spaceAsPlus)
-
-proc percentDecode*(input: openArray[char]): string =
-  result = ""
-  var i = 0
-  while i < input.len:
-    let c = input[i]
-    if c != '%' or i + 2 >= input.len:
-      result &= c
-    else:
-      let h1 = input[i + 1].hexValue
-      let h2 = input[i + 2].hexValue
-      if h1 == -1 or h2 == -1:
-        result &= c
-      else:
-        result &= char((h1 shl 4) or h2)
-        i += 2
-    inc i
-
 type EscapeMode* = enum
   emAll # attribute chars plus single quote (non-standard but safest)
   emAttribute # text chars plus double quote ("attribute mode" in spec)
   emText # &, nbsp, <, > (default mode in spec)
-
-proc htmlEscape*(s: openArray[char]; mode = emAll): string =
-  result = newStringOfCap(s.len)
-  var nbspMode = false
-  for c in s:
-    if nbspMode:
-      if c == '\xA0':
-        result &= "&nbsp;"
-      else:
-        result &= '\xC2' & c
-      nbspMode = false
-      continue
-    case c
-    of '<': result &= "&lt;"
-    of '>': result &= "&gt;"
-    of '&': result &= "&amp;"
-    of '\xC2': nbspMode = true
-    elif c == '"' and mode <= emAttribute: result &= "&quot;"
-    elif c == '\'' and mode == emAll: result &= "&apos;"
-    else: result &= c
-
-proc dqEscape*(s: openArray[char]): string =
-  result = newStringOfCap(s.len)
-  for c in s:
-    if c == '"':
-      result &= '\\'
-    result &= c
-
-proc cssEscape*(s: openArray[char]): string =
-  result = newStringOfCap(s.len)
-  for c in s:
-    if c == '\'':
-      result &= '\\'
-    result &= c
-
-proc cssIdentEscape*(s: openArray[char]): string =
-  var res = newStringOfCap(s.len)
-  for i, c in s:
-    case c
-    of '\0': res &= "\uFFFD"
-    of Controls - {'\0'}:
-      res &= '\\'
-      if uint8(c) > 0xF:
-        res &= HexCharsLower[uint8(c) shr 4]
-      res &= HexCharsLower[uint8(c) and 0xF]
-      res &= ' '
-    of AsciiDigit:
-      if i == 0 or i == 1 and res[0] == '-':
-        res &= '\\'
-        res &= HexCharsLower[uint8(c) shr 4]
-        res &= HexCharsLower[uint8(c) and 0xF]
-        res &= ' '
-      else:
-        res &= c
-    of '-':
-      if res.len == 1:
-        res &= "\\-"
-      else:
-        res &= c
-    of NonAscii, '_', AsciiAlpha:
-      res &= c
-    else:
-      res &= "\\"
-      res &= c
-  move(res)
-
-proc join*(ss: openArray[string]; sep: char): string =
-  if ss.len <= 0:
-    return ""
-  result = ss[0]
-  for i in 1 ..< ss.len:
-    result &= sep
-    result &= ss[i]
-
-iterator split*(s: openArray[char]; sep: char): string =
-  var buf = ""
-  var i = 0
-  while i <= s.len:
-    if i == s.len or s[i] == sep:
-      yield buf
-      buf.setLen(0)
-    else:
-      buf &= s[i]
-    inc i
-
-iterator split*(s: openArray[char]; sep: set[char]): string =
-  var buf = ""
-  var i = 0
-  while i <= s.len:
-    if i == s.len or s[i] in sep:
-      yield buf
-      buf.setLen(0)
-    else:
-      buf &= s[i]
-    inc i
-
-proc containsToken*(s: openArray[char]; tok: string): bool =
-  for it in s.split(AsciiWhitespace):
-    if it == tok:
-      return true
-  return false
-
-proc containsTokenIgnoreCase*(s: openArray[char]; tok: string): bool =
-  for it in s.split(AsciiWhitespace):
-    if it.equalsIgnoreCase(tok):
-      return true
-  return false
 
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
@@ -931,52 +583,6 @@ proc matchQNameProduction*(s: openArray[char]): bool =
         return false
       colon = true
   return s.matchNameProduction()
-
-proc deleteChars*(s: openArray[char]; todel: set[char]): string =
-  result = newStringOfCap(s.len)
-  for c in s:
-    if c notin todel:
-      result &= c
-
-proc replaceControls*(s: openArray[char]): string =
-  result = newStringOfCap(s.len)
-  for u in s.points:
-    if u.isControlChar():
-      result &= u.controlToVisual()
-    else:
-      result.addUTF8(u)
-
-# https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
-proc makeCRLF*(s: openArray[char]): string =
-  result = newStringOfCap(s.len)
-  var i = 0
-  let L = s.len - 1
-  while i < L:
-    let c1 = s[i]
-    let c2 = s[i + 1]
-    result &= c1
-    if c1 == '\r' and c2 != '\n':
-      result &= '\n'
-    elif c1 != '\r' and c2 == '\n':
-      result &= '\r'
-      result &= '\n'
-      inc i
-    inc i
-  if i < s.len:
-    if s[i] == '\r':
-      result &= '\r'
-      result &= '\n'
-    else:
-      result &= s[i]
-
-# Normalize to Unix line endings.
-proc normalizeLF*(s: openArray[char]): string =
-  result = newStringOfCap(s.len)
-  for i, c in s:
-    if c != '\r':
-      result &= c
-    elif i >= s.high or s[i + 1] != '\n':
-      result &= '\n'
 
 type IdentMapItem* = tuple[s: string; n: int]
 
@@ -1047,173 +653,6 @@ proc parseEnumNoCase*[T: enum](s: openArray[char]): Opt[T] =
     {.pop.}
   return err()
 
-const tchar = AsciiAlphaNumeric +
-  {'!', '#'..'\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
-
-proc findContentTypeAttr(contentType, attrname: openArray[char]): int =
-  var i = contentType.findOrLen(';')
-  while i < contentType.len:
-    i = contentType.skipBlanks(i + 1)
-    if contentType.startsWith(attrname, i):
-      i = contentType.skipBlanks(i + attrname.len)
-      if i >= contentType.len:
-        break
-      if contentType[i] == '=':
-        return i + 1
-    i = contentType.findOrLen(';', i)
-  return -1
-
-proc getContentTypeAttr*(contentType, attrname: openArray[char]): string =
-  var i = contentType.findContentTypeAttr(attrname)
-  if i < 0:
-    return ""
-  i = contentType.skipBlanks(i)
-  if i >= contentType.len:
-    return ""
-  if contentType[i] != '"':
-    return contentType.until(';', i)
-  var q = false
-  var s = ""
-  for c in contentType.toOpenArray(i + 1, contentType.high):
-    if q:
-      s &= c
-      q = false
-    elif c == '"':
-      break
-    elif c == '\\':
-      q = true
-    else:
-      s &= c
-  move(s)
-
-# turn value into quoted-string
-proc mimeQuote*(value: string): string =
-  var s = newStringOfCap(value.len)
-  s &= '"'
-  var found = false
-  for c in value:
-    if c in {'"', '\\'}:
-      s &= '\\'
-    found = found or c notin tchar
-    s &= c
-  if not found:
-    return value
-  s &= '"'
-  move(s)
-
-proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
-  var i = contentType.findContentTypeAttr(attrname)
-  if i != -1:
-    let j = contentType.findOrLen(';', i)
-    contentType[i..<j] = value.mimeQuote()
-  else:
-    contentType &= ';' & attrname & '=' & value
-
-proc atob(c: char): uint8 {.inline.} =
-  # see RFC 4648 table
-  if c in AsciiUpperAlpha:
-    return uint8(c) - uint8('A')
-  if c in AsciiLowerAlpha:
-    return uint8(c) - uint8('a') + 26
-  if c in AsciiDigit:
-    return uint8(c) - uint8('0') + 52
-  if c == '+':
-    return 62
-  if c == '/':
-    return 63
-  return uint8.high
-
-# Warning: this overrides outs.
-proc atob*(outs: var string; data: openArray[char]): Err[cstring] =
-  outs = newStringOfCap(data.len div 4 * 3)
-  var buf = array[4, uint8].default
-  var i = 0
-  var j = 0
-  var pad = 0
-  while true:
-    i = data.skipBlanks(i)
-    if i >= data.len:
-      break
-    if data[i] == '=':
-      i = data.skipBlanks(i + 1)
-      inc pad
-      break
-    buf[j] = atob(data[i])
-    if buf[j] == uint8.high:
-      return err("Invalid character in encoded string")
-    if j == 3:
-      let ob1 = (buf[0] shl 2) or (buf[1] shr 4) # 6 bits of b0 | 2 bits of b1
-      let ob2 = (buf[1] shl 4) or (buf[2] shr 2) # 4 bits of b1 | 4 bits of b2
-      let ob3 = (buf[2] shl 6) or buf[3]         # 2 bits of b2 | 6 bits of b3
-      outs &= char(ob1)
-      outs &= char(ob2)
-      outs &= char(ob3)
-      j = 0
-    else:
-      inc j
-    inc i
-  if i < data.len:
-    if i < data.len and data[i] == '=':
-      inc pad
-      inc i
-    i = data.skipBlanks(i)
-  if pad > 0 and j + pad != 4:
-    return err("Too much padding")
-  if i < data.len:
-    return err("Invalid character after encoded string")
-  if j == 3:
-    let ob1 = (buf[0] shl 2) or (buf[1] shr 4) # 6 bits of b0 | 2 bits of b1
-    let ob2 = (buf[1] shl 4) or (buf[2] shr 2) # 4 bits of b1 | 4 bits of b2
-    outs &= char(ob1)
-    outs &= char(ob2)
-  elif j == 2:
-    let ob1 = (buf[0] shl 2) or (buf[1] shr 4) # 6 bits of b0 | 2 bits of b1
-    outs &= char(ob1)
-  elif j != 0:
-    return err("Incorrect number of characters in encoded string")
-  return ok()
-
-const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-
-proc btoa*(s: var string; data: openArray[uint8]) =
-  var i = 0
-  let endw = data.len - 2
-  while i < endw:
-    let n = uint32(data[i]) shl 16 or
-      uint32(data[i + 1]) shl 8 or
-      uint32(data[i + 2])
-    i += 3
-    s &= AMap[n shr 18 and 0x3F]
-    s &= AMap[n shr 12 and 0x3F]
-    s &= AMap[n shr 6 and 0x3F]
-    s &= AMap[n and 0x3F]
-  if i < data.len:
-    let b1 = uint32(data[i])
-    inc i
-    if i < data.len:
-      let b2 = uint32(data[i])
-      s &= AMap[b1 shr 2]                      # 6 bits of b1
-      s &= AMap[b1 shl 4 and 0x3F or b2 shr 4] # 2 bits of b1 | 4 bits of b2
-      s &= AMap[b2 shl 2 and 0x3F]             # 4 bits of b2
-    else:
-      s &= AMap[b1 shr 2]          # 6 bits of b1
-      s &= AMap[b1 shl 4 and 0x3F] # 2 bits of b1
-      s &= '='
-    s &= '='
-
-proc btoa*(data: openArray[uint8]): string =
-  if data.len == 0:
-    return ""
-  var L = data.len div 3 * 4
-  if (let rem = data.len mod 3; rem) > 0:
-    L += 3 - rem
-  var s = newStringOfCap(L)
-  s.btoa(data)
-  move(s)
-
-proc btoa*(data: openArray[char]): string =
-  return btoa(data.toOpenArrayByte(0, data.len - 1))
-
 template uncheckedInc(i: untyped) =
   {.push overflowChecks: off.}
   inc i
@@ -1246,12 +685,6 @@ iterator ritems*[T](a: openArray[T]): lent T {.inline.} =
 iterator mritems*[T](a: var openArray[T]): var T {.inline.} =
   for i in countdown(a.high, 0):
     yield a[i]
-
-proc getFileExt*(path: string): string =
-  let n = path.rfind({'/', '.'})
-  if n < 0 or path[n] != '.':
-    return ""
-  return path.substr(n + 1)
 
 proc chaArrayCopy*[T](dest: var openArray[T]; src: openArray[T]) =
   assert dest.len == src.len

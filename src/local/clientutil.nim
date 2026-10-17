@@ -15,19 +15,20 @@ import js/tojs
 import server/blob
 import server/url
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/strwidth
 import utils/twtstr
 
 jsNamespaceDef(Util):
-  proc getcwd(): string {.jsstfunc.} =
+  proc getcwd(): Str {.jsstfunc.} =
     return chaos.getcwd()
 
-  proc unquote(ctx: JSContext; s: string; base = ""): JSValue {.jsstfunc.} =
+  proc unquote(ctx: JSContext; s: Str; base = str("")): JSValue {.jsstfunc.} =
     let res = ChaPath(s).unquote(base)
     if res.isOk:
       return ctx.toJS(res.get)
-    return JS_ThrowTypeError(ctx, "%s", cstring(res.error))
+    return JS_ThrowTypeError(ctx, "%s", res.error.toCString())
 
   proc openFile(path: CStringNZ): cint {.jsstfunc.} =
     let ps = newPosixStream(path.p, O_RDONLY, 0)
@@ -51,9 +52,9 @@ jsNamespaceDef(Util):
   proc nimGCStats(): string {.jsstfunc.} =
     return GC_getStatistics()
 
-  proc jsGCStats(ctx: JSContext): string {.jsstfunc.} =
+  proc jsGCStats(ctx: JSContext): Str {.jsstfunc.} =
     let rt = JS_GetRuntime(ctx)
-    return rt.getMemoryUsage()
+    rt.getMemoryUsage()
 
   proc gc(ctx: JSContext) {.jsstfunc.} =
     let rt = JS_GetRuntime(ctx)
@@ -65,11 +66,11 @@ jsNamespaceDef(Util):
   proc isSameAuthOrigin(a, b: URL): bool {.jsstfunc.} =
     return a.authOrigin.isSameOrigin(b.authOrigin);
 
-  proc encodeURIPath(s: DOMString): string {.jsstfunc.} =
-    return percentEncode(s.toOpenArray(), PathPercentEncodeSet + {'%'})
+  proc encodeURIPath(s: DOMString): Str {.jsstfunc.} =
+    return percentEncode(s.toStr(), PathPercentEncodeSet + {'%'})
 
-  proc expandPath(s: DOMString): string {.jsstfunc.} =
-    return chaos.expandPath(s.toOpenArray())
+  proc expandPath(s: DOMString): Str {.jsstfunc.} =
+    return chaos.expandPath(s.toStr())
 
   proc mkdir(s: CStringNZ; mode: cint): cint {.jsstfunc.} =
     return posix.mkdir(s.p, Mode(mode))
@@ -77,15 +78,15 @@ jsNamespaceDef(Util):
   proc unlink(s: CStringNZ) {.jsstfunc.} =
     discard posix.unlink(s.p)
 
-  proc readBlob(path: CStringNZ): WebFile {.jsstfunc.} =
+  proc readBlob(path: sink CStringNZ): WebFile {.jsstfunc.} =
     let ps = newPosixStream(path.p, O_RDONLY, 0)
     if ps == nil:
       return WebFile(nil)
-    let name = ($path).afterLast('/')
+    let name = path.toStr().afterLast('/')
     return newWebFile(name, ps.fd)
 
-  proc convertSize(n: float64): string {.jsstfunc.} =
-    twtstr.convertSize(uint64(n))
+  proc convertSize(n: float64): Str {.jsstfunc.} =
+    cowstr.convertSize(uint64(n))
 
   proc width(s: DOMString): int {.jsstfunc.} =
     strwidth.width(s.toOpenArray())

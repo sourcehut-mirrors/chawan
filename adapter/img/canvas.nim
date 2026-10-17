@@ -15,6 +15,7 @@ import css/color
 import html/path
 import io/dynstream
 import io/packetreader
+import utils/cowstr
 
 import ../protocol/lcgi
 
@@ -243,7 +244,7 @@ proc drawBitmap(a, b: Bitmap; p: Vector2D; color: ARGBColor) =
           b.getpx(x, y).a != 0:
         a.setpxb(ax, ay, color)
 
-proc fillText(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
+proc fillText(bmp: Bitmap; text: Str; x, y: float64; color: ARGBColor;
     textAlign: CanvasTextAlign) =
   var w = 0f64
   var glyphs: seq[Bitmap] = @[]
@@ -261,7 +262,7 @@ proc fillText(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
     bmp.drawBitmap(glyph, Vector2D(x: x, y: y - 8), color)
     x += float64(glyph.width)
 
-proc strokeText(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
+proc strokeText(bmp: Bitmap; text: Str; x, y: float64; color: ARGBColor;
     textAlign: CanvasTextAlign) =
   #TODO
   bmp.fillText(text, x, y, color, textAlign)
@@ -339,7 +340,7 @@ proc main() =
         of pcFillText, pcStrokeText:
           if unifontBitmap == nil:
             unifontBitmap = loadUnifont(unifont)
-          var text: string
+          var text: Str
           var x, y: float64
           var color: ARGBColor
           var align: CanvasTextAlign

@@ -43,6 +43,7 @@ import server/loaderiface
 import server/request
 import server/url
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/tabutil
 import utils/twtstr
@@ -53,7 +54,7 @@ type JSFetchOpaque {.final.} = ref object of RootObj
   reject: JSCallback
 
 # Forward declarations
-proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
+proc setLocation(ctx: JSContext; window: Window; s: Str): JSValue
 proc outerWidth(window: Window): int
 proc outerHeight(window: Window): int
 
@@ -68,23 +69,23 @@ jsClassRaw(NavigatorDef, "Navigator"):
     JS_MarkForeignObject(rt, this, markFunc)
 
   # NavigatorID
-  proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
-  proc appName(navigator: Navigator): string {.jsfget.} = "Netscape"
-  proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (X11)"
-  proc platform(navigator: Navigator): string {.jsfget, jsfget: "oscpu".} =
-    "Linux x86_64"
-  proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
-  proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
-  proc userAgent(navigator: Navigator): lent string {.jsfget.} =
+  proc appCodeName(navigator: Navigator): Str {.jsfget.} = str("Mozilla")
+  proc appName(navigator: Navigator): Str {.jsfget.} = str("Netscape")
+  proc appVersion(navigator: Navigator): Str {.jsfget.} = str("5.0 (X11)")
+  proc platform(navigator: Navigator): Str {.jsfget, jsfget: "oscpu".} =
+    str("Linux x86_64")
+  proc product(navigator: Navigator): Str {.jsfget.} = str("Gecko")
+  proc productSub(navigator: Navigator): Str {.jsfget.} = str("20100101")
+  proc userAgent(navigator: Navigator): lent Str {.jsfget.} =
     return Window(navigator).userAgent
-  proc vendor(navigator: Navigator): string {.jsfget, jsfget: "vendorSub".} =
-    ""
+  proc vendor(navigator: Navigator): Str {.jsfget, jsfget: "vendorSub".} =
+    str("")
   proc taintEnabled(navigator: Navigator): bool {.jsfunc.} = false
 
   # NavigatorLanguage
-  proc language(navigator: Navigator): string {.jsfget.} = "en-US"
-  proc languages(navigator: Navigator): seq[string] {.jsfget.} =
-    @["en-US", "en"] #TODO frozen array?
+  proc language(navigator: Navigator): Str {.jsfget.} = str("en-US")
+  proc languages(navigator: Navigator): seq[Str] {.jsfget.} =
+    @[str("en-US"), str("en")] #TODO frozen array?
 
   # NavigatorOnline
   proc onLine(navigator: Navigator): bool {.jsfget.} =
@@ -114,7 +115,7 @@ jsClassRaw(PluginArrayDef, "PluginArray"):
       {.jsmark.} =
     JS_MarkForeignObject(rt, this, markFunc)
 
-  proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
+  proc namedItem(pluginArray: PluginArray): Str {.jsfunc.} = str("")
   proc item(pluginArray: PluginArray): JSValue {.jsfunc.} = JS_NULL
   proc length(pluginArray: PluginArray): uint32 {.jsfget.} = 0
   proc getter(pluginArray: PluginArray; atom: JSAtom): JSValue
@@ -132,7 +133,7 @@ jsClassRaw(MimeTypeArrayDef, "MimeTypeArray"):
       {.jsmark.} =
     JS_MarkForeignObject(rt, this, markFunc)
 
-  proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
+  proc namedItem(mimeTypeArray: MimeTypeArray): Str {.jsfunc.} = str("")
   proc item(mimeTypeArray: MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
   proc length(mimeTypeArray: MimeTypeArray): uint32 {.jsfget.} = 0
   proc getter(mimeTypeArray: MimeTypeArray; atom: JSAtom): JSValue
@@ -175,7 +176,7 @@ type
 
   PermissionStatusObj = object of EventTargetObj
     state: PermissionState
-    name: string
+    name: Str
     #TODO onchange
 
   PermissionStatus = JSRef[PermissionStatusObj]
@@ -190,7 +191,7 @@ jsClassDef(PermissionStatus):
 proc denyPermissionJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   assert argc == 2
-  var name: string
+  var name: Str
   ?ctx.fromJS(argv[1], name)
   let obj = ?trace(ctx.toJSNew(jsNew PermissionStatusObj(
     name: move(name),
@@ -274,13 +275,13 @@ jsClassRaw(HistoryDef, "History"):
       jsfunc: "replaceState".} =
     #TODO figure out some way to emulate the navigation API that isn't as
     # horribly user-hostile as others implement it
-    var s: string
+    var s: Str
     if not JS_IsNull(url):
       ?ctx.fromJS(url, s)
     let window = Window(history)
     if window != nil and window.document != nil:
       let url2 = window.document.parseURL0(s)
-      if url2 != nil and $url2 != $window.document.url:
+      if url2 != nil and url2.toStr() != window.document.url.toStr():
         return ctx.setLocation(window, s)
     return JS_UNDEFINED
 
@@ -331,11 +332,11 @@ jsClassRaw(LocationDef, "Location"):
       {.jsmark.} =
     JS_MarkForeignObject(rt, this, markFunc)
 
-  proc `$`(location: Location): string {.jsuffunc: "toString",
+  proc toStr(location: Location): Str {.jsuffunc: "toString",
       jsuffget: "href".} =
     return location.url.serialize()
 
-  proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
+  proc setHref(ctx: JSContext; location: Location; s: Str): JSValue {.
       jsuffunc: "open", jsfset: "href", jsuffunc: "assign",
       jsuffunc: "replace".} =
     let window = location.window
@@ -346,13 +347,13 @@ jsClassRaw(LocationDef, "Location"):
     if window.document != nil:
       window.navigate(location.url)
 
-  proc origin*(location: Location): string {.jsuffget.} =
+  proc origin*(location: Location): Str {.jsuffget.} =
     return location.url.jsOrigin
 
   proc protocol(ctx: JSContext; location: Location): JSValue {.jsuffget.} =
     return ctx.protocol(location.url)
 
-  proc setProtocol(ctx: JSContext; location: Location; s: string): JSValue
+  proc setProtocol(ctx: JSContext; location: Location; s: Str): JSValue
       {.jsfset: "protocol".} =
     let document = location.document
     if document == nil:
@@ -364,10 +365,10 @@ jsClassRaw(LocationDef, "Location"):
     document.window.navigate(copyURL)
     return JS_UNDEFINED
 
-  proc host(location: Location): string {.jsuffget.} =
+  proc host(location: Location): Str {.jsuffget.} =
     return location.url.host
 
-  proc setHost(location: Location; s: USVString) {.jsfset: "host".} =
+  proc setHost(location: Location; s: Str) {.jsfset: "host".} =
     let document = location.document
     if document == nil:
       return
@@ -375,10 +376,10 @@ jsClassRaw(LocationDef, "Location"):
     copyURL.setHost(s)
     document.window.navigate(copyURL)
 
-  proc hostname(location: Location): string {.jsuffget.} =
-    return location.url.hostname
+  proc hostname(location: Location): lent Str {.jsuffget.} =
+    location.url.hostname
 
-  proc setHostname(location: Location; s: USVString) {.jsfset: "hostname".} =
+  proc setHostname(location: Location; s: Str) {.jsfset: "hostname".} =
     let document = location.document
     if document == nil:
       return
@@ -386,10 +387,10 @@ jsClassRaw(LocationDef, "Location"):
     copyURL.setHostname(s)
     document.window.navigate(copyURL)
 
-  proc port(location: Location): string {.jsuffget.} =
+  proc port(location: Location): Str {.jsuffget.} =
     return location.url.port
 
-  proc setPort(location: Location; s: USVString) {.jsfset: "port".} =
+  proc setPort(location: Location; s: Str) {.jsfset: "port".} =
     let document = location.document
     if document == nil:
       return
@@ -397,10 +398,10 @@ jsClassRaw(LocationDef, "Location"):
     copyURL.setPort(s)
     document.window.navigate(copyURL)
 
-  proc pathname(location: Location): string {.jsuffget.} =
-    return location.url.pathname
+  proc pathname(location: Location): lent Str {.jsuffget.} =
+    location.url.pathname
 
-  proc setPathname(location: Location; s: USVString) {.jsfset: "pathname".} =
+  proc setPathname(location: Location; s: Str) {.jsfset: "pathname".} =
     let document = location.document
     if document == nil:
       return
@@ -408,10 +409,10 @@ jsClassRaw(LocationDef, "Location"):
     copyURL.setPathname(s)
     document.window.navigate(copyURL)
 
-  proc search(location: Location): string {.jsuffget.} =
-    return location.url.search
+  proc search(location: Location): lent Str {.jsuffget.} =
+    location.url.search
 
-  proc setSearch(location: Location; s: string) {.jsfset: "search".} =
+  proc setSearch(location: Location; s: Str) {.jsfset: "search".} =
     let document = location.document
     if document == nil:
       return
@@ -419,10 +420,10 @@ jsClassRaw(LocationDef, "Location"):
     copyURL.setSearch(s)
     document.window.navigate(copyURL)
 
-  proc hash(location: Location): string {.jsuffget.} =
-    return location.url.hash
+  proc hash(location: Location): lent Str {.jsuffget.} =
+    location.url.hash
 
-  proc setHash(location: Location; s: string) {.jsfset: "hash".} =
+  proc setHash(location: Location; s: Str) {.jsfset: "hash".} =
     let document = location.document
     if document == nil:
       return
@@ -471,7 +472,7 @@ type AutoInitGetSetType = enum
 proc windowSetLocation(ctx: JSContext; this, val: JSValueConst): JSValue
     {.cdecl.} =
   var window0: pointer
-  var s: string
+  var s: Str
   ?ctx.fromJSThis(this, event.windowClassID, window0)
   ?ctx.fromJS(val, s)
   let window = cast[Window](window0)
@@ -541,7 +542,7 @@ jsNamespaceDef(CSS):
     if argv.len > 0:
       var value: CSSOMString
       ?ctx.fromJS(argv[0], value)
-      if decl := initCSSDeclaration($arg1):
+      if decl := initCSSDeclaration(arg1):
         case decl.t
         of cdtProperty:
           var cp = initCSSParser(value)
@@ -557,13 +558,41 @@ jsNamespaceDef(CSS):
       #TODO supports(arg1)
       return JS_FALSE
 
-  proc cssEscape(ident: CSSOMString): string {.jsstfunc: "escape".} =
-    return ident.toOpenArray().cssIdentEscape()
+  proc cssIdentEscape(s: CSSOMString): Str {.jsstfunc: "escape".} =
+    var buf = initGrowbufOfCap(s.len)
+    for i, c in s:
+      case c
+      of '\0': buf &= "\uFFFD"
+      of Controls - {'\0'}:
+        buf &= '\\'
+        if uint8(c) > 0xF:
+          buf &= HexCharsLower[uint8(c) shr 4]
+        buf &= HexCharsLower[uint8(c) and 0xF]
+        buf &= ' '
+      of AsciiDigit:
+        if i == 0 or i == 1 and buf[0] == '-':
+          buf &= '\\'
+          buf &= HexCharsLower[uint8(c) shr 4]
+          buf &= HexCharsLower[uint8(c) and 0xF]
+          buf &= ' '
+        else:
+          buf &= c
+      of '-':
+        if buf.len == 1:
+          buf &= "\\-"
+        else:
+          buf &= c
+      of NonAscii, '_', AsciiAlpha:
+        buf &= c
+      else:
+        buf &= "\\"
+        buf &= c
+    buf.toStr()
 
 # MediaQueryList
 type
   MediaQueryListObj {.pure, final.} = object of EventTargetObj
-    media: string
+    media: Str
     matches: bool
     #TODO onchange
     # also there should be a list of these on window that gets dispatched
@@ -619,7 +648,7 @@ jsClassDef(ResizeObserver):
 # Window
 #TODO CORS: get prototype proxy
 
-proc setLocation(ctx: JSContext; window: Window; s: string): JSValue =
+proc setLocation(ctx: JSContext; window: Window; s: Str): JSValue =
   let url = window.document.parseURL0(s)
   if url == nil:
     return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
@@ -818,30 +847,28 @@ jsClassDef(Window):
   proc getParent(window: Window): Window {.jsrfget: "parent".} =
     return window #TODO frames?
 
-  proc origin(window: Window): string {.jsrfget.} =
+  proc origin(window: Window): Str {.jsrfget.} =
     return Location(window).origin
 
   # See twtstr for the actual implementations.
-  proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
-    var s: string
-    if (let r = s.atob(data); r.isErr):
+  proc atob(ctx: JSContext; window: Window; data: DOMString): JSValue {.jsfunc.} =
+    var s: Str
+    if (let r = s.atob(data.toOpenArray()); r.isErr):
       return JS_ThrowDOMException(ctx, "InvalidCharacterError", r.error)
     return JS_NewNarrowStringLen(ctx, s.toCStringConst(), csize_t(s.len))
 
   proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
       {.jsfunc.} =
     let data = ?trace(JS_ToString(ctx, data))
-    var plen: csize_t
-    let cs = JS_ToCStringNarrowLen(ctx, plen, data.vc)
-    if cs == nil:
+    var s: ByteString
+    if ctx.fromJS(data.vc, s).isErr:
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in string")
-    let res = btoa(cstring(cs).toOpenArray(0, int(plen) - 1))
-    JS_FreeCString(ctx, cs)
+    let res = btoa(s.toOpenArray())
     ctx.toJS(res)
 
   proc alert(window: Window; s: DOMString) {.jsfunc.} =
-    window.console.error($s)
+    window.console.error(s.toStr())
 
   proc getEvent(ctx: JSContext; window: Window): JSValue {.jsrfget: "event".} =
     if window.event == nil:
@@ -881,21 +908,21 @@ jsClassDef(Window):
     let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)
     jsNew MediaQueryListObj(
       matches: mqlist.appliesScript(addr window.settings),
-      media: $mqlist
+      media: mqlist.toStr()
     )
 
 proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
-  let sname = $name
+  let sname = cstring(name).toStr()
   let url = parseURL0(sname)
   if url != nil:
     return js_strdup(ctx, name)
   if name[0] == '.' and name[1] == '.' and name[2] == '/' or
       name[0] == '.' and name[1] == '/' or
       name[0] == '/':
-    let url = parseURL0(sname, parseURL0($baseName))
+    let url = parseURL0(sname, parseURL0(cstring(baseName).toStr()))
     if url != nil:
-      let surl = $url
+      let surl = url.toStr()
       return js_strdup(ctx, surl.toCStringConst)
   #TODO importmap
   JS_ThrowTypeError(ctx, "relative module names must start with ./, ../ or /")
@@ -904,7 +931,7 @@ proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JSModuleDef {.cdecl.} =
   let window = ctx.getWindow()
-  let name = $moduleName
+  let name = cstring(moduleName).toStr()
   let url = parseURL0(name)
   if url == nil:
     JS_ThrowTypeError(ctx, "invalid URL: %s", moduleName)
@@ -937,17 +964,18 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     isHandled: JS_BOOL; opaque: pointer) {.cdecl.} =
   if isHandled == 0:
     let window = ctx.getGlobal()
-    var s: string
+    var buf = initGrowbuf()
+    var s: Str
     if fromJS(ctx, reason, s).isOk:
-      s &= '\n'
-    var ss: string
+      buf.addM(s, '\n')
+    var ss: Str
     if ctx.fromJSGetProp(reason, "stack", ss).isOk:
-      s &= ss
+      buf &= ss
     if window.document != nil:
-      window.console.error("Unhandled promise in document",
-        $window.document.url, s)
+      window.console.error(str("Unhandled promise in document"),
+        window.document.url.toStr(), buf.toStr())
     else:
-      window.console.error("(Unhandled promise)", s)
+      window.console.error(str("(Unhandled promise)"), buf.toStr())
     window.console.flush()
 
 proc windowPropsGetOwnProperty(ctx: JSContext; desc: ptr JSPropertyDescriptor;
@@ -1090,7 +1118,7 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     images, styling, autofocus: bool; headless: HeadlessMode;
     attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;
     urandom: PosixStream; imageTypes: MimeTypesImages;
-    userAgent, referrer, contentType: string): Window =
+    userAgent, referrer, contentType: Str): Window =
   let console = newConsole(chaStderr)
   let ctx = if scripting != smFalse:
     rt.newJSContext()

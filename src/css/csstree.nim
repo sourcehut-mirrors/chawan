@@ -32,8 +32,10 @@ when NimMajor >= 2:
 import std/algorithm
 
 import chame/tags
+import config/conftypes
 import css/box
 import css/cascade
+import css/color
 import css/cssparser
 import css/cssvalues
 import html/catom
@@ -41,9 +43,7 @@ import html/dom
 import html/form
 import html/xml
 import js/jsref
-import config/conftypes
-import css/color
-import utils/refstring
+import utils/cowstr
 import utils/twtstr
 
 type
@@ -59,7 +59,7 @@ type
     skipChildren: bool
     case t: StyledNodeType
     of stText:
-      text: RefString
+      text: Str
     of stElement:
       anonChildren: seq[StyledNode]
     of stBr: # <br> element
@@ -104,7 +104,7 @@ when defined(debug):
   proc `$`*(node: StyledNode): string =
     case node.t
     of stText:
-      return node.text.s
+      return $node.text
     of stElement:
       if node.pseudo != peNone:
         return $node.element.tagType & "::" & $node.pseudo
@@ -181,13 +181,13 @@ proc getAnonInlineComputed(frame: var TreeFrame): CSSValues =
       frame.anonInlineComputed = computed.atomize()
   return frame.anonInlineComputed
 
-proc displayed(frame: TreeFrame; text: RefString): bool =
+proc displayed(frame: TreeFrame; text: Str): bool =
   if text.len == 0:
     return false
   return frame.computed{"display"} in DisplayInlineLike or
     frame.lastChildWasInline or
     frame.computed{"white-space"} in WhiteSpacePreserve or
-    not text.s.onlyWhitespace()
+    not text.toOpenArray().onlyWhitespace()
 
 #TODO implement table columns
 const DisplayNoneLike = {
@@ -384,7 +384,7 @@ proc addPseudo(frame: var TreeFrame; pseudo: PseudoElement) =
       computed: computed
     ))
 
-proc addText(frame: var TreeFrame; text: RefString) =
+proc addText(frame: var TreeFrame; text: Str) =
   if frame.displayed(text):
     frame.add(StyledNode(
       t: stText,
@@ -402,15 +402,11 @@ proc addCounter(frame: var TreeFrame; name: CAtom; style: CSSListStyleType) =
     computed: frame.getAnonInlineComputed()
   ))
 
-proc addText(frame: var TreeFrame; s: sink string) =
-  #TODO should probably cache these...
-  frame.addText(newRefString(s))
-
 proc addImage(frame: var TreeFrame; bmp: NetworkBitmap) =
   if bmp == nil or bmp.cacheId == -1:
     # Add a placeholder text if we have no bmp.
     # (If we have bmp, render will take care of it automatically.)
-    frame.addText("[img]")
+    frame.addText(str("[img]"))
 
 proc addImageOrAlt(frame: var TreeFrame; image: HTMLImageElement) =
   let bmp = image.bitmap
@@ -421,7 +417,7 @@ proc addImageOrAlt(frame: var TreeFrame; image: HTMLImageElement) =
     if alt != "":
       frame.addText(alt)
     else:
-      frame.addText("[img]")
+      frame.addText(str("[img]"))
 
 proc addBr(frame: var TreeFrame) =
   frame.add(StyledNode(
@@ -450,17 +446,15 @@ proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
     computed{"width"} = cssLength(n)
     computed = computed.atomize()
     var aframe = frame.ctx.initTreeFrame(input.asElement, computed)
-    if cdata != nil:
-      aframe.addText(cdata)
+    aframe.addText(cdata)
     frame.addAnon(computed, move(aframe.children))
   else:
-    if cdata != nil:
-      frame.addText(cdata)
+    frame.addText(cdata)
 
 proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
   if option.select != nil and option.select.asElement.attrb(satMultiple):
-    frame.addText("[")
-    let cdata = newRefString(if option.selected: "*" else: " ")
+    frame.addText(str("["))
+    let cdata = if option.selected: str("*") else: str(" ")
     var computed = option.computed.inheritProperties()
     computed{"color"} = cssColor(ANSIColor(1)) # red
     computed{"white-space"} = WhiteSpacePre
@@ -469,7 +463,7 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
       var aframe = frame.ctx.initTreeFrame(option.asElement, computed)
       aframe.addText(cdata)
       frame.addAnon(computed, move(aframe.children))
-    frame.addText("]")
+    frame.addText(str("]"))
   frame.addElementChildren()
 
 proc addAnchorChildren(frame: var TreeFrame; anchor: HTMLAnchorElement) =
@@ -494,11 +488,11 @@ proc addChildren(frame: var TreeFrame) =
   of ttTextarea: frame.addText(HTMLTextAreaElement(frame.parent).value)
   of ttImg: frame.addImageOrAlt(HTMLImageElement(frame.parent))
   of ttCanvas: frame.addImage(HTMLCanvasElement(frame.parent).bitmap)
-  of ttVideo: frame.addText("[video]")
-  of ttAudio: frame.addText("[audio]")
+  of ttVideo: frame.addText(str("[video]"))
+  of ttAudio: frame.addText(str("[audio]"))
   of ttBr: frame.addBr()
-  of ttIframe: frame.addText("[iframe]")
-  of ttFrame: frame.addText("[frame]")
+  of ttIframe: frame.addText(str("[iframe]"))
+  of ttFrame: frame.addText(str("[frame]"))
   of ttProgress: frame.addProgress(frame.parent)
   of ttOption:
     let option = HTMLOptionElement(frame.parent)
@@ -609,9 +603,7 @@ proc matchCache(node: StyledNode; box: CSSBox): bool =
         # parent so it would be pointless.
         # (That does bring up the question why we have a computed field for
         # text boxes at at all.  I really don't know...)
-        box.keepLayout = box.len == node.text.len and
-          (box.text == node.text or box.text.s == node.text.s)
-        box.len = node.text.len
+        box.keepLayout = box.text == node.text # efficient when text equals
         box.computed = node.computed
         box.text = node.text
         return true
@@ -782,8 +774,7 @@ proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
       t: cbtText,
       computed: styledNode.computed,
       elementPtr: cast[ptr ElementObj](styledNode.element),
-      text: styledNode.text,
-      len: styledNode.text.len
+      text: styledNode.text
     )
   of stBr:
     if cached != nil:
@@ -800,7 +791,7 @@ proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
       ctx.linkHintChars[])
     if cached != nil:
       let cached = InlineTextBox(cached)
-      cached.keepLayout = cached.text.s == text.s
+      cached.keepLayout = cached.text == text
       cached.text = text
       return cached
     return InlineTextBox(

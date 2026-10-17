@@ -2,8 +2,9 @@
 
 import std/math
 
-import utils/opt
+import utils/cowstr
 import utils/dtoawrap
+import utils/opt
 import utils/twtstr
 
 type LUnit* = distinct int32
@@ -85,7 +86,7 @@ proc toFloat64*(a: LUnit): float64 =
   return float64(int32(a)) / 64
 
 proc `$`*(a: LUnit): string =
-  dtoa(a.toFloat32())
+  $dtoa(a.toFloat32())
 
 proc min*(a, b: LUnit): LUnit {.borrow.}
 proc max*(a, b: LUnit): LUnit {.borrow.}

@@ -3,6 +3,9 @@ import std/posix
 import std/strutils
 import utils/sandbox
 
+when NimMajor >= 2:
+  import std/assertions
+
 const curllib = (func(): string =
   const curlLibName {.strdefine.} = ""
   when curlLibName != "":

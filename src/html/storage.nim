@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import std/options
-
 import html/catom
 import html/domexception
 import html/event
@@ -16,21 +14,22 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/cowstr
 import utils/opt
 
 type
   StorageObj = object
-    map: seq[tuple[key, value: string]]
+    map: seq[tuple[key, value: DOMString]]
 
   Storage = JSRef[StorageObj]
 
   StorageNil = JSNullRef[StorageObj]
 
   StorageEventObj {.pure, final.} = object of EventObj
-    key: Option[string]
-    oldValue: Option[string]
-    newValue: Option[string]
-    url: string
+    key: DOMStringNil
+    oldValue: DOMStringNil
+    newValue: DOMStringNil
+    url: Str
     storageArea: StorageNil
 
   StorageEvent = JSRef[StorageEventObj]
@@ -40,7 +39,7 @@ proc getClassID(t: typedesc[Storage]): JSClassID
 # Storage
 proc find(this: Storage; key: DOMString): int =
   for i in 0 ..< this.map.len:
-    if this.map[i].key == key.toOpenArray():
+    if this.map[i].key == key:
       return i
   return -1
 
@@ -64,12 +63,12 @@ jsClassDef(Storage):
       {.jsfunc.} =
     let i = this.find(key)
     if i >= 0:
-      this.map[i].value = $value
+      this.map[i].value = value
     else:
       if this.map.len >= 64:
         return JS_ThrowDOMException(ctx, "QuotaExceededError",
           "quota exceeded")
-      this.map.add(($key, $value))
+      this.map.add((key, value))
     return JS_UNDEFINED
 
   proc removeItem(this: Storage; key: DOMString) {.jsfunc.} =
@@ -81,7 +80,7 @@ jsClassDef(Storage):
       {.jspropnames.} =
     var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
     for it in this.map:
-      list.add(it.key)
+      list.add(it.key.toStr())
     return list
 
   proc getter(ctx: JSContext; this: Storage; s: DOMString): JSValue
@@ -124,10 +123,10 @@ proc registerAutoInitStorage(ctx: JSContext; name: cstring): JSCode =
 
 # StorageEvent
 type StorageEventInit = object of EventInit
-  key {.jsdefault.}: Option[string] #TODO DOMString
-  oldValue {.jsdefault.}: Option[string] #TODO DOMString
-  newValue {.jsdefault.}: Option[string] #TODO DOMString
-  url {.jsdefault.}: string
+  key {.jsdefault.}: DOMStringNil
+  oldValue {.jsdefault.}: DOMStringNil
+  newValue {.jsdefault.}: DOMStringNil
+  url {.jsdefault.}: Str
   storageArea {.jsdefault.}: StorageNil
 
 jsClassDef(StorageEvent):
@@ -154,14 +153,15 @@ jsClassDef(StorageEvent):
     event
 
   proc initStorageEvent(this: StorageEvent; eventType: CAtom; bubbles = false;
-      cancelable = false; key = none(string); oldValue = none(string);
-      newValue = none(string); url: sink string = "";
-      storageArea = StorageNil(nil)) {.jsfunc.} =
+      cancelable = false; key = DOMStringNil(str(nil));
+      oldValue = DOMStringNil(str(nil)); newValue = DOMStringNil(str(nil));
+      url = str(""); storageArea = StorageNil(nil)) {.jsfunc.} =
     if efDispatch notin this.flags:
       this.key = key
       this.oldValue = oldValue
       this.newValue = newValue
       this.storageArea = storageArea
+      this.url = url
       this.asEvent.initialize(eventType, bubbles, cancelable)
 
 proc addStorageModule*(ctx: JSContext): JSCode =

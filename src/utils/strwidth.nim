@@ -3,6 +3,7 @@
 when NimMajor >= 2:
   import std/assertions
 
+import utils/cowstr
 import utils/twtstr
 
 # Lookup table for characters on the BMP. This "only" takes up 8k of space
@@ -86,19 +87,20 @@ proc width*(s: openArray[char]; start, len: int): int =
     w += u.width()
   return w
 
+proc width*(s: Str): int =
+  s.toOpenArray().width()
+
 # Expand all PUA tabs into hard tabs, disregarding their position.
 # (This is mainly intended for copy/paste, where the actual characters
 # are more interesting than cell alignment.)
-proc expandPUATabsHard*(s: openArray[char]): string =
-  var res = newStringOfCap(s.len)
+proc addExpandPUATabsHard*(buf: var Growbuf; s: openArray[char]) =
   var i = 0
   while i < s.len:
     let pi = i
     if s.nextUTF8(i) in TabPUARange:
-      res &= '\t'
+      buf &= '\t'
     else:
       for j in pi ..< i:
-        res &= s[j]
-  move(res)
+        buf &= s[j]
 
 {.pop.} # raises: []

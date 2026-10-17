@@ -4,17 +4,18 @@ import std/posix
 
 import lcgi
 
-proc loadDir(path, opath: string): Opt[void] =
-  let title = ("Directory list of " & path).mimeQuote()
-  ?chaStdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
-  let d = opendir(path)
+proc loadDir(path, opath: Str): Opt[void] =
+  let title = initStrM("Directory list of ", path).mimeQuote()
+  ?chaStdout.writeLine(str("Content-Type: text/x-dirlist;title="), title,
+    str("\n"))
+  let d = opendir(path.toCString())
   while (let x = readdir(d); x != nil):
-    let file = $cast[cstring](addr x.d_name)
-    let fullpath = path & file
+    let file = cast[cstring](addr x.d_name).toStr()
+    let fullpath = path / file
     var stats: Stat
-    if lstat(cstring(fullpath), stats) < 0:
+    if lstat(fullpath.toCString(), stats) < 0:
       continue
-    var line = ""
+    var line = initGrowbuf()
     if S_ISDIR(stats.st_mode):
       line &= 'd'
     elif S_ISLNK(stats.st_mode):
@@ -41,15 +42,15 @@ proc loadDir(path, opath: string): Opt[void] =
     line &= $stats.st_uid & ' ' # owner (currently unused in dirlist2html)
     line &= $stats.st_gid & ' ' # group (ditto)
     line &= $stats.st_size & ' '
-    line &= formatUnixSeconds(int64(stats.st_mtime), "%b %d %Y") & ' '
-    line &= file
+    line.addM(formatUnixSeconds(int64(stats.st_mtime), "%b %d %Y"), ' ', file)
     if S_ISLNK(stats.st_mode):
       let len = int(stats.st_size)
-      var target = readLink(fullpath)
+      let target = readLink(fullpath)
+      line.addM(" -> ", target)
       if fileExists(target) and (target.len <= 0 or target[^1] != '/'):
-        target &= '/'
-      line &= " -> " & target
-    ?chaStdout.writeLine(line)
+        line &= '/'
+    line &= '\n'
+    ?chaStdout.write(line)
   ok()
 
 proc loadFile(os, ps: PosixStream; stats: Stat) =
@@ -77,17 +78,17 @@ proc main() =
   let path = percentDecode(opath)
   let os = newPosixStream(STDOUT_FILENO)
   var stats: Stat
-  let res = stat(cstring(path), stats)
+  let res = stat(path.toCString(), stats)
   if res == 0 and S_ISDIR(stats.st_mode):
     if path[^1] != '/':
-      discard os.writeLoop("Status: 301\nLocation: " &
-        path.deleteChars({'\r', '\n'}) & "/\n")
+      discard os.writeLoop(initStrM("Status: 301\nLocation: ",
+        path.deleteChars({'\r', '\n'}), "/\n").toOpenArray())
     else:
       discard loadDir(path, opath)
   elif res == 0 and (let ps = newPosixStream(path); ps != nil):
     os.loadFile(ps, stats)
   else:
-    discard os.writeLoop("Cha-Control: ConnectionError FileNotFound")
+    discard chaStdout.writeLine("Cha-Control: ConnectionError FileNotFound")
 
 main()
 

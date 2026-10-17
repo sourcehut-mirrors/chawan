@@ -32,9 +32,9 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/cowstr
 import utils/lrewrap
 import utils/opt
-import utils/refstring
 import utils/strwidth
 import utils/twtstr
 
@@ -72,7 +72,7 @@ type
   HoverType* = enum
     htTitle, htLink, htImage, htCachedImage
 
-  UpdateHoverResult* = seq[tuple[t: HoverType, s: string]]
+  UpdateHoverResult* = seq[tuple[t: HoverType, s: Str]]
 
   GetValueProc = proc(ctx: JSContext; iface: BufferInterface;
     r: var PacketReader): JSValue {.nimcall, raises: [].}
@@ -172,10 +172,10 @@ type
     of crtNone: discard
     of crtOpen:
       open*: Request
-      contentType*: string
+      contentType*: Str
     of crtReadArea, crtReadText, crtReadPassword, crtReadFile:
-      prompt*: string
-      value*: string
+      prompt*: Str
+      value*: Str
     of crtSelect:
       options*: seq[SelectOption]
       selected*: int
@@ -213,9 +213,9 @@ type
     metaRefresh*: MetaRefresh
     charsets*: seq[Charset]
     imageTypes*: MimeTypesImages
-    userAgent*: string
-    referrer*: string
-    userStyle*: string
+    userAgent*: Str
+    referrer*: Str
+    userStyle*: Str
 
   BufferInitFlag* = enum
     bifSave
@@ -247,7 +247,7 @@ type
     bcrMailcap = "mailcap"
 
   Mark = object
-    id: string
+    id: Str
     pos: PagePos
 
   BufferInterface* = JSRef[BufferInterfaceObj]
@@ -265,7 +265,7 @@ type
     pos: CursorState
     highlights: seq[Highlight]
     images*: seq[PosBitmap]
-    hoverText: array[HoverType, string]
+    hoverText: array[HoverType, Str]
     phandle*: ProcessHandle
     imageCache: ImageCache
     attrsp: ptr WindowAttributes
@@ -292,16 +292,16 @@ type
     stream*: PosixStream # response stream
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
-    filterCmd*: string # filter command (called on load)
+    filterCmd*: Str # filter command (called on load)
     startpos: CursorState
-    title: string
+    title: Str
     # if set, this *overrides* any content type received from the network.
     # (this is because it stores the content type from the -T flag.)
     # beware, this string may include content type attributes, if you want
     # to match it you'll have to use shortContentType.
-    contentType*: string
-    shortContentType*: string
-    loadInfo*: string
+    contentType*: Str
+    shortContentType*: Str
+    loadInfo*: Str
     request*: Request # source request
     # note: this is not the same as request.url (but should be synced
     # with buffer.url)
@@ -351,19 +351,19 @@ proc getClassID(t: typedesc[Highlight]): JSClassID
 
 # BufferInit
 proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
-    url: URL; request: Request; attrs: WindowAttributes; title: sink string;
+    url: URL; request: Request; attrs: WindowAttributes; title: sink Str;
     redirectDepth: int; flags: set[BufferInitFlag];
-    contentType, filterCmd: sink string; charsetStack: seq[Charset]):
+    contentType, filterCmd: sink Str; charsetStack: seq[Charset]):
     BufferInit =
   let cacheId = if request.url.schemeType == stCache:
-    parseInt32(request.url.pathname).get(-1)
+    parseInt32(request.url.pathname.toOpenArray()).get(-1)
   else:
     -1
   let host = request.url.host
-  let loadInfo = (if host != "":
-    "Connecting to " & host
+  let loadInfo = if host != "":
+    initStrM("Connecting to ", host, "...")
   else:
-    "Loading " & $request.url) & "..."
+    initStrM("Loading ", request.url.toStr(), "...")
   var flags = flags
   if contentType != "":
     flags.incl(bifForceType)
@@ -396,8 +396,9 @@ proc applyResponse*(init: BufferInit; response: Response;
   # accept cookies
   let cookieJar = init.loaderConfig.cookieJar
   if cookieJar != nil:
-    cookieJar.setCookie(response.headers.getAllNoComma("Set-Cookie"),
-      response.url, init.loaderConfig.cookieMode == cmSave, http = true)
+    let header = response.headers.getAllNoComma(byteStr("Set-Cookie"))
+    cookieJar.setCookie(header, response.url,
+      init.loaderConfig.cookieMode == cmSave, http = true)
   # set referrer policy, if any
   if init.config.refererFrom:
     let referrerPolicy = response.getReferrerPolicy()
@@ -407,13 +408,15 @@ proc applyResponse*(init: BufferInit; response: Response;
     init.loaderConfig.referrerPolicy = rpSameOrigin
   # setup content type; note that isSome means an override so we skip it
   if init.contentType == "":
-    var contentType = response.getLongContentType("application/octet-stream")
+    var contentType = response
+      .getLongContentType(str("application/octet-stream"))
     var shortContentType = contentType.untilLower(';')
     if shortContentType == "application/octet-stream":
-      contentType = mimeTypes.guessContentType(init.url.pathname, "text/plain")
+      contentType = mimeTypes.guessContentType(init.url.pathname,
+        str("text/plain"))
       shortContentType = contentType
-    init.shortContentType = move(shortContentType)
-    init.contentType = move(contentType)
+    init.shortContentType = shortContentType
+    init.contentType = contentType
   # setup charsets:
   # * override charset
   # * network charset
@@ -431,7 +434,8 @@ proc applyResponse*(init: BufferInit; response: Response;
     if init.charsetStack.len == 0:
       init.charsetStack.add(DefaultCharset)
   init.charset = init.charsetStack[^1]
-  let refresh = parseRefresh(response.headers.getFirst("Refresh"), init.url)
+  let refresh = parseRefresh(
+    response.headers.getFirst(byteStr("Refresh")).toStr(), init.url)
   init.refreshUrl = refresh.url
   init.refreshMillis = refresh.n
 
@@ -532,12 +536,12 @@ jsClassPublicDef(BufferInit):
   proc askDownloadDir(init: BufferInit): bool {.jsfget.} =
     init.config.askDownloadDir
 
-  proc title*(init: BufferInit): string {.jsfget.} =
+  proc title*(init: BufferInit): Str {.jsfget.} =
     if init[].title != "":
       return init[].title
     return init.url.serialize(excludepassword = true)
 
-  proc setTitle(init: BufferInit; title: sink string) {.jsfset: "title".} =
+  proc setTitle(init: BufferInit; title: sink Str) {.jsfset: "title".} =
     init.title = title
 
   proc connected*(ctx: JSContext; init: BufferInit; res: BufferConnectionResult;
@@ -637,16 +641,16 @@ proc cursorDispX(iface: BufferInterface): int =
     return max(w - 1, 0)
   return pw
 
-proc getHoverText*(iface: BufferInterface): string =
+proc getHoverText*(iface: BufferInterface): Str =
   for s in iface.hoverText:
     if s != "":
       return s
-  ""
+  str("")
 
 proc clearHover*(iface: BufferInterface) =
   iface.lastPeek = HoverType.high
 
-proc getPeekCursorStr*(iface: BufferInterface): string =
+proc getPeekCursorStr*(iface: BufferInterface): Str =
   var p = iface.lastPeek
   while true:
     if p < HoverType.high:
@@ -665,15 +669,13 @@ const ClickResultReadLine* = {crtReadText, crtReadPassword, crtReadFile}
 proc initClickResult*(): ClickResult =
   ClickResult(t: crtNone)
 
-proc initClickResult*(open: Request; contentType: sink string = ""):
-    ClickResult =
+proc initClickResult*(open: Request; contentType = str("")): ClickResult =
   if open != nil:
     ClickResult(t: crtOpen, open: open, contentType: contentType)
   else:
     initClickResult()
 
-proc initClickResult*(open: RawRequest; contentType: sink string = ""):
-    ClickResult =
+proc initClickResult*(open: RawRequest; contentType = str("")): ClickResult =
   ClickResult(
     t: crtOpen,
     open: newRequest(open),
@@ -694,13 +696,13 @@ proc sread*(r: var PacketReader; x: var ClickResult): PacketCode =
   of crtNone: x = initClickResult()
   of crtOpen:
     var open: RawRequest
-    var contentType: string
+    var contentType: Str
     ?r.sread(open)
     ?r.sread(contentType)
     x = initClickResult(open, contentType)
   of crtReadArea, crtReadText, crtReadPassword, crtReadFile:
-    var prompt: string
-    var value: string
+    var prompt: Str
+    var value: Str
     ?r.sread(prompt)
     ?r.sread(value)
     x = ClickResult(t: t, prompt: prompt, value: value)
@@ -1056,7 +1058,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
     do:
       return irEOF
     inc iface.packetid
-    var links: seq[string]
+    var links: seq[Str]
     iface.stream.withPacketReaderFire r:
       var packetid2: int
       if r.sread(packetid2).isErr:
@@ -1065,8 +1067,8 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
       if r.sread(links).isErr:
         return iface.throwMalformedPacket2(ctx)
     for i, link in links.mypairs:
-      var s = "[" & $(i + 1) & "] " & link
-      if handle(opaque, iface, s, []).isErr:
+      let s = initStrM("[", i + 1, "] ", link)
+      if handle(opaque, iface, s.toOpenArray(), []).isErr:
         return irEOF
   irOk
 
@@ -1173,7 +1175,7 @@ jsClassPublicDef(BufferInterface):
   proc maxfromy(iface: BufferInterface): int =
     return max(iface.numLines - iface.init.height, 0)
 
-  proc getHoverText(iface: BufferInterface; t: HoverType): lent string {.
+  proc getHoverText(iface: BufferInterface; t: HoverType): lent Str {.
       jsmfget("hoverLink", htLink), jsmfget("hoverTitle", htTitle),
       jsmfget("hoverImage", htImage),
       jsmfget("hoverCachedImage", htCachedImage).} =
@@ -1188,31 +1190,30 @@ jsClassPublicDef(BufferInterface):
     if iface.cursorx != pos.x or iface.cursory != pos.y:
       iface.jumpMark = pos
 
-  proc findMark(iface: BufferInterface; id: DOMString): int =
+  proc findMark(iface: BufferInterface; id: Str): int =
     for i, it in iface.marks.mypairs:
       if it.id == id:
         return i
     -1
 
-  proc setMark(iface: BufferInterface; id: DOMString; x, y: int): bool
-      {.jsfunc.} =
+  proc setMark(iface: BufferInterface; id: Str; x, y: int): bool {.jsfunc.} =
     let i = iface.findMark(id)
     if i >= 0:
       iface.marks[i].pos = (x, y)
     else:
-      iface.marks.add(Mark(id: $id, pos: (x, y)))
+      iface.marks.add(Mark(id: id, pos: (x, y)))
     iface.queueDraw()
     i == -1
 
-  proc clearMark(iface: BufferInterface; id: DOMString): bool {.jsfunc.} =
+  proc clearMark(iface: BufferInterface; id: Str): bool {.jsfunc.} =
     let i = iface.findMark(id)
     if i >= 0:
       iface.marks.del(i)
       iface.queueDraw()
     i != -1
 
-  proc getMarkPos(ctx: JSContext; iface: BufferInterface; id: DOMString):
-      JSValue {.jsfunc.} =
+  proc getMarkPos(ctx: JSContext; iface: BufferInterface; id: Str): JSValue
+      {.jsfunc.} =
     if id == "`" or id == "'":
       return ctx.toJS(iface.jumpMark)
     let i = iface.findMark(id)
@@ -1475,14 +1476,14 @@ jsClassPublicDef(BufferInterface):
       w.swrite(ex)
       w.swrite(ey)
       w.swrite(t)
-    return addPromise[string](ctx, iface)
+    return addPromise[Str](ctx, iface)
 
   proc getTitle(ctx: JSContext; iface: BufferInterface): JSValue {.jsfunc.} =
     ctx.withPacketWriter iface, bcGetTitle, w:
       discard
-    return addPromise[string](ctx, iface)
+    return addPromise[Str](ctx, iface)
 
-  proc gotoAnchor(ctx: JSContext; iface: BufferInterface; anchor: USVString;
+  proc gotoAnchor(ctx: JSContext; iface: BufferInterface; anchor: Str;
       autofocus, target: bool): JSValue {.jsfunc.} =
     ctx.withPacketWriter iface, bcGotoAnchor, w:
       w.swrite(anchor.toOpenArray())
@@ -1495,8 +1496,8 @@ jsClassPublicDef(BufferInterface):
       discard
     return addPromise[LoadResult](ctx, iface)
 
-  proc readSuccess(ctx: JSContext; iface: BufferInterface; s: USVString;
-      fd: cint): JSValue {.jsfunc.} =
+  proc readSuccess(ctx: JSContext; iface: BufferInterface; s: Str; fd: cint):
+      JSValue {.jsfunc.} =
     ctx.withPacketWriter iface, bcReadSuccess, w:
       w.swrite(s.toOpenArray())
       let hasfd = fd != -1
@@ -1728,7 +1729,7 @@ proc setText(cell: var FixedCell; u: uint32; i, pi, uw: int;
   elif u in TabPUARange:
     cell.str = ' '.repeat(uw)
   else:
-    cell.str = s.toOpenArray(pi, i - 1).substr()
+    cell.str = initStr(s.toOpenArray(pi, i - 1))
 
 proc drawLines*(iface: BufferInterface; display: var FixedGrid;
     hlcolor: CellColor) =
@@ -1750,7 +1751,7 @@ proc drawLines*(iface: BufferInterface; display: var FixedGrid;
     var nf = line.findNextFormat(w)
     var k = 0
     while k < w - iface.pos.fromx:
-      display[dls + k] = FixedCell(str: " ")
+      display[dls + k] = FixedCell(str: str(" "))
       display[dls + k].setFormat(cf, bgcolor)
       inc k
     let startw = w # save this for later
@@ -1776,7 +1777,7 @@ proc drawLines*(iface: BufferInterface; display: var FixedGrid;
       # Fill the screen if bgcolor is not default.
       let format = initFormat(bgcolor, defaultColor, {})
       for cell in display.mline(by, k):
-        cell = FixedCell(str: " ", format: format)
+        cell = FixedCell(str: str(" "), format: format)
     else:
       for cell in display.mline(by, k):
         cell = FixedCell()

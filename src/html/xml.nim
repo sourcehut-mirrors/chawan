@@ -9,16 +9,17 @@ import io/console
 import io/dynstream
 import js/jsbind
 import js/jsref
+import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
 import server/headers
 import server/loaderiface
 import server/request
-import utils/opt
 import server/url
+import utils/cowstr
+import utils/opt
 import utils/tabutil
-import utils/twtstr
 
 type
   CachedSVG* {.final.} = ref object of StrMapItem
@@ -53,9 +54,9 @@ jsClassRaw(XMLSerializerDef, "XMLSerializer"):
   proc serializeToString(ctx: JSContext; this: JSValueConst; root: Node):
       JSValue {.jsfunc.} =
     #TODO ...yeah
-    var res = ""
-    res.serializeFragmentInner(root, ttUnknown, writeShadow = true)
-    ctx.toJS(res)
+    var buf = initGrowbuf()
+    buf.serializeFragmentInner(root, ttUnknown, writeShadow = true)
+    ctx.toJS(buf.toStr())
 
 # SVGAnimatedString
 jsClassRaw(SVGAnimatedStringDef, "SVGAnimatedString"):
@@ -92,11 +93,11 @@ proc loadSVGFinish(opaque: RootRef; response: Response) =
   let loader = window.loader
   # close immediately; all data we're interested in is in the headers.
   loader.close(response)
-  let dims = response.headers.getFirst("Cha-Image-Dimensions")
-  let width = parseIntP(dims.until('x')).get(-1)
-  let height = parseIntP(dims.after('x')).get(-1)
+  let dims = response.headers.getFirst(byteStr("Cha-Image-Dimensions"))
+  let (width, height) = parseDimensions(Str(dims))
   if width < 0 or height < 0:
-    window.console.error("wrong Cha-Image-Dimensions in", $response.url)
+    window.console.error(str("wrong Cha-Image-Dimensions in"),
+      response.url.toStr())
     window.imageLoaded()
     return
   let bitmap = NetworkBitmap(
@@ -104,7 +105,7 @@ proc loadSVGFinish(opaque: RootRef; response: Response) =
     height: height,
     cacheId: env.cacheId,
     imageId: env.imageId,
-    contentType: "image/svg+xml",
+    contentType: str("image/svg+xml"),
     vector: true
   )
   for svg in env.shared:
@@ -124,7 +125,7 @@ proc loadSVG*(window: Window; svg: SVGSVGElement) =
   svg.fetchStarted = true
   var s = svg.asElement.outerHTML
   if s.len <= 4096: # try to dedupe if the SVG is small enough.
-    let item = CachedSVG(window.svgCache.getOrDefault(s))
+    let item = CachedSVG(window.svgCache.getOrDefault(s.toOpenArray()))
     if item != nil:
       svg.bitmap = item.bmp
       if svg.bitmap != nil: # already decoded
@@ -134,18 +135,20 @@ proc loadSVG*(window: Window; svg: SVGSVGElement) =
       return
   let imageId = window.getImageId()
   let loader = window.loader
-  let (ps, svgres) = loader.doPipeRequest("svg-" & $imageId)
+  let (ps, svgres) = loader.doPipeRequest(initStrM("svg-", imageId))
   if ps == nil:
     return
   let cacheId = loader.addCacheFile(svgres.outputId)
-  let res = ps.writeLoop(s)
+  let res = ps.writeLoop(s.toOpenArray())
   ps.sclose()
   if res.isErr:
     return
   let request = newRequest(
-    "img-codec+svg+xml:decode",
+    str("img-codec+svg+xml:decode"),
     httpMethod = hmPost,
-    headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
+    headers = newHeaders(hgRequest, {
+      byteStr("Cha-Image-Info-Only"): byteStr("1")
+    }),
     body = RequestBody(t: rbtOutput, outputId: svgres.outputId),
     internal = true
   )
@@ -156,7 +159,7 @@ proc loadSVG*(window: Window; svg: SVGSVGElement) =
     imageId: imageId
   )
   if s.len <= 4096:
-    env.s = move(s)
+    env.s = s
     window.svgCache.put(env)
   inc window.remoteImageNum
   loader.fetch(request, loadSVGFinish, env)

@@ -9,22 +9,8 @@
 ## * JSValue is returned as-is, *without* a DupValue operation.
 ## * JSArrayBuffer, JSArrayBufferViewInit are converted to a JS object without
 ##   copying their contents.
-## * Finally, ref object is converted to a JS object whose opaque is the ref
-##   object. (See below.)
-##
-## ref objects can be seamlessly converted to JS objects despite the fact
-## that they are managed by two separate garbage collectors thanks to a patch
-## in QJS:
-##
-## * Nim objects registered with registerType can be paired with one JS
-##   object each.  This happens on-demand, whenever the Nim object has to be
-##   converted into JS.
-## * Once the conversion happened, the JS object will be kept alive until the
-##   Nim object is destroyed, so that JS properties on the JS object are not
-##   lost during a re-conversion.
-## * Similarly, the Nim object is kept alive so long as the JS object is alive.
-## * The patched in can_destroy hook is used to synchronize reference counts
-##   of the two objects; this way, no memory leak occurs.
+## * Finally, JSRef is converted to a JS object whose opaque is the backing
+##   pointer.  (For details, see doc/jsguide.md.)
 
 {.push raises: [].}
 
@@ -40,11 +26,14 @@ import js/jsref
 import js/jstypes
 import js/jsutils
 import js/quickjs
+import utils/cowstr
 import utils/opt
 
 # Convert Nim types to the corresponding JavaScript type.
 proc toJS*(ctx: JSContext; s: string): JSValue
+proc toJS*(ctx: JSContext; s: Str): JSValue
 proc toJS*(ctx: JSContext; s: DOMString): JSValue
+proc toJS*(ctx: JSContext; s: DOMStringNil): JSValue
 proc toJS*(ctx: JSContext; n: int64): JSValue
 proc toJS*(ctx: JSContext; n: int32): JSValue
 proc toJS*(ctx: JSContext; n: int): JSValue
@@ -72,7 +61,7 @@ proc toJSNew*[T](ctx: JSContext; obj: sink JSRef[T]; ctor: JSValueConst):
 proc toJSNew*[T](ctx: JSContext; opt: Opt[T]; ctor: JSValueConst): JSValue
 proc toJSNew*[T](ctx: JSContext; opt: Opt[T]): JSValue
 
-proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
+proc newFunction*(ctx: JSContext; args: openArray[string]; body: Str):
     JSValue =
   var paramList = newSeq[JSValueTraced](args.len + 1)
   for i in 0 ..< args.len:
@@ -100,8 +89,25 @@ proc toJS*(ctx: JSContext; s: openArray[char]): JSValue =
   return JS_NewStringLen(ctx, cast[cstringConst](unsafeAddr s[0]),
     csize_t(s.len))
 
+proc toJS*(ctx: JSContext; s: Str): JSValue =
+  return JS_NewStringLen(ctx, s.toCStringConst(), csize_t(s.len))
+
+proc toJS*(ctx: JSContext; s: Growbuf): JSValue =
+  return JS_NewStringLen(ctx, cast[cstringConst](s.p), csize_t(s.len))
+
+proc toJS*(ctx: JSContext; s: StrNil): JSValue =
+  if s == nil:
+    return JS_NULL
+  return ctx.toJS(s.asStr)
+
 proc toJS*(ctx: JSContext; s: DOMString): JSValue =
-  return JS_NewStringLen(ctx, cstringConst(s.p), csize_t(s.len))
+  ctx.toJS(Str(s))
+
+proc toJS*(ctx: JSContext; s: DOMStringNil): JSValue =
+  ctx.toJS(StrNil(s))
+
+proc toJS*(ctx: JSContext; s: ByteString): JSValue =
+  return JS_NewNarrowStringLen(ctx, Str(s).toCStringConst(), csize_t(s.len))
 
 proc toJS*(ctx: JSContext; n: int16): JSValue =
   return JS_NewInt32(ctx, int32(n))

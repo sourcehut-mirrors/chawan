@@ -5,6 +5,7 @@ import std/math
 
 import chame/tags
 import config/conftypes
+import css/color
 import css/cssparser
 import css/cssvalues
 import css/match
@@ -14,9 +15,9 @@ import html/dom
 import html/form
 import html/script
 import js/jsref
-import css/color
-import utils/opt
+import utils/cowstr
 import utils/dtoawrap
+import utils/opt
 import utils/twtstr
 
 type
@@ -322,11 +323,11 @@ proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   # spectacular failure of the committee...
   ctx.applyValue(entry, rtUser)
 
-proc parseDimensionValues(s: string): Opt[CSSLength] =
+proc parseDimensionValues(s: Str): Opt[CSSLength] =
   var i = s.skipBlanks(0)
   if i >= s.len or s[i] notin AsciiDigit:
     return err()
-  let n = float32(atod(cstring(s), i))
+  let n = float32(atod(s.toCStringConst(), i))
   if isNaN(n):
     return err()
   if i < s.len and s[i] == '%':
@@ -334,17 +335,17 @@ proc parseDimensionValues(s: string): Opt[CSSLength] =
   ok(cssLength(n))
 
 proc applyDimensionHint(ctx: var ApplyValueContext; p: CSSPropertyType;
-    s: string) =
+    s: Str) =
   if dim := parseDimensionValues(s):
     ctx.applyPresHint(makeEntry(p, dim))
 
 proc applyDimensionHintGz(ctx: var ApplyValueContext; p: CSSPropertyType;
-    s: string) =
+    s: Str) =
   let s = parseDimensionValues(s).get(CSSLengthZero)
   if not s.isZero:
     ctx.applyPresHint(makeEntry(p, s))
 
-proc applyColorHint(ctx: var ApplyValueContext; p: CSSPropertyType; s: string) =
+proc applyColorHint(ctx: var ApplyValueContext; p: CSSPropertyType; s: Str) =
   let c = parseLegacyColor(s)
   if c.isOk:
     ctx.applyPresHint(makeEntry(p, c.get.cssColor()))

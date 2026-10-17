@@ -1,18 +1,19 @@
 import std/unittest
 
+import utils/cowstr
 import utils/lrewrap
 import utils/opt
 
-proc match(re, str: string): bool =
+proc match(re, str: Str): bool =
   let re = compileRegex(re, {}).get
-  re.match(str)
+  re.match(str.toOpenArray())
 
 proc testRegexOnly() =
-  check match(".*", "whatever")
-  check match(".*", "")
+  check match(str(".*"), str("whatever"))
+  check match(str(".*"), str(""))
 
 proc testWordBoundaries() =
-  check not "\bth\b".match("Weather")
+  check not str("\bth\b").match(str("Weather"))
 
 proc main() =
   testRegexOnly()

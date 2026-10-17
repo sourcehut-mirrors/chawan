@@ -25,6 +25,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -63,8 +64,8 @@ type
     headers: Headers
     response: Response
     responseObject: JSValueTraced
-    received: string
-    contentTypeOverride: string
+    received: Growbuf
+    contentTypeOverride: Str
 
   XMLHttpRequest = JSRef[XMLHttpRequestObj]
 
@@ -219,28 +220,29 @@ proc sendAsync(opaque: RootRef; response: Response) =
 
 proc getCharset(this: XMLHttpRequest): Charset =
   let override = this.contentTypeOverride.toLowerAscii()
-  let cs = override.getContentTypeAttr("charset").getCharset()
+  let cs = getCharset(override.getContentTypeAttr("charset"))
   if cs != csUnknown:
     return cs
   return this.response.getCharset(csUtf8)
 
-proc getContentType(this: XMLHttpRequest): string =
+proc getContentType(this: XMLHttpRequest): Str =
   if this.contentTypeOverride != "":
     return this.contentTypeOverride
   return this.response.getContentType()
 
-proc ptrify(s: var string):
+proc ptrify(s: var Growbuf):
     tuple[opaque: pointer; p: ptr UncheckedArray[uint8]] =
   if s.len == 0:
     return (nil, nil)
-  var sr = new(string)
+  #TODO could get rid of the ref
+  var sr = new(Growbuf)
   sr[] = move(s)
   GC_ref(sr)
-  return (cast[pointer](sr), cast[ptr UncheckedArray[uint8]](addr sr[0]))
+  return (cast[pointer](sr), cast[ptr UncheckedArray[uint8]](addr sr[][0]))
 
 proc deallocPtrified(p: pointer) =
   if p != nil:
-    let sr = cast[ref string](p)
+    let sr = cast[ref Growbuf](p)
     GC_unref(sr)
 
 proc abufFree(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
@@ -289,12 +291,12 @@ jsClassDef(XMLHttpRequest):
       ?ctx.fromJS(misc[0], async)
       if misc.len > 1 and not JS_IsNull(misc[1]) and
           not JS_IsUndefined(misc[1]):
-        var username: USVString
+        var username: Str
         ?ctx.fromJS(misc[1], username)
         parsedURL.setUsername(username)
       if misc.len > 2 and not JS_IsNull(misc[2]) and
           not JS_IsUndefined(misc[2]):
-        var password: USVString
+        var password: Str
         ?ctx.fromJS(misc[2], password)
         parsedURL.setPassword(password)
     if not async and ctx.getWindow() != nil and
@@ -312,7 +314,7 @@ jsClassDef(XMLHttpRequest):
     this.requestMethod = httpMethod
     this.headers = newHeaders(hgRequest)
     this.response = makeNetworkError()
-    this.received = ""
+    this.received = initGrowbuf()
     this.requestURL = parsedURL
     #TODO response object, received bytes
     if this.readyState != xhrsOpened:
@@ -324,12 +326,12 @@ jsClassDef(XMLHttpRequest):
       name, value: ByteString): Opt[void] {.jsfunc.} =
     ?ctx.checkOpened(this)
     ?ctx.checkSendFlag(this)
-    if not name.s.isValidHeaderName() or not value.s.isValidHeaderValue():
+    if not name.isValidHeaderName() or not value.isValidHeaderValue():
       JS_ThrowDOMException(ctx, "SyntaxError", "invalid header name or value")
       return err()
-    if isForbiddenRequestHeader(name.s, value.s):
+    if isForbiddenRequestHeader(name, value):
       return ok()
-    this.headers[name.s] = value.s
+    this.headers[name] = value
     ok()
 
   proc setWithCredentials(ctx: JSContext; this: XMLHttpRequest;
@@ -374,16 +376,17 @@ jsClassDef(XMLHttpRequest):
           s: document.asNode.serializeFragment(writeShadow = false)
               .toValidUTF8() # replace surrogates
         )
-        "text/html;charset=UTF-8"
+        str("text/html;charset=UTF-8")
       else: #TODO XML
         var init: BodyInit
         ?ctx.fromJS(body, init)
         init.safeExtract(request.body)
-      if not request.headers.addIfNotFoundCheck("Content-Type", contentType):
+      if not request.headers.addIfNotFoundCheck(byteStr("Content-Type"),
+          contentType.asByteString):
         # author already set a content type
         if request.body.t == rbtString or document != nil:
-          request.headers["Content-Type"].
-            setContentTypeAttr("charset", "UTF-8")
+          Str(request.headers[byteStr("Content-Type")]).
+            setContentTypeAttr(str("charset"), str("UTF-8"))
     if JS_IsNull(body):
       this.flags.incl(xhrfUploadComplete)
     else:
@@ -402,7 +405,7 @@ jsClassDef(XMLHttpRequest):
           #TODO timeout
           window.loader.resume(response)
           this.response = response
-          this.received = response.stream.readAll()
+          this.received = initGrowbufSink(response.stream.readAll())
           window.loader.close(response)
           #TODO report timing
           let len = max(response.getContentLength(), 0)
@@ -416,14 +419,14 @@ jsClassDef(XMLHttpRequest):
 
   #TODO abort
 
-  proc responseURL(this: XMLHttpRequest): string {.jsfget.} =
+  proc responseURL(this: XMLHttpRequest): Str {.jsfget.} =
     return this.response.surl
 
   proc status(this: XMLHttpRequest): uint16 {.jsfget.} =
     return this.response.status
 
-  proc statusText(this: XMLHttpRequest): string {.jsfget.} =
-    return ""
+  proc statusText(this: XMLHttpRequest): Str {.jsfget.} =
+    return str("")
 
   proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest;
       name: ByteString): JSValue {.jsfunc.} =
@@ -432,11 +435,11 @@ jsClassDef(XMLHttpRequest):
       return JS_NULL
     return res
 
-  proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
-    var list = newSeq[string]()
+  proc getAllResponseHeaders(this: XMLHttpRequest): Growbuf {.jsfunc.} =
+    var list = newSeq[Str]()
     for k, v in this.response.headers:
-      list.add(k & ": " & v)
-    list.sort(proc(a, b: string): int {.nimcall.} =
+      list.add(initStrM(Str(k), ": ", Str(v)))
+    list.sort(proc(a, b: Str): int {.nimcall.} =
       # ew, but if the spec says so...
       let L = min(a.len, b.len)
       for i in 0 ..< L:
@@ -454,9 +457,10 @@ jsClassDef(XMLHttpRequest):
         return 1
       0
     )
-    result = ""
+    var buf = initGrowbuf()
     for it in list:
-      result &= it.toLowerAscii() & "\r\n"
+      buf.addM(it.toLowerAscii(), "\r\n")
+    buf
 
   proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
     if this.responseType notin {xhrtUnknown, xhrtText}:
@@ -466,7 +470,7 @@ jsClassDef(XMLHttpRequest):
       return ctx.toJS("")
     let charset = this.getCharset()
     #TODO XML encoding stuff?
-    return ctx.toJS(this.received.decodeAll(charset))
+    return ctx.toJS(this.received.toOpenArray().decodeAll(charset))
 
   proc overrideMimeType(ctx: JSContext; this: XMLHttpRequest; s: DOMString):
       JSValue {.jsfunc.} =
@@ -474,7 +478,7 @@ jsClassDef(XMLHttpRequest):
       return JS_ThrowDOMException(ctx, "InvalidStateError",
         "readyState must not be loading or done")
     #TODO parse
-    this.contentTypeOverride = $s
+    this.contentTypeOverride = s.toStr()
     return JS_UNDEFINED
 
   proc setResponseType(ctx: JSContext; this: XMLHttpRequest;
@@ -509,12 +513,15 @@ jsClassDef(XMLHttpRequest):
         ctx.toJSNew(blob)
       of xhrtDocument:
         #TODO this is certainly not compliant
-        let document = ctx.parseHTMLDocument(this.received,
+        let document = ctx.parseHTMLDocument(this.received.toOpenArray(),
           parseURL0("about:blank"))
         ctx.toJSNew(document)
       of xhrtJSON:
-        JS_ParseJSON(ctx, this.received.toCStringConst,
-          csize_t(this.received.len), "<input>".toCStringConst)
+        let buf = move(this.received).toStr() # need NUL-term
+        let val = JS_ParseJSON(ctx, buf.toCStringConst, csize_t(buf.len),
+          "<input>".toCStringConst)
+        this.received = initGrowbufSink(buf)
+        val
       else:
         JS_UNDEFINED
       if not JS_IsException(res.vc):

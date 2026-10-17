@@ -8,19 +8,21 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import js/jsref
+import js/jstypes
 import server/url
 import utils/chaos
+import utils/cowstr
 import utils/opt
 import utils/tabutil
 import utils/twtstr
 
 type
   Cookie* {.final.} = ref object of StrMapItem
-    name: string
-    value: string
+    name: Str
+    value: Str
     expires: int64 # unix time
-    domain: string
-    path: string
+    domain: Str
+    path: Str
     persist: bool
     secure: bool
     httpOnly: bool
@@ -39,6 +41,14 @@ type
     jarsHead: CookieJar
     jarsTail: CookieJar
     transient*: bool # set if there is a failure in parsing cookies
+
+  CookieKey = enum
+    ckExpires = "expires"
+    ckMaxAge = "max-age"
+    ckSecure = "secure"
+    ckHttponly = "httponly"
+    ckPath = "path"
+    ckDomain = "domain"
 
 # Forward declarations
 proc sread*(r: var PacketReader; cookieJar: var CookieJar): PacketCode =
@@ -70,7 +80,7 @@ proc swrite*(w: var PacketWriter; cookieJar: CookieJar) =
 proc newCookieJarMap*(): CookieJarMap =
   return CookieJarMap()
 
-proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
+proc addNew*(map: CookieJarMap; name: Str): CookieJar =
   let jar = CookieJar(s: name)
   map.jars.put(jar)
   if map.jarsTail == nil:
@@ -80,11 +90,11 @@ proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
   map.jarsTail = jar
   return jar
 
-proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
+proc getOrDefault*(map: CookieJarMap; name: openArray[char]): CookieJar =
   return CookieJar(map.jars.getOrDefault(name))
 
-proc getMapKey(cookie: Cookie): string =
-  return cookie.domain & cookie.path & '\t' & cookie.name
+proc getMapKey(cookie: Cookie): Str =
+  initStrM(cookie.domain, cookie.path, "\t", cookie.name)
 
 proc getDaysInMonth(month, year: int): int =
   if month == 2:
@@ -95,7 +105,7 @@ proc getDaysInMonth(month, year: int): int =
     return 30
   31
 
-proc parseCookieDate*(val: string): Opt[int64] =
+proc parseCookieDate*(val: Str): Opt[int64] =
   # cookie-date
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
   var foundTime = false
@@ -117,7 +127,7 @@ proc parseCookieDate*(val: string): Opt[int64] =
         if timeField.len != 1 and timeField.len != 2:
           i = 0
           break
-        time[i] = parseInt32(timeField).get
+        time[i] = parseInt32(timeField.toOpenArray()).get
         inc i
       if i == 3:
         foundTime = true
@@ -125,7 +135,7 @@ proc parseCookieDate*(val: string): Opt[int64] =
     if dayOfMonth == 0: # test for day-of-month
       let digits = dateToken.until(NonDigit)
       if digits.len in 1..2:
-        dayOfMonth = parseInt32(digits).get
+        dayOfMonth = parseInt32(digits.toOpenArray()).get
         continue
     if month == 0: # test for month
       if dateToken.len >= 3:
@@ -148,7 +158,7 @@ proc parseCookieDate*(val: string): Opt[int64] =
     if year == -1: # test for year
       let digits = dateToken.until(NonDigit)
       if digits.len == 4:
-        year = parseInt32(digits).get
+        year = parseInt32(digits.toOpenArray()).get
         continue
   if month == 0 or dayOfMonth notin 1..getDaysInMonth(month, year) or
       year < 1601 or not foundTime or
@@ -168,13 +178,13 @@ proc parseCookieDate*(val: string): Opt[int64] =
   ok(day * 24 * 60 * 60 + time[0] * 60 * 60 + time[1] * 60 + time[2])
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.1.4
-proc defaultCookiePath(url: URL): string =
+proc defaultCookiePath(url: URL): Str =
   var path = url.pathname.untilLast('/')
-  if path == "" or path[0] != '/':
-    return "/"
+  if path.len <= 0 or path[0] != '/':
+    return str("/")
   move(path)
 
-proc cookiePathMatches(cookiePath, requestPath: string): bool =
+proc cookiePathMatches(cookiePath, requestPath: Str): bool =
   if requestPath.startsWith(cookiePath):
     if requestPath.len == cookiePath.len:
       return true
@@ -184,7 +194,7 @@ proc cookiePathMatches(cookiePath, requestPath: string): bool =
       return true
   return false
 
-proc cookieDomainMatches(cookieDomain: string; url: URL): bool =
+proc cookieDomainMatches(cookieDomain: Str; url: URL): bool =
   if cookieDomain.len == 0:
     return false
   if url.isIP():
@@ -213,8 +223,8 @@ proc add(cookieJar: CookieJar; cookie: Cookie; parseMode = false,
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
 # if http is true, httpOnly cookies are included too
-proc serialize*(cookieJar: CookieJar; url: URL; http: bool): string =
-  var res = ""
+proc serialize*(cookieJar: CookieJar; url: URL; http: bool): Str =
+  var buf = initGrowbuf()
   let t = getUnixSeconds()
   var expired: seq[int] = @[]
   for i, cookie in cookieJar.cookies.mypairs:
@@ -235,17 +245,15 @@ proc serialize*(cookieJar: CookieJar; url: URL; http: bool): string =
       continue
     if not cookie.hostOnly and not cookieDomainMatches(cookie.domain, url):
       continue
-    if res != "":
-      res &= "; "
-    res &= cookie.name
-    res &= "="
-    res &= cookie.value
+    if buf != "":
+      buf &= "; "
+    buf.addM(cookie.name, '=', cookie.value)
   for i in expired.ritems:
     cookieJar.map.del(cookieJar.cookies[i])
     cookieJar.cookies.delete(i)
-  move(res)
+  buf.toStr()
 
-proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
+proc parseSetCookie(str: Str; t: int64; url: URL; persist, http: bool):
     Opt[Cookie] =
   let cookie = Cookie(
     expires: -1,
@@ -267,27 +275,31 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
       first = false
       continue
     let part = part.strip(leading = true, trailing = false)
-    let key = part.untilLower('=')
-    let val = part.substr(key.len + 1)
-    case key
-    of "expires":
+    let i = part.findOrLen('=')
+    let key = parseEnumNoCase[CookieKey](part.toOpenArray(0, i - 1))
+    if key.isErr:
+      continue
+    #TODO could use openArray for val too
+    let val = part.substr(i + 1)
+    case key.get
+    of ckExpires:
       if cookie.expires == -1:
         if date := parseCookieDate(val):
           cookie.expires = date
-    of "max-age":
-      let x = parseInt32(val).get(-1)
+    of ckMaxAge:
+      let x = parseInt32(val.toOpenArray()).get(-1)
       if x >= 0:
         cookie.expires = t + x
-    of "secure": cookie.secure = true
-    of "httponly":
+    of ckSecure: cookie.secure = true
+    of ckHttponly:
       if not http:
         return err()
       cookie.httpOnly = true
-    of "path":
+    of ckPath:
       if val != "" and val[0] == '/' and '\t' notin val:
         hasPath = true
         cookie.path = val
-    of "domain":
+    of ckDomain:
       if val == "":
         continue # "Domain=" has no effect
       var hostType = htNone
@@ -297,7 +309,7 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
       if hostType == htNone or not cookieDomainMatches(domain, url):
         return err()
       if hostType != htNone:
-        cookie.domain = move(domain)
+        cookie.domain = domain
         cookie.hostOnly = false
   if cookie.hostOnly:
     cookie.domain = url.hostname
@@ -307,12 +319,12 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist, http: bool):
     cookie.persist = false
   return ok(cookie)
 
-proc setCookie*(cookieJar: CookieJar; header: openArray[string]; url: URL;
+proc setCookie*(cookieJar: CookieJar; header: openArray[ByteString]; url: URL;
     persist, http: bool) =
   let t = getUnixSeconds()
   var sorted = true
   for s in header:
-    if cookie := parseSetCookie(s, t, url, persist, http):
+    if cookie := parseSetCookie(s.toStr(), t, url, persist, http):
       cookieJar.add(cookie, persist = persist)
       sorted = false
   if not sorted:
@@ -323,17 +335,16 @@ type ParseState = object
   i: int
   error: bool
 
-proc nextField(state: var ParseState; iq: openArray[char]): string =
+proc nextField(state: var ParseState; iq: Growbuf): Str =
   if state.i >= iq.len:
     state.error = true
-    return ""
-  var field = iq.until('\t', state.i)
-  state.i += field.len
-  if state.i < iq.len and iq[state.i] == '\t':
-    inc state.i
-  move(field)
+    return str("")
+  let i = iq.findOrLen('\t', state.i)
+  let s = initStr(iq.toOpenArray(state.i, i - 1))
+  state.i = min(i + 1, iq.len)
+  s
 
-proc nextBool(state: var ParseState; iq: openArray[char]): bool =
+proc nextBool(state: var ParseState; iq: Growbuf): bool =
   let field = state.nextField(iq)
   if field == "TRUE":
     return true
@@ -341,34 +352,31 @@ proc nextBool(state: var ParseState; iq: openArray[char]): bool =
     state.error = true
   return false
 
-proc nextInt64(state: var ParseState; iq: openArray[char]): int64 =
-  if x := parseInt64(state.nextField(iq)):
+proc nextInt64(state: var ParseState; iq: Growbuf): int64 =
+  if x := parseInt64(state.nextField(iq).toOpenArray()):
     return x
   state.error = true
   return 0
 
-proc parse0(map: CookieJarMap; file: AChaFile; warnings: var seq[string]):
-    Opt[void] =
-  var line = ""
+proc parse0(map: CookieJarMap; file: AChaFile; warnings: var seq[Str]): Opt[void] =
+  var line = initGrowbuf()
   var nline = 0
   while ?file.readLine(line):
     if line.len != 0:
       var state = ParseState()
       var httpOnly = false
       if line[0] == '#':
-        inc state.i
-        let first = line.until('_', state.i)
-        state.i += first.len
-        if first != "HttpOnly":
+        if not line.toOpenArray().startsWith("HttpOnly_", 1):
           inc nline
           continue
-        inc state.i
+        state.i += "#HttpOnly_".len
         httpOnly = true
       state.error = false
       let cookie = Cookie(httpOnly: httpOnly, persist: true)
       var domain = state.nextField(line)
       var cookieJar: CookieJar = nil
       if (let j = domain.find('@'); j >= 0):
+        #TODO delete?
         cookie.domain = domain.substr(j + 1)
         if cookie.domain.startsWith("."):
           cookie.domain.delete(0..0)
@@ -377,7 +385,7 @@ proc parse0(map: CookieJarMap; file: AChaFile; warnings: var seq[string]):
         if domain[0] == '.':
           domain.delete(0..0)
         cookie.domain = domain
-      cookieJar = map.getOrDefault(domain)
+      cookieJar = map.getOrDefault(domain.toOpenArray())
       if cookieJar == nil:
         cookieJar = map.addNew(domain)
       cookie.hostOnly = not state.nextBool(line)
@@ -389,7 +397,7 @@ proc parse0(map: CookieJarMap; file: AChaFile; warnings: var seq[string]):
       if not state.error:
         cookieJar.add(cookie, parseMode = true)
       else:
-        warnings.add("skipped invalid cookie line " & $nline)
+        warnings.add(initStrM("skipped invalid cookie line ", nline))
     inc nline
   ok()
 
@@ -397,7 +405,7 @@ proc parse0(map: CookieJarMap; file: AChaFile; warnings: var seq[string]):
 # If the cookie file's mtime is less than otime, it won't be parsed.
 # (This is used when writing the file, to merge in new data
 # from other instances written after we first parsed the file.)
-proc parse*(map: CookieJarMap; ps: PosixStream; warnings: var seq[string];
+proc parse*(map: CookieJarMap; ps: PosixStream; warnings: var seq[Str];
     otime = int64.high): Opt[void] =
   var stats: Stat
   if fstat(ps.fd, stats) == -1:
@@ -411,7 +419,7 @@ proc parse*(map: CookieJarMap; ps: PosixStream; warnings: var seq[string];
   ok()
 
 proc write0(map: CookieJarMap; file: AChaFile; ps: PosixStream;
-    tmp, path: string): Opt[void] =
+    tmp, path: Str): Opt[void] =
   ?file.write("""
 # Netscape HTTP Cookie file
 # Autogenerated by Chawan.  Manually added cookies are normally
@@ -420,46 +428,45 @@ proc write0(map: CookieJarMap; file: AChaFile; ps: PosixStream;
 """)
   var i = 0
   let time = getUnixSeconds()
+  var buf = initGrowbuf()
   var jar = map.jarsHead
   while jar != nil:
     for cookie in jar.cookies:
       if cookie.expires <= time or not cookie.persist:
         continue # session cookie
-      var buf = ""
       if cookie.httpOnly:
         buf &= "#HttpOnly_"
       if cookie.domain != jar.s:
-        buf &= jar.s & "@"
+        buf.addM(jar.s, '@')
       if not cookie.hostOnly:
         buf &= '.'
-      buf &= cookie.domain & '\t'
-      const BoolMap = [false: "FALSE", true: "TRUE"]
-      buf &= BoolMap[not cookie.hostOnly] & '\t' # flipped intentionally
-      buf &= cookie.path & '\t'
-      buf &= BoolMap[cookie.secure] & '\t'
-      buf &= $cookie.expires & '\t'
-      buf &= cookie.name & '\t'
-      buf &= cookie.value & '\n'
-      ?file.write(buf)
+      buf.addM(cookie.domain, '\t')
+      const BoolMap = [false: str("FALSE"), true: str("TRUE")]
+      buf.addM(BoolMap[not cookie.hostOnly], '\t', # flipped intentionally
+        cookie.path, '\t',
+        BoolMap[cookie.secure], '\t', cookie.expires, '\t')
+      buf.addM(cookie.name, '\t', cookie.value, '\n')
+      ?file.write(buf.toOpenArray())
+      buf.setLen(0)
       inc i
     jar = jar.next
   if i == 0:
-    discard unlink(cstring(tmp))
-    discard unlink(cstring(path))
+    discard unlink(tmp.toCString())
+    discard unlink(path.toCString())
     return ok()
   if fsync(ps.fd) != 0:
     return err()
   return chafile.rename(tmp, path)
 
-proc write*(map: CookieJarMap; path: string): Opt[void] =
+proc write*(map: CookieJarMap; path: Str): Opt[void] =
   let ps = newPosixStream(path)
   if ps != nil:
-    var dummy: seq[string] = @[]
+    var dummy: seq[Str]
     ?map.parse(ps, dummy, map.mtime)
   elif map.jarsHead == nil:
     return ok()
-  let tmp = path & '~'
-  discard unlink(cstring(tmp))
+  let tmp = initStrM(path, '~')
+  discard unlink(tmp.toCString())
   let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT or O_EXCL, 0o600)
   if ps2 == nil:
     return err()

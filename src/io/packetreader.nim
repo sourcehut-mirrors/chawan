@@ -12,6 +12,7 @@ import std/typetraits
 import config/conftypes
 import css/color
 import io/dynstream
+import utils/cowstr
 import utils/opt
 
 type
@@ -33,7 +34,7 @@ type PacketCode* = enum
 proc sread*(r: var PacketReader; n: var SomeNumber): PacketCode
 proc sread*[T](r: var PacketReader; s: var set[T]): PacketCode
 proc sread*[T: enum](r: var PacketReader; x: var T): PacketCode
-proc sread*(r: var PacketReader; s: var string): PacketCode
+proc sread*(r: var PacketReader; s: var Str): PacketCode
 proc sread*(r: var PacketReader; b: var bool): PacketCode
 proc sread*(r: var PacketReader; tup: var tuple): PacketCode
 proc sread*[T](r: var PacketReader; s: var seq[T]): PacketCode
@@ -204,12 +205,11 @@ proc readLen*(r: var PacketReader): Opt[int] =
     return r.err("negative length")
   ok(len)
 
-proc sread*(r: var PacketReader; s: var string): PacketCode =
+proc sread*(r: var PacketReader; s: var Str): PacketCode =
   let len = ?r.readLen()
-  var s2 = newString(len)
-  if s2.len > 0:
-    ?r.readData(addr s2[0], len)
-  s = move(s2)
+  var s2 = initGrowbufUninit(len)
+  ?r.readData(s2.p, len)
+  s = s2.toStr()
   ok()
 
 proc sread*(r: var PacketReader; b: var bool): PacketCode =

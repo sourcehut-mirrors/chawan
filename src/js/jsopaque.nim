@@ -7,6 +7,7 @@ import std/algorithm
 import js/constcharp
 import js/jstypes
 import js/quickjs
+import utils/cowstr
 import utils/twtstr
 
 type
@@ -137,6 +138,13 @@ iterator marks*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
     for mark in rtOpaque.classes[classid].marks.ritems:
       yield mark
 
+# hooks for cowstr
+proc freeCString(p: cstring) {.exportc: "cha_$1".} =
+  JS_FreeCStringRT(globalRuntime, cstringConst(p))
+
+proc dupCString(p: cstring): cstring {.exportc: "cha_$1".} =
+  cstring(JS_DupCStringRT(globalRuntime, cstringConst(p)))
+
 proc getParent*(rtOpaque: JSRuntimeOpaque; class: JSClassID): JSClassID =
   rtOpaque.classes[int(class)].parent
 
@@ -150,11 +158,10 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
     if atom == JS_ATOM_NULL:
       fail = true
     opaque.strRefs[s] = atom
-  let sym = JS_GetPropertyStr(ctx, opaque.global.value, "Symbol")
+  let sym = JS_GetPropertyStr(ctx, opaque.global.value, cstringConst("Symbol"))
   if not JS_IsException(sym.vc):
     for s in jsyIterator..JSStrRef.high:
-      let name = $s
-      let val = JS_GetPropertyStr(ctx, sym.vc, cstring(name))
+      let val = JS_GetPropertyStr(ctx, sym.vc, s.toStr().toCStringConst())
       if not JS_IsException(val.vc):
         opaque.strRefs[s] = JS_ValueToAtom(ctx, val.vc)
         JS_FreeValue(ctx, val)

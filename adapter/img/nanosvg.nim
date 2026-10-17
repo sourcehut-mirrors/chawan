@@ -50,7 +50,7 @@ proc main() =
     # Unfortunate as it is, I can't just mmap the string because nanosvg
     # wants to modify it.
     var ss = newPosixStream(STDIN_FILENO).readAll()
-    let image = nsvgParse(cstring(ss), "px", 96)
+    let image = nsvgParse(ss.toCString(), "px", 96)
     if image == nil or image.width < 0 or image.height < 0 or
         cdouble(image.width) >= cdouble(cint.high) or
         cdouble(image.height) >= cdouble(cint.high):

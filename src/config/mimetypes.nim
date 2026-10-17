@@ -3,49 +3,50 @@
 import std/algorithm
 
 import io/chafile
+import utils/cowstr
 import utils/opt
 import utils/tabutil
 import utils/twtstr
 
 type
-  MimeTypeTuple = tuple[ext, name: string]
+  MimeTypeTuple = tuple[ext: Str; name: cstring]
 
-const DefaultGuess* = [
-  (ext: "ans", name: "text/x-ansi"),
-  (ext: "asc", name: "text/x-ansi"),
-  (ext: "bmp", name: "image/bmp"),
-  (ext: "css", name: "text/css"),
-  (ext: "gif", name: "image/gif"),
-  (ext: "gmi", name: "text/gemini"),
-  (ext: "htm", name: "text/html"),
-  (ext: "html", name: "text/html"),
-  (ext: "jfif", name: "image/jpeg"),
-  (ext: "jpe", name: "image/jpeg"),
-  (ext: "jpeg", name: "image/jpeg"),
-  (ext: "jpg", name: "image/jpeg"),
-  (ext: "md", name: "text/markdown"),
-  (ext: "png", name: "image/png"),
-  (ext: "svg", name: "image/svg+xml"),
-  (ext: "txt", name: "text/plain"),
-  (ext: "uri", name: "text/uri-list"),
-  (ext: "webp", name: "image/webp"),
-  (ext: "xht", name: "application/xhtml+xml"),
-  (ext: "xhtm", name: "application/xhtml+xml"),
-  (ext: "xhtml", name: "application/xhtml+xml"),
+const DefaultGuess = [
+  (ext: str("ans"), name: cstring"text/x-ansi"),
+  (ext: str("asc"), name: cstring"text/x-ansi"),
+  (ext: str("bmp"), name: cstring"image/bmp"),
+  (ext: str("css"), name: cstring"text/css"),
+  (ext: str("gif"), name: cstring"image/gif"),
+  (ext: str("gmi"), name: cstring"text/gemini"),
+  (ext: str("htm"), name: cstring"text/html"),
+  (ext: str("html"), name: cstring"text/html"),
+  (ext: str("jfif"), name: cstring"image/jpeg"),
+  (ext: str("jpe"), name: cstring"image/jpeg"),
+  (ext: str("jpeg"), name: cstring"image/jpeg"),
+  (ext: str("jpg"), name: cstring"image/jpeg"),
+  (ext: str("md"), name: cstring"text/markdown"),
+  (ext: str("png"), name: cstring"image/png"),
+  (ext: str("svg"), name: cstring"image/svg+xml"),
+  (ext: str("txt"), name: cstring"text/plain"),
+  (ext: str("uri"), name: cstring"text/uri-list"),
+  (ext: str("webp"), name: cstring"image/webp"),
+  (ext: str("xht"), name: cstring"application/xhtml+xml"),
+  (ext: str("xhtm"), name: cstring"application/xhtml+xml"),
+  (ext: str("xhtml"), name: cstring"application/xhtml+xml"),
 ]
 
 # Part after image/, *not* the file extension.
 # (sorted by order of perceived frequency)
 const DefaultImages = [
-  "png", "jpeg", "webp", "svg+xml", "gif", "bmp"
+  str("png"), str("jpeg"), str("webp"), str("svg+xml"), str("gif"), str("bmp")
 ]
 
 # extension -> type
 type
   MimeType = ref object of StrMapItem
-    name: string # content type
+    name: Str # content type
 
-  MimeTypesImageItem* = tuple[ext, subtype: string]
+  MimeTypesImageItem* = tuple[ext, subtype: Str]
 
   MimeTypesImages* = seq[MimeTypesImageItem]
 
@@ -53,14 +54,15 @@ type
     tab: StrMap # ext -> type
     image*: MimeTypesImages # ext -> image/(\w*)
 
-proc cmpMimeTypesImageItem*(x: MimeTypesImageItem; ext: string): int =
+proc cmpMimeTypesImageItem*(x: MimeTypesImageItem; ext: Str): int =
   cmp(x.ext, ext)
 
 proc parseMimeTypes*(mimeTypes: var MimeTypes; file: AChaFile): Opt[void] =
-  var line: string
+  var line: Growbuf
   while ?file.readLine(line):
     if line.len == 0 or line[0] == '#':
       continue
+    let line = move(line).toStr()
     let t = line.untilLower(AsciiWhitespace)
     var i = t.len
     while i < line.len:
@@ -81,51 +83,51 @@ proc parseMimeTypes*(mimeTypes: var MimeTypes; file: AChaFile): Opt[void] =
   )
   ok()
 
-proc cmpMimeType(item: MimeTypeTuple; s: string): int =
+proc cmpMimeType(item: MimeTypeTuple; s: Str): int =
   item.ext.cmp(s)
 
 # for DefaultGuess
-proc guessContentType*(mimeTypes: openArray[MimeTypeTuple]; path: string;
-    fallback = "application/octet-stream"): string =
+proc guessDefaultContentType*(path: Str;
+    fallback = str("application/octet-stream")): Str =
   let ext = path.getFileExt()
   if ext.len > 0:
-    let i = mimeTypes.binarySearch(ext, cmpMimeType)
+    let i = DefaultGuess.binarySearch(ext, cmpMimeType)
     if i >= 0:
-      return mimeTypes[i].name
+      return str(DefaultGuess[i].name)
   return fallback
 
-proc guessContentType*(mimeTypes: MimeTypes; path: string;
-    fallback = "application/octet-stream"): string =
+proc guessContentType*(mimeTypes: MimeTypes; path: Str;
+    fallback = str("application/octet-stream")): Str =
   let ext = path.getFileExt()
   if ext.len > 0:
-    let item = mimeTypes.tab.getOrDefault(ext)
+    let item = mimeTypes.tab.getOrDefault(ext.toOpenArray())
     if item != nil:
       return MimeType(item).name
   return fallback
 
 const JavaScriptTypes = [
-  "application/ecmascript",
-  "application/javascript",
-  "application/x-ecmascript",
-  "application/x-javascript",
-  "text/ecmascript",
-  "text/javascript",
-  "text/javascript1.0",
-  "text/javascript1.1",
-  "text/javascript1.2",
-  "text/javascript1.3",
-  "text/javascript1.4",
-  "text/javascript1.5",
-  "text/jscript",
-  "text/livescript",
-  "text/x-ecmascript",
-  "text/x-javascript"
+  str("application/ecmascript"),
+  str("application/javascript"),
+  str("application/x-ecmascript"),
+  str("application/x-javascript"),
+  str("text/ecmascript"),
+  str("text/javascript"),
+  str("text/javascript1.0"),
+  str("text/javascript1.1"),
+  str("text/javascript1.2"),
+  str("text/javascript1.3"),
+  str("text/javascript1.4"),
+  str("text/javascript1.5"),
+  str("text/jscript"),
+  str("text/livescript"),
+  str("text/x-ecmascript"),
+  str("text/x-javascript")
 ]
 
-proc isJavaScriptType*(s: string): bool =
+proc isJavaScriptType*(s: Str): bool =
   return JavaScriptTypes.binarySearch(s, cmpIgnoreCase) != -1
 
-proc isTextType*(s: string): bool =
+proc isTextType*(s: Str): bool =
   return s.startsWithIgnoreCase("text/") or s.isJavaScriptType()
 
 {.pop.} # raises: []

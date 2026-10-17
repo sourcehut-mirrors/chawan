@@ -151,13 +151,13 @@ proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
   ## exists in a document.
 
 proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
-    text: sink string; before: HandleImpl) {.doc.}
+    text: sink Growbuf; before: HandleImpl) {.doc.}
   ## Create a new comment node, and insert it into `parent` before the node
   ## `before`.
   ## `text` is a string representing the new comment node's character data.
 
 proc appendDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
-    systemId: string) {.doc.}
+    systemId: sink Growbuf) {.doc.}
   ## Append a new document type node to the Document node.
 
 proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
@@ -174,7 +174,7 @@ proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
   ## Note: parent may be either an Element or a Document node.
 
 proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl;
-    text: sink string; before: HandleImpl) {.doc.}
+    text: sink Str; before: HandleImpl) {.doc.}
   ## Insert a text node at the specified location with contents `text`. If
   ## the specified location has a previous sibling that is a text node, no new
   ## text node should be created, but instead `text` should be appended to the
@@ -194,8 +194,8 @@ proc setQuirksModeImpl(builder: DOMBuilderImpl; quirksMode: QuirksMode) {.doc.}
   ## Set quirks mode to either `qmQuirks` or `qmLimitedQuirks`.  `qmNoQuirks`
   ## is the default and is therefore never passed here.
 
-proc setEncodingImpl(builder: DOMBuilderImpl; encoding: string):
-    SetEncodingResult {.doc.}
+proc setEncodingImpl(builder: DOMBuilderImpl; encoding: Str): SetEncodingResult
+    {.doc.}
   ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
   ## containing a non-empty character set is encountered. A SetEncodingResult
   ## return value is expected, which is either `seStop`, stopping the
@@ -265,11 +265,11 @@ when defined(nimdocdummy):
     discard
 
   proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;
-      text: string; before: HandleImpl) =
+      text: sink Growbuf; before: HandleImpl) =
     discard
 
   proc appendDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
-      systemId: string) =
+      systemId: sink Growbuf) =
     discard
 
   proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;

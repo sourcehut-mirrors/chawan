@@ -157,11 +157,11 @@ proc main() =
     var height = cint(0)
     for hdr in headers.split('\n'):
       let s = hdr.after(':').strip()
-      case hdr.until(':')
-      of "Cha-Image-Dimensions":
+      let k = hdr.until(':')
+      if k == "Cha-Image-Dimensions":
         (width, height) = parseDimensionsC(s, allowZero = false)
-      of "Cha-Image-Quality":
-        let q = parseUInt32(s, allowSign = false).get(101)
+      elif k == "Cha-Image-Quality":
+        let q = parseUInt32(s.toOpenArray(), allowSign = false).get(101)
         if q < 1 or 100 < q:
           cgiDie(ceInternalError, "wrong quality")
         quality = cint(q)

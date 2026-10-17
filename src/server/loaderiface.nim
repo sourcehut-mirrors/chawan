@@ -30,7 +30,7 @@ import server/blob
 import server/headers
 import server/request
 import server/url
-import utils/bytearray
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -87,12 +87,11 @@ type
 
   LoaderClientConfig* = object
     originURL*: URL
-    originIp*: string
+    originIp*: Str
     cookieJar*: CookieJar
     defaultHeaders*: Headers
     proxy*: URL
-    allowSchemes*: seq[string]
-    allowAllSchemes*: bool # only true for pager process
+    allowSchemes*: set[SchemeType]
     insecureSslNoVerify*: bool
     referrerPolicy*: ReferrerPolicy
     cookieMode*: CookieMode
@@ -135,8 +134,7 @@ type
     get*: string
 
   BlobOpaque* = ref object of RootObj
-    arr: ByteArray
-    size: int
+    buf: Growbuf
 
   JSBlobOpaque {.final.} = ref object of BlobOpaque
     ctx: JSContext #TODO dup?
@@ -152,7 +150,7 @@ proc getClassID(t: typedesc[Response]): JSClassID
 
 # Forward declaration hack
 proc getLoader(ctx: JSContext): FileLoader {.importc: "cha_$1".}
-proc consoleError(ctx: JSContext; ss: varargs[string]) {.importc: "cha_$1".}
+proc consoleError(ctx: JSContext; ss: varargs[Str]) {.importc: "cha_$1".}
 
 # Response
 template isErr*(x: TextResult): bool =
@@ -183,35 +181,36 @@ proc newResponse*(request: Request; stream: PosixStream; outputId: int):
   )
 
 proc getCharset*(this: Response; fallback: Charset): Charset =
-  let header = this.headers.getFirst("Content-Type").toLowerAscii()
+  let header = this.headers.getFirst(byteStr("Content-Type")).toLowerAscii()
   if header != "":
-    let cs = header.getContentTypeAttr("charset").getCharset()
+    let cs = getCharset(Str(header).getContentTypeAttr("charset"))
     if cs != csUnknown:
       return cs
   return fallback
 
-proc getLongContentType*(this: Response; fallback: string): string =
-  let header = this.headers.getFirst("Content-Type")
+proc getLongContentType*(this: Response; fallback: Str): Str =
+  let header = this.headers.getFirst(byteStr("Content-Type")).toStr()
   if header != "":
-    return header.toValidUTF8().strip()
+    return header
   # also use DefaultGuess for buffer, so that local mime.types cannot
   # override buffer mime.types
-  return DefaultGuess.guessContentType(this.url.pathname, fallback)
+  return guessDefaultContentType(this.url.pathname, fallback)
 
-proc getContentType*(this: Response; fallback = "application/octet-stream"):
-    string =
+proc getContentType*(this: Response;
+    fallback = str("application/octet-stream")): Str =
   return this.getLongContentType(fallback).untilLower(';')
 
 proc getContentLength*(this: Response): int64 =
-  let x = this.headers.getFirst("Content-Length")
-  let u = parseUInt64(x.strip(), allowSign = false).get(uint64.high)
+  let x = this.headers.getFirst(byteStr("Content-Length"))
+  let u = parseUInt64(x.toOpenArray(), allowSign = false)
+    .get(uint64.high)
   if u <= uint64(int64.high):
     return int64(u)
   return -1
 
 proc getReferrerPolicy*(this: Response): Opt[ReferrerPolicy] =
-  for value in this.headers.getAllCommaSplit("Referrer-Policy"):
-    if policy := parseEnumNoCase[ReferrerPolicy](value):
+  for value in this.headers.getAllCommaSplit(byteStr("Referrer-Policy")):
+    if policy := parseEnumNoCase[ReferrerPolicy](value.toOpenArray()):
       return ok(policy)
   err()
 
@@ -237,26 +236,24 @@ const BufferSize = 4096
 proc onReadBlob(response: Response) =
   let opaque = BlobOpaque(response.opaque)
   while true:
-    if opaque.arr.len + BufferSize > opaque.size:
-      opaque.size *= 2
-      opaque.arr.p =
-        cast[ptr UncheckedArray[char]](realloc(opaque.arr.p, opaque.size))
-    let diff = opaque.size - opaque.arr.len
-    let n = response.stream.read(addr opaque.arr.p[opaque.arr.len], diff)
+    let olen = opaque.buf.len
+    opaque.buf.setLenUninit(olen + BufferSize)
+    let n = response.stream.read(opaque.buf.toOpenArray(olen, opaque.buf.high))
     if n <= 0:
       assert n != -1 or errno != EBADF
+      opaque.buf.setLen(olen)
       break
-    opaque.arr.len += n
+    opaque.buf.setLen(olen + n)
 
-proc onFinishByteArray*(response: Response): ByteArray =
+proc onFinishGrowbuf*(response: Response): Growbuf =
   let opaque = BlobOpaque(response.opaque)
-  move(opaque.arr)
+  move(opaque.buf)
 
 proc onFinishBlob*(response: Response): Blob =
-  var arr = response.onFinishByteArray()
-  let p = move(arr.p)
-  arr.len = 0
-  newBlob(p, arr.len, response.getContentType(), deallocBlob)
+  #TODO blob should be managed by loader
+  var buf = response.onFinishGrowbuf()
+  let p = move(buf.p)
+  newBlob(p, buf.len, response.getContentType(), deallocBlob)
 
 proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
   response.opaque = opaque
@@ -267,8 +264,7 @@ proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
     response.flags.incl(rfBodyUsed)
     response[].onFinish(response, true)
     return
-  opaque.size = BufferSize
-  opaque.arr = initByteArray(alloc(BufferSize), 0)
+  opaque.buf = initGrowbuf()
   response.onRead = onReadBlob
   response.flags.incl(rfBodyUsed)
   loader.resume(response)
@@ -315,7 +311,7 @@ proc onFinishText(response: Response; success: bool) =
   let opaque = JSBlobOpaque(response.opaque)
   let ctx = opaque.ctx
   let val = if success:
-    let arr = response.onFinishByteArray()
+    let arr = response.onFinishGrowbuf()
     ctx.toJS(arr.toOpenArray().toValidUTF8())
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
@@ -325,7 +321,7 @@ proc onFinishJSON(response: Response; success: bool) =
   let opaque = JSBlobOpaque(response.opaque)
   let ctx = opaque.ctx
   let val = if success:
-    let arr = response.onFinishByteArray()
+    let arr = response.onFinishGrowbuf()
     let s = arr.toOpenArray().toValidUTF8()
     JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
       "<input>".toCStringConst)
@@ -337,8 +333,8 @@ proc onFinishArrayBuffer(response: Response; success: bool) =
   let opaque = JSBlobOpaque(response.opaque)
   let ctx = opaque.ctx
   let val = if success:
-    let arr = response.onFinishByteArray()
-    ctx.newArrayBuffer(arr.toOpenArray())
+    let buf = response.onFinishGrowbuf()
+    ctx.newArrayBuffer(buf.toOpenArray())
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
@@ -377,10 +373,10 @@ jsClassDef(Response):
   proc jsOk(response: Response): bool {.jsfget: "ok".} =
     return response.status in 200u16 .. 299u16
 
-  proc surl*(response: Response): string {.jsfget: "url".} =
+  proc surl*(response: Response): Str {.jsfget: "url".} =
     if response.responseType == rtError or response.url == nil:
-      return ""
-    return $response.url
+      return str("")
+    return response.url.toStr()
 
   proc bodyUsed*(response: Response): bool {.jsfget.} =
     rfBodyUsed in response.flags
@@ -402,7 +398,7 @@ proc addResponseModule*(ctx: JSContext): JSCode =
 
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:
-    let location = response.headers.getFirst("Location")
+    let location = response.headers.getFirst(byteStr("Location")).toStr()
     if url := parseURL(location, request.url):
       let status = response.status
       if status == 303 and request.httpMethod notin {hmGet, hmHead} or
@@ -595,25 +591,25 @@ proc addCacheFile*(loader: FileLoader; outputId: int): int =
     discard r.sread(cacheId)
   return cacheId
 
-proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
+proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): Str =
   loader.withPacketWriter w:
     w.swrite(lcGetCacheFile)
     w.swrite(cacheId)
     w.swrite(sourcePid)
   do:
-    return ""
-  var s = ""
+    return str("")
+  var s: Str
   loader.withPacketReaderFire r:
     discard r.sread(s)
   move(s)
 
-proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string;
+proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: Str;
     displayUrl: URL): bool =
   loader.withPacketWriter w:
     w.swrite(lcRedirectToFile)
     w.swrite(outputId)
     w.swrite(targetPath)
-    w.swrite($displayUrl)
+    w.swrite(displayUrl.toStr())
   do:
     return false
   var res = false
@@ -631,7 +627,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
     case connectData.state
     of cdsBeforeResult:
       var res: int
-      var msg: string
+      var msg: Str
       r.assert(r.sread(res)) # packet 1
       if res == 0:
         r.assert(r.sread(connectData.outputId)) # packet 1
@@ -724,7 +720,7 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
       else: # EOF
         stream.sclose()
     else:
-      var msg: string
+      var msg: Str
       r.assert(r.sread(msg)) # packet 1
       stream.sclose()
   else: # EOF
@@ -761,7 +757,7 @@ proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
     return newPosixStream(fd)
   return nil
 
-proc passFd*(loader: FileLoader; id: string; fd: cint) =
+proc passFd*(loader: FileLoader; id: Str; fd: cint) =
   loader.withPacketWriterFire w:
     w.swrite(lcPassFd)
     w.swrite(id)
@@ -802,7 +798,7 @@ proc removeClient*(loader: FileLoader; pid: int) =
 
 # Equivalent to creating a pipe and passing its read half of it through
 # passFd.
-proc addPipe*(loader: FileLoader; id: string): PosixStream =
+proc addPipe*(loader: FileLoader; id: Str): PosixStream =
   loader.withPacketWriter w:
     w.swrite(lcAddPipe)
     w.swrite(id)
@@ -818,12 +814,12 @@ proc addPipe*(loader: FileLoader; id: string): PosixStream =
     return newPosixStream(fd)
   return nil
 
-proc doPipeRequest*(loader: FileLoader; id: string):
+proc doPipeRequest*(loader: FileLoader; id: Str):
     tuple[ps: PosixStream; response: Response] =
   let ps = loader.addPipe(id)
   if ps == nil:
     return (nil, Response(nil))
-  let request = newRequest("stream:" & id)
+  let request = newRequest(initStrM("stream:", id))
   let response = loader.doRequest(request)
   if response.stream == nil:
     ps.sclose()

@@ -5,6 +5,7 @@
 import std/posix
 
 import io/dynstream
+import utils/cowstr
 import utils/opt
 import utils/twtstr
 
@@ -37,13 +38,19 @@ proc fseek(file: ChaFile; offset: clong; whence: cint): cint
 proc setbuf*(stream: ChaFile; buf: cstring)
 {.pop.} # importc, header: "<stdio.h>"
 
-proc rename*(oldname, newname: string): Opt[void] =
-  if rename(cstring(oldname), cstring(newname)) != 0:
+proc rename*(oldname, newname: Str): Opt[void] =
+  if rename(oldname.toCString(), newname.toCString()) != 0:
     return err()
   ok()
 
 proc fopen(name: string; mode: cstring): Opt[ChaFile] =
   let file = fopen(cstring(name), mode)
+  if file == nil:
+    return err()
+  ok(file)
+
+proc fopen(name: Str; mode: cstring): Opt[ChaFile] =
+  let file = fopen(name.toCString(), mode)
   if file == nil:
     return err()
   ok(file)
@@ -89,19 +96,27 @@ proc write*(file: ChaFile; c: char): Opt[void] =
     return err()
   ok()
 
-proc writeLine*(file: ChaFile): Opt[void] =
+proc write*(file: ChaFile; s: Str): Opt[void] =
+  file.write(s.toOpenArray())
+
+proc write*(file: ChaFile; buf: Growbuf): Opt[void] =
+  file.write(buf.toOpenArray())
+
+proc writeM*(file: ChaFile; ss: varargs[Str]): Opt[void] =
+  for it in ss:
+    ?file.write(it)
+  ok()
+
+proc writeLine*(file: ChaFile; ss: varargs[Str]): Opt[void] =
+  for s in ss:
+    ?file.write(s.toOpenArray())
   file.write('\n')
 
 proc writeLine*(file: ChaFile; s: openArray[char]): Opt[void] =
   ?file.write(s)
-  file.writeLine()
+  file.write('\n')
 
-proc writeCRLine*(file: ChaFile; s: openArray[char]): Opt[void] =
-  ?file.write(s)
-  ?file.write('\r')
-  file.writeLine()
-
-proc readLineAppend*(file: ChaFile; s: var string): Opt[bool] =
+proc readLineAppend*(file: ChaFile; s: var Growbuf): Opt[bool] =
   while (let c = file.fgetc(); c != EOF):
     let cc = cast[char](c)
     if cc == '\n':
@@ -111,11 +126,11 @@ proc readLineAppend*(file: ChaFile; s: var string): Opt[bool] =
     return err()
   ok(false)
 
-proc readLine*(file: ChaFile; s: var string): Opt[bool] =
+proc readLine*(file: ChaFile; s: var Growbuf): Opt[bool] =
   var i = 0
   var bufLen = cint(80)
   s.setLen(int(bufLen))
-  chaMemset(s, '\n') # sentinel
+  chaMemset(s.toOpenArray(), '\n') # sentinel
   while fgets(cast[cstring](addr s[i]), bufLen - cast[cint](i), file) != nil:
     if s[^1] == '\n' or s[^2] == '\n':
       # either line is shorter than buf, then s[^1] is LF
@@ -132,25 +147,32 @@ proc readLine*(file: ChaFile; s: var string): Opt[bool] =
     s.setLen(i)
     return ok(true)
   # all LFs; we have no more lines.
-  s = ""
+  s = initGrowbuf()
   if ferror(file) != 0:
     return err()
   return ok(false)
 
-proc readAll*(file: ChaFile; s: var string): Opt[void] =
-  s = newString(4096)
+proc readLine*(file: ChaFile; s: var Str): Opt[bool] =
+  var buf = initGrowbufSink(move(s))
+  let res = file.readLine(buf)
+  s = buf.toStr()
+  res
+
+proc readAll*(file: ChaFile; s: var Str): Opt[void] =
+  var buf = initGrowbufUninit(4096)
   var n = 0
   while true:
-    let avail = s.len - n
-    let m = file.read(s.toOpenArray(n, s.len - 1))
+    let avail = buf.len - n
+    let m = file.read(buf.toOpenArray(n, buf.len - 1))
     n += m
-    if n == s.len:
-      s.setLen(s.len + 4096)
+    if n == buf.len:
+      buf.setLenUninit(buf.len + 4096)
     if m < avail:
       break
-  s.setLen(n)
+  buf.setLen(n)
   if ferror(file) != 0:
     return err()
+  s = buf.toStr()
   ok()
 
 proc flush*(file: ChaFile): Opt[void] =
@@ -163,7 +185,7 @@ proc close*(file: ChaFile): Opt[void] {.discardable.} =
     return err()
   ok()
 
-proc readFile*(path: cstring; s: var string): Opt[void] =
+proc readFile*(path: cstring; s: var Str): Opt[void] =
   let file = fopen(path, "r")
   if file == nil:
     return err()
@@ -171,8 +193,8 @@ proc readFile*(path: cstring; s: var string): Opt[void] =
   ?file.close()
   res
 
-proc readFile*(path: string; s: var string): Opt[void] =
-  readFile(cstring(path), s)
+proc readFile*(path: Str; s: var Str): Opt[void] =
+  readFile(path.toCString(), s)
 
 proc writeFile*(path: cstring; content: openArray[char]; mode: cint): Opt[void] =
   discard unlink(path)
@@ -202,6 +224,10 @@ proc `=sink`*(a: var AChaFile; b: AChaFile) =
   `=destroy`(a)
   cast[ptr ChaFile](addr a)[] = cast[ptr ChaFile](unsafeAddr b)[]
 
+proc afopen*(name: Str; mode: cstring): Opt[AChaFile] =
+  let p = ?fopen(name, mode)
+  ok(AChaFile(p))
+
 proc afopen*(name: string; mode: cstring): Opt[AChaFile] =
   let p = ?fopen(name, mode)
   ok(AChaFile(p))
@@ -212,12 +238,22 @@ proc afdopen*(ps: PosixStream; mode: cstring): Opt[AChaFile] =
 
 proc read*(file: AChaFile; s: var openArray[uint8]): int {.borrow.}
 proc read*(file: AChaFile; s: var openArray[char]): int {.borrow.}
-proc readLine*(file: AChaFile; s: var string): Opt[bool] {.borrow.}
-proc readLineAppend*(file: AChaFile; s: var string): Opt[bool] {.borrow.}
 proc write*(file: AChaFile; s: openArray[char]): Opt[void] {.borrow.}
 proc writeLine*(file: AChaFile; s: openArray[char]): Opt[void] {.borrow.}
-proc writeCRLine*(file: AChaFile; s: openArray[char]): Opt[void] {.borrow.}
+proc writeM*(file: AChaFile; ss: varargs[Str]): Opt[void] {.borrow.}
 proc flush*(file: AChaFile): Opt[void] {.borrow.}
 proc seek*(file: AChaFile; offset: clong): Opt[void] {.borrow.}
+
+proc readLine*(file: AChaFile; s: var Str): Opt[bool] =
+  ChaFile(file).readLine(s)
+
+proc readLine*(file: AChaFile; s: var Growbuf): Opt[bool] =
+  ChaFile(file).readLine(s)
+
+proc readLineAppend*(file: AChaFile; s: var Growbuf): Opt[bool] =
+  ChaFile(file).readLineAppend(s)
+
+proc writeLine*(file: AChaFile; ss: varargs[Str]): Opt[void] =
+  file.writeLine(ss)
 
 {.pop.} # raises: []
