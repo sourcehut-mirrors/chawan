@@ -1,4 +1,4 @@
-unreleased
+0.5.0 (2026.10.16)
 
 * rework handling of Referer header
 * rework NodeIterator, add TreeWalker
