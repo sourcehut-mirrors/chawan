@@ -309,7 +309,6 @@ install:
 	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); \
 	done
 	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc urldec)
-	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc btoa)
 	for f in $(ssl_link); do (cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl "$$f"); done
 	for f in $(tohtml_link); do (cd $(LIBEXECDIR_CHAWAN) && ln -sf tohtml "$$f"); done
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
