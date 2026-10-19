@@ -51,7 +51,7 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
     if f.sendCommand("EPSV", "", obuf).get(-1) != 229:
       cgiDie(ceInvalidResponse)
     var i = obuf.find('(')
-    if i == -1:
+    if i < 0:
       cgiDie(ceInvalidResponse)
     i += 4 # skip delims
     let j = obuf.find(')', i)
@@ -64,7 +64,7 @@ proc passiveMode(f: AChaFile; host: string; ipv6: bool): PosixStream =
   var i = obuf.find(AsciiDigit)
   if i < 0:
     cgiDie(ceInvalidResponse)
-  var j = obuf.find(NonDigit - {','}, i)
+  let j = obuf.find(NonDigit - {','}, i)
   if j >= 0:
     obuf.setLen(j)
   var ipv4 = ""

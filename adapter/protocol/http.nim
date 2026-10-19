@@ -243,9 +243,7 @@ proc flushStatus(op: HTTPHandle; line: openArray[char]) =
   if not line.startsWithIgnoreCase("HTTP/1.1 ") and
       not line.startsWithIgnoreCase("HTTP/1.0 "):
     cgiDie(ceInvalidResponse)
-  var codeIdx = line.find(' ', HttpStart.len)
-  if codeIdx < 0:
-    codeIdx = line.len
+  let codeIdx = line.findOrLen(' ', HttpStart.len)
   if codeIdx > 3 + HttpStart.len:
     cgiDie(ceInvalidResponse)
   let code = parseUInt16(line.toOpenArray(HttpStart.len, codeIdx - 1))

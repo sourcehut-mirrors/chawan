@@ -598,9 +598,7 @@ proc openDD(state: var ParseState; line: string; par: bool): Opt[void] =
     # pandoc thinks a tab stop is 4 spaces
     state.numDLSpaces = 4
   else:
-    var i = line.find(AllChars - {' '}, 1)
-    if i < 0:
-      i = line.high
+    let i = line.findOrLen(AllChars - {' '}, 1)
     state.blockData = line.substr(i) & '\n'
     state.numDLSpaces = i
   return state.write("<DD>")
@@ -628,7 +626,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.blockType = btPre
     state.blockData = line.substr(0, 2)
     ?state.write("<PRE>")
-  elif c0 == '[' and (var i = line.find(']', i);
+  elif c0 == '[' and (let i = line.find(']', i);
       i > 1 and i + 1 < line.len and line[i + 1] == ':'):
     state.blockType = btLinkDef
     state.linkDefState = ldsLink

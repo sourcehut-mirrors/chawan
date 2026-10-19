@@ -102,9 +102,7 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
       continue
     case line[0]
     of 'l': # link
-      var linki = name.find(" -> ")
-      if linki == -1:
-        linki = name.len
+      let linki = name.findOrLen(" -> ")
       let linkfrom = name.substr(0, linki - 1)
       let linkto = name.substr(linki + 4) # you?
       items.addItem(DirlistItem(

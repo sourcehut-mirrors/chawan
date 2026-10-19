@@ -372,6 +372,18 @@ proc find*(s: openArray[char]; c: char; start: int; last = -1): int =
     return n
   return start + n
 
+proc findOrLen*(s: openArray[char]; c: char): int =
+  let n = s.find(c)
+  if n < 0:
+    return s.len
+  return n
+
+proc findOrLen*(s: openArray[char]; c: char; start: int): int =
+  let n = s.find(c, start)
+  if n < 0:
+    return s.len
+  return n
+
 proc find*(s: openArray[char]; cs: set[char]): int =
   let slen = s.len
   for i in 0 ..< slen:
@@ -387,6 +399,12 @@ proc find*(s: openArray[char]; cs: set[char]; start: int; last = -1): int =
   if n < 0:
     return n
   return start + n
+
+proc findOrLen*(s: openArray[char]; cc: set[char]; start: int): int =
+  let n = s.find(cc, start)
+  if n < 0:
+    return s.len
+  return n
 
 proc memmem(haystack: pointer; haystacklen: csize_t; needle: pointer;
   needlelen: csize_t): pointer {.importc, header: "<string.h>".}
@@ -423,6 +441,12 @@ proc find*(haystack: openArray[char]; needle: string; start: int; last = -1):
   if n < 0:
     return n
   return start + n
+
+proc findOrLen*(haystack: openArray[char]; needle: string): int =
+  let n = haystack.find(needle)
+  if n < 0:
+    return haystack.len
+  return n
 
 const HasMemrchr = defined(linux) or defined(freebsd) or defined(openbsd) or
   defined(netbsd) or defined(haiku)
@@ -550,36 +574,20 @@ proc stripAndCollapse*(s: openArray[char]): string =
   move(res)
 
 proc until*(s: openArray[char]; cc: char; starti = 0): string =
-  var last = s.find(cc, starti)
-  if last < 0:
-    last = s.high
-  else:
-    dec last
-  return s.toOpenArray(starti, last).substr()
+  let endi = s.findOrLen(cc, starti)
+  return s.toOpenArray(starti, endi - 1).substr()
 
 proc until*(s: openArray[char]; cc: set[char]; starti = 0): string =
-  var last = s.find(cc, starti)
-  if last < 0:
-    last = s.high
-  else:
-    dec last
-  return s.toOpenArray(starti, last).substr()
+  let endi = s.findOrLen(cc, starti)
+  return s.toOpenArray(starti, endi - 1).substr()
 
 proc untilLower*(s: openArray[char]; cc: char; starti = 0): string =
-  var last = s.find(cc, starti)
-  if last < 0:
-    last = s.high
-  else:
-    dec last
-  return s.toOpenArray(starti, last).toLowerAscii()
+  let endi = s.findOrLen(cc, starti)
+  return s.toOpenArray(starti, endi - 1).toLowerAscii()
 
 proc untilLower*(s: openArray[char]; cc: set[char]; starti = 0): string =
-  var last = s.find(cc, starti)
-  if last < 0:
-    last = s.high
-  else:
-    dec last
-  return s.toOpenArray(starti, last).toLowerAscii()
+  let endi = s.findOrLen(cc, starti)
+  return s.toOpenArray(starti, endi - 1).toLowerAscii()
 
 proc after*(s: string; c: char): string =
   let i = s.find(c)
@@ -1079,18 +1087,16 @@ const tchar = AsciiAlphaNumeric +
   {'!', '#'..'\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
 
 proc findContentTypeAttr(contentType, attrname: openArray[char]): int =
-  var i = contentType.find(';')
-  while i != -1:
+  var i = contentType.findOrLen(';')
+  while i < contentType.len:
     i = contentType.skipBlanks(i + 1)
-    if i >= contentType.len:
-      break
     if contentType.startsWith(attrname, i):
       i = contentType.skipBlanks(i + attrname.len)
       if i >= contentType.len:
         break
       if contentType[i] == '=':
         return i + 1
-    i = contentType.find(';', i)
+    i = contentType.findOrLen(';', i)
   return -1
 
 proc getContentTypeAttr*(contentType, attrname: openArray[char]): string =
@@ -1134,9 +1140,7 @@ proc mimeQuote*(value: string): string =
 proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
   var i = contentType.findContentTypeAttr(attrname)
   if i != -1:
-    var j = contentType.find(';', i)
-    if j < 0:
-      j = contentType.len
+    let j = contentType.findOrLen(';', i)
     contentType[i..<j] = value.mimeQuote()
   else:
     contentType &= ';' & attrname & '=' & value

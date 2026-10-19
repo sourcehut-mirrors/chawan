@@ -85,9 +85,7 @@ proc getList*(mailcap: Mailcap; t: string): MailcapList =
   let list = mailcap.getOrDefault(t)
   if list != nil:
     return list
-  var i = t.find('/')
-  if i < 0:
-    i = t.len
+  let i = t.findOrLen('/')
   mailcap.getOrDefault(t.toOpenArray(0, i - 1))
 
 proc isHtmlOrText(s: string): bool =
