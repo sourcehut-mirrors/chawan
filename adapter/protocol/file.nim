@@ -42,13 +42,7 @@ proc loadDir(path, opath: string): Opt[void] =
     line &= $stats.st_uid & ' ' # owner (currently unused in dirlist2html)
     line &= $stats.st_gid & ' ' # group (ditto)
     line &= $stats.st_size & ' '
-    #TODO if new enough, send time instead of year
-    var time = stats.st_mtime
-    let modified = localtime(time)
-    var s = newString(64)
-    let n = chaos.strftime(cstring(s), csize_t(s.len), "%b %d %Y", modified)
-    s.setLen(int(n))
-    line &= s & ' '
+    line &= formatUnixSeconds(int64(stats.st_mtime), "%b %d %Y") & ' '
     line &= file
     if S_ISLNK(stats.st_mode):
       let len = int(stats.st_size)

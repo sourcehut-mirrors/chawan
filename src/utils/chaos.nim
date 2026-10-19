@@ -211,4 +211,15 @@ proc getUnixSeconds*(): int64 =
   let time = getUnixTime()
   time.sec
 
+proc formatUnixSeconds*(n: int64; fmt: cstring): string =
+  #TODO if new enough, send time instead of year
+  var time = Time(n)
+  let tm = localtime(time)
+  if tm == nil:
+    return ""
+  var s = newString(64)
+  let n = strftime(cstring(s), csize_t(s.len), fmt, tm)
+  s.setLen(int(n))
+  s
+
 {.pop.} # raises: []

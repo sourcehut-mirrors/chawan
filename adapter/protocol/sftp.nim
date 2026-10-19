@@ -3,7 +3,6 @@
 {.push raises: [].}
 
 import std/posix
-import std/times
 
 import lcgi
 
@@ -256,7 +255,7 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
         buf &= $attrs.filesize
       buf &= ' '
       if (attrs.flags and LIBSSH2_SFTP_ATTR_ACMODTIME) != 0:
-        buf &= int64(attrs.mtime).fromUnix().local().format("MMM dd yyyy")
+        buf &= formatUnixSeconds(int64(attrs.mtime), "%b %d %Y")
       buf &= ' '
       buf &= name
     if (attrs.flags and LIBSSH2_SFTP_ATTR_PERMISSIONS) != 0 and
