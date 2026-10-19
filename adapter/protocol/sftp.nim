@@ -2,6 +2,7 @@
 
 {.push raises: [].}
 
+import std/posix
 import std/times
 
 import lcgi

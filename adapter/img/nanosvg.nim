@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+import std/posix
+
 import ../protocol/lcgi
 
 {.passc: "-I" & currentSourcePath().untilLast('/').}

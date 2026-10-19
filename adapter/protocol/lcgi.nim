@@ -18,8 +18,6 @@ export opt
 export sandbox
 export twtstr
 
-export STDIN_FILENO, STDOUT_FILENO
-
 type
   CGIError = object
     code*: ConnectionError
