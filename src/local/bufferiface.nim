@@ -1351,6 +1351,8 @@ jsClassPublicDef(BufferInterface):
     let p = JS_GetRegExpBytecode(ctx, re, bytecodeLen)
     if p == nil:
       return JS_EXCEPTION
+    if n == int.low:
+      return JS_ThrowRangeError(ctx, "n too low")
     let bytecode = cast[REBytecode](p)
     var wrap = wrap
     let endy = y

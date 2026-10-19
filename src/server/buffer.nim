@@ -410,7 +410,7 @@ proc findRevNthLink(bc: BufferContext; handle: PagerHandle; i: int):
 
 proc findNextMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
     x, y, endy: int; wrap: bool; n: int): BufferMatch {.proxy.} =
-  if n <= 0 or x < 0 or y < 0 or y >= bc.lines.len:
+  if n == int.low or x < 0 or y < 0 or y >= bc.lines.len:
     return BufferMatch(x: -1, y: -1)
   var y = y
   var n = n
