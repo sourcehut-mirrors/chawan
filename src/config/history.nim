@@ -1,13 +1,13 @@
-# Generic object for line editing and browsing hist.
+# Generic object for line editing and browsing history.
 
 {.push raises: [].}
 
 import std/posix
-import utils/tabutil
 
 import io/chafile
 import io/dynstream
 import utils/opt
+import utils/tabutil
 
 type
   History* = ref object
@@ -105,7 +105,7 @@ proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
         break # buffered entries follow
   else:
     var entry = hist.first
-    for i in 0 ..< hist.maxLen - hist.map.load: # skip buffered entries
+    for i in hist.maxLen ..< hist.map.load: # skip buffered entries
       if entry == nil:
         break
       entry = entry.next
