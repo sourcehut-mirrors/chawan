@@ -1572,6 +1572,11 @@ line.prevHist, line.nextHist
 
 : Jump to the previous/next history entry
 
+line.toggleSelection
+: **C-@**, **C-SPC**
+
+: Toggle selection at the cursor position.
+
 Note: to facilitate URL editing, the line editor has a different definition
 of what a word is than the pager.  For the line editor, a word is either
 a sequence of alphanumeric characters, or any single non-alphanumeric

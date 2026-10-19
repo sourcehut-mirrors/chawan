@@ -290,7 +290,8 @@ for (const it of ["cursorDown", "cursorUp", "cursorTop", "cursorBottom",
 /* line */
 for (const it of ["submit", "backspace", "delete", "cancel", "prevWord",
         "nextWord", "backward", "forward", "clear", "kill", "clearWord",
-        "killWord", "begin", "end", "escape", "prevHist", "nextHist"]) {
+        "killWord", "begin", "end", "escape", "prevHist", "nextHist",
+        "toggleSelection"]) {
     cmd.line[it] = () => pager.lineEdit[it]();
 }
 

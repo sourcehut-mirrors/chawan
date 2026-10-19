@@ -272,7 +272,14 @@ jsClassDef(LineEdit):
     edit.selectType = t
     edit.redraw = true
 
-  # private
+  # public
+  proc toggleSelection(edit: LineEdit) {.jsfunc.} =
+    if edit.selecti == -1:
+      edit.startSelection(lstChar)
+    else:
+      edit.clearSelection()
+
+  # public
   proc selectedText(edit: LineEdit): string {.jsfget.} =
     if edit.selecti < 0:
       return ""

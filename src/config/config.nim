@@ -2351,6 +2351,7 @@ Right line.forward
 Left line.backward
 C-Left line.prevWord
 C-Right line.nextWord
+C-@ line.toggleSelection
 """
 
 const SelectCommands = """

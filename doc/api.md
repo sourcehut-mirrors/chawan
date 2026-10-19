@@ -745,8 +745,14 @@ Following properties (functions/getters) are defined by `LineEdit`:
 `nextHist()`, `prevHist()`
 : Jump to the previous/next history entry.
 
+`toggleSelection()`
+: Toggle selection at the current cursor position.
+
 `text`
 : The currently entered text.
+
+`selectedText`
+: The currently selected text.
 
 ## See also
 
