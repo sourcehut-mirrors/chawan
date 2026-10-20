@@ -65,7 +65,7 @@ includes an `x-type` parameter.
 In browsecap, the MIME type field is treated as *protocol*/*method*.
 For example, `http/get` dispatches to GET requests to an HTTP scheme,
 `ftp/post` to POST requests to an FTP scheme, and `https/*` to all HTTPS
-schemes.
+requests.
 
 ### Templating
 
