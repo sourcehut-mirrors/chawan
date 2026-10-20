@@ -201,7 +201,6 @@ type
     coStyling = "styling"
     coUseMouse = "useMouse"
     coViNumericPrefix = "viNumericPrefix"
-    coW3mCgiCompat = "w3mCgiCompat"
     coWrap = "wrap"
 
     # 4 bytes
@@ -360,7 +359,6 @@ const OptionMap = [
   coStyling: (cotBool, csBuffer),
   coUseMouse: (cotBoolAuto, csInput),
   coViNumericPrefix: (cotBool, csInput),
-  coW3mCgiCompat: (cotBool, csExternal),
   coWrap: (cotBool, csSearch),
 
   coColumns: (cotInt32, csDisplay),
@@ -1315,8 +1313,6 @@ proc parseOption(cp: var ConfigParser; section: ConfigSection; key: string):
     if opt in cp.optionsSeen:
       let kebab = camelToKebabCase(key)
       return cp.err("re-definition of option " & $section & '.' & kebab)
-    if opt == coW3mCgiCompat:
-      cp.warn("w3m-cgi-compat is deprecated")
     cp.optionsSeen.incl(opt)
   x
 

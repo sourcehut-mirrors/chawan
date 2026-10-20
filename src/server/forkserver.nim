@@ -50,7 +50,6 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
     w.swrite(config{"doubleWidthAmbiguous"})
     w.swrite(config{"linkHintChars"})
     w.swrite(LoaderConfig(
-      w3mCGICompat: config{"w3mCgiCompat"},
       cgiDir: config{"cgiDir"},
       tmpdir: config{"tmpdir"},
       configDir: config.dir,

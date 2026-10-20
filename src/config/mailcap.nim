@@ -749,7 +749,6 @@ proc parseURIMethodMap*(this: var Mailcap; file: AChaFile): Opt[void] =
     i = line.skipBlanks(i + 1) # skip colon
     var v = line.until(AsciiWhitespace, i)
     # Basic w3m compatibility.
-    # If needed, w3m-cgi-compat covers more cases.
     var cgi = false
     if v.startsWith("cgi-bin:"):
       v.delete(0..<"cgi-bin:".len)

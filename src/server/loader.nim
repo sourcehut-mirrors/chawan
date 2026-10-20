@@ -174,7 +174,6 @@ type
 
   LoaderConfig* = object
     cgiDir*: seq[string]
-    w3mCGICompat*: bool
     tmpdir*: string
     configDir*: string
     dataDir*: string
@@ -403,14 +402,6 @@ proc close(ctx: var LoaderContext; client: ClientHandle) =
 
 proc isPrivileged(ctx: LoaderContext; client: ClientHandle): bool =
   return ctx.pagerClient == client
-
-proc canRewriteForCGICompat(ctx: LoaderContext; path: string): bool =
-  if path.startsWith("/cgi-bin/") or path.startsWith("/$LIB/"):
-    return true
-  for dir in ctx.config.cgiDir:
-    if path.startsWith(dir):
-      return true
-  return false
 
 proc rejectHandle(ctx: var LoaderContext; handle: InputHandle;
     code: ConnectionError; msg = "") =
@@ -1458,12 +1449,6 @@ proc loadXChaCookie(ctx: var LoaderContext; client: ClientHandle;
 proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: var RawRequest; handle: InputHandle;
     resource: bool) =
-  if ctx.config.w3mCGICompat and request.url.schemeType == stFile:
-    let path = request.url.pathname.percentDecode()
-    if ctx.canRewriteForCGICompat(path):
-      let url = parseURL0("cgi-bin:" & path & request.url.search)
-      if url != nil:
-        request.url = url
   var typeBuf = request.url.scheme & '/' &
     ($request.httpMethod).toLowerAscii()
   var netPathSeen = false

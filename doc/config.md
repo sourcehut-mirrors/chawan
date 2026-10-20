@@ -337,24 +337,6 @@ menu-file = "\$CHA_DIR/"
 : Path for the menu file.  See the Menu section of
   [**cha-api**](api.md#Menu)(7) for how to use it.
 
-w3m-cgi-compat = false
-: **boolean**
-
-: Enable local CGI compatibility with w3m.  In short, it redirects
-  `file:///cgi-bin/*` and `file:///$LIB/cgi-bin/*` to `cgi-bin:*`.
-  See [**cha-cgi**](cgi.md)(5) for details.
-
-  Note: parts of Chawan's security model depend on not confusing
-  protocols with each other, so this option is deprecated.  If you *really*
-  need it for some reason, you can use an `auto-browsecap` entry like
-
-  ```
-  file; %s%?; x-resource; x-cgioutput; \
-    x-match=^(file:///home/me/.chawan/cgi-bin/.*)|(file:///cgi-bin/.*)$
-  ```
-
-  to achive the same results (with the same caveat).
-
 download-dir = "\${TMPDIR:-/tmp}/"
 : **path**
 
