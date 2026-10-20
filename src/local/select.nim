@@ -72,6 +72,12 @@ proc toJS*(ctx: JSContext; x: SelectOption): JSValue =
     return JS_NULL
   return ctx.toJS(x.s)
 
+proc checkMap(this: SelectBuilder; ctx: JSContext): Opt[void] =
+  if this.map == nil:
+    JS_ThrowTypeError(ctx, "select menu already opened")
+    return err()
+  ok()
+
 jsClassDef(SelectBuilder):
   # public
   proc newSelectBuilder(map: ActionMap; options: sink seq[SelectOption] = @[];
@@ -93,6 +99,7 @@ jsClassDef(SelectBuilder):
   # public
   proc addKey(ctx: JSContext; this: SelectBuilder; key: openArray[char]):
       Opt[void] =
+    ?this.checkMap(ctx)
     let fun = ctx.newFunction([], "select.setCursorY(" & $this.options.len &
       ");" & "select.click()")
     if JS_IsException(fun.vc):
@@ -106,6 +113,7 @@ jsClassDef(SelectBuilder):
   proc item(ctx: JSContext; this: SelectBuilder; optionType: SelectOptionType;
       s: sink string; cmd: JSCallback; jsKey = JS_UNDEFINED.vc): Opt[void] {.
       jsmfunc("item", sotItem), jsmfunc("menu", sotMenu).} =
+    ?this.checkMap(ctx)
     if not JS_IsUndefined(jsKey):
       var key: DOMString
       ?ctx.fromJS(jsKey, key)
@@ -115,13 +123,17 @@ jsClassDef(SelectBuilder):
     ok()
 
   # public
-  proc line(this: SelectBuilder; s: sink string = "") {.jsfunc.} =
+  proc line(ctx: JSContext; this: SelectBuilder; s: sink string = ""):
+      Opt[void] {.jsfunc.} =
+    ?this.checkMap(ctx)
     this.options.add(SelectOption(s: s, optionType: sotNop))
     this.callbacks.add(JSCallback(nil))
+    ok()
 
   # public
   proc bindKey(ctx: JSContext; this: SelectBuilder; cmd: JSCallback;
       key: sink string): Opt[void] {.jsfunc: "bind".} =
+    ?this.checkMap(ctx)
     this.map.addAction(key, cmd.toJSValue())
     ok()
 
