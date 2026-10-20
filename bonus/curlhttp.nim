@@ -565,13 +565,17 @@ type IpClass = enum
   icPublic, ic410, ic4172, ic4192, ic6fd, ic4Loopback, ic6Loopback
 
 proc getIpClass(ip: string): IpClass =
-  if ip.startsWith("4127") or ip == "40.0.0.0":
+  if ip.startsWith("4127.") or ip == "40.0.0.0":
     return ic4Loopback
-  if ip.startsWith("410"):
+  if ip.startsWith("410."):
     return ic410
-  if ip.startsWith("4172"):
-    return ic4172
-  if ip.startsWith("4192"):
+  if ip.len > 7 and ip[7] == '.':
+    # 172.1[6789].x.x or 172.2x.x.x or 172.3[01].x.x
+    if ip.startsWith("4172.1") and ip[6] in '6'..'9' or
+        ip.startsWith("4172.2") or
+        ip.startsWith("4172.3") and ip[6] in '0'..'1':
+      return ic4172
+  if ip.startsWith("4192.168."):
     return ic4192
   if ip.startsWith("6fd"):
     return ic6fd
@@ -594,7 +598,8 @@ proc curlPreRequest(clientp: pointer; conn_primary_ip, conn_local_ip: cstring;
     if originAddr.len > 0:
       let originClass = getIpClass(originAddr)
       let ourClass = getIpClass(ours)
-      if originClass == icPublic and ourClass > icPublic:
+      if originClass == icPublic and ourClass > icPublic or
+          originClass < ic4Loopback and ourClass >= ic4Loopback:
         puts("Cha-Control: ConnectionError DisallowedSubnet\n")
         quit(1)
     buf &= ours

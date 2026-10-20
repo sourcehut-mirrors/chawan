@@ -405,7 +405,7 @@ test_charset: test/charset/run.sh $(OBJDIR)/chagashi_test test/charset/basic tes
 test/nim/%: test/nim/%.nim
 	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
 
-test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie
+test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie tlcgi
 test_bin += $(foreach name,$(test_names),test/nim/$(name))
 
 test/nim/ttwtstr: $(twtstr)
@@ -419,6 +419,7 @@ test/nim/tlibregexp: src/js/libregexp.nim
 test/nim/tchahash: src/utils/chahash.nim
 test/nim/tchaos: $(chaos)
 test/nim/tcookie: src/config/cookie.nim $(chafile) $(chaos) $(dynstream)
+test/nim/tlcgi: $(lcgi)
 
 .PHONY: test_nim
 test_nim: $(test_bin)
