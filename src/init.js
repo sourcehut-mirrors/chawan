@@ -585,7 +585,7 @@ Pager.prototype.searchNext = async function(n = 1) {
         buffer.markPos0();
         const y = buffer.cursory;
         await buffer.cursorNextMatch(regex, wrap, true, n);
-        if ((y > buffer.cursory) != (n < 0))
+        if (y != buffer.cursory && (y > buffer.cursory) != (n < 0))
             pager.alert("Search wrapped");
         buffer.markPos();
     } else
