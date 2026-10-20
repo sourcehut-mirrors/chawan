@@ -243,8 +243,8 @@ proc onReadCookieStream(response: Response) =
     var headers: seq[string] = @[]
     while i - 1 < opaque.buffer.len and opaque.buffer[i - 1] != '\n':
       let header = opaque.buffer.until({'\n', '\r'}, i)
-      headers.add(header)
       i += header.len + 1
+      headers.add(header)
     let cookieJar = pager.cookieJars.getOrDefault(jarId)
     let url = parseURL0(urls)
     let persist = persists != "0"
@@ -321,7 +321,7 @@ proc loadAutoMailcap(pager: Pager) =
   pager.autoMailcap.parseBuiltin(DefaultAutoMailcap)
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
-    alerts: seq[string]; loader: FileLoader; loaderPid: int;
+    alerts: sink seq[string]; loader: FileLoader; loaderPid: int;
     console: Console; timeouts: ptr TimeoutState): Pager =
   let pager = jsNew PagerObj(
     config: config,
@@ -1259,7 +1259,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   result.userAgent = loaderConfig.defaultHeaders.getFirst("User-Agent")
 
 proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
-    cookieJarId: string) =
+    cookieJarId: sink string) =
   if loaderConfig.cookieMode != cmNone:
     var cookieJar = pager.cookieJars.getOrDefault(cookieJarId)
     if cookieJar == nil:
@@ -2298,8 +2298,7 @@ jsClassDef(Pager):
     let stream = newPosixStream(fd)
     # add a reference to parent's cached source; it will be removed when the
     # buffer is deleted
-    let loader = pager.loader
-    discard loader.shareCachedItem(init.cacheId, loader.clientPid)
+    discard pager.loader.shareCachedItem(init.cacheId, pager.loader.clientPid)
     let iface2 = pager.addInterface(init, stream, iface.phandle)
     if iface2 != nil:
       # I need numLines so that setCursorY works immediately

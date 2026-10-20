@@ -424,7 +424,7 @@ proc findNextMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
       if not wrap:
         break
       y = if forward: 0 else: bc.lines.high
-    let s = bc.lines[y].str
+    let s {.cursor.} = bc.lines[y].str
     if not forward and b < 0:
       b = s.len
     let cap = if forward:
@@ -1293,11 +1293,11 @@ const InputTypePrompt = [
 
 proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
   bc.restoreFocus()
-  case input.inputType
+  return case input.inputType
   of itFile:
     #TODO we should somehow extract the path name from the current file
     bc.setFocus(input.asElement)
-    return ClickResult(t: crtReadFile)
+    ClickResult(t: crtReadFile)
   of itCheckbox:
     input.setChecked(not input.checked)
     if bc.config.scripting != smFalse:
@@ -1307,7 +1307,7 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
       bc.window.fireEvent(satChange, input.asEventTarget, bubbles = true,
         cancelable = true, trusted = true)
     bc.maybeReshape()
-    return initClickResult()
+    initClickResult()
   of itRadio:
     let wasChecked = input.checked
     input.setChecked(true)
@@ -1318,35 +1318,29 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
       bc.window.fireEvent(satChange, input.asEventTarget, bubbles = true,
         cancelable = true, trusted = true)
     bc.maybeReshape()
-    return initClickResult()
+    initClickResult()
   of itReset:
     if input.form != nil:
       input.form.resetForm(nil)
       bc.maybeReshape()
-    return initClickResult()
+    initClickResult()
   of itSubmit, itButton:
     if input.form != nil:
       return initClickResult(bc.submitFormClick(input.form,
         input.asHTMLElement))
-    return initClickResult()
+    initClickResult()
   else:
     # default is text.
     var prompt = InputTypePrompt[input.inputType]
     if input.inputType == itRange:
       prompt &= " (" & input.asElement.attr(satMin) & ".." &
         input.asElement.attr(satMax) & ")"
+    prompt &= ": "
     bc.setFocus(input.asElement)
     if input.inputType == itPassword:
-      return ClickResult(
-        t: crtReadPassword,
-        prompt: prompt & ": ",
-        value: input.value
-      )
-    return ClickResult(
-      t: crtReadText,
-      prompt: prompt & ": ",
-      value: input.value
-    )
+      ClickResult(t: crtReadPassword, prompt: prompt, value: input.value)
+    else:
+      ClickResult(t: crtReadText, prompt: prompt, value: input.value)
 
 proc click(bc: BufferContext; clickable: Element): ClickResult =
   case clickable.tagType

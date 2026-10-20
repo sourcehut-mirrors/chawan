@@ -365,6 +365,7 @@ proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
   var flags = flags
   if contentType != "":
     flags.incl(bifForceType)
+  let shortContentType = contentType.untilLower(';')
   jsNew BufferInitObj(
     config: config,
     loaderConfig: loaderConfig,
@@ -374,7 +375,7 @@ proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     redirectDepth: redirectDepth,
     flags: flags,
     contentType: contentType,
-    shortContentType: contentType.untilLower(';'),
+    shortContentType: shortContentType,
     width: attrs.width,
     height: attrs.height - 1,
     request: request,
@@ -662,13 +663,16 @@ const ClickResultReadLine* = {crtReadText, crtReadPassword, crtReadFile}
 proc initClickResult*(): ClickResult =
   ClickResult(t: crtNone)
 
-proc initClickResult*(open: Request; contentType = ""): ClickResult =
-  if open == nil:
-    return initClickResult()
-  return ClickResult(t: crtOpen, open: open, contentType: contentType)
+proc initClickResult*(open: Request; contentType: sink string = ""):
+    ClickResult =
+  if open != nil:
+    ClickResult(t: crtOpen, open: open, contentType: contentType)
+  else:
+    initClickResult()
 
-proc initClickResult*(open: RawRequest; contentType = ""): ClickResult =
-  return ClickResult(
+proc initClickResult*(open: RawRequest; contentType: sink string = ""):
+    ClickResult =
+  ClickResult(
     t: crtOpen,
     open: newRequest(open),
     contentType: contentType
