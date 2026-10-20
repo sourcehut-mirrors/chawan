@@ -5,7 +5,6 @@ display:
 - dark mode (basically max Y)
 config:
 - important: config editor
-- $TERM-based display config
 - add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
 	* also some way to set permissions for RPC calls
 mailcap:
@@ -28,7 +27,6 @@ network:
 javascript:
 - ReadableStream
 - separate console for each buffer
-- CORS
 - PutForwards
 layout:
 - details element
