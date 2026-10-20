@@ -481,9 +481,9 @@ proc matchesLocalName*(qualifiedName, localName: CAtom): bool =
     return qualifiedName == localName
   return ($qualifiedName).toOpenArray(i, ($qualifiedName).high) == $localName
 
-proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtomRaw): JSCode =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): JSCode =
   if JS_IsNull(val):
-    res = CAtomNullRaw
+    res = CAtomNull
   else:
     var len: csize_t
     let cs = JS_ToCStringLen(ctx, len, val)
@@ -496,17 +496,11 @@ proc fromJSImpl(ctx: JSContext; val: JSValueConst; res: var CAtomRaw): JSCode =
     {.push overflowChecks: off.}
     let H = cast[int](len) - 1
     {.pop.}
-    res = cstring(cs).toOpenArray(0, H).toAtomRaw()
+    res = cstring(cs).toOpenArray(0, H).toAtom()
     JS_FreeCString(ctx, cs)
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): JSCode =
-  var atom: CAtomRaw
-  let status = ctx.fromJSImpl(val, atom)
-  res = CAtom(atom)
-  status
-
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var CAtom): JSCode =
+proc fromJS(ctx: JSContext; atom: JSAtom; res: var CAtom): JSCode =
   if atom == JS_ATOM_NULL:
     res = CAtomNull
   else:
@@ -543,12 +537,6 @@ proc fromJS*(ctx: JSContext; vals: openArray[JSValueConst];
   res = move(tmp)
   fjOk
 
-proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): JSCode =
-  var ca: CAtom
-  ?ctx.fromJS(val, ca)
-  res = ca.toStaticAtom()
-  fjOk
-
 type FromIdxResult* = enum
   fiIdx, fiStr, fiErr
 
@@ -572,8 +560,8 @@ proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32;
     return fiStr
   fiErr
 
-proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32;
-    s: var CAtom): FromIdxResult =
+proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32; s: var CAtom):
+    FromIdxResult =
   let res = ctx.fromIdx(atom, idx)
   if res != fiStr:
     return res
