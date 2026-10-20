@@ -526,8 +526,6 @@ proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
 
 proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
     targetPath: string; fileOutput: var OutputHandle; osent: var uint64): bool =
-  fileOutput = nil
-  osent = 0
   discard mkdir(cstring(ctx.config.tmpdir), 0o700)
   discard unlink(cstring(targetPath))
   let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_EXCL, 0o600)
@@ -1657,8 +1655,8 @@ proc redirectToFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
   let output = ctx.findOutput(outputId, rclient)
   var success = false
   if output != nil:
-    var fileOutput: OutputHandle
-    var sent: uint64
+    var fileOutput: OutputHandle = nil
+    var sent = 0'u64
     success = ctx.redirectToFile(output, targetPath, fileOutput, sent)
     let contentLen = if output.parent != nil:
       output.parent.contentLen
