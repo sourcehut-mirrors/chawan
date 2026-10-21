@@ -1305,6 +1305,7 @@ proc cursorHome(term: Terminal): Opt[void] =
     return term.cursorGoto(0, 0)
   term.frame.cursorx = 0
   term.frame.cursory = 0
+  term.frame.flags.incl(ffCursorKnown)
   term.write(CSI & 'H')
 
 proc unsetCursorPos(term: Terminal) =
@@ -1684,6 +1685,7 @@ proc setScrollArea(term: Terminal; top, bottom: int): Opt[void] =
     term.frame.scrollBottom = bottom
     term.frame.cursorx = 0
     term.frame.cursory = 0
+    term.frame.flags.incl(ffCursorKnown)
     return term.write(CSI & $top & ";" & $bottom & 'r')
   ok()
 
@@ -1692,6 +1694,7 @@ proc resetScrollArea(term: Terminal): Opt[void] =
     term.frame.scrollBottom = -1
     term.frame.cursorx = 0
     term.frame.cursory = 0
+    term.frame.flags.incl(ffCursorKnown)
     return term.write(CSI & 'r')
   ok()
 
