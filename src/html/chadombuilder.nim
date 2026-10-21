@@ -30,10 +30,10 @@ type CharsetConfidence* = enum
 
 type
   HTML5ParserWrapper* {.final.} = ref object of RootObj
-    parser: HTML5Parser[ParentNode, CAtom]
+    parser: HTML5Parser[ParentNode]
     builder*: ChaDOMBuilder
 
-  ChaDOMBuilder {.final.} = ref object of DOMBuilder[ParentNode, CAtom]
+  ChaDOMBuilder {.final.} = ref object of DOMBuilder[ParentNode]
     ctx: JSContext
     charset*: Charset
     stoppedFromScript: bool
@@ -55,22 +55,6 @@ proc getDocumentImpl(builder: ChaDOMBuilder): ParentNode =
 
 proc atomToTagTypeImpl(builder: ChaDOMBuilder; atom: CAtom): TagType =
   return atom.toTagType()
-
-proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtom =
-  return tagType.view()
-
-proc namespaceToAtomImpl(builder: ChaDOMBuilder; ns: Namespace): CAtom =
-  return case ns
-  of nsNone: CAtomNull
-  of nsHTML: satNamespaceHTML.view()
-  of nsMathML: satNamespaceMathML.view()
-  of nsSVG: satNamespaceSVG.view()
-  of nsXLink: satNamespaceXLink.view()
-  of nsXml: satNamespaceXML.view()
-  of nsXmlns: satNamespaceXMLNS.view()
-
-proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
-  return s.toAtom()
 
 proc finish(builder: ChaDOMBuilder) =
   let document = builder.document
@@ -230,23 +214,6 @@ proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
     node.removeImpl(builder.ctx, suppressObservers = true)
   for child in toMove:
     builder.insertBefore(toNode, child, ParentNode(nil))
-
-proc sortAttrsImpl(builder: ChaDOMBuilder;
-    attrs: var seq[ParsedAttr[CAtom]]) =
-  if attrs.len > 1:
-    attrs.sort(proc(a, b: ParsedAttr[CAtom]): int {.nimcall.} =
-      cmp(uint32(a.name), uint32(b.name))
-    )
-    var j = 1
-    var prev = attrs[0].name
-    for i in 1 ..< attrs.len:
-      let name = attrs[i].name
-      if name != prev:
-        if j < i:
-          attrs[j] = move(attrs[i])
-        inc j
-      prev = name
-    attrs.setLen(j)
 
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
     attrs: seq[ParsedAttr[CAtom]]) =

@@ -4,8 +4,9 @@
 import std/unittest
 import std/streams
 
-import chame/tags
 import chame/minidom
+import chame/tags
+import html/catom
 
 proc escapeText(s: string, attributeMode = false): string =
   result = ""
@@ -63,6 +64,7 @@ proc `$`*(node: Node): string =
 # This is, in fact, standards-compliant behavior.
 # Don't ask.
 test "simple html serialization test":
+  initCAtomFactory()
   const inhtml = """
 <!DOCTYPE html>
 <html>

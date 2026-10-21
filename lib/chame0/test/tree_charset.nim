@@ -4,8 +4,7 @@ import chame/minidom_cs
 import encoding/charset
 import std/streams
 
-proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
-    labels: openArray[string]) =
+proc runTest(test: TCTest; scripting: bool; labels: openArray[string]) =
   let ss = newStringStream(test.data)
   let opts = HTML5ParserOpts[Node](scripting: scripting)
   assert test.fragment.isNone
@@ -14,7 +13,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
     let cs = getCharset(s)
     assert cs != csUnknown
     charsets.add(cs)
-  let pdoc = parseHTML(ss, opts, charsets, factory = factory)
+  let pdoc = parseHTML(ss, opts, charsets)
   #[
   var ins = ""
   for x in test.document.childList:
@@ -30,18 +29,17 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
 
 const rootpath = "test/"
 
-proc runTests(filename: string, labels: openArray[string]) =
-  let factory = newMAtomFactory()
-  let tests = parseTests(readFile(rootpath & filename), factory)
+proc runTests(filename: string; labels: openArray[string]) =
+  let tests = parseTests(readFile(rootpath & filename))
   for test in tests:
     case test.script
-    of SCRIPT_OFF:
-      test.runTest(factory, scripting = false, labels)
-    of SCRIPT_ON:
-      test.runTest(factory, scripting = true, labels)
-    of SCRIPT_BOTH:
-      test.runTest(factory, scripting = false, labels)
-      test.runTest(factory, scripting = true, labels)
+    of smOff:
+      test.runTest(scripting = false, labels)
+    of smOn:
+      test.runTest(scripting = true, labels)
+    of smBoth:
+      test.runTest(scripting = false, labels)
+      test.runTest(scripting = true, labels)
 
 test "sjis.dat":
   runTests("sjis.dat", ["utf8", "sjis", "latin1"])

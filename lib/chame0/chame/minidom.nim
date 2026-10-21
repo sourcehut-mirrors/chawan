@@ -9,9 +9,9 @@
 ## [chame/minidom_cs](minidom_cs.html).
 
 import std/algorithm
-import std/hashes
 import std/streams
 
+import html/catom
 import utils/twtstr
 
 import dombuilder
@@ -26,54 +26,9 @@ const MAtomFactoryStrMapLength = 1024 # must be a power of 2
 static:
   doAssert (MAtomFactoryStrMapLength and (MAtomFactoryStrMapLength - 1)) == 0
 
-type
-  MAtom* = distinct int
-
-  MAtomFactory* = ref object of RootObj
-    strMap: array[MAtomFactoryStrMapLength, seq[MAtom]]
-    atomMap: seq[string]
-
-# Mandatory Atom functions
-proc `==`*(a, b: MAtom): bool {.borrow.}
-proc hash*(atom: MAtom): Hash {.borrow.}
-
-proc strToAtom*(factory: MAtomFactory; s: string): MAtom
-
-const MAtomNull = MAtom(0)
-
-proc newMAtomFactory*(): MAtomFactory =
-  const minCap = int(TagType.high) + 1
-  let factory = MAtomFactory(
-    atomMap: newSeqOfCap[string](minCap),
-  )
-  factory.atomMap.add("") # skip ttUnknown
-  for tagType in TagType(int(ttUnknown) + 1) .. TagType.high:
-    discard factory.strToAtom($tagType)
-  return factory
-
-proc strToAtom*(factory: MAtomFactory; s: string): MAtom =
-  let h = s.hash()
-  let i = h and (factory.strMap.len - 1)
-  for atom in factory.strMap[i]:
-    if factory.atomMap[int(atom)] == s:
-      # Found
-      return atom
-  # Not found
-  let atom = MAtom(factory.atomMap.len)
-  factory.atomMap.add(s)
-  factory.strMap[i].add(atom)
-  return atom
-
-proc tagTypeToAtom*(factory: MAtomFactory; tagType: TagType): MAtom =
-  assert tagType != ttUnknown
-  return MAtom(tagType)
-
-proc atomToStr*(factory: MAtomFactory; atom: MAtom): string =
-  return factory.atomMap[int(atom)]
-
 # Node types
 type
-  Attribute* = ParsedAttr[MAtom]
+  Attribute* = ParsedAttr[CAtom]
 
   Node* = ref object of RootObj
     childList*: seq[Node]
@@ -85,7 +40,6 @@ type
   Comment* = ref object of CharacterData
 
   Document* = ref object of Node
-    factory*: MAtomFactory
 
   Text* = ref object of CharacterData
 
@@ -95,7 +49,7 @@ type
     systemId*: string
 
   Element* = ref object of Node
-    localName*: MAtom
+    localName*: CAtom
     namespace*: Namespace
     attrs*: seq[Attribute]
     document*: Document
@@ -106,13 +60,12 @@ type
     content*: DocumentFragment
 
 type
-  MiniDOMBuilder* = ref object of DOMBuilder[Node, MAtom]
+  MiniDOMBuilder* = ref object of DOMBuilder[Node]
     document*: Document
-    factory*: MAtomFactory
 
 type
   DOMBuilderImpl = MiniDOMBuilder
-  AtomImpl = MAtom
+  AtomImpl = CAtom
   HandleImpl = Node
 
 include htmlparseriface
@@ -136,7 +89,7 @@ iterator descendants*(node: Node): Node =
 proc findAttribute*(element: Element; name: string): int =
   if element.attrs.len == 0:
     return -1
-  let name = element.document.factory.strToAtom(name)
+  let name = name.toAtom()
   for i, it in element.attrs.mpairs:
     if it.name == name:
       return i
@@ -159,7 +112,7 @@ proc clone*(node: Node; deep: bool): Node =
   elif node of Comment:
     Node(Comment(data: Comment(node).data))
   elif node of Document:
-    Node(Document(factory: Document(node).factory))
+    Node(Document())
   elif node of DocumentType:
     let doctype = DocumentType(node)
     Node(DocumentType(
@@ -177,16 +130,8 @@ proc clone*(node: Node; deep: bool): Node =
       copy.childList.add(child.clone(deep = true))
   return copy
 
-proc toTagType*(atom: MAtom): TagType {.inline.} =
-  if int(atom) <= int(high(TagType)):
-    return TagType(atom)
-  return ttUnknown
-
 proc tagType*(element: Element): TagType =
   return element.localName.toTagType()
-
-proc cmp*(a, b: MAtom): int {.inline.} =
-  return cmp(int(a), int(b))
 
 # We use this to validate input strings, since htmltokenizer/htmlparser does no
 # input validation.
@@ -228,27 +173,14 @@ proc toValidUTF8(s: string): string =
       result &= "\uFFFD"
       inc i
 
-proc localNameStr*(element: Element): string =
-  return element.document.factory.atomToStr(element.localName)
+proc localNameStr*(element: Element): lent string =
+  $element.localName
 
 iterator attrsStr*(element: Element): tuple[name, value: string] =
-  let factory = element.document.factory
   for attr in element.attrs:
-    yield (factory.atomToStr(attr.name), attr.value)
+    yield ($attr.name, attr.value)
 
-# htmlparseriface implementation
-proc strToAtomImpl(builder: MiniDOMBuilder, s: string): MAtom =
-  return builder.factory.strToAtom(s)
-
-proc tagTypeToAtomImpl(builder: MiniDOMBuilder; tagType: TagType): MAtom =
-  return builder.factory.tagTypeToAtom(tagType)
-
-proc namespaceToAtomImpl(builder: MiniDOMBuilder; ns: Namespace): MAtom =
-  case ns
-  of nsNone: return MAtomNull
-  else: return builder.factory.strToAtom($ns)
-
-proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: MAtom): TagType =
+proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: CAtom): TagType =
   return atom.toTagType()
 
 proc getDocumentImpl(builder: MiniDOMBuilder): Node =
@@ -257,7 +189,7 @@ proc getDocumentImpl(builder: MiniDOMBuilder): Node =
 proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): Node =
   return handle.parentNode
 
-proc createElement(document: Document; localName: MAtom; namespace: Namespace):
+proc createElement(document: Document; localName: CAtom; namespace: Namespace):
     Element =
   let element = if localName.toTagType() == ttTemplate and
       namespace == nsHTML:
@@ -272,17 +204,16 @@ proc createElement(document: Document; localName: MAtom; namespace: Namespace):
   return element
 
 proc createHTMLElementImpl(builder: MiniDOMBuilder): Node =
-  let localName = builder.factory.tagTypeToAtom(ttHtml)
-  return builder.document.createElement(localName, nsHTML)
+  builder.document.createElement(ttHtml.view(), nsHTML)
 
-proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: MAtom;
+proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: Node; attrs: sink seq[Attribute]):
     Node =
   let element = builder.document.createElement(localName, namespace)
   element.attrs = move(attrs)
   return element
 
-proc getLocalNameImpl(builder: MiniDOMBuilder; handle: Node): MAtom =
+proc getLocalNameImpl(builder: MiniDOMBuilder; handle: Node): CAtom =
   return Element(handle).localName
 
 proc getNamespaceImpl(builder: MiniDOMBuilder; handle: Node): Namespace =
@@ -473,27 +404,11 @@ proc elementPoppedImpl(builder: MiniDOMBuilder; element: Node) =
         found.childList.add(child.clone(deep = true))
     break
 
-proc sortAttrsImpl(builder: MiniDOMBuilder; attrs: var seq[Attribute]) =
-  if attrs.len > 1:
-    attrs.sort(proc(a, b: Attribute): int {.nimcall.} =
-      cmp(a.name, b.name)
-    )
-    var j = 1
-    var prev = attrs[0].name
-    for i in 1 ..< attrs.len:
-      let name = attrs[i].name
-      if name != prev:
-        if j < i:
-          attrs[j] = move(attrs[i])
-        inc j
-      prev = name
-    attrs.setLen(j)
-
 proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
     attrs: seq[Attribute]) =
   let element = Element(handle)
   element.attrs.add(attrs)
-  builder.sortAttrsImpl(element.attrs)
+  element.attrs.sortAttrs()
 
 proc setQuirksModeImpl(builder: MiniDOMBuilder; quirksMode: QuirksMode) =
   discard
@@ -514,16 +429,11 @@ proc setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
 proc setScriptAlreadyStartedImpl(builder: MiniDOMBuilder; script: Node) =
   discard
 
-proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
-  let document = Document(factory: factory)
-  let builder = MiniDOMBuilder(
-    document: document,
-    factory: factory
-  )
-  return builder
+proc newMiniDOMBuilder*(): MiniDOMBuilder =
+  let document = Document()
+  MiniDOMBuilder(document: document)
 
-proc parseFromStream(parser: var HTML5Parser[Node, MAtom];
-    inputStream: Stream) =
+proc parseFromStream(parser: var HTML5Parser[Node]; inputStream: Stream) =
   var buffer {.noinit.}: array[4096, char]
   while true:
     let n = inputStream.readData(addr buffer[0], buffer.len)
@@ -541,22 +451,22 @@ proc parseFromStream(parser: var HTML5Parser[Node, MAtom];
       res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
   parser.finish()
 
-proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node]();
-    factory = newMAtomFactory()): Document =
+proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node]()):
+    Document =
   ## Read, parse and return an HTML document from `inputStream`, using
-  ## parser options `opts` and MAtom factory `factory`.
+  ## parser options `opts`.
   ##
   ## `inputStream` is not required to be seekable.
   ##
   ## For a description of `HTML5ParserOpts`, see the `htmlparser` module's
   ## documentation.
-  let builder = newMiniDOMBuilder(factory)
+  let builder = newMiniDOMBuilder()
   var parser = initHTML5Parser(builder, opts)
   parser.parseFromStream(inputStream)
   return builder.document
 
 proc parseHTMLFragment*(inputStream: Stream; element: Element;
-    opts: HTML5ParserOpts[Node]; factory = newMAtomFactory()): seq[Node] =
+    opts: HTML5ParserOpts[Node]): seq[Node] =
   ## Read, parse and return the children of an HTML fragment from `inputStream`,
   ## using context element `element` and parser options `opts`.
   ##
@@ -568,11 +478,10 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   ##
   ## Note: the members `ctx` and `openElementsInit` of `opts` are
   ## overridden (in accordance with the standard).
-  let builder = newMiniDOMBuilder(factory)
+  let builder = newMiniDOMBuilder()
   let document = builder.document
-  let htmlAtom = builder.factory.tagTypeToAtom(ttHtml)
   let root = Element(
-    localName: htmlAtom,
+    localName: ttHtml.view(),
     namespace: nsHTML,
     document: document
   )

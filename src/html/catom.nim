@@ -371,6 +371,16 @@ template view*(tagType: TagType): CAtom =
   assert tmp != ttUnknown
   CAtom(tmp)
 
+template view*(ns: Namespace): CAtom =
+  case ns
+  of nsNone: CAtomNull
+  of nsHTML: satNamespaceHTML.view()
+  of nsMathML: satNamespaceMathML.view()
+  of nsSVG: satNamespaceSVG.view()
+  of nsXLink: satNamespaceXLink.view()
+  of nsXml: satNamespaceXML.view()
+  of nsXmlns: satNamespaceXMLNS.view()
+
 proc toAtomLower*(s: openArray[char]): CAtom =
   let factory = getFactory()
   var added = false

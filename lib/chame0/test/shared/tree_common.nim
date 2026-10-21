@@ -4,9 +4,9 @@ import std/strutils
 import std/tables
 import std/unittest
 
-import test1
 import chame/htmlparser
 import chame/minidom
+import html/catom
 
 type
   TCError = object
@@ -20,7 +20,7 @@ type
     ctx: Element
 
   ScriptMode = enum
-    SCRIPT_BOTH, SCRIPT_OFF, SCRIPT_ON
+    smBoth, smOff, smOn
 
   TCTest = object
     data: string
@@ -34,8 +34,60 @@ type
     s: string
     i: int
     pi: int
-    factory: MAtomFactory
     linei: int
+
+proc escapeText(s: string, attributeMode = false): string =
+  result = ""
+  var nbspMode = false
+  var nbspPrev = '\0'
+  for c in s:
+    if nbspMode:
+      if c == char(0xA0):
+        result &= "&nbsp;"
+      else:
+        result &= nbspPrev & c
+      nbspMode = false
+    elif c == '&':
+      result &= "&amp;"
+    elif c == char(0xC2):
+      nbspMode = true
+      nbspPrev = c
+    elif attributeMode and c == '"':
+      result &= "&quot;"
+    elif not attributeMode and c == '<':
+      result &= "&lt;"
+    elif not attributeMode and c == '>':
+      result &= "&gt;"
+    else:
+      result &= c
+
+proc `$`(node: Node): string =
+  result = ""
+  if node of Element:
+    let element = Element(node)
+    var x = ""
+    if element.namespace == nsSVG:
+      x = "svg "
+    elif element.namespace == nsMathML:
+      x = "math "
+    result = "<" & x & element.localNameStr
+    for k, v in element.attrsStr:
+      result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
+    result &= ">"
+    for node in element.childList:
+      result &= $node
+    result &= "</" & x & element.localNameStr & ">"
+  elif node of Text:
+    let text = Text(node)
+    result = text.data.escapeText()
+  elif node of Comment:
+    result = "<!-- " & Comment(node).data & "-->"
+  elif node of DocumentType:
+    result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
+  elif node of Document:
+    result = "Node of Document"
+  else:
+    assert false
 
 func has(ctx: TCTestParser): bool =
   return ctx.i < ctx.s.len
@@ -105,7 +157,7 @@ proc parseTestFragment(ctx: var TCTestParser): TCFragment =
   of FT_HTML: nsHTML
   let element = Element(
     namespace: namespace,
-    localName: ctx.factory.strToAtom(line)
+    localName: line.toAtom()
   )
   return TCFragment(
     fragmentType: fragmentType,
@@ -166,7 +218,7 @@ func after(s: string, c: set[char]): string =
 func after(s: string, c: char): string = s.after({c})
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
-  result = Document(factory: ctx.factory)
+  result = Document()
   var stack = @[Node(result)]
   template top: auto = stack[^1]
   var thistext: Text = nil
@@ -228,7 +280,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
         HTMLTemplateElement()
       else:
         Element()
-      element.localName = ctx.factory.strToAtom(nameStr)
+      element.localName = nameStr.toAtom()
       element.namespace = namespace
       element.document = result
       top.childList.add(element)
@@ -251,20 +303,20 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       assert '=' in str
       var name = str.until('=')
       var prefix = ""
-      var ns: MAtom
+      var ns: CAtom
       if name.startsWith("xml "):
-        ns = ctx.factory.strToAtom($nsXml)
+        ns = satNamespaceXML.view()
         prefix = "xml:"
         name = name.substr("xml ".len)
       elif name.startsWith("xmlns "):
-        ns = ctx.factory.strToAtom($nsXmlns)
+        ns = satNamespaceXMLNS.view()
         prefix = "xmlns:"
         name = name.substr("xmlns ".len)
       elif name.startsWith("xlink "):
-        ns = ctx.factory.strToAtom($nsXLink)
+        ns = satNamespaceXLink.view()
         prefix = "xlink:"
         name = name.substr("xlink ".len)
-      let na = ctx.factory.strToAtom(prefix & name)
+      let na = (prefix & name).toAtom()
       let value = str.after('=')[1..^2]
       Element(top).attrs.add(Attribute(name: na, value: value, namespace: ns))
   while indent > 1:
@@ -281,9 +333,9 @@ proc parseTest(ctx: var TCTestParser): TCTest =
     of "#document-fragment":
       t.fragment = some(ctx.parseTestFragment())
     of "#script-off":
-      t.script = SCRIPT_OFF
+      t.script = smOff
     of "#script-on":
-      t.script = SCRIPT_ON
+      t.script = smOn
     of "#document":
       assert t.document == nil
       t.document = ctx.parseTestDocument()
@@ -292,9 +344,9 @@ proc parseTest(ctx: var TCTestParser): TCTest =
       break
   return t
 
-proc parseTests*(s: string, factory: MAtomFactory): seq[TCTest] =
+proc parseTests*(s: string): seq[TCTest] =
   result = @[]
-  var parser = TCTestParser(s: s, factory: factory)
+  var parser = TCTestParser(s: s)
   while parser.i < s.len:
     let test = parser.parseTest()
     result.add(test)
@@ -333,3 +385,4 @@ proc checkTest(nodein, nodep: Node) =
     for i in 0 ..< nodein.childList.len:
       checkTest(nodein.childList[i], nodep.childList[i])
 
+initCAtomFactory()

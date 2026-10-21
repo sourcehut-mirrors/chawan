@@ -4,4 +4,4 @@ type
 
   DOMBuilderBase* = ref object of RootObj
 
-  DOMBuilder*[Handle, Atom] = ref object of DOMBuilderBase
+  DOMBuilder*[Handle] = ref object of DOMBuilderBase

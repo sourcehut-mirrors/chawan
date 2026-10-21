@@ -47,10 +47,9 @@ method setEncoding(builder: CharsetMiniDOMBuilder; encoding: string):
     builder.charset = charset
   return seStop
 
-proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
-  let document = Document(factory: factory)
-  let builder = CharsetMiniDOMBuilder(document: document, factory: factory)
-  return builder
+proc newCharsetMiniDOMBuilder(): CharsetMiniDOMBuilder =
+  let document = Document()
+  CharsetMiniDOMBuilder(document: document)
 
 #TODO this should be handled by decoderstream
 proc bomSniff(inputStream: Stream): Charset =
@@ -66,8 +65,7 @@ proc bomSniff(inputStream: Stream): Charset =
   return csUnknown
 
 proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node];
-    charsets: seq[Charset]; seekable = true; factory = newMAtomFactory()):
-    Document =
+    charsets: seq[Charset]; seekable = true): Document =
   ## Read, parse and return an HTML document from `inputStream`.
   ##
   ## `charsets` is a list of input character sets to try. If empty, it will be
@@ -101,7 +99,7 @@ proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node];
   ## even `<meta charset=...` tags will be disregarded.
   ## (TODO: this should be improved in the future; theoretically we could still
   ## switch between ASCII-compatible charsets before non-ASCII is encountered.)
-  let builder = newCharsetMiniDOMBuilder(factory)
+  let builder = newCharsetMiniDOMBuilder()
   var charsetStack: seq[Charset] = @[]
   for i in countdown(charsets.high, 0):
     charsetStack.add(charsets[i])
@@ -152,14 +150,14 @@ proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node];
       # A meta tag describing the charset has been found; force use of this
       # charset.
       inputStream.setPosition(0)
-      builder.document = Document(factory: factory)
+      builder.document = Document()
       charsetStack.add(builder.charset)
       seekable = false
       continue
     if ctx.failed and seekable:
       # Retry with another charset.
       inputStream.setPosition(0)
-      builder.document = Document(factory: factory)
+      builder.document = Document()
       continue
     break
   return builder.document

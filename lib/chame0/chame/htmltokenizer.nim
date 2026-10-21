@@ -1,8 +1,11 @@
 {.push raises: [].}
 
-import dombuilder
+import std/algorithm
+
 import entity_gen
 import tags
+
+import html/catom
 import utils/twtstr
 
 type TokenizerState* = enum
@@ -40,13 +43,12 @@ type
   TokenFlag* = enum
     tfQuirks, tfSelfClosing
 
-  Tokenizer*[Handle, Atom] = object
-    dombuilder*: DOMBuilder[Handle, Atom]
+  Tokenizer* = object
     tmp: string # temporary buffer (mentioned by the standard, but also used
                 # for attribute names/values and character data)
     startTag*: TagType # last start tag
-    attrName: Atom # atom representing attrn after the attribute name is closed
-    tagname*: Atom
+    attrName: CAtom # atom representing attrn after the attribute name is closed
+    tagname*: CAtom
     code: uint32 # codepoint of current numeric character reference
     entityEntryIdx: int16 # index in entityMap
     entityMatchIdx: int16 # last matching index in entityMap
@@ -64,7 +66,7 @@ type
     quote: char # dedupe states that only differ in their quoting
     entityNameIdx: int8 # index in entity.name
     entityMatchLen: int8 # last matching entity name length
-    attrs*: seq[ParsedAttr[Atom]]
+    attrs*: seq[ParsedAttr[CAtom]]
     charbuf*: string # flushed chars from tmp
     tagNameBuf*: string # buffer for storing the tag name & doctype name
     inputBufIdx*: int # last character consumed in input buf
@@ -103,25 +105,8 @@ proc startsWithIgnoreCase*(str, prefix: string): bool =
 proc equalsIgnoreCase*(s1, s2: string): bool =
   s1.len == s2.len and s1.startsWithIgnoreCase(s2)
 
-proc strToAtom*[Handle, Atom](tok: Tokenizer[Handle, Atom];
-    s: string): Atom =
-  mixin strToAtomImpl
-  tok.dombuilder.toDOMBuilderImpl().strToAtomImpl(s)
-
-proc namespaceToAtom[Handle, Atom](tok: Tokenizer[Handle, Atom];
-    namespace: Namespace): Atom =
-  mixin namespaceToAtomImpl
-  tok.dombuilder.toDOMBuilderImpl().namespaceToAtomImpl(namespace)
-
-proc toTagType[Handle, Atom](tok: Tokenizer[Handle, Atom]; atom: Atom):
-    TagType =
-  mixin atomToTagTypeImpl
-  tok.dombuilder.toDOMBuilderImpl().atomToTagTypeImpl(atom)
-
-proc initTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom]):
-    Tokenizer[Handle, Atom] =
-  Tokenizer[Handle, Atom](
-    dombuilder: dombuilder,
+proc initTokenizer*(): Tokenizer =
+  Tokenizer(
     entityEntryIdx: -1,
     entityMatchIdx: -1,
     chartok: ttWhitespace,
@@ -131,7 +116,7 @@ proc initTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom]):
 template reconsume(tok: var Tokenizer) =
   dec tok.inputBufIdx
 
-proc flushChars(tok: var Tokenizer) =
+proc flushCharsImpl(tok: var Tokenizer) =
   tok.t = tok.chartok
   tok.charbuf = move(tok.tmp)
   tok.chartok = ttWhitespace
@@ -295,21 +280,20 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
       tok.reconsume()
   return tok.rstate
 
-proc flushAttr[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
+proc flushAttr(tok: var Tokenizer) =
   # This can also be called with tok == ttEndTag, in that case we do
   # not want to flush attributes.
   if tok.t == ttStartTag:
-    tok.attrs.add(ParsedAttr[Atom](
+    tok.attrs.add(ParsedAttr[CAtom](
       name: move(tok.attrName),
-      namespace: tok.namespaceToAtom(tok.attrNamespace),
+      namespace: tok.attrNamespace.view(),
       value: move(tok.tmp)
     ))
   else:
     tok.tmp = ""
 
-proc flushAttrs[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
-  mixin sortAttrsImpl
-  tok.dombuilder.toDOMBuilderImpl().sortAttrsImpl(tok.attrs)
+proc flushAttrs(tok: var Tokenizer) =
+  tok.attrs.sortAttrs()
 
 type EatStrResult = enum
   esrFail, esrNext, esrSuccess
@@ -380,7 +364,7 @@ proc cmpAttrName(attr: tuple[name: string; namespace: Namespace]; s: string):
     int =
   cmp(attr.name, s)
 
-proc adjustAttrName[Handle, Atom](tok: var Tokenizer[Handle, Atom]): Atom =
+proc adjustAttrName(tok: var Tokenizer): CAtom =
   # it could be that the attr is in a specific namespace
   let i = AttrNamespaceMap.binarySearch(tok.tmp, cmpAttrName)
   if i >= 0:
@@ -389,14 +373,14 @@ proc adjustAttrName[Handle, Atom](tok: var Tokenizer[Handle, Atom]): Atom =
     tok.attrNamespace = nsNone
     if tok.tagNamespace == nsMathML:
       if tok.tmp == "definitionurl":
-        return tok.strToAtom("definitionURL")
+        return "definitionURL".toAtom()
     else: # SVG
       let i = AdjustedAttrNames.binarySearch(tok.tmp, cmpIgnoreCase)
       if i >= 0:
-        return tok.strToAtom(AdjustedAttrNames[i])
-  tok.strToAtom(tok.tmp)
+        return AdjustedAttrNames[i].toAtom()
+  tok.tmp.toAtom()
 
-proc flushStartTagName[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
+proc flushStartTagName(tok: var Tokenizer) =
   if tok.namespace != nsHTML and not tok.mathMLIntegrationPoint and
       not tok.htmlIntegrationPoint:
     tok.tagNamespace = tok.namespace
@@ -405,12 +389,12 @@ proc flushStartTagName[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
     else:
       -1
     if i >= 0:
-      tok.tagname = tok.strToAtom(AdjustedTagNames[i])
+      tok.tagname = AdjustedTagNames[i].toAtom()
     else:
-      tok.tagname = tok.strToAtom(tok.tagNameBuf)
+      tok.tagname = tok.tagNameBuf.toAtom()
   else:
-    let tagname = tok.strToAtom(tok.tagNameBuf)
-    let startTag = tok.toTagType(tagname)
+    let tagname = tok.tagNameBuf.toAtom()
+    let startTag = tagname.toTagType()
     case startTag
     of ttSvg: tok.tagNamespace = nsSVG
     of ttMath: tok.tagNamespace = nsMathML
@@ -419,17 +403,16 @@ proc flushStartTagName[Handle, Atom](tok: var Tokenizer[Handle, Atom]) =
     tok.tagname = tagname
 
 proc flushEndTagName(tok: var Tokenizer) =
-  tok.tagname = tok.strToAtom(tok.tagNameBuf)
+  tok.tagname = tok.tagNameBuf.toAtom()
 
 proc emitTmp(tok: var Tokenizer) =
   tok.chartok = ttCharacter
   tok.tmp = "</" & tok.tmp
 
 template startTagMatches(tok: Tokenizer): bool =
-  tok.startTag == tok.toTagType(tok.tagname)
+  tok.startTag == tok.tagname.toTagType()
 
-proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
-    ibuf: openArray[char]): TokenizeResult =
+proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
   var res = trDone
   var state = tok.state
   var ignoreLF = tok.ignoreLF
@@ -439,7 +422,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
   template flush_chars =
     if tok.tmp.len > 0:
       dec i
-      tok.flushChars()
+      tok.flushCharsImpl()
       res = trEmit
       break
   template emit(s: static string) =
@@ -923,7 +906,7 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
       case c
       of AsciiWhitespace, '/', '>', '=':
         if tok.tagNamespace == nsNone:
-          tok.attrName = tok.strToAtom(tok.tmp)
+          tok.attrName = tok.tmp.toAtom()
           tok.attrNamespace = nsNone
         else:
           tok.attrName = tok.adjustAttrName()
@@ -1422,14 +1405,14 @@ proc tokenize*[Handle, Atom](tok: var Tokenizer[Handle, Atom];
         tsScriptDataLessThanSign, tsScriptDataEscaped,
         tsScriptDataEscapedDash, tsScriptDataEscapedDashDash,
         tsScriptDataEscapedLessThanSign, tsScriptDataEscapedEndTagOpen}:
-    tok.flushChars()
+    tok.flushCharsImpl()
     res = trEmit
   tok.state = state
   tok.ignoreLF = ignoreLF
   tok.inputBufIdx = i
   res
 
-proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
+proc finish*(tok: var Tokenizer): TokenizeResult =
   let state = tok.state
   tok.state = tsData
   case state
@@ -1500,7 +1483,7 @@ proc finish*[Handle, Atom](tok: var Tokenizer[Handle, Atom]): TokenizeResult =
     return trDone
   else: discard
   if tok.tmp.len > 0:
-    tok.flushChars()
+    tok.flushCharsImpl()
     return trEmit
   trDone
 

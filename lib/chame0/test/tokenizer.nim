@@ -4,6 +4,7 @@ import std/unittest
 
 import chame/htmltokenizer
 import chame/minidom
+import html/catom
 
 proc hexValue*(c: char): int =
   if c in '0'..'9':
@@ -44,22 +45,20 @@ proc doubleEscape(input: string): string =
         esc = 0
   return s
 
-proc getAttrs(factory: MAtomFactory, o: JsonNode, esc: bool):
-    ParsedAttrs[MAtom] =
+proc getAttrs(o: JsonNode; esc: bool): ParsedAttrs[CAtom] =
   result = @[]
   for k, v in o:
-    let k = factory.strToAtom(k)
+    let k = k.toAtom()
     var v = v.getStr()
     if esc:
       v = v.doubleEscape()
-    result.add(ParsedAttr[MAtom](name: k, value: v))
+    result.add(ParsedAttr[CAtom](name: k, value: v))
 
-proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
-    name: var string; otherAttrs: var ParsedAttrs[MAtom];
-    flags: var set[TokenFlag]): TokenType =
+proc getToken(a: seq[JsonNode]; esc: bool; name: var string;
+    otherAttrs: var ParsedAttrs[CAtom]; flags: var set[TokenFlag]): TokenType =
   case a[0].getStr()
   of "StartTag":
-    otherAttrs = getAttrs(factory, a[2], esc)
+    otherAttrs = getAttrs(a[2], esc)
     if a.len > 3 and a[3].getBool():
       flags = {tfSelfClosing}
     name = a[1].getStr()
@@ -94,9 +93,9 @@ proc getToken(factory: MAtomFactory; a: seq[JsonNode]; esc: bool;
     assert false
     return ttComment
 
-proc checkEquals(factory: MAtomFactory; otok: TokenType;
-    tok: Tokenizer[Node, MAtom]; charbuf, desc, otherName: string;
-    otherAttrs: ParsedAttrs[MAtom]; flags: set[TokenFlag]) =
+proc checkEquals(otok: TokenType; tok: Tokenizer;
+    charbuf, desc, otherName: string; otherAttrs: ParsedAttrs[CAtom];
+    flags: set[TokenFlag]) =
   doAssert otok == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
     $otok & ")"
   var name = tok.tagNameBuf
@@ -108,10 +107,9 @@ proc checkEquals(factory: MAtomFactory; otok: TokenType;
       " otok name: " & otherName & ")"
     doAssert tok.flags == flags, desc
   of ttStartTag, ttEndTag:
-    let tagname = factory.strToAtom(name)
+    let tagname = name.toAtom()
     doAssert tok.tagname == tagname, desc & " (tok tagname: " &
-      factory.atomToStr(tok.tagname) & " otok tagname " &
-      factory.atomToStr(tagname) & ")"
+      $tok.tagname & " otok tagname " & $tagname & ")"
     if tok.t == ttStartTag: # otherwise a test incorrectly fails
       doAssert tok.flags == flags, desc
     if tok.t == ttStartTag:
@@ -120,7 +118,7 @@ proc checkEquals(factory: MAtomFactory; otok: TokenType;
       for attr in tok.attrs:
         if i > 0:
           attrs &= " "
-        attrs &= factory.atomToStr(attr.name)
+        attrs &= $attr.name
         attrs &= "="
         attrs &= "'" & attr.value & "'"
         inc i
@@ -129,15 +127,15 @@ proc checkEquals(factory: MAtomFactory; otok: TokenType;
       for attr in otherAttrs:
         if i > 0:
           oattrs &= " "
-        oattrs &= factory.atomToStr(attr.name)
+        oattrs &= $attr.name
         oattrs &= "="
         oattrs &= "'" & attr.value & "'"
         inc i
       doAssert tok.attrs == otherAttrs, desc & " (tok attrs: " & attrs &
         " otok attrs (" & oattrs & ")"
   of ttCharacter, ttWhitespace:
-    doAssert charbuf == otherName, desc & " (tok s: " & " otok s: " &
-      ")"
+    doAssert charbuf == otherName, desc & " (tok s: " & charbuf & " otok s: " &
+      otherName & ")"
   of ttComment:
     doAssert name == otherName, desc & " (tok s: " & name & " otok s: " &
       otherName & ")"
@@ -147,47 +145,43 @@ type TestContext = object
   charbuf: string
   output: seq[JsonNode]
   i: int
-  factory: MAtomFactory
   desc: string
   esc: bool
 
-proc checkCharbuf(ctx: var TestContext; tok: var Tokenizer[Node, MAtom]) =
+proc checkCharbuf(ctx: var TestContext; tok: var Tokenizer) =
   var otherName: string
-  var otherAttrs: ParsedAttrs[MAtom]
+  var otherAttrs: ParsedAttrs[CAtom]
   var flags: set[TokenFlag]
   if ctx.charbuf.len > 0 and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
-    let otok = getToken(ctx.factory, ctx.output[ctx.i].getElems(), ctx.esc,
-      otherName, otherAttrs, flags)
+    let otok = getToken(ctx.output[ctx.i].getElems(), ctx.esc, otherName,
+      otherAttrs, flags)
     let tt = tok.t
     tok.t = ttCharacter
-    checkEquals(ctx.factory, otok, tok, ctx.charbuf, ctx.desc, otherName,
-      otherAttrs, flags)
+    checkEquals(otok, tok, ctx.charbuf, ctx.desc, otherName, otherAttrs, flags)
     inc ctx.i
     ctx.charbuf = ""
     tok.t = tt
 
-proc checkTokens(ctx: var TestContext; tok: var Tokenizer[Node, MAtom]) =
+proc checkTokens(ctx: var TestContext; tok: var Tokenizer) =
   ctx.checkCharbuf(tok)
   var otherName: string
-  var otherAttrs: ParsedAttrs[MAtom]
+  var otherAttrs: ParsedAttrs[CAtom]
   var flags: set[TokenFlag]
   if tok.t in {ttCharacter, ttWhitespace}:
     ctx.charbuf &= tok.charbuf
   elif tok.t == ttNull:
     ctx.charbuf &= char(0)
   else:
-    let otok = getToken(ctx.factory, ctx.output[ctx.i].getElems(), ctx.esc,
-      otherName, otherAttrs, flags)
-    checkEquals(ctx.factory, otok, tok, "", ctx.desc, otherName,
+    let otok = getToken(ctx.output[ctx.i].getElems(), ctx.esc, otherName,
       otherAttrs, flags)
+    checkEquals(otok, tok, "", ctx.desc, otherName, otherAttrs, flags)
     inc ctx.i
 
-proc runTest(builder: MiniDOMBuilder; desc: string; output: seq[JsonNode];
-    startTag: MAtom; esc: bool; input: string; state: TokenizerState) =
-  var tok = initTokenizer(builder)
+proc runTest(desc: string; output: seq[JsonNode];
+    startTag: CAtom; esc: bool; input: string; state: TokenizerState) =
+  var tok = initTokenizer()
   tok.state = state
   var ctx = TestContext(
-    factory: builder.factory,
     output: output,
     desc: desc,
     esc: esc
@@ -237,15 +231,15 @@ proc runTests(filename: string) =
     if esc:
       input = doubleEscape(input)
     let output = t{"output"}.getElems()
-    let factory = newMAtomFactory()
-    let builder = newMiniDOMBuilder(factory)
-    let startTag = builder.factory.strToAtom(t{"lastStartTag"}.getStr())
+    let startTag = t{"lastStartTag"}.getStr().toAtom()
     if "initialStates" notin t:
-      runTest(builder, desc, output, startTag, esc, input, tsData)
+      runTest(desc, output, startTag, esc, input, tsData)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(builder, desc, output, startTag, esc, input, state)
+        runTest(desc, output, startTag, esc, input, state)
+
+initCAtomFactory()
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")

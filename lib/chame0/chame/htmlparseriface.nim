@@ -22,7 +22,7 @@ when defined(nimdocdummy):
   ##
   ## You can also just implement the required functions without including
   ## this interface, but then you will have to do the casting from
-  ## `DOMBuilder[HandleImpl, AtomImpl]` -> `DOMBuilderImpl` manually and will
+  ## `DOMBuilder[HandleImpl]` -> `DOMBuilderImpl` manually and will
   ## get uglier error messages when a function is missing.
   ##
   ## Note that when using this interface you can't use procs with different side
@@ -36,17 +36,16 @@ when defined(nimdocdummy):
   type
     HandleImpl = int
     AtomImpl = int
-    DOMBuilderImpl = DOMBuilder[HandleImpl, AtomImpl]
+    DOMBuilderImpl = DOMBuilder[HandleImpl]
 
 # DOMBuilder
 static:
   # DOMBuilderImpl must be an instance of DOMBuilder with the handle type
   # HandleImpl and atom type AtomImpl.
-  doAssert DOMBuilderImpl is DOMBuilder[HandleImpl, AtomImpl]
+  doAssert DOMBuilderImpl is DOMBuilder[HandleImpl]
 
 {.push objChecks: off.}
-template toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl, AtomImpl]):
-    DOMBuilderImpl =
+template toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl]): DOMBuilderImpl =
   DOMBuilderImpl(dombuilder)
 {.pop.}
 
@@ -58,33 +57,6 @@ when defined(nimdocdummy):
     f
 else:
   macro doc(f: untyped) = f
-
-proc strToAtomImpl(builder: DOMBuilderImpl; s: string): AtomImpl {.doc.}
-  ## Turn a string `s` into an Atom.
-  ##
-  ## This must always convert *every* string with the same value into the
-  ## same Atom. We recommend using a hash table-based approach for this
-  ## (see e.g. MAtomFactory).
-
-proc tagTypeToAtomImpl(builder: DOMBuilderImpl; tagType: TagType): AtomImpl
-    {.doc.}
-  ## Turn a TagType `tagType` into an Atom.
-  ##
-  ## Every TagType `tagType` must always be converted into the same atom as
-  ## that represented by its stringifier. An implementation could be:
-  ## ```nim
-  ## proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tt: TagType): AtomImpl =
-  ##   assert tt != ttUnknown # parser never calls this with ttUnknown.
-  ##   return builder.strToAtomImpl($tt)
-  ## ```
-
-proc namespaceToAtomImpl(builder: DOMBuilderImpl; ns: Namespace): AtomImpl
-    {.doc.}
-  ## Turn a namespace `ns` into an Atom.
-  ##
-  ## This is conceptually the same as `builder.strToAtomImpl($ns)`, except
-  ## that nsNone is supposed to map to a distinct value from the empty
-  ## string (in JS, it is represented by `null`).
 
 proc atomToTagTypeImpl(builder: DOMBuilderImpl; atom: AtomImpl): TagType {.doc.}
   ## Turn an Atom `atom` into a TagType. This is the inverse function of
@@ -167,10 +139,6 @@ proc getTemplateContentImpl(builder: DOMBuilderImpl; handle: HandleImpl):
   ## where `builder.atomToTagTypeImpl(element.localName)` equals ttTemplate
   ## and `builder.getNamespaceImpl(element)` equals `Namespace.HTML` must have
   ## an associated "template contents" node which this function must return.
-
-proc sortAttrsImpl(builder: DOMBuilderImpl;
-    attrs: var seq[ParsedAttr[AtomImpl]]) {.doc.}
-  ## Sort attributes specified in `attrs`, then remove any duplicates found.
 
 #TODO I guess this could be `sink attrs` too
 proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
