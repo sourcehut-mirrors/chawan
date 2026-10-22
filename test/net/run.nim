@@ -2,7 +2,6 @@ import std/asyncdispatch
 import std/asynchttpserver
 import std/httpcore
 import std/os
-import std/strutils
 
 import io/chafile
 import utils/opt

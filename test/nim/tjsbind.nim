@@ -1,7 +1,6 @@
 import std/options
 import std/os
 import std/posix
-import std/strutils
 import std/unittest
 
 import js/fromjs
@@ -14,6 +13,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import utils/opt
+import utils/twtstr
 
 proc evalConvert[T](ctx: JSContext; code: string; file = "<input>";
     flags = JS_EVAL_TYPE_GLOBAL): Result[T, string] =
