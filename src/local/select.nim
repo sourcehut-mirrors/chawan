@@ -268,7 +268,7 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
   var ey = min(sy + select.options.len, mh) + 1
   var sx = select.x
   if sx + select.maxw >= mw:
-    sx = display.width - select.maxw
+    sx = display.width - select.maxw - 2
     if sx < 0:
       # This means the widest option is wider than the available screen.
       # w3m simply cuts off the part that doesn't fit, and we do that too,
@@ -518,9 +518,8 @@ jsClassPublicDef(Select):
     if select.y + select.options.len >= height - 2:
       select.y = max(height - 2 - select.options.len, 0)
     select.maxh = min(height - 2, select.options.len)
-    if select.x + select.maxw + 2 > width:
-      #TODO I don't know why but - 2 does not work.
-      select.x = max(width - select.maxw - 3, 0)
+    if select.x + select.maxw + 2 >= width:
+      select.x = max(width - select.maxw - 2, 0)
     select.setCursorYNear(select.cursory)
     select.queueDraw()
 
