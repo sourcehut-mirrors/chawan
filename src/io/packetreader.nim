@@ -75,6 +75,7 @@ proc initPartialReader*(stream: PosixStream; pr: var PartialPacketReader):
       let e = errno
       if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
         return prcBuffer
+    if n <= 0:
       return prcEOF
     pr.idx += n
     if pr.idx < pr.lens.len:
@@ -92,6 +93,7 @@ proc initPartialReader*(stream: PosixStream; pr: var PartialPacketReader):
       let e = errno
       if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
         return prcBuffer
+    if n <= 0:
       return prcEOF
     pr.idx += n
     if pr.idx - pr.lens.len < pr.r.buffer.len:
