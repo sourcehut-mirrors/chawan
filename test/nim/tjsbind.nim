@@ -430,13 +430,14 @@ val"""
 proc testJSPropEnumList() =
   let rt = newGlobalJSRuntime()
   let ctx = rt.newJSContext()
-  var list = newJSPropertyEnumList(ctx, 0)
-  list.add(1)
-  list.add("hi")
-  list.add(3)
-  list.add(4)
-  assert list.len == 4
-  js_free(ctx, list.buffer)
+  block:
+    var list = newJSPropertyEnumList(ctx, 0)
+    list.add(1)
+    list.add("hi")
+    list.add(3)
+    list.add(4)
+    assert list.len == 4
+    JS_FreePropertyEnum(ctx, list.buffer, list.len)
   ctx.free()
   rt.free()
 

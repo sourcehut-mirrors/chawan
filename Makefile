@@ -384,7 +384,7 @@ $(OBJDIR)/chagashi_test:
 	unxz $(OBJDIR)/chagashi_test/data.tar.xz
 	tar xf $(OBJDIR)/chagashi_test/data.tar -C $(OBJDIR)/chagashi_test
 
-test_flags = --verbosity:0 -d:test
+test_flags = --verbosity:0 -d:test -t:-DDUMP_LEAKS=1
 
 test/charset/%: test/charset/%.nim
 	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
