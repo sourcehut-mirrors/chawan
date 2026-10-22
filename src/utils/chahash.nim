@@ -2,19 +2,15 @@
 
 {.push raises: [].}
 
-import std/endians
-
 type Hash* = int
 
 {.push overflowChecks: off.}
 proc load32le(p: openArray[uint8]; i: int): uint64 =
-  when nimvm:
-    return p[0] or (p[1] shl 8) or (p[2] shl 16) or (p[3] shl 24)
-  var x: uint64
   {.push boundChecks: off.}
-  littleEndian32(addr x, unsafeAddr p[i])
-  {.pop.}
-  x
+  let u = uint64(p[i]) or (uint64(p[i + 1]) shl 8) or
+    (uint64(p[i + 2]) shl 16) or (uint64(p[i + 3]) shl 24)
+  {.pop.} # boundChecks: off
+  u
 
 proc load64le(p: openArray[uint8]; i: int): uint64 =
   load32le(p, i) or (load32le(p, i + 4) shl 32)
