@@ -33,7 +33,7 @@ proc grow(this: var JSPropertyEnumList) =
     csize_t(sizeof(JSPropertyEnum)) * csize_t(this.size))
   this.buffer = cast[JSPropertyEnumArray](p)
 
-proc add(this: var JSPropertyEnumList; atom: JSAtom) =
+proc add(this: var JSPropertyEnumList; atom: sink JSAtom) =
   let i = this.len
   inc this.len
   if this.size < this.len:
@@ -49,7 +49,7 @@ proc contains(this: JSPropertyEnumList; atom: JSAtom): bool =
 
 proc incl(this: var JSPropertyEnumList; atom: sink JSAtom) =
   if atom notin this:
-    this.add(move(atom))
+    this.add(atom)
 
 proc add*(this: var JSPropertyEnumList; val: uint32) =
   let atom = JS_NewAtomUInt32(this.ctx, val)
