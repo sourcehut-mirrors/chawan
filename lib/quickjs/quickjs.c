@@ -3098,7 +3098,7 @@ static int JS_InitAtoms(JSRuntime *rt)
     rt->atom_count = 0;
     rt->atom_size = 0;
     rt->atom_free_index = 0;
-    if (JS_ResizeAtomHash(rt, 512))     /* there are at least 504 predefined atoms */
+    if (JS_ResizeAtomHash(rt, 1024))     /* there are at least 516 predefined atoms */
         return -1;
 
     p = js_atom_init;
@@ -3243,7 +3243,7 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type)
 
         /* alloc new with size progression 3/2:
            4 6 9 13 19 28 42 63 94 141 211 316 474 711 1066 1599 2398 3597 5395 8092
-           preallocating space for predefined atoms (at least 504).
+           preallocating space for predefined atoms (at least 516).
          */
         new_size = max_int(711, rt->atom_size * 3 / 2);
         if (new_size > JS_ATOM_MAX)
