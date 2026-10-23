@@ -206,13 +206,13 @@ proc consumeCommand(state: var MailcapParser; line: openArray[char];
   ok(n)
 
 proc addNamedField(entry: MailcapEntry; t: NamedFieldType;
-    fieldsTail: var NamedField; cmd: var string) =
+    fieldsTail: var NamedField; cmd: var string): Err[string] =
   var s = move(cmd)
   if t in {nfMatch, nfNcMatch}:
     let flags = if t == nfNcMatch: {LRE_FLAG_IGNORECASE} else: {}
     var re: Regex
     if not compileRegex(s, flags, re):
-      return
+      return err(move(re.bytecode))
     s &= '\0' & re.bytecode
   let field = entry.find(t)
   if field != nil:
@@ -224,6 +224,7 @@ proc addNamedField(entry: MailcapEntry; t: NamedFieldType;
     else:
       fieldsTail.next = field
     fieldsTail = field
+  ok()
 
 proc allowField(state: MailcapParser; standard: bool; i: int): bool =
   if i == 2: # x- prefix: only allowed for extensions
@@ -252,7 +253,9 @@ proc consumeField(state: var MailcapParser; line: openArray[char];
       let i = if s.startsWith("x-"): 2 else: 0
       if t := parseEnumNoCase[NamedFieldType](s.toOpenArray(i, s.high)):
         if state.allowField(t <= nfEdit, i):
-          entry.addNamedField(t, fieldsTail, cmd)
+          let res = entry.addNamedField(t, fieldsTail, cmd)
+          if res.isErr:
+            return state.err(res.error)
       return ok(n)
     elif c in Controls:
       return state.err("invalid character in field: " & c)
