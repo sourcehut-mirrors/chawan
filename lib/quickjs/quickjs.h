@@ -774,6 +774,7 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
     return JS_ToCStringLen2(ctx, NULL, val1, 0);
 }
 const char *JS_ToCStringNZ(JSContext *ctx, JSValueConst val1);
+const char *JS_DupCStringRT(JSRuntime *rt, const char *ptr);
 void JS_FreeCString(JSContext *ctx, const char *ptr);
 void JS_FreeCStringRT(JSRuntime *rt, const char *ptr);
 int JS_ToUTF32String(JSContext *ctx, uint32_t **pbuf, JSValueConst val);

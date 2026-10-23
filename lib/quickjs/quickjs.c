@@ -4654,6 +4654,18 @@ void JS_FreeCStringRT(JSRuntime *rt, const char *ptr)
     JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_STRING, p));
 }
 
+const char *JS_DupCStringRT(JSRuntime *rt, const char *ptr)
+{
+    JSString *p;
+    JSValue val;
+
+    if (!ptr)
+        return NULL;
+    p = container_of(ptr, JSString, u);
+    val = JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, p));
+    return (const char *)JS_VALUE_GET_STRING(val)->u.str8;
+}
+
 /* create a string from a narrow Unicode (latin-1) buffer */
 JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *buf, size_t buf_len)
 {
