@@ -710,8 +710,9 @@ template JS_IsConstructor*(ctx: JSContext; val: JSValueConst): bool =
   JS_IsConstructorImpl(ctx, val) != 0
 
 {.push header: qjsheader, importc.}
-# takes ownership of the values
 proc JS_NewArray*(ctx: JSContext): JSValue
+proc JS_NewArrayFrom*(ctx: JSContext; len: cint; tab: JSValueArray):
+  JSValue ## consumes values in tab
 proc JS_IsArray*(ctx: JSContext; v: JSValueConst): cint
 
 proc JS_NewDate*(ctx: JSContext; epoch_ms: float64): JSValue

@@ -9942,7 +9942,8 @@ static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
     return obj;
 }
 
-static JSValue js_create_array_free(JSContext *ctx, int len, JSValue *tab)
+/* consumes values in tab */
+JSValue JS_NewArrayFrom(JSContext *ctx, int len, const JSValue *tab)
 {
     JSValue obj;
     JSObject *p;
@@ -18713,7 +18714,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
         CASE(OP_array_from):
             call_argc = get_u16(pc);
             pc += 2;
-            ret_val = js_create_array_free(ctx, call_argc, sp - call_argc);
+            ret_val = JS_NewArrayFrom(ctx, call_argc, sp - call_argc);
             sp -= call_argc;
             if (unlikely(JS_IsException(ret_val)))
                 goto exception;

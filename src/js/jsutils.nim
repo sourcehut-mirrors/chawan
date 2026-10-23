@@ -148,25 +148,11 @@ proc newArrayFrom*(ctx: JSContext; vals: varargs[JSValue]): JSValue =
   ## Create a new array consisting of `vals`.
   ##
   ## Frees/consumes each individual value in `vals`.
-  if int64(vals.len) > int64(uint32.high):
+  if int64(vals.len) > int64(cint.high):
     ctx.freeValues(vals)
     return JS_ThrowRangeError(ctx, "sequence too large")
-  var obj = JS_NewArray(ctx)
-  if JS_IsException(obj.vc):
-    return obj
-  var u = 0u32
-  let L = uint32(vals.len)
-  while u < L:
-    let res = JS_SetPropertyUint32(ctx, obj.vc, u, vals[u])
-    inc u
-    if res < 0:
-      JS_FreeValue(ctx, obj)
-      obj = JS_EXCEPTION
-      break
-  while u < L:
-    JS_FreeValue(ctx, vals[u])
-    inc u
-  return obj
+  let p = if vals.len > 0: cast[JSValueArray](unsafeAddr vals[0]) else: nil
+  return JS_NewArrayFrom(ctx, cast[cint](vals.len), p)
 
 proc newPromiseCapability*(ctx: JSContext; resolve, reject: var JSCallback):
     JSObjectErr =
