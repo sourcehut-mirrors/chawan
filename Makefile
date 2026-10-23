@@ -224,6 +224,7 @@ $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim adapter/nim.cfg
 
 $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/ssl.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
+	rm -rf "$(OBJDIR)/$(TARGET)/$(notdir $@)"
 	$(NIMC) $(ssl_flags) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%

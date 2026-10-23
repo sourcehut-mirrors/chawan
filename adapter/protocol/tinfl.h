@@ -345,10 +345,10 @@ struct tinfl_decompressor_tag
  * non-conservative read-ahead path won't kick in here on this code.  This
  * is much trickier.
  */
-#define TINFL_HUFF_DECODE(state_index, sym, pHuff) \
+#define TINFL_HUFF_DECODE(state_index, sym, code_len, pHuff) \
     do { \
         int temp; \
-        unsigned code_len, c; \
+        unsigned c; \
         if (num_bits < 15) { \
             if ((pIn_buf_end - pIn_buf_cur) < 2) { \
                  TINFL_HUFF_BITBUF_FILL(state_index, pHuff); \
@@ -659,8 +659,10 @@ int tinfl_decompress(tinfl_decompressor *r, const uint8_t *pIn_buf_next,
                 }
                 if (r->m_type == 2) {
                     for (counter = 0; counter < (r->m_table_sizes[0] + r->m_table_sizes[1]); ) {
-                        unsigned s;
-                        TINFL_HUFF_DECODE(16, dist, &r->m_tables[2]);
+                        unsigned s, code_len;
+                        TINFL_HUFF_DECODE(16, dist, code_len, &r->m_tables[2]);
+                        if (code_len == 0)
+                            TINFL_CR_RETURN_FOREVER(46, TINFL_STATUS_FAILED);
                         if (dist < 16) {
                             r->m_len_codes[counter++] = (uint8_t)dist;
                             continue;
@@ -683,18 +685,20 @@ int tinfl_decompress(tinfl_decompressor *r, const uint8_t *pIn_buf_next,
             }
             for (;;) {
                 uint8_t *pSrc;
+                unsigned code_len;
                 for (;;) {
                     if (((pIn_buf_end - pIn_buf_cur) < 4) ||
                         ((pOut_buf_end - pOut_buf_cur) < 2)) {
-                        TINFL_HUFF_DECODE(23, counter, &r->m_tables[0]);
+                        TINFL_HUFF_DECODE(23, counter, code_len, &r->m_tables[0]);
                         if (counter >= 256)
                             break;
+                        if (code_len == 0)
+                            TINFL_CR_RETURN_FOREVER(47, TINFL_STATUS_FAILED);
                         while (pOut_buf_cur >= pOut_buf_end)
                             TINFL_CR_RETURN(24, TINFL_STATUS_HAS_MORE_OUTPUT);
                         *pOut_buf_cur++ = (uint8_t)counter;
                     } else {
                         int sym2;
-                        unsigned code_len;
                         if (num_bits < 30) {
                             bit_buf |= (((uint64_t)MZ_READ_LE32(pIn_buf_cur)) << num_bits);
                             pIn_buf_cur += 4;
@@ -724,6 +728,8 @@ int tinfl_decompress(tinfl_decompressor *r, const uint8_t *pIn_buf_next,
                         }
                         bit_buf >>= code_len;
                         num_bits -= code_len;
+                        if (code_len == 0)
+                            TINFL_CR_RETURN_FOREVER(48, TINFL_STATUS_FAILED);
 
                         pOut_buf_cur[0] = (uint8_t)counter;
                         if (sym2 & 256) {
@@ -746,7 +752,9 @@ int tinfl_decompress(tinfl_decompressor *r, const uint8_t *pIn_buf_next,
                     counter += extra_bits;
                 }
 
-                TINFL_HUFF_DECODE(26, dist, &r->m_tables[1]);
+                TINFL_HUFF_DECODE(26, dist, code_len, &r->m_tables[1]);
+                if (code_len == 0)
+                    TINFL_CR_RETURN_FOREVER(49, TINFL_STATUS_FAILED);
                 num_extra = s_dist_extra[dist];
                 dist = s_dist_base[dist];
                 if (num_extra) {
