@@ -2430,7 +2430,7 @@ const ReTextStart = /\S/gu;
         this.currentSelection = null;
     }
 
-    /* private */ cancel() {
+    /* public */ cancel() {
         const iface = this.iface;
         if (iface != null && iface.loadState != "loading")
             return;

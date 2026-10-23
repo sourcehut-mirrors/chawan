@@ -607,6 +607,15 @@ respectively, while \(lqany\(rq returns either \(lqprev\(rq, or if
 it\(cqs null, \(lqnext\(rq.
 .RE
 .TP
+\f[CR]cancel()\f[R]
+Stop loading this buffer.
+.RS
+If no connection to the URL has been established yet, this closes the
+buffer.
+Otherwise, the buffer is preserved, but without loading any more data or
+resources.
+.RE
+.TP
 \f[CR]url\f[R]
 Getter for the buffer\(cqs URL.
 Note: this returns a \f[CR]URL\f[R] object, not a string.
