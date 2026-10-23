@@ -2,6 +2,7 @@
 
 import config/config
 import css/cell
+import css/cssvalues
 import js/fromjs
 import js/jsbind
 import js/jsnull
@@ -41,6 +42,7 @@ type
     y: int
     redraw*: bool
     unselected: bool
+    borderStyle: CSSBorderStyle
     finish: JSCallback
     map*: ActionMap
     prev*: SelectNil
@@ -51,6 +53,7 @@ type
     callbacks: seq[JSCallback]
     map: ActionMap
     selected: int
+    borderStyle: CSSBorderStyle
 
   SelectBuilder = JSRef[SelectBuilderObj]
 
@@ -88,7 +91,8 @@ jsClassDef(SelectBuilder):
     jsNew SelectBuilderObj(
       map: map,
       options: move(options),
-      selected: selected
+      selected: selected,
+      borderStyle: BorderStyleSolid
     )
 
   proc mark(rt: JSRuntime; this: SelectBuilder; markFunc: JS_MarkFunc)
@@ -107,6 +111,13 @@ jsClassDef(SelectBuilder):
     var warnings: seq[string]
     let key = parseKeyComb(key, warnings)
     this.map.addAction(key, fun)
+    ok()
+
+  # public
+  proc border(ctx: JSContext; this: SelectBuilder;
+      borderStyle: CSSBorderStyle): Opt[void] {.jsfunc.} =
+    ?this.checkMap(ctx)
+    this.borderStyle = borderStyle
     ok()
 
   # public
@@ -210,7 +221,7 @@ proc cursorPrevMatch(select: Select; regex: REBytecode; wrap: bool) =
       select.queueDraw()
 
 proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
-    upmore, downmore: bool) =
+    upmore, downmore: bool; style: CSSBorderStyle) =
   for y in sy .. ey:
     var x = 0
     let yi = y * display.width
@@ -230,17 +241,17 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
   let bl = if downmore: bdcVerticalBarLeft else: bdcCornerBottomLeft
   let br = if downmore: bdcVerticalBarRight else: bdcCornerBottomRight
   const fmt = Format()
-  display[sy * display.width + sx].str = $tl
-  display[sy * display.width + ex].str = $tr
-  display[ey * display.width + sx].str = $bl
-  display[ey * display.width + ex].str = $br
+  display[sy * display.width + sx].str = style.borderChar(tl)
+  display[sy * display.width + ex].str = style.borderChar(tr)
+  display[ey * display.width + sx].str = style.borderChar(bl)
+  display[ey * display.width + ex].str = style.borderChar(br)
   display[sy * display.width + sx].format = fmt
   display[sy * display.width + ex].format = fmt
   display[ey * display.width + sx].format = fmt
   display[ey * display.width + ex].format = fmt
   # Draw top, bottom borders.
-  let ups = if upmore: " " else: $bdcHorizontalBarTop
-  let downs = if downmore: " " else: $bdcHorizontalBarBottom
+  let ups = if upmore: " " else: style.borderChar(bdcHorizontalBarTop)
+  let downs = if downmore: " " else: style.borderChar(bdcHorizontalBarBottom)
   for x in sx + 1 .. ex - 1:
     display[sy * display.width + x].str = ups
     display[ey * display.width + x].str = downs
@@ -252,8 +263,8 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     display[ey * display.width + sx + (ex - sx) div 2].str = ":"
   # Draw left, right borders.
   for y in sy + 1 .. ey - 1:
-    display[y * display.width + sx].str = $bdcVerticalBarLeft
-    display[y * display.width + ex].str = $bdcVerticalBarRight
+    display[y * display.width + sx].str = style.borderChar(bdcVerticalBarLeft)
+    display[y * display.width + ex].str = style.borderChar(bdcVerticalBarRight)
     display[y * display.width + sx].format = fmt
     display[y * display.width + ex].format = fmt
 
@@ -277,7 +288,7 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
   var ex = min(sx + select.maxw, mw) + 1
   let upmore = select.fromy > 0
   let downmore = select.fromy + mh < select.options.len
-  drawBorders(display, sx, ex, sy, ey, upmore, downmore)
+  drawBorders(display, sx, ex, sy, ey, upmore, downmore, select.borderStyle)
   # move inside border
   inc sy
   inc sx
@@ -527,7 +538,8 @@ jsClassPublicDef(Select):
       y: y,
       options: move(builder.options),
       finish: finish,
-      map: move(builder.map)
+      map: move(builder.map),
+      borderStyle: builder.borderStyle
     )
     if select != nil:
       var maxw = 0

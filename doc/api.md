@@ -695,6 +695,10 @@ which public methods are:
 `select()`
 : Select the previous menu item defined using `item()` or `menu()`.
 
+`border(borderStyle)`
+: Set the border style.  `borderStyle` must be a valid CSS border style
+  enumeration such as "dotted" or "double".
+
 ### LineEdit
 
 The line editor at the bottom of the screen is exposed to the JavaScript context
