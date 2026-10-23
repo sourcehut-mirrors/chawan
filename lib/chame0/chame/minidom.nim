@@ -8,27 +8,17 @@
 ## switch encodings when meta tags are encountered etc. see
 ## [chame/minidom_cs](minidom_cs.html).
 
-import std/algorithm
 import std/streams
 
 import html/catom
 import utils/twtstr
 
-import dombuilder
 import htmlparser
 import tags
 
-export tags
-
-# Atom implementation
-#TODO maybe we should use a better hash map.
-const MAtomFactoryStrMapLength = 1024 # must be a power of 2
-static:
-  doAssert (MAtomFactoryStrMapLength and (MAtomFactoryStrMapLength - 1)) == 0
-
 # Node types
 type
-  Attribute* = ParsedAttr[CAtom]
+  Attribute* = AttrData
 
   Node* = ref object of RootObj
     childList*: seq[Node]

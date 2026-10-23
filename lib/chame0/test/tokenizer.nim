@@ -3,7 +3,7 @@ import std/unicode
 import std/unittest
 
 import chame/htmltokenizer
-import chame/minidom
+import chame/tags
 import html/catom
 
 proc hexValue*(c: char): int =
@@ -45,17 +45,17 @@ proc doubleEscape(input: string): string =
         esc = 0
   return s
 
-proc getAttrs(o: JsonNode; esc: bool): ParsedAttrs[CAtom] =
+proc getAttrs(o: JsonNode; esc: bool): seq[AttrData] =
   result = @[]
   for k, v in o:
     let k = k.toAtom()
     var v = v.getStr()
     if esc:
       v = v.doubleEscape()
-    result.add(ParsedAttr[CAtom](name: k, value: v))
+    result.add(AttrData(name: k, value: v))
 
 proc getToken(a: seq[JsonNode]; esc: bool; name: var string;
-    otherAttrs: var ParsedAttrs[CAtom]; flags: var set[TokenFlag]): TokenType =
+    otherAttrs: var seq[AttrData]; flags: var set[TokenFlag]): TokenType =
   case a[0].getStr()
   of "StartTag":
     otherAttrs = getAttrs(a[2], esc)
@@ -94,7 +94,7 @@ proc getToken(a: seq[JsonNode]; esc: bool; name: var string;
     return ttComment
 
 proc checkEquals(otok: TokenType; tok: Tokenizer;
-    charbuf, desc, otherName: string; otherAttrs: ParsedAttrs[CAtom];
+    charbuf, desc, otherName: string; otherAttrs: seq[AttrData];
     flags: set[TokenFlag]) =
   doAssert otok == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
     $otok & ")"
@@ -150,7 +150,7 @@ type TestContext = object
 
 proc checkCharbuf(ctx: var TestContext; tok: var Tokenizer) =
   var otherName: string
-  var otherAttrs: ParsedAttrs[CAtom]
+  var otherAttrs: seq[AttrData]
   var flags: set[TokenFlag]
   if ctx.charbuf.len > 0 and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
     let otok = getToken(ctx.output[ctx.i].getElems(), ctx.esc, otherName,
@@ -165,7 +165,7 @@ proc checkCharbuf(ctx: var TestContext; tok: var Tokenizer) =
 proc checkTokens(ctx: var TestContext; tok: var Tokenizer) =
   ctx.checkCharbuf(tok)
   var otherName: string
-  var otherAttrs: ParsedAttrs[CAtom]
+  var otherAttrs: seq[AttrData]
   var flags: set[TokenFlag]
   if tok.t in {ttCharacter, ttWhitespace}:
     ctx.charbuf &= tok.charbuf

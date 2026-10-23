@@ -66,7 +66,7 @@ type
     quote: char # dedupe states that only differ in their quoting
     entityNameIdx: int8 # index in entity.name
     entityMatchLen: int8 # last matching entity name length
-    attrs*: seq[ParsedAttr[CAtom]]
+    attrs*: seq[AttrData]
     charbuf*: string # flushed chars from tmp
     tagNameBuf*: string # buffer for storing the tag name & doctype name
     inputBufIdx*: int # last character consumed in input buf
@@ -83,27 +83,6 @@ type
 
   TokenizeResult* = enum
     trDone, trEmit
-
-const AsciiUpperAlpha = {'A'..'Z'}
-const AsciiLowerAlpha = {'a'..'z'}
-const AsciiAlpha = (AsciiUpperAlpha + AsciiLowerAlpha)
-const AsciiDigit = {'0'..'9'}
-const AsciiAlphaNumeric = AsciiAlpha + AsciiDigit
-const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
-
-proc startsWithIgnoreCase*(str, prefix: string): bool =
-  if str.len < prefix.len:
-    return false
-  # prefix.len is always lower
-  var i = 0
-  while i != prefix.len:
-    if str[i].toLowerAscii() != prefix[i].toLowerAscii():
-      return false
-    inc i
-  true
-
-proc equalsIgnoreCase*(s1, s2: string): bool =
-  s1.len == s2.len and s1.startsWithIgnoreCase(s2)
 
 proc initTokenizer*(): Tokenizer =
   Tokenizer(
@@ -182,10 +161,6 @@ proc findCharRef(tok: var Tokenizer; c: char; ibuf: openArray[char]):
       inc tok.entityNameIdx
   true
 
-proc chameAdd(s: var string; a: openArray[char]) =
-  for c in a:
-    s &= c
-
 proc flushNumericCharacterReference(tok: var Tokenizer) =
   const ControlMap = [
     0x20ACu16, 0, 0x201A, 0x192, 0x201E, 0x2026, 0x2020, 0x2021,
@@ -230,7 +205,7 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
     # guaranteed to be alphanumeric.)
     tok.chartok = ttCharacter
     tok.tmp &= '&'
-    tok.tmp.chameAdd(prev.toOpenArray(0, tok.entityNameIdx - 1))
+    tok.tmp &= prev.toOpenArray(0, tok.entityNameIdx - 1)
     return tsAmbiguousAmpersand
   # There is a full match.
   let matchLen = tok.entityMatchLen
@@ -257,8 +232,8 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
     # and then the last partial match.
     tok.chartok = ttCharacter
     tok.tmp &= '&'
-    tok.tmp.chameAdd(entry.toOpenArray(0, matchLen - 1))
-    tok.tmp.chameAdd(prev.toOpenArray(matchLen, tok.entityNameIdx - 1))
+    tok.tmp &= entry.toOpenArray(0, matchLen - 1)
+    tok.tmp &= prev.toOpenArray(matchLen, tok.entityNameIdx - 1)
     if consumed:
       tok.reconsume()
   else:
@@ -274,7 +249,7 @@ proc flushNamedCharacterReference(tok: var Tokenizer; ibuf: openArray[char]):
     if not surrogate and val.unit2 != 0:
       tok.code = val.unit2
       tok.flushNumericCharacterReference()
-    tok.tmp.chameAdd(prev.toOpenArray(matchLen, tok.entityNameIdx - 1))
+    tok.tmp &= prev.toOpenArray(matchLen, tok.entityNameIdx - 1)
     if consumed and n != -1 and
         (entry[matchLen - 1] == ';' or n != int(';')):
       tok.reconsume()
@@ -284,7 +259,7 @@ proc flushAttr(tok: var Tokenizer) =
   # This can also be called with tok == ttEndTag, in that case we do
   # not want to flush attributes.
   if tok.t == ttStartTag:
-    tok.attrs.add(ParsedAttr[CAtom](
+    tok.attrs.add(AttrData(
       name: move(tok.attrName),
       namespace: tok.attrNamespace.view(),
       value: move(tok.tmp)

@@ -2,14 +2,16 @@
 
 import std/algorithm
 
-import dombuilder
 import html/catom
 import htmltokenizer
 import tags
 import utils/twtstr
 
 # Heavily inspired by html5ever's TreeSink design.
+
 type
+  DOMBuilder*[Handle] = ref object of RootObj
+
   HTML5ParserOpts*[Handle] = object
     isIframeSrcdoc*: bool ## Is the document an iframe srcdoc?
     scripting*: bool ## Is scripting enabled for this document?
@@ -36,7 +38,7 @@ type
   Formatting[Handle] = ref object
     element: Handle
     startTagName: CAtom
-    attrs: ParsedAttrs[CAtom]
+    attrs: seq[AttrData]
 
   HTML5Parser*[Handle] = object
     ctx: OpenElement[Handle]
@@ -89,6 +91,9 @@ type ParseChunkResult* = enum
   pcrContinue
   pcrStop
   pcrScript
+
+type SetEncodingResult* = enum
+  seContinue, seStop
 
 # Forward declarations
 proc processInHTML[Handle](parser: var HTML5Parser[Handle]):
@@ -181,7 +186,7 @@ proc appendDocumentType[Handle](parser: HTML5Parser[Handle];
     systemId)
 
 proc insertBefore[Handle](parser: HTML5Parser[Handle];
-    parent, child: Handle; before: Handle) =
+    parent, child, before: Handle) =
   mixin insertBeforeImpl
   parser.dombuilder.toDOMBuilderImpl().insertBeforeImpl(parent, child, before)
 
@@ -201,7 +206,7 @@ proc moveChildren[Handle](parser: HTML5Parser[Handle]; handleFrom,
   parser.dombuilder.toDOMBuilderImpl().moveChildrenImpl(handleFrom, handleTo)
 
 proc addAttrsIfMissing[Handle](parser: HTML5Parser[Handle];
-    element: Handle; attrs: ParsedAttrs[CAtom]) =
+    element: Handle; attrs: seq[AttrData]) =
   mixin addAttrsIfMissingImpl
   parser.dombuilder.toDOMBuilderImpl().addAttrsIfMissingImpl(element, attrs)
 
@@ -418,8 +423,8 @@ proc hasElementInTableScope[Handle](parser: HTML5Parser[Handle];
     target: TagType): bool =
   return parser.hasElementInTableScope({target})
 
-proc find[CAtom](attrs: ParsedAttrs[CAtom]; atom: CAtom): int =
-  attrs.binarySearch(atom, proc(a: ParsedAttr[CAtom]; b: CAtom): int =
+proc find(attrs: seq[AttrData]; atom: CAtom): int =
+  attrs.binarySearch(atom, proc(a: AttrData; b: CAtom): int =
     cmp(a.name, b)
   )
 
@@ -427,12 +432,12 @@ proc findAttr[Handle](parser: HTML5Parser[Handle];
     tagType: TagType): int =
   parser.tok.attrs.find(tagType.view())
 
-proc contains[CAtom](attrs: ParsedAttrs[CAtom]; atom: CAtom): bool =
+proc contains(attrs: seq[AttrData]; atom: CAtom): bool =
   attrs.find(atom) >= 0
 
 proc createElement[Handle](parser: HTML5Parser[Handle];
     localName: CAtom; namespace: Namespace; intendedParent: Handle;
-    attrs: sink ParsedAttrs[CAtom]): Handle =
+    attrs: sink seq[AttrData]): Handle =
   mixin createElementForTokenImpl
   let tagType = parser.toTagType(localName)
   let shouldAssociate =
@@ -446,7 +451,7 @@ proc createElement[Handle](parser: HTML5Parser[Handle];
   element
 
 proc createHTMLElement[Handle](parser: HTML5Parser[Handle];
-    tagname: CAtom; intendedParent: Handle; attrs: sink ParsedAttrs[CAtom]):
+    tagname: CAtom; intendedParent: Handle; attrs: sink seq[AttrData]):
     Handle =
   # attrs not adjusted
   parser.createElement(tagname, nsHTML, intendedParent, attrs)
@@ -493,13 +498,12 @@ proc insert[Handle](parser: HTML5Parser[Handle];
     location: InsertionLocation[Handle]; node: Handle) =
   parser.insertBefore(location.inside, node, location.before)
 
-proc append[Handle](parser: HTML5Parser[Handle];
-    parent, node: Handle) =
+proc append[Handle](parser: HTML5Parser[Handle]; parent, node: Handle) =
   parser.insertBefore(parent, node, Handle.default)
 
 proc insertForeignElement[Handle](parser: var HTML5Parser[Handle];
     localName, tagname: CAtom; namespace: Namespace; stackOnly: bool;
-    attrs: sink ParsedAttrs[CAtom]): Handle =
+    attrs: sink seq[AttrData]): Handle =
   var integrationPoint = false
   case namespace
   of nsMathML:
@@ -527,17 +531,16 @@ proc insertForeignElement[Handle](parser: var HTML5Parser[Handle];
     namespace, stackOnly, move(parser.tok.attrs))
 
 proc insertHTMLElement[Handle](parser: var HTML5Parser[Handle];
-    tagname: CAtom; attrs: ParsedAttrs[CAtom]): Handle =
+    tagname: CAtom; attrs: sink seq[AttrData]): Handle =
   parser.insertForeignElement(tagname, tagname, nsHTML, false, attrs)
 
-proc insertHTMLElement[Handle](parser: var HTML5Parser[Handle]):
-    Handle =
+proc insertHTMLElement[Handle](parser: var HTML5Parser[Handle]): Handle =
   parser.insertForeignElement(nsHTML, false)
 
 proc insertHTMLElement[Handle](parser: var HTML5Parser[Handle];
     tagType: TagType): Handle =
-  let tagname = tagType.view()
-  parser.insertForeignElement(tagname, tagname, nsHTML, false, @[])
+  parser.insertForeignElement(tagType.view(), tagType.view(), nsHTML, false,
+    @[])
 
 proc insertHTMLElementPop[Handle](parser: var HTML5Parser[Handle]) =
   discard parser.insertHTMLElement()
@@ -768,12 +771,11 @@ proc pushActiveFormatting[Handle](parser: var HTML5Parser[Handle];
     if count == 3:
       parser.activeFormatting.delete(i)
       break
-  let fmt = Formatting[Handle](
+  parser.activeFormatting.add(Formatting[Handle](
     element: element,
     startTagName: tagname,
-  )
-  fmt.attrs = move(parser.tok.attrs)
-  parser.activeFormatting.add(fmt)
+    attrs: move(parser.tok.attrs)
+  ))
 
 proc findOpenElement[Handle](parser: var HTML5Parser[Handle];
     element: Handle): int =
@@ -923,8 +925,7 @@ proc findFurthestBlockAfter(parser: HTML5Parser; stackIndex: int): int =
   return -1
 
 # If true is returned, call "any other end tag".
-proc adoptionAgencyAlgorithm[Handle](
-    parser: var HTML5Parser[Handle]): bool =
+proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle]): bool =
   if parser.currentTagName == parser.tok.tagname and
       parser.findLastActiveFormatting(parser.currentNode) == -1:
     discard parser.popElement()
@@ -1018,8 +1019,7 @@ proc closeP(parser: var HTML5Parser; sure = false) =
   if sure or parser.hasElementInButtonScope(ttP):
     parser.popElementsIncl(ttP)
 
-proc otherBodyEndTag[Handle](parser: var HTML5Parser[Handle];
-    tagname: CAtom) =
+proc otherBodyEndTag[Handle](parser: var HTML5Parser[Handle]; tagname: CAtom) =
   for i in countdown(parser.openElements.high, 0):
     let it = parser.openElements[i]
     if it.startTagName == tagname:
@@ -1065,8 +1065,7 @@ proc processInitial[Handle](parser: var HTML5Parser[Handle]):
       pubid.setLen(i)
     parser.appendDocumentType(name, pubid, sysid)
     if not parser.isIframeSrcdoc:
-      if tfQuirks in parser.tok.flags or
-          quirksConditions(name, pubid, sysid):
+      if tfQuirks in parser.tok.flags or quirksConditions(name, pubid, sysid):
         parser.setQuirksMode(qmQuirks)
       elif limitedQuirksConditions(pubid, sysid):
         parser.setQuirksMode(qmLimitedQuirks)
@@ -1657,8 +1656,7 @@ proc processInTable[Handle](parser: var HTML5Parser[Handle]):
         return parser.processInHTML()
     of ttInput:
       let i = parser.findAttr(ttTyp)
-      if i >= 0 and
-          parser.tok.attrs[i].value.equalsIgnoreCase("hidden"):
+      if i >= 0 and parser.tok.attrs[i].value.equalsIgnoreCase("hidden"):
         parser.insertHTMLElementPop()
       else:
         anythingElse = true

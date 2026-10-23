@@ -9,6 +9,7 @@
 
 {.push raises: [].}
 
+import std/algorithm
 import std/macros
 
 import chame/tags
@@ -712,5 +713,27 @@ proc containsIgnoreCase*(this: DOMTokenArray; a: CAtom): bool =
 
 proc containsIgnoreCase*(this: DOMTokenArray; a: StaticAtom): bool =
   this.containsIgnoreCase(a.view())
+
+type
+  AttrData* = object
+    name*: CAtom ## This is the qualified name.
+    namespace*: CAtom
+    value*: string
+
+proc sortAttrs*(attrs: var seq[AttrData]) =
+  if attrs.len > 1:
+    attrs.sort(proc(a, b: AttrData): int {.nimcall.} =
+      cmp(a.name, b.name)
+    )
+    var j = 1
+    var prev = attrs[0].name
+    for i in 1 ..< attrs.len:
+      let name = attrs[i].name
+      if name != prev:
+        if j < i:
+          attrs[j] = move(attrs[i])
+        inc j
+      prev = name
+    attrs.setLen(j)
 
 {.pop.} # raises: []

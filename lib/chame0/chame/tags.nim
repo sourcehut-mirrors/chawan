@@ -172,13 +172,6 @@ type
     nsXml = "http://www.w3.org/XML/1998/namespace",
     nsXmlns = "http://www.w3.org/2000/xmlns/"
 
-  ParsedAttr*[Atom] = object
-    name*: Atom ## This is the qualified name.
-    namespace*: Atom
-    value*: string
-
-  ParsedAttrs*[Atom] = seq[ParsedAttr[Atom]]
-
 const AllTagTypes* = {TagType.low..TagType.high}
 
 const HTagTypes* = {
@@ -193,19 +186,3 @@ const FormAssociatedElements* = {
 const ListedElements* = {
   ttFieldset, ttInput, ttObject, ttOutput, ttSelect, ttTextarea
 }
-
-proc sortAttrs*[Atom](attrs: var seq[ParsedAttr[Atom]]) =
-  if attrs.len > 1:
-    attrs.sort(proc(a, b: ParsedAttr[Atom]): int {.nimcall.} =
-      cmp(a.name, b.name)
-    )
-    var j = 1
-    var prev = attrs[0].name
-    for i in 1 ..< attrs.len:
-      let name = attrs[i].name
-      if name != prev:
-        if j < i:
-          attrs[j] = move(attrs[i])
-        inc j
-      prev = name
-    attrs.setLen(j)

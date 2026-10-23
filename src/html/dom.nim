@@ -445,9 +445,6 @@ type
 
   DocumentType = JSRef[DocumentTypeObj]
 
-  # Note: the `name` field in AttrData is treated as the qualified name.
-  AttrData* = ParsedAttr[CAtom]
-
   CustomElementState = enum
     cesUndefined = "undefined"
     cesFailed = "failed"

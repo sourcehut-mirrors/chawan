@@ -1,8 +1,5 @@
 {.push raises: [].}
 
-import std/algorithm
-
-import chame/dombuilder
 import chame/htmlparser
 import chame/tags
 import config/conftypes
@@ -153,7 +150,7 @@ proc createHTMLElementImpl(builder: ChaDOMBuilder): ParentNode =
 
 proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: ParentNode;
-    attrs: sink seq[ParsedAttr[CAtom]]): ParentNode =
+    attrs: sink seq[AttrData]): ParentNode =
   let document = builder.document
   let element = document.newElement(localName, namespace.toStaticAtom())
   element.sinkAttrs(move(attrs))
@@ -216,7 +213,7 @@ proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
     builder.insertBefore(toNode, child, ParentNode(nil))
 
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
-    attrs: seq[ParsedAttr[CAtom]]) =
+    attrs: seq[AttrData]) =
   let element = handle as Element
   element.addAttrsIfMissing(attrs)
 

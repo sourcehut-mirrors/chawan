@@ -12,7 +12,6 @@
 
 import std/streams
 
-import dombuilder
 import htmlparser
 import minidom
 import tags

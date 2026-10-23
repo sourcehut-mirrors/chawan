@@ -6,6 +6,7 @@ import std/unittest
 
 import chame/htmlparser
 import chame/minidom
+import chame/tags
 import html/catom
 
 type
