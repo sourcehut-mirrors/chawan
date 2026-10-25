@@ -330,9 +330,10 @@ proc setupStartupScript(ctx: JSContext) =
     let ps = newPosixStream(path)
     if ps == nil:
       die("failed to read startup bytecode at " & path)
-    let src = ps.readAllOrMmap()
-    let obj = JS_ReadObject(ctx, cast[ptr uint8](src.p), csize_t(src.len),
-      JS_READ_OBJ_BYTECODE)
+    let src = ps.readAll()
+    assert src.len > 0
+    let obj = JS_ReadObject(ctx, cast[ptr uint8](unsafeAddr src[0]),
+      csize_t(src.len), JS_READ_OBJ_BYTECODE)
   if JS_IsException(obj.vc):
     die(ctx.getExceptionMsg())
   let ret = ctx.evalFunction(obj)

@@ -150,7 +150,7 @@ lib/chaseccomp/chaseccomp.o: .FORCE
 endif
 
 twtstr = src/utils/twtstr.nim src/utils/opt.nim
-dynstream = src/io/dynstream.nim
+dynstream = src/io/dynstream.nim src/utils/bytearray.nim
 chafile = src/io/chafile.nim $(dynstream)
 chaos = src/utils/chaos.nim $(twtstr)
 connectionerror = src/server/connectionerror.nim

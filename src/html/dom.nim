@@ -35,11 +35,11 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
-import server/blob
 import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/bytearray
 import utils/chahash
 import utils/chaos
 import utils/dtoawrap
@@ -1213,14 +1213,14 @@ proc mark*(rt: JSRuntime; env: LoadSheetEnv; markFunc: JS_MarkFunc) =
   rt.markObj(env.url, markFunc)
 
 proc onFinishCSSText(response: Response; success: bool) =
-  let blob = response.onFinishBlob(success)
   let env = LoadSheetEnv(response.opaque)
   let window = env.window
   let this = env.this
   let finish = env.finish
-  if blob != nil:
+  if success:
+    let arr = response.onFinishByteArray()
     let charset = env.charset
-    let s = blob.toOpenArray().cssDecode(charset)
+    let s = arr.toOpenArray().cssDecode(charset)
     window.parseStylesheet(this, s, env.url, charset, env.layer, finish,
       env.parseEnv, env.i)
   else:
@@ -6861,11 +6861,11 @@ proc onFinishToBlob(response: Response; success: bool) =
   let ctx = env.ctx
   let callback = move(env.callback)
   let this = env.this
-  let blob = response.onFinishBlob(success)
-  if blob == nil:
+  if not success:
     JS_FreeContext(ctx)
     return
-  let jsBlob = ctx.toJS(blob)
+  let blob = response.onFinishBlob()
+  let jsBlob = ctx.toJSNew(blob)
   if JS_IsException(jsBlob.vc):
     JS_FreeContext(ctx)
     return
@@ -7257,15 +7257,15 @@ proc onFinishFetchModule(response: Response; success: bool) =
   let element = env.element
   let moduleType = env.moduleType
   let onComplete = env.onComplete
-  let contentType = env.contentType
+  let contentType = response.getContentType()
   let ctx = window.jsctx
-  let blob = response.onFinishBlob(success)
-  if blob == nil:
+  if not success:
     let res = ScriptResult(t: srtNull)
     settings.moduleMap.put(url, moduleType, res)
     element.onComplete(res)
   elif contentType.isJavaScriptType():
-    let source = blob.toOpenArray().toValidUTF8()
+    let arr = response.onFinishByteArray()
+    let source = arr.toOpenArray().toValidUTF8()
     let res = ctx.newJSModuleScript(source, url, env.options, settings)
     #TODO can't we just return null from newJSModuleScript?
     if JS_IsException(res.script.record.vc):

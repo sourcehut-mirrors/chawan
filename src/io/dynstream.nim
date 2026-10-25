@@ -6,6 +6,7 @@
 
 import std/posix
 
+import utils/bytearray
 import utils/opt
 
 type PosixStream* = ref object
@@ -101,6 +102,23 @@ proc readAll*(s: PosixStream; buffer: var string): bool =
   buffer.setLen(idx)
   true
 
+proc readAll*(s: PosixStream; buffer: var ByteArray): bool =
+  assert s.blocking
+  buffer = initByteArray(alloc(4096), 4096)
+  var idx = 0
+  while true:
+    let n = s.read(addr buffer.p[idx], buffer.len - idx)
+    if n == 0:
+      break
+    if n < 0:
+      return false
+    idx += n
+    if idx == buffer.len:
+      buffer.len += 4096
+      buffer.p = cast[ptr UncheckedArray[char]](realloc(buffer.p, buffer.len))
+  buffer.len = idx
+  true
+
 proc readAll*(s: PosixStream): string =
   discard s.readAll(result)
 
@@ -170,7 +188,7 @@ type
   MaybeMappedMemory* = ref MaybeMappedMemoryObj
 
   MaybeMappedMemoryType = enum
-    mmmtMmap, mmmtAlloc, mmmtString
+    mmmtMmap, mmmtAlloc
 
   MaybeMappedMemoryObj = object
     t: MaybeMappedMemoryType
@@ -185,7 +203,6 @@ proc `=destroy`*(mem: var MaybeMappedMemoryObj) =
     of mmmtMmap:
       if mem.p0len != 0:
         discard munmap(mem.p0, mem.p0len)
-    of mmmtString: GC_unref(cast[ref string](mem.p0))
     of mmmtAlloc: dealloc(mem.p0)
 
 proc `=copy`*(dst: var MaybeMappedMemoryObj; src: MaybeMappedMemoryObj)
@@ -231,29 +248,6 @@ proc readLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
     dealloc(p)
     return MaybeMappedMemory(nil)
   return MaybeMappedMemory(t: mmmtAlloc, p0: p, p0len: ilen, p: p, len: ilen)
-
-# Try to mmap the file, and fall back to readAll if it fails.
-# This never returns nil.
-proc readAllOrMmap*(ps: PosixStream): MaybeMappedMemory =
-  var stats: Stat
-  if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
-    let res = ps.mmap(stats, -1)
-    if res != nil:
-      return res
-  let s = new(string)
-  s[] = ps.readAll()
-  GC_ref(s)
-  let p = if s[].len > 0:
-    cast[ptr UncheckedArray[uint8]](addr s[][0])
-  else:
-    nil
-  return MaybeMappedMemory(
-    t: mmmtString,
-    p0: cast[pointer](s),
-    p0len: s[].len,
-    p: p,
-    len: s[].len
-  )
 
 proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
   var stats: Stat

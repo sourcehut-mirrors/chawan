@@ -28,6 +28,7 @@ import server/blob
 import server/headers
 import server/request
 import server/url
+import utils/bytearray
 import utils/opt
 import utils/twtstr
 
@@ -82,8 +83,6 @@ type
     lcSuspend
     lcTee
 
-  ClientKey* = array[32, uint8]
-
   LoaderClientConfig* = object
     originURL*: URL
     originIp*: string
@@ -133,16 +132,12 @@ type
     isOk*: bool
     get*: string
 
-  BlobFinish* = proc(opaque: BlobOpaque; blob: Blob) {.nimcall, raises: [].}
-
   BlobOpaque* = ref object of RootObj
-    p: pointer
-    len: int
+    arr: ByteArray
     size: int
-    contentType*: string
 
   JSBlobOpaque {.final.} = ref object of BlobOpaque
-    ctx: JSContext
+    ctx: JSContext #TODO dup?
     resolve: JSCallback
     reject: JSCallback
 
@@ -157,6 +152,7 @@ proc getClassID(t: typedesc[Response]): JSClassID
 proc getLoader(ctx: JSContext): FileLoader {.importc: "cha_$1".}
 proc consoleError(ctx: JSContext; ss: varargs[string]) {.importc: "cha_$1".}
 
+# Response
 template isErr*(x: TextResult): bool =
   not x.isOk
 
@@ -239,31 +235,26 @@ const BufferSize = 4096
 proc onReadBlob(response: Response) =
   let opaque = BlobOpaque(response.opaque)
   while true:
-    if opaque.len + BufferSize > opaque.size:
+    if opaque.arr.len + BufferSize > opaque.size:
       opaque.size *= 2
-      opaque.p = realloc(opaque.p, opaque.size)
-    let p = cast[ptr UncheckedArray[uint8]](opaque.p)
-    let diff = opaque.size - opaque.len
-    let n = response.stream.read(addr p[opaque.len], diff)
+      opaque.arr.p =
+        cast[ptr UncheckedArray[char]](realloc(opaque.arr.p, opaque.size))
+    let diff = opaque.size - opaque.arr.len
+    let n = response.stream.read(addr opaque.arr.p[opaque.arr.len], diff)
     if n <= 0:
       assert n != -1 or errno != EBADF
       break
-    opaque.len += n
+    opaque.arr.len += n
 
-proc onFinishBlob*(response: Response; success: bool): Blob =
+proc onFinishByteArray*(response: Response): ByteArray =
   let opaque = BlobOpaque(response.opaque)
-  if success:
-    let p = opaque.p
-    opaque.p = nil
-    let blob = if p == nil:
-      newEmptyBlob(opaque.contentType)
-    else:
-      newBlob(p, opaque.len, opaque.contentType, deallocBlob)
-    return blob
-  if opaque.p != nil:
-    dealloc(opaque.p)
-    opaque.p = nil
-  return Blob(nil)
+  move(opaque.arr)
+
+proc onFinishBlob*(response: Response): Blob =
+  var arr = response.onFinishByteArray()
+  let p = move(arr.p)
+  arr.len = 0
+  newBlob(p, arr.len, response.getContentType(), deallocBlob)
 
 proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
   response.opaque = opaque
@@ -274,9 +265,8 @@ proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
     response.flags.incl(rfBodyUsed)
     response[].onFinish(response, true)
     return
-  opaque.contentType = response.getContentType()
-  opaque.p = alloc(BufferSize)
   opaque.size = BufferSize
+  opaque.arr = initByteArray(alloc(BufferSize), 0)
   response.onRead = onReadBlob
   response.flags.incl(rfBodyUsed)
   loader.resume(response)
@@ -295,11 +285,11 @@ proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
   JS_FreeContext(ctx)
 
 proc jsBlobFinish(response: Response; success: bool) =
-  let blob = response.onFinishBlob(success)
   let opaque = JSBlobOpaque(response.opaque)
   let ctx = opaque.ctx
-  let val = if blob != nil:
-    ctx.toJS(blob)
+  let val = if success:
+    let blob = response.onFinishBlob()
+    ctx.toJSNew(blob)
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
@@ -320,21 +310,21 @@ proc blob0(ctx: JSContext; response: Response; finish: ResponseFinish):
   res.toJSValue()
 
 proc onFinishText(response: Response; success: bool) =
-  let blob = response.onFinishBlob(success)
   let opaque = JSBlobOpaque(response.opaque)
   let ctx = opaque.ctx
-  let val = if blob != nil:
-    ctx.toJS(blob.toOpenArray().toValidUTF8())
+  let val = if success:
+    let arr = response.onFinishByteArray()
+    ctx.toJS(arr.toOpenArray().toValidUTF8())
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
 
 proc onFinishJSON(response: Response; success: bool) =
-  let blob = response.onFinishBlob(success)
   let opaque = JSBlobOpaque(response.opaque)
   let ctx = opaque.ctx
-  let val = if blob != nil:
-    let s = blob.toOpenArray().toValidUTF8()
+  let val = if success:
+    let arr = response.onFinishByteArray()
+    let s = arr.toOpenArray().toValidUTF8()
     JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
       "<input>".toCStringConst)
   else:
@@ -342,11 +332,11 @@ proc onFinishJSON(response: Response; success: bool) =
   jsFinish0(opaque, val)
 
 proc onFinishArrayBuffer(response: Response; success: bool) =
-  let blob = response.onFinishBlob(success)
   let opaque = JSBlobOpaque(response.opaque)
   let ctx = opaque.ctx
-  let val = if blob != nil:
-    ctx.newArrayBuffer(blob.toOpenArray())
+  let val = if success:
+    let arr = response.onFinishByteArray()
+    ctx.newArrayBuffer(arr.toOpenArray())
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
