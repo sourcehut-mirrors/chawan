@@ -178,7 +178,6 @@ proc main() =
     else: # jpeg
       stbi_write_jpg_to_func(myWriteFunc, nil, cint(width), cint(height), 4, p,
         quality)
-    deallocMem(src)
   else:
     cgiDie(ceInternalError, "not implemented")
 

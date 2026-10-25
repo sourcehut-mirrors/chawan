@@ -38,7 +38,6 @@ import local/bufferiface
 import local/lineedit
 import local/select
 import local/term
-import server/blob
 import server/connectionerror
 import server/forkserver
 import server/headers
@@ -754,13 +753,8 @@ proc loadCachedImage3(opaque: RootRef; response: Response) =
   if mem == nil:
     loader.removeCachedItem(env.cacheId)
     return
-  let blob = newBlob(mem.p, mem.len, "image/x-sixel",
-    (proc(opaque, p: pointer) =
-      deallocMem(cast[MaybeMappedMemory](opaque))
-    ), mem
-  )
   env.iface.queueDraw()
-  cachedImage.data = blob
+  cachedImage.data = mem
   cachedImage.state = cisLoaded
   cachedImage.cacheId = cacheId
   cachedImage.transparent =

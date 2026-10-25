@@ -40,8 +40,6 @@ proc main() =
   doAssert stbir_resize_uint8_srgb(addr src.p[0], srcWidth, srcHeight, 0,
     addr dst.p[1], dstWidth, dstHeight, 0, 4, 3, 0) != 0
   discard os.writeLoop(dst)
-  deallocMem(src)
-  deallocMem(dst)
 
 main()
 

@@ -101,7 +101,7 @@ type
     state*: CachedImageState
     width*: int
     height*: int
-    data*: Blob # mmapped blob of image data
+    data*: MaybeMappedMemory # mmapped blob of image data
     cacheId*: int # cache id of the file backing "data"
     bmp*: NetworkBitmap
     # Following variables are always 0 in kitty mode; they exist to support

@@ -333,7 +333,6 @@ proc setupStartupScript(ctx: JSContext) =
     let src = ps.readAllOrMmap()
     let obj = JS_ReadObject(ctx, cast[ptr uint8](src.p), csize_t(src.len),
       JS_READ_OBJ_BYTECODE)
-    deallocMem(src)
   if JS_IsException(obj.vc):
     die(ctx.getExceptionMsg())
   let ret = ctx.evalFunction(obj)

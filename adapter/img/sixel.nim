@@ -536,7 +536,6 @@ proc main() =
     let p = cast[ptr UncheckedArray[RGBAColorBE]](src.p)
     os.encode(p.toOpenArray(0, n - 1), width, height, offx, offy, cropw,
       palette, halfdump)
-    deallocMem(src)
   else:
     cgiDie(ceInternalError, "not implemented")
 
