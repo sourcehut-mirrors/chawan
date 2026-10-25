@@ -5,6 +5,8 @@ import std/termios
 
 import config/config
 import config/conftypes
+import css/cell
+import css/color
 import encoding/charset
 import encoding/decoder
 import encoding/encoder
@@ -12,10 +14,9 @@ import encoding/encodercore
 import io/dynstream
 import io/poll
 import js/jsref
-import server/loaderiface
 import server/blob
-import css/cell
-import css/color
+import server/loaderiface
+import utils/chaos
 import utils/opt
 import utils/strwidth
 import utils/twtstr

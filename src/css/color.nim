@@ -368,10 +368,10 @@ const ColorsRGBMap = {
   "yellowgreen": 0x9ACD32u32,
 }
 
-proc namedRGBColor*(s: string): Opt[RGBColor] =
+proc namedRGBColor*(s: openArray[char]): Opt[RGBColor] =
   let i = ColorsRGBMap.binarySearch(s,
-    proc(x: (string, uint32); y: string): int =
-      return x[0].cmpIgnoreCase(y)
+    proc(x: (string, uint32); y: openArray[char]): int =
+      return x[0].cmpIgnoreCase2(y)
   )
   if i != -1:
     return ok(RGBColor(ColorsRGBMap[i][1]))
@@ -1004,7 +1004,7 @@ proc parseHexColor*(s: openArray[char]): Opt[ARGBColor] =
   else:
     return err()
 
-proc parseARGBColor*(s: string): Opt[ARGBColor] =
+proc parseARGBColor*(s: openArray[char]): Opt[ARGBColor] =
   if x := namedRGBColor(s):
     return ok(x.argb)
   if (s.len == 3 or s.len == 4 or s.len == 6 or s.len == 8) and s[0] == '#':

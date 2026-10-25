@@ -4,16 +4,23 @@
 
 import std/posix
 
+import utils/opt
 import utils/twtstr
 
 # POSIX types
 type SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
 
 # POSIX functions
-{.push importc, header: "<stdlib.h>".}
-proc free(p: pointer)
-proc system*(cmd: cstring): cint
-{.pop.} # importc, header: "<stdlib.h>"
+{.push header: "<stdlib.h>".}
+proc free(p: pointer) {.importc.}
+proc system*(cmd: cstring): cint {.importc.}
+proc c_getenv(name: cstring): cstring {.
+  header: "<stdlib.h>", importc: "getenv".}
+proc c_setenv(envname, envval: cstring; overwrite: cint): cint {.
+  header: "<stdlib.h>", importc: "setenv".}
+proc c_unsetenv(name: cstring): cint {.header: "<stdlib.h>",
+  importc: "unsetenv".}
+{.pop.} # header: "<stdlib.h>"
 
 let SIG_DFL* {.importc, header: "<signal.h>".}: SighandlerT
 let SIG_IGN* {.importc, header: "<signal.h>".}: SighandlerT
@@ -63,6 +70,29 @@ proc getArgv*(i: int): string =
 
 proc getArgvCount*(): int =
   int(cmdCount)
+
+proc getEnvCString*(name: cstring): cstring =
+  return c_getenv(name)
+
+proc getEnvEmpty*(name: string; fallback = ""): string =
+  var res = getEnvCString(cstring(name))
+  if res == nil or res[0] == '\0':
+    return fallback
+  return $res
+
+proc setEnvCString*(name, value: cstring): Opt[void] =
+  if c_setenv(name, value, 1) != 0:
+    return err()
+  ok()
+
+proc setEnv*(name, value: string): Opt[void] =
+  setEnvCString(cstring(name), cstring(value))
+
+proc unsetEnvCString*(name: cstring) =
+  discard c_unsetenv(name)
+
+proc unsetEnv*(name: string) =
+  unsetEnvCString(cstring(name))
 
 proc basename*(s: cstring): cstring =
   var i = 0
@@ -221,5 +251,17 @@ proc formatUnixSeconds*(n: int64; fmt: cstring): string =
   let n = strftime(cstring(s), csize_t(s.len), fmt, tm)
   s.setLen(int(n))
   s
+
+proc expandPath*(path: string): string =
+  if path.len > 0 and path[0] == '~':
+    if path.len == 1:
+      return getEnvEmpty("HOME")
+    if path[1] == '/':
+      return getEnvEmpty("HOME") & path.substr(1)
+    let usr = path.until({'/'}, 1)
+    let p = getpwnam(cstring(usr))
+    if p != nil and p.pw_dir != nil:
+      return $p.pw_dir & '/' & path.substr(usr.len)
+  return path
 
 {.pop.} # raises: []

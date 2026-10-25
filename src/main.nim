@@ -256,8 +256,7 @@ proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
   if file.isErr and ctx.configPath.len > 0:
     # The user specified a non-existent config file.
     return err("failed to open config file " & ctx.configPath)
-  if twtstr.setEnv("CHA_DIR", dir).isErr or
-      twtstr.setEnv("CHA_DATA_DIR", dataDir).isErr:
+  if setEnv("CHA_DIR", dir).isErr or setEnv("CHA_DATA_DIR", dataDir).isErr:
     die("failed to set env vars")
   let config = newConfig(jsctx, dir, dataDir)
   if config == nil:
@@ -342,33 +341,37 @@ proc setupStartupScript(ctx: JSContext) =
     die(ctx.getExceptionMsg())
 
 jsNamespaceDef(Client): # fake namespace
-  proc readFile(ctx: JSContext; path: string): JSValue {.jsstfunc.} =
+  proc readFile(ctx: JSContext; path: USVString): JSValue {.jsstfunc.} =
+    #TODO throw on 0 byte
     var s: string
-    if chafile.readFile(path, s).isOk:
+    if chafile.readFile(path.p, s).isOk:
       return ctx.toJS(s)
     return JS_NULL
 
-  proc writeFile(ctx: JSContext; path, content: string; mode = cint(0o644)):
+  proc writeFile(ctx: JSContext; path, content: USVString; mode = cint(0o644)):
       JSValue {.jsstfunc.} =
-    if chafile.writeFile(path, content, mode).isOk:
+    #TODO throw on 0 bytein path
+    if chafile.writeFile(path.p, content.toOpenArray(), mode).isOk:
       return JS_UNDEFINED
-    return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
+    return JS_ThrowTypeError(ctx, "Could not write to file %s", path.p)
 
-  proc getenv(ctx: JSContext; s: string; fallback = JS_NULL.vc): JSValue
+  proc getenv(ctx: JSContext; s: USVString; fallback = JS_NULL.vc): JSValue
       {.jsstfunc.} =
-    let env = twtstr.getEnvCString(s)
+    #TODO throw on 0 byte in s
+    let env = getEnvCString(s.p)
     if env == nil:
       return JS_DupValue(ctx, fallback)
     return JS_NewString(ctx, env)
 
-  proc setenv(ctx: JSContext; s: string; val: JSValueConst): JSValue
+  proc setenv(ctx: JSContext; s: USVString; val: JSValueConst): JSValue
       {.jsstfunc.} =
+    #TODO throw on 0 byte in s
     if JS_IsNull(val):
-      twtstr.unsetEnv(s)
+      unsetEnvCString(s.p)
     else:
-      var vals: string
+      var vals: USVString
       ?ctx.fromJS(val, vals)
-      if twtstr.setEnv(s, vals).isErr:
+      if setEnvCString(s.p, vals.p).isErr:
         return JS_ThrowTypeError(ctx, "Failed to set environment variable")
     return JS_UNDEFINED
 
@@ -440,8 +443,8 @@ proc main() =
   let rt = newGlobalJSRuntime()
   initCAtomFactory()
   let binDir = chaos.getAppFilename().parentDir()
-  if twtstr.setEnv("CHA_BIN_DIR", binDir).isErr or
-      twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
+  if setEnv("CHA_BIN_DIR", binDir).isErr or
+      setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
     die("failed to set env vars")
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:

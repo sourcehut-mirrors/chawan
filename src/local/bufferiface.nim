@@ -1473,10 +1473,10 @@ jsClassPublicDef(BufferInterface):
       discard
     return addPromise[LoadResult](ctx, iface)
 
-  proc readSuccess(ctx: JSContext; iface: BufferInterface; s: string; fd: cint):
-      JSValue {.jsfunc.} =
+  proc readSuccess(ctx: JSContext; iface: BufferInterface; s: USVString;
+      fd: cint): JSValue {.jsfunc.} =
     ctx.withPacketWriter iface, bcReadSuccess, w:
-      w.swrite(s)
+      w.swrite(s.toOpenArray())
       let hasfd = fd != -1
       w.swrite(hasfd)
       if hasfd:

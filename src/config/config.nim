@@ -676,9 +676,9 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var ARGBColor): JSCode =
     # as hex
     return ctx.fromJS(val, uint32(res))
   # parse
-  var s: string
+  var s: DOMString
   ?ctx.fromJS(val, s)
-  if x := parseARGBColor(s):
+  if x := parseARGBColor(s.toOpenArray()):
     res = x
     return fjOk
   JS_ThrowTypeError(ctx, "unrecognized color")
@@ -689,12 +689,12 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var CSSColor): JSCode =
   if ctx.fromJS(val, argb).isOk:
     res = cssColor(argb)
     return fjOk
-  var s: string
+  var s: DOMString
   ?ctx.fromJS(val, s)
   var p = initCSSParser(s)
   let c = p.parseColor()
   if c.isErr or p.has():
-    JS_ThrowTypeError(ctx, "invalid color %s", cstring(s))
+    JS_ThrowTypeError(ctx, "invalid color %s", s.p)
     return fjErr
   res = c.get
   fjOk

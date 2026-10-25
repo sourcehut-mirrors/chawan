@@ -69,7 +69,7 @@ jsNamespaceDef(Util):
     return percentEncode(s.toOpenArray(), PathPercentEncodeSet + {'%'})
 
   proc expandPath(s: string): string {.jsstfunc.} =
-    return twtstr.expandPath(s)
+    return chaos.expandPath(s)
 
   proc mkdir(s: DOMString; mode: cint): cint {.jsstfunc.} =
     return posix.mkdir(s.p, Mode(mode))

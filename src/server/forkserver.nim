@@ -222,7 +222,7 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
     let stdout = cast[ChaFile](stdout)
     env.add(("SCRIPT_FILENAME", cmd))
     for it in env:
-      if twtstr.setEnv(it.name, it.value).isErr:
+      if setEnv(it.name, it.value).isErr:
         discard stdout.writeLine(ExecErrorMsg & " failed to set env vars")
         exitnow(1)
     let i = cmd.rfind('/')
@@ -249,19 +249,18 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
     return pid
 
 proc setupForkServerEnv(config: LoaderConfig): Opt[void] =
-  ?twtstr.setEnv("SERVER_SOFTWARE", "Chawan")
-  ?twtstr.setEnv("SERVER_PROTOCOL", "HTTP/1.0")
-  ?twtstr.setEnv("SERVER_NAME", "localhost")
-  ?twtstr.setEnv("SERVER_PORT", "80")
-  ?twtstr.setEnv("REMOTE_HOST", "localhost")
-  ?twtstr.setEnv("REMOTE_ADDR", "127.0.0.1")
-  ?twtstr.setEnv("GATEWAY_INTERFACE", "CGI/1.1")
-  ?twtstr.setEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
-  ?twtstr.setEnv("CHA_TMP_DIR", config.tmpdir)
-  ?twtstr.setEnv("CHA_DIR", config.configDir)
-  ?twtstr.setEnv("CHA_DATA_DIR", config.dataDir)
-  ?twtstr.setEnv("CHA_BOOKMARK", config.bookmark)
-  ok()
+  ?setEnv("SERVER_SOFTWARE", "Chawan")
+  ?setEnv("SERVER_PROTOCOL", "HTTP/1.0")
+  ?setEnv("SERVER_NAME", "localhost")
+  ?setEnv("SERVER_PORT", "80")
+  ?setEnv("REMOTE_HOST", "localhost")
+  ?setEnv("REMOTE_ADDR", "127.0.0.1")
+  ?setEnv("GATEWAY_INTERFACE", "CGI/1.1")
+  ?setEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
+  ?setEnv("CHA_TMP_DIR", config.tmpdir)
+  ?setEnv("CHA_DIR", config.configDir)
+  ?setEnv("CHA_DATA_DIR", config.dataDir)
+  setEnv("CHA_BOOKMARK", config.bookmark)
 
 const DefaultBrowsecap = """
 http;			http %h %p %s %?;	cgioutput; resource; netpath

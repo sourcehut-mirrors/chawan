@@ -183,7 +183,7 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
     if ctx.hasColon:
       ctx.s &= getEnvEmpty(ctx.identStr, word)
     else:
-      let cs = getEnvCString(ctx.identStr)
+      let cs = getEnvCString(cstring(ctx.identStr))
       if cs != nil:
         ctx.s &= $cs
       else:
@@ -195,7 +195,7 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
         return err(word)
       ctx.s &= s
     else:
-      let cs = getEnvCString(ctx.identStr)
+      let cs = getEnvCString(cstring(ctx.identStr))
       if cs == nil:
         return err(word)
       ctx.s &= $cs
@@ -204,7 +204,7 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
       if getEnvEmpty(ctx.identStr).len > 0:
         ctx.s &= word
     else:
-      if getEnvCString(ctx.identStr) != nil:
+      if getEnvCString(cstring(ctx.identStr)) != nil:
         ctx.s &= word
   else: assert false
   ctx.subChar = '\0'

@@ -256,7 +256,7 @@ proc controlToVisual*(u: uint32): string =
 proc add*(s: var string; u: uint8) =
   s.addInt(uint64(u))
 
-proc cmpIgnoreCase2(a, b: openArray[char]): int =
+proc cmpIgnoreCase2*(a, b: openArray[char]): int =
   let alen = a.len
   let blen = b.len
   let L = min(alen, blen)
@@ -931,42 +931,6 @@ proc matchQNameProduction*(s: openArray[char]): bool =
         return false
       colon = true
   return s.matchNameProduction()
-
-proc c_getenv(name: cstring): cstring {.
-  header: "<stdlib.h>", importc: "getenv".}
-proc c_setenv(envname, envval: cstring; overwrite: cint): cint {.
-  header: "<stdlib.h>", importc: "setenv".}
-proc c_unsetenv(name: cstring): cint {.
-  header: "<stdlib.h>", importc: "unsetenv".}
-
-proc getEnvCString*(name: string): cstring =
-  return c_getenv(cstring(name))
-
-proc getEnvEmpty*(name: string; fallback = ""): string =
-  var res = getEnvCString(name)
-  if res == nil or res[0] == '\0':
-    return fallback
-  return $res
-
-proc setEnv*(name, value: string): Opt[void] =
-  if c_setenv(cstring(name), cstring(value), 1) != 0:
-    return err()
-  ok()
-
-proc unsetEnv*(name: string) =
-  discard c_unsetenv(cstring(name))
-
-proc expandPath*(path: string): string =
-  if path.len > 0 and path[0] == '~':
-    if path.len == 1:
-      return getEnvEmpty("HOME")
-    if path[1] == '/':
-      return getEnvEmpty("HOME") & path.substr(1)
-    let usr = path.until({'/'}, 1)
-    let p = getpwnam(cstring(usr))
-    if p != nil and p.pw_dir != nil:
-      return $p.pw_dir & '/' & path.substr(usr.len)
-  return path
 
 proc deleteChars*(s: openArray[char]; todel: set[char]): string =
   result = newStringOfCap(s.len)
