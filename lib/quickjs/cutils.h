@@ -327,7 +327,7 @@ static inline void dbuf_set_error(DynBuf *s)
     s->error = TRUE;
 }
 
-#define UTF8_CHAR_LEN_MAX 6
+#define UTF8_CHAR_LEN_MAX 4
 
 int unicode_to_utf8(uint8_t *buf, unsigned int c);
 int unicode_from_utf8(const uint8_t *p, int max_len, const uint8_t **pp);

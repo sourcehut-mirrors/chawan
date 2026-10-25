@@ -211,7 +211,7 @@ void dbuf_free(DynBuf *s)
     memset(s, 0, sizeof(*s));
 }
 
-/* Note: at most 31 bits are encoded. At most UTF8_CHAR_LEN_MAX bytes
+/* Note: at most 21 bits are encoded. At most UTF8_CHAR_LEN_MAX bytes
    are output. */
 int unicode_to_utf8(uint8_t *buf, unsigned int c)
 {
@@ -226,19 +226,9 @@ int unicode_to_utf8(uint8_t *buf, unsigned int c)
             if (c < 0x10000) {
                 *q++ = (c >> 12) | 0xe0;
             } else {
-                if (c < 0x00200000) {
-                    *q++ = (c >> 18) | 0xf0;
-                } else {
-                    if (c < 0x04000000) {
-                        *q++ = (c >> 24) | 0xf8;
-                    } else if (c < 0x80000000) {
-                        *q++ = (c >> 30) | 0xfc;
-                        *q++ = ((c >> 24) & 0x3f) | 0x80;
-                    } else {
-                        return 0;
-                    }
-                    *q++ = ((c >> 18) & 0x3f) | 0x80;
-                }
+                if (c > 0x10FFFF)
+                    return 0;
+                *q++ = (c >> 18) | 0xf0;
                 *q++ = ((c >> 12) & 0x3f) | 0x80;
             }
             *q++ = ((c >> 6) & 0x3f) | 0x80;
@@ -257,7 +247,7 @@ static const unsigned char utf8_first_code_mask[5] = {
 };
 
 /* return -1 if error. *pp is not updated in this case. max_len must
-   be >= 1. The maximum length for a UTF8 byte sequence is 6 bytes. */
+   be >= 1. The maximum length for a UTF8 byte sequence is 4 bytes. */
 int unicode_from_utf8(const uint8_t *p, int max_len, const uint8_t **pp)
 {
     int l, c, b, i;
@@ -285,14 +275,8 @@ int unicode_from_utf8(const uint8_t *p, int max_len, const uint8_t **pp)
         l = 2;
         break;
     case 0xf0: case 0xf1: case 0xf2: case 0xf3:
-    case 0xf4: case 0xf5: case 0xf6: case 0xf7:
+    case 0xf4:
         l = 3;
-        break;
-    case 0xf8: case 0xf9: case 0xfa: case 0xfb:
-        l = 4;
-        break;
-    case 0xfc: case 0xfd:
-        l = 5;
         break;
     default:
         return -1;
