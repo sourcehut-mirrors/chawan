@@ -249,10 +249,14 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
     style.updateSheet()
 
 proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
-    ctx: JSContext; charset = DefaultCharset): ChaDOMBuilder =
+    ctx: JSContext; charset = DefaultCharset, quirksMode = qmNoQuirks):
+    ChaDOMBuilder =
+  if url == nil:
+    return nil
   let document = newDocument(url)
   if document == nil:
     return nil
+  document.quirksMode = quirksMode
   document.charset = charset
   document.contentType = satTextHtml
   if window != nil:
@@ -269,17 +273,14 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
 proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
     seq[Node] {.exportc: "cha_$1".} =
   let url = parseURL0("about:blank")
-  if url == nil:
-    return @[]
-  let builder = newChaDOMBuilder(url, Window(nil), ccIrrelevant, ctx)
+  let builder = newChaDOMBuilder(url, Window(nil), ccIrrelevant, ctx,
+    quirksMode = element.asNode.document.quirksMode)
   if builder == nil:
     return @[]
-  let document = builder.document
-  document.quirksMode = element.asNode.document.quirksMode
-  let root = document.newHTMLElement(ttHtml)
+  let root = builder.document.newHTMLElement(ttHtml)
   if root == nil:
     return @[]
-  document.asParentNode.append(ctx, root.asNode)
+  builder.document.asParentNode.append(ctx, root.asNode)
   let form = element.findAncestorIncl(ttForm)
   var opts = HTML5ParserOpts[ParentNode](
     isIframeSrcdoc: false, #TODO?
@@ -396,6 +397,8 @@ proc finish*(wrapper: HTML5ParserWrapper) =
 proc parseHTMLDocument*(ctx: JSContext; str: openArray[char]; url: URL):
     Document =
   let builder = newChaDOMBuilder(url, Window(nil), ccIrrelevant, ctx)
+  if builder == nil:
+    return Document(nil)
   var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode]())
   let res = parser.parseChunk(str)
   assert res == pcrContinue
@@ -426,7 +429,7 @@ jsClassRaw(DOMParserDef, "DOMParser"):
       else:
         parseURL0("about:blank")
       let document = ctx.parseHTMLDocument(str.toOpenArray(), url)
-      return ctx.toJS(document)
+      return ctx.toJSNew(document)
     else:
       return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
 

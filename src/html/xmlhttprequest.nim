@@ -506,12 +506,12 @@ jsClassDef(XMLHttpRequest):
         let len = this.received.len
         let (opaque, p) = this.received.ptrify()
         let blob = newBlob(p, len, this.getContentType(), blobFree, opaque)
-        ctx.toJS(blob)
+        ctx.toJSNew(blob)
       of xhrtDocument:
         #TODO this is certainly not compliant
         let document = ctx.parseHTMLDocument(this.received,
           parseURL0("about:blank"))
-        ctx.toJS(document)
+        ctx.toJSNew(document)
       of xhrtJSON:
         JS_ParseJSON(ctx, this.received.toCStringConst,
           csize_t(this.received.len), "<input>".toCStringConst)
@@ -519,7 +519,7 @@ jsClassDef(XMLHttpRequest):
         JS_UNDEFINED
       if not JS_IsException(res.vc):
         this.responseObject = trace(res)
-    return ctx.toJS(this.responseObject)
+    return this.responseObject.toJSValue()
 
 proc addXMLHttpRequestModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(XMLHttpRequestEventTargetDef)
