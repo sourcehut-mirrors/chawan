@@ -1641,7 +1641,7 @@ proc processOutputString*(term: Terminal; s: openArray[char];
     return ok()
   if not trackCursor:
     term.unsetCursorPos()
-  if s.validateUTF8Surr() != -1:
+  if s.validateUTF8() != -1:
     if trackCursor:
       inc term.frame.cursorx
     return term.write('?')

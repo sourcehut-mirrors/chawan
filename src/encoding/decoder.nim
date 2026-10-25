@@ -165,8 +165,7 @@ proc toValidUTF8*(iq: openArray[char]): string =
   ## U+FFFD replacement characters.
   return iq.decodeAll(csUtf8)
 
-proc validateUTF8Surr*(s: openArray[char]): int =
-  ## Analogous to std/unicode's validateUtf8, but also reports surrogates.
+proc validateUTF8*(s: openArray[char]): int =
   var ctx = initTextDecoderContext(csUtf8, errorMode = demFatal)
   for chunk in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
     discard

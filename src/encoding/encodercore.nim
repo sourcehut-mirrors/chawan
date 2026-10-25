@@ -15,7 +15,7 @@
 ##
 ## The input stream **must** be valid UTF-8, with the exception that
 ## (invalid) surrogate codepoints are automagically replaced with
-## replacement characters.  So if std/unicode's `validateUtf8` returns -1
+## replacement characters.  So if `decoder.validateUtf8` returns -1
 ## on a buffer, it is safe to feed it to `TextEncoder`.
 ##
 ## `encode` expects an input queue `iq`, an output queue `oq`, and an index
