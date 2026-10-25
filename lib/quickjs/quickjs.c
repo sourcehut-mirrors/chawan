@@ -603,10 +603,10 @@ typedef struct JSStringRope {
     uint32_t len;
     uint8_t is_wide_char; /* 0 = 8 bits, 1 = 16 bits characters */
     uint8_t depth; /* max depth of the rope tree */
-    /* XXX: could reduce memory usage by using a direct pointer with
-       bit 0 to select rope or string */
-    JSValue left;
-    JSValue right; /* might be the empty string */
+    int8_t left_tag;
+    int8_t right_tag;
+    void *left;
+    void *right; /* might be the empty string */
 } JSStringRope;
 
 typedef enum {
@@ -2951,6 +2951,16 @@ static inline BOOL is_num_string(uint32_t *pval, const JSString *p)
     }
 }
 
+static inline JSValue js_rope_left(JSStringRope *r)
+{
+    return JS_MKPTR(r->left_tag, r->left);
+}
+
+static inline JSValue js_rope_right(JSStringRope *r)
+{
+    return JS_MKPTR(r->right_tag, r->right);
+}
+
 /* XXX: could use faster version ? */
 static inline uint32_t hash_string8(const uint8_t *str, size_t len, uint32_t h)
 {
@@ -2986,8 +2996,8 @@ static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
         return hash_string(JS_VALUE_GET_STRING(val), h);
     } else {
         JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
-        h = hash_string_rope(r->left, h);
-        return hash_string_rope(r->right, h);
+        h = hash_string_rope(js_rope_left(r), h);
+        return hash_string_rope(js_rope_right(r), h);
     }
 }
 
@@ -4320,9 +4330,9 @@ static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
         if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING_ROPE) {
             JSStringRope *r = JS_VALUE_GET_STRING_ROPE(v);
             /* recursion is acceptable because the rope depth is bounded */
-            if (string_buffer_concat_value(s, r->left))
+            if (string_buffer_concat_value(s, js_rope_left(r)))
                 return -1;
-            return string_buffer_concat_value(s, r->right);
+            return string_buffer_concat_value(s, js_rope_right(r));
         } else {
             v1 = JS_ToString(s->ctx, v);
             if (JS_IsException(v1))
@@ -4856,14 +4866,14 @@ static int string_rope_get(JSValueConst val, uint32_t idx)
     } else {
         JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
         uint32_t len;
-        if (JS_VALUE_GET_TAG(r->left) == JS_TAG_STRING)
-            len = JS_VALUE_GET_STRING(r->left)->len;
+        if (JS_VALUE_GET_TAG(js_rope_left(r)) == JS_TAG_STRING)
+            len = JS_VALUE_GET_STRING(js_rope_left(r))->len;
         else
-            len = JS_VALUE_GET_STRING_ROPE(r->left)->len;
+            len = JS_VALUE_GET_STRING_ROPE(js_rope_left(r))->len;
         if (idx < len)
-            return string_rope_get(r->left, idx);
+            return string_rope_get(js_rope_left(r), idx);
         else
-            return string_rope_get(r->right, idx - len);
+            return string_rope_get(js_rope_right(r), idx - len);
     }
 }
 
@@ -4892,8 +4902,8 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
             return JS_VALUE_GET_STRING(val);
         r = JS_VALUE_GET_STRING_ROPE(val);
         assert(s->stack_len < JS_STRING_ROPE_MAX_DEPTH);
-        s->stack[s->stack_len++] = r->right;
-        val = r->left;
+        s->stack[s->stack_len++] = js_rope_right(r);
+        val = js_rope_left(r);
     }
 }
 
@@ -4960,14 +4970,14 @@ static JSValue js_linearize_string_rope(JSContext *ctx, JSValue rope)
 {
     StringBuffer b_s, *b = &b_s;
     JSStringRope *r;
-    JSValue ret;
+    JSValue ret, left, right;
     
     r = JS_VALUE_GET_STRING_ROPE(rope);
 
     /* check whether it is already linearized */
-    if (JS_VALUE_GET_TAG(r->right) == JS_TAG_STRING &&
-        JS_VALUE_GET_STRING(r->right)->len == 0) {
-        ret = JS_DupValue(ctx, r->left);
+    if (JS_VALUE_GET_TAG(js_rope_right(r)) == JS_TAG_STRING &&
+        JS_VALUE_GET_STRING(js_rope_right(r))->len == 0) {
+        ret = JS_DupValue(ctx, js_rope_left(r));
         JS_FreeValue(ctx, rope);
         return ret;
     }
@@ -4978,10 +4988,14 @@ static JSValue js_linearize_string_rope(JSContext *ctx, JSValue rope)
     ret = string_buffer_end(b);
     if (js_rc(r)->ref_count > 1) {
         /* update the rope so that it won't need to be linearized again */
-        JS_FreeValue(ctx, r->left);
-        JS_FreeValue(ctx, r->right);
-        r->left = JS_DupValue(ctx, ret);
-        r->right = JS_AtomToString(ctx, JS_ATOM_empty_string);
+        JS_FreeValue(ctx, js_rope_left(r));
+        JS_FreeValue(ctx, js_rope_right(r));
+        left = JS_DupValue(ctx, ret);
+        r->left_tag = JS_VALUE_GET_TAG(left);
+        r->left = JS_VALUE_GET_PTR(left);
+        right = JS_AtomToString(ctx, JS_ATOM_empty_string);
+        r->right_tag = JS_VALUE_GET_TAG(right);
+        r->right = JS_VALUE_GET_PTR(right);
     }
     JS_FreeValue(ctx, rope);
     return ret;
@@ -5033,8 +5047,10 @@ static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
     r->len = len;
     r->is_wide_char = is_wide_char;
     r->depth = depth + 1;
-    r->left = op1;
-    r->right = op2;
+    r->left_tag = JS_VALUE_GET_TAG(op1);
+    r->left = JS_VALUE_GET_PTR(op1);
+    r->right_tag = JS_VALUE_GET_TAG(op2);
+    r->right = JS_VALUE_GET_PTR(op2);
     res = JS_MKPTR(JS_TAG_STRING_ROPE, r);
     if (r->depth > JS_STRING_ROPE_MAX_DEPTH) {
         JSValue res2;
@@ -5121,8 +5137,8 @@ static int js_rebalancee_string_rope_rec(JSContext *ctx, JSValue *buckets,
         buckets[i] = a;
     } else {
         JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
-        js_rebalancee_string_rope_rec(ctx, buckets, r->left);
-        js_rebalancee_string_rope_rec(ctx, buckets, r->right);
+        js_rebalancee_string_rope_rec(ctx, buckets, js_rope_left(r));
+        js_rebalancee_string_rope_rec(ctx, buckets, js_rope_right(r));
     }
     return 0;
 }
@@ -5206,15 +5222,15 @@ static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
             } else {
                 JSStringRope *r1;
                 r1 = JS_VALUE_GET_STRING_ROPE(op1);
-                if (JS_VALUE_GET_TAG(r1->right) == JS_TAG_STRING &&
-                    JS_VALUE_GET_STRING(r1->right)->len <= JS_STRING_ROPE_SHORT_LEN) {
+                if (JS_VALUE_GET_TAG(js_rope_right(r1)) == JS_TAG_STRING &&
+                    JS_VALUE_GET_STRING(js_rope_right(r1))->len <= JS_STRING_ROPE_SHORT_LEN) {
                     JSValue val, ret;
-                    val = JS_ConcatString2(ctx, JS_DupValue(ctx, r1->right), op2);
+                    val = JS_ConcatString2(ctx, JS_DupValue(ctx, js_rope_right(r1)), op2);
                     if (JS_IsException(val)) {
                         JS_FreeValue(ctx, op1);
                         return JS_EXCEPTION;
                     }
-                    ret = js_new_string_rope(ctx, JS_DupValue(ctx, r1->left), val);
+                    ret = js_new_string_rope(ctx, JS_DupValue(ctx, js_rope_left(r1)), val);
                     JS_FreeValue(ctx, op1);
                     return ret;
                 }
@@ -5228,15 +5244,15 @@ static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
             return op2;
         }
         r2 = JS_VALUE_GET_STRING_ROPE(op2);
-        if (JS_VALUE_GET_TAG(r2->left) == JS_TAG_STRING &&
-            JS_VALUE_GET_STRING(r2->left)->len <= JS_STRING_ROPE_SHORT_LEN) {
+        if (JS_VALUE_GET_TAG(js_rope_left(r2)) == JS_TAG_STRING &&
+            JS_VALUE_GET_STRING(js_rope_left(r2))->len <= JS_STRING_ROPE_SHORT_LEN) {
             JSValue val, ret;
-            val = JS_ConcatString2(ctx, op1, JS_DupValue(ctx, r2->left));
+            val = JS_ConcatString2(ctx, op1, JS_DupValue(ctx, js_rope_left(r2)));
             if (JS_IsException(val)) {
                 JS_FreeValue(ctx, op2);
                 return JS_EXCEPTION;
             }
-            ret = js_new_string_rope(ctx, val, JS_DupValue(ctx, r2->right));
+            ret = js_new_string_rope(ctx, val, JS_DupValue(ctx, js_rope_right(r2)));
             JS_FreeValue(ctx, op2);
             return ret;
         }
@@ -6749,8 +6765,8 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
         /* Note: recursion is acceptable because the rope depth is bounded */
         {
             JSStringRope *p = JS_VALUE_GET_STRING_ROPE(v);
-            JS_FreeValueRT(rt, p->left);
-            JS_FreeValueRT(rt, p->right);
+            JS_FreeValueRT(rt, js_rope_left(p));
+            JS_FreeValueRT(rt, js_rope_right(p));
             js_free_rt(rt, p);
         }
         break;
@@ -14162,8 +14178,9 @@ static void js_print_string_rec(JSPrintValueState *s, JSValueConst val,
         }
     } else if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING_ROPE) {
         JSStringRope *r = JS_VALUE_GET_PTR(val);
-        js_print_string_rec(s, r->left, sep, pos);
-        js_print_string_rec(s, r->right, sep, pos + js_string_get_length(r->left));
+        js_print_string_rec(s, js_rope_left(r), sep, pos);
+        js_print_string_rec(s, js_rope_right(r), sep,
+                            pos + js_string_get_length(js_rope_left(r)));
     } else {
         js_printf(s, "<invalid string tag %d>", (int)JS_VALUE_GET_TAG(val));
     }
