@@ -648,6 +648,7 @@ proc firstChildShadow(parent: ParentNode): lent Node
 proc nextSibling(node: Node): Node
 proc previousElementSiblingImpl(this: Node): Element
 proc setFirstChild(node: ParentNode; child: Node)
+proc firstElementChild*(node: ParentNode): Element
 
 proc addElementId(this: RootNode; element: Element)
 proc removeElementId(this: RootNode; element: Element)
@@ -699,6 +700,7 @@ proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc hasClass*(element: Element; class: CAtom): bool
 proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element): bool
+proc movingSteps(element: Element; isSubtreeRoot: bool; oldParent: ParentNode)
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
 proc nextDisplayedElement(element: Element): Element
@@ -715,6 +717,7 @@ proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
 
 proc tagType*(element: HTMLElement): TagType
 
+proc insertSheet(this: SheetElement)
 proc removeSheet(this: SheetElement)
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet)
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSCallback;
@@ -787,6 +790,7 @@ proc clickCallback(bc: RootRef; element: HTMLElement) {.importc: "cha_$1".}
 proc unlinkElementBox(element: Element) {.importc: "cha_$1".}
 proc insertionStepsForm(element: Element) {.importc: "cha_$1".}
 proc removingStepsForm(element: Element) {.importc: "cha_$1".}
+proc movingStepsForm(element: Element) {.importc: "cha_$1".}
 proc cloningStepsForm(old, clone: Element) {.importc: "cha_$1".}
 proc reflectAttributeForm(element: Element; name: StaticAtom; has: bool;
   value: string) {.importc: "cha_$1".}
@@ -1807,7 +1811,7 @@ proc checkParentValidity(parent: Node): Result[ParentNode, cstring] =
     return ok(parent)
   return err("parent must be a document, a document fragment, or an element")
 
-proc rootNode(node: Node): Node =
+proc rootNode*(node: Node): Node =
   # If connected, return root; otherwise, return the owner document.
   let parent = node.parentNode
   if parent == nil:
@@ -2003,28 +2007,11 @@ proc checkPreInsertValidity(parent, node, before: Node;
     return err("document type can only be inserted into document")
   ok(parent)
 
-# Pass an index to avoid searching for the node in parent's child list.
-proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
-  let parent = node.parentNode
-  if parent == nil:
-    return
-  let oldRootNode = node.rootNode
-  let document = oldRootNode.document
-  # document is only nil for Document nodes, but those cannot call
-  # remove().
-  assert document != nil
-  #TODO live ranges
+proc removeNodeInternal(node, next: Node; parent: ParentNode;
+    document: Document): Node =
+  # returns previousSibling
   document.invalidateCollectionsRemove(node)
-  let element = node as Element
-  let parentElement = node.parentElement
-  if parentElement != nil:
-    parentElement.invalidate()
-  else:
-    # we're removing all elements; the document must still be invalidated
-    document.invalid = true
-  var prev = node.internalPrev # we turn this into previousSibling
-  let next = node.internalNext
-  let oldNextSibling = node.nextSibling
+  var prev = node.internalPrev
   if next != nil and next.parentNode != nil:
     next.internalPrev = prev
   else:
@@ -2040,11 +2027,34 @@ proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
   node.internalPrev = Node(nil)
   node.internalNext = document.asNode
   node.parentNode = ParentNode(nil)
-  document.invalidateCollections()
-  if element != nil:
-    if parentElement != nil and next.parentNode == parent:
-      parentElement.flags.incl(efChildElIndicesInvalid)
-    element.setMagic(0)
+  let parentAsElement = parent as Element
+  if parentAsElement != nil:
+    parentAsElement.invalidate()
+  else:
+    # we're removing all elements; the document must still be invalidated
+    document.invalid = true
+  let nodeAsElement = node as Element
+  if nodeAsElement != nil:
+    if parentAsElement != nil and next.parentNode == parent:
+      # removed node was not the last one
+      parentAsElement.flags.incl(efChildElIndicesInvalid)
+    nodeAsElement.setMagic(0)
+  return prev
+
+# Pass an index to avoid searching for the node in parent's child list.
+proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
+  let parent = node.parentNode
+  if parent == nil:
+    return
+  let oldRootNode = node.rootNode
+  let document = oldRootNode.document
+  # document is only nil for Document nodes, but those cannot call
+  # remove().
+  assert document != nil
+  #TODO live ranges
+  let next = node.internalNext
+  let oldNextSibling = node.nextSibling
+  let oldPreviousSibling = node.removeNodeInternal(next, parent, document)
   #TODO assigned
   if oldRootNode of ShadowRoot:
     let shadow = ShadowRoot(oldRootNode)
@@ -2069,7 +2079,8 @@ proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
         discard #TODO queue disconnectedCallback
   #TODO transient registered observers
   if not suppressObservers:
-    parent.queueTreeMutationRecord(ctx, [], [node], prev, oldNextSibling)
+    parent.queueTreeMutationRecord(ctx, [], [node], oldPreviousSibling,
+      oldNextSibling)
   #TODO children changed steps
 
 # e may be nil
@@ -2827,11 +2838,8 @@ proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
     this.atoms = newDOMTokenArray(atoms)
   this
 
-proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
-    postConnectionNodes: var seq[Element]) =
-  let parentDocument = parent.asNode.document
-  parentDocument.adopt(node, ctx)
-  let rootNode = parent.asNode.rootNode
+proc insertNodeInternal(parent: ParentNode; node, before: Node;
+    parentAsElement: Element) =
   let first = parent.firstChild
   if before == nil:
     if first != nil:
@@ -2852,23 +2860,30 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
     if before == first:
       parent.setFirstChild(node)
   node.parentNode = parent
-  let parentElement = node.parentElement
-  let element = node as Element
-  if element != nil:
+  let nodeAsElement = node as Element
+  if nodeAsElement != nil:
     #TODO same as before != nil?
-    if node.nextSibling != nil and parentElement != nil:
-      parentElement.flags.incl(efChildElIndicesInvalid)
-    elif (let prev = element.previousElementSibling; prev != nil):
-      element.setMagic(prev.getMagic() + 1)
+    if node.nextSibling != nil and parentAsElement != nil:
+      parentAsElement.flags.incl(efChildElIndicesInvalid)
+    elif (let prev = nodeAsElement.previousElementSibling; prev != nil):
+      nodeAsElement.setMagic(prev.getMagic() + 1)
     else:
-      element.setMagic(0)
+      nodeAsElement.setMagic(0)
+
+proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
+    postConnectionNodes: var seq[Element]) =
+  let parentDocument = parent.asNode.document
+  parentDocument.adopt(node, ctx)
+  let rootNode = parent.asNode.rootNode
+  let parentAsElement = parent as Element
+  parent.insertNodeInternal(node, before, parentAsElement)
   parentDocument.invalidateCollections()
-  if parentElement != nil:
-    let shadow = parentElement.shadowRoot
+  if parentAsElement != nil:
+    let shadow = parentAsElement.shadowRoot
     if shadow != nil and shadow.slotAssignment == samNamed and
-        (element != nil or node of Text):
+        (node of Element or node of Text):
       node.assignSlot()
-    if parentElement.tagType == ttSlot and rootNode of ShadowRoot:
+    if parentAsElement.tagType == ttSlot and rootNode of ShadowRoot:
       discard #TODO signal a slot change
     #TODO assign slottables for a tree with root
   if node.nextSibling == nil:
@@ -2936,6 +2951,72 @@ proc insert*(parent: ParentNode; ctx: JSContext; node, before: Node;
       parent.insert0(ctx, nodes, before, suppressObservers)
   else:
     parent.insert0(ctx, [node], before, suppressObservers)
+
+proc moveBefore(parent: ParentNode; ctx: JSContext; node, child: Node):
+    Err[cstring] =
+  # child may be nil
+  if parent.asNode.rootNodeShadow != node.rootNodeShadow:
+    return err("parent's root is not the same as node's root")
+  if node.isInclusiveAncestorHost(parent.asNode):
+    return err("node is an ancestor of parent")
+  if child != nil and child.parentNode != parent:
+    return err("reference child is not an ancestor of parent")
+  let nodeAsElement = node as Element
+  if nodeAsElement == nil and not (node of CharacterData):
+    return err("expected node to be an Element or CharacterData")
+  if node of Text and parent of Document:
+    return err("cannot move Text into Document")
+  if parent of Document and nodeAsElement != nil and
+      (parent.firstElementChild != nil or child of DocumentType or
+      child != nil and child.nextSibling of DocumentType):
+    return err("cannot insert element before document type")
+  let document = parent.asNode.document
+  let oldParent = node.parentNode
+  #TODO live range pre-remove steps
+  let next = node.internalNext
+  let oldPreviousSibling = node.removeNodeInternal(next, oldParent, document)
+  let oldNextSibling = node.nextSibling
+  #TODO assign slottables, trigger slot change, assign slottables for a tree
+  #TODO transient registered observers
+  #TODO live ranges
+  let newPreviousSibling = if child != nil:
+    child.previousSibling
+  else:
+    parent.lastChild
+  let parentAsElement = parent as Element
+  parent.insertNodeInternal(node, child, parentAsElement)
+  #TODO assign slot, signal slot change, assign slottables for tree
+  let oldRootNodeLike = oldParent.asNode.rootNode as RootNode
+  let rootNode = parent.asNode.rootNode
+  let rootNodeLike = rootNode as RootNode
+  for desc in node.descendantsShadowIncl:
+    let last = desc.lastChild
+    if last != nil and last.internalNext == node:
+      # update root (but only if it isn't a shadow root inside node)
+      last.internalNext = rootNode
+  for desc in node.descendantsShadowIncl:
+    #TODO starting to think the last sibling = root hack is not the best
+    # idea after all...
+    let descAsElement = desc as Element
+    if descAsElement != nil:
+      if oldRootNodeLike != nil:
+        oldRootNodeLike.removeElementId(descAsElement)
+      if rootNodeLike != nil:
+        rootNodeLike.addElementId(descAsElement)
+      descAsElement.movingSteps(descAsElement.asNode == node, oldParent)
+    #TODO connectedMoveCallback
+  oldParent.queueTreeMutationRecord(ctx, [], [node], oldPreviousSibling,
+    oldNextSibling)
+  parent.queueTreeMutationRecord(ctx, [node], [], newPreviousSibling, child)
+  ok()
+
+proc moveBeforeImpl(parent: ParentNode; ctx: JSContext; node: Node;
+    child: NodeNil): JSValue =
+  let child = if Node(child) == node: node.nextSibling else: Node(child)
+  let res = parent.moveBefore(ctx, node, child)
+  if res.isErr:
+    return ctx.insertThrow(res.error)
+  return JS_UNDEFINED
 
 proc parseSelectors(ctx: JSContext; ds: DOMString): SelectorList =
   result = parseSelectors(ds)
@@ -3277,6 +3358,10 @@ jsClassDef(DocumentFragment):
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     return ctx.replaceChildrenImpl(this.asNode, nodes)
 
+  proc moveBefore(ctx: JSContext; this: DocumentFragment;
+      node: Node; child: NodeNil): JSValue {.jsfunc.} =
+    this.asParentNode.moveBeforeImpl(ctx, node, child)
+
   proc children(this: DocumentFragment): HTMLCollection {.jsnfget.} =
     this.asParentNode.childrenImpl
 
@@ -3430,6 +3515,7 @@ proc scriptingEnabled*(document: Document): bool =
 
 proc getElementsById*(document: Document; id: CAtom): JSRootRef =
   # for WindowProperties
+  #TODO should also return img[name]
   if id != satUempty and document.elementIdMap.len > 0:
     let mask = document.elementIdMap.len - 1
     let hcache = id.hash()
@@ -3973,6 +4059,10 @@ jsClassPublicDef(Document):
   proc replaceChildren(ctx: JSContext; this: Document;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     return ctx.replaceChildrenImpl(this.asNode, nodes)
+
+  proc moveBefore(ctx: JSContext; this: Document; node: Node; child: NodeNil):
+      JSValue {.jsfunc.} =
+    this.asParentNode.moveBeforeImpl(ctx, node, child)
 
   # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
   proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
@@ -5392,6 +5482,18 @@ proc postConnectionSteps(element: Element; ctx: JSContext) =
   if script.asNode.isConnected and script.parserDocument == nil:
     script.prepare(ctx)
 
+proc movingSteps(element: Element; isSubtreeRoot: bool;
+    oldParent: ParentNode) =
+  unlinkElementBox(element)
+  element.box = nil
+  element.computed = nil
+  if (let element = element as SheetElement; element != nil):
+    element.removeSheet()
+    if element.asNode.isConnected():
+      element.insertSheet()
+  else:
+    movingStepsForm(element)
+
 proc delAttr(element: Element; ctx: JSContext; i: int) =
   var name = element.attrs[i].name
   if element.attrs[i].namespace != CAtomNull:
@@ -5810,6 +5912,10 @@ jsClassPublicDef(Element):
   proc replaceChildren(ctx: JSContext; this: Element;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     return ctx.replaceChildrenImpl(this.asNode, nodes)
+
+  proc moveBefore(ctx: JSContext; this: Element; node: Node; child: NodeNil):
+      JSValue {.jsfunc.} =
+    this.asParentNode.moveBeforeImpl(ctx, node, child)
 
   proc setAttribute(ctx: JSContext; element: Element;
       qualifiedName, value: DOMString): Opt[void] {.jsfunc.} =

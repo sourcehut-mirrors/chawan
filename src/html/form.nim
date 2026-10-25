@@ -209,8 +209,7 @@ proc hasInsertionStepsForm(element: Element): bool {.exportc: "cha_$1".} =
   element.tagType == ttOption or element of FormAssociatedElement
 
 proc insertionStepsForm(element: Element) {.exportc: "cha_$1".} =
-  case element.tagType
-  of ttOption:
+  if element.tagType == ttOption:
     let parent = element.asNode.parentElement
     if parent != nil:
       var select = parent as HTMLSelectElement
@@ -218,12 +217,18 @@ proc insertionStepsForm(element: Element) {.exportc: "cha_$1".} =
         select = parent.asNode.parentElement as HTMLSelectElement
       if select != nil:
         select.setSelectedness()
-  elif (let element = element as FormAssociatedElement; element != nil):
+  if (let element = element as FormAssociatedElement; element != nil):
     if not element.parserInserted:
       element.resetFormOwner()
 
 proc removingStepsForm(element: Element) {.exportc: "cha_$1".} =
   if (let element = element as FormAssociatedElement; element != nil):
+    element.resetFormOwner()
+
+proc movingStepsForm(element: Element) {.exportc: "cha_$1".} =
+  let element = element as FormAssociatedElement
+  if element != nil and element.form != nil and
+      element.form.asNode.rootNode != element.asNode.rootNode:
     element.resetFormOwner()
 
 proc cloningStepsForm(old, clone: Element) {.exportc: "cha_$1".} =

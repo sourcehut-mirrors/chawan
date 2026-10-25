@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<title>ParentNode#moveBefore</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<div id=y><div>
+<script>
+const shadow = y.attachShadow({mode: "closed"});
+shadow.innerHTML = "<div id=z>blah</div>"
+const z = shadow.getElementById("z")
+{
+	/* connected */
+	assertEquals(z.parentNode, shadow)
+	y.moveBefore(z, null);
+	assertEquals(shadow.firstChild, null);
+	assertEquals(z.parentNode, y);
+	assertEquals(shadow.getElementById("z"), null);
+	assertEquals(document.getElementById("z"), z);
+	shadow.moveBefore(z, null);
+	assertEquals(shadow.getElementById("z"), z);
+	assertEquals(document.getElementById("z"), null);
+}
+{
+	/* disconnected */
+	const y = window.y;
+	y.remove();
+	assertEquals(shadow.getElementById("z"), z);
+	assertEquals(document.getElementById("z"), null);
+	y.moveBefore(z, null);
+	assertEquals(shadow.getElementById("z"), null);
+	assertEquals(document.getElementById("z"), null);
+}
+x.textContent = "Success"
+</script>
