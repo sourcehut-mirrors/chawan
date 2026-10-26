@@ -3458,14 +3458,18 @@ static JSAtom JS_NewAtomStr(JSContext *ctx, JSString *p)
 {
     JSRuntime *rt = ctx->rt;
     uint32_t n;
+    JSAtom atom;
+
     if (is_num_string(&n, p)) {
         if (n <= JS_ATOM_MAX_INT) {
             js_free_string(rt, p);
             return __JS_AtomFromUInt32(n);
         }
     }
-    /* XXX: should generate an exception */
-    return __JS_NewAtom(rt, p, JS_ATOM_TYPE_STRING);
+    atom = __JS_NewAtom(rt, p, JS_ATOM_TYPE_STRING);
+    if (atom == JS_ATOM_NULL)
+        JS_ThrowOutOfMemory(ctx);
+    return atom;
 }
 
 /* XXX: optimize */
@@ -52114,24 +52118,28 @@ static JSValue js_proxy_revoke_constructor(JSContext *ctx,
 static JSValue js_proxy_revocable(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv)
 {
-    JSValue proxy_obj, revoke_obj = JS_UNDEFINED, obj;
+    JSValue proxy_obj, revoke_obj, obj;
 
+    obj = JS_NewObject(ctx);
+    if (JS_IsException(obj))
+        return JS_EXCEPTION;
     proxy_obj = js_proxy_constructor(ctx, JS_UNDEFINED, argc, argv);
     if (JS_IsException(proxy_obj))
-        goto fail;
+        goto fail2;
     revoke_obj = js_proxy_revoke_constructor(ctx, proxy_obj);
     if (JS_IsException(revoke_obj))
         goto fail;
-    obj = JS_NewObject(ctx);
-    if (JS_IsException(obj))
+    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_revoke, revoke_obj,
+                               JS_PROP_C_W_E) < 0)
         goto fail;
-    // XXX: exceptions?
-    JS_DefinePropertyValue(ctx, obj, JS_ATOM_proxy, proxy_obj, JS_PROP_C_W_E);
-    JS_DefinePropertyValue(ctx, obj, JS_ATOM_revoke, revoke_obj, JS_PROP_C_W_E);
+    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_proxy, proxy_obj,
+                               JS_PROP_C_W_E) < 0)
+        goto fail2;
     return obj;
  fail:
     JS_FreeValue(ctx, proxy_obj);
-    JS_FreeValue(ctx, revoke_obj);
+fail2:
+    JS_FreeValue(ctx, obj);
     return JS_EXCEPTION;
 }
 
