@@ -4034,8 +4034,9 @@ jsClassPublicDef(Document):
     ctx.toJSNew(document.newElement(localName, namespace))
 
   proc createElementNS(ctx: JSContext; document: Document;
-      namespace, qualifiedName: CAtom): Opt[Element] {.jsnfunc.} =
-    var namespace = namespace
+      namespace: CAtomNullable; qualifiedName: CAtom): Opt[Element]
+      {.jsnfunc.} =
+    var namespace = CAtom(namespace)
     var localName = qualifiedName
     ?ctx.validateAndExtract(namespace, localName, nvElement)
     #TODO custom elements (is)
@@ -4237,7 +4238,7 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
     JS_MarkForeignObject(rt, this, markFunc)
 
   proc createDocument(ctx: JSContext; implementation: DOMImplementation;
-      namespace: CAtom; qualifiedName: DOMStringNull;
+      namespace: CAtomNullable; qualifiedName: DOMStringNull;
       doctype = none(DocumentType)): JSValue {.jsfunc.} =
     let document = newXMLDocument()
     if document == nil:
@@ -4252,7 +4253,7 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
     if element != nil:
       document.asParentNode.append(ctx, element.asNode)
     document.origin = Document(implementation).origin
-    case namespace.toStaticAtom()
+    case CAtom(namespace).toStaticAtom()
     of satNamespaceHTML: document.contentType = satApplicationXmlHtml
     of satNamespaceSVG: document.contentType = satImageSvgXml
     else: discard
@@ -4819,6 +4820,14 @@ proc newAttr(document: Document; data: AttrData): Attr =
 proc data(attr: Attr): lent AttrData =
   return attr.ownerElement.attrs[attr.dataIdx]
 
+proc localName(attr: Attr): CAtom =
+  let name = attr.data.name
+  if attr.data.namespace != CAtomNull:
+    let i = name.find(':')
+    if i >= 0:
+      return name.substr(i + 1, name.len - 1)
+  return name
+
 jsClassDef(Attr):
   jsextends NodeDef
 
@@ -4844,7 +4853,7 @@ jsClassDef(Attr):
         return ctx.toJS(($name).toOpenArray(i + 1, name.len - 1))
     return ctx.toJS(name)
 
-  proc value(attr: Attr): string {.jsfget.} =
+  proc value(attr: Attr): lent string {.jsfget.} =
     return attr.data.value
 
   proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
@@ -4881,15 +4890,15 @@ jsClassDef(NamedNodeMap):
       rt.markObj(attr, markFunc)
 
   proc getNamedItem(map: NamedNodeMap; qualifiedName: CAtom): Attr {.
-      jsfunc.} =
+      jsnfunc.} =
     let i = map.element.findAttr(qualifiedName)
     if i >= 0:
       return map.getAttr(i)
     return Attr(nil)
 
-  proc getNamedItemNS(map: NamedNodeMap; namespace, localName: CAtom):
-      Attr {.jsfunc.} =
-    let i = map.element.findAttrNS(namespace, localName)
+  proc getNamedItemNS(map: NamedNodeMap; namespace: CAtomNullable;
+      localName: CAtom): Attr {.jsnfunc.} =
+    let i = map.element.findAttrNS(CAtom(namespace), localName)
     if i >= 0:
       return map.getAttr(i)
     return Attr(nil)
@@ -5700,9 +5709,9 @@ jsClassPublicDef(Element):
       {.jsfunc.} =
     return element.findAttr(qualifiedName) >= 0
 
-  proc hasAttributeNS(element: Element; namespace, localName: CAtom):
-      bool {.jsfunc.} =
-    return element.findAttrNS(namespace, localName) >= 0
+  proc hasAttributeNS(element: Element; namespace: CAtomNullable;
+      localName: CAtom): bool {.jsfunc.} =
+    return element.findAttrNS(CAtom(namespace), localName) >= 0
 
   proc getAttributeNames(ctx: JSContext; element: Element): JSValue
       {.jsfunc.} =
@@ -5719,11 +5728,25 @@ jsClassPublicDef(Element):
     return JS_NULL
 
   proc getAttributeNS(ctx: JSContext; element: Element;
-      namespace, localName: CAtom): JSValue {.jsfunc.} =
-    let i = element.findAttrNS(namespace, localName)
+      namespace: CAtomNullable; localName: CAtom): JSValue {.jsfunc.} =
+    let i = element.findAttrNS(CAtom(namespace), localName)
     if i >= 0:
       return ctx.toJS(element.attrs[i].value)
     return JS_NULL
+
+  proc getAttributeNode(element: Element; qualifiedName: CAtom): Attr
+      {.jsnfunc.} =
+    let attributes = element.attributes
+    if attributes == nil:
+      return Attr(nil)
+    attributes.getNamedItem(qualifiedName)
+
+  proc getAttributeNodeNS(element: Element; namespace: CAtomNullable;
+      localName: CAtom): Attr {.jsnfunc.} =
+    let attributes = element.attributes
+    if attributes == nil:
+      return Attr(nil)
+    attributes.getNamedItemNS(namespace, localName)
 
   proc getElementsByTagName(element: Element; tagName: CAtom):
       HTMLCollection {.jsnfunc.} =
@@ -5929,9 +5952,9 @@ jsClassPublicDef(Element):
     ok()
 
   proc setAttributeNS(ctx: JSContext; element: Element;
-      namespace, qualifiedName: CAtom; value: DOMString): Opt[void]
-      {.jsfunc.} =
-    var namespace = namespace
+      namespace: CAtomNullable; qualifiedName: CAtom; value: DOMString):
+      Opt[void] {.jsfunc.} =
+    var namespace = CAtom(namespace)
     var localName = qualifiedName
     ?ctx.validateAndExtract(namespace, localName, nvAttribute)
     var i = element.findAttrNS(namespace, localName)
@@ -5957,8 +5980,8 @@ jsClassPublicDef(Element):
     element.delAttr(ctx, qualifiedName)
 
   proc removeAttributeNS(ctx: JSContext; element: Element;
-      namespace, localName: CAtom) {.jsfunc.} =
-    let i = element.findAttrNS(namespace, localName)
+      namespace: CAtomNullable; localName: CAtom) {.jsfunc.} =
+    let i = element.findAttrNS(CAtom(namespace), localName)
     if i >= 0:
       element.delAttr(ctx, i)
 
@@ -5980,6 +6003,31 @@ jsClassPublicDef(Element):
       element.delAttr(ctx, i)
       return ok(false)
     return ok(true)
+
+  proc setAttributeNode(ctx: JSContext; element: Element; attr: Attr): JSValue
+      {.jsfunc, jsfunc: "setAttributeNodeNS".} =
+    if not (attr.ownerElement of AttrDummyElement):
+      return JS_ThrowDOMException(ctx, "InUseAttributeError",
+        "attribute already in use")
+    let attributes = element.attributes
+    if attributes == nil:
+      return JS_ThrowOutOfMemory(ctx)
+    let localName = attr.localName
+    let i = element.findAttrNS(attr.namespaceURI, localName)
+    let oldAttr = if i >= 0: attributes.getAttr(i) else: Attr(nil)
+    if oldAttr != attr:
+      ?ctx.setAttributeNS(element, CAtomNullable(attr.namespaceURI), localName,
+        attr.value.toDOMStringView()) #TODO won't work with Str
+    ctx.toJS(oldAttr)
+
+  proc removeAttributeNode(ctx: JSContext; element: Element; attr: Attr):
+      JSValue {.jsfunc.} =
+    let i = element.findAttrNS(attr.namespaceURI, attr.localName)
+    if i < 0:
+      return JS_ThrowDOMException(ctx, "NotFoundError",
+        "attribute not found in element")
+    element.delAttr(ctx, i)
+    return ctx.toJS(attr)
 
   proc setId(ctx: JSContext; element: Element; id: DOMString) {.
       jsfset: "id".} =

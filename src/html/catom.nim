@@ -268,6 +268,8 @@ proc dup(atom: CAtomRaw): CAtomRaw =
 type
   CAtom* = distinct CAtomRaw
 
+  CAtomNullable* = distinct CAtom # translates JS_NULL to CAtomNull
+
 const CAtomNull* = CAtom(CAtomNullRaw)
 
 proc `==`*(a, b: CAtom): bool {.borrow.}
@@ -277,9 +279,6 @@ proc hash*(atom: CAtom): Hash {.borrow.}
 proc `=destroy`*(atom: var CAtom) =
   freeAtom(cast[CAtomRaw](atom))
 
-proc `=dup`*(atom: CAtom): CAtom {.noinit.} =
-  cast[ptr CAtomRaw](addr result)[] = dup(cast[CAtomRaw](atom))
-
 proc `=copy`*(x: var CAtom; y: CAtom) =
   if x != y:
     `=destroy`(x)
@@ -288,6 +287,9 @@ proc `=copy`*(x: var CAtom; y: CAtom) =
 proc `=sink`*(x: var CAtom; y: CAtom) =
   `=destroy`(x)
   cast[ptr CAtomRaw](addr x)[] = cast[CAtomRaw](y)
+
+proc `=dup`*(atom: CAtom): CAtom =
+  CAtom(dup(cast[CAtomRaw](atom)))
 
 proc view*(atom: CAtomRaw): lent CAtom =
   CAtom(atom)
@@ -493,22 +495,29 @@ proc matchesLocalName*(qualifiedName, localName: CAtom): bool =
   return ($qualifiedName).toOpenArray(i, ($qualifiedName).high) == $localName
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): JSCode =
-  if JS_IsNull(val):
-    res = CAtomNull
-  else:
-    var len: csize_t
-    let cs = JS_ToCStringLen(ctx, len, val)
-    if cs == nil:
-      return fjErr
-    if len > csize_t(int.high):
-      JS_FreeCString(ctx, cs)
-      JS_ThrowRangeError(ctx, "string length out of bounds")
-      return fjErr
-    {.push overflowChecks: off.}
-    let H = cast[int](len) - 1
-    {.pop.}
-    res = cstring(cs).toOpenArray(0, H).toAtom()
+  var len: csize_t
+  let cs = JS_ToCStringLen(ctx, len, val)
+  if cs == nil:
+    return fjErr
+  if len > csize_t(int.high):
     JS_FreeCString(ctx, cs)
+    JS_ThrowRangeError(ctx, "string length out of bounds")
+    return fjErr
+  {.push overflowChecks: off.}
+  let H = cast[int](len) - 1
+  {.pop.}
+  res = cstring(cs).toOpenArray(0, H).toAtom()
+  JS_FreeCString(ctx, cs)
+  fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtomNullable):
+    JSCode =
+  if JS_IsNull(val):
+    res = CAtomNullable(CAtomNull)
+  else:
+    var atom: CAtom
+    ?ctx.fromJS(val, atom)
+    res = CAtomNullable(atom)
   fjOk
 
 proc fromJS(ctx: JSContext; atom: JSAtom; res: var CAtom): JSCode =
