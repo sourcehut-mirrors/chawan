@@ -98,13 +98,11 @@ iterator points*(s: openArray[char]): uint32 {.inline.} =
     let u = s.nextUTF8(i)
     yield u
 
-proc addPoints*(res: var seq[uint32]; s: openArray[char]) =
+proc toPoints*(s: openArray[char]): seq[uint32] =
+  var res: seq[uint32] = @[]
   for u in s.points:
     res.add(u)
-
-proc toPoints*(s: openArray[char]): seq[uint32] =
-  result = @[]
-  result.addPoints(s)
+  move(res)
 
 proc addUTF8*(res: var string; u: uint32) =
   if u < 0x80:
