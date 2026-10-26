@@ -271,7 +271,7 @@ proc setTrusted*(event: Event) =
 
 jsClassPublicDef(Event):
   jsget Event, timeStamp
-  jsget Event, target
+  jsget Event, target, "target", "srcElement"
   jsget Event, currentTarget
   jsget Event, eventType, "type"
   jsget Event, eventPhase
@@ -302,9 +302,6 @@ jsClassPublicDef(Event):
       {.jsfunc.} =
     if efDispatch notin this.flags:
       this.initialize(eventType, bubbles, cancelable)
-
-  proc srcElement(this: Event): EventTarget {.jsfget.} =
-    return this.target
 
   #TODO shadow DOM etc.
   proc composedPath(this: Event): seq[EventTarget] {.jsfunc.} =
