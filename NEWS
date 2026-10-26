@@ -1,3 +1,23 @@
+unreleased
+
+* support ParentNode#moveBefore
+* add C-@ to line editor for toggling selection
+* remove deprecated external.w3m-cgi-compat option
+* fix infinite loop in tinfl on invalid deflate streams
+* fix chaseccomp compilation on platforms without fcntl syscall
+* fix term quit getting stuck on some broken terminals
+
+0.5.1 (2026.10.25)
+* remove non-functional btoa symlink
+* fix broken subnet classification procedure
+* fix all history entries being truncated in some cases
+* fix crash on invoking functions on detached SelectBuilder
+* fix chahash on big-endian platforms
+* fix calls to invalidated SelectBuilder crashing the browser
+* fix select being incorrectly positioned at the screen's edge
+* fix crashed buffers crashing the pager too in some cases
+* report invalid match/nc-match regexes in mailcap
+
 0.5.0 (2026.10.16)
 
 * rework handling of Referer header
