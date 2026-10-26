@@ -138,8 +138,31 @@ proc `=destroy`*(s: var DOMString) =
   if (s.ilen and DOMStringConstFlag) == 0:
     JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
 
+proc `=sink`*(dst: var DOMString; src: DOMString) =
+  `=destroy`(dst)
+  dst.ilen = src.ilen
+  dst.p = src.p
+
 proc `=copy`*(a: var DOMString; b: DOMString) {.error.} =
   discard
+
+proc `=destroy`*(s: var USVString) =
+  if (s.ilen and DOMStringConstFlag) == 0:
+    JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
+
+proc `=sink`*(dst: var USVString; src: USVString) =
+  `=destroy`(dst)
+  dst.ilen = src.ilen
+  dst.p = src.p
+
+proc `=destroy`*(s: var DOMStringNull) =
+  if (s.ilen and DOMStringConstFlag) == 0:
+    JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
+
+proc `=sink`*(dst: var DOMStringNull; src: DOMStringNull) =
+  `=destroy`(dst)
+  dst.ilen = src.ilen
+  dst.p = src.p
 
 template len*(ds: DOMString): int =
   ds.ilen and not DOMStringConstFlag
