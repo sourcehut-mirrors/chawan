@@ -944,7 +944,8 @@ proc parseCSINum(term: Terminal; c: char): EscParseChunkResult =
               term.attrs.ppl == 0 and term.attrs.height != 0:
             term.attrs.ppl = y div term.attrs.height
             term.attrs.heightPx = term.attrs.ppl * term.attrs.height
-          term.eparser.queryState = qsWindowPixels.succ
+          if term.eparser.queryState <= qsWindowPixels:
+            term.eparser.queryState = qsWindowPixels.succ
         of 6:
           if not term.config{"forcePixelsPerColumn"}:
             term.attrs.ppc = x
@@ -952,7 +953,8 @@ proc parseCSINum(term: Terminal; c: char): EscParseChunkResult =
           if not term.config{"forcePixelsPerLine"}:
             term.attrs.ppl = y
             term.attrs.heightPx = y * term.attrs.height
-          term.eparser.queryState = qsCellSize.succ
+          if term.eparser.queryState <= qsCellSize:
+            term.eparser.queryState = qsCellSize.succ
         else: discard
         if term.attrs != oattrs:
           term.windowChange()
