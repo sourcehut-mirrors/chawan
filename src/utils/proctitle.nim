@@ -9,14 +9,13 @@ elif defined(netbsd) or defined(openbsd):
     "setproctitle", varargs.}
 elif defined(linux):
   let PR_SET_NAME {.importc, header: "<sys/prctl.h>", nodecl.}: cint
-  proc prctl(option: cint; arg2, arg3, arg4, arg5: culong): cint {.importc,
-    header: "<sys/prctl.h>".}
+  proc prctl(option: cint): cint {.importc, header: "<sys/prctl.h>", varargs.}
 
 proc setProcessTitle*(s: string) =
   when defined(freebsd) or defined(netbsd) or defined(openbsd):
     c_setproctitle("%s", cstring(s))
   elif defined(linux):
-    discard prctl(PR_SET_NAME, cast[culong](cstring(s)), 0, 0, 0)
+    discard prctl(PR_SET_NAME, cstring(s))
 
 when defined(linux):
   import utils/twtstr
