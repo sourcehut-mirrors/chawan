@@ -45,8 +45,12 @@ ifeqdef SYS_statx eperm
 
 # accept fcntl(2), but only with F_DUPFD, F_GETFD, F_SETFD, F_GETFL, F_SETFL.
 # (F_SETFL is 4, others are 0..3)
+ifdef SYS_fcntl
 ifeqdef SYS_fcntl64 is_fcntl64
 ifne SYS_fcntl not_fcntl
+else /* SYS_fcntl */
+ifne SYS_fcntl64 not_fcntl
+endif /* SYS_fcntl */
 # additional test for fcntl64 on 32-bit systems
 : is_fcntl64
 load args[1]

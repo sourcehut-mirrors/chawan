@@ -5,7 +5,7 @@ LC_ALL=C
 echo "#include <sys/syscall.h>"
 
 sed -E -e 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d' \
-	-e 's/^ifdef/#&/;s/^endif/#&/;s/^include/#&/' \
+	-e 's/^ifdef|^else|^endif|^include/#&/' \
 	-e 's/^(if..)def ([^ ]+) ([^ ]+)$/#ifdef \2\
 \1 cha_\2 \3\
 #endif/' \
