@@ -557,25 +557,21 @@ proc fromJS*(ctx: JSContext; vals: openArray[JSValueConst];
   res = move(tmp)
   fjOk
 
-type FromIdxResult* = enum
-  fiIdx, fiStr, fiErr
+type
+  FromIdxResult* = enum
+    fiIdx, fiStr, fiErr
 
-proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult =
-  let val = JS_AtomIsNumericIndex1(ctx, atom)
-  if JS_IsException(val.vc):
-    return fiErr
-  var i: int64
-  if not JS_IsUndefined(val.vc) and ctx.fromJSFree(val, i).isOk and
-      i in 0..int64(uint32.high - 1):
-    idx = uint32(i)
-    return fiIdx
-  fiStr
+  FromIdxResult2* = range[fiIdx..fiStr]
+
+proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32): FromIdxResult2 =
+  if JS_AtomIsArrayIndex(ctx, idx, atom) != 0:
+    return FromIdxResult2(fiIdx)
+  FromIdxResult2(fiStr)
 
 proc fromIdx*(ctx: JSContext; atom: JSAtom; idx: var uint32;
     ds: var DOMString): FromIdxResult =
-  let res = ctx.fromIdx(atom, idx)
-  if res != fiStr:
-    return res
+  if JS_AtomIsArrayIndex(ctx, idx, atom) != 0:
+    return fiIdx
   if ctx.fromJS(atom, ds).isOk:
     return fiStr
   fiErr

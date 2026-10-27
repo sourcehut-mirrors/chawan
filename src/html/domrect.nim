@@ -99,7 +99,6 @@ jsClassPublicDef(DOMRectList):
       else:
         JS_UNINITIALIZED
     of fiStr: JS_UNINITIALIZED
-    of fiErr: JS_EXCEPTION
 
 proc addDOMRectModule*(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(DOMRectReadOnlyDef)

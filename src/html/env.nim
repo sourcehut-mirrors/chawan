@@ -639,16 +639,14 @@ proc windowPreventExtensions(ctx: JSContext; obj: JSValueConst): cint
 
 proc windowDefineOwnProperty(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
     val, getter, setter: JSValueConst; flags: cint): cint {.cdecl.} =
-  var propVal = trace(JS_AtomIsNumericIndex1(ctx, prop))
-  if JS_IsException(propVal):
-    wasMoved(propVal)
-    return -1
-  if JS_IsUndefined(propVal):
-    wasMoved(propVal)
+  var idx: uint32
+  case ctx.fromIdx(prop, idx)
+  of fiStr:
     return JS_DefineProperty(ctx, obj, prop, val, getter, setter,
       flags or JS_PROP_NO_EXOTIC)
-  return JS_ThrowTypeErrorOrFalse(ctx, flags,
-    "cannot set indexed property on window")
+  of fiIdx:
+    return JS_ThrowTypeErrorOrFalse(ctx, flags,
+      "cannot set indexed property on window")
 
 proc throwNetworkError(ctx: JSContext): JSValue =
   return JS_ThrowTypeError(ctx,

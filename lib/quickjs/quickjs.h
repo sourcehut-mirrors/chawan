@@ -456,11 +456,11 @@ JSAtom JS_NewAtom(JSContext *ctx, const char *str);
 JSAtom JS_NewAtomUInt32(JSContext *ctx, uint32_t n);
 JSAtom JS_DupAtom(JSContext *ctx, JSAtom v);
 JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v);
-JSValue JS_AtomIsNumericIndex1(JSContext *ctx, JSAtom atom);
 void JS_FreeAtom(JSContext *ctx, JSAtom v);
 void JS_FreeAtomRT(JSRuntime *rt, JSAtom v);
 JSValue JS_AtomToValue(JSContext *ctx, JSAtom atom);
 JSValue JS_AtomToString(JSContext *ctx, JSAtom atom);
+JS_BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom);
 const char *JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom);
 static inline const char *JS_AtomToCString(JSContext *ctx, JSAtom atom)
 {

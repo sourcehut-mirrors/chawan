@@ -513,7 +513,6 @@ jsClassDef(HTMLOptionsCollection):
     case ctx.fromIdx(atom, u)
     of fiIdx: discard
     of fiStr: return JS_UNINITIALIZED
-    of fiErr: return JS_EXCEPTION
     let element = this.asHTMLCollection.item(u)
     let value = value.get.asNode
     if value == nil:

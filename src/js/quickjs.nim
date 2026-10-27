@@ -531,7 +531,8 @@ proc JS_NewAtomLen*(ctx: JSContext; str: cstringConst; len: csize_t): JSAtom
 proc JS_NewAtom*(ctx: JSContext; str: cstringConst): JSAtom
 proc JS_NewAtomUInt32*(ctx: JSContext; u: uint32): JSAtom
 proc JS_DupAtomRT(rt: JSRuntime; v: JSAtom): JSAtomRaw
-proc JS_AtomIsNumericIndex1*(ctx: JSContext; atom: JSAtom): JSValue
+proc JS_AtomIsArrayIndex*(ctx: JSContext; pval: var uint32; atom: JSAtom):
+  JS_BOOL
 proc JS_FreeAtomRT(rt: JSRuntime; atom: JSAtom)
 proc JS_AtomToValue*(ctx: JSContext; atom: JSAtom): JSValue
 proc JS_AtomToString*(ctx: JSContext; atom: JSAtom): JSValue

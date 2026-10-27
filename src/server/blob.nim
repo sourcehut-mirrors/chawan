@@ -327,7 +327,6 @@ jsClassDef(FileList):
     return case ctx.fromIdx(atom, u)
     of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
     of fiStr: JS_UNINITIALIZED
-    of fiErr: JS_EXCEPTION
 
 # FileReader
 #TODO definitely not compliant, but I guess it's fine for now

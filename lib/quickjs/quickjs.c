@@ -3685,7 +3685,7 @@ JSValue JS_AtomToString(JSContext *ctx, JSAtom atom)
 
 /* return TRUE if the atom is an array index (i.e. 0 <= index <=
    2^32-2 and return its value */
-static BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom)
+BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom)
 {
     if (__JS_AtomIsTaggedInt(atom)) {
         *pval = __JS_AtomToUInt32(atom);
@@ -3711,7 +3711,7 @@ static BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom)
 /* This test must be fast if atom is not a numeric index (e.g. a
    method name). Return JS_UNDEFINED if not a numeric
    index. JS_EXCEPTION can also be returned. */
-JSValue JS_AtomIsNumericIndex1(JSContext *ctx, JSAtom atom)
+static JSValue JS_AtomIsNumericIndex1(JSContext *ctx, JSAtom atom)
 {
     JSRuntime *rt = ctx->rt;
     JSAtomStruct *p1;
@@ -4418,6 +4418,23 @@ static JSValue string_buffer_end(StringBuffer *s)
     return JS_MKPTR(JS_TAG_STRING, str);
 }
 
+static JSValue string_concat_values_free(JSContext *ctx, int argc,
+                                         JSValue *argv)
+{
+    StringBuffer b_s, *b = &b_s;
+    int i = 0;
+
+    string_buffer_init(ctx, b, 0);
+    for (; i < argc; i++) {
+        if (string_buffer_concat_value_free(b, argv[i]))
+            goto fail;
+    }
+fail:
+    for (; i < argc; i++)
+        JS_FreeValue(ctx, argv[i]);
+    return string_buffer_end(b);
+}
+
 /* create a string from a UTF-8 buffer */
 JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
 {
@@ -4621,6 +4638,7 @@ static const char *JS_ToCStringLen3(JSContext *ctx, size_t *plen,
         *plen = str_new->len;
     return (const char *)str_new->u.str8;
  fail:
+    JS_FreeValue(ctx, val);
     if (plen)
         *plen = 0;
     return NULL;
@@ -7853,20 +7871,21 @@ static const char *get_prop_string(JSContext *ctx, JSValueConst obj, JSAtom prop
 
 /* if filename != NULL, an additional level is added with the filename
    and line number information (used for parse error). */
-static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
+static void build_backtrace(JSContext *ctx, JSValueConst error_val,
                             JSValueConst filter_func, const char *filename,
                             int line_num, int col_num, int backtrace_flags)
 {
     JSStackFrame *sf;
-    JSValue str;
+    JSValue str, error_obj;
     DynBuf dbuf;
     const char *func_name_str;
     const char *str1;
     JSObject *p;
 
-    if (!JS_IsObject(error_obj))
+    if (!JS_IsObject(error_val))
         return; /* protection in the out of memory case */
     
+    error_obj = JS_DupValue(ctx, error_val);
     js_dbuf_init(ctx, &dbuf);
     if (filename) {
         dbuf_printf(&dbuf, "    at %s", filename);
@@ -7875,7 +7894,7 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
         dbuf_putc(&dbuf, '\n');
         str = JS_NewString(ctx, filename);
         if (JS_IsException(str))
-            return;
+            goto cleanup;
         /* Note: SpiderMonkey does that, could update once there is a standard */
         if (JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_fileName, str,
                                    JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
@@ -7883,7 +7902,7 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
                                    JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
             JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_columnNumber, JS_NewInt32(ctx, col_num),
                                    JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
-            return;
+            goto cleanup;
         }
     }
 
@@ -7940,9 +7959,11 @@ found:
         str = JS_NULL;
     else
         str = JS_NewString(ctx, (char *)dbuf.buf);
-    dbuf_free(&dbuf);
     JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
                            JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+cleanup:
+    dbuf_free(&dbuf);
+    JS_FreeValue(ctx, error_obj);
 }
 
 /* Note: it is important that no exception is returned by this function */
@@ -18742,6 +18763,16 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             *sp++ = ret_val;
             BREAK;
 
+        CASE(OP_concat):
+            call_argc = get_u16(pc);
+            pc += 2;
+            ret_val = string_concat_values_free(ctx, call_argc, sp - call_argc);
+            sp -= call_argc;
+            if (JS_IsException(ret_val))
+                goto exception;
+            *sp++ = ret_val;
+            BREAK;
+
         CASE(OP_apply):
             {
                 int magic;
@@ -20983,17 +21014,16 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             }
             BREAK;
 
-#if 0
         CASE(OP_to_string):
             if (JS_VALUE_GET_TAG(sp[-1]) != JS_TAG_STRING) {
-                ret_val = JS_ToString(ctx, sp[-1]);
+                sf->cur_pc = pc;
+                ret_val = JS_ToStringFree(ctx, *--sp);
                 if (JS_IsException(ret_val))
                     goto exception;
-                JS_FreeValue(ctx, sp[-1]);
-                sp[-1] = ret_val;
+                *sp++ = ret_val;
             }
             BREAK;
-#endif
+
         CASE(OP_with_get_var):
         CASE(OP_with_put_var):
         CASE(OP_with_delete_var):
@@ -25040,6 +25070,8 @@ static __exception int js_parse_template(JSParseState *s, int call, int *argc)
     while (s->token.val == TOK_TEMPLATE) {
         const uint8_t *p = s->token.ptr + 1;
         cooked = s->token;
+        if (depth >= 65534)
+            return js_parse_error(s, "template string too deep");
         if (call) {
             if (JS_DefinePropertyValueUint32(ctx, raw_array, depth,
                                              JS_DupValue(ctx, s->token.u.str.str),
@@ -25072,12 +25104,8 @@ static __exception int js_parse_template(JSParseState *s, int call, int *argc)
                 JS_FreeValue(s->ctx, cooked.u.str.str);
                 if (ret)
                     return -1;
-                if (depth == 0) {
-                    if (s->token.u.str.sep == '`')
-                        goto done1;
-                    emit_op(s, OP_get_field2);
-                    emit_atom(s, JS_ATOM_concat);
-                }
+                if (depth == 0 && s->token.u.str.sep == '`')
+                    goto done1;
                 depth++;
             } else {
                 JS_FreeValue(s->ctx, cooked.u.str.str);
@@ -25093,7 +25121,8 @@ static __exception int js_parse_template(JSParseState *s, int call, int *argc)
         if (s->token.val != '}') {
             return js_parse_error(s, "expected '}' after template expression");
         }
-        /* XXX: should convert to string at this stage? */
+        if (!call)
+            emit_op(s, OP_to_string);
         free_token(s, &s->token);
         /* Resume TOK_TEMPLATE parsing (s->token.line_num and
          * s->token.ptr are OK) */
@@ -25110,8 +25139,8 @@ static __exception int js_parse_template(JSParseState *s, int call, int *argc)
         seal_template_obj(ctx, template_object);
         *argc = depth + 1;
     } else {
-        emit_op(s, OP_call_method);
-        emit_u16(s, depth - 1);
+        emit_op(s, OP_concat);
+        emit_u16(s, depth);
     }
  done1:
     return next_token(s);
@@ -32259,6 +32288,7 @@ static __exception int js_parse_export(JSParseState *s)
     JSModuleDef *m = s->cur_func->module;
     JSAtom local_name, export_name;
     int first_export, idx, i, tok;
+    BOOL has_string_binding;
     JSExportEntry *me;
 
     if (next_token(s))
@@ -32282,12 +32312,23 @@ static __exception int js_parse_export(JSParseState *s)
     switch(tok) {
     case '{':
         first_export = m->export_entries_count;
+        has_string_binding = FALSE;
         while (s->token.val != '}') {
-            if (!token_is_ident(s->token.val)) {
-                js_parse_error(s, "identifier expected");
-                return -1;
+            if (s->token.val == TOK_STRING) {
+                if (js_string_find_invalid_codepoint(JS_VALUE_GET_STRING(s->token.u.str.str)) >= 0) {
+                    return js_parse_error(s, "contains unpaired surrogate");
+                }
+                local_name = JS_ValueToAtom(s->ctx, s->token.u.str.str);
+                if (local_name == JS_ATOM_NULL)
+                    return -1;
+                has_string_binding = TRUE;
+            } else {
+                if (!token_is_ident(s->token.val)) {
+                    js_parse_error(s, "identifier or string expected");
+                    return -1;
+                }
+                local_name = JS_DupAtom(ctx, s->token.u.ident.atom);
             }
-            local_name = JS_DupAtom(ctx, s->token.u.ident.atom);
             export_name = JS_ATOM_NULL;
             if (next_token(s))
                 goto fail;
@@ -32304,7 +32345,7 @@ static __exception int js_parse_export(JSParseState *s)
                         goto fail;
                 } else {
                     if (!token_is_ident(s->token.val)) {
-                        js_parse_error(s, "identifier expected");
+                        js_parse_error(s, "identifier or string expected");
                         goto fail;
                     }
                     export_name = JS_DupAtom(ctx, s->token.u.ident.atom);
@@ -32341,6 +32382,8 @@ static __exception int js_parse_export(JSParseState *s)
                 me->export_type = JS_EXPORT_TYPE_INDIRECT;
                 me->u.req_module_idx = idx;
             }
+        } else if (has_string_binding) {
+            return js_parse_error(s, "string export name only allowed with 'from' clause");
         }
         break;
     case '*':
@@ -32348,11 +32391,21 @@ static __exception int js_parse_export(JSParseState *s)
             /* export ns from */
             if (next_token(s))
                 return -1;
-            if (!token_is_ident(s->token.val)) {
-                js_parse_error(s, "identifier expected");
-                return -1;
+            if (s->token.val == TOK_STRING) {
+                if (js_string_find_invalid_codepoint(JS_VALUE_GET_STRING(s->token.u.str.str)) >= 0) {
+                    js_parse_error(s, "contains unpaired surrogate");
+                    return -1;
+                }
+                export_name = JS_ValueToAtom(s->ctx, s->token.u.str.str);
+                if (export_name == JS_ATOM_NULL)
+                    return -1;
+            } else {
+                if (!token_is_ident(s->token.val)) {
+                    js_parse_error(s, "identifier or string expected");
+                    return -1;
+                }
+                export_name = JS_DupAtom(ctx, s->token.u.ident.atom);
             }
-            export_name = JS_DupAtom(ctx, s->token.u.ident.atom);
             if (next_token(s))
                 goto fail1;
             idx = js_parse_from_clause(s, m);
@@ -44095,13 +44148,9 @@ static JSValue js_array_sort(JSContext *ctx, JSValueConst this_val,
     while (n < pos) {
         if (array[n].str)
             JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, array[n].str));
-        if (array[n].pos == n) {
-            JS_FreeValue(ctx, array[n].val);
-        } else {
-            if (JS_SetPropertyInt64(ctx, obj, n, array[n].val) < 0) {
-                n++;
-                goto exception;
-            }
+        if (JS_SetPropertyInt64(ctx, obj, n, array[n].val) < 0) {
+            n++;
+            goto exception;
         }
         n++;
     }
@@ -45008,6 +45057,56 @@ exception:
     return JS_EXCEPTION;
 }
 
+static JSValue js_iterator_proto_join(JSContext *ctx, JSValueConst this_val,
+                                      int argc, JSValueConst *argv)
+{
+    JSValue separator, item, ret, method;
+    StringBuffer b_s, *b = &b_s;
+    BOOL done;
+    const JSString *p = NULL;
+
+    if (!JS_IsObject(this_val))
+        return JS_ThrowTypeErrorNotAnObject(ctx);
+    string_buffer_init(ctx, b, 0);
+    if (JS_IsUndefined(argv[0]))
+        separator = JS_AtomToString(ctx, JS_ATOM__comma_);
+    else
+        separator = JS_ToString(ctx, argv[0]);
+    if (JS_IsException(separator)) {
+        method = JS_UNDEFINED;
+        goto exception_close;
+    }
+    method = JS_GetProperty(ctx, this_val, JS_ATOM_next);
+    if (JS_IsException(method))
+        goto exception;
+    for (;;) {
+        item = JS_IteratorNext(ctx, this_val, method, &done);
+        if (JS_IsException(item))
+            goto exception;
+        if (done)
+            break;
+        if (p)
+            string_buffer_concat(b, p, 0, p->len);
+        else
+            p = JS_VALUE_GET_STRING(separator);
+        if (!JS_IsUndefined(item) && !JS_IsNull(item)) {
+            if (string_buffer_concat_value_free(b, item))
+                goto exception_close;
+        }
+    }
+    ret = string_buffer_end(b);
+    goto done;
+exception_close:
+    JS_IteratorClose(ctx, this_val, TRUE);
+exception:
+    string_buffer_free(b);
+    ret = JS_EXCEPTION;
+done:
+    JS_FreeValue(ctx, separator);
+    JS_FreeValue(ctx, method);
+    return ret;
+}
+
 static JSValue js_iterator_proto_iterator(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv)
 {
@@ -45303,6 +45402,7 @@ static const JSCFunctionListEntry js_iterator_proto_funcs[] = {
     JS_CFUNC_MAGIC_DEF("some", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_SOME ),
     JS_CFUNC_DEF("reduce", 1, js_iterator_proto_reduce ),
     JS_CFUNC_DEF("toArray", 0, js_iterator_proto_toArray ),
+    JS_CFUNC_DEF("join", 1, js_iterator_proto_join ),
     JS_CFUNC_DEF("[Symbol.iterator]", 0, js_iterator_proto_iterator ),
     JS_CGETSET_DEF("[Symbol.toStringTag]", js_iterator_proto_get_toStringTag, js_iterator_proto_set_toStringTag),
 };
@@ -46095,19 +46195,22 @@ static JSValue js_string_codePointAt(JSContext *ctx, JSValueConst this_val,
 static JSValue js_string_concat(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
+    StringBuffer b_s, *b = &b_s;
     JSValue r;
     int i;
 
-    /* XXX: Use more efficient method */
-    /* XXX: This method is OK if r has a single refcount */
-    /* XXX: should use string_buffer? */
+    string_buffer_init(ctx, b, 0);
     r = JS_ToStringCheckObject(ctx, this_val);
+    if (string_buffer_concat_value_free(b, r))
+        goto fail;
     for (i = 0; i < argc; i++) {
-        if (JS_IsException(r))
-            break;
-        r = JS_ConcatString(ctx, r, JS_DupValue(ctx, argv[i]));
+        if (string_buffer_concat_value(b, argv[i]))
+            goto fail;
     }
-    return r;
+    return string_buffer_end(b);
+ fail:
+    string_buffer_free(b);
+    return JS_EXCEPTION;
 }
 
 static int string_cmp(JSString *p1, JSString *p2, int x1, int x2, int len)
@@ -60662,7 +60765,7 @@ static JSValue js_dataview_get_byteLength(JSContext *ctx, JSValueConst this_val)
     if (!p)
         return JS_EXCEPTION;
     if (dataview_is_oob(p))
-        return JS_ThrowTypeErrorArrayBufferOOB(ctx);
+        return JS_NewUint32(ctx, 0);
     ta = p->u.typed_array;
     if (ta->track_rab) {
         abuf = ta->buffer->u.array_buffer;
@@ -60680,7 +60783,7 @@ static JSValue js_dataview_get_byteOffset(JSContext *ctx, JSValueConst this_val)
     if (!p)
         return JS_EXCEPTION;
     if (dataview_is_oob(p))
-        return JS_ThrowTypeErrorArrayBufferOOB(ctx);
+        return JS_NewUint32(ctx, 0);
     ta = p->u.typed_array;
     return JS_NewUint32(ctx, ta->offset);
 }

@@ -4639,7 +4639,6 @@ jsClassDef(DOMTokenList):
     case ctx.fromIdx(atom, u)
     of fiIdx: ctx.item(this, u).uninitIfNull()
     of fiStr: JS_UNINITIALIZED
-    of fiErr: JS_EXCEPTION
 
 # DOMStringMap
 proc toDataStr(name: DOMString): CAtom =
@@ -4709,7 +4708,6 @@ jsClassPublicDef(NodeList):
     case ctx.fromIdx(atom, u)
     of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
     of fiStr: JS_UNINITIALIZED
-    of fiErr: JS_EXCEPTION
 
   proc names(ctx: JSContext; this: NodeList): JSPropertyEnumList
       {.jspropnames.} =
@@ -4790,7 +4788,6 @@ jsClassDef(HTMLAllCollection):
     case ctx.fromIdx(atom, u)
     of fiIdx: ctx.toJS(this.item(u)).uninitIfNull()
     of fiStr: JS_UNINITIALIZED
-    of fiErr: JS_EXCEPTION
 
   proc names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
       {.jspropnames.} =
