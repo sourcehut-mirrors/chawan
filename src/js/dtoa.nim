@@ -42,6 +42,8 @@ const JS_ATOD_ACCEPT_BIN_OCT* = (1 shl 1)
 const JS_ATOD_ACCEPT_LEGACY_OCTAL* = (1 shl 2)
 # accept _ between digits as a digit separator
 const JS_ATOD_ACCEPT_UNDERSCORES* = (1 shl 3)
+# accept radix prefix after +/- sign
+const JS_ATOD_ACCEPT_PREFIX_AFTER_SIGN* = (1 shl 4)
 
 type
   JSDTOATempMem* {.importc, header: "../../lib/quickjs/dtoa.h".} = object

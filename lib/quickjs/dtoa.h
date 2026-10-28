@@ -53,6 +53,8 @@
 #define JS_ATOD_ACCEPT_LEGACY_OCTAL  (1 << 2)
 /* accept _ between digits as a digit separator */
 #define JS_ATOD_ACCEPT_UNDERSCORES  (1 << 3)
+/* accept radix prefix after +/- sign */
+#define JS_ATOD_ACCEPT_PREFIX_AFTER_SIGN  (1 << 4)
 
 typedef struct {
     uint64_t mem[37];

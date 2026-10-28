@@ -1372,10 +1372,14 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
     if (p[0] == '+') {
         p++;
         p_start = p;
+        if (!(flags & JS_ATOD_ACCEPT_PREFIX_AFTER_SIGN))
+            goto no_radix_prefix;
     } else if (p[0] == '-') {
         is_neg = 1;
         p++;
         p_start = p;
+        if (!(flags & JS_ATOD_ACCEPT_PREFIX_AFTER_SIGN))
+            goto no_radix_prefix;
     } else {
         p_start = p;
     }
@@ -1393,7 +1397,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
                    radix == 0 && (flags & JS_ATOD_ACCEPT_BIN_OCT)) {
             p += 2;
             radix = 2;
-        } else if ((p[1] >= '0' && p[1] <= '9') &&
+        } else if (((p[1] >= '0' && p[1] <= '9') || p[1] == '_') &&
                    radix == 0 && (flags & JS_ATOD_ACCEPT_LEGACY_OCTAL)) {
             int i;
             sep = 256;
@@ -1406,11 +1410,13 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
         } else {
             goto no_prefix;
         }
+        flags |= JS_ATOD_INT_ONLY;
         /* there must be a digit after the prefix */
         if (to_digit((uint8_t)*p) >= radix)
             goto fail;
     no_prefix: ;
     } else {
+no_radix_prefix:
         if (!(flags & JS_ATOD_INT_ONLY) && strstart(p, "Infinity", &p))
             goto overflow;
     }
@@ -1461,7 +1467,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
         limb_t c;
         if (*p == '.' && (p > p_start || to_digit(p[1]) < radix) &&
             !(flags & JS_ATOD_INT_ONLY)) {
-            if (*p == sep)
+            if (p[1] == sep)
                 goto fail;
             if (dot_pos >= 0)
                 break;
