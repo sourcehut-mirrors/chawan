@@ -60427,7 +60427,7 @@ static const JSCFunctionListEntry js_typed_array_base_proto_funcs[] = {
     JS_CFUNC_MAGIC_DEF("indexOf", 1, js_typed_array_indexOf, special_indexOf ),
     JS_CFUNC_MAGIC_DEF("lastIndexOf", 1, js_typed_array_indexOf, special_lastIndexOf ),
     JS_CFUNC_MAGIC_DEF("includes", 1, js_typed_array_indexOf, special_includes ),
-    //JS_ALIAS_BASE_DEF("toString", "toString", 2 /* Array.prototype. */), @@@
+    JS_ALIAS_BASE_DEF("toString", "toString", 1 /* Array.prototype. */),
 };
 
 static const JSCFunctionListEntry js_typed_array_funcs[] = {
@@ -61671,8 +61671,8 @@ static int JS_AddIntrinsicAtomics(JSContext *ctx)
 
 int JS_AddIntrinsicTypedArrays(JSContext *ctx)
 {
-    JSValue typed_array_base_func, typed_array_base_proto, obj;
-    int i, ret;
+    JSValue typed_array_base_func, obj;
+    int i;
 
     obj = JS_NewCConstructor(ctx, JS_CLASS_ARRAY_BUFFER, "ArrayBuffer",
                                     js_array_buffer_constructor, 1, JS_CFUNC_constructor, 0,
@@ -61704,20 +61704,6 @@ int JS_AddIntrinsicTypedArrays(JSContext *ctx)
                                   JS_NEW_CTOR_NO_GLOBAL);
     if (JS_IsException(typed_array_base_func))
         return -1;
-
-    /* TypedArray.prototype.toString must be the same object as Array.prototype.toString */
-    obj = JS_GetProperty(ctx, ctx->class_proto[JS_CLASS_ARRAY], JS_ATOM_toString);
-    if (JS_IsException(obj))
-        goto fail;
-    /* XXX: should use alias method in JSCFunctionListEntry */ //@@@
-    typed_array_base_proto = JS_GetProperty(ctx, typed_array_base_func, JS_ATOM_prototype);
-    if (JS_IsException(typed_array_base_proto))
-        goto fail;
-    ret = JS_DefinePropertyValue(ctx, typed_array_base_proto, JS_ATOM_toString, obj,
-                                 JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
-    JS_FreeValue(ctx, typed_array_base_proto);
-    if (ret < 0)
-        goto fail;
     
     /* Used to squelch a -Wcast-function-type warning. */
     JSCFunctionType ft = { .generic_magic = js_typed_array_constructor };
@@ -61744,7 +61730,6 @@ int JS_AddIntrinsicTypedArrays(JSContext *ctx)
                                      0);
         }
         if (JS_IsException(obj)) {
-        fail:
             JS_FreeValue(ctx, typed_array_base_func);
             return -1;
         }
