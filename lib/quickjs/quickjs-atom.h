@@ -196,6 +196,8 @@ DEF(lastChunkHandling, "lastChunkHandling")
 DEF(omitPadding, "omitPadding")
 DEF(read, "read")
 DEF(written, "written")
+DEF(allow_partial, "allow-partial")
+DEF(only_full, "only-full")
 /* */
 DEF(toJSON, "toJSON")
 DEF(maxByteLength, "maxByteLength")

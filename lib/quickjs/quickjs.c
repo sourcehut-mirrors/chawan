@@ -2153,7 +2153,7 @@ static size_t js_def_malloc_usable_size(const void *ptr)
     return malloc_size(ptr);
 #elif defined(_WIN32)
     return _msize((void *)ptr);
-#elif defined(__EMSCRIPTEN__)
+#elif defined(__EMSCRIPTEN__) || defined(__OpenBSD__)
     return 0;
 #elif defined(__linux__) || defined(__GLIBC__)
     return malloc_usable_size((void *)ptr);
@@ -4433,6 +4433,85 @@ fail:
     for (; i < argc; i++)
         JS_FreeValue(ctx, argv[i]);
     return string_buffer_end(b);
+}
+
+typedef struct ValueBufferBase {
+    JSValue *arr;
+    JSValue def[4];
+    int len;
+    int size;
+    int error_status;
+} ValueBufferBase;
+
+typedef struct ValueBuffer {
+    ValueBufferBase sup;
+    JSContext *ctx;
+} ValueBuffer;
+
+static void value_buffer_base_init(ValueBufferBase *b)
+{
+    b->len = 0;
+    b->size = 4;
+    b->error_status = 0;
+    b->arr = b->def;
+}
+
+static void value_buffer_base_free(JSRuntime *rt, ValueBufferBase *b)
+{
+    while (b->len > 0)
+        JS_FreeValueRT(rt, b->arr[--b->len]);
+    if (b->arr != b->def)
+        js_free_rt(rt, b->arr);
+    b->arr = b->def;
+    b->size = 4;
+}
+
+static int value_buffer_base_append(JSContext *ctx, ValueBufferBase *b,
+                                    JSValue val)
+{
+    if (b->error_status)
+        return -1;
+
+    if (b->len >= b->size) {
+        int new_size = (b->len + (b->len >> 1) + 31) & ~16;
+        size_t slack;
+        JSValue *new_arr;
+
+        if (b->arr == b->def) {
+            new_arr = js_realloc2(ctx, NULL, sizeof(*b->arr) * new_size, &slack);
+            if (new_arr)
+                memcpy(new_arr, b->def, sizeof b->def);
+        } else {
+            new_arr = js_realloc2(ctx, b->arr, sizeof(*b->arr) * new_size, &slack);
+        }
+        if (!new_arr) {
+            value_buffer_base_free(ctx->rt, b);
+            JS_FreeValue(ctx, val);
+            b->error_status = -1;
+            return -1;
+        }
+        new_size += slack / sizeof(*new_arr);
+        b->arr = new_arr;
+        b->size = new_size;
+    }
+    b->arr[b->len++] = val;
+    return 0;
+}
+
+static void value_buffer_init(JSContext *ctx, ValueBuffer *b)
+{
+    value_buffer_base_init(&b->sup);
+    b->ctx = ctx;
+}
+
+static int value_buffer_append(ValueBuffer *b, JSValue val)
+{
+    return value_buffer_base_append(b->ctx, &b->sup, val);
+}
+
+static void value_buffer_free(ValueBuffer *b)
+{
+    value_buffer_base_free(b->ctx->rt, &b->sup);
 }
 
 /* create a string from a UTF-8 buffer */
@@ -44709,18 +44788,24 @@ typedef enum JSIteratorHelperKindEnum {
     JS_ITERATOR_HELPER_KIND_MAP,
     JS_ITERATOR_HELPER_KIND_SOME,
     JS_ITERATOR_HELPER_KIND_TAKE,
+    JS_ITERATOR_HELPER_KIND_CHUNKS,
+    JS_ITERATOR_HELPER_KIND_WINDOWS,
 } JSIteratorHelperKindEnum;
 
 typedef struct JSIteratorHelperData {
     JSValue obj;
     JSValue next;
-    JSValue func; // predicate (filter) or mapper (flatMap, map)
-    JSValue inner; // innerValue (flatMap)
+    JSValue func; /* predicate (filter) or mapper (flatMap, map) */
+    JSValue inner; /* innerValue (flatMap) */
     JSValue inner_next; // innerValue next method (flatMap)
-    int64_t count; // limit (drop, take) or counter (filter, map, flatMap)
+    int64_t count; /* limit (drop, take), counter (filter, map, flatMap),
+                      or chunk size (chunks) */
     JSIteratorHelperKindEnum kind : 8;
-    uint8_t executing : 1;
-    uint8_t done : 1;
+    uint8_t executing;
+    uint8_t done;
+    uint8_t allow_partial : 1; /* undersized (windows) */
+    uint8_t has_buffer : 1; /* whether this object allocated a buffer */
+    ValueBufferBase buffer[]; /* value buffer (windows, chunks) */
 } JSIteratorHelperData;
 
 static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
@@ -44730,11 +44815,13 @@ static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
     JSValue obj, method;
     int64_t count;
     JSIteratorHelperData *it;
+    BOOL has_buffer, allow_partial;
 
     if (!JS_IsObject(this_val))
         return JS_ThrowTypeErrorNotAnObject(ctx);
     func = JS_UNDEFINED;
     count = 0;
+    has_buffer = allow_partial = FALSE;
 
     switch(magic) {
     case JS_ITERATOR_HELPER_KIND_DROP:
@@ -44753,6 +44840,41 @@ static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
                 else
                     count = MAX_SAFE_INTEGER;
             }
+        }
+        break;
+    case JS_ITERATOR_HELPER_KIND_CHUNKS:
+    case JS_ITERATOR_HELPER_KIND_WINDOWS:
+        {
+            int ret;
+            ret = JS_NumberIsInteger(ctx, argv[0]);
+            if (ret < 0)
+                goto fail;
+            if (ret == 0) {
+                JS_ThrowTypeError(ctx, "integer expected");
+                goto fail;
+            }
+            if (JS_ToInt64Sat(ctx, &count, argv[0]) < 0)
+                goto fail;
+            if (count < 1 || count > UINT32_MAX)
+                goto range_error;
+            if (magic == JS_ITERATOR_HELPER_KIND_WINDOWS &&
+                argc > 1 && !JS_IsUndefined(argv[1])) {
+                if (JS_IsString(argv[1])) {
+                    JSAtom undersized = JS_ValueToAtom(ctx, argv[1]);
+                    if (undersized == JS_ATOM_NULL)
+                        goto fail;
+                    if (undersized == JS_ATOM_allow_partial)
+                        allow_partial = TRUE;
+                    else if (undersized != JS_ATOM_only_full)
+                        goto fail_undersized;
+                    JS_FreeAtom(ctx, undersized);
+                } else {
+fail_undersized:
+                    JS_ThrowTypeError(ctx, "invalid undersized parameter");
+                    goto fail;
+                }
+            }
+            has_buffer = TRUE;
         }
         break;
     case JS_ITERATOR_HELPER_KIND_FILTER:
@@ -44777,7 +44899,7 @@ static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
         JS_FreeValue(ctx, method);
         goto fail;
     }
-    it = js_malloc(ctx, sizeof(*it));
+    it = js_malloc(ctx, sizeof(*it) + has_buffer * sizeof(*it->buffer));
     if (!it) {
         JS_FreeValue(ctx, obj);
         JS_FreeValue(ctx, method);
@@ -44792,10 +44914,14 @@ static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
     it->count = count;
     it->executing = 0;
     it->done = 0;
+    it->allow_partial = allow_partial;
+    it->has_buffer = has_buffer;
+    if (has_buffer)
+        value_buffer_base_init(it->buffer);
     JS_SetOpaque(obj, it);
     return obj;
 range_error:
-    JS_ThrowRangeError(ctx, "must be positive");
+    JS_ThrowRangeError(ctx, "parameter out of range");
 fail:
     JS_IteratorClose(ctx, this_val, TRUE);
     return JS_EXCEPTION;
@@ -45151,6 +45277,8 @@ static void js_iterator_helper_finalizer(JSRuntime *rt, JSValue val)
         JS_FreeValueRT(rt, it->next);
         JS_FreeValueRT(rt, it->inner);
         JS_FreeValueRT(rt, it->inner_next);
+        if (it->has_buffer)
+            value_buffer_base_free(rt, it->buffer);
         js_free_rt(rt, it);
     }
 }
@@ -45166,6 +45294,11 @@ static void js_iterator_helper_mark(JSRuntime *rt, JSValueConst val,
         JS_MarkValue(rt, it->next, mark_func);
         JS_MarkValue(rt, it->inner, mark_func);
         JS_MarkValue(rt, it->inner_next, mark_func);
+        if (it->has_buffer) {
+            int i;
+            for (i = 0; i < it->buffer->len; i++)
+                JS_MarkValue(rt, it->buffer->arr[i], mark_func);
+        }
     }
 }
 
@@ -45369,12 +45502,51 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
             }
         }
         break;
+    case JS_ITERATOR_HELPER_KIND_CHUNKS:
+    case JS_ITERATOR_HELPER_KIND_WINDOWS:
+        {
+            ValueBufferBase *buffer = it->buffer;
+            while (buffer->len < it->count) {
+                JSValue item = JS_IteratorNext(ctx, it->obj, it->next, pdone);
+                if (JS_IsException(item))
+                    goto fail_no_close;
+                if (*pdone)
+                    break;
+                if (value_buffer_base_append(ctx, buffer, item))
+                    goto fail;
+            }
+            if (buffer->len > 0 && (it->kind == JS_ITERATOR_HELPER_KIND_CHUNKS ||
+                                    (*pdone && it->allow_partial))) {
+                ret = JS_NewArrayFrom(ctx, buffer->len, buffer->arr);
+                buffer->len = 0;
+                if (*pdone) {
+                    *pdone = FALSE;
+                    it->done = TRUE;
+                    goto done2;
+                } else if (JS_IsException(ret)) {
+                    goto fail;
+                }
+            } else if (!*pdone && it->kind == JS_ITERATOR_HELPER_KIND_WINDOWS) {
+                ret = js_create_array(ctx, buffer->len,
+                                      (JSValueConst *)buffer->arr);
+                if (JS_IsException(ret))
+                    goto fail;
+                JS_FreeValue(ctx, it->buffer->arr[0]);
+                it->buffer->len--;
+                memmove(&it->buffer->arr[0], &it->buffer->arr[1],
+                        it->buffer->len * sizeof(*it->buffer->arr));
+            } else {
+                ret = JS_UNDEFINED;
+            }
+        }
+        break;
     default:
         abort();
     }
 
  done:
     it->done = *pdone;
+done2:
     it->executing = 0;
     return ret;
  fail:
@@ -45396,6 +45568,8 @@ static const JSCFunctionListEntry js_iterator_proto_funcs[] = {
     JS_CFUNC_MAGIC_DEF("flatMap", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_FLAT_MAP ),
     JS_CFUNC_MAGIC_DEF("map", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_MAP ),
     JS_CFUNC_MAGIC_DEF("take", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_TAKE ),
+    JS_CFUNC_MAGIC_DEF("chunks", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_CHUNKS ),
+    JS_CFUNC_MAGIC_DEF("windows", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_WINDOWS ),
     JS_CFUNC_MAGIC_DEF("every", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_EVERY ),
     JS_CFUNC_MAGIC_DEF("find", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_FIND),
     JS_CFUNC_MAGIC_DEF("forEach", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_FOR_EACH ),
@@ -49409,66 +49583,6 @@ static JSValue js_regexp_Symbol_matchAll(JSContext *ctx, JSValueConst this_val,
     return JS_EXCEPTION;
 }
 
-typedef struct ValueBuffer {
-    JSContext *ctx;
-    JSValue *arr;
-    JSValue def[4];
-    int len;
-    int size;
-    int error_status;
-} ValueBuffer;
-
-static int value_buffer_init(JSContext *ctx, ValueBuffer *b)
-{
-    b->ctx = ctx;
-    b->len = 0;
-    b->size = 4;
-    b->error_status = 0;
-    b->arr = b->def;
-    return 0;
-}
-
-static void value_buffer_free(ValueBuffer *b)
-{
-    while (b->len > 0)
-        JS_FreeValue(b->ctx, b->arr[--b->len]);
-    if (b->arr != b->def)
-        js_free(b->ctx, b->arr);
-    b->arr = b->def;
-    b->size = 4;
-}
-
-static int value_buffer_append(ValueBuffer *b, JSValue val)
-{
-    if (b->error_status)
-        return -1;
-
-    if (b->len >= b->size) {
-        int new_size = (b->len + (b->len >> 1) + 31) & ~16;
-        size_t slack;
-        JSValue *new_arr;
-
-        if (b->arr == b->def) {
-            new_arr = js_realloc2(b->ctx, NULL, sizeof(*b->arr) * new_size, &slack);
-            if (new_arr)
-                memcpy(new_arr, b->def, sizeof b->def);
-        } else {
-            new_arr = js_realloc2(b->ctx, b->arr, sizeof(*b->arr) * new_size, &slack);
-        }
-        if (!new_arr) {
-            value_buffer_free(b);
-            JS_FreeValue(b->ctx, val);
-            b->error_status = -1;
-            return -1;
-        }
-        new_size += slack / sizeof(*new_arr);
-        b->arr = new_arr;
-        b->size = new_size;
-    }
-    b->arr[b->len++] = val;
-    return 0;
-}
-
 /* find in 'p' or its prototypes */
 static JSShapeProperty *find_property_regexp(JSProperty **ppr,
                                              JSObject *p, JSAtom atom)
@@ -49634,9 +49748,9 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
         }
     }
     nextSourcePosition = 0;
-    for(j = 0; j < results->len; j++) {
+    for(j = 0; j < results->sup.len; j++) {
         JSValueConst result;
-        result = results->arr[j];
+        result = results->sup.arr[j];
         if (js_get_length32(ctx, &nCaptures, result) < 0)
             goto exception;
         JS_FreeValue(ctx, matched);
@@ -52362,7 +52476,6 @@ static JSValue js_symbol_get_description(JSContext *ctx, JSValueConst this_val)
 static const JSCFunctionListEntry js_symbol_proto_funcs[] = {
     JS_CFUNC_DEF("toString", 0, js_symbol_toString ),
     JS_CFUNC_DEF("valueOf", 0, js_symbol_valueOf ),
-    // XXX: should have writable: false
     JS_CFUNC_DEF("[Symbol.toPrimitive]", 1, js_symbol_valueOf ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Symbol", JS_PROP_CONFIGURABLE ),
     JS_CGETSET_DEF("description", js_symbol_get_description, NULL ),
