@@ -10,6 +10,10 @@ proc JS_AddIntrinsicDOMException*(ctx: JSContext): cint {.importc.}
 proc JS_ThrowDOMException*(ctx: JSContext; name, fmt: cstring): JSValue {.
   importc, varargs, discardable.}
 
+proc JS_ThrowDOMExceptionNoParent*(ctx: JSContext): JSValue =
+  return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
+    "parent is not a valid element")
+
 proc addDOMExceptionModule*(ctx: JSContext): Opt[void] =
   if ctx.getOpaque() == nil:
     return ok()

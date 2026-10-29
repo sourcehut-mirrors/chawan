@@ -5652,6 +5652,23 @@ proc getDOMTokenList*(element: Element; arr: DOMTokenArray; name: StaticAtom):
 proc shadowRoot(this: Element): ShadowRoot =
   this.internalFirst as ShadowRoot
 
+proc toInnerText(this: Element; ctx: JSContext; s: openArray[char]):
+    DocumentFragment =
+  var text = newStringOfCap(s.len)
+  var cr = false
+  for c in s:
+    if c == '\n' or cr:
+      text &= "<br>"
+    if c notin {'\n', '\r'}:
+      text &= c
+    cr = c == '\r'
+  if cr:
+    text &= "<br>"
+  let root = this.asNode.document.newHTMLElement(ttDiv)
+  if root != nil:
+    return ctx.parseFragment(root.asParentNode, text)
+  return DocumentFragment(nil)
+
 jsClassPublicDef(Element):
   jsextends ParentNodeDef
 
@@ -5823,8 +5840,7 @@ jsClassPublicDef(Element):
     var nodeCtx = this
     if position in {iapBeforeBegin, iapAfterEnd}:
       if this.parentNode of Document or this.parentNode == nil:
-        return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
-          "parent is not a valid element")
+        return JS_ThrowDOMExceptionNoParent(ctx)
       nodeCtx = this.asNode.parentElement
     if nodeCtx == nil or
         not this.asNode.document.isxml and nodeCtx.tagType == ttHtml:
@@ -6140,6 +6156,43 @@ jsClassPublicDef(Element):
       name: DOMString) {.jsmfset("className", satClass),
       jsmfset("slot", satSlot).} =
     element.setAttr(ctx, magic, name)
+
+  proc innerText(ctx: JSContext; this: Element): JSValue {.jsfget,
+      jsfget: "outerText".} =
+    ctx.toJS(this.asNode.textContent)
+
+  proc setInnerText(ctx: JSContext; this: Element; ds: DOMStringNull)
+      {.jsfset: "innerText".} =
+    let fragment = this.toInnerText(ctx, ds.toOpenArray())
+    if fragment != nil:
+      this.asParentNode.replaceAll(ctx, fragment.asNode)
+
+  proc setOuterText(ctx: JSContext; this: Element; ds: DOMStringNull):
+      JSValue {.jsfset: "outerText".} =
+    let parent = this.asNode.parentNode
+    if parent == nil:
+      return JS_ThrowDOMExceptionNoParent(ctx)
+    let fragment = this.toInnerText(ctx, ds.toOpenArray())
+    if fragment == nil:
+      return JS_ThrowOutOfMemory(ctx)
+    if fragment.asNode.firstChild == nil:
+      let text = newText(this.asNode.document, "")
+      if text != nil:
+        fragment.asParentNode.append(ctx, text.asNode)
+    let prev = this.asNode.previousSibling
+    let next = this.asNode.nextSibling
+    let res = parent.asNode.replaceChildWith(ctx, this.asNode, fragment.asNode)
+    if res.isErr:
+      return ctx.insertThrow(res.error)
+    if (let next = next as Text; next != nil):
+      if (let prev = next.asNode.previousSibling as Text; prev != nil):
+        #TODO replace (live ranges etc.)
+        prev.data.s &= next.data.s
+    if (let prev = prev as Text; prev != nil):
+      if (let next = prev.asNode.nextSibling as Text; next != nil):
+        #TODO replace (live ranges etc.)
+        prev.data.s &= next.data.s
+    return JS_UNDEFINED
 
 # AttrDummyElement
 jsClassDef(AttrDummyElement): # fake class
