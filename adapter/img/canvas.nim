@@ -292,11 +292,11 @@ proc main() =
     var width: int
     var height: int
     ps.withPacketReader r:
-      r.sread(cmd)
+      r.assert(r.sread(cmd))
       if cmd != pcSetDimensions:
         cgiDie(ceInternalError, "wrong dimensions")
-      r.sread(width)
-      r.sread(height)
+      r.assert(r.sread(width))
+      r.assert(r.sread(height))
     do:
       quit(1)
     if os.writeLoop("Cha-Image-Dimensions: " & $width & "x" & $height &
@@ -306,18 +306,18 @@ proc main() =
     var alive = true
     while alive:
       ps.withPacketReader r:
-        r.sread(cmd)
+        r.assert(r.sread(cmd))
         case cmd
         of pcSetDimensions:
           alive = false
         of pcFillRect, pcStrokeRect:
           var x1, y1, x2, y2: int
           var color: ARGBColor
-          r.sread(x1)
-          r.sread(y1)
-          r.sread(x2)
-          r.sread(y2)
-          r.sread(color)
+          r.assert(r.sread(x1))
+          r.assert(r.sread(y1))
+          r.assert(r.sread(x2))
+          r.assert(r.sread(y2))
+          r.assert(r.sread(color))
           if cmd == pcFillRect:
             bmp.fillRect(x1, y1, x2, y2, color)
           else:
@@ -326,15 +326,15 @@ proc main() =
           var lines: PathLines
           var color: ARGBColor
           var fillRule: CanvasFillRule
-          r.sread(lines)
-          r.sread(color)
-          r.sread(fillRule)
+          r.assert(r.sread(lines))
+          r.assert(r.sread(color))
+          r.assert(r.sread(fillRule))
           bmp.fillPath(lines, color, fillRule)
         of pcStrokePath:
           var lines: seq[Line]
           var color: ARGBColor
-          r.sread(lines)
-          r.sread(color)
+          r.assert(r.sread(lines))
+          r.assert(r.sread(color))
           bmp.strokePath(lines, color)
         of pcFillText, pcStrokeText:
           if unifontBitmap == nil:
@@ -343,11 +343,11 @@ proc main() =
           var x, y: float64
           var color: ARGBColor
           var align: CanvasTextAlign
-          r.sread(text)
-          r.sread(x)
-          r.sread(y)
-          r.sread(color)
-          r.sread(align)
+          r.assert(r.sread(text))
+          r.assert(r.sread(x))
+          r.assert(r.sread(y))
+          r.assert(r.sread(color))
+          r.assert(r.sread(align))
           if cmd == pcFillText:
             bmp.fillText(text, x, y, color, align)
           else:

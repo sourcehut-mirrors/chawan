@@ -684,30 +684,31 @@ proc initClickResult*(options: seq[SelectOption]; selected: int):
     return initClickResult()
   return ClickResult(t: crtSelect, options: options, selected: selected)
 
-proc sread*(r: var PacketReader; x: var ClickResult) =
+proc sread*(r: var PacketReader; x: var ClickResult): PacketCode =
   var t0: ClickResultType
-  r.sread(t0)
+  ?r.sread(t0)
   let t = t0
   case t
   of crtNone: x = initClickResult()
   of crtOpen:
     var open: RawRequest
     var contentType: string
-    r.sread(open)
-    r.sread(contentType)
+    ?r.sread(open)
+    ?r.sread(contentType)
     x = initClickResult(open, contentType)
   of crtReadArea, crtReadText, crtReadPassword, crtReadFile:
     var prompt: string
     var value: string
-    r.sread(prompt)
-    r.sread(value)
+    ?r.sread(prompt)
+    ?r.sread(value)
     x = ClickResult(t: t, prompt: prompt, value: value)
   of crtSelect:
     var options: seq[SelectOption]
     var selected: int
-    r.sread(options)
-    r.sread(selected)
+    ?r.sread(options)
+    ?r.sread(selected)
     x = initClickResult(options, selected)
+  ok()
 
 proc swrite*(w: var PacketWriter; x: ClickResult) =
   w.swrite(x.t)
@@ -768,13 +769,27 @@ proc findPromise(iface: BufferInterface; id: int): int =
 type IfaceResult* = enum
   irOk, irException, irEOF
 
+proc throwMalformedPacket(iface: BufferInterface; ctx: JSContext): JSValue =
+  return JS_ThrowTypeError(ctx, "malformed packet: %s",
+    iface.partialReader.r.error)
+
+proc throwMalformedPacket2(iface: BufferInterface; ctx: JSContext):
+    IfaceResult =
+  discard iface.throwMalformedPacket(ctx)
+  irException
+
+template orThrow(res: PacketCode; ctx: JSContext; iface: BufferInterface) =
+  if res.isErr:
+    return iface.throwMalformedPacket(ctx)
+
 # Returns false on I/O error, err on JS error.
 proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
   assert not iface.dead
   case iface.stream.initPartialReader(iface.partialReader)
   of prcDone:
     var packetid: int
-    iface.partialReader.r.sread(packetid)
+    if iface.partialReader.r.sread(packetid).isErr:
+      return iface.throwMalformedPacket2(ctx)
     let i = iface.findPromise(packetid)
     var res = irOk
     if i >= 0:
@@ -812,7 +827,8 @@ proc hasPromises(iface: BufferInterface): bool =
 proc getFromStream[T](ctx: JSContext; iface: BufferInterface;
     r: var PacketReader): JSValue =
   var res: T
-  r.sread(res)
+  if r.sread(res).isErr:
+    return iface.throwMalformedPacket(ctx)
   return ctx.toJS(res)
 
 proc addPromise(ctx: JSContext; iface: BufferInterface; get: GetValueProc):
@@ -933,11 +949,11 @@ proc getLinesFromStream(ctx: JSContext; iface: BufferInterface;
   iface.gotLines = true
   let oldBgcolor = iface.bgcolor
   let oldNumLines = iface.numLines
-  r.sread(iface.lineShift)
-  r.sread(iface.numLines)
-  r.sread(iface.bgcolor)
-  r.sread(iface.lines)
-  r.sread(iface.images)
+  r.sread(iface.lineShift).orThrow(ctx, iface)
+  r.sread(iface.numLines).orThrow(ctx, iface)
+  r.sread(iface.bgcolor).orThrow(ctx, iface)
+  r.sread(iface.lines).orThrow(ctx, iface)
+  r.sread(iface.images).orThrow(ctx, iface)
   if iface.pos.setx >= 0:
     iface.setCursorX(iface.pos.setx, iface.pos.setxrefresh, iface.pos.setxsave)
   if oldNumLines != iface.numLines:
@@ -1009,13 +1025,15 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
     inc iface.packetid
     iface.stream.withPacketReader r:
       var packetid2: int
-      r.sread(packetid2)
+      if r.sread(packetid2).isErr:
+        return iface.throwMalformedPacket2(ctx)
       assert packetid == packetid2
-      r.sread(iface.lineShift)
-      r.sread(iface.numLines)
-      r.sread(iface.bgcolor)
-      r.sread(iface.lines)
-      r.sread(iface.images)
+      if r.sread(iface.lineShift).isErr or
+          r.sread(iface.numLines).isErr or
+          r.sread(iface.bgcolor).isErr or
+          r.sread(iface.lines).isErr or
+          r.sread(iface.images).isErr:
+        return iface.throwMalformedPacket2(ctx)
     do:
       return irEOF
     for line in iface.lines:
@@ -1039,9 +1057,11 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
     var links: seq[string]
     iface.stream.withPacketReaderFire r:
       var packetid2: int
-      r.sread(packetid2)
+      if r.sread(packetid2).isErr:
+        return iface.throwMalformedPacket2(ctx)
       assert packetid == packetid2
-      r.sread(links)
+      if r.sread(links).isErr:
+        return iface.throwMalformedPacket2(ctx)
     for i, link in links.mypairs:
       var s = "[" & $(i + 1) & "] " & link
       if handle(opaque, iface, s, []).isErr:
@@ -1051,7 +1071,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
 proc updateHoverFromStream(ctx: JSContext; iface: BufferInterface;
     r: var PacketReader): JSValue =
   var res: UpdateHoverResult
-  r.sread(res)
+  r.sread(res).orThrow(ctx, iface)
   if res.len > 0:
     assert res.high <= int(HoverType.high)
     for (ht, s) in res:

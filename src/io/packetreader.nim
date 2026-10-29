@@ -1,6 +1,12 @@
+# TODO:
+# * use custom code instead of PacketCode?
+# * impose a sensible limit on packet size
+# * allocation errors?  (I think they have to be handled differently...)
+
 {.push raises: [].}
 
 import std/posix
+import std/typetraits
 
 import config/conftypes
 import css/color
@@ -12,6 +18,7 @@ type
     buffer: seq[uint8]
     bufIdx: int
     fds: seq[cint]
+    error*: cstring
 
   PartialPacketReader* = object
     idx: int
@@ -19,19 +26,23 @@ type
     lens: array[2 * sizeof(int), uint8]
     r*: PacketReader
 
-proc sread*(r: var PacketReader; n: var SomeNumber)
-proc sread*[T](r: var PacketReader; s: var set[T])
-proc sread*[T: enum](r: var PacketReader; x: var T)
-proc sread*(r: var PacketReader; s: var string)
-proc sread*(r: var PacketReader; b: var bool)
-proc sread*(r: var PacketReader; tup: var tuple)
-proc sread*[T](r: var PacketReader; s: var seq[T])
-proc sread*(r: var PacketReader; obj: var object)
-proc sread*(r: var PacketReader; c: var ARGBColor)
-proc sread*(r: var PacketReader; c: var CellColor)
-proc sread*(r: var PacketReader; bmp: var NetworkBitmap)
+type PacketCode* = enum
+  pcErr, pcOk
 
-proc initReader*(stream: PosixStream; r: var PacketReader; len, nfds: int): bool =
+proc sread*(r: var PacketReader; n: var SomeNumber): PacketCode
+proc sread*[T](r: var PacketReader; s: var set[T]): PacketCode
+proc sread*[T: enum](r: var PacketReader; x: var T): PacketCode
+proc sread*(r: var PacketReader; s: var string): PacketCode
+proc sread*(r: var PacketReader; b: var bool): PacketCode
+proc sread*(r: var PacketReader; tup: var tuple): PacketCode
+proc sread*[T](r: var PacketReader; s: var seq[T]): PacketCode
+proc sread*(r: var PacketReader; obj: var object): PacketCode
+proc sread*(r: var PacketReader; c: var ARGBColor): PacketCode
+proc sread*(r: var PacketReader; c: var CellColor): PacketCode
+proc sread*(r: var PacketReader; bmp: var NetworkBitmap): PacketCode
+
+proc initReader*(stream: PosixStream; r: var PacketReader; len, nfds: int):
+    bool =
   assert len != 0 or nfds != 0
   r = PacketReader(
     buffer: newSeqUninit[uint8](len),
@@ -115,7 +126,8 @@ proc initPartialReader*(stream: PosixStream; pr: var PartialPacketReader):
   return prcDone
 
 proc assertEmpty(r: var PacketReader) =
-  assert r.bufIdx == r.buffer.len and r.fds.len == 0
+  # it is allowed (recommended) to abort reading if the packet is malformed
+  assert r.error != nil or r.bufIdx == r.buffer.len and r.fds.len == 0
 
 template withPacketReader*(stream: PosixStream; r, body, fallback: untyped) =
   block:
@@ -132,82 +144,121 @@ template withPacketReaderFire*(stream: PosixStream; r, body: untyped) =
   do:
     discard
 
-proc readData*(r: var PacketReader; buffer: pointer; len: int) =
-  assert r.bufIdx + len <= r.buffer.len
-  copyMem(buffer, addr r.buffer[r.bufIdx], len)
-  r.bufIdx += len
+template ok*(t: typedesc[PacketCode]): PacketCode =
+  pcOk
 
-proc recvFd*(r: var PacketReader): cint =
-  return r.fds.pop()
+template err*(t: typedesc[PacketCode]): PacketCode =
+  pcErr
+
+template `?`*(res: PacketCode) =
+  if res == pcErr:
+    return pcErr
+
+template err*(r: var PacketReader; s: cstring): untyped =
+  r.error = s
+  err()
+
+template isOk*(res: PacketCode): bool =
+  res == pcOk
+
+template isErr*(res: PacketCode): bool =
+  res == pcErr
+
+proc readData*(r: var PacketReader; buffer: pointer; len: int): PacketCode =
+  if len > r.buffer.len:
+    return r.err("out of packet bounds")
+  if len > 0:
+    copyMem(buffer, addr r.buffer[r.bufIdx], len)
+    r.bufIdx += len
+  ok()
+
+proc recvFd*(r: var PacketReader): Opt[cint] =
+  if r.fds.len <= 0:
+    return r.err("out of file descriptors")
+  ok(r.fds.pop())
 
 proc closeFds*(r: var PacketReader) =
   for fd in r.fds:
     discard close(fd)
 
-proc sread*(r: var PacketReader; n: var SomeNumber) =
-  n = 0
+proc sread*(r: var PacketReader; n: var SomeNumber): PacketCode =
   r.readData(addr n, sizeof(n))
 
-proc sread*[T: enum](r: var PacketReader; x: var T) =
+proc sread*[T: enum](r: var PacketReader; x: var T): PacketCode =
+  #TODO could just send/read the enum size
   var i {.noinit.}: int
-  r.sread(i)
+  ?r.sread(i)
   x = cast[T](i)
+  ok()
 
-proc sread*[T](r: var PacketReader; s: var set[T]) =
+proc sread*[T](r: var PacketReader; s: var set[T]): PacketCode =
   r.readData(addr s, sizeof(s))
 
-proc sread*(r: var PacketReader; s: var string) =
+proc readLen*(r: var PacketReader): Opt[int] =
+  #TODO 32-bit ints should be enough...
   var len {.noinit.}: int
-  r.sread(len)
-  s = newString(len)
-  if len > 0:
-    r.readData(addr s[0], len)
+  if r.sread(len).isErr:
+    return err()
+  if len < 0:
+    return r.err("negative length")
+  ok(len)
 
-proc sread*(r: var PacketReader; b: var bool) =
+proc sread*(r: var PacketReader; s: var string): PacketCode =
+  let len = ?r.readLen()
+  var s2 = newString(len)
+  if s2.len > 0:
+    ?r.readData(addr s2[0], len)
+  s = move(s2)
+  ok()
+
+proc sread*(r: var PacketReader; b: var bool): PacketCode =
+  #TODO could compress into bits (but maybe not worth it...)
   var n: uint8
-  r.sread(n)
-  if n == 1u8:
-    b = true
-  else:
-    assert n == 0u8
-    b = false
+  ?r.sread(n)
+  if n > 1:
+    return r.err("invalid bool value")
+  b = n == 1
+  ok()
 
-proc sread*(r: var PacketReader; tup: var tuple) =
+proc sread*(r: var PacketReader; tup: var tuple): PacketCode =
   for f in tup.fields:
-    r.sread(f)
+    ?r.sread(f)
+  ok()
 
-proc sread*(r: var PacketReader; s: var seq[char]) =
-  var len {.noinit.}: int
-  r.sread(len)
-  s = newSeq[char](len)
-  if len > 0:
-    r.readData(addr s[0], s.len)
+proc sread*[T](r: var PacketReader; s: var seq[T]): PacketCode =
+  let len = ?r.readLen()
+  var s2 = newSeq[T](len)
+  when T is char or T is SomeNumber:
+    if len > 0:
+      ?r.readData(addr s2[0], s2.len * sizeof(T))
+  else:
+    for x in s2.mitems:
+      ?r.sread(x)
+  s = move(s2)
+  ok()
 
-proc sread*[T](r: var PacketReader; s: var seq[T]) =
-  var len {.noinit.}: int
-  r.sread(len)
-  s = newSeq[T](len)
-  for x in s.mitems:
-    r.sread(x)
-
-proc sread*(r: var PacketReader; obj: var object) =
-  obj = default(typeof(obj))
+proc sread*(r: var PacketReader; obj: var object): PacketCode =
   for f in obj.fields:
-    r.sread(f)
+    ?r.sread(f)
+  ok()
 
-proc sread*(r: var PacketReader; c: var ARGBColor) =
+proc sread*(r: var PacketReader; c: var ARGBColor): PacketCode =
   r.sread(uint32(c))
 
-proc sread*(r: var PacketReader; c: var CellColor) =
+proc sread*(r: var PacketReader; c: var CellColor): PacketCode =
   r.sread(uint32(c))
 
-proc sread*(r: var PacketReader; bmp: var NetworkBitmap) =
+proc sread*(r: var PacketReader; bmp: var NetworkBitmap): PacketCode =
   var n: bool
-  r.sread(n)
+  ?r.sread(n)
   if n:
     bmp = NetworkBitmap()
-    r.sread(bmp[])
+    ?r.sread(bmp[])
   else:
     bmp = nil
+  ok()
+
+proc assert*(r: var PacketReader; res: PacketCode) =
+  doAssert res == pcOk, $r.error
 
 {.pop.} # raises: []

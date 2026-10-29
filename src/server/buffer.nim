@@ -138,7 +138,7 @@ macro proxyt(flag: static ProxyFlag; fun: typed) =
       let typ = param[^2]
       stmts.add(quote do:
         var `id`: `typ`
-        `r`.sread(`id`)
+        `r`.assert(`r`.sread(`id`))
       )
       call.add(id)
   let hasRes = params[0].kind == nnkEmpty
@@ -696,8 +696,8 @@ proc removePagerHandle(bc: BufferContext; handle: PagerHandle): bool =
 proc cloneCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
     packetid: int): CommandResult =
   var newurl: URL
-  r.sread(newurl)
-  let pstream = newPosixStream(r.recvFd())
+  r.assert(r.sread(newurl))
+  let pstream = newPosixStream(r.recvFd().get)
   bc.addPagerHandle(pstream)
   let target = bc.document.findAnchor(newurl.hash)
   bc.document.setTarget(target)
@@ -1170,9 +1170,9 @@ proc readSuccessCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
     packetid: int): CommandResult =
   var s: string
   var hasfd: bool
-  r.sread(s)
-  r.sread(hasfd)
-  let fd = if hasfd: r.recvFd() else: -1
+  r.assert(r.sread(s))
+  r.assert(r.sread(hasfd))
+  let fd = if hasfd: r.recvFd().get(-1) else: -1
   let request = bc.readSuccess0(s, fd)
   let clickResult = initClickResult(request)
   handle.stream.withPacketWriterReturnEOF w:
@@ -1475,7 +1475,7 @@ proc swrite(w: var PacketWriter; x: FlexibleLine) =
 proc getLinesCmd(bc: BufferContext; handle: PagerHandle; r: var PacketReader;
     packetid: int): CommandResult =
   var slice: Slice[int]
-  r.sread(slice)
+  r.assert(r.sread(slice))
   if slice.b < 0 or slice.b > bc.lines.high:
     slice.b = bc.lines.high
   handle.stream.withPacketWriterReturnEOF w:
@@ -1741,8 +1741,8 @@ proc readCommand(bc: BufferContext; data: PagerHandle): CommandResult =
   data.stream.withPacketReader r:
     var cmd: BufferCommand
     var packetid: int
-    r.sread(cmd)
-    r.sread(packetid)
+    r.assert(r.sread(cmd))
+    r.assert(r.sread(packetid))
     res = ProxyMap[cmd](bc, data, r, packetid)
   do: # EOF, pager died
     return cmdrEOF

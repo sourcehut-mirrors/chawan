@@ -1030,10 +1030,12 @@ proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
     contentType, filterCmd: sink string; title: sink string = "";
     redirectDepth = 0; flags: set[BufferInitFlag] = {};
     charsetStack: seq[Charset] = @[]): BufferInit =
-  let stream = pager.loader.startRequest(request, loaderConfig)
-  if stream == nil:
-    pager.alert("failed to start request for " & $request.url)
+  let res = pager.loader.startRequest(request, loaderConfig)
+  if res.isErr:
+    pager.alert("failed to start request for " & $request.url & " (" &
+      $res.error & ")")
     return BufferInit(nil)
+  let stream = res.get
   pager.loader.pollData.register(stream.fd, POLLIN)
   let init = newBufferInit(bufferConfig, loaderConfig, url, request,
     pager.attrs, title, redirectDepth, flags, contentType, filterCmd,
@@ -1761,9 +1763,10 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
     var res = int(ceLoaderGone)
     var msg: string
     init.stream.withPacketReaderFire r:
-      r.sread(res)
+      #TODO throw on malformed packets
+      r.assert(r.sread(res))
       if res == 0: # continue
-        r.sread(init.istreamOutputId)
+        r.assert(r.sread(init.istreamOutputId))
         init.connectionState = cdsBeforeStatus
         let host = init.url.host
         if host == "":
@@ -1771,9 +1774,9 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
         else:
           init.loadInfo = "Connected to " & host & ".  Downloading..."
         pager.copyLoadInfo(init)
-        r.sread(init.loaderConfig.originIp)
+        r.assert(r.sread(init.loaderConfig.originIp))
       else:
-        r.sread(msg)
+        r.assert(r.sread(msg))
     if res != 0: # done
       if res == int(ceMailcap):
         pager.unregisterBufferInit(init)
@@ -1815,8 +1818,8 @@ proc handleRead(pager: Pager; data: BufferInitData): JSValue =
     let stream = move(init.stream)
     let response = newResponse(init.request, stream, init.istreamOutputId)
     stream.withPacketReaderFire r:
-      r.sread(response.status)
-      r.sreadList(response.headers)
+      r.assert(r.sread(response.status))
+      r.assert(r.sreadList(response.headers))
     init.applyResponse(response, pager.mimeTypes)
     let redirect = response.getRedirect(init.request)
     let ctx = pager.jsctx

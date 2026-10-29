@@ -41,23 +41,23 @@ type
     transient*: bool # set if there is a failure in parsing cookies
 
 # Forward declarations
-proc sread*(r: var PacketReader; cookieJar: var CookieJar) =
+proc sread*(r: var PacketReader; cookieJar: var CookieJar): PacketCode =
   var n: bool
-  r.sread(n)
+  ?r.sread(n)
   if n:
     cookieJar = CookieJar()
-    r.sread(cookieJar.s)
-    var len: int
-    r.sread(len)
+    ?r.sread(cookieJar.s)
+    let len = ?r.readLen()
     cookieJar.cookies = newSeq[Cookie](len)
     for i in 0 ..< len:
       let cookie = Cookie()
-      r.sread(cookie[])
+      ?r.sread(cookie[])
       cookieJar.cookies[i] = cookie
       if not cookie.skip:
         cookieJar.map.put(cookie)
   else:
     cookieJar = nil
+  ok()
 
 proc swrite*(w: var PacketWriter; cookieJar: CookieJar) =
   w.swrite(cookieJar != nil)

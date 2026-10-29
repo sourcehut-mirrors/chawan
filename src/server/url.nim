@@ -108,13 +108,14 @@ proc swrite*(w: var PacketWriter; url: URL) =
   else:
     w.swrite("")
 
-proc sread*(r: var PacketReader; url: var URL) =
+proc sread*(r: var PacketReader; url: var URL): PacketCode =
   var s: string
-  r.sread(s)
+  ?r.sread(s)
   if s == "":
     url = URL(nil)
   else:
     url = parseURL0(s)
+  ok()
 
 # -1 if not special
 # 0 if file

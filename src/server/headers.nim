@@ -55,25 +55,27 @@ proc getClassID(t: typedesc[Headers]): JSClassID
 proc sort(headers: Headers)
 
 # in the loader we just send a seq of openArray[HTTPHeader]
-proc sreadList*(r: var PacketReader; headers: Headers) =
+proc sreadList*(r: var PacketReader; headers: Headers): PacketCode =
   assert headers != nil
-  r.sread(headers.list)
+  ?r.sread(headers.list)
   headers.sort()
+  ok()
 
 proc swriteList*(w: var PacketWriter; headers: Headers) =
   w.swrite(headers.list)
 
-proc sread*(r: var PacketReader; headers: var Headers) =
+proc sread*(r: var PacketReader; headers: var Headers): PacketCode =
   var has: bool
-  r.sread(has)
+  ?r.sread(has)
   if has:
     var obj: HeadersObj
-    r.sread(obj.list)
+    ?r.sread(obj.list)
     headers = jsNew obj
     if headers != nil:
       headers.sort()
   else:
     headers = Headers(nil)
+  ok()
 
 proc swrite*(w: var PacketWriter; headers: Headers) =
   w.swrite(headers != nil)

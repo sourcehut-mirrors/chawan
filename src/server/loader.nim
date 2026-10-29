@@ -1093,7 +1093,7 @@ proc loadCGIImpl(ctx: var LoaderContext; client: ClientHandle;
     pid = -1
   if pid != -1:
     ctx.forkStream.withPacketReader r:
-      r.sread(pid)
+      r.assert(r.sread(pid))
     do:
       pid = -1
   if pid == -1:
@@ -1561,15 +1561,15 @@ proc load(ctx: var LoaderContext; request: var RawRequest;
 proc loadCmd(ctx: var LoaderContext; client: ClientHandle; r: var PacketReader):
     CommandResult =
   var request: RawRequest
-  r.sread(request)
+  r.assert(r.sread(request))
   ctx.load(request, client, client.config, resource = true)
 
 proc loadConfigCmd(ctx: var LoaderContext; client: ClientHandle;
     r: var PacketReader): CommandResult =
   var request: RawRequest
   var config: LoaderClientConfig
-  r.sread(request)
-  r.sread(config)
+  r.assert(r.sread(request))
+  r.assert(r.sread(config))
   ctx.load(request, client, config, resource = false)
 
 proc getClientByPid(ctx: LoaderContext; pid: int): ClientHandle =
@@ -1582,8 +1582,8 @@ proc getCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var cacheId: int
   var sourcePid: int
-  r.sread(cacheId)
-  r.sread(sourcePid)
+  r.assert(r.sread(cacheId))
+  r.assert(r.sread(sourcePid))
   let client = ctx.getClientByPid(sourcePid)
   let n = if client != nil: client.cacheMap.find(cacheId) else: -1
   rclient.withPacketWriterReturnEOF w:
@@ -1597,8 +1597,8 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var pid: int
   var config: LoaderClientConfig
-  r.sread(pid)
-  r.sread(config)
+  r.assert(r.sread(pid))
+  r.assert(r.sread(config))
   assert ctx.clientMap.getOrDefault(pid) == nil
   var sv {.noinit.}: array[2, cint]
   var res = cmdrDone
@@ -1624,7 +1624,7 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc removeClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var pid: int
-  r.sread(pid)
+  r.assert(r.sread(pid))
   let client = ctx.getClientByPid(pid)
   if client != nil:
     ctx.unregClient.add(client)
@@ -1633,7 +1633,7 @@ proc removeClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc addCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var outputId: int
-  r.sread(outputId)
+  r.assert(r.sread(outputId))
   let output = ctx.findOutput(outputId, rclient)
   rclient.withPacketWriter w:
     if output == nil:
@@ -1649,9 +1649,9 @@ proc redirectToFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
   var outputId: int
   var targetPath: string
   var displayUrl: string
-  r.sread(outputId)
-  r.sread(targetPath)
-  r.sread(displayUrl)
+  r.assert(r.sread(outputId))
+  r.assert(r.sread(targetPath))
+  r.assert(r.sread(displayUrl))
   let output = ctx.findOutput(outputId, rclient)
   var success = false
   if output != nil:
@@ -1688,9 +1688,9 @@ proc shareCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
   var sourcePid: int # pid of source client
   var targetPid: int # pid of target client
   var id: int
-  r.sread(sourcePid)
-  r.sread(targetPid)
-  r.sread(id)
+  r.assert(r.sread(sourcePid))
+  r.assert(r.sread(targetPid))
+  r.assert(r.sread(id))
   let sourceClient = ctx.getClientByPid(sourcePid)
   let targetClient = ctx.getClientByPid(targetPid)
   let n = if sourceClient != nil and targetClient != nil:
@@ -1711,7 +1711,7 @@ proc openCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   # open a cached item
   var id: int
-  r.sread(id)
+  r.assert(r.sread(id))
   let (ps, _) = rclient.openCachedItem(id)
   rclient.withPacketWriter w:
     w.swrite(ps != nil)
@@ -1724,8 +1724,8 @@ proc openCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc passFdCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var id: string
-  r.sread(id)
-  let fd = r.recvFd()
+  r.assert(r.sread(id))
+  let fd = r.recvFd().get
   #TODO cloexec?
   rclient.passedFdMap.add((id, newPosixStream(fd)))
   cmdrDone
@@ -1733,7 +1733,7 @@ proc passFdCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc addPipeCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var id: string
-  r.sread(id)
+  r.assert(r.sread(id))
   var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
     rclient.withPacketWriter w:
@@ -1760,7 +1760,7 @@ proc addPipeCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc removeCachedItemCmd(ctx: var LoaderContext; client: ClientHandle;
     r: var PacketReader): CommandResult =
   var id: int
-  r.sread(id)
+  r.assert(r.sread(id))
   let n = client.cacheMap.find(id)
   if n != -1:
     let item = client.cacheMap[n]
@@ -1774,8 +1774,8 @@ proc teeCmd(ctx: var LoaderContext; rclient: ClientHandle; r: var PacketReader):
     CommandResult =
   var sourceId: int
   var targetPid: int
-  r.sread(sourceId)
-  r.sread(targetPid)
+  r.assert(r.sread(sourceId))
+  r.assert(r.sread(targetPid))
   let outputIn = ctx.findOutput(sourceId, rclient)
   let target = ctx.getClientByPid(targetPid)
   var pipev {.noinit.}: array[2, cint]
@@ -1799,7 +1799,7 @@ proc teeCmd(ctx: var LoaderContext; rclient: ClientHandle; r: var PacketReader):
 proc addAuthCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var url: URL
-  r.sread(url)
+  r.assert(r.sread(url))
   let origin = url.authOrigin
   let item = ctx.authMap.findItem(origin)
   if item != nil:
@@ -1823,7 +1823,7 @@ proc addAuthCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc suspendCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var ids: seq[int]
-  r.sread(ids)
+  r.assert(r.sread(ids))
   for id in ids:
     let output = ctx.findOutput(id, rclient)
     if output != nil:
@@ -1836,7 +1836,7 @@ proc suspendCmd(ctx: var LoaderContext; rclient: ClientHandle;
 proc resumeCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var ids: seq[int]
-  r.sread(ids)
+  r.assert(r.sread(ids))
   for id in ids:
     let output = ctx.findOutput(id, rclient)
     if output != nil:
@@ -1876,7 +1876,7 @@ proc readCommand(ctx: var LoaderContext; rclient: ClientHandle) =
   var res = cmdrEOF
   rclient.stream.withPacketReaderFire r:
     var cmd: LoaderCommand
-    r.sread(cmd)
+    r.assert(r.sread(cmd))
     if cmd in PrivilegedCommands:
       doAssert ctx.isPrivileged(rclient)
     res = CommandMap[cmd](ctx, rclient, r)

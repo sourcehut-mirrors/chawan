@@ -70,8 +70,8 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
   var process = -1
   var fswarnings: seq[string]
   forkserver.stream.withPacketReaderFire r:
-    r.sread(process)
-    r.sread(fswarnings)
+    r.assert(r.sread(process))
+    r.assert(r.sread(fswarnings))
   warnings.add(fswarnings)
   return process
 
@@ -95,7 +95,7 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
   var bufferPid = -1
   if not fail:
     forkserver.stream.withPacketReaderFire r:
-      r.sread(bufferPid)
+      r.assert(r.sread(bufferPid))
   if bufferPid == -1:
     discard close(sv[0])
     return (-1, nil)
@@ -144,13 +144,13 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
   var ishtml: bool
   var charsetStack: seq[Charset]
   var contentType: string
-  r.sread(config)
-  r.sread(url)
-  r.sread(attrs)
-  r.sread(ishtml)
-  r.sread(charsetStack)
-  r.sread(contentType)
-  let fd = r.recvFd()
+  r.assert(r.sread(config))
+  r.assert(r.sread(url))
+  r.assert(r.sread(attrs))
+  r.assert(r.sread(ishtml))
+  r.assert(r.sread(charsetStack))
+  r.assert(r.sread(contentType))
+  let fd = r.recvFd().get
   stderr.flushFile()
   let pid = fork()
   if pid == 0:
@@ -165,9 +165,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
     var loaderStream: PosixStream
     var istream: PosixStream
     pstream.withPacketReader r:
-      r.sread(cacheId)
-      loaderStream = newPosixStream(r.recvFd())
-      istream = newPosixStream(r.recvFd())
+      r.assert(r.sread(cacheId))
+      loaderStream = newPosixStream(r.recvFd().get)
+      istream = newPosixStream(r.recvFd().get)
     do: # EOF in pager; give up
       quit(1)
     let loader = newFileLoader(pid, loaderStream)
@@ -188,19 +188,19 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
 
 proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
   var hasIstream: bool
-  r.sread(hasIstream)
-  let istream = if hasIstream: newPosixStream(r.recvFd()) else: nil
-  let ostream = newPosixStream(r.recvFd())
+  r.assert(r.sread(hasIstream))
+  let istream = if hasIstream: newPosixStream(r.recvFd().get) else: nil
+  let ostream = newPosixStream(r.recvFd().get)
   # hack to detect when the child died
   var hasOstreamOut2: bool
-  r.sread(hasOstreamOut2)
-  let ostreamOut2 = if hasOstreamOut2: newPosixStream(r.recvFd()) else: nil
+  r.assert(r.sread(hasOstreamOut2))
+  let ostreamOut2 = if hasOstreamOut2: newPosixStream(r.recvFd().get) else: nil
   var env: seq[tuple[name, value: string]]
   var argv: seq[string]
   var cmd: string
-  r.sread(env)
-  r.sread(argv)
-  r.sread(cmd)
+  r.assert(r.sread(env))
+  r.assert(r.sread(argv))
+  r.assert(r.sread(cmd))
   let pid = fork()
   if pid == 0: # child
     ctx.stream.sclose()
@@ -309,12 +309,12 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
     var linkHintChars: string
     var urimethodmapPaths: seq[string]
     var autoBrowsecapPath: string
-    r.sread(isCJKAmbiguous)
-    r.sread(linkHintChars)
-    r.sread(config)
-    r.sread(clientConfig)
-    r.sread(urimethodmapPaths)
-    r.sread(autoBrowsecapPath)
+    r.assert(r.sread(isCJKAmbiguous))
+    r.assert(r.sread(linkHintChars))
+    r.assert(r.sread(config))
+    r.assert(r.sread(clientConfig))
+    r.assert(r.sread(urimethodmapPaths))
+    r.assert(r.sread(autoBrowsecapPath))
     ctx.linkHintChars = linkHintChars.toPoints()
     # for CGI
     if setupForkServerEnv(config).isErr:

@@ -437,9 +437,9 @@ proc startRequest(loader: FileLoader; request: Request): PosixStream =
   var success = false
   var fd: cint
   loader.withPacketReaderFire r:
-    r.sread(success)
+    discard r.sread(success)
     if success:
-      fd = r.recvFd()
+      fd = r.recvFd().get(-1)
   if success:
     let res = newPosixStream(fd)
     res.setCloseOnExec()
@@ -447,22 +447,26 @@ proc startRequest(loader: FileLoader; request: Request): PosixStream =
   return nil
 
 proc startRequest*(loader: FileLoader; request: Request;
-    config: LoaderClientConfig): PosixStream =
+    config: LoaderClientConfig): Result[PosixStream, cstring] =
   loader.withPacketWriter w:
     w.swrite(lcLoadConfig)
     w.swrite(request)
     w.swrite(config)
   do:
-    return nil
+    return err("loader did not accept request")
   var fd = cint(-1)
   loader.withPacketReaderFire r:
     var success: bool
-    r.sread(success)
+    if r.sread(success).isErr:
+      return err(r.error)
     if success:
-      fd = r.recvFd()
+      let res = r.recvFd()
+      if res.isErr:
+        return err(r.error)
+      fd = res.get
   if fd != -1:
-    return newPosixStream(fd)
-  nil
+    return ok(newPosixStream(fd))
+  err("loader failed to start request")
 
 iterator data*(loader: FileLoader): MapData {.inline.} =
   for it in loader.map:
@@ -572,9 +576,8 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (PosixStream, int) =
   var outputId: int
   var fd = cint(-1)
   loader.withPacketReaderFire r:
-    r.sread(outputId)
-    if outputId != -1:
-      fd = r.recvFd()
+    if r.sread(outputId).isOk and outputId != -1:
+      fd = r.recvFd().get(-1)
   if fd != -1:
     return (newPosixStream(fd), outputId)
   return (nil, -1)
@@ -587,7 +590,7 @@ proc addCacheFile*(loader: FileLoader; outputId: int): int =
     return -1
   var cacheId = -1
   loader.withPacketReaderFire r:
-    r.sread(cacheId)
+    discard r.sread(cacheId)
   return cacheId
 
 proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
@@ -599,7 +602,7 @@ proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
     return ""
   var s = ""
   loader.withPacketReaderFire r:
-    r.sread(s)
+    discard r.sread(s)
   move(s)
 
 proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string;
@@ -613,7 +616,8 @@ proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string;
     return false
   var res = false
   loader.withPacketReaderFire r:
-    r.sread(res)
+    if r.sread(res).isErr:
+      return false
   return res
 
 proc onConnected(loader: FileLoader; connectData: ConnectData) =
@@ -626,14 +630,14 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
     of cdsBeforeResult:
       var res: int
       var msg: string
-      r.sread(res) # packet 1
+      r.assert(r.sread(res)) # packet 1
       if res == 0:
-        r.sread(connectData.outputId) # packet 1
-        r.sread(msg) # packet 1
+        r.assert(r.sread(connectData.outputId)) # packet 1
+        r.assert(r.sread(msg)) # packet 1
         inc connectData.state
       else:
         # msg is discarded.
-        r.sread(msg) # packet 1
+        r.assert(r.sread(msg)) # packet 1
         let fd = connectData.stream.fd
         loader.unregister(fd)
         stream.sclose()
@@ -643,8 +647,8 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
     of cdsBeforeStatus:
       let response = newResponse(request, stream, connectData.outputId)
       # packet 2
-      r.sread(response.status)
-      r.sreadList(response.headers)
+      r.assert(r.sread(response.status))
+      r.assert(r.sreadList(response.headers))
       # Only a stream of the response body may arrive after this point.
       response.stream = stream
       # delete before resolving the promise
@@ -707,19 +711,19 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
   var r: PacketReader
   if stream != nil and stream.initPacketReader(r):
     var res: int
-    r.sread(res) # packet 1
+    r.assert(r.sread(res)) # packet 1
     if res == 0:
-      r.sread(response.outputId) # packet 1
+      r.assert(r.sread(response.outputId)) # packet 1
       if stream.initPacketReader(r): # packet 2
-        r.sread(response.status)
-        r.sreadList(response.headers)
+        r.assert(r.sread(response.status))
+        r.assert(r.sreadList(response.headers))
         # Only a stream of the response body may arrive after this point.
         response.stream = stream
       else: # EOF
         stream.sclose()
     else:
       var msg: string
-      r.sread(msg) # packet 1
+      r.assert(r.sread(msg)) # packet 1
       stream.sclose()
   else: # EOF
     if stream != nil:
@@ -736,7 +740,7 @@ proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1):
     w.swrite(id)
   var success = false
   loader.withPacketReaderFire r:
-    r.sread(success)
+    discard r.sread(success)
   return success
 
 proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
@@ -748,9 +752,9 @@ proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
   var fd = cint(-1)
   loader.withPacketReaderFire r:
     var success: bool
-    r.sread(success)
+    discard r.sread(success)
     if success:
-      fd = r.recvFd()
+      fd = r.recvFd().get(-1)
   if fd != -1:
     return newPosixStream(fd)
   return nil
@@ -782,9 +786,9 @@ proc addClient*(loader: FileLoader; pid: int; config: LoaderClientConfig):
   var success = false
   var fd: cint
   loader.withPacketReaderFire r:
-    r.sread(success)
+    discard r.sread(success)
     if success:
-      fd = r.recvFd()
+      fd = r.recvFd().get(-1)
   if success:
     return newPosixStream(fd)
   return nil
@@ -805,9 +809,9 @@ proc addPipe*(loader: FileLoader; id: string): PosixStream =
   var fd: cint = -1
   loader.withPacketReaderFire r:
     var success: bool
-    r.sread(success)
+    discard r.sread(success)
     if success:
-      fd = r.recvFd()
+      fd = r.recvFd().get(-1)
   if fd != -1:
     return newPosixStream(fd)
   return nil

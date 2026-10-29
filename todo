@@ -10,7 +10,6 @@ config:
 mailcap:
 - save custom command? (or a mailcap command editor like w3m)
 buffer:
-- important: validate returned values
 - color visited links
 	* needs some sort of conditional formatting in pager, e.g. give
 	  all Formats an id in buffer and send a list of "if URL

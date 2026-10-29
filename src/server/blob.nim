@@ -99,27 +99,29 @@ proc swrite*(w: var PacketWriter; blob: Blob) =
   if blob.size > 0:
     w.writeData(blob.buffer, blob.size)
 
-proc sread*(r: var PacketReader; blob: var Blob) =
+proc sread*(r: var PacketReader; blob: var Blob): PacketCode =
   var isWebFile: bool
-  r.sread(isWebFile)
+  ?r.sread(isWebFile)
   blob = if isWebFile: (jsNew WebFileObj()).asBlob else: jsNew BlobObj()
+  #TODO allocation error
   assert blob != nil
   if isWebFile:
     let file = WebFile(blob)
     var hasFd: bool
-    r.sread(hasFd)
+    ?r.sread(hasFd)
     if hasFd:
-      file.fd = r.recvFd()
+      file.fd = ?r.recvFd()
     else:
       file.fd = -1
-    r.sread(file.name)
-  r.sread(blob.contentType)
-  r.sread(blob.size)
+    ?r.sread(file.name)
+  ?r.sread(blob.contentType)
+  ?r.sread(blob.size)
   if blob.size > 0:
     let buffer = alloc(blob.size)
-    r.readData(buffer, blob.size)
+    ?r.readData(buffer, blob.size)
     blob.buffer = buffer
     blob.deallocFun = deallocBlob
+  ok()
 
 type
   BlobPropertyBag = object of JSDict

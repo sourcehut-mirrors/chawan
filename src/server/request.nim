@@ -149,19 +149,20 @@ proc swrite*(w: var PacketWriter; part: FormDataEntry) =
   else:
     w.swrite(part.value)
 
-proc sread*(r: var PacketReader; part: var FormDataEntry) =
+proc sread*(r: var PacketReader; part: var FormDataEntry): PacketCode =
   var isstr: bool
-  r.sread(isstr)
+  ?r.sread(isstr)
   if isstr:
     part = FormDataEntry(isstr: true)
   else:
     part = FormDataEntry(isstr: false)
-  r.sread(part.name)
-  r.sread(part.filename)
+  ?r.sread(part.name)
+  ?r.sread(part.filename)
   if part.isstr:
-    r.sread(part.svalue)
+    ?r.sread(part.svalue)
   else:
-    r.sread(part.value)
+    ?r.sread(part.value)
+  ok()
 
 proc swrite*(w: var PacketWriter; formData: FormData) =
   w.swrite(formData != nil)
@@ -169,16 +170,17 @@ proc swrite*(w: var PacketWriter; formData: FormData) =
     w.swrite(formData.entries)
     w.swrite(formData.boundary)
 
-proc sread*(r: var PacketReader; formData: var FormData) =
+proc sread*(r: var PacketReader; formData: var FormData): PacketCode =
   var has: bool
-  r.sread(has)
+  ?r.sread(has)
   if has:
     var obj: FormDataObj
-    r.sread(obj.entries)
-    r.sread(obj.boundary)
+    ?r.sread(obj.entries)
+    ?r.sread(obj.boundary)
     formData = jsNew obj
   else:
     formData = FormData(nil)
+  ok()
 
 proc swrite*(w: var PacketWriter; o: RequestBody) =
   w.swrite(o.t)
@@ -190,12 +192,12 @@ proc swrite*(w: var PacketWriter; o: RequestBody) =
   of rbtOutput: w.swrite(o.outputId)
   of rbtCache: w.swrite(o.cacheId)
 
-proc sread*(r: var PacketReader; o: var RequestBody) =
+proc sread*(r: var PacketReader; o: var RequestBody): PacketCode =
   var t: RequestBodyType
-  r.sread(t)
+  ?r.sread(t)
   o = RequestBody(t: t)
   case t
-  of rbtNone: discard
+  of rbtNone: ok()
   of rbtString: r.sread(o.s)
   of rbtBlob: r.sread(o.blob)
   of rbtMultipart: r.sread(o.multipart)
@@ -214,12 +216,12 @@ proc sread*(w: var PacketReader; o: var Request) {.
     error: "use RawRequest instead".} =
   discard
 
-proc sread*(r: var PacketReader; o: var RawRequest) =
-  r.sread(o.url)
-  r.sread(o.headers)
-  r.sread(o.body)
-  r.sread(o.httpMethod)
-  r.sread(o.flags)
+proc sread*(r: var PacketReader; o: var RawRequest): PacketCode =
+  ?r.sread(o.url)
+  ?r.sread(o.headers)
+  ?r.sread(o.body)
+  ?r.sread(o.httpMethod)
+  ?r.sread(o.flags)
   r.sread(o.credentials)
 
 # FormData
