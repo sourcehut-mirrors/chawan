@@ -64,7 +64,7 @@ Unstable packages (tip of the `master` branch):
 
 * AUR: <https://aur.archlinux.org/packages/chawan-git>
 * AppImage: <https://git.lerch.org/lobo/chawan-appimage/>
-* Gentoo: (::guru overlay, live ebuild) <https://codeberg.org/gentoo/guru/src/branch/dev/www-client/chawan/chawan-9999.ebuild>
+* Gentoo (::guru overlay, live ebuild): <https://codeberg.org/gentoo/guru/src/branch/dev/www-client/chawan/chawan-9999.ebuild>
 * Homebrew (using `--HEAD`): <https://formulae.brew.sh/formula/chawan>
 
 Each [release](https://chawan.net/news/index.html) also comes with static
