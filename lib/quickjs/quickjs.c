@@ -8629,8 +8629,10 @@ static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
         JSVarRef *var_ref;
         /* in the global object we use references */
         var_ref = js_create_var_ref(ctx, FALSE);
-        if (!var_ref)
+        if (!var_ref) {
+            JS_FreeValue(ctx, val);
             return -1;
+        }
         prs->flags |= JS_PROP_VARREF;
         pr->u.var_ref = var_ref;
         var_ref->value = val; 
@@ -10284,8 +10286,10 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
                 return call_setter(ctx, pr->u.getset.setter, this_obj, val, flags);
             } else if ((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT) {
                 /* Instantiate property and retry (potentially useless) */
-                if (JS_AutoInitProperty(ctx, p1, prop, pr, prs))
+                if (JS_AutoInitProperty(ctx, p1, prop, pr, prs)) {
+                    JS_FreeValue(ctx, val);
                     return -1;
+                }
                 goto retry2;
             } else if (!(prs->flags & JS_PROP_WRITABLE)) {
                 goto read_only_prop;
