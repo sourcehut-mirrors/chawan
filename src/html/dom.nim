@@ -7684,7 +7684,7 @@ jsClassDef(HTMLTableSectionElement):
     let rows = this.rows()
     let nrows = rows.asCollection.getLength()
     if index < -1 or index > int64(nrows):
-      JS_ThrowDOMException(ctx, "index out of bounds", "IndexSizeError")
+      JS_ThrowDOMException(ctx, "IndexSizeError", "index out of bounds")
       return err()
     let tr = this.asNode.document.newHTMLElement(ttTr)
     let before = if index == -1 or index == int64(nrows):
