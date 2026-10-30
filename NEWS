@@ -1,11 +1,13 @@
 unreleased
 
 * support ParentNode#moveBefore
+* support Element#innerText, Element#outerText
 * add C-@ to line editor for toggling selection
 * remove deprecated external.w3m-cgi-compat option
 * fix infinite loop in tinfl on invalid deflate streams
 * fix chaseccomp compilation on platforms without fcntl syscall
 * fix term quit getting stuck on some broken terminals
+* work around a Nim 2.2.14/2.4.0 regression
 
 0.5.1 (2026.10.25)
 * remove non-functional btoa symlink
