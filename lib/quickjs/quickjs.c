@@ -9446,18 +9446,17 @@ static JSAtom JS_ValueToAtomFree(JSContext *ctx, JSValue val)
         /* fast path for integer values */
         atom = __JS_AtomFromUInt32(JS_VALUE_GET_INT(val));
     } else if (tag == JS_TAG_SYMBOL) {
-        JSAtomStruct *p = JS_VALUE_GET_PTR(val);
-        atom = JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
+convert_symbol:
+        atom = JS_DupAtom(ctx, js_symbol_to_atom(ctx, val));
         JS_FreeValue(ctx, val);
     } else {
-        JSValue str;
-        str = JS_ToPropertyKeyFree(ctx, val);
-        if (JS_IsException(str))
+        val = JS_ToPropertyKeyFree(ctx, val);
+        if (JS_IsException(val))
             return JS_ATOM_NULL;
-        if (JS_VALUE_GET_TAG(str) == JS_TAG_SYMBOL) {
-            atom = js_symbol_to_atom(ctx, str);
+        if (JS_VALUE_GET_TAG(val) == JS_TAG_SYMBOL) {
+            goto convert_symbol;
         } else {
-            atom = JS_NewAtomStr(ctx, JS_VALUE_GET_STRING(str));
+            atom = JS_NewAtomStr(ctx, JS_VALUE_GET_STRING(val));
         }
     }
     return atom;
@@ -44786,17 +44785,18 @@ static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
                 goto range_error;
             if (magic == JS_ITERATOR_HELPER_KIND_WINDOWS &&
                 argc > 1 && !JS_IsUndefined(argv[1])) {
+                BOOL ok = FALSE;
                 if (JS_IsString(argv[1])) {
                     JSAtom undersized = JS_ValueToAtom(ctx, argv[1]);
                     if (undersized == JS_ATOM_NULL)
                         goto fail;
                     if (undersized == JS_ATOM_allow_partial)
-                        allow_partial = TRUE;
-                    else if (undersized != JS_ATOM_only_full)
-                        goto fail_undersized;
+                        ok = allow_partial = TRUE;
+                    else if (undersized == JS_ATOM_only_full)
+                        ok = TRUE;
                     JS_FreeAtom(ctx, undersized);
-                } else {
-fail_undersized:
+                }
+                if (!ok) {
                     JS_ThrowTypeError(ctx, "invalid undersized parameter");
                     goto fail;
                 }
