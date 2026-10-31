@@ -125,14 +125,6 @@ proc callSink*(ctx: JSContext; funcObj: sink JSCallback; this: JSValueConst;
   ctx.freeValues(argv)
   res
 
-proc callSinkThis*(ctx: JSContext; funcObj: sink JSCallback; this: JSValue;
-    argv: varargs[JSValue]): JSValue =
-  ## Call `funcObj` with the this value `this` and parameters `argv`, then
-  ## free each element of `argv` as well as `this`.
-  let res = ctx.callSink(funcObj, this.vc, argv)
-  JS_FreeValue(ctx, this)
-  res
-
 proc invoke*(ctx: JSContext; val: JSObject; atom: JSAtom;
     argv: varargs[JSValueConst]): JSValue =
   ## Invoke the function named `atom` on `val`.

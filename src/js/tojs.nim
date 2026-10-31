@@ -309,4 +309,7 @@ proc toJSNew*[T](ctx: JSContext; opt: Opt[T]): JSValue =
   else:
     return JS_EXCEPTION
 
+proc toJSConst*(ctx: JSContext; b: bool): JSValueConst =
+  JSValueConst(JS_NewBool(ctx, JS_BOOL(b)))
+
 {.pop.} # raises: []

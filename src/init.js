@@ -415,24 +415,17 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
     const init = {contentType, charset, history};
     for (const page of pages)
         this.loadSubmit(page, init);
-    this.showAlerts();
-    if (!config.start.headless)
-        this.inputLoop();
-    else {
-        this.headlessLoop();
-        let tab = this.tabHead;
-        loop:
-        while (tab != null) {
-            let buffer = tab.head;
-            while (buffer != null) {
-                if (!this.drawBuffer(buffer.iface)) {
-                    console.error("Error in buffer", buffer.url);
-                    this.handleStderr(); /* dump errors */
-                    break loop;
-                }
-                buffer = buffer.next
+}
+
+Pager.prototype.drawBuffers = function() {
+    loop:
+    for (let tab = this.tabHead; tab != null; tab = tab.next) {
+        for (let buffer = tab.head; buffer != null; buffer = buffer.next) {
+            if (!this.drawBuffer(buffer.iface)) {
+                console.error("Error in buffer", buffer.url);
+                this.handleStderr(); /* dump errors */
+                break loop;
             }
-            tab = tab.next;
         }
     }
 }

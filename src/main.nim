@@ -105,27 +105,27 @@ type ParamParseContext = object
   visual: bool
   opts: seq[string]
   stylesheet: string
-  jsctx: JSContext
+  ctx: JSContext
   pages: seq[JSValue]
 
-proc addPage(ctx: var ParamParseContext; s: string): Opt[void] =
-  let val = ctx.jsctx.toJS(s)
+proc addPage(ppc: var ParamParseContext; s: string): Opt[void] =
+  let val = ppc.ctx.toJS(s)
   if JS_IsException(val.vc):
     return err()
-  ctx.pages.add(val)
+  ppc.pages.add(val)
   ok()
 
-proc addDefaultPages(ctx: var ParamParseContext; config: Config;
+proc addDefaultPages(ppc: var ParamParseContext; config: Config;
     history: var bool): Opt[void] =
-  if ctx.visual:
+  if ppc.visual:
     history = false
-    return ctx.addPage(config{"visualHome"})
+    return ppc.addPage(config{"visualHome"})
   if (let httpHome = getEnvEmpty("HTTP_HOME"); httpHome != ""):
     history = false
-    return ctx.addPage(httpHome)
+    return ppc.addPage(httpHome)
   if (let wwwHome = getEnvEmpty("WWW_HOME"); wwwHome != ""):
     history = false
-    return ctx.addPage(wwwHome)
+    return ppc.addPage(wwwHome)
   ok()
 
 when defined(nimUseStrictDefs):
@@ -136,65 +136,65 @@ else:
   template myProveInit(x: untyped): untyped =
     x
 
-proc getNext(ctx: var ParamParseContext): string {.myProveInit.} =
-  if ctx.next != "":
-    return move(ctx.next)
-  inc ctx.i
-  if ctx.i < getArgvCount():
-    return $getArgvCString(ctx.i)
+proc getNext(ppc: var ParamParseContext): string {.myProveInit.} =
+  if ppc.next != "":
+    return move(ppc.next)
+  inc ppc.i
+  if ppc.i < getArgvCount():
+    return $getArgvCString(ppc.i)
   help(1)
 
-proc parseConfig(ctx: var ParamParseContext) =
-  ctx.configPath = ctx.getNext()
-  if ctx.configPath == "":
+proc parseConfig(ppc: var ParamParseContext) =
+  ppc.configPath = ppc.getNext()
+  if ppc.configPath == "":
     die("config override cannot be empty")
 
-proc parseMonochrome(ctx: var ParamParseContext) =
-  ctx.opts.add("display.color-mode = monochrome")
+proc parseMonochrome(ppc: var ParamParseContext) =
+  ppc.opts.add("display.color-mode = monochrome")
 
-proc parseVisual(ctx: var ParamParseContext) =
-  ctx.visual = true
+proc parseVisual(ppc: var ParamParseContext) =
+  ppc.visual = true
 
-proc parseContentType(ctx: var ParamParseContext) =
-  ctx.contentType = ctx.getNext()
+proc parseContentType(ppc: var ParamParseContext) =
+  ppc.contentType = ppc.getNext()
 
-proc getCharset(ctx: var ParamParseContext): Charset =
-  let s = ctx.getNext()
+proc getCharset(ppc: var ParamParseContext): Charset =
+  let s = ppc.getNext()
   let charset = getCharset(s)
   if charset == csUnknown:
     die("unknown charset " & s)
   return charset
 
-proc parseInputCharset(ctx: var ParamParseContext) =
-  ctx.charset = ctx.getCharset()
+proc parseInputCharset(ppc: var ParamParseContext) =
+  ppc.charset = ppc.getCharset()
 
-proc parseOutputCharset(ctx: var ParamParseContext) =
-  ctx.opts.add("encoding.display-charset = '" & $ctx.getCharset() & "'")
+proc parseOutputCharset(ppc: var ParamParseContext) =
+  ppc.opts.add("encoding.display-charset = '" & $ppc.getCharset() & "'")
 
-proc parseDump(ctx: var ParamParseContext) =
-  ctx.opts.add("start.headless = 'dump'")
+proc parseDump(ppc: var ParamParseContext) =
+  ppc.opts.add("start.headless = 'dump'")
 
-proc parseCSS(ctx: var ParamParseContext) =
-  ctx.stylesheet &= ctx.getNext()
+proc parseCSS(ppc: var ParamParseContext) =
+  ppc.stylesheet &= ppc.getNext()
 
-proc parseOpt(ctx: var ParamParseContext) =
-  ctx.opts.add(ctx.getNext())
+proc parseOpt(ppc: var ParamParseContext) =
+  ppc.opts.add(ppc.getNext())
 
-proc parseRun(ctx: var ParamParseContext) =
-  let script = dqEscape(ctx.getNext())
-  ctx.opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
-  ctx.opts.add("start.headless = true")
+proc parseRun(ppc: var ParamParseContext) =
+  let script = dqEscape(ppc.getNext())
+  ppc.opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
+  ppc.opts.add("start.headless = true")
 
-proc parse(ctx: var ParamParseContext): Opt[void] =
+proc parse(ppc: var ParamParseContext): Opt[void] =
   var escapeAll = false
-  while ctx.i < getArgvCount():
-    let param = $getArgvCString(ctx.i)
+  while ppc.i < getArgvCount():
+    let param = $getArgvCString(ppc.i)
     if escapeAll: # after --
-      ?ctx.addPage(param)
-      inc ctx.i
+      ?ppc.addPage(param)
+      inc ppc.i
       continue
     if param.len <= 0:
-      inc ctx.i
+      inc ppc.i
       continue
     if param[0] == '-':
       if param.len == 1:
@@ -202,75 +202,75 @@ proc parse(ctx: var ParamParseContext): Opt[void] =
         # (Some programs use single-dash to read from stdin, but we do that
         # automatically when stdin is not a tty. So ignoring it entirely
         # is probably for the best.)
-        inc ctx.i
+        inc ppc.i
         continue
       if param[1] != '-':
         for j in 1 ..< param.len:
           const NeedsNextParam = {'C', 'I', 'O', 'T', 'c', 'o', 'r'}
           var hasNext = false
           if j < param.high and param[j] in NeedsNextParam:
-            ctx.next = param.substr(j + 1)
+            ppc.next = param.substr(j + 1)
             hasNext = true
           case param[j]
-          of 'C': ctx.parseConfig()
-          of 'I': ctx.parseInputCharset()
-          of 'M': ctx.parseMonochrome()
-          of 'O': ctx.parseOutputCharset()
-          of 'T': ctx.parseContentType()
-          of 'V': ctx.parseVisual()
-          of 'c': ctx.parseCSS()
-          of 'd': ctx.parseDump()
+          of 'C': ppc.parseConfig()
+          of 'I': ppc.parseInputCharset()
+          of 'M': ppc.parseMonochrome()
+          of 'O': ppc.parseOutputCharset()
+          of 'T': ppc.parseContentType()
+          of 'V': ppc.parseVisual()
+          of 'c': ppc.parseCSS()
+          of 'd': ppc.parseDump()
           of 'h': help(0)
-          of 'o': ctx.parseOpt()
-          of 'r': ctx.parseRun()
+          of 'o': ppc.parseOpt()
+          of 'r': ppc.parseRun()
           of 'v': version()
           else: help(1)
           if hasNext:
-            ctx.next = ""
+            ppc.next = ""
             break
       else:
         case param
-        of "--config": ctx.parseConfig()
-        of "--input-charset": ctx.parseInputCharset()
-        of "--monochrome": ctx.parseMonochrome()
-        of "--output-charset": ctx.parseOutputCharset()
-        of "--type": ctx.parseContentType()
-        of "--visual": ctx.parseVisual()
-        of "--css": ctx.parseCSS()
-        of "--dump": ctx.parseDump()
+        of "--config": ppc.parseConfig()
+        of "--input-charset": ppc.parseInputCharset()
+        of "--monochrome": ppc.parseMonochrome()
+        of "--output-charset": ppc.parseOutputCharset()
+        of "--type": ppc.parseContentType()
+        of "--visual": ppc.parseVisual()
+        of "--css": ppc.parseCSS()
+        of "--dump": ppc.parseDump()
         of "--help": help(0)
-        of "--opt": ctx.parseOpt()
-        of "--run": ctx.parseRun()
+        of "--opt": ppc.parseOpt()
+        of "--run": ppc.parseRun()
         of "--version": version()
         of "--": escapeAll = true
         else: help(1)
     else:
-      ?ctx.addPage(param)
-    inc ctx.i
+      ?ppc.addPage(param)
+    inc ppc.i
   ok()
 
-proc initConfig(ctx: ParamParseContext; warnings: var seq[string];
-    jsctx: JSContext): Result[Config, string] =
+proc initConfig(ppc: ParamParseContext; warnings: var seq[string];
+    ctx: JSContext): Result[Config, string] =
   var dir, dataDir: string
-  let file = openConfig(dir, dataDir, ctx.configPath, warnings)
-  if file.isErr and ctx.configPath.len > 0:
+  let file = openConfig(dir, dataDir, ppc.configPath, warnings)
+  if file.isErr and ppc.configPath.len > 0:
     # The user specified a non-existent config file.
-    return err("failed to open config file " & ctx.configPath)
+    return err("failed to open config file " & ppc.configPath)
   if setEnv("CHA_DIR", dir).isErr or setEnv("CHA_DATA_DIR", dataDir).isErr:
     die("failed to set env vars")
-  let config = newConfig(jsctx, dir, dataDir)
+  let config = newConfig(ctx, dir, dataDir)
   if config == nil:
-    return err(jsctx.getExceptionMsg())
+    return err(ctx.getExceptionMsg())
   let cwd = chaos.getcwd()
   if file.isOk:
-    let name = if ctx.configPath.len > 0:
-      ctx.configPath.afterLast('/')
+    let name = if ppc.configPath.len > 0:
+      ppc.configPath.afterLast('/')
     else:
       "config.toml"
-    ?config.parseConfig(config.dir, file.get, warnings, jsctx, name)
-  for opt in ctx.opts:
-    ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", laxnames = true)
-  config{"userStyle"} &= ctx.stylesheet
+    ?config.parseConfig(config.dir, file.get, warnings, ctx, name)
+  for opt in ppc.opts:
+    ?config.parseConfig(cwd, opt, warnings, ctx, "<input>", laxnames = true)
+  config{"userStyle"} &= ppc.stylesheet
   isCJKAmbiguous = config{"doubleWidthAmbiguous"}
   ok(config)
 
@@ -350,7 +350,7 @@ jsNamespaceDef(Client): # fake namespace
 
   proc writeFile(ctx: JSContext; path, content: USVString; mode = cint(0o644)):
       JSValue {.jsstfunc.} =
-    #TODO throw on 0 bytein path
+    #TODO throw on 0 byte in path
     if chafile.writeFile(path.p, content.toOpenArray(), mode).isOk:
       return JS_UNDEFINED
     return JS_ThrowTypeError(ctx, "Could not write to file %s", path.p)
@@ -384,33 +384,35 @@ proc addJSModules(client: Window; ctx: JSContext): JSCode =
   ?ctx.addBufferInterfaceModule()
   ctx.addSelectModule()
 
-proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
+proc main2(ctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
+  if urandom == nil:
+    die("failed to open /dev/urandom")
   urandom.setCloseOnExec()
-  var ctx = ParamParseContext(jsctx: jsctx, i: 1)
-  if ctx.parse().isErr:
-    die(jsctx.getExceptionMsg())
+  var ppc = ParamParseContext(ctx: ctx, i: 1)
+  if ppc.parse().isErr:
+    die(ctx.getExceptionMsg())
   let loaderControl = newPosixStream(loaderSockVec[0])
   loaderControl.setCloseOnExec()
   let loader = newFileLoader(pagerPid, loaderControl)
-  let client = newClient(jsctx, loader, urandom)
-  if client == nil or client.addJSModules(jsctx).isErr:
-    die("failed to initialize JS: " & jsctx.getExceptionMsg())
+  let client = newClient(ctx, loader, urandom)
+  if client == nil or client.addJSModules(ctx).isErr:
+    die("failed to initialize JS: " & ctx.getExceptionMsg())
   var warnings = newSeq[string]()
-  let cres = ctx.initConfig(warnings, jsctx)
+  let cres = ppc.initConfig(warnings, ctx)
   if cres.isErr:
     die(cres.error)
   let config = cres.get
-  if jsctx.definePropertyConvert(jsctx.getOpaque().global, jstConfig,
+  if ctx.definePropertyConvert(ctx.getOpaque().global, jstConfig,
       config).isErr:
-    die(jsctx.getExceptionMsg())
+    die(ctx.getExceptionMsg())
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
-  if ctx.pages.len == 0 and ps.isatty():
-    if ctx.addDefaultPages(config, history).isErr:
-      die(jsctx.getExceptionMsg())
-  if ctx.pages.len == 0 and config{"headless"} != hmTrue:
+  if ppc.pages.len == 0 and ps.isatty():
+    if ppc.addDefaultPages(config, history).isErr:
+      die(ctx.getExceptionMsg())
+  if ppc.pages.len == 0 and config{"headless"} != hmTrue:
     if ps.isatty():
       help(1)
   # make sure tmpdir exists
@@ -430,14 +432,14 @@ proc main2(jsctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     else:
       discard chaos.signal(SIGINT, chaos.SIG_DFL);
       discard kill(getpid(), SIGINT)
-  jsctx.setupStartupScript()
-  let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
+  ctx.setupStartupScript()
+  let pager = newPager(config, forkserver, ctx, warnings, loader, loaderPid,
     client.console, addr client.timeouts)
   if pager == nil:
     die("failed to create pager")
   client.settings.attrsp = addr pager.term.attrs
   client.settings.scriptAttrsp = addr pager.term.attrs
-  return pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
+  return pager.run(ctx, ppc.pages, ppc.contentType, ppc.charset, history)
 
 proc main() =
   let rt = newGlobalJSRuntime()
@@ -451,9 +453,9 @@ proc main() =
     die("failed to set up initial socket pair")
   let pagerPid = int(getpid())
   let forkserver = forkForkServer(loaderSockVec, pagerPid, rt)
-  let jsctx = rt.newJSContext()
-  let code = main2(jsctx, loaderSockVec, pagerPid, forkserver)
-  jsctx.free()
+  let ctx = rt.newJSContext()
+  let code = main2(ctx, loaderSockVec, pagerPid, forkserver)
+  ctx.free()
   rt.free()
   quit(code)
 
