@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/posix
 
 import css/color
@@ -380,8 +382,7 @@ proc processData(state: var State; buf: openArray[char]) =
     else: state.putc(c)
 
 proc usage() =
-  let stderr = cast[ChaFile](stderr)
-  discard stderr.writeLine("Usage: ansi2html [-s] [-t title]")
+  discard chaStderr.writeLine("Usage: ansi2html [-s] [-t title]")
   quit(1)
 
 proc main*() =

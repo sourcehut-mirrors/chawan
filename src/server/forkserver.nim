@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/posix
 
 import config/config
@@ -120,7 +122,7 @@ proc forkLoader(ctx: var ForkServerContext; rt: JSRuntime;
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     loaderStream.sclose()
     return (-1, nil)
-  stderr.flushFile()
+  discard chaStderr.flush()
   let pid = fork()
   if pid == 0:
     # child process
@@ -151,7 +153,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
   r.assert(r.sread(charsetStack))
   r.assert(r.sread(contentType))
   let fd = r.recvFd().get
-  stderr.flushFile()
+  discard chaStderr.flush()
   let pid = fork()
   if pid == 0:
     # child process
@@ -171,10 +173,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
     do: # EOF in pager; give up
       quit(1)
     let loader = newFileLoader(pid, loaderStream)
-    let stdout = cast[ChaFile](stdout)
-    discard stdout.flush()
+    discard chaStdout.flush()
     discard dup2(STDERR_FILENO, STDOUT_FILENO) # QJS logs errors to stdout
-    setbuf(stdout, nil)
+    setbuf(chaStdout, nil)
     # SIGPIPE remains ignored, because we don't want the buffer to signal
     # just because the pager unregistered it (this can also happen when a
     # buffer is cloned)
@@ -219,16 +220,15 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
     discard chaos.signal(SIGPIPE, chaos.SIG_DFL)
     const ExecErrorMsg =
       "Cha-Control: ConnectionError InternalError failed to execute CGI script"
-    let stdout = cast[ChaFile](stdout)
     env.add(("SCRIPT_FILENAME", cmd))
     for it in env:
       if setEnv(it.name, it.value).isErr:
-        discard stdout.writeLine(ExecErrorMsg & " failed to set env vars")
+        discard chaStdout.writeLine(ExecErrorMsg & " failed to set env vars")
         exitnow(1)
     let i = cmd.rfind('/')
     cmd[i] = '\0'
     if chdir(cstring(cmd)) != 0:
-      discard stdout.writeLine(ExecErrorMsg &
+      discard chaStdout.writeLine(ExecErrorMsg &
         " failed to set working directory")
       exitnow(1)
     cmd[i] = '/'
@@ -238,7 +238,8 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int {.noinit.} =
       cargv[i + 1] = cstring(argv[i])
     discard execv(cstring(cmd), cast[cstringArray](addr cargv[0]))
     let es = $strerror(errno)
-    discard stdout.writeLine(ExecErrorMsg & ' ' & es.deleteChars({'\n', '\r'}))
+    discard chaStdout.writeLine(ExecErrorMsg & ' ' &
+      es.deleteChars({'\n', '\r'}))
     exitnow(1)
   else: # parent or error
     if istream != nil:

@@ -4,6 +4,8 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2 and defined(debug):
+  import std/assertions
 import std/macrocache
 
 import js/jsopaque

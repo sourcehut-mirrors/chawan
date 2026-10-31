@@ -6,8 +6,7 @@ import lcgi
 
 proc loadDir(path, opath: string): Opt[void] =
   let title = ("Directory list of " & path).mimeQuote()
-  let stdout = cast[ChaFile](stdout)
-  ?stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
+  ?chaStdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   let d = opendir(path)
   while (let x = readdir(d); x != nil):
     let file = $cast[cstring](addr x.d_name)
@@ -50,7 +49,7 @@ proc loadDir(path, opath: string): Opt[void] =
       if fileExists(target) and (target.len <= 0 or target[^1] != '/'):
         target &= '/'
       line &= " -> " & target
-    ?stdout.writeLine(line)
+    ?chaStdout.writeLine(line)
   ok()
 
 proc loadFile(os, ps: PosixStream; stats: Stat) =

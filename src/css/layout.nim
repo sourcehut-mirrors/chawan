@@ -3,6 +3,8 @@
 # Note: if you start (or stop) using a property in layout, don't forget to
 # modify LayoutProperties in cssvalues.
 
+when NimMajor >= 2:
+  import std/assertions
 import std/math
 
 import config/conftypes

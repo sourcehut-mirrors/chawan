@@ -9,7 +9,7 @@ import utils/chaos
 import utils/opt
 
 proc die(s: string) {.noreturn.} =
-  discard cast[ChaFile](stderr).writeLine("chac: " & s)
+  discard chaStderr.writeLine("chac: " & s)
   quit(1)
 
 proc usage() {.noreturn.} =

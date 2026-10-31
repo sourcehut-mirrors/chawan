@@ -1,10 +1,12 @@
+import std/unittest
+
 import html/catom
 
 proc testAtom() =
   initCAtomFactory()
   var atom1 = new(ref CAtom)
   atom1[] = "asdf".toAtom()
-  assert atom1[] == "asdf".toAtom(), "toAtom does not roundtrip"
+  check atom1[] == "asdf".toAtom()
 
   # simulate collision
   let h = atom1[].hash()
@@ -22,15 +24,15 @@ proc testAtom() =
   let idx1 = testGetIdx(atom1[])
   let idx2 = testGetIdx(atom2)
   let idx3 = testGetIdx(atom3[])
-  assert ((idx1 + 1) and 0xFFF) == idx3
-  assert ((idx3 + 1) and 0xFFF) == idx2
+  check ((idx1 + 1) and 0xFFF) == idx3
+  check ((idx3 + 1) and 0xFFF) == idx2
   # backshift atom2
   atom3 = nil
   let idx2After = testGetIdx(atom2)
-  assert idx2After == idx1 + 1
+  check idx2After == idx1 + 1
   # atom2 is already at home, do nothing
   atom1 = nil
   let idx2AfterAfter = testGetIdx(atom2)
-  assert idx2AfterAfter == idx2After
+  check idx2AfterAfter == idx2After
 
 testAtom()

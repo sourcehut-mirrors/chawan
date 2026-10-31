@@ -1,3 +1,7 @@
+{.push raises: [].}
+
+when NimMajor >= 2:
+  import std/assertions
 import std/algorithm
 
 import utils/twtstr
@@ -109,3 +113,5 @@ proc fullsize*(s: string): string =
       result.addUTF8(u)
     else:
       result.addUTF8(fullSizeMap[i][1])
+
+{.pop.} # raises: []

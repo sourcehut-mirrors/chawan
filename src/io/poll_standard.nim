@@ -2,6 +2,9 @@
 # std only merged working bindings recently, so for now we have to bind
 # it on our own.
 
+when NimMajor >= 2:
+  import std/assertions
+
 from std/posix import TPollfd, POLLNVAL
 
 # NB: nfds_t on SVR4 was unsigned long, but BSDs use unsigned int.

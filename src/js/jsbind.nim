@@ -73,6 +73,8 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/macros
 import std/options
 import std/typetraits

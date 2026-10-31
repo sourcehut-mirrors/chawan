@@ -123,7 +123,6 @@ const RegexStr =
 
 proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   var line = ""
   # The "right thing" would be to check for the error code and output error
   # messages accordingly. Unfortunately that would prevent us from streaming
@@ -143,13 +142,13 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
   # skip formatting of line 0, like w3mman does
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
-  ?stdout.write(header)
-  ?stdout.writeLine(line.processBackspace())
+  ?chaStdout.write(header)
+  ?chaStdout.writeLine(line.processBackspace())
   var wasBlank = false
   # regexes partially from w3mman2html
   var re: Regex
   if not RegexStr.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE}, re):
-    discard cast[ChaFile](stderr).writeLine(re.bytecode)
+    discard cast[ChaFile](chaStderr).writeLine(re.bytecode)
     quit(1)
   var paths: seq[string] = @[]
   var ignoreMan = keyword.toUpperAscii()
@@ -227,7 +226,7 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
         let cat = man & section
         s.setLen(s.len - section.len)
         oline &= "<a href='man:" & cat & "'>" & s & "</a>" & section
-    ?stdout.writeLine(oline)
+    ?chaStdout.writeLine(oline)
   ok()
 
 proc myOpen(cmd: string): Opt[tuple[ofile, efile: AChaFile]] =
@@ -241,8 +240,8 @@ proc myOpen(cmd: string): Opt[tuple[ofile, efile: AChaFile]] =
   of 0: # child
     discard close(opipe[0])
     discard close(epipe[0])
-    discard dup2(opipe[1], stdout.getFileHandle())
-    discard dup2(epipe[1], stderr.getFileHandle())
+    discard dup2(opipe[1], STDOUT_FILENO)
+    discard dup2(epipe[1], STDERR_FILENO)
     discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
     exitnow(1)
   else: # parent
@@ -292,7 +291,6 @@ proc doLocal(man, path: string) =
 <pre>""", keyword = path.afterLast('/').until('.'))
 
 proc doKeyword(man, keyword, section: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   let sectionOpt = if section == "": "" else: " -s " & quoteShellPosix(section)
   let cmd = man & sectionOpt & " -k " & quoteShellPosix(keyword)
   let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
@@ -302,13 +300,13 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
     if wait(addr wstatus) >= 0 and not WIFEXITED(wstatus) or
         WEXITSTATUS(wstatus) != 0:
       cgiDie(ceFileNotFound, efile.readErrorMsg(line))
-  ?stdout.write("Content-Type: text/html\n\n")
-  ?stdout.write("<title>man" & sectionOpt & " -k " & keyword & "</title>\n")
-  ?stdout.write("<h1>man" & sectionOpt & " -k <b>" & keyword & "</b></h1>\n")
-  ?stdout.write("<ul>")
+  ?chaStdout.write("Content-Type: text/html\n\n")
+  ?chaStdout.write("<title>man" & sectionOpt & " -k " & keyword & "</title>\n")
+  ?chaStdout.write("<h1>man" & sectionOpt & " -k <b>" & keyword & "</b></h1>\n")
+  ?chaStdout.write("<ul>")
   while true:
     if line.len == 0:
-      ?stdout.write("\n")
+      ?chaStdout.write("\n")
       if not ofile.readLine(line).get(false):
         break
       continue
@@ -324,7 +322,7 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
       i = line.skipBlanks(i + 1)
     # collect section
     if line[i] != '(':
-      discard cast[ChaFile](stderr).writeLine("Error parsing line! " & line)
+      discard cast[ChaFile](chaStderr).writeLine("Error parsing line! " & line)
       quit(1)
     let sectionText = line.substr(i, line.find(')', i))
     i += sectionText.len
@@ -340,7 +338,7 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
         s &= ", "
     s &= sectionText
     s &= line.substr(i)
-    ?stdout.writeLine(s)
+    ?chaStdout.writeLine(s)
     if not ofile.readLine(line).get(false):
       break
   ok()
@@ -377,8 +375,7 @@ proc main() =
   elif t == "-l":
     doLocal(man, path)
   else:
-    let stdout = cast[ChaFile](stdout)
-    discard stdout.writeLine("Cha-Control: ConnectionError 1 invalid scheme")
+    discard chaStdout.writeLine("Cha-Control: ConnectionError 1 invalid scheme")
 
 main()
 

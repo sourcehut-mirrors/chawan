@@ -1,7 +1,10 @@
 {.push raises: [].}
 
-import charset
-import encodercore
+when NimMajor >= 2:
+  import std/assertions
+
+import encoding/charset
+import encoding/encodercore
 
 type EncoderErrorMode* = enum
   eemFatal, eemHtml

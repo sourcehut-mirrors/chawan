@@ -1,5 +1,8 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 import io/chafile
 import utils/opt
 import utils/tabutil
@@ -1121,11 +1124,10 @@ proc parseLinkDef(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc readLine(state: var ParseState; line: var string): Opt[bool] =
-  let stdin = cast[ChaFile](stdin)
   let hadLine = line != "" or
     state.blockType in {btList, btDefinitionBlank, btParBlank}
   if state.slurpIdx < 0:
-    if ?stdin.readLine(line):
+    if ?chaStdin.readLine(line):
       if state.slurpIdx == -2:
         state.slurpBuf &= line & '\n'
       return ok(true)
@@ -1164,7 +1166,7 @@ proc parse(state: var ParseState): Opt[void] =
 proc main*() =
   var state = ParseState(
     slurpIdx: -1,
-    ofile: cast[ChaFile](stdout),
+    ofile: cast[ChaFile](chaStdout),
     refMap: new(ref StrMap)
   )
   discard state.parse()

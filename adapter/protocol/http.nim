@@ -2,6 +2,8 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/posix
 
 import io/dynstream
@@ -131,8 +133,7 @@ type
     teDeflate = "deflate"
 
 proc die(s: string) {.noreturn.} =
-  let stderr = cast[ChaFile](stderr)
-  discard stderr.writeLine("newhttp: " & s)
+  discard chaStderr.writeLine("newhttp: " & s)
   quit(1)
 
 proc inflate(op: HTTPHandle; flag: uint32) =

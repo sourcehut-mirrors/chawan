@@ -12,8 +12,7 @@ import utils/opt
 import utils/twtstr
 
 proc usage() {.noreturn.} =
-  let stderr = cast[ChaFile](stderr)
-  discard stderr.write("""
+  discard chaStderr.write("""
 Usage: urlenc [-s] [set]
 The input to be decoded is read from stdin, with the last line feed removed.
 [set] decides which characters are encoded, and defaults to "form".
@@ -60,16 +59,14 @@ proc main(): Opt[void] =
         spacesAsPlus = true
       else:
         usage()
-  let stdin = cast[ChaFile](stdin)
   var s: string
-  ?stdin.readAll(s)
+  ?chaStdin.readAll(s)
   if s.len > 0 and s[^1] == '\n':
     s.setLen(s.len - 1)
-  let stdout = cast[ChaFile](stdout)
   if isdec:
-    stdout.writeLine(s.percentDecode())
+    chaStdout.writeLine(s.percentDecode())
   else:
-    stdout.writeLine(s.percentEncode(set, spacesAsPlus))
+    chaStdout.writeLine(s.percentEncode(set, spacesAsPlus))
 
 discard main()
 

@@ -12,21 +12,19 @@ proc parse(): Opt[void] =
   # does not allow collapsing newlines, so we would have to use <br> or empty
   # <p> tags for them. Neither make a lot more sense semantically than the
   # simplest and most efficient solution, which is just using newlines.)
-  let stdout = cast[ChaFile](stdout)
-  let stdin = cast[ChaFile](stdin)
-  ?stdout.write("<!DOCTYPE html>")
+  ?chaStdout.write("<!DOCTYPE html>")
   var inpre = false
   var inul = false
   var line = ""
-  while ?stdin.readLine(line):
+  while ?chaStdin.readLine(line):
     if inpre and not line.startsWith("```"):
-      ?stdout.write(line.htmlEscape() & '\n')
+      ?chaStdout.write(line.htmlEscape() & '\n')
       continue
     if inul and not line.startsWith("* "):
-      ?stdout.write("</ul>")
+      ?chaStdout.write("</ul>")
       inul = false
     if line.len == 0:
-      ?stdout.write("\n")
+      ?chaStdout.write("\n")
       continue
     if line.startsWith("=>"): # link
       let i = line.skipBlanks(2)
@@ -36,34 +34,34 @@ proc parse(): Opt[void] =
         line.toOpenArray(j, line.high).htmlEscape()
       else:
         url.htmlEscape()
-      ?stdout.write("<a href='" & url.htmlEscape() & "'>" & text & "</a>")
+      ?chaStdout.write("<a href='" & url.htmlEscape() & "'>" & text & "</a>")
     elif line.startsWith("```"): # preformatting toggle
       inpre = not inpre
       let title = line.toOpenArray(3, line.high).htmlEscape()
       if inpre:
-        ?stdout.write("<pre title='" & title & "'>")
+        ?chaStdout.write("<pre title='" & title & "'>")
       else:
-        ?stdout.write("</pre>")
+        ?chaStdout.write("</pre>")
     elif line.startsWith("#"): # heading line
       var i = 1
       while i < line.len and i < 3 and line[i] == '#':
         inc i
       let h = "h" & $i
       i = line.skipBlanks(i) # ignore whitespace after #
-      ?stdout.write("<" & h & ">" &
+      ?chaStdout.write("<" & h & ">" &
         line.toOpenArray(i, line.high).htmlEscape() & "</" & h & ">")
     elif line.startsWith("* "): # unordered list item
       if not inul:
         inul = true
-        ?stdout.write("<ul>")
-      ?stdout.write("<li>" & line.toOpenArray(2, line.high).htmlEscape() &
+        ?chaStdout.write("<ul>")
+      ?chaStdout.write("<li>" & line.toOpenArray(2, line.high).htmlEscape() &
         "</li>")
     elif line.startsWith(">"): # quote
-      ?stdout.write("<blockquote>")
-      ?stdout.write(line.toOpenArray(1, line.high).htmlEscape())
-      ?stdout.write("</blockquote>")
+      ?chaStdout.write("<blockquote>")
+      ?chaStdout.write(line.toOpenArray(1, line.high).htmlEscape())
+      ?chaStdout.write("</blockquote>")
     else:
-      ?stdout.write(line.htmlEscape() & '\n')
+      ?chaStdout.write(line.htmlEscape() & '\n')
   ok()
 
 proc main*() =

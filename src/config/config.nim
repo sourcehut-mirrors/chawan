@@ -1,12 +1,13 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/algorithm
 import std/macros
 import std/math
 
 import config/chapath
 import config/conftypes
-import config/cookie
 import css/cell
 import css/color
 import css/cssparser

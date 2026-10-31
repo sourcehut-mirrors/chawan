@@ -14,6 +14,9 @@ type
 
 let EOF {.importc, header: "<stdio.h>".}: cint
 let SEEK_SET {.importc, header: "<stdio.h>".}: cint
+let chaStdin* {.importc: "stdin", header: "<stdio.h>".}: ChaFile
+let chaStdout* {.importc: "stdout", header: "<stdio.h>".}: ChaFile
+let chaStderr* {.importc: "stderr", header: "<stdio.h>".}: ChaFile
 
 {.push importc, header: "<stdio.h>".}
 proc fopen(pathname, mode: cstring): ChaFile

@@ -5,6 +5,8 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/posix
 
 import config/conftypes

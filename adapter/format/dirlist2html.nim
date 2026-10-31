@@ -45,8 +45,7 @@ proc printDirlist(f: ChaFile; items: openArray[DirlistItem]): Opt[void] =
   ok()
 
 proc usage() =
-  let stderr = cast[ChaFile](stderr)
-  discard stderr.writeLine("Usage: dirlist2html [-t title]")
+  discard chaStderr.writeLine("Usage: dirlist2html [-t title]")
   quit(1)
 
 proc addItem(items: var seq[DirlistItem]; item: DirlistItem) =
@@ -148,8 +147,7 @@ proc parseArgs(title: var string) =
 proc parse(): Opt[void] =
   var title = ""
   parseArgs(title)
-  let stdout = cast[ChaFile](stdout)
-  ?stdout.write("""
+  ?chaStdout.write("""
 <!DOCTYPE html>
 <head>
 <title>""" & title.htmlEscape() & """</title>
@@ -158,8 +156,7 @@ proc parse(): Opt[void] =
 <pre><h1>""" & title.htmlEscape() & """</h1>
 """)
   var items: seq[DirlistItem] = @[]
-  let stdin = cast[ChaFile](stdin)
-  ?stdin.parseInput(items)
+  ?chaStdin.parseInput(items)
   items.sort(proc(a, b: DirlistItem): int =
     if a.t == ditDir and b.t != ditDir:
       return -1
@@ -167,8 +164,8 @@ proc parse(): Opt[void] =
       return 1
     return cmp(a.dname, b.dname)
   )
-  ?stdout.printDirlist(items)
-  stdout.write("</pre></body>")
+  ?chaStdout.printDirlist(items)
+  chaStdout.write("</pre></body>")
 
 proc main*() =
   discard parse()

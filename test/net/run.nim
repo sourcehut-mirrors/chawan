@@ -30,8 +30,6 @@ proc cb(req: Request) {.async.} =
         if n >= 0:
           headers.add((line.substr(0, n - 1), line.substr(n + 1)))
       res = res.substr(i)
-    else:
-      res = readFile(req.url.path.after('/'))
   #echo (req.reqMethod, req.url.path, req.headers)
   await req.respond(Http200, res, headers.newHttpHeaders())
 

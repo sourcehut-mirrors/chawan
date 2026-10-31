@@ -26,18 +26,16 @@ type
   CGIResult*[T] = Result[T, CGIError]
 
 proc cgiDie*(code: ConnectionError; s: cstring = nil) {.noreturn.} =
-  let stdout = cast[ChaFile](stdout)
-  discard stdout.write("Cha-Control: ConnectionError " & $int(code))
+  discard chaStdout.write("Cha-Control: ConnectionError " & $int(code))
   if s != nil and s[0] != '\0':
-    discard stdout.write(' ')
-    discard stdout.writecstr(s)
-  discard stdout.writeLine()
+    discard chaStdout.write(' ')
+    discard chaStdout.writecstr(s)
+  discard chaStdout.writeLine()
   quit(1)
 
 proc cgiDie*(code: ConnectionError; s: string) {.noreturn.} =
-  let stdout = cast[ChaFile](stdout)
-  discard stdout.write("Cha-Control: ConnectionError " & $int(code) & ' ')
-  discard stdout.writeLine(s)
+  discard chaStdout.write("Cha-Control: ConnectionError " & $int(code) & ' ')
+  discard chaStdout.writeLine(s)
   quit(1)
 
 proc cgiDie*(e: CGIError) {.noreturn.} =

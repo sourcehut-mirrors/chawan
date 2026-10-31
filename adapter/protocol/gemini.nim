@@ -7,9 +7,8 @@ import std/posix
 import lcgi_ssl
 
 proc sdie(s: string) =
-  let stdout = cast[ChaFile](stdout)
-  if stdout.write("Cha-Control: ConnectionError 5 " & s & ": ").isOk:
-    ERR_print_errors_fp(stdout)
+  if chaStdout.write("Cha-Control: ConnectionError 5 " & s & ": ").isOk:
+    ERR_print_errors_fp(chaStdout)
   quit(1)
 
 proc openKnownHosts(os: PosixStream): (AChaFile, string) =

@@ -8,6 +8,8 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/posix
 
 import ../protocol/lcgi
@@ -16,8 +18,7 @@ import io/poll
 import utils/sandbox
 
 proc usage() {.noreturn.} =
-  let stderr = cast[ChaFile](stderr)
-  discard stderr.writeLine("Usage: " & getArgv(0) & " [host] [port] [-m msg]")
+  discard chaStderr.writeLine("Usage: " & getArgv(0) & " [host] [port] [-m msg]")
   quit(1)
 
 proc main() =

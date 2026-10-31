@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/options
 import std/posix
 
@@ -421,7 +423,7 @@ proc cleanup(pager: Pager) =
     if pager.cookieJars.write(pager.config{"cookieFile"}).isErr:
       pager.alert("failed to save cookies")
   for msg in pager.alerts:
-    discard cast[ChaFile](stderr).write("cha: " & msg & '\n')
+    discard chaStderr.write("cha: " & msg & '\n')
   pager.timeouts = nil
   # break up cycles
   for it in pager.loader.data:
@@ -431,10 +433,9 @@ proc cleanup(pager: Pager) =
       hist.clear()
   if pager.console != nil and pager.dumpConsoleFile:
     if file := chafile.afopen(pager.consoleFile, "r+"):
-      let stderr = cast[ChaFile](stderr)
       var buffer {.noinit.}: array[1024, uint8]
       while (let n = file.read(buffer); n != 0):
-        if stderr.write(buffer.toOpenArray(0, n - 1)).isErr:
+        if chaStderr.write(buffer.toOpenArray(0, n - 1)).isErr:
           break
 
 proc runJSJobs(pager: Pager; rt: JSRuntime): Opt[void] =

@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import io/chafile
 import js/constcharp
 import js/cutils
 import js/dtoa
@@ -522,7 +523,7 @@ type JSMemoryUsage* {.importc, header: qjsheader.} = object
   binary_object_count*, binary_object_size*: int64
 
 proc JS_ComputeMemoryUsage*(rt: JSRuntime; s: var JSMemoryUsage)
-proc JS_DumpMemoryUsage*(fp: File; s: var JSMemoryUsage; rt: JSRuntime)
+proc JS_DumpMemoryUsage*(fp: ChaFile; s: var JSMemoryUsage; rt: JSRuntime)
 
 # atom support
 const JS_ATOM_NULL* = JSAtom(0)

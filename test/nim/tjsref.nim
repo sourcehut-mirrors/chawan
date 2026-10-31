@@ -1,3 +1,5 @@
+import std/unittest
+
 import js/jsbind
 import js/jsref
 import js/jsutils
@@ -42,10 +44,10 @@ proc testHooks() =
 proc main() =
   let rt = newGlobalJSRuntime()
   let ctx = newJSContext(rt)
-  assert ctx.registerClass(TestDef) == fjOk
+  check ctx.registerClass(TestDef) == fjOk
   testHooks()
   ctx.free()
   rt.free()
-  assert count == 6, $count
+  check count == 6
 
 main()

@@ -2,6 +2,9 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 import chame/tags
 import html/catom
 import html/dom

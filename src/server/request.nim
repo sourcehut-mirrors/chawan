@@ -1,5 +1,8 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 import html/script
 import io/dynstream
 import io/packetreader

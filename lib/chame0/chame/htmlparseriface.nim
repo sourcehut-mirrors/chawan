@@ -38,6 +38,9 @@ when defined(nimdocdummy):
     AtomImpl = int
     DOMBuilderImpl = DOMBuilder[HandleImpl]
 
+when NimMajor >= 2:
+  import std/assertions
+
 # DOMBuilder
 static:
   # DOMBuilderImpl must be an instance of DOMBuilder with the handle type

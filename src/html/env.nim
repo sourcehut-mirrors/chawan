@@ -1,5 +1,8 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 import config/conftypes
 import config/mimetypes
 import css/cssparser
@@ -1089,7 +1092,7 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;
     urandom: PosixStream; imageTypes: MimeTypesImages;
     userAgent, referrer, contentType: string): Window =
-  let console = newConsole(cast[ChaFile](stderr))
+  let console = newConsole(chaStderr)
   let ctx = if scripting != smFalse:
     rt.newJSContext()
   else:
@@ -1130,7 +1133,7 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream):
   # global object in the pager
   if ctx.addWindowModule().isErr:
     return Window(nil)
-  let console = newConsole(cast[ChaFile](stderr))
+  let console = newConsole(chaStderr)
   let window = jsNew WindowObj(
     jsctx: ctx,
     loader: loader,

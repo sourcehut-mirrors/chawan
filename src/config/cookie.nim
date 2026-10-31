@@ -167,14 +167,6 @@ proc parseCookieDate*(val: string): Opt[int64] =
   let day = era * 146097 + doe - 719468
   ok(day * 24 * 60 * 60 + time[0] * 60 * 60 + time[1] * 60 + time[2])
 
-# For debugging
-proc `$`*(cookieJar: CookieJar): string =
-  result = ""
-  for cookie in cookieJar.cookies:
-    result &= "Cookie "
-    result &= $cookie[]
-    result &= "\n"
-
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.1.4
 proc defaultCookiePath(url: URL): string =
   var path = url.pathname.untilLast('/')

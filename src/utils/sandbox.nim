@@ -29,6 +29,9 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 const disableSandbox {.booldefine.} = false
 
 type SandboxType* = enum

@@ -1,3 +1,8 @@
+{.push raises: [].}
+
+when NimMajor >= 2:
+  import std/assertions
+
 import css/color
 import utils/strwidth
 
@@ -126,3 +131,5 @@ proc findNextFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
   if i < line.formats.len:
     return line.formats[i]
   return SimpleFormatCell(pos: -1)
+
+{.pop.} # raises: []

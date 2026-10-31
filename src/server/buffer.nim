@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
 import std/macros
 import std/options
 import std/posix
@@ -285,9 +287,8 @@ proc cursorBytes(bc: BufferContext; y, cc: int): int =
 
 proc navigate(bc: RootRef; url: URL) {.exportc: "cha_$1".} =
   let bc = BufferContext(bc)
-  let stderr = cast[ChaFile](stderr)
   bc.navigateUrl = url
-  discard stderr.writeLine("navigate to " & $url)
+  discard chaStderr.writeLine("navigate to " & $url)
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
 proc findPrevLink(bc: BufferContext; handle: PagerHandle;
@@ -1872,7 +1873,7 @@ proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
     bc.htmlParser = newHTML5ParserWrapper(bc.window, url, confidence,
       bc.charset)
     if bc.htmlParser == nil:
-      discard cast[ChaFile](stderr).writeLine("out of memory")
+      discard chaStderr.writeLine("out of memory")
       quit(1)
     bc.document.applyUASheet()
     bc.document.applyUserSheet(bc.config.userStyle)

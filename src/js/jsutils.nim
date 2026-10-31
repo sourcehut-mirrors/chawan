@@ -2,6 +2,9 @@
 
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 import js/constcharp
 import js/cutils
 import js/dtoa

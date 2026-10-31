@@ -13,18 +13,16 @@ proc getField(line: string; i: var int): string =
   move(s)
 
 proc parse(): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
-  let stdin = cast[ChaFile](stdin)
   if getArgvCount() != 3 or getArgvCString(1) != "-u":
-    discard stdout.writeLine("Usage: gopher2html [-u URL]")
+    discard chaStdout.writeLine("Usage: gopher2html [-u URL]")
     quit(1)
   let url = htmlEscape(getArgv(2))
-  ?stdout.write("""<!DOCTYPE html>
+  ?chaStdout.write("""<!DOCTYPE html>
 <title>Index of """ & url & """</title>
 <h1>Index of """ & url & """</h1>""")
   var ispre = false
   var line = ""
-  while ?stdin.readLine(line):
+  while ?chaStdin.readLine(line):
     if line.len == 0:
       continue
     let t = line[0]
@@ -54,7 +52,7 @@ proc parse(): Opt[void] =
         file.substr("URL:".len)
       outs &= "<a item-type=\"" & htmlEscape([t]) & "\" href=\"" &
         htmlEscape(ourls) & "\">" & htmlEscape(name) & "</a><br>\n"
-    ?stdout.write(outs)
+    ?chaStdout.write(outs)
   ok()
 
 proc main*() =

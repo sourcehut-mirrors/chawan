@@ -1,10 +1,12 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+else:
+  from utils/twtstr import substr
+
 import js/libregexp
 import utils/opt
-
-when NimMajor < 2:
-  from utils/twtstr import substr
 
 type
   Regex* = object

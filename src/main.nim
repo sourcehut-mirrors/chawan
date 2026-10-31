@@ -65,7 +65,7 @@ const ChaVersionStrLong = block:
   s & ")\n"
 
 proc die(s: string) {.noreturn.} =
-  discard cast[ChaFile](stderr).writeLine("cha: " & s)
+  discard chaStderr.writeLine("cha: " & s)
   quit(1)
 
 proc help(i: int) {.noreturn.} =
@@ -87,13 +87,13 @@ Options:
     -V, --visual               Visual startup mode
 """
   if i == 0:
-    discard cast[ChaFile](stdout).write(s)
+    discard chaStdout.write(s)
   else:
-    discard cast[ChaFile](stderr).write(s)
+    discard chaStderr.write(s)
   quit(i)
 
 proc version() =
-  discard cast[ChaFile](stdout).write(ChaVersionStrLong)
+  discard chaStdout.write(ChaVersionStrLong)
   quit(0)
 
 type ParamParseContext = object
@@ -331,7 +331,6 @@ proc setupStartupScript(ctx: JSContext) =
     if ps == nil:
       die("failed to read startup bytecode at " & path)
     let src = ps.readAll()
-    assert src.len > 0
     let obj = JS_ReadObject(ctx, cast[ptr uint8](unsafeAddr src[0]),
       csize_t(src.len), JS_READ_OBJ_BYTECODE)
   if JS_IsException(obj.vc):

@@ -33,8 +33,7 @@ proc sendCommand(f: AChaFile; cmd, param: string; outs: var string):
   ok(status)
 
 proc sdie(status: int; s, obuf: string) {.noreturn.} =
-  let stdout = cast[ChaFile](stdout)
-  discard stdout.write("Status: " & $status &
+  discard chaStdout.write("Status: " & $status &
     "\nContent-Type: text/html\n\n" & """
 <h1>""" & s & """</h1>
 
@@ -100,8 +99,7 @@ proc login(f: AChaFile; username, password: string): Opt[void] =
   ok()
 
 proc cat(passive: PosixStream): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
-  ?stdout.flush()
+  ?chaStdout.flush()
   let os = newPosixStream(STDOUT_FILENO)
   var buffer {.noinit.}: array[4096, uint8]
   while true:
@@ -114,7 +112,6 @@ proc cat(passive: PosixStream): Opt[void] =
   ok()
 
 proc listDir(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   let passive = f.passiveMode(host, ipv6)
   enterNetworkSandbox()
   var obuf = ""
@@ -122,22 +119,20 @@ proc listDir(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =
     passive.sclose()
     return err()
   let title = ("Index of " & path).mimeQuote()
-  ?stdout.writeLine("Content-Type: text/x-dirlist;title=" & title & "\n\n")
+  ?chaStdout.writeLine("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   passive.cat()
 
 proc retrieve(f: AChaFile; path, host: string; ipv6: bool): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   let passive = f.passiveMode(host, ipv6)
   enterNetworkSandbox()
   var obuf = ""
   if f.sendCommand("RETR", path, obuf).get(550) == 550:
     passive.sclose()
     sdie(404, "Not found", obuf)
-  ?stdout.writeLine()
+  ?chaStdout.writeLine()
   passive.cat()
 
 proc main() =
-  let stdout = cast[ChaFile](stdout)
   if getArgvCount() != 4:
     cgiDie(ceInternalError, "usage: ftp [host] [port] [path]")
   let host = getArgv(1)
@@ -156,7 +151,7 @@ proc main() =
     var obuf = ""
     let res = if f.sendCommand("CWD", path, obuf).get(-1) == 250:
       if path[^1] != '/':
-        stdout.write("Status: 301\nLocation: " & path & "/\n")
+        chaStdout.write("Status: 301\nLocation: " & path & "/\n")
       else:
         f.listDir(path, host, ipv6)
     else:

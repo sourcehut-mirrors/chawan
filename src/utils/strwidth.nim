@@ -1,5 +1,8 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 import utils/twtstr
 
 # Lookup table for characters on the BMP. This "only" takes up 8k of space
