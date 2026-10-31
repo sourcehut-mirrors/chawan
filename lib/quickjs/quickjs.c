@@ -44945,6 +44945,66 @@ static JSValue js_iterator_proto_reduce(JSContext *ctx, JSValueConst this_val,
     return JS_EXCEPTION;
 }
 
+static JSValue js_iterator_proto_includes(JSContext *ctx, JSValueConst this_val,
+                                          int argc, JSValueConst *argv)
+{
+    JSValueConst needle;
+    JSValue next, val;
+    int64_t skip;
+    int ret;
+    BOOL done;
+
+    if (!JS_IsObject(this_val))
+        return JS_ThrowTypeErrorNotAnObject(ctx);
+    needle = argv[0];
+    if (argc >= 2 && !JS_IsUndefined(argv[1])) {
+        if (!JS_IsNumber(argv[1]))
+            goto bad_skip;
+        ret = JS_ToInt64SatF(ctx, &skip, argv[1]);
+        if (ret < 0)
+            goto exception;
+        if (ret != JS_TO_INT64_SAT_INF && !JS_NumberIsInteger(ctx, argv[1])) {
+bad_skip:
+            JS_ThrowTypeError(ctx, "skipped must be an integer or infinity");
+            goto exception;
+        }
+        if (skip < 0 || (ret == 0 && skip > MAX_SAFE_INTEGER)) {
+            JS_ThrowRangeError(ctx, "skipped out of range");
+            goto exception;
+        }
+    } else {
+        skip = 0;
+    }
+    next = JS_GetProperty(ctx, this_val, JS_ATOM_next);
+    if (JS_IsException(next))
+        return JS_EXCEPTION;
+    for (;;) {
+        val = JS_IteratorNext(ctx, this_val, next, &done);
+        if (JS_IsException(val))
+            break;
+        if (done) {
+            val = JS_FALSE;
+            break;
+        }
+        if (skip > 0) {
+            if (skip != INT64_MAX)
+                skip--;
+        } else if (js_same_value_zero(ctx, val, needle)) {
+            JS_FreeValue(ctx, val);
+            val = JS_TRUE;
+            if (JS_IteratorClose(ctx, this_val, FALSE) < 0)
+                val = JS_EXCEPTION;
+            break;
+        }
+        JS_FreeValue(ctx, val);
+    }
+    JS_FreeValue(ctx, next);
+    return val;
+ exception:
+    JS_IteratorClose(ctx, this_val, TRUE);
+    return JS_EXCEPTION;
+}
+
 static JSValue js_iterator_proto_toArray(JSContext *ctx, JSValueConst this_val,
                                          int argc, JSValueConst *argv)
 {
@@ -45414,6 +45474,7 @@ static const JSCFunctionListEntry js_iterator_proto_funcs[] = {
     JS_CFUNC_DEF("reduce", 1, js_iterator_proto_reduce ),
     JS_CFUNC_DEF("toArray", 0, js_iterator_proto_toArray ),
     JS_CFUNC_DEF("join", 1, js_iterator_proto_join ),
+    JS_CFUNC_DEF("includes", 1, js_iterator_proto_includes ),
     JS_CFUNC_DEF("[Symbol.iterator]", 0, js_iterator_proto_iterator ),
     JS_CGETSET_DEF("[Symbol.toStringTag]", js_iterator_proto_get_toStringTag, js_iterator_proto_set_toStringTag),
 };
