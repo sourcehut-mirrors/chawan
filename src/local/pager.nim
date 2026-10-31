@@ -2120,6 +2120,18 @@ proc run*(pager: Pager; ctx: JSContext; pages: openArray[JSValue];
   pager.cleanup()
   max(pager.exitCode, 0)
 
+proc externIntoImpl(pager: Pager; cmd: cstring; ins: openArray[char]): bool =
+  pager.setEnvVars(pager.defaultEnv())
+  let file = chafile.popen(cmd, "w")
+  if file == nil:
+    return false
+  # It is OK if a process refuses to read all input.
+  discard file.write(ins)
+  let rv = file.pclose()
+  if rv == -1:
+    return false
+  return rv == 0
+
 jsClassDef(Pager):
   jsget Pager, paste
   jsget Pager, arg0 # private
@@ -2503,9 +2515,9 @@ jsClassDef(Pager):
     pager.addConsole0(close = true)
 
   # private
-  proc saveTo(pager: Pager; init: BufferInit; path: USVString): bool
+  proc saveTo(pager: Pager; init: BufferInit; path: CStringNZ): bool
       {.jsfunc.} =
-    if pager.loader.redirectToFile(init.istreamOutputId, $path, init.url):
+    if pager.loader.redirectToFile(init.istreamOutputId, $path.p, init.url):
       pager.loader.resume(init.istreamOutputId)
       init.closeMailcap()
       return true
@@ -2564,7 +2576,7 @@ jsClassDef(Pager):
   # or perhaps just an extern2 that can use JS readablestreams and returns
   # retval, then deprecate the rest.
   # public
-  proc extern(ctx: JSContext; pager: Pager; cmd: DOMString;
+  proc extern(ctx: JSContext; pager: Pager; cmd: CStringNZ;
       t = ExternDict(env: trace(JS_UNDEFINED), suspend: true)): JSValue
       {.jsfunc.} =
     var env = newSeq[EnvVar]()
@@ -2576,7 +2588,7 @@ jsClassDef(Pager):
     return ctx.toJS(res.get == 0)
 
   # public
-  proc externCapture(ctx: JSContext; pager: Pager; cmd: DOMString): JSValue
+  proc externCapture(ctx: JSContext; pager: Pager; cmd: CStringNZ): JSValue
       {.jsfunc.} =
     pager.setEnvVars(pager.defaultEnv())
     let file = chafile.popen(cmd.p, "r")
@@ -2589,17 +2601,9 @@ jsClassDef(Pager):
     return JS_NULL
 
   # public
-  proc externInto(pager: Pager; cmd: string; ins: DOMString): bool {.jsfunc.} =
-    pager.setEnvVars(pager.defaultEnv())
-    let file = chafile.popen(cmd, "w")
-    if file == nil:
-      return false
-    # It is OK if a process refuses to read all input.
-    discard file.write(ins.toOpenArray())
-    let rv = file.pclose()
-    if rv == -1:
-      return false
-    return rv == 0
+  proc externInto(pager: Pager; cmd: CStringNZ; ins: DOMString): bool
+      {.jsfunc.} =
+    pager.externIntoImpl(cmd.p, ins.toOpenArray())
 
   # private
   proc suspend(ctx: JSContext; pager: Pager): JSValue {.jsfunc.} =
@@ -2620,7 +2624,9 @@ jsClassDef(Pager):
         return JS_TRUE
       if not clipboard:
         return JS_FALSE
-      return ctx.toJS(pager.externInto(pager.config{"copyCmd"}, s))
+      let success = pager.externIntoImpl(cstring(pager.config{"copyCmd"}),
+        s.toOpenArray())
+      return ctx.toJS(success)
     return ctx.jsQuit(pager, 1)
 
   # private

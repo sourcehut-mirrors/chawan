@@ -341,35 +341,31 @@ proc setupStartupScript(ctx: JSContext) =
     die(ctx.getExceptionMsg())
 
 jsNamespaceDef(Client): # fake namespace
-  proc readFile(ctx: JSContext; path: USVString): JSValue {.jsstfunc.} =
-    #TODO throw on 0 byte
+  proc readFile(ctx: JSContext; path: CStringNZ): JSValue {.jsstfunc.} =
     var s: string
     if chafile.readFile(path.p, s).isOk:
       return ctx.toJS(s)
     return JS_NULL
 
-  proc writeFile(ctx: JSContext; path, content: USVString; mode = cint(0o644)):
-      JSValue {.jsstfunc.} =
-    #TODO throw on 0 byte in path
+  proc writeFile(ctx: JSContext; path: CStringNZ; content: USVString;
+      mode = cint(0o644)): JSValue {.jsstfunc.} =
     if chafile.writeFile(path.p, content.toOpenArray(), mode).isOk:
       return JS_UNDEFINED
     return JS_ThrowTypeError(ctx, "Could not write to file %s", path.p)
 
-  proc getenv(ctx: JSContext; s: USVString; fallback = JS_NULL.vc): JSValue
+  proc getenv(ctx: JSContext; s: CStringNZ; fallback = JS_NULL.vc): JSValue
       {.jsstfunc.} =
-    #TODO throw on 0 byte in s
     let env = getEnvCString(s.p)
     if env == nil:
       return JS_DupValue(ctx, fallback)
     return JS_NewString(ctx, env)
 
-  proc setenv(ctx: JSContext; s: USVString; val: JSValueConst): JSValue
+  proc setenv(ctx: JSContext; s: CStringNZ; val: JSValueConst): JSValue
       {.jsstfunc.} =
-    #TODO throw on 0 byte in s
     if JS_IsNull(val):
       unsetEnvCString(s.p)
     else:
-      var vals: USVString
+      var vals: CStringNZ
       ?ctx.fromJS(val, vals)
       if setEnvCString(s.p, vals.p).isErr:
         return JS_ThrowTypeError(ctx, "Failed to set environment variable")

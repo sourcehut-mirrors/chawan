@@ -29,7 +29,7 @@ jsNamespaceDef(Util):
       return ctx.toJS(res.get)
     return JS_ThrowTypeError(ctx, "%s", cstring(res.error))
 
-  proc openFile(path: DOMString): cint {.jsstfunc.} =
+  proc openFile(path: CStringNZ): cint {.jsstfunc.} =
     let ps = newPosixStream(path.p, O_RDONLY, 0)
     if ps == nil:
       return -1
@@ -41,9 +41,9 @@ jsNamespaceDef(Util):
       ?ctx.fromJS(val, fd)
       var stats: Stat
       return ok(fstat(fd, stats) == 0 and not S_ISDIR(stats.st_mode))
-    var path: string
+    var path: CStringNZ
     ?ctx.fromJS(val, path)
-    return ok(fileExists(path))
+    return ok(fileExists(path.p))
 
   proc closeFile(fd: cint) {.jsstfunc.} =
     discard close(fd)
@@ -68,20 +68,20 @@ jsNamespaceDef(Util):
   proc encodeURIPath(s: DOMString): string {.jsstfunc.} =
     return percentEncode(s.toOpenArray(), PathPercentEncodeSet + {'%'})
 
-  proc expandPath(s: string): string {.jsstfunc.} =
-    return chaos.expandPath(s)
+  proc expandPath(s: DOMString): string {.jsstfunc.} =
+    return chaos.expandPath(s.toOpenArray())
 
-  proc mkdir(s: DOMString; mode: cint): cint {.jsstfunc.} =
+  proc mkdir(s: CStringNZ; mode: cint): cint {.jsstfunc.} =
     return posix.mkdir(s.p, Mode(mode))
 
-  proc unlink(s: DOMString) {.jsstfunc.} =
+  proc unlink(s: CStringNZ) {.jsstfunc.} =
     discard posix.unlink(s.p)
 
-  proc readBlob(path: string): WebFile {.jsstfunc.} =
-    let ps = newPosixStream(path, O_RDONLY, 0)
+  proc readBlob(path: CStringNZ): WebFile {.jsstfunc.} =
+    let ps = newPosixStream(path.p, O_RDONLY, 0)
     if ps == nil:
       return WebFile(nil)
-    let name = path.afterLast('/')
+    let name = ($path).afterLast('/')
     return newWebFile(name, ps.fd)
 
   proc convertSize(n: float64): string {.jsstfunc.} =
@@ -90,7 +90,7 @@ jsNamespaceDef(Util):
   proc width(s: DOMString): int {.jsstfunc.} =
     strwidth.width(s.toOpenArray())
 
-  proc importModule(ctx: JSContext; path: DOMString): JSValue {.jsstfunc.} =
+  proc importModule(ctx: JSContext; path: CStringNZ): JSValue {.jsstfunc.} =
     # used in init.js because QJS cannot handle import() if you strip debug
     # info
     JS_LoadModule(ctx, chaos.getcwd().toCStringConst(), cstringConst(path.p))

@@ -223,6 +223,13 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ByteString):
   let cs = JS_ToCStringLen(ctx, len, val) # cstring
   ctx.fromJS(cs, len, res)
 
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CStringNZ): JSCode =
+  let cs = JS_ToCStringNZ(ctx, val)
+  if cs == nil:
+    return fjErr
+  res = CStringNZ(p: cstring(cs))
+  fjOk
+
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): JSCode =
   var n {.noinit.}: int32
   if JS_ToInt32(ctx, n, val) < 0:

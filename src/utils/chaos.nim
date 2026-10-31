@@ -118,9 +118,12 @@ proc readLink*(s: string): string =
   res.setLen(int(len))
   move(res)
 
-proc fileExists*(s: string): bool =
+proc fileExists*(s: cstring): bool =
   var stats {.noinit.}: Stat
-  stat(cstring(s), stats) == 0 and S_ISREG(stats.st_mode)
+  stat(s, stats) == 0 and S_ISREG(stats.st_mode)
+
+proc fileExists*(s: string): bool =
+  fileExists(cstring(s))
 
 proc dirExists*(s: string): bool =
   var stats {.noinit.}: Stat
@@ -252,16 +255,20 @@ proc formatUnixSeconds*(n: int64; fmt: cstring): string =
   s.setLen(int(n))
   s
 
-proc expandPath*(path: string): string =
+proc expandPath*(path: openArray[char]): string =
   if path.len > 0 and path[0] == '~':
     if path.len == 1:
       return getEnvEmpty("HOME")
     if path[1] == '/':
-      return getEnvEmpty("HOME") & path.substr(1)
+      var res = getEnvEmpty("HOME")
+      res &= path.toOpenArray(1, path.high)
+      return move(res)
     let usr = path.until({'/'}, 1)
     let p = getpwnam(cstring(usr))
     if p != nil and p.pw_dir != nil:
-      return $p.pw_dir & '/' & path.substr(usr.len)
-  return path
+      var res = $p.pw_dir & '/'
+      res &= path.toOpenArray(usr.len, path.high)
+      return move(res)
+  return path.substr()
 
 {.pop.} # raises: []

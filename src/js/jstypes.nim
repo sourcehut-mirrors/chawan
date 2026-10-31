@@ -118,6 +118,8 @@ type JSKeyValuePair*[K, T] = object
 # * ByteString: like string, but rejects codepoints greater than U+00FF.
 # * CSSOMString: the spec allows aliasing this to DOMString or USVString.
 #   We use USVString to reduce malformed UTF-8.
+# * CStringNZ: non-zero JS string, may contain surrogates.
+#   Useful for paths.
 type
   DOMString* {.pure, inheritable.} = object
     p*: cstring
@@ -131,6 +133,9 @@ type
     s*: string
 
   CSSOMString* = USVString
+
+  CStringNZ* = object
+    p*: cstring
 
 const DOMStringConstFlag = 1 shl (sizeof(int) * 8 - 1)
 
@@ -162,6 +167,14 @@ proc `=destroy`*(s: var DOMStringNull) =
 proc `=sink`*(dst: var DOMStringNull; src: DOMStringNull) =
   `=destroy`(dst)
   dst.ilen = src.ilen
+  dst.p = src.p
+
+proc `=destroy`*(s: var CStringNZ) =
+  if s.p != nil:
+    JS_FreeCStringRT(globalRuntime, cstringConst(s.p))
+
+proc `=sink`*(dst: var CStringNZ; src: CStringNZ) =
+  `=destroy`(dst)
   dst.p = src.p
 
 template len*(ds: DOMString): int =
@@ -219,6 +232,9 @@ proc `$`*(us: USVString): string =
 
 proc `$`*(bs: ByteString): lent string =
   bs.s
+
+proc `$`*(s: CStringNZ): string =
+  $s.p
 
 type JSObject* = distinct pointer
 
