@@ -52345,8 +52345,8 @@ int JS_AddIntrinsicProxy(JSContext *ctx)
     if (JS_SetPropertyFunctionList(ctx, obj1, js_proxy_funcs,
                                    countof(js_proxy_funcs)))
         goto fail;
-    if (JS_DefinePropertyValueStr(ctx, ctx->global_obj, "Proxy",
-                                  obj1, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0)
+    if (JS_DefinePropertyValue(ctx, ctx->global_obj, JS_ATOM_Proxy,
+                               obj1, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0)
         goto fail;
     return 0;
  fail:
