@@ -13,6 +13,7 @@ import html/event
 import io/dynstream
 import io/packetreader
 import io/packetwriter
+import js/constcharp
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -355,7 +356,7 @@ proc package(ctx: JSContext; s: openArray[char]; contentType: string;
   of ptBinaryString:
     if s.len == 0:
       return trace(JS_NewString(ctx, ""))
-    let res = JS_NewNarrowStringLen(ctx, cast[cstring](unsafeAddr s[0]),
+    let res = JS_NewNarrowStringLen(ctx, cast[cstringConst](unsafeAddr s[0]),
       csize_t(s.len))
     return trace(res)
 

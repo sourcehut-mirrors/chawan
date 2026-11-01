@@ -826,19 +826,18 @@ jsClassDef(Window):
     var s: string
     if (let r = s.atob(data); r.isErr):
       return JS_ThrowDOMException(ctx, "InvalidCharacterError", r.error)
-    return ctx.toJS(NarrowString(s))
+    return JS_NewNarrowStringLen(ctx, s.toCStringConst(), csize_t(s.len))
 
   proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
       {.jsfunc.} =
     let data = ?trace(JS_ToString(ctx, data))
-    let len = JS_GetStringLength(data.vc)
-    if len == 0:
-      return ctx.toJS("")
-    let buf = JS_GetNarrowStringBuffer(data.vc)
-    if buf == nil:
+    var plen: csize_t
+    let cs = JS_ToCStringNarrowLen(ctx, plen, data.vc)
+    if cs == nil:
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in string")
-    let res = btoa(buf.toOpenArray(0, int(len) - 1))
+    let res = btoa(cstring(cs).toOpenArray(0, int(plen) - 1))
+    JS_FreeCString(ctx, cs)
     ctx.toJS(res)
 
   proc alert(window: Window; s: DOMString) {.jsfunc.} =

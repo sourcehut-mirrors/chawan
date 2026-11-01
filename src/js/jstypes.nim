@@ -83,10 +83,6 @@ type
 template jsdefault*(x: untyped) {.pragma.}
 template jsdefault*() {.pragma.}
 
-# Container compatible with the internal representation of narrow strings in
-# QuickJS (Latin-1).
-type NarrowString* = distinct string
-
 # Various containers for array buffer types.
 # Converting these only requires copying the metadata; buffers are never copied.
 type

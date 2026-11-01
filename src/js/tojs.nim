@@ -9,8 +9,6 @@
 ## * JSValue is returned as-is, *without* a DupValue operation.
 ## * JSArrayBuffer, JSArrayBufferViewInit are converted to a JS object without
 ##   copying their contents.
-## * NarrowString is converted to a JS narrow string (with copying). For more
-##   information on JS string handling, see js/jstypes.nim.
 ## * Finally, ref object is converted to a JS object whose opaque is the ref
 ##   object. (See below.)
 ##
@@ -64,7 +62,6 @@ proc toJS*(ctx: JSContext; t: JSValueTraced): JSValue
 proc toJS*[T](ctx: JSContext; obj: sink JSRef[T]): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBufferInit): JSValue
 proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue
-proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
 proc toJS*[T](ctx: JSContext; opt: Opt[T]): JSValue
 
 # Same as toJS, but used in constructors. ctor contains the target prototype,
@@ -273,9 +270,6 @@ proc toJS*(ctx: JSContext; u8a: JSArrayBufferViewInit): JSValue =
   let len = ?trace(ctx.toJS(u8a.len))
   let argv = [jsabuf.vc, offset.vc, len.vc]
   JS_NewTypedArray(ctx, 3, argv.toJSValueConstArray(), u8a.t)
-
-proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =
-  return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
 
 proc definePropertyConvert*[T](ctx: JSContext; this: JSObject;
     name: JSStrRef; x: T): JSCode =

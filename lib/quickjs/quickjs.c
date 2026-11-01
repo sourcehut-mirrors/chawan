@@ -4587,6 +4587,14 @@ JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
     return JS_EXCEPTION;
 }
 
+/* create a string from a narrow Unicode (latin-1) buffer */
+JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *buf, size_t buf_len)
+{
+    if (buf_len > JS_STRING_LEN_MAX)
+        return JS_ThrowInternalError(ctx, "string too long");
+    return js_new_string8_len(ctx, buf, buf_len);
+}
+
 static JSValue JS_ConcatString3(JSContext *ctx, const char *str1,
                                 JSValue str2, const char *str3)
 {
@@ -4765,6 +4773,30 @@ const char *JS_ToCStringNZ(JSContext *ctx, JSValueConst val1)
     return str;
 }
 
+const char *JS_ToCStringNarrowLen(JSContext *ctx, size_t *plen,
+                                  JSValueConst value)
+{
+    JSValue str;
+    JSString *p;
+
+    str = JS_ToString(ctx, value);
+    if (JS_IsException(str))
+        goto fail;
+    p = JS_VALUE_GET_STRING(value);
+    if (p->is_wide_char) {
+        JS_ThrowTypeError(ctx, "invalid character in string");
+        JS_FreeValue(ctx, str);
+        goto fail;
+    }
+    if (plen)
+        *plen = p->len;
+    return (const char *)p->u.str8;
+fail:
+    if (plen)
+        *plen = 0;
+    return NULL;
+}
+
 void JS_FreeCString(JSContext *ctx, const char *ptr)
 {
     JS_FreeCStringRT(ctx->rt, ptr);
@@ -4790,29 +4822,6 @@ const char *JS_DupCStringRT(JSRuntime *rt, const char *ptr)
     p = container_of(ptr, JSString, u);
     val = JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, p));
     return (const char *)JS_VALUE_GET_STRING(val)->u.str8;
-}
-
-/* create a string from a narrow Unicode (latin-1) buffer */
-JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *buf, size_t buf_len)
-{
-    if (buf_len > JS_STRING_LEN_MAX)
-        return JS_ThrowInternalError(ctx, "string too long");
-    return js_new_string8_len(ctx, buf, buf_len);
-}
-
-uint8_t *JS_GetNarrowStringBuffer(JSValueConst value)
-{
-    if (JS_VALUE_GET_TAG(value) != JS_TAG_STRING ||
-        JS_VALUE_GET_STRING(value)->is_wide_char)
-        return NULL;
-    return JS_VALUE_GET_STRING(value)->u.str8;
-}
-
-uint32_t JS_GetStringLength(JSValueConst value)
-{
-    if (unlikely(JS_VALUE_GET_TAG(value) != JS_TAG_STRING))
-        return 0;
-    return JS_VALUE_GET_STRING(value)->len;
 }
 
 static int memcmp16_8(const uint16_t *src1, const uint8_t *src2, int len)

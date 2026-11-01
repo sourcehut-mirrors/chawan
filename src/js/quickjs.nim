@@ -645,6 +645,8 @@ proc JS_ToBigInt128Sat*(ctx: JSContext; plow, phigh: var uint64;
   val: JSValueConst): cint
 
 proc JS_NewStringLen*(ctx: JSContext; str: cstringConst; len1: csize_t): JSValue
+proc JS_NewNarrowStringLen*(ctx: JSContext; str: cstringConst; len1: csize_t):
+  JSValue
 proc JS_NewString*(ctx: JSContext; str: cstring): JSValue
 proc JS_NewAtomString*(ctx: JSContext; str: cstring): JSValue
 proc JS_ToString*(ctx: JSContext; val: JSValueConst): JSValue
@@ -657,7 +659,10 @@ proc JS_ToCString*(ctx: JSContext; val1: JSValueConst): cstringConst
 proc JS_ToCStringNZ*(ctx: JSContext; val1: JSValueConst): cstringConst
 proc JS_ToCStringUSVLen*(ctx: JSContext; plen: var csize_t;
   val1: JSValueConst): cstringConst
+proc JS_ToCStringNarrowLen*(ctx: JSContext; plen: var csize_t;
+  val1: JSValueConst): cstringConst
 proc JS_FreeCString*(ctx: JSContext; p: cstringConst)
+proc JS_FreeCStringRT*(rt: JSRuntime; p: cstringConst)
 proc JS_ToUTF32String*(ctx: JSContext; pbuf: var ptr uint32;
   val: JSValueConst): cstringConst
 
@@ -678,10 +683,6 @@ proc JS_SetForeignOpaque*(rt: JSRuntime; p: pointer; val: JSValue)
 proc JS_GetForeignMagic*(p: pointer): uint32
 proc JS_SetForeignMagic*(p: pointer; val: uint32)
 proc JS_GetForeignObjectRefs*(p: pointer): cint {.importc.}
-proc JS_FreeCStringRT*(rt: JSRuntime; p: cstringConst)
-proc JS_NewNarrowStringLen*(ctx: JSContext; s: cstring; len: csize_t): JSValue
-proc JS_GetNarrowStringBuffer*(str: JSValueConst): ptr UncheckedArray[uint8]
-proc JS_GetStringLength*(str: JSValueConst): uint32
 proc JS_GetRegExpBytecode*(ctx: JSContext; obj: JSValueConst; plen: var cint):
   ptr uint8
 proc JS_ThrowTypeErrorOrFalse*(ctx: JSContext; flags: cint; fmt: cstring):

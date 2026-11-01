@@ -755,6 +755,7 @@ int JS_ToBigInt128(JSContext *ctx, uint64_t *plow, uint64_t *phigh, JSValueConst
 int JS_ToBigInt128Sat(JSContext *ctx, uint64_t *plow, uint64_t *phigh, JSValueConst val);
 
 JSValue JS_NewStringLen(JSContext *ctx, const char *str1, size_t len1);
+JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
 static inline JSValue JS_NewString(JSContext *ctx, const char *str)
 {
     return JS_NewStringLen(ctx, str, strlen(str));
@@ -774,14 +775,12 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
     return JS_ToCStringLen2(ctx, NULL, val1, 0);
 }
 const char *JS_ToCStringNZ(JSContext *ctx, JSValueConst val1);
+const char *JS_ToCStringNarrowLen(JSContext *ctx, size_t *plen, JSValueConst val1);
 const char *JS_DupCStringRT(JSRuntime *rt, const char *ptr);
 void JS_FreeCString(JSContext *ctx, const char *ptr);
 void JS_FreeCStringRT(JSRuntime *rt, const char *ptr);
 int JS_ToUTF32String(JSContext *ctx, uint32_t **pbuf, JSValueConst val);
 
-JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
-uint8_t *JS_GetNarrowStringBuffer(JSValueConst value);
-uint32_t JS_GetStringLength(JSValueConst value);
 uint8_t *JS_GetRegExpBytecode(JSContext *ctx, JSValueConst obj, int *plen);
 
 JSValue JS_NewSymbol(JSContext *ctx, const char *description, JS_BOOL is_global);
