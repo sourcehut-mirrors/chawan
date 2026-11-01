@@ -11,7 +11,8 @@ import utils/chaos
 
 {.passl: "-lm".}
 
-const CFLAGS = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCHA_BUILD"
+const CFLAGS = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCHA_BUILD" &
+  " -DCONFIG_NO_ATOMICS"
 
 {.compile("../../lib/quickjs/quickjs.c", CFLAGS).}
 

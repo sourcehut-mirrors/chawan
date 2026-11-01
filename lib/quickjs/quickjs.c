@@ -34,7 +34,7 @@
 #include <math.h>
 #if defined(__APPLE__)
 #include <malloc/malloc.h>
-#elif defined(__linux__) || defined(__GLIBC__)
+#elif defined(__linux__) || defined(__GLIBC__) || defined(__HAIKU__) || defined(__NetBSD__)
 #include <malloc.h>
 #elif defined(__FreeBSD__)
 #include <malloc_np.h>
@@ -68,7 +68,7 @@
 
 /* define to include Atomics.* operations which depend on the OS
    threads */
-#if !defined(__EMSCRIPTEN__) && !defined(CHA_BUILD)
+#if !defined(__EMSCRIPTEN__) && !defined(CONFIG_NO_ATOMICS)
 #define CONFIG_ATOMICS
 #endif
 
@@ -2141,19 +2141,16 @@ void JS_SetRuntimeOpaque(JSRuntime *rt, void *opaque)
 /* default memory allocation functions with memory limitation */
 static size_t js_def_malloc_usable_size(const void *ptr)
 {
-#ifdef CHA_BUILD
-    return 0;
-#elif defined(__APPLE__)
+#if defined(__APPLE__)
     return malloc_size(ptr);
 #elif defined(_WIN32)
     return _msize((void *)ptr);
-#elif defined(__EMSCRIPTEN__) || defined(__OpenBSD__)
+#elif defined(__EMSCRIPTEN__)
     return 0;
-#elif defined(__linux__) || defined(__GLIBC__)
+#elif defined(__linux__) || defined(__GLIBC__) || defined(__HAIKU__) || defined(__NetBSD__) || defined(__FreeBSD__)
     return malloc_usable_size((void *)ptr);
 #else
-    /* change this to `return 0;` if compilation fails */
-    return malloc_usable_size((void *)ptr);
+    return 0;
 #endif
 }
 
