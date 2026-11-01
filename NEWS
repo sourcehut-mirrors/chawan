@@ -8,6 +8,10 @@ unreleased
 * fix chaseccomp compilation on platforms without fcntl syscall
 * fix term quit getting stuck on some broken terminals
 * work around a Nim 2.2.14/2.4.0 regression
+* fix a leak in QJS JS_ValueToAtom
+* fix overflow in QJS variable capturing
+* fix key being incorrectly removed in some cases in config
+* fix default omni-rule overriding
 
 0.5.1 (2026.10.25)
 * remove non-functional btoa symlink
