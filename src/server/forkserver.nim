@@ -288,6 +288,9 @@ img-codec+x-cha-canvas;	canvas %s;		cgioutput; resource; internal
 img-codec+svg+xml;	nanosvg %s;		cgioutput; resource; internal
 """
 
+proc getTimezoneOffset(opaque: pointer; time: int64): cint {.cdecl.} =
+  0
+
 proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
     rt: JSRuntime) =
   setProcessTitle("cha forkserver")
@@ -300,6 +303,7 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
       jsctx.addBlobModule().isErr or
       jsctx.addRequestModule().isErr:
     quit(2)
+  JS_SetTimezoneOffsetFunc(rt, getTimezoneOffset)
   JS_FreeContext(jsctx)
   var ctx = ForkServerContext(stream: controlStream)
   discard chaos.signal(SIGCHLD, chaos.SIG_IGN)

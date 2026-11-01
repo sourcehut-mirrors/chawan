@@ -380,6 +380,9 @@ struct JSRuntime {
     JSSharedArrayBufferFunctions sab_funcs;
     /* see JS_SetStripInfo() */
     uint8_t strip_flags;
+
+    /* callback for getTimezoneOffset */
+    JSTimezoneOffsetFunc *get_timezone_offset;
     
     /* Shape hash table */
     int shape_hash_bits;
@@ -1406,6 +1409,7 @@ static JSVarRef *js_global_object_find_uninitialized_var(JSContext *ctx, JSObjec
 static int typed_array_init(JSContext *ctx, JSValueConst obj,
                             JSValue buffer, uint64_t offset, uint64_t len,
                             BOOL track_rab);
+static int js_get_timezone_offset_def(void *opaque, int64_t time);
 
 
 static const JSClassExoticMethods js_arguments_exotic_methods;
@@ -2086,6 +2090,7 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque)
     rt->malloc_ctx.mf = *mf;
     rt->malloc_ctx.malloc_state = ms;
     rt->malloc_gc_threshold = 256 * 1024;
+    rt->get_timezone_offset = js_get_timezone_offset_def;
 
     init_list_head(&rt->context_list);
     init_list_head(&rt->gc_obj_list);
@@ -48263,9 +48268,8 @@ static const JSCFunctionListEntry js_math_obj[] = {
 
 /* OS dependent. d = argv[0] is in ms from 1970. Return the difference
    between UTC time and local time 'd' in minutes */
-static int getTimezoneOffset(int64_t time)
+static int js_get_timezone_offset_def(void *opaque, int64_t time)
 {
-#ifndef CHA_BUILD
     time_t ti;
     int res;
 
@@ -48316,9 +48320,11 @@ static int getTimezoneOffset(int64_t time)
     }
 #endif
     return res;
-#else
-    return 0;
-#endif
+}
+
+static inline int getTimezoneOffset(JSContext *ctx, int64_t time)
+{
+    return ctx->rt->get_timezone_offset(ctx->rt->user_opaque, time);
 }
 
 #if 0
@@ -55885,7 +55891,7 @@ static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
     } else {
         d = dval;     /* assuming -8.64e15 <= dval <= -8.64e15 */
         if (is_local) {
-            tz = -getTimezoneOffset(d);
+            tz = -getTimezoneOffset(ctx, d);
             d += tz * 60000;
         }
     }
@@ -55931,7 +55937,8 @@ static double time_clip(double t) {
 
 /* The spec mandates the use of 'double' and it specifies the order
    of the operations */
-static double set_date_fields(double fields[minimum_length(7)], int is_local) {
+static double set_date_fields(JSContext *ctx, double fields[minimum_length(7)],
+                              int is_local) {
     double y, m, dt, ym, mn, day, h, s, milli, time, tv;
     int yi, mi, i;
     int64_t days;
@@ -55983,12 +55990,14 @@ static double set_date_fields(double fields[minimum_length(7)], int is_local) {
     /* adjust for local time and clip */
     if (is_local) {
         int64_t ti = tv < INT64_MIN ? INT64_MIN : tv >= 0x1p63 ? INT64_MAX : (int64_t)tv;
-        tv += getTimezoneOffset(ti) * 60000;
+        tv += getTimezoneOffset(ctx, ti) * 60000;
     }
     return time_clip(tv);
 }
 
-static double set_date_fields_checked(double fields[minimum_length(7)], int is_local)
+static double set_date_fields_checked(JSContext *ctx,
+                                      double fields[minimum_length(7)],
+                                      int is_local)
 {
     int i;
     double a;
@@ -56000,7 +56009,7 @@ static double set_date_fields_checked(double fields[minimum_length(7)], int is_l
         if (i == 0 && fields[0] >= 0 && fields[0] < 100)
             fields[0] += 1900;
     }
-    return set_date_fields(fields, is_local);
+    return set_date_fields(ctx, fields, is_local);
 }
 
 static JSValue get_date_field(JSContext *ctx, JSValueConst this_val,
@@ -56056,7 +56065,7 @@ static JSValue set_date_field(JSContext *ctx, JSValueConst this_val,
         return JS_NAN; /* thisTimeValue is NaN */
 
     if (res && argc > 0)
-        d = set_date_fields(fields, is_local);
+        d = set_date_fields(ctx, fields, is_local);
 
     return JS_SetThisDateValue(ctx, this_val, d);
 }
@@ -56229,7 +56238,7 @@ static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
             if (JS_ToFloat64(ctx, &fields[i], argv[i]))
                 return JS_EXCEPTION;
         }
-        val = set_date_fields_checked(fields, 1);
+        val = set_date_fields_checked(ctx, fields, 1);
     }
 has_val:
 #if 0
@@ -56269,7 +56278,7 @@ static JSValue js_Date_UTC(JSContext *ctx, JSValueConst this_val,
         if (JS_ToFloat64(ctx, &fields[i], argv[i]))
             return JS_EXCEPTION;
     }
-    return JS_NewFloat64(ctx, set_date_fields_checked(fields, 0));
+    return JS_NewFloat64(ctx, set_date_fields_checked(ctx, fields, 0));
 }
 
 /* Date string parsing */
@@ -56728,7 +56737,7 @@ static JSValue js_Date_parse(JSContext *ctx, JSValueConst this_val,
         if (valid) {
             for(i = 0; i < 7; i++)
                 fields1[i] = fields[i];
-            d = set_date_fields(fields1, is_local) - fields[8] * 60000;
+            d = set_date_fields(ctx, fields1, is_local) - fields[8] * 60000;
             rv = JS_NewFloat64(ctx, d);
         }
     }
@@ -56775,6 +56784,11 @@ static JSValue js_date_Symbol_toPrimitive(JSContext *ctx, JSValueConst this_val,
     return JS_ToPrimitive(ctx, obj, hint_num | JS_HINT_FORCE_ORDINARY);
 }
 
+void JS_SetTimezoneOffsetFunc(JSRuntime *rt, JSTimezoneOffsetFunc func)
+{
+    rt->get_timezone_offset = func;
+}
+
 static JSValue js_date_getTimezoneOffset(JSContext *ctx, JSValueConst this_val,
                                          int argc, JSValueConst *argv)
 {
@@ -56787,7 +56801,7 @@ static JSValue js_date_getTimezoneOffset(JSContext *ctx, JSValueConst this_val,
         return JS_NAN;
     else
         /* assuming -8.64e15 <= v <= -8.64e15 */
-        return JS_NewInt64(ctx, getTimezoneOffset((int64_t)trunc(v)));
+        return JS_NewInt64(ctx, getTimezoneOffset(ctx, (int64_t)trunc(v)));
 }
 
 static JSValue js_date_getTime(JSContext *ctx, JSValueConst this_val,

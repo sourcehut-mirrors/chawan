@@ -11,8 +11,7 @@ import utils/chaos
 
 {.passl: "-lm".}
 
-const CFLAGS = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCHA_BUILD" &
-  " -DCONFIG_NO_ATOMICS"
+const CFLAGS = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCONFIG_NO_ATOMICS"
 
 {.compile("../../lib/quickjs/quickjs.c", CFLAGS).}
 
@@ -722,6 +721,9 @@ proc JS_IsArray*(ctx: JSContext; v: JSValueConst): cint
 proc JS_NewDate*(ctx: JSContext; epoch_ms: float64): JSValue
 proc JS_ThisDateValue*(ctx: JSContext; valp: var float64; this: JSValueConst):
   JSValue
+
+type JSTimezoneOffsetFunc = proc(opaque: pointer; time: int64): cint {.cdecl.}
+proc JS_SetTimezoneOffsetFunc*(rt: JSRuntime; fun: JSTimezoneOffsetFunc)
 
 proc JS_GetProperty*(ctx: JSContext; this_obj: JSValueConst; prop: JSAtom):
   JSValue

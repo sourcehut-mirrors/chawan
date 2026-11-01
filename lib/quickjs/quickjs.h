@@ -816,6 +816,11 @@ int JS_IsArray(JSContext *ctx, JSValueConst val);
 JSValue JS_NewDate(JSContext *ctx, double epoch_ms);
 int JS_ThisDateValue(JSContext *ctx, double *valp, JSValueConst this_val);
 
+/* return the difference between UTC time and local time in minutes
+   opaque is from JS_SetRuntimeOpaque */
+typedef int JSTimezoneOffsetFunc(void *opaque, int64_t time);
+void JS_SetTimezoneOffsetFunc(JSRuntime *rt, JSTimezoneOffsetFunc *func);
+
 JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
                                JSAtom prop, JSValueConst receiver,
                                JS_BOOL throw_ref_error);
