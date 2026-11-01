@@ -43,8 +43,19 @@
 /* trailer length after the group name including the trailing '\0' */
 #define LRE_GROUP_NAME_TRAILER_LEN 2 
 
+typedef int JSLREStackCheckFunc(void *opaque, size_t alloca_size);
+typedef void *JSLREReallocFunc(void *opaque, void *ptr, size_t size);
+
+typedef struct JSLREExecFunctions {
+    JSLREReallocFunc *lre_realloc;
+    /* return non-zero if time out */
+    int (*lre_check_timeout)(void *opaque);
+} JSLREExecFunctions;
+
 uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
                      const char *buf, size_t buf_len, int re_flags,
+                     JSLREReallocFunc *lre_realloc,
+                     JSLREStackCheckFunc *lre_check_stack_overflow,
                      void *opaque);
 int lre_get_alloc_count(const uint8_t *bc_buf);
 int lre_get_capture_count(const uint8_t *bc_buf);
@@ -52,14 +63,8 @@ int lre_get_flags(const uint8_t *bc_buf);
 const char *lre_get_groupnames(const uint8_t *bc_buf);
 int lre_exec(uint8_t **capture,
              const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
-             int cbuf_type, void *opaque);
+             int cbuf_type, JSLREExecFunctions *funcs, void *opaque);
 
 int lre_parse_escape(const uint8_t **pp, int allow_utf16);
-
-/* must be provided by the user, return non zero if overflow */
-int lre_check_stack_overflow(void *opaque, size_t alloca_size);
-/* must be provided by the user, return non zero if time out */
-int lre_check_timeout(void *opaque);
-void *lre_realloc(void *opaque, void *ptr, size_t size);
 
 #endif /* LIBREGEXP_H */

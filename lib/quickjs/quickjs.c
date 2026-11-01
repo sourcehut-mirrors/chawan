@@ -48368,6 +48368,12 @@ static void js_regexp_finalizer(JSRuntime *rt, JSValue val)
         JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_STRING, re->pattern));
 }
 
+static int lre_check_stack_overflow(void *opaque, size_t alloca_size)
+{
+    JSRuntime *rt = opaque;
+    return js_check_stack_overflow(rt, alloca_size);
+}
+
 /* create a string containing the RegExp bytecode */
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags)
@@ -48435,7 +48441,9 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     if (!str)
         return JS_EXCEPTION;
     re_bytecode_buf = lre_compile(&re_bytecode_len, error_msg,
-                                  sizeof(error_msg), str, len, re_flags, ctx);
+                                  sizeof(error_msg), str, len, re_flags,
+                                  js_realloc_rt_dbuf, lre_check_stack_overflow,
+                                  ctx->rt);
     JS_FreeCString(ctx, str);
     if (!re_bytecode_buf) {
         JS_ThrowSyntaxError(ctx, "%s", error_msg);
@@ -48814,35 +48822,12 @@ fail:
     return JS_EXCEPTION;
 }
 
-int lre_check_stack_overflow(void *opaque, size_t alloca_size)
+static int lre_check_timeout(void *opaque)
 {
-    JSContext *ctx = opaque;
-
-    if (!ctx)
-        return 0;
-    return js_check_stack_overflow(ctx->rt, alloca_size);
-}
-
-int lre_check_timeout(void *opaque)
-{
-    JSContext *ctx = opaque;
-    JSRuntime *rt;
-
-    if (!ctx)
-        return 0;
-    rt = ctx->rt;
+    JSRuntime *rt = opaque;
     return (rt->interrupt_handler && 
             rt->interrupt_handler(rt, rt->interrupt_opaque));
 }
-
-#ifndef CHA_BUILD
-void *lre_realloc(void *opaque, void *ptr, size_t size)
-{
-    JSContext *ctx = opaque;
-    /* No JS exception is raised here */
-    return js_realloc_rt(ctx->rt, ptr, size);
-}
-#endif
 
 static JSValue js_regexp_escape(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
@@ -48945,6 +48930,7 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
     const char *group_name_ptr;
     JSObject *p_obj;
     JSAtom group_name;
+    JSLREExecFunctions lre_funcs;
     
     if (!re)
         return JS_EXCEPTION;
@@ -48982,9 +48968,11 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
     if (last_index > str->len) {
         rc = 2;
     } else {
+        lre_funcs.lre_realloc = js_realloc_rt_dbuf;
+        lre_funcs.lre_check_timeout = lre_check_timeout;
         rc = lre_exec(capture, re_bytecode,
-                      str_buf, last_index, str->len,
-                      shift, ctx);
+                      str_buf, last_index, str->len, shift,
+                      &lre_funcs, ctx->rt);
     }
     if (rc != 1) {
         if (rc >= 0) {
@@ -49167,6 +49155,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     JSString *rp = JS_VALUE_GET_STRING(rep_val);
     const char *group_name_ptr;
     BOOL fullUnicode;
+    JSLREExecFunctions lre_funcs;
     
     if (!re)
         return JS_EXCEPTION;
@@ -49205,12 +49194,15 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     shift = str->is_wide_char;
     str_buf = str->u.str8;
     next_src_pos = 0;
+    lre_funcs.lre_realloc = js_realloc_rt_dbuf;
+    lre_funcs.lre_check_timeout = lre_check_timeout;
     for (;;) {
         if (last_index > str->len) {
             ret = 0;
         } else {
             ret = lre_exec(capture, re_bytecode,
-                           str_buf, last_index, str->len, shift, ctx);
+                           str_buf, last_index, str->len, shift,
+                           &lre_funcs, ctx->rt);
         }
         if (ret != 1) {
             if (ret >= 0) {

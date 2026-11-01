@@ -14,6 +14,12 @@ type
 
   REBytecode* = distinct ptr uint8
 
+proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
+  return realloc(p, cast[int](size))
+
+proc checkStack(opaque: pointer; alloca_size: csize_t): cint {.cdecl.} =
+  0
+
 proc bytecodeToRegex*(p: REBytecode; plen: cint): Regex =
   let plen = int(plen)
   let p = cast[ptr UncheckedArray[char]](p)
@@ -28,7 +34,7 @@ proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
   var errorMsg = newString(64)
   var plen: cint
   let bytecode = lre_compile(plen, cstring(errorMsg), cint(errorMsg.len),
-    cstring(buf), csize_t(buf.len), flags.toCInt, nil)
+    cstring(buf), csize_t(buf.len), flags.toCInt, passRealloc, checkStack, nil)
   if bytecode == nil: # Failed to compile.
     let i = errorMsg.find('\0')
     if i >= 0:
@@ -73,15 +79,26 @@ iterator caps*(ctx: ExecContext): tuple[s, e: int] =
   for i in 0 ..< ctx.ncaps:
     yield ctx.cap(i)
 
+proc checkTimeout(opaque: pointer): cint {.cdecl.} =
+  0
+
 iterator exec*(ctx: var ExecContext; s: openArray[char]; start = 0): cint =
   let L = cint(min(int(cint.high), s.len))
   let pcapture = if ctx.tmp.len > 0: addr ctx.tmp[0] else: nil
-  let base = if s.len > 0: cast[ptr uint8](unsafeAddr s[0]) else: nil
+  let base = if s.len > 0:
+    cast[ptr uint8](unsafeAddr s[0])
+  else:
+    cast[ptr uint8](cstring(""))
   let flags = lre_get_flags(ctx.bytecode).toLREFlags()
   ctx.base = cast[uint](base)
   var start = cint(min(int(cint.high), start))
-  while start < L:
-    let ret = lre_exec(pcapture, ctx.bytecode, base, start, L, 3, nil)
+  let funcs = JSLREExecFunctions(
+    lre_realloc: passRealloc,
+    lre_check_timeout: checkTimeout
+  )
+  while start <= L:
+    let ret = lre_exec(pcapture, ctx.bytecode, base, start, L, 3,
+      unsafeAddr funcs, nil)
     yield ret
     if ret != 1 or LRE_FLAG_GLOBAL notin flags:
       break
@@ -140,7 +157,7 @@ proc countBackslashes(buf: string; i: int): int =
     inc j
   return j
 
-proc compileRegex(buf: string; flags: LREFlags = {}): Result[Regex, string] =
+proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
   var regex: Regex
   if not compileRegex(buf, flags, regex):
     return err(regex.bytecode)

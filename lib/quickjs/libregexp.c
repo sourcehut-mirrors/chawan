@@ -85,6 +85,8 @@ typedef struct {
     int has_named_captures; /* -1 = don't know, 0 = no, 1 = yes */
     void *opaque;
     DynBuf group_names;
+    JSLREReallocFunc *lre_realloc;
+    JSLREStackCheckFunc *lre_check_stack_overflow;
     union {
         char error_msg[TMP_BUF_SIZE];
         char tmp_buf[TMP_BUF_SIZE];
@@ -159,7 +161,7 @@ static uint32_t re_string_hash(int len, const uint32_t *buf)
 
 static void re_string_list_init(REParseState *s1, REStringList *s)
 {
-    cr_init(&s->cr, s1->opaque, lre_realloc);
+    cr_init(&s->cr, s1->opaque, s1->lre_realloc);
     s->n_strings = 0;
     s->hash_size = 0;
     s->hash_bits = 0;
@@ -173,10 +175,10 @@ static void re_string_list_free(REStringList *s)
     for(i = 0; i < s->hash_size; i++) {
         for(p = s->hash_table[i]; p != NULL; p = p_next) {
             p_next = p->next;
-            lre_realloc(s->cr.mem_opaque, p, 0);
+            s->cr.realloc_func(s->cr.mem_opaque, p, 0);
         }
     }
-    lre_realloc(s->cr.mem_opaque, s->hash_table, 0);
+    s->cr.realloc_func(s->cr.mem_opaque, s->hash_table, 0);
 
     cr_free(&s->cr);
 }
@@ -248,8 +250,8 @@ static int re_string_find2(REStringList *s, int len, const uint32_t *buf,
         uint32_t new_hash_size;
         new_hash_bits = max_int(s->hash_bits + 1, 4);
         new_hash_size = 1 << new_hash_bits;
-        new_hash_table = lre_realloc(s->cr.mem_opaque, NULL,
-                                     sizeof(new_hash_table[0]) * new_hash_size);
+        new_hash_table = s->cr.realloc_func(s->cr.mem_opaque, NULL,
+                                            sizeof(new_hash_table[0]) * new_hash_size);
         if (!new_hash_table)
             return -1;
         memset(new_hash_table, 0, sizeof(new_hash_table[0]) * new_hash_size);
@@ -261,14 +263,15 @@ static int re_string_find2(REStringList *s, int len, const uint32_t *buf,
                 new_hash_table[h] = p;
             }
         }
-        lre_realloc(s->cr.mem_opaque, s->hash_table, 0);
+        s->cr.realloc_func(s->cr.mem_opaque, s->hash_table, 0);
         s->hash_bits = new_hash_bits;
         s->hash_size = new_hash_size;
         s->hash_table = new_hash_table;
         h = h0 >> (32 - s->hash_bits);
     }
 
-    p = lre_realloc(s->cr.mem_opaque, NULL, sizeof(REString) + len * sizeof(buf[0]));
+    p = s->cr.realloc_func(s->cr.mem_opaque, NULL,
+                           sizeof(REString) + len * sizeof(buf[0]));
     if (!p)
         return -1;
     p->next = s->hash_table[h];
@@ -334,7 +337,7 @@ static int re_string_list_op(REStringList *a, REStringList *b, int op)
                     /* remove it */
                     *pp = p->next;
                     a->n_strings--;
-                    lre_realloc(a->cr.mem_opaque, p, 0);
+                    a->cr.realloc_func(a->cr.mem_opaque, p, 0);
                 } else {
                     /* keep it */
                     pp = &p->next;
@@ -943,7 +946,7 @@ static int parse_unicode_property(REParseState *s, REStringList *cr,
         }
         if (ret < 0 && !is_inv && allow_sequence_prop) {
             CharRange cr_tmp;
-            cr_init(&cr_tmp, s->opaque, lre_realloc);
+            cr_init(&cr_tmp, s->opaque, s->lre_realloc);
             ret = unicode_sequence_prop(name, seq_prop_cb, cr, &cr_tmp);
             cr_free(&cr_tmp);
             if (ret == -1) {
@@ -1001,7 +1004,7 @@ static int parse_class_string_disjunction(REParseState *s, REStringList *cr,
     if (*p != '{')
         return re_parse_error(s, "expecting '{' after \\q");
 
-    dbuf_init2(&str, s->opaque, lre_realloc);
+    dbuf_init2(&str, s->opaque, s->lre_realloc);
     re_string_list_init(s, cr);
     
     p++;
@@ -1287,7 +1290,7 @@ static int re_emit_string_list(REParseState *s, const REStringList *sl)
     } else {
         /* at least one string list is present : match the longest ones first */
         /* XXX: add a new op_switch opcode to compile as a trie */
-        tab = lre_realloc(s->opaque, NULL, sizeof(tab[0]) * sl->n_strings);
+        tab = s->lre_realloc(s->opaque, NULL, sizeof(tab[0]) * sl->n_strings);
         if (!tab) {
             re_parse_out_of_memory(s);
             return -1;
@@ -1332,7 +1335,7 @@ static int re_emit_string_list(REParseState *s, const REStringList *sl)
             else
                 split_pos = 0; /* not used */
             if (re_emit_range(s, &sl->cr)) {
-                lre_realloc(s->opaque, tab, 0);
+                s->lre_realloc(s->opaque, tab, 0);
                 return -1;
             }
             if (!is_last)
@@ -1346,7 +1349,7 @@ static int re_emit_string_list(REParseState *s, const REStringList *sl)
             last_match_pos = next_pos;
         }
         
-        lre_realloc(s->opaque, tab, 0);
+        s->lre_realloc(s->opaque, tab, 0);
     }
     return 0;
 }
@@ -1387,7 +1390,7 @@ static int re_parse_nested_class(REParseState *s, REStringList *cr, const uint8_
     REStringList cr1_s, *cr1 = &cr1_s;
     BOOL invert, is_first;
 
-    if (lre_check_stack_overflow(s->opaque, 0))
+    if (s->lre_check_stack_overflow(s->opaque, 0))
         return re_parse_error(s, "stack overflow");
 
     re_string_list_init(s, cr);
@@ -1444,7 +1447,7 @@ static int re_parse_nested_class(REParseState *s, REStringList *cr, const uint8_
                 }
                 if (s->ignore_case) {
                     CharRange cr2_s, *cr2 = &cr2_s;
-                    cr_init(cr2, s->opaque, lre_realloc);
+                    cr_init(cr2, s->opaque, s->lre_realloc);
                     if (cr_add_interval(cr2, c1, c2 + 1) ||
                         cr_regexp_canonicalize(cr2, s->is_unicode) ||
                         cr_op1(&cr->cr, cr2->points, cr2->len, CR_OP_UNION)) {
@@ -2407,7 +2410,7 @@ static int re_parse_disjunction(REParseState *s, BOOL is_backward_dir)
 {
     int start, len, pos;
 
-    if (lre_check_stack_overflow(s->opaque, 0))
+    if (s->lre_check_stack_overflow(s->opaque, 0))
         return re_parse_error(s, "stack overflow");
 
     start = s->byte_code.size;
@@ -2511,7 +2514,8 @@ static void *lre_bytecode_realloc(void *opaque, void *ptr, size_t size)
            avoid some overflows. */
         return NULL;
     } else {
-        return lre_realloc(opaque, ptr, size);
+        REParseState *s = opaque;
+        return s->lre_realloc(s->opaque, ptr, size);
     }
 }
 
@@ -2521,6 +2525,8 @@ static void *lre_bytecode_realloc(void *opaque, void *ptr, size_t size)
 */
 uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
                      const char *buf, size_t buf_len, int re_flags,
+                     JSLREReallocFunc *lre_realloc,
+                     JSLREStackCheckFunc *lre_check_stack_overflow,
                      void *opaque)
 {
     REParseState s_s, *s = &s_s;
@@ -2542,8 +2548,10 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
     s->capture_count = 1;
     s->total_capture_count = -1;
     s->has_named_captures = -1;
+    s->lre_realloc = lre_realloc;
+    s->lre_check_stack_overflow = lre_check_stack_overflow;
 
-    dbuf_init2(&s->byte_code, opaque, lre_bytecode_realloc);
+    dbuf_init2(&s->byte_code, s, lre_bytecode_realloc);
     dbuf_init2(&s->group_names, opaque, lre_realloc);
 
     dbuf_put_u16(&s->byte_code, re_flags); /* first element is the flags */
@@ -2749,6 +2757,7 @@ typedef struct {
     int capture_count;
     BOOL is_unicode;
     int interrupt_counter;
+    JSLREExecFunctions *funcs;
     void *opaque; /* used for stack overflow check */
 
     StackElem *stack_buf;
@@ -2760,7 +2769,7 @@ static int lre_poll_timeout(REExecContext *s)
 {
     if (unlikely(--s->interrupt_counter <= 0)) {
         s->interrupt_counter = INTERRUPT_COUNTER_INIT;
-        if (lre_check_timeout(s->opaque))
+        if (s->funcs->lre_check_timeout(s->opaque))
             return LRE_RET_TIMEOUT;
     }
     return 0;
@@ -2774,13 +2783,15 @@ static no_inline int stack_realloc(REExecContext *s, size_t n)
     if (new_size < n)
         new_size = n;
     if (s->stack_buf == s->static_stack_buf) {
-        new_stack = lre_realloc(s->opaque, NULL, new_size * sizeof(StackElem));
+        new_stack = s->funcs->lre_realloc(s->opaque, NULL,
+                                          new_size * sizeof(StackElem));
         if (!new_stack)
             return -1;
         /* XXX: could use correct size */
         memcpy(new_stack, s->stack_buf, s->stack_size * sizeof(StackElem));
     } else {
-        new_stack = lre_realloc(s->opaque, s->stack_buf, new_size * sizeof(StackElem));
+        new_stack = s->funcs->lre_realloc(s->opaque, s->stack_buf,
+                                          new_size * sizeof(StackElem));
         if (!new_stack)
             return -1;
     }
@@ -3344,7 +3355,7 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
    clen. */
 int lre_exec(uint8_t **capture,
              const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
-             int cbuf_type, void *opaque)
+             int cbuf_type, JSLREExecFunctions *funcs, void *opaque)
 {
     REExecContext s_s, *s = &s_s;
     int re_flags, i, ret, cbuf_width = cbuf_type;
@@ -3361,6 +3372,7 @@ int lre_exec(uint8_t **capture,
     if (s->cbuf_type == 1 && s->is_unicode)
         s->cbuf_type = 2;
     s->interrupt_counter = INTERRUPT_COUNTER_INIT;
+    s->funcs = funcs;
     s->opaque = opaque;
 
     s->stack_buf = s->static_stack_buf;
@@ -3380,7 +3392,7 @@ int lre_exec(uint8_t **capture,
     ret = lre_exec_backtrack(s, capture, bc_buf + RE_HEADER_LEN, cptr);
 
     if (s->stack_buf != s->static_stack_buf)
-        lre_realloc(s->opaque, s->stack_buf, 0);
+        funcs->lre_realloc(s->opaque, s->stack_buf, 0);
     return ret;
 }
 
@@ -3423,14 +3435,20 @@ void *lre_realloc(void *opaque, void *ptr, size_t size)
     return realloc(ptr, size);
 }
 
+int lre_check_timeout(void *opaque)
+{
+    return FALSE;
+}
+
 int main(int argc, char **argv)
 {
     int len, flags, ret, i;
     uint8_t *bc;
     char error_msg[64];
-    uint8_t *capture;
+    uint8_t **capture;
     const char *input;
     int input_len, capture_count;
+    JSLREExecFunctions funcs;
 
     if (argc < 4) {
         printf("usage: %s regexp flags input\n", argv[0]);
@@ -3438,7 +3456,8 @@ int main(int argc, char **argv)
     }
     flags = atoi(argv[2]);
     bc = lre_compile(&len, error_msg, sizeof(error_msg), argv[1],
-                     strlen(argv[1]), flags, NULL);
+                     strlen(argv[1]), flags, lre_realloc,
+                     lre_check_stack_overflow, NULL);
     if (!bc) {
         fprintf(stderr, "error: %s\n", error_msg);
         exit(1);
@@ -3448,7 +3467,10 @@ int main(int argc, char **argv)
     input_len = strlen(input);
 
     capture = malloc(sizeof(capture[0]) * lre_get_alloc_count(bc));
-    ret = lre_exec(capture, bc, (uint8_t *)input, 0, input_len, 0, NULL);
+    funcs.lre_realloc = lre_realloc;
+    funcs.lre_check_timeout = lre_check_timeout;
+    ret = lre_exec(capture, bc, (uint8_t *)input, 0, input_len, 0,
+                   &funcs, NULL);
     printf("ret=%d\n", ret);
     if (ret == 1) {
         capture_count = lre_get_capture_count(bc);

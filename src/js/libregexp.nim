@@ -12,59 +12,6 @@ const CFLAGS = "-fwrapv"
 
 {.compile("../../lib/quickjs/libregexp.c", CFLAGS).}
 
-# Hack: quickjs provides a lre_check_stack_overflow, but that basically
-# depends on the entire QuickJS runtime. So to avoid pulling that in as
-# a necessary dependency, we must provide one ourselves, but *only* if
-# quickjs has not been imported.
-# So we define NOT_LRE_ONLY in quickjs.nim, and check it in the "second
-# compilation pass" (i.e. in C).
-{.emit: """
-typedef struct JSRuntime JSRuntime;
-typedef struct JSContext JSContext;
-
-#ifndef NOT_LRE_ONLY
-int lre_check_timeout(void *opaque)
-{
-  return 0;
-}
-
-int lre_check_stack_overflow(void *opaque, size_t alloca_size)
-{
-  return 0;
-}
-
-/* there is no JS runtime */
-JSRuntime *JS_GetRuntime(JSContext *ctx)
-{
-  return NULL;
-}
-
-void *js_realloc_rt(JSRuntime *rt, void *ptr, size_t size)
-{
-  return NULL;
-}
-#endif
-""".}
-
-type
-  JSRuntime {.importc, incompleteStruct.} = object
-  JSContext {.importc, incompleteStruct.} = object
-
-proc JS_GetRuntime(ctx: ptr JSContext): ptr JSRuntime {.importc.}
-proc js_realloc_rt(rt: ptr JSRuntime; p: pointer; size: csize_t): pointer {.
-  importc.}
-
-# this is hardcoded into quickjs, so we must override it here.
-proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
-  if opaque == nil:
-    if size == 0:
-      if p != nil:
-        dealloc(p)
-      return nil
-    return realloc(p, size)
-  let rt = JS_GetRuntime(cast[ptr JSContext](opaque))
-  return js_realloc_rt(rt, p, size)
-
 type
   LREFlag* {.size: sizeof(cint).} = enum
     LRE_FLAG_GLOBAL = "g"
@@ -84,12 +31,28 @@ proc toLREFlags*(flags: cint): LREFlags =
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
+const lreheader = "../../lib/quickjs/libregexp.h"
+
+type JSLREStackCheckFunc =
+  proc(opaque: pointer; alloca_size: csize_t): cint {.cdecl.}
+
+type JSLREReallocFunc* =
+  proc(opaque, p: pointer; size: csize_t): pointer {.cdecl.}
+
+type JSLREExecFunctions* {.importc, header: lreheader,
+    completeStruct.} = object
+  lre_realloc*: JSLREReallocFunc
+  lre_check_timeout*: proc(opaque: pointer): cint {.cdecl.}
+
 {.push header: "../../lib/quickjs/libregexp.h", importc.}
 proc lre_compile*(plen: var cint; error_msg: cstring; error_msg_size: cint;
-  buf: cstring; buf_len: csize_t; re_flags: cint; opaque: pointer): ptr uint8
+  buf: cstring; buf_len: csize_t; re_flags: cint;
+  lre_realloc: JSLREReallocFunc; lre_check_stack_overflow: JSLREStackCheckFunc;
+  opaque: pointer): ptr uint8
 
 proc lre_exec*(capture: ptr ptr uint8; bc_buf, cbuf: ptr uint8;
-  cindex, clen, cbuf_type: cint; opaque: pointer): cint
+  cindex, clen, cbuf_type: cint; funcs: ptr JSLREExecFunctions;
+  opaque: pointer): cint
 
 proc lre_get_alloc_count*(bc_buf: ptr uint8): cint
 proc lre_get_capture_count*(bc_buf: ptr uint8): cint

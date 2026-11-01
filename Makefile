@@ -416,7 +416,7 @@ test/nim/tjsref: src/js/jsref.nim src/js/jsbind.nim src/js/jsutils.nim \
 test/nim/tjsbind: src/js/fromjs.nim src/js/jsbind.nim src/js/jsnull.nim \
 	src/js/jspropenumlist.nim src/js/jsref.nim src/js/jstypes.nim \
 	src/js/jsutils.nim src/js/quickjs.nim src/js/tojs.nim $(twtstr)
-test/nim/tlibregexp: src/js/libregexp.nim
+test/nim/tlibregexp: src/js/libregexp.nim src/utils/lrewrap.nim src/utils/opt.nim
 test/nim/tchahash: src/utils/chahash.nim
 test/nim/tchaos: $(chaos)
 test/nim/tcookie: src/config/cookie.nim $(chafile) $(chaos) $(dynstream)
