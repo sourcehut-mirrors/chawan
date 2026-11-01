@@ -33609,6 +33609,11 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
     JSVarDef *vd;
     BOOL is_pseudo_var, is_arg_scope;
 
+    if (s->var_ref_count >= JS_MAX_LOCAL_VARS) {
+        JS_ThrowInternalError(ctx, "too many local variables");
+        return -1;
+    }
+
     label_done = -1;
 
     /* XXX: could be simpler to use a specific function to
@@ -34957,6 +34962,8 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
             pos_next = resolve_scope_var(ctx, s, var_name, scope, op, &bc_out,
                                          NULL, NULL, pos_next);
             JS_FreeAtom(ctx, var_name);
+            if (pos_next < 0)
+                goto fail;
             break;
         case OP_scope_make_ref:
             {
@@ -34970,6 +34977,8 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
                 pos_next = resolve_scope_var(ctx, s, var_name, scope, op, &bc_out,
                                              bc_buf, ls, pos_next);
                 JS_FreeAtom(ctx, var_name);
+                if (pos_next < 0)
+                    goto fail;
             }
             break;
         case OP_scope_get_private_field:
