@@ -29,9 +29,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 const disableSandbox {.booldefine.} = false
 
 type SandboxType* = enum
@@ -67,6 +64,9 @@ when SandboxMode == stCapsicum:
     discard cap_enter()
 
 elif SandboxMode == stPledge:
+  when NimMajor >= 2:
+    import std/assertions
+
   proc pledge(promises, execpromises: cstring): cint {.importc, cdecl,
     header: "<unistd.h>".}
 
@@ -79,6 +79,9 @@ elif SandboxMode == stPledge:
     doAssert pledge("stdio", nil) == 0
 
 elif SandboxMode == stSeccomp:
+  when NimMajor >= 2:
+    import std/assertions
+
   proc sourceParent(): string =
     var s = currentSourcePath()
     while s.len > 0 and s[^1] != '/':
