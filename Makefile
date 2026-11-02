@@ -346,10 +346,12 @@ uninstall:
 	for f in cha-protocols.5 cha-api.5 cha-troubleshooting.5 cha-image.5 cha-localcgi.5; do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
 
+test_flags = --verbosity:0 -d:test -t:-DDUMP_LEAKS=1
+
 test/net/run: src/io/chafile.nim src/utils/opt.nim src/utils/twtstr.nim
 
 test/net/run: test/net/run.nim
-	$(NIMC) --nimcache:"$(OBJDIR)/test_net" test/net/run.nim
+	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_net" test/net/run.nim
 
 .PHONY: map
 map:
@@ -384,8 +386,6 @@ $(OBJDIR)/chagashi_test:
 	cp test/charset/data.tar.xz $(OBJDIR)/chagashi_test
 	unxz $(OBJDIR)/chagashi_test/data.tar.xz
 	tar xf $(OBJDIR)/chagashi_test/data.tar -C $(OBJDIR)/chagashi_test
-
-test_flags = --verbosity:0 -d:test -t:-DDUMP_LEAKS=1
 
 test/charset/%: test/charset/%.nim
 	$(NIMC) $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
