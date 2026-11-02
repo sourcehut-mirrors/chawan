@@ -1703,7 +1703,7 @@ proc parseHeaders(cp: var ConfigParser; x: var ConfigHeadersInit): Opt[void] =
     x.clear = true
   else:
     ?cp.typeCheck(ttString)
-    x.s.add((move(cp.key), move(cp.buf)))
+    x.s.add((cp.key, move(cp.buf)))
   ok()
 
 proc parseURL(cp: var ConfigParser; x: var URL): Opt[void] =
@@ -1991,7 +1991,7 @@ proc parseConfigValue(cp: var ConfigParser): Opt[void] =
       return cp.err(ctx.getExceptionMsg())
     #TODO this won't fly for dynamic reloading
     let map = cp.config.actionMap[section]
-    map.addAction(move(cp.key), val)
+    map.addAction(cp.key, val)
   elif cp.opt != coAddEntry: # add entry here means "not found"
     ?cp.parseConfigValue1()
   # reset to state before this key
