@@ -15,6 +15,7 @@ import encoding/charset
 import html/script
 import io/chafile
 import io/dynstream
+import js/constcharp
 import js/dtoa
 import js/fromjs
 import js/jsbind
@@ -311,7 +312,6 @@ type
       discard
 
   ConfigRule = ref object of StrMapItem
-    name: string
     matchType*: SiteconfMatch # only used for siteconf
     regex*: Regex # url for siteconf, match for omnirule
     fun*: JSCallback # substituteUrl for siteconf, rewriteUrl for omnirule
@@ -758,14 +758,18 @@ iterator items*(list: ConfigList): ConfigRule =
 
 proc put(list: var ConfigList; rule: ConfigRule) =
   # Removes old rules (if any).
-  let oldRule = ConfigRule(list.map.getOrDefault(rule.name))
+  let oldRule = ConfigRule(list.map.getOrDefault(rule.s))
   if oldRule != nil:
     let prev = move(oldRule.prev)
     let next = move(oldRule.next)
     if prev != nil:
       prev.next = next
+    else:
+      list.head = next
     if next != nil:
       next.prev = prev
+    else:
+      list.tail = prev
   list.map.put(rule)
   if list.tail == nil:
     list.head = rule
@@ -2002,7 +2006,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
   let opt = entry.opt
   if section in {csSiteconf, csOmnirule}:
     if entry.t == cocStr and opt == coAddEntry:
-      let rule = ConfigRule(name: move(entry.str))
+      let rule = ConfigRule(s: move(entry.str))
       config.lists[section].put(rule)
     else:
       let rule = config.lists[section].tail
@@ -2448,6 +2452,21 @@ const ConfigInitPathSeq = {
   coCgiDir: @["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"],
 }
 
+const ConfigInitOmnirule = [
+  ("ddg", "^ddg:", "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q="),
+  ("br", "^br:", "https://search.brave.com/search?q="),
+  ("wk", "^wk:", "https://en.wikipedia.org/wiki/Special:Search?search="),
+  ("wd", "^wd:",
+    "https://en.wiktionary.org/w/index.php?title=Special:Search&search="),
+  ("ms", "^ms:", "https://old-search.marginalia.nu/search?query="),
+]
+
+proc omniRewriteCallback(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint): JSValue {.cdecl.} =
+  var s: string
+  ?ctx.fromJS(argv[0], s)
+  ctx.toJS(ConfigInitOmnirule[magic][2] & s.after(':'))
+
 var configSectionCID {.global.}: JSClassID
 
 proc getConfigOption(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
@@ -2584,7 +2603,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
     for path in it[1]:
       config.strSeqs[it[0]].add(ChaPath(path).unquote(dir).get)
   config.siteconf.put(ConfigRule(
-    name: "downloads",
+    s: "downloads",
     regex: compileMatchRegex("about:downloads").get,
     entries: @[ConfigEntry(
       section: csSiteconf,
@@ -2593,6 +2612,18 @@ proc newConfig*(ctx: JSContext; dir, dataDir: string): Config =
       bit: ConfigOptionBit(metaRefresh: mrAlways)
     )]
   ))
+  for i, it in ConfigInitOmnirule.mypairs:
+    var ft: JSCFunctionType
+    ft.generic_magic = omniRewriteCallback
+    let fun = JS_NewCFunction2(ctx, ft.generic,
+      cstringConst("omnirule callback"), 1, JS_CFUNC_generic_magic, cint(i))
+    if JS_IsException(fun.vc):
+      return Config(nil)
+    config.omnirule.put(ConfigRule(
+      s: it[0],
+      regex: compileMatchRegex(it[1]).get,
+      fun: traceCallback(fun)
+    ))
   if ctx.addConfigSections(config).isErr:
     return Config(nil)
   config
@@ -2627,7 +2658,7 @@ jsClassDef(Config):
     if p == nil:
       return JS_EXCEPTION
     config.omnirule.put(ConfigRule(
-      name: name,
+      s: name,
       regex: bytecodeToRegex(cast[REBytecode](p), len),
       fun: fun
     ))
