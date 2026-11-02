@@ -2043,7 +2043,6 @@ proc removeNodeInternal(node, next: Node; parent: ParentNode;
     nodeAsElement.setMagic(0)
   return prev
 
-# Pass an index to avoid searching for the node in parent's child list.
 proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
   let parent = node.parentNode
   if parent == nil:
