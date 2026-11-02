@@ -331,12 +331,6 @@ class Mouse {
     static META = 4;
 }
 
-/* private */
-function addDefaultOmniRule(name, match, url) {
-    const fun = x => url + encodeURIComponent(x.substring(x.indexOf(':') + 1));
-    config.addOmniRule(name, match, fun);
-}
-
 /*
  * Some properties defined on Buffer are also reflected on Pager.
  * This is for backwards compatibility only, and it should not be
@@ -396,15 +390,6 @@ Pager.prototype.init = function(pages, contentType, charset, history, pipe) {
     this.tab = this.tabHead = new Tab();
     this.commandMode = false;
     this.refreshAllowed = new Set();
-    addDefaultOmniRule("ddg", /^ddg:/,
-        "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=");
-    addDefaultOmniRule("br", /^br:/, "https://search.brave.com/search?q=");
-    addDefaultOmniRule("wk", /^wk:/,
-        "https://en.wikipedia.org/wiki/Special:Search?search=");
-    addDefaultOmniRule("wd", /^wd:/,
-        "https://en.wiktionary.org/w/index.php?title=Special:Search&search=");
-    addDefaultOmniRule("ms", /^ms:/,
-        "https://old-search.marginalia.nu/search?query=");
     this.runStartupScript();
     if (pipe) {
         this.loadSubmit("stream:-", {
