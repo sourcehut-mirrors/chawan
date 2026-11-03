@@ -7,8 +7,6 @@ import js/dtoa
 import js/libregexp
 import utils/chaos
 
-{.passc: "-DNOT_LRE_ONLY".}
-
 {.passl: "-lm".}
 
 const CFLAGS = "-fwrapv -DCONFIG_VERSION='\"cha\"' -DCONFIG_NO_ATOMICS"
