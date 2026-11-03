@@ -8018,7 +8018,7 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_val,
                 goto found;
         }
         sf = ctx->rt->current_stack_frame;
-found:
+found: ;
     }
 
     for(; sf != NULL; sf = sf->prev_frame) {
@@ -22621,28 +22621,28 @@ typedef struct JSFunctionDef {
     struct list_head link;
 
     int eval_type; /* only valid if is_eval = TRUE */
-    BOOL is_eval : 1; /* TRUE if eval code */
-    BOOL is_global_var : 1; /* TRUE if variables are not defined locally:
-                               eval global, eval module or non strict eval */
-    BOOL is_func_expr : 1; /* TRUE if function expression */
-    BOOL has_home_object : 1; /* TRUE if the home object is available */
-    BOOL has_prototype : 1; /* true if a prototype field is necessary */
-    BOOL has_simple_parameter_list : 1;
-    BOOL has_parameter_expressions : 1; /* if true, an argument scope is created */
-    BOOL has_use_strict : 1; /* to reject directive in special cases */
-    BOOL has_eval_call : 1; /* true if the function contains a call to eval() */
-    BOOL has_arguments_binding : 1; /* true if the 'arguments' binding is
-                                       available in the function */
-    BOOL has_this_binding : 1; /* true if the 'this' and new.target binding are
-                                  available in the function */
-    BOOL new_target_allowed : 1; /* true if the 'new.target' does not
-                                    throw a syntax error */
-    BOOL super_call_allowed : 1; /* true if super() is allowed */
-    BOOL super_allowed : 1; /* true if super. or super[] is allowed */
-    BOOL arguments_allowed : 1; /* true if the 'arguments' identifier is allowed */
-    BOOL is_derived_class_constructor : 1;
-    BOOL in_function_body : 1;
-    BOOL need_home_object : 1;
+    uint8_t is_eval : 1; /* TRUE if eval code */
+    uint8_t is_global_var : 1; /* TRUE if variables are not defined locally:
+                                  eval global, eval module or non strict eval */
+    uint8_t is_func_expr : 1; /* TRUE if function expression */
+    uint8_t has_home_object : 1; /* TRUE if the home object is available */
+    uint8_t has_prototype : 1; /* true if a prototype field is necessary */
+    uint8_t has_simple_parameter_list : 1;
+    uint8_t has_parameter_expressions : 1; /* if true, an argument scope is created */
+    uint8_t has_use_strict : 1; /* to reject directive in special cases */
+    uint8_t has_eval_call : 1; /* true if the function contains a call to eval() */
+    uint8_t has_arguments_binding : 1; /* true if the 'arguments' binding is
+                                          available in the function */
+    uint8_t has_this_binding : 1; /* true if the 'this' and new.target binding are
+                                     available in the function */
+    uint8_t new_target_allowed : 1; /* true if the 'new.target' does not
+                                       throw a syntax error */
+    uint8_t super_call_allowed : 1; /* true if super() is allowed */
+    uint8_t super_allowed : 1; /* true if super. or super[] is allowed */
+    uint8_t arguments_allowed : 1; /* true if the 'arguments' identifier is allowed */
+    uint8_t is_derived_class_constructor : 1;
+    uint8_t in_function_body : 1;
+    uint8_t need_home_object : 1;
     JSFunctionKindEnum func_kind : 8;
     JSParseFunctionEnum func_type : 8;
     uint8_t js_mode; /* bitmap of JS_MODE_x */
