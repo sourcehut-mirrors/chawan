@@ -7829,7 +7829,7 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
                 goto found;
         }
         sf = ctx->rt->current_stack_frame;
-found:
+found: ;
     }
 
     for(; sf != NULL; sf = sf->prev_frame) {
