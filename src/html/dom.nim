@@ -3942,6 +3942,24 @@ jsClassPublicDef(Document):
           return element as HTMLElement
     HTMLElement(nil)
 
+  # https://html.spec.whatwg.org/multipage/obsolete.html#Document-partial
+  proc getBodyColorAttr(document: Document; magic: StaticAtom): string {.
+      jsmfget("bgColor", satBgcolor), jsmfget("fgColor", satText),
+      jsmfget("linkColor", satLink), jsmfget("vlinkColor", satVlink),
+      jsmfget("alinkColor", satAlink).} =
+    let body = document.body.asElement
+    if body != nil:
+      return body.attr(magic)
+    return ""
+
+  proc setBodyColorAttr(ctx: JSContext; document: Document; magic: StaticAtom;
+      s: DOMStringNull) {.jsmfset("bgColor", satBgcolor),
+      jsmfset("fgColor", satText), jsmfset("linkColor", satLink),
+      jsmfset("vlinkColor", satVlink), jsmfset("alinkColor", satAlink).} =
+    let body = document.body.asElement
+    if body != nil:
+      body.setAttr(ctx, magic, s)
+
   proc title*(document: Document): string {.jsfget.} =
     let root = document.documentElement
     let title = if root != nil and root.tagType(satNamespaceSVG) == ttSvg:
