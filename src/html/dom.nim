@@ -4067,8 +4067,9 @@ jsClassPublicDef(Document):
     this.asParentNode.moveBeforeImpl(ctx, node, child)
 
   # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
-  proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
-      JSValue {.jsfunc.} =
+  proc write(ctx: JSContext; document: Document; nl: bool;
+      args: varargs[JSValueConst]): JSValue {.jsmfunc("write", false),
+      jsmfunc("writeln", true).} =
     var text = ""
     for arg in args:
       # Note: this diverges from behavior in other browsers, but I'm not
@@ -4077,6 +4078,8 @@ jsClassPublicDef(Document):
       var s: USVString
       ?ctx.fromJS(arg, s)
       text &= s.toOpenArray()
+    if nl:
+      text &= '\n'
     if document.isxml:
       return JS_ThrowDOMException(ctx, "InvalidStateError",
         "document.write not supported in XML documents")
