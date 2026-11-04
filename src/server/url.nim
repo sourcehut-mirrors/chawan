@@ -507,7 +507,7 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
 proc domainToAscii(domain: string; beStrict: bool): string =
   var res = domain.toLowerAscii()
   if beStrict or NonAscii in domain:
-    if res.startsWith("xn--") or result.find(".xn--") != -1 or NonAscii in res:
+    if res.startsWith("xn--") or res.find(".xn--") != -1 or NonAscii in res:
       res = domain.unicodeToAscii(beStrict)
   move(res)
 
