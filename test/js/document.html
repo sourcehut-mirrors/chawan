@@ -51,5 +51,15 @@ assertEquals(document.head, null);
 {
 	assertEquals(document.getRootNode(), document);
 }
+{
+	for (const [prop, attr] of [["bgColor", "bgcolor"], ["fgColor", "text"],
+		["linkColor", "link"], ["vlinkColor", "vlink"],
+		["alinkColor", "alink"]]) {
+		document[prop] = "red";
+		assertEquals(document.body.getAttribute(attr), "red");
+		document[prop] = null;
+		assertEquals(document.body.getAttribute(attr), "");
+	}
+}
 document.getElementById("abc").textContent = "Success";
 </script>
