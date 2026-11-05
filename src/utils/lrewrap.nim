@@ -15,6 +15,10 @@ type
   REBytecode* = distinct ptr uint8
 
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
+  if size == 0:
+    if p != nil:
+      dealloc(p)
+    return nil
   return realloc(p, cast[int](size))
 
 proc checkStack(opaque: pointer; alloca_size: csize_t): cint {.cdecl.} =
