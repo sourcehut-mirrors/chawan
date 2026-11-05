@@ -22,7 +22,7 @@ proc isLocal(t: NimNode): bool =
     of nnkCall, nnkCast:
       # if it's a call, see below.
       # if it's a cast, preserve it.
-      return true
+      return false
     of nnkStmtList, nnkStmtListExpr:
       # check the last child
       t = t[^1]
