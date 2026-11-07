@@ -1187,8 +1187,8 @@ proc listMarker0(t: CSSListStyleType; i: int32; hintMap: openArray[uint32]):
   of ListStyleTypeDisc: "•" # U+2022
   of ListStyleTypeCircle: "○" # U+25CB
   of ListStyleTypeSquare: "□" # U+25A1
-  of ListStyleTypeDisclosureOpen: "▶" # U+25B6
-  of ListStyleTypeDisclosureClosed: "▼" # U+25BC
+  of ListStyleTypeDisclosureOpen: "▼" # U+25BC
+  of ListStyleTypeDisclosureClosed: "▶" # U+25B6
   of ListStyleTypeDecimal: $i
   of ListStyleTypeUpperRoman: romanNumber(i)
   of ListStyleTypeLowerRoman: romanNumber(i).toLowerAscii()
