@@ -205,6 +205,11 @@ assertEquals(new URL("https://xn--") + "", "https://xn--/");
 		}
 		assertEquals(i, 1);
 	}
+	{
+		const x = new URLSearchParams("b=c&a=c&a=b");
+		x.sort();
+		assertEquals(x + "", "a=c&a=b&b=c");
+	}
 }
 {
 	const url = new URL("data:blah  #a");

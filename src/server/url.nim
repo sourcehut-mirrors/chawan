@@ -1286,6 +1286,7 @@ jsClassPublicDef(URLSearchParams):
     return ok(params)
 
   proc toStr*(params: URLSearchParams): Str {.jsfunc: "toString".} =
+    params.sync()
     serializeFormURLEncoded(params.list)
 
   proc append(params: URLSearchParams; name, value: sink Str) {.jsfunc.} =
@@ -1349,6 +1350,17 @@ jsClassPublicDef(URLSearchParams):
       URLSearchParamsIterator {.jsmfunc("entries", sitEntries),
       jsmfunc("values", sitValues), jsmfunc("keys", sitKeys).} =
     jsNew URLSearchParamsIteratorObj(t: t, params: params)
+
+  proc sort(params: URLSearchParams) {.jsfunc.} =
+    params.sync()
+    params.list.sort(proc(a, b: tuple[name, value: Str]): int =
+      cmp(a.name, b.name)
+    )
+    params.update()
+
+  proc size(params: URLSearchParams): uint32 {.jsfget.} =
+    params.sync()
+    uint32(params.list.len)
 
 jsClassNameDef(URLSearchParamsIterator, "URLSearchParams Iterator"):
   classDef.iterable = jitIterator
