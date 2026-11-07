@@ -370,7 +370,7 @@ type
     internalTarget: Element
     renderBlockingElements: seq[Element]
     uaSheetsHead: CSSStylesheet
-    userSheet: CSSStylesheet
+    userSheetsHead: CSSStylesheet
     authorSheetsHead: CSSStylesheet
     sheetTitle: Str
     ruleMap: CSSRuleMap
@@ -1490,8 +1490,10 @@ proc windowChange*(window: Window) =
   while sheet != nil:
     sheet.windowChange(baseURL)
     sheet = sheet.next
-  if document.userSheet != nil:
-    document.userSheet.windowChange(baseURL)
+  sheet = document.userSheetsHead
+  while sheet != nil:
+    sheet.windowChange(baseURL)
+    sheet = sheet.next
   sheet = document.authorSheetsHead
   while sheet != nil:
     sheet.windowChange(baseURL)
@@ -3692,13 +3694,19 @@ proc applyQuirksSheet*(document: Document) =
   let sheet = parseStylesheet(quirks, URL(nil), addr document.window.settings,
     coUserAgent, CAtomNull)
   document.uaSheetsHead.next = sheet
-  sheet.prev = document.uaSheetsHead
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
-proc applyUserSheet*(document: Document; user: Str) =
-  document.userSheet = parseStylesheet(user, URL(nil),
-    addr document.window.settings, coUser, CAtomNull)
+proc applyUserSheets*(document: Document; user: openArray[Str]) =
+  var tail: CSSStylesheet
+  for s in user:
+    let sheet = parseStylesheet(s, URL(nil), addr document.window.settings,
+      coUser, CAtomNull)
+    if tail != nil:
+      tail.next = sheet
+    else:
+      document.userSheetsHead = sheet
+    tail = sheet
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -3709,7 +3717,10 @@ proc getRuleMap*(document: Document): CSSRuleMap =
     while sheet != nil:
       map.add(sheet)
       sheet = sheet.next
-    map.add(document.userSheet)
+    sheet = document.userSheetsHead
+    while sheet != nil:
+      map.add(sheet)
+      sheet = sheet.next
     sheet = document.authorSheetsHead
     while sheet != nil:
       if not sheet.disabled and sheet.applies:
@@ -3758,12 +3769,8 @@ jsClassPublicDef(Document):
   jsget Document, currentScript
 
   proc finalize(rt: JSRuntime; document: Document) {.jsfin.} =
-    var sheet = move(document.uaSheetsHead)
-    while sheet != nil:
-      let next = move(sheet.next)
-      sheet.prev = nil
-      sheet = next
-    sheet = move(document.authorSheetsHead)
+    # note: only author sheets are cyclic
+    var sheet = move(document.authorSheetsHead)
     while sheet != nil:
       let next = move(sheet.next)
       sheet.prev = nil

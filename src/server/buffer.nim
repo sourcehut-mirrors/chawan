@@ -582,7 +582,7 @@ proc switchCharset(bc: BufferContext) =
   bc.initDecoder()
   bc.htmlParser.restart(bc.charset)
   bc.document.applyUASheet()
-  bc.document.applyUserSheet(bc.config.userStyle)
+  bc.document.applyUserSheets(bc.config.userStyle)
   bc.document.invalid = true
 
 proc bomSniff(bc: BufferContext; iq: openArray[uint8]): int =
@@ -1920,7 +1920,7 @@ proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
       discard chaStderr.writeLine("out of memory")
       quit(1)
     bc.document.applyUASheet()
-    bc.document.applyUserSheet(bc.config.userStyle)
+    bc.document.applyUserSheets(bc.config.userStyle)
     bc.runBuffer()
     bc.window.bc = nil # break cycle
     ctx = bc.window.jsctx

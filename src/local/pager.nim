@@ -1140,8 +1140,7 @@ proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
     charsetOverride: Charset; loaderConfig: var LoaderClientConfig;
     ourl: var URL; cookieJarId, filterCmd: var Str): BufferConfig =
   result = BufferConfig(
-    #TODO userStyle should be a seq[Str] instead
-    userStyle: initStrM(pager.config{"userStyle"}, '\n'),
+    userStyle: @[pager.config{"userStyle"}],
     refererFrom: pager.config{"refererFrom"},
     scripting: pager.config{"scripting"},
     charsets: pager.config{"documentCharset"},
@@ -1216,9 +1215,7 @@ proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
       of cocStr:
         case e.opt
         of coShareCookieJar: cookieJarId = e.str
-        of coUserStyle:
-          result.userStyle &= e.str
-          result.userStyle &= "\n"
+        of coUserStyle: result.userStyle.add(e.str)
         of coFilterCmd: filterCmd = e.str
         else: assert false
       of cocCharsetSeq:

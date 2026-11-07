@@ -43,6 +43,7 @@ type
     s*: StyleState
     settings: ptr EnvironmentSettings
     # doubly linked list of all sheets in the document
+    # (prev is unset for UA/user style)
     prev*: CSSStylesheet
     next*: CSSStylesheet
     media*: Str # media attr

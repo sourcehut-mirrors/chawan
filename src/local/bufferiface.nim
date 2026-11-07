@@ -215,7 +215,7 @@ type
     imageTypes*: MimeTypesImages
     userAgent*: Str
     referrer*: Str
-    userStyle*: Str
+    userStyle*: seq[Str]
 
   BufferInitFlag* = enum
     bifSave
