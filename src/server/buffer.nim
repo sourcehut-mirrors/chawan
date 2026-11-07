@@ -1050,7 +1050,7 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
       RequestBody(t: rbtString, s: serializePlainTextFormData(kvlist))
-    let headers = newHeaders(hgRequest, {
+    let headers = newHeaders(hgRequest, @{
       byteStr("Content-Type"): contentType.asByteString
     })
     return newRequest(parsedAction, httpMethod, headers, body)

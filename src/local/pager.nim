@@ -755,7 +755,7 @@ proc loadCachedImage2(env: CachedImageEnv; response: Response) =
   if cachedImage.state == cisCanceled:
     loader.removeCachedItem(cacheId)
     return
-  let headers = newHeaders(hgRequest, {
+  let headers = newHeaders(hgRequest, @{
     byteStr("Cha-Image-Dimensions"):
       initDimsHeader(cachedImage.width, cachedImage.height)
   })
@@ -809,7 +809,7 @@ proc loadCachedImage0(opaque: RootRef; response: Response) =
     return
   # resize
   # use a temp file, so that img-resize can mmap its output
-  let headers = newHeaders(hgRequest, {
+  let headers = newHeaders(hgRequest, @{
     byteStr("Cha-Image-Dimensions"): initDimsHeader(bmp.width, bmp.height),
     byteStr("Cha-Image-Target-Dimensions"):
       initDimsHeader(cachedImage.width, cachedImage.height)

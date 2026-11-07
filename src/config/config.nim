@@ -2613,7 +2613,7 @@ proc newConfig*(ctx: JSContext; dir, dataDir: Str): Config =
   let page = newActionMap(ctx, PageCommands, str(""))
   let line = newActionMap(ctx, LineCommands, str("writeInputBuffer"))
   let select = newActionMap(ctx, SelectCommands, str(""))
-  let defaultHeaders = newHeaders(hgRequest, {
+  let defaultHeaders = newHeaders(hgRequest, @{
     byteStr("User-Agent"): byteStr("chawan"),
     byteStr("Accept"): byteStr("text/html, text/*;q=0.5, */*;q=0.4"),
     byteStr("Accept-Encoding"): byteStr("gzip, deflate, br"),

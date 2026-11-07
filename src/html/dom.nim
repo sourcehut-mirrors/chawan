@@ -1092,14 +1092,13 @@ proc checkCORSRequest*(window: Window; input: Request): bool =
   if window.isSameOrigin(input.url.origin):
     return true
   #TODO redirect-taint
-  let requestOrigin0 = window.settings.origin.toStr()
-  if input.url.scheme != requestOrigin0.until(':'):
+  let requestOrigin = window.settings.origin.toStr().asByteString
+  if input.url.scheme != Str(requestOrigin).until(':'):
     return false
-  let requestOrigin = requestOrigin0.asByteString
   if window.corsCache.getOrDefault(input.url.toStr()) != nil:
     return false
   input.headers[byteStr("Origin")] = requestOrigin
-  let headers = newHeaders(hgRequest, {byteStr("Origin"): requestOrigin})
+  let headers = newHeaders(hgRequest, @{byteStr("Origin"): requestOrigin})
   if headers == nil:
     return false
   let request = newRequest(input.url, hmOptions, headers)
@@ -1382,7 +1381,7 @@ proc loadImage0(opaque: RootRef; response: Response) =
   let request = newRequest(
     url,
     httpMethod = hmPost,
-    headers = newHeaders(hgRequest, {
+    headers = newHeaders(hgRequest, @{
       byteStr("Cha-Image-Info-Only"): byteStr("1")
     }),
     body = RequestBody(t: rbtOutput, outputId: response.outputId),
@@ -1448,7 +1447,7 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
     shared: @[image]
   )
   window.imageURLCache.put(cachedURL)
-  let headers = newHeaders(hgRequest, {byteStr("Accept"): byteStr("*/*")})
+  let headers = newHeaders(hgRequest, @{byteStr("Accept"): byteStr("*/*")})
   inc window.remoteImageNum
   let request = newRequest(url, headers = headers)
   window.corsFetch(request, loadImage0, cachedURL)
@@ -3866,7 +3865,7 @@ jsClassPublicDef(Document):
     let window = ?ctx.getCookieWindow(document)
     if window == nil:
       return ok()
-    let headers = newHeaders(hgRequest, {
+    let headers = newHeaders(hgRequest, @{
       byteStr("Set-Cookie"): cookie.asByteString
     })
     let request = newRequest(str("x-cha-cookie:set"), hmPost, headers,
@@ -7017,7 +7016,7 @@ proc toBlob0(opaque: RootRef; response: Response) =
     JS_FreeContext(ctx)
     return
   let this = env.this
-  let headers = newHeaders(hgRequest, {
+  let headers = newHeaders(hgRequest, @{
     byteStr("Cha-Image-Dimensions"):
       initDimsHeader(this.bitmap.width, this.bitmap.height)
   })
@@ -7059,7 +7058,7 @@ jsClassDef(HTMLCanvasElement):
       ":encode"))
     if url == nil:
       return
-    let headers = newHeaders(hgRequest, {
+    let headers = newHeaders(hgRequest, @{
       byteStr("Cha-Image-Dimensions"):
         initDimsHeader(this.bitmap.width, this.bitmap.height)
     })

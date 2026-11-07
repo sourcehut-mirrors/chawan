@@ -146,7 +146,7 @@ proc loadSVG*(window: Window; svg: SVGSVGElement) =
   let request = newRequest(
     str("img-codec+svg+xml:decode"),
     httpMethod = hmPost,
-    headers = newHeaders(hgRequest, {
+    headers = newHeaders(hgRequest, @{
       byteStr("Cha-Image-Info-Only"): byteStr("1")
     }),
     body = RequestBody(t: rbtOutput, outputId: svgres.outputId),

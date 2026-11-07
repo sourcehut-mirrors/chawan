@@ -307,11 +307,10 @@ proc fill*(ctx: JSContext; headers: Headers; init: HeadersInit): Opt[void] =
 proc newHeaders*(guard: HeaderGuard): Headers =
   jsNew HeadersObj(guard: guard)
 
-proc newHeaders*(guard: HeaderGuard; list: openArray[HTTPHeader]): Headers =
-  #TODO sink seq instead?
+proc newHeaders*(guard: HeaderGuard; list: sink seq[HTTPHeader]): Headers =
   let headers = newHeaders(guard)
   if headers != nil:
-    headers.list = @list
+    headers.list = move(list)
     headers.sort()
   return headers
 
