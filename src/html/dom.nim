@@ -5352,6 +5352,7 @@ proc insertionSteps(element: Element): bool =
     let document = link.asNode.document
     if link.asNode.isConnected() and document.sheetTitle == "" and
         link.enabled.get(true) and
+        link.relList.containsIgnoreCase(satStylesheet) and
         not link.relList.containsIgnoreCase(satAlternate):
       document.sheetTitle = link.asElement.attr(satTitle)
     let window = document.window
