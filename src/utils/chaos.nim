@@ -7,7 +7,10 @@ import std/posix
 import utils/twtstr
 
 # POSIX types
-type SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
+type
+  SighandlerT = proc(sig: cint) {.cdecl, raises: [].}
+
+  cptrdiff* {.importc: "ptrdiff_t", header: "<stddef.h>".} = distinct int
 
 # POSIX functions
 {.push importc, header: "<stdlib.h>".}
