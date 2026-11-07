@@ -105,7 +105,7 @@ proc getDaysInMonth(month, year: int): int =
     return 30
   31
 
-proc parseCookieDate*(val: Str): Opt[int64] =
+proc parseCookieDate*(val: openArray[char]): Opt[int64] =
   # cookie-date
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
   var foundTime = false
@@ -279,15 +279,14 @@ proc parseSetCookie(str: Str; t: int64; url: URL; persist, http: bool):
     let key = parseEnumNoCase[CookieKey](part.toOpenArray(0, i - 1))
     if key.isErr:
       continue
-    #TODO could use openArray for val too
-    let val = part.substr(i + 1)
+    let valStart = min(i + 1, part.len)
     case key.get
     of ckExpires:
       if cookie.expires == -1:
-        if date := parseCookieDate(val):
+        if date := parseCookieDate(part.toOpenArray(valStart, part.high)):
           cookie.expires = date
     of ckMaxAge:
-      let x = parseInt32(val.toOpenArray()).get(-1)
+      let x = parseInt32(part.toOpenArray(valStart, part.high)).get(-1)
       if x >= 0:
         cookie.expires = t + x
     of ckSecure: cookie.secure = true
@@ -296,12 +295,14 @@ proc parseSetCookie(str: Str; t: int64; url: URL; persist, http: bool):
         return err()
       cookie.httpOnly = true
     of ckPath:
+      let val = part.substr(valStart)
       if val != "" and val[0] == '/' and '\t' notin val:
         hasPath = true
         cookie.path = val
     of ckDomain:
-      if val == "":
+      if valStart >= part.len:
         continue # "Domain=" has no effect
+      let val = part.substr(valStart)
       var hostType = htNone
       var domain = parseHost(val, url.schemeType, hostType)
       if domain.len > 0 and domain[0] == '.':
@@ -376,7 +377,6 @@ proc parse0(map: CookieJarMap; file: AChaFile; warnings: var seq[Str]): Opt[void
       var domain = state.nextField(line)
       var cookieJar: CookieJar = nil
       if (let j = domain.find('@'); j >= 0):
-        #TODO delete?
         cookie.domain = domain.substr(j + 1)
         if cookie.domain.startsWith("."):
           cookie.domain.delete(0..0)

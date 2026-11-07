@@ -537,11 +537,7 @@ iterator split*(s: openArray[char]; sep: char): Str =
       buf &= s[i]
     inc i
 
-iterator split*(s: Str; sep: char): Str =
-  for it in s.toOpenArray().split(sep):
-    yield it
-
-iterator split*(s: Str; sep: set[char]): Str =
+iterator split*(s: openArray[char]; sep: set[char]): Str =
   var buf = initGrowbuf()
   var i = 0
   while i <= s.len:
@@ -550,6 +546,14 @@ iterator split*(s: Str; sep: set[char]): Str =
     else:
       buf &= s[i]
     inc i
+
+iterator split*(s: Str; sep: char): Str =
+  for it in s.toOpenArray().split(sep):
+    yield it
+
+iterator split*(s: Str; sep: set[char]): Str =
+  for it in s.toOpenArray().split(sep):
+    yield it
 
 proc containsToken*(s: Str; tok: openArray[char]): bool =
   for it in s.split(AsciiWhitespace):
