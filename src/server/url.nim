@@ -60,6 +60,9 @@ type
   URLSearchParamsObj = object
     list: seq[tuple[name, value: Str]]
     url: URL
+    # keep a cached string of search.  we update the list whenever the
+    # source search changes (which we can check in O(1) thanks to CoW)
+    search: Str
 
   URLSearchParamsIterator = JSRef[URLSearchParamsIteratorObj]
 
@@ -91,7 +94,6 @@ type
     pathname*: Str
     search*: Str
     hash*: Str
-    searchParamsInternal: URLSearchParams #TODO remove
 
   OriginType* = enum
     otOpaque, otTuple
@@ -1189,7 +1191,6 @@ proc cloneInto(a, b: URL) =
   b.pathname = a.pathname
   b.search = a.search
   b.hash = a.hash
-  b.searchParamsInternal = URLSearchParams(nil)
 
 proc newURL*(url: URL): URL =
   result = jsNew URLObj()
@@ -1249,15 +1250,18 @@ proc getSearchParam*(url: URL; name: openArray[char]): Str =
     return str("") # empty
   return url.search.until('&', i + name.len + 1)
 
+proc sync(params: URLSearchParams) =
+  if params.url != nil and params.search != params.url.search:
+    let i = int(params.url.search.len > 0)
+    params.list = parseFromURLEncoded(
+      params.url.search.toOpenArray(i, params.url.search.high))
+    params.search = params.url.search
+
 proc update(params: URLSearchParams) =
   if params.url == nil:
     return
-  let serializedQuery = serializeFormURLEncoded(params.list,
-    questionMark = true)
-  if serializedQuery == "":
-    params.url.search = str("")
-  else:
-    params.url.search = serializedQuery
+  params.url.search = serializeFormURLEncoded(params.list, questionMark = true)
+  params.search = params.url.search
 
 jsClassPublicDef(URLSearchParams):
   classDef.iterable = jitPair
@@ -1281,14 +1285,16 @@ jsClassPublicDef(URLSearchParams):
         params.list = parseFromURLEncoded(res.toOpenArray(i, res.high))
     return ok(params)
 
-  proc toStr(params: URLSearchParams): Str {.jsfunc: "toString".} =
+  proc toStr*(params: URLSearchParams): Str {.jsfunc: "toString".} =
     serializeFormURLEncoded(params.list)
 
   proc append(params: URLSearchParams; name, value: sink Str) {.jsfunc.} =
+    params.sync()
     params.list.add((name, value))
     params.update()
 
   proc delete(params: URLSearchParams; name: Str) {.jsfunc.} =
+    params.sync()
     for i in countdown(params.list.high, 0):
       if params.list[i][0] == name:
         params.list.delete(i)
@@ -1296,12 +1302,14 @@ jsClassPublicDef(URLSearchParams):
 
   proc get(ctx: JSContext; params: URLSearchParams; name: Str): JSValue
       {.jsfunc.} =
+    params.sync()
     for it in params.list:
       if it.name == name:
         return ctx.toJS(it.value)
     return JS_NULL
 
   proc getAll(params: URLSearchParams; name: Str): seq[Str] {.jsfunc.} =
+    params.sync()
     var res = newSeq[Str]()
     for it in params.list:
       if it.name == name:
@@ -1310,6 +1318,7 @@ jsClassPublicDef(URLSearchParams):
 
   proc has(ctx: JSContext; params: URLSearchParams; name: Str;
       jsValue = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
+    params.sync()
     if JS_IsUndefined(jsValue):
       for it in params.list:
         if it.name == name:
@@ -1324,6 +1333,7 @@ jsClassPublicDef(URLSearchParams):
     return JS_FALSE
 
   proc set(params: URLSearchParams; name, value: Str) {.jsfunc.} =
+    params.sync()
     var found = false
     for param in params.list.mitems:
       if param.name == name:
@@ -1345,17 +1355,17 @@ jsClassNameDef(URLSearchParamsIterator, "URLSearchParams Iterator"):
 
   proc next(ctx: JSContext; iter: URLSearchParamsIterator; done: var JS_BOOL):
       JSValue {.jsiter.} =
-    let params = iter.params
+    iter.params.sync()
     let i = iter.i
-    if i >= params.list.len:
+    if i >= iter.params.list.len:
       done = JS_BOOL(1)
       return JS_UNDEFINED
     inc iter.i
     done = JS_BOOL(0)
     case iter.t
-    of sitEntries: ctx.toJS(params.list[i])
-    of sitKeys: ctx.toJS(params.list[i].name)
-    of sitValues: ctx.toJS(params.list[i].value)
+    of sitEntries: ctx.toJS(iter.params.list[i])
+    of sitKeys: ctx.toJS(iter.params.list[i].name)
+    of sitValues: ctx.toJS(iter.params.list[i].value)
 
 # URL
 proc origin*(url: URL): Origin =
@@ -1428,14 +1438,25 @@ jsClassPublicDef(URL):
     else:
       JS_ThrowTypeError(ctx, "%s is not a valid URL", s)
 
-  proc searchParams(url: URL): URLSearchParams {.jsnfget.} =
-    if url.searchParamsInternal == nil:
-      let i = int(url.search.len > 0)
-      url.searchParamsInternal = jsNew URLSearchParamsObj(
-        list: parseFromURLEncoded(url.search.toOpenArray(i, url.search.high)),
-        url: url
-      )
-    return url.searchParamsInternal
+  proc searchParams(ctx: JSContext; this: JSValueConst): JSValue {.jsfget.} =
+    var url: URL
+    ?ctx.fromJS(this, url)
+    var desc: JSPropertyDescriptor
+    let res = JS_GetOwnProperty(ctx, addr desc, this,
+      ctx.getAtom(jszSearchParams))
+    if res < 0:
+      return JS_EXCEPTION
+    if res == 0:
+      JS_FreeValue(ctx, desc.getter)
+      JS_FreeValue(ctx, desc.setter)
+      desc.value = ctx.toJSNew(jsNew URLSearchParamsObj(url: url))
+      if JS_IsException(desc.value.vc):
+        return JS_EXCEPTION
+      if JS_SetProperty(ctx, this, ctx.getAtom(jszSearchParams),
+          JS_DupValue(ctx, desc.value.vc)) < 0:
+        JS_FreeValue(ctx, desc.value)
+        return JS_EXCEPTION
+    return desc.value
 
   proc jsOrigin*(url: URL): Str {.jsfget: "origin".} =
     return url.origin.toStr()
@@ -1509,13 +1530,9 @@ jsClassPublicDef(URL):
   proc setSearch*(url: URL; s: Str) {.jsfset: "search".} =
     if s.len <= 0:
       url.search = str("")
-      if url.searchParamsInternal != nil:
-        url.searchParamsInternal.list.setLen(0)
     else:
       let idx = if s[0] == '?': 1 else: 0
       parseURL1(s.toOpenArray(idx, s.high), url, usQuery)
-      if url.searchParamsInternal != nil:
-        url.searchParamsInternal.list = parseFromURLEncoded(s.toOpenArray())
 
   proc hash(ctx: JSContext; url: URL): JSValue {.jsfget.} =
     if url.hash.len <= 1:

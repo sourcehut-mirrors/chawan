@@ -62,6 +62,7 @@ type
     jstY = "y"
     jsyIterator = "iterator" # must be the first symbol
     jsyToStringTag = "toStringTag"
+    jszSearchParams
 
   JSFunctionRef* = enum
     jsfArrayPrototypeForEach = "Array.prototype.forEach"
@@ -160,7 +161,7 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
     opaque.strRefs[s] = atom
   let sym = JS_GetPropertyStr(ctx, opaque.global.value, cstringConst("Symbol"))
   if not JS_IsException(sym.vc):
-    for s in jsyIterator..JSStrRef.high:
+    for s in jsyIterator..<jszSearchParams:
       let val = JS_GetPropertyStr(ctx, sym.vc, s.toStr().toCStringConst())
       if not JS_IsException(val.vc):
         opaque.strRefs[s] = JS_ValueToAtom(ctx, val.vc)
@@ -170,6 +171,13 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
     JS_FreeValue(ctx, sym)
   else:
     fail = true
+  for s in jszSearchParams..JSStrRef.high:
+    let val = JS_NewPrivateSymbol(ctx)
+    if not JS_IsException(val.vc):
+      opaque.strRefs[s] = JS_ValueToAtom(ctx, val.vc)
+      JS_FreeValue(ctx, val)
+    else:
+      fail = true
   for s, it in opaque.objRefs.mpairs:
     let ss = $s
     let val = JS_Eval(ctx, ss.toCStringConst, csize_t(ss.len),
