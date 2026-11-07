@@ -419,26 +419,17 @@ proc getExceptionMsg*(ctx: JSContext): Str =
   ## Converts the current exception to a string.
   var buf = initGrowbuf()
   let ex = JS_GetException(ctx)
-  var plen: csize_t
-  let outp = JS_ToCStringLen(ctx, plen, ex.vc) # cstring
+  var len: csize_t
+  let outp = JS_ToCStringLen(ctx, len, ex.vc) # cstring
   if outp != nil:
-    if plen > 0:
-      buf.setLen(cast[int](plen))
-      #TODO chaCopyMem
-      copyMem(addr buf[0], cstring(outp), plen)
-    JS_FreeCString(ctx, outp)
+    buf &= initQJSStr(cstring(outp), cast[int](len)) # free's outp
     buf &= '\n'
   let stack = JS_GetPropertyStr(ctx, ex.vc, cstringConst("stack"))
   JS_FreeValue(ctx, ex)
   if not JS_IsUndefined(stack.vc):
-    let outp = JS_ToCStringLen(ctx, plen, stack.vc) # cstring
+    let outp = JS_ToCStringLen(ctx, len, stack.vc) # cstring
     if outp != nil:
-      if plen > 0:
-        let olen = buf.len
-        buf.setLen(cast[int](plen) + olen)
-        #TODO chaCopyMem
-        copyMem(addr buf[olen], cstring(outp), plen)
-      JS_FreeCString(ctx, outp)
+      buf &= initQJSStr(cstring(outp), cast[int](len)) # free's outp
   JS_FreeValue(ctx, stack)
   buf.toStr()
 
