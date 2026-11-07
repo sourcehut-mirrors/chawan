@@ -1191,7 +1191,7 @@ proc cssDecode(iq: openArray[char]; fallback: Charset): string =
     let n = charsetRule.len + s.len
     if n >= 0 and n + 1 < iq.len and iq[n] == '"' and iq[n + 1] == ';':
       charset = getCharset(s)
-      if charset in {csUtf16le, csUtf16be}:
+      if charset in {csUtf16le, csUtf16be, csUnknown}:
         charset = csUtf8
   iq.toOpenArray(offset, iq.high).decodeAll(charset)
 
