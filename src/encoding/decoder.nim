@@ -164,21 +164,18 @@ proc toValidUTF8*(iq: openArray[char]): Str =
   ## U+FFFD replacement characters.
   return iq.decodeAll(csUtf8)
 
-proc toValidUTF8*(iq: Str): Str =
-  var nonAscii: uint
-  for c in iq:
-    nonAscii += uint8(c) shr 7
-  if nonAscii == 0:
-    return iq
-  #TODO avoid allocation in all valid cases
-  return iq.toOpenArray().decodeAll(csUtf8)
-
-proc validateUTF8*(s: openArray[char]): int =
-  var ctx = initTextDecoderContext(csUtf8, errorMode = demFatal)
-  for chunk in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
-    discard
-  if ctx.failed:
-    return ctx.td.ri
+proc validateUTF8*(iq: openArray[char]): int =
+  var td = initTextDecoder(csUtf8)
+  var oq: array[4, uint8]
+  var n = 0
+  if td.decode(iq.toOpenArrayByte(0, iq.high), oq, n, finish = true) ==
+      tdrError:
+    return td.ri
   return -1
+
+proc toValidUTF8*(iq: Str): Str =
+  if iq.toOpenArray().validateUTF8() < 0:
+    return iq
+  return iq.toOpenArray().decodeAll(csUtf8)
 
 {.pop.}
