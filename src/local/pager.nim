@@ -1138,22 +1138,24 @@ proc windowChange(pager: Pager; ctx: JSContext): Opt[void] =
 # Note that this may modify the URL passed.
 proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
     charsetOverride: Charset; loaderConfig: var LoaderClientConfig;
-    ourl: var URL; cookieJarId, filterCmd: var Str): BufferConfig =
+    ourl: var URL; cookieJarId, filterCmd: var Str;
+    flags: var set[BufferInitFlag]; metaRefresh: var MetaRefresh):
+    BufferConfig =
   result = BufferConfig(
     userStyle: @[pager.config{"userStyle"}],
-    refererFrom: pager.config{"refererFrom"},
     scripting: pager.config{"scripting"},
     charsets: pager.config{"documentCharset"},
     images: pager.config{"images"},
     styling: pager.config{"styling"},
     autofocus: pager.config{"autofocus"},
-    history: pager.config{"history"},
     headless: pager.config{"headless"},
     charsetOverride: charsetOverride,
-    metaRefresh: pager.config{"metaRefresh"},
-    markLinks: pager.config{"markLinks"},
-    askDownloadDir: pager.config{"askDownloadDir"}
+    markLinks: pager.config{"markLinks"}
   )
+  metaRefresh = pager.config{"metaRefresh"}
+  flags.toggleIf(bifHistory, pager.config{"history"})
+  flags.toggleIf(bifAskDownloadDir, pager.config{"askDownloadDir"})
+  flags.toggleIf(bifRefererFrom, pager.config{"refererFrom"})
   loaderConfig = LoaderClientConfig(
     originURL: url,
     defaultHeaders: pager.config{"defaultHeaders"},
@@ -1202,15 +1204,15 @@ proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
         case e.opt
         of coCookie: loaderConfig.cookieMode = bit.cookieMode
         of coScripting: result.scripting = bit.scriptingMode
-        of coRefererFrom: result.refererFrom = bit.bool
+        of coRefererFrom: flags.toggleIf(bifRefererFrom, bit.bool)
         of coImages: result.images = bit.bool
         of coStyling: result.styling = bit.bool
         of coInsecureSslNoVerify: loaderConfig.insecureSslNoVerify = bit.bool
         of coAutofocus: result.autofocus = bit.bool
-        of coMetaRefresh: result.metaRefresh = bit.metaRefresh
-        of coHistory: result.history = bit.bool
+        of coMetaRefresh: metaRefresh = bit.metaRefresh
+        of coHistory: flags.toggleIf(bifHistory, bit.bool)
         of coMarkLinks: result.markLinks = bit.bool
-        of coAskDownloadDir: result.askDownloadDir = bit.bool
+        of coAskDownloadDir: flags.toggleIf(bifAskDownloadDir, bit.bool)
         else: assert false
       of cocStr:
         case e.opt
@@ -1248,50 +1250,10 @@ proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
       cookieJar = pager.cookieJars.addNew(cookieJarId)
     loaderConfig.cookieJar = cookieJar
 
-proc initGotoURL(pager: Pager; ctx: JSContext; request: Request;
-    charset: Charset; referrer: BufferInit; cookie: CookieModeAuto;
-    scripting: ScriptingModeAuto; loaderConfig: var LoaderClientConfig;
-    bufferConfig: var BufferConfig; filterCmd: var Str) =
-  var cookieJarId: Str
-  for i in 0 ..< pager.config{"maxRedirect"}:
-    var ourl: URL
-    bufferConfig = pager.applySiteconf(ctx, request.url, charset, loaderConfig,
-      ourl, cookieJarId, filterCmd)
-    if ourl == nil:
-      break
-    request.url = ourl
-  bufferConfig.scripting = scripting.get(bufferConfig.scripting)
-  let allowHttpFromFile = when NimMajor < 2:
-    pager.config.bits[coAllowHttpFromFile].bool
-  else:
-    pager.config{"allowHttpFromFile"}
-  if allowHttpFromFile and request.url.schemeType in {stFile, stStream}:
-    loaderConfig.allowSchemes.incl(stHttp)
-    loaderConfig.allowSchemes.incl(stHttps)
-  if bufferConfig.scripting != smFalse:
-    loaderConfig.allowSchemes.incl(stXChaCookie)
-  if referrer != nil and referrer.config.refererFrom:
-    var referrerHeader = referrer.url.getReferrer(request.url,
-      referrer.loaderConfig.referrerPolicy)
-    request.setReferrer(referrerHeader.asByteString)
-    bufferConfig.referrer = referrerHeader
-  else:
-    request.unsetReferrer()
-  loaderConfig.cookieMode = cookie.get(loaderConfig.cookieMode)
-  pager.applyCookieJar(loaderConfig, cookieJarId)
-  if request.url.username != "":
-    pager.loader.addAuth(request.url)
-  request.url.password = str("")
-
-proc gotoURL0(pager: Pager; request: Request; save, history: bool;
+proc gotoURL0(pager: Pager; request: Request; flags: set[BufferInitFlag];
     bufferConfig: BufferConfig; loaderConfig: LoaderClientConfig;
     title, contentType: sink Str; redirectDepth: int; url: URL;
     filterCmd: sink Str): BufferInit =
-  var flags: set[BufferInitFlag] = {}
-  if save:
-    flags.incl(bifSave)
-  if history and bufferConfig.history:
-    flags.incl(bifHistory)
   let url = if url != nil: url else: request.url
   let init = pager.initBuffer(bufferConfig, loaderConfig, request,
     url, contentType, filterCmd, title, redirectDepth, flags)
@@ -2559,12 +2521,43 @@ jsClassDef(Pager):
     var loaderConfig: LoaderClientConfig
     var bufferConfig: BufferConfig
     var filterCmd: Str
-    pager.initGotoURL(ctx, request, t.charset, t.referrer.get, t.cookie,
-      t.scripting, loaderConfig, bufferConfig, filterCmd)
-    let init = pager.gotoURL0(request, t.save, t.history, bufferConfig,
-      loaderConfig, t.title, Str(t.contentType), t.redirectDepth, t.url.get,
-      filterCmd)
-    ok(init)
+    var flags: set[BufferInitFlag]
+    var metaRefresh: MetaRefresh
+    var cookieJarId: Str
+    for i in 0 ..< pager.config{"maxRedirect"}:
+      var ourl: URL
+      bufferConfig = pager.applySiteconf(ctx, request.url, t.charset,
+        loaderConfig, ourl, cookieJarId, filterCmd, flags, metaRefresh)
+      if ourl == nil:
+        break
+      request.url = ourl
+    bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
+    if t.save:
+      flags.incl(bifSave)
+    if not t.history:
+      flags.excl(bifHistory)
+    let allowHttpFromFile = when NimMajor < 2:
+      pager.config.bits[coAllowHttpFromFile].bool
+    else:
+      pager.config{"allowHttpFromFile"}
+    if allowHttpFromFile and request.url.schemeType in {stFile, stStream}:
+      loaderConfig.allowSchemes = loaderConfig.allowSchemes + {stHttp, stHttps}
+    if bufferConfig.scripting != smFalse:
+      loaderConfig.allowSchemes.incl(stXChaCookie)
+    if t.referrer != nil and bifRefererFrom in BufferInit(t.referrer).flags:
+      let referrerHeader = BufferInit(t.referrer).url.getReferrer(request.url,
+        BufferInit(t.referrer).loaderConfig.referrerPolicy)
+      request.setReferrer(referrerHeader.asByteString)
+      bufferConfig.referrer = referrerHeader
+    else:
+      request.unsetReferrer()
+    loaderConfig.cookieMode = t.cookie.get(loaderConfig.cookieMode)
+    pager.applyCookieJar(loaderConfig, cookieJarId)
+    if request.url.username != "":
+      pager.loader.addAuth(request.url)
+    request.url.password = str("")
+    ok(pager.gotoURL0(request, flags, bufferConfig, loaderConfig, t.title,
+      Str(t.contentType), t.redirectDepth, t.url.get, filterCmd))
 
   type ExternDict = object of JSDict
     env {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
