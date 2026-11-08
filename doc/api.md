@@ -692,7 +692,7 @@ which public methods are:
 
 `bind(command, key)`
 : Bind a command to the key specified, using the syntax described in
-  [**cha-config**](5)(config.md#keybinding-format)'s Keybinding format
+  [**cha-config**](config.md#keybinding-format)(5)'s *Keybinding format*
   section.
 
   Such keybindings are distinct from the config's `[select]` section in
