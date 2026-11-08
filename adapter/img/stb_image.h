@@ -6576,7 +6576,7 @@ static stbi_uc *stbi__process_gif_raster(stbi__context *s, stbi__gif *g)
 
 // this function is designed to support animated gifs, although stb_image doesn't support it
 // two back is the image from two frames ago, used for a very specific disposal format
-static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, int req_comp, stbi_uc *saved)
+static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, int req_comp, stbi_uc *saved, int *end_seen)
 {
    int dispose, first_frame;
    int x, y, w, h;
@@ -6704,7 +6704,8 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
          }
 
          case 0x3B: // gif stream termination code
-            return (stbi_uc *) s; // using '1' causes warning on some compilers
+            *end_seen = 1;
+            return 0;
 
          default:
             return stbi__errpuc("unknown code", "Corrupt GIF");
@@ -6747,13 +6748,12 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
    memset(g, 0, sizeof(*g));
 
    for (;;) {
-      stbi_uc *pixels = stbi__gif_load_next(s, g, comp, req_comp, saved_pixels);
+      int end_seen = 0;
+      stbi_uc *pixels = stbi__gif_load_next(s, g, comp, req_comp, saved_pixels, &end_seen);
       if (!pixels) {
-         ok = 0;
+         ok = end_seen;
          break;
       }
-      if (pixels == (stbi_uc*)s) // end of animated gif marker
-         break;
 
       *x = g->w;
       *y = g->h;
@@ -6836,6 +6836,7 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
 static void *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, int req_comp, stbi__result_info *ri)
 {
    stbi_uc *u = 0;
+   int end_seen = 0;
    stbi__gif *g = (stbi__gif *) stbi__malloc(sizeof(*g));
    if (!g)
       return stbi__errpuc("outofmem", "Out of memory");
@@ -6844,8 +6845,7 @@ static void *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, int req
 
    STBI_NOTUSED(ri);
 
-   u = stbi__gif_load_next(s, g, comp, req_comp, 0);
-   if (u == (stbi_uc *) s) u = 0;  // end of animated gif marker
+   u = stbi__gif_load_next(s, g, comp, req_comp, 0, &end_seen);
    if (u) {
       *x = g->w;
       *y = g->h;
