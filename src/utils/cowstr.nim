@@ -793,14 +793,15 @@ proc kebabToCamelCase*(s: Str): Str =
   var buf = initGrowbufOfCap(s.len)
   var flip = false
   for c in s:
+    if flip and c notin AsciiLowerAlpha:
+      buf &= '-'
     if c == '-':
       flip = true
-    else:
-      if flip:
-        buf &= c.toUpperAscii()
-      else:
-        buf &= c
+    elif flip:
+      buf &= c.toUpperAscii()
       flip = false
+    else:
+      buf &= c
   if flip:
     buf &= '-'
   buf.toStr()
