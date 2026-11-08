@@ -1566,10 +1566,10 @@ proc addU32(buf: var Growbuf; n: uint32) {.exportc: "cha_Growbuf_$1".} =
 proc addI32(buf: var Growbuf; n: int32) {.exportc: "cha_Growbuf_$1".} =
   buf &= n
 
-proc addU64(buf: var Growbuf; n: uint32) {.exportc: "cha_Growbuf_$1".} =
+proc addU64(buf: var Growbuf; n: uint64) {.exportc: "cha_Growbuf_$1".} =
   buf &= n
 
-proc addI64(buf: var Growbuf; n: int32) {.exportc: "cha_Growbuf_$1".} =
+proc addI64(buf: var Growbuf; n: int64) {.exportc: "cha_Growbuf_$1".} =
   buf &= n
 
 {.pop.} # raises: []
