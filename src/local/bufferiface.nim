@@ -539,7 +539,7 @@ jsClassPublicDef(BufferInit):
   proc title*(init: BufferInit): Str {.jsfget.} =
     if init[].title != "":
       return init[].title
-    return init.url.serialize(excludepassword = true)
+    return init.url.toStr()
 
   proc setTitle(init: BufferInit; title: sink Str) {.jsfset: "title".} =
     init.title = title

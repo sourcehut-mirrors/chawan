@@ -105,7 +105,7 @@ type
 # Forward declarations
 proc parseURL0*(input: openArray[char]; base = URL(nil)): URL
 proc parseURL0*(input: Str; base = URL(nil)): URL
-proc serialize*(url: URL; excludeHash = false; excludePassword = false): Str
+proc serialize*(url: URL; excludeHash = false): Str
 proc serializeip(ipv4: uint32): Str
 proc serializeip(ipv6: array[8, uint16]): Str
 proc host*(url: URL): Str
@@ -1153,7 +1153,7 @@ proc serializeip(ipv6: array[8, uint16]): Str =
   buf &= ']'
   buf.toStr()
 
-proc serialize*(url: URL; excludeHash = false; excludePassword = false): Str =
+proc serialize*(url: URL; excludeHash = false): Str =
   var buf = initGrowbufOfCap(url.scheme.len + url.username.len +
     url.password.len + url.pathname.len + url.search.len + url.hash.len + 3)
   buf &= url.scheme
@@ -1162,7 +1162,7 @@ proc serialize*(url: URL; excludeHash = false; excludePassword = false): Str =
     buf &= "//"
     if url.includesCredentials:
       buf &= url.username
-      if not excludePassword and url.password != "":
+      if url.password != "":
         buf.addM(':', url.password)
       buf &= '@'
     buf &= url.hostname

@@ -1061,9 +1061,7 @@ proc isLink(this: Collection; node: Node): bool =
     element.asElement.attrb(satHref)
 
 proc logException(window: Window; url: URL) =
-  #TODO excludepassword seems pointless?
-  window.console.error(str("Exception in document"),
-    url.serialize(excludepassword = true),
+  window.console.error(str("Exception in document"), url.toStr(),
     window.jsctx.getExceptionMsg())
 
 proc isSameOrigin*(window: Window; origin: Origin): bool =
