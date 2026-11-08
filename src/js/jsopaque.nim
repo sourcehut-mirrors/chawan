@@ -50,6 +50,7 @@ type
     jstPrompt = "prompt"
     jstProtocol = "protocol"
     jstPrototype = "prototype"
+    jstRandomUUID = "randomUUID"
     jstScreen = "screen"
     jstSearch = "search"
     jstSelected = "selected"

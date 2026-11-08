@@ -308,6 +308,19 @@ jsClassRaw(CryptoDef, "Crypto"):
     doAssert window.urandom.readLoop(uv.toOpenArray()).isOk
     return JS_DupValue(ctx, view.value)
 
+  proc randomUUID(crypto: Crypto): DOMString {.jsfunc.} =
+    let window = Window(crypto)
+    var bytes: array[16, uint8]
+    doAssert window.urandom.readLoop(bytes).isOk
+    bytes[6] = (bytes[6] and not 0xF0'u8) or 0x40'u8
+    bytes[8] = (bytes[8] and not 0xC0'u8) or 0x80'u8
+    var buf = initGrowbufOfCap(36)
+    for i, u in bytes:
+      buf.addHexLower(u)
+      if i == 3 or i == 5 or i == 7 or i == 9:
+        buf &= '-'
+    DOMString(buf.toStr())
+
 # Location
 type Location = distinct Window
 
@@ -347,7 +360,7 @@ jsClassRaw(LocationDef, "Location"):
     if window.document != nil:
       window.navigate(location.url)
 
-  proc origin*(location: Location): Str {.jsuffget.} =
+  proc origin(location: Location): Str {.jsuffget.} =
     return location.url.jsOrigin
 
   proc protocol(ctx: JSContext; location: Location): JSValue {.jsuffget.} =
@@ -509,7 +522,7 @@ proc registerAutoInitGetSet(ctx: JSContext; namespace: JSObject;
     return err()
   ok()
 
-proc addNavigatorModule*(ctx: JSContext): Opt[void] =
+proc addNavigatorModule(ctx: JSContext; url: URL): Opt[void] =
   ?ctx.registerClass(NotificationDef)
   ?ctx.registerClass(PermissionStatusDef)
   let ctxOpaque = ctx.getOpaque()
@@ -524,6 +537,10 @@ proc addNavigatorModule*(ctx: JSContext): Opt[void] =
     jstHistory, gstReplaceable)
   ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, CryptoDef,
     jstCrypto, gstReplaceable)
+  if url.schemeType == stData or
+      url.schemeType == stHttp and url.hostname != "localhost":
+    #TODO is secure context (except data)
+    ?ctx.deleteProperty(ctx.getClassProto(CryptoDef.id), jstRandomUUID)
   ?ctx.registerAutoInitGetSet(ctxOpaque.global, globalId, LocationDef,
     jstLocation, gstUnforgeable)
   let navigator = ctx.getClassProto(NavigatorDef.id)
@@ -911,7 +928,7 @@ jsClassDef(Window):
       media: mqlist.toStr()
     )
 
-proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
+proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
   let sname = cstring(name).toStr()
   let url = parseURL0(sname)
@@ -1051,7 +1068,7 @@ proc addWindowModule(ctx: JSContext): JSCode =
   let proto = ?trace(ctx.addWindowProperties())
   ctx.registerGlobalClass(WindowDef, proto.vc)
 
-proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
+proc addCommonModules(ctx: JSContext; window: Window; url: URL): Opt[void] =
   ?ctx.setGlobal(window)
   ?ctx.addEventModule()
   ?ctx.addWindowEvents()
@@ -1061,7 +1078,7 @@ proc addCommonModules(ctx: JSContext; window: Window): Opt[void] =
   JS_SetHostPromiseRejectionTracker(JS_GetRuntime(ctx), rejectionHandler, nil)
   ?ctx.addConsoleModule()
   ?ctx.addStorageModule()
-  ?ctx.addNavigatorModule()
+  ?ctx.addNavigatorModule(url)
   ?ctx.addDOMExceptionModule()
   ?ctx.addDOMRectModule()
   ?ctx.addDOMModule()
@@ -1091,13 +1108,13 @@ proc getConsole(ctx: JSContext): Console {.exportc: "cha_$1".} =
 proc getLoader(ctx: JSContext): FileLoader {.exportc: "cha_$1".} =
   ctx.getGlobal().loader
 
-proc addScripting*(window: Window; ctx: JSContext): Opt[void] =
+proc addScripting(window: Window; ctx: JSContext; url: URL): Opt[void] =
   if window == nil or window.customElements == nil:
     JS_ThrowOutOfMemory(ctx)
     return err()
   let rt = JS_GetRuntime(ctx)
   let ctxOpaque = ctx.getOpaque()
-  ?ctx.addCommonModules(window)
+  ?ctx.addCommonModules(window, url)
   if ctxOpaque != nil:
     JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
     if window.settings.scripting == smApp:
@@ -1149,7 +1166,7 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     importMapsAllowed: true,
     jsctx: ctx
   )
-  if addScripting(window, ctx).isErr:
+  if addScripting(window, ctx, url).isErr:
     console.error("failed to initialize JS")
     console.writeException(ctx)
     quit(1)
@@ -1173,7 +1190,7 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream):
   if window == nil or window.document == nil:
     JS_ThrowOutOfMemory(ctx)
     return Window(nil)
-  if ctx.addCommonModules(window).isErr:
+  if ctx.addCommonModules(window, window.document.url).isErr:
     return Window(nil)
   window
 

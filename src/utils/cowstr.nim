@@ -1516,6 +1516,10 @@ proc addHex*(buf: var Growbuf; u: uint8) =
   buf &= HexCharsUpper[u shr 4]
   buf &= HexCharsUpper[u and 0xF]
 
+proc addHexLower*(buf: var Growbuf; u: uint8) =
+  buf &= HexCharsLower[u shr 4]
+  buf &= HexCharsLower[u and 0xF]
+
 proc addHex*(buf: var Growbuf; c: char) =
   buf.addHex(uint8(c))
 

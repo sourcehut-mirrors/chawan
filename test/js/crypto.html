@@ -3,13 +3,21 @@
 <div id=x>Fail</div>
 <script src=asserts.js></script>
 <script>
-const abuf = new ArrayBuffer(10);
-const view1 = new Int8Array(abuf);
-const view2 = new Int8Array(abuf, 9, 1);
-crypto.getRandomValues(view2);
-assertEquals(view1[0], 0);
-const view3 = new Uint8ClampedArray(abuf, 0, 1);
-assertThrows(() => crypto.getRandomValues(view3), DOMException);
-assertEquals(view1[0], 0);
+{
+	/* getRandomValues */
+	const abuf = new ArrayBuffer(10);
+	const view1 = new Int8Array(abuf);
+	const view2 = new Int8Array(abuf, 9, 1);
+	crypto.getRandomValues(view2);
+	assertEquals(view1[0], 0);
+	const view3 = new Uint8ClampedArray(abuf, 0, 1);
+	assertThrows(() => crypto.getRandomValues(view3), DOMException);
+	assertEquals(view1[0], 0);
+}
+{
+	/* randomUUID */
+	const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
+	assertEquals(uuidRe.test(crypto.randomUUID()), true);
+}
 document.getElementById("x").textContent = "Success";
 </script>
