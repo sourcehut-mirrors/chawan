@@ -2,16 +2,29 @@ unreleased
 
 * support ParentNode#moveBefore
 * support Element#innerText, Element#outerText
+* support URLSearchParams#sort, URLSearchParams#size
+* support crypto.randomUUID
 * add C-@ to line editor for toggling selection
 * remove deprecated external.w3m-cgi-compat option
 * fix infinite loop in tinfl on invalid deflate streams
 * fix chaseccomp compilation on platforms without fcntl syscall
+
+0.5.2 (2026.11.08)
+
 * fix term quit getting stuck on some broken terminals
 * work around a Nim 2.2.14/2.4.0 regression
 * fix a leak in QJS JS_ValueToAtom
 * fix overflow in QJS variable capturing
 * fix key being incorrectly removed in some cases in config
 * fix default omni-rule overriding
+* fix list-style-type disclosure-open/close mixup
+* fix handling of unknown @charset at rules
+* fix a bug in domainToAscii
+* fix non-stylesheet link[title] setting the selected stylesheet's title
+* update stb_image[_write] to latest version
+* fix external QJS ArrayBuffers keeping free_func after detaching
+* work around a distinct codegen bug in old Nim versions
+* fix no-referrer Referrer-Policy with referer-from=false
 
 0.5.1 (2026.10.25)
 * remove non-functional btoa symlink
