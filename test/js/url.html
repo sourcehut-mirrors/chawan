@@ -119,6 +119,7 @@ assertEquals(new URL("", "file:///test?test#test") + "", "file:///test?test");
 assertEquals(new URL("https://xn--bad.example") + "", "https://xn--bad.example/");
 assertEquals(new URL("https://xn--ta.example") + "", "https://xn--ta.example/");
 assertEquals(new URL("https://xn--") + "", "https://xn--/");
+assertEquals(new URL("https://[0:1:0:1:0:1:0:1]") + "", "https://[0:1:0:1:0:1:0:1]/");
 {
 	const x = new URL("file:/test");
 	x.protocol = "abcd";
