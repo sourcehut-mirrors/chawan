@@ -57954,6 +57954,7 @@ void JS_DetachArrayBuffer(JSContext *ctx, JSValueConst obj)
         return;
     if (abuf->free_func)
         abuf->free_func(ctx->rt, abuf->opaque, abuf->data);
+    abuf->free_func = NULL;
     abuf->data = NULL;
     abuf->byte_length = 0;
     abuf->detached = TRUE;
@@ -58090,6 +58091,7 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
                 return res;
         }
         /* neuter the backing buffer */
+        abuf->free_func = NULL;
         abuf->data = NULL;
         abuf->byte_length = 0;
         abuf->detached = TRUE;
