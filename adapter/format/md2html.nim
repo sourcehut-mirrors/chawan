@@ -165,11 +165,11 @@ proc parseInTag(ctx: var ParseInlineContext; line: Str; state: ParseState):
       if s.startsWithScheme(): # link
         ?state.write(initStrM("<A HREF='", s.htmlEscape(), "'>", s, "</A>"))
       else: # tag
-        let s = initStrM('<', s, '>')
-        ?state.write(s)
+        let s2 = initStrM('<', s, '>')
+        ?state.write(s2)
         if PreTags.containsIgnoreCase(s):
           let pi = i + 1
-          i = line.find(s.toOpenArray(), i)
+          i = line.find(s2.toOpenArray(), i)
           if i == -1:
             i = line.high
           else:
