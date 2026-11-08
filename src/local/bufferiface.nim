@@ -397,10 +397,12 @@ proc applyResponse*(init: BufferInit; response: Response;
     cookieJar.setCookie(response.headers.getAllNoComma("Set-Cookie"),
       response.url, init.loaderConfig.cookieMode == cmSave, http = true)
   # set referrer policy, if any
+  let referrerPolicy = response.getReferrerPolicy()
   if init.config.refererFrom:
-    let referrerPolicy = response.getReferrerPolicy()
     init.loaderConfig.referrerPolicy =
       referrerPolicy.get(rpStrictOriginWhenCrossOrigin)
+  elif referrerPolicy.get(rpSameOrigin) == rpNoReferrer:
+    init.loaderConfig.referrerPolicy = rpNoReferrer
   else:
     init.loaderConfig.referrerPolicy = rpSameOrigin
   # setup content type; note that isSome means an override so we skip it
