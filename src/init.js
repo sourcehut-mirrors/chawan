@@ -791,9 +791,10 @@ Pager.prototype.gotoURLHash = function(request, current) {
     /* check if only hash changed */
     const anchor = url.hash.substring(1);
     url.hash = current.url.hash;
-    if (current.url + "" != url + "")
-        return false;
+    let differs = current.url + "" != url + "";
     url.hash = anchor;
+    if (differs)
+        return false;
     current.iface.gotoAnchor(anchor, false, false).then(([x, y, click]) => {
         if (y >= 0) {
             const nc = this.dupeBuffer2(current, url);
