@@ -1041,7 +1041,7 @@ proc parseQuery(input: openArray[char]; n: var int; url: URL; override: bool):
 
 proc parseURLImpl(input: openArray[char]; base, url: URL;
     state: URLState; override: bool): URLState =
-  var n = 0
+  var n = input.skipURLBlanks(0)
   var state = state
   if state == usSchemeStart:
     state = input.parseSchemeStart(n, base, url, override)
@@ -1070,15 +1070,16 @@ proc parseURLImpl(input: openArray[char]; base, url: URL;
 #TODO encoding
 proc parseURL0*(input: openArray[char]; base = URL(nil)): URL =
   let url = jsNew URLObj(port: -1)
-  const NoStrip = AllChars - C0Controls - {' '}
-  var starti = input.find(NoStrip)
-  var endi = input.rfind(NoStrip)
-  if starti < 0:
-    starti = 0
-    endi = -1
-  if input.toOpenArray(starti, endi).parseURLImpl(base, url, usSchemeStart,
-      override = false) == usFail:
-    return URL(nil)
+  if url != nil:
+    const NoStrip = AllChars - C0Controls - {' '}
+    var starti = input.find(NoStrip)
+    var endi = input.rfind(NoStrip)
+    if starti < 0:
+      starti = 0
+      endi = -1
+    if input.toOpenArray(starti, endi).parseURLImpl(base, url, usSchemeStart,
+        override = false) == usFail:
+      return URL(nil)
   return url
 
 proc parseURL0*(input: Str; base = URL(nil)): URL =

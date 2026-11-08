@@ -234,6 +234,10 @@ assertEquals(new URL("https://[0:1:0:1:0:1:0:1]") + "", "https://[0:1:0:1:0:1:0:
 	assertEquals(url + "", "https://example.org/?#");
 	assertEquals(url.search, "");
 	assertEquals(url.hash, "");
+	url.hash = "\t\t\r\n";
+	assertEquals(url.hash, "");
+	url.search = "\t\t";
+	assertEquals(url.search, "");
 }
 document.getElementById("x").textContent = "Success";
 </script>
