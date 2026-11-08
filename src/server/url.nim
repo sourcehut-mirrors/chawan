@@ -1113,9 +1113,9 @@ proc serializeip(ipv4: uint32): Str =
 
 proc findZeroSeq(ipv6: array[8, uint16]): int =
   var maxi = -1
-  var maxn = 0
+  var maxn = 1
   var newi = -1
-  var newn = 1
+  var newn = 0
   for i, n in ipv6:
     if n == 0:
       inc newn
