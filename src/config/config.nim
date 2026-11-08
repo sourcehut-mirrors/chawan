@@ -231,7 +231,7 @@ type
     coDefaultForegroundColor = "defaultForegroundColor"
     coHighlightColor = "highlightColor"
 
-    # string
+    # Str
     coAutoBrowsecap = "autoBrowsecap"
     coAutoMailcap = "autoMailcap"
     coBookmark = "bookmark"
@@ -249,7 +249,7 @@ type
     coUserStyle = "userStyle"
     coVisualHome = "visualHome"
 
-    # seq[string]
+    # seq[Str]
     coCgiDir = "cgiDir"
     coInclude = "include"
     coMailcap = "mailcap"
