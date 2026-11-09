@@ -325,7 +325,7 @@ Trust it?
 <form method=POST>
 <input type=submit name=trust_cert value=always>
 <input type=submit name=trust_cert value=once>
-<input type=hidden name=entry value='""", " sha256 ", theirDigest, ' ',
+<input type=hidden name=entry value='""", host, " sha256 ", theirDigest, ' ',
   uint64(theirTime), "'>\n</form>\n"))
   of ccrNewExpiration:
     discard os.writeLoop(initStrM("""
