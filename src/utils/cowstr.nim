@@ -279,8 +279,8 @@ proc initStr*(s: openArray[char]): Str =
 proc toStr*(s: cstring): Str =
   initStr(s, s.len)
 
-proc str*(s: cstring): Str =
-  initStrLit(s, s.len)
+template str*(s: static string): Str =
+  initStrLit(cstring(s), s.len)
 
 macro addM*(buf: var Growbuf; ss: varargs[typed]) =
   # fmt format: like printf, but uses DLE (data link escape) instead of %
@@ -294,8 +294,15 @@ macro addM*(buf: var Growbuf; ss: varargs[typed]) =
   for it in ss:
     case it.kind
     of nnkCharLit:
-      fmt &= char(it.intVal)
+      let c = char(it.intVal)
+      if c in {'\x00', '\x10'}:
+        fmt &= "\x10c"
+        args.add(it)
+      else:
+        fmt &= c
     of nnkStrLit, nnkTripleStrLit:
+      if {'\x00', '\x10'} in it.strVal:
+        error("NUL or DLE in string (pass it as str() instead)")
       fmt &= it.strVal
     else:
       let typ = it.getTypeInst()

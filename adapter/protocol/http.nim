@@ -136,7 +136,7 @@ proc die(s: Str) {.noreturn.} =
   discard chaStderr.writeLine(str("newhttp: "), s)
   quit(1)
 
-template die(s: static cstring) =
+template die(s: static string) =
   die(str(s))
 
 proc inflate(op: HTTPHandle; flag: uint32) =

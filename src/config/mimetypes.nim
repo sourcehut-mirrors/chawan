@@ -93,7 +93,8 @@ proc guessDefaultContentType*(path: Str;
   if ext.len > 0:
     let i = DefaultGuess.binarySearch(ext, cmpMimeType)
     if i >= 0:
-      return str(DefaultGuess[i].name)
+      let cs = DefaultGuess[i].name
+      return initStrLit(cs, cs.len)
   return fallback
 
 proc guessContentType*(mimeTypes: MimeTypes; path: Str;

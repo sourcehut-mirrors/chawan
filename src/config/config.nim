@@ -1144,7 +1144,7 @@ template err(cp: var ConfigParser; msg: Str): untyped =
   cp.setError(msg)
   err()
 
-template err(cp: var ConfigParser; msg: static cstring): untyped =
+template err(cp: var ConfigParser; msg: static string): untyped =
   cp.setError(str(msg))
   err()
 

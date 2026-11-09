@@ -74,7 +74,8 @@ const ErrorMessages* = [
 
 proc getLoaderErrorMessage*(code: int): Str =
   if code in int(ConnectionError.low)..int(ConnectionError.high):
-    return str(ErrorMessages[ConnectionError(code)])
+    let cs = ErrorMessages[ConnectionError(code)]
+    return initStrLit(cs, cs.len)
   return initStrM("unexpected error code ", code)
 
 {.pop.} # raises: []

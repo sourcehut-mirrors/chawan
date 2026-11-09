@@ -171,7 +171,7 @@ proc sendSocks5Domain(ps: PosixStream; host, port: Str; outIp: var Str):
     return errCGIError(ceInternalError, "wrong port")
   let port = x.get
   block:
-    let sbuf = initGrowbufM("\x05\x01\x00\x03", char(host.len), host,
+    let sbuf = initGrowbufM(str("\x05\x01\x00\x03"), char(host.len), host,
       char(port shr 8), char(port and 0xFF))
     if ps.writeLoop(sbuf.toOpenArray()).isErr:
       return errCGIError(ceProxyRefusedToConnect)

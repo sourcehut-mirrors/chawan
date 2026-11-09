@@ -69,7 +69,7 @@ proc die(s: Str) {.noreturn.} =
   discard chaStderr.writeLine(initStrM("cha: ", s))
   quit(1)
 
-template die(s: cstring) =
+template die(s: static string) =
   die(str(s))
 
 proc help(i: int) {.noreturn.} =
