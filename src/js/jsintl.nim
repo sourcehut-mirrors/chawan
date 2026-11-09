@@ -82,6 +82,7 @@ type
   NumberFormat = JSRef[NumberFormatObj]
 
   PluralRulesObj = object
+    minimumFractionDigits: uint8
 
   PluralRules = JSRef[PluralRulesObj]
 
@@ -98,7 +99,8 @@ type
   ListFormat = JSRef[ListFormatObj]
 
 # Intl
-proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
+proc canonicalizeLocales(ctx: JSContext; val: JSValueConst; filter: bool):
+    JSValue =
   if JS_IsUndefined(val):
     return JS_NewArray(ctx)
   #TODO InitializedLocale, actually validate locales, dedup
@@ -106,7 +108,7 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
   let len = ctx.toIntIndex(lengthVal.toJSValue())
   if len < 0:
     return JS_EXCEPTION
-  var tags: seq[DOMString]
+  var tags: seq[Str]
   for k in 0 ..< len:
     let prop = ?JS_NewAtomUInt32(ctx, uint32(k))
     let has = JS_HasProperty(ctx, val, prop)
@@ -117,17 +119,18 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst): JSValue =
       if not JS_IsString(locale) and not JS_IsObject(locale):
         return JS_ThrowTypeError(ctx, "unexpected locale type")
       #TODO InitializedLocale
-      var tag: DOMString
+      var tag: Str
       ?ctx.fromJSFree(locale.toJSValue(), tag)
       #TODO validate
-      if tag notin tags:
+      if tag notin tags and
+          (not filter or tag == "en" or tag.startsWith("en")):
         tags.add(tag)
   ctx.toJS(tags)
 
 jsNamespaceDef(Intl):
   proc getCanonicalLocales(ctx: JSContext; val: JSValueConst): JSValue {.
       jsstfunc.} =
-    ctx.canonicalizeLocales(val)
+    ctx.canonicalizeLocales(val, filter = false)
 
 # Collator
 jsClassDef(Collator):
@@ -281,10 +284,9 @@ jsClassDef(NumberFormat):
     of nsCurrency: discard #TODO?
     buf.toStr()
 
-  proc supportedLocalesOf(ctx: JSContext; locales: JSValueConst;
-      options = JS_UNDEFINED.vc): JSValue {.jsstfunc.} =
-    #TODO
-    return ctx.getCanonicalLocales(locales)
+  proc supportedLocalesOfNF(ctx: JSContext; locales = JS_UNDEFINED.vc;
+      options = JS_UNDEFINED.vc): JSValue {.jsstfunc: "supportedLocalesOf".} =
+    return ctx.canonicalizeLocales(locales, filter = true)
 
 # DateTimeFormat
 jsClassDef(DateTimeFormat):
@@ -296,8 +298,18 @@ jsClassDef(DateTimeFormat):
 
 # PluralRules
 jsClassDef(PluralRules):
-  proc newPluralRules(): PluralRules {.jsctor.} =
-    jsNew PluralRulesObj()
+  proc newPluralRules(ctx: JSContext; ctor: JSValueConst;
+      label = str(""); options = JS_UNDEFINED.vc): JSValue {.jsctor2.} =
+    #TODO
+    let obj = jsNew PluralRulesObj()
+    if obj != nil:
+      var minimumFractionDigits: float64
+      discard ?ctx.fromJSGetProp(options, "minimumFractionDigits",
+        minimumFractionDigits)
+      if minimumFractionDigits < 0 or not (minimumFractionDigits <= 100):
+        return JS_ThrowRangeError(ctx, "invalid digits value")
+      obj.minimumFractionDigits = uint8(minimumFractionDigits)
+    ctx.toJSNew(obj, ctor)
 
   proc resolvedOptions(ctx: JSContext; this: PluralRules): JSValue {.jsfunc.} =
     let obj = ?ctx.newObject()
@@ -305,9 +317,13 @@ jsClassDef(PluralRules):
     obj.toJSValue()
 
   proc select(this: PluralRules; num: float64): Str {.jsfunc.} =
-    if num == 1:
+    if this.minimumFractionDigits == 0 and num == 1:
       return str("one")
-    return str("many")
+    return str("other")
+
+  proc supportedLocalesOfPR(ctx: JSContext; locales = JS_UNDEFINED.vc;
+      options = JS_UNDEFINED.vc): JSValue {.jsstfunc: "supportedLocalesOf".} =
+    return ctx.canonicalizeLocales(locales, filter = true)
 
 # RelativeTimeFormat
 jsClassDef(RelativeTimeFormat):

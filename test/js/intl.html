@@ -7,8 +7,6 @@ const desc = Object.getOwnPropertyDescriptor(window, "Intl");
 assert(desc.configurable);
 assert(desc.writable);
 assert(!desc.enumerable);
-assertEquals(new Intl.PluralRules().resolvedOptions().locale, "en-US");
-assertThrows(() => Intl.PluralRules(), TypeError);
 {
 	/* NumberFormat */
 	assertEquals(Intl.NumberFormat().format("1"), "1");
@@ -22,6 +20,14 @@ assertThrows(() => Intl.PluralRules(), TypeError);
 	const coll = new Intl.Collator("en");
 	assertEquals(coll.compare("a", "a"), 0);
 	assertEquals(coll.compare("\uDC00", "\uDFFF"), -1);
+}
+{
+	/* PluralRules */
+	assertEquals(new Intl.PluralRules().resolvedOptions().locale, "en-US");
+	assertThrows(() => Intl.PluralRules(), TypeError);
+	assertEquals(new Intl.PluralRules(`en`, {
+		minimumFractionDigits: 2
+	}).select(1), "other");
 }
 document.getElementById("x").textContent = "Success";
 </script>
