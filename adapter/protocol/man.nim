@@ -138,7 +138,7 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: Str): Opt[void] =
     var wstatus: cint
     discard wait(addr wstatus)
     if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
-      cgiDie(ceFileNotFound, $efile.readErrorMsg(line))
+      cgiDie(ceFileNotFound, efile.readErrorMsg(line))
   # skip formatting of line 0, like w3mman does
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
@@ -307,7 +307,7 @@ proc doKeyword(man, keyword, section: Str): Opt[void] =
     var wstatus = cint(0)
     if wait(addr wstatus) >= 0 and not WIFEXITED(wstatus) or
         WEXITSTATUS(wstatus) != 0:
-      cgiDie(ceFileNotFound, $efile.readErrorMsg(line))
+      cgiDie(ceFileNotFound, efile.readErrorMsg(line))
   ?chaStdout.write("Content-Type: text/html\n\n")
   ?chaStdout.write(initStrM("<title>man", sectionOpt, " -k ", keyword,
     "</title>\n"))
@@ -332,8 +332,8 @@ proc doKeyword(man, keyword, section: Str): Opt[void] =
       i = line.skipBlanks(i + 1)
     # collect section
     if line[i] != '(':
-      discard cast[ChaFile](chaStderr).writeLine("Error parsing line! " &
-        $line)
+      discard cast[ChaFile](chaStderr).writeLine(str("Error parsing line! "),
+        line)
       quit(1)
     let sectionText = line.substr(i, line.find(')', i))
     i += sectionText.len

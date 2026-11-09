@@ -31,15 +31,16 @@ proc sendCommand(f: AChaFile; cmd, param: Str; outs: var Str): Opt[int32] =
       break
   ok(status)
 
-proc sdie(status: int; s, obuf: string) {.noreturn.} =
-  discard chaStdout.write("Status: " & $status &
-    "\nContent-Type: text/html\n\n" & """
-<h1>""" & s & """</h1>
+proc sdie(status: int; s: cstring; obuf: Str) {.noreturn.} =
+  discard chaStdout.write(initStrM("Status: ", status, '\n',
+    "Content-Type: text/html\n",
+    '\n',
+    "<h1>", s, """</h1>
 
 The server has returned the following message:
 
 <plaintext>
-""" & obuf)
+""", obuf))
   quit(1)
 
 const Success = 200 .. 299
@@ -86,14 +87,14 @@ proc passiveMode(f: AChaFile; host: Str; ipv6: bool): PosixStream =
 proc login(f: AChaFile; username, password: Str): Opt[void] =
   var obuf: Str
   if f.sendCommand(str(""), str(""), obuf).get(-1) != 220:
-    cgiDie(ceConnectionRefused, $obuf.deleteChars({'\n', '\r'}))
+    cgiDie(ceConnectionRefused, obuf.deleteChars({'\n', '\r'}))
   var ustatus = f.sendCommand(str("USER"), username, obuf).get(-1)
   if ustatus == 331:
     ustatus = f.sendCommand(str("PASS"), password, obuf).get(-1)
   if ustatus in Success:
     discard # no need for pass
   else:
-    sdie(401, "Unauthorized", $obuf)
+    sdie(401, "Unauthorized", obuf)
   discard ?f.sendCommand(str("TYPE"), str("I"), obuf) # request raw data
   ok()
 
@@ -128,7 +129,7 @@ proc retrieve(f: AChaFile; path, host: Str; ipv6: bool): Opt[void] =
   var obuf: Str
   if f.sendCommand(str("RETR"), path, obuf).get(550) == 550:
     passive.sclose()
-    sdie(404, "Not found", $obuf)
+    sdie(404, "Not found", obuf)
   ?chaStdout.writeLine()
   passive.cat()
 

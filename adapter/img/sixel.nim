@@ -32,13 +32,13 @@ import css/color
 
 import ../protocol/lcgi
 
-proc puts(os: PosixStream; s: string) =
+proc puts(os: PosixStream; s: Growbuf) =
   doAssert os.writeLoop(s).isOk
 
 const DCS = "\eP"
 const ST = "\e\\"
 
-proc putU32BE(s: var string; n: uint32) =
+proc putU32BE(s: var Growbuf; n: uint32) =
   s &= char((n shr 24) and 0xFF)
   s &= char((n shr 16) and 0xFF)
   s &= char((n shr 8) and 0xFF)
@@ -183,7 +183,7 @@ proc flatten(children: NodeChildren; cols: var seq[Node]) =
       else:
         node.u.children.flatten(cols)
 
-proc flatten(root: NodeChildren; outs: var string; palette: uint): seq[Node] =
+proc flatten(root: NodeChildren; outs: var Growbuf; palette: uint): seq[Node] =
   var cols = newSeqOfCap[Node](palette)
   root.flatten(cols)
   # try to set the most common colors as the smallest numbers (so we write less)
@@ -192,7 +192,7 @@ proc flatten(root: NodeChildren; outs: var string; palette: uint): seq[Node] =
   for n, it in cols:
     let c = it.u.leaf.c
     # 2 is RGB
-    outs &= '#' & $n & ";2;" & $c.r & ';' & $c.g & ';' & $c.b
+    outs.addM('#', n, ";2;", c.r, ';', c.g, ';', c.b)
     it.idx = n
   return cols
 
@@ -318,29 +318,27 @@ type
     # (yes, this *is* faster than a seq.)
     next: ptr SixelChunk
 
-proc compressSixel(outs: var string; band: SixelBand) =
+proc compressSixel(outs: var Growbuf; band: SixelBand) =
   var x = 0
   var chunk = band.head
   while chunk != nil:
-    outs &= '#' & $chunk.c
+    outs.addM('#', chunk.c)
     var n = chunk.x - x
     var c = '?'
     for u in chunk.data:
       let cc = char(u + 0x3F)
       if c != cc:
         if n > 3:
-          outs &= '!' & $n & c
+          outs.addM('!', n, c)
         else:
-          for i in 0 ..< n:
-            outs &= c
+          outs.setLenFill(outs.len + n, c)
         c = cc
         n = 0
       inc n
     if n > 3:
-      outs &= '!' & $n & c
+      outs.addM('!', n, c)
     else:
-      for i in 0 ..< n:
-        outs &= c
+      outs.setLenFill(outs.len + n, c)
     x = chunk.x + chunk.data.len
     let next = chunk.next
     chunk.next = nil
@@ -369,21 +367,22 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
   var transparent = false
   var root = img.quantize(palette, transparent)
   # prelude
-  var outs = "Cha-Image-Sixel-Transparent: " & $int(transparent) & "\n"
-  outs &= "Cha-Image-Sixel-Prelude-Len: "
   const PreludePad = "666 666 666"
+  var outs = initGrowbufM("Cha-Image-Sixel-Transparent: ", int(transparent),
+    '\n',
+    "Cha-Image-Sixel-Prelude-Len: ")
   let preludeLenPos = outs.len
-  outs &= PreludePad & "\n\n"
+  outs.addM(static(PreludePad), "\n\n")
   let dcsPos = outs.len
   outs &= DCS
   if transparent:
     outs &= "0;1" # P2=1 -> image has transparency
   outs &= 'q'
   # set raster attributes
-  outs &= "\"1;1;" & $width & ';' & $height
+  outs.addM("\"1;1;", width, ';', height)
   let nodes = root.flatten(outs, palette)
   # prepend prelude size
-  var ps = $(outs.len - dcsPos)
+  var ps = initGrowbufM(outs.len - dcsPos)
   while ps.len < PreludePad.len:
     ps &= ' '
   for i, c in ps:
@@ -391,7 +390,7 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
   let L = width * height
   let realw = cropw - offx
   var n = offy * width
-  var ymap = ""
+  var ymap = initGrowbuf()
   var totalLen = 0u32
   # add +2 so we don't have to bounds check
   var dither = Dither(

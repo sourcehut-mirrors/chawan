@@ -300,8 +300,8 @@ proc main() =
       r.assert(r.sread(height))
     do:
       quit(1)
-    if os.writeLoop("Cha-Image-Dimensions: " & $width & "x" & $height &
-        "\n\n").isErr:
+    if os.writeLoop(initStrM("Cha-Image-Dimensions: ", width, 'x', height,
+        "\n\n")).isErr:
       quit(1)
     let bmp = newBitmap(width, height)
     var alive = true

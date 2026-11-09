@@ -6,8 +6,9 @@ import std/posix
 
 import lcgi_ssl
 
-proc sdie(s: string) =
-  if chaStdout.write("Cha-Control: ConnectionError 5 " & s & ": ").isOk:
+proc sdie(s: cstring) =
+  if chaStdout.write(initStrM("Cha-Control: ConnectionError 5 ", s, ": "))
+      .isOk:
     ERR_print_errors_fp(chaStdout)
   quit(1)
 
@@ -169,7 +170,8 @@ proc checkCert(os: PosixStream; ssl: ptr SSL; host, port: Str;
     tmpEntry)
 
 proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: Str) =
-  var buffer = newString(4096)
+  var buffer = initGrowbuf()
+  buffer.setLen(4096)
   var n = 0
   while n < buffer.len:
     let m = SSL_read(ssl, addr buffer[n], cint(buffer.len - n))
@@ -185,7 +187,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: Str) =
     if m <= 0:
       break
     n += m
-  let i = buffer.find("\r\n")
+  let i = buffer.toOpenArray().find("\r\n")
   if i == -1:
     cgiDie(ceInvalidResponse, "invalid status line")
   var meta = buffer.substr(3, i - 1)
@@ -208,8 +210,8 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: Str) =
   of '2': # success
     # META is the content type.
     if meta == "":
-      meta = "text/gemini"
-    discard os.writeLoop("Content-Type: " & meta & "\n\n")
+      meta = str("text/gemini")
+    discard os.writeLoop(initStrM("Content-Type: ", meta, "\n\n"))
     discard os.writeLoop(buffer.toOpenArray(i + 2, n - 1))
     while true:
       let n = SSL_read(ssl, addr buffer[0], cint(buffer.len))
@@ -222,7 +224,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: Str) =
     # Using an HTTP permanent redirect would send another POST and
     # break redirection after form submission (search), so we send
     # See Other.
-    discard os.writeLoop("Status: 303\nLocation: " & meta & "\n\n")
+    discard os.writeLoop(initStrM("Status: 303\nLocation: ", meta, "\n\n"))
   of '4': # temporary failure
     # META is additional information.
     let tmp = case status1

@@ -382,11 +382,15 @@ proc namedRGBColor*(s: openArray[char]): Opt[RGBColor] =
     return ok(RGBColor(ColorsRGBMap[i][1]))
   return err()
 
-proc toStr*(c: RGBColor): Str =
-  var buf = initGrowbuf("#")
+proc add*(buf: var Growbuf; c: RGBColor) =
+  buf &= '#'
   buf.addHex(c.r)
   buf.addHex(c.g)
   buf.addHex(c.b)
+
+proc toStr*(c: RGBColor): Str =
+  var buf = initGrowbuf()
+  buf &= c
   buf.toStr()
 
 proc `$`*(c: RGBColor): string =

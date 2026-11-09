@@ -197,6 +197,10 @@ proc append(ctx: var ParseInlineContext; s: openArray[char];
     ?state.write(s)
   ok()
 
+proc append(ctx: var ParseInlineContext; s: Str; state: ParseState):
+    Opt[void] =
+  ctx.append(s.toOpenArray(), state)
+
 proc append(ctx: var ParseInlineContext; c: char; state: ParseState):
     Opt[void] =
   if ctx.bs == bsInBracket:
@@ -212,7 +216,7 @@ proc parseComment(ctx: var ParseInlineContext; line: Str; state: ParseState):
     Opt[void] =
   var i = ctx.i
   var cs = csNone
-  var buf = ""
+  var buf = initGrowbuf()
   while i < line.len:
     let c = line[i]
     if cs in {csNone, csDash} and c == '-':
@@ -224,7 +228,7 @@ proc parseComment(ctx: var ParseInlineContext; line: Str; state: ParseState):
       cs = csNone
     buf &= c
     inc i
-  ?ctx.append(buf, state)
+  ?ctx.append(buf.toOpenArray(), state)
   ctx.i = i
   ok()
 
@@ -234,7 +238,7 @@ proc parseCode(ctx: var ParseInlineContext; line: Str; state: ParseState):
   let j = line.find('`', i)
   if j >= 0:
     ?ctx.append("<CODE>", state)
-    ?ctx.append($line.toOpenArray(i, j - 1).htmlEscape(), state)
+    ?ctx.append(line.toOpenArray(i, j - 1).htmlEscape(), state)
     ?ctx.append("</CODE>", state)
     ctx.i = j
   else:
@@ -301,9 +305,11 @@ proc parseLinkBail(ctx: var ParseInlineContext; i: int; state: ParseState):
 
 proc parseLinkWrite(ctx: ParseInlineContext; url, title: Str;
     state: ParseState): Opt[void] =
-  ?state.write("<A HREF='" & $url.htmlEscape())
+  ?state.write("<A HREF='")
+  ?state.write(url.htmlEscape())
   if title != "":
-    ?state.write("' TITLE='" & $title.htmlEscape())
+    ?state.write("' TITLE='")
+    ?state.write(title.htmlEscape())
   return state.write(initStrM("'>", ctx.bracketChars, "</A>"))
 
 proc parseLink(ctx: var ParseInlineContext; line: Str;
@@ -374,11 +380,11 @@ proc parseImageAlt(text: var Growbuf; line: Str; i: int): int =
 
 proc parseImageWrite(ctx: var ParseInlineContext; link, title, alt: Str;
     state: ParseState): Opt[void] =
-  ?ctx.append("<IMG SRC='" & $link.htmlEscape(), state)
+  ?ctx.append(initStrM("<IMG SRC='", link.htmlEscape()), state)
   if title != "":
-    ?ctx.append("' TITLE='" & $title.htmlEscape(), state)
+    ?ctx.append(initStrM("' TITLE='", title.htmlEscape()), state)
   if alt != "":
-    ?ctx.append("' ALT='" & $alt.htmlEscape(), state)
+    ?ctx.append(initStrM("' ALT='", alt.htmlEscape()), state)
   return ctx.append("'>", state)
 
 proc parseImage(ctx: var ParseInlineContext; line: Str;
@@ -544,7 +550,7 @@ proc pushList(state: var ParseState; desc: ListItemDesc): Opt[void] =
     if desc.start == 1:
       ?state.write("<OL>\n<LI>")
     else:
-      ?state.write("<OL start=" & $desc.start & ">\n<LI>")
+      ?state.write(initStrM("<OL start=", desc.start, ">\n<LI>"))
   of ltUl: ?state.write("<UL>\n<LI>")
   of ltNoMark: assert false
   state.lists.add(List(t: desc.t, depth: desc.depth))
@@ -563,7 +569,7 @@ proc writeHeading(state: var ParseState; n: int; text: Str): Opt[void] =
   ?state.write(initStrM("<H", n, " id='", id, "'><A HREF='#", id,
     "' CLASS=heading>", '#'.repeat(n), "</A> "))
   ?state.parseInline(text)
-  ?state.writeLine("</H" & $n & '>')
+  ?state.writeLine(initStrM("</H", n, '>'))
   ok()
 
 const ThematicBreakChars = {'-', '*', '_'}
@@ -1030,7 +1036,7 @@ proc parseTabPre(state: var ParseState; line: Str): Opt[void] =
     while state.numBlockLines > 0:
       ?state.writeLine()
       dec state.numBlockLines
-    ?state.writeLine($line.toOpenArray(1, line.high).htmlEscape())
+    ?state.writeLine(line.toOpenArray(1, line.high).htmlEscape())
   ok()
 
 proc parseSpacePre(state: var ParseState; line: Str): Opt[void] =
@@ -1045,7 +1051,7 @@ proc parseSpacePre(state: var ParseState; line: Str): Opt[void] =
     while state.numBlockLines > 0:
       ?state.writeLine()
       dec state.numBlockLines
-    ?state.writeLine($line.toOpenArray(4, line.high).htmlEscape())
+    ?state.writeLine(line.toOpenArray(4, line.high).htmlEscape())
   ok()
 
 proc parseBlockquote(state: var ParseState; line: Str): Opt[void] =

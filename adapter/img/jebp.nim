@@ -65,9 +65,8 @@ proc writeAll(data: pointer; size: int) =
     assert i >= 0
     n += i
 
-proc puts(s: string) =
-  if s.len > 0:
-    writeAll(unsafeAddr s[0], s.len)
+proc puts(s: Str) =
+  writeAll(s.toCString(), s.len)
 
 proc main() =
   enterNetworkSandbox()
@@ -85,8 +84,8 @@ proc main() =
     if infoOnly:
       let res = jebp_read_size_from_callbacks(addr image, addr cb, nil)
       if res == 0:
-        puts("Cha-Image-Dimensions: " & $image.width & "x" & $image.height &
-          "\n\n")
+        puts(initStrM("Cha-Image-Dimensions: ", image.width, 'x', image.height,
+          "\n\n"))
         quit(0)
       else:
         cgiDie(ceInternalError, jebp_error_string(res))
@@ -94,8 +93,8 @@ proc main() =
     if res != 0:
       cgiDie(ceInternalError, jebp_error_string(res))
     else:
-      puts("Cha-Image-Dimensions: " & $image.width & "x" & $image.height &
-        "\n\n")
+      puts(initStrM("Cha-Image-Dimensions: ", image.width, 'x', image.height,
+        "\n\n"))
       writeAll(image.pixels, image.width * image.height * 4)
       jebp_free_image(addr image)
   else:

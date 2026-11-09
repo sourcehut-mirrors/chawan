@@ -172,6 +172,9 @@ proc puts(state: var State; s: openArray[char]) {.inline.} =
 proc puts(state: var State; s: Str) {.inline.} =
   state.puts(s.toOpenArray())
 
+proc puts(state: var State; s: Growbuf) {.inline.} =
+  state.puts(s.toOpenArray())
+
 proc flushFmt(state: var State) =
   if state.pendingFmt != state.currentFmt:
     if state.spanOpen:
@@ -183,30 +186,30 @@ proc flushFmt(state: var State) =
     state.spanOpen = true
     state.puts("<span style='")
     let fmt = state.pendingFmt
-    var buf = ""
+    var buf = initGrowbuf()
     if fmt.fgcolor.t != ctNone:
       buf &= "color:"
       case fmt.fgcolor.t
       of ctNone: discard
-      of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.fgcolor.ansi) & ")"
-      of ctRGB: buf &= $fmt.fgcolor.rgb
-      buf &= ";"
+      of ctANSI: buf.addM("-cha-ansi(", uint8(fmt.fgcolor.ansi), ')')
+      of ctRGB: buf &= fmt.fgcolor.rgb
+      buf &= ';'
     if fmt.bgcolor.t != ctNone:
       buf &= "background-color:"
       case fmt.bgcolor.t
       of ctNone: discard
-      of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.bgcolor.ansi) & ")"
-      of ctRGB: buf &= $fmt.bgcolor.rgb
-      buf &= ";"
+      of ctANSI: buf.addM("-cha-ansi(", uint8(fmt.bgcolor.ansi), ')')
+      of ctRGB: buf &= fmt.bgcolor.rgb
+      buf &= ';'
     const Decoration = {ffOverline, ffUnderline, ffStrike, ffBlink, ffReverse}
     if Decoration * fmt.flags != {}:
       buf &= "text-decoration:"
       for flag in [ffOverline, ffUnderline, ffStrike, ffBlink, ffReverse]:
         if flag in fmt.flags:
-          buf &= $flag & ' '
+          buf.addM(flag, ' ')
       if buf[^1] != ' ':
         buf.setLen(buf.high)
-      buf &= ";"
+      buf &= ';'
     if ffBold in fmt.flags:
       buf &= "font-weight:bold;"
     if ffItalic in fmt.flags:

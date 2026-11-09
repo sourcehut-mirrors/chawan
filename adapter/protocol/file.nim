@@ -38,11 +38,11 @@ proc loadDir(path, opath: Str): Opt[void] =
         line &= c
       else:
         line &= '-'
-    line &= ' ' & $stats.st_nlink & ' '
-    line &= $stats.st_uid & ' ' # owner (currently unused in dirlist2html)
-    line &= $stats.st_gid & ' ' # group (ditto)
-    line &= $stats.st_size & ' '
-    line.addM(formatUnixSeconds(int64(stats.st_mtime), "%b %d %Y"), ' ', file)
+    line.addM(' ', uint64(stats.st_nlink), ' ',
+      uint64(stats.st_uid), ' ', # owner (currently unused in dirlist2html)
+      uint64(stats.st_gid), ' ', # group (ditto)
+      uint64(stats.st_size), ' ',
+      formatUnixSeconds(int64(stats.st_mtime), "%b %d %Y"), ' ', file)
     if S_ISLNK(stats.st_mode):
       let len = int(stats.st_size)
       let target = readLink(fullpath)
@@ -55,14 +55,10 @@ proc loadDir(path, opath: Str): Opt[void] =
 
 proc loadFile(os, ps: PosixStream; stats: Stat) =
   const BufferSize = 16384
-  var buffer {.noinit.}: array[BufferSize, char]
-  let s = "Content-Length: " & $stats.st_size & "\n"
-  var start = 0
-  for c in s:
-    buffer[start] = c
-    inc start
-  buffer[start] = '\n'
-  inc start
+  var buffer = initGrowbufOfCap(BufferSize)
+  buffer.addM("Content-Length: ", uint64(stats.st_size), "\n\n")
+  var start = buffer.len
+  buffer.setLenUninit(BufferSize)
   while true:
     let n = ps.read(buffer.toOpenArray(start, buffer.high))
     if n <= 0:

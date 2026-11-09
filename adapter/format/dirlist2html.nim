@@ -77,11 +77,10 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]): Opt[void] =
     i = line.skipTillSpace(i)
     # size
     i = line.skipBlanks(i)
-    var sizes = ""
+    let sizesStart = i
     while i < line.len and line[i] in AsciiDigit:
-      sizes &= line[i]
       inc i
-    let nsize = parseInt64(sizes).get(-1)
+    let nsize = parseInt64(line.toOpenArray(sizesStart, i - 1)).get(-1)
     # date
     i = line.skipBlanks(i)
     let datestarti = i

@@ -1113,6 +1113,9 @@ proc btoa*(s: var Growbuf; data: openArray[uint8]) =
       s &= '='
     s &= '='
 
+proc btoa*(s: var Growbuf; data: openArray[char]) =
+  s.btoa(data.toOpenArrayByte(0, data.high))
+
 proc btoa*(data: openArray[uint8]): Str =
   if data.len == 0:
     return str("")

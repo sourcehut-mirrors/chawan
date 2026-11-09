@@ -28,15 +28,16 @@ type
   CGIResult*[T] = Result[T, CGIError]
 
 proc cgiDie*(code: ConnectionError; s: cstring = nil) {.noreturn.} =
-  discard chaStdout.write("Cha-Control: ConnectionError " & $int(code))
+  discard chaStdout.write(initStrM("Cha-Control: ConnectionError ", int(code)))
   if s != nil and s[0] != '\0':
     discard chaStdout.write(' ')
     discard chaStdout.writecstr(s)
   discard chaStdout.writeLine()
   quit(1)
 
-proc cgiDie*(code: ConnectionError; s: string) {.noreturn.} =
-  discard chaStdout.write("Cha-Control: ConnectionError " & $int(code) & ' ')
+proc cgiDie*(code: ConnectionError; s: Str) {.noreturn.} =
+  discard chaStdout.write(initStrM("Cha-Control: ConnectionError ", int(code),
+    ' '))
   discard chaStdout.writeLine(s)
   quit(1)
 
@@ -189,7 +190,7 @@ proc sendSocks5Domain(ps: PosixStream; host, port: Str; outIp: var Str):
     for i, num in ipv4:
       if i > 0:
         ip &= '.'
-      ip &= $num
+      ip &= num
   of 0x03:
     var len = [0u8]
     if ps.readLoop(len).isErr:
@@ -249,12 +250,12 @@ proc connectHTTPSocket(host, port, proxyHost, proxyPort,
     "Host: ", host, ':', port, "\r\n")
   if proxyUser != "" or proxyPass != "":
     buf &= "Proxy-Authorization: Basic "
-    buf &= btoa($proxyUser & ':' & $proxyPass)
+    buf.btoa(initStrM(proxyUser, ':', proxyPass).toOpenArray())
     buf &= "\r\n"
   buf &= "\r\n"
   if ps.writeLoop(buf.toOpenArray()).isErr:
     return errCGIError(ceProxyRefusedToConnect)
-  var res = ""
+  var res = initGrowbuf()
   var crlfState = 0
   while crlfState < 4:
     var buf = [char(0)]

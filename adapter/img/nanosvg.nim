@@ -57,8 +57,8 @@ proc main() =
       cgiDie(ceInternalError, "decoding failed")
     let width = cint(image.width)
     let height = cint(image.height)
-    discard os.writeLoop("Cha-Image-Dimensions: " & $width & 'x' & $height &
-      "\n\n")
+    discard os.writeLoop(initStrM("Cha-Image-Dimensions: ", width, 'x', height,
+      "\n\n"))
     for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":

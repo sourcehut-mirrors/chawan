@@ -254,12 +254,11 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
         buf &= "----------"
       buf &= " 0 0 0 "
       if (attrs.flags and LIBSSH2_SFTP_ATTR_SIZE) != 0:
-        buf &= $attrs.filesize
+        buf &= attrs.filesize
       buf &= ' '
       if (attrs.flags and LIBSSH2_SFTP_ATTR_ACMODTIME) != 0:
         buf &= formatUnixSeconds(int64(attrs.mtime), "%b %d %Y")
-      buf &= ' '
-      buf &= name
+      buf.addM(' ', name)
     if (attrs.flags and LIBSSH2_SFTP_ATTR_PERMISSIONS) != 0 and
         (attrs.permissions and LIBSSH2_SFTP_S_IFLNK) != 0 and
         buf.toOpenArray().find(" -> ") == -1:
@@ -283,7 +282,7 @@ Content-Type: text/html
 
 <h1>Not found""")
     quit(0)
-  discard os.writeLoop("Content-Length: " & $attrs.filesize & "\n\n")
+  discard os.writeLoop(initStrM("Content-Length: ", attrs.filesize, "\n\n"))
   # Apparently a huge buffer results in significant speed increases
   # compared to a small one.
   var buffer {.noinit.}: array[65536, char]
@@ -319,7 +318,7 @@ proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION; host, port: Str;
   while not found and libssh2_knownhost_get(hosts, addr store, store) == 0:
     if store == nil or store.name == nil:
       continue
-    found = $store.name == name
+    found = store.name == name.toCString()
   if found:
     let t = store.typemask and LIBSSH2_KNOWNHOST_KEY_MASK
     let meth = case t

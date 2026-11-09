@@ -112,10 +112,10 @@ type
     ssl: ptr SSL # used in HTTPS
     httpStream: PosixStream # used in HTTP
     os: PosixStream
-    line: string
+    line: Growbuf
     contentEncodings: seq[ContentEncoding]
     transferEncodings: seq[TransferEncoding]
-    headersBuf: string # buffer of all headers to be printed on stdout
+    headersBuf: Growbuf # buffer of all headers to be printed on stdout
 
   HTTPState = enum
     hsStatus, hsHeaders, hsChunkSize, hsChunkSizeCr, hsAfterChunk,
@@ -132,9 +132,12 @@ type
     teGzip = "gzip"
     teDeflate = "deflate"
 
-proc die(s: string) {.noreturn.} =
-  discard chaStderr.writeLine("newhttp: " & s)
+proc die(s: Str) {.noreturn.} =
+  discard chaStderr.writeLine(str("newhttp: "), s)
   quit(1)
+
+template die(s: static cstring) =
+  die(str(s))
 
 proc inflate(op: HTTPHandle; flag: uint32) =
   var pipefd {.noinit.}: array[2, cint]
@@ -181,7 +184,7 @@ proc inflate(op: HTTPHandle; flag: uint32) =
         of TINFL_STATUS_ADLER32_MISMATCH, TINFL_STATUS_FAILED,
             TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS,
             TINFL_STATUS_ISIZE_OR_CRC32_MISMATCH:
-          die($status)
+          die(status.toStr())
     quit(0)
   else: # parent
     pins.sclose()
@@ -232,7 +235,7 @@ proc unbrotli(op: HTTPHandle) =
           quit(0)
         of BROTLI_DECODER_RESULT_ERROR:
           let c = decomp.BrotliDecoderGetErrorCode()
-          die($BrotliDecoderErrorString(c))
+          die(BrotliDecoderErrorString(c).toStr())
     # should be unreachable I think
     die("unexpected end of brotli stream")
   else: # parent
@@ -249,7 +252,7 @@ proc flushStatus(op: HTTPHandle; line: openArray[char]) =
     cgiDie(ceInvalidResponse)
   let code = parseUInt16(line.toOpenArray(HttpStart.len, codeIdx - 1))
     .orDie(ceInvalidResponse)
-  op.headersBuf = "Status: " & $code & "\r\nCha-Control: ControlDone\r\n"
+  op.headersBuf.addM("Status: ", code, "\r\nCha-Control: ControlDone\r\n")
   op.state = hsHeaders
 
 proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
@@ -268,7 +271,7 @@ proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
     while j >= 0 and op.line[j] in HTTPWhitespace:
       dec j
     op.flushStatus(op.line.toOpenArray(0, j))
-    op.line = ""
+    op.line.setLen(0)
   i + 1
 
 proc addHeader(op: HTTPHandle) =
@@ -283,7 +286,7 @@ proc addHeader(op: HTTPHandle) =
       inc valueIdx
     let value = name.substr(valueIdx)
     name.setLen(j + 1)
-    if '\r' notin name and '\r' notin value:
+    if '\r' notin name.toOpenArray() and '\r' notin value:
       if name.equalsIgnoreCase("Content-Encoding"):
         for it in value.split(','):
           if ce := parseEnumNoCase[ContentEncoding](it):
@@ -293,8 +296,8 @@ proc addHeader(op: HTTPHandle) =
           if te := parseEnumNoCase[TransferEncoding](it):
             op.transferEncodings.add(te)
       elif name.equalsIgnoreCase("Content-Length"):
-        op.chunkSize = parseUInt64(value).get(uint64.high)
-      op.headersBuf &= name & ": " & value & "\r\n"
+        op.chunkSize = parseUInt64(value.toOpenArray()).get(uint64.high)
+      op.headersBuf.addM(name, ": ", value, "\r\n")
 
 proc flushHeaders(op: HTTPHandle) =
   op.headersBuf &= "\r\n"
@@ -397,7 +400,7 @@ proc handleTrailers(op: HTTPHandle; iq: openArray[char]): int =
       if j < 0:
         op.state = hsDone
         return i + 1
-      op.line = ""
+      op.line.setLen(0)
     else:
       op.line &= c
   return iq.len

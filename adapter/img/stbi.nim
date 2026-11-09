@@ -105,9 +105,8 @@ proc writeAll(data: pointer; size: int) =
 proc myWriteFunc(context, data: pointer; size: cint) {.cdecl.} =
   writeAll(data, int(size))
 
-proc puts(s: string) =
-  if s.len > 0:
-    writeAll(unsafeAddr s[0], s.len)
+proc puts(s: Str) =
+  writeAll(s.toCString(), s.len)
 
 proc main() =
   if getArgvCount() != 3:
@@ -116,7 +115,7 @@ proc main() =
   let cmd = getArgvCString(2)
   if cmd == "decode":
     if format notin [cstring"jpeg", "gif", "bmp", "png", "x-unknown"]:
-      cgiDie(ceInternalError, "unknown format " & $format)
+      cgiDie(ceInternalError, initStrM("unknown format ", format))
     enterNetworkSandbox()
     var user = StbiUser()
     var x: cint
@@ -136,7 +135,7 @@ proc main() =
     if infoOnly:
       if stbi_info_from_callbacks(addr clbk, addr user, x, y,
           channels_in_file) == 1:
-        puts("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
+        puts(initStrM("Cha-Image-Dimensions: ", x, 'x', y, "\n\n"))
         quit(0)
       else:
         cgiDie(ceInternalError, stbi_failure_reason())
@@ -145,12 +144,12 @@ proc main() =
     if p == nil:
       cgiDie(ceInternalError, stbi_failure_reason())
     else:
-      puts("Cha-Image-Dimensions: " & $x & "x" & $y & "\n\n")
+      puts(initStrM("Cha-Image-Dimensions: ", x, 'x', y, "\n\n"))
       writeAll(p, x * y * 4)
       stbi_image_free(p)
   elif cmd == "encode":
     if format notin [cstring"png", "bmp", "jpeg"]:
-      cgiDie(ceInternalError, "unknown format " & $format)
+      cgiDie(ceInternalError, initStrM("unknown format ", format))
     let headers = getEnvEmpty("REQUEST_HEADERS")
     var quality = cint(50)
     var width = cint(0)
@@ -170,7 +169,7 @@ proc main() =
     if src == nil:
       cgiDie(ceInternalError, "failed to read input")
     enterNetworkSandbox() # don't swallow stat
-    puts("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
+    puts(initStrM("Cha-Image-Dimensions: ", width, 'x', height, "\n\n"))
     let p = src.p
     if format == "png":
       stbi_write_png_to_func(myWriteFunc, nil, cint(width), cint(height), 4, p,
