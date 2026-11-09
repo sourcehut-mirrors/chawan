@@ -3887,7 +3887,7 @@ JSClassID JS_NewClassID(JSClassID *pclass_id)
     return class_id;
 }
 
-JSClassID JS_GetClassID(JSValue v)
+JSClassID JS_GetClassID(JSValueConst v)
 {
     JSObject *p;
     if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT)
@@ -58404,7 +58404,7 @@ JSValue JS_GetTypedArrayBuffer(JSContext *ctx, JSValueConst obj,
     if (pbyte_offset)
         *pbyte_offset = ta->offset;
     if (pbyte_length)
-        *pbyte_length = ta->length;
+        *pbyte_length = (size_t)p->u.array.count << typed_array_size_log2(p->class_id);
     if (pbytes_per_element) {
         *pbytes_per_element = 1 << typed_array_size_log2(p->class_id);
     }
@@ -61172,7 +61172,7 @@ static const JSCFunctionListEntry js_dataview_proto_funcs[] = {
 
 int JS_GetTypedArrayType(JSValueConst obj)
 {
-    JSClassID class_id = JS_GetClassID((JSValue)obj);
+    JSClassID class_id = JS_GetClassID(obj);
 
     if (class_id < JS_CLASS_UINT8C_ARRAY || class_id > JS_CLASS_BIG_UINT64_ARRAY)
         return -1;
