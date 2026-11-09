@@ -259,6 +259,6 @@ proc readLineAppend*(file: AChaFile; s: var Growbuf): Opt[bool] =
   ChaFile(file).readLineAppend(s)
 
 proc writeLine*(file: AChaFile; ss: varargs[Str]): Opt[void] =
-  file.writeLine(ss)
+  ChaFile(file).writeLine(ss)
 
 {.pop.} # raises: []
