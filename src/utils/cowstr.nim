@@ -653,8 +653,8 @@ proc toUpperAscii*(s: Str): Str =
 proc find*(s: Str; c: char; start = 0): int =
   s.toOpenArray().find(c, start)
 
-proc find*(s: Str; cs: set[char]; start = 0): int =
-  s.toOpenArray().find(cs, start)
+proc find*(s: Str; cs: set[char]; start = 0; last = -1): int =
+  s.toOpenArray().find(cs, start, last)
 
 proc find*(s: Str; needle: openArray[char]; start = 0; last = -1): int =
   s.toOpenArray().find(needle, start, last)

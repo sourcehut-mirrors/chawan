@@ -62,8 +62,8 @@ proc testUTF8Valid() =
     "\u1F972"
   ]
   for s in utf8_valid:
-    assert s.toValidUTF8() == s
-    assert $s.toValidUTF8() & 'x' == s & 'x'
+    assert newStr(s).toValidUTF8() == s
+    assert $newStr(s).toValidUTF8() & 'x' == s & 'x'
     var oq {.noinit.}: array[3, uint8]
     var ctx = initTextDecoderContext(csUtf8)
     block:
@@ -90,10 +90,11 @@ proc testUTF8Invalid() =
     "\uD83C": "\uFFFD\uFFFD\uFFFD", # some unpaired surrogate
     "r\xC8sum\xC8s": "r\uFFFDsum\uFFFDs", # latin-1 mis-declared as UTF-8
     "\x41\xC0\xAF\x41\xF4\x80\x80\x41": "A\uFFFD\uFFFDA\uFFFDA",
+    "aaaaaaaaa\xC8": "aaaaaaaaa\uFFFD", # valid before invalid
   }
   for (s, t) in utf8_error:
-    assert s.toValidUTF8() == t
-    assert (s & 'x').toValidUTF8() == t & 'x'
+    assert newStr(s).toValidUTF8() == t
+    assert newStr(s & 'x').toValidUTF8() == t & 'x'
     block:
       var ctx = initTextDecoderContext(csUtf8)
       var oq {.noinit.}: array[2, uint8]

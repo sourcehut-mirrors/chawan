@@ -312,7 +312,7 @@ proc onFinishText(response: Response; success: bool) =
   let ctx = opaque.ctx
   let val = if success:
     let arr = response.onFinishGrowbuf()
-    ctx.toJS(arr.toOpenArray().toValidUTF8())
+    ctx.toJS(arr.toStr().toValidUTF8())
   else:
     JS_ThrowTypeError(ctx, "error reading response body")
   jsFinish0(opaque, val)
@@ -322,7 +322,7 @@ proc onFinishJSON(response: Response; success: bool) =
   let ctx = opaque.ctx
   let val = if success:
     let arr = response.onFinishGrowbuf()
-    let s = arr.toOpenArray().toValidUTF8()
+    let s = arr.toStr().toValidUTF8()
     JS_ParseJSON(ctx, s.toCStringConst, csize_t(s.len),
       "<input>".toCStringConst)
   else:

@@ -178,21 +178,18 @@ proc decodeAll*(iq: openArray[char]; charset: Charset): Str =
   ## See above.
   return iq.toOpenArrayByte(0, iq.high).decodeAll(charset)
 
-proc toValidUTF8*(iq: openArray[char]): Str =
-  ## Validate the UTF-8 string `iq`, replacing invalid characters with
-  ## U+FFFD replacement characters.
-  return iq.decodeAll(csUtf8)
-
 proc validateUTF8*(iq: openArray[char]): int =
-  var td = initTextDecoder(csUtf8)
+  var ctx = initTextDecoderContext(csUtf8, demFatal)
   var oq: array[4, uint8]
-  var n = 0
-  if td.decode(iq.toOpenArrayByte(0, iq.high), oq, n, finish = true) ==
-      tdrError:
-    return td.ri
+  for s in ctx.decode(iq.toOpenArrayByte(0, iq.high), oq, finish = true):
+    discard
+  if ctx.failed:
+    return ctx.td.ri
   return -1
 
 proc toValidUTF8*(iq: Str): Str =
+  ## Validate the UTF-8 string `iq`, replacing invalid characters with
+  ## U+FFFD replacement characters.
   if iq.toOpenArray().validateUTF8() < 0:
     return iq
   return iq.toOpenArray().decodeAll(csUtf8)

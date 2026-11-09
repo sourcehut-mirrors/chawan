@@ -1172,7 +1172,7 @@ proc parseStylesheet(window: Window; this: SheetElement; s: Str;
       window.loadSheet(this, it.url, charset, it.layer, importSheetFinish,
         i, env)
 
-proc cssDecode(iq: openArray[char]; fallback: Charset): Str =
+proc cssDecode(iq: Str; fallback: Charset): Str =
   var charset = fallback
   var offset = 0
   const charsetRule = "@charset \""
@@ -1194,6 +1194,8 @@ proc cssDecode(iq: openArray[char]; fallback: Charset): Str =
         charset = getCharset(initStr(iq.toOpenArray(si, ei)))
         if charset in {csUtf16le, csUtf16be, csUnknown}:
           charset = csUtf8
+  if offset == 0 and charset == csUtf8:
+    return iq.toValidUTF8()
   iq.toOpenArray(offset, iq.high).decodeAll(charset)
 
 type
@@ -1220,7 +1222,7 @@ proc onFinishCSSText(response: Response; success: bool) =
   if success:
     let buf = response.onFinishGrowbuf()
     let charset = env.charset
-    let s = buf.toOpenArray().cssDecode(charset)
+    let s = buf.toStr().cssDecode(charset)
     window.parseStylesheet(this, s, env.url, charset, env.layer, finish,
       env.parseEnv, env.i)
   else:
