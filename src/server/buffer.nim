@@ -575,7 +575,7 @@ proc canSwitch(bc: BufferContext): bool {.inline.} =
 const BufferSize = 16384
 
 proc initDecoder(bc: BufferContext) =
-  bc.ctx = initTextDecoderContext(bc.charset, demFatal, BufferSize)
+  bc.ctx = initTextDecoderContext(bc.charset, demFatal)
 
 proc switchCharset(bc: BufferContext) =
   bc.charset = bc.charsetStack.pop()
