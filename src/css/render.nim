@@ -128,7 +128,7 @@ proc setTextStr(line: var FlexibleLine; s: openArray[char];
   while i < padlen: # place before new string
     line.str[i] = ' '
     inc i
-  copyMem(addr line.str[i], unsafeAddr s[0], s.len)
+  chaArrayCopy(line.str.toOpenArray(i, i + s.len - 1), s)
   i = targeti
   while widthError > 0:
     # we ate half of a double width char; pad it out with spaces.

@@ -196,7 +196,8 @@ proc readFile*(path: cstring; s: var Str): Opt[void] =
 proc readFile*(path: Str; s: var Str): Opt[void] =
   readFile(path.toCString(), s)
 
-proc writeFile*(path: cstring; content: openArray[char]; mode: cint): Opt[void] =
+proc writeFile*(path: cstring; content: openArray[uint8]; mode: cint):
+    Opt[void] =
   discard unlink(path)
   let ps = newPosixStream(path, O_CREAT or O_WRONLY or O_EXCL, mode)
   if ps == nil:
@@ -205,6 +206,10 @@ proc writeFile*(path: cstring; content: openArray[char]; mode: cint): Opt[void] 
   let res = file.write(content)
   ?file.close()
   res
+
+proc writeFile*(path: cstring; content: openArray[char]; mode: cint):
+    Opt[void] =
+  writeFile(path, content.toOpenArrayByte(0, content.high), mode)
 
 proc seek*(file: ChaFile; offset: clong): Opt[void] =
   if fseek(file, offset, SEEK_SET) != 0:

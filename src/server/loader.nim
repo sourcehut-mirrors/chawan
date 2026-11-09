@@ -264,11 +264,14 @@ template isEmpty(output: OutputHandle): bool =
 proc newLoaderBuffer(size = LoaderBufferPageSize): LoaderBuffer =
   return LoaderBuffer(page: newSeqUninit[uint8](size))
 
-proc newLoaderBuffer(s: openArray[char]): LoaderBuffer =
+proc newLoaderBuffer(s: openArray[uint8]): LoaderBuffer =
   let buffer = newLoaderBuffer(s.len)
   buffer.len = s.len
-  copyMem(addr buffer.page[0], unsafeAddr s[0], s.len)
+  chaArrayCopy(buffer.page, s.toOpenArray(0, s.high))
   buffer
+
+proc newLoaderBuffer(s: openArray[char]): LoaderBuffer =
+  newLoaderBuffer(s.toOpenArrayByte(0, s.high))
 
 proc tee(ctx: var LoaderContext; outputIn: OutputHandle; ostream: PosixStream;
     owner: ClientHandle): OutputHandle =
@@ -804,7 +807,7 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
     var si = 0
     if handle.parser != nil:
       si = ctx.parseHeaders(handle, buffer)
-      if si == -1: # died while parsing headers; unregister
+      if si < 0: # died while parsing headers; unregister
         return hrrUnregister
       if si == n: # parsed the entire buffer as headers; skip output handling
         continue
@@ -812,13 +815,9 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
         # Some parts of the buffer have been consumed as headers; others
         # must be passed on to the client.
         # We *could* store si as an offset to the buffer, but it would
-        # make things much more complex.  Let's just do this:
-        let nlen = buffer.len - si
-        let nbuffer = newLoaderBuffer(nlen)
-        nbuffer.len = nlen
-        copyMem(addr nbuffer.page[0], addr buffer.page[si], nbuffer.len)
-        buffer = nbuffer
-        assert nbuffer.len != 0, $initGrowbufM(si, ' ', buffer.len, " n ", n)
+        # make things much more complex.  Let's just copy it:
+        buffer = newLoaderBuffer(buffer.page.toOpenArray(si, buffer.len - 1))
+        assert buffer.len > 0
     else:
       handle.bytesSeen += uint64(n)
       #TODO stop reading if Content-Length exceeded

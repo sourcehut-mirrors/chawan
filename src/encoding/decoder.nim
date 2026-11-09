@@ -6,6 +6,7 @@ when NimMajor >= 2:
 import encoding/charset
 import encoding/decodercore
 import utils/cowstr
+import utils/twtstr
 
 type DecoderErrorMode* = enum
   demFatal, demReplacement
@@ -20,11 +21,29 @@ type UnsafeSlice* = object
   p*: ptr UncheckedArray[char]
   len*: int
 
+proc high*(sl: UnsafeSlice): int {.inline.} =
+  {.push overflowChecks: off.}
+  let H = sl.len - 1
+  {.pop.}
+  H
+
+template toOpenArray*(sl: UnsafeSlice): openArray[char] =
+  sl.toOpenArray(0, sl.high)
+
+template toOpenArray*(sl: UnsafeSlice; lo, hi: int): openArray[char] =
+  sl.p.toOpenArray(lo, hi)
+
+template toOpenArrayByte*(sl: UnsafeSlice; lo, hi: int): openArray[uint8] =
+  sl.p.toOpenArrayByte(lo, hi)
+
+template toOpenArrayByte*(sl: UnsafeSlice): openArray[uint8] =
+  sl.toOpenArrayByte(0, sl.high)
+
 proc `$`*(sl: UnsafeSlice): string =
   if sl.p == nil:
     return ""
   var s = newString(sl.len)
-  copyMem(addr s[0], addr sl.p[0], sl.len)
+  chaArrayCopy(s, sl.toOpenArray())
   move(s)
 
 proc toUnsafeSlice(s: openArray[uint8]): UnsafeSlice =
@@ -124,21 +143,6 @@ iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
   var oq {.noinit.}: array[1024, uint8]
   for it in ctx.decode(iq, oq, finish):
     yield it
-
-proc high*(sl: UnsafeSlice): int =
-  return sl.len - 1
-
-template toOpenArray*(sl: UnsafeSlice; lo, hi: int): openArray[char] =
-  sl.p.toOpenArray(lo, hi)
-
-template toOpenArray*(sl: UnsafeSlice): openArray[char] =
-  sl.toOpenArray(0, sl.high)
-
-template toOpenArrayByte*(sl: UnsafeSlice; lo, hi: int): openArray[uint8] =
-  sl.p.toOpenArrayByte(lo, hi)
-
-template toOpenArrayByte*(sl: UnsafeSlice): openArray[uint8] =
-  sl.toOpenArrayByte(0, sl.high)
 
 proc add*(s: var Growbuf; sl: UnsafeSlice) =
   s &= sl.toOpenArray()

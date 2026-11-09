@@ -659,7 +659,7 @@ proc write(term: Terminal; s: openArray[char]): Opt[void] =
     let olen = page.a.len
     if olen + s.len <= BufferSize:
       page.a.setLen(olen + s.len)
-      copyMem(addr page.a[olen], unsafeAddr s[0], s.len)
+      chaArrayCopy(page.a.toOpenArray(olen, page.a.high), s)
       return ok()
   # large write, or the buffer is full.
   ?term.startFlush()

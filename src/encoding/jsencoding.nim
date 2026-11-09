@@ -2,6 +2,7 @@
 
 import encoding/charset
 import encoding/decoder
+import js/constcharp
 import js/fromjs
 import js/jsbind
 import js/jsref
@@ -74,9 +75,9 @@ jsClassNameDef(JSTextDecoder, "TextDecoder"):
     return ctx.toJS(oq)
 
 # TextEncoder
-proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
-  if p != nil:
-    dealloc(p)
+proc deallocCString(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
+  if opaque != nil:
+    JS_FreeCStringRT(rt, cast[cstringConst](p))
 
 jsClassRaw(TextEncoderDef, "TextEncoder"):
   type JSTextEncoder = distinct pointer
@@ -88,20 +89,22 @@ jsClassRaw(TextEncoderDef, "TextEncoder"):
   proc encoding(ctx: JSContext; this: JSTextEncoder): JSValue {.jsfget.} =
     return ctx.toJS("utf-8")
 
-  proc encode(this: JSTextEncoder; input = str("")): JSArrayBufferViewInit
-      {.jsfunc.} =
-    let p = if input.len > 0:
-      let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
-      copyMem(buf, input.toCString(), input.len)
-      buf
-    else:
-      nil
-    JSArrayBufferViewInit(
+  proc encode(ctx: JSContext; this: JSTextEncoder; input = JS_UNDEFINED.vc):
+      JSValue {.jsfunc.} =
+    var p: ptr UncheckedArray[uint8]
+    var len = 0
+    if not JS_IsUndefined(input):
+      var len2: csize_t
+      p = cast[typeof(p)](JS_ToCStringUSVLen(ctx, len2, input))
+      if p == nil:
+        return JS_EXCEPTION
+      len = cast[int](len2) # valid because of QJS string limit
+    ctx.toJS(JSArrayBufferViewInit(
       t: JS_TYPED_ARRAY_UINT8,
-      abuf: JSArrayBufferInit(p: p, len: input.len, dealloc: deallocWrap),
+      abuf: JSArrayBufferInit(p: p, len: len, dealloc: deallocCString),
       offset: 0,
-      len: input.len
-    )
+      len: len
+    ))
 
   #TODO encodeInto
 

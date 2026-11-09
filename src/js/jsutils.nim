@@ -13,6 +13,7 @@ import js/jstypes
 import js/quickjs
 import utils/cowstr
 import utils/opt
+import utils/twtstr
 
 type JSCode* = enum
   fjErr, fjOk
@@ -527,8 +528,7 @@ proc serialize*(ctx: JSContext; val: JSValueConst): Opt[seq[uint8]] =
     return err()
   let plen = cast[int](plens)
   var res = newSeqUninit[uint8](plen)
-  if plen > 0:
-    copyMem(addr res[0], pres, plen)
+  chaArrayCopy(res, pres.toOpenArray(0, plen - 1))
   ok(move(res))
 
 proc deserialize*(ctx: JSContext; s: openArray[uint8]): JSValue =
