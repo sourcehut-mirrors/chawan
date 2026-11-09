@@ -277,7 +277,7 @@ proc getCursorClickable(bc: BufferContext; cursorx, cursory: int): Element =
   return Element(nil)
 
 proc cursorBytes(bc: BufferContext; y, cc: int): int =
-  let line = bc.lines[y].str
+  let line {.cursor.} = bc.lines[y].str
   var w = 0
   var i = 0
   while i < line.len and w < cc:
@@ -308,7 +308,7 @@ proc findPrevLink(bc: BufferContext; handle: PagerHandle;
   var ly = 0 # last y
   var lx = 0 # last x
   for y in countdown(cursory, 0):
-    let line = bc.lines[y]
+    let line {.cursor.} = bc.lines[y]
     if y != cursory:
       i = line.formats.len - 1
     while i >= 0:
@@ -327,7 +327,7 @@ proc findPrevLink(bc: BufferContext; handle: PagerHandle;
           dec i
         # on previous lines
         for iy in countdown(ly - 1, 0):
-          let line = bc.lines[iy]
+          let line {.cursor.} = bc.lines[iy]
           i = line.formats.len - 1
           let oly = iy
           let olx = lx
@@ -380,15 +380,17 @@ proc findNextParagraph(bc: BufferContext; handle: PagerHandle;
   var y = cursory
   if n < 0:
     for i in 0 ..< -n:
-      while y >= 0 and bc.lines[y].str.onlyWhitespace():
+      while y >= 0 and bc.lines[y].str.toOpenArray().onlyWhitespace():
         dec y
-      while y >= 0 and not bc.lines[y].str.onlyWhitespace():
+      while y >= 0 and not bc.lines[y].str.toOpenArray().onlyWhitespace():
         dec y
   else:
     for i in 0 ..< n:
-      while y < bc.lines.len and bc.lines[y].str.onlyWhitespace():
+      while y < bc.lines.len and bc.lines[y].str.toOpenArray()
+          .onlyWhitespace():
         inc y
-      while y < bc.lines.len and not bc.lines[y].str.onlyWhitespace():
+      while y < bc.lines.len and not bc.lines[y].str.toOpenArray()
+          .onlyWhitespace():
         inc y
   return y
 
@@ -399,8 +401,7 @@ proc findRevNthLink(bc: BufferContext; handle: PagerHandle; i: int):
   var k = 0
   var link: Element
   for y in countdown(bc.lines.high, 0):
-    let line = bc.lines[y]
-    for format in line.formats.ritems:
+    for format in bc.lines[y].formats.ritems:
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
         inc k
@@ -429,11 +430,11 @@ proc findNextMatch(bc: BufferContext; handle: PagerHandle; regex: Regex;
     if not forward and b < 0:
       b = s.len
     let cap = if forward:
-      regex.matchFirst(s, b)
+      regex.matchFirst(s.toOpenArray(), b)
     else:
       regex.matchLast(s.toOpenArray(0, b - 1), 0)
     if cap.s >= 0:
-      let x = s.width(0, cap.s)
+      let x = s.toOpenArray().width(0, cap.s)
       let w = s.toOpenArray(cap.s, cap.e - 1).width()
       dec n
       if n == 0:
@@ -1505,7 +1506,7 @@ proc readCanceled(bc: BufferContext; handle: PagerHandle) {.proxy.} =
 # function that matches SimpleFlexibleLine
 # (TODO: elements really don't belong in FormatCell...)
 proc swrite(w: var PacketWriter; x: FlexibleLine) =
-  w.swrite(x.str)
+  w.swrite(x.str.toOpenArray())
   w.swrite(x.formats.len)
   for f in x.formats:
     w.swrite(f.format)
@@ -1544,23 +1545,23 @@ proc getSelectionText(bc: BufferContext; handle: PagerHandle;
   case t
   of stNormal:
     if sy == ey:
-      let si = bc.lines[sy].str.findColBytes(sx)
-      let ei = bc.lines[ey].str.findColBytes(ex + 1, sx, si) - 1
+      let si = bc.lines[sy].str.toOpenArray().findColBytes(sx)
+      let ei = bc.lines[ey].str.toOpenArray().findColBytes(ex + 1, sx, si) - 1
       s.addExpandPUATabsHard(bc.lines[sy].str.toOpenArray(si, ei))
     else:
-      let si = bc.lines[sy].str.findColBytes(sx)
-      let ei = bc.lines[ey].str.findColBytes(ex + 1) - 1
+      let si = bc.lines[sy].str.toOpenArray().findColBytes(sx)
+      let ei = bc.lines[ey].str.toOpenArray().findColBytes(ex + 1) - 1
       s.addExpandPUATabsHard(bc.lines[sy].str
         .toOpenArray(si, bc.lines[sy].str.high))
       s &= '\n'
       for y in sy + 1 .. ey - 1:
-        s.addExpandPUATabsHard(bc.lines[y].str)
+        s.addExpandPUATabsHard(bc.lines[y].str.toOpenArray())
         s &= '\n'
       s.addExpandPUATabsHard(bc.lines[ey].str.toOpenArray(0, ei))
   of stBlock:
     for y in sy .. ey:
-      let si = bc.lines[y].str.findColBytes(sx)
-      let ei = bc.lines[y].str.findColBytes(ex + 1, sx, si) - 1
+      let si = bc.lines[y].str.toOpenArray().findColBytes(sx)
+      let ei = bc.lines[y].str.toOpenArray().findColBytes(ex + 1, sx, si) - 1
       if y > sy:
         s &= '\n'
       s.addExpandPUATabsHard(bc.lines[y].str.toOpenArray(si, ei))
@@ -1568,7 +1569,7 @@ proc getSelectionText(bc: BufferContext; handle: PagerHandle;
     for y in sy .. ey:
       if y > sy:
         s &= '\n'
-      s.addExpandPUATabsHard(bc.lines[y].str)
+      s.addExpandPUATabsHard(bc.lines[y].str.toOpenArray())
   s.toStr()
 
 proc getLinks(bc: BufferContext; handle: PagerHandle): seq[Str] {.proxy.} =

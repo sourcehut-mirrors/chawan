@@ -1297,11 +1297,6 @@ proc initGrowbuf*(src: Growbuf): Growbuf =
   buf &= src
   move(buf)
 
-proc initGrowbufUTF8*(us: openArray[uint32]): Growbuf =
-  var buf = initGrowbuf()
-  buf.addUTF8(us)
-  move(buf)
-
 proc deallocGrowbuf*(opaque, p: pointer) =
   #TODO this shouldn't be needed
   if p != nil:
@@ -1439,6 +1434,9 @@ proc `[]=`*(buf: var Growbuf; n: int; c: char) {.inline.} =
 
 proc `[]=`*(buf: var Growbuf; n: BackwardsIndex; c: char) {.inline.} =
   buf[buf.len - int(n)] = c
+
+proc nextUTF8*(buf: Growbuf; i: var int): uint32 =
+  buf.toOpenArray().nextUTF8(i)
 
 proc toStr*(buf: sink Growbuf): Str =
   let bufLen = buf.len

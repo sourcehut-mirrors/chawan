@@ -27,7 +27,7 @@ type
   # * The position of every FormatCell should be greater than the position
   #   of the previous FormatCell.
   FlexibleLine* = object
-    str*: seq[char]
+    str*: Growbuf
     formats*: seq[FormatCell]
 
   FlexibleGrid* = seq[FlexibleLine]
@@ -125,9 +125,9 @@ proc setTextStr(line: var FlexibleLine; s: openArray[char];
       moveMem(addr line.str[nj], unsafeAddr line.str[j], remainingLen)
   else:
     line.str.setLen(nlen)
-  while i < padlen: # place before new string
-    line.str[i] = ' '
-    inc i
+  if i < padlen: # place before new string
+    chaMemset(line.str.toOpenArray(i, padlen - 1), ' ')
+    i = padlen
   chaArrayCopy(line.str.toOpenArray(i, i + s.len - 1), s)
   i = targeti
   while widthError > 0:
@@ -322,9 +322,10 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     if alpha < 255:
       # If the background is not fully opaque, then text under it is
       # preserved.
-      let w = line.str.width()
-      for i in w ..< endx:
-        line.str &= ' '
+      let w = line.str.toOpenArray().width()
+      let diff = endx - w
+      if diff > 0:
+        line.str.setLenFill(line.str.len + diff, ' ')
       cx = min(w, startx)
       hadStr = w > endx
     else:

@@ -33,7 +33,8 @@ proc mnormalize*(s: var Growbuf) =
       UNICODE_NFC, nil, passRealloc)
     if olen > 0:
       let p = cast[ptr UncheckedArray[uint32]](obuf)
-      s = initGrowbufUTF8(p.toOpenArray(0, int(olen) - 1))
+      s = initGrowbuf()
+      s.addUTF8(p.toOpenArray(0, int(olen) - 1))
       dealloc(obuf)
     else:
       s = initGrowbuf()
