@@ -276,21 +276,12 @@ proc findOrLen*(s: openArray[char]; c: char; start: int): int =
     return s.len
   return n
 
-proc find*(s: openArray[char]; cs: set[char]): int =
-  let slen = s.len
-  for i in 0 ..< slen:
+proc find*(s: openArray[char]; cs: set[char]; start = 0; last = -1): int =
+  let slen = if last == -1: s.len else: last + 1
+  for i in start ..< slen:
     if s[i] in cs:
       return i
   return -1
-
-proc find*(s: openArray[char]; cs: set[char]; start: int; last = -1): int =
-  let last = if last == -1: s.high else: last
-  if start > last:
-    return -1
-  let n = s.toOpenArray(start, last).find(cs)
-  if n < 0:
-    return n
-  return start + n
 
 proc findOrLen*(s: openArray[char]; cc: set[char]; start: int): int =
   let n = s.find(cc, start)
