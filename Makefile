@@ -258,7 +258,7 @@ $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 FLAGS_FOR_BUILD += $(foreach flag,$(HOSTCFLAGS),-t:$(flag))
 FLAGS_FOR_BUILD += $(foreach flag,$(HOSTLDFLAGS),-l:$(flag))
 
-$(OBJDIR)/chac: src/chac.nim src/js/* lib/quickjs/*
+$(OBJDIR)/chac: src/chac.nim src/js/* lib/quickjs/* $(cowstr)
 	$(NIMC) -d:chaCowWithJS $(FLAGS_FOR_BUILD) --nimcache:"$(OBJDIR)/chac_cache" -o:$@ $<
 
 $(script_target): src/%.js $(OBJDIR)/chac
