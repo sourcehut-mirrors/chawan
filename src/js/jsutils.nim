@@ -303,7 +303,7 @@ proc addRow(s: var Growbuf; title: Str; count, size, sz2, cnt2: int64;
     name: Str) =
   let d = cdouble(sz2) / cdouble(cnt2)
   let dn = js_dtoa_max_len(d, 10, 1, JS_DTOA_FORMAT_FIXED)
-  var buf = initGrowbufUninit(dn)
+  var buf = initGrowbufUninit(dn + 1) # +1 for NUL term
   var tmp: JSDTOATempMem
   let len = js_dtoa(cast[cstring](buf.p), d, 10, 1, JS_DTOA_FORMAT_FIXED, tmp)
   buf.setLen(int(len))
