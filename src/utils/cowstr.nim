@@ -496,7 +496,7 @@ proc equalsIgnoreCase*(a: Str; b: openArray[char]): bool =
   a.toOpenArray().equalsIgnoreCase(b)
 
 proc equalsIgnoreCase*(a, b: Str): bool =
-  if a.p == b.p:
+  if cast[pointer](a.p) == cast[pointer](b.p):
     return true
   a.equalsIgnoreCase(b.toOpenArray())
 
@@ -923,7 +923,7 @@ proc htmlEscape*(s: openArray[char]; mode = emAll): Str =
       if c == '\xA0':
         buf &= "&nbsp;"
       else:
-        buf &= '\xC2' & c
+        buf.addM('\xC2', c)
       nbspMode = false
       continue
     case c
@@ -1014,18 +1014,15 @@ proc setContentTypeAttr*(contentType: var Str; attrname, value: Str) =
     buf.addM(';', attrname, '=', value)
     contentType = buf.toStr()
 
-proc deleteChars*(s: openArray[char]; todel: set[char]): Str =
+proc deleteChars*(s: Str; todel: set[char]): Str =
+  let i = s.find(todel)
+  if i < 0:
+    return s
   var buf = initGrowbufOfCap(s.len)
   for c in s:
     if c notin todel:
       buf &= c
   buf.toStr()
-
-proc deleteChars*(s: Str; todel: set[char]): Str =
-  let i = s.find(todel)
-  if i < 0:
-    return s
-  s.toOpenArray().deleteChars(todel)
 
 proc atob(c: char): uint8 {.inline.} =
   # see RFC 4648 table
