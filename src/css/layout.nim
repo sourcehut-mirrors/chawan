@@ -16,7 +16,6 @@ import utils/cowstr
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr
-import utils/widthconv
 
 type
   LayoutContext = ref object

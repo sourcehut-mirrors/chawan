@@ -450,12 +450,12 @@ proc processIdna(str: Str; beStrict: bool): Str =
   # UseSTD3ASCIIRules = beStrict
   # Transitional_Processing = false
   # VerifyDnsLength = beStrict
-  var mapped: seq[uint32] = @[]
+  var mapped0: seq[uint32] = @[]
   let ctx = LUContext()
   for u in str.points:
-    if ctx.mapIdna(mapped, u).isErr:
+    if ctx.mapIdna(mapped0, u).isErr:
       return str("")
-  mapped = mapped.normalize()
+  let mapped = mapped0.normalize()
   if mapped.len == 0:
     return str("")
   var labels = initGrowbuf()

@@ -163,7 +163,7 @@ tinfl = adapter/protocol/tinfl.h
 # lib/*0 has a 0 so that it doesn't conflict with the old submodules.
 # git can't deal with this, it seems.
 $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/chawan.html res/license.md \
-		res/quirk.css res/ua.css res/*.tab res/version lib/chame0/chame/* \
+		res/quirk.css res/ua.css res/version lib/chame0/chame/* \
 		lib/quickjs/* $(chaseccomp) res/charwidth_gen.nim nim.cfg \
 		$(embed_script)
 	@mkdir -p "$(OUTDIR_BIN)"
