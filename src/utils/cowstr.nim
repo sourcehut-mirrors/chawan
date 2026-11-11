@@ -537,11 +537,11 @@ iterator split*(s: openArray[char]; sep: char): Str =
   var buf = initGrowbuf()
   var i = 0
   while i <= s.len:
-    if i == s.len or s[i] == sep:
+    let c = if i == s.len: sep else: s[i]
+    if c == sep:
       yield move(buf).toStr()
-      buf.setLen(0)
     else:
-      buf &= s[i]
+      buf &= c
     inc i
 
 iterator split*(s: openArray[char]; sep: set[char]): Str =
@@ -563,16 +563,24 @@ iterator split*(s: Str; sep: set[char]): Str =
     yield it
 
 proc containsToken*(s: Str; tok: openArray[char]): bool =
-  for it in s.split(AsciiWhitespace):
-    if it == tok:
+  var i = 0
+  let slen = s.len
+  while i <= slen:
+    let j = s.toOpenArray().findOrLen(AsciiWhitespace, i)
+    if s.toOpenArray(i, j - 1).eqStr(tok):
       return true
-  return false
+    i = j + 1
+  false
 
 proc containsTokenIgnoreCase*(s: Str; tok: openArray[char]): bool =
-  for it in s.split(AsciiWhitespace):
-    if it.equalsIgnoreCase(tok):
+  var i = 0
+  let slen = s.len
+  while i <= slen:
+    let j = s.toOpenArray().findOrLen(AsciiWhitespace, i)
+    if s.toOpenArray(i, j - 1).equalsIgnoreCase(tok):
       return true
-  return false
+    i = j + 1
+  false
 
 proc containsIgnoreCase*(ss: openArray[Str]; s: Str): bool =
   for it in ss:
@@ -617,7 +625,7 @@ proc strip*(s: Str; leading = true; trailing = true; chars = AsciiWhitespace):
 
 proc stripAndCollapse*(s: Str): Str =
   let start = s.skipBlanks(0)
-  if start == 0 and AsciiWhitespace notin s.toOpenArray():
+  if start == 0 and AsciiWhitespace notin s:
     return s
   var res = initGrowbufOfCap(s.len)
   var space = false
@@ -681,8 +689,7 @@ proc until*(s: Str; cc: set[char]; starti = 0): Str =
 
 proc untilLower*(s: Str; cc: char; starti = 0): Str =
   let endi = s.findOrLen(cc, starti)
-  if starti == 0 and endi == s.len and
-      AsciiUpperAlpha notin s.toOpenArray(starti, s.len - 1):
+  if starti == 0 and endi == s.len and AsciiUpperAlpha notin s:
     return s
   var buf = initGrowbufUninit(endi - starti)
   for i in starti ..< endi:
@@ -691,8 +698,7 @@ proc untilLower*(s: Str; cc: char; starti = 0): Str =
 
 proc untilLower*(s: Str; cc: set[char]; starti = 0): Str =
   let endi = s.findOrLen(cc, starti)
-  if starti == 0 and endi == s.len and
-      AsciiUpperAlpha notin s.toOpenArray(starti, s.len - 1):
+  if starti == 0 and endi == s.len and AsciiUpperAlpha notin s:
     return s
   var buf = initGrowbufUninit(endi - starti)
   for i in starti ..< endi:
@@ -1556,7 +1562,8 @@ proc until*(buf: Growbuf; cc: char; starti = 0): Str =
 
 # for addV
 proc reserveAdd(buf: var Growbuf; len: csize_t) {.exportc: "cha_Growbuf_$1".} =
-  reserve(buf, buf.len + cast[int](len))
+  let nlen = buf.len + cast[int](len)
+  reserve(buf, nlen)
 
 proc addSpan(buf: var Growbuf; p: cstring; len: csize_t) {.
     exportc: "cha_Growbuf_$1".} =
