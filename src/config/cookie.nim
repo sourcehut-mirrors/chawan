@@ -50,6 +50,20 @@ type
     ckPath = "path"
     ckDomain = "domain"
 
+  Month = enum
+    mJan = (1, "jan")
+    mFeb = "feb"
+    mMar = "mar"
+    mApr = "apr"
+    mMay = "may"
+    mJun = "jun"
+    mJul = "jul"
+    mAug = "aug"
+    mSep = "sep"
+    mOct = "oct"
+    mNov = "nov"
+    mDec = "dec"
+
 # Forward declarations
 proc sread*(r: var PacketReader; cookieJar: var CookieJar): PacketCode =
   var n: bool
@@ -139,21 +153,8 @@ proc parseCookieDate*(val: openArray[char]): Opt[int64] =
         continue
     if month == 0: # test for month
       if dateToken.len >= 3:
-        case dateToken.toOpenArray(0, 2).toLowerAscii()
-        of "jan": month = 1
-        of "feb": month = 2
-        of "mar": month = 3
-        of "apr": month = 4
-        of "may": month = 5
-        of "jun": month = 6
-        of "jul": month = 7
-        of "aug": month = 8
-        of "sep": month = 9
-        of "oct": month = 10
-        of "nov": month = 11
-        of "dec": month = 12
-        else: discard
-        if month != 0:
+        if x := parseEnumNoCase[Month](dateToken.toOpenArray(0, 2)):
+          month = int(x)
           continue
     if year == -1: # test for year
       let digits = dateToken.until(NonDigit)

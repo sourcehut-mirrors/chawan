@@ -1,6 +1,7 @@
 import std/unittest
 
 import utils/cowstr
+import utils/twtstr
 
 proc use(s: Str) =
   discard
@@ -80,6 +81,43 @@ proc testCString() =
   check str("blah blah").substr(0, 3).toCString() == "blah"
   check initStr("blah blah").substr(0, 3).toCString() == "blah"
 
+proc testUntil() =
+  check str("a b c/d").untilLast('/') == "a b c"
+  check str("a b c/").untilLast('/') == "a b c"
+  check str("a b c").untilLast('/') == "a b c"
+
+proc testStrip() =
+  check str(" ").strip() == ""
+  check str("\f\t test \r\n").strip() == "test"
+  check str(" test ").strip(trailing = false) == "test "
+  check str(" test ").strip(leading = false) == " test"
+  check str(" \tes\t ").strip(chars = {' '}) == "\tes\t"
+
+proc testFind() =
+  check "test".find("te") == 0
+  check "test".find("est") == 1
+  check "test".find("st") == 2
+  check "test".find("test") == 0
+  check "test".find("t") == 0
+  check "test".find("t", start = 5) == -1
+  check "test".find("t", start = 1) == 3
+  check "".find("t") == -1
+  check "".find("t", start = 1) == -1
+  check "".find("") == 0
+  check "".find("", start = 1) == -1
+  check "test".find("") == 0
+  check "test".find("", start = 1) == 1
+
+  check "test".rfind('t') == 3
+  check "test".rfind('t', 0, last = 3) == 3
+  check "test".rfind('t', 0, last = 2) == 0
+  check "test".rfind('t', start = 1, last = 2) == -1
+
+  check "test".startsWith("test")
+  check not "test".startsWith("testt")
+  check "test".startsWith("t")
+  check "test".startsWith("")
+
 proc util() =
   testContains()
   testDelete()
@@ -88,6 +126,9 @@ proc util() =
   testInt()
   testCString()
   testDelete()
+  testUntil()
+  testStrip()
+  testFind()
 
 proc main() =
   refs()

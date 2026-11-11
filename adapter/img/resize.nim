@@ -6,7 +6,7 @@ import std/posix
 
 import ../protocol/lcgi
 
-{.passc: "-I" & currentSourcePath().untilLast('/').}
+{.passc: "-I" & currentSourcePath().parentDir().}
 
 {.push header: """
 #define STB_IMAGE_RESIZE_IMPLEMENTATION

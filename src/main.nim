@@ -36,7 +36,8 @@ import utils/sandbox
 import utils/strwidth
 import utils/twtstr
 
-const ChaVersionStr0 = "Chawan browser " & staticRead"res/version".strip()
+const chaVersion {.strdefine.} = "version unset"
+const ChaVersionStr0 = "Chawan browser " & chaVersion
 
 const ChaVersionStr = block:
   var s = ChaVersionStr0 & " ("

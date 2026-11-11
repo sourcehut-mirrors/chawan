@@ -3,7 +3,6 @@
 when NimMajor >= 2:
   import std/assertions
 import std/algorithm
-import std/posix
 
 import utils/opt
 
@@ -137,12 +136,6 @@ proc toUpperAscii*(c: char): char {.inline.} =
   else:
     c
 
-proc toLowerAscii*(s: openArray[char]): string =
-  let L = s.len
-  result = newString(L)
-  for i in 0 ..< L:
-    result[i] = s[i].toLowerAscii()
-
 proc hexValue*(c: char): int =
   if c in AsciiDigit:
     return int(uint8(c) - uint8('0'))
@@ -166,9 +159,6 @@ proc cmpIgnoreCase2*(a, b: openArray[char]): int =
     if n != 0:
       return n
   cmp(alen, blen)
-
-proc cmpIgnoreCase*(a, b: string): int =
-  a.cmpIgnoreCase2(b)
 
 proc equalsIgnoreCase*(s1, s2: openArray[char]): bool {.inline.} =
   return s1.cmpIgnoreCase2(s2) == 0
@@ -409,28 +399,11 @@ when NimMajor < 2:
       res &= c
     move(res)
 
-proc strip*(s: openArray[char]; leading = true; trailing = true;
-    chars = AsciiWhitespace): string =
-  var i = 0
-  if leading:
-    while i < s.len and s[i] in chars:
-      inc i
-  var j = s.high
-  if trailing:
-    while j >= 0 and s[j] in chars:
-      dec j
-  if i > j:
-    return ""
-  return s.toOpenArray(i, j).substr()
-
-proc untilLast*(s: string; c: char): string =
-  let i = s.rfind(c)
+proc parentDir*(s: string): string =
+  let i = s.rfind('/')
   if i >= 0:
     return s.substr(0, i - 1)
   return s
-
-proc parentDir*(s: string): string =
-  s.untilLast('/')
 
 # https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#numbers
 proc parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;

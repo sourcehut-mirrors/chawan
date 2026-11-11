@@ -4659,7 +4659,7 @@ jsClassDef(DOMTokenList):
     case this.localName
     of satRel:
       const SupportedTokens = [satAlternate, satStylesheet]
-      let lower = token.toOpenArray().toLowerAscii()
+      let lower = token.toStr().toLowerAscii()
       return ctx.toJS(lower.toStaticAtom() in SupportedTokens)
     else:
       return JS_ThrowTypeError(ctx,

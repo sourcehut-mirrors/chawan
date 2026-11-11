@@ -11,7 +11,7 @@ when sizeof(cint) < 4:
 else:
   type jebp_int = cint
 
-{.passc: "-I" & currentSourcePath().untilLast('/').}
+{.passc: "-I" & currentSourcePath().parentDir().}
 
 {.push header: """
 #define JEBP_NO_STDIO

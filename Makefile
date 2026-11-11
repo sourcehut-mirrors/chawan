@@ -168,7 +168,8 @@ $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim src/*/*.c res/chawan.html res/license.m
 		$(embed_script)
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
-                -d:chaCowWithJS $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
+                -d:chaVersion=$(shell cat res/version) -d:chaCowWithJS $(FLAGS) \
+                -o:"$(OUTDIR_BIN)/cha" src/main.nim
 
 $(OUTDIR_BIN)/mancha: adapter/tools/mancha
 	@mkdir -p "$(OUTDIR_BIN)"
@@ -410,10 +411,9 @@ test/nim/%: test/nim/%.nim
 test/nim/tjsref test/nim/tjsbind test/nim/tcatom test/nim/tcookie:
 	$(NIMC) -d:chaCowWithJS $(test_flags) --nimcache:"$(OBJDIR)/test_$(notdir $@)" -o:$@ $<
 
-test_names = ttwtstr tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie tlcgi tcowstr
+test_names = tcatom tjsref tjsbind tlibregexp tchahash tchaos tcookie tlcgi tcowstr
 test_bin += $(foreach name,$(test_names),test/nim/$(name))
 
-test/nim/ttwtstr: $(twtstr)
 test/nim/tcatom: test/nim/tcatom.nim src/html/catom.nim
 test/nim/tjsref: test/nim/tjsref.nim src/js/jsref.nim src/js/jsbind.nim \
 	src/js/jsutils.nim src/js/quickjs.nim

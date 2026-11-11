@@ -4,7 +4,7 @@ import std/posix
 
 import ../protocol/lcgi
 
-{.passc: "-I" & currentSourcePath().untilLast('/').}
+{.passc: "-I" & currentSourcePath().parentDir().}
 
 {.push header: """
 #define NANOSVG_IMPLEMENTATION

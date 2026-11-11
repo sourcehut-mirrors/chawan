@@ -477,9 +477,9 @@ proc toStaticAtom*(atom: CAtom): StaticAtom {.borrow.}
 proc toStaticAtomLower*(atom: CAtom): StaticAtom =
   atom.toLowerAscii().toStaticAtom()
 
-proc toStaticAtom*(s: string): StaticAtom =
+proc toStaticAtom*(s: Str): StaticAtom =
   let factory = getFactory()
-  factory.get(s, s.hash()).toStaticAtom()
+  factory.get(s.toOpenArray(), s.toOpenArray().hash()).toStaticAtom()
 
 proc `==`*(a: CAtomRaw; b: StaticAtom): bool =
   a.toStaticAtom() == b

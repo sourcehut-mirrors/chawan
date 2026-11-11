@@ -19,7 +19,7 @@ import utils/cowstr
 
 import ../protocol/lcgi
 
-{.passc: "-I" & currentSourcePath().untilLast('/').}
+{.passc: "-I" & currentSourcePath().parentDir().}
 
 {.push header: """
 #define STBI_ONLY_PNG
