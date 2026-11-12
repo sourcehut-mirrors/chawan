@@ -256,6 +256,9 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
   document.quirksMode = quirksMode
   document.charset = charset
   document.contentType = satTextHtml
+  document.customElements = newCustomElementRegistry()
+  if document.customElements == nil:
+    return nil
   if window != nil:
     document.window = window
     window.document = document

@@ -749,9 +749,6 @@ proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
 jsClassDef(Window):
   jsextends EventTargetDef
 
-  jsget Window, referrer
-  jsget Window, performance
-  jsget Window, customElements
   jsufget Window, document
 
   proc addWindowEvents(ctx: JSContext): Opt[void] =
@@ -932,6 +929,16 @@ jsClassDef(Window):
       media: mqlist.toStr()
     )
 
+  proc getPerformance(ctx: JSContext; window: Window): JSValue {.
+      jsrfget: "performance".} =
+    if window.internalPerformance == nil:
+      window.internalPerformance = newPerformance(window.timeOrigin,
+        window.settings.scripting)
+    ctx.toJSNew(window.internalPerformance)
+
+  proc customElements(window: Window): CustomElementRegistry {.jsfget.} =
+    window.document.customElements
+
 proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
   let sname = cstring(name).toStr()
@@ -1101,12 +1108,7 @@ proc addCommonModules(ctx: JSContext; window: Window; url: URL): Opt[void] =
   ?ctx.addRequestModule()
   ?ctx.addResponseModule()
   ?ctx.addEncodingModule()
-  ?ctx.addPerformanceModule()
-  window.performance = newPerformance(window.settings.scripting)
-  if window.performance == nil:
-    JS_ThrowOutOfMemory(ctx)
-    return err()
-  ok()
+  ctx.addPerformanceModule()
 
 proc getConsole(ctx: JSContext): Console {.exportc: "cha_$1".} =
   ctx.getGlobal().console
@@ -1152,6 +1154,7 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     console.writeException(ctx)
     quit(1)
   let window = jsNew WindowObj(
+    jsctx: ctx,
     console: console,
     loader: loader,
     settings: EnvironmentSettings(
@@ -1162,14 +1165,14 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
       images: images,
       autofocus: autofocus,
       headless: headless,
-      contentType: contentType.toAtom()
+      contentType: contentType.toAtom(),
     ),
     imageTypes: imageTypes,
     userAgent: userAgent,
     referrer: referrer,
     urandom: urandom,
     importMapsAllowed: true,
-    jsctx: ctx
+    timeOrigin: getTime(scripting)
   )
   if addScripting(window, ctx, url).isErr:
     console.error("failed to initialize JS")
@@ -1191,6 +1194,7 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream):
     console: console,
     settings: EnvironmentSettings(scripting: smApp),
     dangerAlwaysSameOrigin: true,
+    timeOrigin: getTime(smApp)
   )
   let url = parseURL0("about:blank")
   if window == nil or url == nil:

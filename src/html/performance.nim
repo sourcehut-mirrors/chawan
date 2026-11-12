@@ -40,15 +40,16 @@ proc getClassID(t: typedesc[Performance]): JSClassID
 proc getClassID(t: typedesc[PerformanceMark]): JSClassID
 
 # Performance
-proc getTime(scripting: ScriptingMode): float64 =
+proc getTime*(scripting: ScriptingMode): float64 =
   if scripting == smApp:
     # 0.1ms precision
     return getUnixMillisFloat()
   # 1ms precision
   return float64(getUnixMillis())
 
-proc newPerformance*(scripting: ScriptingMode): Performance =
-  jsNew PerformanceObj(timeOrigin: getTime(scripting), scripting: scripting)
+proc newPerformance*(timeOrigin: float64; scripting: ScriptingMode):
+    Performance =
+  jsNew PerformanceObj(timeOrigin: timeOrigin, scripting: scripting)
 
 proc getEntryId(this: Performance): uint64 =
   result = this.id

@@ -129,8 +129,8 @@ type
     imageTypes*: MimeTypesImages
     userAgent*: Str
     referrer*: Str
-    performance*: Performance
-    customElements*: CustomElementRegistry
+    internalPerformance*: Performance # may be nil
+    timeOrigin*: float64
     urandom*: PosixStream
 
   CECallbackType = enum
@@ -159,14 +159,14 @@ type
     flags: set[CustomElementFlag]
     next: CustomElementDef
 
-  CustomElementRegistryObj* = object
+  CustomElementRegistryObj = object
     defsHead: CustomElementDef
     defsTail: CustomElementDef
     inDefine: bool
     scoped: bool
     scopedDocuments: seq[Document]
 
-  CustomElementRegistry = JSRef[CustomElementRegistryObj]
+  CustomElementRegistry* = JSRef[CustomElementRegistryObj]
 
   ElementAccessor = JSRef[ElementAccessorObj]
 
@@ -377,7 +377,7 @@ type
     parser*: RootRef
     liveCollections: seq[ptr CollectionLikeObj]
     liveCollectionsLoad: int
-    customElements: CustomElementRegistry #TODO ?
+    customElements*: CustomElementRegistry
 
   XMLDocumentObj {.pure, final.} = object of DocumentObj
 
