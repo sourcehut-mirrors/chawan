@@ -19,21 +19,22 @@ Further notes on processing CGI paths:
 * Paths beginning with `/cgi-bin/` or `/$LIB/` are stripped of this segment
   automatically. So e.g. `cgi-bin:/cgi-bin/script-name` becomes
   `cgi-bin:script-name`.
-* Absolute paths are accepted as e.g. `cgi-bin:/path/to/cgi/dir/script-name`.
-  Note however, that this only works if `/path/to/cgi/dir` has already been
-  specified as a CGI directory in `external.cgi-dir`.
+* Absolute paths are accepted as e.g. `cgi-bin:/path/to/cgi/dir/script-name`,
+  but this only works if `/path/to/cgi/dir` has already been specified as a
+  CGI directory in the `external.cgi-dir` [**cha-config**](config.md)(5)
+  option.
 
 ## Headers
 
-Local CGI scripts may send some headers that Chawan will interpret specially
-(and thus will not pass forward to e.g. the fetch API, etc):
+Some headers are interpreted specially (and thus are not forwarded to
+e.g. the fetch API, etc):
 
 * `Status`: interpreted as the HTTP status code.
 * `Cha-Control`: special header, see below.
 
-These headers **must** be sent before any regular headers.  Headers received
-after a regular header or a `Cha-Control: ControlDone` header will be
-treated as regular headers.
+These headers **must** be sent before any regular headers.  Headers
+received after a regular header or a `Cha-Control: ControlDone` header will
+be treated as regular headers.
 
 The `Cha-Control` header's value is parsed as follows:
 
@@ -102,13 +103,6 @@ may use either (but not both) in a ConnectionError header.
 
 Chawan sets the following environment variables:
 
-* `SERVER_SOFTWARE="Chawan"`
-* `SERVER_PROTOCOL="HTTP/1.0"`
-* `SERVER_NAME="localhost"`
-* `SERVER_PORT="80"`
-* `REMOTE_HOST="localhost"`
-* `REMOTE_ADDR="127.0.0.1"`
-* `GATEWAY_INTERFACE="CGI/1.1"`
 * `SCRIPT_NAME="/cgi-bin/script-name"` if called with a relative path, and
   `"/path/to/script/script-name"` if called with an absolute path.
 * `SCRIPT_FILENAME="/path/to/script/script-name"`
@@ -136,13 +130,23 @@ Chawan sets the following environment variables:
 * `HTTP_AUTHORIZATION=` if set, the Authorization header.
 * `REMOTE_USER=` if Authorization uses "Basic" auth, its user part.
 * `CHA_TMP_DIR=` directory used for storing temporary files.
-* `CHA_DIR=` location of the config file.
+* `CHA_DIR=` parent directory of the config file.
 
-Requests originating from the [**cha-urimethodmap**](urimethodmap.md)(5)
-feature also set a set of environment variables starting with
-`MAPPED_URI_`.  However, this feature is deprecated in favor of passing
-parameters from *browsecap*, as described in
-[**cha-mailcap**](mailcap.md)(5).
+The standard CGI variables `SERVER_SOFTWARE`, `SERVER_PROTOCOL`,
+`SERVER_NAME`, `SERVER_PORT`, `SERVER_ADDR` and `GATEWAY_INTERFACE` are
+set to dummy values corresponding to a request to localhost.
+
+In addition, custom environment variables and command line arguments can be
+set in *cgioutput* browsecap entries.  For instance, the following entry
+invokes the script with the variables `$host` and `$port`, and the URI's
+path as the first parameter:
+
+```
+# in $CHA_DIR/browsecap
+my-scheme; host=%h port=%p /cgi-bin/handler %s; cgioutput
+```
+
+For details, refer to [**cha-mailcap**](mailcap.md)(5).
 
 ## Request body
 

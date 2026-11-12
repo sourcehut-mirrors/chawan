@@ -8,7 +8,7 @@ commands, or to convert them to HTML/plain text before displaying them
 in Chawan.
 
 The *browsecap* file fulfills a similar purpose for URI scheme handling.
-Browsecap can override handling of any built-in scheme, or to add custom
+Browsecap can override handling of any built-in scheme, or invoke custom
 handlers (e.g. [**mutt**](man:mutt(1))(1) for *mailto*).  When combined
 with [**cha-cgi**](cgi.md)(5), browsecap also enables extending Chawan
 with user-specified schemes.

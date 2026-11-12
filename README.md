@@ -95,22 +95,23 @@ Currently implemented features are:
 
 ...with a lot more [planned](todo).
 
-## Bugs, technical issues, etc.
+## Bugs, technical issues, patches, etc.
 
 First, read the [troubleshooting](doc/troubleshooting.md) document.
 If it doesn't help, [open a ticket](https://todo.sr.ht/~bptato/chawan).
+In doing so, please make sure your tickets are valid markdown, or they
+become unreadable on the web interface.
 
-When using the ticket tracker, please make sure your tickets are valid
-markdown, or they become unreadable on the web interface.  If you want to
-send plain text e-mails not formatted as markdown, use the [mailing
-list](mailto:~bptato/chawan-devel@lists.sr.ht) instead.
+If you want to send plain text e-mails not formatted as markdown, use the
+[mailing list](mailto:~bptato/chawan-devel@lists.sr.ht) instead.  You can
+also open tickets on the [Codeberg mirror](https://codeberg.org/bptato/chawan).
 
-If you're having troubles accessing SourceHut, you can also use the
-[Codeberg mirror](https://codeberg.org/bptato/chawan).  Patches can be sent
-to the mailing list, as Codeberg pull requests, or in private.
+Patches can be sent to the aforementioned mailing list, as Codeberg pull
+requests, or in private.  Use whatever is the most convenient for you.
 
-Please do not submit tickets or patches directly or indirectly generated
-with artificial neural networks.
+Please do not submit tickets or patches that were generated with artificial
+neural networks (directly, indirectly, fully, or partially).  Such patches
+will be rejected.
 
 ## Documentation index
 

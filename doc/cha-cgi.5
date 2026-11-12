@@ -30,13 +30,13 @@ So e.g.\ \f[CR]cgi\-bin:/cgi\-bin/script\-name\f[R] becomes
 \f[CR]cgi\-bin:script\-name\f[R].
 .IP \(bu 2
 Absolute paths are accepted as
-e.g.\ \f[CR]cgi\-bin:/path/to/cgi/dir/script\-name\f[R].
-Note however, that this only works if \f[CR]/path/to/cgi/dir\f[R] has
-already been specified as a CGI directory in
-\f[CR]external.cgi\-dir\f[R].
+e.g.\ \f[CR]cgi\-bin:/path/to/cgi/dir/script\-name\f[R], but this only
+works if \f[CR]/path/to/cgi/dir\f[R] has already been specified as a CGI
+directory in the \f[CR]external.cgi\-dir\f[R] \f[B]cha\-config\f[R](5)
+option.
 .SS Headers
-Local CGI scripts may send some headers that Chawan will interpret
-specially (and thus will not pass forward to e.g.\ the fetch API, etc):
+Some headers are interpreted specially (and thus are not forwarded to
+e.g.\ the fetch API, etc):
 .IP \(bu 2
 \f[CR]Status\f[R]: interpreted as the HTTP status code.
 .IP \(bu 2
@@ -140,20 +140,6 @@ network.
 .SS Environment variables
 Chawan sets the following environment variables:
 .IP \(bu 2
-\f[CR]SERVER_SOFTWARE=\(dqChawan\(dq\f[R]
-.IP \(bu 2
-\f[CR]SERVER_PROTOCOL=\(dqHTTP/1.0\(dq\f[R]
-.IP \(bu 2
-\f[CR]SERVER_NAME=\(dqlocalhost\(dq\f[R]
-.IP \(bu 2
-\f[CR]SERVER_PORT=\(dq80\(dq\f[R]
-.IP \(bu 2
-\f[CR]REMOTE_HOST=\(dqlocalhost\(dq\f[R]
-.IP \(bu 2
-\f[CR]REMOTE_ADDR=\(dq127.0.0.1\(dq\f[R]
-.IP \(bu 2
-\f[CR]GATEWAY_INTERFACE=\(dqCGI/1.1\(dq\f[R]
-.IP \(bu 2
 \f[CR]SCRIPT_NAME=\(dq/cgi\-bin/script\-name\(dq\f[R] if called with a
 relative path, and \f[CR]\(dq/path/to/script/script\-name\(dq\f[R] if
 called with an absolute path.
@@ -204,13 +190,26 @@ user part.
 .IP \(bu 2
 \f[CR]CHA_TMP_DIR=\f[R] directory used for storing temporary files.
 .IP \(bu 2
-\f[CR]CHA_DIR=\f[R] location of the config file.
+\f[CR]CHA_DIR=\f[R] parent directory of the config file.
 .PP
-Requests originating from the \f[B]cha\-urimethodmap\f[R](5) feature
-also set a set of environment variables starting with
-\f[CR]MAPPED_URI_\f[R].
-However, this feature is deprecated in favor of passing parameters from
-\f[I]browsecap\f[R], as described in \f[B]cha\-mailcap\f[R](5).
+The standard CGI variables \f[CR]SERVER_SOFTWARE\f[R],
+\f[CR]SERVER_PROTOCOL\f[R], \f[CR]SERVER_NAME\f[R],
+\f[CR]SERVER_PORT\f[R], \f[CR]SERVER_ADDR\f[R] and
+\f[CR]GATEWAY_INTERFACE\f[R] are set to dummy values corresponding to a
+request to localhost.
+.PP
+In addition, custom environment variables and command line arguments can
+be set in \f[I]cgioutput\f[R] browsecap entries.
+For instance, the following entry invokes the script with the variables
+\f[CR]$host\f[R] and \f[CR]$port\f[R], and the URI\(cqs path as the
+first parameter:
+.IP
+.EX
+# in $CHA_DIR/browsecap
+my\-scheme; host=%h port=%p /cgi\-bin/handler %s; cgioutput
+.EE
+.PP
+For details, refer to \f[B]cha\-mailcap\f[R](5).
 .SS Request body
 If the request body is not empty, it is streamed into the program
 through the standard input.
