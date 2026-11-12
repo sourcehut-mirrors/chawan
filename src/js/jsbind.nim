@@ -126,7 +126,6 @@ type
   ChaClassDef* = object
     class_name*: cstring
     id*: JSClassID
-    parent*: JSClassID
     iterable*: JSIterableType
     flags*: set[ChaClassFlag]
     # pointer to functions:
@@ -136,6 +135,7 @@ type
     funsEnd*: int16
     staticFunsEnd*: int16
     unforgeableFunsEnd*: int16
+    parentP*: ptr JSClassID
     funsBase*: JSCFunctionListP
     ctor*: JSCFunction
     finalizer*: ChaFinalizerFunction
@@ -365,8 +365,8 @@ proc newClassConstructor(ctx: JSContext; def: ChaClassDef): JSObjectErr =
   else:
     JS_CFUNC_constructor
   let fun = ?ctx.newCFunction2(ctor, def.class_name, 0, ctorType, 0)
-  if def.parent != JS_INVALID_CLASS_ID:
-    let proto = ctx.getOpaque().ctors[int(def.parent)]
+  if def.parentP != nil:
+    let proto = ctx.getOpaque().ctors[int(def.parentP[])]
     assert proto != nil
     if JS_SetPrototype(ctx, fun.value, proto.value) < 0:
       return err()
@@ -1279,8 +1279,8 @@ proc jsClassTypeRecurse(markList, finList, recList: NimNode) =
               myDestroyZero(this.`varNode`)
             )
 
-template jsextends*(class: ChaClassDef) =
-  classDef.parent = class.id
+template jsextends*(class: var ChaClassDef) =
+  classDef.parentP = addr class.id
 
 proc setGet(map: var GetSetMap; name: string; get: NimNode;
     flag: BoundFunctionFlag; magic: NimNode) =
@@ -1641,7 +1641,6 @@ macro jsClassImpl(def: untyped; jsname: static string; typ: typed;
 
 template jsClassRawForward*(def: untyped; jsname: string; body: untyped) =
   def.flags.incl(ccfRaw)
-  discard JS_NewClassID(def.id)
   jsClassImpl(def, jsname, nil, body)
 
 template jsClassRaw*(def: untyped; jsname: string; body: untyped) =
@@ -1651,7 +1650,6 @@ template jsClassRaw*(def: untyped; jsname: string; body: untyped) =
 
 template jsClassNameDef*(nimt: typedesc; jsname: string; body: untyped) =
   var `nimt Def` {.global, noinit, inject.}: ChaClassDef
-  discard JS_NewClassID(`nimt Def`.id)
   jsClassImpl(`nimt Def`, jsname, nimt):
     proc getClassID(t {.inject.}: typedesc[nimt]): JSClassID {.used.} =
       classDef.id
@@ -1659,7 +1657,6 @@ template jsClassNameDef*(nimt: typedesc; jsname: string; body: untyped) =
 
 template jsClassPublicNameDef*(nimt: typedesc; jsname: string; body: untyped) =
   var `nimt Def`* {.global, noinit, inject.}: ChaClassDef
-  discard JS_NewClassID(`nimt Def`.id)
   jsClassImpl(`nimt Def`, jsname, nimt):
     proc getClassID*(t {.inject.}: typedesc[nimt]): JSClassID {.used.} =
       classDef.id
@@ -1667,7 +1664,6 @@ template jsClassPublicNameDef*(nimt: typedesc; jsname: string; body: untyped) =
 
 template jsClassDef*(nimt: typedesc; body: untyped) =
   var `nimt Def` {.global, noinit, inject.}: ChaClassDef
-  discard JS_NewClassID(`nimt Def`.id)
   jsClassImpl(`nimt Def`, astToStr(nimt), nimt):
     proc getClassID(t {.inject.}: typedesc[nimt]): JSClassID {.used.} =
       classDef.id
@@ -1675,7 +1671,6 @@ template jsClassDef*(nimt: typedesc; body: untyped) =
 
 template jsClassPublicDef*(nimt: typedesc; body: untyped) =
   var `nimt Def`* {.global, noinit, inject.}: ChaClassDef
-  discard JS_NewClassID(`nimt Def`.id)
   jsClassImpl(`nimt Def`, astToStr(nimt), nimt):
     proc getClassID*(t {.inject.}: typedesc[nimt]): JSClassID =
       classDef.id
@@ -1685,7 +1680,8 @@ template jsNamespaceDef*(name, body: untyped) =
   var `name Def` {.global, noinit, inject.}: ChaClassDef
   jsClassImpl(`name Def`, astToStr(name), nil, body)
 
-proc registerClassCommon(ctx: JSContext; def: ChaClassDef): JSCode =
+proc registerClassCommon(ctx: JSContext; def: var ChaClassDef): JSCode =
+  discard JS_NewClassID(def.id)
   let rt = JS_GetRuntime(ctx)
   let id = def.id
   let rtOpaque = rt.getOpaque()
@@ -1700,7 +1696,7 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): JSCode =
   cdef.class_name = def.class_name
   cdef.exotic = def.exotic
   let raw = ccfRaw in def.flags and
-    (def.parent == JS_INVALID_CLASS_ID or rtOpaque.classes[int(id)].raw)
+    (def.parentP == nil or rtOpaque.classes[int(id)].raw)
   if raw:
     cdef.gc_mark = jsMarkRaw
     cdef.finalizer = jsFinalizeRaw
@@ -1710,41 +1706,40 @@ proc registerClassCommon(ctx: JSContext; def: ChaClassDef): JSCode =
   if JS_NewClass(rt, id, addr cdef) < 0:
     return fjErr
   rtOpaque.classes[int(id)].raw = raw
-  rtOpaque.classes[int(id)].parent = def.parent
-  if def.parent != JS_INVALID_CLASS_ID:
-    assert rtOpaque.classes[int(def.parent)].initialized
-    rtOpaque.classes[int(def.parent)].final = false
   var merged = @(def.unforgeableFuns)
-  if int(def.parent) < rtOpaque.classes.len:
-    merged.add(rtOpaque.classes[int(def.parent)].unforgeable)
-  if merged.len > 0:
-    rtOpaque.classes[int(def.id)].unforgeable = move(merged)
   var fins: seq[ChaFinalizerFunction] = @[]
+  var marks: seq[ChaMarkFunction] = @[]
   if def.finalizer != nil:
     fins.add(def.finalizer)
-  if int(def.parent) < rtOpaque.classes.len:
-    fins.add(rtOpaque.classes[int(def.parent)].fins)
-  if fins.len > 0:
-    rtOpaque.classes[int(def.id)].fins = move(fins)
-  var marks: seq[ChaMarkFunction] = @[]
   if def.mark != nil:
     marks.add(def.mark)
-  if int(def.parent) < rtOpaque.classes.len:
-    marks.add(rtOpaque.classes[int(def.parent)].marks)
+  if def.parentP != nil:
+    let parent = def.parentP[]
+    assert parent != JS_INVALID_CLASS_ID
+    rtOpaque.classes[int(id)].parent = parent
+    assert rtOpaque.classes[int(parent)].initialized
+    rtOpaque.classes[int(parent)].final = false
+    merged.add(rtOpaque.classes[int(parent)].unforgeable)
+    fins.add(rtOpaque.classes[int(parent)].fins)
+    marks.add(rtOpaque.classes[int(parent)].marks)
+  if merged.len > 0:
+    rtOpaque.classes[int(def.id)].unforgeable = move(merged)
+  if fins.len > 0:
+    rtOpaque.classes[int(def.id)].fins = move(fins)
   if marks.len > 0:
     rtOpaque.classes[int(def.id)].marks = move(marks)
   rtOpaque.classes[int(def.id)].name = def.class_name
   fjOk
 
-proc registerClassNoNamespace*(ctx: JSContext; def: ChaClassDef): JSCode =
+proc registerClassNoNamespace*(ctx: JSContext; def: var ChaClassDef): JSCode =
   # like registerClass, but don't add it to the global object
   if ctx.registerClassCommon(def) == fjErr:
     return fjErr
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil: # no scripting
     return fjOk
-  let proto = ?ctx.newProtoFromParentClass(def.parent, def.iterable,
-    JS_NULL.vc)
+  let parent = if def.parentP != nil: def.parentP[] else: JS_INVALID_CLASS_ID
+  let proto = ?ctx.newProtoFromParentClass(parent, def.iterable, JS_NULL.vc)
   let id = def.id
   JS_SetClassProto(ctx, id, proto.toJSValue())
   let name = JS_NewString(ctx, def.class_name)
@@ -1760,7 +1755,7 @@ proc registerClassNoNamespace*(ctx: JSContext; def: ChaClassDef): JSCode =
   ctxOpaque.ctors[int(id)] = jctor
   fjOk
 
-proc registerClass*(ctx: JSContext; def: ChaClassDef;
+proc registerClass*(ctx: JSContext; def: var ChaClassDef;
     namespace = JSObjectNil(nil)): JSCode =
   ?ctx.registerClassNoNamespace(def)
   let ctxOpaque = ctx.getOpaque()
@@ -1791,7 +1786,7 @@ proc registerNamespaceFree*(ctx: JSContext; def: ChaClassDef): JSCode =
   discard ?ctx.registerNamespace(def)
   fjOk
 
-proc registerFakeClass*(ctx: JSContext; def: ChaClassDef): JSCode =
+proc registerFakeClass*(ctx: JSContext; def: var ChaClassDef): JSCode =
   ## Register a class that will not be exposed to JS.
   ## The prototype is set to the parent class's prototype; however, runtime
   ## type checks in Nim respect the actual class hierarchy.
@@ -1802,26 +1797,27 @@ proc registerFakeClass*(ctx: JSContext; def: ChaClassDef): JSCode =
     let iid = int(def.id)
     if ctxOpaque.ctors.len <= iid:
       ctxOpaque.ctors.setLen(iid + 1)
-    if def.parent == JS_INVALID_CLASS_ID:
+    if def.parentP == nil:
       let obj = ?ctx.newObject()
       let proto = JS_GetPrototype(ctx, obj.value)
       JS_SetClassProto(ctx, def.id, proto)
       let funProto = JS_GetPrototype(ctx, ctxOpaque.funRefs[jsfFunction].value)
       ctxOpaque.ctors[iid] = ?tryTraceObj(funProto)
     else:
-      JS_SetClassProto(ctx, def.id, ctx.getClassProto(def.parent).toJSValue())
-      ctxOpaque.ctors[iid] = ctxOpaque.ctors[int(def.parent)]
+      JS_SetClassProto(ctx, def.id,
+        ctx.getClassProto(def.parentP[]).toJSValue())
+      ctxOpaque.ctors[iid] = ctxOpaque.ctors[int(def.parentP[])]
   fjOk
 
-proc registerGlobalClass*(ctx: JSContext; def: ChaClassDef;
+proc registerGlobalClass*(ctx: JSContext; def: var ChaClassDef;
     parentProto = JS_NULL.vc): JSCode =
   if ctx.registerClassCommon(def) == fjErr:
     return fjErr
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil: # no scripting
     return fjOk
-  let proto = ?ctx.newProtoFromParentClass(def.parent, def.iterable,
-    parentProto)
+  let parent = if def.parentP != nil: def.parentP[] else: JS_INVALID_CLASS_ID
+  let proto = ?ctx.newProtoFromParentClass(parent, def.iterable, parentProto)
   let id = def.id
   JS_SetClassProto(ctx, id, proto.toJSValue())
   let name = JS_NewString(ctx, def.class_name)

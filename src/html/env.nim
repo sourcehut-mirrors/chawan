@@ -500,7 +500,7 @@ proc windowSetLocation(ctx: JSContext; this, val: JSValueConst): JSValue
   return ctx.setLocation(window, s)
 
 proc registerAutoInitGetSet(ctx: JSContext; namespace: JSObject;
-    parentClass: JSClassID; def: ChaClassDef; name: JSStrRef;
+    parentClass: JSClassID; def: var ChaClassDef; name: JSStrRef;
     t: AutoInitGetSetType): Opt[void] =
   # Register a lazily initialized singleton-like class.
   ?ctx.registerClass(def)
@@ -748,8 +748,6 @@ proc animationFrameHandler(ctx: JSContext; this: JSValueConst; argc: cint;
 
 jsClassDef(Window):
   jsextends EventTargetDef
-
-  event.windowClassID = classDef.id
 
   jsget Window, referrer
   jsget Window, performance
@@ -1072,7 +1070,9 @@ proc addWindowProperties(ctx: JSContext): JSValue =
 proc addWindowModule(ctx: JSContext): JSCode =
   ?ctx.addEventTarget()
   let proto = ?trace(ctx.addWindowProperties())
-  ctx.registerGlobalClass(WindowDef, proto.vc)
+  ?ctx.registerGlobalClass(WindowDef, proto.vc)
+  event.windowClassID = WindowDef.id
+  fjOk
 
 proc addCommonModules(ctx: JSContext; window: Window; url: URL): Opt[void] =
   ?ctx.setGlobal(window)
@@ -1115,7 +1115,7 @@ proc getLoader(ctx: JSContext): FileLoader {.exportc: "cha_$1".} =
   ctx.getGlobal().loader
 
 proc addScripting(window: Window; ctx: JSContext; url: URL): Opt[void] =
-  if window == nil or window.customElements == nil:
+  if window == nil:
     JS_ThrowOutOfMemory(ctx)
     return err()
   let rt = JS_GetRuntime(ctx)
@@ -1168,7 +1168,6 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     userAgent: userAgent,
     referrer: referrer,
     urandom: urandom,
-    customElements: newCustomElementRegistry(),
     importMapsAllowed: true,
     jsctx: ctx
   )
@@ -1182,7 +1181,7 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
 proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream):
     Window =
   # global object in the pager
-  if ctx.addWindowModule().isErr:
+  if ctx.addWindowModule().isErr or ctx.addURLModule().isErr:
     return Window(nil)
   let console = newConsole(chaStderr)
   let window = jsNew WindowObj(
@@ -1192,12 +1191,16 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream):
     console: console,
     settings: EnvironmentSettings(scripting: smApp),
     dangerAlwaysSameOrigin: true,
-    document: newDocument(parseURL0("about:blank"))
   )
-  if window == nil or window.document == nil:
+  let url = parseURL0("about:blank")
+  if window == nil or url == nil:
     JS_ThrowOutOfMemory(ctx)
     return Window(nil)
-  if ctx.addCommonModules(window, window.document.url).isErr:
+  if ctx.addCommonModules(window, url).isErr:
+    return Window(nil)
+  window.document = newDocument(url)
+  if window.document == nil:
+    JS_ThrowOutOfMemory(ctx)
     return Window(nil)
   window
 

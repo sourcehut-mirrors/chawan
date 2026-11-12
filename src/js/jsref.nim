@@ -66,6 +66,8 @@ template getMagic*[T](r: JSRef[T]): uint32 =
   JS_GetForeignMagic(dotGet(ptr T, r))
 
 proc jsNew0(p: ptr pointer; class: JSClassID; size: csize_t) =
+  when defined(debug):
+    assert class != JS_INVALID_CLASS_ID
   p[] = JS_NewForeignObject(globalRuntime, class, size)
 
 template jsNewOf*[T](x: T; classid: JSClassID): JSRef[T] =

@@ -2379,8 +2379,6 @@ type GetRootNodeOptions {.pure.} = object of JSDict
 jsClassDef(Node):
   jsextends EventTargetDef
 
-  event.nodeClassID = classDef.id
-
   jsget Node, parentNode
 
   proc baseURI(node: Node): Str {.jsfget.} =
@@ -6843,8 +6841,6 @@ proc jsReflectEventSet(ctx: JSContext; this, val: JSValueConst; magic: cint):
 jsClassPublicDef(HTMLElement):
   jsextends ElementDef
 
-  event.htmlElementClassID = classDef.id
-
   proc dataset(element: HTMLElement): DOMStringMap {.jsnfget.} =
     var dataset = element.asElement.getAccessor(satDataset) as DOMStringMap
     if dataset == nil:
@@ -8066,6 +8062,7 @@ proc registerElements(ctx: JSContext): Opt[void] =
   ?ctx.registerClass(ElementDef)
   ?ctx.registerFakeClass(AttrDummyElementDef)
   ?ctx.registerClass(HTMLElementDef)
+  event.htmlElementClassID = HTMLElementDef.id
   ?ctx.addHTMLElementReflection()
   ?ctx.registerFakeClass(SheetElementDef)
   ?ctx.registerClass(HTMLMediaElementDef)
@@ -8170,6 +8167,7 @@ proc registerElements(ctx: JSContext): Opt[void] =
 
 proc addDOMModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(NodeDef)
+  event.nodeClassID = NodeDef.id
   ?ctx.defineConsts(NodeDef.id, NodeType)
   ?ctx.registerFakeClass(ParentNodeDef)
   ?ctx.registerFakeClass(RootNodeDef)
