@@ -366,7 +366,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   let rt = JS_GetRuntime(ctx)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(rt, interruptHandler, nil)
-  let request = newRequest(str("about:cookie-stream"))
+  let request = newRequest(str("x-cha-cookie:stream"), internal = true)
   let cookieStreamOpaque = CookieStreamOpaque(pager: pager)
   pager.loader.fetch(request, initCookieStream, cookieStreamOpaque)
   block history:
