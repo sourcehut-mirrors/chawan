@@ -4,6 +4,7 @@ import std/algorithm
 
 import io/console
 import js/fromjs
+import js/jsopaque
 import js/jstypes
 import js/jsutils
 import js/quickjs
@@ -16,6 +17,7 @@ type
     ttInterval = "setInterval handler"
 
   TimeoutEntry = ref object
+    #TODO probably have to store the context too
     expires: int64
     val: JSValueTraced
     args: seq[JSValueTraced]
@@ -75,6 +77,9 @@ proc runEntry(ctx: JSContext; entry: TimeoutEntry; console: Console) =
       trace(JS_EXCEPTION)
   if JS_IsException(ret):
     console.writeException(ctx)
+  # behave as if this were a global task
+  let rt = JS_GetRuntime(ctx)
+  rt.runMicrotasks()
 
 # for poll
 proc sortAndGetTimeout*(state: var TimeoutState): cint =

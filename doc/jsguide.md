@@ -492,10 +492,9 @@ Here, the call is **incorrect**.  The reason is that QuickJS *borrows*
 removeEventListener), then you're suddenly looking at memory corruption.
 
 This can be avoided by storing the callback as `JSCallback` and using
-`ctx.call(callback, ...)` instead.  The reason is that `call` dup's the
-callback before calling, so it is guaranteed to remain valid.  (This
-is only the case if `callback` is actually `JSCallback`; if it is a
-`JSValue`, you must dup it even when using `ctx.call`.)
+the `ctx.call(callback, ...)` wrapper (from `js/jsutils`) instead.
+The reason is that `call` dup's the callback before calling, so it is
+guaranteed to remain valid.
 
 ### JSAtom
 

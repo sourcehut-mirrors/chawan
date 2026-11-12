@@ -235,7 +235,7 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
       assert builder.poppedScript == nil
       inc document.throwOnDynamicMarkupInsertion
       #TODO I think this has to be moved for custom elements
-      document.window.performMicrotaskCheckpoint()
+      document.window.runMicrotasks()
       dec document.throwOnDynamicMarkupInsertion
     builder.poppedScript = script
   elif (let svg = element as SVGSVGElement; svg != nil):

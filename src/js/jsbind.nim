@@ -318,6 +318,8 @@ proc free*(rt: JSRuntime) =
   ## Free the JSRuntime `rt` and unset it as the global runtime.
   let rtOpaque = rt.getOpaque()
   rtOpaque.enumMap = @[]
+  rtOpaque.tasksHead = nil
+  rtOpaque.tasksTail = nil
   JS_FreeRuntime(rt)
   # free opaque after runtime to preserve class data for mark & finalization
   `=destroy`(rtOpaque[])

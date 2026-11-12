@@ -2,6 +2,7 @@
 
 when NimMajor >= 2:
   import std/assertions
+
 import std/posix
 
 import config/mimetypes
@@ -16,6 +17,7 @@ import io/packetwriter
 import js/constcharp
 import js/fromjs
 import js/jsbind
+import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -334,7 +336,7 @@ jsClassDef(FileList):
 # FileReader
 #TODO definitely not compliant, but I guess it's fine for now
 proc package(ctx: JSContext; s: openArray[char]; contentType: Str;
-    packageType: PackageType; jsEncoding: JSValueConst): JSValueTraced =
+    packageType: PackageType; encoding: StrNil): JSValueTraced =
   case packageType
   of ptDataURL:
     var res = initGrowbufM("data:", contentType, ";base64,")
@@ -344,8 +346,8 @@ proc package(ctx: JSContext; s: openArray[char]; contentType: Str;
     return trace(ctx.newArrayBuffer(s))
   of ptText:
     var charset = csUnknown
-    if not JS_IsUndefined(jsEncoding):
-      discard ctx.fromJS(jsEncoding, charset)
+    if encoding != nil:
+      charset = getCharset(encoding.asStr)
     if charset == csUnknown:
       charset = getCharset(contentType.getContentTypeAttr("charset"))
     if charset == csUnknown:
@@ -358,18 +360,28 @@ proc package(ctx: JSContext; s: openArray[char]; contentType: Str;
       csize_t(s.len))
     return trace(res)
 
-proc fulfillReadJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
-    JSValue {.cdecl.} =
-  assert argc == 2
-  var this: FileReader
-  ?ctx.fromJS(argv[0], this)
+type
+  FileReaderEnv = ref object of JSTaskEnv
+    this: FileReader
+    encoding: StrNil
+    len: int64
+
+  ProgressEnv = ref object of JSTaskEnv
+    this: EventTarget
+    name: StaticAtom
+    loaded: int64
+    length: int64
+
+proc progressEventTask(ctx: JSContext; env: JSTaskEnv): Opt[void] =
+  let env = ProgressEnv(env)
+  ctx.fireProgressEvent(env.this, env.name, env.loaded, env.length)
+  ok()
+
+proc fulfillReadTask(ctx: JSContext; env: JSTaskEnv): Opt[void] =
+  let env = FileReaderEnv(env)
+  let this = env.this
   if this.abort != nil and this.abort.signal.aborted:
-    return JS_UNDEFINED
-  #TODO queue a task
-  let len = this.blob.getSize()
-  ctx.fireProgressEvent(this.asEventTarget, satLoadstart, 0, int64(len))
-  if this.abort != nil and this.abort.signal.aborted:
-    return JS_UNDEFINED
+    return ok()
   this.readyState = frsDone
   if this.blob of WebFile:
     let fd = WebFile(this.blob).fd
@@ -377,17 +389,32 @@ proc fulfillReadJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     let res = ps.readAll()
     discard ps.seek(0)
     this.result = ?ctx.package(res.toOpenArray(), this.blob.contentType,
-      this.packageType, argv[1])
+      this.packageType, env.encoding)
   else:
     this.result = ?ctx.package(this.blob.toOpenArray(), this.blob.contentType,
-      this.packageType, argv[1])
+      this.packageType, env.encoding)
+  let len = env.len
   ctx.fireProgressEvent(this.asEventTarget, satLoad, int64(len), int64(len))
   if this.abort != nil and this.abort.signal.aborted:
-    return JS_UNDEFINED
+    return ok()
   if this.readyState == frsDone:
     ctx.fireProgressEvent(this.asEventTarget, satLoadend, int64(len),
       int64(len))
-  return JS_UNDEFINED
+  ok()
+
+proc startReadTask(ctx: JSContext; env: JSTaskEnv): Opt[void] =
+  let env = FileReaderEnv(env)
+  if env.this.abort != nil and env.this.abort.signal.aborted:
+    return ok()
+  let len = env.this.blob.getSize()
+  ?ctx.queueTask(jtsFileReader, progressEventTask, ProgressEnv(
+    this: env.this.asEventTarget,
+    name: satLoadstart,
+    loaded: 0,
+    length: len
+  ))
+  env.len = len
+  ctx.queueTask(jtsFileReader, fulfillReadTask, env)
 
 jsClassDef(FileReader):
   jsextends EventTargetDef
@@ -398,13 +425,16 @@ jsClassDef(FileReader):
   proc newFileReader(): FileReader {.jsctor.} =
     jsNew FileReaderObj()
 
-  proc read(ctx: JSContext; jsThis: JSValueConst; packageType: PackageType;
-      blob: Blob; encoding = JS_UNDEFINED.vc): JSValue {.
+  proc read(ctx: JSContext; this: FileReader; packageType: PackageType;
+      blob: Blob; jsEncoding = JS_UNDEFINED.vc): JSValue {.
       jsmfunc("readAsArrayBuffer", ptArrayBuffer),
       jsmfunc("readAsBinaryString", ptBinaryString),
       jsmfunc("readAsText", ptText), jsmfunc("readAsDataURL", ptDataURL).} =
-    var this: ptr FileReaderObj
-    ?ctx.fromJS(jsThis, this)
+    var encoding = str(nil)
+    if packageType == ptText and not JS_IsUndefined(jsEncoding):
+      var ds: DOMString
+      ?ctx.fromJS(jsEncoding, ds)
+      encoding = ds.toStr().toStrNil()
     if this.readyState == frsLoading:
       return JS_ThrowDOMException(ctx, "InvalidStateError",
         "a file is already being loaded")
@@ -414,12 +444,10 @@ jsClassDef(FileReader):
     this.blob = blob
     this.abort = newAbortController()
     this.packageType = packageType
-    var encoding2 = trace(JS_UNDEFINED)
-    if packageType == ptText and not JS_IsUndefined(encoding):
-      var ds: DOMString
-      ?ctx.fromJS(encoding, ds)
-      encoding2 = ?trace(ctx.toJS(ds))
-    ?ctx.enqueueJob(fulfillReadJob, jsThis, encoding2.vc)
+    ?ctx.queueTask(jtsFileReader, startReadTask, FileReaderEnv(
+      this: this,
+      encoding: encoding
+    ))
     return JS_UNDEFINED
 
   proc abort(ctx: JSContext; this: FileReader): Opt[void] {.jsfunc.} =
@@ -429,6 +457,7 @@ jsClassDef(FileReader):
       if this.abort != nil:
         discard ?trace(ctx.abort(this.abort))
         this.readyState = frsDone
+      JS_GetRuntime(ctx).removeTasks(jtsFileReader)
       ctx.fireProgressEvent(this.asEventTarget, satAbort, 0, 0)
       if this.readyState != frsLoading:
         ctx.fireProgressEvent(this.asEventTarget, satLoadend, 0, 0)

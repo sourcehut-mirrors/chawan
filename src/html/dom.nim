@@ -1464,20 +1464,9 @@ proc click(window: Window; element: HTMLElement) =
   if window.bc != nil:
     clickCallback(window.bc, element)
 
-proc runJSJobs*(window: Window) =
+proc runMicrotasks*(window: Window) =
   let rt = JS_GetRuntime(window.jsctx)
-  while true:
-    let ctx = rt.runJSJobs()
-    if ctx == nil:
-      break
-    window.console.writeException(ctx)
-
-proc performMicrotaskCheckpoint*(window: Window) =
-  if window.inMicrotaskCheckpoint:
-    return
-  window.inMicrotaskCheckpoint = true
-  window.runJSJobs()
-  window.inMicrotaskCheckpoint = false
+  rt.runMicrotasks()
 
 proc windowChange*(window: Window) =
   let document = window.document
@@ -1876,11 +1865,11 @@ proc find(observers: openArray[ObserverItem]; observer: MutationObserver):
 
 #TODO put this in runtime opaque
 var pendingObservers {.global.}: seq[MutationObserver]
-var mutationJobQueued {.global.}: bool
 
 proc mutationJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
-  mutationJobQueued = false
+  let rt = JS_GetRuntime(ctx)
+  rt.getOpaque().mutationJobQueued = false
   let observers = move(pendingObservers)
   #TODO signal slots
   for observer in observers:
@@ -1890,12 +1879,15 @@ proc mutationJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
       let records = ?trace(ctx.toJS(records))
       let this = trace(ctx.toJS(observer)) # cannot fail
       #TODO invoke (with all the ceremony that entails)
+      let inScript = rt.getOpaque().inScript
       discard ?trace(ctx.call(observer.callback, this.vc, records.vc, this.vc))
+      rt.cleanUpCallback(inScript)
   return JS_UNDEFINED
 
 proc queueMutationJob(ctx: JSContext) =
-  if not mutationJobQueued and ctx.enqueueJob(mutationJob) == fjOk:
-    mutationJobQueued = true
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  if not rtOpaque.mutationJobQueued and ctx.enqueueJob(mutationJob) == fjOk:
+    rtOpaque.mutationJobQueued = true
 
 proc queueMutationRecord(target: Node; ctx: JSContext; t: MutationRecordType;
     name, namespace: CAtom; oldValue: StrNil; added, removed: openArray[Node];
@@ -6986,10 +6978,14 @@ proc onFinishToBlob(response: Response; success: bool) =
     JS_FreeContext(ctx)
     return
   let window = this.asNode.document.window
+  #TODO invoke (with all the ceremony that entails)
   let res = trace(ctx.callSink(callback, JS_UNDEFINED.vc, jsBlob))
+  let rt = JS_GetRuntime(ctx)
+  let inScript = rt.getOpaque().inScript
   if JS_IsException(res.vc):
     window.console.error(str("Exception in canvas toBlob:"),
       ctx.getExceptionMsg())
+  rt.cleanUpCallback(inScript)
   JS_FreeContext(ctx)
 
 proc toBlob1(opaque: RootRef; response: Response) =
@@ -7350,9 +7346,14 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
       ctx.setImportMeta(record.vc, true) == fjErr:
     window.logException(script.baseURL)
   else:
-    let res = ctx.evalFunction(record.toJSValue()) # consumes record
-    if JS_IsException(res):
-      window.logException(script.baseURL)
+    let rt = JS_GetRuntime(ctx)
+    let inScript = rt.getOpaque().inScript
+    block:
+      let res = ctx.evalFunction(record.toJSValue()) # consumes record
+      if JS_IsException(res):
+        window.logException(script.baseURL)
+      # note: res is discarded in the spec too
+    rt.cleanUpScript(inScript)
 
 type
   FetchModuleEnv* {.final.} = ref object of BlobOpaque
@@ -7486,10 +7487,13 @@ proc execute*(element: HTMLScriptElement) =
       let ctx = window.jsctx
       if window.settings.scripting != smFalse:
         element.prepare(ctx)
+        let rt = JS_GetRuntime(ctx)
+        let inScript = rt.getOpaque().inScript
         let record = move(script.record).toJSValue()
         let ret = ctx.evalFunction(record) # consumes record
         if JS_IsException(ret):
           window.logException(script.baseURL)
+        rt.cleanUpScript(inScript)
     document.currentScript = oldCurrentScript
   else: discard #TODO
   if needsInc:

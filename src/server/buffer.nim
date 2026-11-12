@@ -35,6 +35,7 @@ import io/poll
 import io/timeout
 import js/fromjs
 import js/jsbind
+import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -72,7 +73,6 @@ type
     ishtml: bool
     needsBOMSniff: bool
     savetask: bool
-    checkJobs: bool
     state: BufferState
     charset: Charset
     bgcolor: CellColor
@@ -728,8 +728,9 @@ proc finishLoad(bc: BufferContext; data: InputData) =
   data.stream.sclose()
 
 proc headlessMustWait(bc: BufferContext): bool =
+  let rt = JS_GetRuntime(bc.window.jsctx)
   return bc.config.scripting != smFalse and
-      (not bc.window.timeouts.empty or bc.checkJobs) or
+      (not bc.window.timeouts.empty or rt.hasTasksOrJobs()) or
     bc.loader.hasFds()
 
 proc imagesLoaded(bc: BufferContext) =
@@ -847,7 +848,6 @@ proc onload(bc: BufferContext; data: InputData) =
           continue
         if bc.rewind(data, 0):
           continue
-      bc.checkJobs = true
       bc.firstBufferRead = true
       reprocess = false
     else: # EOF
@@ -1809,7 +1809,6 @@ proc handleRead(bc: BufferContext; fd: cint): bool =
       bc.onload(InputData(data))
     else:
       bc.loader.onRead(fd)
-      bc.checkJobs = true
   else:
     assert false
   true
@@ -1827,7 +1826,6 @@ proc handleError(bc: BufferContext; fd: cint): bool =
       if not bc.loader.onError(fd):
         #TODO handle connection error
         assert false, $fd
-      bc.checkJobs = true
   else:
     assert false, $fd
   true
@@ -1860,11 +1858,15 @@ proc runBuffer(bc: BufferContext) =
     bc.loader.unregistered.setLen(0)
     bc.loader.unblockRegister()
     if bc.config.scripting != smFalse:
-      if bc.window.timeouts.run(bc.window.jsctx, bc.window.console) or
-          bc.checkJobs:
-        bc.window.runJSJobs()
-        bc.maybeReshape(suppressFouc = true)
-        bc.checkJobs = false
+      let rt = JS_GetRuntime(bc.window.jsctx)
+      discard bc.window.timeouts.run(bc.window.jsctx, bc.window.console)
+      while (let task = rt.popTask(); task != nil):
+        if task.cb(task.ctx, task.env).isErr:
+          #TODO not convinced that this is actually needed
+          bc.window.console.error(initStrM("Exception in task from source ",
+            task.source, ": ", task.ctx.getExceptionMsg()))
+        bc.window.runMicrotasks()
+      bc.maybeReshape(suppressFouc = true)
 
 proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];

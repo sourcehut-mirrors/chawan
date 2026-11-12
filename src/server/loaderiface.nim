@@ -21,6 +21,7 @@ import io/poll
 import js/constcharp
 import js/fromjs
 import js/jsbind
+import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -275,11 +276,13 @@ proc jsFinish0(opaque: JSBlobOpaque; val: JSValue) =
   let reject = move(opaque.reject)
   opaque.ctx = nil
   if not JS_IsException(val.vc):
+    #TODO invoke?
     let res = trace(ctx.callSink(resolve, JS_UNDEFINED.vc, val))
     if JS_IsException(res):
       ctx.consoleError(ctx.getExceptionMsg())
   else:
     discard ctx.enqueueRejection(reject)
+  JS_GetRuntime(ctx).runMicrotasks()
   JS_FreeContext(ctx)
 
 proc jsBlobFinish(response: Response; success: bool) =

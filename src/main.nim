@@ -11,6 +11,7 @@ import html/dom
 import html/env
 import html/script
 import io/chafile
+import io/console
 import io/dynstream
 import io/poll
 import js/fromjs
@@ -407,6 +408,11 @@ proc addJSModules(client: Window; ctx: JSContext): JSCode =
   ?ctx.addBufferInterfaceModule()
   ctx.addSelectModule()
 
+proc logExceptionPager(ctx: JSContext) =
+  # log exception for main process
+  let client = ctx.getWindow()
+  client.console.writeException(ctx)
+
 proc main2(ctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
     forkserver: ForkServer): int =
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
@@ -477,6 +483,7 @@ proc main() =
   let pagerPid = int(getpid())
   let forkserver = forkForkServer(loaderSockVec, pagerPid, rt)
   let ctx = rt.newJSContext()
+  rt.getOpaque().logExceptionCb = logExceptionPager
   let code = main2(ctx, loaderSockVec, pagerPid, forkserver)
   ctx.free()
   rt.free()

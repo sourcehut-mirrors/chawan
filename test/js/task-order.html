@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<title>Test task ordering</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+let atStep = 0;
+
+function step(i) {
+	assertEquals(i, atStep);
+	atStep++;
+}
+
+new Promise(resolve => {
+	resolve();
+}).then(() => /* called from microtask (I guess?) */ step(0));
+
+window.onmessage = x => {
+	/* called from event loop */
+	assertEquals(x.data, 1);
+	step(3);
+	document.getElementById("x").textContent = "Success";
+}
+
+window.postMessage(1);
+
+queueMicrotask(() => /* called from microtask */ step(1))
+new Promise(resolve => {
+	resolve();
+}).then(() => /* called from microtask */ step(2));
+</script>

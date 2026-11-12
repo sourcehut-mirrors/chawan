@@ -442,11 +442,13 @@ proc cleanup(pager: Pager) =
           break
 
 proc runJSJobs(pager: Pager; rt: JSRuntime): Opt[void] =
-  while true:
-    let ctx = rt.runJSJobs()
-    if ctx == nil:
-      break
-    pager.console.writeException(ctx)
+  rt.runMicrotasks() #TODO handle after invoking callbacks instead?
+  while (let task = rt.popTask(); task != nil):
+    if task.cb(task.ctx, task.env).isErr:
+      #TODO not convinced that this is actually needed
+      pager.console.error(initStrM("Exception in task from source ",
+        task.source, ": ", task.ctx.getExceptionMsg()))
+    rt.runMicrotasks()
   if pager.exitCode != -1:
     return err()
   ok()

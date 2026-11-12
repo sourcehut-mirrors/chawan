@@ -106,11 +106,6 @@ proc freeValues*(ctx: JSContext; vals: openArray[JSValue]) =
   for val in vals:
     JS_FreeValue(ctx, val)
 
-proc call*(ctx: JSContext; funcObj, this: JSValueConst;
-    argv: varargs[JSValueConst]): JSValue =
-  ## Call `funcObj` with the this value `this` and parameters `argv`.
-  JS_Call(ctx, funcObj, this, cast[cint](argv.len), argv.toJSValueConstArray())
-
 proc call*(ctx: JSContext; funcObj: sink JSCallback; this: JSValueConst;
     argv: varargs[JSValueConst]): JSValue =
   ## Call `funcObj` with the this value `this` and parameters `argv`.
@@ -169,12 +164,14 @@ proc enqueueJob*(ctx: JSContext; fun: JSJobFunc;
 
 proc rejectJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
-  return ctx.call(argv[0], JS_UNDEFINED.vc, argv[1])
+  return JS_Call(ctx, argv[0], JS_UNDEFINED.vc, 1,
+    cast[JSValueConstArray](unsafeAddr argv[1]))
 
 proc enqueueRejection*(ctx: JSContext; reject: JSCallback): JSCode =
   ## Usage: throw an exception, then call queueRejection with the reject fun.
   ## reject is freed.
   let ex = JS_GetException(ctx)
+  #TODO shouldn't these be tasks?
   let code = ctx.enqueueJob(rejectJob, reject.value, ex.vc)
   JS_FreeValue(ctx, ex)
   code
@@ -434,16 +431,6 @@ proc getExceptionMsg*(ctx: JSContext): Str =
   JS_FreeValue(ctx, stack)
   buf.toStr()
 
-proc runJSJobs*(rt: JSRuntime): JSContext =
-  ## Returns the first JSContext that threw an exception, or nil if no
-  ## exception was thrown.
-  while JS_IsJobPending(rt) != 0:
-    var ctx: JSContext
-    let r = JS_ExecutePendingJob(rt, ctx)
-    if r == -1:
-      return ctx
-  nil
-
 proc toIntIndex*(ctx: JSContext; value: JSValue): int =
   ## Convert value to an index that is guaranteed to be smaller than
   ## uint32.high or int.high (on 32-bit systems).
@@ -514,10 +501,14 @@ proc newGetterFunctionData*(ctx: JSContext; fun: JSCFunctionData;
 proc callUserObject*(ctx: JSContext; callback: JSObject; name: JSStrRef;
     this, arg: JSValueConst): JSValue =
   #TODO switch the context as the spec mandates
+  #TODO handle incumbent object
+  let rt = JS_GetRuntime(ctx)
+  let inScript = rt.getOpaque().inScript
   let ret = if JS_IsFunction(ctx, callback):
     ctx.call(JSCallback(callback), this, arg)
   else:
     ctx.invoke(callback, ctx.getAtom(name), arg)
+  rt.cleanUpScript(inScript)
   ret
 
 proc serialize*(ctx: JSContext; val: JSValueConst): Opt[seq[uint8]] =

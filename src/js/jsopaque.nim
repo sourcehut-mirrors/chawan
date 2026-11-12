@@ -8,6 +8,7 @@ import js/constcharp
 import js/jstypes
 import js/quickjs
 import utils/cowstr
+import utils/opt
 import utils/twtstr
 
 type
@@ -117,10 +118,37 @@ type
     atoms*: seq[JSAtom] # enum number -> atom
     enums*: seq[EnumMapItem] # atom number -> enum
 
+  JSTaskSource* = enum
+    jtsPermission
+    jtsPostMessage
+    jtsFileReader
+    jtsDOMManipulation
+
+  JSTaskEnv* = ref object of RootObj #TODO JSRoot?
+
+  #TODO return JSCode?
+  JSTaskCallback* = proc(ctx: JSContext; env: JSTaskEnv): Opt[void] {.
+    nimcall, raises: [].}
+
+  JSTask* = ref JSTaskObj
+
+  JSTaskObj = object
+    ctx*: JSContext
+    source*: JSTaskSource
+    env*: JSTaskEnv
+    cb*: JSTaskCallback
+    next: JSTask
+
   JSRuntimeOpaqueObj* = object
     classes*: seq[JSClassData] # JSClassID -> data
     enumMap*: seq[EnumMapEntry]
+    tasksHead*: JSTask
+    tasksTail*: JSTask
     load: int
+    mutationJobQueued*: bool
+    inMicrotaskCheckpoint*: bool
+    inScript*: bool
+    logExceptionCb*: proc(ctx: JSContext) {.nimcall, raises: [].}
     when defined(debug):
       marking*: bool
 
@@ -139,6 +167,9 @@ iterator marks*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
   if classid < rtOpaque.classes.len:
     for mark in rtOpaque.classes[classid].marks.ritems:
       yield mark
+
+proc `=destroy`*(task: var JSTaskObj) =
+  JS_FreeContext(task.ctx)
 
 # hooks for cowstr
 proc freeCString(p: cstring) {.exportc: "cha_$1".} =
@@ -245,5 +276,66 @@ proc getName*(rt: JSRuntime; classid: JSClassID): string =
 
 proc getAtom*(ctx: JSContext; jst: JSStrRef): lent JSAtom =
   ctx.getOpaque().strRefs[jst]
+
+proc queueTask2(rtOpaque: JSRuntimeOpaque; task: sink JSTask) =
+  if rtOpaque.tasksTail == nil:
+    rtOpaque.tasksHead = task
+  else:
+    rtOpaque.tasksTail.next = task
+  rtOpaque.tasksTail = task
+
+proc queueTask*(ctx: JSContext; source: JSTaskSource; cb: JSTaskCallback;
+    env: JSTaskEnv): Opt[void] =
+  let rt = JS_GetRuntime(ctx)
+  let rtOpaque = rt.getOpaque()
+  let task = JSTask(ctx: JS_DupContext(ctx), source: source, env: env, cb: cb)
+  rtOpaque.queueTask2(task)
+  ok() # in case we ever want to handle OOM
+
+proc popTask*(rt: JSRuntime): JSTask =
+  let rtOpaque = rt.getOpaque()
+  let task = move(rtOpaque.tasksHead)
+  if task != nil:
+    rtOpaque.tasksHead = move(task.next)
+    if rtOpaque.tasksHead == nil:
+      rtOpaque.tasksTail = nil
+  task
+
+proc removeTasks*(rt: JSRuntime; source: JSTaskSource) =
+  let rtOpaque = rt.getOpaque()
+  var it = move(rtOpaque.tasksHead)
+  rtOpaque.tasksTail = nil
+  while it != nil:
+    let next = move(it.next)
+    if it.source != source:
+      rtOpaque.queueTask2(it)
+    it = next
+
+proc runMicrotasks*(rt: JSRuntime) =
+  let rtOpaque = rt.getOpaque()
+  if not rtOpaque.inMicrotaskCheckpoint:
+    rtOpaque.inMicrotaskCheckpoint = true
+    while JS_IsJobPending(rt) != 0:
+      var ctx: JSContext
+      let r = JS_ExecutePendingJob(rt, ctx)
+      if r < 0 and ctx != nil and rtOpaque.logExceptionCb != nil:
+        #TODO QJS says ctx is deprecated, but I'm not sure if we can log
+        # all exceptions otherwise.  (Maybe it's possible with the promise
+        # tracker + doing it on our side otherwise?)
+        rtOpaque.logExceptionCb(ctx)
+    rtOpaque.inMicrotaskCheckpoint = false
+
+proc cleanUpScript*(rt: JSRuntime; prevInScript: bool) =
+  rt.getOpaque().inScript = prevInScript
+  if not prevInScript:
+    rt.runMicrotasks()
+
+proc cleanUpCallback*(rt: JSRuntime; prevInScript: bool) =
+  # same as cleanUpScript for now; in the spec it handles the incumbent
+  # settings object
+  rt.cleanUpScript(prevInScript)
+
+proc hasTasksOrJobs*(rt: JSRuntime): bool =
+  JS_IsJobPending(rt) != 0 or rt.getOpaque().tasksHead != nil
 
 {.pop.} # raises
