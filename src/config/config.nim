@@ -621,7 +621,7 @@ template defineAuto(typ, other: untyped) =
     return JS_NULL
 
   proc fromJS*(ctx: JSContext; val: JSValueConst; res: var typ): JSCode =
-    if not JS_IsNull(val):
+    if JS_IsNull(val):
       res = typ(0)
     else:
       var res2: other
