@@ -17519,12 +17519,12 @@ exception:
 
 static __exception int JS_CopyDataProperties(JSContext *ctx,
                                              JSValueConst target,
-                                             JSValueConst source,
+                                             JSValueConst source0,
                                              JSValueConst excluded,
                                              BOOL setprop)
 {
     JSPropertyEnum *tab_atom;
-    JSValue val;
+    JSValue val, source;
     uint32_t i, tab_atom_count;
     JSObject *p;
     JSObject *pexcl = NULL;
@@ -17532,8 +17532,11 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     JSPropertyDescriptor desc;
     BOOL is_enumerable;
 
-    if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT)
+    if (JS_IsNull(source0) || JS_IsUndefined(source0))
         return 0;
+    source = JS_ToObject(ctx, source0);
+    if (JS_IsException(source))
+        return -1;
 
     if (JS_VALUE_GET_TAG(excluded) == JS_TAG_OBJECT)
         pexcl = JS_VALUE_GET_OBJ(excluded);
@@ -17550,8 +17553,10 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
         }
     }
     if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count, p,
-                                       gpn_flags))
+                                       gpn_flags)) {
+        JS_FreeValue(ctx, source);
         return -1;
+    }
 
     for (i = 0; i < tab_atom_count; i++) {
         if (pexcl) {
@@ -17586,9 +17591,11 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
             goto exception;
     }
     JS_FreePropertyEnum(ctx, tab_atom, tab_atom_count);
+    JS_FreeValue(ctx, source);
     return 0;
  exception:
     JS_FreePropertyEnum(ctx, tab_atom, tab_atom_count);
+    JS_FreeValue(ctx, source);
     return -1;
 }
 
@@ -41443,27 +41450,19 @@ static JSValue js_object_assign(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
     // Object.assign(obj, source1)
-    JSValue obj, s;
+    JSValue obj;
     int i;
 
-    s = JS_UNDEFINED;
     obj = JS_ToObject(ctx, argv[0]);
     if (JS_IsException(obj))
         goto exception;
     for (i = 1; i < argc; i++) {
-        if (!JS_IsNull(argv[i]) && !JS_IsUndefined(argv[i])) {
-            s = JS_ToObject(ctx, argv[i]);
-            if (JS_IsException(s))
+        if (JS_CopyDataProperties(ctx, obj, argv[i], JS_UNDEFINED, TRUE))
                 goto exception;
-            if (JS_CopyDataProperties(ctx, obj, s, JS_UNDEFINED, TRUE))
-                goto exception;
-            JS_FreeValue(ctx, s);
-        }
     }
     return obj;
 exception:
     JS_FreeValue(ctx, obj);
-    JS_FreeValue(ctx, s);
     return JS_EXCEPTION;
 }
 
