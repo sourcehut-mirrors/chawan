@@ -281,7 +281,9 @@ proc generateBoundary(urandom: PosixStream): Str =
   if urandom.readLoop(s).isErr:
     return str("")
   # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
-  return initStrM("----WebKitFormBoundary", btoa(s))
+  var buf = initGrowbuf("----WebKitFormBoundary")
+  buf.addBtoa(s)
+  buf.toStr()
 
 proc newFormData0*(urandom: PosixStream): FormData =
   var boundary = urandom.generateBoundary()

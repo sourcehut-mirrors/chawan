@@ -885,8 +885,9 @@ jsClassDef(Window):
     if ctx.fromJS(data.vc, s).isErr:
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in string")
-    let res = btoa(s.toOpenArray())
-    ctx.toJS(res)
+    var buf = initGrowbuf()
+    buf.addBtoa(s.toOpenArray())
+    ctx.toJS(buf)
 
   proc alert(window: Window; s: DOMString) {.jsfunc.} =
     window.console.error(s.toStr())

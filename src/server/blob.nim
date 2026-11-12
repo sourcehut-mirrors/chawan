@@ -340,7 +340,7 @@ proc package(ctx: JSContext; s: openArray[char]; contentType: Str;
   case packageType
   of ptDataURL:
     var res = initGrowbufM("data:", contentType, ";base64,")
-    res.btoa(s.toOpenArrayByte(0, s.high))
+    res.addBtoa(s.toOpenArrayByte(0, s.high))
     return trace(ctx.toJS(res))
   of ptArrayBuffer:
     return trace(ctx.newArrayBuffer(s))

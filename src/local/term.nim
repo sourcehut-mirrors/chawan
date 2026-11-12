@@ -2230,7 +2230,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
   let L = image.data.len
   let m = if i < L: '1' else: '0'
   outs.addM(",a=T,f=100,m=", m, ';')
-  outs.btoa(p.toOpenArray(0, min(L, i) - 1))
+  outs.addBtoa(p.toOpenArray(0, min(L, i) - 1))
   outs &= ST
   ?term.write(outs)
   while i < L:
@@ -2238,7 +2238,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
     i += MaxBytes
     let m = if i < L: '1' else: '0'
     var outs = initGrowbufM(static(APC), "Gm=", m, ';')
-    outs.btoa(p.toOpenArray(j, min(L, i) - 1))
+    outs.addBtoa(p.toOpenArray(j, min(L, i) - 1))
     outs &= ST
     ?term.write(outs)
   ok()
@@ -2407,7 +2407,7 @@ proc sendOSC52*(term: Terminal; s: openArray[char]; clipboard = true):
   if term.osc52Primary:
     buf &= 'p'
   buf &= ';'
-  buf.btoa(s.toOpenArrayByte(0, s.high))
+  buf.addBtoa(s.toOpenArrayByte(0, s.high))
   buf &= ST
   let ot = term.frameType
   term.frameType = ftCurrent

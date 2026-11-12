@@ -17,7 +17,7 @@ proc parse(): Opt[void] =
     let n = chaStdin.read(buffer)
     if n <= 0:
       break
-    s.btoa(buffer.toOpenArray(0, n - 1))
+    s.addBtoa(buffer.toOpenArray(0, n - 1))
     ?chaStdout.write(s)
     s.setLen(0)
   ?chaStdout.write("'>")

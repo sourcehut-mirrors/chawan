@@ -1095,50 +1095,6 @@ proc atob*(outs: var Str; data: openArray[char]): Err[cstring] =
   outs = s.toStr()
   return ok()
 
-const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-
-proc btoa*(s: var Growbuf; data: openArray[uint8]) =
-  var i = 0
-  let endw = data.len - 2
-  while i < endw:
-    let n = uint32(data[i]) shl 16 or
-      uint32(data[i + 1]) shl 8 or
-      uint32(data[i + 2])
-    i += 3
-    s &= AMap[n shr 18 and 0x3F]
-    s &= AMap[n shr 12 and 0x3F]
-    s &= AMap[n shr 6 and 0x3F]
-    s &= AMap[n and 0x3F]
-  if i < data.len:
-    let b1 = uint32(data[i])
-    inc i
-    if i < data.len:
-      let b2 = uint32(data[i])
-      s &= AMap[b1 shr 2]                      # 6 bits of b1
-      s &= AMap[b1 shl 4 and 0x3F or b2 shr 4] # 2 bits of b1 | 4 bits of b2
-      s &= AMap[b2 shl 2 and 0x3F]             # 4 bits of b2
-    else:
-      s &= AMap[b1 shr 2]          # 6 bits of b1
-      s &= AMap[b1 shl 4 and 0x3F] # 2 bits of b1
-      s &= '='
-    s &= '='
-
-proc btoa*(s: var Growbuf; data: openArray[char]) =
-  s.btoa(data.toOpenArrayByte(0, data.high))
-
-proc btoa*(data: openArray[uint8]): Str =
-  if data.len == 0:
-    return str("")
-  var L = data.len div 3 * 4
-  if (let rem = data.len mod 3; rem) > 0:
-    L += 3 - rem
-  var buf = initGrowbufOfCap(L)
-  buf.btoa(data)
-  buf.toStr()
-
-proc btoa*(data: openArray[char]): Str =
-  btoa(data.toOpenArrayByte(0, data.len - 1))
-
 proc parseDimensions*(s: Str): tuple[w, h: int] =
   let xi = s.find('x')
   if xi < 0:
@@ -1559,6 +1515,41 @@ proc findOrLen*(buf: Growbuf; c: char; starti = 0): int =
 proc until*(buf: Growbuf; cc: char; starti = 0): Str =
   let endi = buf.findOrLen(cc, starti)
   buf.substr(starti, endi - 1)
+
+const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+proc addBtoa*(s: var Growbuf; data: openArray[uint8]) =
+  var L = data.len div 3 * 4
+  if (let rem = data.len mod 3; rem) > 0:
+    L += 3 - rem
+  s.reserve(s.len + L)
+  var i = 0
+  let endw = data.len - 2
+  while i < endw:
+    let n = uint32(data[i]) shl 16 or
+      uint32(data[i + 1]) shl 8 or
+      uint32(data[i + 2])
+    i += 3
+    s &= AMap[n shr 18 and 0x3F]
+    s &= AMap[n shr 12 and 0x3F]
+    s &= AMap[n shr 6 and 0x3F]
+    s &= AMap[n and 0x3F]
+  if i < data.len:
+    let b1 = uint32(data[i])
+    inc i
+    if i < data.len:
+      let b2 = uint32(data[i])
+      s &= AMap[b1 shr 2]                      # 6 bits of b1
+      s &= AMap[b1 shl 4 and 0x3F or b2 shr 4] # 2 bits of b1 | 4 bits of b2
+      s &= AMap[b2 shl 2 and 0x3F]             # 4 bits of b2
+    else:
+      s &= AMap[b1 shr 2]          # 6 bits of b1
+      s &= AMap[b1 shl 4 and 0x3F] # 2 bits of b1
+      s &= '='
+    s &= '='
+
+proc addBtoa*(s: var Growbuf; data: openArray[char]) =
+  s.addBtoa(data.toOpenArrayByte(0, data.high))
 
 # for addV
 proc reserveAdd(buf: var Growbuf; len: csize_t) {.exportc: "cha_Growbuf_$1".} =

@@ -250,7 +250,7 @@ proc connectHTTPSocket(host, port, proxyHost, proxyPort,
     "Host: ", host, ':', port, "\r\n")
   if proxyUser != "" or proxyPass != "":
     buf &= "Proxy-Authorization: Basic "
-    buf.btoa(initStrM(proxyUser, ':', proxyPass).toOpenArray())
+    buf.addBtoa(initGrowbufM(proxyUser, ':', proxyPass).toOpenArray())
     buf &= "\r\n"
   buf &= "\r\n"
   if ps.writeLoop(buf.toOpenArray()).isErr:

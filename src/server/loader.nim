@@ -1481,7 +1481,7 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
         if auth != nil:
           let buf = initGrowbufM(auth.username, ':', auth.password)
           var buf2 = initGrowbuf("Basic ")
-          buf2 &= btoa(buf.toOpenArray())
+          buf2.addBtoa(buf.toOpenArray())
           request.headers.addIfNotFound(byteStr("Authorization"),
             buf2.toStr().asByteString)
         if mfUrimethodmap in entry.flags: # backwards-compat
