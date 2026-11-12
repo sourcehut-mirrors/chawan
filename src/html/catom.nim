@@ -378,6 +378,12 @@ proc toAtom*(s: openArray[char]): CAtom =
 proc toAtom*(s: Str): CAtom =
   CAtom(getFactory().toAtomRaw(s))
 
+proc toAtom*(s: StrNil): CAtom =
+  if s != nil:
+    s.asStr.toAtom()
+  else:
+    CAtomNull
+
 proc toAtom*(s: DOMString): CAtom =
   s.toStr().toAtom()
 

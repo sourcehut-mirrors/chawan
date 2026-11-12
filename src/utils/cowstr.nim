@@ -1149,15 +1149,16 @@ proc `==`*(s: StrNil; n: typeof(nil)): bool =
   ## type.
   s.asStr.ilen == 0 and s.asStr.p == nil
 
-proc toStrNil*(s: sink Str): StrNil =
+proc toStrNil*(s: Str): lent StrNil =
   if s.len == 0:
-    wasMoved(s)
-    StrNil(initStr("", 0))
-  else:
-    StrNil(s)
+    let hack {.global.} = StrNil(str(""))
+    return hack
+  StrNil(s)
+
+const strNil = StrNil(initStrLit(nil, 0))
 
 template str*(s: typeof(nil)): StrNil =
-  StrNil(initStrLit(nil, 0))
+  strNil
 
 # Growbuf
 iterator items*(s: Growbuf): char =

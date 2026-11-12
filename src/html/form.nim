@@ -243,30 +243,31 @@ proc cloningStepsForm(old, clone: Element) {.exportc: "cha_$1".} =
     clone.setChecked(old.checked)
     #TODO dirty checkedness flag
 
-proc reflectAttributeForm(element: Element; name: StaticAtom; has: bool;
-    value: Str) {.exportc: "cha_$1".} =
+proc reflectAttributeForm(element: Element; name: StaticAtom; value: StrNil)
+    {.exportc: "cha_$1".} =
   case element.tagType
   of ttInput:
     let input = element as HTMLInputElement
     case name
-    of satValue: input.setValue(value)
-    of satChecked: input.setChecked(has)
+    of satValue: input.setValue(value.asStr)
+    of satChecked: input.setChecked(value != nil)
     of satType:
-      input.inputType = parseEnumNoCase[InputType](value.toOpenArray())
-        .get(itText)
+      input.inputType =
+        parseEnumNoCase[InputType](value.asStr.toOpenArray()).get(itText)
     else: discard
   of ttOption:
     let option = element as HTMLOptionElement
     if name == satSelected:
-      option.selected = has
+      option.selected = value != nil
   of ttButton:
     let button = element as HTMLButtonElement
     if name == satType:
-      button.buttonType = parseEnumNoCase[ButtonType](value).get(btSubmit)
+      button.buttonType =
+        parseEnumNoCase[ButtonType](value.asStr).get(btSubmit)
   of ttArea:
     let area = element as HTMLAreaElement
     if name == satRel:
-      area.asElement.reflectTokens(area.relList, satRel, value)
+      area.asElement.reflectTokens(area.relList, satRel, value.asStr)
   else: discard
 
 proc getElementForm(element: Element): HTMLElement {.exportc: "cha_$1".} =

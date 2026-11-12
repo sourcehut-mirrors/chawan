@@ -790,8 +790,8 @@ proc insertionStepsForm(element: Element) {.importc: "cha_$1".}
 proc removingStepsForm(element: Element) {.importc: "cha_$1".}
 proc movingStepsForm(element: Element) {.importc: "cha_$1".}
 proc cloningStepsForm(old, clone: Element) {.importc: "cha_$1".}
-proc reflectAttributeForm(element: Element; name: StaticAtom; has: bool;
-  value: Str) {.importc: "cha_$1".}
+proc reflectAttributeForm(element: Element; name: StaticAtom; value: StrNil)
+  {.importc: "cha_$1".}
 proc hasInsertionStepsForm(element: Element): bool {.importc: "cha_$1".}
 proc getElementForm(element: Element): HTMLElement {.importc: "cha_$1".}
 proc getFormMethodAttr(element: Element; name: StaticAtom): Str {.
@@ -5248,18 +5248,18 @@ proc reflectTokens*(element: Element; arr: var DOMTokenArray; name: StaticAtom;
     # references element
     list.toks = DOMTokenArrayView(arr)
 
-proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
-    value: Str) =
+proc reflectLocalAttr(element: Element; name: StaticAtom; value: StrNil) =
   case element.tagType
   of ttLink:
     let link = element as HTMLLinkElement
     if name == satRel:
-      link.asElement.reflectTokens(link.relList, satRel, value) # do not return
+      link.asElement.reflectTokens(link.relList, satRel, value.asStr)
+      # do not return
     let document = link.asNode.document
     let connected = link.asNode.isConnected()
     if name == satDisabled:
       let wasDisabled = link.isDisabled()
-      link.enabled = (not has).toOptionalBool()
+      link.enabled = (value == nil).toOptionalBool()
       let disabled = link.isDisabled()
       if wasDisabled != disabled:
         for sheet in link.asSheetElement.sheets:
@@ -5277,7 +5277,7 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
   of ttA:
     let anchor = element as HTMLAnchorElement
     if name == satRel:
-      anchor.asElement.reflectTokens(anchor.relList, satRel, value)
+      anchor.asElement.reflectTokens(anchor.relList, satRel, value.asStr)
   of ttCanvas:
     if element.scriptingEnabled and name in {satWidth, satHeight}:
       let w = element.attrul(satWidth).get(300)
@@ -5310,58 +5310,53 @@ proc reflectLocalAttr(element: Element; name: StaticAtom; has: bool;
       if window != nil:
         window.loadImage(image)
   else:
-    element.reflectAttributeForm(name, has, value)
+    element.reflectAttributeForm(name, value)
 
 # Called whenever an attribute changes on the element.
-# If `has' is false, then value is "".  Otherwise, value is the new
-# attribute value.
-proc reflectAttr0(element: Element; name: CAtom; has: bool; value: Str) =
+# If the value was removed, a nil `value' is passed; otherwise the new
+# attribute's value.
+proc reflectAttr0(element: Element; name: CAtom; value: StrNil) =
   let name = name.toStaticAtom()
   case name
   of satId:
     let root = element.asNode.rootNode as RootNode
     if element.id != satUempty and root != nil:
       root.removeElementId(element)
-    if has:
-      element.id = value.toAtom()
-    else:
-      element.id = satUempty.view()
+    element.id = value.asStr.toAtom()
     if element.id != satUempty and root != nil:
       root.addElementId(element)
   of satName:
-    if has:
-      element.name = value.toAtom()
-    else:
-      element.name = CAtomNull
+    element.name = value.toAtom()
   of satClass:
-    element.reflectTokens(element.classList, satClass, value)
+    element.reflectTokens(element.classList, satClass, value.asStr)
   #TODO internalNonce
   of satStyle:
-    if has:
+    if value != nil:
       if element.cachedStyle == nil:
-        element.cachedStyle = newCSSStyleDeclaration(element, value)
+        element.cachedStyle = newCSSStyleDeclaration(element, value.asStr)
       elif element.cachedStyle.updating: # no need to re-parse
         element.cachedStyle.updating = false
       else:
-        element.cachedStyle.decls = value.parseDeclarations()
+        element.cachedStyle.decls = value.asStr.parseDeclarations()
     else:
       element.cachedStyle.decls.setLen(0)
   of satUnknown: discard # early return
-  elif element.scriptingEnabled and element.reflectScriptAttr(name, value):
+  elif element.scriptingEnabled and
+      element.reflectScriptAttr(name, value.asStr):
     discard
   else:
-    element.reflectLocalAttr(name, has, value)
+    element.reflectLocalAttr(name, value)
 
-proc reflectAttr(element: Element; name: CAtom; has: bool; value: Str) =
-  element.reflectAttr0(name, has, value)
+proc reflectAttr(element: Element; name: CAtom; value: StrNil) =
+  element.reflectAttr0(name, value)
   element.asNode.document.invalidateCollections()
   element.invalidate()
 
 proc reflectAttrDel(element: Element; name: CAtom) =
-  element.reflectAttr(name, false, str(""))
+  element.reflectAttr(name, str(nil))
 
 proc reflectAttr(element: Element; attr: AttrData) =
-  element.reflectAttr(attr.name, true, attr.value)
+  element.reflectAttr(attr.name, attr.value.toStrNil())
 
 proc elIndex*(this: Element): uint32 =
   if this.parentNode == nil:
