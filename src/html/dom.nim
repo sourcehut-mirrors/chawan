@@ -2722,7 +2722,7 @@ proc lastElementChild*(node: ParentNode): Element =
     return child
   return Element(nil)
 
-proc findFirstChildOf(node: ParentNode; tagType: TagType): Element =
+proc findFirstChildOf*(node: ParentNode; tagType: TagType): Element =
   for element in node.elementList:
     if element.tagType == tagType:
       return element
@@ -2735,7 +2735,7 @@ proc findFirstChildOf(node: ParentNode; localName, namespace: StaticAtom):
       return element
   return Element(nil)
 
-proc findLastChildOf(node: ParentNode; tagType: TagType): Element =
+proc findLastChildOf*(node: ParentNode; tagType: TagType): Element =
   for element in node.relementList:
     if element.tagType == tagType:
       return element

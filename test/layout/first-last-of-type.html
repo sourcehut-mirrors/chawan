@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<style>
+div > :first-of-type { color: green }
+div > :last-of-type { color: blue }
+div > * { color: red }
+summary:first-of-type { color: green }
+</style>
+<div>
+  <p>
+    first p
+  <div>first div</div>
+  <p>
+    second p
+  <div>second div</div>
+  <div>last div</div>
+</div>
+<hr>
+<summary>first</summary>
+<summary>second</summary>

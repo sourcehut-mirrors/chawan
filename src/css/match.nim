@@ -117,6 +117,14 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     let parentNode = element.parentNode
     return parentNode != nil and parentNode.firstElementChild == element and
       parentNode.lastElementChild == element
+  of pcFirstOfType:
+    if element.elIndex == 0:
+      return true # fast path
+    return element.parentNode != nil and
+      element.parentNode.findFirstChildOf(element.tagType) == element
+  of pcLastOfType:
+    return element.parentNode != nil and
+      element.parentNode.findLastChildOf(element.tagType) == element
   of pcHover:
     hasDeps = true
     depends.add(element, dtHover)

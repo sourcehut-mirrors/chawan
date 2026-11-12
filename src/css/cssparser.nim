@@ -383,6 +383,8 @@ type
     pcFirstChild = "first-child"
     pcLastChild = "last-child"
     pcOnlyChild = "only-child"
+    pcFirstOfType = "first-of-type"
+    pcLastOfType = "last-of-type"
     pcHover = "hover"
     pcRoot = "root"
     pcChecked = "checked"
@@ -439,7 +441,7 @@ type
       fsels*: SelectorList
     of stHost:
       host*: HostSelector
-    of stNthChild, stNthLastChild:
+    of stNthChild, stNthLastChild: #TODO nth-of-type
       nthChild*: CSSNthChild
     next: Selector
 
