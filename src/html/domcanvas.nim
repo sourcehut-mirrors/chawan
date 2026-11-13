@@ -371,7 +371,7 @@ jsClassDef(CanvasRenderingContext2D):
 
   proc measureText(ctx: CanvasRenderingContext2D; text: DOMString): TextMetrics
       {.jsfunc.} =
-    let tw = text.toStr().width()
+    let tw = text.asStr.width()
     return jsNew TextMetricsObj(
       width: 8 * float64(tw),
       actualBoundingBoxLeft: 0,

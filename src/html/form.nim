@@ -821,7 +821,7 @@ jsClassPublicDef(HTMLInputElement):
 
   proc setValue(this: HTMLInputElement; ds: sink DOMString) {.
       jsfset: "value".} =
-    this.setValue(ds.toStr())
+    this.setValue(ds.asStr)
 
   proc setType(ctx: JSContext; this: HTMLInputElement; s: DOMString) {.
       jsfset: "type".} =
@@ -967,9 +967,9 @@ jsClassDef(HTMLOutputElement):
       ds: sink DOMString) {.jsfset: "defaultValue".} =
     if this.dirty:
       this.dirty = true
-      this.internalValue = ds.toStr()
+      this.internalValue = ds.asStr
     else:
-      this.asParentNode.replaceAll(ctx, ds.toStr())
+      this.asParentNode.replaceAll(ctx, ds.asStr)
 
   proc value(this: HTMLOutputElement): Str {.jsfget.} =
     return this.asNode.textContent
@@ -1145,7 +1145,7 @@ jsClassDef(HTMLTextAreaElement):
 
   proc setValue(this: HTMLTextAreaElement; ds: sink DOMString) {.
       jsfset: "value".} =
-    this.setValue(ds.toStr())
+    this.setValue(ds.asStr)
 
   proc defaultValue(this: HTMLTextAreaElement): Str {.jsfget.} =
     this.asParentNode.childTextContent

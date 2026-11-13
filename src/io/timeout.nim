@@ -72,7 +72,7 @@ proc runEntry(ctx: JSContext; entry: TimeoutEntry; console: Console) =
   else:
     var s: DOMString
     if ctx.fromJS(entry.val, s).isOk:
-      trace(ctx.eval(s.toStr(), entry.t.toStr(), JS_EVAL_TYPE_GLOBAL))
+      trace(ctx.eval(s.asStr, entry.t.toStr(), JS_EVAL_TYPE_GLOBAL))
     else:
       trace(JS_EXCEPTION)
   if JS_IsException(ret):

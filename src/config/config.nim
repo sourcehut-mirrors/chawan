@@ -701,10 +701,10 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var CSSColor): JSCode =
     return fjOk
   var s: DOMString
   ?ctx.fromJS(val, s)
-  var p = initCSSParser(s.toStr())
+  var p = initCSSParser(s.asStr)
   let c = p.parseColor()
   if c.isErr or p.has():
-    JS_ThrowTypeError(ctx, "invalid color %s", s.toStr().toCStringConst())
+    JS_ThrowTypeError(ctx, "invalid color %s", s.asStr.toCStringConst())
     return fjErr
   res = c.get
   fjOk

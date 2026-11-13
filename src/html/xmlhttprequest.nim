@@ -478,7 +478,7 @@ jsClassDef(XMLHttpRequest):
       return JS_ThrowDOMException(ctx, "InvalidStateError",
         "readyState must not be loading or done")
     #TODO parse
-    this.contentTypeOverride = s.toStr()
+    this.contentTypeOverride = s.asStr
     return JS_UNDEFINED
 
   proc setResponseType(ctx: JSContext; this: XMLHttpRequest;

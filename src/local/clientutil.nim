@@ -67,10 +67,10 @@ jsNamespaceDef(Util):
     return a.authOrigin.isSameOrigin(b.authOrigin);
 
   proc encodeURIPath(s: DOMString): Str {.jsstfunc.} =
-    return percentEncode(s.toStr(), PathPercentEncodeSet + {'%'})
+    return percentEncode(s.asStr, PathPercentEncodeSet + {'%'})
 
   proc expandPath(s: DOMString): Str {.jsstfunc.} =
-    return chaos.expandPath(s.toStr())
+    return chaos.expandPath(s.asStr)
 
   proc mkdir(s: CStringNZ; mode: cint): cint {.jsstfunc.} =
     return posix.mkdir(s.p, Mode(mode))

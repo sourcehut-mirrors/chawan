@@ -80,7 +80,7 @@ jsClassDef(Storage):
       {.jspropnames.} =
     var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
     for it in this.map:
-      list.add(it.key.toStr())
+      list.add(it.key.asStr)
     return list
 
   proc getter(ctx: JSContext; this: Storage; s: DOMString): JSValue

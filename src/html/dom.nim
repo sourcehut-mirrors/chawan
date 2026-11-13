@@ -659,7 +659,7 @@ proc firstElementChild*(node: ParentNode): Element
 proc addElementId(this: RootNode; element: Element)
 proc removeElementId(this: RootNode; element: Element)
 
-proc setData(ctx: JSContext; this: CharacterData; data: DOMStringEmpty)
+proc setData(ctx: JSContext; this: CharacterData; data: sink DOMStringEmpty)
 
 proc addLiveCollection(document: Document; collection: CollectionLike)
 proc removeLiveCollection(document: Document; collection: CollectionLike)
@@ -2813,7 +2813,7 @@ proc replaceAll*(parent: ParentNode; ctx: JSContext; s: Str) =
   parent.replaceAll(ctx, text.asNode)
 
 proc replaceAll(parent: ParentNode; ctx: JSContext; ds: sink DOMString) =
-  parent.replaceAll(ctx, ds.toStr())
+  parent.replaceAll(ctx, ds.asStr)
 
 proc childElementCountImpl(node: ParentNode): uint32 =
   let last = node.lastElementChild
@@ -2860,7 +2860,7 @@ proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
     cnGetElementsByClassName)
   if this != nil:
     var atoms = @[param]
-    for class in classNames.toStr().split(AsciiWhitespace):
+    for class in classNames.asStr.split(AsciiWhitespace):
       if class.len > 0:
         atoms.add(class.toAtom())
     this.atoms = newDOMTokenArray(atoms)
@@ -3058,10 +3058,10 @@ proc moveBeforeImpl(parent: ParentNode; ctx: JSContext; node: Node;
   return JS_UNDEFINED
 
 proc parseSelectors(ctx: JSContext; ds: DOMString): SelectorList =
-  var sels = parseSelectors(ds.toStr())
+  var sels = parseSelectors(ds.asStr)
   if sels.len == 0:
     JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
-      ds.toStr().toCStringConst())
+      ds.asStr.toCStringConst())
   move(sels)
 
 proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: DOMString):
@@ -3269,11 +3269,11 @@ jsClassDef(CharacterData):
 
   jsget CharacterData, data
 
-  proc setData(ctx: JSContext; this: CharacterData; data: DOMStringEmpty) {.
-      jsfset: "data".} =
+  proc setData(ctx: JSContext; this: CharacterData;
+      data: sink DOMStringEmpty) {.jsfset: "data".} =
     this.asNode.queueMutationRecord(ctx, mrtCharacterData, CAtomNull,
       CAtomNull, this.data.toStrNil(), [], [], Node(nil), Node(nil))
-    this.data = DOMString(data).toStr()
+    this.data = DOMString(data).asStr
 
   proc length(this: CharacterData): int {.jsfget.} =
     var n = 0
@@ -3310,7 +3310,7 @@ proc newText*(document: Document; data: sink Str): Text =
   jsNew TextObj(internalNext: document.asNode, data: data)
 
 proc newText*(document: Document; data: sink DOMString): Text =
-  document.newText(data.toStr())
+  document.newText(data.asStr)
 
 jsClassPublicDef(Text):
   jsextends CharacterDataDef
@@ -3351,7 +3351,7 @@ jsClassDef(Comment):
   proc newComment(ctx: JSContext; data = DOMString(str(""))): Comment {.
       jsctor.} =
     let window = ctx.getWindow()
-    return window.document.newComment(data.toStr())
+    return window.document.newComment(data.asStr)
 
 # DocumentFragment
 template asDocumentFragment[T: DocumentFragmentObj](x: JSRef[T]):
@@ -3930,11 +3930,11 @@ jsClassPublicDef(Document):
     if "]]>" in data.toOpenArray():
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "CDATA sections may not contain the string ]]>")
-    return ctx.toJSNew(newCDATASection(document, data.toStr()))
+    return ctx.toJSNew(newCDATASection(document, data.asStr))
 
   proc createComment(document: Document; data: sink DOMString): Comment
       {.jsnfunc.} =
-    return newComment(document, data.toStr())
+    return newComment(document, data.asStr)
 
   proc createProcessingInstruction(ctx: JSContext; document: Document;
       target, data: DOMString): JSValue {.jsfunc.} =
@@ -3942,8 +3942,7 @@ jsClassPublicDef(Document):
         "?>" in data.toOpenArray():
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid data for processing instruction")
-    let pi = newProcessingInstruction(document, target.toStr(), data.toStr())
-    ctx.toJSNew(pi)
+    ctx.toJSNew(newProcessingInstruction(document, target.asStr, data.asStr))
 
   proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
       JSValue {.jsfunc.} =
@@ -4313,7 +4312,7 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
     let document = newXMLDocument()
     if document == nil:
       return JS_ThrowOutOfMemory(ctx)
-    let qualifiedName = DOMString(qualifiedName).toStr().toAtom()
+    let qualifiedName = DOMString(qualifiedName).asStr.toAtom()
     let element = if qualifiedName != satUempty:
       ?ctx.createElementNS(document.asDocument, namespace, qualifiedName)
     else:
@@ -4361,8 +4360,8 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
       return JS_ThrowDOMException(ctx, "InvalidCharacterError",
         "invalid character in qualified name")
     let document = Document(implementation)
-    let doctype = document.newDocumentType(qualifiedName.toStr(),
-      publicId.toStr(), systemId.toStr())
+    let doctype = document.newDocumentType(qualifiedName.asStr, publicId.asStr,
+      systemId.asStr)
     ctx.toJS(doctype)
 
   proc hasFeature(implementation: DOMImplementation): bool {.jsfunc.} =
@@ -4698,7 +4697,7 @@ jsClassDef(DOMTokenList):
     case this.localName
     of satRel:
       const SupportedTokens = [satAlternate, satStylesheet]
-      let lower = token.toStr().toLowerAscii()
+      let lower = token.asStr.toLowerAscii()
       return ctx.toJS(lower.toStaticAtom() in SupportedTokens)
     else:
       return JS_ThrowTypeError(ctx,
@@ -4713,7 +4712,7 @@ jsClassDef(DOMTokenList):
 
 # DOMStringMap
 proc toDataStr(name: DOMString): CAtom =
-  initStrM("data-", name.toStr().camelToKebabCase()).toAtom()
+  initStrM("data-", name.asStr.camelToKebabCase()).toAtom()
 
 jsClassDef(DOMStringMap):
   jsextends ElementAccessorDef
@@ -5234,7 +5233,7 @@ proc setHover*(element: Element; hover: bool) =
     element.invalidate(dtHover)
 
 proc parseColor(element: Element; s: sink DOMString): Opt[ARGBColor] =
-  var ctx = initCSSParser(s.toStr())
+  var ctx = initCSSParser(s.asStr)
   if color := ctx.parseColor():
     case color.t
     of cctArgb, cctOklab: return ok(color.argb())
@@ -5676,7 +5675,7 @@ proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
 
 proc setAttr(element: Element; ctx: JSContext; name: CAtom;
     value: sink DOMString) =
-  element.setAttr(ctx, name, value.toStr())
+  element.setAttr(ctx, name, value.asStr)
 
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
     value: sink DOMString) =
@@ -6124,7 +6123,7 @@ jsClassPublicDef(Element):
   proc setAttributeNS(ctx: JSContext; element: Element;
       namespace: CAtomNullable; qualifiedName: CAtom; value: sink DOMString):
       Opt[void] {.jsfunc.} =
-    element.setAttrNS(ctx, namespace, qualifiedName, value.toStr())
+    element.setAttrNS(ctx, namespace, qualifiedName, value.asStr)
 
   proc removeAttribute(ctx: JSContext; element: Element;
       qualifiedName: CAtom) {.jsfunc.} =
@@ -7146,7 +7145,7 @@ jsClassDef(HTMLCanvasElement):
   proc getContext*(jctx: JSContext; this: HTMLCanvasElement;
       contextId: DOMString; options = JS_UNDEFINED.vc):
       CanvasRenderingContext2D {.jsfunc.} =
-    if contextId.toStr() == "2d":
+    if contextId.asStr == "2d":
       if this.ctx2d == nil:
         let window = jctx.getWindow()
         let loader = window.loader

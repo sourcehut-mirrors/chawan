@@ -104,7 +104,7 @@ proc toStr*(src: sink CStringNZ): Str =
 template len*(ds: DOMString): int =
   Str(ds).len
 
-template toStr*(ds: DOMString): Str =
+template asStr*(ds: DOMString): Str =
   Str(ds)
 
 template toOpenArray*(s: DOMString): openArray[char] =

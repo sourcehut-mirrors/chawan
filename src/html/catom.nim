@@ -387,7 +387,7 @@ proc toAtom*(s: StrNil): CAtom =
     CAtomNull
 
 proc toAtom*(s: DOMString): CAtom =
-  s.toStr().toAtom()
+  s.asStr.toAtom()
 
 proc toAtom*(s: Growbuf): CAtom =
   s.toOpenArray().toAtom()
@@ -463,7 +463,7 @@ proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
   return false
 
 proc toAtomLower*(s: DOMString): CAtom =
-  s.toStr().toAtomLower()
+  s.asStr.toAtomLower()
 
 proc containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
   return aa.containsIgnoreCase(a.view())

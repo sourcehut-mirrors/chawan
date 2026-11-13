@@ -197,7 +197,7 @@ jsClassDef(PermissionStatus):
 proc denyPermissionJob(ctx: JSContext; env: JSTaskEnv): Opt[void] =
   let env = PermissionEnv(env)
   let obj = ?trace(ctx.toJSNew(jsNew PermissionStatusObj(
-    name: move(env.name).toStr(),
+    name: move(env.name).asStr,
     state: psDenied
   )))
   #TODO call?
@@ -890,7 +890,7 @@ jsClassDef(Window):
     ctx.toJS(buf)
 
   proc alert(window: Window; s: DOMString) {.jsfunc.} =
-    window.console.error(s.toStr())
+    window.console.error(s.asStr)
 
   proc getEvent(ctx: JSContext; window: Window): JSValue {.jsrfget: "event".} =
     if window.event == nil:

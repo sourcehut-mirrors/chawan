@@ -577,7 +577,7 @@ jsClassDef(Request):
       let res = parseEnumNoCase[HttpMethod](s.toOpenArray())
       if res.isErr:
         JS_ThrowTypeError(ctx, "unexpected HTTP method %s",
-          s.toStr().toCStringConst())
+          s.asStr.toCStringConst())
         return err()
       httpMethod = res.get
     var hasReferrer = true

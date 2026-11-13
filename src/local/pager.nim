@@ -2222,7 +2222,7 @@ jsClassDef(Pager):
       {.jsfunc.} =
     if pager.consoleInit != nil:
       pager.consoleInit.flags.incl(bifTailOnLoad)
-    return ctx.eval(s.toStr(), str("<command>"),
+    return ctx.eval(s.asStr, str("<command>"),
       JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_BACKTRACE_BARRIER)
 
   # private

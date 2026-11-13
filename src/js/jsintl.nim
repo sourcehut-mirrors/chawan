@@ -138,7 +138,7 @@ jsClassDef(Collator):
     jsNew CollatorObj()
 
   proc compare(this: Collator; a, b: DOMString): int {.jsfunc.} =
-    clamp(cmp(a.toStr(), b.toStr()), -1, 1)
+    clamp(cmp(a.asStr, b.asStr), -1, 1)
 
 # NumberFormat
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
