@@ -2748,24 +2748,28 @@ proc lastElementChild*(node: ParentNode): Element =
     return child
   return Element(nil)
 
-proc findFirstChildOf*(node: ParentNode; tagType: TagType): Element =
-  for element in node.elementList:
-    if element.tagType == tagType:
-      return element
-  return Element(nil)
-
-proc findFirstChildOf(node: ParentNode; localName, namespace: StaticAtom):
+proc findFirstChildOf*(node: ParentNode; localName, namespace: CAtom):
     Element =
   for element in node.elementList:
     if element.localName == localName and element.namespaceURI == namespace:
       return element
   return Element(nil)
 
-proc findLastChildOf*(node: ParentNode; tagType: TagType): Element =
+proc findFirstChildOf(node: ParentNode; localName, namespace: StaticAtom):
+    Element =
+  node.findFirstChildOf(localName.view(), namespace.view())
+
+proc findFirstChildOf(node: ParentNode; tagType: TagType): Element =
+  node.findFirstChildOf(tagType.view(), satNamespaceHTML.view())
+
+proc findLastChildOf*(node: ParentNode; localName, namespace: CAtom): Element =
   for element in node.relementList:
-    if element.tagType == tagType:
+    if element.localName == localName and element.namespaceURI == namespace:
       return element
   return Element(nil)
+
+proc findLastChildOf(node: ParentNode; tagType: TagType): Element =
+  node.findLastChildOf(tagType.view(), satNamespaceHTML.view())
 
 proc findFirstChildNotOf(node: ParentNode; tagType: set[TagType]): Element =
   for element in node.elementList:
