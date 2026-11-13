@@ -4,10 +4,17 @@ unreleased
 * support Element#innerText, Element#outerText
 * support URLSearchParams#sort, URLSearchParams#size
 * support crypto.randomUUID
+* support details element
+* support :first-of-type, :last-of-type selectors
 * add C-@ to line editor for toggling selection
+* switch to copy-on-write strings
 * remove deprecated external.w3m-cgi-compat option
 * fix infinite loop in tinfl on invalid deflate streams
 * fix chaseccomp compilation on platforms without fcntl syscall
+* properly implement task handling in the event loop
+* fix JS_GetTypedArrayBuffer length reporting in QJS
+* fix navigation to URL with hash trimming off hash sometimes
+* fix incorrect serialization of some IPv6 URLs
 
 0.5.2 (2026.11.08)
 
