@@ -337,7 +337,7 @@ type
 
   AttrObj* {.final.} = object of NodeObj
     dataIdx: int
-    ownerElement: Element
+    ownerElement: Element # may be nil
 
   DOMImplementation = distinct Document # strong ref
 
@@ -4873,7 +4873,11 @@ proc newAttr(document: Document; data: AttrData): Attr =
   newAttr(dummy.asElement, 0)
 
 proc data(attr: Attr): lent AttrData =
-  return attr.ownerElement.attrs[attr.dataIdx]
+  if attr.ownerElement == nil:
+    # ran out of memory during attribute removal
+    let hack {.global.} = AttrData()
+    return hack
+  attr.ownerElement.attrs[attr.dataIdx]
 
 proc localName(attr: Attr): CAtom =
   let name = attr.data.name
@@ -4913,7 +4917,8 @@ jsClassDef(Attr):
 
   proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
       jsfset: "value".} =
-    attr.ownerElement.setAttr(ctx, attr.data.name, ds)
+    if attr.ownerElement != nil:
+      attr.ownerElement.setAttr(ctx, attr.data.name, ds)
 
   proc jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
     if attr.ownerElement of AttrDummyElement:
@@ -5611,12 +5616,12 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
         dec attr.dataIdx
     if j >= 0:
       let attr = map.attrlist[j]
-      #TODO OOM
+      var data = attr.data
+      data.value = oldValue
       attr.ownerElement = (jsNew AttrDummyElementObj(
         internalNext: attr.asNode.document.asNode,
-        attrs: @[attr.data]
-      )).asElement
-      attr.ownerElement.attrs[0].value = oldValue
+        attrs: @[data]
+      )).asElement # works even if jsNew produces nil
       attr.dataIdx = 0
       map.attrlist.del(j) # ordering does not matter
   element.attrs.delete(i) # ordering matters
@@ -5641,6 +5646,12 @@ proc setAttr(element: Element; ctx: JSContext; name: CAtom; value: sink Str) =
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
       CAtomNull, str(nil), [], [], Node(nil), Node(nil))
     element.attrs.insert(AttrData(name: name, value: value), i)
+    let map = element.getCachedAttributes()
+    if map != nil:
+      # adjust invalidated indices
+      for k, attr in map.attrlist.mypairs:
+        if attr.dataIdx >= i:
+          inc attr.dataIdx
     element.reflectAttr(ctx, element.attrs[i], str(nil))
 
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
@@ -5676,6 +5687,12 @@ proc setAttrNS(element: Element; ctx: JSContext; namespace: CAtomNullable;
       name: qualifiedName,
       value: value
     ), i)
+    let map = element.getCachedAttributes()
+    if map != nil:
+      # adjust invalidated indices
+      for k, attr in map.attrlist.mypairs:
+        if attr.dataIdx >= i:
+          inc attr.dataIdx
     element.reflectAttr(ctx, element.attrs[i], str(nil))
   ok()
 
@@ -5687,10 +5704,9 @@ proc sinkAttrs*(element: Element; ctx: JSContext; attrs: sink seq[AttrData]) =
 proc addAttrsIfMissing*(element: Element; ctx: JSContext;
     attrs: seq[AttrData]) =
   for attr in attrs:
-    var i = element.attrs.upperBound(attr.name, cmpAttrName)
-    if i <= 0 or element.attrs[i - 1].name != attr.name:
-      element.attrs.insert(attr, i)
-      element.reflectAttr(ctx, element.attrs[i], str(nil))
+    # not optimal, but used very rarely so it's fine
+    if not element.attrb(attr.name):
+      element.setAttr(ctx, attr.name, attr.value)
 
 proc hint*(element: Element): bool =
   efHint in element.flags

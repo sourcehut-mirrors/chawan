@@ -47,6 +47,8 @@ function testAttribute() {
 	assertEquals(x.attributes.item(0xFFFFFFFF), null);
 	assertEquals(x.getAttributeNS("ns", "test"), "d")
 	x.setAttribute("nonstest", "e");
+	assertEquals(x.attributes.getNamedItemNS("ns", "test").value, "d");
+	assertEquals(x.attributes.getNamedItemNS("ns2", "test").value, "c");
 	assertEquals(x.attributes["nonstest"].namespaceURI, null);
 	let attr = x.attributes["pf:test"]
 	x.removeAttributeNS("ns", "test")
@@ -73,6 +75,21 @@ function testAttribute() {
 		const getOwnerDocument =
 			Node.prototype.__lookupGetter__("ownerDocument");
 		assertEquals(getOwnerDocument.call(attr), newDoc);
+	}
+	{
+		const el2 = document.createElement("test");
+		el2.setAttribute("a", "b");
+		el2.setAttribute("b", "c");
+		const attr = el2.attributes[1];
+		el2.removeAttribute("a");
+		el2.setAttribute("a", "x");
+		assertEquals(attr.value, "c")
+		el2.setAttribute("b", "x");
+		assertEquals(attr.value, "x")
+		el2.removeAttribute("b");
+		el2.setAttribute("b", "y");
+		assertEquals(attr.value, "x")
+		assertEquals(attr.ownerElement, null);
 	}
 }
 
