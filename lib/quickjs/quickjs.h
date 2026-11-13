@@ -549,7 +549,7 @@ typedef struct JSClassDef {
 #define JS_INVALID_CLASS_ID 0
 JSClassID JS_NewClassID(JSClassID *pclass_id);
 /* Returns the class ID if `v` is an object, otherwise returns JS_INVALID_CLASS_ID. */
-JSClassID JS_GetClassID(JSValue v);
+JSClassID JS_GetClassID(JSValueConst v);
 int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def);
 int JS_IsRegisteredClass(JSRuntime *rt, JSClassID class_id);
 
@@ -1186,6 +1186,7 @@ int JS_SetPropertyFunctionList(JSContext *ctx, JSValueConst obj,
 #define JS_NEW_CTOR_PROTO_CLASS (1 << 1) /* the prototype class is 'class_id' instead of JS_CLASS_OBJECT */
 #define JS_NEW_CTOR_PROTO_EXIST (1 << 2) /* the prototype is already defined */
 #define JS_NEW_CTOR_READONLY    (1 << 3) /* read-only constructor field */
+#define JS_NEW_CTOR_NO_PROTO    (1 << 4) /* don't set ctor on the proto */
 
 JSValue JS_NewCConstructor(JSContext *ctx, int class_id, const char *name,
                            JSCFunction *func, int length, JSCFunctionEnum cproto, int magic,

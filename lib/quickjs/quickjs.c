@@ -3109,7 +3109,7 @@ static int JS_InitAtoms(JSRuntime *rt)
 
     p = js_atom_init;
     for(i = 1; i < JS_ATOM_END; i++) {
-        if (i == JS_ATOM_Private_brand)
+        if (i == JS_ATOM_Private_brand || i == JS_ATOM_Private_stack)
             atom_type = JS_ATOM_TYPE_PRIVATE;
         else if (i >= JS_ATOM_Symbol_toPrimitive)
             atom_type = JS_ATOM_TYPE_SYMBOL;
@@ -8064,7 +8064,7 @@ found: ;
         str = JS_NULL;
     else
         str = JS_NewString(ctx, (char *)dbuf.buf);
-    JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
+    JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_Private_stack, str,
                            JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
 cleanup:
     dbuf_free(&dbuf);
@@ -8079,8 +8079,6 @@ static BOOL is_backtrace_needed(JSContext *ctx, JSValueConst obj)
         return FALSE;
     p = JS_VALUE_GET_OBJ(obj);
     if (p->class_id != JS_CLASS_ERROR)
-        return FALSE;
-    if (find_own_property1(p, JS_ATOM_stack))
         return FALSE;
     return TRUE;
 }
@@ -8254,6 +8252,11 @@ static JSValue JS_ThrowStackOverflow(JSContext *ctx)
 static JSValue JS_ThrowTypeErrorNotAnObject(JSContext *ctx)
 {
     return JS_ThrowTypeError(ctx, "not an object");
+}
+
+static JSValue JS_ThrowTypeErrorNotAString(JSContext *ctx)
+{
+    return JS_ThrowTypeError(ctx, "not a string");
 }
 
 static JSValue JS_ThrowTypeErrorNotAConstructor(JSContext *ctx,
@@ -14518,7 +14521,8 @@ static void js_print_error(JSPrintValueState *s, JSObject *p)
     JS_FreeCString(s->ctx, str);
 
     /* dump the stack if present */
-    str = get_prop_string(s->ctx, JS_MKPTR(JS_TAG_OBJECT, p), JS_ATOM_stack);
+    str = get_prop_string(s->ctx, JS_MKPTR(JS_TAG_OBJECT, p),
+                          JS_ATOM_Private_stack);
     if (str) {
         js_putc(s, '\n');
         
@@ -21665,6 +21669,32 @@ static void async_func_free(JSRuntime *rt, JSAsyncFunctionState *s)
             }
         }
     }
+}
+
+static JSValue js_define_except_proto(JSContext *ctx, JSValueConst this_val,
+                                      JSValueConst val, JSClassID class_id,
+                                      JSAtom prop)
+{
+    JSContext *realm;
+    int ret;
+
+    if (!JS_IsObject(this_val))
+        return JS_ThrowTypeErrorNotAnObject(ctx);
+    realm = JS_GetFunctionRealm(ctx, this_val);
+    if (js_same_value(ctx, this_val, realm->class_proto[class_id]))
+        return JS_ThrowTypeError(ctx, "cannot set property on home object");
+    ret = JS_GetOwnProperty(ctx, NULL, this_val, prop);
+    if (ret < 0)
+        return JS_EXCEPTION;
+    if (!ret) {
+        ret = JS_DefinePropertyValueC(ctx, this_val, prop, val, JS_PROP_C_W_E |
+                                                                JS_PROP_THROW);
+    } else {
+        ret = JS_SetProperty(ctx, this_val, prop, JS_DupValue(ctx, val));
+    }
+    if (ret < 0)
+        return JS_EXCEPTION;
+    return JS_UNDEFINED;
 }
 
 /* Generators */
@@ -40592,7 +40622,8 @@ int JS_SetConstructor(JSContext *ctx, JSValueConst func_obj,
 /* Return the constructor and. Define it as a global variable unless
    JS_NEW_CTOR_NO_GLOBAL is set. The new class inherit from
    parent_ctor if it is not JS_UNDEFINED. if class_id is != -1,
-   class_proto[class_id] is set. */
+   class_proto[class_id] is set. if JS_NEW_CTOR_NO_PROTO is set, the
+   constructor is not defined on the proto. */
 JSValue JS_NewCConstructor(JSContext *ctx, int class_id, const char *name,
                            JSCFunction *func, int length, JSCFunctionEnum cproto, int magic,
                            JSValueConst parent_ctor,
@@ -40650,7 +40681,16 @@ JSValue JS_NewCConstructor(JSContext *ctx, int class_id, const char *name,
                                       JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0)
             goto fail;
     }
-    JS_SetConstructor2(ctx, ctor, proto, proto_flags, ctor_flags);
+    if (JS_DefinePropertyValueC(ctx, ctor, JS_ATOM_prototype,
+                                proto, proto_flags) < 0)
+        goto fail;
+    if (!(flags & JS_NEW_CTOR_NO_PROTO)) {
+        if (JS_DefinePropertyValueC(ctx, proto, JS_ATOM_constructor,
+                                    ctor, ctor_flags) < 0)
+            goto fail;
+        set_cycle_flag(ctx, ctor);
+        set_cycle_flag(ctx, proto);
+    }
 
     JS_FreeValue(ctx, proto);
     JS_FreeValue(ctx, parent_proto);
@@ -42354,10 +42394,35 @@ static JSValue js_error_toString(JSContext *ctx, JSValueConst this_val,
     return JS_ConcatString(ctx, name, msg);
 }
 
+static JSValue js_error_get_stack(JSContext *ctx, JSValueConst this_val)
+{
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSObject *p;
+
+    if (!JS_IsObject(this_val))
+        return JS_ThrowTypeErrorNotAnObject(ctx);
+    p = JS_VALUE_GET_OBJ(this_val);
+    prs = find_own_property(&pr, p, JS_ATOM_Private_stack);
+    if (!prs)
+        return JS_UNDEFINED;
+    return JS_DupValue(ctx, pr->u.value);
+}
+
+static JSValue js_error_set_stack(JSContext *ctx, JSValueConst this_val,
+                                  JSValueConst val)
+{
+    if (!JS_IsString(val))
+        return JS_ThrowTypeErrorNotAString(ctx);
+    return js_define_except_proto(ctx, this_val, val, JS_CLASS_ERROR,
+                                  JS_ATOM_stack);
+}
+
 static const JSCFunctionListEntry js_error_proto_funcs[] = {
     JS_CFUNC_DEF("toString", 0, js_error_toString ),
     JS_PROP_STRING_DEF("name", "Error", JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE ),
     JS_PROP_STRING_DEF("message", "", JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE ),
+    JS_CGETSET_DEF("stack", js_error_get_stack, js_error_set_stack ),
 };
 
 /* 2 entries for each native error class */
@@ -44564,26 +44629,20 @@ static const JSCFunctionListEntry js_iterator_wrap_proto_funcs[] = {
 
 /* Iterator */
 
-static JSValue js_iterator_constructor_getset(JSContext *ctx,
-                                              JSValueConst this_val,
-                                              int argc, JSValueConst *argv,
-                                              int magic,
-                                              JSValue *func_data)
+static JSValue js_iterator_constructor_get(JSContext *ctx, JSValueConst this_val)
 {
-    int ret;
+    JSContext *realm;
 
-    if (argc > 0) { // if setter
-        if (!JS_IsObject(argv[0]))
-            return JS_ThrowTypeErrorNotAnObject(ctx);
-        ret = JS_DefinePropertyValueC(ctx, this_val, JS_ATOM_constructor,
-                                      argv[0],
-                                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
-        if (ret < 0)
-            return JS_EXCEPTION;
-        return JS_UNDEFINED;
-    } else {
-        return JS_DupValue(ctx, func_data[0]);
-    }
+    realm = JS_GetFunctionRealm(ctx, this_val);
+    return JS_DupValue(ctx, realm->iterator_ctor);
+}
+
+static JSValue js_iterator_constructor_set(JSContext *ctx,
+                                           JSValueConst this_val,
+                                           JSValueConst val)
+{
+    return js_define_except_proto(ctx, this_val, val, JS_CLASS_ITERATOR,
+                                  JS_ATOM_constructor);
 }
 
 static JSValue js_iterator_constructor(JSContext *ctx, JSValueConst new_target,
@@ -45228,25 +45287,12 @@ static JSValue js_iterator_proto_get_toStringTag(JSContext *ctx, JSValueConst th
     return JS_AtomToString(ctx, JS_ATOM_Iterator);
 }
 
-static JSValue js_iterator_proto_set_toStringTag(JSContext *ctx, JSValueConst this_val, JSValueConst val)
+static JSValue js_iterator_proto_set_toStringTag(JSContext *ctx,
+                                                 JSValueConst this_val,
+                                                 JSValueConst val)
 {
-    int res;
-
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeErrorNotAnObject(ctx);
-    if (js_same_value(ctx, this_val, ctx->class_proto[JS_CLASS_ITERATOR]))
-        return JS_ThrowTypeError(ctx, "Cannot assign to read only property");
-    res = JS_GetOwnProperty(ctx, NULL, this_val, JS_ATOM_Symbol_toStringTag);
-    if (res < 0)
-        return JS_EXCEPTION;
-    if (res) {
-        if (JS_SetProperty(ctx, this_val, JS_ATOM_Symbol_toStringTag, JS_DupValue(ctx, val)) < 0)
-            return JS_EXCEPTION;
-    } else {
-        if (JS_DefinePropertyValueC(ctx, this_val, JS_ATOM_Symbol_toStringTag, val, JS_PROP_C_W_E) < 0)
-            return JS_EXCEPTION;
-    }
-    return JS_UNDEFINED;
+    return js_define_except_proto(ctx, this_val, val, JS_CLASS_ITERATOR,
+                                  JS_ATOM_Symbol_toStringTag);
 }
 
 /* Iterator Helper */
@@ -45603,6 +45649,7 @@ static const JSCFunctionListEntry js_iterator_proto_funcs[] = {
     JS_CFUNC_DEF("includes", 1, js_iterator_proto_includes ),
     JS_CFUNC_DEF("[Symbol.iterator]", 0, js_iterator_proto_iterator ),
     JS_CGETSET_DEF("[Symbol.toStringTag]", js_iterator_proto_get_toStringTag, js_iterator_proto_set_toStringTag),
+    JS_CGETSET_DEF("constructor", js_iterator_constructor_get, js_iterator_constructor_set),
 };
 
 static const JSCFunctionListEntry js_iterator_helper_proto_funcs[] = {
@@ -46180,7 +46227,7 @@ static JSValue js_thisStringValue(JSContext *ctx, JSValueConst this_val)
                 return JS_DupValue(ctx, p->u.object_data);
         }
     }
-    return JS_ThrowTypeError(ctx, "not a string");
+    return JS_ThrowTypeErrorNotAString(ctx);
 }
 
 static JSValue js_string_fromCharCode(JSContext *ctx, JSValueConst this_val,
@@ -46779,7 +46826,7 @@ static int js_string_GetSubstitution(JSContext *ctx,
     JSString *rp;
 
     if (JS_VALUE_GET_TAG(rep) != JS_TAG_STRING) {
-        JS_ThrowTypeError(ctx, "not a string");
+        JS_ThrowTypeErrorNotAString(ctx);
         goto exception;
     }
     shift = sp->is_wide_char;
@@ -48919,7 +48966,7 @@ static JSValue js_regexp_escape(JSContext *ctx, JSValueConst this_val,
     int i, i0;
     
     if (!JS_IsString(argv[0]))
-        return JS_ThrowTypeError(ctx, "not a string");
+        return JS_ThrowTypeErrorNotAString(ctx);
     str = JS_ToString(ctx, argv[0]); /* must call it to linearlize ropes */
     if (JS_IsException(str))
         return JS_EXCEPTION;
@@ -57444,32 +57491,13 @@ int JS_AddIntrinsicBaseObjects(JSContext *ctx)
 
     /* Iterator */
     obj2 = JS_NewCConstructor(ctx, JS_CLASS_ITERATOR, "Iterator",
-                                     js_iterator_constructor, 0, JS_CFUNC_constructor_or_func, 0,
-                                     JS_UNDEFINED,
-                                     js_iterator_funcs, countof(js_iterator_funcs),
-                                     js_iterator_proto_funcs, countof(js_iterator_proto_funcs),
-                                     0);
+                              js_iterator_constructor, 0, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_iterator_funcs, countof(js_iterator_funcs),
+                              js_iterator_proto_funcs, countof(js_iterator_proto_funcs),
+                              JS_NEW_CTOR_NO_PROTO);
     if (JS_IsException(obj2))
         return -1;
-    // quirk: Iterator.prototype.constructor is an accessor property
-    // TODO(bnoordhuis) mildly inefficient because JS_NewGlobalCConstructor
-    // first creates a .constructor value property that we then replace with
-    // an accessor
-    obj1 = JS_NewCFunctionData(ctx, js_iterator_constructor_getset,
-                               0, 0, 1, (JSValueConst *)&obj2);
-    if (JS_IsException(obj1)) {
-        JS_FreeValue(ctx, obj2);
-        return -1;
-    }
-    if (JS_DefineProperty(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
-                          JS_ATOM_constructor, JS_UNDEFINED,
-                          obj1, obj1,
-                          JS_PROP_HAS_GET | JS_PROP_HAS_SET | JS_PROP_CONFIGURABLE) < 0) {
-        JS_FreeValue(ctx, obj2);
-        JS_FreeValue(ctx, obj1);
-        return -1;
-    }
-    JS_FreeValue(ctx, obj1);
     ctx->iterator_ctor = obj2;
     
     ctx->class_proto[JS_CLASS_ITERATOR_HELPER] =
