@@ -333,8 +333,7 @@ jsClassRaw(LocationDef, "Location"):
     return location.url.serialize()
 
   proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
-      jsuffunc: "open", jsfset: "href", jsuffunc: "assign",
-      jsuffunc: "replace".} =
+      jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =
     let window = location.window
     return ctx.setLocation(window, s)
 
@@ -883,6 +882,9 @@ jsClassDef(Window):
       matches: mqlist.appliesScript(addr window.settings),
       media: $mqlist
     )
+
+  proc open(ctx: JSContext; window: Window; s: string): JSValue {.jsuffunc.} =
+    ctx.open(window, s)
 
 proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
     opaque: pointer): cstring {.cdecl.} =
