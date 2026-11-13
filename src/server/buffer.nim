@@ -1678,7 +1678,7 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
         let replacement = ctx.parseFragment(html.asParentNode,
           data.toOpenArray())
         if replacement != nil:
-          discard element.asNode.replaceChildWith(ctx, text.asNode,
+          discard element.asParentNode.replaceChildWith(ctx, text.asNode,
             replacement.asNode)
   bc.maybeReshape()
 

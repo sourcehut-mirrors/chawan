@@ -251,7 +251,7 @@ type
   CollectionMode* = enum
     cmSubtree # subtree is visible
     cmChildren # only children are visible
-    cmTree # tree of root node is visible
+    cmTree # tree root node belongs to is visible
 
   # hidden ancestor for NodeList & Collection (for code sharing)
   CollectionObj {.pure.} = object of CollectionLikeObj
@@ -1974,9 +1974,8 @@ proc canInsertIntoDocument(parent: ParentNode; node, before: Node;
 
 # Note: the ordering of the arguments in the standard is whack so this
 # doesn't match that.  Also, in the spec, "before" is called "child".
-proc checkPreInsertValidity(parent, node, before: Node;
+proc checkPreInsertValidity(parent: ParentNode; node, before: Node;
     excl: PreInsertExclude): Result[ParentNode, cstring] =
-  let parent = ?parent.checkParentValidity()
   if node.isInclusiveAncestorHost(parent.asNode):
     return err("parent must be an ancestor")
   if before != nil and before.parentNode != parent:
@@ -2106,7 +2105,7 @@ proc insertThrow*(ctx: JSContext; e: cstring): JSValue =
   return JS_ThrowDOMException(ctx, "HierarchyRequestError", e)
 
 # before may be nil
-proc insertBefore(parent: Node; ctx: JSContext; node, before: Node):
+proc insertBefore(parent: ParentNode; ctx: JSContext; node, before: Node):
     Err[cstring] =
   let parent = ?parent.checkPreInsertValidity(node, before, pieNone)
   let referenceChild = if before == node:
@@ -2116,7 +2115,12 @@ proc insertBefore(parent: Node; ctx: JSContext; node, before: Node):
   parent.insert(ctx, node, referenceChild)
   ok()
 
-proc insertBeforeUndefined*(ctx: JSContext; parent, node: Node;
+proc insertBeforeSlow(parent: Node; ctx: JSContext; node, before: Node):
+    Err[cstring] =
+  let parent = ?parent.checkParentValidity() # produces ParentNode
+  parent.insertBefore(ctx, node, before)
+
+proc insertBeforeUndefined*(ctx: JSContext; parent: ParentNode; node: Node;
     before: NodeNil): JSValue =
   let res = parent.insertBefore(ctx, node, before.get)
   if res.isErr:
@@ -2128,7 +2132,7 @@ proc append*(parent: ParentNode; ctx: JSContext; node: Node) =
 
 # Replace child with node.
 # Note: the argument ordering here is the opposite of replaceChild.
-proc replaceChildWith*(parent: Node; ctx: JSContext; child, node: Node):
+proc replaceChildWith*(parent: ParentNode; ctx: JSContext; child, node: Node):
     Err[cstring] =
   let parent = ?parent.checkPreInsertValidity(node, child, pieBefore)
   let childNextSibling = child.nextSibling
@@ -2156,8 +2160,13 @@ proc replaceChildWith*(parent: Node; ctx: JSContext; child, node: Node):
       referenceChild)
   ok()
 
-proc replaceChildWithThrow*(ctx: JSContext; parent, child, node: Node):
-    JSValue =
+proc replaceChildWithSlow(parent: Node; ctx: JSContext; child, node: Node):
+    Err[cstring] =
+  let parent = ?parent.checkParentValidity() # turn into ParentNode
+  parent.replaceChildWith(ctx, child, node)
+
+proc replaceChildWithThrow*(ctx: JSContext; parent: ParentNode;
+    child, node: Node): JSValue =
   let res = parent.replaceChildWith(ctx, child, node)
   if res.isErr:
     return ctx.insertThrow(res.error)
@@ -2478,7 +2487,7 @@ jsClassDef(Node):
       return false
     a.contains(b)
 
-  proc firstChild(node: Node): Node {.jsfget.} =
+  proc firstChildSlow(node: Node): Node {.jsfget: "firstChild".} =
     if (let node = node as ParentNode; node != nil):
       return node.firstChild
     Node(nil)
@@ -2489,7 +2498,7 @@ jsClassDef(Node):
     Node(nil)
 
   proc hasChildNodes(node: Node): bool {.jsfunc.} =
-    return node.firstChild != nil
+    return node.firstChildSlow != nil
 
   proc removeChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
     if node.parentNode.asNode != parent:
@@ -2499,7 +2508,7 @@ jsClassDef(Node):
 
   proc insertBefore(ctx: JSContext; parent, node: Node; before: NodeNil):
       JSValue {.jsfunc.} =
-    let res = parent.insertBefore(ctx, node, before.get)
+    let res = parent.insertBeforeSlow(ctx, node, before.get)
     if res.isErr:
       return ctx.insertThrow(res.error)
     return ctx.toJS(node)
@@ -2510,7 +2519,7 @@ jsClassDef(Node):
   # Warning: the ordering is counter-intuitive here.
   proc jsReplaceChild(ctx: JSContext; parent, node, child: Node): JSValue {.
       jsfunc: "replaceChild".} =
-    let res = parent.replaceChildWith(ctx, child, node)
+    let res = parent.replaceChildWithSlow(ctx, child, node)
     if res.isErr:
       return ctx.insertThrow(res.error)
     return ctx.toJS(child)
@@ -2556,7 +2565,7 @@ jsClassDef(Node):
         return false
       elif node of DocumentFragment and not (other of DocumentFragment):
         return false
-      var it = other.firstChild
+      var it = other.firstChildSlow
       for child in node.childList:
         if it == nil or not child.isEqualNode(it):
           return false
@@ -2629,24 +2638,23 @@ proc toNode(ctx: JSContext; argv: openArray[JSValueConst];
     return err()
   ok(fragment)
 
-proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
-    JSValue =
-  let node = ?ctx.toNode(nodes, parent.document)
-  return ctx.insertBeforeUndefined(parent, node, jsNull(parent.firstChild))
+proc prependImpl(ctx: JSContext; parent: ParentNode;
+    nodes: openArray[JSValueConst]): JSValue =
+  let node = ?ctx.toNode(nodes, parent.asNode.document)
+  ctx.insertBeforeUndefined(parent, node, jsNull(parent.firstChild))
 
-proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
-    JSValue =
-  let node = ?ctx.toNode(nodes, parent.document)
+proc appendImpl(ctx: JSContext; parent: ParentNode;
+    nodes: openArray[JSValueConst]): JSValue =
+  let node = ?ctx.toNode(nodes, parent.asNode.document)
   return ctx.insertBeforeUndefined(parent, node, jsNull(Node))
 
-proc replaceChildrenImpl(ctx: JSContext; parent: Node;
+proc replaceChildrenImpl(ctx: JSContext; parent: ParentNode;
     nodes: openArray[JSValueConst]): JSValue =
-  let node = ?ctx.toNode(nodes, parent.document)
-  let x = parent.checkPreInsertValidity(node, Node(nil), pieChildren)
-  if x.isErr:
-    return ctx.insertThrow(x.error)
-  let parent = x.get
-  parent.replaceAll(ctx, node)
+  let node = ?ctx.toNode(nodes, parent.asNode.document)
+  let parent = parent.checkPreInsertValidity(node, Node(nil), pieChildren)
+  if parent.isErr:
+    return ctx.insertThrow(parent.error)
+  parent.get.replaceAll(ctx, node)
   return JS_UNDEFINED
 
 proc previousSiblingExcept(this: Node; nodes: openArray[Node]): Node =
@@ -2697,7 +2705,7 @@ proc replaceWithImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
     let before = this.nextSiblingExcept(nodes)
     let node = ctx.toNode(nodes, this.document)
     if this.parentNode == parent:
-      return ctx.replaceChildWithThrow(parent.asNode, this, node)
+      return ctx.replaceChildWithThrow(parent, this, node)
     parent.insert(ctx, node, before)
   return JS_UNDEFINED
 
@@ -3382,15 +3390,15 @@ jsClassDef(DocumentFragment):
 
   proc prepend(ctx: JSContext; this: DocumentFragment;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
-    return ctx.prependImpl(this.asNode, nodes)
+    ctx.prependImpl(this.asParentNode, nodes)
 
   proc append(ctx: JSContext; this: DocumentFragment;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
-    return ctx.appendImpl(this.asNode, nodes)
+    ctx.appendImpl(this.asParentNode, nodes)
 
   proc replaceChildren(ctx: JSContext; this: DocumentFragment;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
-    return ctx.replaceChildrenImpl(this.asNode, nodes)
+    ctx.replaceChildrenImpl(this.asParentNode, nodes)
 
   proc moveBefore(ctx: JSContext; this: DocumentFragment;
       node: Node; child: NodeNil): JSValue {.jsfunc.} =
@@ -4110,15 +4118,15 @@ jsClassPublicDef(Document):
 
   proc prepend(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
       JSValue {.jsfunc.} =
-    return ctx.prependImpl(this.asNode, nodes)
+    ctx.prependImpl(this.asParentNode, nodes)
 
   proc append(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
       JSValue {.jsfunc.} =
-    return ctx.appendImpl(this.asNode, nodes)
+    ctx.appendImpl(this.asParentNode, nodes)
 
   proc replaceChildren(ctx: JSContext; this: Document;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
-    return ctx.replaceChildrenImpl(this.asNode, nodes)
+    ctx.replaceChildrenImpl(this.asParentNode, nodes)
 
   proc moveBefore(ctx: JSContext; this: Document; node: Node; child: NodeNil):
       JSValue {.jsfunc.} =
@@ -4490,14 +4498,14 @@ jsClassRawForward(TreeWalkerDef, "TreeWalker"):
   proc traverse(ctx: JSContext; this: NodeIteratorLike; last: bool): Opt[Node]
       {.jsmfunc("firstChild", false), jsmfunc("lastChild", true).} =
     let currentNode = this.currentNode
-    var node = if last: currentNode.lastChild else: currentNode.firstChild
+    var node = if last: currentNode.lastChild else: currentNode.firstChildSlow
     while node != nil:
       let res = ?ctx.filter(this, node)
       if res == uint32(nfrAccept):
         this.currentNode = node
         return ok(node)
       if res == uint32(nfrSkip):
-        let child = if last: node.lastChild else: node.firstChild
+        let child = if last: node.lastChild else: node.firstChildSlow
         if child != nil:
           node = child
           continue
@@ -4526,7 +4534,7 @@ jsClassRawForward(TreeWalkerDef, "TreeWalker"):
           if res == uint32(nfrAccept):
             this.currentNode = node
             return ok(node)
-          sibling = if next: node.firstChild else: node.lastChild
+          sibling = if next: node.firstChildSlow else: node.lastChild
           if res == uint32(nfrReject) or sibling == nil:
             sibling = if next: node.nextSibling else: node.previousSibling
         node = node.parentNode.asNode
@@ -5197,21 +5205,25 @@ type InsertAdjacentPosition = enum
   iapAfterBegin = "afterbegin"
   iapBeforeEnd = "beforeend"
 
-proc insertAdjacent(ctx: JSContext; this: Node; position: DOMString;
+proc insertAdjacent(ctx: JSContext; this: Element; position: DOMString;
     node: Node): JSValue =
   let pos0 = parseEnumNoCase[InsertAdjacentPosition](position.toOpenArray())
   if pos0.isErr:
     return JS_ThrowDOMException(ctx, "SyntaxError", "invalid position")
   case pos0.get
   of iapBeforeBegin:
-    if this.parentNode == nil:
+    if this.asNode.parentNode == nil:
       JS_NULL
     else:
-      ctx.insertBefore(this.parentNode.asNode, node, jsNull(this))
-  of iapAfterBegin: ctx.insertBefore(this, node, jsNull(this.firstChild))
-  of iapBeforeEnd: ctx.insertBefore(this, node, jsNull(Node))
+      ctx.insertBefore(this.asNode.parentNode.asNode, node,
+        jsNull(this.asNode))
+  of iapAfterBegin:
+    ctx.insertBefore(this.asNode, node, jsNull(this.asParentNode.firstChild))
+  of iapBeforeEnd:
+    ctx.insertBefore(this.asNode, node, jsNull(Node))
   of iapAfterEnd:
-    ctx.insertBefore(this.parentNode.asNode, node, jsNull(this.nextSibling))
+    ctx.insertBefore(this.asNode.parentNode.asNode, node,
+      jsNull(this.asNode.nextSibling))
 
 proc hover*(element: Element): bool =
   return efHover in element.flags
@@ -5377,7 +5389,7 @@ proc reflectLocalAttr(element: Element; ctx: JSContext; name: StaticAtom;
           other.delAttr(ctx, satOpen.view())
       if (let shadow = element.shadowRoot; shadow != nil):
         if (let first = shadow.asParentNode.firstChild; first != nil):
-          if (let defaultSummary = first.firstChild as Element;
+          if (let defaultSummary = first.firstChildSlow as Element;
               defaultSummary != nil):
             let style = if value != nil:
               str("display: list-item; counter-increment: list-item 0;" &
@@ -5973,7 +5985,8 @@ jsClassPublicDef(Element):
       DOMString(s).toOpenArray())
     if fragment == nil:
       return JS_ThrowOutOfMemory(ctx)
-    ctx.replaceChildWithThrow(parent.asNode, element.asNode, fragment.asNode)
+    ctx.replaceChildWithThrow(parent.asParentNode, element.asNode,
+      fragment.asNode)
 
   proc insertAdjacentHTML(ctx: JSContext; this: Element;
       position, text: DOMString): JSValue {.jsfunc.} =
@@ -6006,14 +6019,14 @@ jsClassPublicDef(Element):
 
   proc insertAdjacentElement(ctx: JSContext; this: Element;
       position: DOMString; element: Element): JSValue {.jsfunc.} =
-    ctx.insertAdjacent(this.asNode, position, element.asNode)
+    ctx.insertAdjacent(this, position, element.asNode)
 
   proc insertAdjacentText(ctx: JSContext; this: Element;
       position, s: DOMString): JSValue {.jsfunc.} =
     let text = this.asNode.document.newText(s).asNode
     if text == nil:
       return JS_ThrowOutOfMemory(ctx)
-    discard ?trace(ctx.insertAdjacent(this.asNode, position, text))
+    discard ?trace(ctx.insertAdjacent(this, position, text))
     return JS_UNDEFINED
 
   proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
@@ -6083,15 +6096,15 @@ jsClassPublicDef(Element):
 
   proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
       JSValue {.jsfunc.} =
-    return ctx.prependImpl(this.asNode, nodes)
+    ctx.prependImpl(this.asParentNode, nodes)
 
   proc append(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
       JSValue {.jsfunc.} =
-    return ctx.appendImpl(this.asNode, nodes)
+    ctx.appendImpl(this.asParentNode, nodes)
 
   proc replaceChildren(ctx: JSContext; this: Element;
       nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
-    return ctx.replaceChildrenImpl(this.asNode, nodes)
+    ctx.replaceChildrenImpl(this.asParentNode, nodes)
 
   proc moveBefore(ctx: JSContext; this: Element; node: Node; child: NodeNil):
       JSValue {.jsfunc.} =
@@ -6295,7 +6308,7 @@ jsClassPublicDef(Element):
         fragment.asParentNode.append(ctx, text.asNode)
     let prev = this.asNode.previousSibling
     let next = this.asNode.nextSibling
-    let res = parent.asNode.replaceChildWith(ctx, this.asNode, fragment.asNode)
+    let res = parent.replaceChildWith(ctx, this.asNode, fragment.asNode)
     if res.isErr:
       return ctx.insertThrow(res.error)
     if (let next = next as Text; next != nil):
@@ -7861,7 +7874,7 @@ jsClassDef(HTMLTableElement):
       ctx.remove(old)
     if sect == nil:
       return JS_UNDEFINED
-    return ctx.insertBeforeUndefined(this.asNode, HTMLElement(sect).asNode,
+    ctx.insertBeforeUndefined(this.asParentNode, HTMLElement(sect).asNode,
       jsNull(this.asParentNode.firstChild))
 
   proc tBodies(this: HTMLTableElement): HTMLCollection {.jsnfget.} =

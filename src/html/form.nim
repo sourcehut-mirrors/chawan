@@ -479,9 +479,9 @@ jsClassDef(HTMLOptionsCollection):
       if beforeEl == nil:
         beforeEl = this.asHTMLCollection.item(uint32(beforeIdx)) as HTMLElement
       let parent = if beforeEl != nil:
-        beforeEl.parentNode.asNode
+        beforeEl.parentNode
       else:
-        this.root
+        this.root as ParentNode
       return ctx.insertBeforeUndefined(parent, element.asNode,
         jsNull(beforeEl.asNode))
     return JS_UNDEFINED
@@ -526,7 +526,7 @@ jsClassDef(HTMLOptionsCollection):
       return JS_UNDEFINED
     let parent = this.root as ParentNode
     if element != nil:
-      return ctx.replaceChildWithThrow(parent.asNode, element.asNode, value)
+      return ctx.replaceChildWithThrow(parent, element.asNode, value)
     let len = this.length
     let document = parent.asNode.document
     for i in len ..< u:
@@ -534,7 +534,7 @@ jsClassDef(HTMLOptionsCollection):
       if option == nil:
         return JS_ThrowOutOfMemory(ctx)
       parent.append(ctx, option.asNode)
-    return ctx.insertBeforeUndefined(parent.asNode, value, jsNull(Node))
+    ctx.insertBeforeUndefined(parent, value, jsNull(Node))
 
   proc selectedIndex(this: HTMLOptionsCollection): int {.jsfget.} =
     return (this.root as HTMLSelectElement).selectedIndex
