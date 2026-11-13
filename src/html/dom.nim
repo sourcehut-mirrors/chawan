@@ -4661,17 +4661,14 @@ jsClassDef(DOMTokenList):
     ok()
 
   proc toggle(ctx: JSContext; this: DOMTokenList; token: CAtom;
-      force = JS_UNDEFINED.vc): Opt[bool] {.jsfunc.} =
+      force = obNone): Opt[bool] {.jsfunc.} =
     ?ctx.validateDOMTokens(token)
-    let forceBool = JS_ToBool(ctx, force)
-    if forceBool < 0:
-      return err()
     if this.contains(token):
-      if JS_IsUndefined(force) or forceBool == 0:
+      if force in {obNone, obFalse}:
         this.remove(ctx, token)
         return ok(false)
       return ok(true)
-    if JS_IsUndefined(force) or forceBool == 1:
+    if force in {obNone, obTrue}:
       this.add(ctx, token)
       return ok(true)
     ok(false)
@@ -6136,20 +6133,16 @@ jsClassPublicDef(Element):
       element.delAttr(ctx, i)
 
   proc toggleAttribute(ctx: JSContext; element: Element;
-      qualifiedName: DOMString; force = JS_UNDEFINED.vc): Opt[bool]
-      {.jsfunc.} =
-    let forceBool = JS_ToBool(ctx, force)
-    if forceBool < 0:
-      return err()
+      qualifiedName: DOMString; force = obNone): Opt[bool] {.jsfunc.} =
     ?ctx.validateAttrName(qualifiedName.toOpenArray())
     let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtom())
     let i = element.findAttr(qualifiedName)
     if i < 0:
-      if JS_IsUndefined(force) or forceBool == 1:
+      if force in {obNone, obTrue}:
         element.setAttr(ctx, qualifiedName, str(""))
         return ok(true)
       return ok(false)
-    if JS_IsUndefined(force) or forceBool == 0:
+    if force in {obNone, obFalse}:
       element.delAttr(ctx, i)
       return ok(false)
     return ok(true)
