@@ -921,6 +921,11 @@ proc cssEscape*(s: Str): Str =
     buf &= c
   buf.toStr()
 
+type EscapeMode* = enum
+  emAll # attribute chars plus single quote (non-standard but safest)
+  emAttribute # text chars plus double quote ("attribute mode" in spec)
+  emText # &, nbsp, <, > (default mode in spec)
+
 proc htmlEscape*(s: openArray[char]; mode = emAll): Str =
   var buf = initGrowbufOfCap(s.len)
   var nbspMode = false

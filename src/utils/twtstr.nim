@@ -485,11 +485,6 @@ const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
 const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +
   {'!', '\''..')', '~'}
 
-type EscapeMode* = enum
-  emAll # attribute chars plus single quote (non-standard but safest)
-  emAttribute # text chars plus double quote ("attribute mode" in spec)
-  emText # &, nbsp, <, > (default mode in spec)
-
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
   (0xC0u16, 0xD6u16),
