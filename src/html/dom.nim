@@ -738,7 +738,8 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   isTopLevel: bool; onComplete: OnCompleteProc)
 proc updateSheet*(this: HTMLStyleElement)
 
-proc filterDetailsTask(env: JSTaskEnv; opaque: RootRef): bool
+proc filterDetailsTask(source: JSTaskSource; env: JSTaskEnv; opaque: RootRef):
+  bool
 proc findOpenDetailsInGroup(element: Element; value: Str): Element
 proc toggleDetailsTask(ctx: JSContext; env: JSTaskEnv): Opt[void]
 
@@ -7199,7 +7200,8 @@ proc clickSummary*(this: HTMLElement; ctx: JSContext) =
     else:
       parent.delAttr(ctx, i)
 
-proc filterDetailsTask(env: JSTaskEnv; opaque: RootRef): bool =
+proc filterDetailsTask(source: JSTaskSource; env: JSTaskEnv; opaque: RootRef):
+    bool =
   let aux = DetailsTaskEnv(opaque)
   if env of DetailsTaskEnv:
     let env = DetailsTaskEnv(env)

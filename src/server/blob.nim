@@ -416,6 +416,10 @@ proc startReadTask(ctx: JSContext; env: JSTaskEnv): Opt[void] =
   env.len = len
   ctx.queueTask(jtsFileReader, fulfillReadTask, env)
 
+proc filterFileReaderTask(source: JSTaskSource; env: JSTaskEnv;
+    opaque: RootRef): bool =
+  source == jtsFileReader
+
 jsClassDef(FileReader):
   jsextends EventTargetDef
 
@@ -457,7 +461,7 @@ jsClassDef(FileReader):
       if this.abort != nil:
         discard ?trace(ctx.abort(this.abort))
         this.readyState = frsDone
-      JS_GetRuntime(ctx).removeTasks(jtsFileReader)
+      JS_GetRuntime(ctx).filterTasks(filterFileReaderTask, nil)
       ctx.fireProgressEvent(this.asEventTarget, satAbort, 0, 0)
       if this.readyState != frsLoading:
         ctx.fireProgressEvent(this.asEventTarget, satLoadend, 0, 0)

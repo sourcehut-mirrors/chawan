@@ -301,19 +301,8 @@ proc popTask*(rt: JSRuntime): JSTask =
       rtOpaque.tasksTail = nil
   task
 
-proc removeTasks*(rt: JSRuntime; source: JSTaskSource) =
-  #TODO use filterTasks instead
-  let rtOpaque = rt.getOpaque()
-  var it = move(rtOpaque.tasksHead)
-  rtOpaque.tasksTail = nil
-  while it != nil:
-    let next = move(it.next)
-    if it.source != source:
-      rtOpaque.queueTask2(it)
-    it = next
-
-type FilterFun = proc(env: JSTaskEnv; opaque: RootRef): bool {.
-  nimcall, raises: [].}
+type FilterFun = proc(source: JSTaskSource; env: JSTaskEnv; opaque: RootRef):
+    bool {.nimcall, raises: [].}
 
 proc filterTasks*(rt: JSRuntime; cb: FilterFun; opaque: RootRef) =
   ## remove tasks for which `cb' returns true
@@ -322,7 +311,7 @@ proc filterTasks*(rt: JSRuntime; cb: FilterFun; opaque: RootRef) =
   rtOpaque.tasksTail = nil
   while it != nil:
     let next = move(it.next)
-    if not cb(it.env, opaque):
+    if not cb(it.source, it.env, opaque):
       rtOpaque.queueTask2(it)
     it = next
 
