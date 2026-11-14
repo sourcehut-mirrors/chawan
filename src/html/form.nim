@@ -855,9 +855,9 @@ jsClassDef(HTMLLabelElement):
   jsextends HTMLElementDef
 
   proc control*(label: HTMLLabelElement): HTMLElement {.jsfget.} =
-    let i = label.asElement.findAttr(satFor)
-    if i >= 0:
-      let id = label.asElement.getAttr(i).toAtom()
+    let u = label.asElement.findAttr(satFor)
+    if u != uint32.high:
+      let id = label.asElement.getAttr(u).toAtom()
       let element = label.asNode.document.asRootNode.getElementById(id)
       if element != nil and element.isLabelable():
         return element as HTMLElement

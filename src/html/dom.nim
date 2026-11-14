@@ -335,7 +335,7 @@ type
   Attr = JSRef[AttrObj]
 
   AttrObj* {.final.} = object of NodeObj
-    dataIdx: int
+    dataIdx: uint32
     ownerElement: Element # may be nil
 
   DOMImplementation = distinct Document # strong ref
@@ -482,7 +482,7 @@ type
     id*: CAtom # 20
     name*: CAtom # 24
     classList*: DOMTokenArray # 32
-    attrs*: seq[AttrData] # 48, sorted by int(qualifiedName)
+    attrs*: AttrDataList # 48, sorted by int(qualifiedName)
     cachedStyle*: CSSStyleDeclaration # 56
     computed*: CSSValues # 64
     box*: RootRef # 72, CSSBox
@@ -690,13 +690,14 @@ proc setAttr(element: Element; ctx: JSContext; name: CAtom; value: sink Str)
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
   value: sink Str)
 proc attr*(element: Element; s: StaticAtom): Str
+proc attrb*(element: Element; qualifiedName: CAtom): bool
 proc attrb*(element: Element; at: StaticAtom): bool
-proc delAttr(element: Element; ctx: JSContext; i: int)
+proc delAttr(element: Element; ctx: JSContext; u: uint32)
 proc delAttr(element: Element; ctx: JSContext; name: CAtom)
 proc elIndex*(this: Element): uint32
 proc ensureStyle*(element: Element)
-proc findAttr(element: Element; qualifiedName: CAtom): int
-proc findAttrNS(element: Element; namespace, localName: CAtom): int
+proc findAttr(element: Element; qualifiedName: CAtom): uint32
+proc findAttrNS(element: Element; namespace, localName: CAtom): uint32
 proc getCachedAttributes(element: Element): NamedNodeMap
 proc getBoundingClientRect(element: Element): DOMRect
 proc getCharset(element: Element): Charset
@@ -2557,8 +2558,9 @@ jsClassDef(Node):
         if node.namespaceURI != other.namespaceURI or
             node.tagName != other.tagName or node.attrs.len != other.attrs.len:
           return false
-        for i, attr in node.attrs.mypairs:
-          if attr != other.attrs[i]:
+        #TODO why not `==`?
+        for u, attr in node.attrs:
+          if attr != other.attrs[u]:
             return false
       elif node of Document and not (other of Document):
         return false
@@ -4716,17 +4718,17 @@ jsClassDef(DOMStringMap):
   proc delete(ctx: JSContext; map: DOMStringMap; name: DOMString): bool {.
       jsfunc.} =
     let name = name.toDataStr()
-    let i = map.target.asElement.findAttr(name)
-    if i >= 0:
-      map.target.asElement.delAttr(ctx, i)
-    return i >= 0
+    let u = map.target.asElement.findAttr(name)
+    if u != uint32.high:
+      map.target.asElement.delAttr(ctx, u)
+    return u != uint32.high
 
   proc getter(ctx: JSContext; map: DOMStringMap; name: DOMString): JSValue
       {.jsgetownprop.} =
     let name = name.toDataStr()
-    let i = map.target.asElement.findAttr(name)
-    if i >= 0:
-      return ctx.toJS(map.target.attrs[i].value)
+    let u = map.target.asElement.findAttr(name)
+    if u != uint32.high:
+      return ctx.toJS(map.target.attrs[u].value)
     return JS_UNINITIALIZED
 
   proc setter(ctx: JSContext; map: DOMStringMap; name, value: DOMString):
@@ -4863,7 +4865,7 @@ jsClassDef(HTMLAllCollection):
     return list
 
 # Attr
-proc newAttr(element: Element; dataIdx: int): Attr =
+proc newAttr(element: Element; dataIdx: uint32): Attr =
   jsNew AttrObj(
     internalNext: element.asNode.document.asNode,
     dataIdx: dataIdx,
@@ -4873,7 +4875,7 @@ proc newAttr(element: Element; dataIdx: int): Attr =
 proc newAttr(document: Document; data: AttrData): Attr =
   let dummy = jsNew AttrDummyElementObj(
     internalNext: document.asNode,
-    attrs: @[data]
+    attrs: newAttrDataList(data)
   )
   if dummy == nil:
     return Attr(nil)
@@ -4933,13 +4935,13 @@ jsClassDef(Attr):
     return attr.ownerElement
 
 # NamedNodeMap
-proc findAttr(map: NamedNodeMap; dataIdx: int): int =
+proc findAttr(map: NamedNodeMap; dataIdx: uint32): int =
   for i, attr in map.attrlist.mypairs:
     if attr.dataIdx == dataIdx:
       return i
   return -1
 
-proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
+proc getAttr(map: NamedNodeMap; dataIdx: uint32): Attr =
   let i = map.findAttr(dataIdx)
   if i >= 0:
     return map.attrlist[i]
@@ -4958,24 +4960,24 @@ jsClassDef(NamedNodeMap):
 
   proc getNamedItem(map: NamedNodeMap; qualifiedName: CAtom): Attr {.
       jsnfunc.} =
-    let i = map.element.findAttr(qualifiedName)
-    if i >= 0:
-      return map.getAttr(i)
+    let u = map.element.findAttr(qualifiedName)
+    if u != uint32.high:
+      return map.getAttr(u)
     return Attr(nil)
 
   proc getNamedItemNS(map: NamedNodeMap; namespace: CAtomNullable;
       localName: CAtom): Attr {.jsnfunc.} =
-    let i = map.element.findAttrNS(CAtom(namespace), localName)
-    if i >= 0:
-      return map.getAttr(i)
+    let u = map.element.findAttrNS(CAtom(namespace), localName)
+    if u != uint32.high:
+      return map.getAttr(u)
     return Attr(nil)
 
   proc length(map: NamedNodeMap): uint32 {.jsfget.} =
-    return uint32(map.element.attrs.len)
+    return map.element.attrs.len
 
   proc item(map: NamedNodeMap; u: uint32): Attr {.jsfunc.} =
-    if int64(u) < int64(map.element.attrs.len):
-      return map.getAttr(int(u))
+    if u < map.element.attrs.len:
+      return map.getAttr(u)
     return Attr(nil)
 
   proc getter(ctx: JSContext; this: NamedNodeMap; atom: JSAtom): JSValue
@@ -4989,7 +4991,7 @@ jsClassDef(NamedNodeMap):
 
   proc names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
       {.jspropnames.} =
-    let len = uint32(map.element.attrs.len)
+    let len = map.element.attrs.len
     var list = newJSPropertyEnumList(ctx, len)
     for u in 0 ..< len:
       list.add(u)
@@ -5055,34 +5057,31 @@ proc normalizeAttrQName(element: Element; qualifiedName: CAtom):
     return qualifiedName.toLowerAscii()
   return qualifiedName
 
-proc cmpAttrName(a: AttrData; b: CAtom): int =
-  return cmp(a.name, b)
-
-proc findAttr(element: Element; qualifiedName: CAtom): int =
+proc findAttr(element: Element; qualifiedName: CAtom): uint32 =
   let qualifiedName = element.normalizeAttrQName(qualifiedName)
-  let n = element.attrs.lowerBound(qualifiedName, cmpAttrName)
+  let n = element.attrs.lowerBound(qualifiedName)
   if n < element.attrs.len and element.attrs[n].name == qualifiedName:
     return n
-  return -1
+  return uint32.high
 
-proc findAttr*(element: Element; name: StaticAtom): int =
+proc findAttr*(element: Element; name: StaticAtom): uint32 =
   element.findAttr(name.view())
 
-proc getAttr*(element: Element; i: int): lent Str =
-  element.attrs[i].value
+proc getAttr*(element: Element; u: uint32): lent Str =
+  element.attrs[u].value
 
-proc findAttrNS(element: Element; namespace, localName: CAtom): int =
+proc findAttrNS(element: Element; namespace, localName: CAtom): uint32 =
   if namespace == CAtomNull:
-    for i, attr in element.attrs.mypairs:
+    for u, attr in element.attrs:
       if attr.namespace == CAtomNull and attr.name == localName:
-        return i
-    return -1
-  # Potentially slow path, since we don't store namespace prefixes separately.
-  # Still preferable to wasting memory on XML brain damage.
-  for i, attr in element.attrs.mypairs:
-    if attr.namespace == namespace and attr.name.matchesLocalName(localName):
-      return i
-  return -1
+        return u
+  else:
+    # Potentially slow path, since we don't store namespace prefixes
+    # separately.  Still preferable to wasting memory on XML brain damage.
+    for u, attr in element.attrs:
+      if attr.namespace == namespace and attr.name.matchesLocalName(localName):
+        return u
+  return uint32.high
 
 proc getAccessor(element: Element; magic: StaticAtom): ElementAccessor =
   var it = element.accessorsHead
@@ -5102,9 +5101,9 @@ proc getCachedAttributes(element: Element): NamedNodeMap =
   element.getAccessor(satAttributes) as NamedNodeMap
 
 proc attr*(element: Element; s: CAtom): Str =
-  let i = element.findAttr(s)
-  if i >= 0:
-    return element.attrs[i].value
+  let u = element.findAttr(s)
+  if u != uint32.high:
+    return element.attrs[u].value
   str("")
 
 proc attr*(element: Element; s: StaticAtom): Str =
@@ -5133,9 +5132,6 @@ proc attrdgz*(element: Element; s: StaticAtom): Opt[float64] =
   if d <= 0:
     return err()
   ok(d)
-
-proc attrb*(element: Element; s: CAtom): bool =
-  return element.findAttr(s) >= 0
 
 proc attrb*(element: Element; at: StaticAtom): bool =
   return element.attrb(at.view())
@@ -5364,9 +5360,10 @@ proc reflectLocalAttr(element: Element; ctx: JSContext; name: StaticAtom;
         window.loadImage(image)
   of ttDetails:
     if name == satName and value.asStr != "":
-      let i = element.findAttr(satOpen)
-      if i >= 0 and element.findOpenDetailsInGroup(value.asStr) != nil:
-        element.delAttr(ctx, i)
+      let u = element.findAttr(satOpen)
+      if u != uint32.high and
+          element.findOpenDetailsInGroup(value.asStr) != nil:
+        element.delAttr(ctx, u)
     if name == satOpen and (oldValue == nil) != (value == nil):
       let rt = JS_GetRuntime(ctx)
       let env = DetailsTaskEnv(
@@ -5564,11 +5561,11 @@ proc insertionSteps(element: Element; ctx: JSContext): bool =
         document.sheetTitle = style.asElement.attr(satTitle)
       style.updateSheet()
   of ttDetails:
-    let i = element.findAttr(satOpen)
-    if i >= 0:
+    let u = element.findAttr(satOpen)
+    if u != uint32.high:
       let name = element.attr(satName)
       if name != "" and element.findOpenDetailsInGroup(name) != nil:
-        element.delAttr(ctx, i)
+        element.delAttr(ctx, u)
   of ttScript:
     return true
   elif element.namespaceURI == satNamespaceSVG:
@@ -5605,24 +5602,24 @@ proc movingSteps(element: Element; isSubtreeRoot: bool;
   else:
     movingStepsForm(element)
 
-proc delAttr(element: Element; ctx: JSContext; i: int) =
-  var name = element.attrs[i].name
-  if element.attrs[i].namespace != CAtomNull:
+proc delAttr(element: Element; ctx: JSContext; u: uint32) =
+  var name = element.attrs[u].name
+  if element.attrs[u].namespace != CAtomNull:
     let i = name.find(':')
     if i >= 0:
       name = name.substr(i)
-  let oldValue = move(element.attrs[i].value)
+  let oldValue = move(element.attrs[u].value)
   element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
-    element.attrs[i].namespace, oldValue.toStrNil(), [], [],
+    element.attrs[u].namespace, oldValue.toStrNil(), [], [],
     Node(nil), Node(nil))
   let map = element.getCachedAttributes()
   if map != nil:
     # delete from attrlist + adjust indices invalidated
     var j = -1
     for k, attr in map.attrlist.mypairs:
-      if attr.dataIdx == i:
+      if attr.dataIdx == u:
         j = k
-      elif attr.dataIdx > i:
+      elif attr.dataIdx > u:
         dec attr.dataIdx
     if j >= 0:
       let attr = map.attrlist[j]
@@ -5630,39 +5627,39 @@ proc delAttr(element: Element; ctx: JSContext; i: int) =
       data.value = oldValue
       attr.ownerElement = (jsNew AttrDummyElementObj(
         internalNext: attr.asNode.document.asNode,
-        attrs: @[data]
+        attrs: newAttrDataList(data)
       )).asElement # works even if jsNew produces nil
       attr.dataIdx = 0
       map.attrlist.del(j) # ordering does not matter
-  element.attrs.delete(i) # ordering matters
+  element.attrs.delete(u) # ordering matters
   element.reflectAttr(ctx, name, str(nil), oldValue.toStrNil())
 
 proc delAttr(element: Element; ctx: JSContext; name: CAtom) =
-  let i = element.findAttr(name)
-  if i >= 0:
-    element.delAttr(ctx, i)
+  let u = element.findAttr(name)
+  if u != uint32.high:
+    element.delAttr(ctx, u)
 
 proc setAttr(element: Element; ctx: JSContext; name: CAtom; value: sink Str) =
-  var i = element.attrs.upperBound(name, cmpAttrName)
-  if i > 0 and element.attrs[i - 1].name == name:
-    dec i
-    let oldValue = move(element.attrs[i].value)
+  var u = element.attrs.upperBound(name)
+  if u > 0 and element.attrs[u - 1].name == name:
+    dec u
+    let oldValue = move(element.attrs[u].value)
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
       CAtomNull, oldValue.toStrNil(), [], [], Node(nil),
       Node(nil))
-    element.attrs[i].value = value
-    element.reflectAttr(ctx, element.attrs[i], oldValue.toStrNil)
+    element.attrs[u].value = value
+    element.reflectAttr(ctx, element.attrs[u], oldValue.toStrNil)
   else:
     element.asNode.queueMutationRecord(ctx, mrtAttributes, name,
       CAtomNull, str(nil), [], [], Node(nil), Node(nil))
-    element.attrs.insert(AttrData(name: name, value: value), i)
+    element.attrs.insert(AttrData(name: name, value: value), u)
     let map = element.getCachedAttributes()
     if map != nil:
       # adjust invalidated indices
       for k, attr in map.attrlist.mypairs:
-        if attr.dataIdx >= i:
+        if attr.dataIdx >= u:
           inc attr.dataIdx
-    element.reflectAttr(ctx, element.attrs[i], str(nil))
+    element.reflectAttr(ctx, element.attrs[u], str(nil))
 
 proc setAttr*(element: Element; ctx: JSContext; name: StaticAtom;
     value: sink Str) =
@@ -5681,38 +5678,38 @@ proc setAttrNS(element: Element; ctx: JSContext; namespace: CAtomNullable;
   var namespace = CAtom(namespace)
   var localName = qualifiedName
   ?ctx.validateAndExtract(namespace, localName, nvAttribute)
-  var i = element.findAttrNS(namespace, localName)
-  if i >= 0:
-    let old = move(element.attrs[i].value)
+  var u = element.findAttrNS(namespace, localName)
+  if u != uint32.high:
+    let old = move(element.attrs[u].value)
     element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
       namespace, old.toStrNil(), [], [], Node(nil), Node(nil))
-    element.attrs[i].value = value
-    element.reflectAttr(ctx, element.attrs[i], old.toStrNil())
+    element.attrs[u].value = value
+    element.reflectAttr(ctx, element.attrs[u], old.toStrNil())
   else:
     element.asNode.queueMutationRecord(ctx, mrtAttributes, localName,
       namespace, str(nil), [], [], Node(nil), Node(nil))
-    i = element.attrs.upperBound(qualifiedName, cmpAttrName)
+    u = element.attrs.upperBound(qualifiedName)
     element.attrs.insert(AttrData(
       namespace: namespace,
       name: qualifiedName,
       value: value
-    ), i)
+    ), u)
     let map = element.getCachedAttributes()
     if map != nil:
       # adjust invalidated indices
       for k, attr in map.attrlist.mypairs:
-        if attr.dataIdx >= i:
+        if attr.dataIdx >= u:
           inc attr.dataIdx
-    element.reflectAttr(ctx, element.attrs[i], str(nil))
+    element.reflectAttr(ctx, element.attrs[u], str(nil))
   ok()
 
-proc sinkAttrs*(element: Element; ctx: JSContext; attrs: sink seq[AttrData]) =
+proc sinkAttrs*(element: Element; ctx: JSContext; attrs: sink AttrDataList) =
   element.attrs = move(attrs)
   for attr in element.attrs:
     element.reflectAttr(ctx, attr, str(nil))
 
 proc addAttrsIfMissing*(element: Element; ctx: JSContext;
-    attrs: seq[AttrData]) =
+    attrs: AttrDataList) =
   for attr in attrs:
     # not optimal, but used very rarely so it's fine
     if not element.attrb(attr.name):
@@ -5868,13 +5865,13 @@ jsClassPublicDef(Element):
         element.addAccessor(map.asElementAccessor, satAttributes)
     map
 
-  proc hasAttribute(element: Element; qualifiedName: CAtom): bool
-      {.jsfunc.} =
-    return element.findAttr(qualifiedName) >= 0
+  proc attrb*(element: Element; qualifiedName: CAtom): bool
+      {.jsfunc: "hasAttribute".} =
+    return element.findAttr(qualifiedName) != uint32.high
 
   proc hasAttributeNS(element: Element; namespace: CAtomNullable;
       localName: CAtom): bool {.jsfunc.} =
-    return element.findAttrNS(CAtom(namespace), localName) >= 0
+    return element.findAttrNS(CAtom(namespace), localName) != uint32.high
 
   proc getAttributeNames(ctx: JSContext; element: Element): JSValue
       {.jsfunc.} =
@@ -5885,16 +5882,16 @@ jsClassPublicDef(Element):
 
   proc getAttribute(ctx: JSContext; element: Element;
       qualifiedName: CAtom): JSValue {.jsfunc.} =
-    let i = element.findAttr(qualifiedName)
-    if i >= 0:
-      return ctx.toJS(element.attrs[i].value)
+    let u = element.findAttr(qualifiedName)
+    if u != uint32.high:
+      return ctx.toJS(element.attrs[u].value)
     return JS_NULL
 
   proc getAttributeNS(ctx: JSContext; element: Element;
       namespace: CAtomNullable; localName: CAtom): JSValue {.jsfunc.} =
-    let i = element.findAttrNS(CAtom(namespace), localName)
-    if i >= 0:
-      return ctx.toJS(element.attrs[i].value)
+    let u = element.findAttrNS(CAtom(namespace), localName)
+    if u != uint32.high:
+      return ctx.toJS(element.attrs[u].value)
     return JS_NULL
 
   proc getAttributeNode(element: Element; qualifiedName: CAtom): Attr
@@ -6126,9 +6123,9 @@ jsClassPublicDef(Element):
 
   proc removeAttributeNS(ctx: JSContext; element: Element;
       namespace: CAtomNullable; localName: CAtom) {.jsfunc.} =
-    let i = element.findAttrNS(CAtom(namespace), localName)
-    if i >= 0:
-      element.delAttr(ctx, i)
+    let u = element.findAttrNS(CAtom(namespace), localName)
+    if u != uint32.high:
+      element.delAttr(ctx, u)
 
   proc toggleAttribute(ctx: JSContext; element: Element;
       qualifiedName: DOMString; force = obNone): Opt[bool] {.jsfunc.} =
@@ -6154,8 +6151,8 @@ jsClassPublicDef(Element):
     if attributes == nil:
       return JS_ThrowOutOfMemory(ctx)
     let localName = attr.localName
-    let i = element.findAttrNS(attr.namespaceURI, localName)
-    let oldAttr = if i >= 0: attributes.getAttr(i) else: Attr(nil)
+    let u = element.findAttrNS(attr.namespaceURI, localName)
+    let oldAttr = if u != uint32.high: attributes.getAttr(u) else: Attr(nil)
     if oldAttr != attr:
       ?element.setAttrNS(ctx, CAtomNullable(attr.namespaceURI), attr.name,
         attr.value)
@@ -6163,11 +6160,11 @@ jsClassPublicDef(Element):
 
   proc removeAttributeNode(ctx: JSContext; element: Element; attr: Attr):
       JSValue {.jsfunc.} =
-    let i = element.findAttrNS(attr.namespaceURI, attr.localName)
-    if i < 0:
+    let u = element.findAttrNS(attr.namespaceURI, attr.localName)
+    if u == uint32.high:
       return JS_ThrowDOMException(ctx, "NotFoundError",
         "attribute not found in element")
-    element.delAttr(ctx, i)
+    element.delAttr(ctx, u)
     return ctx.toJS(attr)
 
   proc setId(ctx: JSContext; element: Element; id: DOMString) {.
@@ -7217,11 +7214,11 @@ proc clickSummary*(this: HTMLElement; ctx: JSContext) =
     if root != nil:
       parent = root.host
   if parent.tagType == ttDetails:
-    let i = parent.findAttr(satOpen)
-    if i < 0:
+    let u = parent.findAttr(satOpen)
+    if u == uint32.high:
       parent.setAttr(ctx, satOpen, str(""))
     else:
-      parent.delAttr(ctx, i)
+      parent.delAttr(ctx, u)
 
 proc filterDetailsTask(source: JSTaskSource; env: JSTaskEnv; opaque: RootRef):
     bool =

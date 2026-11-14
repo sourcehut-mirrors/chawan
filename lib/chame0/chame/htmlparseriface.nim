@@ -83,7 +83,7 @@ proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
 
 proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
     namespace: Namespace; intendedParent: HandleImpl;
-    attrs: sink seq[AttrData]): HandleImpl {.doc.}
+    attrs: sink AttrDataList): HandleImpl {.doc.}
   ## Create a new element node.
   ##
   ## `localName` is an Atom representing the tag name of the start token.
@@ -145,7 +145,7 @@ proc getTemplateContentImpl(builder: DOMBuilderImpl; handle: HandleImpl):
 
 #TODO I guess this could be `sink attrs` too
 proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
-    attrs: seq[AttrData]) {.doc.}
+    attrs: AttrDataList) {.doc.}
   ## Add the attributes in `attrs` to the element node `element`.
   ## This is only called with the HTML and BODY tags, when more than one
   ## exists in a document.
@@ -250,7 +250,7 @@ when defined(nimdocdummy):
 
   proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
       namespace: Namespace; intendedParent: HandleImpl;
-      attrs: sink seq[AttrData]): HandleImpl = discard
+      attrs: sink AttrDataList): HandleImpl = discard
 
   proc getLocalNameImpl(builder: DOMBuilderImpl; handle: HandleImpl): AtomImpl =
     discard
@@ -264,7 +264,7 @@ when defined(nimdocdummy):
     discard
 
   proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl;
-      attrs: seq[AttrData]) =
+      attrs: AttrDataList) =
     discard
 
   proc insertCommentImpl(builder: DOMBuilderImpl; parent: HandleImpl;

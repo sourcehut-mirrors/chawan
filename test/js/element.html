@@ -42,6 +42,8 @@ function testAttribute() {
 	assertEquals(x.attributes["pf:test"].prefix, "pf");
 	assertEquals(x.attributes["pf:test"].localName, "test");
 	assertEquals(x.attributes["pf:test"].value, "d");
+	assertEquals(x.hasAttribute("pf:test"), true);
+	assertEquals(x.hasAttribute("unset"), false);
 	assertEquals(x.attributes.unset, undefined);
 	assertEquals(x.attributes.length, 6);
 	assertEquals(x.attributes.item(0xFFFFFFFF), null);

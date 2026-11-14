@@ -11,6 +11,7 @@
 
 when NimMajor >= 2:
   import std/assertions
+
 import std/algorithm
 import std/macros
 
@@ -741,12 +742,161 @@ type
     namespace*: CAtom
     value*: Str
 
-proc sortAttrs*(attrs: var seq[AttrData]) =
+  AttrDataListObj = object
+    len: uint32
+    cap: uint32
+    data: UncheckedArray[AttrData]
+
+  AttrDataList* = distinct ptr AttrDataListObj
+
+proc dup(this: AttrDataList): ptr AttrDataListObj
+proc `==`(a: AttrDataList; b: typeof(nil)): bool {.borrow.}
+
+proc `=destroy`*(this: var AttrDataList) =
+  if this != nil:
+    dealloc(cast[pointer](this))
+
+proc `=sink`*(x: var AttrDataList; y: AttrDataList) =
+  `=destroy`(x)
+  cast[ptr ptr AttrDataListObj](addr x)[] = cast[ptr AttrDataListObj](y)
+
+proc `=dup`*(this: AttrDataList): AttrDataList {.noinit.} =
+  cast[ptr ptr AttrDataListObj](addr result)[] = dup(this)
+
+proc `=copy`*(x: var AttrDataList; y: AttrDataList) =
+  if (ptr AttrDataListObj)(x) != (ptr AttrDataListObj)(y):
+    `=destroy`(x)
+    cast[ptr ptr AttrDataListObj](addr x)[] = dup(y)
+
+proc len*(this: AttrDataList): uint32 =
+  if (ptr AttrDataListObj)(this) == nil:
+    return 0
+  (ptr AttrDataListObj)(this).len
+
+proc `[]`*(this: AttrDataList; u: uint32): lent AttrData {.inline.} =
+  assert u < this.len
+  (ptr AttrDataListObj)(this).data[u]
+
+iterator items*(this: AttrDataList): lent AttrData =
+  let len = this.len
+  for u in 0 ..< len:
+    yield this[u]
+
+iterator pairs*(this: AttrDataList): tuple[key: uint32; val: lent AttrData] =
+  let len = this.len
+  for u in 0 ..< len:
+    yield (u, this[u])
+
+proc `[]`*(this: var AttrDataList; u: uint32): var AttrData =
+  assert u < this.len
+  (ptr AttrDataListObj)(this).data[u]
+
+proc `[]=`*(this: var AttrDataList; u: uint32; data: sink AttrData) =
+  assert u < this.len
+  (ptr AttrDataListObj)(this).data[u] = move(data)
+
+proc high*(this: AttrDataList): int =
+  int(this.len) - 1
+
+template toOpenArray(attrs: AttrDataList): var openArray[AttrData] =
+  let p = (ptr AttrDataListObj)(attrs)
+  var data = if p != nil: addr p.data else: (ptr UncheckedArray[AttrData])(nil)
+  data.toOpenArray(0, attrs.high)
+
+proc resizeAttrDataList(old: ptr AttrDataListObj; cap: uint32):
+    ptr AttrDataListObj =
+  # I guess alignment is fine here...
+  let ocap = if old != nil: old.cap else: 0
+  let osize = sizeof(AttrDataListObj) + cast[int](ocap) * sizeof(AttrData)
+  let size = sizeof(AttrDataListObj) + cast[int](cap) * sizeof(AttrData)
+  let this = cast[ptr AttrDataListObj](realloc0(old, osize, size))
+  this.cap = cap
+  this
+
+proc dup(this: AttrDataList): ptr AttrDataListObj =
+  if this == nil:
+    return nil
+  let len = this.len
+  let p2 = resizeAttrDataList(nil, len)
+  p2.len = len
+  for u in 0 ..< this.len:
+    p2.data[u] = this[u]
+  p2
+
+proc cmpAttrName(a: AttrData; b: CAtom): int =
+  return cmp(a.name, b)
+
+proc lowerBound*(this: AttrDataList; name: CAtom): uint32 =
+  uint32(this.toOpenArray().lowerBound(name, cmpAttrName))
+
+proc upperBound*(this: AttrDataList; name: CAtom): uint32 =
+  uint32(this.toOpenArray().upperBound(name, cmpAttrName))
+
+proc newAttrDataList*(data: sink AttrData): AttrDataList =
+  var p = resizeAttrDataList(nil, 1)
+  p.len = 1
+  p.data[0] = data
+  AttrDataList(p)
+
+template empty*(t: typedesc[AttrDataList]): AttrDataList =
+  AttrDataList(nil)
+
+proc setLen*(attrs: var AttrDataList; len: uint32) =
+  let olen = attrs.len
+  var p = (ptr AttrDataListObj)(attrs)
+  var cap = if p != nil: p.cap else: 0
+  if cap < len:
+    assert cap < 0x7FFFFFFF
+    cap *= 2
+    if cap < len:
+      cap = len
+    p = resizeAttrDataList(p, cap)
+    (ptr AttrDataListObj)(attrs) = p
+  if p != nil:
+    for u in len ..< olen:
+      p.data[u] = AttrData.default
+    p.len = len
+
+proc delete*(attrs: var AttrDataList; u: uint32) =
+  let olen = attrs.len
+  assert u < olen
+  let p = (ptr AttrDataListObj)(attrs)
+  {.cast(raises: []).}:
+    `=destroy`(p.data[u])
+  moveMem(addr p.data[u], addr p.data[u + 1],
+    (olen - 1 - u) * uint32(sizeof(AttrData)))
+  p.len = olen - 1
+
+proc insert*(attrs: var AttrDataList; data: sink AttrData; u: uint32) =
+  let olen = attrs.len
+  assert u <= olen
+  attrs.setLen(olen + 1)
+  if u < olen:
+    moveMem(addr attrs[u + 1], addr attrs[u],
+      (olen - u) * uint32(sizeof(AttrData)))
+  copyMem(addr attrs[u], addr data, sizeof(AttrData))
+  wasMoved(data)
+
+proc add*(attrs: var AttrDataList; data: sink AttrData) =
+  let olen = attrs.len
+  attrs.setLen(olen + 1)
+  attrs[olen] = data
+
+proc `==`*(a, b: AttrDataList): bool =
+  let alen = a.len
+  if alen != b.len:
+    return false
+  for u in 0 ..< alen:
+    if a[u] != b[u]:
+      return false
+  true
+
+proc sortAttrs*(attrs: var AttrDataList) =
   if attrs.len > 1:
-    attrs.sort(proc(a, b: AttrData): int {.nimcall.} =
+    attrs.toOpenArray().sort(proc(a, b: AttrData): int {.nimcall.} =
       cmp(a.name, b.name)
     )
-    var j = 1
+    var j = 1'u32
     var prev = attrs[0].name
     for i in 1 ..< attrs.len:
       let name = attrs[i].name
@@ -755,6 +905,6 @@ proc sortAttrs*(attrs: var seq[AttrData]) =
           attrs[j] = move(attrs[i])
         inc j
       prev = name
-    attrs.setLen(j)
+    (ptr AttrDataListObj)(attrs).len = j
 
 {.pop.} # raises: []

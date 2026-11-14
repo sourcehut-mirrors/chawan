@@ -69,7 +69,7 @@ type
     quote: char # dedupe states that only differ in their quoting
     entityNameIdx: int8 # index in entity.name
     entityMatchLen: int8 # last matching entity name length
-    attrs*: seq[AttrData]
+    attrs*: AttrDataList
     charbuf*: Growbuf # flushed chars from tmp
     tagNameBuf*: Growbuf # buffer for storing the tag name & doctype name
     inputBufIdx*: int # last character consumed in input buf

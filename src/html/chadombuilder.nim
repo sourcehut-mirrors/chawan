@@ -148,7 +148,7 @@ proc createHTMLElementImpl(builder: ChaDOMBuilder): ParentNode =
 
 proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: ParentNode;
-    attrs: sink seq[AttrData]): ParentNode =
+    attrs: sink AttrDataList): ParentNode =
   let document = builder.document
   let element = document.newElement(builder.ctx, localName,
     namespace.toStaticAtom())
@@ -211,7 +211,7 @@ proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
     builder.insertBefore(toNode, child, ParentNode(nil))
 
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: ParentNode;
-    attrs: seq[AttrData]) =
+    attrs: AttrDataList) =
   let element = handle as Element
   element.addAttrsIfMissing(builder.ctx, attrs)
 
