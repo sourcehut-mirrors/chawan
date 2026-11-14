@@ -40,10 +40,19 @@ function testRegExp() {
 	"".replace(o);
 }
 
+function testError() {
+	try {
+		assert(false);
+	} catch (e) {
+		assert(e.stack.trim().split('\n')[0].startsWith("at assert"));
+	}
+}
+
 testNumberLiterals();
 testArrayBuffer();
 testDate();
 testRegExp();
+testError();
 
 document.getElementById("x").textContent = "Success";
 </script>

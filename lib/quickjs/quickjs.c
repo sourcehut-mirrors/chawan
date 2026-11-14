@@ -8080,6 +8080,8 @@ static BOOL is_backtrace_needed(JSContext *ctx, JSValueConst obj)
     p = JS_VALUE_GET_OBJ(obj);
     if (p->class_id != JS_CLASS_ERROR)
         return FALSE;
+    if (find_own_property1(p, JS_ATOM_Private_stack))
+        return FALSE;
     return TRUE;
 }
 
