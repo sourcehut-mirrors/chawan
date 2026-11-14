@@ -113,7 +113,6 @@ type
     document*: Document
     timeouts*: TimeoutState
     importMapsAllowed*: bool
-    inMicrotaskCheckpoint*: bool
     dangerAlwaysSameOrigin*: bool # for client, insecure if Window sets true
     remoteSheetNum*: uint32
     loadedSheetNum*: uint32
