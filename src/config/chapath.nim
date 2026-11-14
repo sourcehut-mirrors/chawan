@@ -155,7 +155,7 @@ proc stateCurlyHash(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${#ident
   if c == '}':
     let s = getEnvEmpty(move(ctx.identStr).toStr())
-    ctx.s &= $s.len
+    ctx.s &= s.len
     ctx.state = usNormal
     return ok()
   if c == '$': # allow $ as first char only
