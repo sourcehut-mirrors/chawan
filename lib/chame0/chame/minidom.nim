@@ -18,11 +18,9 @@ import tags
 
 # Node types
 type
-  Attribute* = AttrData
-
   Node* = ref object of RootObj
     childList*: seq[Node]
-    parentNode* {.cursor.}: Node
+    parentNode*: Node
 
   CharacterData* = ref object of Node
     data*: Str
@@ -41,7 +39,7 @@ type
   Element* = ref object of Node
     localName*: CAtom
     namespace*: Namespace
-    attrs*: seq[Attribute]
+    attrs*: seq[AttrData]
     document*: Document
 
   DocumentFragment* = ref object of Node
@@ -120,10 +118,10 @@ proc tagType*(element: Element): TagType =
 proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: CAtom): TagType =
   return atom.toTagType()
 
-proc getDocumentImpl(builder: MiniDOMBuilder): Node =
+proc getDocumentImpl(builder: MiniDOMBuilder): lent Node =
   return builder.document
 
-proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): Node =
+proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): lent Node =
   return handle.parentNode
 
 proc createElement(document: Document; localName: CAtom; namespace: Namespace):
@@ -144,122 +142,29 @@ proc createHTMLElementImpl(builder: MiniDOMBuilder): Node =
   builder.document.createElement(ttHtml.view(), nsHTML)
 
 proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: CAtom;
-    namespace: Namespace; intendedParent: Node; attrs: sink seq[Attribute]):
+    namespace: Namespace; intendedParent: Node; attrs: sink seq[AttrData]):
     Node =
   let element = builder.document.createElement(localName, namespace)
   element.attrs = move(attrs)
   return element
 
 proc getLocalNameImpl(builder: MiniDOMBuilder; handle: Node): CAtom =
-  return Element(handle).localName
+  Element(handle).localName
 
 proc getNamespaceImpl(builder: MiniDOMBuilder; handle: Node): Namespace =
-  return Element(handle).namespace
+  Element(handle).namespace
 
-proc getTemplateContentImpl(builder: MiniDOMBuilder, handle: Node): Node =
-  return HTMLTemplateElement(handle).content
-
-proc countElementChildren(node: Node): int =
-  result = 0
-  for child in node.childList:
-    if child of Element:
-      inc result
-
-proc hasTextChild(node: Node): bool =
-  for child in node.childList:
-    if child of Text:
-      return true
-  return false
-
-proc hasElementChild(node: Node): bool =
-  for child in node.childList:
-    if child of Element:
-      return true
-  return false
-
-proc hasDocumentTypeChild(node: Node): bool =
-  for child in node.childList:
-    if child of DocumentType:
-      return true
-  return false
-
-proc isHostIncludingInclusiveAncestor(a, b: Node): bool =
-  var b = b
-  while b != nil:
-    if b == a:
-      return true
-    b = b.parentNode
-  return false
-
-proc hasPreviousElementSibling(node: Node): bool =
-  for n in node.parentNode.childList:
-    if n == node:
-      break
-    if n of Element:
-      return true
-  return false
-
-proc hasNextDocumentTypeSibling(node: Node): bool =
-  for i in countdown(node.parentNode.childList.len, 0):
-    let n = node.parentNode.childList[i]
-    if n == node:
-      break
-    if n of DocumentType:
-      return true
-  return false
-
-proc isValidParent(node: Node): bool =
-  return node of Element or node of Document or node of DocumentFragment
-
-proc isValidChild(node: Node): bool =
-  return node.isValidParent or node of DocumentType or node of CharacterData
-
-# WARNING the ordering of the arguments in the standard is whack so this
-# doesn't match that
-proc preInsertionValidity*(parent, node, before: Node): bool =
-  if not parent.isValidParent:
-    return false
-  if node.isHostIncludingInclusiveAncestor(parent):
-    return false
-  if before != nil and before.parentNode != parent:
-    return false
-  if not node.isValidChild:
-    return false
-  if node of Text and parent of Document:
-    return false
-  if node of DocumentType and not (parent of Document):
-    return false
-  if parent of Document:
-    if node of DocumentFragment:
-      let elems = node.countElementChildren()
-      if elems > 1 or node.hasTextChild():
-        return false
-      elif elems == 1 and (parent.hasElementChild() or
-          before != nil and
-          (before of DocumentType or before.hasNextDocumentTypeSibling())):
-        return false
-    elif node of Element:
-      if parent.hasElementChild():
-        return false
-      elif before != nil and (before of DocumentType or
-            before.hasNextDocumentTypeSibling()):
-        return false
-    elif node of DocumentType:
-      if parent.hasDocumentTypeChild() or
-          before != nil and before.hasPreviousElementSibling() or
-          before == nil and parent.hasElementChild():
-        return false
-  return true # no exception reached
+proc getTemplateContentImpl(builder: MiniDOMBuilder, handle: Node): lent Node =
+  HTMLTemplateElement(handle).content
 
 proc insertBefore(parent, child, before: Node) =
-  if parent.preInsertionValidity(child, before):
-    assert child.parentNode == nil
-    if before == nil:
-      parent.childList.add(child)
-    else:
-      let i = parent.childList.find(before)
-      parent.childList.insert(child, i)
-    child.parentNode = parent
+  assert child.parentNode == nil
+  if before == nil:
+    parent.childList.add(child)
+  else:
+    let i = parent.childList.find(before)
+    parent.childList.insert(child, i)
+  child.parentNode = parent
 
 proc insertBeforeImpl(builder: MiniDOMBuilder; parent, child, before: Node) =
   parent.insertBefore(child, before)
@@ -280,6 +185,7 @@ proc appendDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
 
 proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: sink Str;
     before: Node) =
+  assert parent != builder.document
   let prevSibling = if before != nil:
     let i = parent.childList.find(before)
     if i == 0:
@@ -341,7 +247,7 @@ proc elementPoppedImpl(builder: MiniDOMBuilder; element: Node) =
     break
 
 proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
-    attrs: seq[Attribute]) =
+    attrs: seq[AttrData]) =
   let element = Element(handle)
   element.attrs.add(attrs)
   element.attrs.sortAttrs()

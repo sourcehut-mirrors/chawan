@@ -123,11 +123,6 @@ proc processAfterBody[Handle](parser: var HTML5Parser[Handle]):
   ParseChunkResult
 
 # DOMBuilder interface functions
-proc toAtom[Handle](parser: HTML5Parser[Handle]; tagType: TagType):
-    CAtom =
-  mixin tagTypeToAtomImpl
-  parser.dombuilder.toDOMBuilderImpl().tagTypeToAtomImpl(tagType)
-
 proc toTagType[Handle](parser: HTML5Parser[Handle]; atom: CAtom): TagType =
   mixin atomToTagTypeImpl
   return parser.dombuilder.toDOMBuilderImpl().atomToTagTypeImpl(atom)
@@ -142,17 +137,16 @@ proc setEncoding(parser: var HTML5Parser; cs: Str): SetEncodingResult =
   mixin setEncodingImpl
   return parser.dombuilder.toDOMBuilderImpl().setEncodingImpl(cs)
 
-proc getDocument[Handle](parser: HTML5Parser[Handle]): Handle =
+proc getDocument[Handle](parser: HTML5Parser[Handle]): lent Handle =
   mixin getDocumentImpl
   return parser.dombuilder.toDOMBuilderImpl().getDocumentImpl()
 
-proc getParentNode[Handle](parser: HTML5Parser[Handle];
-    handle: Handle): Handle =
+proc getParentNode[Handle](parser: HTML5Parser[Handle]; handle: Handle):
+    lent Handle =
   mixin getParentNodeImpl
   return parser.dombuilder.toDOMBuilderImpl().getParentNodeImpl(handle)
 
-proc getLocalName[Handle](parser: HTML5Parser[Handle];
-    handle: Handle): CAtom =
+proc getLocalName[Handle](parser: HTML5Parser[Handle]; handle: Handle): CAtom =
   mixin getLocalNameImpl
   return parser.dombuilder.toDOMBuilderImpl().getLocalNameImpl(handle)
 
@@ -161,23 +155,22 @@ proc getNamespace[Handle](parser: HTML5Parser[Handle];
   mixin getNamespaceImpl
   return parser.dombuilder.toDOMBuilderImpl().getNamespaceImpl(handle)
 
-proc getTemplateContent[Handle](parser: HTML5Parser[Handle];
-    handle: Handle): Handle =
+proc getTemplateContent[Handle](parser: HTML5Parser[Handle]; handle: Handle):
+    lent Handle =
   mixin getTemplateContentImpl
   return parser.dombuilder.toDOMBuilderImpl().getTemplateContentImpl(handle)
 
 proc getTagType[Handle](parser: HTML5Parser[Handle]; handle: Handle): TagType =
   if parser.getNamespace(handle) != nsHTML:
     return ttUnknown
-  return parser.toTagType(parser.getLocalName(handle))
+  return parser.getLocalName(handle).toTagType()
 
-proc createHTMLElement[Handle](parser: HTML5Parser[Handle]):
-    Handle =
+proc createHTMLElement[Handle](parser: HTML5Parser[Handle]): Handle =
   mixin createHTMLElementImpl
   return parser.dombuilder.toDOMBuilderImpl().createHTMLElementImpl()
 
 proc insertCommentImpl[Handle](parser: var HTML5Parser[Handle];
-    parent: Handle; before: Handle) =
+    parent, before: Handle) =
   mixin insertCommentImpl
   parser.dombuilder.toDOMBuilderImpl().insertCommentImpl(parent,
     move(parser.tok.tagNameBuf), before)
@@ -208,8 +201,8 @@ proc moveChildren[Handle](parser: HTML5Parser[Handle]; handleFrom,
   mixin moveChildrenImpl
   parser.dombuilder.toDOMBuilderImpl().moveChildrenImpl(handleFrom, handleTo)
 
-proc addAttrsIfMissing[Handle](parser: HTML5Parser[Handle];
-    element: Handle; attrs: seq[AttrData]) =
+proc addAttrsIfMissing[Handle](parser: HTML5Parser[Handle]; element: Handle;
+    attrs: seq[AttrData]) =
   mixin addAttrsIfMissingImpl
   parser.dombuilder.toDOMBuilderImpl().addAttrsIfMissingImpl(element, attrs)
 
@@ -271,24 +264,24 @@ proc resetInsertionMode(parser: var HTML5Parser) =
   parser.insertionMode = parser.resetInsertionMode0()
 
 proc currentNodeToken[Handle](parser: HTML5Parser[Handle]):
-    OpenElement[Handle] =
-  return parser.openElements[^1]
+    lent OpenElement[Handle] =
+  parser.openElements[parser.openElements.high]
 
-proc currentNode[Handle](parser: HTML5Parser[Handle]): Handle =
-  return parser.currentNodeToken.element
+proc currentNode[Handle](parser: HTML5Parser[Handle]): lent Handle =
+  parser.currentNodeToken.element
 
-proc currentTagName[Handle](parser: HTML5Parser[Handle]): CAtom =
-  return parser.currentNodeToken.startTagName
+proc currentTagName[Handle](parser: HTML5Parser[Handle]): lent CAtom =
+  parser.currentNodeToken.startTagName
 
 proc adjustedCurrentNodeToken[Handle](parser: HTML5Parser[Handle]):
-    OpenElement[Handle] =
+    lent OpenElement[Handle] =
   if parser.hasContext() and parser.openElements.len == 1:
     return parser.ctx
   else:
     return parser.currentNodeToken
 
 proc adjustedCurrentNode[Handle](parser: HTML5Parser[Handle]):
-    Handle =
+    lent Handle =
   return parser.adjustedCurrentNodeToken.element
 
 proc lastElementOfTag[Handle](parser: HTML5Parser[Handle];
@@ -339,8 +332,7 @@ proc appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle]):
     InsertionLocation[Handle] =
   parser.appropriatePlaceForInsert(parser.currentNode)
 
-proc hasElement[Handle](parser: HTML5Parser[Handle];
-    tag: TagType): bool =
+proc hasElement[Handle](parser: HTML5Parser[Handle]; tag: TagType): bool =
   for it in parser.openElements:
     if parser.getTagType(it.element) == tag:
       return true
@@ -357,18 +349,16 @@ proc hasElementInScopeWithXML[Handle](parser: HTML5Parser[Handle];
     if element == target:
       return true
     let localName = parser.getLocalName(element)
-    let tagType = parser.toTagType(localName)
+    let tagType = localName.toTagType()
     case parser.getNamespace(element)
     of nsHTML:
       if tagType in list:
         return false
     of nsMathML:
-      const elements = {ttMi, ttMo, ttMn, ttMs, ttMtext, ttAnnotationXml}
-      if tagType in elements:
+      if tagType in {ttMi, ttMo, ttMn, ttMs, ttMtext, ttAnnotationXml}:
         return false
     of nsSVG:
-      const elements = {ttForeignObject, ttDesc, ttTitle}
-      if tagType in elements:
+      if tagType in {ttForeignObject, ttDesc, ttTitle}:
         return false
     else: discard
   return false
@@ -551,8 +541,7 @@ proc insertHTMLElementPop[Handle](parser: var HTML5Parser[Handle]) =
 
 proc insertCharacter(parser: var HTML5Parser; data: sink Str) =
   let location = parser.appropriatePlaceForInsert()
-  if location.inside != parser.getDocument():
-    parser.insertText(location.inside, move(data), location.before)
+  parser.insertText(location.inside, move(data), location.before)
 
 proc insertCharacter(parser: var HTML5Parser; data: sink Growbuf) =
   parser.insertCharacter(data.toStr())

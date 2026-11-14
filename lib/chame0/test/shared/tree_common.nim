@@ -198,7 +198,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
   template pop_node =
     let node = stack.pop()
     if node of Element:
-      Element(node).attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
+      Element(node).attrs.sort(proc(a, b: AttrData): int = cmp(a.name, b.name))
     indent -= 2
   while ctx.has:
     let line = ctx.consumeLine()
@@ -227,7 +227,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
         break
       let node = stack.pop()
       if node of Element:
-        Element(node).attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
+        Element(node).attrs.sort(proc(a, b: AttrData): int = cmp(a.name, b.name))
       indent -= 2
     let str = line.substr(indent + 1)
     if str.startsWith("<!DOCTYPE "):
@@ -295,7 +295,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       let na = initStrM(prefix, name).toAtom()
       let value0 = str.after('=')
       let value = value0.substr(1, value0.len - 2)
-      Element(top).attrs.add(Attribute(name: na, value: value, namespace: ns))
+      Element(top).attrs.add(AttrData(name: na, value: value, namespace: ns))
   while indent > 1:
     pop_node
 

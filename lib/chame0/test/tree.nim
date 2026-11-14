@@ -11,8 +11,7 @@ proc runTest(test: TCTest; scripting, print: bool) =
     ctx[] = test.fragment.get.ctx[]
     let childList = parseHTMLFragment(test.data.toOpenArray(), ctx, opts)
     for child in childList:
-      if ctx.preInsertionValidity(child, nil):
-        ctx.childList.add(child)
+      ctx.childList.add(child)
     Document(childList: ctx.childList)
   if print:
     var ins = initGrowbuf()
