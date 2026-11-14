@@ -409,22 +409,38 @@ In particular, handling `JSValue`s is unavoidable when:
 * You want to call a callback.
 * You want a dynamically typed variable, e.g. for "union" types.
 
-### Option vs Opt
+### Opt
 
-In converters, the conventional way to represent null values is to
-`import std/options`, `import js/jsnull`, and use `Option[T]`.
-
-This applies to e.g. strings (which are not nilable in Nim), but also to
-refs in fromJS so that a registered ref object parameter of a `.jsfunc` is
-not nullable unless you wrap it in an `Option`.
-
-`Opt[T]` in contrast is used for representing errors using Chawan's result
-type defined in `types/opt`.
+`Opt[T]` is used for representing errors using Chawan's result type defined
+in `types/opt`.
 
 Typically, it is returned from fromJS as `Opt[void]`.  It is also possible
 to return a `Opt[T]` from a bound procedure, making it easy to return error
 conditions from procs used both in Nim and JS.  (However, returning a
 JSValue is usually more efficient.)
+
+### `null`, `undefined`
+
+By default, `null` is not accepted for types in converters
+(e.g. `.jsfunc`).
+
+The conventional way to accept null values for object types is to `import
+js/jsnull`, and take `JSNull[T]` as a parameter.  For strings, use `StrNil`
+which is a regular `Str` with the default state reserved for a "null" value.
+
+Meanwhile, `undefined` is accepted for any optional parameter, e.g.
+
+```nim
+proc foo(a: MyObject; b = 3) {.jsfunc.} =
+  # may be called as a.foo() and then you get "3" as b's value
+```
+
+For enums, you can create a `distinct` integer type with separate
+converters that reserves a separate value for `null`.  The same approach is
+used for accepting `undefined`.
+
+Finally, for one-off cases it may be easier to just give up on type-safety
+and use `JS_IsNull`/`JS_IsUndefined` directly.
 
 ### Using `JSValue`
 

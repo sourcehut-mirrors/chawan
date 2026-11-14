@@ -48,8 +48,8 @@ Rationale: makes it easier to edit in vi.
 Semicolons, not commas. e.g.
 
 ```nim
-proc foo(p1: int; p2, p3: string; p4 = true) # Good
-proc bar(p1: int, p2, p3: string, p4 = true) # Bad
+proc foo(p1: int; p2, p3: Str; p4 = true) # Good
+proc bar(p1: int, p2, p3: Str, p4 = true) # Bad
 ```
 
 Rationale: makes it easier to edit in vi.
@@ -123,6 +123,44 @@ can remove these once Nim supports cyclic module dependencies.)
 
 List of Nim features/patterns that sound like a good idea but aren't, for
 non-obvious reasons.
+
+### `string`
+
+Instead of `system.string`, Chawan uses the `Str` type from `utils/cowstr`,
+which allows for zero-copy references to QuickJS strings and copy-on-write
+semantics.
+
+The main difference of `Str` from `system.string` is that it does *not*
+double as a string-builder.  Instead, you'd normally use the separate
+`Growbuf` type to construct a `Str`, like so:
+
+```nim
+var buf = initGrowbuf()
+for it in foo:
+  buf &= it
+buf.toStr() # creates a `Str`
+```
+
+Often times it's also possible to build a `Str`/`Growbuf` in-place
+using `initStrM` and `initGrowbufM`.  These take a variable amount of
+parameters that are concatenated in the end:
+
+```nim
+let s = initStrM("Count: ", num, ", char: ", c, " other str: ", s2")
+var buf = initGrowbufM('(', name)
+buf &= ...
+```
+
+While `Str` is copy-on-write, `Growbuf` isn't; copying the latter is only
+possible by passing a `Growbuf` to `initGrowbuf`.
+
+Finally, initialization from string literals is special-cased so that it
+points to the original string in the ROM.  To construct a `Str` from a
+literal, use `str`:
+
+```nim
+foo(str("abcdef"))
+```
 
 ### Exceptions
 
