@@ -4989,17 +4989,16 @@ jsClassDef(NamedNodeMap):
 
   proc names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
       {.jspropnames.} =
-    let len = if map.element.namespaceURI == satNamespaceHTML:
-      uint32(map.attrlist.len + map.element.attrs.len)
-    else:
-      uint32(map.attrlist.len)
+    let len = uint32(map.element.attrs.len)
     var list = newJSPropertyEnumList(ctx, len)
     for u in 0 ..< len:
       list.add(u)
     let element = map.element
+    let ishtml = element.namespaceURI == satNamespaceHTML and
+      not element.asNode.document.isxml
     for attr in element.attrs:
       let name = attr.name
-      if element.namespaceURI == satNamespaceHTML and AsciiUpperAlpha in name:
+      if ishtml and AsciiUpperAlpha in name:
         continue
       list.incl(name.toStr())
     return list
