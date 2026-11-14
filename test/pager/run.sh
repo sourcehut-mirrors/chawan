@@ -44,6 +44,11 @@ then	echo "charset override doesn't work for files"
 	exit 1
 fi
 
+if ! $CHA charset.html -Cconfig.toml -o encoding.document-charset=utf8 | diff charset-fail.expected -
+then	echo "document charset doesn't work for files"
+	exit 1
+fi
+
 if ! $CHA <charset.html -Cconfig.toml -Iutf8 -Ttext/html | diff charset.expected -
 then	echo "charset override doesn't work for stdin"
 	exit 1

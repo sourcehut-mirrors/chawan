@@ -1704,7 +1704,7 @@ proc parseCharsetSeq(cp: var ConfigParser; x: var seq[Charset]): Opt[void] =
   ?cp.typeCheck({ttString, ttArray})
   if cp.tt == ttString:
     var charset: Charset
-    ?cp.parseEnum(charset)
+    ?cp.parseCharset(charset)
     x = @[charset]
   else:
     x = @[]
