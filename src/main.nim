@@ -67,12 +67,13 @@ const ChaVersionStrLong = block:
   s &= "poll uses " & $PollMode
   s & ")\n"
 
-proc die(s: Str) {.noreturn.} =
+proc die2(s: Str) {.noreturn.} =
+  # note: for some reason overloading die2 with die crashes Nim 2.2.4
   discard chaStderr.writeLine(initStrM("cha: ", s))
   quit(1)
 
 template die(s: static string) =
-  die(str(s))
+  die2(str(s))
 
 proc help(i: int) {.noreturn.} =
   let s = ChaVersionStr & """
@@ -168,7 +169,7 @@ proc getCharset(ppc: var ParamParseContext): Charset =
   let s = ppc.getNext()
   let charset = getCharset(s)
   if charset == csUnknown:
-    die(initStrM("unknown charset ", s))
+    die2(initStrM("unknown charset ", s))
   return charset
 
 proc parseInputCharset(ppc: var ParamParseContext) =
@@ -358,15 +359,15 @@ proc setupStartupScript(ctx: JSContext) =
     let path = ChaPath(str("$CHA_LIBEXEC_DIR/init.jsb")).unquoteGet()
     let ps = newPosixStream(path)
     if ps == nil:
-      die(initStrM("failed to read startup bytecode at ", path))
+      die2(initStrM("failed to read startup bytecode at ", path))
     let src = ps.readAll()
     let obj = JS_ReadObject(ctx, cast[ptr uint8](src.toCString()),
       csize_t(src.len), JS_READ_OBJ_BYTECODE)
   if JS_IsException(obj.vc):
-    die(ctx.getExceptionMsg())
+    die2(ctx.getExceptionMsg())
   let ret = ctx.evalFunction(obj)
   if JS_IsException(ret):
-    die(ctx.getExceptionMsg())
+    die2(ctx.getExceptionMsg())
 
 jsNamespaceDef(Client): # fake namespace
   proc readFile(ctx: JSContext; path: CStringNZ): JSValue {.jsstfunc.} =
@@ -421,26 +422,26 @@ proc main2(ctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
   urandom.setCloseOnExec()
   var ppc = ParamParseContext(ctx: ctx, i: 1)
   if ppc.parse().isErr:
-    die(ctx.getExceptionMsg())
+    die2(ctx.getExceptionMsg())
   let loaderControl = newPosixStream(loaderSockVec[0])
   loaderControl.setCloseOnExec()
   let loader = newFileLoader(pagerPid, loaderControl)
   let client = newClient(ctx, loader, urandom)
   if client == nil or client.addJSModules(ctx).isErr:
-    die(initStrM("failed to initialize JS: ", ctx.getExceptionMsg()))
+    die2(initStrM("failed to initialize JS: ", ctx.getExceptionMsg()))
   var warnings = newSeq[Str]()
   let cres = ppc.initConfig(warnings, ctx)
   if cres.isErr:
-    die(cres.error)
+    die2(cres.error)
   let config = cres.get
   if ctx.definePropertyConvert(ctx.getOpaque().global, jstConfig,
       config).isErr:
-    die(ctx.getExceptionMsg())
+    die2(ctx.getExceptionMsg())
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
   if ppc.pages.len == 0 and ps.isatty():
     if ppc.addDefaultPages(config, history).isErr:
-      die(ctx.getExceptionMsg())
+      die2(ctx.getExceptionMsg())
   if ppc.pages.len == 0 and config{"headless"} != hmTrue:
     if ps.isatty():
       help(1)
@@ -448,9 +449,9 @@ proc main2(ctx: JSContext; loaderSockVec: array[2, cint]; pagerPid: int;
   let tmpdir = config{"tmpdir"}.toCString()
   discard mkdir(tmpdir, 0o700)
   if chown(tmpdir, getuid(), getgid()) != 0:
-    die(initStrM("failed to set ownership of ", config{"tmpdir"}))
+    die2(initStrM("failed to set ownership of ", config{"tmpdir"}))
   if chmod(tmpdir, 0o700) != 0:
-    die(initStrM("failed to set permissions of ", config{"tmpdir"}))
+    die2(initStrM("failed to set permissions of ", config{"tmpdir"}))
   let loaderPid = forkserver.loadConfig(config, warnings)
   if loaderPid == -1:
     die("failed to fork loader process")
