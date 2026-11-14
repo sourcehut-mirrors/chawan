@@ -4,7 +4,36 @@
 <script src=asserts.js></script>
 <script>
 const x = document.getElementById("x");
+/* null -> empty string */
 x.innerHTML = null;
 assertEquals(x.innerHTML, "");
+{	/* unterminated partial entities */
+	x.innerHTML = "&gtrsim";
+	assertEquals(x.innerText, ">rsim");
+	x.innerHTML = "&gt";
+	assertEquals(x.innerText, ">");
+	x.innerHTML = "&g";
+	assertEquals(x.innerText, "&g");
+	x.innerHTML = "<H2>Q&A</H2>";
+	assertEquals(x.innerHTML, "<h2>Q&amp;A</h2>");
+	x.innerHTML = "<h2>&g</h2>";
+	assertEquals(x.innerHTML, "<h2>&amp;g</h2>");
+}
+{	/* edge cases */
+	x.innerHTML = "&zacute;";
+	assertEquals(x.innerText, "ź");
+	x.innerHTML = "&#x10FFFF1";
+	assertEquals(x.innerText, "\uFFFD");
+}
+{	/* ampersand ends with whitespace */
+	x.innerHTML = "&\n";
+	assertEquals(x.innerText, "&\n");
+	x.innerHTML = "&#x\n";
+	assertEquals(x.innerText, "&#x\n");
+	x.innerHTML = "&#X\n";
+	assertEquals(x.innerText, "&#X\n");
+	x.innerHTML = "&#\n";
+	assertEquals(x.innerText, "&#\n");
+}
 x.innerHTML = "Success";
 </script>

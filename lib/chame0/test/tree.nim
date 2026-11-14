@@ -1,36 +1,34 @@
 include shared/tree_common
 
-import std/streams
+import io/chafile
 
 proc runTest(test: TCTest; scripting, print: bool) =
-  let ss = newStringStream(test.data)
   let opts = HTML5ParserOpts[Node](scripting: scripting)
   let pdoc = if test.fragment.isNone:
-    parseHTML(ss, opts)
+    parseHTML(test.data.toOpenArray(), opts)
   else:
     let ctx = Element()
     ctx[] = test.fragment.get.ctx[]
-    let childList = parseHTMLFragment(ss, ctx, opts)
+    let childList = parseHTMLFragment(test.data.toOpenArray(), ctx, opts)
     for child in childList:
       if ctx.preInsertionValidity(child, nil):
         ctx.childList.add(child)
     Document(childList: ctx.childList)
   if print:
-    var ins = ""
+    var ins = initGrowbuf()
     for x in test.document.childList:
-      ins &= $x & '\n'
-    var ps = ""
+      ins.addM(x.toStr(), '\n')
+    var ps = initGrowbuf()
     for x in pdoc.childList:
-      ps &= $x & '\n'
-    echo "data ", test.data
-    echo "indoc ", $ins
-    echo "psdoc ", $ps
+      ps.addM(x.toStr(), '\n')
   checkTest(test.document, pdoc)
 
 const rootpath = "test/html5lib-tests/tree-construction/"
 
-proc runTests(filename: string, print = false) =
-  let tests = parseTests(readFile(rootpath & filename))
+proc runTests(filename: cstring; print = false) =
+  var buf: Str
+  discard readFile(initStrM(static(rootpath), filename), buf)
+  let tests = parseTests(buf)
   for test in tests:
     case test.script
     of smOff:
@@ -42,7 +40,7 @@ proc runTests(filename: string, print = false) =
       test.runTest(scripting = true, print = print)
 
 test "tests1.dat":
-  runTests("tests1.dat")
+  runTests("tests1.dat", print = true)
 
 test "tests2.dat":
   runTests("tests2.dat")

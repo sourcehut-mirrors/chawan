@@ -8,10 +8,10 @@
 ## switch encodings when meta tags are encountered etc. see
 ## [chame/minidom_cs](minidom_cs.html).
 
-import std/streams
+{.push raises: [].}
 
 import html/catom
-import utils/twtstr
+import utils/cowstr
 
 import htmlparser
 import tags
@@ -25,7 +25,7 @@ type
     parentNode* {.cursor.}: Node
 
   CharacterData* = ref object of Node
-    data*: string
+    data*: Str
 
   Comment* = ref object of CharacterData
 
@@ -34,9 +34,9 @@ type
   Text* = ref object of CharacterData
 
   DocumentType* = ref object of Node
-    name*: string
-    publicId*: string
-    systemId*: string
+    name*: Str
+    publicId*: Str
+    systemId*: Str
 
   Element* = ref object of Node
     localName*: CAtom
@@ -76,17 +76,11 @@ iterator descendants*(node: Node): Node =
     for i in countdown(node.childList.high, 0):
       stack.add(node.childList[i])
 
-proc findAttribute*(element: Element; name: string): int =
-  if element.attrs.len == 0:
-    return -1
-  let name = name.toAtom()
+proc findAttribute(element: Element; name: StaticAtom): int =
   for i, it in element.attrs.mpairs:
     if it.name == name:
       return i
   return -1
-
-proc hasAttribute*(element: Element; name: string): bool =
-  element.findAttribute(name) != -1
 
 proc clone*(node: Node; deep: bool): Node =
   let copy = if node of Element:
@@ -122,53 +116,6 @@ proc clone*(node: Node; deep: bool): Node =
 
 proc tagType*(element: Element): TagType =
   return element.localName.toTagType()
-
-# We use this to validate input strings, since htmltokenizer/htmlparser does no
-# input validation.
-#TODO this is broken, just mandate input to be valid UTF-8 instead
-proc toValidUTF8(s: string): string =
-  result = ""
-  var i = 0
-  while i < s.len:
-    if int(s[i]) < 0x80:
-      result &= s[i]
-      inc i
-    elif int(s[i]) shr 5 == 0x6:
-      if i + 1 < s.len and int(s[i + 1]) shr 6 == 2:
-        result &= s[i]
-        result &= s[i + 1]
-      else:
-        result &= "\uFFFD"
-      i += 2
-    elif int(s[i]) shr 4 == 0xE:
-      if i + 2 < s.len and int(s[i + 1]) shr 6 == 2 and
-          int(s[i + 2]) shr 6 == 2:
-        result &= s[i]
-        result &= s[i + 1]
-        result &= s[i + 2]
-      else:
-        result &= "\uFFFD"
-      i += 3
-    elif int(s[i]) shr 3 == 0x1E:
-      if i + 3 < s.len and int(s[i + 1]) shr 6 == 2 and
-          int(s[i + 2]) shr 6 == 2 and int(s[i + 3]) shr 6 == 2:
-        result &= s[i]
-        result &= s[i + 1]
-        result &= s[i + 2]
-        result &= s[i + 3]
-      else:
-        result &= "\uFFFD"
-      i += 4
-    else:
-      result &= "\uFFFD"
-      inc i
-
-proc localNameStr*(element: Element): lent string =
-  $element.localName
-
-iterator attrsStr*(element: Element): tuple[name, value: string] =
-  for attr in element.attrs:
-    yield ($attr.name, attr.value)
 
 proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: CAtom): TagType =
   return atom.toTagType()
@@ -318,22 +265,21 @@ proc insertBeforeImpl(builder: MiniDOMBuilder; parent, child, before: Node) =
   parent.insertBefore(child, before)
 
 proc insertCommentImpl(builder: MiniDOMBuilder; parent: Node;
-    text: sink string; before: Node) =
-  let comment = Comment(data: text.toValidUTF8())
+    text: sink Growbuf; before: Node) =
+  let comment = Comment(data: text.toStr())
   parent.insertBefore(comment, before)
 
 proc appendDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
-    systemId: string) =
+    systemId: sink Growbuf) =
   let doctype = DocumentType(
-    name: name.toValidUTF8(),
-    publicId: publicId.toValidUTF8(),
-    systemId: systemId.toValidUTF8()
+    name: name.toStr(),
+    publicId: publicId.toStr(),
+    systemId: systemId.toStr()
   )
   builder.document.insertBefore(doctype, nil)
 
-proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: sink string;
+proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: sink Str;
     before: Node) =
-  let text = text.toValidUTF8()
   let prevSibling = if before != nil:
     let i = parent.childList.find(before)
     if i == 0:
@@ -367,7 +313,7 @@ proc elementPoppedImpl(builder: MiniDOMBuilder; element: Node) =
   let popped = Element(element)
   if popped.namespace != nsHTML or popped.tagType != ttOption:
     return
-  let selected = popped.hasAttribute("selected")
+  let selected = popped.findAttribute(satSelected) != -1
   for ancestor in popped.ancestors:
     if not (ancestor of Element):
       break
@@ -407,12 +353,12 @@ proc associateWithFormImpl(builder: MiniDOMBuilder;
     element, form, intendedParent: Node) =
   discard
 
-method setEncoding(builder: MiniDOMBuilder; encoding: string):
+method setEncoding(builder: MiniDOMBuilder; encoding: Str):
     SetEncodingResult {.base, raises: [].} =
   # Provided as a method for minidom_cs to override.
   seContinue
 
-proc setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
+proc setEncodingImpl(builder: MiniDOMBuilder; encoding: Str):
     SetEncodingResult =
   builder.setEncoding(encoding)
 
@@ -423,25 +369,22 @@ proc newMiniDOMBuilder*(): MiniDOMBuilder =
   let document = Document()
   MiniDOMBuilder(document: document)
 
-proc parseFromStream(parser: var HTML5Parser[Node]; inputStream: Stream) =
-  var buffer {.noinit.}: array[4096, char]
-  while true:
-    let n = inputStream.readData(addr buffer[0], buffer.len)
-    if n == 0: break
-    # res can be pcrContinue or pcrScript. pcrStop is only returned
-    # on charset switching, and minidom does not support that.
-    var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
-    # Important: we must repeat parseChunk with the same contents for the script
-    # end tag result, with reprocess = true.
-    #
-    # (This is only relevant for calls where scripting = true; with scripting =
-    # false, pcrScript would never be returned.)
-    var ip = 0
-    while res == pcrScript and (ip += parser.getInsertionPoint(); ip != n):
-      res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
+proc parseFromStream(parser: var HTML5Parser[Node]; buffer: openArray[char]) =
+  let n = buffer.len
+  # res can be pcrContinue or pcrScript. pcrStop is only returned
+  # on charset switching, and minidom does not support that.
+  var res = parser.parseChunk(buffer)
+  # Important: we must repeat parseChunk with the same contents for the script
+  # end tag result, with reprocess = true.
+  #
+  # (This is only relevant for calls where scripting = true; with scripting =
+  # false, pcrScript would never be returned.)
+  var ip = 0
+  while res == pcrScript and (ip += parser.getInsertionPoint(); ip != n):
+    res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
   parser.finish()
 
-proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node]()):
+proc parseHTML*(inputStream: openArray[char]; opts = HTML5ParserOpts[Node]()):
     Document =
   ## Read, parse and return an HTML document from `inputStream`, using
   ## parser options `opts`.
@@ -455,7 +398,7 @@ proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node]()):
   parser.parseFromStream(inputStream)
   return builder.document
 
-proc parseHTMLFragment*(inputStream: Stream; element: Element;
+proc parseHTMLFragment*(inputStream: openArray[char]; element: Element;
     opts: HTML5ParserOpts[Node]): seq[Node] =
   ## Read, parse and return the children of an HTML fragment from `inputStream`,
   ## using context element `element` and parser options `opts`.
@@ -481,7 +424,7 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   opts.openElementsInit = root
   if element.namespace == nsMathML and
       element.localName.toTagType() == ttAnnotationXml:
-    let i = element.findAttribute("encoding")
+    let i = element.findAttribute(satEncoding)
     if i >= 0:
       let val = element.attrs[i].value.toLowerAscii()
       opts.ctxIsIntegrationPoint =
@@ -493,7 +436,7 @@ proc parseHTMLFragment*(inputStream: Stream; element: Element;
   parser.parseFromStream(inputStream)
   return root.childList
 
-proc parseHTMLFragment*(s: string; element: Element): seq[Node] =
+proc parseHTMLFragment*(s: Str; element: Element): seq[Node] =
   ## Convenience wrapper around parseHTMLFragment with opts.
   ##
   ## Read, parse and return the children of an HTML fragment from the string `s`,
@@ -501,6 +444,7 @@ proc parseHTMLFragment*(s: string; element: Element): seq[Node] =
   ##
   ## For details on the HTML fragment parsing algorithm, see
   ## https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
-  let inputStream = newStringStream(s)
   let opts = HTML5ParserOpts[Node](isIframeSrcdoc: false, scripting: false)
-  return parseHTMLFragment(inputStream, element, opts)
+  return parseHTMLFragment(s.toOpenArray(), element, opts)
+
+{.pop.} # raises: []

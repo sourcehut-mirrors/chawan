@@ -1,10 +1,13 @@
+when NimMajor >= 2:
+  import std/assertions
+
 import std/json
-import std/unicode
 import std/unittest
 
 import chame/htmltokenizer
 import chame/tags
 import html/catom
+import utils/cowstr
 
 proc hexValue*(c: char): int =
   if c in '0'..'9':
@@ -15,8 +18,8 @@ proc hexValue*(c: char): int =
     return int(uint8(c) - uint8('A') + 0xA)
   return -1
 
-proc doubleEscape(input: string): string =
-  var s = ""
+proc doubleEscape(input: Str): Str =
+  var s = initGrowbuf()
   var esc = 0
   var u: uint32 = 0
   for c in input:
@@ -41,115 +44,105 @@ proc doubleEscape(input: string): string =
       u *= 0x10
       u += uint32(n)
       if esc == 6:
-        s &= $cast[Rune](u)
+        s.addUTF8(u)
         esc = 0
-  return s
+  s.toStr()
 
 proc getAttrs(o: JsonNode; esc: bool): seq[AttrData] =
   result = @[]
   for k, v in o:
     let k = k.toAtom()
-    var v = v.getStr()
+    var v = newStr(v.getStr())
     if esc:
       v = v.doubleEscape()
     result.add(AttrData(name: k, value: v))
 
-proc getToken(a: seq[JsonNode]; esc: bool; name: var string;
+proc getToken(a: seq[JsonNode]; esc: bool; name: var Str;
     otherAttrs: var seq[AttrData]; flags: var set[TokenFlag]): TokenType =
   case a[0].getStr()
   of "StartTag":
     otherAttrs = getAttrs(a[2], esc)
     if a.len > 3 and a[3].getBool():
       flags = {tfSelfClosing}
-    name = a[1].getStr()
+    name = newStr(a[1].getStr())
     return ttStartTag
   of "EndTag":
-    name = a[1].getStr()
+    name = newStr(a[1].getStr())
     return ttEndTag
   of "Character":
     name = if esc:
-      doubleEscape(a[1].getStr())
+      doubleEscape(newStr(a[1].getStr()))
     else:
-      a[1].getStr()
+      newStr(a[1].getStr())
     return ttCharacter
   of "DOCTYPE":
     if not a[4].getBool(): # yes, this is reversed. don't ask
       flags.incl(tfQuirks)
-    name = a[1].getStr()
+    name = newStr(a[1].getStr())
     let pubid = a[2].getStr()
     let sysid = a[3].getStr()
     if pubid.len > 0 or sysid.len > 0:
-      name &= '\0' & pubid
+      name &= initStrM('\0', newStr(pubid))
     if sysid.len > 0:
-      name &= '\0' & sysid
+      name &= initStrM('\0', newStr(sysid))
     return ttDoctype
   of "Comment":
     name = if esc:
-      doubleEscape(a[1].getStr())
+      doubleEscape(newStr(a[1].getStr()))
     else:
-      a[1].getStr()
+      newStr(a[1].getStr())
     return ttComment
   else:
     assert false
     return ttComment
 
 proc checkEquals(otok: TokenType; tok: Tokenizer;
-    charbuf, desc, otherName: string; otherAttrs: seq[AttrData];
+    charbuf, desc, otherName: Str; otherAttrs: seq[AttrData];
     flags: set[TokenFlag]) =
-  doAssert otok == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
-    $otok & ")"
-  var name = tok.tagNameBuf
+  check otok == tok.t
+  var name = initStr(tok.tagNameBuf.toOpenArray())
   case tok.t
   of ttDoctype:
     while name.len > 0 and name[^1] == '\0':
       name.setLen(name.high)
-    doAssert name == otherName, desc & " (" & "tok name: " & name &
-      " otok name: " & otherName & ")"
-    doAssert tok.flags == flags, desc
+    check name == otherName
+    check tok.flags == flags
   of ttStartTag, ttEndTag:
     let tagname = name.toAtom()
-    doAssert tok.tagname == tagname, desc & " (tok tagname: " &
-      $tok.tagname & " otok tagname " & $tagname & ")"
+    check tok.tagname == tagname
     if tok.t == ttStartTag: # otherwise a test incorrectly fails
-      doAssert tok.flags == flags, desc
+      check tok.flags == flags
     if tok.t == ttStartTag:
-      var attrs = ""
+      var attrs = initGrowbuf()
       var i = 0
       for attr in tok.attrs:
         if i > 0:
           attrs &= " "
-        attrs &= $attr.name
-        attrs &= "="
-        attrs &= "'" & attr.value & "'"
+        attrs.addM(attr.name.toStr(), "='", attr.value, "'")
         inc i
-      var oattrs = ""
+      var oattrs = initGrowbuf()
       i = 0
       for attr in otherAttrs:
         if i > 0:
           oattrs &= " "
-        oattrs &= $attr.name
-        oattrs &= "="
-        oattrs &= "'" & attr.value & "'"
+        oattrs.addM(attr.name.toStr(), "='", attr.value, "'")
         inc i
-      doAssert tok.attrs == otherAttrs, desc & " (tok attrs: " & attrs &
-        " otok attrs (" & oattrs & ")"
+      check tok.attrs == otherAttrs
   of ttCharacter, ttWhitespace:
-    doAssert charbuf == otherName, desc & " (tok s: " & charbuf & " otok s: " &
-      otherName & ")"
+    check charbuf == otherName
   of ttComment:
-    doAssert name == otherName, desc & " (tok s: " & name & " otok s: " &
-      otherName & ")"
+    check name == otherName
   of ttNull: discard
 
 type TestContext = object
-  charbuf: string
+  charbuf: Growbuf
   output: seq[JsonNode]
   i: int
-  desc: string
+  desc: Str
   esc: bool
 
 proc checkCharbuf(ctx: var TestContext; tok: var Tokenizer) =
-  var otherName: string
+  var otherName: Str
   var otherAttrs: seq[AttrData]
   var flags: set[TokenFlag]
   if ctx.charbuf.len > 0 and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
@@ -157,14 +150,14 @@ proc checkCharbuf(ctx: var TestContext; tok: var Tokenizer) =
       otherAttrs, flags)
     let tt = tok.t
     tok.t = ttCharacter
-    checkEquals(otok, tok, ctx.charbuf, ctx.desc, otherName, otherAttrs, flags)
+    checkEquals(otok, tok, move(ctx.charbuf).toStr(), ctx.desc, otherName,
+      otherAttrs, flags)
     inc ctx.i
-    ctx.charbuf = ""
     tok.t = tt
 
 proc checkTokens(ctx: var TestContext; tok: var Tokenizer) =
   ctx.checkCharbuf(tok)
-  var otherName: string
+  var otherName: Str
   var otherAttrs: seq[AttrData]
   var flags: set[TokenFlag]
   if tok.t in {ttCharacter, ttWhitespace}:
@@ -174,11 +167,11 @@ proc checkTokens(ctx: var TestContext; tok: var Tokenizer) =
   else:
     let otok = getToken(ctx.output[ctx.i].getElems(), ctx.esc, otherName,
       otherAttrs, flags)
-    checkEquals(otok, tok, "", ctx.desc, otherName, otherAttrs, flags)
+    checkEquals(otok, tok, str(""), ctx.desc, otherName, otherAttrs, flags)
     inc ctx.i
 
-proc runTest(desc: string; output: seq[JsonNode];
-    startTag: CAtom; esc: bool; input: string; state: TokenizerState) =
+proc runTest(desc: Str; output: seq[JsonNode]; startTag: CAtom; esc: bool;
+    input: Str; state: TokenizerState) =
   var tok = initTokenizer()
   tok.state = state
   var ctx = TestContext(
@@ -225,8 +218,8 @@ const rootpath = "test/html5lib-tests/tokenizer/"
 proc runTests(filename: string) =
   let tests = parseFile(rootpath & filename){"tests"}
   for t in tests:
-    let desc = t{"description"}.getStr()
-    var input = t{"input"}.getStr()
+    let desc = newStr(t{"description"}.getStr())
+    var input = newStr(t{"input"}.getStr())
     let esc = "doubleEscaped" in t and t{"doubleEscaped"}.getBool()
     if esc:
       input = doubleEscape(input)
