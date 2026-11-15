@@ -482,11 +482,11 @@ type
     id*: CAtom # 20
     name*: CAtom # 24
     classList*: DOMTokenArray # 32
-    attrs*: AttrDataList # 48, sorted by int(qualifiedName)
-    cachedStyle*: CSSStyleDeclaration # 56
-    computed*: CSSValues # 64
-    box*: RootRef # 72, CSSBox
-    accessorsHead: ElementAccessor # 80, JS-specific helper objects
+    attrs*: AttrDataList # 40, sorted by uint32(name)
+    cachedStyle*: CSSStyleDeclaration # 48
+    computed*: CSSValues # 56
+    box*: RootRef # 64, CSSBox
+    accessorsHead: ElementAccessor # 72, JS-specific helper objects
 
   AttrDummyElementObj {.pure, final.} = object of ElementObj
 
@@ -3965,7 +3965,7 @@ jsClassPublicDef(Document):
       return JS_NULL
     ctx.getProperty(ctx.getOpaque().global, jstLocation).toJSValue()
 
-  proc setLocation*(ctx: JSContext; document: Document; s: Str): JSValue
+  proc setLocation(ctx: JSContext; document: Document; s: Str): JSValue
       {.jsfset: "location".} =
     let obj = ?trace(ctx.location(document))
     let res = JS_SetProperty(ctx, obj.vc, ctx.getAtom(jstHref), ctx.toJS(s))
@@ -5121,15 +5121,9 @@ proc attrulgz*(element: Element; s: StaticAtom): Opt[uint32] =
 proc attrul*(element: Element; s: StaticAtom): Opt[uint32] =
   return parseUInt32(element.attr(s).toOpenArray(), allowSign = true)
 
-proc attrd*(element: Element; s: StaticAtom): Opt[float64] =
+proc attrdgz(element: Element; s: StaticAtom): Opt[float64] =
   let d = parseFloat64(element.attr(s))
-  if isNaN(d):
-    return err()
-  ok(d)
-
-proc attrdgz*(element: Element; s: StaticAtom): Opt[float64] =
-  let d = element.attrd(s).get(0)
-  if d <= 0:
+  if isNaN(d) or d <= 0:
     return err()
   ok(d)
 
