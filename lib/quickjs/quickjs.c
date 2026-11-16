@@ -4490,10 +4490,16 @@ static int value_buffer_base_append(JSContext *ctx, ValueBufferBase *b,
 
     if (b->len >= b->size) {
         /* XXX: realloc_array? */
-        int new_size = (b->len + (b->len >> 1) + 31) & ~16;
+        size_t new_size;
         size_t slack;
         JSValue *new_arr;
 
+        new_size = (b->len + (b->len >> 1) + 31) & ~16;
+        if (new_size > INT32_MAX / sizeof(*b->arr)) {
+            JS_ThrowInternalError(ctx, "too many elements in buffer");
+            b->error_status = -1;
+            return -1;
+        }
         if (b->arr == b->def) {
             new_arr = js_realloc2(ctx, NULL, sizeof(*b->arr) * new_size, &slack);
             if (new_arr)
@@ -17172,6 +17178,61 @@ JSValue JS_GetIterator(JSContext *ctx, JSValueConst obj, BOOL is_async)
     ret = JS_GetIterator2(ctx, obj, method);
     JS_FreeValue(ctx, method);
     return ret;
+}
+
+/* fills pnext with next func, or JS_UNDEFINED on exception */
+static JSValue JS_GetIteratorFlat(JSContext *ctx, JSValueConst obj,
+                                  JSValue *pnext, BOOL accept_string)
+{
+    JSValue inner, method;
+
+    if (!JS_IsObject(obj) && !(accept_string && JS_IsString(obj))) {
+        JS_ThrowTypeErrorNotAnObject(ctx);
+        goto fail;
+    }
+    method = JS_GetProperty(ctx, obj, JS_ATOM_Symbol_iterator);
+    if (JS_IsException(method))
+        goto fail;
+    if (JS_IsNull(method) || JS_IsUndefined(method)) {
+        inner = JS_DupValue(ctx, obj);
+    } else {
+        inner = JS_GetIterator2(ctx, obj, method);
+        JS_FreeValue(ctx, method);
+        if (JS_IsException(inner))
+            goto fail;
+    }
+
+    method = JS_GetProperty(ctx, inner, JS_ATOM_next);
+    if (JS_IsException(method)) {
+        JS_FreeValue(ctx, inner);
+        goto fail;
+    }
+    *pnext = method;
+    return inner;
+fail:
+    *pnext = JS_UNDEFINED;
+    return JS_EXCEPTION;
+}
+
+/* shortcut for JS_GetIterator(..., FALSE) and then getting JS_ATOM_next */
+static JSValue JS_GetIteratorNext(JSContext *ctx, JSValueConst obj,
+                                  JSValue *pnext)
+{
+    JSValue iter, next;
+
+    iter = JS_GetIterator(ctx, obj, FALSE);
+    if (JS_IsException(iter))
+        goto fail;
+    next = JS_GetProperty(ctx, iter, JS_ATOM_next);
+    if (JS_IsException(next)) {
+        JS_FreeValue(ctx, iter);
+        goto fail;
+    }
+    *pnext = next;
+    return iter;
+fail:
+    *pnext = JS_UNDEFINED;
+    return JS_EXCEPTION;
 }
 
 /* return *pdone = 2 if the iterator object is not parsed */
@@ -41608,7 +41669,7 @@ exception:
 static JSValue js_object_fromEntries(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv)
 {
-    JSValue obj, iter, next_method = JS_UNDEFINED;
+    JSValue obj, iter, next_method;
     JSValueConst iterable;
     BOOL done;
 
@@ -41620,11 +41681,8 @@ static JSValue js_object_fromEntries(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(obj))
         return obj;
 
-    iter = JS_GetIterator(ctx, iterable, FALSE);
+    iter = JS_GetIteratorNext(ctx, iterable, &next_method);
     if (JS_IsException(iter))
-        goto fail;
-    next_method = JS_GetProperty(ctx, iter, JS_ATOM_next);
-    if (JS_IsException(next_method))
         goto fail;
 
     for(;;) {
@@ -42254,17 +42312,14 @@ static const JSCFunctionListEntry js_function_proto_funcs[] = {
 
 static JSValue iterator_to_array(JSContext *ctx, JSValueConst items)
 {
-    JSValue iter, next_method = JS_UNDEFINED;
+    JSValue iter, next_method;
     JSValue v, r = JS_UNDEFINED;
     int64_t k;
     BOOL done;
 
-    iter = JS_GetIterator(ctx, items, FALSE);
+    iter = JS_GetIteratorNext(ctx, items, &next_method);
     if (JS_IsException(iter))
-        goto exception;
-    next_method = JS_GetProperty(ctx, iter, JS_ATOM_next);
-    if (JS_IsException(next_method))
-        goto exception;
+        return JS_EXCEPTION;
     r = JS_NewArray(ctx);
     if (JS_IsException(r))
         goto exception;
@@ -44675,7 +44730,15 @@ typedef enum JSIteratorHelperKindEnum {
     JS_ITERATOR_HELPER_KIND_CHUNKS,
     JS_ITERATOR_HELPER_KIND_WINDOWS,
     JS_ITERATOR_HELPER_KIND_CONCAT,
+    JS_ITERATOR_HELPER_KIND_ZIP,
+    JS_ITERATOR_HELPER_KIND_ZIP_KEYED,
 } JSIteratorHelperKindEnum;
+
+typedef enum JSIteratorZipMode {
+    JS_ITERATOR_ZIP_SHORTEST,
+    JS_ITERATOR_ZIP_LONGEST,
+    JS_ITERATOR_ZIP_STRICT,
+} JSIteratorZipMode;
 
 typedef struct JSIteratorHelperData {
     JSValue obj;
@@ -44684,12 +44747,18 @@ typedef struct JSIteratorHelperData {
     JSValue inner; /* innerValue (flatMap) or iterator (concat) */
     JSValue inner_next; /* innerValue next method (flatMap) */
     int64_t count; /* limit (drop, take), counter (filter, map, flatMap),
-                      chunk size (chunks), index (concat) */
+                      chunk size (chunks), index (concat),
+                      open iterator count (zip, zipKeyed) */
     JSIteratorHelperKindEnum kind : 8;
-    uint8_t executing;
-    uint8_t done;
+    JSIteratorZipMode mode : 8; /* mode (zip, zipKeyed) */
+    uint8_t executing : 1;
+    uint8_t done : 1;
+    uint8_t started  : 1;
     uint8_t allow_partial : 1; /* undersized (windows) */
     uint8_t has_buffer : 1; /* whether this object allocated a buffer */
+    uint32_t keys_len;
+    JSAtom *keys; /* pointer to keys (zipKeyed) */
+    uint8_t *closed; /* bitmap for which iterators are closed (zip, zipKeyed) */
     ValueBufferBase buffer[]; /* value buffer (windows, chunks) */
 } JSIteratorHelperData;
 
@@ -44700,10 +44769,9 @@ static JSValue js_iterator_concat(JSContext *ctx, JSValueConst this_val,
     JSValue obj, method;
     int i;
 
-    it = js_malloc(ctx, sizeof(*it) + sizeof(*it->buffer));
+    it = js_mallocz(ctx, sizeof(*it) + sizeof(*it->buffer));
     if (!it)
         return JS_EXCEPTION;
-    memset(it, 0, sizeof(*it));
     it->inner = JS_UNDEFINED;
     it->next = JS_UNDEFINED;
     it->kind = JS_ITERATOR_HELPER_KIND_CONCAT;
@@ -44746,27 +44814,9 @@ static JSValue js_iterator_from(JSContext *ctx, JSValueConst this_val,
     JSIteratorWrapData *it;
     int ret;
 
-    if (!JS_IsObject(obj)) {
-        if (!JS_IsString(obj))
-            return JS_ThrowTypeError(ctx, "Iterator.from called on non-object");
-    }
-    method = JS_GetProperty(ctx, obj, JS_ATOM_Symbol_iterator);
-    if (JS_IsException(method))
+    iter = JS_GetIteratorFlat(ctx, obj, &method, TRUE);
+    if (JS_IsException(iter))
         return JS_EXCEPTION;
-    if (JS_IsNull(method) || JS_IsUndefined(method)) {
-        iter = JS_DupValue(ctx, obj);
-    } else {
-        iter = JS_GetIterator2(ctx, obj, method);
-        JS_FreeValue(ctx, method);
-        if (JS_IsException(iter))
-            return JS_EXCEPTION;
-    }
-
-    wrapper = JS_UNDEFINED;
-    method = JS_GetProperty(ctx, iter, JS_ATOM_next);
-    if (JS_IsException(method))
-        goto fail;
-
     ret = JS_OrdinaryIsInstanceOf(ctx, iter, ctx->iterator_ctor);
     if (ret < 0)
         goto fail;
@@ -44779,8 +44829,10 @@ static JSValue js_iterator_from(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(wrapper))
         goto fail;
     it = js_malloc(ctx, sizeof(*it));
-    if (!it)
+    if (!it) {
+        JS_FreeValue(ctx, wrapper);
         goto fail;
+    }
     it->wrapped_iter = iter;
     it->wrapped_next = method;
     JS_SetOpaque(wrapper, it);
@@ -44789,7 +44841,228 @@ static JSValue js_iterator_from(JSContext *ctx, JSValueConst this_val,
  fail:
     JS_FreeValue(ctx, method);
     JS_FreeValue(ctx, iter);
-    JS_FreeValue(ctx, wrapper);
+    return JS_EXCEPTION;
+}
+
+static JSValue js_iterator_zip(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv, int magic)
+{
+    JSValue iter, next, val, padding, inner, inner_next, output_val;
+    JSIteratorHelperData *it;
+    JSIteratorZipMode mode;
+    JSAtom atom;
+    BOOL done, close_iter;
+    int i, step, iter_count;
+    JSPropertyEnum *atoms;
+    uint32_t atoms_len;
+    JSAtom *keys;
+    uint8_t *closed;
+
+    if (!JS_IsObject(argv[0]))
+        return JS_ThrowTypeErrorNotAnObject(ctx);
+    mode = JS_ITERATOR_ZIP_SHORTEST;
+    padding = JS_UNDEFINED;
+    if (argc > 1 && !JS_IsUndefined(argv[1])) {
+        if (!JS_IsObject(argv[1]))
+            return JS_ThrowTypeErrorNotAnObject(ctx);
+        val = JS_GetProperty(ctx, argv[1], JS_ATOM_mode);
+        if (JS_IsException(val))
+            return JS_EXCEPTION;
+        if (!JS_IsUndefined(val)) {
+            if (!JS_IsString(val)) {
+                JS_FreeValue(ctx, val);
+                return JS_ThrowTypeErrorNotAString(ctx);
+            }
+            atom = JS_ValueToAtomFree(ctx, val);
+            if (atom == JS_ATOM_NULL)
+                return JS_EXCEPTION;
+            if (atom == JS_ATOM_longest)
+                mode = JS_ITERATOR_ZIP_LONGEST;
+            else if (atom == JS_ATOM_strict)
+                mode = JS_ITERATOR_ZIP_STRICT;
+            else if (atom != JS_ATOM_shortest) {
+                JS_FreeAtom(ctx, atom);
+                return JS_ThrowTypeError(ctx, "unexpected mode");
+            }
+            JS_FreeAtom(ctx, atom);
+            if (mode == JS_ITERATOR_ZIP_LONGEST) {
+                padding = JS_GetProperty(ctx, argv[1], JS_ATOM_padding);
+                if (JS_IsException(padding))
+                    return JS_EXCEPTION;
+                if (!JS_IsUndefined(padding) && !JS_IsObject(padding)) {
+                    JS_FreeValue(ctx, padding);
+                    return JS_ThrowTypeErrorNotAnObject(ctx);
+                }
+            }
+        }
+    }
+
+    /* we interleave iterator objects within the buffer like:
+       iterator -> iterator.next -> (if mode == "longest") padding */
+    it = js_mallocz(ctx, sizeof(*it) + sizeof(*it->buffer));
+    if (!it) {
+        JS_FreeValue(ctx, padding);
+        return JS_EXCEPTION;
+    }
+    it->kind = magic;
+    it->has_buffer = 1;
+    it->mode = mode;
+    value_buffer_base_init(it->buffer);
+    close_iter = FALSE;
+    atoms = NULL;
+    keys = NULL;
+    closed = NULL;
+    atoms_len = 0;
+    iter = JS_UNDEFINED;
+    next = JS_UNDEFINED;
+    output_val = JS_UNDEFINED;
+    iter_count = 0;
+
+    if (magic == JS_ITERATOR_HELPER_KIND_ZIP) {
+        iter = JS_GetIteratorNext(ctx, argv[0], &next);
+        if (JS_IsException(iter))
+            goto fail_close;
+        output_val = JS_NewArray(ctx);
+        if (JS_IsException(output_val))
+            goto fail_close;
+        for (;;) {
+            val = JS_IteratorNext(ctx, iter, next, &done);
+            if (JS_IsException(val))
+                goto fail_close;
+            if (done)
+                break;
+            inner = JS_GetIteratorFlat(ctx, val, &inner_next, FALSE);
+            JS_FreeValue(ctx, val);
+            close_iter = TRUE;
+            if (JS_IsException(inner))
+                goto fail_close;
+            value_buffer_base_append(ctx, it->buffer, inner);
+            if (value_buffer_base_append(ctx, it->buffer, inner_next))
+                goto fail_close;
+            if (mode == JS_ITERATOR_ZIP_LONGEST) {
+                if (value_buffer_base_append(ctx, it->buffer, JS_UNDEFINED))
+                    goto fail_close;
+            }
+            close_iter = FALSE;
+            iter_count++;
+        }
+        if (mode == JS_ITERATOR_ZIP_LONGEST && !JS_IsUndefined(padding)) {
+            JS_FreeValue(ctx, iter);
+            JS_FreeValue(ctx, next);
+            iter = JS_GetIteratorNext(ctx, padding, &next);
+            if (JS_IsException(iter))
+                goto fail_close;
+            done = FALSE;
+            for (i = 0; i < it->buffer->len; i += 3) {
+                val = JS_IteratorNext(ctx, iter, next, &done);
+                if (JS_IsException(val))
+                    goto fail_close;
+                if (done)
+                    break;
+                it->buffer->arr[i + 2] = val;
+            }
+            if (!done && JS_IteratorClose(ctx, iter, FALSE) < 0)
+                goto fail_close;
+        }
+    } else { /* zipKeyed */
+        uint32_t u;
+        int res;
+        JSObject *p;
+        JSPropertyDescriptor desc;
+
+        p = JS_VALUE_GET_OBJ(argv[0]);
+        if (JS_GetOwnPropertyNamesInternal(ctx, &atoms, &atoms_len, p,
+                                           JS_GPN_STRING_MASK |
+                                           JS_GPN_SYMBOL_MASK) < 0) {
+            goto fail_close;
+        }
+        /* dummy object whose values will be filled later */
+        output_val = JS_NewObjectProto(ctx, JS_NULL);
+        if (JS_IsException(output_val))
+            goto fail_close;
+        keys = js_mallocz(ctx, atoms_len * sizeof(JSAtom));
+        if (!keys)
+            goto fail_close;
+
+        for (u = 0; u < atoms_len; u++) {
+            res = JS_GetOwnPropertyInternal(ctx, &desc, p, atoms[u].atom);
+            if (res < 0)
+                goto fail_close;
+            if (!res)
+                goto remove_key;
+            res = desc.flags & JS_PROP_ENUMERABLE;
+            js_free_desc(ctx, &desc);
+            if (!res)
+                goto remove_key;
+            val = JS_GetProperty(ctx, argv[0], atoms[u].atom);
+            if (JS_IsException(val))
+                goto fail_close;
+            if (!JS_IsUndefined(val)) {
+                inner = JS_GetIteratorFlat(ctx, val, &inner_next, FALSE);
+                JS_FreeValue(ctx, val);
+                if (JS_IsException(inner))
+                    goto fail_close;
+                value_buffer_base_append(ctx, it->buffer, inner);
+                if (value_buffer_base_append(ctx, it->buffer, inner_next))
+                    goto fail_close;
+                if (mode == JS_ITERATOR_ZIP_LONGEST) {
+                    if (value_buffer_base_append(ctx, it->buffer, JS_UNDEFINED))
+                        goto fail_close;
+                }
+                keys[iter_count++] = atoms[u].atom;
+            } else {
+remove_key:
+                JS_FreeAtom(ctx, atoms[u].atom);
+            }
+            atoms[u].atom = JS_ATOM_NULL;
+        }
+        if (mode == JS_ITERATOR_ZIP_LONGEST && !JS_IsUndefined(padding)) {
+            for (i = 0; i < iter_count; i++) {
+                val = JS_GetProperty(ctx, padding, keys[i]);
+                if (JS_IsException(val))
+                    goto fail_close;
+                it->buffer->arr[i * 3 + 2] = val;
+            }
+        }
+    }
+    closed = js_mallocz(ctx, (iter_count + 7) / 8);
+    if (!closed)
+        goto fail_close;
+    val = JS_NewObjectClass(ctx, JS_CLASS_ITERATOR_HELPER);
+    if (JS_IsException(val))
+        goto fail_close;
+    JS_SetOpaque(val, it);
+    it->obj = output_val;
+    it->keys = keys;
+    it->closed = closed;
+    it->count = iter_count; /* number of open iterators */
+    it->keys_len = keys ? iter_count : 0;
+
+    JS_FreeValue(ctx, iter);
+    JS_FreeValue(ctx, next);
+    JS_FreePropertyEnum(ctx, atoms, atoms_len);
+    JS_FreeValue(ctx, padding);
+    return val;
+
+fail_close:
+    step = mode == JS_ITERATOR_ZIP_LONGEST ? 3 : 2;
+    for (i = it->buffer->len - step; i >= 0; i -= step)
+        JS_IteratorClose(ctx, it->buffer->arr[i], TRUE);
+    if (close_iter)
+        JS_IteratorClose(ctx, iter, TRUE);
+    JS_FreeValue(ctx, iter);
+    JS_FreeValue(ctx, next);
+    JS_FreePropertyEnum(ctx, atoms, atoms_len);
+    JS_FreeValue(ctx, output_val);
+    if (keys) {
+        for (i = 0; i < iter_count; i++)
+            JS_FreeAtom(ctx, keys[i]);
+    }
+    js_free(ctx, keys);
+    js_free(ctx, closed);
+    value_buffer_base_free(ctx->rt, it->buffer);
+    js_free(ctx, it);
+    JS_FreeValue(ctx, padding);
     return JS_EXCEPTION;
 }
 
@@ -44885,7 +45158,7 @@ static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
         JS_FreeValue(ctx, method);
         goto fail;
     }
-    it = js_malloc(ctx, sizeof(*it) + has_buffer * sizeof(*it->buffer));
+    it = js_mallocz(ctx, sizeof(*it) + has_buffer * sizeof(*it->buffer));
     if (!it) {
         JS_FreeValue(ctx, obj);
         JS_FreeValue(ctx, method);
@@ -44898,8 +45171,6 @@ static JSValue js_create_iterator_helper(JSContext *ctx, JSValueConst this_val,
     it->inner = JS_UNDEFINED;
     it->inner_next = JS_UNDEFINED;
     it->count = count;
-    it->executing = 0;
-    it->done = 0;
     it->allow_partial = allow_partial;
     it->has_buffer = has_buffer;
     if (has_buffer)
@@ -45302,6 +45573,7 @@ static JSValue js_iterator_proto_set_toStringTag(JSContext *ctx,
 static void js_iterator_helper_finalizer(JSRuntime *rt, JSValue val)
 {
     JSObject *p = JS_VALUE_GET_OBJ(val);
+    uint32_t i;
     JSIteratorHelperData *it = p->u.iterator_helper_data;
     if (it) {
         JS_FreeValueRT(rt, it->obj);
@@ -45311,6 +45583,10 @@ static void js_iterator_helper_finalizer(JSRuntime *rt, JSValue val)
         JS_FreeValueRT(rt, it->inner_next);
         if (it->has_buffer)
             value_buffer_base_free(rt, it->buffer);
+        js_free_rt(rt, it->closed);
+        for (i = 0; i < it->keys_len; i++)
+            JS_FreeAtomRT(rt, it->keys[i]);
+        js_free_rt(rt, it->keys);
         js_free_rt(rt, it);
     }
 }
@@ -45346,7 +45622,7 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
     it = JS_GetOpaque2(ctx, this_val, JS_CLASS_ITERATOR_HELPER);
     if (!it)
         return JS_EXCEPTION;
-    if (it->executing)
+    if (it->started && it->executing)
         return JS_ThrowTypeError(ctx, "cannot invoke a running iterator");
     if (it->done) {
         *pdone = TRUE;
@@ -45357,8 +45633,13 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
 
     if (magic == GEN_MAGIC_RETURN) {
         *pdone = TRUE;
+        it->done = TRUE;
         ret = JS_UNDEFINED;
         
+        if (it->kind == JS_ITERATOR_HELPER_KIND_ZIP ||
+            it->kind == JS_ITERATOR_HELPER_KIND_ZIP_KEYED) {
+            goto zip_close_all;
+        }
         if (!JS_IsUndefined(it->inner)) {
             if (JS_IteratorClose(ctx, it->inner, FALSE))
                 ret = JS_EXCEPTION;
@@ -45371,6 +45652,8 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
             ret = JS_EXCEPTION;
         goto done;
     }
+
+    it->started = TRUE;
 
     switch (it->kind) {
     case JS_ITERATOR_HELPER_KIND_DROP:
@@ -45445,32 +45728,10 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
                     JS_FreeValue(ctx, index_val);
                     if (JS_IsException(ret))
                         goto fail;
-                    if (!JS_IsObject(ret)) {
-                        JS_FreeValue(ctx, ret);
-                        JS_ThrowTypeError(ctx, "not an object");
+                    inner = JS_GetIteratorFlat(ctx, ret, &method, FALSE);
+                    JS_FreeValue(ctx, ret);
+                    if (JS_IsException(inner))
                         goto fail;
-                    }
-                    method = JS_GetProperty(ctx, ret, JS_ATOM_Symbol_iterator);
-                    if (JS_IsException(method)) {
-                        JS_FreeValue(ctx, ret);
-                        goto fail;
-                    }
-                    if (JS_IsNull(method) || JS_IsUndefined(method)) {
-                        JS_FreeValue(ctx, method);
-                        inner = ret;
-                    } else {
-                        inner = JS_GetIterator2(ctx, ret, method);
-                        JS_FreeValue(ctx, method);
-                        JS_FreeValue(ctx, ret);
-                        if (JS_IsException(inner))
-                            goto fail;
-                    }
-
-                    method = JS_GetProperty(ctx, inner, JS_ATOM_next);
-                    if (JS_IsException(method)) {
-                        JS_FreeValue(ctx, inner);
-                        goto fail;
-                    }
                     it->inner = inner;
                     it->inner_next = method;
                 }
@@ -45610,6 +45871,107 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
         *pdone = TRUE;
         ret = JS_UNDEFINED;
         break;
+    case JS_ITERATOR_HELPER_KIND_ZIP:
+    case JS_ITERATOR_HELPER_KIND_ZIP_KEYED:
+        if (it->buffer->len > 0) {
+            JSValue item, inner, inner_next, obj;
+            int step, i, j;
+            step = it->mode == JS_ITERATOR_ZIP_LONGEST ? 3 : 2;
+            for (i = 0, j = 0; i < it->buffer->len; i += step, j++) {
+                BOOL done;
+                if (JS_IsNull(it->buffer->arr[i])) {
+                    assert(it->mode == JS_ITERATOR_ZIP_LONGEST);
+                    item = JS_DupValue(ctx, it->buffer->arr[i + 2]);
+                    goto zip_append;
+                }
+                inner = it->buffer->arr[i];
+                inner_next = it->buffer->arr[i + 1];
+                item = JS_IteratorNext(ctx, inner, inner_next, &done);
+                if (JS_IsException(item) || done) {
+                    it->closed[j / 8] |= 1 << (j & 7);
+                    it->count--;
+                }
+                if (JS_IsException(item))
+                    goto fail_zip_close_all;
+                if (!done)
+                    goto zip_append;
+                switch (it->mode) {
+                case JS_ITERATOR_ZIP_STRICT:
+                    if (i > 0) {
+                        ret = JS_ThrowTypeError(ctx, "size mismatch");
+                        goto fail_zip_close_all;
+                    }
+                    for (i = step, j = 1; i < it->buffer->len; i += step, j++) {
+                        inner = it->buffer->arr[i];
+                        inner_next = it->buffer->arr[i + 1];
+                        item = JS_IteratorNext(ctx, inner, inner_next, &done);
+                        if (JS_IsException(item) || done) {
+                            it->closed[j / 8] |= j & 7;
+                            it->count--;
+                        }
+                        if (JS_IsException(item))
+                            goto fail_zip_close_all;
+                        JS_FreeValue(ctx, item);
+                        if (!done) {
+                            ret = JS_ThrowTypeError(ctx, "size mismatch");
+                            goto fail_zip_close_all;
+                        }
+                    }
+                    /* fall thru */
+                case JS_ITERATOR_ZIP_SHORTEST:
+                    *pdone = TRUE;
+                    ret = JS_UNDEFINED;
+                    goto zip_close_all;
+                case JS_ITERATOR_ZIP_LONGEST:
+                    if (it->count == 0) {
+                        ret = JS_UNDEFINED;
+                        *pdone = TRUE;
+                        goto done;
+                    }
+                    /* padding */
+                    JS_FreeValue(ctx, it->buffer->arr[i]);
+                    it->buffer->arr[i] = JS_NULL;
+                    item = JS_DupValue(ctx, it->buffer->arr[i + 2]);
+                }
+zip_append:
+                if (it->kind == JS_ITERATOR_HELPER_KIND_ZIP) {
+                    if (JS_SetPropertyUint32(ctx, it->obj, j, item) < 0)
+                        goto fail_zip_close_all;
+                } else { /* zipKeyed */
+                    if (JS_DefinePropertyValue(ctx, it->obj, it->keys[j], item,
+                                               JS_PROP_C_W_E) < 0)
+                        goto fail_zip_close_all;
+                }
+            }
+            /* yield */
+            if (it->kind == JS_ITERATOR_HELPER_KIND_ZIP)
+                obj = JS_NewArray(ctx);
+            else
+                obj = JS_NewObjectProto(ctx, JS_NULL);
+            if (JS_IsException(obj))
+                goto fail_zip_close_all;
+            ret = it->obj;
+            it->obj = obj;
+            goto done;
+fail_zip_close_all:
+            ret = JS_EXCEPTION;
+            *pdone = TRUE;
+zip_close_all:
+            step = it->mode == JS_ITERATOR_ZIP_LONGEST ? 3 : 2;
+            for (i = it->buffer->len - step; it->count && i >= 0; i -= step) {
+                j = i / step;
+                if ((it->closed[j / 8] & (1 << (j & 7))))
+                    continue;
+                if (JS_IteratorClose(ctx, it->buffer->arr[i],
+                                     JS_IsException(ret)) < 0)
+                    ret = JS_EXCEPTION;
+                it->count--;
+            }
+        } else {
+            ret = JS_UNDEFINED;
+            *pdone = TRUE;
+        }
+        break;
     default:
         abort();
     }
@@ -45631,6 +45993,8 @@ done2:
 static const JSCFunctionListEntry js_iterator_funcs[] = {
     JS_CFUNC_DEF("concat", 0, js_iterator_concat ),
     JS_CFUNC_DEF("from", 1, js_iterator_from ),
+    JS_CFUNC_MAGIC_DEF("zip", 1, js_iterator_zip, JS_ITERATOR_HELPER_KIND_ZIP ),
+    JS_CFUNC_MAGIC_DEF("zipKeyed", 1, js_iterator_zip, JS_ITERATOR_HELPER_KIND_ZIP_KEYED ),
 };
 
 static const JSCFunctionListEntry js_iterator_proto_funcs[] = {
@@ -48254,13 +48618,10 @@ static JSValue js_math_sumPrecise(JSContext *ctx, JSValueConst this_val,
     double d;
     SumPreciseState s_s, *s = &s_s;
 
-    iter = JS_GetIterator(ctx, argv[0], FALSE);
+    iter = JS_GetIteratorNext(ctx, argv[0], &next);
     if (JS_IsException(iter))
         return JS_EXCEPTION;
     ret = JS_EXCEPTION;
-    next = JS_GetProperty(ctx, iter, JS_ATOM_next);
-    if (JS_IsException(next))
-        goto fail;
     sum_precise_init(s);
     for (;;) {
         item = JS_IteratorNext(ctx, iter, next, &done);
@@ -52732,11 +53093,8 @@ static JSValue js_map_constructor(JSContext *ctx, JSValueConst new_target,
             goto fail;
         }
 
-        iter = JS_GetIterator(ctx, arr, FALSE);
+        iter = JS_GetIteratorNext(ctx, arr, &next_method);
         if (JS_IsException(iter))
-            goto fail;
-        next_method = JS_GetProperty(ctx, iter, JS_ATOM_next);
-        if (JS_IsException(next_method))
             goto fail;
 
         for(;;) {
@@ -53275,7 +53633,7 @@ static JSValue js_object_groupBy(JSContext *ctx, JSValueConst this_val,
     if (check_function(ctx, cb))
         return JS_EXCEPTION;
 
-    iter = JS_GetIterator(ctx, argv[0], /*is_async*/FALSE);
+    iter = JS_GetIteratorNext(ctx, argv[0], &next);
     if (JS_IsException(iter))
         return JS_EXCEPTION;
 
@@ -53284,10 +53642,6 @@ static JSValue js_object_groupBy(JSContext *ctx, JSValueConst this_val,
     v = JS_UNDEFINED;
     prop = JS_UNDEFINED;
     groups = JS_UNDEFINED;
-
-    next = JS_GetProperty(ctx, iter, JS_ATOM_next);
-    if (JS_IsException(next))
-        goto exception;
 
     if (is_map) {
         groups = js_map_constructor(ctx, JS_UNDEFINED, 0, NULL, 0);
@@ -54899,7 +55253,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(promise_resolve) ||
         check_function(ctx, promise_resolve))
         goto fail_reject;
-    iter = JS_GetIterator(ctx, argv[0], FALSE);
+    iter = JS_GetIteratorNext(ctx, argv[0], &next_method);
     if (JS_IsException(iter)) {
         JSValue error;
     fail_reject:
@@ -54911,9 +55265,6 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
             goto fail;
         JS_FreeValue(ctx, ret);
     } else {
-        next_method = JS_GetProperty(ctx, iter, JS_ATOM_next);
-        if (JS_IsException(next_method))
-            goto fail_reject;
         values = JS_NewArray(ctx);
         if (JS_IsException(values))
             goto fail_reject;
@@ -55041,7 +55392,7 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(promise_resolve) ||
         check_function(ctx, promise_resolve))
         goto fail_reject;
-    iter = JS_GetIterator(ctx, argv[0], FALSE);
+    iter = JS_GetIteratorNext(ctx, argv[0], &next_method);
     if (JS_IsException(iter)) {
         JSValue error;
     fail_reject:
@@ -55053,10 +55404,6 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
             goto fail;
         JS_FreeValue(ctx, ret);
     } else {
-        next_method = JS_GetProperty(ctx, iter, JS_ATOM_next);
-        if (JS_IsException(next_method))
-            goto fail_reject;
-
         for(;;) {
             /* XXX: conformance: should close the iterator if error on 'done'
                access, but not on 'value' access */
