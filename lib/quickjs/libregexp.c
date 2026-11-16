@@ -1980,7 +1980,7 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                 re_emit_op(s, REOP_lookahead_match + is_neg);
                 /* jump after the 'match' after the lookahead is successful */
                 if (dbuf_error(&s->byte_code))
-                    return -1;
+                    goto out_of_memory;
                 put_u32(s->byte_code.buf + pos, s->byte_code.size - (pos + 4));
             } else if (p[2] == '<') {
                 p += 3;
@@ -2260,6 +2260,9 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
             {
                 BOOL need_capture_init, add_zero_advance_check;
                 int len, pos;
+
+                if (dbuf_error(&s->byte_code))
+                    goto out_of_memory;
                 
                 /* the spec tells that if there is no advance when
                    running the atom after the first quant_min times,
