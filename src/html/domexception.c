@@ -1,3 +1,5 @@
+/* 1 <- increment this to force compiler cache invalidation */
+
 #include <stdarg.h>
 #include <stdio.h>
 

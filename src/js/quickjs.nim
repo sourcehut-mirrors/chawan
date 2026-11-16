@@ -19,12 +19,12 @@ const qjsheader = "../../lib/quickjs/quickjs.h"
 
 const
   # all tags with a reference count are negative
-  JS_TAG_FIRST* = -9 ## first negative tag
-  JS_TAG_BIG_INT* = -9
-  JS_TAG_SYMBOL* = -8
-  JS_TAG_STRING* = -7
-  JS_TAG_STRING_ROPE* = -6
-  JS_TAG_FOREIGN_OBJ* = -4 ## used in GC callbacks
+  JS_TAG_FIRST* = -8 ## first negative tag
+  JS_TAG_FOREIGN_OBJ* = -8 ## used in GC callbacks
+  JS_TAG_BIG_INT* = -7
+  JS_TAG_SYMBOL* = -6
+  JS_TAG_STRING* = -5
+  JS_TAG_STRING_ROPE* = -4
   JS_TAG_MODULE* = -3 ## used internally
   JS_TAG_FUNCTION_BYTECODE* = -2 ## used internally
   JS_TAG_OBJECT* = -1
@@ -39,21 +39,31 @@ const
   JS_TAG_FLOAT64* = 8 ##  any larger tag is FLOAT64 if JS_NAN_BOXING
 
 when sizeof(int) < sizeof(int64):
+  const JS_NAN_BOXING = true
+  const JS_NAN_BOX_TAG_SHIFT = 32
+elif defined(amd64) or defined(arm64) and defined(macosx) or defined(riscv64):
+  # we assume pointers fit on 47 bits
+  const JS_NAN_BOXING = true
+  const JS_NAN_BOX_TAG_SHIFT = 47
+else:
+  const JS_NAN_BOXING = false
+
+when JS_NAN_BOXING:
   type JSValue* {.importc, header: qjsheader.} = distinct uint64
 
   type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
 
   template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
-    cast[int32](cast[uint64](v) shr 32)
+    cast[int32](cast[int64](v) shr JS_NAN_BOX_TAG_SHIFT)
 
   template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
-    cast[pointer](v)
+    cast[pointer](cast[uint](v) and ((1'u64 shl JS_NAN_BOX_TAG_SHIFT) - 1))
 
   template JS_MKVAL*(t, val: untyped): JSValue =
-    JSValue((cast[uint64](int64(t)) shl 32) or uint32(val))
+    JSValue((cast[uint64](int64(t)) shl JS_NAN_BOX_TAG_SHIFT) or uint32(val))
 
   template JS_MKPTR*(t, p: untyped): JSValue =
-    JSValue((cast[uint64](int64(t)) shl 32) or cast[uint](p))
+    JSValue((cast[uint64](int64(t)) shl JS_NAN_BOX_TAG_SHIFT) or cast[uint](p))
 else:
   type
     JSValueUnion* {.importc, completeStruct, header: qjsheader,
