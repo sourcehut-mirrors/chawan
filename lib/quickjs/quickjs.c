@@ -2706,13 +2706,17 @@ typedef enum JSFreeModuleEnum {
 } JSFreeModuleEnum;
 
 /* XXX: would be more efficient with separate module lists */
-static void js_free_modules(JSContext *ctx, JSFreeModuleEnum flag)
+static void js_free_modules(JSContext *ctx, JSFreeModuleEnum flag,
+                            JSModuleDef *src)
 {
-    struct list_head *el, *el1;
+    struct list_head *el, *el1, queue;
+
+    init_list_head(&queue);
+redo:
     list_for_each_safe(el, el1, &ctx->loaded_modules) {
         JSModuleDef *m = list_entry(el, JSModuleDef, link);
         if (flag == JS_FREE_MODULE_ALL ||
-            (flag == JS_FREE_MODULE_NOT_RESOLVED && !m->resolved)) {
+            (flag == JS_FREE_MODULE_NOT_RESOLVED && !m->resolved && m != src)) {
             /* warning: the module may be referenced elsewhere. It
                could be simpler to use an array instead of a list for
                'ctx->loaded_modules' */
@@ -2720,7 +2724,28 @@ static void js_free_modules(JSContext *ctx, JSFreeModuleEnum flag)
             m->link.prev = NULL;
             m->link.next = NULL;
             JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+        } else if (flag == JS_FREE_MODULE_NOT_RESOLVED && src != NULL) {
+            int i;
+            for (i = 0; i < m->req_module_entries_count; i++) {
+                JSReqModuleEntry *rme = &m->req_module_entries[i];
+                if (rme->module == src) {
+                    list_del(&m->link);
+                    list_add(&m->link, &queue);
+                    rme->module = NULL;
+                    break;
+                }
+            }
         }
+    }
+    if (src) {
+        list_del(&src->link);
+        src->link.prev = NULL;
+        src->link.next = NULL;
+        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, src));
+    }
+    if (!list_empty(&queue)) {
+        src = list_entry(queue.next, JSModuleDef, link);
+        goto redo;
     }
 }
 
@@ -2815,7 +2840,7 @@ void JS_FreeContext(JSContext *ctx)
     }
 #endif
 
-    js_free_modules(ctx, JS_FREE_MODULE_ALL);
+    js_free_modules(ctx, JS_FREE_MODULE_ALL, NULL);
 
     JS_FreeValue(ctx, ctx->global_obj);
     JS_FreeValue(ctx, ctx->global_var_obj);
@@ -27492,7 +27517,7 @@ static __exception int js_parse_postfix_expr(JSParseState *s, int parse_flags)
     case TOK_SUPER:
         if (next_token(s))
             return -1;
-        if (s->token.val == '(') {
+        if (accept_lparen && s->token.val == '(') {
             if (!s->cur_func->super_call_allowed)
                 return js_parse_error(s, "super() is only valid in a derived class constructor");
             call_type = FUNC_CALL_SUPER_CTOR;
@@ -28211,8 +28236,10 @@ static __exception int js_parse_expr_binary(JSParseState *s, int level,
         atom = JS_DupAtom(s->ctx, s->token.u.ident.atom);
         if (next_token(s))
             goto fail_private_in;
-        if (s->token.val != TOK_IN)
+        if (s->token.val != TOK_IN) {
+            js_parse_error(s, "invalid use of 'in'");
             goto fail_private_in;
+        }
         if (next_token(s))
             goto fail_private_in;
         if (js_parse_expr_binary(s, level - 1, parse_flags)) {
@@ -30418,9 +30445,9 @@ static char *js_default_module_normalize_name(JSContext *ctx,
         return js_strdup(ctx, name);
     }
 
-    p = strrchr(base_name, '/');
-    if (p)
-        len = p - base_name;
+    r = strrchr(base_name, '/');
+    if (r)
+        len = r - base_name;
     else
         len = 0;
 
@@ -31023,9 +31050,12 @@ static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
             return -1;
         rme->module = m1;
         /* already done in js_host_resolve_imported_module() except if
-           the module was loaded with JS_EvalBinary() */
-        if (js_resolve_module(ctx, m1) < 0)
+           the module was loaded with JS_EvalBinary().
+           in that case, free partially loaded dependents too */
+        if (js_resolve_module(ctx, m1) < 0) {
+            js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED, m1);
             return -1;
+        }
     }
     return 0;
 }
@@ -31462,7 +31492,7 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
         goto fail;
 
     if (js_resolve_module(ctx, m) < 0) {
-        js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+        js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED, m);
         goto fail;
     }
 
@@ -31849,7 +31879,7 @@ static int js_execute_async_module(JSContext *ctx, JSModuleDef *m)
         return -1;
     m_obj = JS_NewModuleValue(ctx, m);
     resolve_funcs[0] = JS_NewCFunctionData(ctx, js_async_module_execution_fulfilled, 0, 0, 1, (JSValueConst *)&m_obj);
-    resolve_funcs[1] = JS_NewCFunctionData(ctx, js_async_module_execution_rejected, 0, 0, 1, (JSValueConst *)&m_obj);
+    resolve_funcs[1] = JS_NewCFunctionData(ctx, js_async_module_execution_rejected, 1, 0, 1, (JSValueConst *)&m_obj);
     ret_val = js_promise_then(ctx, promise, 2, (JSValueConst *)resolve_funcs);
     JS_FreeValue(ctx, ret_val);
     JS_FreeValue(ctx, m_obj);
@@ -37278,6 +37308,8 @@ static __exception int js_parse_function_decl2(JSParseState *s,
                 } else {
                     /* unnamed arg for destructuring */
                     idx = add_arg(ctx, fd, JS_ATOM_NULL);
+                    if (idx < 0)
+                        goto fail;
                     emit_op(s, OP_get_arg);
                     emit_u16(s, idx);
                 }
@@ -37839,9 +37871,8 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     }
     return ret_val;
  fail1:
-    /* XXX: should free all the unresolved dependencies */
     if (m)
-        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+        js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED, m);
     return JS_EXCEPTION;
 }
 
@@ -37911,7 +37942,7 @@ int JS_ResolveModule(JSContext *ctx, JSValueConst obj)
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_MODULE) {
         JSModuleDef *m = JS_VALUE_GET_PTR(obj);
         if (js_resolve_module(ctx, m) < 0) {
-            js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+            js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED, NULL);
             return -1;
         }
     }
@@ -52849,7 +52880,7 @@ static JSValue js_map_clear(JSContext *ctx, JSValueConst this_val,
 {
     JSMapState *s = JS_GetOpaque2(ctx, this_val, JS_CLASS_MAP + magic);
     struct list_head *el, *el1;
-    JSMapRecord *mr;
+    JSMapRecord *mr, *mr2;
 
     if (!s)
         return JS_EXCEPTION;
@@ -52859,7 +52890,14 @@ static JSValue js_map_clear(JSContext *ctx, JSValueConst this_val,
     
     list_for_each_safe(el, el1, &s->records) {
         mr = list_entry(el, JSMapRecord, link);
+        mr2 = NULL;
+        if (el1 != &s->records) {
+            mr2 = list_entry(el1, JSMapRecord, link);
+            mr2->ref_count++;
+        }
         map_delete_record_internal(ctx->rt, s, mr);
+        if (mr2 && mr2->ref_count > 0)
+            mr2->ref_count--;
     }
     return JS_UNDEFINED;
 }

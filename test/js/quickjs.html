@@ -40,10 +40,30 @@ function testRegExp() {
 	"".replace(o);
 }
 
+function testError() {
+	try {
+		assert(false);
+	} catch (e) {
+		assert(e.stack.trim().split('\n')[0].startsWith("at assert"));
+	}
+}
+
+function testClass() {
+	assertThrows(() => eval(`
+	class X extends Object {
+		constructor() { new super() }
+	}`), SyntaxError);
+	assertThrows(() => eval(`class X extends Object {
+		a() { #x in\\u0061 }
+	}`), SyntaxError);
+}
+
 testNumberLiterals();
 testArrayBuffer();
 testDate();
 testRegExp();
+testError();
+testClass();
 
 document.getElementById("x").textContent = "Success";
 </script>
