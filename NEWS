@@ -1,3 +1,13 @@
+0.5.3 (2026.11.21)
+
+* fix incorrect serialization of some IPv6 URLs
+* fix JS_GetTypedArrayBuffer length reporting in QJS
+* fix navigation to URL with hash trimming off hash sometimes
+* fix parsing of non-array charset labels in config
+* fix broken window.open shim
+* fix various memory safety bugs in QJS
+* fix meta refresh in inactive tab freezing the UI
+
 0.5.2 (2026.11.08)
 
 * fix term quit getting stuck on some broken terminals
