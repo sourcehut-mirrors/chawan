@@ -24985,6 +24985,8 @@ static __exception int js_parse_template(JSParseState *s, int call, int *argc)
     while (s->token.val == TOK_TEMPLATE) {
         const uint8_t *p = s->token.ptr + 1;
         cooked = s->token;
+        if (depth >= 65534)
+            return js_parse_error(s, "template string too deep");
         if (call) {
             if (JS_DefinePropertyValueUint32(ctx, raw_array, depth,
                                              JS_DupValue(ctx, s->token.u.str.str),
