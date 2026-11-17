@@ -11,6 +11,7 @@ import html/form
 import html/xml
 import js/fromjs
 import js/jsbind
+import js/jsopaque
 import js/jsref
 import js/jstypes
 import js/jsutils
@@ -236,7 +237,8 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
       assert builder.poppedScript == nil
       inc document.throwOnDynamicMarkupInsertion
       #TODO I think this has to be moved for custom elements
-      document.window.runMicrotasks()
+      let rt = JS_GetRuntime(builder.ctx)
+      rt.runMicrotasks()
       dec document.throwOnDynamicMarkupInsertion
     builder.poppedScript = script
   elif (let svg = element as SVGSVGElement; svg != nil):

@@ -1870,7 +1870,7 @@ proc runBuffer(bc: BufferContext) =
           #TODO not convinced that this is actually needed
           bc.window.console.error(initStrM("Exception in task from source ",
             task.source, ": ", task.ctx.getExceptionMsg()))
-        bc.window.runMicrotasks()
+        rt.runMicrotasks()
       bc.maybeReshape(suppressFouc = true)
 
 proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;

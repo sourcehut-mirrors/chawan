@@ -1477,10 +1477,6 @@ proc click(window: Window; element: HTMLElement) =
   if window.bc != nil:
     clickCallback(window.bc, element)
 
-proc runMicrotasks*(window: Window) =
-  let rt = JS_GetRuntime(window.jsctx)
-  rt.runMicrotasks()
-
 proc windowChange*(window: Window) =
   let document = window.document
   document.ruleMap = nil
