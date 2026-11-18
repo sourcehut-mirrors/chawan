@@ -19,7 +19,7 @@ import utils/tabutil
 import utils/twtstr
 
 type
-  CSSValueType* = enum
+  CSSValueType = enum
     cvtAlignItems = "alignItems"
     cvtAlignSelf = "alignSelf"
     cvtBgcolorIsCanvas = "bgcolorIsCanvas"
@@ -379,15 +379,14 @@ type
   #TODO: we could split up CSSValues into smaller parts and intern those
   # too for more savings.
   CSSValuesMapObj* = object
-    tab: seq[ptr CSSValuesRootObj]
+    tab: seq[ptr CSSValuesHeader]
     load: int
 
-  CSSValuesRootObj {.pure, inheritable.} = object
+  CSSValuesHeader = object
     hcache: Hash
 
-  CSSValuesRoot = ref CSSValuesRootObj
-
-  CSSValuesObj* {.pure.} = object of CSSValuesRoot
+  CSSValues* = ref object
+    header: CSSValuesHeader
     pseudo*: PseudoElement
     bits*: array[CSSPropertyType.low..LastBitPropType, CSSValueBit]
     hwords*: array[FirstHWordPropType..LastHWordPropType, CSSValueHWord]
@@ -395,8 +394,6 @@ type
     objs*: array[FirstObjPropType..CSSPropertyType.high, CSSValue]
     vars*: CSSVariableMap
     next*: CSSValues
-
-  CSSValues* = ref CSSValuesObj
 
   CSSOrigin* = enum
     coUserAgent
@@ -461,7 +458,7 @@ type
       deg: float32
 
 # Forward declarations
-proc del(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj)
+proc del(map: var CSSValuesMapObj; computed: ptr CSSValuesHeader)
 proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
 proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
@@ -477,7 +474,7 @@ unionHooks(CSSValueBit)
 unionHooks(CSSValueHWord)
 unionHooks(CSSValueWord)
 
-proc `=destroy`*(computed: var CSSValuesRootObj) =
+proc `=destroy`*(computed: var CSSValuesHeader) =
   computedMap.del(addr computed)
 
 iterator items*(content: CSSContent): CSSContent =
@@ -491,8 +488,8 @@ iterator items*(list: CSSCounterSetList): CSSCounterSet =
     for it in list.s:
       yield it
 
-proc newCSSCounterSetList*(s: openArray[CSSCounterSet]): CSSCounterSetList =
-  CSSCounterSetList(s: @s)
+proc newCSSCounterSet*(s: varargs[CSSCounterSet]): CSSValue =
+  CSSValue(v: cvtCounterSet, counterSet: CSSCounterSetList(s: @s))
 
 static:
   doAssert sizeof(CSSValueBit) == 1
@@ -661,8 +658,8 @@ const LayoutProperties* = {
 }
 
 proc isSame(a, b: CSSValues): bool =
-  if a.hcache != b.hcache or a.pseudo != b.pseudo or a.vars != b.vars or
-      a.next != b.next:
+  if a.header.hcache != b.header.hcache or a.pseudo != b.pseudo or
+      a.vars != b.vars or a.next != b.next:
     return false
   if cmpMem(addr a.bits, addr b.bits, sizeof(a.bits)) != 0:
     return false
@@ -674,7 +671,7 @@ proc isSame(a, b: CSSValues): bool =
     return false
   true
 
-proc putAgain(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj) =
+proc putAgain(map: var CSSValuesMapObj; computed: ptr CSSValuesHeader) =
   let mask = map.tab.len - 1
   let hcache = computed.hcache
   var home = hcache and mask
@@ -686,8 +683,8 @@ proc putAgain(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj) =
     if tabSwap(home, it.hcache, i, mask): # displace
       swap(it, current)
 
-proc put0(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj):
-    ptr CSSValuesRootObj =
+proc put0(map: var CSSValuesMapObj; computed: ptr CSSValuesHeader):
+    ptr CSSValuesHeader =
   let mask = map.tab.len - 1
   let hcache = computed.hcache
   var home = hcache and mask
@@ -724,28 +721,28 @@ proc atomize(map: var CSSValuesMapObj; computed: CSSValues): CSSValues =
     h = h !& cast[int](it.dummy)
   for it in computed.objs:
     h = h !& cast[int](it)
-  computed.hcache = !$h
+  computed.header.hcache = !$h
   for it in map.tab.prepareTableAdd(map.load, 32):
     if it != nil:
       map.putAgain(it)
-  let res = map.put0(cast[ptr CSSValuesRootObj](computed))
-  if res == cast[ptr CSSValuesRootObj](computed):
+  let res = map.put0(cast[ptr CSSValuesHeader](computed))
+  if res == cast[ptr CSSValuesHeader](computed):
     inc map.load
   cast[CSSValues](res)
 
 proc atomize*(computed: CSSValues): CSSValues =
   computedMap.atomize(computed)
 
-proc tabHashFast(item: ptr CSSValuesRootObj): Hash =
+proc tabHashFast(item: ptr CSSValuesHeader): Hash =
   item.hcache
 
-proc tabIsEmpty(item: ptr CSSValuesRootObj): bool =
+proc tabIsEmpty(item: ptr CSSValuesHeader): bool =
   item == nil
 
-proc tabKeyEq(a, b: ptr CSSValuesRootObj): bool =
+proc tabKeyEq(a, b: ptr CSSValuesHeader): bool =
   a == b
 
-proc del(map: var CSSValuesMapObj; computed: ptr CSSValuesRootObj) =
+proc del(map: var CSSValuesMapObj; computed: ptr CSSValuesHeader) =
   tabDelImpl(map.tab, map.load, computed, computed.hcache)
 
 proc newCSSVariableMap*(parent: CSSVariableMap): CSSVariableMap =
@@ -799,6 +796,9 @@ proc valueType*(prop: CSSPropertyType): CSSValueType =
 
 proc isSupportedProperty*(s: openArray[char]): bool =
   return anyPropertyType(s).isOk
+
+proc isCurrentColor*(computed: CSSValues; t: CSSPropertyType): bool =
+  valueType(t) == cvtColor and computed.words[t].color.t == cctCurrent
 
 template auto*(length: CSSLength): bool =
   isNaN(length.npx)
@@ -896,8 +896,7 @@ proc add(buf: var Growbuf; val: CSSValue) =
 proc serialize*(c: ARGBColor; html: bool): Str =
   if html and c.a == 255:
     return c.rgb().toStr()
-  var buf = initGrowbufM("rgba(", uint32(c.r), ", ", uint32(c.g), ", ",
-    uint32(c.b), ", ")
+  var buf = initGrowbufM("rgba(", c.r, ", ", c.g, ", ", c.b, ", ")
   buf.addDouble(float64(c.a) / 255)
   buf &= ')'
   buf.toStr()
@@ -922,13 +921,7 @@ proc add(buf: var Growbuf; c: CSSColor) =
     if c.a != 255:
       buf &= c.serialize(html = false)
     else:
-      buf &= "rgb("
-      buf &= c.r
-      buf &= ", "
-      buf &= c.g
-      buf &= ", "
-      buf &= c.b
-      buf &= ')'
+      buf.addM("rgb(", c.r, ", ", c.g, ", ", c.b, ')')
 
 proc toStr*(c: CSSColor): Str =
   var buf = initGrowbuf()

@@ -424,22 +424,14 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     if n := element.attrl(satStart):
       if n > int32.low:
         let n = n - 1
-        let val = CSSValue(
-          v: cvtCounterSet,
-          counterSet: newCSSCounterSetList(
-            [CSSCounterSet(name: satListItem.view(), num: n)]
-          )
-        )
-        ctx.applyPresHint(makeEntry(cptCounterReset, val))
+        ctx.applyPresHint(makeEntry(cptCounterReset, newCSSCounterSet(
+          CSSCounterSet(name: satListItem.view(), num: n)
+        )))
   of ttLi:
     if n := element.attrl(satValue):
-      let val = CSSValue(
-        v: cvtCounterSet,
-        counterSet: newCSSCounterSetList([
-          CSSCounterSet(name: satListItem.view(), num: n)
-        ])
-      )
-      ctx.applyPresHint(makeEntry(cptCounterSet, val))
+      ctx.applyPresHint(makeEntry(cptCounterSet, newCSSCounterSet(
+        CSSCounterSet(name: satListItem.view(), num: n)
+      )))
   of ttHr:
     if dim := parseDimensionValues(element.attr(satWidth)):
       if dim.isPx:
@@ -498,7 +490,7 @@ proc applyDeclarations(rules: RuleList; pseudo: PseudoElement;
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
       result.initialOrInheritFrom(ctx.parentComputed, t)
-    if valueType(t) == cvtColor and result.words[t].color.t == cctCurrent:
+    if result.isCurrentColor(t):
       result.words[t].color = result{"color"}
     if old != nil and t in LayoutProperties:
       relayout = relayout or not result.equals(old, t)
