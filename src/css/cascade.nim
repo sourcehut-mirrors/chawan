@@ -280,7 +280,10 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
   of ceBit: ctx.computed.bits[t].dummy = entry.bit
   of ceHWord: ctx.computed.hwords[t] = entry.hword
   of ceWord: ctx.computed.words[t] = entry.word
-  of ceObject: ctx.computed.objs[t] = entry.obj
+  of ceCounter: ctx.computed.counters[t] = entry.counter
+  of ceContent: ctx.computed.content = entry.content
+  of ceQuotes: ctx.computed.quotes = entry.quotes
+  of ceImage: ctx.computed.image = entry.image
   of ceGlobal:
     case entry.global
     of cgtInherit: ctx.computed.initialOrCopyFrom(ctx.parentComputed, t)

@@ -345,12 +345,14 @@ type
     cptWidth = "width"
     cptZIndex = "z-index"
 
-    # object properties: stored as a tagged ref object
-    cptBackgroundImage = "background-image"
-    cptContent = "content"
+    # counter set properties: stored as ref object
     cptCounterReset = "counter-reset"
     cptCounterIncrement = "counter-increment"
     cptCounterSet = "counter-set"
+
+    # misc, stored as ref object
+    cptBackgroundImage = "background-image"
+    cptContent = "content"
     cptQuotes = "quotes"
 
 # Selectors
@@ -632,7 +634,8 @@ const FirstHWordPropType* = LastBitPropType.succ
 const LastHWordPropType* = cptOpacity
 const FirstWordPropType* = LastHWordPropType.succ
 const LastWordPropType* = cptZIndex
-const FirstObjPropType* = LastWordPropType.succ
+const FirstCounterPropType* = LastWordPropType.succ
+const LastCounterPropType* = cptCounterSet
 
 proc shorthandType*(s: openArray[char]): CSSShorthandType =
   return parseEnumNoCase[CSSShorthandType](s).get(cstNone)
