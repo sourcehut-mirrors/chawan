@@ -53,8 +53,9 @@ template isErr*(res: JSCode): bool =
   res == fjErr
 
 proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): JSCode =
-  result = ctx.fromJS(val.vc, res)
+  let code = ctx.fromJS(val.vc, res)
   JS_FreeValue(ctx, val)
+  code
 
 proc fromJSFree*(ctx: JSContext; val: JSValue; res: var JSValueTraced):
     JSCode =
@@ -547,7 +548,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
         return fjOk
   else:
     newStmtList()
-  result = quote do:
+  quote do:
     `undefInit`
     `undefCheck`
     if not JS_IsObject(val):

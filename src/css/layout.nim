@@ -283,7 +283,7 @@ proc resolveBorder(lctx: LayoutContext; computed: CSSValues;
       cptBorderBottomStyle: cptBorderBottomWidth
     }
   ]
-  result = CSSBorder.default
+  var border = CSSBorder.default
   #TODO error correction should probably be done on padding first and margin
   # only as a last resort. (then maybe it becomes feasible to do box-sizing
   # right too somehow)
@@ -296,7 +296,7 @@ proc resolveBorder(lctx: LayoutContext; computed: CSSValues;
         let e = w - cellSize
         if e < 0'lu and margin[dim].start >= -e or e > 0'lu:
           margin[dim].start += e # correct error
-        result[dim].start = styleStart
+        border[dim].start = styleStart
     let styleEnd = computed.getBorderStyle(it[1][0])
     if styleEnd != BorderStyleNone:
       let w = computed.getLineWidth(it[1][1]).toLUnit()
@@ -304,7 +304,8 @@ proc resolveBorder(lctx: LayoutContext; computed: CSSValues;
         let e = w - cellSize
         if e < 0'lu and margin[dim].send >= -e or e > 0'lu:
           margin[dim].send += e # correct error
-        result[dim].send = styleEnd
+        border[dim].send = styleEnd
+  border
 
 proc resolvePositioned(lctx: LayoutContext; size: Size;
     computed: CSSValues): RelativeRect =
@@ -1327,7 +1328,7 @@ proc initLineBoxState(fstate: var FlowState): LineBoxState =
   # (I guess this means it doesn't quite belong in lbstate, but FlowState is
   # also way too overloaded so it still seems preferable)
   var pendingAbsolutes = move(fstate.lbstate.pendingAbsolutes)
-  result = LineBoxState(
+  LineBoxState(
     intrh: cellHeight,
     baseline: cellHeight,
     size: size(w = 0'lu, h = cellHeight),
@@ -2119,11 +2120,15 @@ proc layoutFlow0(fstate: var FlowState) =
 
 proc initFlowState(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
     root: bool): FlowState =
-  result = FlowState(
+  var bfcOffset = input.bfcOffset
+  if box.computed{"position"} in PositionAbsoluteFixed:
+    # absolute abuses bfcOffset as its own offset, so unset it
+    bfcOffset = Offset0
+  FlowState(
     lctx: lctx,
     box: box,
     offset: input.padding.topLeft,
-    bfcOffset: input.bfcOffset,
+    bfcOffset: bfcOffset,
     space: input.space,
     exclusionsHead: input.exclusionsHead,
     exclusionsTail: input.exclusionsTail,
@@ -2134,9 +2139,6 @@ proc initFlowState(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
     pendingFloatsHead: input.pendingFloatsHead,
     pendingFloatsTail: input.pendingFloatsTail
   )
-  if box.computed{"position"} in PositionAbsoluteFixed:
-    # absolute abuses bfcOffset as its own offset, so unset it
-    result.bfcOffset = Offset0
 
 # Second layout.  Reset the starting offset, and stretch the box to the
 # max child width.

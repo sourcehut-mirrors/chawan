@@ -400,18 +400,19 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
 
 proc parseMediaQueryList*(ctx: var CSSParser; attrs: ptr WindowAttributes):
     seq[MediaQuery] =
-  result = @[]
+  var res: seq[MediaQuery] = @[]
   while ctx.has():
     var s: seq[CSSToken] = @[]
     discard ctx.addUntil(cttComma, s)
     var parser = MediaQueryParser(ctx: initCSSParserSink(s), attrs: attrs)
     if query := parser.parseMediaQuery():
-      result.add(query)
+      res.add(query)
     else:
       # sadly, the standard doesn't let us skip this :/
       #TODO but it seems Blink does something else nevertheless o_0
       let all = MediaQuery(t: mctMedia, media: mtAll)
-      result.add(MediaQuery(t: mctNot, n: all))
+      res.add(MediaQuery(t: mctNot, n: all))
+  move(res)
 
 type
   MediaApplyContext = object

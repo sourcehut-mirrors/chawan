@@ -165,7 +165,7 @@ proc inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
 
 proc initTreeFrame(ctx: TreeContext; parent: Element; computed: CSSValues):
     TreeFrame =
-  result = TreeFrame(
+  TreeFrame(
     parent: parent,
     computed: computed,
     pseudoComputed: computed.next,
@@ -199,7 +199,7 @@ proc displayed(frame: TreeFrame; element: Element): bool =
 
 proc initStyledAnon(element: Element; computed: CSSValues;
     children: sink seq[StyledNode] = @[]): StyledNode =
-  result = StyledNode(
+  StyledNode(
     t: stElement,
     element: element,
     anonChildren: children,

@@ -890,9 +890,10 @@ proc atPercentOf*(iface: BufferInterface): int =
 
 proc initPacketWriter(iface: BufferInterface; cmd: BufferCommand):
     PacketWriter =
-  result = initPacketWriter()
-  result.swrite(cmd)
-  result.swrite(iface.packetid)
+  var w = initPacketWriter()
+  w.swrite(cmd)
+  w.swrite(iface.packetid)
+  w
 
 proc flush(iface: BufferInterface; w: var PacketWriter): bool =
   if iface.dead:

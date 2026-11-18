@@ -1010,10 +1010,10 @@ when defined(debug):
   proc `$`*(val: CSSValues): string =
     $val.toStr()
 
-  proc serialize(computed: CSSValues; p: CSSPropertyType): string =
+  proc serialize(computed: CSSValues; p: CSSPropertyType): Str =
     var buf = initGrowbuf()
     buf.addProperty(computed, p)
-    $buf
+    buf.toStr()
 
 proc getLength*(computed: CSSValues; p: CSSPropertyType): CSSLength =
   computed.words[p].length
@@ -2318,7 +2318,7 @@ proc getInitialTable(): array[CSSPropertyType, CSSValue] =
   for t in CSSPropertyType:
     result[t] = CSSValue(v: valueType(t))
 
-let defaultTable = getInitialTable()
+let defaultTable {.global.} = getInitialTable()
 
 template getDefault(t: CSSPropertyType): CSSValue =
   defaultTable[t]
@@ -2771,20 +2771,23 @@ proc initialOrCopyFrom*(a, b: CSSValues; t: CSSPropertyType) =
     a.setInitial(t)
 
 proc inheritProperties*(parent: CSSValues): CSSValues =
-  result = CSSValues()
+  let computed = CSSValues()
   for t in CSSPropertyType:
     if t.inherited:
-      result.copyFrom(parent, t)
+      computed.copyFrom(parent, t)
     else:
-      result.setInitial(t)
+      computed.setInitial(t)
+  computed
 
 proc copyProperties*(props: CSSValues): CSSValues =
-  result = CSSValues()
-  result[] = props[]
+  let computed = CSSValues()
+  computed[] = props[]
+  computed
 
 proc rootProperties*(): CSSValues =
-  result = CSSValues()
-  result.setAllInitial()
+  let computed = CSSValues()
+  computed.setAllInitial()
+  computed
 
 # Separate CSSValues of a table into those of the wrapper and the actual
 # table.
@@ -2896,13 +2899,12 @@ proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): Str =
 when defined(debug):
   proc serializeEmpty*(computed: CSSValues): string =
     let default = rootProperties()
-    result = ""
+    var buf = initGrowbuf()
     for p in CSSPropertyType:
       let a = computed.serialize(p)
       let b = default.serialize(p)
       if a != b and not b.equalsIgnoreCase("currentcolor"):
-        result &= $p & ':'
-        result &= a
-        result &= ';'
+        buf.addM(p, ':', a, ';')
+    $buf
 
 {.pop.} # raises: []

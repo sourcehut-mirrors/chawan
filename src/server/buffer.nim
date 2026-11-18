@@ -1713,7 +1713,7 @@ proc findLeaf(box: CSSBox; element: Element): CSSBox =
 
 proc showHints(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
     HintResult {.proxy.} =
-  result = HintResult.default
+  var hints = HintResult.default
   bc.maybeReshape()
   let ppc = bc.attrs.ppc.toLUnit()
   let ppl = bc.attrs.ppl.toLUnit()
@@ -1724,13 +1724,14 @@ proc showHints(bc: BufferContext; handle: PagerHandle; sx, sy, ex, ey: int):
       let box = CSSBox(element.box).findLeaf(element)
       let offset = box.render.offset
       if offset >= so and offset < eo:
-        result.add(CursorXY(
+        hints.add(CursorXY(
           x: (offset.x div ppc).toInt(),
           y: (offset.y div ppl).toInt()
         ))
         element.setHint(true)
-  bc.nhints = result.len
+  bc.nhints = hints.len
   bc.maybeReshape()
+  move(hints)
 
 proc submitForm(bc: BufferContext; handle: PagerHandle; cursorx, cursory: int):
     ClickResult {.proxy.} =

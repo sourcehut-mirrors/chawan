@@ -1211,9 +1211,10 @@ proc cloneInto(a, b: URL) =
   b.hash = a.hash
 
 proc newURL*(url: URL): URL =
-  result = jsNew URLObj()
-  if result != nil:
-    url.cloneInto(result)
+  let url2 = jsNew URLObj()
+  if url2 != nil:
+    url.cloneInto(url2)
+  url2
 
 proc isIP*(url: URL): bool =
   return url.hostType in {htIpv4, htIpv6}

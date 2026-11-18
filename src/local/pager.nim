@@ -218,8 +218,9 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   return nil
 
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
-  result = cint(term.sigintCaught)
+  let res = cint(term.sigintCaught)
   term.sigintCaught = false
+  res
 
 type CookieStreamOpaque {.final.} = ref object of RootObj
   pager: Pager
@@ -582,10 +583,11 @@ proc writeStatusMessage(status: var Surface; str: openArray[char];
     while x < nx: # clear unset cells
       status.grid[x] = FixedCell()
       inc x
-  result = x
+  let res = x
   while x < e:
     status.grid[x] = FixedCell()
     inc x
+  res
 
 # Note: should only be called directly after user interaction.
 proc refreshStatusMsg(pager: Pager) =

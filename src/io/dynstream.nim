@@ -112,7 +112,9 @@ proc readAll*(s: PosixStream; outs: var Str): bool =
   true
 
 proc readAll*(s: PosixStream): Str =
-  discard s.readAll(result)
+  var res: Str
+  discard s.readAll(res)
+  res
 
 proc setBlocking*(s: PosixStream; blocking: bool) =
   s.blocking = blocking

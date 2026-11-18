@@ -26,7 +26,7 @@ proc checkStack(opaque: pointer; alloca_size: csize_t): cint {.cdecl.} =
 proc bytecodeToRegex*(p: REBytecode; plen: cint): Regex =
   let plen = int(plen)
   let p = cast[ptr UncheckedArray[char]](p)
-  result = Regex(bytecode: initStr(p.toOpenArray(0, plen - 1)))
+  Regex(bytecode: initStr(p.toOpenArray(0, plen - 1)))
 
 proc compileRegex*(buf: Str; flags: LREFlags; regex: var Regex): bool =
   ## Compile a regular expression using QuickJS's libregexp library.

@@ -379,9 +379,10 @@ proc unlinkElementBox(element: Element) {.exportc: "cha_$1".} =
 
 proc getClientRects(element: Element; firstOnly, blockOnly: bool):
     seq[DOMRect] {.exportc: "cha_$1".} =
-  result = @[]
+  var rects: seq[DOMRect] = @[]
   if element.box != nil:
-    result.getClientRects(CSSBox(element.box), firstOnly, blockOnly)
+    rects.getClientRects(CSSBox(element.box), firstOnly, blockOnly)
+  rects
 
 # Currently, getBitmap and getImageBitmap is effectively the same.
 # The separation exists so that in the future, getBitmap can be expanded
@@ -400,7 +401,7 @@ when defined(debug):
   proc `$`*(box: CSSBox; pass2 = true): string =
     if box.positioned and not pass2:
       return ""
-    result = "<"
+    var buf = initGrowbuf('<')
     let name = if box.computed{"display"} != DisplayInline:
       if box.element.tagType in {ttHtml, ttBody}:
         $box.element.tagType
@@ -410,7 +411,7 @@ when defined(debug):
       "br"
     else:
       "span"
-    result &= name
+    buf &= name
     let computed = box.computed.copyProperties()
     if computed{"display"} == DisplayBlock:
       computed{"display"} = DisplayInline
@@ -418,29 +419,31 @@ when defined(debug):
     if style != "":
       if style[^1] == ';':
         style.setLen(style.high)
-      result &= " style='" & style & "'"
-    result &= ">"
+      buf &= " style='" & style & "'"
+    buf &= ">"
     if box of InlineNewLineBox:
-      return
+      return $buf
     if box of BlockBox:
-      result &= '\n'
+      buf &= '\n'
     for it in box.children:
-      result &= `$`(it, pass2 = false)
+      buf &= `$`(it, pass2 = false)
     if box of InlineTextBox:
       for run in InlineTextBox(box).runs:
-        result &= $run.s
+        buf &= $run.s
     if box of BlockBox:
-      result &= '\n'
-    result &= "</" & name & ">"
+      buf &= '\n'
+    buf &= "</" & name & ">"
+    $buf
 
   proc `$`*(stack: StackItem): string =
-    result = "<STACK index=" & $stack.index & ">\n"
-    result &= `$`(stack.box, pass2 = true)
-    result &= "\n"
+    var buf = initGrowbufM("<STACK index=", stack.index, ">\n")
+    buf &= `$`(stack.box, pass2 = true)
+    buf &= "\n"
     for child in stack.children:
-      result &= "<child>\n"
-      result &= $child
-      result &= "</child>\n"
-    result &= "</STACK>\n"
+      buf &= "<child>\n"
+      buf &= $child
+      buf &= "</child>\n"
+    buf &= "</STACK>\n"
+    $buf
 
 {.pop.}

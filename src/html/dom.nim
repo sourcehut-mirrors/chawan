@@ -1310,8 +1310,9 @@ proc loadLink(window: Window; link: HTMLLinkElement) =
     window.loadSheet(link.asSheetElement, url, loadLinkFinish)
 
 proc getImageId*(window: Window): int =
-  result = window.imageId
+  let id = window.imageId
   inc window.imageId
+  id
 
 proc fireEvent*(ctx: JSContext; event: Event; target: EventTarget) =
   discard ctx.dispatch(target, event)
@@ -2802,9 +2803,10 @@ proc findFirstChildNotOf(node: ParentNode; tagType: set[TagType]): Element =
   return Element(nil)
 
 proc getChildList*(node: ParentNode): seq[Node] =
-  result = @[]
+  var list: seq[Node] = @[]
   for child in node.childList:
-    result.add(child)
+    list.add(child)
+  list
 
 proc replaceAll(parent: ParentNode; ctx: JSContext; node: Node) =
   let removedNodes = parent.getChildList()

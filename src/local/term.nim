@@ -699,8 +699,9 @@ proc readChar(term: Terminal): Opt[char] =
     term.ibufLen = term.istream.read(term.ibuf)
     if term.ibufLen == -1:
       return err()
-  result = ok(term.ibuf[term.ibufn])
+  let c = term.ibuf[term.ibufn]
   inc term.ibufn
+  ok(c)
 
 proc blockIO0(term: Terminal) =
   term.istream.setBlocking(true)

@@ -230,8 +230,9 @@ proc unset(ctx: var LoaderContext; handle: LoaderHandle) =
     ctx.handleMap[fd] = nil
 
 proc getOutputId(ctx: var LoaderContext): int =
-  result = ctx.outputNum
+  let id = ctx.outputNum
   inc ctx.outputNum
+  id
 
 # Create a new loader handle, with the output stream ostream.
 proc newInputHandle(ctx: var LoaderContext; ostream: PosixStream;
@@ -1323,15 +1324,16 @@ type
 
 proc parseDownloadActions(ctx: LoaderContext; s: openArray[char]):
     seq[DownloadAction] =
-  result = @[]
+  var items: seq[DownloadAction] = @[]
   for it in s.split('&'):
     let name = it.until('=')
     if name.startsWith("stop"):
       let n = parseIntP(name.substr("stop".len).toOpenArray()).get(-1)
       if n >= 0 and n < ctx.downloadList.len:
-        result.add(DownloadAction(n: n, t: datRemove))
-  result.sort(proc(a, b: DownloadAction): int = return cmp(a.n, b.n),
+        items.add(DownloadAction(n: n, t: datRemove))
+  items.sort(proc(a, b: DownloadAction): int = return cmp(a.n, b.n),
     Descending)
+  items
 
 proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
     request: RawRequest) =

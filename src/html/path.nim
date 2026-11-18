@@ -56,7 +56,7 @@ proc cross(v1, v2: Vector2D): float64 =
 proc innerAngle(v1, v2: Vector2D): float64 =
   return arccos((v1 * v2) / (v1.norm() * v2.norm()))
 
-proc rotate(v: Vector2D, alpha: float64): Vector2D =
+proc rotate(v: Vector2D; alpha: float64): Vector2D =
   let sa = sin(alpha)
   let ca = cos(alpha)
   return Vector2D(

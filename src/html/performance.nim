@@ -52,8 +52,9 @@ proc newPerformance*(timeOrigin: float64; scripting: ScriptingMode):
   jsNew PerformanceObj(timeOrigin: timeOrigin, scripting: scripting)
 
 proc getEntryId(this: Performance): uint64 =
-  result = this.id
+  let id = this.id
   inc this.id
+  id
 
 jsClassDef(Performance):
   jsextends EventTargetDef

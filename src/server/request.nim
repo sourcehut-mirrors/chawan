@@ -299,30 +299,31 @@ proc add*(list: var seq[FormDataEntry], entry: tuple[name, value: Str]) =
   ))
 
 proc calcLength*(this: FormData): int =
-  result = 0
+  var n = 0
   for entry in this.entries:
-    result += "--\r\n".len + this.boundary.len # always have boundary
+    n += "--\r\n".len + this.boundary.len # always have boundary
     #TODO maybe make CRLF for name first?
-    result += entry.name.len # always have name
+    n += entry.name.len # always have name
     # these must be percent-encoded, with 2 char overhead:
-    result += entry.name.toOpenArray().count({'\r', '\n', '"'}) * 2
+    n += entry.name.toOpenArray().count({'\r', '\n', '"'}) * 2
     if entry.isstr:
-      result += "Content-Disposition: form-data; name=\"\"\r\n".len
-      result += entry.svalue.len
+      n += "Content-Disposition: form-data; name=\"\"\r\n".len
+      n += entry.svalue.len
     else:
-      result += "Content-Disposition: form-data; name=\"\";".len
+      n += "Content-Disposition: form-data; name=\"\";".len
       # file name
-      result += " filename=\"\"\r\n".len
-      result += entry.filename.len
+      n += " filename=\"\"\r\n".len
+      n += entry.filename.len
       # dquot must be quoted with 2 char overhead
-      result += entry.filename.toOpenArray().count('"') * 2
+      n += entry.filename.toOpenArray().count('"') * 2
       # content type
-      result += "Content-Type: \r\n".len
-      result += entry.value.contentType.len
-      result += entry.value.getSize()
-    result += "\r\n".len # header is always followed by \r\n
-    result += "\r\n".len # value is always followed by \r\n
-  result += "--".len + this.boundary.len + "--\r\n".len
+      n += "Content-Type: \r\n".len
+      n += entry.value.contentType.len
+      n += entry.value.getSize()
+    n += "\r\n".len # header is always followed by \r\n
+    n += "\r\n".len # value is always followed by \r\n
+  n += "--".len + this.boundary.len + "--\r\n".len
+  n
 
 proc getContentType*(this: FormData): Str =
   initStrM("multipart/form-data; boundary=", this.boundary)
@@ -372,13 +373,14 @@ jsClassPublicDef(FormData):
 
   proc getAll(ctx: JSContext; this: FormData; name: Str): seq[JSValue]
       {.jsfunc.} =
-    result = newSeq[JSValue]()
+    var values = newSeq[JSValue]()
     for entry in this.entries:
       if entry.name == name:
         if entry.isstr:
-          result.add(ctx.toJS(entry.svalue))
+          values.add(ctx.toJS(entry.svalue))
         else:
-          result.add(ctx.toJS(entry.value))
+          values.add(ctx.toJS(entry.value))
+    values
 
 # Request
 proc contentLength*(body: RequestBody): int =
