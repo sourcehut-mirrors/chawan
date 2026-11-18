@@ -2820,6 +2820,24 @@ proc splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
   inner{"display"} = DisplayTableWrapper
   return (outer, inner)
 
+type BoxDrawingChar* = enum
+  bdcHorizontalBarTop = "\u2500"
+  bdcHorizontalBarBottom = "\u2500"
+  bdcVerticalBarLeft = "\u2502"
+  bdcVerticalBarRight = "\u2502"
+  bdcCornerTopLeft = "\u250C"
+  bdcCornerTopRight = "\u2510"
+  bdcCornerBottomLeft = "\u2514"
+  bdcCornerBottomRight = "\u2518"
+  bdcSideBarLeft = "\u251C"
+  bdcSideBarRight = "\u2524"
+  bdcSideBarTop = "\u252C"
+  bdcSideBarBottom = "\u2534"
+  bdcSideBarCross = "\u253C"
+
+const HorizontalBar = {bdcHorizontalBarTop, bdcHorizontalBarBottom}
+const VerticalBar = {bdcVerticalBarLeft, bdcVerticalBarRight}
+
 proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): Str =
   return case style
   of BorderStyleNone, BorderStyleHidden: str("")
