@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<style>
+.a { color: red }
+</style>
+<div class=a>red</div>
+<div class=b>default</div>
+<div id=outer>
+  <div id=x></div>
+</div>
+<script>
+const shadow = x.attachShadow({mode: "open"});
+shadow.innerHTML = `
+<style>
+:host > .b { color: green }
+</style>
+<div class=a>default</div>
+<div class=b>green</div>
+`;
+</script>

@@ -1,5 +1,8 @@
 {.push raises: [].}
 
+when NimMajor >= 2:
+  import std/assertions
+
 import std/algorithm
 import std/math
 
@@ -526,11 +529,13 @@ proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
   map[pseudo].applyDeclarations(pseudo, parent, element, window, old)
 
 proc applyStyle(element: Element) {.exportc: "cha_$1".} =
+  let root = element.asNode.rootNode as RootNode
+  assert root != nil
   let document = element.asNode.document
   let window = document.window
   var depends = DependencyInfo.default
   var map = RuleListMap.default
-  map.calcRules(element, document.getRuleMap(), depends)
+  map.calcRules(element, getRuleMap(root, document), depends)
   let style = element.cachedStyle
   if window.settings.styling and style != nil:
     #TODO store this in CSSStyleDeclaration
@@ -552,7 +557,7 @@ proc applyStyle(element: Element) {.exportc: "cha_$1".} =
           def.vals[f].parseComputedValues(decl.p, decl.value,
             window.settings.attrsp[])
     map[peNone].a[coAuthor].unlayered.add(def)
-  document.applyStyleDependencies(element, depends)
+  root.applyStyleDependencies(element, depends)
   var computed = map.applyDeclarations(peNone, element.asNode.parentElement,
     element, window, element.computed)
   element.computed = computed

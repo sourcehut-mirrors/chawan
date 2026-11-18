@@ -29,8 +29,11 @@ import utils/opt
 # A similar situation arises for compound selectors as well, and even
 # selector lists (in case of pseudo-class functions).
 
+# Forward declarations
 proc matches(element: Element; cxsel: ComplexSelector;
   depends: var DependencyInfo; ohasDeps: var bool): bool
+proc matches(element: Element; sels: CompoundSelector;
+  depends: var DependencyInfo; ohasDeps: var bool; host = false): bool
 
 type CaseSensitivity = enum
   csI, csS
@@ -102,7 +105,7 @@ proc matches(element: Element; slist: SelectorList;
   return pmatch
 
 proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
-    hasDeps: var bool): bool =
+    hasDeps: var bool; host: bool): bool =
   case pc
   of pcFirstChild:
     let parentNode = element.parentNode
@@ -159,7 +162,7 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
   of pcBorderNonzero:
     return element.attrb(satBorder) and element.attrul(satBorder).get(1) != 0
   of pcHost:
-    return false #TODO shadow DOM
+    return host
   of pcDefined:
     return element.isDefined()
 
@@ -233,7 +236,7 @@ proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
   false
 
 proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
-    ohasDeps: var bool): bool =
+    ohasDeps: var bool; host: bool): bool =
   case sel.t
   of stType:
     return element.localName == sel.atom
@@ -244,7 +247,7 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:
-    return element.matches(sel.pc, depends, ohasDeps)
+    return element.matches(sel.pc, depends, ohasDeps, host)
   of stUniversal:
     return true
   of stNthChild:
@@ -258,14 +261,16 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stLang:
     return element.matchesLang(sel.value)
   of stHost:
-    return false #TODO shadow DOM
+    if host:
+      return element.matches(sel.host.csel, depends, ohasDeps)
+    return false
 
 proc matches(element: Element; sels: CompoundSelector;
-    depends: var DependencyInfo; ohasDeps: var bool): bool =
+    depends: var DependencyInfo; ohasDeps: var bool; host = false): bool =
   var pmatch = true
   for sel in sels:
     var hasDeps = false
-    let match = element.matches(sel, depends, hasDeps)
+    let match = element.matches(sel, depends, hasDeps, host)
     if not hasDeps:
       if not match:
         return false
@@ -290,15 +295,26 @@ proc matches(element: Element; cxsel: ComplexSelector;
     of ctNone:
       match = e.matches(csel, mdepends, hasDeps)
     of ctDescendant:
-      e = e.asNode.parentElement
-      while e != nil:
+      while true:
+        let e2 = e.asNode.parentElement
+        if e2 == nil:
+          if e.parentNode of ShadowRoot:
+            match = ShadowRoot(e.parentNode).host
+              .matches(csel, mdepends, hasDeps, host = true)
+        e = e2
+        if e == nil:
+          break
         if e.matches(csel, mdepends, hasDeps):
           match = true
           break
-        e = e.asNode.parentElement
     of ctChild:
-      e = e.asNode.parentElement
-      match = e != nil and e.matches(csel, mdepends, hasDeps)
+      if (let e2 = e.asNode.parentElement; e2 != nil):
+        e = e2
+        match = e != nil and e.matches(csel, mdepends, hasDeps)
+      elif e.parentNode of ShadowRoot:
+        match = ShadowRoot(e.parentNode).host
+          .matches(csel, mdepends, hasDeps, host = true)
+        e = Element(nil)
     of ctNextSibling:
       e = e.previousElementSibling
       match = e != nil and e.matches(csel, mdepends, hasDeps)

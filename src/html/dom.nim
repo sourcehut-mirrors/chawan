@@ -326,11 +326,14 @@ type
   ParentNodeObj {.pure.} = object of NodeObj
     internalFirst: Node # either firstChild or shadow root
 
-  RootNode = JSRef[RootNodeObj]
+  RootNode* = JSRef[RootNodeObj]
 
   RootNodeObj {.pure.} = object of ParentNodeObj
     elementIdMap: seq[ptr ElementObj]
     elementIdMapLoad: int
+    authorSheetsHead: CSSStylesheet
+    ruleMap: CSSRuleMap
+    styleDependencies: array[DependencyType, DependencyMapPair]
 
   Attr = JSRef[AttrObj]
 
@@ -363,7 +366,6 @@ type
     ignoreDestructiveWrites: int
     throwOnDynamicMarkupInsertion*: int
     writeBuffersTop*: DocumentWriteBuffer
-    styleDependencies: array[DependencyType, DependencyMapPair]
     scriptsToExecSoon: HTMLScriptElement
     scriptsToExecInOrder: HTMLScriptElement
     scriptsToExecInOrderTail: HTMLScriptElement
@@ -375,13 +377,12 @@ type
     renderBlockingElements: seq[Element]
     uaSheetsHead: CSSStylesheet
     userSheetsHead: CSSStylesheet
-    authorSheetsHead: CSSStylesheet
     sheetTitle: Str
-    ruleMap: CSSRuleMap
     parser*: RootRef
     liveCollections: seq[ptr CollectionLikeObj]
     liveCollectionsLoad: int
     customElements*: CustomElementRegistry
+    shadowHead: ShadowRoot
 
   XMLDocumentObj {.pure, final.} = object of DocumentObj
 
@@ -428,6 +429,8 @@ type
   SlotAssignmentMode = enum
     samNamed = "named", samManual = "manual"
 
+  ShadowRoot* = JSRef[ShadowRootObj]
+
   ShadowRootObj {.pure, final.} = object of DocumentFragmentObj
     mode: ShadowRootMode
     delegatesFocus: bool
@@ -437,9 +440,9 @@ type
     declarative: bool
     unsetCustomElements: bool
     customElements: CustomElementRegistry
+    prev: ShadowRoot
+    next: ShadowRoot
     #TODO onslotchange
-
-  ShadowRoot = JSRef[ShadowRootObj]
 
   DocumentTypeObj {.pure, final.} = object of NodeObj
     name*: Str
@@ -663,7 +666,7 @@ proc setData(ctx: JSContext; this: CharacterData; data: sink DOMStringEmpty)
 proc addLiveCollection(document: Document; collection: CollectionLike)
 proc removeLiveCollection(document: Document; collection: CollectionLike)
 proc adopt(document: Document; node: Node; ctx: JSContext)
-proc applyStyleDependencies*(document: Document; element: Element;
+proc applyStyleDependencies*(root: RootNode; element: Element;
   depends: DependencyInfo)
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
@@ -713,7 +716,7 @@ proc nextElementSibling*(element: Element): Element
 proc postConnectionSteps(element: Element; ctx: JSContext)
 proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
-proc removingSteps(element: Element)
+proc removingSteps(element: Element; oldRootNode: RootNode)
 proc scriptingEnabled(element: Element): bool
 proc shadowRoot(this: Element): ShadowRoot
 proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
@@ -723,7 +726,7 @@ proc globalCustomElements(this: ShadowRoot): CustomElementRegistry
 proc tagType*(element: HTMLElement): TagType
 
 proc insertSheet(this: SheetElement)
-proc removeSheet(this: SheetElement)
+proc removeSheet(this: SheetElement; oldRootNode: RootNode)
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet)
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSCallback;
   contentType = str("image/png"); qualityVal = JS_UNDEFINED.vc)
@@ -765,8 +768,6 @@ proc getClassID(t: typedesc[HTMLTableSectionElement]): JSClassID
 proc getClassID(t: typedesc[NamedNodeMap]): JSClassID
 proc getClassID(t: typedesc[NodeIterator]): JSClassID
 proc getClassID(t: typedesc[ProcessingInstruction]): JSClassID
-proc getClassID(t: typedesc[RootNode]): JSClassID
-proc getClassID(t: typedesc[ShadowRoot]): JSClassID
 proc getClassID(t: typedesc[SheetElement]): JSClassID
 proc getClassID(t: typedesc[XMLDocument]): JSClassID
 proc getClassID*(t: typedesc[Document]): JSClassID
@@ -782,6 +783,8 @@ proc getClassID*(t: typedesc[HTMLTemplateElement]): JSClassID
 proc getClassID*(t: typedesc[NodeList]): JSClassID
 proc getClassID*(t: typedesc[Node]): JSClassID
 proc getClassID*(t: typedesc[ParentNode]): JSClassID
+proc getClassID*(t: typedesc[RootNode]): JSClassID
+proc getClassID*(t: typedesc[ShadowRoot]): JSClassID
 proc getClassID*(t: typedesc[Text]): JSClassID
 
 # Forward declaration hacks
@@ -1492,13 +1495,19 @@ proc windowChange*(window: Window) =
     sheet.windowChange(baseURL)
     sheet = sheet.next
   sheet = document.authorSheetsHead
-  while sheet != nil:
-    sheet.windowChange(baseURL)
-    if sheet.media != "":
-      var ctx = initCSSParser(sheet.media)
-      let media = ctx.parseMediaQueryList(window.settings.attrsp)
-      sheet.applies = media.applies(addr window.settings)
-    sheet = sheet.next
+  var shadow = document.shadowHead
+  while true:
+    while sheet != nil:
+      sheet.windowChange(baseURL)
+      if sheet.media != "":
+        var ctx = initCSSParser(sheet.media)
+        let media = ctx.parseMediaQueryList(window.settings.attrsp)
+        sheet.applies = media.applies(addr window.settings)
+      sheet = sheet.next
+    if shadow == nil:
+      break
+    sheet = shadow.authorSheetsHead
+    shadow = shadow.next
 
 proc getComputedStyle0*(ctx: JSContext; window: Window; element: Element;
     pseudoElt: JSValueConst): Opt[CSSStyleDeclaration] =
@@ -2078,15 +2087,25 @@ proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
     if last != nil and last.internalNext == oldRootNode: # update root
       last.internalNext = node
     if (let element = desc as Element; element != nil):
-      if element.id != satUempty:
+      if oldRootDocumentLike != nil:
+        if element.id != satUempty:
         # try to remove from the old root; this might not do anything if
         # this is a descendant of a shadow root
-        if oldRootDocumentLike != nil:
           oldRootDocumentLike.removeElementId(element)
-      document.applyStyleDependencies(element, DependencyInfo.default)
-      element.removingSteps()
+        oldRootDocumentLike.applyStyleDependencies(element,
+          DependencyInfo.default)
+      element.removingSteps(oldRootDocumentLike)
       if element.custom == cesCustom and parentConnected:
         discard #TODO queue disconnectedCallback
+    elif (let shadow = desc as ShadowRoot; shadow != nil):
+      let prev = move(shadow.prev)
+      let next = move(shadow.next)
+      if prev != nil:
+        prev.next = next
+      else:
+        document.shadowHead = next
+      if next != nil:
+        next.prev = prev
   #TODO transient registered observers
   if not suppressObservers:
     parent.queueTreeMutationRecord(ctx, [], [node], oldPreviousSibling,
@@ -2948,6 +2967,11 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
       let customElements = shadow.customElements
       if customElements != nil and customElements.scoped:
         customElements.addScopedDocument(parentDocument)
+      let next = move(parentDocument.shadowHead)
+      if next != nil:
+        next.prev = shadow
+      shadow.next = next
+      parentDocument.shadowHead = shadow
   # Insertion steps have a tendency to traverse the dom, which has
   # disastrous consequences in the above loop as the root node is still
   # inconsistent.  So we just cache the first node with insertion steps
@@ -3155,8 +3179,16 @@ proc removeElementId(this: RootNode; element: Element) =
   tabDelImpl(this.elementIdMap, this.elementIdMapLoad, addr element[],
     element.id.hash())
 
-jsClassDef(RootNode): # fake class
+jsClassPublicDef(RootNode): # fake class
   jsextends ParentNodeDef
+
+  proc finalize(rt: JSRuntime; this: RootNode) {.jsfin.} =
+    # note: only author sheets are cyclic
+    var sheet = move(this.authorSheetsHead)
+    while sheet != nil:
+      let next = move(sheet.next)
+      sheet.prev = nil
+      sheet = next
 
 # ElementAccessor
 jsClassDef(ElementAccessor): # fake class
@@ -3745,8 +3777,8 @@ proc applyUserSheets*(document: Document; user: openArray[Str]) =
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
-proc getRuleMap*(document: Document): CSSRuleMap =
-  if document.ruleMap == nil:
+proc getRuleMap*(root: RootNode; document: Document): CSSRuleMap =
+  if root.ruleMap == nil:
     let map = newCSSRuleMap(document.quirksMode == qmQuirks)
     var sheet = document.uaSheetsHead
     while sheet != nil:
@@ -3756,13 +3788,13 @@ proc getRuleMap*(document: Document): CSSRuleMap =
     while sheet != nil:
       map.add(sheet)
       sheet = sheet.next
-    sheet = document.authorSheetsHead
+    sheet = root.authorSheetsHead
     while sheet != nil:
       if not sheet.disabled and sheet.applies:
         map.add(sheet)
       sheet = sheet.next
-    document.ruleMap = map
-  return document.ruleMap
+    root.ruleMap = map
+  root.ruleMap
 
 proc findAnchor*(document: Document; id: Str): Element =
   if id.len == 0:
@@ -3802,14 +3834,6 @@ jsClassPublicDef(Document):
   jsget Document, contentType
   jsget Document, window, "defaultView"
   jsget Document, currentScript
-
-  proc finalize(rt: JSRuntime; document: Document) {.jsfin.} =
-    # note: only author sheets are cyclic
-    var sheet = move(document.authorSheetsHead)
-    while sheet != nil:
-      let next = move(sheet.next)
-      sheet.prev = nil
-      sheet = next
 
   proc mark(rt: JSRuntime; document: Document; markFunc: JS_MarkFunc)
       {.jsmark.} =
@@ -5126,16 +5150,14 @@ proc attrdgz(element: Element; s: StaticAtom): Opt[float64] =
 proc attrb*(element: Element; at: StaticAtom): bool =
   return element.attrb(at.view())
 
-proc isDisplayed(element: Element): bool =
-  element.ensureStyle()
-  return element.computed{"display"} != DisplayNone
-
 proc nextDisplayedElement(element: Element): Element =
   var node = element.asNode.nextDescendant(Node(nil))
   while node != nil:
     let element = node as Element
-    if element != nil and element.isDisplayed():
-      return element
+    if element != nil:
+      element.ensureStyle()
+      if element.computed{"display"} != DisplayNone:
+        return element
     let skip = element != nil # skip non-displayed elements
     node = node.nextDescendant(Node(nil), skip)
   Element(nil)
@@ -5370,15 +5392,6 @@ proc reflectLocalAttr(element: Element; ctx: JSContext; name: StaticAtom;
           other.delAttr(ctx, satOpen.view())
       if (let shadow = element.shadowRoot; shadow != nil):
         if (let first = shadow.asParentNode.firstChild; first != nil):
-          if (let defaultSummary = first.firstChildSlow as Element;
-              defaultSummary != nil):
-            let style = if value != nil:
-              str("display: list-item; counter-increment: list-item 0;" &
-                  "list-style: disclosure-open inside")
-            else:
-              str("display: list-item; counter-increment: list-item 0;" &
-                  "list-style: disclosure-closed inside")
-            defaultSummary.setAttr(ctx, satStyle, style)
           if (let next = first.nextSibling as Element; next != nil):
             #TODO content-visibility
             let style = if value != nil:
@@ -5505,6 +5518,7 @@ proc invalidate*(element: Element) =
     node = node.nextDescendant(element.asNode, skip)
 
 proc ensureStyle*(element: Element) =
+  # note: it is not valid to call this on disconnected elements
   if element.computed == nil or efRestyle in element.flags:
     element.flags.excl(efRestyle)
     element.applyStyle()
@@ -5564,14 +5578,14 @@ proc insertionSteps(element: Element; ctx: JSContext): bool =
     element.insertionStepsForm()
   false
 
-proc removingSteps(element: Element) =
+proc removingSteps(element: Element; oldRootNode: RootNode) =
   # We'll have to restyle on insert anyway, so don't keep style/layout data
   # alive for out-of-tree elements.
   unlinkElementBox(element)
   element.box = nil
   element.computed = nil
   if (let element = element as SheetElement; element != nil):
-    element.removeSheet()
+    element.removeSheet(oldRootNode)
   else:
     element.removingStepsForm()
 
@@ -5586,9 +5600,8 @@ proc movingSteps(element: Element; isSubtreeRoot: bool;
   element.box = nil
   element.computed = nil
   if (let element = element as SheetElement; element != nil):
-    element.removeSheet()
-    if element.asNode.isConnected():
-      element.insertSheet()
+    element.removeSheet(element.asNode.rootNode as RootNode)
+    element.insertSheet()
   else:
     movingStepsForm(element)
 
@@ -6311,7 +6324,7 @@ proc globalCustomElements(this: ShadowRoot): CustomElementRegistry =
     return document.customElements
   return CustomElementRegistry(nil)
 
-jsClassDef(ShadowRoot):
+jsClassPublicDef(ShadowRoot):
   jsextends DocumentFragmentDef
 
   jsget ShadowRoot, mode
@@ -6420,14 +6433,16 @@ proc add(map: var DependencyMap; key, value: Element) =
 proc invalidate*(element: Element; dep: DependencyType) =
   if dep in element.selfDepends:
     element.invalidate()
-  let document = element.asNode.document
-  for it in document.styleDependencies[dep].dependedBy.getAll(element):
-    it.invalidate()
+  let root = element.asNode.rootNode as RootNode
+  if root != nil:
+    #TODO could assert too but I'm too lazy to check all call sites
+    for it in root.styleDependencies[dep].dependedBy.getAll(element):
+      it.invalidate()
 
-proc applyStyleDependencies*(document: Document; element: Element;
+proc applyStyleDependencies*(root: RootNode; element: Element;
     depends: DependencyInfo) =
   element.selfDepends = {}
-  for t, map in document.styleDependencies.mpairs:
+  for t, map in root.styleDependencies.mpairs:
     for it in map.dependsOn.popAll(element):
       map.dependedBy.del(element, it)
     for el in depends[t]:
@@ -7183,18 +7198,28 @@ proc initDetails(this: HTMLElement; ctx: JSContext; document: Document):
   let text = document.newText(str("Details"))
   let slot1 = document.newHTMLElement(ctx, ttSlot)
   let slot2 = document.newHTMLElement(ctx, ttSlot)
+  let style = document.newHTMLElement(ctx, ttStyle)
+  let styleText = document.newText(str("""
+:host summary {
+  display: list-item;
+  counter-increment: list-item 0;
+  list-style: disclosure-closed inside;
+}
+:host([open]) summary {
+  list-style-type: disclosure-open;
+}
+"""))
   if shadow == nil or defaultSummary == nil or text == nil or slot1 == nil or
-      slot2 == nil:
+      slot2 == nil or style == nil or styleText == nil:
     return err()
   defaultSummary.asParentNode.append(ctx, text.asNode)
   slot1.asParentNode.append(ctx, defaultSummary.asNode)
   shadow.asParentNode.append(ctx, slot1.asNode)
   shadow.asParentNode.append(ctx, slot2.asNode)
+  style.asParentNode.append(ctx, styleText.asNode)
+  shadow.asParentNode.append(ctx, style.asNode)
   #TODO content-visibility
   slot2.asElement.setAttr(ctx, satStyle, str("display: none"))
-  defaultSummary.asElement.setAttr(ctx, satStyle,
-    str("display: list-item; counter-increment: list-item 0;" &
-        "list-style: disclosure-closed inside"))
   ok()
 
 proc clickSummary*(this: HTMLElement; ctx: JSContext) =
@@ -7313,54 +7338,53 @@ proc isDisabled(this: SheetElement): bool =
   link != nil and link.isDisabled()
 
 proc insertSheet(this: SheetElement) =
-  if this.sheetHead != nil:
+  let root = this.asNode.rootNode as RootNode
+  if this.sheetHead != nil and root != nil:
     assert this.sheetHead.prev == nil and this.sheetTail.next == nil
-    let document = this.asNode.document
     let prev = this.findPrevSheet()
     let next = this.findNextSheet()
     if prev != nil:
       prev.next = this.sheetHead
       this.sheetHead.prev = prev
     else:
-      document.authorSheetsHead = this.sheetHead
+      root.authorSheetsHead = this.sheetHead
     this.sheetTail.next = next
     if next != nil:
       next.prev = this.sheetTail
-    if document.ruleMap != nil and not this.isDisabled():
+    if root.ruleMap != nil and not this.isDisabled():
       if next == nil:
         for sheet in this.sheets:
-          document.ruleMap.add(sheet)
+          root.ruleMap.add(sheet)
       else:
-        document.ruleMap = nil
-    let html = document.documentElement
-    if html != nil:
-      html.invalidate()
+        root.ruleMap = nil
+    if root.asNode.isConnected():
+      let html = root.asNode.document.documentElement
+      if html != nil:
+        html.invalidate()
 
-proc removeSheet(this: SheetElement) =
-  if this.sheetHead != nil:
-    let document = this.asNode.document
+proc removeSheet(this: SheetElement; oldRootNode: RootNode) =
+  if this.sheetHead != nil and oldRootNode != nil:
     let prev = this.sheetHead.prev
     let next = this.sheetTail.next
     if prev == nil:
-      document.authorSheetsHead = next
+      oldRootNode.authorSheetsHead = next
     else:
       prev.next = next
     if next != nil:
       next.prev = prev
     if not this.isDisabled():
-      document.ruleMap = nil
+      oldRootNode.ruleMap = nil
     this.sheetHead.prev = nil
     this.sheetTail.next = nil
-    let html = document.documentElement
+    let html = oldRootNode.asNode.document.documentElement
     if html != nil:
       html.invalidate()
 
 proc updateSheet(this: SheetElement; head, tail: CSSStylesheet) =
-  this.removeSheet()
+  this.removeSheet(this.asNode.rootNode as RootNode)
   this.sheetHead = head
   this.sheetTail = tail
-  if this.asNode.isConnected():
-    this.insertSheet()
+  this.insertSheet()
 
 jsClassDef(SheetElement): # fake class
   jsextends HTMLElementDef

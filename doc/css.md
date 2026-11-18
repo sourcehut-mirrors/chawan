@@ -112,12 +112,12 @@ Following standard pseudo-classes are supported: `:first-child`,
 `:last-child`, `:only-child`, `:hover`, `:root`, `:nth-child()`,
 `:nth-last-child()`, `:checked`, `:focus`, `:is()`, `:not()`,
 `:where()`, `:lang()`, `:link`, `:target`, `:disabled`, `:empty`,
-`:first-of-type`, `:last-of-type`.
+`:first-of-type`, `:last-of-type`, `:host`, and `:host()`.
 
 `:visited` is parsed, but for now it is not matched.
 
-`:defined`, `:host`, and `:host()` are matched for compatibility; however,
-custom elements and shadow DOM are not supported yet.
+`:defined`, is matched for compatibility; however, custom elements are not
+supported yet.
 
 The standard pseudo-elements `::before`, `::after`, and `::marker` are
 supported.  `::backdrop` is parsed for compatibility, but is not supported
