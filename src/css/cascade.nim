@@ -55,7 +55,7 @@ type
   RevertMap = array[CSSPropertyType, RevertType]
 
   ApplyValueContext = object
-    vals: CSSValues
+    computed: CSSValues
     parentComputed: CSSValues
     window: Window
     old: CSSValues
@@ -240,7 +240,7 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
 
 proc resolveVariable(ctx: var ApplyValueContext; p: CSSWidePropertyType;
     cvar: CSSVarEntry; revertType: RevertType): Opt[void] =
-  let vars = ctx.vals.vars
+  let vars = ctx.computed.vars
   for it in cvar.resolved:
     if it.vars == vars:
       ctx.applyValues(it.entries, revertType)
@@ -277,18 +277,18 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
     # either already set, or reverted to a subsequent value.
     return
   case entry.et
-  of ceBit: ctx.vals.bits[t].dummy = entry.bit
-  of ceHWord: ctx.vals.hwords[t] = entry.hword
-  of ceWord: ctx.vals.words[t] = entry.word
-  of ceObject: ctx.vals.objs[t] = entry.obj
+  of ceBit: ctx.computed.bits[t].dummy = entry.bit
+  of ceHWord: ctx.computed.hwords[t] = entry.hword
+  of ceWord: ctx.computed.words[t] = entry.word
+  of ceObject: ctx.computed.objs[t] = entry.obj
   of ceGlobal:
     case entry.global
-    of cgtInherit: ctx.vals.initialOrCopyFrom(ctx.parentComputed, t)
-    of cgtInitial: ctx.vals.setInitial(t)
-    of cgtUnset: ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
+    of cgtInherit: ctx.computed.initialOrCopyFrom(ctx.parentComputed, t)
+    of cgtInitial: ctx.computed.setInitial(t)
+    of cgtUnset: ctx.computed.initialOrInheritFrom(ctx.parentComputed, t)
     of cgtRevert:
       if revertType == rtSet: # user agent
-        ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
+        ctx.computed.initialOrInheritFrom(ctx.parentComputed, t)
       else:
         ctx.revertMap[t] = revertType
         return
@@ -445,19 +445,22 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
 
 proc applyVars(ctx: var ApplyValueContext; defs: openArray[CSSRuleDef];
     flag: CSSImportantFlag; parentVars: CSSVariableMap) =
-  var vars = move(ctx.vals.vars)
+  var vars = move(ctx.computed.vars)
   for def in defs.ritems:
     for cvar in def.vars[flag].ritems:
       if vars == nil:
         vars = newCSSVariableMap(parentVars)
       vars.putIfAbsent(cvar)
-  ctx.vals.vars = move(vars)
+  ctx.computed.vars = move(vars)
 
 proc applyDeclarations(rules: RuleList; pseudo: PseudoElement;
     parent, element: Element; window: Window; old: CSSValues): CSSValues =
-  result = CSSValues(pseudo: pseudo)
   var parentVars: CSSVariableMap = nil
-  var ctx = ApplyValueContext(window: window, vals: result, old: old)
+  var ctx = ApplyValueContext(
+    window: window,
+    computed: CSSValues(pseudo: pseudo),
+    old: old
+  )
   if parent != nil:
     parent.ensureStyle()
     ctx.parentComputed = parent.computed
@@ -470,8 +473,8 @@ proc applyDeclarations(rules: RuleList; pseudo: PseudoElement;
     ctx.applyVars(rules.a[origin].unlayered, cifNormal, parentVars)
     for layer in rules.a[origin].layers:
       ctx.applyVars(layer, cifNormal, parentVars)
-  if result.vars == nil or result.vars.isSame(parentVars):
-    result.vars = parentVars # inherit parent
+  if ctx.computed.vars == nil or ctx.computed.vars.isSame(parentVars):
+    ctx.computed.vars = parentVars # inherit parent
   ctx.applyImportantValues(rules.a[coUserAgent], rtSet)
   ctx.applyImportantValues(rules.a[coUser], rtUserAgent)
   ctx.applyImportantValues(rules.a[coAuthor], rtUser)
@@ -483,38 +486,39 @@ proc applyDeclarations(rules: RuleList; pseudo: PseudoElement;
     ctx.applyPresHints(element)
   ctx.applyNormalValues(rules.a[coUserAgent], rtSet)
   # fill in defaults
-  if ctx.revertMap[cptColor] != rtSet or result{"color"}.t == cctCurrent:
+  if ctx.revertMap[cptColor] != rtSet or ctx.computed{"color"}.t == cctCurrent:
     # do this first so currentcolor works
-    result.initialOrInheritFrom(ctx.parentComputed, cptColor)
+    ctx.computed.initialOrInheritFrom(ctx.parentComputed, cptColor)
   var relayout = false
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
-      result.initialOrInheritFrom(ctx.parentComputed, t)
-    if result.isCurrentColor(t):
-      result.words[t].color = result{"color"}
+      ctx.computed.initialOrInheritFrom(ctx.parentComputed, t)
+    if ctx.computed.isCurrentColor(t):
+      ctx.computed.words[t].color = ctx.computed{"color"}
     if old != nil and t in LayoutProperties:
-      relayout = relayout or not result.equals(old, t)
+      relayout = relayout or not ctx.computed.equals(old, t)
   if relayout:
     element.relayout.incl(pseudo)
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.
   # Well, neither will I, because the spec breaks on actual websites.
   # Curse CSS.
-  if result{"position"} in PositionAbsoluteFixed:
-    if result{"display"} == DisplayInline:
-      result{"display"} = DisplayInlineBlock
-    elif result{"display"} == DisplayInlineListItem:
-      result{"display"} = DisplayInlineBlockListItem
-  elif result{"float"} != FloatNone or
+  if ctx.computed{"position"} in PositionAbsoluteFixed:
+    if ctx.computed{"display"} == DisplayInline:
+      ctx.computed{"display"} = DisplayInlineBlock
+    elif ctx.computed{"display"} == DisplayInlineListItem:
+      ctx.computed{"display"} = DisplayInlineBlockListItem
+  elif ctx.computed{"float"} != FloatNone or
       ctx.parentComputed != nil and
         ctx.parentComputed{"display"} in DisplayInnerFlex + DisplayInnerGrid:
-    result{"display"} = result{"display"}.blockify()
-  if (result{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
-      (result{"overflow-y"} in {OverflowVisible, OverflowClip}):
-    result{"overflow-x"} = result{"overflow-x"}.bfcify()
-    result{"overflow-y"} = result{"overflow-y"}.bfcify()
+    ctx.computed{"display"} = ctx.computed{"display"}.blockify()
+  if (ctx.computed{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
+      (ctx.computed{"overflow-y"} in {OverflowVisible, OverflowClip}):
+    ctx.computed{"overflow-x"} = ctx.computed{"overflow-x"}.bfcify()
+    ctx.computed{"overflow-y"} = ctx.computed{"overflow-y"}.bfcify()
   if element != nil and element.getBitmap() != nil:
-    result{"display"} = result{"display"}.imgify()
+    ctx.computed{"display"} = ctx.computed{"display"}.imgify()
+  move(ctx.computed)
 
 proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
     parent, element: Element; window: Window; old: CSSValues): CSSValues =
