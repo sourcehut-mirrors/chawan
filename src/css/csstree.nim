@@ -43,6 +43,7 @@ import html/dom
 import html/form
 import html/xml
 import js/jsref
+import js/jstypes
 import utils/cowstr
 import utils/twtstr
 
@@ -429,13 +430,11 @@ proc addBr(frame: var TreeFrame) =
 proc addElementChildren(frame: var TreeFrame) =
   for it in frame.parent.asParentNode.shadowChildList:
     if it of Element:
-      let element = Element(it)
-      frame.addElement(element)
+      frame.addElement(Element(it))
     elif it of Text:
       #TODO collapse subsequent text nodes into one StyledNode
       # (it isn't possible in HTML, only with JS DOM manipulation)
-      let text = Text(it)
-      frame.addText(text.data)
+      frame.addText(Text(it).data.asStr)
 
 proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
   let cdata = input.inputString()
@@ -478,7 +477,7 @@ proc addSlotChildren(frame: var TreeFrame; slot: HTMLSlotElement) =
         frame.addElement(Element(it))
       elif it of Text:
         #TODO collapse subsequent text nodes into one StyledNode
-        frame.addText(Text(it).data)
+        frame.addText(Text(it).data.asStr)
   else:
     frame.addElementChildren()
 
@@ -496,7 +495,7 @@ proc addProgress(frame: var TreeFrame; element: Element) =
 proc addChildren(frame: var TreeFrame) =
   case frame.parent.tagType
   of ttInput: frame.addInputChildren(HTMLInputElement(frame.parent))
-  of ttTextarea: frame.addText(HTMLTextAreaElement(frame.parent).value)
+  of ttTextarea: frame.addText(HTMLTextAreaElement(frame.parent).value.asStr)
   of ttImg: frame.addImageOrAlt(HTMLImageElement(frame.parent))
   of ttCanvas: frame.addImage(HTMLCanvasElement(frame.parent).bitmap)
   of ttVideo: frame.addText(str("[video]"))

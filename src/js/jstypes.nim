@@ -110,6 +110,12 @@ template asStr*(ds: DOMString): Str =
 template toOpenArray*(s: DOMString): openArray[char] =
   Str(s).toOpenArray()
 
+template asDOMString*(s: Str): DOMString =
+  DOMString(s)
+
+template domStr*(s: static string): DOMString =
+  str(s).asDOMString
+
 proc `$`*(ds: DOMString): string {.borrow.}
 proc `$`*(ds: DOMStringEmpty): string {.borrow.}
 proc `==`*(ds: DOMString; s: openArray[char]): bool {.borrow.}
@@ -164,7 +170,7 @@ proc add*(buf: var Growbuf; s: ByteString) =
 proc toByteString*(buf: sink Growbuf): ByteString =
   ByteString(buf.toStr())
 
-template byteStr*(s: cstring): ByteString =
+template byteStr*(s: static string): ByteString =
   ByteString(str(s))
 
 template asByteString*(s: Str): ByteString =

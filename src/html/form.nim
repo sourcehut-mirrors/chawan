@@ -129,7 +129,7 @@ type
 
   HTMLTextAreaElementObj {.pure, final.} = object of FormAssociatedElementObj
     dirty: bool
-    internalValue: Str
+    internalValue: DOMString
 
   HTMLOutputElement = JSRef[HTMLOutputElementObj]
 
@@ -154,11 +154,11 @@ proc checked*(input: HTMLInputElement): bool
 proc setChecked*(input: HTMLInputElement; b: bool)
 proc value*(this: HTMLInputElement): Str
 proc setValue*(this: HTMLInputElement; value: sink Str)
-proc selectedIndex*(this: HTMLSelectElement): int
+proc selectedIndex*(this: HTMLSelectElement): int32
 proc setSelectedness(select: HTMLSelectElement)
-proc defaultValue(this: HTMLOutputElement): Str
+proc defaultValue(this: HTMLOutputElement): DOMString
 proc value*(option: HTMLOptionElement): Str
-proc value*(this: HTMLTextAreaElement): Str
+proc value*(this: HTMLTextAreaElement): DOMString
 
 proc getClassID(t: typedesc[HTMLAreaElement]): JSClassID
 proc getClassID(t: typedesc[HTMLOutputElement]): JSClassID
@@ -604,7 +604,7 @@ jsClassDef(HTMLAreaElement):
   proc getRelList(this: HTMLAreaElement): DOMTokenList {.jsfget: "relList".} =
     this.asElement.getDOMTokenList(this.relList, satRel)
 
-  proc setRelList(ctx: JSContext; this: HTMLAreaElement; ds: DOMString) {.
+  proc setRelList(ctx: JSContext; this: HTMLAreaElement; ds: sink DOMString) {.
       jsfset: "relList".} =
     this.asElement.setAttr(ctx, satRel, ds)
 
@@ -614,7 +614,7 @@ jsClassPublicDef(HTMLButtonElement):
 
   jsget HTMLButtonElement, buttonType, "type"
 
-  proc setType(ctx: JSContext; this: HTMLButtonElement; s: DOMString) {.
+  proc setType(ctx: JSContext; this: HTMLButtonElement; s: sink DOMString) {.
       jsfset: "type".} =
     this.asElement.setAttr(ctx, satType, s)
 
@@ -700,7 +700,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
     elif (let field = field as HTMLButtonElement; field != nil):
       entrylist.add((name, field.asElement.attr(satValue)))
     elif (let field = field as HTMLTextAreaElement; field != nil):
-      entrylist.add((name, field.value))
+      entrylist.add((name, field.value.asStr))
     else:
       assert false
     let input = field as HTMLInputElement
@@ -748,7 +748,7 @@ jsClassPublicDef(HTMLFormElement):
   proc getRelList(this: HTMLFormElement): DOMTokenList {.jsfget: "relList".} =
     this.asElement.getDOMTokenList(this.relList, satRel)
 
-  proc setRelList(ctx: JSContext; this: HTMLFormElement; s: DOMString) {.
+  proc setRelList(ctx: JSContext; this: HTMLFormElement; s: sink DOMString) {.
       jsfset: "relList".} =
     this.asElement.setAttr(ctx, satRel, s)
 
@@ -823,7 +823,7 @@ jsClassPublicDef(HTMLInputElement):
       jsfset: "value".} =
     this.setValue(ds.asStr)
 
-  proc setType(ctx: JSContext; this: HTMLInputElement; s: DOMString) {.
+  proc setType(ctx: JSContext; this: HTMLInputElement; s: sink DOMString) {.
       jsfset: "type".} =
     this.asElement.setAttr(ctx, satType, s)
 
@@ -882,7 +882,7 @@ proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
     var text: DOMString
     ?ctx.fromJS(argv[0], text)
     if text.len > 0:
-      let node = document.newText(text)
+      let node = document.createTextNode(text)
       if node == nil:
         return JS_ThrowOutOfMemory(ctx)
       this.asParentNode.append(ctx, node.asNode)
@@ -894,7 +894,7 @@ proc newOption(ctx: JSContext; _: JSValueConst; argc: cint;
     var defaultSelected: bool
     ?ctx.fromJS(argv[2], defaultSelected)
     if defaultSelected:
-      this.asElement.setAttr(ctx, satSelected, str(""))
+      this.asElement.setAttr(ctx, satSelected, domStr(""))
   if argc >= 4:
     ?ctx.fromJS(argv[3], this.selected)
   ctx.toJS(this)
@@ -912,22 +912,22 @@ jsClassPublicDef(HTMLOptionElement):
   jsget HTMLOptionElement, selected
 
   proc text(option: HTMLOptionElement): Str {.jsfget.} =
-    var s = initGrowbuf()
+    var s: Str
     for child in option.asParentNode.descendants:
       let parent = child.parentElement
       let child = child as Text
       if child != nil and (parent.tagTypeNoNS != ttScript or
           parent.namespaceURI notin [satNamespaceHTML, satNamespaceSVG]):
-        s &= child.data
-    s.toStr().stripAndCollapse()
+        s &= child.data.asStr
+    s.stripAndCollapse()
 
   proc value*(option: HTMLOptionElement): Str {.jsfget.} =
     if option.asElement.attrb(satValue):
       return option.asElement.attr(satValue)
     return option.text
 
-  proc setValue(ctx: JSContext; option: HTMLOptionElement; ds: DOMString) {.
-      jsfset: "value".} =
+  proc setValue(ctx: JSContext; option: HTMLOptionElement;
+      ds: sink DOMString) {.jsfset: "value".} =
     option.asElement.setAttr(ctx, satValue, ds)
 
   proc setSelected*(option: HTMLOptionElement; selected: bool)
@@ -958,9 +958,9 @@ jsClassDef(HTMLOutputElement):
   proc getType(this: HTMLOutputElement): Str {.jsfget: "type".} =
     return str("output")
 
-  proc defaultValue(this: HTMLOutputElement): Str {.jsfget.} =
+  proc defaultValue(this: HTMLOutputElement): DOMString {.jsfget.} =
     if this.dirty:
-      return this.internalValue
+      return this.internalValue.asDOMString
     return this.asNode.textContent
 
   proc setDefaultValue(ctx: JSContext; this: HTMLOutputElement;
@@ -969,16 +969,16 @@ jsClassDef(HTMLOutputElement):
       this.dirty = true
       this.internalValue = ds.asStr
     else:
-      this.asParentNode.replaceAll(ctx, ds.asStr)
+      this.asParentNode.replaceAll(ctx, ds)
 
-  proc value(this: HTMLOutputElement): Str {.jsfget.} =
-    return this.asNode.textContent
+  proc value(this: HTMLOutputElement): DOMString {.jsfget.} =
+    this.asNode.textContent
 
-  proc setValue(ctx: JSContext; this: HTMLOutputElement; ds: DOMString) {.
+  proc setValue(ctx: JSContext; this: HTMLOutputElement; ds: sink DOMString) {.
       jsfset: "value".} =
     if not this.dirty:
       this.dirty = true
-      this.internalValue = this.asNode.textContent
+      this.internalValue = this.asNode.textContent.asStr
     this.asParentNode.replaceAll(ctx, ds)
 
 # <select>
@@ -1064,25 +1064,25 @@ jsClassPublicDef(HTMLSelectElement):
     this.asParentNode.getHTMLCollection(isSelectedOptionOf, cmSubtree,
       cnSelectedOptions)
 
-  proc selectedIndex*(this: HTMLSelectElement): int {.jsfget.} =
-    var i = 0
+  proc selectedIndex*(this: HTMLSelectElement): int32 {.jsfget.} =
+    var u = 0'u32
     for it in this.options:
       if it.selected:
-        return i
-      inc i
+        return cast[int32](u)
+      inc u
     return -1
 
-  proc setSelectedIndex*(this: HTMLSelectElement; n: int)
+  proc setSelectedIndex*(this: HTMLSelectElement; n: int32)
       {.jsfset: "selectedIndex".} =
-    var i = 0
+    var u = 0'u32
     for it in this.options:
-      if i == n:
+      if u == uint32(n):
         it.selected = true
         it.dirty = true
       else:
         it.selected = false
       it.asElement.invalidate(dtChecked)
-      inc i
+      inc u
     this.asNode.document.invalidateCollections()
 
   proc value(this: HTMLSelectElement): Str {.jsfget.} =
@@ -1130,28 +1130,25 @@ jsClassPublicDef(HTMLSelectElement):
     ok()
 
 # <textarea>
-proc setValue*(this: HTMLTextAreaElement; s: sink Str) =
-  this.dirty = true
-  this.internalValue = s
-  this.asElement.invalidate()
-
 jsClassDef(HTMLTextAreaElement):
   jsextends FormAssociatedElementDef
 
-  proc value*(this: HTMLTextAreaElement): Str {.jsfget.} =
+  proc value*(this: HTMLTextAreaElement): DOMString {.jsfget.} =
     if this.dirty:
       return this.internalValue
-    return this.asParentNode.childTextContent
+    return this.asParentNode.childTextContent.asDOMString
 
-  proc setValue(this: HTMLTextAreaElement; ds: sink DOMString) {.
+  proc setValue*(this: HTMLTextAreaElement; s: sink DOMString) {.
       jsfset: "value".} =
-    this.setValue(ds.asStr)
+    this.dirty = true
+    this.internalValue = s
+    this.asElement.invalidate()
 
   proc defaultValue(this: HTMLTextAreaElement): Str {.jsfget.} =
     this.asParentNode.childTextContent
 
-  proc setDefaultValue(ctx: JSContext; this: HTMLTextAreaElement; ds: DOMString)
-      {.jsfset: "defaultValue".} =
+  proc setDefaultValue(ctx: JSContext; this: HTMLTextAreaElement;
+      ds: sink DOMString) {.jsfset: "defaultValue".} =
     this.asParentNode.replaceAll(ctx, ds)
 
 proc newHTMLElementForm(tagType: TagType): HTMLElement {.exportc: "cha_$1".} =

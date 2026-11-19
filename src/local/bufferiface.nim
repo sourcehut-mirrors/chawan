@@ -1500,7 +1500,7 @@ jsClassPublicDef(BufferInterface):
         w.sendFd(fd)
     return addPromise[ClickResult](ctx, iface)
 
-  proc select(ctx: JSContext; iface: BufferInterface; selected: int): JSValue
+  proc select(ctx: JSContext; iface: BufferInterface; selected: int32): JSValue
       {.jsfunc.} =
     ctx.withPacketWriter iface, bcSelect, w:
       w.swrite(selected)

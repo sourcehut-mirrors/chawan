@@ -561,9 +561,10 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
     if data.len > 0:
       let lastText = plaintext.asParentNode.lastChild as Text
       if lastText != nil:
-        lastText.data &= data.toOpenArray()
+        lastText.data.asStr &= data.toOpenArray()
       else:
-        let text = bc.document.newText(initStr(data.toOpenArray()))
+        let text = bc.document.createTextNode(
+          initStr(data.toOpenArray()).asDOMString)
         if text != nil:
           plaintext.asParentNode.append(bc.window.jsctx, text.asNode)
       plaintext.asElement.invalidate()
@@ -1196,7 +1197,7 @@ proc readSuccess0(bc: BufferContext; s: Str; fd: cint): Request =
       return bc.implicitSubmit(input)
     of ttTextarea:
       let textarea = HTMLTextAreaElement(focus)
-      textarea.setValue(s)
+      textarea.setValue(s.asDOMString)
       if bc.config.scripting != smFalse:
         bc.window.fireEvent(satChange, textarea.asEventTarget, bubbles = true,
           cancelable = true, trusted = true)
@@ -1234,7 +1235,7 @@ proc click(bc: BufferContext; select: HTMLSelectElement): ClickResult =
   for option in select.options:
     #TODO: add nop options for each optgroup
     let text = option.asNode.textContent
-    options.add(SelectOption(s: text.stripAndCollapse()))
+    options.add(SelectOption(s: text.asStr.stripAndCollapse()))
     if selected == -1 and option.selected:
       selected = i
     inc i
@@ -1278,7 +1279,7 @@ proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
 
 proc click(bc: BufferContext; textarea: HTMLTextAreaElement): ClickResult =
   bc.setFocus(textarea.asElement)
-  ClickResult(t: crtReadArea, value: textarea.value)
+  ClickResult(t: crtReadArea, value: textarea.value.asStr)
 
 proc click(bc: BufferContext; audio: HTMLAudioElement): ClickResult =
   bc.restoreFocus()
@@ -1488,17 +1489,15 @@ proc contextMenu(bc: BufferContext; handle: PagerHandle;
       bc.maybeReshape()
   canceled
 
-proc select(bc: BufferContext; handle: PagerHandle; selected: int): ClickResult
-    {.proxy.} =
+proc select(bc: BufferContext; handle: PagerHandle; selected: int32):
+    ClickResult {.proxy.} =
   let select = bc.document.focus as HTMLSelectElement
   if select != nil:
-    if selected != -1:
-      let index = select.selectedIndex
-      if index != selected:
-        select.setSelectedIndex(selected)
-        if bc.config.scripting != smFalse:
-          bc.window.fireEvent(satChange, select.asEventTarget, bubbles = true,
-            cancelable = true, trusted = true)
+    if selected != -1 and select.selectedIndex != selected:
+      select.setSelectedIndex(selected)
+      if bc.config.scripting != smFalse:
+        bc.window.fireEvent(satChange, select.asEventTarget, bubbles = true,
+          cancelable = true, trusted = true)
     bc.restoreFocus()
     bc.maybeReshape()
   return initClickResult()
@@ -1623,7 +1622,7 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
     for node in element.asParentNode.safeChildList:
       if (let text = node as Text; text != nil):
         if lastText != nil:
-          lastText.data &= text.data
+          lastText.data.asStr &= text.data.asStr
           text.asNode.removeImpl(ctx)
         else:
           texts.add(text)
@@ -1644,7 +1643,7 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
       for cap in regex.matchCap(text.data.toOpenArray(), 0):
         let capLen = cap.e - cap.s
         while j < cap.s:
-          case (let c = text.data[j]; c)
+          case (let c = text.data.asStr[j]; c)
           of '<':
             data &= "&lt;"
           of '>':
@@ -1660,14 +1659,14 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
           inc j
         let hi = j + capLen - 1
         data &= "<a href=\""
-        data &= text.data.toOpenArray(j, hi)
+        data &= text.data.asStr.toOpenArray(j, hi)
         data &= "\">"
-        data &= text.data.toOpenArray(j, hi).htmlEscape()
+        data &= text.data.asStr.toOpenArray(j, hi).htmlEscape()
         data &= "</a>"
         j += capLen
       if data.len > 0:
         while j < text.data.len:
-          case (let c = text.data[j]; c)
+          case (let c = text.data.asStr[j]; c)
           of '<': data &= "&lt;"
           of '>': data &= "&gt;"
           of '\'': data &= "&apos;"

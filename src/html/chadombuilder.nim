@@ -173,7 +173,7 @@ proc insertBefore(builder: ChaDOMBuilder; parent: ParentNode; child: Node;
 
 proc insertCommentImpl(builder: ChaDOMBuilder; parent: ParentNode;
     text: sink Growbuf; before: ParentNode) =
-  let comment = builder.document.newComment(text.toStr())
+  let comment = builder.document.createComment(text.toStr().asDOMString)
   builder.insertBefore(parent, comment.asNode, before)
 
 proc appendDocumentTypeImpl(builder: ChaDOMBuilder;
@@ -192,12 +192,12 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: sink Str;
   if parent != builder.document: # I guess it can happen with scripts?
     let prevText = parent.lastChildBefore(before.asNode) as Text
     if prevText != nil:
-      prevText.data &= text
+      prevText.data.asStr &= text
       let parent = parent as Element
       if parent != nil:
         parent.invalidate()
     else:
-      let text = builder.document.newText(text)
+      let text = builder.document.createTextNode(text.asDOMString)
       if text != nil:
         builder.insertBefore(parent, text.asNode, before)
 
