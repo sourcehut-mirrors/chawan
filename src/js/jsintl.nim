@@ -104,10 +104,7 @@ proc canonicalizeLocales(ctx: JSContext; val: JSValueConst; filter: bool):
   if JS_IsUndefined(val):
     return JS_NewArray(ctx)
   #TODO InitializedLocale, actually validate locales, dedup
-  let lengthVal = ?ctx.getProperty(val, jstLength)
-  let len = ctx.toIntIndex(lengthVal.toJSValue())
-  if len < 0:
-    return JS_EXCEPTION
+  let len = ?ctx.getLengthInt(val)
   var tags: seq[Str]
   for k in 0 ..< len:
     let prop = ?JS_NewAtomUInt32(ctx, uint32(k))

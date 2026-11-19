@@ -205,6 +205,21 @@ proc getProperty*(ctx: JSContext; this: JSObject; name: JSStrRef):
     JSValueTraced =
   ctx.getProperty(this.value, name)
 
+proc getLength*(ctx: JSContext; this: JSValueConst): Opt[int64] =
+  var len {.noinit.}: int64
+  if JS_GetLength(ctx, this, len) < 0:
+    return err()
+  ok(len)
+
+proc getLengthInt*(ctx: JSContext; value: JSValueConst): Opt[int] =
+  ## Convert length to an index that is guaranteed to be smaller than
+  ## uint32.high or int.high (on 32-bit systems).
+  let len = ?ctx.getLength(value)
+  if len > int64(int.high) or uint64(len) > uint32.high:
+    JS_ThrowRangeError(ctx, "index out of acceptable range")
+    return err()
+  ok(len)
+
 proc deleteProperty*(ctx: JSContext; this: JSObject; name: JSStrRef):
     JSCode =
   if JS_DeleteProperty(ctx, this.value, ctx.getAtom(name), 0) < 0:
@@ -430,21 +445,6 @@ proc getExceptionMsg*(ctx: JSContext): Str =
       buf &= initQJSStr(cstring(outp), cast[int](len)) # free's outp
   JS_FreeValue(ctx, stack)
   buf.toStr()
-
-proc toIntIndex*(ctx: JSContext; value: JSValue): int =
-  ## Convert value to an index that is guaranteed to be smaller than
-  ## uint32.high or int.high (on 32-bit systems).
-  ##
-  ## Returns -1 on exception.
-  var tmp {.noinit.}: uint64
-  let lenOk = JS_ToIndex(ctx, tmp, value.vc)
-  JS_FreeValue(ctx, value)
-  if lenOk < 0:
-    return -1
-  if tmp > uint64(int.high) or tmp > uint32.high:
-    JS_ThrowInternalError(ctx, "index out of acceptable range")
-    return -1
-  int(tmp)
 
 proc tryTraceObj*(val: JSValue): JSObjectErr =
   if JS_IsException(val.vc):

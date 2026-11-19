@@ -30,7 +30,6 @@ type
     jstHostname = "hostname"
     jstHref = "href"
     jstKeys = "keys"
-    jstLength = "length"
     jstLocale = "locale"
     jstLocation = "location"
     jstMain = "main"

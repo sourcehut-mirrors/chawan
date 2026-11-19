@@ -84,7 +84,7 @@ typedef uint32_t JSAtom;
 enum {
     /* all tags with a reference count are negative */
     JS_TAG_FIRST       = -8, /* first negative tag */
-    JS_TAG_FOREIGN_OBJ = -8, /* used internally */
+    JS_TAG_FOREIGN_OBJ = -8, /* used in GC callbacks */
     JS_TAG_BIG_INT     = -7,
     JS_TAG_SYMBOL      = -6,
     JS_TAG_STRING      = -5,
@@ -863,6 +863,7 @@ int JS_PreventExtensions(JSContext *ctx, JSValueConst obj);
 int JS_DeleteProperty(JSContext *ctx, JSValueConst obj, JSAtom prop, int flags);
 int JS_SetPrototype(JSContext *ctx, JSValueConst obj, JSValueConst proto_val);
 JSValue JS_GetPrototype(JSContext *ctx, JSValueConst val);
+int JS_GetLength(JSContext *ctx, JSValueConst val, int64_t *pres);
 
 #define JS_GPN_STRING_MASK  (1 << 0)
 #define JS_GPN_SYMBOL_MASK  (1 << 1)

@@ -8580,6 +8580,11 @@ static JSValue JS_GetPrototypeFree(JSContext *ctx, JSValue obj)
     return obj1;
 }
 
+int JS_GetLength(JSContext *ctx, JSValueConst obj, int64_t *pres)
+{
+    return js_get_length64(ctx, pres, obj);
+}
+
 /* return TRUE, FALSE or (-1) in case of exception */
 int JS_OrdinaryIsInstanceOf(JSContext *ctx, JSValueConst val,
                             JSValueConst obj)
@@ -8900,8 +8905,10 @@ static JSValue JS_ThrowTypeErrorPrivateNotFound(JSContext *ctx, JSAtom atom)
                                  atom);
 }
 
-/* Private fields can be added even on non extensible objects or
-   Proxies */
+/* Per the nonextensible-applies-to-private proposal, private fields cannot
+   be added to non-extensible objects. Note that a Proxy's JSObject stays
+   extensible (its trap reflects the target), so private fields can still be
+   stamped onto Proxies. */
 static int JS_DefinePrivateField(JSContext *ctx, JSValueConst obj,
                                  JSValueConst name, JSValue val)
 {
@@ -8921,6 +8928,10 @@ static int JS_DefinePrivateField(JSContext *ctx, JSValueConst obj,
     }
     prop = js_symbol_to_atom(ctx, name);
     p = JS_VALUE_GET_OBJ(obj);
+    if (unlikely(!p->extensible)) {
+        JS_ThrowTypeError(ctx, "object is not extensible");
+        goto fail;
+    }
     prs = find_own_property(&pr, p, prop);
     if (prs) {
         JS_ThrowTypeErrorAtom(ctx, "private class field '%s' already exists",
@@ -9024,6 +9035,11 @@ static int JS_AddBrand(JSContext *ctx, JSValueConst obj, JSValueConst home_obj)
 
     if (JS_IsObject(obj)) {
         p1 = JS_VALUE_GET_OBJ(obj);
+        if (unlikely(!p1->extensible)) {
+            JS_FreeAtom(ctx, brand_atom);
+            JS_ThrowTypeError(ctx, "object is not extensible");
+            return -1;
+        }
         prs = find_own_property(&pr, p1, brand_atom);
         if (unlikely(prs)) {
             JS_FreeAtom(ctx, brand_atom);
@@ -13020,9 +13036,9 @@ static int js_bigint_float64_cmp(JSContext *ctx, const JSBigInt *a,
         a_mant = js_bigint_get_mant_exp(ctx, &f, a);
         if (f != e) {
             if (f < e)
-                return -1;
+                return 2 * a_sign - 1;
             else
-                return 1;
+                return 1 - 2 * a_sign;
         } else {
             mant = (mant | ((uint64_t)1 << 52)) << 11; /* align to a_mant */
             if (a_mant < mant)
@@ -61402,7 +61418,7 @@ static JSValue js_dataview_get_byteLength(JSContext *ctx, JSValueConst this_val)
     if (!p)
         return JS_EXCEPTION;
     if (dataview_is_oob(p))
-        return JS_NewUint32(ctx, 0);
+        return JS_NewInt32(ctx, 0);
     ta = p->u.typed_array;
     if (ta->track_rab) {
         abuf = ta->buffer->u.array_buffer;
@@ -61420,7 +61436,7 @@ static JSValue js_dataview_get_byteOffset(JSContext *ctx, JSValueConst this_val)
     if (!p)
         return JS_EXCEPTION;
     if (dataview_is_oob(p))
-        return JS_NewUint32(ctx, 0);
+        return JS_NewInt32(ctx, 0);
     ta = p->u.typed_array;
     return JS_NewUint32(ctx, ta->offset);
 }

@@ -756,8 +756,7 @@ proc JS_DeleteProperty*(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
   flags: cint): cint
 proc JS_SetPrototype*(ctx: JSContext; obj, proto_val: JSValueConst): cint
 proc JS_GetPrototype*(ctx: JSContext; val: JSValueConst): JSValue
-proc JS_GetLength*(ctx: JSContext; obj: JSValueConst; pres: ptr uint64): JSValue
-proc JS_SetLength*(ctx: JSContext; obj: JSValueConst; len: uint64): cint
+proc JS_GetLength*(ctx: JSContext; obj: JSValueConst; pres: var int64): cint
 
 const
   JS_GPN_STRING_MASK* = cint(1 shl 0)
