@@ -6132,18 +6132,18 @@ jsClassPublicDef(Element):
     if u != uint32.high:
       element.delAttr(ctx, u)
 
-  proc toggleAttribute(ctx: JSContext; element: Element;
-      qualifiedName: DOMString; force = obNone): Opt[bool] {.jsfunc.} =
-    ?ctx.validateAttrName(qualifiedName.toOpenArray())
-    let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtom())
-    let i = element.findAttr(qualifiedName)
-    if i < 0:
+  proc toggleAttribute(ctx: JSContext; element: Element; qualifiedName: CAtom;
+      force = obNone): Opt[bool] {.jsfunc.} =
+    ?ctx.validateAttrName(qualifiedName.toStr().toOpenArray())
+    let qualifiedName = element.normalizeAttrQName(qualifiedName)
+    let u = element.findAttr(qualifiedName)
+    if u == uint32.high:
       if force in {obNone, obTrue}:
         element.setAttr(ctx, qualifiedName, str(""))
         return ok(true)
       return ok(false)
     if force in {obNone, obFalse}:
-      element.delAttr(ctx, i)
+      element.delAttr(ctx, u)
       return ok(false)
     return ok(true)
 

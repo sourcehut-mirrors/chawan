@@ -93,6 +93,18 @@ function testAttribute() {
 		assertEquals(attr.value, "x")
 		assertEquals(attr.ownerElement, null);
 	}
+	{
+		const el2 = document.createElement("test");
+		el2.toggleAttribute("a");
+		assertEquals(el2.getAttribute("a"), "");
+		el2.toggleAttribute("a");
+		assertEquals(el2.getAttribute("a"), null);
+		el2.toggleAttribute("a", false);
+		assertEquals(el2.getAttribute("a"), null);
+		el2.toggleAttribute("a");
+		el2.toggleAttribute("a", true);
+		assertEquals(el2.getAttribute("a"), "");
+	}
 }
 
 function testParentNode() { /* ParentNode mixin */
