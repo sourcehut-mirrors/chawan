@@ -89,7 +89,7 @@ proc getEnvCString*(name: cstring): cstring =
   return c_getenv(name)
 
 proc getEnvEmpty*(name: cstring; fallback = str("")): Str =
-  var res = getEnvCString(name)
+  let res = getEnvCString(name)
   if res == nil or res[0] == '\0':
     return fallback
   return res.toStr()
@@ -97,25 +97,19 @@ proc getEnvEmpty*(name: cstring; fallback = str("")): Str =
 proc getEnvEmpty*(name: Str; fallback = str("")): Str =
   getEnvEmpty(name.toCString(), fallback)
 
-proc setEnvCString*(name, value: cstring): Opt[void] =
+proc setEnv*(name, value: cstring): Opt[void] =
   if c_setenv(name, value, 1) != 0:
     return err()
   ok()
 
-proc setEnv*(name, value: string): Opt[void] =
-  setEnvCString(cstring(name), cstring(value))
-
 proc setEnv*(name: cstring; value: Str): Opt[void] =
-  setEnvCString(name, value.toCString())
+  setEnv(name, value.toCString())
 
 proc setEnv*(name, value: Str): Opt[void] =
   setEnv(name.toCString(), value)
 
-proc unsetEnvCString*(name: cstring) =
+proc unsetEnv*(name: cstring) =
   discard c_unsetenv(name)
-
-proc unsetEnv*(name: string) =
-  unsetEnvCString(cstring(name))
 
 proc basename*(s: cstring): cstring =
   var i = 0
