@@ -253,6 +253,7 @@ proc parse(ppc: var ParamParseContext): Opt[void] =
           let key = case param[j]
           of 'C': pkConfig
           of 'I': pkInputCharset
+          of 'M': pkMonochrome
           of 'O': pkOutputCharset
           of 'T': pkType
           of 'V': pkVisual
