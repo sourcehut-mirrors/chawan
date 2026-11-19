@@ -216,9 +216,9 @@ proc getLengthInt*(ctx: JSContext; value: JSValueConst): Opt[int] =
   ## uint32.high or int.high (on 32-bit systems).
   let len = ?ctx.getLength(value)
   if len > int64(int.high) or uint64(len) > uint32.high:
-    JS_ThrowRangeError(ctx, "index out of acceptable range")
+    JS_ThrowRangeError(ctx, "index outside acceptable range")
     return err()
-  ok(len)
+  ok(cast[int](len))
 
 proc deleteProperty*(ctx: JSContext; this: JSObject; name: JSStrRef):
     JSCode =
