@@ -69,8 +69,7 @@ if the `ref` is nil before marking any sub-fields.
 
 ## Implementing interfaces
 
-WebIDL interfaces (also known as a "class") are implemented in Chawan using
-the `jsClassDef` macro.  Example:
+Interfaces are implemented using the `jsClassDef` macro.  Example:
 
 ```nim
 jsClassDef(Node):
@@ -134,19 +133,20 @@ For registering namespaces, use `registerNamespace`.
 
 Sometimes, it is useful to derive two unrelated WebIDL interfaces from
 the same parent Nim object.  For example, `HTMLCollection` and
-`HTMLAllCollection` have similar behavior, and are therefore both derived
-from `Collection`.  Still, this is just an implementation detail, and we
-don't actually want to expose `Collection` to the web.
+`HTMLAllCollection` have similar behavior, and are both derived from
+`Collection`.  Still, this is just an implementation detail, and we don't
+actually want to expose `Collection` to the web.
 
-In such classes, use `registerFakeClass`; the runtime will treat this as
-a class, but from the JS side, it will look as if the prototype were the
-class's prototype.  Such classes must be treated as "abstract", i.e., you
-shouldn't instantiate the class itself with `jsNew`, only derived classes.
+In such classes, use `registerFakeClass`, which the runtime treats as a
+class on the Nim side, but from the JS side, it will look as if the
+prototype were the class's prototype.  Such classes must be treated as
+"abstract", i.e., you shouldn't instantiate the class itself with `jsNew`, only
+derived classes.
 
 ### Commands & function pragmas
 
-Inside a `jsClassDef` (etc.), it is possible to define getters, setters,
-functions, etc. either by issuing a `js[...]` *command*, or by defining a
+It is possible to define getters, setters, functions, etc. inside a
+`jsClassDef` either by issuing a `js[...]` *command*, or by defining a
 procedure with a `.js[...]` pragma attached (as seen above).
 
 Commands look like this:

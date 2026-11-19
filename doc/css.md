@@ -116,7 +116,7 @@ Following standard pseudo-classes are supported: `:first-child`,
 
 `:visited` is parsed, but for now it is not matched.
 
-`:defined`, is matched for compatibility; however, custom elements are not
+`:defined` is matched for compatibility; however, custom elements are not
 supported yet.
 
 The standard pseudo-elements `::before`, `::after`, and `::marker` are
