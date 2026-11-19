@@ -533,7 +533,7 @@ proc insertHTMLElement[Handle](parser: var HTML5Parser[Handle]): Handle =
 proc insertHTMLElement[Handle](parser: var HTML5Parser[Handle];
     tagType: TagType): Handle =
   parser.insertForeignElement(tagType.view(), tagType.view(), nsHTML, false,
-    AttrDataList.empty)
+    AttrDataList.default)
 
 proc insertHTMLElementPop[Handle](parser: var HTML5Parser[Handle]) =
   discard parser.insertHTMLElement()

@@ -747,35 +747,35 @@ type
     cap: uint32
     data: UncheckedArray[AttrData]
 
-  AttrDataList* = distinct ptr AttrDataListObj
+  AttrDataList* = object
+    p: ptr AttrDataListObj
 
 proc dup(this: AttrDataList): ptr AttrDataListObj
-proc `==`(a: AttrDataList; b: typeof(nil)): bool {.borrow.}
 
 proc `=destroy`*(this: var AttrDataList) =
-  if this != nil:
-    dealloc(cast[pointer](this))
+  if this.p != nil:
+    dealloc(this.p)
 
 proc `=sink`*(x: var AttrDataList; y: AttrDataList) =
   `=destroy`(x)
-  cast[ptr ptr AttrDataListObj](addr x)[] = cast[ptr AttrDataListObj](y)
-
-proc `=dup`*(this: AttrDataList): AttrDataList {.noinit.} =
-  cast[ptr ptr AttrDataListObj](addr result)[] = dup(this)
+  x.p = y.p
 
 proc `=copy`*(x: var AttrDataList; y: AttrDataList) =
-  if (ptr AttrDataListObj)(x) != (ptr AttrDataListObj)(y):
+  if x.p != y.p:
     `=destroy`(x)
-    cast[ptr ptr AttrDataListObj](addr x)[] = dup(y)
+    x.p = dup(y)
+
+proc `=dup`*(this: AttrDataList): AttrDataList =
+  AttrDataList(p: dup(this))
 
 proc len*(this: AttrDataList): uint32 =
-  if (ptr AttrDataListObj)(this) == nil:
+  if this.p == nil:
     return 0
-  (ptr AttrDataListObj)(this).len
+  this.p.len
 
 proc `[]`*(this: AttrDataList; u: uint32): lent AttrData {.inline.} =
   assert u < this.len
-  (ptr AttrDataListObj)(this).data[u]
+  this.p.data[u]
 
 iterator items*(this: AttrDataList): lent AttrData =
   let len = this.len
@@ -789,17 +789,17 @@ iterator pairs*(this: AttrDataList): tuple[key: uint32; val: lent AttrData] =
 
 proc `[]`*(this: var AttrDataList; u: uint32): var AttrData =
   assert u < this.len
-  (ptr AttrDataListObj)(this).data[u]
+  this.p.data[u]
 
 proc `[]=`*(this: var AttrDataList; u: uint32; data: sink AttrData) =
   assert u < this.len
-  (ptr AttrDataListObj)(this).data[u] = move(data)
+  this.p.data[u] = move(data)
 
 proc high*(this: AttrDataList): int =
   int(this.len) - 1
 
 template toOpenArray(attrs: AttrDataList): var openArray[AttrData] =
-  let p = (ptr AttrDataListObj)(attrs)
+  let p = attrs.p
   var data = if p != nil: addr p.data else: (ptr UncheckedArray[AttrData])(nil)
   data.toOpenArray(0, attrs.high)
 
@@ -814,7 +814,7 @@ proc resizeAttrDataList(old: ptr AttrDataListObj; cap: uint32):
   this
 
 proc dup(this: AttrDataList): ptr AttrDataListObj =
-  if this == nil:
+  if this.p == nil:
     return nil
   let len = this.len
   let p2 = resizeAttrDataList(nil, len)
@@ -836,14 +836,11 @@ proc newAttrDataList*(data: sink AttrData): AttrDataList =
   var p = resizeAttrDataList(nil, 1)
   p.len = 1
   p.data[0] = data
-  AttrDataList(p)
-
-template empty*(t: typedesc[AttrDataList]): AttrDataList =
-  AttrDataList(nil)
+  AttrDataList(p: p)
 
 proc setLen*(attrs: var AttrDataList; len: uint32) =
   let olen = attrs.len
-  var p = (ptr AttrDataListObj)(attrs)
+  var p = attrs.p
   var cap = if p != nil: p.cap else: 0
   if cap < len:
     assert cap < 0x7FFFFFFF
@@ -851,7 +848,7 @@ proc setLen*(attrs: var AttrDataList; len: uint32) =
     if cap < len:
       cap = len
     p = resizeAttrDataList(p, cap)
-    (ptr AttrDataListObj)(attrs) = p
+    attrs.p = p
   if p != nil:
     for u in len ..< olen:
       p.data[u] = AttrData.default
@@ -860,7 +857,7 @@ proc setLen*(attrs: var AttrDataList; len: uint32) =
 proc delete*(attrs: var AttrDataList; u: uint32) =
   let olen = attrs.len
   assert u < olen
-  let p = (ptr AttrDataListObj)(attrs)
+  let p = attrs.p
   {.cast(raises: []).}:
     `=destroy`(p.data[u])
   moveMem(addr p.data[u], addr p.data[u + 1],
@@ -905,6 +902,6 @@ proc sortAttrs*(attrs: var AttrDataList) =
           attrs[j] = move(attrs[i])
         inc j
       prev = name
-    (ptr AttrDataListObj)(attrs).len = j
+    attrs.setLen(j)
 
 {.pop.} # raises: []
