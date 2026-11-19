@@ -307,8 +307,8 @@ proc `=sink`*(dest: var JSValueTraced; src: JSValueTraced) =
 proc `=dup`*(t: JSValueTraced): JSValueTraced =
   JSValueTraced(JS_DupValueRT(globalRuntime, JSValueConst(t)))
 
-proc trace*(val: JSValue): JSValueTraced {.noinit.} =
-  cast[ptr JSValue](addr result)[] = val
+proc trace*(val: JSValue): JSValueTraced =
+  JSValueTraced(val)
 
 proc dupTrace*(ctx: JSContext; val: JSValueConst): JSValueTraced =
   trace(JS_DupValue(ctx, val))

@@ -67,9 +67,9 @@ template get*[T, E](res: Result[T, E]): T =
 
 proc get*[T, E](res: Result[T, E]; v: T): T =
   if res.isOk:
-    result = res.value
+    res.value
   else:
-    result = v
+    v
 
 template myMove(x: untyped): untyped =
   when (NimMajor, NimMinor, NimPatch) < (2, 2, 2):

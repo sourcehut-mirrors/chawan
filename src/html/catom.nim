@@ -639,18 +639,18 @@ proc `=destroy`*(this: var DOMTokenArray) =
   if this != nil:
     dealloc(cast[pointer](this))
 
-proc `=dup`*(this: DOMTokenArray): DOMTokenArray {.noinit.} =
-  cast[ptr ptr DOMTokenArrayBuffer](addr result)[] = dup(this)
+proc `=sink`*(x: var DOMTokenArray; y: DOMTokenArray) =
+  `=destroy`(x)
+  cast[ptr ptr DOMTokenArrayBuffer](addr x)[] =
+    cast[ptr DOMTokenArrayBuffer](y)
 
 proc `=copy`*(x: var DOMTokenArray; y: DOMTokenArray) =
   if x != y:
     `=destroy`(x)
     cast[ptr ptr DOMTokenArrayBuffer](addr x)[] = dup(y)
 
-proc `=sink`*(x: var DOMTokenArray; y: DOMTokenArray) =
-  `=destroy`(x)
-  cast[ptr ptr DOMTokenArrayBuffer](addr x)[] =
-    cast[ptr DOMTokenArrayBuffer](y)
+proc `=dup`*(this: DOMTokenArray): DOMTokenArray =
+  DOMTokenArray(dup(this))
 
 proc len*(this: DOMTokenArrayView): uint32 =
   if this == nil:
