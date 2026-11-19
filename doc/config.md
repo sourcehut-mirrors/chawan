@@ -699,8 +699,7 @@ Examples:
 
 ```toml
 # Search using DuckDuckGo Lite.
-# (This rule is included in the default config, although C-k invokes
-# Brave search.)
+# (This rule is included in the default config.)
 [omnirule.ddg]
 match = '^ddg:'
 substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.substring(x.indexOf(':') + 1))'
@@ -1021,7 +1020,7 @@ webSearch
 : **C-k**
 
 : Open the URL bar with an arbitrary search engine.  At the moment, this is
-  Brave Search, but this may change in the future.
+  DuckDuckGo Lite, but this may change in the future.
 
 dupeBuffer
 : **M-u**

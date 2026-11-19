@@ -44,7 +44,7 @@ globalThis.cmd = {
         pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
     },
     loadEmpty: () => pager.load(""),
-    webSearch: () => pager.load("br:"),
+    webSearch: () => pager.load("ddg:"),
     addBookmark: () => {
         const url = encodeURIComponent(buffer.url);
         const title = encodeURIComponent(buffer.title);

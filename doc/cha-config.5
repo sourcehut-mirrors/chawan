@@ -724,8 +724,7 @@ Examples:
 .IP
 .EX
 \f[I]# Search using DuckDuckGo Lite.\f[R]
-\f[I]# (This rule is included in the default config, although C\-k invokes\f[R]
-\f[I]# Brave search.)\f[R]
+\f[I]# (This rule is included in the default config.)\f[R]
 \f[B][omnirule.ddg]\f[R]
 match = \(aq\(haddg:\(aq
 substitute\-url = \(aq(x) => \(dqhttps://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1&q=\(dq + encodeURIComponent(x.substring(x.indexOf(\(aq\f[B]:\f[R]\(aq) + 1))\(aq
@@ -1077,7 +1076,8 @@ webSearch
 \f[B]C\-k\f[R]
 .RS
 Open the URL bar with an arbitrary search engine.
-At the moment, this is Brave Search, but this may change in the future.
+At the moment, this is DuckDuckGo Lite, but this may change in the
+future.
 .RE
 .TP
 dupeBuffer
