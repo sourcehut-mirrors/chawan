@@ -1754,6 +1754,8 @@ Pager.prototype.replaceWith = function(old, replacement) {
     }
     if (this.buffer == old)
         this.setBuffer(replacement);
+    else if (replacement.tab.current == old) /* inactive tab */
+        replacement.tab.current = replacement;
 }
 
 /* private */
