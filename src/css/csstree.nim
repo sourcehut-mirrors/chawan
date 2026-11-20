@@ -31,7 +31,6 @@ when NimMajor >= 2:
   import std/assertions
 import std/algorithm
 
-import chame/tags
 import config/conftypes
 import css/box
 import css/cascade

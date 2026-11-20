@@ -6,7 +6,6 @@ when NimMajor >= 2:
 import std/algorithm
 import std/math
 
-import chame/tags
 import config/conftypes
 import css/color
 import css/cssparser

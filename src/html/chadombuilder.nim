@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import chame/htmlparser
-import chame/tags
 import config/conftypes
 import encoding/charset
 import html/catom

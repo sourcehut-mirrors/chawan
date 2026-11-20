@@ -2,8 +2,8 @@
 
 {.push raises: [].}
 
-import chame/tags
 import config/conftypes
+import html/catom
 import html/dom
 import io/console
 import io/dynstream

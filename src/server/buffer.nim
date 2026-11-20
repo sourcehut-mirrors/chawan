@@ -6,7 +6,6 @@ import std/macros
 import std/posix
 
 import chame/htmlparser
-import chame/tags
 import config/conftypes
 import css/box
 import css/cell

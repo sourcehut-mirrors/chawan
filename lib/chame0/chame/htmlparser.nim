@@ -2,11 +2,9 @@
 
 when NimMajor >= 2:
   import std/assertions
-import std/algorithm
 
 import html/catom
 import htmltokenizer
-import tags
 import utils/cowstr
 import utils/twtstr
 
@@ -422,11 +420,11 @@ proc find(attrs: AttrDataList; atom: CAtom): uint32 =
     return u
   uint32.high
 
-proc findAttr[Handle](parser: HTML5Parser[Handle]; tagType: TagType): uint32 =
-  parser.tok.attrs.find(tagType.view())
+proc findAttr[Handle](parser: HTML5Parser[Handle]; name: StaticAtom): uint32 =
+  parser.tok.attrs.find(name.view())
 
-proc contains(attrs: AttrDataList; atom: CAtom): bool =
-  attrs.find(atom) != uint32.high
+proc contains(attrs: AttrDataList; atom: StaticAtom): bool =
+  attrs.find(atom.view()) != uint32.high
 
 proc createElement[Handle](parser: HTML5Parser[Handle];
     localName: CAtom; namespace: Namespace; intendedParent: Handle;
@@ -436,7 +434,7 @@ proc createElement[Handle](parser: HTML5Parser[Handle];
   let shouldAssociate =
     namespace == nsHTML and tagType in FormAssociatedElements and
     parser.form != Handle.default and not parser.hasElement(ttTemplate) and
-    (tagType notin ListedElements or ttForm.view() notin attrs)
+    (tagType notin ListedElements or satForm notin attrs)
   let element = parser.dombuilder.toDOMBuilderImpl()
     .createElementForTokenImpl(localName, namespace, intendedParent, attrs)
   if shouldAssociate:
@@ -1153,11 +1151,11 @@ proc processInHead[Handle](parser: var HTML5Parser[Handle]):
       parser.insertHTMLElementPop()
     of ttMeta:
       var res = seContinue
-      if (let u = parser.findAttr(ttCharset); u != uint32.high):
+      if (let u = parser.findAttr(satCharset); u != uint32.high):
         res = parser.setEncoding(parser.tok.attrs[u].value)
-      elif (let u = parser.findAttr(ttHttpEquiv); u != uint32.high):
+      elif (let u = parser.findAttr(satHttpEquiv); u != uint32.high):
         if parser.tok.attrs[u].value.equalsIgnoreCase("Content-Type"):
-          let u = parser.findAttr(ttContent)
+          let u = parser.findAttr(satContent)
           if u != uint32.high:
             let cs = extractEncFromMeta(parser.tok.attrs[u].value)
             if cs != "":
@@ -1335,7 +1333,7 @@ proc processInBody[Handle](parser: var HTML5Parser[Handle]):
       discard parser.insertHTMLElement()
     of ttH1, ttH2, ttH3, ttH4, ttH5, ttH6:
       parser.closeP()
-      if parser.getTagType(parser.currentNode) in HTagTypes:
+      if parser.getTagType(parser.currentNode) in {ttH1..ttH6}:
         discard parser.popElement()
       discard parser.insertHTMLElement()
     of ttPre, ttListing:
@@ -1447,7 +1445,7 @@ proc processInBody[Handle](parser: var HTML5Parser[Handle]):
           parser.getTagType(parser.ctx.element) != ttSelect:
         discard parser.hasElementInScopePop(ttSelect)
         parser.reconstructActiveFormatting()
-        let u = parser.findAttr(ttTyp)
+        let u = parser.findAttr(satType)
         if u == uint32.high or
             not parser.tok.attrs[u].value.equalsIgnoreCase("hidden"):
           parser.framesetOk = false
@@ -1655,7 +1653,7 @@ proc processInTable[Handle](parser: var HTML5Parser[Handle]):
         parser.resetInsertionMode()
         return parser.processInHTML()
     of ttInput:
-      let u = parser.findAttr(ttTyp)
+      let u = parser.findAttr(satType)
       if u != uint32.high and
           parser.tok.attrs[u].value.equalsIgnoreCase("hidden"):
         parser.insertHTMLElementPop()
@@ -2139,9 +2137,8 @@ proc processInForeign[Handle](parser: var HTML5Parser[Handle]):
         ttSub, ttSup, ttTable, ttTt, ttU, ttUl, ttVar:
       return parser.processHTMLForeignTag()
     of ttFont:
-      if ttColor.view() in parser.tok.attrs or
-          ttFace.view() in parser.tok.attrs or
-          ttSize.view() in parser.tok.attrs:
+      if satColor in parser.tok.attrs or satFace in parser.tok.attrs or
+          satSize in parser.tok.attrs:
         return parser.processHTMLForeignTag()
       # fall through
     else: discard

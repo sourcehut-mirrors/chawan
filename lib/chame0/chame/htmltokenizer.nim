@@ -5,7 +5,6 @@ when NimMajor >= 2:
 import std/algorithm
 
 import entity_gen
-import tags
 
 import html/catom
 import utils/cowstr

@@ -1,13 +1,11 @@
 when NimMajor >= 2:
   import std/assertions
 
-import std/algorithm
 import std/options
 import std/unittest
 
 import chame/htmlparser
 import chame/minidom
-import chame/tags
 import html/catom
 import utils/cowstr
 
@@ -198,7 +196,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
   template pop_node =
     let node = stack.pop()
     if node of Element:
-      Element(node).attrs.sort(proc(a, b: AttrData): int = cmp(a.name, b.name))
+      Element(node).attrs.sortAttrs()
     indent -= 2
   while ctx.has:
     let line = ctx.consumeLine()
@@ -227,7 +225,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
         break
       let node = stack.pop()
       if node of Element:
-        Element(node).attrs.sort(proc(a, b: AttrData): int = cmp(a.name, b.name))
+        Element(node).attrs.sortAttrs()
       indent -= 2
     let str = line.substr(indent + 1)
     if str.startsWith("<!DOCTYPE "):

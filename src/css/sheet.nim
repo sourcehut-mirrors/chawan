@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import chame/tags
 import css/cssparser
 import css/cssvalues
 import css/mediaquery

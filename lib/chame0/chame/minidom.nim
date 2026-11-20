@@ -14,7 +14,6 @@ import html/catom
 import utils/cowstr
 
 import htmlparser
-import tags
 
 # Node types
 type
@@ -39,7 +38,7 @@ type
   Element* = ref object of Node
     localName*: CAtom
     namespace*: Namespace
-    attrs*: seq[AttrData]
+    attrs*: AttrDataList
     document*: Document
 
   DocumentFragment* = ref object of Node
@@ -74,11 +73,11 @@ iterator descendants*(node: Node): Node =
     for i in countdown(node.childList.high, 0):
       stack.add(node.childList[i])
 
-proc findAttribute(element: Element; name: StaticAtom): int =
-  for i, it in element.attrs.mpairs:
+proc findAttribute(element: Element; name: StaticAtom): uint32 =
+  for u, it in element.attrs:
     if it.name == name:
-      return i
-  return -1
+      return u
+  return uint32.high
 
 proc clone*(node: Node; deep: bool): Node =
   let copy = if node of Element:
@@ -142,7 +141,7 @@ proc createHTMLElementImpl(builder: MiniDOMBuilder): Node =
   builder.document.createElement(ttHtml.view(), nsHTML)
 
 proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: CAtom;
-    namespace: Namespace; intendedParent: Node; attrs: sink seq[AttrData]):
+    namespace: Namespace; intendedParent: Node; attrs: sink AttrDataList):
     Node =
   let element = builder.document.createElement(localName, namespace)
   element.attrs = move(attrs)
@@ -219,7 +218,7 @@ proc elementPoppedImpl(builder: MiniDOMBuilder; element: Node) =
   let popped = Element(element)
   if popped.namespace != nsHTML or popped.tagType != ttOption:
     return
-  let selected = popped.findAttribute(satSelected) != -1
+  let selected = popped.findAttribute(satSelected) != uint32.high
   for ancestor in popped.ancestors:
     if not (ancestor of Element):
       break
@@ -247,9 +246,10 @@ proc elementPoppedImpl(builder: MiniDOMBuilder; element: Node) =
     break
 
 proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
-    attrs: seq[AttrData]) =
+    attrs: AttrDataList) =
   let element = Element(handle)
-  element.attrs.add(attrs)
+  for attr in attrs:
+    element.attrs.add(attr)
   element.attrs.sortAttrs()
 
 proc setQuirksModeImpl(builder: MiniDOMBuilder; quirksMode: QuirksMode) =
@@ -330,9 +330,9 @@ proc parseHTMLFragment*(inputStream: openArray[char]; element: Element;
   opts.openElementsInit = root
   if element.namespace == nsMathML and
       element.localName.toTagType() == ttAnnotationXml:
-    let i = element.findAttribute(satEncoding)
-    if i >= 0:
-      let val = element.attrs[i].value.toLowerAscii()
+    let u = element.findAttribute(satEncoding)
+    if u != uint32.high:
+      let val = element.attrs[u].value.toLowerAscii()
       opts.ctxIsIntegrationPoint =
         val == "text/html" or val == "application/xhtml+xml"
   elif element.namespace == nsSVG:

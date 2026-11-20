@@ -396,7 +396,7 @@ proc getImageBitmap*(box: BlockBox): NetworkBitmap =
   return nil
 
 when defined(debug):
-  import chame/tags
+  import html/catom
 
   proc `$`*(box: CSSBox; pass2 = true): string =
     if box.positioned and not pass2:

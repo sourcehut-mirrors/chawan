@@ -6,7 +6,6 @@ import std/algorithm
 import std/math
 import std/setutils
 
-import chame/tags
 import config/conftypes
 import config/mimetypes
 import css/color
