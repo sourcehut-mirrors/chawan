@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 
 import io/packetreader
@@ -14,6 +12,7 @@ import js/jsutils
 import js/quickjs
 import js/tojs
 import server/url
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -73,7 +72,7 @@ proc sort(headers: Headers)
 
 # in the loader we just send a seq of openArray[HTTPHeader]
 proc sreadList*(r: var PacketReader; headers: Headers): PacketCode =
-  assert headers != nil
+  chaAssert headers != nil
   ?r.sread(headers.list)
   headers.sort()
   ok()

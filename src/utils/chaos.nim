@@ -2,10 +2,9 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -68,7 +67,7 @@ let cmdLine {.importc, global.}: cstringArray
 let cmdCount {.importc, global.}: cint
 
 proc getArgvCString*(i: int): cstring =
-  assert i >= 0 and i < cmdCount
+  chaAssert i >= 0 and i < cmdCount
   cmdLine[i]
 
 proc getArgv*(i: int): Str =

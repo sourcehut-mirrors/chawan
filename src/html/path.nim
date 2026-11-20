@@ -1,9 +1,9 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/math
+
+import utils/assert
 
 type
   CanvasFillRule* = enum
@@ -146,7 +146,7 @@ proc newMatrixUninitialized(w, h: int): Matrix =
   )
 
 proc `*`*(a, b: Matrix): Matrix =
-  assert a.w == b.h
+  chaAssert a.w == b.h
   let h = a.h
   let w = b.w
   let n = a.w
@@ -358,7 +358,7 @@ proc addLines(lines: var seq[Line]; subpath: Subpath; i: int) =
 proc getLines*(path: Path): seq[Line] =
   var lines: seq[Line] = @[]
   for subpath in path.subpaths:
-    assert subpath.points.len == subpath.segments.len + 1
+    chaAssert subpath.points.len == subpath.segments.len + 1
     for i in 0 ..< subpath.segments.len:
       lines.addLines(subpath, i)
   move(lines)

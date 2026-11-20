@@ -2,9 +2,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import html/catom
 import html/dom
 import html/domexception
@@ -21,6 +18,7 @@ import js/tojs
 import server/blob
 import server/request
 import server/url
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -645,7 +643,7 @@ proc resetForm*(form: HTMLFormElement; ctx: JSContext) =
 # do it.
 proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
     encoding = str("UTF-8")): seq[FormDataEntry] =
-  assert not form.constructingEntryList
+  chaAssert not form.constructingEntryList
   form.constructingEntryList = true
   var entrylist: seq[FormDataEntry] = @[]
   for field in form.controls:
@@ -701,7 +699,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter = HTMLElement(nil);
     elif (let field = field as HTMLTextAreaElement; field != nil):
       entrylist.add((name, field.value.asStr))
     else:
-      assert false
+      chaAssert false
     let input = field as HTMLInputElement
     if field.asHTMLElement.tagType == ttTextarea or
         input != nil and input.inputType in AutoDirInput:

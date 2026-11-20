@@ -1,8 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import config/conftypes
 import config/mimetypes
 import css/cssparser
@@ -42,6 +39,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/opt
@@ -311,13 +309,13 @@ jsClassRaw(CryptoDef, "Crypto"):
         "Wrong typed array type")
     if uv.abuf.len > 65536:
       return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
-    doAssert window.urandom.readLoop(uv.toOpenArray()).isOk
+    chaAssert window.urandom.readLoop(uv.toOpenArray()).isOk
     return JS_DupValue(ctx, view.value)
 
   proc randomUUID(crypto: Crypto): DOMString {.jsfunc.} =
     let window = Window(crypto)
     var bytes: array[16, uint8]
-    doAssert window.urandom.readLoop(bytes).isOk
+    chaAssert window.urandom.readLoop(bytes).isOk
     bytes[6] = (bytes[6] and not 0xF0'u8) or 0x40'u8
     bytes[8] = (bytes[8] and not 0xC0'u8) or 0x80'u8
     var buf = initGrowbufOfCap(36)

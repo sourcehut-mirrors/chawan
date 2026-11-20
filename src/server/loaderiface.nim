@@ -5,8 +5,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import config/conftypes
@@ -31,6 +29,7 @@ import server/blob
 import server/headers
 import server/request
 import server/url
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -216,7 +215,7 @@ proc getReferrerPolicy*(this: Response): Opt[ReferrerPolicy] =
   err()
 
 proc resume*(loader: FileLoader; response: Response) =
-  assert rfResumed notin response.flags
+  chaAssert rfResumed notin response.flags
   loader.resume(response.outputId)
   response.flags.incl(rfResumed)
 
@@ -241,7 +240,7 @@ proc onReadBlob(response: Response) =
     opaque.buf.setLenUninit(olen + BufferSize)
     let n = response.stream.read(opaque.buf.toOpenArray(olen, opaque.buf.high))
     if n <= 0:
-      assert n != -1 or errno != EBADF
+      chaAssert n != -1 or errno != EBADF
       opaque.buf.setLen(olen)
       break
     opaque.buf.setLen(olen + n)
@@ -483,7 +482,7 @@ proc put*(loader: FileLoader; data: MapData) =
   let fd = int(data.stream.fd)
   if loader.map.len <= fd:
     loader.map.setLen(fd + 1)
-  assert loader.map[fd] == nil
+  chaAssert loader.map[fd] == nil
   loader.map[fd] = data
   if data of LoaderData:
     inc loader.mapFds
@@ -528,11 +527,11 @@ proc unregister*(loader: FileLoader; data: MapData) =
   loader.unregister(data.stream.fd)
 
 proc blockRegister*(loader: FileLoader) =
-  assert not loader.registerBlocked
+  chaAssert not loader.registerBlocked
   loader.registerBlocked = true
 
 proc unblockRegister*(loader: FileLoader) =
-  assert loader.registerBlocked
+  chaAssert loader.registerBlocked
   loader.registerBlocked = false
   for it in loader.registerQueue:
     loader.register(it.data, it.events)

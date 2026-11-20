@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import config/config
@@ -32,6 +30,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/assert
 import utils/cowstr
 import utils/lrewrap
 import utils/opt
@@ -781,7 +780,7 @@ template orThrow(res: PacketCode; ctx: JSContext; iface: BufferInterface) =
 
 # Returns false on I/O error, err on JS error.
 proc handleCommand*(ctx: JSContext; iface: BufferInterface): IfaceResult =
-  assert not iface.dead
+  chaAssert not iface.dead
   case iface.stream.initPartialReader(iface.partialReader)
   of prcDone:
     var packetid: int
@@ -1025,7 +1024,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
       var packetid2: int
       if r.sread(packetid2).isErr:
         return iface.throwMalformedPacket2(ctx)
-      assert packetid == packetid2
+      chaAssert packetid == packetid2
       if r.sread(iface.lineShift).isErr or
           r.sread(iface.numLines).isErr or
           r.sread(iface.bgcolor).isErr or
@@ -1057,7 +1056,7 @@ proc requestLinesSync*(ctx: JSContext; iface: BufferInterface;
       var packetid2: int
       if r.sread(packetid2).isErr:
         return iface.throwMalformedPacket2(ctx)
-      assert packetid == packetid2
+      chaAssert packetid == packetid2
       if r.sread(links).isErr:
         return iface.throwMalformedPacket2(ctx)
     for i, link in links.mypairs:
@@ -1071,7 +1070,7 @@ proc updateHoverFromStream(ctx: JSContext; iface: BufferInterface;
   var res: UpdateHoverResult
   r.sread(res).orThrow(ctx, iface)
   if res.len > 0:
-    assert res.high <= int(HoverType.high)
+    chaAssert res.high <= int(HoverType.high)
     for (ht, s) in res:
       iface.hoverText[ht] = s
     iface.refreshStatus = true

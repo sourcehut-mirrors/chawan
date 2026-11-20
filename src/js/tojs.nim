@@ -14,8 +14,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/macrocache
 import std/typetraits
 
@@ -26,6 +24,7 @@ import js/jsref
 import js/jstypes
 import js/jsutils
 import js/quickjs
+import utils/assert
 import utils/cowstr
 import utils/opt
 
@@ -246,7 +245,7 @@ const EnumCounter = CacheCounter("EnumCounter")
 proc getJSEnumId*[T: enum](t: typedesc[T]): int =
   const enumId = EnumCounter.value
   static:
-    assert int(T.low) >= 0
+    chaAssert int(T.low) >= 0
     inc EnumCounter
   enumId
 

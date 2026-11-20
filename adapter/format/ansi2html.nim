@@ -1,12 +1,11 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import css/color
 import io/chafile
 import io/dynstream
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/opt
@@ -329,7 +328,7 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
       # welp. we have to fixup the previous char's formatting
       var i = state.outbufIdx - 1
       while true:
-        assert i >= 0
+        chaAssert i >= 0
         if (int(state.outbuf[i]) and 0xC0) != 0x80:
           break
         dec i

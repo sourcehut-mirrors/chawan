@@ -2,15 +2,13 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import js/constcharp
 import js/cutils
 import js/dtoa
 import js/jsopaque
 import js/jstypes
 import js/quickjs
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -387,7 +385,7 @@ proc evalFunction*(ctx: JSContext; val: JSValue): JSValueTraced =
 
 proc getClassProto*(ctx: JSContext; classid: JSClassID): JSObject =
   let proto = JS_GetClassProto(ctx, classid)
-  assert JS_IsObject(proto.vc)
+  chaAssert JS_IsObject(proto.vc)
   traceObj(proto)
 
 proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
@@ -449,8 +447,7 @@ proc getExceptionMsg*(ctx: JSContext): Str =
 proc tryTraceObj*(val: JSValue): JSObjectErr =
   if JS_IsException(val.vc):
     return err()
-  when defined(debug):
-    assert JS_IsObject(val.vc)
+  chaDebugAssert JS_IsObject(val.vc)
   JSObjectErr(traceObj(val))
 
 proc toObject*(ctx: JSContext; val: JSValueConst): JSObjectErr =

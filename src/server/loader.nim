@@ -22,8 +22,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/posix
 
@@ -44,6 +42,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/opt
@@ -220,11 +219,11 @@ proc put(ctx: var LoaderContext; handle: LoaderHandle) =
   let fd = int(handle.stream.fd)
   if ctx.handleMap.len <= fd:
     ctx.handleMap.setLen(fd + 1)
-  assert ctx.handleMap[fd] == nil
+  chaAssert ctx.handleMap[fd] == nil
   ctx.handleMap[fd] = handle
 
 proc unset(ctx: var LoaderContext; handle: LoaderHandle) =
-  assert not handle.registered
+  chaAssert not handle.registered
   let fd = int(handle.stream.fd)
   if fd < ctx.handleMap.len:
     ctx.handleMap[fd] = nil
@@ -276,7 +275,7 @@ proc newLoaderBuffer(s: openArray[char]): LoaderBuffer =
 
 proc tee(ctx: var LoaderContext; outputIn: OutputHandle; ostream: PosixStream;
     owner: ClientHandle): OutputHandle =
-  assert outputIn.suspended
+  chaAssert outputIn.suspended
   let output = OutputHandle(
     parent: outputIn.parent,
     stream: ostream,
@@ -290,12 +289,12 @@ proc tee(ctx: var LoaderContext; outputIn: OutputHandle; ostream: PosixStream;
   )
   ctx.put(output)
   if outputIn.parent != nil:
-    assert outputIn.parent.parser == nil
+    chaAssert outputIn.parent.parser == nil
     outputIn.parent.outputs.add(output)
   return output
 
 template output(handle: InputHandle): OutputHandle =
-  assert handle.outputs.len == 1
+  chaAssert handle.outputs.len == 1
   handle.outputs[0]
 
 template bufferFromWriter(w, body: untyped): LoaderBuffer =
@@ -306,7 +305,7 @@ template bufferFromWriter(w, body: untyped): LoaderBuffer =
 
 proc sendResult(ctx: var LoaderContext; handle: InputHandle; res: int;
     msg = str("")): PushBufferResult =
-  assert handle.rstate == rsBeforeResult
+  chaAssert handle.rstate == rsBeforeResult
   let output = handle.output
   inc handle.rstate
   let buffer = bufferFromWriter w:
@@ -338,7 +337,7 @@ proc updateCookies(ctx: var LoaderContext; cookieJar: CookieJar;
 
 proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
     headers: openArray[HTTPHeader]): PushBufferResult =
-  assert handle.rstate == rsBeforeStatus
+  chaAssert handle.rstate == rsBeforeStatus
   inc handle.rstate
   let contentLens = headers.getFirst(byteStr("Content-Length"))
   handle.startTime = getUnixSeconds()
@@ -374,7 +373,7 @@ proc write(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   if len == 0:
     # Warning: this can happen when using partially cached handles.
     return 0
-  assert len > 0
+  chaAssert len > 0
   return ps.write(addr buffer.page[si], len)
 
 proc iclose(ctx: var LoaderContext; handle: InputHandle) =
@@ -441,16 +440,16 @@ iterator outputHandles(ctx: LoaderContext): OutputHandle {.inline.} =
 
 proc findOutput(ctx: var LoaderContext; id: int;
     client: ClientHandle): OutputHandle =
-  assert id != -1
+  chaAssert id != -1
   for it in ctx.outputHandles:
     if it.outputId == id:
       # verify that it's safe to access this handle.
-      doAssert ctx.isPrivileged(client) or client == it.owner
+      chaAssert ctx.isPrivileged(client) or client == it.owner
       return it
   return nil
 
 proc findCachedHandle(ctx: LoaderContext; cacheId: int): InputHandle =
-  assert cacheId != -1
+  chaAssert cacheId != -1
   for it in ctx.inputHandles:
     if it.cacheId == cacheId:
       return it
@@ -463,33 +462,33 @@ proc find(cacheMap: openArray[CachedItem]; id: int): int =
   -1
 
 proc register(ctx: var LoaderContext; handle: InputHandle) =
-  assert not handle.registered
+  chaAssert not handle.registered
   ctx.pollData.register(handle.stream.fd, cshort(POLLIN))
   handle.registered = true
 
 proc unregister(ctx: var LoaderContext; handle: InputHandle) =
-  assert handle.registered
+  chaAssert handle.registered
   ctx.pollData.unregister(int(handle.stream.fd))
   handle.registered = false
 
 proc register(ctx: var LoaderContext; output: OutputHandle) =
-  assert not output.registered
+  chaAssert not output.registered
   ctx.pollData.register(int(output.stream.fd), cshort(POLLOUT))
   output.registered = true
 
 proc unregister(ctx: var LoaderContext; output: OutputHandle) =
-  assert output.registered
+  chaAssert output.registered
   ctx.pollData.unregister(int(output.stream.fd))
   output.registered = false
 
 proc register(ctx: var LoaderContext; client: ClientHandle) =
-  assert not client.registered
+  chaAssert not client.registered
   ctx.clientMap.put(ClientMapItem(n: client.pid, handle: client))
   ctx.pollData.register(client.stream.fd, cshort(POLLIN))
   client.registered = true
 
 proc unregister(ctx: var LoaderContext; client: ClientHandle) =
-  assert client.registered
+  chaAssert client.registered
   discard ctx.clientMap.pop(client.pid)
   ctx.pollData.unregister(int(client.stream.fd))
   client.registered = false
@@ -522,7 +521,7 @@ proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
           if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
             n = 0
           else:
-            assert e == EPIPE, $strerror(e)
+            chaAssert e == EPIPE, strerror(e)
             output.dead = true
             unregWrite.add(output)
             continue
@@ -597,7 +596,7 @@ proc openCachedItem(client: ClientHandle; id: int): (PosixStream, int) =
     if ps == nil:
       client.cacheMap.del(n)
       return (nil, -1)
-    assert item.offset != -1
+    chaAssert item.offset != -1
     if ps.seek(item.offset) >= 0:
       return (ps, n)
   return (nil, -1)
@@ -762,7 +761,7 @@ proc parseHeaders(ctx: var LoaderContext; handle: InputHandle;
 
 proc finishParse(ctx: var LoaderContext; handle: InputHandle) =
   if handle.cacheRef != nil:
-    assert handle.cacheRef.offset == -1
+    chaAssert handle.cacheRef.offset == -1
     let ps = newPosixStream(handle.cacheRef.path.toCString(), O_RDONLY, 0)
     if ps != nil:
       var buffer {.noinit.}: array[4096, char]
@@ -770,7 +769,7 @@ proc finishParse(ctx: var LoaderContext; handle: InputHandle) =
       while true:
         let n = ps.read(buffer)
         if n <= 0:
-          assert n == 0 or errno != EBADF
+          chaAssert n == 0 or errno != EBADF
           break
         let pn = ctx.parseHeaders0(handle, buffer.toOpenArray(0, n - 1))
         if pn == -1:
@@ -800,7 +799,7 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
       if e == EAGAIN or e == EWOULDBLOCK or e == EINTR: # retry later
         break
       else: # sender died; stop streaming
-        assert e == EPIPE, $strerror(e)
+        chaAssert e == EPIPE, strerror(e)
         return hrrBrokenPipe
     if n == 0: # EOF
       return hrrUnregister
@@ -818,7 +817,7 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
         # We *could* store si as an offset to the buffer, but it would
         # make things much more complex.  Let's just copy it:
         buffer = newLoaderBuffer(buffer.page.toOpenArray(si, buffer.len - 1))
-        assert buffer.len > 0
+        chaAssert buffer.len > 0
     else:
       handle.bytesSeen += uint64(n)
       #TODO stop reading if Content-Length exceeded
@@ -837,7 +836,7 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
 # ongoing (and thus some parts of the document are not cached yet).
 proc loadStreamRegular(ctx: var LoaderContext;
     handle, cachedHandle: InputHandle) =
-  assert handle.parser == nil # parser is only used with CGI
+  chaAssert handle.parser == nil # parser is only used with CGI
   var unregWrite: seq[OutputHandle] = @[]
   let r = ctx.handleRead(handle, unregWrite)
   for output in unregWrite:
@@ -973,7 +972,7 @@ proc writeBody(ctx: var LoaderContext; ostream, istream2: PosixStream;
       handle.stream = istream2
       ostream.setBlocking(false)
       ctx.loadStreamRegular(handle, cachedHandle)
-      assert handle.stream == nil
+      chaAssert handle.stream == nil
       ctx.close(handle)
   of rbtNone:
     discard
@@ -1146,7 +1145,7 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
   of pbrUnregister: return
   let ps = client.passedFdMap[i].ps
   var stats: Stat
-  doAssert fstat(ps.fd, stats) != -1
+  chaAssert fstat(ps.fd, stats) != -1
   handle.stream = ps
   client.passedFdMap.del(i)
   if S_ISCHR(stats.st_mode) or S_ISREG(stats.st_mode):
@@ -1516,7 +1515,7 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
         ctx.addFd(handle)
     of stCache:
       ctx.loadFromCache(client, handle, request)
-      assert handle.stream == nil
+      chaAssert handle.stream == nil
     of stData:
       ctx.loadData(handle, request)
     of stAbout:
@@ -1614,7 +1613,7 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
   var config: LoaderClientConfig
   r.assert(r.sread(pid))
   r.assert(r.sread(config))
-  assert ctx.clientMap.getOrDefault(pid) == nil
+  chaAssert ctx.clientMap.getOrDefault(pid) == nil
   var sv {.noinit.}: array[2, cint]
   var res = cmdrDone
   rclient.withPacketWriter w:
@@ -1887,13 +1886,13 @@ const PrivilegedCommands = {LoaderCommand.low .. LoaderCommand.high} -
   UnprivilegedCommands
 
 proc readCommand(ctx: var LoaderContext; rclient: ClientHandle) =
-  assert not rclient.stream.isend
+  chaAssert not rclient.stream.isend
   var res = cmdrEOF
   rclient.stream.withPacketReaderFire r:
     var cmd: LoaderCommand
     r.assert(r.sread(cmd))
     if cmd in PrivilegedCommands:
-      doAssert ctx.isPrivileged(rclient)
+      chaAssert ctx.isPrivileged(rclient)
     res = CommandMap[cmd](ctx, rclient, r)
   case res
   of cmdrDone: discard
@@ -1921,7 +1920,7 @@ proc handleWrite(ctx: var LoaderContext; output: OutputHandle;
       if e == EAGAIN or e == EWOULDBLOCK or e == EINTR: # never mind
         break
       else: # receiver died; stop streaming
-        assert e == EPIPE, $strerror(e)
+        chaAssert e == EPIPE, strerror(e)
         unregWrite.add(output)
         break
     output.bytesSent += uint64(n)
@@ -2020,7 +2019,7 @@ proc loaderLoop(ctx: var LoaderContext) =
         elif handle of OutputHandle: # ostream died
           ctx.unregWrite.add(OutputHandle(handle))
         else: # client died
-          assert handle of ClientHandle
+          chaAssert handle of ClientHandle
           ctx.unregClient.add(ClientHandle(handle))
     ctx.finishCycle()
   ctx.exitLoader()

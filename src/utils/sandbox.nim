@@ -64,23 +64,21 @@ when SandboxMode == stCapsicum:
     discard cap_enter()
 
 elif SandboxMode == stPledge:
-  when NimMajor >= 2:
-    import std/assertions
+  import utils/assert
 
   proc pledge(promises, execpromises: cstring): cint {.importc, cdecl,
     header: "<unistd.h>".}
 
   proc enterBufferSandbox*() =
     # take whatever we need to send/receive fds
-    doAssert pledge("stdio sendfd recvfd", nil) == 0
+    chaAssert pledge("stdio sendfd recvfd", nil) == 0
 
   proc enterNetworkSandbox*() =
     # we don't need much to write out data from sockets to stdout.
-    doAssert pledge("stdio", nil) == 0
+    chaAssert pledge("stdio", nil) == 0
 
 elif SandboxMode == stSeccomp:
-  when NimMajor >= 2:
-    import std/assertions
+  import utils/assert
 
   proc sourceParent(): string =
     var s = currentSourcePath()
@@ -93,10 +91,10 @@ elif SandboxMode == stSeccomp:
   proc cha_enter_network_sandbox(): cint {.importc, cdecl.}
 
   proc enterBufferSandbox*() =
-    doAssert cha_enter_buffer_sandbox() == 1
+    chaAssert cha_enter_buffer_sandbox() == 1
 
   proc enterNetworkSandbox*() =
-    doAssert cha_enter_network_sandbox() == 1
+    chaAssert cha_enter_network_sandbox() == 1
 
 else:
   {.warning: "Building without syscall sandboxing!".}

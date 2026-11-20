@@ -233,7 +233,7 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: ParentNode) =
     element.resetElement(builder.ctx)
   elif (let script = element as HTMLScriptElement; script != nil):
     if document.scriptingEnabled:
-      assert builder.poppedScript == nil
+      chaAssert builder.poppedScript == nil
       inc document.throwOnDynamicMarkupInsertion
       #TODO I think this has to be moved for custom elements
       let rt = JS_GetRuntime(builder.ctx)
@@ -303,7 +303,7 @@ proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
   var parser = initHTML5Parser(builder, opts)
   let res = parser.parseChunk(s)
   # scripting is false and confidence is certain -> this must be continue
-  assert res == pcrContinue
+  chaAssert res == pcrContinue
   parser.finish()
   builder.finish()
   return root.asParentNode.getChildList()
@@ -347,13 +347,13 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
         let script = move(document.parserBlockingScript)
         #TODO style sheet
         script.execute()
-        assert document.parserBlockingScript != script
+        chaAssert document.parserBlockingScript != script
       if builder.stoppedFromScript:
         # document.write inserted a meta charset tag
         break
-      assert document.writeBuffersTop.toOpenArray().len == 0
+      chaAssert document.writeBuffersTop.toOpenArray().len == 0
       document.writeBuffersTop = document.writeBuffersTop.prev
-      assert document.writeBuffersTop == nil
+      chaAssert document.writeBuffersTop == nil
       if ip == buffer.len:
         # script was at the end of the buffer; nothing to parse
         break
@@ -381,13 +381,13 @@ proc parseDocumentWriteChunk(wrapper: RootRef) {.exportc: "cha_$1".} =
           let script = move(document.parserBlockingScript)
           #TODO style sheet
           script.execute()
-          assert document.parserBlockingScript != script
+          chaAssert document.parserBlockingScript != script
       res = wrapper.parser.parseChunk(buffer.toOpenArray())
       if res != pcrScript:
         break
-    assert document.writeBuffersTop.i == document.writeBuffersTop.data.len
+    chaAssert document.writeBuffersTop.i == document.writeBuffersTop.data.len
     document.writeBuffersTop = document.writeBuffersTop.prev
-  assert builder.poppedScript == nil
+  chaAssert builder.poppedScript == nil
   buffer.i = buffer.data.len
   if res == pcrStop:
     builder.stoppedFromScript = true
@@ -403,7 +403,7 @@ proc parseHTMLDocument*(ctx: JSContext; str: openArray[char]; url: URL):
     return Document(nil)
   var parser = initHTML5Parser(builder, HTML5ParserOpts[ParentNode]())
   let res = parser.parseChunk(str)
-  assert res == pcrContinue
+  chaAssert res == pcrContinue
   parser.finish()
   builder.finish()
   return builder.document

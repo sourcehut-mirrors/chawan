@@ -1,8 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import std/posix
 
 import config/mimetypes
@@ -23,6 +20,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/opt
@@ -110,7 +108,7 @@ proc sread*(r: var PacketReader; blob: var Blob): PacketCode =
   ?r.sread(isWebFile)
   blob = if isWebFile: (jsNew WebFileObj()).asBlob else: jsNew BlobObj()
   #TODO allocation error
-  assert blob != nil
+  chaAssert blob != nil
   if isWebFile:
     let file = WebFile(blob)
     var hasFd: bool
@@ -191,7 +189,7 @@ proc init(ctx: JSContext; blob: Blob; parts: seq[BlobPart];
     let n = ctx.getBase(part, p)
     if n < 0:
       return err()
-    assert i + n <= len
+    chaAssert i + n <= len
     copyMem(addr buffer[i], p, n)
     i += n
   blob.size = len

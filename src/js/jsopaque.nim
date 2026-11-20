@@ -1,12 +1,11 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 
 import js/constcharp
 import js/jstypes
 import js/quickjs
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -214,7 +213,7 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
     let val = JS_Eval(ctx, ss.toCStringConst, csize_t(ss.len),
       cstringConst("<init>"), 0)
     if not JS_IsException(val.vc):
-      assert JS_IsObject(val.vc)
+      chaAssert JS_IsObject(val.vc)
       it = traceObj(val)
     else:
       fail = true
@@ -223,7 +222,7 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
     let val = JS_Eval(ctx, ss.toCStringConst, csize_t(ss.len),
       cstringConst("<init>"), 0)
     if not JS_IsException(val.vc):
-      assert JS_IsFunction(ctx, val.vc)
+      chaAssert JS_IsFunction(ctx, val.vc)
       it = traceCallback(val)
     else:
       fail = true

@@ -1,9 +1,8 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 
+import utils/assert
 import utils/opt
 
 const AllChars* = {char.low..char.high}
@@ -630,7 +629,7 @@ iterator mritems*[T](a: var openArray[T]): var T {.inline.} =
     yield a[i]
 
 proc chaArrayCopy*[T](dest: var openArray[T]; src: openArray[T]) =
-  assert dest.len == src.len
+  chaAssert dest.len == src.len
   if dest.len > 0:
     copyMem(addr dest[0], unsafeAddr src[0], dest.len * sizeof(T))
 

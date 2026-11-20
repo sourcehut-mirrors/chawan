@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/macros
 import std/math
@@ -30,6 +28,7 @@ import js/quickjs
 import js/tojs
 import server/headers
 import server/url
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/dtoawrap
@@ -530,9 +529,9 @@ proc getClassID(t: typedesc[Config]): JSClassID
 proc getClassID*(t: typedesc[ActionMap]): JSClassID
 
 static:
-  doAssert sizeof(ConfigOptionBit) == 1
-  doAssert sizeof(ConfigOptionHWord) == 4
-  doAssert sizeof(ConfigOptionWord) == 8
+  chaAssert sizeof(ConfigOptionBit) == 1
+  chaAssert sizeof(ConfigOptionHWord) == 4
+  chaAssert sizeof(ConfigOptionWord) == 8
 
 proc parseOption(s: openArray[char]): Opt[ConfigOption] =
   return strictParseEnum[ConfigOption](s)
@@ -1303,7 +1302,7 @@ proc consumeString(cp: var ConfigParser; line: Str; first: char; n: int):
         return ok(n)
       if n + 1 < line.len and line[n] == first and line[n + 1] == first:
         n += 2
-        doAssert cp.states.pop() in {tsMultiStringSimple, tsMultiStringDouble}
+        chaAssert cp.states.pop() in {tsMultiStringSimple, tsMultiStringDouble}
         return ok(n)
       cp.buf &= c
     elif first == '"' and c == '\\':
@@ -2055,10 +2054,10 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
         rule.fun = move(entry.fun)
       of cocClear: config.lists[section].clear(JS_GetRuntime(ctx))
       else:
-        assert opt in SiteconfOptions
+        chaAssert opt in SiteconfOptions
         rule.entries.add(entry)
   elif section == csCmd:
-    assert entry.t == cocCmdInit
+    chaAssert entry.t == cocCmdInit
     if config.cmdInit.len == 0:
       config.cmdInit = move(entry.cmdInit)
     else:
@@ -2079,7 +2078,7 @@ proc applyEntry(ctx: JSContext; config: Config; entry: var ConfigEntry) =
         for it in init.s:
           config.defaultHeaders[it.name] = it.value
     of cocURL: config.proxy = move(entry.url)
-    of cocClear, cocRegex, cocFunction, cocCmdInit: assert false
+    of cocClear, cocRegex, cocFunction, cocCmdInit: chaAssert false
 
 proc applyEntries(ctx: JSContext; config: Config;
     entries: var seq[ConfigEntry]) =

@@ -1,42 +1,40 @@
-when NimMajor >= 2:
-  import std/assertions
-
 import std/os
 import std/streams
 
 import encoding/charset
 import encoding/decoder
 import encoding/encoder
+import utils/assert
 import utils/cowstr
 
 let dir = getEnv("CGS_TESTDIR")
 
-proc runTestIn(test_in, test_in_ref: FileStream; label: string) =
-  let cs = getCharset(newStr(label))
-  assert cs != csUnknown
+proc runTestIn(test_in, test_in_ref: FileStream; label: cstring) =
+  let cs = getCharset(label.toStr())
+  chaAssert cs != csUnknown
   let s = test_in.readAll()
   let ours = s.decodeAll(cs)
   let theirs = newStr(test_in_ref.readAll())
   if ours != theirs:
     echo "ours vs theirs len ", ours.len, " ", theirs.len
-    let helpfile = newFileStream(dir / "fail_in_" & label, fmWrite)
+    let helpfile = newFileStream(dir / "fail_in_" & $label, fmWrite)
     helpfile.write($ours)
-    assert false, "Failed in test " & label
+    chaAssert false, initStrM("Failed in test ", label)
 
-proc runTestOut(test_out, test_out_ref: FileStream; label: string) =
-  let cs = getCharset(newStr(label))
-  assert cs != csUnknown
+proc runTestOut(test_out, test_out_ref: FileStream; label: cstring) =
+  let cs = getCharset(label.toStr())
+  chaAssert cs != csUnknown
   let s = test_out.readAll()
   let ours = s.encodeAll(cs)
   let theirs = test_out_ref.readAll()
   let match = ours == theirs
   if not match:
     echo "ours vs theirs len ", ours.len, " ", theirs.len
-    let helpfile = newFileStream(dir / "fail_out_" & label, fmWrite)
+    let helpfile = newFileStream(dir / "fail_out_" & $label, fmWrite)
     helpfile.write(ours)
-    assert false, "Failed out test " & label
+    chaAssert false, initStrM("Failed out test ", label)
 
-proc runTest(name, label: string; no_out = false) =
+proc runTest(name: string; label: cstring; no_out = false) =
   let test_in = newFileStream(dir / name & "_in.txt")
   let test_in_ref = newFileStream(dir / name & "_in_ref.txt")
   runTestIn(test_in, test_in_ref, label)

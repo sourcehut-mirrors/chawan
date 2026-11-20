@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import config/config
@@ -25,6 +23,7 @@ import server/loader
 import server/loaderiface
 import server/request
 import server/url
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/opt
@@ -184,7 +183,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
     launchBuffer(rt, config, url, attrs, ishtml, charsetStack, loader, pstream,
       istream, urandom, cacheId, contentType, move(ctx.linkHintChars),
       move(ctx.schemes))
-    doAssert false
+    chaAssert false
   discard close(fd)
   return pid
 

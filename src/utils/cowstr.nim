@@ -1,12 +1,10 @@
 {.push raises: [], gcsafe.}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import std/macros
 import std/math
 
 import js/constcharp
+import utils/assert
 import utils/macroutil
 import utils/opt
 import utils/twtstr
@@ -253,11 +251,11 @@ proc initStrLit*(p: cstring; len: int): Str =
   Str(p: p, ilen: len or tag)
 
 proc initStr(p: cstring; len: int): Str =
-  assert len >= 0
+  chaAssert len >= 0
   if len == 0:
     return initStrLit(p, len)
   else:
-    assert len <= MaxLen
+    chaAssert len <= MaxLen
     {.push overflowChecks: off.}
     let lenz = len + 1 # for NUL term
     {.pop.}
@@ -472,7 +470,7 @@ proc cmp*(a: openArray[char]; b: Str): int =
   cmpStr(a, b.toOpenArray())
 
 proc `[]`*(s: Str; n: int): char {.inline.} =
-  assert n >= 0 and n < s.len
+  chaAssert n >= 0 and n < s.len
   s.p[n]
 
 proc `[]`*(s: Str; n: BackwardsIndex): char {.inline.} =
@@ -1143,6 +1141,14 @@ proc convertSize*(size: uint64): Str =
   res.setLen(max(n, 0))
   res.toStr()
 
+template chaAssert*(cond: untyped; msg: Str) =
+  let msg2 = msg
+  chaAssert(cond, msg2.toCString(), msg2.len)
+
+template chaDebugAssert*(cond: untyped; msg: Str) =
+  let msg2 = msg
+  chaDebugAssert(cond, msg2.toCString(), msg2.len)
+
 # StrNil
 template asStr*(s: StrNil): Str =
   Str(s)
@@ -1193,7 +1199,7 @@ iterator mpairs*(s: Growbuf): tuple[key: int; c: var char] =
 
 proc reserveImpl(dst: var Growbuf; nlen: int) =
   # cap length incl. NUL-term to max string length
-  assert (nlen or 3) <= MaxLen
+  chaAssert (nlen or 3) <= MaxLen
   let nlen = (nlen or 3) + 1
   if dst.p == nil:
     let cap = nlen
@@ -1228,7 +1234,7 @@ proc initGrowbuf*(): Growbuf =
   Growbuf()
 
 proc initGrowbufOfCap*(len: int): Growbuf =
-  assert len >= 0
+  chaAssert len >= 0
   var buf = initGrowbuf()
   buf.reserve(len)
   move(buf)
@@ -1293,7 +1299,7 @@ proc add*(dst: var Growbuf; src: openArray[char]) =
     dst.ilen = csize_t(dstLen)
 
 proc setLenUninit*(buf: var Growbuf; len: int) =
-  assert len >= 0
+  chaAssert len >= 0
   buf.reserve(len)
   buf.ilen = csize_t(len)
 
@@ -1395,18 +1401,18 @@ proc addUTF8*(res: var Growbuf; us: openArray[uint32]) =
     res.addUTF8(u)
 
 proc `[]`*(buf: var Growbuf; n: int): var char {.inline.} =
-  assert n >= 0 and n < buf.len
+  chaAssert n >= 0 and n < buf.len
   buf.p[n]
 
 proc `[]`*(buf: Growbuf; n: int): char {.inline.} =
-  assert n >= 0 and n < buf.len
+  chaAssert n >= 0 and n < buf.len
   buf.p[n]
 
 proc `[]`*(buf: var Growbuf; n: BackwardsIndex): var char {.inline.} =
   buf[buf.len - int(n)]
 
 proc `[]=`*(buf: var Growbuf; n: int; c: char) {.inline.} =
-  assert n >= 0 and n < buf.len
+  chaAssert n >= 0 and n < buf.len
   buf.p[n] = c
 
 proc `[]=`*(buf: var Growbuf; n: BackwardsIndex; c: char) {.inline.} =
@@ -1450,7 +1456,7 @@ proc startsWithIgnoreCase*(a: Growbuf; b: openArray[char]): bool =
 proc insert*(buf: var Growbuf; s: Str; i = 0) =
   let bufLen = buf.len
   let slen = s.len
-  assert i >= 0 and i <= bufLen
+  chaAssert i >= 0 and i <= bufLen
   if slen > 0:
     buf.setLenUninit(bufLen + slen)
     moveMem(addr buf.p[i + slen], unsafeAddr buf[i], bufLen - i)

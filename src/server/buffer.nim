@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/macros
 import std/posix
 
@@ -47,6 +45,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/assert
 import utils/cowstr
 import utils/lrewrap
 import utils/luwrap
@@ -499,14 +498,14 @@ proc hasTask(handle: PagerHandle; cmd: BufferCommand): bool =
 
 proc resolveTask(handle: PagerHandle; cmd: BufferCommand) =
   let packetid = handle.tasks[cmd]
-  assert packetid != 0
+  chaAssert packetid != 0
   handle.stream.withPacketWriterFire wt:
     wt.swrite(packetid)
   handle.tasks[cmd] = 0
 
 proc resolveTask[T](handle: PagerHandle; cmd: BufferCommand; res: T) =
   let packetid = handle.tasks[cmd]
-  assert packetid != 0
+  chaAssert packetid != 0
   handle.stream.withPacketWriterFire wt:
     wt.swrite(packetid)
     wt.swrite(res)
@@ -555,7 +554,7 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
     var plaintext = bc.document.findFirst(ttPlaintext)
     if plaintext == nil:
       const s = "<plaintext>"
-      doAssert bc.htmlParser.parseBuffer(s) != pcrStop
+      chaAssert bc.htmlParser.parseBuffer(s) != pcrStop
       plaintext = bc.document.findFirst(ttPlaintext)
     if data.len > 0:
       let lastText = plaintext.asParentNode.lastChild as Text
@@ -718,7 +717,7 @@ proc dispatchLoadEvent(bc: BufferContext) =
 proc finishLoad(bc: BufferContext; data: InputData) =
   if bc.ctx.td.charset != csUnknown:
     for chunk in bc.ctx.decode([], finish = true):
-      doAssert bc.processData0(chunk)
+      chaAssert bc.processData0(chunk)
   bc.htmlParser.finish()
   bc.document.readyState = rsInteractive
   bc.loader.unregister(data)
@@ -985,7 +984,7 @@ proc toNameValuePairs(list: seq[FormDataEntry]): seq[tuple[name, value: Str]] =
 proc makeFormRequest(bc: BufferContext; parsedAction: URL;
     httpMethod: HttpMethod; entryList: var seq[FormDataEntry];
     enctype: FormEncodingType): Request =
-  assert httpMethod in {hmGet, hmPost}
+  chaAssert httpMethod in {hmGet, hmPost}
   case parsedAction.schemeType
   of stFtp, stJavascript:
     return newRequest(parsedAction) # get action URL
@@ -1592,7 +1591,7 @@ proc onReshape(bc: BufferContext; handle: PagerHandle) {.proxy: pfTask.} =
     # the buffer were to be reshaped between two onReshape requests.
     handle.onReshapeImmediately = false
     return
-  assert handle.tasks[bcOnReshape] == 0
+  chaAssert handle.tasks[bcOnReshape] == 0
   bc.savetask = true
 
 proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
@@ -1601,14 +1600,16 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
   let body = bc.document.findFirst(ttBody)
   if body == nil:
     return
-  var buf = initGrowbuf('(')
-  for i, scheme in bc.schemes.mypairs:
-    if i > 0:
-      buf &= '|'
-    buf &= scheme
-  buf &= r"):(//[\w%:.-]+)?[\w/@%:.~-]*\??[\w%:~.=&-]*#?[\w:~.=-]*[\w/~=-]"
+  let rebuf = block:
+    var buf = initGrowbuf('(')
+    for i, scheme in bc.schemes.mypairs:
+      if i > 0:
+        buf &= '|'
+      buf &= scheme
+    buf &= r"):(//[\w%:.-]+)?[\w/@%:.~-]*\??[\w%:~.=&-]*#?[\w:~.=-]*[\w/~=-]"
+    buf.toStr()
   var regex: Regex
-  doAssert compileRegex(buf.toStr(), {LRE_FLAG_GLOBAL}, regex)
+  chaAssert compileRegex(rebuf, {LRE_FLAG_GLOBAL}, regex)
   # Dummy element for the fragment parsing algorithm. We can't just use parent
   # there, because e.g. plaintext would not parse the text correctly.
   let ctx = bc.window.jsctx
@@ -1814,7 +1815,7 @@ proc handleRead(bc: BufferContext; fd: cint): bool =
     else:
       bc.loader.onRead(fd)
   else:
-    assert false
+    chaAssert false
   true
 
 proc handleError(bc: BufferContext; fd: cint): bool =
@@ -1829,9 +1830,9 @@ proc handleError(bc: BufferContext; fd: cint): bool =
     else:
       if not bc.loader.onError(fd):
         #TODO handle connection error
-        assert false, $fd
+        chaAssert false, fd.toStr()
   else:
-    assert false, $fd
+    chaAssert false, fd.toStr()
   true
 
 proc getPollTimeout(bc: BufferContext): cint =

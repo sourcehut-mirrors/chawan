@@ -1,12 +1,10 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import std/algorithm
 
 import js/libregexp
 import js/libunicode
+import utils/assert
 import utils/cowstr
 import utils/twtstr
 
@@ -50,7 +48,7 @@ proc addUTF8*(buf: var Growbuf; us: CodeArray) =
   buf.addUTF8(us.toOpenArray())
 
 proc `[]`*(ca: CodeArray; n: int): uint32 {.inline.} =
-  assert n >= 0 and n < ca.len
+  chaAssert n >= 0 and n < ca.len
   ca.p[n]
 
 proc `==`*(a: openArray[uint32]; b: CodeArray): bool =
@@ -152,14 +150,14 @@ proc initGeneralCategory(ctx: LUContext; lur: LURangeType) =
   if lur notin ctx.inited:
     let p = addr ctx.crs[lur]
     cr_init(p, nil, passRealloc)
-    doAssert unicode_general_category(p, cstring($lur)) == 0
+    chaAssert unicode_general_category(p, cstring($lur)) == 0
     ctx.inited.incl(lur)
 
 proc initProp(ctx: LUContext; lur: LURangeType) =
   if lur notin ctx.inited:
     let p = addr ctx.crs[lur]
     cr_init(p, nil, passRealloc)
-    doAssert unicode_prop(p, cstring($lur)) == 0
+    chaAssert unicode_prop(p, cstring($lur)) == 0
     ctx.inited.incl(lur)
 
 proc isAlpha*(ctx: LUContext; u: uint32): bool =

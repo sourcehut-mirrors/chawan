@@ -1,8 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import html/catom
 import html/domexception
 import html/script
@@ -15,6 +12,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/opt
@@ -1023,7 +1021,7 @@ jsClassPublicDef(EventTarget):
 proc addEventGetSetImpl*(ctx: JSContext; obj: JSObject; id: JSClassID;
     atoms: openArray[StaticAtom]; get: JSGetterMagicFunction;
     set: JSSetterMagicFunction): Opt[void] =
-  assert ctx.isInstanceOf(id, EventTargetDef.id)
+  chaAssert ctx.isInstanceOf(id, EventTargetDef.id)
   for atom in atoms:
     let name = initStrM("on", atom.toStr())
     ?ctx.definePropertyGetSetCE(obj, name.toCString(), get, set, cint(atom))

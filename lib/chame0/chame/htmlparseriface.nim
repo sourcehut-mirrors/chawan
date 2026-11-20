@@ -38,14 +38,13 @@ when defined(nimdocdummy):
     AtomImpl = int
     DOMBuilderImpl = DOMBuilder[HandleImpl]
 
-when NimMajor >= 2:
-  import std/assertions
+import utils/assert
 
 # DOMBuilder
 static:
   # DOMBuilderImpl must be an instance of DOMBuilder with the handle type
   # HandleImpl and atom type AtomImpl.
-  doAssert DOMBuilderImpl is DOMBuilder[HandleImpl]
+  chaAssert DOMBuilderImpl is DOMBuilder[HandleImpl]
 
 {.push objChecks: off.}
 template toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl]): DOMBuilderImpl =

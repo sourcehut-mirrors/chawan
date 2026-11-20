@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 import std/termios
 
@@ -17,6 +15,7 @@ import io/dynstream
 import io/poll
 import js/jsref
 import server/loaderiface
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/opt
@@ -605,7 +604,7 @@ proc flush*(term: Terminal): Opt[bool] =
   while true:
     var page = term.frames[ftCurrent].head
     if page == nil:
-      assert term.frameType != ftNext
+      chaAssert term.frameType != ftNext
     while page != nil:
       var n = page.n
       let H = page.a.len - 1
@@ -711,7 +710,7 @@ proc blockIO0(term: Terminal) =
 proc blockIO(term: Terminal): Opt[void] =
   term.istream.setBlocking(true)
   term.ostream.setBlocking(true)
-  doAssert ?term.flush()
+  chaAssert ?term.flush()
   ok()
 
 proc unblockIO(term: Terminal) =
@@ -1456,7 +1455,7 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
     of cmEightBit:
       return cellColor(newrgb.toEightBit())
     of cmMonochrome:
-      assert false
+      chaAssert false
   return cfgcolor
 
 proc writeColorSGR(term: Terminal; c: CellColor; bgmod: uint8): Opt[void] =
@@ -1665,7 +1664,7 @@ proc processOutputString*(term: Terminal; s: openArray[char];
     return term.write('?')
   if trackCursor:
     for u in s.points:
-      assert u > 0x9F or u != 0x7F and u > 0x1F
+      chaAssert u > 0x9F or u != 0x7F and u > 0x1F
       term.frame.cursorx += uint32(u.width())
   if term.cs == csUtf8:
     # The output encoding matches the internal representation.
@@ -2259,12 +2258,12 @@ proc outputImages(term: Terminal): Opt[void] =
     term.frame.kittyImagesToClear.setLen(0)
   for image in term.frame.canvasImages:
     if image.damaged:
-      assert image.dims.dispw > 0 and image.dims.disph > 0
+      chaAssert image.dims.dispw > 0 and image.dims.disph > 0
       ?term.resetScrollArea()
       let x = max(image.dims.x, 0)
       let y = max(image.dims.y, 0)
       case term.imageMode
-      of imNone: assert false
+      of imNone: chaAssert false
       of imSixel: ?term.outputSixelImage(x, y, image)
       of imKitty: ?term.outputKittyImage(x, y, image)
       image.damaged = false

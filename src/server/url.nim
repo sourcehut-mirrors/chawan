@@ -2,8 +2,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 
 import io/packetreader
@@ -20,6 +18,7 @@ import js/jsutils
 import js/libunicode
 import js/quickjs
 import js/tojs
+import utils/assert
 import utils/cowstr
 import utils/luwrap
 import utils/opt
@@ -628,7 +627,7 @@ proc parseRelative(input: openArray[char]; n: var int; base, url: URL):
     URLState =
   url.scheme = base.scheme
   url.schemeType = base.schemeType
-  assert url.schemeType != stFile
+  chaAssert url.schemeType != stFile
   if n < input.len and input[n] == '/' or
       url.isSpecial and n < input.len and input[n] == '\\':
     n = input.skipURLBlanks(n + 1)

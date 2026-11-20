@@ -54,13 +54,12 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/bitops
 
 import encoding/charset
 import encoding/charset_map
+import utils/assert
 
 type
   TextDecoderResult* = enum
@@ -122,7 +121,7 @@ template try_put_utf8(oq: var openArray[uint8]; c: uint32; n: var int) =
     oq[n] = uint8(c and 0x3F or 0x80)
     inc n
   else:
-    assert c <= 0x10FFFF
+    chaAssert c <= 0x10FFFF
     if n + 3 >= oq.len:
       return tdrReqOutput
     oq[n] = uint8(c shr 18 or 0xF0)

@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/macros
 import std/typetraits
@@ -14,6 +12,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -502,7 +501,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       if not other.sameType(jsDictType) and not jsDictType.sameType(other):
         identDefsStack.add(other.getTypeInst().getImpl()[2][2])
     else:
-      assert def.kind == nnkIdentDefs
+      chaAssert def.kind == nnkIdentDefs
       var fallback: NimNode = nil
       var name = def[0]
       if name.kind == nnkPragmaExpr:

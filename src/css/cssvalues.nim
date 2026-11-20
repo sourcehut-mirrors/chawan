@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/macros
 import std/math
@@ -11,6 +9,7 @@ import css/color
 import css/cssparser
 import css/lunit
 import html/catom
+import utils/assert
 import utils/chahash
 import utils/cowstr
 import utils/dtoawrap
@@ -493,10 +492,10 @@ proc newCSSCounterSet*(s: varargs[CSSCounterSet]): CSSCounterSetList =
   CSSCounterSetList(s: @s)
 
 static:
-  doAssert sizeof(CSSValueBit) == 1
-  doAssert sizeof(CSSValueHWord) <= 4
-  doAssert sizeof(CSSValueWord) <= 8
-  doAssert sizeof(CSSComputedEntry()) <= 16
+  chaAssert sizeof(CSSValueBit) == 1
+  chaAssert sizeof(CSSValueHWord) <= 4
+  chaAssert sizeof(CSSValueWord) <= 8
+  chaAssert sizeof(CSSComputedEntry()) <= 16
 
 const ValueTypes = [
   # bits
@@ -937,14 +936,14 @@ proc addProperty(buf: var Growbuf; val: CSSValueHWord; t: CSSValueType) =
     buf.addDouble(val.lineWidth)
     buf &= "px"
   else:
-    assert false
+    chaAssert false
 
 proc addProperty(buf: var Growbuf; val: CSSValueWord; t: CSSValueType) =
   case t
   of cvtColor: buf &= val.color
   of cvtLength: buf &= val.length
   of cvtZIndex: buf &= val.zIndex
-  else: assert false
+  else: chaAssert false
 
 proc addProperty(buf: var Growbuf; val: CSSValueBit; t: CSSValueType) =
   case t
@@ -974,7 +973,7 @@ proc addProperty(buf: var Growbuf; val: CSSValueBit; t: CSSValueType) =
   of cvtWhiteSpace: buf &= $val.whiteSpace
   of cvtWordBreak: buf &= $val.wordBreak
   else:
-    assert false
+    chaAssert false
 
 proc addProperty(buf: var Growbuf; computed: CSSValues; p: CSSPropertyType) =
   case p.reprType

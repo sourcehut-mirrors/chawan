@@ -3,10 +3,8 @@
 
 {.passc: "-D_DARWIN_UNLIMITED_SELECT".}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import std/posix
+import utils/assert
 
 type PollData* = object
   currentFd: cint
@@ -71,7 +69,7 @@ proc register*(ctx: var PollData; fd: cint; events: cshort) =
       ctx.fds.setLen(64)
     else:
       ctx.fds.setLen(max(ctx.fds.len * 2, ((infds + 7) div 8) * 8))
-    assert ctx.fds.len mod 8 == 0
+    chaAssert ctx.fds.len mod 8 == 0
     let sz = ctx.fds.len div 8
     ctx.readPool.setLen(sz)
     ctx.writePool.setLen(sz)

@@ -2,11 +2,11 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import lcgi
+
+import utils/assert
 
 # libssh2 bindings
 
@@ -367,7 +367,7 @@ Please try to connect to the server once with SSH:
 ssh """, host, " -p ", port))
     quit(1)
   else:
-    assert check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH
+    chaAssert check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH
     discard os.writeLoop(initStrM("""
 Content-Type: text/html
 

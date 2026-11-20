@@ -1,7 +1,5 @@
-when NimMajor >= 2:
-  import std/assertions
-
 import std/strutils
+import std/unittest
 
 import encoding/charset
 import encoding/decoder
@@ -21,7 +19,7 @@ proc testCJK() =
     else:
       iroha
     let sdecoded = sencoded.toOpenArray().decodeAll(cs)
-    assert sdecoded == iroha
+    check sdecoded == iroha
     var ctx = initTextDecoderContext(cs)
     var dec2 = initGrowbuf()
     for i in 0 ..< 100:
@@ -30,7 +28,7 @@ proc testCJK() =
         dec2 &= slice
       for slice in ctx.decode([], finish = true):
         dec2 &= slice
-    assert dec2 == iroha100
+    check dec2 == iroha100
 
 proc testUTF8Parts() =
   # Validate "Hellö, world!".
@@ -38,18 +36,18 @@ proc testUTF8Parts() =
   var td = initTextDecoder(csUtf8)
   var n = 0
   var oq = newSeq[uint8](16)
-  assert td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrReadInput
+  check td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrReadInput
   # read Hell (0xC3 is not consumed yet)
-  assert td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrDone
+  check td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrDone
   # n is still 0, but 0xC3 is now buffered
-  assert n == 0
+  check n == 0
   # read 0xB6 + , world! => Hellö world!
   let ss1 = "\xB6, world!\xC3"
-  assert td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n) == tdrReadInput
+  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n) == tdrReadInput
   # 0xC3 got moved from the internal buffer to oq
-  assert n == 1
-  assert oq[0] == 0xC3
-  assert td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n,
+  check n == 1
+  check oq[0] == 0xC3
+  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n,
     finish = true) == tdrError
 
 proc testUTF8Valid() =
@@ -62,15 +60,15 @@ proc testUTF8Valid() =
     "\u1F972"
   ]
   for s in utf8_valid:
-    assert newStr(s).toValidUTF8() == s
-    assert $newStr(s).toValidUTF8() & 'x' == s & 'x'
+    check newStr(s).toValidUTF8() == s
+    check $newStr(s).toValidUTF8() & 'x' == s & 'x'
     var oq {.noinit.}: array[3, uint8]
     var ctx = initTextDecoderContext(csUtf8)
     block:
       var res = initGrowbuf()
       for s in ctx.decode(s.toOpenArrayByte(0, s.high), oq, finish = true):
         res &= s
-      assert res == s
+      check res == s
     for j in 2 .. 10:
       var res = initGrowbuf()
       var i = 0
@@ -79,7 +77,7 @@ proc testUTF8Valid() =
             oq, finish = i + j >= s.len):
           res &= s
         i += j
-      assert res == s
+      check res == s
 
 proc testUTF8Invalid() =
   const utf8_error = {
@@ -93,8 +91,8 @@ proc testUTF8Invalid() =
     "aaaaaaaaa\xC8": "aaaaaaaaa\uFFFD", # valid before invalid
   }
   for (s, t) in utf8_error:
-    assert newStr(s).toValidUTF8() == t
-    assert newStr(s & 'x').toValidUTF8() == t & 'x'
+    check newStr(s).toValidUTF8() == t
+    check newStr(s & 'x').toValidUTF8() == t & 'x'
     block:
       var ctx = initTextDecoderContext(csUtf8)
       var oq {.noinit.}: array[2, uint8]
@@ -102,7 +100,7 @@ proc testUTF8Invalid() =
       for i in 0 ..< s.len:
         for s in ctx.decode([uint8(s[i])], oq, finish = i == s.high):
           res &= s
-      assert res == t
+      check res == t
     block:
       var ctx = initTextDecoderContext(csUtf8)
       var oq {.noinit.}: array[2, uint8]
@@ -113,7 +111,7 @@ proc testUTF8Invalid() =
             finish = i + 2 >= s.len):
           res &= s
         i += 2
-      assert res == t
+      check res == t
 
 proc testUTF16be() =
   const list = {
@@ -125,7 +123,7 @@ proc testUTF16be() =
     "\xD8\x3E\xDD\x72": "\u{1F972}", # paired surrogates
   }
   for (s, t) in list:
-    assert s.decodeAll(csUtf16be) == t
+    check s.decodeAll(csUtf16be) == t
 
 proc testUTF16le() =
   const list = {
@@ -137,7 +135,7 @@ proc testUTF16le() =
     "\x3E\xD8\x72\xDD": "\u{1F972}", # paired surrogates
   }
   for (s, t) in list:
-    assert s.decodeAll(csUtf16le) == t
+    check s.decodeAll(csUtf16le) == t
   var s = ""
   var s8 = ""
   for i in 0 ..< 10:
@@ -148,7 +146,7 @@ proc testUTF16le() =
   var res = initGrowbuf()
   for s in ctx.decode(s.toOpenArrayByte(0, s.high), oq, finish = true):
     res &= s
-  assert res == s8
+  check res == s8
 
 const tisztaszivvel = """
 Nincsen apám, se anyám,
@@ -175,7 +173,7 @@ gyönyörűszép szívemen.
 proc testWindows1250() =
   let sencoded = tisztaszivvel.encodeAll(csWindows1250)
   let sdecoded = sencoded.toOpenArray().decodeAll(csWindows1250)
-  assert sdecoded == tisztaszivvel
+  check sdecoded == tisztaszivvel
 
 const erlkoenig = """
 Wer reitet so spät durch Nacht und Wind?
@@ -222,20 +220,20 @@ In seinen Armen, das Kind war tot.
 proc testWindows1252() =
   let sencoded = erlkoenig.encodeAll(csWindows1252)
   let sdecoded = sencoded.toOpenArray().decodeAll(csWindows1252)
-  assert sdecoded == erlkoenig
+  check sdecoded == erlkoenig
 
 proc testIso8859_2() =
   let sencoded = tisztaszivvel.encodeAll(csIso8859_2)
   let sdecoded = sencoded.toOpenArray().decodeAll(csIso8859_2)
-  assert sdecoded == tisztaszivvel
+  check sdecoded == tisztaszivvel
 
 proc testGetLocaleCharset() =
-  assert getLocaleCharset(str("ja_JP.EUC_JP")) == csEucJP
-  assert getLocaleCharset(str("ja_JP.UTF-8")) == csUtf8
-  assert getLocaleCharset(str("")) == csUtf8
+  check getLocaleCharset(str("ja_JP.EUC_JP")) == csEucJP
+  check getLocaleCharset(str("ja_JP.UTF-8")) == csUtf8
+  check getLocaleCharset(str("")) == csUtf8
 
 proc testShiftJIS() =
-  assert "\u2212".encodeAll(csShiftJIS) ==
+  check "\u2212".encodeAll(csShiftJIS) ==
     "\uFF0D".encodeAll(csShiftJIS)
 
 proc testUTF8InvalidStream() =
@@ -243,31 +241,31 @@ proc testUTF8InvalidStream() =
   var res = initGrowbuf()
   for slice in ctx.decode("\xc0a".toOpenArrayByte(0, 0), finish = false):
     res &= slice
-  assert res == "\uFFFD"
+  check res == "\uFFFD"
 
 proc testIso2022JP() =
-  assert "\x1B\x24".decodeAll(csIso2022JP) == "\uFFFD$"
-  assert "\x1B\x28".decodeAll(csIso2022JP) == "\uFFFD("
-  assert "ｶﾀｶﾅ".encodeAll(csIso2022JP) == "\e$B%+%?%+%J\e(B"
-  assert "\x1B\x24\x50".decodeAll(csIso2022JP) == "\uFFFD$P"
-  assert "\x1B\x28\x42\x50".decodeAll(csIso2022JP) == "P"
-  assert "\x1B\x21".decodeAll(csIso2022JP) == "\uFFFD!"
+  check "\x1B\x24".decodeAll(csIso2022JP) == "\uFFFD$"
+  check "\x1B\x28".decodeAll(csIso2022JP) == "\uFFFD("
+  check "ｶﾀｶﾅ".encodeAll(csIso2022JP) == "\e$B%+%?%+%J\e(B"
+  check "\x1B\x24\x50".decodeAll(csIso2022JP) == "\uFFFD$P"
+  check "\x1B\x28\x42\x50".decodeAll(csIso2022JP) == "P"
+  check "\x1B\x21".decodeAll(csIso2022JP) == "\uFFFD!"
 
 proc testGb18030() =
   # surrogate
   let sencoded = "\uD800".encodeAll(csGb18030)
   let sdecoded = sencoded.toOpenArray().decodeAll(csGb18030)
-  assert sdecoded == "\uFFFD\uFFFD\uFFFD"
+  check sdecoded == "\uFFFD\uFFFD\uFFFD"
   # ranges
   let first = "\u0080".encodeAll(csGb18030)
-  assert first == "\x81\x30\x81\x30"
-  assert first.toOpenArray().decodeAll(csGb18030) == "\u0080"
+  check first == "\x81\x30\x81\x30"
+  check first.toOpenArray().decodeAll(csGb18030) == "\u0080"
   let last = "\u{10000}".encodeAll(csGb18030)
-  assert last == "\x90\x30\x81\x30"
-  assert last.toOpenArray().decodeAll(csGb18030) == "\u{10000}"
-  assert "\xfe\x39\xfe\x40".decodeAll(csGb18030) == "\uFFFD9\uFA0C"
+  check last == "\x90\x30\x81\x30"
+  check last.toOpenArray().decodeAll(csGb18030) == "\u{10000}"
+  check "\xfe\x39\xfe\x40".decodeAll(csGb18030) == "\uFFFD9\uFA0C"
   # error with ASCII
-  assert "\x81\x3a".decodeAll(csGb18030) == "\uFFFD:"
+  check "\x81\x3a".decodeAll(csGb18030) == "\uFFFD:"
 
 proc main() =
   testCJK()

@@ -23,17 +23,16 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/posix
 
 import css/color
+import utils/assert
 
 import ../protocol/lcgi
 
 proc puts(os: PosixStream; s: Growbuf) =
-  doAssert os.writeLoop(s).isOk
+  chaAssert os.writeLoop(s).isOk
 
 const DCS = "\eP"
 const ST = "\e\\"
@@ -79,7 +78,7 @@ proc insert(root: var NodeChildren; c: RGBColor; trimMap: var TrimMap): uint =
   var parent = addr root
   var split = false
   while true:
-    assert level < 8
+    chaAssert level < 8
     let idx = c.getIdx(level)
     let old = parent[idx]
     if old == nil:

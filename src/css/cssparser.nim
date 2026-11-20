@@ -1,11 +1,10 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 
 import html/catom
 import js/constcharp
+import utils/assert
 import utils/cowstr
 import utils/dtoawrap
 import utils/opt
@@ -471,7 +470,7 @@ static:
   #   pseudo-element boxes in the tree by skipping all anonymous boxes,
   #   and then you could remove the `relayout' bitmap.  It does seem
   #   painful though.
-  assert sizeof(PseudoElement) == 1
+  chaAssert sizeof(PseudoElement) == 1
 
 unionHooks(CSSTokenUnion)
 
@@ -556,7 +555,7 @@ proc name*(decl: CSSDeclaration): Str =
   of cdtProperty: return decl.p.toStr()
   of cdtVariable: return initStrM("--", decl.v.toStr())
   of cdtNestedRule:
-    assert false
+    chaAssert false
     return str("")
 
 proc add(buf: var Growbuf; c: CSSQualifiedRule) =
@@ -1025,7 +1024,7 @@ proc initCSSDeclaration*(name: Str): Opt[CSSDeclaration] =
 proc peekToken*(ctx: var CSSParser): lent CSSToken =
   if ctx.at >= ctx.toks.len:
     var i = ctx.i
-    doAssert ctx.iq.toOpenArray().nextToken(i)
+    chaAssert ctx.iq.toOpenArray().nextToken(i)
     ctx.toks.add(ctx.iq.toOpenArray().consume(i))
     ctx.i = i
   return ctx.toks[ctx.at]
@@ -1034,7 +1033,7 @@ proc consume*(ctx: var CSSParser): lent CSSToken =
   let at = ctx.at
   if at >= ctx.toks.len:
     var i = ctx.i
-    doAssert ctx.iq.toOpenArray().nextToken(i)
+    chaAssert ctx.iq.toOpenArray().nextToken(i)
     ctx.toks.add(ctx.iq.toOpenArray().consume(i))
     ctx.i = i
   inc ctx.at
@@ -1955,7 +1954,7 @@ proc parseSelectorList(state: var SelectorParser; forgiving: bool):
       if not forgiving:
         return @[]
       # forgiving is always nested
-      assert state.nested
+      chaAssert state.nested
       state.failed = false
       while state.has():
         case state.peekTokenType()

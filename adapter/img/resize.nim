@@ -1,10 +1,10 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import ../protocol/lcgi
+
+import utils/assert
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
@@ -38,7 +38,7 @@ proc main() =
     cgiDie(ceInternalError, "failed to open i/o")
   dst.p[0] = uint8('\n') # for CGI
   enterNetworkSandbox()
-  doAssert stbir_resize_uint8_srgb(addr src.p[0], srcWidth, srcHeight, 0,
+  chaAssert stbir_resize_uint8_srgb(addr src.p[0], srcWidth, srcHeight, 0,
     addr dst.p[1], dstWidth, dstHeight, 0, 4, 3, 0) != 0
   discard os.writeLoop(dst)
 

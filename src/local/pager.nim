@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import config/chapath
@@ -45,6 +43,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/lrewrap
@@ -770,7 +769,8 @@ proc loadCachedImage2(env: CachedImageEnv; response: Response) =
       cachedImage.dispw.toStr().asByteString)
   of imKitty:
     url = parseURL0("img-codec+png:encode")
-  of imNone: assert false
+  of imNone:
+    chaAssert false
   let request = newRequest(
     url,
     httpMethod = hmPost,
@@ -1211,21 +1211,21 @@ proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
         of coHistory: flags.toggleIf(bifHistory, bit.bool)
         of coMarkLinks: result.markLinks = bit.bool
         of coAskDownloadDir: flags.toggleIf(bifAskDownloadDir, bit.bool)
-        else: assert false
+        else: chaAssert false
       of cocStr:
         case e.opt
         of coShareCookieJar: cookieJarId = e.str
         of coUserStyle: result.userStyle.add(e.str)
         of coFilterCmd: filterCmd = e.str
-        else: assert false
+        else: chaAssert false
       of cocCharsetSeq:
-        assert e.opt == coDocumentCharset
+        chaAssert e.opt == coDocumentCharset
         result.charsets = e.charsetSeq
       of cocURL:
-        assert e.opt == coProxy
+        chaAssert e.opt == coProxy
         loaderConfig.proxy = e.url
       of cocHeaders:
-        assert e.opt == coDefaultHeaders
+        chaAssert e.opt == coDefaultHeaders
         let init = e.headers
         if init.clear:
           loaderConfig.defaultHeaders = newHeaders(hgRequest, init.s)
@@ -1234,7 +1234,7 @@ proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
           for it in init.s:
             headers[it.name] = it.value
           loaderConfig.defaultHeaders = headers
-      else: assert false
+      else: chaAssert false
   if result.images:
     result.imageTypes = pager.mimeTypes.image
   result.userAgent =
@@ -1859,7 +1859,7 @@ proc handleRead(pager: Pager; ctx: JSContext; fd: cint): JSValue =
         if pager.runJSJobs(JS_GetRuntime(ctx)).isErr:
           return JS_EXCEPTION
   else:
-    assert false
+    chaAssert false
   return JS_UNDEFINED
 
 proc handleWrite(pager: Pager; fd: cint): bool =
@@ -1910,7 +1910,7 @@ let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
 proc setupSignals(pager: Pager): PosixStream =
   var pipefd {.noinit.}: array[2, cint]
-  doAssert pipe(pipefd) != -1
+  chaAssert pipe(pipefd) != -1
   let writer = newPosixStream(pipefd[1])
   writer.setCloseOnExec()
   writer.setBlocking(false)

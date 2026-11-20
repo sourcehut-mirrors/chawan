@@ -1,10 +1,9 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import io/dynstream
+import utils/assert
 import utils/chaos
 import utils/opt
 import utils/sandbox
@@ -99,7 +98,7 @@ proc writeAll(data: pointer; size: int) =
   while n < size:
     let i = write(STDOUT_FILENO, addr cast[ptr UncheckedArray[uint8]](data)[n],
       int(size) - n)
-    assert i >= 0
+    chaAssert i >= 0
     n += i
 
 proc myWriteFunc(context, data: pointer; size: cint) {.cdecl.} =

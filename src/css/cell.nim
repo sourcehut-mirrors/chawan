@@ -1,9 +1,7 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import css/color
+import utils/assert
 import utils/cowstr
 import utils/strwidth
 
@@ -84,7 +82,7 @@ proc `$`*(format: Format): string =
     $format.flags & ")"
 
 static:
-  doAssert {FormatFlag.low..FormatFlag.high}.card <= 12
+  chaAssert {FormatFlag.low..FormatFlag.high}.card <= 12
 
 proc initFormat*(bgcolor, fgcolor: CellColor; flags: FormatMode): Format =
   return Format(

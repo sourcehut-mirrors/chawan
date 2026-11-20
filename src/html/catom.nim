@@ -9,9 +9,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import std/algorithm
 import std/macros
 
@@ -21,6 +18,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/assert
 import utils/chahash
 import utils/cowstr
 import utils/opt
@@ -445,8 +443,7 @@ proc freeAtom(atom: CAtomRaw) =
   if u > uint32(StaticAtom.high):
     let factory = getFactory()
     let desc = addr factory.atomMap[uint32(atom)]
-    when defined(debug):
-      assert desc.refc > 0
+    chaDebugAssert desc.refc > 0
     dec desc.refc
     if desc.refc == 0:
       freeAtomImpl(u)
@@ -552,7 +549,7 @@ proc initCAtomFactory*() =
   # StaticAtom includes TagType too.
   for sa in StaticAtom(1) .. StaticAtom.high:
     let atom = factory.toAtomRaw(sa.toStr())
-    assert uint32(atom) == uint32(sa)
+    chaAssert uint32(atom) == uint32(sa)
 
 proc toAtomRaw(s: openArray[char]): CAtomRaw =
   return getFactory().toAtomRaw(s)
@@ -576,12 +573,12 @@ proc toAtom*(s: Growbuf): CAtom =
   s.toOpenArray().toAtom()
 
 proc toStaticAtom*(tagType: TagType): StaticAtom =
-  assert tagType != ttUnknown
+  chaAssert tagType != ttUnknown
   StaticAtom(uint32(tagType))
 
 template view*(tagType: TagType): CAtom =
   let tmp = tagType
-  assert tmp != ttUnknown
+  chaAssert tmp != ttUnknown
   CAtom(tmp)
 
 template view*(ns: Namespace): CAtom =
@@ -599,7 +596,7 @@ proc toAtomLower*(s: Str): CAtom =
 
 template view*(satom: StaticAtom): CAtom =
   let tmp = satom
-  assert tmp != satUnknown
+  chaAssert tmp != satUnknown
   CAtom(CAtomRaw(uint32(tmp)))
 
 proc toStr*(atom: CAtom): lent Str =
@@ -842,14 +839,14 @@ proc len*(this: DOMTokenArrayView): uint32 =
 proc len*(this: DOMTokenArray): uint32 {.borrow.}
 
 proc `[]`*(this: DOMTokenArrayView; u: uint32): lent CAtom =
-  assert this != nil and u < this.len
+  chaAssert this != nil and u < this.len
   (ptr DOMTokenArrayBuffer)(this).toks[u]
 
 proc `[]`*(this: DOMTokenArray; u: uint32): lent CAtom =
   DOMTokenArrayView(this)[u]
 
 proc `[]=`*(this: DOMTokenArray; u: uint32; atom: sink CAtom) =
-  assert this != nil and u < this.len
+  chaAssert this != nil and u < this.len
   (ptr DOMTokenArrayBuffer)(this).toks[u] = move(atom)
 
 iterator items*(a: DOMTokenArrayView): lent CAtom {.inline.} =
@@ -877,7 +874,7 @@ iterator pairs*(a: DOMTokenArray): tuple[key: uint32; value: lent CAtom]
     yield (u, tok)
 
 proc createDOMTokenArray(len: uint32): ptr DOMTokenArrayBuffer =
-  assert len < uint32(int32.high)
+  chaAssert len < uint32(int32.high)
   let size = sizeof(DOMTokenArrayBuffer) + cast[int](len) * sizeof(CAtom)
   let this = cast[ptr DOMTokenArrayBuffer](alloc0(size))
   this.len = len
@@ -892,7 +889,7 @@ proc dup(this: DOMTokenArray): ptr DOMTokenArrayBuffer =
   other
 
 proc newDOMTokenArray*(toks: varargs[CAtom]): DOMTokenArray =
-  assert int64(toks.len) < int64(uint32.high)
+  chaAssert int64(toks.len) < int64(uint32.high)
   if toks.len == 0:
     return DOMTokenArray(nil)
   let this = DOMTokenArray(createDOMTokenArray(uint32(toks.len)))
@@ -956,7 +953,7 @@ proc len*(this: AttrDataList): uint32 =
   this.p.len
 
 proc `[]`*(this: AttrDataList; u: uint32): lent AttrData {.inline.} =
-  assert u < this.len
+  chaAssert u < this.len
   this.p.data[u]
 
 iterator items*(this: AttrDataList): lent AttrData =
@@ -970,11 +967,11 @@ iterator pairs*(this: AttrDataList): tuple[key: uint32; val: lent AttrData] =
     yield (u, this[u])
 
 proc `[]`*(this: var AttrDataList; u: uint32): var AttrData =
-  assert u < this.len
+  chaAssert u < this.len
   this.p.data[u]
 
 proc `[]=`*(this: var AttrDataList; u: uint32; data: sink AttrData) =
-  assert u < this.len
+  chaAssert u < this.len
   this.p.data[u] = move(data)
 
 proc high*(this: AttrDataList): int =
@@ -1025,7 +1022,7 @@ proc setLen*(attrs: var AttrDataList; len: uint32) =
   var p = attrs.p
   var cap = if p != nil: p.cap else: 0
   if cap < len:
-    assert cap < 0x7FFFFFFF
+    chaAssert cap < 0x7FFFFFFF
     cap *= 2
     if cap < len:
       cap = len
@@ -1038,7 +1035,7 @@ proc setLen*(attrs: var AttrDataList; len: uint32) =
 
 proc delete*(attrs: var AttrDataList; u: uint32) =
   let olen = attrs.len
-  assert u < olen
+  chaAssert u < olen
   let p = attrs.p
   {.cast(raises: []).}:
     `=destroy`(p.data[u])
@@ -1048,7 +1045,7 @@ proc delete*(attrs: var AttrDataList; u: uint32) =
 
 proc insert*(attrs: var AttrDataList; data: sink AttrData; u: uint32) =
   let olen = attrs.len
-  assert u <= olen
+  chaAssert u <= olen
   attrs.setLen(olen + 1)
   if u < olen:
     moveMem(addr attrs[u + 1], addr attrs[u],

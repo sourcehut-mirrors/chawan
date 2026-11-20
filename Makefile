@@ -149,7 +149,7 @@ lib/chaseccomp/chaseccomp.o: .FORCE
 .FORCE:
 endif
 
-twtstr = src/utils/twtstr.nim src/utils/opt.nim
+twtstr = src/utils/twtstr.nim src/utils/opt.nim src/utils/assert.nim
 cowstr = $(twtstr) src/utils/cowstr.nim src/utils/cowstr.c src/js/constcharp.nim
 dynstream = src/io/dynstream.nim
 chafile = src/io/chafile.nim $(dynstream) $(cowstr)

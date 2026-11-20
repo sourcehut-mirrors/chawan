@@ -1,8 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import html/script
 import io/dynstream
 import io/packetreader
@@ -17,6 +14,7 @@ import js/tojs
 import server/blob
 import server/headers
 import server/url
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -421,7 +419,7 @@ proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     tocache = false; credentials = cmSameOrigin; internal = false;
     urlCredentials = false; destination = rdNone; mode = rmNoCors;
     window = RequestWindow(t: rwtNoWindow)): Request =
-  assert url != nil
+  chaAssert url != nil
   if referrer != nil:
     headers[byteStr("Referer")] = referrer.toStr().asByteString
   var flags: set[RequestFlag] = {}

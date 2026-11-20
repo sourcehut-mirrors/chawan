@@ -1,11 +1,9 @@
-when NimMajor >= 2:
-  import std/assertions
-
 import std/json
 import std/unittest
 
 import chame/htmltokenizer
 import html/catom
+import utils/assert
 import utils/cowstr
 
 proc hexValue*(c: char): int =
@@ -92,7 +90,7 @@ proc getToken(a: seq[JsonNode]; esc: bool; name: var Str;
       newStr(a[1].getStr())
     return ttComment
   else:
-    assert false
+    chaAssert false
     return ttComment
 
 proc checkEquals(otok: TokenType; tok: Tokenizer;
@@ -192,7 +190,7 @@ proc runTest(desc: Str; output: seq[JsonNode]; startTag: CAtom; esc: bool;
   if ctx.i < ctx.output.len:
     tok.t = ttStartTag # hack so checkCharbuf actually does something
     ctx.checkCharbuf(tok)
-  assert ctx.i == ctx.output.len
+  chaAssert ctx.i == ctx.output.len
 
 proc getState(s: string): TokenizerState =
   case s

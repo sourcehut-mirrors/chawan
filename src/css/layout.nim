@@ -3,8 +3,6 @@
 # Note: if you start (or stop) using a property in layout, don't forget to
 # modify LayoutProperties in cssvalues.
 
-when NimMajor >= 2:
-  import std/assertions
 import std/math
 
 import config/conftypes
@@ -12,6 +10,7 @@ import css/box
 import css/cssparser
 import css/cssvalues
 import css/lunit
+import utils/assert
 import utils/cowstr
 import utils/luwrap
 import utils/strwidth
@@ -980,12 +979,12 @@ proc findNextFloatOffset(fstate: FlowState; offset: Offset; size: Size;
     # Move y to the bottom exclusion edge at the lowest y (where the exclusion
     # still intersects with the previous y).
     offset.y = nexty
-  assert false
+  chaAssert false
   Offset0
 
 proc positionFloat(fstate: var FlowState; child: BlockBox; space: Space;
     outerSize: Size; marginOffset, bfcOffset, offset: Offset) =
-  assert space.w.t != scFitContent
+  chaAssert space.w.t != scFitContent
   var offset = offset
   offset.y += fstate.marginTodo.sum()
   let clear = child.computed{"clear"}
@@ -994,7 +993,7 @@ proc positionFloat(fstate: var FlowState; child: BlockBox; space: Space;
   var childBfcOffset = bfcOffset + offset - marginOffset
   childBfcOffset.y = max(fstate.clearOffset, childBfcOffset.y)
   let ft = child.computed{"float"}
-  assert ft != FloatNone
+  chaAssert ft != FloatNone
   offset = fstate.findNextFloatOffset(childBfcOffset, outerSize, space, ft)
   child.state.offset = offset - bfcOffset + marginOffset
   let ex = Exclusion(offset: offset, size: outerSize, t: ft)
@@ -1197,7 +1196,7 @@ proc alignLine(fstate: var FlowState) =
       # Add the offset to avoid destroying margins (etc.) of the block.
       atom.box.state.offset += atom.offset
     else:
-      assert false
+      chaAssert false
     lastAtom = atom
     atom = atom.next
   if currentBox != nil:
@@ -1508,7 +1507,7 @@ proc addWordEOL(fstate: var FlowState; word: var WordState): bool =
     return false
   let wrapPos = word.wrapPos
   if wrapPos >= 0:
-    assert wrapPos <= word.s.len
+    chaAssert wrapPos <= word.s.len
     var leftstr = initGrowbufSink(word.s.substr(wrapPos))
     word.s.setLen(wrapPos)
     if word.hasSoftHyphen:
@@ -1740,7 +1739,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
     # in initReLayout.
     fstate.lbstate.totalFloatWidth += outerSize.w
   else:
-    assert fstate.space.w.t == scStretch
+    chaAssert fstate.space.w.t == scStretch
     fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
     fstate.initLine(flag = ilfFloat)
     var newLine = true
@@ -2074,7 +2073,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       if child of InlineBox:
         fstate.layoutInline(InlineBox(child))
       else:
-        assert child of BlockBox
+        chaAssert child of BlockBox
         let child = BlockBox(child)
         if child.computed{"display"} in DisplayInlineBlockLike:
           fstate.layoutInlineBlock(ibox, child)
@@ -2246,7 +2245,7 @@ proc layoutFlowRoot(lctx: LayoutContext; box: BlockBox; offset: Offset;
   if not lctx.layoutFlowRootPre(box, offset, input):
     return
   lctx.layoutFlow(box, input, root = true)
-  assert box.state.pendingFloatsTail == nil
+  chaAssert box.state.pendingFloatsTail == nil
   let marginBottom = box.state.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
@@ -2261,7 +2260,7 @@ proc layoutImage(lctx: LayoutContext; box: BlockBox; offset: Offset;
   let bmp = box.getImageBitmap()
   # applyDeclaration only sets this layout if getBitmap isn't nil.
   # If it is nil, something is wrong with layout invalidation.
-  assert bmp != nil
+  chaAssert bmp != nil
   let osize = size(
     w = bmp.width.toLUnit(),
     h = bmp.height.toLUnit()
@@ -2379,7 +2378,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox; space: Space;
   if box.input.space.w.isDefinite():
     box.input.space.w.u -= box.input.padding[dtHorizontal].sum()
   lctx.layout(box, Offset0, box.input)
-  assert box.state.pendingFloatsTail == nil
+  chaAssert box.state.pendingFloatsTail == nil
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   box.state.size.h = max(box.state.size.h, box.state.maxFloatHeight)
@@ -2526,7 +2525,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
   let growlen = tctx.cols.len
   for box in row.children:
     let box = BlockBox(box)
-    assert box.computed{"display"} == DisplayTableCell
+    chaAssert box.computed{"display"} == DisplayTableCell
     let firstRow = rowi == 0 or not tctx.rows[rowi - 1].hasBottomBorder
     let colspan = box.computed{"-cha-colspan"}
     # grow until n, but not more
@@ -2678,9 +2677,9 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
     of DisplayTableFooterGroup:
       if tfoot == nil:
         tfoot = child
-    else: assert false
+    else: chaAssert false
     for it in child.children:
-      assert it.computed{"display"} == DisplayTableRow
+      chaAssert it.computed{"display"} == DisplayTableRow
       inc nrows
   tctx.rows = newSeqOfCap[RowContext](nrows)
   if thead != nil:
@@ -3337,7 +3336,7 @@ proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
   of DisplayInnerTable: lctx.layoutTable(box, offset, input)
   of DisplayInnerFlex: lctx.layoutFlex(box, offset, input)
   of DisplayImageBlock, DisplayImageInline: lctx.layoutImage(box, offset, input)
-  else: assert false
+  else: chaAssert false
   if input.space.w.t != scMeasure:
     let size = if root == irfRoot: lctx.canvasSize else: box.state.size
     lctx.popPositioned(box.absolute, size)

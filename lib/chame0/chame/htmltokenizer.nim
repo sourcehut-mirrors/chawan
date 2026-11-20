@@ -1,12 +1,11 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 
 import entity_gen
 
 import html/catom
+import utils/assert
 import utils/cowstr
 import utils/twtstr
 
@@ -397,7 +396,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
   var state = tok.state
   var ignoreLF = tok.ignoreLF
   var i = tok.inputBufIdx
-  assert i >= 0 # helps the compiler
+  chaAssert i >= 0 # helps the compiler
 
   template flush_chars =
     if tok.tmp.len > 0:
@@ -1308,7 +1307,7 @@ proc tokenize*(tok: var Tokenizer; ibuf: openArray[char]): TokenizeResult =
       if tok.findCharRef(c, ibuf):
         state = tok.flushNamedCharacterReference(ibuf)
       i = tok.inputBufIdx
-      assert i >= 0 # helps the compiler
+      chaAssert i >= 0 # helps the compiler
 
     of tsAmbiguousAmpersand:
       if c in AsciiAlpha:

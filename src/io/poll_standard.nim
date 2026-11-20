@@ -2,10 +2,9 @@
 # std only merged working bindings recently, so for now we have to bind
 # it on our own.
 
-when NimMajor >= 2:
-  import std/assertions
-
 from std/posix import TPollfd, POLLNVAL
+
+import utils/assert
 
 # NB: nfds_t on SVR4 was unsigned long, but BSDs use unsigned int.
 # Linux and Haiku emulate the former, BSDs inherit the latter.
@@ -36,7 +35,7 @@ iterator events*(ctx: var PollData): tuple[fd: cint; revents: cshort] =
     let event = ctx.fds[i]
     if event.fd == -1 or ctx.fds[i].revents == 0:
       continue
-    assert (event.revents and POLLNVAL) == 0
+    chaAssert (event.revents and POLLNVAL) == 0
     yield (event.fd, event.revents)
 
 proc register*(ctx: var PollData; fd: int; events: cshort) =

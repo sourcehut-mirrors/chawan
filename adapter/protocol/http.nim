@@ -2,11 +2,10 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import io/dynstream
+import utils/assert
 import utils/opt
 import utils/sandbox
 
@@ -177,10 +176,10 @@ proc inflate(op: HTTPHandle; flag: uint32) =
         of TINFL_STATUS_HAS_MORE_OUTPUT:
           discard
         of TINFL_STATUS_NEEDS_MORE_INPUT:
-          assert len == n
+          chaAssert len == n
         of TINFL_STATUS_DONE:
           quit(0)
-        of TINFL_STATUS_BAD_PARAM: assert false
+        of TINFL_STATUS_BAD_PARAM: chaAssert false
         of TINFL_STATUS_ADLER32_MISMATCH, TINFL_STATUS_FAILED,
             TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS,
             TINFL_STATUS_ISIZE_OR_CRC32_MISMATCH:
@@ -226,7 +225,7 @@ proc unbrotli(op: HTTPHandle) =
         n = csize_t(len) - iqn
         case status
         of BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT:
-          assert len == n
+          chaAssert len == n
           break
         of BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT:
           discard

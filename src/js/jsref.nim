@@ -4,13 +4,12 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2 and defined(debug):
-  import std/assertions
 import std/macrocache
 
 import js/jsopaque
 import js/jstypes
 import js/quickjs
+import utils/assert
 import utils/macroutil
 
 type
@@ -19,15 +18,13 @@ type
   JSRef*[T] = distinct ptr T
 
 proc destroyAux(p: ptr pointer) {.exportc: "cha_jsDestroyImpl".} =
-  when defined(debug):
-    assert p[] == nil or not globalRuntime.getOpaque().marking
+  chaDebugAssert p[] == nil or not globalRuntime.getOpaque().marking
   JS_FreeForeignObject(globalRuntime, p[])
 
 proc dupAux(p: pointer): pointer {.exportc: "cha_jsDup".} =
   if p == nil:
     return nil
-  when defined(debug):
-    assert not globalRuntime.getOpaque().marking
+  chaDebugAssert not globalRuntime.getOpaque().marking
   return JS_DupForeignObject(globalRuntime, p)
 
 proc copyAux(dest: ptr pointer; r: pointer) {.exportc: "cha_jsCopyImpl".} =
@@ -66,8 +63,7 @@ template getMagic*[T](r: JSRef[T]): uint32 =
   JS_GetForeignMagic(dotGet(ptr T, r))
 
 proc jsNew0(p: ptr pointer; class: JSClassID; size: csize_t) =
-  when defined(debug):
-    assert class != JS_INVALID_CLASS_ID
+  chaDebugAssert class != JS_INVALID_CLASS_ID
   p[] = JS_NewForeignObject(globalRuntime, class, size)
 
 template jsNewOf*[T](x: T; classid: JSClassID): JSRef[T] =

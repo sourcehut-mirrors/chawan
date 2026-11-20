@@ -4,14 +4,12 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
-import std/typetraits
 
 import config/conftypes
 import css/color
 import io/dynstream
+import utils/assert
 import utils/cowstr
 import utils/opt
 
@@ -45,7 +43,7 @@ proc sread*(r: var PacketReader; bmp: var NetworkBitmap): PacketCode
 
 proc initReader*(stream: PosixStream; r: var PacketReader; len, nfds: int):
     bool =
-  assert len != 0 or nfds != 0
+  chaAssert len != 0 or nfds != 0
   r = PacketReader(
     buffer: newSeqUninit[uint8](len),
     fds: newSeqUninit[cint](nfds),
@@ -129,7 +127,7 @@ proc initPartialReader*(stream: PosixStream; pr: var PartialPacketReader):
 
 proc assertEmpty(r: var PacketReader) =
   # it is allowed (recommended) to abort reading if the packet is malformed
-  assert r.error != nil or r.bufIdx == r.buffer.len and r.fds.len == 0
+  chaAssert r.error != nil or r.bufIdx == r.buffer.len and r.fds.len == 0
 
 template withPacketReader*(stream: PosixStream; r, body, fallback: untyped) =
   block:
@@ -260,6 +258,6 @@ proc sread*(r: var PacketReader; bmp: var NetworkBitmap): PacketCode =
   ok()
 
 proc assert*(r: var PacketReader; res: PacketCode) =
-  doAssert res == pcOk, $r.error
+  chaAssert res == pcOk, r.error
 
 {.pop.} # raises: []

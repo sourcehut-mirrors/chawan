@@ -4,10 +4,9 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
+import utils/assert
 import utils/cowstr
 import utils/opt
 
@@ -24,7 +23,7 @@ type PosixStream* = ref object
 proc read*(s: PosixStream; buffer: pointer; len: int): int =
   let n = read(s.fd, buffer, len)
   if n == 0:
-    assert not s.isend
+    chaAssert not s.isend
     s.isend = true
   return n
 
@@ -33,7 +32,7 @@ proc write*(s: PosixStream; buffer: pointer; len: int): int =
   return write(s.fd, buffer, len)
 
 proc sclose*(s: PosixStream) =
-  assert not s.closed
+  chaAssert not s.closed
   discard close(s.fd)
   s.closed = true
 
@@ -95,7 +94,7 @@ proc writeLoop*(s: PosixStream; str: Str): Opt[void] =
   s.writeLoop(str.toOpenArray())
 
 proc readAll*(s: PosixStream; outs: var Str): bool =
-  assert s.blocking
+  chaAssert s.blocking
   var buf = initGrowbufUninit(4096)
   var idx = 0
   while true:
@@ -205,11 +204,11 @@ proc `=copy`*(dst: var MaybeMappedMemoryObj; src: MaybeMappedMemoryObj)
 
 proc mmap(ps: PosixStream; stats: Stat; ilen: int): MaybeMappedMemory =
   let srcOff = lseek(ps.fd, 0, SEEK_CUR) # skip headers
-  doAssert srcOff >= 0
+  chaAssert srcOff >= 0
   let p0len = int(stats.st_size)
   let len = int(stats.st_size - srcOff)
   if ilen != -1:
-    doAssert ilen == len
+    chaAssert ilen == len
   if len == 0:
     return MaybeMappedMemory(t: mmmtMmap, p0: nil, p0len: 0, p: nil, len: 0)
   let p0 = mmap(nil, p0len, PROT_READ, MAP_PRIVATE, ps.fd, 0)
@@ -278,7 +277,7 @@ proc setCloseOnExec*(ps: PosixStream) =
 
 proc sendMsg*(s: PosixStream; buffer: openArray[uint8];
     fds: openArray[cint]): int =
-  assert buffer.len > 0
+  chaAssert buffer.len > 0
   var iov = IOVec(iov_base: unsafeAddr buffer[0], iov_len: csize_t(buffer.len))
   let fdSize = sizeof(cint) * fds.len
   let controlLen = cast[int](CMSG_SPACE(csize_t(fdSize)))
@@ -299,7 +298,7 @@ proc sendMsg*(s: PosixStream; buffer: openArray[uint8];
 
 proc recvMsg*(s: PosixStream; buffer: var openArray[uint8];
     fdbuf: var openArray[cint]; numFds: var int): int =
-  assert buffer.len > 0
+  chaAssert buffer.len > 0
   var iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
   let fdbufSize = sizeof(cint) * fdbuf.len
   let controlLen = cast[int](CMSG_SPACE(csize_t(fdbufSize)))
@@ -332,7 +331,7 @@ proc recvMsg*(s: PosixStream; buffer: var openArray[uint8];
     else:
       #TODO we could just return -2 here, but I'm not sure if it can
       # ever happen
-      assert false
+      chaAssert false
     cmsg = CMSG_NXTHDR(addr hdr, cmsg)
   return n
 

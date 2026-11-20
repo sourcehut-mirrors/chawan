@@ -6,14 +6,13 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/posix
 
 import config/conftypes
 import css/color
 import io/dynstream
+import utils/assert
 import utils/cowstr
 import utils/opt
 
@@ -107,7 +106,7 @@ proc flush2(w: var PacketWriter; stream: PosixStream): FlushResult =
   if w.fds.len > 0:
     w.fds.reverse()
     let n = stream.sendMsg([0u8], w.fds)
-    assert n != 0
+    chaAssert n != 0
     if n < 0:
       let e = errno
       if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
@@ -167,7 +166,7 @@ proc swrite*(w: var PacketWriter; n: SomeNumber) =
 
 proc swrite*[T: enum](w: var PacketWriter; x: T) =
   static:
-    doAssert sizeof(int) >= sizeof(T)
+    chaAssert sizeof(int) >= sizeof(T)
   w.swrite(int(x))
 
 proc swrite*[T](w: var PacketWriter; s: set[T]) =

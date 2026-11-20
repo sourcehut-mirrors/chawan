@@ -1,8 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import config/conftypes
 import css/box
 import css/cell
@@ -10,6 +7,7 @@ import css/color
 import css/cssvalues
 import css/lunit
 import html/dom
+import utils/assert
 import utils/cowstr
 import utils/strwidth
 import utils/twtstr
@@ -168,7 +166,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
         )
       else:
         # First format < cx => split it up
-        assert pos < cx
+        chaAssert pos < cx
         inc fi # insert after first format
         line.insertFormat(cx, fi, initFormat(), Element(nil))
   # Now for the text's formats:
@@ -189,7 +187,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
       line.formats[fi] = FormatCell(format: format, node: node, pos: x)
     else:
       # First format's pos < x => split it up.
-      assert line.formats[fi].pos < x
+      chaAssert line.formats[fi].pos < x
       if nx > x: # see above
         format.bgcolor = lformat.bgcolor
       inc fi # insert after first format
@@ -231,7 +229,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
         format.bgcolor = defaultColor
         line.insertFormat(nx, fi, format, node)
   dec fi # go back to previous format, so that pos <= targetX
-  assert line.formats[fi].pos <= targetX
+  chaAssert line.formats[fi].pos <= targetX
   # That's it!
 
 proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
@@ -250,7 +248,7 @@ proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
 
 proc setText1(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
     format: Format; node: Element) =
-  assert x >= 0 and s.len != 0
+  chaAssert x >= 0 and s.len != 0
   var cx: int
   var nx: int
   var hadStr: bool
@@ -374,7 +372,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     # Process formatting around endx
     let efi = line.findFormatN(endx, ifi) - 1
     if efi >= 0 and line.formats[efi].pos < endx and hadStr:
-      assert line.formats[efi].pos < endx
+      chaAssert line.formats[efi].pos < endx
       line.insertFormat(endx, efi + 1, lformat, lnode)
 
 proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
@@ -462,7 +460,7 @@ proc inheritClipBox(box: BlockBox; parent: CSSBox; state: RenderState) =
   if parent == nil:
     box.render.clipBox = DefaultClipBox
     return
-  assert parent.render.rendered
+  chaAssert parent.render.rendered
   var clipBox = parent.render.clipBox
   let overflowX = box.computed{"overflow-x"}
   let overflowY = box.computed{"overflow-y"}

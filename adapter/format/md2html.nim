@@ -1,9 +1,7 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import io/chafile
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/tabutil
@@ -552,7 +550,7 @@ proc pushList(state: var ParseState; desc: ListItemDesc): Opt[void] =
     else:
       ?state.write(initStrM("<OL start=", desc.start, ">\n<LI>"))
   of ltUl: ?state.write("<UL>\n<LI>")
-  of ltNoMark: assert false
+  of ltNoMark: chaAssert false
   state.lists.add(List(t: desc.t, depth: desc.depth))
   ok()
 
@@ -560,7 +558,7 @@ proc popList(state: var ParseState): Opt[void] =
   case state.lists.pop().t
   of ltOl: ?state.writeLine("</OL>")
   of ltUl: ?state.writeLine("</UL>")
-  of ltNoMark: assert false
+  of ltNoMark: chaAssert false
   ok()
 
 proc writeHeading(state: var ParseState; n: int; text: Str): Opt[void] =

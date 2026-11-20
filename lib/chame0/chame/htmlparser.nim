@@ -1,10 +1,8 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import html/catom
 import htmltokenizer
+import utils/assert
 import utils/cowstr
 import utils/twtstr
 
@@ -300,7 +298,7 @@ proc lastChildOf[Handle](n: OpenElement[Handle]):
 # https://html.spec.whatwg.org/multipage/#appropriate-place-for-inserting-a-node
 proc appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle];
     target: Handle): InsertionLocation[Handle] =
-  assert parser.getTagType(parser.openElements[0].element) == ttHtml
+  chaAssert parser.getTagType(parser.openElements[0].element) == ttHtml
   let targetTagType = parser.getTagType(target)
   const FosterTagTypes = {ttTable, ttTbody, ttTfoot, ttThead, ttTr}
   if parser.fosterParenting and targetTagType in FosterTagTypes:
@@ -967,7 +965,7 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle]): bool =
         if nodeStackIndex < furthestBlockIndex:
           dec furthestBlockIndex
           let element = parser.openElements[furthestBlockIndex].element
-          assert furthestBlock == element
+          chaAssert furthestBlock == element
         continue
       let fmt = parser.activeFormatting[nodeFormattingIndex]
       var attrs = fmt.attrs
@@ -1601,7 +1599,7 @@ proc processText[Handle](parser: var HTML5Parser[Handle]):
     parser.insertionMode = parser.oldInsertionMode
     if parser.scripting and parser.toTagType(parser.tok.tagname) == ttScript:
       return pcrScript
-  else: assert false # unreachable
+  else: chaAssert false # unreachable
   pcrContinue
 
 proc processInTable[Handle](parser: var HTML5Parser[Handle]):
@@ -2103,7 +2101,7 @@ proc otherForeignEndTag[Handle](parser: var HTML5Parser[Handle]):
     ParseChunkResult =
   for i in countdown(parser.openElements.high, 0): # loop
     if i == 0: # fragment case
-      assert parser.hasContext()
+      chaAssert parser.hasContext()
       break
     let oe = parser.openElements[i]
     if i != parser.openElements.high and
@@ -2258,7 +2256,7 @@ proc finish*[Handle](parser: var HTML5Parser[Handle]) =
   ## open elements one by one.
   while parser.tok.finish() != trDone:
     let pres = parser.processToken()
-    assert pres == pcrContinue
+    chaAssert pres == pcrContinue
     # Tokenizer's finish() cannot emit tag tokens, so pres cannot be
     # pcrScript or pcrStop (which are returned on seeing </script> and
     # <meta>).

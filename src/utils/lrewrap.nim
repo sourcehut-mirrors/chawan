@@ -1,9 +1,7 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import js/libregexp
+import utils/assert
 import utils/cowstr
 import utils/opt
 
@@ -46,7 +44,7 @@ proc compileRegex*(buf: Str; flags: LREFlags; regex: var Regex): bool =
       errorMsg.setLen(i)
     regex = Regex(bytecode: errorMsg.toStr())
     return false
-  assert plen > 0
+  chaAssert plen > 0
   regex = bytecodeToRegex(cast[REBytecode](bytecode), plen)
   dealloc(bytecode)
   true
@@ -71,7 +69,7 @@ template ncaps(ctx: ExecContext): cint =
   lre_get_capture_count(ctx.bytecode)
 
 proc cap*(ctx: ExecContext; i: int): tuple[s, e: int] =
-  assert i < int(ctx.ncaps)
+  chaAssert i < int(ctx.ncaps)
   let sp = ctx.tmp[i * 2]
   let ep = ctx.tmp[i * 2 + 1]
   if sp == nil or ep == nil:

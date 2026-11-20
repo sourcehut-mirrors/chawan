@@ -1,10 +1,10 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import ../protocol/lcgi
+
+import utils/assert
 
 when sizeof(cint) < 4:
   type jebp_int = clong
@@ -62,7 +62,7 @@ proc writeAll(data: pointer; size: int) =
   let data = cast[ptr UncheckedArray[uint8]](data)
   while n < size:
     let i = write(STDOUT_FILENO, addr data[n], size - n)
-    assert i >= 0
+    chaAssert i >= 0
     n += i
 
 proc puts(s: Str) =

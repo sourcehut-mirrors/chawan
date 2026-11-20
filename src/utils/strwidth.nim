@@ -1,8 +1,6 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
+import utils/assert
 import utils/cowstr
 import utils/twtstr
 
@@ -48,7 +46,7 @@ const TabPUARange* = 0xE000u32 .. 0xE007u32
 
 proc tabPUAPoint*(n: int): uint32 =
   let u = 0xE000 + uint32(n) - 1
-  assert u in TabPUARange
+  chaAssert u in TabPUARange
   return u
 
 var isCJKAmbiguous* {.global.} = false

@@ -73,8 +73,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/macros
 import std/typetraits
 
@@ -87,6 +85,7 @@ import js/jstypes
 import js/jsutils
 import js/quickjs
 import js/tojs
+import utils/assert
 import utils/chahash
 import utils/cowstr
 import utils/opt
@@ -367,7 +366,7 @@ proc newClassConstructor(ctx: JSContext; def: ChaClassDef): JSObjectErr =
   let fun = ?ctx.newCFunction2(ctor, def.class_name, 0, ctorType, 0)
   if def.parentP != nil:
     let proto = ctx.getOpaque().ctors[int(def.parentP[])]
-    assert proto != nil
+    chaAssert proto != nil
     if JS_SetPrototype(ctx, fun.value, proto.value) < 0:
       return err()
   JSObjectErr(fun)
@@ -530,7 +529,7 @@ proc put0(map: var GetSetMap; item: GetSet): bool =
       it = item
       break
     if it.hcache == item.hcache and it.s == item.s:
-      assert false # I don't think this can happen?
+      chaAssert false # I don't think this can happen?
       return false
     if tabSwap(home, it.hcache, i, mask): # displace
       swap(it, item)
@@ -592,7 +591,7 @@ proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
       inc gen.i
     elif gen.funcParams[gen.i].t.eqIdent("JSRuntime"):
       inc gen.i # special case for finalizers that have a JSRuntime param
-  assert length in 0..255
+  chaAssert length in 0..255
   gen.length = uint8(length)
 
 template getJSParams(): untyped =
@@ -1288,9 +1287,9 @@ proc setGet(map: var GetSetMap; name: string; get: NimNode;
   if other != nil:
     other.get = get
     if flag != bffNone and other.flag != flag:
-      assert other.flag == bffNone
+      chaAssert other.flag == bffNone
       other.flag = flag
-    assert other.magic == magic
+    chaAssert other.magic == magic
   else:
     map.put(GetSet(s: name, get: get, flag: flag, magic: magic))
 
@@ -1300,9 +1299,9 @@ proc setSet(map: var GetSetMap; name: string; set: NimNode;
   if other != nil:
     other.set = set
     if flag != bffNone and other.flag != flag:
-      assert other.flag == bffNone
+      chaAssert other.flag == bffNone
       other.flag = flag
-    assert other.magic == magic
+    chaAssert other.magic == magic
   else:
     map.put(GetSet(s: name, set: set, flag: flag, magic: magic))
 
@@ -1404,7 +1403,7 @@ proc jsClassRecurse(stmts, body: NimNode; info: var RegistryInfo) =
             info.tabUnforgeable.add(quote do:
               JS_CFUNC_DEF(`name`, `len`, `id`, JS_PROP_ENUMERABLE)
             )
-          else: assert false
+          else: chaAssert false
         of bfGetter:
           info.getset.setGet(name, id, flag, magic)
           if flag == bffReplaceable:
@@ -1715,9 +1714,9 @@ proc registerClassCommon(ctx: JSContext; def: var ChaClassDef): JSCode =
     marks.add(def.mark)
   if def.parentP != nil:
     let parent = def.parentP[]
-    assert parent != JS_INVALID_CLASS_ID
+    chaAssert parent != JS_INVALID_CLASS_ID
     rtOpaque.classes[int(id)].parent = parent
-    assert rtOpaque.classes[int(parent)].initialized
+    chaAssert rtOpaque.classes[int(parent)].initialized
     rtOpaque.classes[int(parent)].final = false
     merged.add(rtOpaque.classes[int(parent)].unforgeable)
     fins.add(rtOpaque.classes[int(parent)].fins)
@@ -1768,7 +1767,7 @@ proc registerClass*(ctx: JSContext; def: var ChaClassDef;
   fjOk
 
 proc registerNamespace*(ctx: JSContext; def: ChaClassDef): Opt[JSObjectNil] =
-  assert def.unforgeableFuns.len == 0 and def.funs.len == 0
+  chaAssert def.unforgeableFuns.len == 0 and def.funs.len == 0
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return ok(JSObjectNil(nil))
@@ -1823,7 +1822,7 @@ proc registerGlobalClass*(ctx: JSContext; def: var ChaClassDef;
   let name = JS_NewString(ctx, def.class_name)
   if JS_IsException(name.vc):
     return fjErr
-  assert ctxOpaque.gclass == JS_INVALID_CLASS_ID
+  chaAssert ctxOpaque.gclass == JS_INVALID_CLASS_ID
   ctxOpaque.gclass = def.id
   # Global already exists, so set unforgeable functions here
   if ctx.definePropertyC(proto, jsyToStringTag, name) == fjErr or

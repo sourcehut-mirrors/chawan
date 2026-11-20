@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/math
 import std/setutils
@@ -39,6 +37,7 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/url
+import utils/assert
 import utils/chahash
 import utils/chaos
 import utils/cowstr
@@ -1842,8 +1841,8 @@ proc textContent*(node: Node): DOMString =
   domStr("")
 
 proc inSameTree*(a, b: Node): bool =
-  assert a != nil
-  assert b != nil
+  chaAssert a != nil
+  chaAssert b != nil
   a.rootNode == b.rootNode
 
 # a == b or a in b's ancestors
@@ -2052,7 +2051,7 @@ proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
   let document = oldRootNode.document
   # document is only nil for Document nodes, but those cannot call
   # remove().
-  assert document != nil
+  chaAssert document != nil
   #TODO live ranges
   let next = node.internalNext
   let oldNextSibling = node.nextSibling
@@ -2210,7 +2209,7 @@ proc clone(node: Node; ctx: JSContext; document: Document; deep: bool;
   elif node of DocumentFragment:
     document.createDocumentFragment().asNode
   else:
-    assert false
+    chaAssert false
     Node(nil)
   copy
 
@@ -2706,8 +2705,7 @@ proc replaceWithImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
 proc firstChild(parent: ParentNode): lent Node =
   let child = parent.internalFirst
   if child != nil and child.parentNode == nil:
-    when defined(debug):
-      assert child of ShadowRoot
+    chaDebugAssert child of ShadowRoot
     return child.internalNext
   return parent.internalFirst
 
@@ -3201,7 +3199,7 @@ proc populateCollection(this: Collection) =
 
 proc refreshCollection(this: Collection) =
   if this.invalid:
-    assert this.document != nil
+    chaAssert this.document != nil
     this.snapshot.setLen(0)
     this.populateCollection()
     this.invalid = false
@@ -3704,7 +3702,7 @@ proc reflectEvent(document: Document; target: EventTarget;
     name, eventType: StaticAtom; value: Str) =
   let ctx = document.window.jsctx
   let fun = trace(ctx.newFunction(["event"], value))
-  assert ctx != nil
+  chaAssert ctx != nil
   if JS_IsException(fun.vc):
     document.window.logException(document.baseURL)
   else:
@@ -6395,7 +6393,7 @@ proc invalidate*(element: Element; dep: DependencyType) =
     element.invalidate()
   let root = element.asNode.rootNode as RootNode
   if root != nil:
-    #TODO could assert too but I'm too lazy to check all call sites
+    #TODO could chaAssert too but I'm too lazy to check all call sites
     for it in root.styleDependencies[dep].dependedBy.getAll(element):
       it.invalidate()
 
@@ -6781,7 +6779,7 @@ const SuperGlobalAttrs = [raTitle, raLang, raDir, raHidden]
 static:
   # In the reflection magic we allocate 9 bits to attribute names and 7 bits
   # to class names.
-  doAssert ReflectMap.len < 512
+  chaAssert ReflectMap.len < 512
 
 proc jsReflectGet0(ctx: JSContext; htmlElement: HTMLElement; magic: cint):
     JSValue =
@@ -7299,7 +7297,7 @@ proc isDisabled(this: SheetElement): bool =
 proc insertSheet(this: SheetElement) =
   let root = this.asNode.rootNode as RootNode
   if this.sheetHead != nil and root != nil:
-    assert this.sheetHead.prev == nil and this.sheetTail.next == nil
+    chaAssert this.sheetHead.prev == nil and this.sheetTail.next == nil
     let prev = this.findPrevSheet()
     let next = this.findNextSheet()
     if prev != nil:
@@ -7564,7 +7562,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   if res != nil:
     if res.t == srtFetching:
       #TODO await value
-      assert false
+      chaAssert false
     element.onComplete(res)
     return
   let destination = moduleType.moduleTypeToRequestDest(destination)
@@ -7602,7 +7600,7 @@ proc execute*(element: HTMLScriptElement) =
   if i >= 0:
     document.renderBlockingElements.delete(i)
   #TODO this should work eventually (when module & importmap are implemented)
-  #assert element.scriptResult != nil
+  #chaAssert element.scriptResult != nil
   if element.scriptResult == nil:
     return
   if element.scriptResult.t == srtNull:

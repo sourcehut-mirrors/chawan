@@ -1,10 +1,9 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/algorithm
 import std/bitops
 
+import utils/assert
 import utils/cowstr
 import utils/opt
 import utils/twtstr
@@ -910,7 +909,7 @@ proc H*(c: OklabColor): uint16 =
 # Note: this assumes n notin 0..15 (which would be ANSI 4-bit)
 proc toRGB*(param0: ANSIColor): RGBColor =
   let u = uint8(param0)
-  assert u notin 0u8..15u8
+  chaAssert u notin 0u8..15u8
   if u < 232:
     let n = u - 16
     var r = (n div 36) * 40

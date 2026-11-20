@@ -1,10 +1,8 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import encoding/charset
 import encoding/encodercore
+import utils/assert
 import utils/cowstr
 
 type EncoderErrorMode* = enum
@@ -14,7 +12,8 @@ proc initTextEncoder*(charset: Charset): TextEncoder =
   ## Create a new TextEncoder instance from the charset.
   ## Note: UTF-8 and UTF-16 encoders are not supported.
   ## (For UTF-8, use a TextDecoder instead.)
-  assert charset notin {csUtf8, csUtf16be, csUtf16le, csReplacement, csUnknown}
+  chaAssert charset notin {csUtf8, csUtf16be, csUtf16le, csReplacement,
+    csUnknown}
   TextEncoder(charset: charset)
 
 proc encodeAll*(iq: openArray[uint8]; charset: Charset; success: var bool):

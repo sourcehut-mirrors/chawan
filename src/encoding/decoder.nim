@@ -1,10 +1,8 @@
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
-
 import encoding/charset
 import encoding/decodercore
+import utils/assert
 import utils/cowstr
 import utils/twtstr
 
@@ -14,7 +12,7 @@ type DecoderErrorMode* = enum
 proc initTextDecoder*(charset: Charset): TextDecoder =
   ## Create a new TextDecoder instance from the charset.
   ## `charset` may be any value except csUnknown.
-  assert charset != csUnknown
+  chaAssert charset != csUnknown
   TextDecoder(charset: charset)
 
 type UnsafeSlice* = object

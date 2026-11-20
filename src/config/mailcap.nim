@@ -2,8 +2,6 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import io/chafile
@@ -11,6 +9,7 @@ import io/dynstream
 import js/jsref
 import js/libregexp
 import server/url
+import utils/assert
 import utils/chaos
 import utils/cowstr
 import utils/lrewrap
@@ -293,7 +292,7 @@ proc parseBuiltin*(mailcap: var Mailcap; buf: openArray[char]) =
     inc mailcap.len
     var t: Str
     let res = state.parseEntry(line.toOpenArray(), entry, t)
-    doAssert res.isOk, $state.error
+    chaAssert res.isOk, state.error
     mailcap.add(entry, t)
 
 proc parseMailcap(state: var MailcapParser; mailcap: var Mailcap;

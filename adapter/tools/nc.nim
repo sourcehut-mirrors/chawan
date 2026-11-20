@@ -8,13 +8,12 @@
 
 {.push raises: [].}
 
-when NimMajor >= 2:
-  import std/assertions
 import std/posix
 
 import ../protocol/lcgi
 import io/chafile
 import io/poll
+import utils/assert
 import utils/cowstr
 import utils/sandbox
 
@@ -63,7 +62,7 @@ proc main() =
   while i < 2:
     pollData.poll(-1)
     for event in pollData.events:
-      assert (event.revents and POLLOUT) == 0
+      chaAssert (event.revents and POLLOUT) == 0
       if (event.revents and POLLIN) != 0:
         if event.fd == ips.fd:
           let n = ips.read(buf)
@@ -74,7 +73,7 @@ proc main() =
           if ps.writeLoop(buf.toOpenArray(0, n - 1)).isErr:
             quit(1)
         else:
-          assert event.fd == ps.fd
+          chaAssert event.fd == ps.fd
           let n = ps.read(buf)
           if n <= 0:
             pollData.unregister(ps.fd)
