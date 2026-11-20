@@ -487,49 +487,43 @@ proc toJS(ctx: JSContext; input: MouseInput): JSValue =
     return JS_EXCEPTION
   obj.toJSValue()
 
-proc handleKeyEnd(pager: Pager; ctx: JSContext; e: InputEvent): int =
+proc handleKeyEnd(pager: Pager; ctx: JSContext; e: InputEvent): JSCode =
   let arg0 = trace(ctx.toJS(e.t))
   if JS_IsException(arg0.vc):
     pager.console.writeException(ctx)
-    return 0
+    return fjOk
   let arg1 = trace(if e.t == ietMouse: ctx.toJS(e.m) else: JS_UNDEFINED)
+  if JS_IsException(arg0.vc):
+    pager.console.writeException(ctx)
+    return fjOk
   pager.term.catchSigint()
   let this = trace(ctx.toJS(pager))
   let res = trace(ctx.call(pager.handleInput, this.vc, arg0.vc, arg1.vc))
   pager.term.respectSigint()
   if JS_IsException(res):
     if pager.exitCode != -1: # quit() called
-      return -1
+      return fjErr
     # user code, so catch & log exceptions here
     pager.console.writeException(ctx)
-  1
+  fjOk
 
 proc handleUserInput(pager: Pager; ctx: JSContext): JSValue =
-  let res = pager.term.ahandleRead()
-  if res.isErr:
+  if pager.term.fillInputBuffer().isErr:
     return ctx.jsQuit(pager, 1)
-  if not res.get:
-    return JS_UNDEFINED
   let pasteHack = pager.mousePaste and not pager.term.hasBracketedPaste()
-  while e := pager.term.areadEvent():
+  while e := pager.term.readEvent():
     case e.t
     of ietKey: pager.inputBuffer &= e.c
-    of ietWindowChange:
-      if pager.windowChange(ctx).isErr:
-        return JS_EXCEPTION
+    of ietWindowChange: ?pager.windowChange(ctx)
     of ietRedraw: pager.redraw()
     of ietKeyEnd, ietPaste, ietMouse:
       if e.t == ietKeyEnd and pasteHack:
         continue
-      case pager.handleKeyEnd(ctx, e)
-      of -1: return JS_EXCEPTION
-      of 0: break
-      else: discard
-  if pasteHack:
+      ?pager.handleKeyEnd(ctx, e)
+  if pasteHack and pager.inputBuffer.len > 0:
     # hack: when we have no bracketed paste, we pretend that all keys sent
     # together on middle click are a single event.
-    if pager.handleKeyEnd(ctx, InputEvent(t: ietPaste)) < 0:
-      return JS_EXCEPTION
+    ?pager.handleKeyEnd(ctx, InputEvent(t: ietPaste))
   return JS_UNDEFINED
 
 proc runInit(pager: Pager; ctx: JSContext; proto: JSObject;

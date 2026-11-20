@@ -693,12 +693,13 @@ proc write(term: Terminal; c: char): Opt[void] =
 proc write(term: Terminal; buf: Growbuf): Opt[void] =
   term.write(buf.toOpenArray())
 
-proc readChar(term: Terminal): Opt[char] =
+proc readCharSync(term: Terminal): Opt[char] =
   if term.ibufn == term.ibufLen:
     term.ibufn = 0
-    term.ibufLen = term.istream.read(term.ibuf)
-    if term.ibufLen == -1:
+    let n = term.istream.read(term.ibuf)
+    if n < 0:
       return err()
+    term.ibufLen = n
   let c = term.ibuf[term.ibufn]
   inc term.ibufn
   ok(c)
@@ -717,24 +718,22 @@ proc unblockIO(term: Terminal) =
   term.istream.setBlocking(false)
   term.ostream.setBlocking(false)
 
-proc ahandleRead*(term: Terminal): Opt[bool] =
+proc fillInputBuffer*(term: Terminal): Opt[void] =
+  # Fill the input buffer with characters.  After this, the caller is
+  # expected to exhaust it by repeatedly calling readEvent.
+  # If err is returned, the terminal has disconnected; the caller should
+  # save state and then quit.
   term.ibufn = 0
-  term.ibufLen = term.istream.read(term.ibuf)
-  if term.ibufLen < 0:
+  let n = term.istream.read(term.ibuf)
+  if n < 0:
+    term.ibufLen = 0
     let e = errno
     if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
       term.blockIO0()
       return err()
-    term.ibufLen = 0
-    return ok(false)
-  ok(true)
-
-proc areadChar(term: Terminal): Opt[char] =
-  if term.ibufn >= term.ibufLen:
-    return err()
-  let c = term.ibuf[term.ibufn]
-  inc term.ibufn
-  ok(c)
+  else:
+    term.ibufLen = n
+  ok()
 
 proc backtrack(eparser: var EventParser; c: char) =
   eparser.backtrackStack.setLen(0)
@@ -1175,14 +1174,18 @@ proc parseAPCG(term: Terminal; c: char): EscParseChunkResult =
     return eprRedraw
   eprNone
 
-proc areadCharBacktrack(term: Terminal): Opt[char] =
+proc readCharBacktrack(term: Terminal): Opt[char] =
   if term.eparser.state == esBacktrack:
     if term.eparser.backtrackStack.len > 0:
       return ok(term.eparser.backtrackStack.pop())
     term.eparser.state = esNone
-  return term.areadChar()
+  if term.ibufn >= term.ibufLen:
+    return err()
+  let c = term.ibuf[term.ibufn]
+  inc term.ibufn
+  ok(c)
 
-proc areadEvent*(term: Terminal): Opt[InputEvent] =
+proc readEvent*(term: Terminal): Opt[InputEvent] =
   var epr = eprNone
   while epr == eprNone:
     let state = term.eparser.state
@@ -1206,7 +1209,7 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
             elif u shr 4 == 0b1110: 3i8
             else: 4i8
         return ok(InputEvent(t: ietKey, c: c))
-    let c = ?term.areadCharBacktrack()
+    let c = ?term.readCharBacktrack()
     case state
     of esBacktrack: term.parseNone(c)
     of esNone, esBracketed:
@@ -1351,13 +1354,15 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]"; bottom = false): Opt[void] =
     ?term.write(msg)
     ?term.blockIO()
     #TODO probably we should allow SIGINT here too
+    # (actually, it would be best to fix the UI so that this proc can be
+    # removed)
     while term.eparser.queryState != qsNone:
-      if term.ahandleRead().isErr:
+      if term.fillInputBuffer().isErr:
         break
       while true:
-        if term.areadEvent().isErr:
+        if term.readEvent().isErr:
           break
-    discard term.readChar()
+    discard term.readCharSync()
     term.unblockIO()
   ok()
 
@@ -2493,10 +2498,10 @@ proc quit*(term: Terminal): Opt[void] =
     term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
     discard tcSetAttr(term.istream.fd, TCSANOW, addr term.newTermios)
     while term.eparser.queryState != qsNone:
-      if term.ahandleRead().isErr:
+      if term.fillInputBuffer().isErr:
         break
       while true:
-        if term.areadEvent().isErr:
+        if term.readEvent().isErr:
           break
     ?term.disableRawMode()
     term.clearCanvas()
