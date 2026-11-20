@@ -294,4 +294,4 @@ https/get;	mpv -- %u; needsterminal; nc-match=^https://(www\.)?youtube\.com/watc
 
 ## See also
 
-[**cha**](cha.md)(1)
+[**cha**](cha.md)(1), [**cha-cgi**](cgi.md)(5)

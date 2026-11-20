@@ -90,6 +90,23 @@ differentiates between three tiers:
 It is possible to manually adjust OSC 52 use with the `input.osc52-copy` and
 `input.osc52-primary` configuration options.
 
+### Middle-click paste
+
+Chawan employs a hack to allow middle-click paste inside the line editor:
+when receiving a middle-click "mouse press" event, it immediately disables
+mouse tracking, and re-enables it after the next "bracketed paste" event.
+
+(When bracketed paste is disabled, it's emulated by pretending that all
+keys received in the same buffer are a paste event.  Note however that this
+only happens during middle-click paste, otherwise such sequences are still
+treated as key presses.)
+
+This works well in e.g. XTerm, because it handles paste events on mouse
+button *release*.  Unfortunately, some other terminals handle them on
+*press*, which is inhibited by the mouse protocol; users of such terminals
+will have to press the middle mouse button again.  (Alternatively, most
+terminals allow bypassing the protocol by holding down the shift key.)
+
 ## Ancient terminals
 
 Most pre-ECMA-48 (1979) terminals are not expected to work.
