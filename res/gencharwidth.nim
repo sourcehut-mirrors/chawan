@@ -1,12 +1,13 @@
 {.push raises: [].}
 
 import io/chafile
-import types/opt
+import utils/cowstr
+import utils/opt
 import utils/strwidth
 import utils/twtstr
 
 proc die(s: string) {.noreturn.} =
-  discard cast[ChaFile](stderr).writeLine("gencharwidth: " & s)
+  discard chaStderr.writeLine("gencharwidth: " & s)
   quit(1)
 
 var DoubleWidthRanges: seq[(uint32, uint32)] = @[]
@@ -28,7 +29,7 @@ proc add(res: var seq[(uint32, uint32)]; s: string) =
     res.add((rstart, rend))
 
 proc loadRanges() =
-  var s: string
+  var s: Str
   if readFile("res/EastAsianWidth.txt", s).isErr:
     die("failed to read res/EastAsianWidth.txt")
   for line in s.split('\n'):
@@ -55,8 +56,7 @@ type LineWriter = object
   line: string
 
 proc flush(writer: var LineWriter) =
-  let stdout = cast[ChaFile](stdout)
-  discard stdout.write(writer.line & '\n')
+  discard chaStdout.write(writer.line & '\n')
   writer.line = ""
 
 proc write(writer: var LineWriter, s: string) =
@@ -65,6 +65,7 @@ proc write(writer: var LineWriter, s: string) =
   writer.line &= s
 
 proc makePropertyTable(ranges: RangeMap): PropertyTable =
+  result = PropertyTable.default
   var ucs = 0u32
   var k = 0
   while ucs <= 0xFFFF:

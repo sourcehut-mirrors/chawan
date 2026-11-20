@@ -179,7 +179,7 @@ res/chawan.html: res/chawan.html.in res/version
 	sed "s/%CHA_VERSION%/$$(cat res/version)/g" $< > $@~
 	mv $@~ $@
 
-unicode_version = 17.0.0
+unicode_version = 18.0.0
 
 .PHONY: unicode_gen
 unicode_gen:
