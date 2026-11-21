@@ -1396,7 +1396,7 @@ void nsvgRasterize(NSVGrasterizer* r,
 		memset(&dst[i*stride], 0, w*4);
 
 	for (shape = image->shapes; shape != NULL; shape = shape->next) {
-		if (!(shape->flags & NSVG_FLAGS_VISIBLE))
+		if (!(shape->flags & NSVG_FLAGS_VISIBLE) || shape->virtual)
 			continue;
 
 		if (shape->fill.type != NSVG_PAINT_NONE) {

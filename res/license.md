@@ -110,10 +110,14 @@ SOFTWARE.
 ## NanoSVG
 
 This copy of NanoSVG includes modifications that are not part of the
-original source file. (<- for compliance with the license below.)
+original source file.  (<- for compliance with the license below.)
+
+It also includes some improvements from the
+[Dillo](https://dillo-browser.org) browser.
 
 ```
 Copyright (c) 2013-14 Mikko Mononen memon@inside.org
+Copyright (c) 2024 Rodrigo Arias Mallo <rodarima@gmail.com>
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the authors be held liable for any damages
