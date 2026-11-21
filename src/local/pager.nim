@@ -2293,12 +2293,12 @@ jsClassDef(Pager):
 
   # private
   proc getTempFile(pager: Pager; ext = str("")): Str {.jsfunc.} =
-    var buf = initGrowbufM(pager.config{"tmpdir"}, "chaptmp",
-      pager.loader.clientPid, '-', pager.tmpfSeq)
+    var buf = initGrowbufM("chaptmp", pager.loader.clientPid, '-',
+      pager.tmpfSeq)
     if ext != "":
       buf.addM('.', ext)
     inc pager.tmpfSeq
-    buf.toStr()
+    pager.config{"tmpdir"} / buf.toStr()
 
   # public
   proc askChar(ctx: JSContext; pager: Pager; prompt: sink Str): JSValue
