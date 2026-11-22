@@ -306,10 +306,14 @@ type
   #   child.  The root in turn stores either the owner document (detached
   #   tree) or nil (ShadowRoot, Document).
   #
-  # Since a root always has a nil parentNode, it can be distinguished from
-  # the next sibling by testing its parent against 0.  Do note that this
-  # is also true for internalFirst if it holds a shadow root, but the two
-  # cases do not conflict because a root node cannot be firstChild.
+  # Whether the next sibling is the root node can be determined by testing
+  # its parent against the current node's parent.  Note that it is *not*
+  # guaranteed that the root's parent is nil; in particular, when the
+  # insertion steps are running, the root is already attached to another
+  # tree.
+  #
+  # On the other hand, if internalFirst is a shadow root, then its parent
+  # is nil in all cases.
   Node* = JSRef[NodeObj]
 
   NodeNil = JSNullRef[NodeObj]
@@ -699,7 +703,6 @@ proc getBoundingClientRect(element: Element): DOMRect
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc hasClass*(element: Element; class: CAtom): bool
-proc hasInsertionSteps(element: Element): bool
 proc insertionSteps(element: Element; ctx: JSContext): bool
 proc movingSteps(element: Element; isSubtreeRoot: bool; oldParent: ParentNode)
 proc invalidate*(element: Element)
@@ -801,7 +804,6 @@ proc movingStepsForm(element: Element) {.importc: "cha_$1".}
 proc cloningStepsForm(old, clone: Element) {.importc: "cha_$1".}
 proc reflectAttributeForm(element: Element; name: StaticAtom; value: StrNil)
   {.importc: "cha_$1".}
-proc hasInsertionStepsForm(element: Element): bool {.importc: "cha_$1".}
 proc getElementForm(element: Element): HTMLElement {.importc: "cha_$1".}
 proc getFormMethodAttr(element: Element; name: StaticAtom): Str {.
   importc: "cha_$1".}
@@ -847,8 +849,8 @@ iterator childList*(node: ParentNode): Node {.inline.} =
     while true:
       yield it
       it = it.internalNext
-      if it.parentNode == nil:
-        break # found root
+      if it.parentNode != node:
+        break # root node (stored next pointer of as last child)
 
 iterator safeChildList*(node: ParentNode): Node {.inline.} =
   var node = node.firstChild
@@ -859,16 +861,18 @@ iterator safeChildList*(node: ParentNode): Node {.inline.} =
 
 # either the shadow root, or our child list
 iterator shadowChildList*(node: ParentNode): Node {.inline.} =
+  var node = node
   var it = node.firstChildShadow
   if it != nil:
     if it.parentNode == nil: # shadow root
-      it = (it as ParentNode).firstChildShadow
+      node = it as ParentNode
+      it = node.firstChildShadow
     if it != nil:
       while true:
         yield it
         it = it.internalNext
-        if it.parentNode == nil:
-          break # found root
+        if it.parentNode != node:
+          break # root node (stored next pointer of as last child)
 
 iterator rchildList*(node: ParentNode): Node {.inline.} =
   let first = node.firstChild
@@ -895,7 +899,8 @@ iterator precedingSiblings(node: Node): Node {.inline.} =
 iterator subsequentSiblings(node: Node): Node {.inline.} =
   var it = node.internalNext
   if it != nil:
-    while it.parentNode != nil:
+    let parent = node.parentNode
+    while it.parentNode == parent:
       yield it
       it = it.internalNext
 
@@ -1679,6 +1684,8 @@ when defined(debug):
       return "null"
     if node of Document:
       return "Document"
+    if node of ShadowRoot:
+      return "ShadowRoot"
     var buf = initGrowbuf()
     buf.serializeFragmentInner(node, ttUnknown, writeShadow = true)
     $buf
@@ -1716,9 +1723,10 @@ proc nextSiblingShadow(node: Node): lent Node =
   if next == nil:
     # node is a Document.
     return node.internalNext
-  if next.parentNode == nil:
+  if next.parentNode != node.parentNode:
     # next is the root, return nil.
-    return next.parentNode.asNode
+    let hack {.global.} = Node(nil)
+    return hack
   return node.internalNext
 
 # Return the next descendant if it isn't `start', and nil otherwise.
@@ -1733,7 +1741,7 @@ proc nextDescendant(node, start: Node; skip = false): Node =
   # climb up until we find a non-last leaf (this might be node itself)
   var it = node
   while it != start:
-    if it.internalNext != nil and it.internalNext.parentNode != nil:
+    if it.internalNext != nil and it.internalNext.parentNode == it.parentNode:
       return it.internalNext
     it = it.parentNode.asNode
   # done
@@ -1752,17 +1760,6 @@ proc nextDescendantShadow(node, start: Node): Node =
     node = node.parentNodeShadow
   # done
   Node(nil)
-
-proc nextElementDescendantShadow(element: Element; start: Node): Element =
-  var node = element.asNode
-  while true:
-    node = node.nextDescendantShadow(start)
-    if node == nil:
-      break
-    let element = node as Element
-    if element != nil:
-      return element
-  Element(nil)
 
 proc previousDescendant(node: Node): Node =
   var prev = node.previousSibling
@@ -1810,6 +1807,8 @@ proc checkParentValidity(parent: Node): Result[ParentNode, cstring] =
 
 proc rootNode*(node: Node): Node =
   # Return the root node (may be shadow root, or a disconnected element)
+  # Warning: during element insertion, this returns the old root node for
+  # nodes that haven't been visited yet.
   let parent = node.parentNode
   if parent == nil:
     return node
@@ -2920,7 +2919,6 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
   if node.nextSibling == nil:
     node.internalNext = rootNode
   let rootDocumentLike = rootNode as RootNode
-  var specialElement: Element
   for desc in node.descendantsShadowIncl:
     let last = desc.lastChild
     if last != nil and last.internalNext == node:
@@ -2931,8 +2929,8 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
         if element.asNode.rootNode == rootDocumentLike.asNode:
           # rootNode cannot be nil, so neither can rootDocumentLike here
           rootDocumentLike.addElementId(element)
-      if specialElement == nil and element.hasInsertionSteps():
-        specialElement = element
+      if element.insertionSteps(ctx):
+        postConnectionNodes.add(element)
       if element.custom == cesCustom:
         #TODO append parentDocument to element custom registry
         #TODO enqueue connectedCallback (custom elements)
@@ -2948,14 +2946,6 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
         next.prev = shadow
       shadow.next = next
       parentDocument.shadowHead = shadow
-  # Insertion steps have a tendency to traverse the dom, which has
-  # disastrous consequences in the above loop as the root node is still
-  # inconsistent.  So we just cache the first node with insertion steps
-  # and traverse the tree again if needed.
-  while specialElement != nil:
-    if specialElement.insertionSteps(ctx):
-      postConnectionNodes.add(specialElement)
-    specialElement = specialElement.nextElementDescendantShadow(node)
 
 # WARNING ditto
 proc insert0(parent: ParentNode; ctx: JSContext; nodes: openArray[Node];
@@ -5497,11 +5487,6 @@ proc hasId*(element: Element; id: CAtom): bool =
   if efQuirks in element.flags:
     return element.id.equalsIgnoreCase(id)
   return element.id == id
-
-proc hasInsertionSteps(element: Element): bool =
-  element.tagType in {ttLink, ttImg, ttStyle, ttScript, ttDetails} or
-    element.tagType(satNamespaceSVG) == ttSvg or
-    element.hasInsertionStepsForm()
 
 # Returns true if has post-connection steps.
 proc insertionSteps(element: Element; ctx: JSContext): bool =

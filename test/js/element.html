@@ -135,11 +135,17 @@ function testDataset() {
 		"test,test-,test-Test");
 }
 
+function testOwnerDocument() {
+	const el = document.createElement("div");
+	assertEquals(el.ownerDocument, document);
+}
+
 testName();
 testClass();
 testAttribute();
 testParentNode();
 testDataset();
+testOwnerDocument();
 
 x.textContent = "Success";
 </script>

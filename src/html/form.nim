@@ -205,9 +205,6 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
           yield opt
 
 # Element extensions
-proc hasInsertionStepsForm(element: Element): bool {.exportc: "cha_$1".} =
-  element.tagType == ttOption or element of FormAssociatedElement
-
 proc insertionStepsForm(element: Element) {.exportc: "cha_$1".} =
   if element.tagType == ttOption:
     let parent = element.asNode.parentElement
