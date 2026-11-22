@@ -215,6 +215,8 @@ type
     bifSave
     bifHTML # buffer is parsed as HTML (applies for x-htmloutput too)
     bifHistory # buffer should be saved to history
+    bifVisited # :visited links are matched when this buffer is
+               # target & :visited is matched by this buffer
     bifTailOnLoad # jump to the last line on the next load
     bifCrashed # buffer process no longer available
     bifHasStart # buffer has/had a starting position
@@ -298,6 +300,11 @@ type
     contentType*: Str
     shortContentType*: Str
     loadInfo*: Str
+    # Origin of the URL from which the user navigated to this history entry.
+    # Note that this is set based on the `buffer.history' value,
+    # *disregarding* referrer policy or `buffer.referer-from', so do not
+    # use it for anything referrer-related.
+    historyOrigin*: Str
     request*: Request # source request
     # note: this is not the same as request.url (but should be synced
     # with buffer.url)
@@ -350,8 +357,8 @@ proc getClassID(t: typedesc[Highlight]): JSClassID
 proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; attrs: WindowAttributes; title: sink Str;
     redirectDepth: int; flags: set[BufferInitFlag];
-    contentType, filterCmd: sink Str; charsetStack: seq[Charset]):
-    BufferInit =
+    contentType, filterCmd: sink Str; charsetStack: seq[Charset];
+    historyOrigin: sink Str; metaRefresh: MetaRefresh): BufferInit =
   let cacheId = if request.url.schemeType == stCache:
     parseInt32(request.url.pathname.toOpenArray()).get(-1)
   else:
@@ -383,7 +390,9 @@ proc newBufferInit*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     refreshMillis: -1,
     filterCmd: filterCmd,
     istreamOutputId: -1,
-    ostreamOutputId: -1
+    ostreamOutputId: -1,
+    historyOrigin: historyOrigin,
+    metaRefresh: metaRefresh
   )
 
 # Apply data received in response.
@@ -469,6 +478,7 @@ jsClassPublicDef(BufferInit):
       height: init.height,
       request: init.request,
       charsetStack: init.charsetStack,
+      metaRefresh: init.metaRefresh,
       refreshMillis: -1,
       istreamOutputId: -1,
       ostreamOutputId: -1

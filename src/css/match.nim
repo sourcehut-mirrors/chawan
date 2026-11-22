@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import config/history
 import css/cssparser
 import html/catom
 import html/dom
@@ -155,6 +156,12 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
   of pcLink:
     return element.tagType in {ttA, ttArea} and element.attrb(satHref)
   of pcVisited:
+    # Matches self-URLs and URLs clicked from the current buffer.
+    # See cha-css(7) for the rationale.
+    if (let element = element as HTMLHyperlinkElement; element != nil):
+      let window = element.asNode.document.window
+      if window != nil and window.history != nil and window.history.len > 0:
+        return element.url in window.history
     return false
   of pcDisabled:
     return element.isDisabled()

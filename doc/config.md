@@ -209,7 +209,22 @@ meta-refresh = "ask"
 history = true
 : **boolean**
 
-: Whether or not browsing history should be saved to the disk.
+: Whether or not browsing history should be saved to the disk as specified
+  in `history-file`.
+
+visited = false
+: **boolean**
+  Whether the CSS `:visited` pseudo-class should be matched (i.e., visited
+  links turn purple).  When this option is set, it is matched if either a)
+  the link points to the current buffer's origin (=domain, roughly) or b)
+  the link has been visited from the same origin before.  The latter is
+  checked by storing the referring origin in the history.uri file.
+
+  Note that the combination of `visited = true` and `scripting = true`
+  has similar privacy implications to `cookie = "save"`, as the website
+  gets to know whether you have visited it before.  (Setting arbitrary
+  data requires the user to click around, so it's a bit weaker than
+  cookies.)
 
 mark-links = false
 : **boolean**
@@ -903,6 +918,19 @@ history = buffer.history
 : **boolean**
 
 : Whether or not browsing history should be saved to the disk for this URL.
+
+visited = buffer.visited
+: **boolean**
+
+: Whether or not the `:visited` pseudo-class should be matched (i.e.,
+  visited links turn purple).  Both the visited buffer as well as the
+  originating buffer must have `visited` set to true for this to take
+  effect.  See `visited` in the [Buffer](#buffer) section for privacy
+  implications of this setting.
+
+  It is valid to set `visited` to true when `history` is set to false;
+  in that case, visits to the site will not be logged to history, but the
+  buffer will match `:visited` for links to other sites nevertheless.
 
 mark-links = buffer.mark-links
 : **boolean**

@@ -114,10 +114,16 @@ Following standard pseudo-classes are supported: `:first-child`,
 `:where()`, `:lang()`, `:link`, `:target`, `:disabled`, `:empty`,
 `:first-of-type`, `:last-of-type`, `:host`, and `:host()`.
 
-`:visited` is parsed, but for now it is not matched.
-
 `:defined` is matched for compatibility; however, custom elements are not
 supported yet.
+
+`:visited` is not matched by default due to privacy concerns.  If
+`buffer.visited = true` is set, it is matched selectively: navigation
+origins are saved to the disk along with the history entry, and matched by
+subsequent buffers that have the same origin as the URL or the buffer from
+which it was clicked.  See [**cha-config**](config.md#buffer)(5)'s
+*Buffer* section for discussion on the privacy implications of this
+setting.
 
 The standard pseudo-elements `::before`, `::after`, and `::marker` are
 supported.  `::backdrop` is parsed for compatibility, but is not supported

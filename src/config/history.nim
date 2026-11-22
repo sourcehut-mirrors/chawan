@@ -9,6 +9,7 @@ import io/dynstream
 import utils/cowstr
 import utils/opt
 import utils/tabutil
+import utils/twtstr
 
 type
   History* = ref object
@@ -20,8 +21,52 @@ type
     transient*: bool # set if there is a failure in parsing history
 
   HistoryEntry* {.final.} = ref object of StrMapItem
+    # For history entries, the entry is composed like
+    #   url(\torigin)?
+    #
+    # Note: we cannot merge identical entries from separate origins because
+    # taht would allow history enumeration attacks.  (Sketch: push an
+    # entry known to be in history, an entry to check, then history-size
+    # more fake entries.  If the entry to check is still in the history,
+    # then the entry to check has been visited from another website,
+    # otherwise it wasn't.)
+    #TODO however, we could still merge the /representation/ by adding a
+    # "weight" to each entry that counts how many origins it has been
+    # accessed from.  When the entry gets shifted out, we just drop the
+    # last origin (and if there are no more, the entry itself too).
     prev*: HistoryEntry
     next*: HistoryEntry
+
+iterator items*(hist: History): HistoryEntry =
+  var entry = hist.first
+  while entry != nil:
+    yield entry
+    entry = entry.next
+
+proc matchesEntryOrigin(s, origin: Str): bool =
+  # Also make self-links visible, since the server already knows that the
+  # user has visited anyway.
+  let i = s.findOrLen(':')
+  if not s.startsWith("://", i) or s.startsWith("file:///"):
+    # Not a net_path, so only same-origin if url == origin.
+    let j = s.findOrLen('\t')
+    return s.toOpenArray(0, j - 1) == origin
+  let j = s.findOrLen({'/', '\t'}, i + 3)
+  return s.toOpenArray(0, j - 1) == origin
+
+proc matchesOrigin(entry: HistoryEntry; origin: Str): bool =
+  var i = entry.s.findOrLen('\t')
+  if i < entry.s.len:
+    return origin == entry.s.toOpenArray(i + 1, entry.s.high)
+  matchesEntryOrigin(entry.s, origin)
+
+iterator itemsOfOrigin*(hist: History; origin: Str): HistoryEntry =
+  for entry in hist:
+    if entry.matchesOrigin(origin):
+      yield entry
+
+proc getText*(entry: HistoryEntry): Str =
+  percentDecode(entry.s.until('\t'))
 
 proc shrink(hist: History) =
   # Provide a buffer of the history length so that merging in another
@@ -35,7 +80,7 @@ proc shrink(hist: History) =
     if hist.first == nil:
       hist.last = nil
 
-proc add(hist: History; entry: sink HistoryEntry; merge = false) =
+proc add(hist: History; entry: sink HistoryEntry; merge: bool) =
   let old = HistoryEntry(hist.map.getOrDefault(entry.s))
   if merge and old != nil:
     return
@@ -62,8 +107,25 @@ proc add(hist: History; entry: sink HistoryEntry; merge = false) =
 proc newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
 
-proc add*(hist: History; s: sink Str) =
-  hist.add(HistoryEntry(s: s), merge = false)
+proc addRaw*(hist: History; s: sink Str; merge = false) =
+  hist.add(HistoryEntry(s: s), merge)
+
+proc addInput*(hist: History; s: Str) =
+  # filter out tabulator
+  hist.addRaw(percentEncode(s, ControlPercentEncodeSet))
+
+proc addURL*(hist: History; s, origin: Str) =
+  if origin == "" or matchesEntryOrigin(s, origin):
+    # If origin is the same for the URL, it will be visible anyway.
+    hist.addRaw(s)
+  else:
+    hist.addRaw(initStrM(s, '\t', origin))
+
+proc contains*(hist: History; s: Str): bool =
+  s.toOpenArray() in hist.map
+
+proc len*(hist: History): int =
+  hist.map.load
 
 proc clear*(hist: History) =
   var it = move(hist.first)
@@ -88,7 +150,7 @@ proc parse*(hist: History; ps: PosixStream; otime = int64.low;
     let file = ?ps.afdopen("r")
     var line = initGrowbuf()
     while ?file.readLine(line):
-      hist.add(HistoryEntry(s: move(line).toStr()), merge)
+      hist.addRaw(move(line).toStr(), merge)
     hist.mtime = mtime
   ok()
 

@@ -140,8 +140,7 @@ type
 
   HTMLAreaElement = JSRef[HTMLAreaElementObj]
 
-  HTMLAreaElementObj {.pure, final.} = object of HTMLElementObj
-    relList: DOMTokenArray
+  HTMLAreaElementObj {.pure, final.} = object of HTMLHyperlinkElementObj
 
 # Forward declarations
 proc resetFormOwner(element: FormAssociatedElement)
@@ -260,7 +259,15 @@ proc reflectAttributeForm(element: Element; name: StaticAtom; value: StrNil)
         parseEnumNoCase[ButtonType](value.asStr).get(btSubmit)
   of ttArea:
     let area = element as HTMLAreaElement
-    if name == satRel:
+    if name == satHref:
+      let url = element.asNode.document.parseURL0(value.asStr)
+      if url != nil and url.schemeType != stBlob:
+        url.username = str("")
+        url.password = str("")
+        area.asHTMLHyperlinkElement.url = url.toStr()
+      else:
+        area.asHTMLHyperlinkElement.url = str("")
+    elif name == satRel:
       area.asElement.reflectTokens(area.relList, satRel, value.asStr)
   else: discard
 
@@ -588,7 +595,7 @@ jsClassPublicDef(FormAssociatedElement): # fake class
 
 # <area>
 jsClassDef(HTMLAreaElement):
-  jsextends HTMLElementDef
+  jsextends HTMLHyperlinkElementDef
 
   proc toString(this: HTMLAreaElement): Str {.jsfunc.} =
     if href := this.asElement.reinitURL():

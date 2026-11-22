@@ -5,6 +5,7 @@ import std/posix
 
 import chame/htmlparser
 import config/conftypes
+import config/history
 import css/box
 import css/cell
 import css/color
@@ -1246,6 +1247,12 @@ proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
       url = bc.evalJSURL(url, str("text/html"))
       if url == nil:
         return initClickResult()
+    if bc.window.history != nil:
+      bc.window.history.addRaw(url.toStr())
+      #TODO we should invalidate all anchors, but looping through all
+      # elements is too slow...
+      anchor.asElement.invalidate()
+      bc.maybeReshape()
     return initClickResult(newRequest(url, hmGet))
   return initClickResult()
 
@@ -1874,10 +1881,10 @@ proc runBuffer(bc: BufferContext) =
       bc.maybeReshape(suppressFouc = true)
 
 proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
-    attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
+    attrs: WindowAttributes; ishtml: bool; charsetStack: sink seq[Charset];
     loader: FileLoader; pstream, istream, urandom: PosixStream; cacheId: int;
     contentType: Str; linkHintChars: sink seq[uint32];
-    schemes: sink seq[Str]) =
+    schemes: sink seq[Str]; history: History) =
   let confidence = if config.charsetOverride == csUnknown:
     ccTentative
   else:
@@ -1913,7 +1920,8 @@ proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
       config.imageTypes,
       config.userAgent,
       config.referrer,
-      contentType
+      contentType,
+      history
     )
     bc.window.bc = bc
     bc.charset = bc.charsetStack.pop()

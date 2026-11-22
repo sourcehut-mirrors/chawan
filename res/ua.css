@@ -168,6 +168,8 @@ p { margin: 1em 0 }
 	a[href]:hover { font-weight: bold }
 }
 
+a[href]:visited { color: -cha-ansi(magenta) }
+
 a[href]::-cha-link-marker {
 	counter-increment: -cha-link-counter;
 	content: '[' counter(-cha-link-counter) ']';

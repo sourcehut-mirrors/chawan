@@ -281,7 +281,8 @@ template str*(s: static string): Str =
   initStrLit(cstring(s), s.len)
 
 macro addM*(buf: var Growbuf; ss: varargs[typed]) =
-  # fmt format: like printf, but uses DLE (data link escape) instead of %
+  # fmt format: like printf, but uses DLE (ASCII data link escape)
+  # instead of %
   # str: DLE S
   # growbuf: DLE G
   # char: DLE c
@@ -293,13 +294,13 @@ macro addM*(buf: var Growbuf; ss: varargs[typed]) =
     case it.kind
     of nnkCharLit:
       let c = char(it.intVal)
-      if c in {'\x00', '\x10'}:
+      if c in {'\x00', DLE}:
         fmt &= "\x10c"
         args.add(it)
       else:
         fmt &= c
     of nnkStrLit, nnkTripleStrLit:
-      if {'\x00', '\x10'} in it.strVal:
+      if {'\x00', DLE} in it.strVal:
         error("NUL or DLE in string (pass it as str() instead)")
       fmt &= it.strVal
     else:

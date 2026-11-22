@@ -99,7 +99,7 @@ type
 
   Origin* = object
     t*: OriginType
-    s: Str
+    s*: Str
 
 # Forward declarations
 proc parseURL0*(input: openArray[char]; base = URL(nil)): URL

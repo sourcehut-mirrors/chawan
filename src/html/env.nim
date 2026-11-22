@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import config/conftypes
+import config/history
 import config/mimetypes
 import css/cssparser
 import css/cssvalues
@@ -259,7 +260,7 @@ jsClassRaw(ScreenDef, "Screen"):
 
 # History
 jsClassRaw(HistoryDef, "History"):
-  type History = distinct Window
+  type WindowHistory = distinct Window
 
   proc finalizeHistory(rt: JSRuntime; this: pointer) {.jsfin.} =
     JS_FreeForeignObject(rt, this)
@@ -268,13 +269,13 @@ jsClassRaw(HistoryDef, "History"):
       {.jsmark.} =
     JS_MarkForeignObject(rt, this, markFunc)
 
-  proc length(history: History): uint32 {.jsfget.} = 1
-  proc state(history: History): JSValue {.jsfget.} = JS_NULL
-  proc go(history: History) {.jsfunc.} = discard
-  proc back(history: History) {.jsfunc.} = discard
-  proc forward(history: History) {.jsfunc.} = discard
+  proc length(history: WindowHistory): uint32 {.jsfget.} = 1
+  proc state(history: WindowHistory): JSValue {.jsfget.} = JS_NULL
+  proc go(history: WindowHistory) {.jsfunc.} = discard
+  proc back(history: WindowHistory) {.jsfunc.} = discard
+  proc forward(history: WindowHistory) {.jsfunc.} = discard
 
-  proc pushState(ctx: JSContext; history: History; data: JSValueConst;
+  proc pushState(ctx: JSContext; history: WindowHistory; data: JSValueConst;
       unused: DOMString; url = JS_NULL.vc): JSValue {.jsfunc,
       jsfunc: "replaceState".} =
     #TODO figure out some way to emulate the navigation API that isn't as
@@ -1144,7 +1145,7 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     images, styling, autofocus: bool; headless: HeadlessMode;
     attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;
     urandom: PosixStream; imageTypes: MimeTypesImages;
-    userAgent, referrer, contentType: Str): Window =
+    userAgent, referrer, contentType: Str; history: History): Window =
   let console = newConsole(chaStderr)
   let ctx = if scripting != smFalse:
     rt.newJSContext()
@@ -1173,7 +1174,8 @@ proc newWindow*(rt: JSRuntime; scripting: ScriptingMode;
     referrer: referrer,
     urandom: urandom,
     importMapsAllowed: true,
-    timeOrigin: getTime(scripting)
+    timeOrigin: getTime(scripting),
+    history: history
   )
   if addScripting(window, ctx, url).isErr:
     console.error("failed to initialize JS")

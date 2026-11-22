@@ -20,6 +20,10 @@ const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 const HTTPWhitespace* = {' ', '\n', '\r', '\t'}
 const NonDigit* = AllChars - AsciiDigit
 
+# ASCII controls used in some internal DSLs
+const RS* = '\x1E' # record separator
+const DLE* = '\x10' # data link escape
+
 proc nextUTF8*(s: openArray[char]; i: var int): uint32 =
   var j = i
   var u = uint32(s[j])
@@ -454,6 +458,7 @@ proc parseInt64*(s: openArray[char]): Opt[int64] =
 proc parseIntP*(s: openArray[char]): Opt[int] =
   return parseIntImpl[int, uint](s, 10)
 
+#TODO move to cowstr
 const ControlPercentEncodeSet* = Controls + NonAscii
 const FragmentPercentEncodeSet* = ControlPercentEncodeSet +
   {' ', '"', '<', '>', '`'}

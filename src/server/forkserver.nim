@@ -4,6 +4,7 @@ import std/posix
 
 import config/config
 import config/conftypes
+import config/history
 import config/mailcap
 import encoding/charset
 import io/chafile
@@ -44,6 +45,7 @@ type
     loaderStream: PosixStream
     pollData: PollData
     linkHintChars: seq[uint32]
+    historySize: int32
     schemes: seq[Str]
 
 proc loadConfig*(forkserver: ForkServer; config: Config;
@@ -67,6 +69,7 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
     ))
     w.swrite(config{"urimethodmap"})
     w.swrite(config{"autoBrowsecap"})
+    w.swrite(config{"historySize"})
   do:
     return -1
   var process = -1
@@ -79,10 +82,12 @@ proc loadConfig*(forkserver: ForkServer; config: Config;
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
-    contentType: Str): tuple[pid: int; cstream: PosixStream] =
+    contentType: Str; history: History):
+    tuple[pid: int; cstream: PosixStream] =
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return (-1, nil)
+  let origin = url.authOrigin
   var fail = false
   forkserver.stream.withPacketWriter w:
     w.swrite(config)
@@ -91,6 +96,12 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     w.swrite(ishtml)
     w.swrite(charsetStack)
     w.swrite(contentType)
+    # see cha-css(7) for an explanation
+    if history != nil:
+      for entry in history.itemsOfOrigin(origin.s):
+        w.swrite(false)
+        w.swrite(entry.s.until('\t'))
+    w.swrite(true)
     w.sendFd(sv[1])
   do:
     fail = true
@@ -152,6 +163,11 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
   r.assert(r.sread(ishtml))
   r.assert(r.sread(charsetStack))
   r.assert(r.sread(contentType))
+  let history = newHistory(ctx.historySize)
+  while (var done: bool; r.assert(r.sread(done)); not done):
+    var s: Str
+    r.assert(r.sread(s))
+    history.addRaw(s)
   let fd = r.recvFd().get
   discard chaStderr.flush()
   let pid = fork()
@@ -182,7 +198,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader;
     enterBufferSandbox()
     launchBuffer(rt, config, url, attrs, ishtml, charsetStack, loader, pstream,
       istream, urandom, cacheId, contentType, move(ctx.linkHintChars),
-      move(ctx.schemes))
+      move(ctx.schemes), history)
     chaAssert false
   discard close(fd)
   return pid
@@ -320,6 +336,7 @@ proc runForkServer*(controlStream, loaderStream: PosixStream; pagerPid: int;
     r.assert(r.sread(clientConfig))
     r.assert(r.sread(urimethodmapPaths))
     r.assert(r.sread(autoBrowsecapPath))
+    r.assert(r.sread(ctx.historySize))
     ctx.linkHintChars = linkHintChars.toOpenArray().toPoints()
     # for CGI
     if setupForkServerEnv(config).isErr:

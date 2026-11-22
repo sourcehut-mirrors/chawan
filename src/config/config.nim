@@ -192,6 +192,7 @@ type
     coHeadless = "headless"
     coHighlightMarks = "highlightMarks"
     coHistory = "history"
+    coVisited = "visited"
     coIgnoreCase = "ignoreCase"
     coImageMode = "imageMode"
     coImages = "images"
@@ -349,6 +350,7 @@ const OptionMap = [
   coHeadless: (cotHeadlessMode, csStart),
   coHighlightMarks: (cotBool, csDisplay),
   coHistory: (cotBool, csBuffer),
+  coVisited: (cotBool, csBuffer),
   coIgnoreCase: (cotRegexCase, csSearch),
   coImageMode: (cotImageModeAuto, csDisplay),
   coImages: (cotBool, csBuffer),
@@ -438,9 +440,9 @@ const LastStrSeqOpt = coUrimethodmap
 
 const SiteconfOptions = {
   coCookie, coScripting, coRefererFrom, coImages, coStyling,
-  coInsecureSslNoVerify, coAutofocus, coMetaRefresh, coHistory, coMarkLinks,
-  coShareCookieJar, coUserStyle, coFilterCmd, coDocumentCharset, coProxy,
-  coDefaultHeaders, coAskDownloadDir
+  coInsecureSslNoVerify, coAutofocus, coMetaRefresh, coHistory, coVisited,
+  coMarkLinks, coShareCookieJar, coUserStyle, coFilterCmd, coDocumentCharset,
+  coProxy, coDefaultHeaders, coAskDownloadDir
 }
 
 type

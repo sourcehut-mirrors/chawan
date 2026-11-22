@@ -192,7 +192,25 @@ accepts all of them, \(lqask\(rq brings up a pop\-up menu.
 history = true
 \f[B]boolean\f[R]
 .RS
-Whether or not browsing history should be saved to the disk.
+Whether or not browsing history should be saved to the disk as specified
+in \f[CR]history\-file\f[R].
+.RE
+.TP
+visited = false
+\f[B]boolean\f[R] Whether the CSS \f[CR]:visited\f[R] pseudo\-class
+should be matched (i.e., visited links turn purple).
+When this option is set, it is matched if either a) the link points to
+the current buffer\(cqs origin (=domain, roughly) or b) the link has
+been visited from the same origin before.
+The latter is checked by storing the referring origin in the history.uri
+file.
+.RS
+Note that the combination of \f[CR]visited = true\f[R] and
+\f[CR]scripting = true\f[R] has similar privacy implications to
+\f[CR]cookie = \(dqsave\(dq\f[R], as the website gets to know whether
+you have visited it before.
+(Setting arbitrary data requires the user to click around, so it\(cqs a
+bit weaker than cookies.)
 .RE
 .TP
 mark\-links = false
@@ -953,6 +971,21 @@ history = buffer.history
 .RS
 Whether or not browsing history should be saved to the disk for this
 URL.
+.RE
+.TP
+visited = buffer.visited
+\f[B]boolean\f[R]
+.RS
+Whether or not the \f[CR]:visited\f[R] pseudo\-class should be matched
+(i.e., visited links turn purple).
+Both the visited buffer as well as the originating buffer must have
+\f[CR]visited\f[R] set to true for this to take effect.
+See \f[CR]visited\f[R] in the Buffer section for privacy implications of
+this setting.
+It is valid to set \f[CR]visited\f[R] to true when \f[CR]history\f[R] is
+set to false; in that case, visits to the site will not be logged to
+history, but the buffer will match \f[CR]:visited\f[R] for links to
+other sites nevertheless.
 .RE
 .TP
 mark\-links = buffer.mark\-links

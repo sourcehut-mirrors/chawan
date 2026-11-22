@@ -227,7 +227,7 @@ proc readLine*(prompt, current: sink Str; termwidth: int; hide: bool;
   let promptw = prompt.width()
   let cursori = current.len
   # Skip the last history entry if it's identical to the input.
-  let skipLast = hist.last != nil and hist.last.s == current
+  let skipLast = hist.last != nil and hist.last.getText() == current
   let edit = jsNew LineEditObj(
     prompt: prompt,
     promptw: promptw,
@@ -291,7 +291,7 @@ jsClassDef(LineEdit):
 
   proc submit(ctx: JSContext; edit: LineEdit): JSValue {.jsfunc.} =
     if edit.hist.mtime == 0 and edit.text.len > 0:
-      edit.hist.add(edit.text)
+      edit.hist.addInput(edit.text)
     let text = ctx.toJS(edit.text)
     if JS_IsException(text.vc):
       return JS_EXCEPTION
@@ -450,7 +450,7 @@ jsClassDef(LineEdit):
     elif edit.currHist.prev != nil:
       edit.currHist = edit.currHist.prev
     if edit.currHist != nil:
-      edit.text = edit.currHist.s
+      edit.text = edit.currHist.getText()
       edit.clearSelection()
       # The begin call is needed so the cursor doesn't get lost outside
       # the string.
@@ -464,7 +464,7 @@ jsClassDef(LineEdit):
     if edit.currHist != nil:
       edit.currHist = edit.currHist.next
       if edit.currHist != nil:
-        edit.text = edit.currHist.s
+        edit.text = edit.currHist.getText()
         if edit.currHist == edit.hist.last and edit.skipLast:
           edit.currHist = nil
       else:

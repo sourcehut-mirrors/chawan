@@ -241,8 +241,8 @@ proc onReadCookieStream(response: Response) =
   var lastlf = opaque.buffer.toOpenArray().rfind('\n')
   var i = 0
   # Syntax: {jarId} RS {url} RS {persist?} RS {header} [ CR {header} ... ] LF
+  # (where RS is ASCII record separator)
   # Persist is ASCII digit 0 if persist, 1 if not.
-  const RS = '\x1E' # ASCII record separator
   while i < lastlf:
     let jarId = opaque.buffer.until(RS, i)
     i += jarId.len + 1
@@ -598,7 +598,7 @@ proc refreshStatusMsg(pager: Pager) =
     # save to alert history
     if pager.lastAlert != "":
       let hist = pager.getHist(lmAlert)
-      hist.add(move(pager.lastAlert))
+      hist.addInput(move(pager.lastAlert))
     pager.lastAlert = move(pager.alerts[0])
     pager.alerts.delete(0)
   else:
@@ -1010,7 +1010,8 @@ proc writeAskPrompt(pager: Pager) =
 
 proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; url: URL;
-    contentType, filterCmd: sink Str; title: sink Str = str("");
+    contentType, filterCmd: sink Str; metaRefresh: MetaRefresh;
+    historyOrigin: sink Str = str(""); title: sink Str = str("");
     redirectDepth = 0; flags: set[BufferInitFlag] = {};
     charsetStack: seq[Charset] = @[]): BufferInit =
   let res = pager.loader.startRequest(request, loaderConfig)
@@ -1022,7 +1023,7 @@ proc initBuffer(pager: Pager; bufferConfig: BufferConfig;
   pager.loader.pollData.register(stream.fd, POLLIN)
   let init = newBufferInit(bufferConfig, loaderConfig, url, request,
     pager.attrs, title, redirectDepth, flags, contentType, filterCmd,
-    charsetStack)
+    charsetStack, historyOrigin, metaRefresh)
   init.stream = stream
   let data = BufferInitData(init: init, stream: stream)
   pager.loader.put(data)
@@ -1152,6 +1153,7 @@ proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
   )
   metaRefresh = pager.config{"metaRefresh"}
   flags.toggleIf(bifHistory, pager.config{"history"})
+  flags.toggleIf(bifVisited, pager.config{"visited"})
   flags.toggleIf(bifAskDownloadDir, pager.config{"askDownloadDir"})
   flags.toggleIf(bifRefererFrom, pager.config{"refererFrom"})
   loaderConfig = LoaderClientConfig(
@@ -1209,6 +1211,7 @@ proc applySiteconf(pager: Pager; ctx: JSContext; url: URL;
         of coAutofocus: result.autofocus = bit.bool
         of coMetaRefresh: metaRefresh = bit.metaRefresh
         of coHistory: flags.toggleIf(bifHistory, bit.bool)
+        of coVisited: flags.toggleIf(bifVisited, bit.bool)
         of coMarkLinks: result.markLinks = bit.bool
         of coAskDownloadDir: flags.toggleIf(bifAskDownloadDir, bit.bool)
         else: chaAssert false
@@ -1250,11 +1253,12 @@ proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
 
 proc gotoURL0(pager: Pager; request: Request; flags: set[BufferInitFlag];
     bufferConfig: BufferConfig; loaderConfig: LoaderClientConfig;
-    title, contentType: sink Str; redirectDepth: int; url: URL;
-    filterCmd: sink Str): BufferInit =
+    title, contentType, historyOrigin: sink Str; redirectDepth: int; url: URL;
+    filterCmd: sink Str; metaRefresh: MetaRefresh): BufferInit =
   let url = if url != nil: url else: request.url
-  let init = pager.initBuffer(bufferConfig, loaderConfig, request,
-    url, contentType, filterCmd, title, redirectDepth, flags)
+  let init = pager.initBuffer(bufferConfig, loaderConfig, request, url,
+    contentType, filterCmd, metaRefresh, historyOrigin, title, redirectDepth,
+    flags)
   if init == nil:
     return init
   inc pager.numload
@@ -1781,7 +1785,14 @@ proc handleRead(pager: Pager; ctx: JSContext; data: BufferInitData): JSValue =
       # This forces client to ask for confirmation before quitting.
       pager.hasload = true
       if bifHistory in init.flags:
-        pager.lineHist[lmLocation].add(init.url.toStr())
+        if bifVisited in init.flags:
+          let origin = if init.historyOrigin != "":
+            init.historyOrigin
+          else:
+            init.url.authOrigin.s
+          pager.lineHist[lmLocation].addURL(init.url.toStr(), origin)
+        else:
+          pager.lineHist[lmLocation].addRaw(init.url.toStr())
       init.istreamOutputId = response.outputId
       init.ostream = stream
       if init.filterCmd != "":
@@ -2367,6 +2378,7 @@ jsClassDef(Pager):
       init.url,
       contentType,
       filterCmd,
+      init.metaRefresh,
       charsetStack = init.charsetStack
     )
 
@@ -2454,7 +2466,7 @@ jsClassDef(Pager):
     ?ctx.fromJS(arg0, s)
     for rule in pager.config.omnirule:
       if rule.regex.match(s.toOpenArray()):
-        pager.lineHist[lmLocation].add(s)
+        pager.lineHist[lmLocation].addInput(s)
         return ctx.call(rule.fun, JS_UNDEFINED.vc, arg0)
     return JS_DupValue(ctx, arg0)
 
@@ -2549,13 +2561,24 @@ jsClassDef(Pager):
       bufferConfig.referrer = referrerHeader
     else:
       request.unsetReferrer()
+    let historyOrigin = if t.referrer != nil and bifVisited in flags:
+      let origin = BufferInit(t.referrer).url.authOrigin
+      # We don't use the serialization because that would collapse all
+      # opaque origins into "null", but we consider requests from the same
+      # URL the same origin.
+      #TODO ideally we'd have a centralized proc for this policy
+      origin.s
+    else:
+      str("")
     loaderConfig.cookieMode = t.cookie.get(loaderConfig.cookieMode)
     pager.applyCookieJar(loaderConfig, cookieJarId)
     if request.url.username != "":
       pager.loader.addAuth(request.url)
+    request.url.username = str("")
     request.url.password = str("")
     ok(pager.gotoURL0(request, flags, bufferConfig, loaderConfig, t.title,
-      Str(t.contentType), t.redirectDepth, t.url.get, filterCmd))
+      Str(t.contentType), historyOrigin, t.redirectDepth, t.url.get, filterCmd,
+      metaRefresh))
 
   type ExternDict = object of JSDict
     env {.jsdefault: trace(JS_UNDEFINED).}: JSValueTraced
@@ -2631,7 +2654,7 @@ jsClassDef(Pager):
 
   # private
   proc addHist(pager: Pager; mode: LineMode; s: sink Str) {.jsfunc.} =
-    pager.getHist(mode).add(s)
+    pager.getHist(mode).addRaw(s)
 
   # private
   proc applyMailcap(ctx: JSContext; pager: Pager; init: BufferInit;
@@ -2690,7 +2713,8 @@ jsClassDef(Pager):
         attrs,
         bifHTML in init.flags,
         init.charsetStack,
-        init.shortContentType
+        init.shortContentType,
+        if bifVisited in init.flags: pager.lineHist[lmLocation] else: nil
       )
       let ostream = init.ostream
       if pid == -1:

@@ -128,6 +128,17 @@ proc getOrDefault*(map: StrMap; s: openArray[char]): StrMapItem =
 proc getOrDefault*(map: StrMap; s: Str): StrMapItem =
   map.getOrDefault(s.toOpenArray())
 
+proc contains*(map: StrMap; s: openArray[char]): bool =
+  if map.tab.len <= 0:
+    return false
+  let hcache = myHash(s)
+  for i, it in map.tab.tabPairs(hcache):
+    if it == nil:
+      break
+    if it.hcache == hcache and it.s == s:
+      return true
+  false
+
 proc put0(map: var StrMap; item: StrMapItem; override: bool): bool =
   # returns true if a new item was inserted
   # if override, existing items are replaced by the new one
