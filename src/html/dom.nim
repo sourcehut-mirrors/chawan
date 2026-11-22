@@ -880,7 +880,7 @@ iterator rchildList*(node: ParentNode): Node {.inline.} =
         break
       it = it.internalPrev
 
-iterator precedingSiblings*(node: Node): Node {.inline.} =
+iterator precedingSiblings(node: Node): Node {.inline.} =
   let parent = node.parentNode
   if parent != nil:
     let first = parent.firstChild
@@ -892,7 +892,7 @@ iterator precedingSiblings*(node: Node): Node {.inline.} =
           break
         it = it.internalPrev
 
-iterator subsequentSiblings*(node: Node): Node {.inline.} =
+iterator subsequentSiblings(node: Node): Node {.inline.} =
   var it = node.internalNext
   if it != nil:
     while it.parentNode != nil:
@@ -3282,7 +3282,7 @@ jsClassDef(CharacterData):
 
   proc length(this: CharacterData): int {.jsfget.} =
     var n = 0
-    for u in this.data.toOpenArray().points:
+    for u in this.data.asStr.points:
       if u < 0x10000: # ucs-2
         n += 1
       else: # surrogate
