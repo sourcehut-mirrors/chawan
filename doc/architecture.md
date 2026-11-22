@@ -342,8 +342,7 @@ optimizations:
   last child of the parent node.
 
 * `internalNext` holds either the next sibling, or if it is the last node,
-  the root of the tree it belongs to.  (Note: I'm not sure about this one,
-  the performance impact might not be worth the space gained...)
+  the root of the tree it belongs to.
 
 * Event listeners and mutation observers are stored in the same singly
   linked list (attached to `EventTarget`, from which `Node` is derived).

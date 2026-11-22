@@ -6,15 +6,24 @@ unreleased
 * support crypto.randomUUID
 * support details element
 * support :first-of-type, :last-of-type selectors
+* support SVG use, path/g/symbol inside defs (from Dillo)
+* switch default search engine to DuckDuckGo lite
 * add C-@ to line editor for toggling selection
 * switch to copy-on-write strings
 * remove deprecated external.w3m-cgi-compat option
 * fix infinite loop in tinfl on invalid deflate streams
 * fix chaseccomp compilation on platforms without fcntl syscall
 * properly implement task handling in the event loop
+
+0.5.3 (2026.11.21)
+
+* fix incorrect serialization of some IPv6 URLs
 * fix JS_GetTypedArrayBuffer length reporting in QJS
 * fix navigation to URL with hash trimming off hash sometimes
-* fix incorrect serialization of some IPv6 URLs
+* fix parsing of non-array charset labels in config
+* fix broken window.open shim
+* fix various memory safety bugs in QJS
+* fix meta refresh in inactive tab freezing the UI
 
 0.5.2 (2026.11.08)
 
