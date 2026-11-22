@@ -253,7 +253,7 @@ proc onFinishBlob*(response: Response): Blob =
   #TODO blob should be managed by loader
   var buf = response.onFinishGrowbuf()
   let p = move(buf.p)
-  newBlob(p, buf.len, response.getContentType(), deallocBlob)
+  newBlob(p, buf.len, response.getContentType(), deallocGrowbuf)
 
 proc blob*(loader: FileLoader; response: Response; opaque: BlobOpaque) =
   response.opaque = opaque
