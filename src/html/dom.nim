@@ -703,13 +703,13 @@ proc getBoundingClientRect(element: Element): DOMRect
 proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc hasClass*(element: Element; class: CAtom): bool
-proc insertionSteps(element: Element; ctx: JSContext): bool
+proc insertionSteps(element: Element; ctx: JSContext;
+  postConnectionNodes: var seq[Element])
 proc movingSteps(element: Element; isSubtreeRoot: bool; oldParent: ParentNode)
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
 proc nextDisplayedElement(element: Element): Element
 proc nextElementSibling*(element: Element): Element
-proc postConnectionSteps(element: Element; ctx: JSContext)
 proc precedes(this, other: Element): bool
 proc previousElementSibling*(element: Element): Element
 proc removingSteps(element: Element; oldRootNode: RootNode)
@@ -2929,8 +2929,7 @@ proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
         if element.asNode.rootNode == rootDocumentLike.asNode:
           # rootNode cannot be nil, so neither can rootDocumentLike here
           rootDocumentLike.addElementId(element)
-      if element.insertionSteps(ctx):
-        postConnectionNodes.add(element)
+      element.insertionSteps(ctx, postConnectionNodes)
       if element.custom == cesCustom:
         #TODO append parentDocument to element custom registry
         #TODO enqueue connectedCallback (custom elements)
@@ -2962,8 +2961,10 @@ proc insert0(parent: ParentNode; ctx: JSContext; nodes: openArray[Node];
   #TODO children changed steps for parent
   if not suppressObservers:
     parent.queueTreeMutationRecord(ctx, nodes, [], beforeBefore, before)
-  for el in postConnectionNodes:
-    el.postConnectionSteps(ctx)
+  for element in postConnectionNodes:
+    if (let element = element as HTMLScriptElement; element != nil):
+      if element.asNode.isConnected and element.parserDocument == nil:
+        element.prepare(ctx)
 
 proc insert*(parent: ParentNode; ctx: JSContext; node, before: Node;
     suppressObservers = false) =
@@ -5489,7 +5490,8 @@ proc hasId*(element: Element; id: CAtom): bool =
   return element.id == id
 
 # Returns true if has post-connection steps.
-proc insertionSteps(element: Element; ctx: JSContext): bool =
+proc insertionSteps(element: Element; ctx: JSContext;
+    postConnectionNodes: var seq[Element]) =
   case element.tagType
   of ttLink:
     let link = element as HTMLLinkElement
@@ -5521,12 +5523,11 @@ proc insertionSteps(element: Element; ctx: JSContext): bool =
       if name != "" and element.findOpenDetailsInGroup(name) != nil:
         element.delAttr(ctx, u)
   of ttScript:
-    return true
+    postConnectionNodes.add(element)
   elif element.namespaceURI == satNamespaceSVG:
     element.insertionStepsSVG()
   else:
     element.insertionStepsForm()
-  false
 
 proc removingSteps(element: Element; oldRootNode: RootNode) =
   # We'll have to restyle on insert anyway, so don't keep style/layout data
@@ -5538,11 +5539,6 @@ proc removingSteps(element: Element; oldRootNode: RootNode) =
     element.removeSheet(oldRootNode)
   else:
     element.removingStepsForm()
-
-proc postConnectionSteps(element: Element; ctx: JSContext) =
-  let script = element as HTMLScriptElement
-  if script.asNode.isConnected and script.parserDocument == nil:
-    script.prepare(ctx)
 
 proc movingSteps(element: Element; isSubtreeRoot: bool;
     oldParent: ParentNode) =
