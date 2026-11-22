@@ -1226,9 +1226,12 @@ proc reserveImpl(dst: var Growbuf; nlen: int) =
       hdr.icap = cap
     {.pop.} # overflowChecks: off, rangeChecks: off
 
-template reserve(dst: var Growbuf; nlen: int) =
+template reserveInline(dst: var Growbuf; nlen: int) =
   if dst.p == nil and nlen > 0 or dst.p != nil and dst.heapHdr.icap <= nlen:
     dst.reserveImpl(nlen)
+
+proc reserve(dst: var Growbuf; nlen: int) =
+  dst.reserveInline(nlen)
 
 proc initGrowbuf*(): Growbuf =
   Growbuf()
@@ -1236,7 +1239,7 @@ proc initGrowbuf*(): Growbuf =
 proc initGrowbufOfCap*(len: int): Growbuf =
   chaAssert len >= 0
   var buf = initGrowbuf()
-  buf.reserve(len)
+  buf.reserveInline(len)
   move(buf)
 
 proc initGrowbufUninit*(len: int): Growbuf =
@@ -1291,7 +1294,7 @@ proc add*(dst: var Growbuf; src: openArray[char]) =
   if srcLen > 0:
     let oldLen = dst.len
     let dstLen = oldLen + srcLen
-    dst.reserve(dstLen)
+    dst.reserveInline(dstLen)
     {.push boundChecks: off.}
     # src is ensured to be > 0 (reserve can only grow it)
     copyMem(addr dst.p[oldLen], unsafeAddr src[0], srcLen)
@@ -1300,7 +1303,7 @@ proc add*(dst: var Growbuf; src: openArray[char]) =
 
 proc setLenUninit*(buf: var Growbuf; len: int) =
   chaAssert len >= 0
-  buf.reserve(len)
+  buf.reserveInline(len)
   buf.ilen = csize_t(len)
 
 proc setLenFill*(buf: var Growbuf; len: int; c: char) =
@@ -1328,7 +1331,7 @@ proc add*(dst: var Growbuf; c: char) =
   {.push overflowChecks: off.} # already checked in reserve
   let dstLen = oldLen + 1
   {.pop.}
-  dst.reserve(dstLen)
+  dst.reserveInline(dstLen)
   dst.p[oldLen] = c
   dst.ilen = csize_t(dstLen)
 
@@ -1570,8 +1573,7 @@ proc addBtoa*(s: var Growbuf; data: openArray[char]) =
 
 # for addV
 proc reserveAdd(buf: var Growbuf; len: csize_t) {.exportc: "cha_Growbuf_$1".} =
-  let nlen = buf.len + cast[int](len)
-  reserve(buf, nlen)
+  buf.reserve(buf.len + cast[int](len))
 
 proc addSpan(buf: var Growbuf; p: cstring; len: csize_t) {.
     exportc: "cha_Growbuf_$1".} =
