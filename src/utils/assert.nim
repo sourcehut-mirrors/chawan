@@ -28,33 +28,29 @@ proc chaFailedAssertImpl(line, column, len: int; file, expr, msg: cstring)
 
 template chaAssertImpl(cond: bool; msg: cstring; len: int;
     expr: static string) =
-  bind instantiationInfo
-  mixin failedAssertImpl
   const loc = instantiationInfo()
+  bind instantiationInfo
+  mixin chaFailedAssertImpl
   {.line: loc.}:
-    mixin chaFailedAssertImpl
-    chaFailedAssertImpl(loc.line, loc.column, len, cstring(loc.filename),
-      cstring(expr), msg)
+    if unlikely(not cond):
+      chaFailedAssertImpl(loc.line, loc.column, len, cstring(loc.filename),
+        cstring(expr), msg)
 
 template chaAssert*(cond: untyped) =
-  if unlikely(not cond):
-    chaAssertImpl(cond, "", 0, astToStr(cond))
+  chaAssertImpl(cond, "", 0, astToStr(cond))
 
 template chaAssert*(cond: untyped; msg: cstring; len: int) =
   ## Assert that `cond` evaluates to true, otherwise crash.
   ##
   ## It is valid for `cond` to have side effects.
-  if not cond:
-    chaAssertImpl(cond, msg, len, astToStr(cond))
+  chaAssertImpl(cond, msg, len, astToStr(cond))
 
 template chaAssert*(cond: untyped; msg: cstring) =
-  if unlikely(not cond):
-    let cs = msg
-    chaAssertImpl(cond, cs, cs.len, astToStr(cond))
+  let cs = msg
+  chaAssertImpl(cond, cs, cs.len, astToStr(cond))
 
 template chaAssert*(cond: untyped; msg: static string) =
-  if unlikely(not cond):
-    chaAssertImpl(cond, cstring(msg), msg.len, astToStr(cond))
+  chaAssertImpl(cond, cstring(msg), msg.len, astToStr(cond))
 
 template chaDebugAssert*(cond: untyped; msg = cstring("")) =
   ## Like chaAssert, but only gets compiled in for debug builds, so `cond`
@@ -62,13 +58,11 @@ template chaDebugAssert*(cond: untyped; msg = cstring("")) =
   ##
   ## Use for assertions that are too expensive to make in release builds.
   when defined(debug):
-    if unlikely(not cond):
-      let cs = msg
-      chaAssertImpl(cond, cs, cs.len, astToStr(cond))
+    let cs = msg
+    chaAssertImpl(cond, cs, cs.len, astToStr(cond))
 
 template chaDebugAssert*(cond: untyped; msg: cstring; len: int) =
   when defined(debug):
-    if unlikely(not cond):
-      chaAssertImpl(cond, msg, len, astToStr(cond))
+    chaAssertImpl(cond, msg, len, astToStr(cond))
 
 {.pop.} # raises: []
