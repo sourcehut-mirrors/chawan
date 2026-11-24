@@ -653,7 +653,7 @@ proc replaceAll*(parent: ParentNode; ctx: JSContext; s: sink DOMString)
 proc firstChild(parent: ParentNode): lent Node
 proc lastChild*(parent: ParentNode): lent Node
 proc firstChildShadow(parent: ParentNode): lent Node
-proc nextSibling(node: Node): Node
+proc nextSibling(node: Node): lent Node
 proc previousElementSiblingImpl(this: Node): Element
 proc setFirstChild(node: ParentNode; child: Node)
 proc firstElementChild*(node: ParentNode): Element
@@ -1723,7 +1723,7 @@ proc nextSiblingShadow(node: Node): lent Node =
   if next == nil:
     # node is a Document.
     return node.internalNext
-  if next.parentNode != node.parentNode:
+  if node.parentNode != nil and next.parentNode != node.parentNode:
     # next is the root, return nil.
     let hack {.global.} = Node(nil)
     return hack
@@ -2424,11 +2424,17 @@ jsClassDef(Node):
   proc parentElement*(node: Node): Element {.jsfget.} =
     node.parentNode as Element
 
-  proc nextSibling(node: Node): Node {.jsfget.} =
-    if node.parentNode == nil:
-      # if parent is nil, then may be a shadow root
-      return Node(nil)
-    return node.nextSiblingShadow
+  proc nextSibling(node: Node): lent Node {.jsfget.} =
+    let next = node.internalNext
+    if next == nil:
+      # node is a Document.
+      return node.internalNext
+    if next.parentNode != node.parentNode:
+      # next is the root, or node is a shadow root (whose parent is nil).
+      # return nil.
+      let hack {.global.} = Node(nil)
+      return hack
+    return node.internalNext
 
   proc previousSibling*(node: Node): Node {.jsfget.} =
     if node.parentNode == nil or node == node.parentNode.firstChild:
