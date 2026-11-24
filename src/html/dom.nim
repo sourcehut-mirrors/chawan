@@ -463,9 +463,13 @@ type
     cesPrecustomized = "precustomized"
     cesCustom = "custom"
 
-  ElementFlag = enum
-    efHint, efHover, efShadowRoot, efChildElIndicesInvalid, efRestyle,
-    efQuirks
+  ElementFlag* = enum # 2 free
+    efChildElIndicesInvalid # elIndex for children must be updated
+    efRestyle # restyle pending
+    efQuirks # document is in quirks mode (only here for convenience)
+    efHint # generates ::-cha-link-hint
+    efHover # matched by :hover
+    efVisited # matched by :visited
 
   CSSStyleDeclarationObj* = object
     computed: bool
@@ -483,7 +487,7 @@ type
     namespaceURI*: CAtom # 4
     tagName: CAtom # 8
     relayout*: set[PseudoElement] # 9
-    flags: set[ElementFlag] # 10
+    flags*: set[ElementFlag] # 10
     selfDepends: set[DependencyType] # 11
     custom: CustomElementState # 12
     localName*: CAtom # 16
@@ -509,8 +513,6 @@ type
   HTMLHyperlinkElement* = JSRef[HTMLHyperlinkElementObj]
 
   HTMLHyperlinkElementObj* = object of HTMLElementObj
-    url*: Str # serialized URL parsed from href (relative to document)
-              # with username/password omitted (for :visited matching)
     relList*: DOMTokenArray
 
   HTMLAnchorElement* = JSRef[HTMLAnchorElementObj]
@@ -5315,16 +5317,19 @@ proc reflectLocalAttr(element: Element; ctx: JSContext; name: StaticAtom;
       if window != nil:
         window.loadLink(link)
   of ttA:
-    let anchor = element as HTMLAnchorElement
     if name == satHref:
-      let url = element.asNode.document.parseURL0(value.asStr)
-      if url != nil and url.schemeType != stBlob:
-        url.username = str("")
-        url.password = str("")
-        anchor.asHTMLHyperlinkElement.url = url.toStr()
-      else:
-        anchor.asHTMLHyperlinkElement.url = str("")
+      element.flags.excl(efVisited)
+      let document = element.asNode.document
+      if document.window != nil and document.window.history != nil and
+          document.window.history.len > 0:
+        let url = document.parseURL0(value.asStr)
+        if url != nil and url.schemeType != stBlob:
+          url.username = str("")
+          url.password = str("")
+          if url.toStr() in document.window.history:
+            element.flags.incl(efVisited)
     elif name == satRel:
+      let anchor = element as HTMLAnchorElement
       anchor.asElement.reflectTokens(anchor.relList, satRel, value.asStr)
   of ttCanvas:
     if element.scriptingEnabled and name in {satWidth, satHeight}:

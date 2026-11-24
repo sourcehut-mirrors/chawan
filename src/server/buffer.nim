@@ -1251,6 +1251,7 @@ proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
       bc.window.history.addRaw(url.toStr())
       #TODO we should invalidate all anchors, but looping through all
       # elements is too slow...
+      anchor.flags.incl(efVisited)
       anchor.asElement.invalidate()
       bc.maybeReshape()
     return initClickResult(newRequest(url, hmGet))

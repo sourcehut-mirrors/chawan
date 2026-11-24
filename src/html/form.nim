@@ -2,6 +2,7 @@
 
 {.push raises: [].}
 
+import config/history
 import html/catom
 import html/dom
 import html/domexception
@@ -260,13 +261,16 @@ proc reflectAttributeForm(element: Element; name: StaticAtom; value: StrNil)
   of ttArea:
     let area = element as HTMLAreaElement
     if name == satHref:
-      let url = element.asNode.document.parseURL0(value.asStr)
-      if url != nil and url.schemeType != stBlob:
-        url.username = str("")
-        url.password = str("")
-        area.asHTMLHyperlinkElement.url = url.toStr()
-      else:
-        area.asHTMLHyperlinkElement.url = str("")
+      element.flags.excl(efVisited)
+      let document = element.asNode.document
+      if document.window != nil and document.window.history != nil and
+          document.window.history.len > 0:
+        let url = document.parseURL0(value.asStr)
+        if url != nil and url.schemeType != stBlob:
+          url.username = str("")
+          url.password = str("")
+          if url.toStr() in document.window.history:
+            element.flags.incl(efVisited)
     elif name == satRel:
       area.asElement.reflectTokens(area.relList, satRel, value.asStr)
   else: discard
