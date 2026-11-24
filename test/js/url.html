@@ -17,6 +17,8 @@ assertEquals(new URL("x", "file:///A:/y") + "", "file:///A:/x");
 assertEquals(new URL("/x", "file:///A:") + "", "file:///A:/x");
 assertEquals(new URL('file://C:/') + "", "file:///C:/");
 assertEquals(new URL('file://C|/') + "", "file:///C:/");
+assertEquals(new URL("file:...", "https://example.org/test") + "", "file:///...");
+assertEquals(new URL("https://example.org/foo/%2e", "about:blank") + "", "https://example.org/foo/");
 /* non-standard, but needed for compat with ed2k */
 assertEquals(new URL('ed2k://|a|b|c|/') + "", "ed2k://|a|b|c|/");
 /* following is standard behavior (but IMO the spec should be changed) */
@@ -33,6 +35,7 @@ assertEquals(new URL("https://example.org//") + "", "https://example.org//");
 assertEquals(new URL("https://example.com/[]?[]#[]") + "", "https://example.com/[]?[]#[]");
 assertEquals(new URL("https://example/%?%#%") + "", "https://example/%?%#%");
 assertEquals(new URL("https://example/%25?%25#%25") + "", "https://example/%25?%25#%25");
+assertEquals(new URL("sc://faß.Example") + "", "sc://fa%C3%9F.Example");
 assertEquals(new URL("  https:exa\tmple\n.org\n/  ") + "", "https://example.org/");
 assertEquals(new URL("  https:exa\tmple.org\n:\n2\n4\n5\n2\n\n/  ") + "", "https://example.org:2452/");
 assertEquals(new URL("  h\nt\tt\np\ts\n:\t/\n/\te\nx\ta\nm\tp\nl\te\n/\tp\na\tt\n\nh\t?\nq\tu\ne\tr\ny\t#\nf\tr\na\tg\nm\te\nnt") + "", "https://example/path?query#fragment");

@@ -351,7 +351,7 @@ jsClassRaw(LocationDef, "Location"):
 
   proc toStr(location: Location): Str {.jsuffunc: "toString",
       jsuffget: "href".} =
-    return location.url.serialize()
+    return location.url.toStr()
 
   proc setHref(ctx: JSContext; location: Location; s: Str): JSValue {.
       jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =

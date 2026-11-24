@@ -104,9 +104,6 @@ type
 # Forward declarations
 proc parseURL0*(input: openArray[char]; base = URL(nil)): URL
 proc parseURL0*(input: Str; base = URL(nil)): URL
-proc serialize*(url: URL; excludeHash = false): Str
-proc serializeip(ipv4: uint32): Str
-proc serializeip(ipv6: array[8, uint16]): Str
 proc host*(url: URL): Str
 proc toStr*(url: URL): Str
 proc toStr*(params: URLSearchParams): Str
@@ -115,7 +112,7 @@ proc getClassID(t: typedesc[URLSearchParamsIterator]): JSClassID
 
 proc swrite*(w: var PacketWriter; url: URL) =
   if url != nil:
-    w.swrite(url.serialize())
+    w.swrite(url.toStr())
   else:
     w.swrite(str(""))
 
@@ -155,11 +152,70 @@ template isSpecial(url: URL): bool =
 
 const URLWhitespace = {'\r', '\n', '\t'}
 
-proc skipURLBlanks(input: openArray[char]; n: int): int =
+proc skipURLBlanks(input: openArray[char]; n: int): int {.inline.} =
   var n = n
   while n < input.len and input[n] in URLWhitespace:
     inc n
   n
+
+proc findZeroSeq(ipv6: array[8, uint16]): int =
+  var maxi = -1
+  var maxn = 1
+  var newi = -1
+  var newn = 0
+  for i, n in ipv6:
+    if n == 0:
+      inc newn
+      if newi == -1:
+        newi = i
+    else:
+      if newn > maxn:
+        maxn = newn
+        maxi = newi
+      newn = 0
+      newi = -1
+  if newn > maxn:
+    return newi
+  return maxi
+
+proc addHexLower(buf: var Growbuf; u: uint16) =
+  var x = u
+  let len = if (u and 0xF000) != 0:
+    4
+  elif (u and 0x0F00) != 0:
+    3
+  elif (u and 0xF0) != 0:
+    2
+  else:
+    1
+  let olen = buf.len
+  buf.setLen(olen + len)
+  for i in countdown(buf.high, olen):
+    buf[i] = HexCharsLower[x and 0xF]
+    x = x shr 4
+
+proc serializeip(ipv6: array[8, uint16]): Str =
+  let compress = findZeroSeq(ipv6)
+  var ignore0 = false
+  var buf = initGrowbuf('[')
+  for i, n in ipv6:
+    if ignore0:
+      if n == 0:
+        continue
+      else:
+        ignore0 = false
+    if i == compress:
+      if i == 0:
+        buf &= "::"
+      else:
+        buf &= ':'
+      ignore0 = true
+      continue
+    buf.addHexLower(n)
+    if i != ipv6.high:
+      buf &= ':'
+  buf &= ']'
+  buf.toStr()
 
 proc parseIpv6(input: openArray[char]): Str =
   var pieceIndex = 0
@@ -276,7 +332,11 @@ proc opaqueParseHost(input: Str; schemeType: SchemeType;
     # non-standard ed2k quirk for web-compat
     if c in ForbiddenHostChars and not (c == '|' and schemeType == stEd2k):
       return str("")
-    o.percentEncode(c, ControlPercentEncodeSet)
+    if c notin ControlPercentEncodeSet:
+      o &= c
+    else:
+      o &= '%'
+      o.addHex(c)
   hostType = htOpaque
   o.toStr()
 
@@ -525,6 +585,10 @@ proc domainToAscii(domain: Str; beStrict: bool): Str =
       res = domain.unicodeToAscii(beStrict)
   move(res)
 
+proc serializeip(ipv4: uint32): Str =
+  initStrM(ipv4 shr 24, '.', (ipv4 shr 16) and 0xFF, '.',
+    (ipv4 shr 8) and 0xFF, '.', (ipv4 and 0xFF))
+
 proc parseHost*(input: Str; schemeType: SchemeType; hostType: var HostType):
     Str =
   let special = SpecialPort[schemeType] >= 0
@@ -594,8 +658,11 @@ proc parseOpaquePath(input: openArray[char]; n: var int; url: URL): URLState =
         buf &= "%20"
       else:
         buf &= ' '
+    of ControlPercentEncodeSet:
+      buf &= '%'
+      buf.addHex(c)
     else:
-      buf.percentEncode(c, ControlPercentEncodeSet)
+      buf &= c
   url.pathname = buf.toStr()
   n = i
   nextState
@@ -744,11 +811,11 @@ proc parseSchemeStart(input: openArray[char]; n: var int; base, url: URL;
   return state
 
 proc parseAuthority(input: openArray[char]; n: var int; url: URL): URLState =
-  var atSignSeen = false
   var passwordSeen = false
-  var buffer = initGrowbuf()
   var beforeBuffer = n
   var i = n
+  var bufferIdx = n
+  var atSignSeen = false
   var username = initGrowbuf()
   var password = initGrowbuf()
   while i < input.len:
@@ -757,25 +824,35 @@ proc parseAuthority(input: openArray[char]; n: var int; url: URL): URLState =
     if c in {'/', '?', '#'} or url.isSpecial and c == '\\':
       break
     if c == '@':
-      if atSignSeen:
-        buffer.insert(str("%40"), 0)
       atSignSeen = true
-      for c in buffer:
-        if c == ':' and not passwordSeen:
-          passwordSeen = true
-          continue
-        if passwordSeen:
-          password.percentEncode(c, UserInfoPercentEncodeSet)
-        else:
-          username.percentEncode(c, UserInfoPercentEncodeSet)
-      buffer.setLen(0)
+      var j = bufferIdx
+      if not passwordSeen:
+        while j < i:
+          let c = input[j]
+          j = input.skipURLBlanks(j + 1)
+          if c == ':':
+            passwordSeen = true
+            break
+          if c notin UserInfoPercentEncodeSet:
+            username &= c
+          else:
+            username &= '%'
+            username.addHex(c)
+      if passwordSeen:
+        while j < i:
+          let c = input[j]
+          j = input.skipURLBlanks(j + 1)
+          if c notin UserInfoPercentEncodeSet:
+            password &= c
+          else:
+            password &= '%'
+            password.addHex(c)
       beforeBuffer = nexti
-    else:
-      buffer &= c
+      bufferIdx = i
     i = nexti
   url.username = username.toStr()
   url.password = password.toStr()
-  if atSignSeen and buffer == "":
+  if atSignSeen and bufferIdx == beforeBuffer:
     return usFail
   n = beforeBuffer
   return usHost
@@ -858,27 +935,26 @@ proc parseHostState(input: openArray[char]; n: var int; url: URL;
 
 proc parsePort(input: openArray[char]; n: var int; url: URL; override: bool):
     URLState =
-  var buffer = initGrowbuf()
+  var port = 0'u16
   var i = n
   while i < input.len:
     let c = input[i]
     if c in AsciiDigit:
-      buffer &= c
+      let next = port * 10 + (uint16(c) - uint16('0'))
+      if next < port:
+        return usFail
+      port = next
     elif c in {'/', '?', '#'} or url.isSpecial and c == '\\' or override:
       break
     else:
       return usFail
     i = input.skipURLBlanks(i + 1)
-  n = i
-  if buffer != "":
-    let i = parseInt32(buffer.toOpenArray()).get(int32.high)
-    # can't be negative, buffer only includes AsciiDigit
-    if i > 65535:
-      return usFail
-    if SpecialPort[url.schemeType] == i:
+  if i > n:
+    if SpecialPort[url.schemeType] == int32(port):
       url.port = -1
     else:
-      url.port = i
+      url.port = int32(port)
+  n = i
   if override:
     return usFail
   return usPathStart
@@ -959,18 +1035,19 @@ proc parsePathStart(input: openArray[char]; n: var int; url: URL;
     n = input.skipURLBlanks(n + 1)
   return usDone
 
-proc isSingleDotPathSegment(s: Growbuf): bool =
+proc isSingleDotPathSegment(s: openArray[char]): bool =
   s == "." or s.equalsIgnoreCase("%2e")
 
-proc isDoubleDotPathSegment(s: Growbuf): bool =
+proc isDoubleDotPathSegment(s: openArray[char]): bool =
   s == ".." or s.equalsIgnoreCase(".%2e") or s.equalsIgnoreCase("%2e.") or
     s.equalsIgnoreCase("%2e%2e")
 
 proc parsePath(input: openArray[char]; n: var int; url: URL; override: bool):
     URLState =
   var nextState = usPath
-  var buffer = initGrowbuf()
   var pathname = initGrowbufSink(move(url.pathname))
+  var bufferIdx = pathname.len
+  pathname &= '/'
   let schemeType = url.schemeType
   while n < input.len:
     let c = input[n]
@@ -984,35 +1061,39 @@ proc parsePath(input: openArray[char]; n: var int; url: URL; override: bool):
         nextState = usFragment
         break
       let slashCond = c != '/' and (not url.isSpecial or c != '\\')
-      if buffer.isDoubleDotPathSegment():
+      if pathname.toOpenArray(bufferIdx + 1, pathname.high)
+          .isDoubleDotPathSegment():
+        pathname.setLen(bufferIdx)
         shortenPath(pathname, schemeType)
         if slashCond:
           pathname &= '/'
-      elif buffer.isSingleDotPathSegment() and slashCond:
-        pathname &= '/'
-      elif not buffer.isSingleDotPathSegment():
-        if url.schemeType == stFile and pathname == "" and
-            buffer.toOpenArray().isWinDriveLetter():
-          buffer[1] = ':'
-        pathname &= '/'
-        pathname &= buffer
-      buffer.setLen(0)
+      elif pathname.toOpenArray(bufferIdx + 1, pathname.high)
+          .isSingleDotPathSegment():
+        pathname.setLen(bufferIdx + int(slashCond))
+      elif url.schemeType == stFile and bufferIdx == 0 and
+          pathname.toOpenArray(1, pathname.high).isWinDriveLetter():
+        pathname[2] = ':'
+      bufferIdx = pathname.len
+      pathname &= '/'
+    elif c notin PathPercentEncodeSet:
+      pathname &= c
     else:
-      buffer.percentEncode(c, PathPercentEncodeSet)
+      pathname &= '%'
+      pathname.addHex(c)
   let slashCond = n >= input.len or input[n] != '/' and
     (not url.isSpecial or input[n] != '\\')
-  if buffer.isDoubleDotPathSegment():
+  if pathname.toOpenArray(bufferIdx + 1, pathname.high)
+      .isDoubleDotPathSegment():
+    pathname.setLen(bufferIdx)
     shortenPath(pathname, schemeType)
     if slashCond:
       pathname &= '/'
-  elif buffer.isSingleDotPathSegment() and slashCond:
-    pathname &= '/'
-  elif not buffer.isSingleDotPathSegment():
-    if url.schemeType == stFile and pathname == "" and
-        buffer.toOpenArray().isWinDriveLetter():
-      buffer[1] = ':'
-    pathname &= '/'
-    pathname &= buffer
+  elif pathname.toOpenArray(bufferIdx + 1, pathname.high)
+      .isSingleDotPathSegment():
+    pathname.setLen(bufferIdx + int(slashCond))
+  elif url.schemeType == stFile and bufferIdx == 0 and
+      pathname.toOpenArray(1, pathname.high).isWinDriveLetter():
+    pathname[2] = ':'
   url.pathname = pathname.toStr()
   nextState
 
@@ -1025,14 +1106,14 @@ proc parseQuery(input: openArray[char]; n: var int; url: URL; override: bool):
     let c = input[i]
     if not override and c == '#':
       break
-    buf &= c
+    if c notin SpecialQueryPercentEncodeSet or not url.isSpecial and c == '\'':
+      buf &= c
+    else:
+      buf &= '%'
+      buf.addHex(c)
     i = input.skipURLBlanks(i + 1)
   n = i
-  let set = if url.isSpecial:
-    SpecialQueryPercentEncodeSet
-  else:
-    QueryPercentEncodeSet
-  url.search = buf.toStr().percentEncode(set)
+  url.search = buf.toStr()
   if n < input.len:
     n = input.skipURLBlanks(n + 1)
     return usFragment
@@ -1061,8 +1142,13 @@ proc parseURLImpl(input: openArray[char]; base, url: URL;
   if state == usFragment:
     var hash = initGrowbuf("#")
     while n < input.len:
-      hash.percentEncode(input[n], FragmentPercentEncodeSet)
+      let c = input[n]
       n = input.skipURLBlanks(n + 1)
+      if c notin FragmentPercentEncodeSet:
+        hash &= c
+      else:
+        hash &= '%'
+        hash.addHex(c)
     url.hash = hash.toStr()
   return state
 
@@ -1107,93 +1193,9 @@ proc parseJSURL*(ctx: JSContext; s: Str; base = URL(nil)):
     return err()
   ok(url)
 
-proc serializeip(ipv4: uint32): Str =
-  initStrM(ipv4 shr 24, '.', (ipv4 shr 16) and 0xFF, '.',
-    (ipv4 shr 8) and 0xFF, '.', (ipv4 and 0xFF))
-
-proc findZeroSeq(ipv6: array[8, uint16]): int =
-  var maxi = -1
-  var maxn = 1
-  var newi = -1
-  var newn = 0
-  for i, n in ipv6:
-    if n == 0:
-      inc newn
-      if newi == -1:
-        newi = i
-    else:
-      if newn > maxn:
-        maxn = newn
-        maxi = newi
-      newn = 0
-      newi = -1
-  if newn > maxn:
-    return newi
-  return maxi
-
-proc addHexLower(buf: var Growbuf; u: uint16) =
-  var x = u
-  let len = if (u and 0xF000) != 0:
-    4
-  elif (u and 0x0F00) != 0:
-    3
-  elif (u and 0xF0) != 0:
-    2
-  else:
-    1
-  let olen = buf.len
-  buf.setLen(olen + len)
-  for i in countdown(buf.high, olen):
-    buf[i] = HexCharsLower[x and 0xF]
-    x = x shr 4
-
-proc serializeip(ipv6: array[8, uint16]): Str =
-  let compress = findZeroSeq(ipv6)
-  var ignore0 = false
-  var buf = initGrowbuf('[')
-  for i, n in ipv6:
-    if ignore0:
-      if n == 0:
-        continue
-      else:
-        ignore0 = false
-    if i == compress:
-      if i == 0:
-        buf &= "::"
-      else:
-        buf &= ':'
-      ignore0 = true
-      continue
-    buf.addHexLower(n)
-    if i != ipv6.high:
-      buf &= ':'
-  buf &= ']'
-  buf.toStr()
-
-proc serialize*(url: URL; excludeHash = false): Str =
-  var buf = initGrowbufOfCap(url.scheme.len + url.username.len +
-    url.password.len + url.pathname.len + url.search.len + url.hash.len + 3)
-  buf &= url.scheme
-  buf &= ':'
-  if url.hostType != htNone:
-    buf &= "//"
-    if url.includesCredentials:
-      buf &= url.username
-      if url.password != "":
-        buf.addM(':', url.password)
-      buf &= '@'
-    buf &= url.hostname
-    if url.port >= 0:
-      buf.addM(':', url.port)
-  elif not url.opaquePath and url.pathname.len >= 2 and url.pathname[1] == '/':
-    buf &= "/."
-  buf.addM(url.pathname, url.search)
-  if not excludeHash:
-    buf &= url.hash
-  buf.toStr()
-
-proc `$`*(url: URL): string =
-  $url.serialize()
+when defined(debug):
+  proc `$`*(url: URL): string =
+    $url.toStr()
 
 # from a to b
 proc cloneInto(a, b: URL) =
@@ -1244,9 +1246,9 @@ proc serializeFormURLEncoded*(kvs: seq[(Str, Str)]; spaceAsPlus = true;
   for (name, value) in kvs:
     if buf.len > 0:
       buf &= '&'
-    buf.percentEncode(name, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
+    buf.addPercentEncode(name, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
     buf &= '='
-    buf.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
+    buf.addPercentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
   buf.toStr()
 
 proc findSearchParam(url: URL; name: openArray[char]): int =
@@ -1459,7 +1461,23 @@ jsClassPublicDef(URL):
 
   proc toStr*(url: URL): Str {.jsfunc: "toString", jsfunc: "toJSON",
       jsfget: "href".} =
-    url.serialize()
+    var buf = initGrowbufOfCap(url.scheme.len + url.username.len +
+      url.password.len + url.pathname.len + url.search.len + url.hash.len + 3)
+    buf.addM(url.scheme, ':')
+    if url.hostType != htNone:
+      buf &= "//"
+      if url.includesCredentials:
+        buf &= url.username
+        if url.password != "":
+          buf.addM(':', url.password)
+        buf &= '@'
+      buf &= url.hostname
+      if url.port >= 0:
+        buf.addM(':', url.port)
+    elif not url.opaquePath and url.pathname.len >= 2 and url.pathname[1] == '/':
+      buf &= "/."
+    buf.addM(url.pathname, url.search, url.hash)
+    buf.toStr()
 
   proc setHref(ctx: JSContext; url: URL; s: Str) {.jsfset: "href".} =
     let purl = parseURL0(s)

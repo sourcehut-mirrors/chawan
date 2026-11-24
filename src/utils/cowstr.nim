@@ -102,7 +102,7 @@ proc add*(dst: var Growbuf; n: uint64)
 proc addUTF8*(res: var Growbuf; u: uint32)
 proc addUTF8*(res: var Growbuf; us: openArray[uint32])
 proc nextUTF8*(s: Str; i: var int): uint32
-proc percentEncode*(append: var Growbuf; s: Str; set: set[char];
+proc addPercentEncode*(append: var Growbuf; s: Str; set: set[char];
   spaceAsPlus = false)
 proc insert*(buf: var Growbuf; s: Str; i = 0)
 proc delete*(s: var Growbuf; slice: Slice[int])
@@ -896,7 +896,7 @@ proc normalizeLF*(s: Str): Str =
 
 proc percentEncode*(s: Str; set: set[char]; spaceAsPlus = false): Str =
   var buf = initGrowbuf()
-  buf.percentEncode(s, set, spaceAsPlus)
+  buf.addPercentEncode(s, set, spaceAsPlus)
   buf.toStr()
 
 proc dqEscape*(s: Str): Str =
@@ -1511,20 +1511,16 @@ proc addHexLower*(buf: var Growbuf; u: uint8) =
 proc addHex*(buf: var Growbuf; c: char) =
   buf.addHex(uint8(c))
 
-proc percentEncode*(append: var Growbuf; c: char; set: set[char];
-    spaceAsPlus = false) =
-  if spaceAsPlus and c == ' ':
-    append &= '+'
-  elif c notin set:
-    append &= c
-  else:
-    append &= '%'
-    append.addHex(c)
-
-proc percentEncode*(append: var Growbuf; s: Str; set: set[char];
+proc addPercentEncode*(append: var Growbuf; s: Str; set: set[char];
     spaceAsPlus = false) =
   for c in s:
-    append.percentEncode(c, set, spaceAsPlus)
+    if spaceAsPlus and c == ' ':
+      append &= '+'
+    elif c notin set:
+      append &= c
+    else:
+      append &= '%'
+      append.addHex(c)
 
 proc rfind*(buf: Growbuf; c: char; starti = 0): int =
   buf.toOpenArray().rfind(c, starti)
