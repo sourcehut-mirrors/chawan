@@ -454,7 +454,7 @@ proc punyEncode(s: openArray[char]): StrNil =
     if m == n:
       continue
     let delta2 = uint64(delta) + uint64(m - n - 1) * uint64(h + 1)
-    if uint64(delta) > uint64(uint32.high): # overflow
+    if uint64(delta2) > uint64(uint32.high): # overflow
       return str(nil)
     delta = uint32(delta2)
     n = m
