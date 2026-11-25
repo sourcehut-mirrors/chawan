@@ -4,6 +4,8 @@
 <script src=asserts.js></script>
 <script>
 x.before("hi");
+x.before(x);
+x.after(x);
 assertEquals(x.previousSibling.textContent, "hi");
 x.previousSibling.remove();
 document.getElementById("x").textContent = "Success";

@@ -2697,7 +2697,7 @@ proc nextSiblingExcept(this: Node; nodes: openArray[Node]): Node =
   node
 
 proc beforeImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
-    Opt[void] =
+    JSValue =
   var nodes: seq[Node]
   ?ctx.toNodes(argv, this.document, nodes)
   let parent = this.parentNode
@@ -2705,19 +2705,19 @@ proc beforeImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
     let prev = this.previousSiblingExcept(nodes)
     let node = ctx.toNode(nodes, this.document)
     let before = if prev != nil: prev.nextSibling else: parent.firstChild
-    parent.insert(ctx, node, before)
-  ok()
+    return ctx.insertBeforeUndefined(parent, node, jsNull(before))
+  return JS_UNDEFINED
 
 proc afterImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
-    Opt[void] =
+    JSValue =
   var nodes: seq[Node]
   ?ctx.toNodes(argv, this.document, nodes)
   let parent = this.parentNode
   if parent != nil:
     let before = this.nextSiblingExcept(nodes)
     let node = ctx.toNode(nodes, this.document)
-    parent.insert(ctx, node, before)
-  ok()
+    return ctx.insertBeforeUndefined(parent, node, jsNull(before))
+  return JS_UNDEFINED
 
 proc replaceWithImpl(ctx: JSContext; this: Node; argv: varargs[JSValueConst]):
     JSValue =
@@ -3336,11 +3336,11 @@ jsClassDef(CharacterData):
     return this.asNode.nextElementSiblingImpl
 
   proc before(ctx: JSContext; this: CharacterData;
-      nodes: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
+      nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     ctx.beforeImpl(this.asNode, nodes)
 
   proc after(ctx: JSContext; this: CharacterData; nodes: varargs[JSValueConst]):
-      Opt[void] {.jsfunc.} =
+      JSValue {.jsfunc.} =
     ctx.afterImpl(this.asNode, nodes)
 
   proc replaceWith(ctx: JSContext; this: CharacterData;
@@ -4410,11 +4410,11 @@ jsClassDef(DocumentType):
   jsget DocumentType, systemId
 
   proc before(ctx: JSContext; this: DocumentType;
-      nodes: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
+      nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
     ctx.beforeImpl(this.asNode, nodes)
 
   proc after(ctx: JSContext; this: DocumentType; nodes: varargs[JSValueConst]):
-      Opt[void] {.jsfunc.} =
+      JSValue {.jsfunc.} =
     ctx.afterImpl(this.asNode, nodes)
 
   proc replaceWith(ctx: JSContext; this: DocumentType;
@@ -5943,11 +5943,11 @@ jsClassPublicDef(Element):
     return element.asNode.nextElementSiblingImpl
 
   proc before(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
-      Opt[void] {.jsfunc.} =
+      JSValue {.jsfunc.} =
     ctx.beforeImpl(this.asNode, nodes)
 
   proc after(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
-      Opt[void] {.jsfunc.} =
+      JSValue {.jsfunc.} =
     ctx.afterImpl(this.asNode, nodes)
 
   proc replaceWith(ctx: JSContext; this: Element;
