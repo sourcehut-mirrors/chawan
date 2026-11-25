@@ -18,7 +18,6 @@ import utils/chaos
 import utils/cowstr
 import utils/opt
 import utils/strwidth
-import utils/twtstr
 
 jsNamespaceDef(Util):
   proc getcwd(): Str {.jsstfunc.} =

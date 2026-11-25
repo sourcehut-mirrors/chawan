@@ -550,7 +550,7 @@ jsClassPublicDef(Select):
         buf.addUTF8(opt.s.toOpenArray().toPoints().normalize())
         buf &= ' '
         opt.s = buf.toStr()
-        maxw = max(maxw, opt.s.toOpenArray().width())
+        maxw = max(maxw, opt.s.width())
       select.maxw = maxw
       for opt in select.options.mitems:
         if opt.s == "  " and opt.optionType == sotNop:

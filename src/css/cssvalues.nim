@@ -468,7 +468,7 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor]
 var computedMap {.global.}: CSSValuesMapObj
 
 when defined(debug):
-  proc serializeEmpty*(computed: CSSValues): string
+  proc serializeEmpty*(computed: CSSValues): Str
 
 unionHooks(CSSValueBit)
 unionHooks(CSSValueHWord)
@@ -2917,7 +2917,7 @@ proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): Str =
     else: str(" ")
 
 when defined(debug):
-  proc serializeEmpty*(computed: CSSValues): string =
+  proc serializeEmpty*(computed: CSSValues): Str =
     let default = rootProperties()
     var buf = initGrowbuf()
     for p in CSSPropertyType:
@@ -2925,6 +2925,6 @@ when defined(debug):
       let b = default.serialize(p)
       if a != b and not b.equalsIgnoreCase("currentcolor"):
         buf.addM(p, ':', a, ';')
-    $buf
+    buf.toStr()
 
 {.pop.} # raises: []

@@ -10,7 +10,6 @@ import io/chafile
 import utils/chaos
 import utils/cowstr
 import utils/opt
-import utils/twtstr
 
 proc usage() {.noreturn.} =
   discard chaStderr.write("""

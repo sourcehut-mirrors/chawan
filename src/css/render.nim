@@ -42,7 +42,7 @@ type
   RenderState = object
     bgcolor: CellColor
     images: seq[PosBitmap]
-    spaces: seq[char] # buffer filled with spaces for padding
+    spaces: Growbuf # buffer filled with spaces for padding
     cellSize: Size # size(w = attrs.ppc, h = attrs.ppl)
 
 # Forward declarations
@@ -329,8 +329,8 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     else:
       # Otherwise, background overpaints old text.
       let w = endx - startx
-      while state.spaces.len < w:
-        state.spaces &= ' '
+      if state.spaces.len < w:
+        state.spaces.setLenFill(w, ' ')
       var nx: int
       line.setText0(state.spaces.toOpenArray(0, w - 1), startx, endx,
         cx, nx, hadStr)

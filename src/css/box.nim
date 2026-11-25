@@ -404,22 +404,22 @@ when defined(debug):
     var buf = initGrowbuf('<')
     let name = if box.computed{"display"} != DisplayInline:
       if box.element.tagType in {ttHtml, ttBody}:
-        $box.element.tagType
+        box.element.tagType.toStr()
       else:
-        "div"
+        str("div")
     elif box of InlineNewLineBox:
-      "br"
+      str("br")
     else:
-      "span"
+      str("span")
     buf &= name
     let computed = box.computed.copyProperties()
     if computed{"display"} == DisplayBlock:
       computed{"display"} = DisplayInline
-    var style = $computed.serializeEmpty()
+    var style = computed.serializeEmpty()
     if style != "":
       if style[^1] == ';':
         style.setLen(style.high)
-      buf &= " style='" & style & "'"
+      buf.addM(" style='", style, "'")
     buf &= ">"
     if box of InlineNewLineBox:
       return $buf
@@ -432,7 +432,7 @@ when defined(debug):
         buf &= $run.s
     if box of BlockBox:
       buf &= '\n'
-    buf &= "</" & name & ">"
+    buf.addM("</", name, '>')
     $buf
 
   proc `$`*(stack: StackItem): string =

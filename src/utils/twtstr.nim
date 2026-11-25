@@ -130,11 +130,6 @@ proc hexValue*(c: char): int =
     return int(uint8(c) - uint8('A') + 0xA)
   return -1
 
-proc decValue*(c: char): int =
-  if c in AsciiDigit:
-    return int(uint8(c) - uint8('0'))
-  return -1
-
 proc cmpIgnoreCase2*(a, b: openArray[char]): int =
   let alen = a.len
   let blen = b.len
@@ -457,20 +452,6 @@ proc parseInt64*(s: openArray[char]): Opt[int64] =
 
 proc parseIntP*(s: openArray[char]): Opt[int] =
   return parseIntImpl[int, uint](s, 10)
-
-#TODO move to cowstr
-const ControlPercentEncodeSet* = Controls + NonAscii
-const FragmentPercentEncodeSet* = ControlPercentEncodeSet +
-  {' ', '"', '<', '>', '`'}
-const QueryPercentEncodeSet* = FragmentPercentEncodeSet - {'`'} + {'#'}
-const SpecialQueryPercentEncodeSet* = QueryPercentEncodeSet + {'\''}
-const PathPercentEncodeSet* = QueryPercentEncodeSet + {'?', '`', '{', '}', '^'}
-const UserInfoPercentEncodeSet* = PathPercentEncodeSet +
-  {'/', ':', ';', '=', '@', '['..']', '|'}
-const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
-  {'$'..'&', '+', ','}
-const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +
-  {'!', '\''..')', '~'}
 
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [

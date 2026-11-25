@@ -1512,6 +1512,19 @@ proc addHexLower*(buf: var Growbuf; u: uint8) =
 proc addHex*(buf: var Growbuf; c: char) =
   buf.addHex(uint8(c))
 
+const ControlPercentEncodeSet* = Controls + NonAscii
+const FragmentPercentEncodeSet* = ControlPercentEncodeSet +
+  {' ', '"', '<', '>', '`'}
+const QueryPercentEncodeSet* = FragmentPercentEncodeSet - {'`'} + {'#'}
+const SpecialQueryPercentEncodeSet* = QueryPercentEncodeSet + {'\''}
+const PathPercentEncodeSet* = QueryPercentEncodeSet + {'?', '`', '{', '}', '^'}
+const UserInfoPercentEncodeSet* = PathPercentEncodeSet +
+  {'/', ':', ';', '=', '@', '['..']', '|'}
+const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
+  {'$'..'&', '+', ','}
+const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +
+  {'!', '\''..')', '~'}
+
 proc addPercentEncode*(append: var Growbuf; s: Str; set: set[char];
     spaceAsPlus = false) =
   for c in s:

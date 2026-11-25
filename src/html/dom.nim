@@ -4637,7 +4637,7 @@ proc remove(this: DOMTokenList; ctx: JSContext; toks: varargs[CAtom]) =
       continue
     if buf.len > 0:
       buf &= ' '
-    buf &= tok.toStr()
+    buf &= tok
   this.update(ctx, buf.toStr())
 
 proc add(this: DOMTokenList; ctx: JSContext; toks: varargs[CAtom]) =
@@ -4645,12 +4645,12 @@ proc add(this: DOMTokenList; ctx: JSContext; toks: varargs[CAtom]) =
   for tok in this.toks:
     if buf.len > 0:
       buf &= ' '
-    buf &= tok.toStr()
+    buf &= tok
   for tok in toks:
     if tok notin this.toks:
       if buf.len > 0:
         buf &= ' '
-      buf &= tok.toStr()
+      buf &= tok
   this.update(ctx, buf.toStr())
 
 jsClassDef(DOMTokenList):
@@ -4675,7 +4675,7 @@ jsClassDef(DOMTokenList):
     for i, tok in this.toks:
       if i != 0:
         s &= ' '
-      s &= tok.toStr()
+      s &= tok
     s.toStr()
 
   proc add(ctx: JSContext; this: DOMTokenList; argv: varargs[JSValueConst]):

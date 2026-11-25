@@ -399,7 +399,7 @@ proc `$`*(color: CellColor): string =
   case color.t
   of ctNone: "none"
   of ctRGB: $color.rgb.toStr()
-  of ctANSI: "-cha-ansi(" & $uint8(color.ansi()) & ')'
+  of ctANSI: $initStrM("-cha-ansi(", uint8(color.ansi()), ')')
 
 # Divide each component by 255, multiply them by n, and discard the fractions.
 # See https://arxiv.org/pdf/2202.02864.pdf for details.

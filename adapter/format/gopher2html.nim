@@ -4,7 +4,6 @@ import io/chafile
 import utils/chaos
 import utils/cowstr
 import utils/opt
-import utils/twtstr
 
 proc getField(line: Str; i: var int): Str =
   let s = line.until('\t', i)

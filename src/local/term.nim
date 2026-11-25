@@ -1471,22 +1471,14 @@ proc writeColorSGR(term: Terminal; c: CellColor; bgmod: uint8): Opt[void] =
       else:
         res &= 82 + bgmod + n
     else:
-      res &= 38 + bgmod
-      res &= ";5;"
-      res &= n
+      res.addM(38 + bgmod, ";5;", n)
   of ctRGB:
     let rgb = c.rgb
-    res &= 38 + bgmod
-    res &= ";2;"
-    # Ideally, the following two semis would be colons, as that is
+    # Ideally, the last two semis would be colons, as that is
     # backwards-compatible with terminals that do not support RGB colors.
     # Unfortunately, konsole & vte only support the backwards-incompatible
     # variant, and both pretend to be XTerm, so we must keep sending semis.
-    res &= rgb.r
-    res &= ';'
-    res &= rgb.g
-    res &= ';'
-    res &= rgb.b
+    res.addM(38 + bgmod, ";2;", rgb.r, ';', rgb.g, ';', rgb.b)
   res &= 'm'
   term.write(res)
 
@@ -1593,8 +1585,7 @@ proc encodeAllQMark(res: var Growbuf; te: var TextEncoder;
     of terError:
       res.setLen(n)
       # match width of replaced char
-      for i in 0 ..< te.c.width():
-        res &= '?'
+      res.setLenFill(res.len + te.c.width(), '?')
       n = res.len
 
 proc encodeAscii(res: var Growbuf; s: openArray[char]; specialGraphics: bool;
@@ -1648,8 +1639,7 @@ proc encodeAscii(res: var Growbuf; s: openArray[char]; specialGraphics: bool;
       of 0x201C, 0x201D: res &= '"'
       of 0x2022: res &= '*' # also bullet lists are pretty common
       else:
-        for i in 0 ..< u.width():
-          res &= '?'
+        res.setLenFill(res.len + u.width(), '?')
   specialGraphics
 
 proc processOutputString*(term: Terminal; s: openArray[char];

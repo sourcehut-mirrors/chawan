@@ -9,7 +9,6 @@ import io/dynstream
 import utils/cowstr
 import utils/opt
 import utils/tabutil
-import utils/twtstr
 
 type
   History* = ref object

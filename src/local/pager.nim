@@ -664,11 +664,9 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
       if bgcolor == defaultColor and (x and 7) == 0:
         ls &= '\t'
       else:
-        for i in 0 ..< uw:
-          ls &= ' '
+        ls.setLenFill(ls.len + uw, ' ')
     else:
-      for i in pi ..< i:
-        ls &= s[i]
+      ls &= s.toOpenArray(pi, i - 1)
   oi = i
   ox = x
   ls.toStr()
@@ -2255,7 +2253,7 @@ jsClassDef(Pager):
       if pager.precnum != 0 and c == '0' or c in '1'..'9':
         if pager.precnum < MaxPrecNum: # better ignore than eval...
           pager.precnum *= 10
-          pager.precnum += int32(decValue(c))
+          pager.precnum += int32(c) - int32('0')
         pager.inputBuffer.setLen(0)
         return true
       pager.arg0 = max(pager.precnum, 0)
