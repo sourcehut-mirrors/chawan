@@ -11624,6 +11624,10 @@ static int JS_GetGlobalVarRef(JSContext *ctx, JSAtom prop, JSValue *sp)
         }
     }
     sp[1] = JS_AtomToValue(ctx, prop);
+    if (unlikely(JS_IsException(sp[1]))) {
+        JS_FreeValue(ctx, sp[0]);
+        return -1;
+    }
     return 0;
 }
 
@@ -14553,7 +14557,7 @@ static BOOL is_ascii_ident(const JSString *p)
     return TRUE;
 }
 
-static void js_print_atom(JSPrintValueState *s, JSAtom atom)
+static void js_print_atom2(JSPrintValueState *s, JSAtom atom, BOOL is_property_name)
 {
     int i;
     if (__JS_AtomIsTaggedInt(atom)) {
@@ -14564,7 +14568,16 @@ static void js_print_atom(JSPrintValueState *s, JSAtom atom)
         assert(atom < s->rt->atom_size);
         JSString *p;
         p = s->rt->atom_array[atom];
-        if (is_ascii_ident(p)) {
+        if (p->atom_type == JS_ATOM_TYPE_GLOBAL_SYMBOL ||
+            p->atom_type == JS_ATOM_TYPE_SYMBOL) {
+            if (is_property_name)
+                js_putc(s, '[');
+            js_puts(s, "Symbol(\"");
+            js_print_string1(s, p, p->len, '\"');
+            js_puts(s, "\")");
+            if (is_property_name)
+                js_putc(s, ']');
+        } else if (is_ascii_ident(p)) {
             for(i = 0; i < p->len; i++) {
                 js_putc(s, string_get(p, i));
             }
@@ -14574,6 +14587,11 @@ static void js_print_atom(JSPrintValueState *s, JSAtom atom)
             js_putc(s, '"');
         }
     }
+}
+
+static void js_print_atom(JSPrintValueState *s, JSAtom atom)
+{
+    js_print_atom2(s, atom, FALSE);
 }
 
 /* return 0 if invalid length */
@@ -14891,7 +14909,7 @@ static void js_print_object(JSPrintValueState *s, JSObject *p)
                 if (j < s->options.max_item_count) {
                     pr = &p->prop[i];
                     js_print_comma(s, &comma_state);
-                    js_print_atom(s, prs->atom);
+                    js_print_atom2(s, prs->atom, TRUE);
                     js_printf(s, ": ");
                     
                     /* XXX: autoinit property */
@@ -15084,9 +15102,7 @@ static void js_print_value(JSPrintValueState *s, JSValueConst val)
     case JS_TAG_SYMBOL:
         {
             JSAtomStruct *p = JS_VALUE_GET_PTR(val);
-            js_puts(s, "Symbol(");
             js_print_atom(s, js_get_atom_index(s->rt, p));
-            js_putc(s, ')');
         }
         break;
     case JS_TAG_MODULE:
@@ -17310,6 +17326,8 @@ static __exception int js_for_in_next(JSContext *ctx, JSValue *sp)
     }
     /* return the property */
     sp[0] = JS_AtomToValue(ctx, prop);
+    if (unlikely(JS_IsException(sp[0])))
+        return -1;
     sp[1] = JS_FALSE;
     return 0;
  done:
@@ -18820,6 +18838,8 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #endif
         CASE(OP_push_atom_value):
             *sp++ = JS_AtomToValue(ctx, get_u32(pc));
+            if (unlikely(JS_IsException(sp[-1])))
+                goto exception;
             pc += 4;
             BREAK;
         CASE(OP_undefined):
@@ -19716,6 +19736,8 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 }
                 pr->u.var_ref = var_ref;
                 *sp++ = JS_AtomToValue(ctx, atom);
+                if (unlikely(JS_IsException(sp[-1])))
+                    goto exception;
             }
             BREAK;
         CASE(OP_make_var_ref):
@@ -21480,6 +21502,8 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     case OP_with_make_ref:
                         /* produce a pair object/propname on the stack */
                         *sp++ = JS_AtomToValue(ctx, atom);
+                        if (unlikely(JS_IsException(sp[-1])))
+                            goto exception;
                         break;
                     case OP_with_get_ref:
                         /* produce a pair object/method on the stack */
@@ -28418,6 +28442,8 @@ static __exception int js_parse_postfix_expr(JSParseState *s, int parse_flags)
                     JSValue val;
                     int ret;
                     val = JS_AtomToValue(s->ctx, s->token.u.ident.atom);
+                    if (JS_IsException(val))
+                        return -1;
                     ret = emit_push_const(s, val, 1);
                     JS_FreeValue(s->ctx, val);
                     if (ret)
@@ -28502,6 +28528,10 @@ static __exception int js_parse_delete(JSParseState *s)
             name = get_u32(fd->byte_code.buf + fd->last_opcode_pos + 1);
             fd->byte_code.size = fd->last_opcode_pos;
             val = JS_AtomToValue(s->ctx, name);
+            if (JS_IsException(val)) {
+                JS_FreeAtom(s->ctx, name);
+                return -1;
+            }
             ret = emit_push_const(s, val, 1);
             JS_FreeValue(s->ctx, val);
             JS_FreeAtom(s->ctx, name);
