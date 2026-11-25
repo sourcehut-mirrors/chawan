@@ -225,6 +225,7 @@ type
     cnImages
     cnGetElementsByName
     cnGetElementsByTagName
+    cnGetElementsByTagNameNS
     cnGetElementsByClassName
     cnGetElementsById
     cnSelectedOptions
@@ -1072,6 +1073,15 @@ proc isElementOf(this: Collection; node: Node): bool =
     if node.namespaceURI == satNamespaceHTML:
       return node.localName == atom or node.tagName.equalsIgnoreCase(atom)
     return node.tagName == atom
+  return false
+
+proc isElementOfNS(this: Collection; node: Node): bool =
+  let node = node as Element
+  if node != nil:
+    let namespace = this.atoms[0]
+    let localName = this.atoms[1]
+    return (namespace.toStr() == "*" or namespace == node.namespaceURI) and
+      (localName.toStr() == "*" or localName == node.localName)
   return false
 
 proc isElementWithClass(this: Collection; node: Node): bool =
@@ -2841,13 +2851,14 @@ proc childTextContent*(node: ParentNode): Str =
       buf &= child.data.asStr
   buf
 
-proc getParamCollection(root: ParentNode; name: CollectionName; param: CAtom):
-    Collection =
+proc getParamCollection(root: ParentNode; name: CollectionName; param: CAtom;
+    param2 = CAtomNull): Collection =
   let document = root.asNode.document
   for collection in document.liveCollections(root.asNode):
     if collection.getMagic() == uint32(name):
       let collection = collection as Collection
-      if collection.atoms[0] == param:
+      if collection.atoms[0] == param and
+          (param2 == CAtomNull or collection.atoms[1] == param2):
         return collection
   Collection(nil)
 
@@ -2861,6 +2872,22 @@ proc getElementsByTagNameImpl(root: ParentNode; tagName: CAtom):
     cnGetElementsByTagName)
   if this != nil:
     this.atoms = newDOMTokenArray(tagName)
+  this
+
+proc getElementsByTagNameNSImpl(root: ParentNode;
+    namespaceURI, localName: CAtom): HTMLCollection =
+  let collection = root.getParamCollection(cnGetElementsByTagName,
+    namespaceURI, localName)
+  if collection != nil:
+    return collection as HTMLCollection
+  let match = if namespaceURI.toStr() == "*" and localName.toStr() == "*":
+    isElement
+  else:
+    isElementOfNS
+  let this = newHTMLCollection(root.asNode, match, cmSubtree,
+    cnGetElementsByTagNameNS)
+  if this != nil:
+    this.atoms = newDOMTokenArray(namespaceURI, localName)
   this
 
 proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
@@ -4069,6 +4096,11 @@ jsClassPublicDef(Document):
   proc getElementsByTagName(document: Document; tagName: CAtom):
       HTMLCollection {.jsnfunc.} =
     document.asParentNode.getElementsByTagNameImpl(tagName)
+
+  proc getElementsByTagNameNS(document: Document; namespaceURI: CAtomNullable;
+      localName: CAtom): HTMLCollection {.jsnfunc.} =
+    document.asParentNode.getElementsByTagNameNSImpl(CAtom(namespaceURI),
+      localName)
 
   proc getElementsByClassName(document: Document; classNames: DOMString):
       HTMLCollection {.jsnfunc.} =
@@ -5891,6 +5923,11 @@ jsClassPublicDef(Element):
   proc getElementsByTagName(element: Element; tagName: CAtom):
       HTMLCollection {.jsnfunc.} =
     element.asParentNode.getElementsByTagNameImpl(tagName)
+
+  proc getElementsByTagNameNS(element: Element; namespaceURI: CAtomNullable;
+      localName: CAtom): HTMLCollection {.jsnfunc.} =
+    element.asParentNode.getElementsByTagNameNSImpl(CAtom(namespaceURI),
+      localName)
 
   proc getElementsByClassName(element: Element; classNames: DOMString):
       HTMLCollection {.jsnfunc.} =
