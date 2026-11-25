@@ -551,6 +551,11 @@ proc initCAtomFactory*() =
     let atom = factory.toAtomRaw(sa.toStr())
     chaAssert uint32(atom) == uint32(sa)
 
+proc deinitCAtomFactory*() =
+  # make it so that we don't leak QJS strings on exit
+  for desc in factory.atomMap.mitems:
+    desc.s = str("")
+
 proc toAtomRaw(s: openArray[char]): CAtomRaw =
   return getFactory().toAtomRaw(s)
 
@@ -933,6 +938,8 @@ proc dup(this: AttrDataList): ptr AttrDataListObj
 
 proc `=destroy`*(this: var AttrDataList) =
   if this.p != nil:
+    for u in 0 ..< this.p.len:
+      `=destroy`(this.p.data[u])
     dealloc(this.p)
 
 proc `=sink`*(x: var AttrDataList; y: AttrDataList) =

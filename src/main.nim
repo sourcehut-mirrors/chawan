@@ -487,6 +487,7 @@ proc main() =
   let ctx = rt.newJSContext()
   rt.getOpaque().logExceptionCb = logExceptionPager
   let code = main2(ctx, loaderSockVec, pagerPid, forkserver)
+  deinitCAtomFactory()
   ctx.free()
   rt.free()
   quit(code)

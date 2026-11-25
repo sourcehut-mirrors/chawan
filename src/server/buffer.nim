@@ -1941,6 +1941,7 @@ proc launchBuffer*(rt: JSRuntime; config: BufferConfig; url: sink URL;
     bc.runBuffer()
     bc.window.bc = nil # break cycle
     ctx = bc.window.jsctx
+  deinitCAtomFactory()
   let rt = JS_GetRuntime(ctx)
   ctx.free()
   rt.free()
