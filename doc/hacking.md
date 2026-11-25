@@ -10,66 +10,37 @@ Also, try to keep the style of existing code.
 In particular, style of vendored libraries should not be changed unless
 upstream is dead.
 
-### Casing
+### Nim style
 
-Everything is camelCase.  Enums are camelCase too, but the first part is an
-abbreviation of the type name. e.g. members of `SomeEnum` start with `se`.
+* Types and constants use PascalCase.  Otherwise, all identifiers are
+  camelCase.  Enums are camelCase too, where the first part is an
+  abbreviation of the type name, e.g. members of `SomeEnum` start with
+  "se".  Nonetheless, we keep style of external C libraries, which is
+  often snake_case.
 
-Exceptions:
+* 80 chars per line (except for URL comments).  No blank lines inside
+  procedures (and other code blocks); a single blank line separates two
+  procs, type defs, etc.  If your proc doesn't fit on two 24-line screens,
+  split it up into more procs instead of inserting blank lines.
 
-* Types/constants use PascalCase. enums in cssvalues use PascalCase too, to
-  avoid name collisions.
-* We keep style of external C libraries, which is often snake_case.
+  (Occasionally a proc will get larger than two screens, and that's ok,
+  but try to avoid it.)
 
-Rationale: consistency.
+* Params: semicolons, not commas, e.g.
 
-### Wrapping
+  ```nim
+  proc foo(p1: int; p2, p3: Str; p4 = true) # Good
+  proc bar(p1: int, p2, p3: Str, p4 = true) # Bad
+  ```
 
-80 chars per line.
+* Prefer short (but descriptive) names.  Don't copy verbose naming from
+  the standard.
 
-Exceptions: URL comments.
+* Comment what is not obvious, don't comment what is obvious.  Whether
+  something is obvious or not is left to your judgment.
 
-Rationale: makes it easier to edit in vi.
-
-### Spacing
-
-No blank lines inside procedures (and other code blocks).  A single blank
-line separates two procs, type defs, etc.  If your proc doesn't fit on two
-24-line screens, split it up into more procs instead of inserting blank
-lines.
-
-Exceptions: occasionally a proc will get larger than two screens, and that's
-ok, but try to avoid it.
-
-Rationale: makes it easier to edit in vi.
-
-### Param separation
-
-Semicolons, not commas. e.g.
-
-```nim
-proc foo(p1: int; p2, p3: Str; p4 = true) # Good
-proc bar(p1: int, p2, p3: Str, p4 = true) # Bad
-```
-
-Rationale: makes it easier to edit in vi.
-
-### Naming
-
-Prefer short (but descriptive) names.  Don't copy verbose naming from the
-standard.
-
-Rationale: we aren't a fruit company.
-
-### Comments
-
-Comment what is not obvious, don't comment what is obvious.  Whether
-something is obvious or not is left to your judgment.
-
-Don't paste standard prose into the code unless you're making a point.  If
-you do, abridge the prose.
-
-Rationale: common sense, copyright.
+  Don't paste standard prose into the code unless you're making a point.
+  If you do, abridge the prose.
 
 ### C style
 
@@ -126,13 +97,13 @@ non-obvious reasons.
 
 ### `string`
 
-Instead of `system.string`, Chawan uses the `Str` type from `utils/cowstr`,
-which allows for zero-copy references to QuickJS strings and copy-on-write
-semantics.
+Instead of `system.string`, Chawan uses `Str` from `utils/cowstr`, which
+has copy-on-write semantics and can hold references to QuickJS strings
+without copying.
 
-The main difference of `Str` from `system.string` is that it does *not*
-double as a string-builder.  Instead, you'd normally use the separate
-`Growbuf` type to construct a `Str`, like so:
+The main difference from `system.string` is that `Str` does not double as
+a string-builder.  Instead, you'd normally use the separate `Growbuf` type
+to construct a `Str`, like so:
 
 ```nim
 var buf = initGrowbuf()
@@ -247,33 +218,6 @@ This is a workaround for a [compiler
 bug](https://github.com/nim-lang/Nim/issues/25236) affecting Nim versions
 up to & including 2.2.8.
 
-### Copying operations
-
-`substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which is a
-non-copying slice.  (Obviously, you should use `substr` if you *need* to
-copy.)
-
-Note that `=` usually copies.  If you're copying a large object a lot, you
-may want to set its type to `ref`.  Also, the `move` statement is useful
-when copying values out of an object; note that this zeroes out the
-original value, so it's safe to use.
-
-Beware of `pairs` on sequences of objects; it copies.  Use `mypairs` if you
-don't need mutation, `mpairs` if you do:
-
-```nim
-proc foo(objs: openArray[SomeObj]) =
-  for i, obj in objs: # Bad. this copies. obj's type is "SomeObj".
-    obj.bar(i)
-  # import utils/twtstr to use mypairs.
-  for i, obj in objs.mypairs: # OK, doesn't copy. obj's type is "lent "SomeObj".
-    obj.bar(i)
-  for i, obj in objs.mpairs: # OK, doesn't copy. obj's type is "var SomeObj".
-    obj.i = i
-```
-
-Similarly, the regular `items` on `array`s copies; use `myitems` instead.
-
 ### `func`, `.noSideEffect`
 
 These introduce function coloring for little to no benefit.
@@ -324,18 +268,19 @@ var myVariable {.global.}: int
 For most std modules, Chawan has its own counterparts in the utils
 directory:
 
-* `std/strutils`, `std/unicode` -> `utils/twtstr`
+* `std/strutils`, `std/unicode` -> `utils/twtstr`, `utils/cowstr`
 * `std/os` -> `utils/chaos`
 * `std/hashes` -> `utils/chahash`
 * `std/tables` -> `utils/tabutil`
+* `std/assertions` -> `utils/assert`
 
 There are several reasons for not using std: poor performance from using
 old idioms, unpredictable backwards-compatibility, code bloat, and bugs.
 
-This doesn't mean using std is /forbidden/, there are still many modules
-for which we don't have (or need) custom counterparts - for instance,
-`std/algorithm` works well.  The only rule is that when you *do* use std,
-you should prefix the imports with `std/`, e.g.:
+This doesn't mean using std is /forbidden/ (at least not yet), there are
+still many modules for which we don't have (or need) custom counterparts.
+The only rule is that when you *do* use std, you should prefix the imports
+with `std/`, e.g.:
 
 ```nim
 import algorithm # bad
@@ -345,6 +290,128 @@ import std/algorithm # good
 ### `converter`
 
 Avoid, it slows down the compiler to a crawl.
+
+## Tips for writing fast code
+
+Generally, do the simplest thing that works.  But for a browser, it's
+often important that the result is also fast, so here are some tricks.
+
+### Reducing copies
+
+`substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which is a
+non-copying slice.  (Obviously, you should use `substr` if you *need* to
+copy.)
+
+For `ref`, `JSRef` and `Str`, the assignment operator `=` just increases a
+reference count.  For other types however, it *copies* the object;
+notably, this includes non-ref `object`s and `seq`s.
+
+If you're copying a large object a lot, you may want to set its type to
+`ref`.  Also, the `move` statement is useful when copying values out of an
+object; note that this zeroes out the original value, so it's safe to use.
+
+Beware of `pairs` on sequences of objects; it copies.  Use `mypairs` if you
+don't need mutation, `mpairs` if you do:
+
+```nim
+proc foo(objs: openArray[SomeObj]) =
+  for i, obj in objs: # Bad. this copies. obj's type is "SomeObj".
+    obj.bar(i)
+  # import utils/twtstr to use mypairs.
+  for i, obj in objs.mypairs: # OK, doesn't copy. obj's type is "lent "SomeObj".
+    obj.bar(i)
+  for i, obj in objs.mpairs: # OK, doesn't copy. obj's type is "var SomeObj".
+    obj.i = i
+```
+
+Similarly, the regular `items` on `array`s copies; use `myitems` instead.
+
+### Object layout
+
+Nim does not optimize object layout for you, so it's useful to familiarize
+yourself with how alignment works.  First, take a look at the following
+(bad) example:
+
+```nim
+type Foo = ref object
+  color: uint32 4 bytes
+  len: int # 8 bytes
+  invalid: bool # 1 byte
+  next: Foo # 8 bytes
+```
+
+Intuitively one would think the total size is 4 + 8 + 1 + 8 = 21 bytes.
+But in fact, on a 64-bit CPU this is turned into something like
+
+```nim
+type Foo = ref object
+  color: uint32 # 4 bytes
+  padding: array[4, uint8] # 4 bytes
+  len: int # 8 bytes
+  invalid: bool # 1 byte
+  padding2: array[7, uint8] # 7 bytes
+  next: Foo # 8 bytes
+
+echo sizeof(Foo()[]) # 32
+```
+
+Without this, e.g. `len` and `next` would have to be accessed at an
+address that starts at 4/13 bytes, but CPUs aren't very good at that (some
+do it slowly, some refuse to do it at all).  So the compiler helps us out
+by stuffing the object with padding, but now it's larger than it needs
+to be.
+
+The solution is to move small fields near each other:
+
+```nim
+type Foo = ref object
+  len: int
+  next: Foo
+  color: uint32 # 4 bytes
+  invalid: bool # 1 byte
+  # padding of 3 bytes
+
+echo sizeof(Foo()[]) # 24
+```
+
+(Ideally the padding should be at the end, because then an object
+embedding another can place other fields in it.)
+
+With this we won 8 bytes per object.  Now, say we add a couple more flags:
+
+```nim
+type Foo = ref object
+  len: int
+  next: Foo
+  color: uint32 # 4 bytes
+  invalid: bool # 1 byte
+  hover: bool # 1 byte
+  focus: bool # 1 byte
+  readonly: bool # 1 byte
+  # padding of 7 bytes
+
+echo sizeof(Foo()[]) # 32
+```
+
+The problem now is that these flags are really just a single bit, but
+we're wasting an entire *byte* on them.  Luckily, Nim has a convenient
+solution for this:
+
+```nim
+type FooFlag = enum
+  ffInvalid, ffHover, ffFocus, ffReadonly
+
+type Foo = ref object
+  color: uint32 # 4 bytes
+  flags: set[FooFlag] # 1 byte (compiles to a bit field)
+  # padding of 3 bytes
+  len: int
+  next: Foo
+
+echo sizeof(Foo()[]) # 24
+```
+
+And we saved 8 bytes again.
 
 ## Debugging
 
