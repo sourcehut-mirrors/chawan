@@ -5,15 +5,18 @@ unreleased
   crypto.randomUUID, Iterator#chunks/#windows/#includes,
   Iterator.zip/zipKeyed
 * support details element
-* support :first-of-type, :last-of-type selectors
+* support :first-of-type, :last-of-type, :scope selectors
 * support SVG use, path/g/symbol inside defs (from Dillo)
 * support :visited (opt-in, only matched if buffer.visited=true)
+* support light-dark() colors
 * switch default search engine to DuckDuckGo lite
 * add C-@ to line editor for toggling selection
 * switch to copy-on-write strings
 * remove deprecated external.w3m-cgi-compat option
 * fix infinite loop in tinfl on invalid deflate streams
 * fix chaseccomp compilation on platforms without fcntl syscall
+* fix crash on node.before(node)
+* fix img[src]/link[href] not respecting base element
 * properly implement task handling in the event loop
 
 0.5.3 (2026.11.21)
