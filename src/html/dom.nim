@@ -1344,9 +1344,19 @@ proc fireEvent*(window: Window; event: Event; target: EventTarget) =
   window.jsctx.fireEvent(event, target)
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget;
-    bubbles, cancelable, trusted: bool) =
+    bubbles, cancelable: bool) =
   let event = newTrustedEvent(name, target, bubbles, cancelable)
   window.fireEvent(event, target)
+
+type LoadEnv = ref object of JSTaskEnv
+  element: HTMLImageElement
+
+proc fireLoadTask(ctx: JSContext; env: JSTaskEnv): Opt[void] =
+  let env = LoadEnv(env)
+  let event = newTrustedEvent(satLoad, env.element.asEventTarget,
+    bubbles = false, cancelable = false)
+  ctx.fireEvent(event, env.element.asEventTarget)
+  ok()
 
 proc loadImageFinish(opaque: RootRef; response: Response) =
   let cachedURL = CachedURLImage(opaque)
@@ -1379,8 +1389,9 @@ proc loadImageFinish(opaque: RootRef; response: Response) =
     share.asElement.invalidate()
     #TODO fire error on error
     if window.settings.scripting != smFalse:
-      window.fireEvent(satLoad, share.asEventTarget, bubbles = false,
-        cancelable = false, trusted = true)
+      discard window.jsctx.queueTask(jtsDOMManipulation, fireLoadTask, LoadEnv(
+        element: share
+      ))
   window.imageLoaded()
 
 proc loadImage0(opaque: RootRef; response: Response) =
@@ -7669,7 +7680,7 @@ proc execute*(element: HTMLScriptElement) =
     return
   if element.scriptResult.t == srtNull:
     window.fireEvent(satError, element.asEventTarget, bubbles = false,
-      cancelable = false, trusted = true)
+      cancelable = false)
     return
   let needsInc = element.external or element.scriptType == stModule
   if needsInc:
@@ -7701,7 +7712,7 @@ proc execute*(element: HTMLScriptElement) =
     dec document.ignoreDestructiveWrites
   if element.external:
     window.fireEvent(satLoad, element.asEventTarget, bubbles = false,
-      cancelable = false, trusted = true)
+      cancelable = false)
 
 # https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
 proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
@@ -7769,7 +7780,7 @@ proc prepare*(element: HTMLScriptElement; ctx: JSContext) =
     element.external = src != "" and element.scriptType != stImportMap
     if element.scriptType == stImportMap or url == nil:
       window.fireEvent(satError, element.asEventTarget, bubbles = false,
-        cancelable = false, trusted = true)
+        cancelable = false)
       return
     if element.asElement.isRenderBlocking():
       element.asElement.blockRendering()

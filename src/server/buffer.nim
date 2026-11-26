@@ -1162,7 +1162,7 @@ proc updateInput(bc: BufferContext; element: Element; s: Str;
     let window = bc.window
     if isFile:
       window.fireEvent(satInput, element.asEventTarget, bubbles = true,
-        cancelable = true, trusted = true)
+        cancelable = true)
     else:
       let inputEvent = newInputEvent(satInput.view(),
         InputEventInit(
@@ -1176,7 +1176,7 @@ proc updateInput(bc: BufferContext; element: Element; s: Str;
         inputEvent.setTrusted()
         window.fireEvent(inputEvent, element.asEventTarget)
     bc.window.fireEvent(satChange, element.asEventTarget, bubbles = true,
-      cancelable = true, trusted = true)
+      cancelable = true)
   bc.maybeReshape()
 
 proc readSuccess0(bc: BufferContext; s: Str; fd: cint): Request =
@@ -1199,7 +1199,7 @@ proc readSuccess0(bc: BufferContext; s: Str; fd: cint): Request =
       textarea.setValue(s.asDOMString)
       if bc.config.scripting != smFalse:
         bc.window.fireEvent(satChange, textarea.asEventTarget, bubbles = true,
-          cancelable = true, trusted = true)
+          cancelable = true)
       bc.updateInput(focus, s, isFile = false)
     else: discard
   return Request(nil)
@@ -1264,7 +1264,7 @@ proc click(bc: BufferContext; option: HTMLOptionElement): ClickResult =
       option.setSelected(not option.selected)
       if bc.config.scripting != smFalse:
         bc.window.fireEvent(satChange, select.asEventTarget, bubbles = true,
-          cancelable = true, trusted = true)
+          cancelable = true)
       bc.maybeReshape()
       return initClickResult()
     return bc.click(select)
@@ -1349,9 +1349,9 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
     if bc.config.scripting != smFalse:
       # Note: not an InputEvent.
       bc.window.fireEvent(satInput, input.asEventTarget, bubbles = true,
-        cancelable = true, trusted = true)
+        cancelable = true)
       bc.window.fireEvent(satChange, input.asEventTarget, bubbles = true,
-        cancelable = true, trusted = true)
+        cancelable = true)
     bc.maybeReshape()
     initClickResult()
   of itRadio:
@@ -1360,9 +1360,9 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
     if not wasChecked and bc.config.scripting != smFalse:
       # See above.
       bc.window.fireEvent(satInput, input.asEventTarget, bubbles = true,
-        cancelable = true, trusted = true)
+        cancelable = true)
       bc.window.fireEvent(satChange, input.asEventTarget, bubbles = true,
-        cancelable = true, trusted = true)
+        cancelable = true)
     bc.maybeReshape()
     initClickResult()
   of itReset:
@@ -1503,7 +1503,7 @@ proc select(bc: BufferContext; handle: PagerHandle; selected: int32):
       select.setSelectedIndex(selected)
       if bc.config.scripting != smFalse:
         bc.window.fireEvent(satChange, select.asEventTarget, bubbles = true,
-          cancelable = true, trusted = true)
+          cancelable = true)
     bc.restoreFocus()
     bc.maybeReshape()
   return initClickResult()

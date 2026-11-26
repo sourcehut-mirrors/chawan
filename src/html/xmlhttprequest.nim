@@ -97,7 +97,7 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
 
 proc fireReadyStateChangeEvent(window: Window; target: XMLHttpRequest) =
   window.fireEvent(satReadystatechange, target.asEventTarget, bubbles = false,
-    cancelable = false, trusted = true)
+    cancelable = false)
 
 proc checkOpened(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
   if this.readyState != xhrsOpened:

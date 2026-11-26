@@ -66,7 +66,7 @@ proc finish(builder: ChaDOMBuilder) =
   if document.scriptingEnabled:
     #TODO queue DOM task, then spin event loop
     window.fireEvent(satDOMContentLoaded, document.asEventTarget,
-      bubbles = true, cancelable = false, trusted = true)
+      bubbles = true, cancelable = false)
   #TODO ServiceWorkerContainer etc.
   document.setActiveParser(nil)
 
