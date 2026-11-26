@@ -450,9 +450,10 @@ proc parseRefresh*(s: Str; baseURL: URL): CheckRefreshResult =
   var j = s.high
   if q and i < s.len and s[^1] in {'"', '\''}:
     dec j
-  if url := parseURL(s.substr(i, j), baseURL):
-    return (n: n, url: url)
-  return (n: -1, url: URL(nil))
+  let url = parseURL0(s.substr(i, j), baseURL)
+  if url == nil:
+    n = -1
+  return (n: -1, url: url)
 
 jsClassDef(Headers):
   proc newHeaders(ctx: JSContext; jsInit = JS_UNDEFINED.vc): Opt[Headers]

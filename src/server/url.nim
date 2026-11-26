@@ -1168,22 +1168,14 @@ proc parseURL0*(input: openArray[char]; base = URL(nil)): URL =
   return url
 
 proc parseURL0*(input: Str; base = URL(nil)): URL =
-  parseURL0(input.toOpenArray(), base)
-
-proc parseURL1(input: openArray[char]; url: URL; state: URLState) =
-  discard input.parseURLImpl(base = URL(nil), url, state, override = true)
-
-proc parseURL*(input: openArray[char]; base = URL(nil)): Opt[URL] =
-  let url = parseURL0(input, base)
-  if url == nil:
-    return err()
+  let url = parseURL0(input.toOpenArray(), base)
   if url.schemeType == stBlob:
     #TODO blob urls
     discard
-  ok(url)
+  url
 
-proc parseURL*(input: Str; base = URL(nil)): Opt[URL] =
-  parseURL(input.toOpenArray(), base)
+proc parseURL1(input: openArray[char]; url: URL; state: URLState) =
+  discard input.parseURLImpl(base = URL(nil), url, state, override = true)
 
 proc parseJSURL*(ctx: JSContext; s: Str; base = URL(nil)):
     Opt[URL] =
@@ -1404,10 +1396,10 @@ proc origin*(url: URL): Origin =
   case url.schemeType
   of stBlob:
     #TODO
-    let pathURL = parseURL(url.pathname)
-    if pathURL.isErr:
+    let pathURL = parseURL0(url.pathname)
+    if pathURL == nil:
       return Origin(t: otOpaque, s: url.toStr())
-    return pathURL.get.origin
+    return pathURL.origin
   of stFtp, stHttp, stHttps, stWs, stWss:
     return Origin(t: otTuple, s: initStrM(url.scheme, "://", url.host))
   else:

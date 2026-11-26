@@ -401,7 +401,8 @@ proc addResponseModule*(ctx: JSContext): JSCode =
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:
     let location = response.headers.getFirst(byteStr("Location")).toStr()
-    if url := parseURL(location, request.url):
+    let url = parseURL0(location, request.url)
+    if url != nil:
       let status = response.status
       if status == 303 and request.httpMethod notin {hmGet, hmHead} or
           status == 301 or

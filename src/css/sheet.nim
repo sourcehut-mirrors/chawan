@@ -369,7 +369,9 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
       ?ctx.skipBlanksCheckHas()
       let tok = ctx.consume()
       let urls = ?ctx.parseURL(tok)
-      let url = ?parseURL(urls, base)
+      let url = parseURL0(urls, base)
+      if url == nil:
+        return err()
       var layer = layer
       ?ctx.parseImportLayer(sheet, layer)
       #TODO media queries
