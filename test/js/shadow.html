@@ -59,6 +59,17 @@ const shadow = el.attachShadow({mode: "open"})
 	assertThrows(() => el.attachShadow({mode: "closed"}), DOMException);
 	assertThrows(() => el.attachShadow({mode: "open"}), DOMException);
 }
+{
+	/* closed */
+	const el = document.createElement("div");
+	const child1 = document.createElement("div");
+	const child2 = document.createElement("span");
+	el.appendChild(child1);
+	el.appendChild(child2);
+	const shadow = el.attachShadow({mode: "closed"});
+	child1.remove();
+	assertEquals(el.firstChild, child2);
+}
 shadow.append("Success")
 x.before(shadow);
 document.getElementById("x").remove();

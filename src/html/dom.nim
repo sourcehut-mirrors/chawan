@@ -2036,38 +2036,48 @@ proc removeNodeInternal(node, next: Node; parent: ParentNode;
     document: Document): Node =
   # returns previousSibling
   document.invalidateCollectionsRemove(node)
-  var prev = node.internalPrev
-  if next != nil and next.parentNode != nil:
-    next.internalPrev = prev
-  else:
-    parent.firstChild.internalPrev = prev
+  var prev = move(node.internalPrev)
   if parent.firstChild == node:
-    prev = Node(nil)
+    # note: we can test parentNode against nil because we are not in
+    # insertion steps
     if next != nil and next.parentNode != nil:
+      # first child removed; link new first child to last child, and then
+      # shadow to new first child
+      next.internalPrev = move(prev)
       parent.setFirstChild(next)
     else:
+      # no children left
+      prev = Node(nil)
       parent.setFirstChild(Node(nil))
   else:
+    if next != nil and next.parentNode != nil:
+      # non-first, non-last child removed; link nextSibling to
+      # previousSibling
+      next.internalPrev = prev
+    else:
+      # last child removed, but there are others left; link first to
+      # previous
+      parent.firstChild.internalPrev = prev
+    # either way, prev must link to next
     prev.internalNext = next
-  node.internalPrev = Node(nil)
   node.internalNext = document.asNode
   node.parentNode = ParentNode(nil)
   let nodeAsElement = node as Element
   let parentAsElement = parent as Element
   if parentAsElement != nil:
     parentAsElement.invalidate()
-    if parentAsElement.tagType == ttDetails and
-        (let shadow = parentAsElement.shadowRoot; shadow != nil):
-      # idk where this belongs, I'll just put it here
-      if (let slot1 = shadow.asParentNode.firstChild as HTMLSlotElement;
-          slot1 != nil):
-        if (let i = slot1.nodes.find(node); i >= 0):
-          slot1.nodes.delete(i)
-        elif (let slot2 = slot1.asNode.nextSibling as HTMLSlotElement;
-            slot2 != nil):
-          let i = slot2.nodes.find(node)
-          if i >= 0:
-            slot2.nodes.delete(i)
+    if parentAsElement.tagType == ttDetails:
+      let shadow = parentAsElement.shadowRoot
+      if shadow != nil:
+        if (let slot1 = shadow.asParentNode.firstChild as HTMLSlotElement;
+            slot1 != nil):
+          if (let i = slot1.nodes.find(node); i >= 0):
+            slot1.nodes.delete(i)
+          elif (let slot2 = slot1.asNode.nextSibling as HTMLSlotElement;
+              slot2 != nil):
+            let i = slot2.nodes.find(node)
+            if i >= 0:
+              slot2.nodes.delete(i)
   else:
     # we're removing all elements; the document must still be invalidated
     document.invalid = true
@@ -2076,7 +2086,7 @@ proc removeNodeInternal(node, next: Node; parent: ParentNode;
       # removed node was not the last one
       parentAsElement.flags.incl(efChildElIndicesInvalid)
     nodeAsElement.setMagic(0)
-  return prev
+  prev
 
 proc removeImpl*(node: Node; ctx: JSContext; suppressObservers = false) =
   let parent = node.parentNode
@@ -2917,8 +2927,8 @@ proc getElementsByClassNameImpl(root: ParentNode; classNames: DOMString):
 
 proc insertNodeInternal(parent: ParentNode; node, before: Node;
     parentAsElement: Element) =
-  let first = parent.firstChild
   if before == nil:
+    let first = parent.firstChild
     if first != nil:
       let last = first.internalPrev
       last.internalNext = node
@@ -2929,34 +2939,34 @@ proc insertNodeInternal(parent: ParentNode; node, before: Node;
       node.internalPrev = node
   else:
     node.internalNext = before
-    let prev = before.internalPrev
-    node.internalPrev = prev
-    if prev.nextSibling != nil:
+    let prev = move(before.internalPrev)
+    if prev.internalNext == before and prev.parentNode != nil:
+      # prev is neither the last sibling, nor a shadow root
       prev.internalNext = node
+    node.internalPrev = prev
     before.internalPrev = node
-    if before == first:
+    if before == parent.firstChild:
       parent.setFirstChild(node)
   node.parentNode = parent
   let nodeAsElement = node as Element
   if nodeAsElement != nil:
-    #TODO same as before != nil?
-    if node.nextSibling != nil and parentAsElement != nil:
+    if before != nil and parentAsElement != nil:
       parentAsElement.flags.incl(efChildElIndicesInvalid)
     elif (let prev = nodeAsElement.previousElementSibling; prev != nil):
       nodeAsElement.setMagic(prev.getMagic() + 1)
     else:
       nodeAsElement.setMagic(0)
-  if parentAsElement != nil and parentAsElement.tagType == ttDetails and
-      (let shadow = parentAsElement.shadowRoot; shadow != nil):
-    # idk where this belongs, I'll just put it here
-    if (let slot1 = shadow.asParentNode.firstChild as HTMLSlotElement;
-        slot1 != nil):
-      if node of Element and Element(node).tagType == ttSummary and
-          slot1.nodes.len == 0:
-        slot1.nodes.add(node)
-      elif (let slot2 = slot1.asNode.nextSibling as HTMLSlotElement;
-          slot2 != nil):
-        slot2.nodes.add(node)
+  if parentAsElement != nil and parentAsElement.tagType == ttDetails:
+    let shadow = parentAsElement.shadowRoot
+    if shadow != nil:
+      if (let slot1 = shadow.asParentNode.firstChild as HTMLSlotElement;
+          slot1 != nil):
+        if node of Element and Element(node).tagType == ttSummary and
+            slot1.nodes.len == 0:
+          slot1.nodes.add(node)
+        elif (let slot2 = slot1.asNode.nextSibling as HTMLSlotElement;
+            slot2 != nil):
+          slot2.nodes.add(node)
 
 proc insert1(parent: ParentNode; ctx: JSContext; node, before: Node;
     postConnectionNodes: var seq[Element]) =
