@@ -1205,7 +1205,7 @@ proc newClient*(ctx: JSContext; loader: FileLoader; urandom: PosixStream):
     return Window(nil)
   if ctx.addCommonModules(window, url).isErr:
     return Window(nil)
-  window.document = newDocument(url)
+  window.document = newDocument(url, url.origin)
   if window.document == nil:
     JS_ThrowOutOfMemory(ctx)
     return Window(nil)

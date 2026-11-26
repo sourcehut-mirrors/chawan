@@ -73,7 +73,7 @@ proc finish(builder: ChaDOMBuilder) =
 proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   let builder = wrapper.builder
   let oldDocument = move(builder.document)
-  let document = newDocument(oldDocument.url)
+  let document = newDocument(oldDocument.url, oldDocument.origin)
   document.charset = charset
   oldDocument.setActiveParser(nil)
   document.setActiveParser(wrapper)
@@ -252,7 +252,7 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
     ChaDOMBuilder =
   if url == nil:
     return nil
-  let document = newDocument(url)
+  let document = newDocument(url, url.origin)
   if document == nil:
     return nil
   document.quirksMode = quirksMode

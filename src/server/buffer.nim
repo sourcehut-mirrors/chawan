@@ -218,7 +218,8 @@ proc getImageHover(bc: BufferContext; element: Element): Str =
   if (let image = element as HTMLImageElement; image != nil):
     let src = image.asElement.attr(satSrc)
     if src != "":
-      if url := image.asNode.document.parseURL(src):
+      let url = image.asNode.document.parseURL0(src)
+      if url != nil:
         return url.toStr()
   str("")
 
@@ -234,12 +235,14 @@ proc getClickHover(bc: BufferContext; element: Element): Str =
     of ttVideo, ttAudio:
       let (src, _) = HTMLElement(clickable).getSrc()
       if src != "":
-        if url := clickable.asNode.document.parseURL(src):
+        let url = clickable.asNode.document.parseURL0(src)
+        if url != nil:
           return url.toStr()
     of ttFrame, ttIframe:
       let src = clickable.attr(satSrc)
       if src != "":
-        if url := clickable.asNode.document.parseURL(src):
+        let url = clickable.asNode.document.parseURL0(src)
+        if url != nil:
           return url.toStr()
     elif clickable of FormAssociatedElement:
       let fae = FormAssociatedElement(clickable)
@@ -1291,7 +1294,8 @@ proc click(bc: BufferContext; audio: HTMLAudioElement): ClickResult =
   bc.restoreFocus()
   let (src, contentType) = audio.asHTMLElement.getSrc()
   if src != "":
-    if url := audio.asNode.document.parseURL(src):
+    let url = audio.asNode.document.parseURL0(src)
+    if url != nil:
       return initClickResult(newRequest(url), contentType)
   return initClickResult()
 
@@ -1299,7 +1303,8 @@ proc click(bc: BufferContext; video: HTMLVideoElement): ClickResult =
   bc.restoreFocus()
   let (src, contentType) = video.asHTMLElement.getSrc()
   if src != "":
-    if url := video.asNode.document.parseURL(src):
+    let url = video.asNode.document.parseURL0(src)
+    if url != nil:
       return initClickResult(newRequest(url), contentType)
   return initClickResult()
 
@@ -1308,7 +1313,8 @@ proc clickFrame(bc: BufferContext; frame: Element): ClickResult =
   bc.restoreFocus()
   let src = frame.attr(satSrc)
   if src != "":
-    if url := frame.asNode.document.parseURL(src):
+    let url = frame.asNode.document.parseURL0(src)
+    if url != nil:
       return initClickResult(newRequest(url))
   return initClickResult()
 

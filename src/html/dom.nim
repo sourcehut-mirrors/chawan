@@ -366,8 +366,9 @@ type
     url*: URL # not nil
     currentScript: HTMLScriptElement
     implementation: JSObject
-    internalBaseURL: URL
-    origin: Origin
+    internalBaseURL: URL # roughly the same as "frozen base URL" in spec
+    fallbackBaseURL: URL # usually same as url
+    origin*: Origin
     # document.write
     ignoreDestructiveWrites: int
     throwOnDynamicMarkupInsertion*: int
@@ -624,7 +625,7 @@ proc loadSheet(window: Window; this: SheetElement; url: URL; charset: Charset;
 proc newCDATASection(document: Document; data: sink DOMString): CDATASection
 proc createComment*(document: Document; data: sink DOMString): Comment
 proc createTextNode*(document: Document; data: sink DOMString): Text
-proc newDocument*(url: URL): Document
+proc newDocument*(url: URL; origin: Origin): Document
 proc newDOMImplementation(ctx: JSContext; document: Document): JSObjectErr
 proc newDocumentType*(document: Document; name, publicId, systemId: sink Str):
   DocumentType
@@ -687,7 +688,6 @@ proc focus*(document: Document): Element
 proc invalidateCollections*(document: Document)
 proc invalidateCollectionsRemove(document: Document; node: Node)
 proc parseURL0*(document: Document; s: Str): URL
-proc parseURL*(document: Document; s: Str): Opt[URL]
 
 proc adjustForRemoval(iter: NodeIterator; node: Node)
 
@@ -1769,7 +1769,6 @@ proc nextSiblingShadow(node: Node): lent Node =
 # Return the next descendant if it isn't `start', and nil otherwise.
 # When `skip' is true, skip children of `node'.
 # Note: `start' must be either an ancestor of `node', `node` itself, or nil.
-#TODO start should be ParentNode
 proc nextDescendant(node, start: Node; skip = false): Node =
   if not skip and (let parent = node as ParentNode; parent != nil):
     let first = parent.firstChild
@@ -2234,10 +2233,9 @@ proc clone(node: Node; ctx: JSContext; document: Document; deep: bool;
   elif (let node = node as ProcessingInstruction; node != nil):
     document.newProcessingInstruction(node.target, node.data).asNode
   elif (let document = node as Document; document != nil):
-    let x = newDocument(document.url)
+    let x = newDocument(document.url, document.origin)
     x.charset = document.charset
     x.contentType = document.contentType
-    x.origin = document.origin
     x.quirksMode = document.quirksMode
     x.asNode
   elif (let node = node as DocumentType; node != nil):
@@ -3462,17 +3460,22 @@ template asDocument[T: DocumentObj](x: JSRef[T]): Document =
   Document(x)
 
 proc newXMLDocument(): XMLDocument =
+  let url = parseURL0("about:blank")
+  if url == nil:
+    return XMLDocument(nil)
   jsNew XMLDocumentObj(
-    url: parseURL0("about:blank"),
+    url: url,
+    fallbackBaseURL: url,
     contentType: satApplicationXml,
     charset: csUtf8
   )
 
-proc newDocument*(url: URL): Document =
+proc newDocument*(url: URL; origin: Origin): Document =
   jsNew DocumentObj(
     url: url,
+    fallbackBaseURL: url,
     contentType: satApplicationXml,
-    origin: url.origin,
+    origin: origin,
     charset: csUtf8
   )
 
@@ -3635,27 +3638,20 @@ proc baseURL*(document: Document): URL =
     for base in document.asParentNode.elementDescendants(ttBase):
       let u = base.asElement.findAttr(satHref)
       if u != uint32.high:
-        #TODO frozen base url
         let href = base.asElement.attrs[u].value
         if href != "":
-          let url = parseURL0(href, document.url)
-          if url != nil:
+          let url = parseURL0(href, document.fallbackBaseURL) #TODO encoding
+          if url != nil and url.schemeType notin {stData, stJavascript}:
+            #TODO CSP
             document.internalBaseURL = url
           break
     if document.internalBaseURL == nil:
-      document.internalBaseURL = document.url
+      document.internalBaseURL = document.fallbackBaseURL
   return document.internalBaseURL
 
 proc parseURL0*(document: Document; s: Str): URL =
   #TODO encodings
   return parseURL0(s, document.baseURL)
-
-proc parseURL*(document: Document; s: Str): Opt[URL] =
-  #TODO encodings
-  let url = document.parseURL0(s)
-  if url == nil:
-    return err()
-  ok(url)
 
 proc invalidateCollections*(document: Document) =
   for collection in document.liveCollections:
@@ -3862,12 +3858,10 @@ jsClassPublicDef(Document):
 
   proc newDocument(ctx: JSContext): Document {.jsctor.} =
     let global = ctx.getWindow()
-    jsNew DocumentObj(
-      url: parseURL0("about:blank"),
-      contentType: satApplicationXml,
-      origin: global.document.origin,
-      charset: csUtf8
-    )
+    let url = parseURL0("about:blank")
+    if url == nil:
+      return Document(nil)
+    newDocument(url, global.document.origin)
 
   proc getImplementation(ctx: JSContext; document: Document): JSValue
       {.jsfget: "implementation".} =
@@ -4378,6 +4372,8 @@ jsClassRaw(DOMImplementationDef, "DOMImplementation"):
   proc createHTMLDocument(ctx: JSContext; implementation: DOMImplementation;
       title = JS_UNDEFINED.vc): JSValue {.jsfunc.} =
     let doc = newDocument(ctx)
+    if doc == nil:
+      return JS_ThrowOutOfMemory(ctx)
     doc.contentType = satTextHtml
     let doctype = doc.newDocumentType(str("html"), str(""), str(""))
     let html = doc.newHTMLElement(ctx, ttHtml)
@@ -5611,6 +5607,7 @@ proc insertionSteps(element: Element; ctx: JSContext;
     postConnectionNodes.add(element)
   of ttBase:
     element.asNode.document.internalBaseURL = URL(nil)
+    #TODO invalidate :visited
   elif element.namespaceURI == satNamespaceSVG:
     element.insertionStepsSVG()
   else:
@@ -6462,11 +6459,10 @@ proc add(map: var DependencyMap; key, value: Element) =
   inc map.load
 
 proc invalidate*(element: Element; dep: DependencyType) =
-  if dep in element.selfDepends:
-    element.invalidate()
   let root = element.asNode.rootNode as RootNode
-  if root != nil:
-    #TODO could chaAssert too but I'm too lazy to check all call sites
+  if root != nil: # rootless elements need not be invalidated
+    if dep in element.selfDepends:
+      element.invalidate()
     for it in root.styleDependencies[dep].dependedBy.getAll(element):
       it.invalidate()
 
@@ -6863,7 +6859,8 @@ proc jsReflectGet0(ctx: JSContext; htmlElement: HTMLElement; magic: cint):
   of rtStr, rtStrNull: return ctx.toJS(element.attr(name))
   of rtUrl:
     let s = element.attr(name)
-    if url := element.asNode.document.parseURL(s):
+    let url = element.asNode.document.parseURL0(s)
+    if url != nil:
       return ctx.toJS(url.toStr())
     return ctx.toJS(s)
   of rtReferrerPolicy:
@@ -7007,9 +7004,9 @@ template htmlClassDef(name: untyped) =
 proc reinitURL*(element: Element): Opt[URL] =
   let u = element.findAttr(satHref)
   if u != uint32.high:
-    let url = element.asNode.document.parseURL(element.attrs[u].value)
-    if url.isOk and url.get.schemeType != stBlob:
-      return url
+    let url = element.asNode.document.parseURL0(element.attrs[u].value)
+    if url != nil and url.schemeType != stBlob:
+      return ok(url)
   return err()
 
 proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
@@ -7085,8 +7082,9 @@ jsClassDef(HTMLBaseElement):
   jsextends HTMLElementDef
 
   proc href(base: HTMLBaseElement): Str {.jsfget.} =
-    #TODO with fallback base url
-    if url := parseURL(base.asElement.attr(satHref)):
+    let document = base.asNode.document
+    let url = parseURL0(base.asElement.attr(satHref), document.fallbackBaseURL)
+    if url != nil:
       return url.toStr()
     return str("")
 
