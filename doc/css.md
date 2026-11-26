@@ -112,7 +112,8 @@ Following standard pseudo-classes are supported: `:first-child`,
 `:last-child`, `:only-child`, `:hover`, `:root`, `:nth-child()`,
 `:nth-last-child()`, `:checked`, `:focus`, `:is()`, `:not()`,
 `:where()`, `:lang()`, `:link`, `:target`, `:disabled`, `:empty`,
-`:first-of-type`, `:last-of-type`, `:host`, and `:host()`.
+`:first-of-type`, `:last-of-type`, `:scope` (DOM only, no `@scope` yet),
+`:host`, and `:host()`.
 
 `:defined` is matched for compatibility; however, custom elements are not
 supported yet.

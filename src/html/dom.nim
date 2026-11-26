@@ -797,7 +797,7 @@ proc getClassID*(t: typedesc[ShadowRoot]): JSClassID
 proc getClassID*(t: typedesc[Text]): JSClassID
 
 # Forward declaration hacks
-proc matchesList(element: Element; cxsels: SelectorList): bool {.
+proc matchesList(element, scope: Element; cxsels: SelectorList): bool {.
   importc: "cha_$1".}
 proc parseHTMLFragment(ctx: JSContext; element: Element; s: openArray[char]):
   seq[Node] {.importc: "cha_$1".}
@@ -3117,8 +3117,9 @@ proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: DOMString):
   let selectors = ctx.parseSelectors(q)
   if selectors.len == 0:
     return JS_EXCEPTION
+  let scope = node as Element
   for element in node.elementDescendants:
-    if element.matchesList(selectors):
+    if element.matchesList(scope, selectors):
       return ctx.toJS(element)
   return JS_NULL
 
@@ -3129,8 +3130,9 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: DOMString):
     return JS_EXCEPTION
   let this = newEmptyNodeList()
   if this != nil:
+    let scope = node as Element
     for element in node.elementDescendants:
-      if element.matchesList(selectors):
+      if element.matchesList(scope, selectors):
         this.snapshot.add(element.asNode)
   return ctx.toJSNew(this)
 
@@ -6273,7 +6275,7 @@ jsClassPublicDef(Element):
     if selectors.len == 0:
       return JS_EXCEPTION
     for element in this.branchElems:
-      if element.matchesList(selectors):
+      if element.matchesList(this, selectors):
         return ctx.toJS(element)
     return JS_NULL
 
@@ -6282,7 +6284,7 @@ jsClassPublicDef(Element):
     let selectors = ctx.parseSelectors(q)
     if selectors.len == 0:
       return JS_EXCEPTION
-    return ctx.toJS(this.matchesList(selectors))
+    return ctx.toJS(this.matchesList(this, selectors))
 
   proc style(element: Element): CSSStyleDeclaration {.jsnfget.} =
     if element.cachedStyle == nil:

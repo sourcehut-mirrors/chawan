@@ -398,6 +398,7 @@ type
     pcHost = "host"
     pcDefined = "defined"
     pcEmpty = "empty"
+    pcScope = "scope"
     pcFirstNode = "-cha-first-node"
     pcLastNode = "-cha-last-node"
     pcBorderNonzero = "-cha-border-nonzero"

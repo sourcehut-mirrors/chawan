@@ -140,12 +140,19 @@ function testOwnerDocument() {
 	assertEquals(el.ownerDocument, document);
 }
 
+function testMatches() {
+	const el = document.createElement("div");
+	assertEquals(el.matches(":scope"), true);
+	assertEquals(el.closest(":scope"), el);
+}
+
 testName();
 testClass();
 testAttribute();
 testParentNode();
 testDataset();
 testOwnerDocument();
+testMatches();
 
 x.textContent = "Success";
 </script>

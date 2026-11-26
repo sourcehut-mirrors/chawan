@@ -137,7 +137,7 @@ proc calcRule(tosorts: var ToSorts; element: Element;
     if sel.ancestorClass != CAtomNull and
         not tosorts.cache.hasClass(sel.ancestorClass):
       continue
-    if element.matches(sel, depends):
+    if element.matches(Element(nil), sel, depends):
       tosorts.map[sel.pseudo].add((sel.specificity, rule))
       seen.incl(sel.pseudo)
 

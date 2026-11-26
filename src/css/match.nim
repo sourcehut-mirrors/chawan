@@ -29,9 +29,9 @@ import utils/opt
 # selector lists (in case of pseudo-class functions).
 
 # Forward declarations
-proc matches(element: Element; cxsel: ComplexSelector;
+proc matches(element, scope: Element; cxsel: ComplexSelector;
   depends: var DependencyInfo; ohasDeps: var bool): bool
-proc matches(element: Element; sels: CompoundSelector;
+proc matches(element, scope: Element; sels: CompoundSelector;
   depends: var DependencyInfo; ohasDeps: var bool; host = false): bool
 
 type CaseSensitivity = enum
@@ -83,13 +83,13 @@ proc matchesAttr(element: Element; sel: Selector): bool =
     of csI: return sel.value.toLowerAscii() in val.toLowerAscii()
     of csS: return sel.value in val
 
-proc matches(element: Element; slist: SelectorList;
+proc matches(element, scope: Element; slist: SelectorList;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
   var pmatch = false
   var rhasDeps = false
   for cxsel in slist:
     var hasDeps = false
-    let match = element.matches(cxsel, depends, hasDeps)
+    let match = element.matches(scope, cxsel, depends, hasDeps)
     if not hasDeps:
       if match:
         return true
@@ -103,8 +103,8 @@ proc matches(element: Element; slist: SelectorList;
   ohasDeps = rhasDeps
   return pmatch
 
-proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
-    hasDeps: var bool; host: bool): bool =
+proc matches(element, scope: Element; pc: PseudoClass;
+    depends: var DependencyInfo; hasDeps: var bool; host: bool): bool =
   case pc
   of pcFirstChild:
     let parentNode = element.parentNode
@@ -115,6 +115,7 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
   of pcFirstNode: return element.isFirstVisualNode()
   of pcLastNode: return element.isLastVisualNode()
   of pcEmpty: return element.isVisuallyEmpty()
+  of pcScope: return element == scope
   of pcOnlyChild:
     let parentNode = element.parentNode
     return parentNode != nil and parentNode.firstElementChild == element and
@@ -173,7 +174,7 @@ proc matchesLang(element: Element; lang: Str): bool =
       return element.attr(satLang) == lang
   false
 
-proc matchesNthChild(element: Element; nthChild: CSSNthChild;
+proc matchesNthChild(element, scope: Element; nthChild: CSSNthChild;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
   let parentNode = element.parentNode
   if parentNode == nil:
@@ -188,7 +189,7 @@ proc matchesNthChild(element: Element; nthChild: CSSNthChild;
     if A < 0:
       return j <= 0 and j mod A == 0
     return j >= 0 and j mod A == 0
-  if element.matches(nthChild.ofsels, depends, ohasDeps):
+  if element.matches(scope, nthChild.ofsels, depends, ohasDeps):
     var i = 1
     for child in parentNode.elementList:
       if child == element:
@@ -199,12 +200,12 @@ proc matchesNthChild(element: Element; nthChild: CSSNthChild;
           return j <= 0 and j mod A == 0
         return j >= 0 and j mod A == 0
       var hasDeps = false
-      if child.matches(nthChild.ofsels, depends, hasDeps):
+      if child.matches(scope, nthChild.ofsels, depends, hasDeps):
         inc i
       ohasDeps = ohasDeps or hasDeps
   false
 
-proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
+proc matchesNthLastChild(element, scope: Element; nthChild: CSSNthChild;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
   let parentNode = element.parentNode
   if parentNode == nil:
@@ -220,7 +221,7 @@ proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
     if A < 0:
       return j <= 0 and j mod A == 0
     return j >= 0 and j mod A == 0
-  if element.matches(nthChild.ofsels, depends, ohasDeps):
+  if element.matches(scope, nthChild.ofsels, depends, ohasDeps):
     var i = 1
     for child in parentNode.relementList:
       if child == element:
@@ -231,13 +232,13 @@ proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
           return j <= 0 and j mod A == 0
         return j >= 0 and j mod A == 0
       var hasDeps: bool
-      if child.matches(nthChild.ofsels, depends, hasDeps):
+      if child.matches(scope, nthChild.ofsels, depends, hasDeps):
         inc i
       ohasDeps = ohasDeps or hasDeps
   false
 
-proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
-    ohasDeps: var bool; host: bool): bool =
+proc matches(element, scope: Element; sel: Selector;
+    depends: var DependencyInfo; ohasDeps: var bool; host: bool): bool =
   case sel.t
   of stType:
     return element.localName == sel.atom
@@ -248,30 +249,30 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:
-    return element.matches(sel.pc, depends, ohasDeps, host)
+    return element.matches(scope, sel.pc, depends, ohasDeps, host)
   of stUniversal:
     return true
   of stNthChild:
-    return element.matchesNthChild(sel.nthChild, depends, ohasDeps)
+    return element.matchesNthChild(scope, sel.nthChild, depends, ohasDeps)
   of stNthLastChild:
-    return element.matchesNthLastChild(sel.nthChild, depends, ohasDeps)
+    return element.matchesNthLastChild(scope, sel.nthChild, depends, ohasDeps)
   of stNot:
-    return not element.matches(sel.fsels, depends, ohasDeps)
+    return not element.matches(scope, sel.fsels, depends, ohasDeps)
   of stIs, stWhere:
-    return element.matches(sel.fsels, depends, ohasDeps)
+    return element.matches(scope, sel.fsels, depends, ohasDeps)
   of stLang:
     return element.matchesLang(sel.value)
   of stHost:
     if host:
-      return element.matches(sel.host.csel, depends, ohasDeps)
+      return element.matches(scope, sel.host.csel, depends, ohasDeps)
     return false
 
-proc matches(element: Element; sels: CompoundSelector;
+proc matches(element, scope: Element; sels: CompoundSelector;
     depends: var DependencyInfo; ohasDeps: var bool; host = false): bool =
   var pmatch = true
   for sel in sels:
     var hasDeps = false
-    let match = element.matches(sel, depends, hasDeps, host)
+    let match = element.matches(scope, sel, depends, hasDeps, host)
     if not hasDeps:
       if not match:
         return false
@@ -284,7 +285,7 @@ proc matches(element: Element; sels: CompoundSelector;
       pmatch = match
   return pmatch
 
-proc matches(element: Element; cxsel: ComplexSelector;
+proc matches(element, scope: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
   var e = element
   var pmatch = true
@@ -294,35 +295,35 @@ proc matches(element: Element; cxsel: ComplexSelector;
     var hasDeps = false
     case csel.ct
     of ctNone:
-      match = e.matches(csel, mdepends, hasDeps)
+      match = e.matches(scope, csel, mdepends, hasDeps)
     of ctDescendant:
       while true:
         let e2 = e.asNode.parentElement
         if e2 == nil:
           if e.parentNode of ShadowRoot:
             match = ShadowRoot(e.parentNode).host
-              .matches(csel, mdepends, hasDeps, host = true)
+              .matches(scope, csel, mdepends, hasDeps, host = true)
         e = e2
         if e == nil:
           break
-        if e.matches(csel, mdepends, hasDeps):
+        if e.matches(scope, csel, mdepends, hasDeps):
           match = true
           break
     of ctChild:
       if (let e2 = e.asNode.parentElement; e2 != nil):
         e = e2
-        match = e != nil and e.matches(csel, mdepends, hasDeps)
+        match = e != nil and e.matches(scope, csel, mdepends, hasDeps)
       elif e.parentNode of ShadowRoot:
         match = ShadowRoot(e.parentNode).host
-          .matches(csel, mdepends, hasDeps, host = true)
+          .matches(scope, csel, mdepends, hasDeps, host = true)
         e = Element(nil)
     of ctNextSibling:
       e = e.previousElementSibling
-      match = e != nil and e.matches(csel, mdepends, hasDeps)
+      match = e != nil and e.matches(scope, csel, mdepends, hasDeps)
     of ctSubsequentSibling:
       var it = e.previousElementSibling
       while it != nil:
-        if it.matches(csel, mdepends, hasDeps):
+        if it.matches(scope, csel, mdepends, hasDeps):
           e = it
           match = true
           break
@@ -343,15 +344,15 @@ proc matches(element: Element; cxsel: ComplexSelector;
   return pmatch
 
 # Note: this modifies "depends".
-proc matches*(element: Element; cxsel: ComplexSelector;
+proc matches*(element, scope: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo): bool =
   var dummy: bool
-  return element.matches(cxsel, depends, dummy)
+  return element.matches(scope, cxsel, depends, dummy)
 
-proc matchesList(element: Element; slist: SelectorList): bool {.
+proc matchesList(element, scope: Element; slist: SelectorList): bool {.
     exportc: "cha_$1".} =
   var dummy = DependencyInfo.default
   var dummy2: bool
-  return element.matches(slist, dummy, dummy2)
+  return element.matches(scope, slist, dummy, dummy2)
 
 {.pop.} # raises: []
