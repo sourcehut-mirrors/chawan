@@ -463,7 +463,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
 proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
   Opt[CSSCalcSum]
-proc parseColor*(ctx: var CSSParser): Opt[CSSColor]
+proc parseColor*(ctx: var CSSParser; attrs: WindowAttributes): Opt[CSSColor]
 
 var computedMap {.global.}: CSSValuesMapObj
 
@@ -1754,23 +1754,34 @@ proc parseANSI(ctx: var CSSParser): Opt[CSSColor] =
   else: discard
   return err()
 
-proc parseColorFun(ctx: var CSSParser; ft: CSSFunctionType): Opt[CSSColor] =
+proc parseColorFun(ctx: var CSSParser; ft: CSSFunctionType;
+    attrs: WindowAttributes): Opt[CSSColor] =
   ?ctx.skipBlanksCheckHas()
   let resx = if ctx.peekIdentNoCase("from"):
     ctx.seekToken()
-    let origin = ?ctx.parseColor()
+    let origin = ?ctx.parseColor(attrs)
     ctx.parseRelativeColorFun(origin, ft)
   else:
     case ft
     of cftRgb, cftRgba, cftHsl, cftHsla: ctx.parseLegacyColorFun(ft)
     of cftOklab, cftOklch: ctx.parseNewColorFun(ft)
     of cftChaAnsi: ctx.parseANSI()
+    of cftLightDark:
+      let light = ?ctx.parseColor(attrs)
+      if not ctx.has() or ctx.peekTokenType() != cttComma:
+        return err()
+      ctx.seekToken()
+      let dark = ?ctx.parseColor(attrs)
+      if attrs.prefersDark:
+        ok(dark)
+      else:
+        ok(light)
     else: return err()
   let res = ?resx
   ?ctx.checkFunctionEnd()
   ok(res)
 
-proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
+proc parseColor*(ctx: var CSSParser; attrs: WindowAttributes): Opt[CSSColor] =
   ?ctx.skipBlanksCheckHas()
   let tok = ctx.consume()
   case tok.t
@@ -1793,7 +1804,7 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
       return err()
   of cttFunction:
     #TODO add some sub-parser interface because this is horrible
-    let res = ctx.parseColorFun(tok.ft)
+    let res = ctx.parseColorFun(tok.ft, attrs)
     if res.isErr:
       ctx.skipFunction()
     return res
@@ -2246,7 +2257,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   of cvtWordBreak: makeEntry(t, ?parseIdent[CSSWordBreak](ctx))
   of cvtListStyleType: makeEntry(t, ?parseIdent[CSSListStyleType](ctx))
   of cvtFontStyle: makeEntry(t, ?parseIdent[CSSFontStyle](ctx))
-  of cvtColor: makeEntry(t, ?ctx.parseColor())
+  of cvtColor: makeEntry(t, ?ctx.parseColor(attrs))
   of cvtLength:
     case t
     of cptMinWidth, cptMinHeight:
@@ -2463,7 +2474,7 @@ proc parseBorder(ctx: var CSSParser; sh: CSSShorthandType;
   while ctx.has():
     case ctx.peekTokenType()
     of cttHash:
-      color = makeEntry(cptBorderLeftColor, ?ctx.parseColor())
+      color = makeEntry(cptBorderLeftColor, ?ctx.parseColor(attrs))
       inc ncolor
     of cttIdent:
       let s = ctx.peekToken().s
@@ -2476,14 +2487,14 @@ proc parseBorder(ctx: var CSSParser; sh: CSSShorthandType;
         width = makeEntry(cptBorderLeftWidth, float32(x))
         inc nwidth
       else:
-        color = makeEntry(cptBorderLeftColor, ?ctx.parseColor())
+        color = makeEntry(cptBorderLeftColor, ?ctx.parseColor(attrs))
         inc ncolor
     of cttFunction:
       if ctx.peekToken().ft == cftCalc:
         width = makeEntry(cptBorderLeftWidth, ?ctx.parseLineWidth(attrs))
         inc nwidth
       else:
-        color = makeEntry(cptBackgroundColor, ?ctx.parseColor())
+        color = makeEntry(cptBackgroundColor, ?ctx.parseColor(attrs))
         inc ncolor
     of cttDimension, cttNumber:
       width = makeEntry(cptBorderLeftWidth, ?ctx.parseLineWidth(attrs))
@@ -2547,18 +2558,18 @@ proc parseBackground(ctx: var CSSParser; attrs: WindowAttributes;
   while ctx.has():
     case ctx.peekTokenType()
     of cttHash:
-      color = makeEntry(cptBackgroundColor, ?ctx.parseColor())
+      color = makeEntry(cptBackgroundColor, ?ctx.parseColor(attrs))
     of cttString:
       image = makeEntry(cptBackgroundImage, ?ctx.parseImage())
     of cttIdent:
       if ctx.peekIdentNoCase("none"):
         image = makeEntry(cptBackgroundImage, ?ctx.parseImage())
-      elif x := ctx.parseColor():
+      elif x := ctx.parseColor(attrs):
         color = makeEntry(cptBackgroundColor, x)
     of cttFunction:
       if ctx.peekToken().ft == cftUrl:
         image = makeEntry(cptBackgroundImage, ?ctx.parseImage())
-      elif x := ctx.parseColor():
+      elif x := ctx.parseColor(attrs):
         color = makeEntry(cptBackgroundColor, x)
     else:
       #TODO when we implement the other shorthands too

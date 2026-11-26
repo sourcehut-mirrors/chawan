@@ -25,8 +25,8 @@ A list of supported standard properties, with notes on unimplemented values:
 * caption-side
 * clear
 * color (hex values, colors except system keywords, and functions `rgb`,
-  `rgba`, `hsl`, `hsla`, `oklab`, `oklch`; see limitations on relative
-  colors ("from" keyword) below)
+  `rgba`, `hsl`, `hsla`, `oklab`, `oklch`, `light-dark`; see limitations
+  on relative colors ("from" keyword) below)
 * content (string, (no-)open/close-quote, counter())
 * counter-increment
 * counter-reset

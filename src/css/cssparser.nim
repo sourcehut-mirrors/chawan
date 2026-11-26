@@ -185,6 +185,7 @@ type
     cftUrl = "url"
     cftVar = "var"
     cftWhere = "where"
+    cftLightDark = "light-dark"
 
   CSSSimpleBlock* = ref object
     value*: seq[CSSToken]

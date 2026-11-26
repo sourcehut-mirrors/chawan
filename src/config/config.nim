@@ -703,7 +703,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var CSSColor): JSCode =
   var s: DOMString
   ?ctx.fromJS(val, s)
   var p = initCSSParser(s.asStr)
-  let c = p.parseColor()
+  let c = p.parseColor(dummyAttrs)
   if c.isErr or p.has():
     JS_ThrowTypeError(ctx, "invalid color %s", s.asStr.toCStringConst())
     return fjErr
@@ -1615,7 +1615,7 @@ proc parseCSSColor(cp: var ConfigParser; x: var CSSColor): Opt[void] =
   ?cp.typeCheck(ttString)
   let s = move(cp.buf).toStr()
   var ctx = initCSSParser(s)
-  let c = ctx.parseColor()
+  let c = ctx.parseColor(dummyAttrs)
   if c.isErr or ctx.has() or c.get.t == cctCurrent:
     return cp.err(initStrM("invalid color '", s, "'"))
   x = c.get

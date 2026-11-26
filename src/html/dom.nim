@@ -5250,11 +5250,15 @@ proc setHover*(element: Element; hover: bool) =
 
 proc parseColor(element: Element; s: sink DOMString): Opt[ARGBColor] =
   var ctx = initCSSParser(s.asStr)
-  if color := ctx.parseColor():
+  let window = element.asNode.document.window
+  let attrsp = if window != nil:
+    window.settings.scriptAttrsp
+  else:
+    unsafeAddr dummyAttrs
+  if color := ctx.parseColor(attrsp[]):
     case color.t
     of cctArgb, cctOklab: return ok(color.argb())
     of cctCurrent:
-      let window = element.asNode.document.window
       if window != nil and window.settings.scripting == smApp and
           element.asNode.isConnected():
         element.ensureStyle()
