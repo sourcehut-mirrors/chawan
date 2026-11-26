@@ -1328,7 +1328,8 @@ proc loadLink(window: Window; link: HTMLLinkElement) =
   let href = link.asElement.attr(satHref)
   if href == "":
     return
-  if url := parseURL(href, window.document.url):
+  let url = window.document.parseURL0(href)
+  if url != nil:
     inc window.remoteSheetNum
     window.loadSheet(link.asSheetElement, url, loadLinkFinish)
 
@@ -1478,10 +1479,9 @@ proc loadImage*(window: Window; image: HTMLImageElement) =
   let src = image.asElement.attr(satSrc)
   if src == "":
     return
-  let url0 = parseURL(src, window.document.url)
-  if url0.isErr:
+  let url = window.document.parseURL0(src)
+  if url == nil:
     return
-  let url = url0.get
   if window.document.url.schemeType == stHttps and url.schemeType == stHttp:
     # mixed content :/
     #TODO maybe do this in loader?
