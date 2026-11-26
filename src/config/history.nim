@@ -24,7 +24,7 @@ type
     #   url(\torigin)?
     #
     # Note: we cannot merge identical entries from separate origins because
-    # taht would allow history enumeration attacks.  (Sketch: push an
+    # that would allow history enumeration attacks.  (Sketch: push an
     # entry known to be in history, an entry to check, then history-size
     # more fake entries.  If the entry to check is still in the history,
     # then the entry to check has been visited from another website,
