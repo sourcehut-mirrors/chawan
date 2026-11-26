@@ -1169,7 +1169,7 @@ proc parseURL0*(input: openArray[char]; base = URL(nil)): URL =
 
 proc parseURL0*(input: Str; base = URL(nil)): URL =
   let url = parseURL0(input.toOpenArray(), base)
-  if url.schemeType == stBlob:
+  if url != nil and url.schemeType == stBlob:
     #TODO blob urls
     discard
   url
