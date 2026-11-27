@@ -1637,13 +1637,13 @@ proc markURL(bc: BufferContext; handle: PagerHandle) {.proxy.} =
       if (let text = node as Text; text != nil):
         if lastText != nil:
           lastText.data.asStr &= text.data.asStr
-          text.asNode.removeImpl(ctx)
+          text.asNode.remove(ctx)
         else:
           texts.add(text)
           lastText = text
       elif (let element = node as HTMLElement; element != nil):
         if element.tagType in {ttNobr, ttWbr}:
-          element.asNode.removeImpl(ctx)
+          element.asNode.remove(ctx)
         elif element.tagType notin {ttHead, ttScript, ttStyle, ttA}:
           stack.add(element)
           lastText = Text(nil)

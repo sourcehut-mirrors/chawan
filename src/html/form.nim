@@ -495,7 +495,7 @@ jsClassDef(HTMLOptionsCollection):
       {.jsfunc.} =
     let element = this.asHTMLCollection.item(uint32(i))
     if element != nil:
-      element.asNode.removeImpl(ctx)
+      element.asNode.remove(ctx)
 
   proc length(this: HTMLOptionsCollection): uint32 {.jsfget.} =
     this.asCollection.getLength()
@@ -515,7 +515,7 @@ jsClassDef(HTMLOptionsCollection):
     else:
       for i in 0 ..< len - n:
         let it = this.asHTMLCollection.item(uint32(i))
-        it.asNode.removeImpl(ctx)
+        it.asNode.remove(ctx)
 
   proc setter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom;
       value: HTMLOptionElementNil): JSValue {.jssetprop.} =
@@ -527,7 +527,7 @@ jsClassDef(HTMLOptionsCollection):
     let value = value.get.asNode
     if value == nil:
       if element != nil:
-        element.asNode.removeImpl(ctx)
+        element.asNode.remove(ctx)
       return JS_UNDEFINED
     let parent = this.root as ParentNode
     if element != nil:
@@ -1131,7 +1131,7 @@ jsClassPublicDef(HTMLSelectElement):
       let options = this.options()
       ctx.remove(options, i)
     else:
-      this.asNode.removeImpl(ctx)
+      this.asNode.remove(ctx)
     ok()
 
 # <textarea>

@@ -201,12 +201,12 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: ParentNode; text: sink Str;
         builder.insertBefore(parent, text.asNode, before)
 
 proc removeImpl(builder: ChaDOMBuilder; child: ParentNode) =
-  child.asNode.removeImpl(builder.ctx, suppressObservers = true)
+  child.asNode.remove(builder.ctx, suppressObservers = true)
 
 proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: ParentNode) =
   let toMove = fromNode.getChildList()
   for node in toMove:
-    node.removeImpl(builder.ctx, suppressObservers = true)
+    node.remove(builder.ctx, suppressObservers = true)
   for child in toMove:
     builder.insertBefore(toNode, child, ParentNode(nil))
 
