@@ -126,7 +126,7 @@ type
     outputId*: int
     opaque*: RootRef
 
-  OngoingData* = ref object of LoaderData
+  OngoingData* {.final.} = ref object of LoaderData
     response*: Response
 
   TextResult* = object

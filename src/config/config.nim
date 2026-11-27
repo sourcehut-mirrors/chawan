@@ -318,7 +318,7 @@ type
     of cocClear:
       discard
 
-  ConfigRule = ref object of StrMapItem
+  ConfigRule {.final.} = ref object of StrMapItem
     matchType*: SiteconfMatch # only used for siteconf
     regex*: Regex # url for siteconf, match for omnirule
     fun*: JSCallback # substituteUrl for siteconf, rewriteUrl for omnirule

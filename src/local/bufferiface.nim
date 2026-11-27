@@ -332,10 +332,10 @@ type
     istreamOutputId*: int
     ostreamOutputId*: int
 
-  BufferInterfaceData* = ref object of MapData
+  BufferInterfaceData* {.final.} = ref object of MapData
     iface*: BufferInterface
 
-  BufferInitData* = ref object of MapData
+  BufferInitData* {.final.} = ref object of MapData
     init*: BufferInit
 
 # Forward declarations

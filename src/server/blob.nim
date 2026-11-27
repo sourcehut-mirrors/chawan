@@ -359,12 +359,12 @@ proc package(ctx: JSContext; s: openArray[char]; contentType: Str;
     return trace(res)
 
 type
-  FileReaderEnv = ref object of JSTaskEnv
+  FileReaderEnv {.final.} = ref object of JSTaskEnv
     this: FileReader
     encoding: StrNil
     len: int64
 
-  ProgressEnv = ref object of JSTaskEnv
+  ProgressEnv {.final.} = ref object of JSTaskEnv
     this: EventTarget
     name: StaticAtom
     loaded: int64

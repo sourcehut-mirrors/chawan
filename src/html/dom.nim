@@ -1360,7 +1360,7 @@ proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget;
   let event = newTrustedEvent(name, target, bubbles, cancelable)
   window.fireEvent(event, target)
 
-type LoadEnv = ref object of JSTaskEnv
+type LoadEnv {.final.} = ref object of JSTaskEnv
   element: HTMLImageElement
 
 proc fireLoadTask(ctx: JSContext; env: JSTaskEnv): Opt[void] =

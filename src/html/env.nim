@@ -142,7 +142,7 @@ jsClassRaw(MimeTypeArrayDef, "MimeTypeArray"):
 # Notification
 # we intentionally don't support notifications, but some websites use it
 # for "browser verification"
-type PermissionEnv = ref object of JSTaskEnv
+type PermissionEnv {.final.} = ref object of JSTaskEnv
   resolve: JSCallback
   callback: JSCallback
   name: DOMString
@@ -727,7 +727,7 @@ proc microtaskJob(ctx: JSContext; argc: cint; argv: JSValueConstArray):
     JSValue {.cdecl.} =
   JS_Call(ctx, argv[0], JS_UNDEFINED.vc, 0, nil)
 
-type PostMessageEnv = ref object of JSTaskEnv
+type PostMessageEnv {.final.} = ref object of JSTaskEnv
   data: JSValueTraced
 
 proc postMessageJob(ctx: JSContext; env: JSTaskEnv): Opt[void] =

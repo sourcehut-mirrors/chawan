@@ -88,7 +88,7 @@ type
     path: Str
     ostream: PosixStream
 
-  CommandItem = ref object of IntMapItem
+  CommandItem {.final.} = ref object of IntMapItem
     cmd: Str
 
   PagerObj {.pure, final.} = object of JSRootObj

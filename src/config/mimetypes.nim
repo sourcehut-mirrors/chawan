@@ -43,7 +43,7 @@ const DefaultImages = [
 
 # extension -> type
 type
-  MimeType = ref object of StrMapItem
+  MimeType {.final.} = ref object of StrMapItem
     name: Str # content type
 
   MimeTypesImageItem* = tuple[ext, subtype: Str]
