@@ -457,18 +457,22 @@ proc evalAction(pager: Pager; ctx: JSContext; arg0: int32;
     oval: var JSValueTraced): JSValue =
   var val = oval
   if not JS_IsFunction(ctx, val): # yes, this looks weird, but it's correct
+    pager.term.catchSigint()
     val = ctx.evalFunction(val.toJSValue())
+    pager.term.respectSigint()
     if JS_IsFunction(ctx, val):
       # optimization: skip this eval on the next call.
       oval = val
   # If an action evaluates to a function that function is evaluated too.
   if JS_IsFunction(ctx, val):
     let fun = traceCallback(val.toJSValue())
+    pager.term.catchSigint()
     val = if arg0 != 0:
       let arg = trace(ctx.toJS(arg0))
       trace(ctx.call(fun, JS_UNDEFINED.vc, arg.vc))
     else: # no precnum
       trace(ctx.call(fun, JS_UNDEFINED.vc))
+    pager.term.respectSigint()
   val.toJSValue()
 
 proc toJS(ctx: JSContext; input: MouseInput): JSValue =
@@ -1925,8 +1929,11 @@ proc setupSignals(pager: Pager): PosixStream =
   writer.setBlocking(false)
   var gwriter {.global.}: PosixStream = nil
   gwriter = writer
-  onSignal SIGWINCH, SIGCHLD:
-    let n = if sig == SIGCHLD: 1u8 else: 0u8
+  onSignal SIGWINCH, SIGCHLD, SIGHUP:
+    if sig == SIGHUP:
+      if acceptSigint:
+        sigintCaught = true
+    let n = if sig == SIGCHLD: 1u8 elif sig == SIGHUP: 2u8 else: 0u8
     discard gwriter.write([n])
   let reader = newPosixStream(pipefd[0])
   reader.setCloseOnExec()
@@ -1975,6 +1982,9 @@ proc inputLoop(pager: Pager; ctx: JSContext): Opt[void] =
             for c in buffer.toOpenArray(0, n - 1):
               if c == 1: # SIGCHLD
                 inc sigchld
+              elif c == 2: # SIGHUP
+                pager.exitCode = 0
+                return err()
               else: # 0, SIGWINCH
                 sigwinch = true
           for u in 0 ..< sigchld:
@@ -2227,8 +2237,11 @@ jsClassDef(Pager):
       {.jsfunc.} =
     if pager.consoleInit != nil:
       pager.consoleInit.flags.incl(bifTailOnLoad)
-    return ctx.eval(s.asStr, str("<command>"),
+    pager.term.catchSigint()
+    let res = ctx.eval(s.asStr, str("<command>"),
       JS_EVAL_TYPE_GLOBAL or JS_EVAL_FLAG_BACKTRACE_BARRIER)
+    pager.term.respectSigint()
+    res
 
   # private
   proc jsQuit(ctx: JSContext; pager: Pager; code = 0): JSValue {.
