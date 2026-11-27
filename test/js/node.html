@@ -38,5 +38,17 @@ assert(new Text("a").isEqualNode(new Text("a")));
 	const comment = new Comment();
 	assertEquals(comment.childNodes, comment.childNodes);
 }
+{
+	/* compareDocumentPosition */
+	const element = document.createElement("div");
+	const child1 = document.createElement("div");
+	const child2 = document.createElement("div");
+	element.appendChild(child1);
+	element.appendChild(child2);
+	const ret1 = element.compareDocumentPosition(child1);
+	assertEquals(ret1, 20);
+	const ret2 = child1.compareDocumentPosition(child2);
+	assertEquals(ret2 & Node.DOCUMENT_POSITION_FOLLOWING, 4);
+}
 document.getElementById("x").textContent = "Success";
 </script>

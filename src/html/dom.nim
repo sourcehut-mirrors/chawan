@@ -68,6 +68,15 @@ type
     ntDocumentFragment = (11u16, "DOCUMENT_FRAGMENT_NODE")
     ntNotation = (12u16, "NOTATION_NODE")
 
+type DocumentPosition = enum
+  dpDisconnected = (0'u16, "DOCUMENT_POSITION_DISCONNECTED")
+  dpPreceding = (1'u16, "DOCUMENT_POSITION_PRECEDING")
+  dpFollowing = (2'u16, "DOCUMENT_POSITION_FOLLOWING")
+  dpContains = (3'u16, "DOCUMENT_POSITION_CONTAINS")
+  dpContainedBy = (4'u16, "DOCUMENT_POSITION_CONTAINED_BY")
+  dpImplementationSpecific =
+    (5'u16, "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC")
+
 type
   DependencyType* = enum
     dtHover, dtChecked, dtFocus, dtTarget
@@ -342,9 +351,9 @@ type
 
   Attr = JSRef[AttrObj]
 
-  AttrObj* {.final.} = object of NodeObj
+  AttrObj {.final.} = object of NodeObj
     dataIdx: uint32
-    ownerElement: Element # may be nil
+    internalOwnerElement: Element # may be nil
 
   DOMImplementation = distinct Document # strong ref
 
@@ -654,6 +663,7 @@ proc nextDescendantShadow(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc parentNodeHost(node: Node): Node
 proc previousSibling*(node: Node): Node
+proc precedes(this, other: Node): bool
 proc serializeFragment(res: var Growbuf; node: Node; writeShadow: bool)
 proc serializeFragmentInner*(res: var Growbuf; child: Node; parentType: TagType;
   writeShadow: bool)
@@ -694,6 +704,7 @@ proc adjustForRemoval(iter: NodeIterator; node: Node)
 proc newAttr(document: Document; data: AttrData): Attr
 proc data(attr: Attr): lent AttrData
 proc setValue(ctx: JSContext; attr: Attr; ds: DOMString)
+proc ownerElement(attr: Attr): Element
 
 proc attachShadowInternal(this: Element; init: ShadowRootInit;
   customElements: CustomElementRegistry): ShadowRoot
@@ -2584,9 +2595,6 @@ jsClassDef(Node):
     ctx.cloneNodeImpl(node, node.document, deep, ParentNode(nil),
       CustomElementRegistry(nil))
 
-  proc isSameNode(node, other: Node): bool {.jsfunc.} =
-    return node == other
-
   proc childNodes(node: Node): NodeList {.jsfget.} =
     var list = node.getLiveCollection(cnChildNodes) as NodeList
     if list == nil:
@@ -2631,6 +2639,40 @@ jsClassDef(Node):
         return false
       return node.data == other.data
     true
+
+  proc isSameNode(this, other: Node): bool {.jsfunc.} =
+    return this == other
+
+  proc compareDocumentPosition(this, other: Node): uint16 {.jsfunc.} =
+    if this == other:
+      return 0
+    let attr1 = other as Attr
+    let attr2 = this as Attr
+    let node1 = if attr1 != nil: attr1.ownerElement.asNode else: other
+    let node2 = if attr2 != nil: attr2.ownerElement.asNode else: this
+    if attr2 != nil:
+      if attr1 != nil and node1 != nil and node2 == node1:
+        let res = if attr1.dataIdx < attr2.dataIdx:
+          {dpImplementationSpecific, dpPreceding}
+        else:
+          {dpImplementationSpecific, dpFollowing}
+        return cast[uint16](res)
+    if node1 == nil or node2 == nil or node1.rootNode != node2.rootNode:
+      #TODO this matches the spec, but I'm not a fan
+      let res = if cast[uint](node1) < cast[uint](node2):
+        {dpDisconnected, dpImplementationSpecific, dpPreceding}
+      else:
+        {dpDisconnected, dpImplementationSpecific, dpFollowing}
+      return cast[uint16](res)
+    if node1 == node2 and attr2 != nil or
+        attr1 == nil and node1.contains(node2):
+      return cast[uint16]({dpContains, dpPreceding})
+    if node1 == node2 and attr1 != nil or
+        attr2 == nil and node2.contains(node1):
+      return cast[uint16]({dpContainedBy, dpFollowing})
+    if node1.precedes(node2):
+      return cast[uint16]({dpPreceding})
+    cast[uint16]({dpFollowing})
 
   proc setNodeValue(ctx: JSContext; node: Node; data: DOMStringEmpty): Opt[void]
       {.jsfset: "nodeValue".} =
@@ -4927,7 +4969,7 @@ proc newAttr(element: Element; dataIdx: uint32): Attr =
   jsNew AttrObj(
     internalNext: element.asNode.document.asNode,
     dataIdx: dataIdx,
-    ownerElement: element,
+    internalOwnerElement: element,
   )
 
 proc newAttr(document: Document; data: AttrData): Attr =
@@ -4940,11 +4982,11 @@ proc newAttr(document: Document; data: AttrData): Attr =
   newAttr(dummy.asElement, 0)
 
 proc data(attr: Attr): lent AttrData =
-  if attr.ownerElement == nil:
+  if attr.internalOwnerElement == nil:
     # ran out of memory during attribute removal
     let hack {.global.} = AttrData()
     return hack
-  attr.ownerElement.attrs[attr.dataIdx]
+  attr.internalOwnerElement.attrs[attr.dataIdx]
 
 proc localName(attr: Attr): CAtom =
   let name = attr.data.name
@@ -4984,13 +5026,13 @@ jsClassDef(Attr):
 
   proc setValue(ctx: JSContext; attr: Attr; ds: DOMString) {.
       jsfset: "value".} =
-    if attr.ownerElement != nil:
-      attr.ownerElement.setAttr(ctx, attr.data.name, ds)
+    if attr.internalOwnerElement != nil:
+      attr.internalOwnerElement.setAttr(ctx, attr.data.name, ds)
 
-  proc jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
-    if attr.ownerElement of AttrDummyElement:
+  proc ownerElement(attr: Attr): Element {.jsfget.} =
+    if attr.internalOwnerElement of AttrDummyElement:
       return Element(nil)
-    return attr.ownerElement
+    return attr.internalOwnerElement
 
 # NamedNodeMap
 proc findAttr(map: NamedNodeMap; dataIdx: uint32): int =
@@ -5215,6 +5257,18 @@ proc precedes(this, other: Element): bool =
       this = thisParent
     other = otherParent
   false
+
+proc precedes(this, other: Node): bool =
+  if this == other.parentNode.asNode:
+    return true
+  if other == this.parentNode.asNode:
+    return false
+  if this.parentNode == other.parentNode:
+    for it in this.subsequentSiblings:
+      if it == other:
+        return true
+    return false
+  this.parentElement.precedes(other.parentElement)
 
 proc findAncestorIncl*(element: Element; tagType: TagType): Element =
   for element in element.branchElems:
@@ -5674,7 +5728,7 @@ proc delAttr(element: Element; ctx: JSContext; u: uint32) =
       let attr = map.attrlist[j]
       var data = attr.data
       data.value = oldValue
-      attr.ownerElement = (jsNew AttrDummyElementObj(
+      attr.internalOwnerElement = (jsNew AttrDummyElementObj(
         internalNext: attr.asNode.document.asNode,
         attrs: newAttrDataList(data)
       )).asElement # works even if jsNew produces nil
@@ -6191,7 +6245,7 @@ jsClassPublicDef(Element):
 
   proc setAttributeNode(ctx: JSContext; element: Element; attr: Attr): JSValue
       {.jsfunc, jsfunc: "setAttributeNodeNS".} =
-    if not (attr.ownerElement of AttrDummyElement):
+    if not (attr.internalOwnerElement of AttrDummyElement):
       return JS_ThrowDOMException(ctx, "InUseAttributeError",
         "attribute already in use")
     let attributes = element.attributes
@@ -8411,7 +8465,6 @@ proc registerElements(ctx: JSContext): Opt[void] =
 proc addDOMModule*(ctx: JSContext): JSCode =
   ?ctx.registerClass(NodeDef)
   event.nodeClassID = NodeDef.id
-  ?ctx.defineConsts(NodeDef.id, NodeType)
   ?ctx.registerFakeClass(ParentNodeDef)
   ?ctx.registerFakeClass(RootNodeDef)
   ?ctx.registerFakeClass(ElementAccessorDef)
@@ -8444,6 +8497,10 @@ proc addDOMModule*(ctx: JSContext): JSCode =
   let ctxOpaque = ctx.getOpaque()
   if ctxOpaque == nil:
     return ok()
+  ?ctx.defineConsts(NodeDef.id, NodeType)
+  for e in DocumentPosition:
+    let n = ctx.toJS(1u32 shl uint32(e))
+    ?ctx.definePropertyE(ctxOpaque.ctors[int(NodeDef.id)], e.toStr(), n)
   ?ctx.definePropertyCW(ctxOpaque.global, "HTMLDocument",
     ctxOpaque.ctors[int(DocumentDef.id)].toJSValue())
   let nodeFilter = ?ctx.newObject()
