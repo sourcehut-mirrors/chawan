@@ -28,7 +28,8 @@ type
 
   AnsiCodeParseState = enum
     acpsDone, acpsStart, acpsParams, acpsInterm, acpsFinal, acpsBackspace,
-    acpsInBackspaceTransition, acpsInBackspace, acpsOSC, acpsOSCEsc
+    acpsInBackspaceTransition, acpsInBackspace, acpsOSC, acpsOSCEsc,
+    acpsDSCS
 
   State = object
     os: PosixStream
@@ -249,6 +250,8 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
         state.ansiState = acpsOSC
       else:
         state.ansiState = acpsDone
+    elif c in '('..'+': # DEC set character set
+      state.ansiState = acpsDSCS
     else:
       state.ansiState = acpsDone
       return pacrProcess
@@ -264,6 +267,9 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
     else:
       state.ansiState = acpsFinal
       return state.parseAnsiCode(format, c)
+  of acpsDSCS:
+    #TODO we should probably support special graphics at least
+    state.ansiState = acpsDone
   of acpsFinal:
     state.ansiState = acpsDone
     if c in '@'..'~':
