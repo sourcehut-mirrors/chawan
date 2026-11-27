@@ -30,7 +30,6 @@
 #include <assert.h>
 #include <sys/time.h>
 #include <time.h>
-#include <fenv.h>
 #include <math.h>
 #if defined(__APPLE__)
 #include <malloc/malloc.h>
