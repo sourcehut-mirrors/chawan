@@ -289,6 +289,7 @@ macro makeStaticAtom =
       satMax = "max"
       satMedia = "media"
       satMessage = "message"
+      satMessageevent = "messageevent"
       satMethod = "method"
       satMin = "min"
       satMissingDashGlyph = "missing-glyph"

@@ -4036,18 +4036,22 @@ jsClassPublicDef(Document):
 
   proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
       JSValue {.jsfunc.} =
-    case atom.toStaticAtomLower()
+    let event = case atom.toStaticAtomLower()
+    of satMessageevent:
+      ctx.newMessageEvent(satUempty.view()).asEvent
     of satCustomevent:
-      return ctx.toJSNew(ctx.newCustomEvent(satUempty.view()))
+      ctx.newCustomEvent(satUempty.view()).asEvent
     of satEvent, satEvents, satHtmlevents, satSvgevents:
-      return ctx.toJSNew(newEvent(satUempty, EventTarget(nil), bubbles = false,
-        cancelable = false))
+      newEvent(satUempty, EventTarget(nil), bubbles = false,
+        cancelable = false)
     of satUievent, satUievents:
-      return ctx.toJSNew(newUIEvent(satUempty.view()))
+      newUIEvent(satUempty.view()).asEvent
     of satMouseevent, satMouseevents:
-      return ctx.toJSNew(newMouseEvent(satUempty.view()))
+      newMouseEvent(satUempty.view()).asEvent
     else:
       return JS_ThrowDOMException(ctx, "NotSupportedError", "event not supported")
+    event.flags.excl(efInitialized)
+    ctx.toJSNew(event)
 
   proc location(ctx: JSContext; document: Document): JSValue {.jsuffget.} =
     if document.window == nil:

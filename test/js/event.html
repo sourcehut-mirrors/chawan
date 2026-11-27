@@ -65,6 +65,8 @@ function bodyOnload(event) {
 }
 {
 	assertEquals(new ProgressEvent("test", {loaded: .5}).loaded, .5);
+	const me = document.createEvent("messageevent");
+	assertThrows(() => window.dispatchEvent(me), DOMException);
 }
 
 let ok8 = true;
